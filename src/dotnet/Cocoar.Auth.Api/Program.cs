@@ -19,7 +19,7 @@ builder.Host.UseWolverine(opts =>
 {
     // Discover handlers in the Application assembly
     opts.Discovery.IncludeAssembly(typeof(Cocoar.Auth.Application.DependencyInjection).Assembly);
-    
+
     // Use local, in-memory queue (no external message transport needed)
     opts.Durability.Mode = DurabilityMode.Solo;
 });

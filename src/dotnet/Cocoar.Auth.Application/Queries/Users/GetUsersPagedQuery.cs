@@ -25,9 +25,9 @@ public class GetUsersPagedHandler
     public async Task<ErrorOr<UserListDto>> HandleAsync(GetUsersPagedQuery query, CancellationToken cancellationToken)
     {
         var (users, totalCount) = await _userRepository.GetPagedAsync(
-            query.Page, 
-            query.PageSize, 
-            query.Search, 
+            query.Page,
+            query.PageSize,
+            query.Search,
             cancellationToken);
 
         return new UserListDto
