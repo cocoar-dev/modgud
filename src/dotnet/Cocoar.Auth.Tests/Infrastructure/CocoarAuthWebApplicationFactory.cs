@@ -89,8 +89,17 @@ public class CocoarAuthWebApplicationFactory : WebApplicationFactory<Program>, I
 
     public new async Task DisposeAsync()
     {
+        // Dispose WebApplicationFactory first (stops Wolverine/host) before disposing postgres
+        try
+        {
+            await base.DisposeAsync();
+        }
+        catch (AggregateException)
+        {
+            // Suppress Wolverine shutdown exceptions during test cleanup
+        }
+
         await _postgresContainer.DisposeAsync();
-        await base.DisposeAsync();
     }
 
     public async Task<ApplicationUser> CreateTestUserAsync(

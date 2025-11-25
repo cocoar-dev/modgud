@@ -1,8 +1,10 @@
+using Cocoar.Auth.Application.Commands.Roles;
 using Cocoar.Auth.Application.DTOs.Roles;
-using Cocoar.Auth.Application.Services;
+using Cocoar.Auth.Application.Queries.Roles;
 using Cocoar.Primitives;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Wolverine;
 
 namespace Cocoar.Auth.Api.Controllers.Admin;
 
@@ -10,11 +12,11 @@ namespace Cocoar.Auth.Api.Controllers.Admin;
 [Authorize(Roles = "Admin")]
 public class RolesAdminController : ApiControllerBase
 {
-    private readonly RoleService _roleService;
+    private readonly IMessageBus _messageBus;
 
-    public RolesAdminController(RoleService roleService)
+    public RolesAdminController(IMessageBus messageBus)
     {
-        _roleService = roleService;
+        _messageBus = messageBus;
     }
 
     /// <summary>
@@ -24,7 +26,9 @@ public class RolesAdminController : ApiControllerBase
     [ProducesResponseType(typeof(RoleListDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetRoles(CancellationToken cancellationToken)
     {
-        var result = await _roleService.GetAllAsync(cancellationToken);
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<RoleListDto>>(
+            new GetAllRolesQuery(),
+            cancellationToken);
         return FromErrorOr(result);
     }
 
@@ -41,7 +45,9 @@ public class RolesAdminController : ApiControllerBase
             return BadRequest("Invalid role ID format.");
         }
 
-        var result = await _roleService.GetByIdAsync(roleId, cancellationToken);
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<RoleDto>>(
+            new GetRoleByIdQuery(roleId),
+            cancellationToken);
         return FromErrorOr(result);
     }
 
@@ -54,7 +60,9 @@ public class RolesAdminController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateRole([FromBody] CreateRoleDto dto, CancellationToken cancellationToken)
     {
-        var result = await _roleService.CreateAsync(dto, cancellationToken);
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<RoleDto>>(
+            new CreateRoleCommand(dto),
+            cancellationToken);
         return FromErrorOr(result, role => CreatedAtAction(nameof(GetRole), new { id = role.Id.ToString() }, role));
     }
 
@@ -73,7 +81,9 @@ public class RolesAdminController : ApiControllerBase
             return BadRequest("Invalid role ID format.");
         }
 
-        var result = await _roleService.UpdateAsync(roleId, dto, cancellationToken);
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<RoleDto>>(
+            new UpdateRoleCommand(roleId, dto),
+            cancellationToken);
         return FromErrorOr(result);
     }
 
@@ -91,7 +101,9 @@ public class RolesAdminController : ApiControllerBase
             return BadRequest("Invalid role ID format.");
         }
 
-        var result = await _roleService.DeleteAsync(roleId, cancellationToken);
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
+            new DeleteRoleCommand(roleId),
+            cancellationToken);
         if (result.IsError)
         {
             return Problem(result.Errors);

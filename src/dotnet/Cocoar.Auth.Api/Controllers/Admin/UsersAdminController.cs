@@ -1,9 +1,10 @@
-using Cocoar.Auth.Application.DTOs.Common;
+using Cocoar.Auth.Application.Commands.Users;
 using Cocoar.Auth.Application.DTOs.Users;
-using Cocoar.Auth.Application.Services;
+using Cocoar.Auth.Application.Queries.Users;
 using Cocoar.Primitives;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Wolverine;
 
 namespace Cocoar.Auth.Api.Controllers.Admin;
 
@@ -11,11 +12,11 @@ namespace Cocoar.Auth.Api.Controllers.Admin;
 [Authorize(Roles = "Admin")]
 public class UsersAdminController : ApiControllerBase
 {
-    private readonly UserService _userService;
+    private readonly IMessageBus _messageBus;
 
-    public UsersAdminController(UserService userService)
+    public UsersAdminController(IMessageBus messageBus)
     {
-        _userService = userService;
+        _messageBus = messageBus;
     }
 
     /// <summary>
@@ -29,7 +30,9 @@ public class UsersAdminController : ApiControllerBase
         [FromQuery] string? search = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _userService.GetPagedAsync(page, pageSize, search, cancellationToken);
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<UserListDto>>(
+            new GetUsersPagedQuery(page, pageSize, search),
+            cancellationToken);
         return FromErrorOr(result);
     }
 
@@ -46,7 +49,9 @@ public class UsersAdminController : ApiControllerBase
             return BadRequest("Invalid user ID format.");
         }
 
-        var result = await _userService.GetByIdAsync(userId, cancellationToken);
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<UserDto>>(
+            new GetUserByIdQuery(userId),
+            cancellationToken);
         return FromErrorOr(result);
     }
 
@@ -59,7 +64,9 @@ public class UsersAdminController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserDto dto, CancellationToken cancellationToken)
     {
-        var result = await _userService.CreateAsync(dto, cancellationToken);
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<UserDto>>(
+            new CreateUserCommand(dto),
+            cancellationToken);
         return FromErrorOr(result, user => CreatedAtAction(nameof(GetUser), new { id = user.Id.ToString() }, user));
     }
 
@@ -78,7 +85,9 @@ public class UsersAdminController : ApiControllerBase
             return BadRequest("Invalid user ID format.");
         }
 
-        var result = await _userService.UpdateAsync(userId, dto, cancellationToken);
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<UserDto>>(
+            new UpdateUserCommand(userId, dto),
+            cancellationToken);
         return FromErrorOr(result);
     }
 
@@ -95,7 +104,9 @@ public class UsersAdminController : ApiControllerBase
             return BadRequest("Invalid user ID format.");
         }
 
-        var result = await _userService.DeleteAsync(userId, cancellationToken);
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
+            new DeleteUserCommand(userId),
+            cancellationToken);
         if (result.IsError)
         {
             return Problem(result.Errors);
@@ -118,7 +129,9 @@ public class UsersAdminController : ApiControllerBase
             return BadRequest("Invalid user ID format.");
         }
 
-        var result = await _userService.ResetPasswordAsync(userId, dto, cancellationToken);
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
+            new ResetUserPasswordCommand(userId, dto),
+            cancellationToken);
         if (result.IsError)
         {
             return Problem(result.Errors);

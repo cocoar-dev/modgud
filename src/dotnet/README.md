@@ -77,11 +77,27 @@ A full-featured Identity Provider built with ASP.NET Core, Marten (PostgreSQL do
 ```
 src/dotnet/
 ├── Cocoar.Auth.Domain/          # Domain entities and value objects
-├── Cocoar.Auth.Application/     # Application services, DTOs, interfaces
+├── Cocoar.Auth.Application/     # Application services, DTOs, CQRS commands/queries
+│   ├── Commands/                # Wolverine command handlers
+│   │   ├── Users/               # User management commands
+│   │   └── Roles/               # Role management commands
+│   └── Queries/                 # Wolverine query handlers
+│       ├── Users/               # User queries
+│       └── Roles/               # Role queries
 ├── Cocoar.Auth.Infrastructure/  # Marten stores, repositories
 ├── Cocoar.Auth.Api/             # REST API controllers
 └── Cocoar.Auth.Tests/           # Integration tests
 ```
+
+### CQRS Pattern with Wolverine
+
+The Admin endpoints (Users and Roles management) use the CQRS pattern with [Wolverine](https://wolverinefx.io/) as the mediator:
+
+- **Commands** - Mutate state (Create, Update, Delete operations)
+- **Queries** - Read state (Get by ID, List operations)
+- **Handlers** - Process commands/queries with business logic
+
+Auth endpoints (login, register, password reset, profile) remain service-based for simplicity.
 
 ## Technology Stack
 
@@ -92,6 +108,7 @@ src/dotnet/
 | Identity | ASP.NET Core Identity | 10.0 |
 | Database | PostgreSQL | via Marten |
 | Document Store | Marten | 8.16.1 |
+| CQRS/Mediator | Wolverine | 5.3.0 |
 | Serialization | System.Text.Json | (built-in) |
 | Mapping | Mapperly | 4.3.0 |
 | Error Handling | ErrorOr | 2.0.1 |
@@ -174,16 +191,31 @@ src/dotnet/
 
 ### Application Layer (`Cocoar.Auth.Application`)
 
+- **CQRS Commands** (via Wolverine):
+  - `CreateUserCommand` / `CreateUserCommandHandler`
+  - `UpdateUserCommand` / `UpdateUserCommandHandler`
+  - `DeleteUserCommand` / `DeleteUserCommandHandler`
+  - `ResetUserPasswordCommand` / `ResetUserPasswordCommandHandler`
+  - `CreateRoleCommand` / `CreateRoleCommandHandler`
+  - `UpdateRoleCommand` / `UpdateRoleCommandHandler`
+  - `DeleteRoleCommand` / `DeleteRoleCommandHandler`
+
+- **CQRS Queries** (via Wolverine):
+  - `GetUserByIdQuery` / `GetUserByIdQueryHandler`
+  - `GetUsersPagedQuery` / `GetUsersPagedQueryHandler`
+  - `GetRoleByIdQuery` / `GetRoleByIdQueryHandler`
+  - `GetAllRolesQuery` / `GetAllRolesQueryHandler`
+
 - **DTOs**:
   - `UserDto`, `CreateUserRequest`, `UpdateUserRequest`
   - `RoleDto`, `CreateRoleRequest`, `UpdateRoleRequest`
   - `LoginRequest`, `LoginResponse`
   - `ChangePasswordRequest`
+  - `RegisterDto`, `ProfileDto`, `UpdateProfileDto`
+  - `ForgotPasswordDto`, `ResetPasswordDto`, `ConfirmEmailDto`
 
-- **Services**:
-  - `IUserService` / `UserService` - User management operations
-  - `IRoleService` / `RoleService` - Role management operations
-  - `IAuthenticationService` / `AuthenticationService` - Login/logout
+- **Services** (for Auth endpoints):
+  - `IAuthService` / `AuthService` - Login, logout, registration, email confirmation, password reset, profile
 
 - **Mappers** (using Mapperly):
   - `UserMapper` - Maps between ApplicationUser and DTOs
@@ -223,21 +255,23 @@ src/dotnet/
   - `POST /change-password` - Change current user's password
 
 - **UsersAdminController** (`/api/admin/users`) - Requires `Admin` role:
-  - `GET /` - List all users
-  - `GET /{id}` - Get user by ID
-  - `POST /` - Create new user
-  - `PUT /{id}` - Update user
-  - `DELETE /{id}` - Delete user
-  - `POST /{id}/change-password` - Change user password
+  - Uses Wolverine `IMessageBus` for CQRS pattern
+  - `GET /` - List all users (GetUsersPagedQuery)
+  - `GET /{id}` - Get user by ID (GetUserByIdQuery)
+  - `POST /` - Create new user (CreateUserCommand)
+  - `PUT /{id}` - Update user (UpdateUserCommand)
+  - `DELETE /{id}` - Delete user (DeleteUserCommand)
+  - `POST /{id}/reset-password` - Reset user password (ResetUserPasswordCommand)
   - `POST /{id}/roles/{roleName}` - Add user to role
   - `DELETE /{id}/roles/{roleName}` - Remove user from role
 
 - **RolesAdminController** (`/api/admin/roles`) - Requires `Admin` role:
-  - `GET /` - List all roles
-  - `GET /{id}` - Get role by ID
-  - `POST /` - Create new role
-  - `PUT /{id}` - Update role
-  - `DELETE /{id}` - Delete role
+  - Uses Wolverine `IMessageBus` for CQRS pattern
+  - `GET /` - List all roles (GetAllRolesQuery)
+  - `GET /{id}` - Get role by ID (GetRoleByIdQuery)
+  - `POST /` - Create new role (CreateRoleCommand)
+  - `PUT /{id}` - Update role (UpdateRoleCommand)
+  - `DELETE /{id}` - Delete role (DeleteRoleCommand)
 
 ### Tests (`Cocoar.Auth.Tests`)
 

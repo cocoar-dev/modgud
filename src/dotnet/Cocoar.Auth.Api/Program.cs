@@ -2,6 +2,7 @@ using Cocoar.Auth.Application;
 using Cocoar.Auth.Infrastructure;
 using Cocoar.Primitives;
 using Cocoar.Primitives.OptionalAware;
+using Wolverine;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +13,16 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddInfrastructure(connectionString);
 builder.Services.AddIdentityWithMarten();
 builder.Services.AddApplication();
+
+// Configure Wolverine
+builder.Host.UseWolverine(opts =>
+{
+    // Discover handlers in the Application assembly
+    opts.Discovery.IncludeAssembly(typeof(Cocoar.Auth.Application.DependencyInjection).Assembly);
+    
+    // Use local, in-memory queue (no external message transport needed)
+    opts.Durability.Mode = DurabilityMode.Solo;
+});
 
 // Configure authentication
 builder.Services.ConfigureApplicationCookie(options =>
