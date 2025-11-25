@@ -1,4 +1,3 @@
-using Cocoar.Auth.Application.DTOs.Roles;
 using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Domain.Entities;
 using ErrorOr;
@@ -9,7 +8,7 @@ namespace Cocoar.Auth.Application.Commands.Roles;
 /// <summary>
 /// Command to create a new role.
 /// </summary>
-public record CreateRoleCommand(CreateRoleDto Dto);
+public record CreateRoleCommand(string Name, string? Description);
 
 /// <summary>
 /// Handler for CreateRoleCommand.
@@ -23,17 +22,15 @@ public class CreateRoleHandler
         _roleManager = roleManager;
     }
 
-    public async Task<ErrorOr<RoleDto>> HandleAsync(CreateRoleCommand command, CancellationToken cancellationToken)
+    public async Task<ErrorOr<ApplicationRole>> HandleAsync(CreateRoleCommand command, CancellationToken cancellationToken)
     {
-        var dto = command.Dto;
-
-        var existingRole = await _roleManager.FindByNameAsync(dto.Name);
+        var existingRole = await _roleManager.FindByNameAsync(command.Name);
         if (existingRole is not null)
         {
-            return RoleErrors.DuplicateName(dto.Name);
+            return RoleErrors.DuplicateName(command.Name);
         }
 
-        var role = new ApplicationRole(dto.Name, dto.Description);
+        var role = new ApplicationRole(command.Name, command.Description);
 
         var result = await _roleManager.CreateAsync(role);
         if (!result.Succeeded)
@@ -41,13 +38,6 @@ public class CreateRoleHandler
             return RoleErrors.CreationFailed(result.Errors.Select(e => e.Description));
         }
 
-        return new RoleDto
-        {
-            Id = role.Id,
-            Name = role.Name!,
-            Description = role.Description,
-            CreatedAt = role.CreatedAt,
-            ModifiedAt = role.ModifiedAt
-        };
+        return role;
     }
 }

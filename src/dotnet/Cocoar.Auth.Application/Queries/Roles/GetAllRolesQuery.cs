@@ -1,6 +1,5 @@
-using Cocoar.Auth.Application.DTOs.Roles;
 using Cocoar.Auth.Application.Interfaces;
-using Cocoar.Auth.Application.Mappers;
+using Cocoar.Auth.Domain.Entities;
 using ErrorOr;
 
 namespace Cocoar.Auth.Application.Queries.Roles;
@@ -22,14 +21,9 @@ public class GetAllRolesHandler
         _roleRepository = roleRepository;
     }
 
-    public async Task<ErrorOr<RoleListDto>> HandleAsync(GetAllRolesQuery query, CancellationToken cancellationToken)
+    public async Task<ErrorOr<IReadOnlyList<ApplicationRole>>> HandleAsync(GetAllRolesQuery query, CancellationToken cancellationToken)
     {
         var roles = await _roleRepository.GetAllAsync(cancellationToken);
-
-        return new RoleListDto
-        {
-            Items = roles.Select(RoleMapper.ToDto).ToList(),
-            TotalCount = roles.Count
-        };
+        return roles.ToList();
     }
 }

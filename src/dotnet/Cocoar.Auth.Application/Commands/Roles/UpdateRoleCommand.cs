@@ -1,8 +1,8 @@
-using Cocoar.Auth.Application.DTOs.Roles;
 using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Domain.Entities;
 using Cocoar.Primitives;
+using Cocoar.Primitives.OptionalAware;
 using ErrorOr;
 using Microsoft.AspNetCore.Identity;
 
@@ -11,7 +11,10 @@ namespace Cocoar.Auth.Application.Commands.Roles;
 /// <summary>
 /// Command to update an existing role.
 /// </summary>
-public record UpdateRoleCommand(ShortGuid Id, UpdateRoleDto Dto);
+public record UpdateRoleCommand(
+    ShortGuid Id,
+    Optional<string> Name,
+    Optional<string?> Description);
 
 /// <summary>
 /// Handler for UpdateRoleCommand.
@@ -29,19 +32,17 @@ public class UpdateRoleHandler
         _roleRepository = roleRepository;
     }
 
-    public async Task<ErrorOr<RoleDto>> HandleAsync(UpdateRoleCommand command, CancellationToken cancellationToken)
+    public async Task<ErrorOr<ApplicationRole>> HandleAsync(UpdateRoleCommand command, CancellationToken cancellationToken)
     {
-        var (id, dto) = command;
-
-        var role = await _roleRepository.GetByIdAsync(id.Guid, cancellationToken);
+        var role = await _roleRepository.GetByIdAsync(command.Id.Guid, cancellationToken);
         if (role is null)
         {
-            return RoleErrors.NotFound(id.Guid);
+            return RoleErrors.NotFound(command.Id.Guid);
         }
 
-        if (dto.Name.HasValue)
+        if (command.Name.HasValue)
         {
-            var newName = dto.Name.Value!;
+            var newName = command.Name.Value!;
             var existingRole = await _roleManager.FindByNameAsync(newName);
             if (existingRole is not null && existingRole.Id != role.Id)
             {
@@ -50,9 +51,9 @@ public class UpdateRoleHandler
             role.SetName(newName);
         }
 
-        if (dto.Description.HasValue)
+        if (command.Description.HasValue)
         {
-            role.SetDescription(dto.Description.Value);
+            role.SetDescription(command.Description.Value);
         }
 
         var result = await _roleManager.UpdateAsync(role);
@@ -61,13 +62,6 @@ public class UpdateRoleHandler
             return RoleErrors.UpdateFailed(result.Errors.Select(e => e.Description));
         }
 
-        return new RoleDto
-        {
-            Id = role.Id,
-            Name = role.Name!,
-            Description = role.Description,
-            CreatedAt = role.CreatedAt,
-            ModifiedAt = role.ModifiedAt
-        };
+        return role;
     }
 }

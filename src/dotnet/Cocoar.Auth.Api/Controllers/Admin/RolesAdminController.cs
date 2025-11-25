@@ -1,6 +1,9 @@
+using Cocoar.Auth.Api.Extensions;
 using Cocoar.Auth.Application.Commands.Roles;
 using Cocoar.Auth.Application.DTOs.Roles;
+using Cocoar.Auth.Application.Mappers;
 using Cocoar.Auth.Application.Queries.Roles;
+using Cocoar.Auth.Domain.Entities;
 using Cocoar.Primitives;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -26,10 +29,17 @@ public class RolesAdminController : ApiControllerBase
     [ProducesResponseType(typeof(RoleListDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetRoles(CancellationToken cancellationToken)
     {
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<RoleListDto>>(
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<IReadOnlyList<ApplicationRole>>>(
             new GetAllRolesQuery(),
             cancellationToken);
-        return FromErrorOr(result);
+
+        return result.Match(
+            roles => Ok(new RoleListDto
+            {
+                Items = roles.Select(RoleMapper.ToDto).ToList(),
+                TotalCount = roles.Count
+            }),
+            errors => Problem(errors));
     }
 
     /// <summary>
@@ -45,10 +55,13 @@ public class RolesAdminController : ApiControllerBase
             return BadRequest("Invalid role ID format.");
         }
 
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<RoleDto>>(
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<ApplicationRole>>(
             new GetRoleByIdQuery(roleId),
             cancellationToken);
-        return FromErrorOr(result);
+
+        return result.Match(
+            role => Ok(RoleMapper.ToDto(role)),
+            errors => Problem(errors));
     }
 
     /// <summary>
@@ -60,10 +73,13 @@ public class RolesAdminController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateRole([FromBody] CreateRoleDto dto, CancellationToken cancellationToken)
     {
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<RoleDto>>(
-            new CreateRoleCommand(dto),
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<ApplicationRole>>(
+            dto.ToCommand(),
             cancellationToken);
-        return FromErrorOr(result, role => CreatedAtAction(nameof(GetRole), new { id = role.Id.ToString() }, role));
+
+        return result.Match(
+            role => CreatedAtAction(nameof(GetRole), new { id = role.Id.ToString() }, RoleMapper.ToDto(role)),
+            errors => Problem(errors));
     }
 
     /// <summary>
@@ -81,10 +97,13 @@ public class RolesAdminController : ApiControllerBase
             return BadRequest("Invalid role ID format.");
         }
 
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<RoleDto>>(
-            new UpdateRoleCommand(roleId, dto),
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<ApplicationRole>>(
+            dto.ToCommand(roleId),
             cancellationToken);
-        return FromErrorOr(result);
+
+        return result.Match(
+            role => Ok(RoleMapper.ToDto(role)),
+            errors => Problem(errors));
     }
 
     /// <summary>
@@ -104,6 +123,7 @@ public class RolesAdminController : ApiControllerBase
         var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
             new DeleteRoleCommand(roleId),
             cancellationToken);
+
         if (result.IsError)
         {
             return Problem(result.Errors);

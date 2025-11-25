@@ -1,8 +1,6 @@
-using Cocoar.Auth.Application.DTOs.Users;
 using Cocoar.Auth.Application.Errors;
-using Cocoar.Auth.Application.Interfaces;
-using Cocoar.Auth.Application.Mappers;
 using Cocoar.Auth.Domain.Entities;
+using Cocoar.Primitives;
 using ErrorOr;
 using Microsoft.AspNetCore.Identity;
 
@@ -11,7 +9,16 @@ namespace Cocoar.Auth.Application.Commands.Users;
 /// <summary>
 /// Command to create a new user.
 /// </summary>
-public record CreateUserCommand(CreateUserDto Dto);
+public record CreateUserCommand(
+    string UserName,
+    string Password,
+    string? Email,
+    string? PhoneNumber,
+    string? FirstName,
+    string? LastName,
+    bool IsActive = true,
+    bool LockoutEnabled = true,
+    List<ShortGuid>? Roles = null);
 
 /// <summary>
 /// Handler for CreateUserCommand.
@@ -25,46 +32,47 @@ public class CreateUserHandler
         _userManager = userManager;
     }
 
-    public async Task<ErrorOr<UserDto>> HandleAsync(CreateUserCommand command, CancellationToken cancellationToken)
+    public async Task<ErrorOr<ApplicationUser>> HandleAsync(CreateUserCommand command, CancellationToken cancellationToken)
     {
-        var dto = command.Dto;
-
         // Check for duplicate username
-        var existingUser = await _userManager.FindByNameAsync(dto.UserName);
+        var existingUser = await _userManager.FindByNameAsync(command.UserName);
         if (existingUser is not null)
         {
-            return UserErrors.DuplicateUserName(dto.UserName);
+            return UserErrors.DuplicateUserName(command.UserName);
         }
 
         // Check for duplicate email if provided
-        if (!string.IsNullOrWhiteSpace(dto.Email))
+        if (!string.IsNullOrWhiteSpace(command.Email))
         {
-            existingUser = await _userManager.FindByEmailAsync(dto.Email);
+            existingUser = await _userManager.FindByEmailAsync(command.Email);
             if (existingUser is not null)
             {
-                return UserErrors.DuplicateEmail(dto.Email);
+                return UserErrors.DuplicateEmail(command.Email);
             }
         }
 
-        var user = new ApplicationUser(dto.UserName, dto.Email);
-        user.SetPhoneNumber(dto.PhoneNumber);
-        user.SetFirstName(dto.FirstName);
-        user.SetLastName(dto.LastName);
-        user.SetIsActive(dto.IsActive);
-        user.SetLockoutEnabled(dto.LockoutEnabled);
+        var user = new ApplicationUser(command.UserName, command.Email);
+        user.SetPhoneNumber(command.PhoneNumber);
+        user.SetFirstName(command.FirstName);
+        user.SetLastName(command.LastName);
+        user.SetIsActive(command.IsActive);
+        user.SetLockoutEnabled(command.LockoutEnabled);
 
         // Add roles
-        foreach (var roleId in dto.Roles)
+        if (command.Roles is not null)
         {
-            user.AddRole(roleId.Guid);
+            foreach (var roleId in command.Roles)
+            {
+                user.AddRole(roleId.Guid);
+            }
         }
 
-        var result = await _userManager.CreateAsync(user, dto.Password);
+        var result = await _userManager.CreateAsync(user, command.Password);
         if (!result.Succeeded)
         {
             return UserErrors.CreationFailed(result.Errors.Select(e => e.Description));
         }
 
-        return UserMapper.ToDto(user);
+        return user;
     }
 }

@@ -1,4 +1,3 @@
-using Cocoar.Auth.Application.DTOs.Users;
 using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Domain.Entities;
@@ -11,7 +10,7 @@ namespace Cocoar.Auth.Application.Commands.Users;
 /// <summary>
 /// Command to reset a user's password (admin action).
 /// </summary>
-public record ResetUserPasswordCommand(ShortGuid Id, ResetPasswordDto Dto);
+public record ResetUserPasswordCommand(ShortGuid Id, string NewPassword);
 
 /// <summary>
 /// Handler for ResetUserPasswordCommand.
@@ -38,7 +37,7 @@ public class ResetUserPasswordHandler
         }
 
         var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-        var result = await _userManager.ResetPasswordAsync(user, token, command.Dto.NewPassword);
+        var result = await _userManager.ResetPasswordAsync(user, token, command.NewPassword);
 
         if (!result.Succeeded)
         {

@@ -1,9 +1,8 @@
-using Cocoar.Auth.Application.DTOs.Users;
 using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Application.Interfaces;
-using Cocoar.Auth.Application.Mappers;
 using Cocoar.Auth.Domain.Entities;
 using Cocoar.Primitives;
+using Cocoar.Primitives.OptionalAware;
 using ErrorOr;
 using Microsoft.AspNetCore.Identity;
 
@@ -12,7 +11,19 @@ namespace Cocoar.Auth.Application.Commands.Users;
 /// <summary>
 /// Command to update an existing user.
 /// </summary>
-public record UpdateUserCommand(ShortGuid Id, UpdateUserDto Dto);
+public record UpdateUserCommand(
+    ShortGuid Id,
+    Optional<string> UserName,
+    Optional<string?> Email,
+    Optional<string?> PhoneNumber,
+    Optional<string?> FirstName,
+    Optional<string?> LastName,
+    Optional<bool> IsActive,
+    Optional<bool> LockoutEnabled,
+    Optional<bool> EmailConfirmed,
+    Optional<bool> PhoneNumberConfirmed,
+    Optional<bool> TwoFactorEnabled,
+    Optional<List<ShortGuid>> Roles);
 
 /// <summary>
 /// Handler for UpdateUserCommand.
@@ -30,19 +41,17 @@ public class UpdateUserHandler
         _userRepository = userRepository;
     }
 
-    public async Task<ErrorOr<UserDto>> HandleAsync(UpdateUserCommand command, CancellationToken cancellationToken)
+    public async Task<ErrorOr<ApplicationUser>> HandleAsync(UpdateUserCommand command, CancellationToken cancellationToken)
     {
-        var (id, dto) = command;
-
-        var user = await _userRepository.GetByIdAsync(id.Guid, cancellationToken);
+        var user = await _userRepository.GetByIdAsync(command.Id.Guid, cancellationToken);
         if (user is null)
         {
-            return UserErrors.NotFound(id.Guid);
+            return UserErrors.NotFound(command.Id.Guid);
         }
 
-        if (dto.UserName.HasValue)
+        if (command.UserName.HasValue)
         {
-            var newUserName = dto.UserName.Value!;
+            var newUserName = command.UserName.Value!;
             var existingUser = await _userManager.FindByNameAsync(newUserName);
             if (existingUser is not null && existingUser.Id != user.Id)
             {
@@ -51,48 +60,48 @@ public class UpdateUserHandler
             user.SetUserName(newUserName);
         }
 
-        if (dto.Email.HasValue)
+        if (command.Email.HasValue)
         {
-            if (!string.IsNullOrWhiteSpace(dto.Email.Value))
+            if (!string.IsNullOrWhiteSpace(command.Email.Value))
             {
-                var existingUser = await _userManager.FindByEmailAsync(dto.Email.Value);
+                var existingUser = await _userManager.FindByEmailAsync(command.Email.Value);
                 if (existingUser is not null && existingUser.Id != user.Id)
                 {
-                    return UserErrors.DuplicateEmail(dto.Email.Value);
+                    return UserErrors.DuplicateEmail(command.Email.Value);
                 }
             }
-            user.SetEmail(dto.Email.Value);
+            user.SetEmail(command.Email.Value);
         }
 
-        if (dto.PhoneNumber.HasValue)
-            user.SetPhoneNumber(dto.PhoneNumber.Value);
+        if (command.PhoneNumber.HasValue)
+            user.SetPhoneNumber(command.PhoneNumber.Value);
 
-        if (dto.FirstName.HasValue)
-            user.SetFirstName(dto.FirstName.Value);
+        if (command.FirstName.HasValue)
+            user.SetFirstName(command.FirstName.Value);
 
-        if (dto.LastName.HasValue)
-            user.SetLastName(dto.LastName.Value);
+        if (command.LastName.HasValue)
+            user.SetLastName(command.LastName.Value);
 
-        if (dto.IsActive.HasValue)
-            user.SetIsActive(dto.IsActive.Value);
+        if (command.IsActive.HasValue)
+            user.SetIsActive(command.IsActive.Value);
 
-        if (dto.LockoutEnabled.HasValue)
-            user.SetLockoutEnabled(dto.LockoutEnabled.Value);
+        if (command.LockoutEnabled.HasValue)
+            user.SetLockoutEnabled(command.LockoutEnabled.Value);
 
-        if (dto.EmailConfirmed.HasValue)
-            user.SetEmailConfirmed(dto.EmailConfirmed.Value);
+        if (command.EmailConfirmed.HasValue)
+            user.SetEmailConfirmed(command.EmailConfirmed.Value);
 
-        if (dto.PhoneNumberConfirmed.HasValue)
-            user.SetPhoneNumberConfirmed(dto.PhoneNumberConfirmed.Value);
+        if (command.PhoneNumberConfirmed.HasValue)
+            user.SetPhoneNumberConfirmed(command.PhoneNumberConfirmed.Value);
 
-        if (dto.TwoFactorEnabled.HasValue)
-            user.SetTwoFactorEnabled(dto.TwoFactorEnabled.Value);
+        if (command.TwoFactorEnabled.HasValue)
+            user.SetTwoFactorEnabled(command.TwoFactorEnabled.Value);
 
-        if (dto.Roles.HasValue)
+        if (command.Roles.HasValue)
         {
             // Replace all roles
             user.Roles.Clear();
-            var newRoles = dto.Roles.Value ?? [];
+            var newRoles = command.Roles.Value ?? [];
             foreach (var roleId in newRoles)
             {
                 user.AddRole(roleId.Guid);
@@ -105,6 +114,6 @@ public class UpdateUserHandler
             return UserErrors.UpdateFailed(result.Errors.Select(e => e.Description));
         }
 
-        return UserMapper.ToDto(user);
+        return user;
     }
 }

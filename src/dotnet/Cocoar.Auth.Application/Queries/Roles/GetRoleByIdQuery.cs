@@ -1,7 +1,6 @@
-using Cocoar.Auth.Application.DTOs.Roles;
 using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Application.Interfaces;
-using Cocoar.Auth.Application.Mappers;
+using Cocoar.Auth.Domain.Entities;
 using Cocoar.Primitives;
 using ErrorOr;
 
@@ -24,7 +23,7 @@ public class GetRoleByIdHandler
         _roleRepository = roleRepository;
     }
 
-    public async Task<ErrorOr<RoleDto>> HandleAsync(GetRoleByIdQuery query, CancellationToken cancellationToken)
+    public async Task<ErrorOr<ApplicationRole>> HandleAsync(GetRoleByIdQuery query, CancellationToken cancellationToken)
     {
         var role = await _roleRepository.GetByIdAsync(query.Id.Guid, cancellationToken);
         if (role is null)
@@ -32,6 +31,6 @@ public class GetRoleByIdHandler
             return RoleErrors.NotFound(query.Id.Guid);
         }
 
-        return RoleMapper.ToDto(role);
+        return role;
     }
 }

@@ -1,6 +1,5 @@
-using Cocoar.Auth.Application.DTOs.Users;
 using Cocoar.Auth.Application.Interfaces;
-using Cocoar.Auth.Application.Mappers;
+using Cocoar.Auth.Domain.Entities;
 using ErrorOr;
 
 namespace Cocoar.Auth.Application.Queries.Users;
@@ -9,6 +8,11 @@ namespace Cocoar.Auth.Application.Queries.Users;
 /// Query to get a paginated list of users.
 /// </summary>
 public record GetUsersPagedQuery(int Page, int PageSize, string? Search = null);
+
+/// <summary>
+/// Result for GetUsersPagedQuery.
+/// </summary>
+public record GetUsersPagedResult(IReadOnlyList<ApplicationUser> Users, int TotalCount);
 
 /// <summary>
 /// Handler for GetUsersPagedQuery.
@@ -22,7 +26,7 @@ public class GetUsersPagedHandler
         _userRepository = userRepository;
     }
 
-    public async Task<ErrorOr<UserListDto>> HandleAsync(GetUsersPagedQuery query, CancellationToken cancellationToken)
+    public async Task<ErrorOr<GetUsersPagedResult>> HandleAsync(GetUsersPagedQuery query, CancellationToken cancellationToken)
     {
         var (users, totalCount) = await _userRepository.GetPagedAsync(
             query.Page,
@@ -30,12 +34,6 @@ public class GetUsersPagedHandler
             query.Search,
             cancellationToken);
 
-        return new UserListDto
-        {
-            Items = users.Select(UserMapper.ToDto).ToList(),
-            TotalCount = totalCount,
-            Page = query.Page,
-            PageSize = query.PageSize
-        };
+        return new GetUsersPagedResult(users, totalCount);
     }
 }
