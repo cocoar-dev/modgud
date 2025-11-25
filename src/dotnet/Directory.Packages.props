@@ -1,0 +1,29 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- ASP.NET Core & Identity -->
+    <PackageVersion Include="Microsoft.AspNetCore.Identity" Version="2.3.0" />
+    <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Identity.Stores" Version="10.0.0" />
+    <!-- Marten -->
+    <PackageVersion Include="Marten" Version="8.16.1" />
+    <!-- Mapping -->
+    <PackageVersion Include="Riok.Mapperly" Version="4.3.0" />
+    <!-- ErrorOr -->
+    <PackageVersion Include="ErrorOr" Version="2.0.1" />
+    <!-- JSON -->
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
+    <!-- Swagger -->
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.0.1" />
+    <!-- Testing -->
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageVersion Include="Weasel.Core" Version="8.3.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.9.0" />
+  </ItemGroup>
+</Project>
