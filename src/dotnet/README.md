@@ -1,11 +1,11 @@
 # Cocoar.Auth - Identity Provider
 
-A full-featured Identity Provider built with ASP.NET Core, Marten (PostgreSQL document database), and Clean Architecture.
+A full-featured Identity Provider built with ASP.NET Core, Marten (PostgreSQL document database + event store), Wolverine (CQRS), and Clean Architecture.
 
 ## Current Status
 
-✅ **Phase 1: Core Identity Management** - Complete
-✅ **Phase 2: User Self-Service** - Complete (63/63 tests passing)
+✅ **Phase 1: Core Identity Management** - Complete  
+✅ **Phase 2: User Self-Service + Event Sourcing** - Complete (69/69 tests passing)
 
 ---
 
@@ -28,7 +28,7 @@ A full-featured Identity Provider built with ASP.NET Core, Marten (PostgreSQL do
 ### Admin - User Management
 - ✅ Create User
 - ✅ Get User by ID
-- ✅ List All Users
+- ✅ List/Search Users (paginated)
 - ✅ Update User
 - ✅ Delete User
 - ✅ Change User Password
@@ -42,11 +42,20 @@ A full-featured Identity Provider built with ASP.NET Core, Marten (PostgreSQL do
 - ✅ Update Role
 - ✅ Delete Role
 
+### Event Sourcing (User & Role Domain)
+- ✅ UserAggregate (event-sourced aggregate)
+- ✅ RoleAggregate (event-sourced aggregate)
+- ✅ 20+ domain events (UserCreated, RoleCreated, RoleAssigned, etc.)
+- ✅ UserStateProjection (inline projection for validation)
+- ✅ RoleStateProjection (inline projection for validation)
+- ✅ UserDetailsProjection (async projection for API responses)
+- ✅ UserSecurityData (separate document for sensitive data)
+
 ---
 
 ## 🔲 Not Yet Implemented
 
-### OpenIddict / OAuth 2.0
+### OpenIddict / OAuth 2.0 (Phase 3)
 - ❌ Authorization Endpoint
 - ❌ Token Endpoint
 - ❌ Refresh Tokens
@@ -56,15 +65,15 @@ A full-featured Identity Provider built with ASP.NET Core, Marten (PostgreSQL do
 - ❌ Client Application Management
 - ❌ Scope Management
 
-### Security
+### Security (Phase 4)
 - ❌ Two-Factor Authentication (TOTP)
 - ❌ Rate Limiting
 - ❌ Account Lockout Policies
 
-### External Login
+### External Login (Phase 5)
 - ❌ External Login Providers (Google, Microsoft, etc.)
 
-### Advanced
+### Advanced (Phase 6)
 - ❌ Audit Logging
 - ❌ Session Management
 - ❌ Multi-tenancy
@@ -76,28 +85,58 @@ A full-featured Identity Provider built with ASP.NET Core, Marten (PostgreSQL do
 
 ```
 src/dotnet/
-├── Cocoar.Auth.Domain/          # Domain entities and value objects
-├── Cocoar.Auth.Application/     # Application services, DTOs, CQRS commands/queries
+├── Cocoar.Auth.Domain/          # Domain entities, events, aggregates
+│   ├── Entities/                # ApplicationUser, ApplicationRole
+│   ├── Events/                  # UserCreated, UserUpdated, etc.
+│   └── Aggregates/              # UserAggregate (event-sourced)
+├── Cocoar.Auth.Application/     # Application services, DTOs, CQRS
 │   ├── Commands/                # Wolverine command handlers
-│   │   ├── Users/               # User management commands
-│   │   └── Roles/               # Role management commands
-│   └── Queries/                 # Wolverine query handlers
-│       ├── Users/               # User queries
-│       └── Roles/               # Role queries
-├── Cocoar.Auth.Infrastructure/  # Marten stores, repositories
+│   │   ├── Users/               # CreateUser, UpdateUser, DeleteUser
+│   │   └── Roles/               # CreateRole, UpdateRole, DeleteRole
+│   ├── Queries/                 # Wolverine query handlers
+│   │   ├── Users/               # GetUserById, GetUsersPaged
+│   │   └── Roles/               # GetRoleById, GetAllRoles
+│   └── Services/                # AuthService
+├── Cocoar.Auth.Infrastructure/  # Marten stores, repositories, projections
+│   ├── Identity/                # MartenUserStore, MartenRoleStore
+│   └── Persistence/             # Repositories, Projections
+│       └── Projections/         # UserStateProjection, RoleStateProjection
 ├── Cocoar.Auth.Api/             # REST API controllers
-└── Cocoar.Auth.Tests/           # Integration tests
+└── Cocoar.Auth.Tests/           # Integration tests (69 tests)
 ```
 
 ### CQRS Pattern with Wolverine
 
-The Admin endpoints (Users and Roles management) use the CQRS pattern with [Wolverine](https://wolverinefx.io/) as the mediator:
+Admin endpoints use CQRS with [Wolverine](https://wolverinefx.io/):
 
-- **Commands** - Mutate state (Create, Update, Delete operations)
-- **Queries** - Read state (Get by ID, List operations)
+- **Commands** - Mutate state (Create, Update, Delete)
+- **Queries** - Read state (Get by ID, List)
 - **Handlers** - Process commands/queries with business logic
 
-Auth endpoints (login, register, password reset, profile) remain service-based for simplicity.
+Auth endpoints (login, register, password reset, profile) use service-based architecture.
+
+### Event Sourcing with Marten
+
+The user domain uses event sourcing for full audit trail:
+
+```
+User Action → Command Handler → Append Events → Inline Projection → UserState
+                              ↓
+                    Store in Event Stream (mt_events)
+```
+
+**Key Design Decisions:**
+1. **Separate Security Data** - Password hashes stored in `UserSecurityData`, NOT in events
+2. **Two-Tier Projections**:
+   - Inline `*State` projections for validation (synchronous, immediate consistency)
+   - Async `*ReadModel` projections for API display (eventually consistent, denormalized)
+3. **Naming Conventions**:
+   - `*State` = Inline projection, single source of truth (e.g., `UserState`, `RoleState`)
+   - `*ReadModel` = Async projection for display (e.g., `UserDetailsReadModel`)
+   - `*Data` = Value objects / embedded data (e.g., `ClaimData`, `RoleInfo`)
+4. **Event Categories:**
+   - Profile Events: Contain data (UserCreated, UserNameChanged)
+   - Security Events: Metadata only (UserPasswordChanged stores timestamp, not password)
 
 ## Technology Stack
 
@@ -107,7 +146,7 @@ Auth endpoints (login, register, password reset, profile) remain service-based f
 | Web Framework | ASP.NET Core | 10.0 |
 | Identity | ASP.NET Core Identity | 10.0 |
 | Database | PostgreSQL | via Marten |
-| Document Store | Marten | 8.16.1 |
+| Document Store / Event Store | Marten | 8.16.1 |
 | CQRS/Mediator | Wolverine | 5.3.0 |
 | Serialization | System.Text.Json | (built-in) |
 | Mapping | Mapperly | 4.3.0 |
@@ -138,7 +177,7 @@ Auth endpoints (login, register, password reset, profile) remain service-based f
 ### Admin - Users (requires Admin role)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/admin/users` | List all users |
+| GET | `/api/admin/users` | List/search users (paginated) |
 | GET | `/api/admin/users/{id}` | Get user by ID |
 | POST | `/api/admin/users` | Create new user |
 | PUT | `/api/admin/users/{id}` | Update user |
@@ -162,32 +201,44 @@ Auth endpoints (login, register, password reset, profile) remain service-based f
 
 ### Domain Layer (`Cocoar.Auth.Domain`)
 
-- **ApplicationUser** - Full user entity with:
-  - Username, email, phone number
-  - Password hash storage
-  - First name, last name, display name
-  - Email/phone confirmation
-  - Lockout support
-  - Two-factor authentication flag
-  - Security stamp
-  - Claims collection
-  - Roles collection (by ID)
-  - External logins
-  - Authentication tokens
-  - Active/inactive status
-  - Audit fields (created/modified dates)
+**Entities:**
+- **ApplicationUser** - Full user entity (ASP.NET Identity compatible)
+- **ApplicationRole** - Role entity for authorization
 
-- **ApplicationRole** - Role entity with:
-  - Name and normalized name
-  - Description
-  - Claims collection
-  - Audit fields
+**Aggregates:**
+- **UserAggregate** - Event-sourced aggregate for user profile data
 
-- **Value Objects**:
-  - `UserClaim` - Type/value pair for user claims
-  - `UserLogin` - External login provider info
-  - `UserToken` - Authentication tokens
-  - `RoleClaim` - Type/value pair for role claims
+**Events (15+ domain events):**
+```
+Profile Events (with data):
+├── UserCreated              # Initial user creation
+├── UserNameChanged          # Username modification  
+├── UserEmailChanged         # Email address change
+├── UserPhoneNumberChanged   # Phone number change
+├── UserProfileNameChanged   # First/Last name change
+├── UserActivated            # User activation
+├── UserDeactivated          # User deactivation with reason
+├── UserDeleted              # Soft delete with reason
+├── UserRoleAssigned         # Role assignment
+└── UserRoleRemoved          # Role removal
+
+Security Events (metadata only - no sensitive data):
+├── UserPasswordChanged      # Password change timestamp
+├── UserSecurityStampChanged # Security stamp rotation
+├── UserEmailConfirmed       # Email confirmation
+├── UserPhoneNumberConfirmed # Phone confirmation
+├── UserLockedOut            # Account lockout
+├── UserLockoutEnded         # Lockout release
+├── UserTwoFactorEnabled     # 2FA enabled
+├── UserTwoFactorDisabled    # 2FA disabled
+└── UserAccessFailed         # Failed login attempt
+```
+
+**Value Objects:**
+- `UserClaim` - Type/value pair for user claims
+- `UserLogin` - External login provider info
+- `UserToken` - Authentication tokens
+- `RoleClaim` - Type/value pair for role claims
 
 ### Application Layer (`Cocoar.Auth.Application`)
 
@@ -239,6 +290,20 @@ Auth endpoints (login, register, password reset, profile) remain service-based f
   - Role CRUD operations
   - Role claims
 
+- **Projections**:
+  - `UserStateProjection` - Inline projection that maintains `UserState` from events
+  - `RoleStateProjection` - Inline projection that maintains `RoleState` from events
+
+- **State Models** (Inline, for validation):
+  - `UserState` - Normalized user state for validation and Identity
+  - `RoleState` - Normalized role state for validation and Identity
+
+- **Read Models** (Async, for display):
+  - `UserDetailsReadModel` - Denormalized user data with embedded role info for API responses
+
+- **Security Data**:
+  - `UserSecurityData` - Separate document for sensitive data (password hash, security stamp)
+
 ### API Layer (`Cocoar.Auth.Api`)
 
 - **AuthController** (`/api/auth`):
@@ -256,7 +321,7 @@ Auth endpoints (login, register, password reset, profile) remain service-based f
 
 - **UsersAdminController** (`/api/admin/users`) - Requires `Admin` role:
   - Uses Wolverine `IMessageBus` for CQRS pattern
-  - `GET /` - List all users (GetUsersPagedQuery)
+  - `GET /` - List/search users with pagination (GetUsersPagedQuery)
   - `GET /{id}` - Get user by ID (GetUserByIdQuery)
   - `POST /` - Create new user (CreateUserCommand)
   - `PUT /{id}` - Update user (UpdateUserCommand)
@@ -275,12 +340,15 @@ Auth endpoints (login, register, password reset, profile) remain service-based f
 
 ### Tests (`Cocoar.Auth.Tests`)
 
-- **63 integration tests** - All passing ✅
+- **69 integration tests** - All passing ✅
 - Uses Testcontainers for PostgreSQL
+- Shared test factory with proper cleanup
 - Cookie-based authentication testing
 - Full CRUD coverage for users and roles
 - Registration, email confirmation, password reset tests
 - Profile management tests
+- Event sourcing and projection verification
+- Async projection denormalization tests
 
 ---
 

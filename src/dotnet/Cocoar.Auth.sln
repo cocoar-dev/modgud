@@ -1,7 +1,6 @@
-
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.0.31903.59
+# Visual Studio Version 18
+VisualStudioVersion = 18.3.11218.70 d18.3
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
 EndProject
@@ -18,6 +17,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cocoar.Auth.Tests", "Cocoar.Auth.Tests\Cocoar.Auth.Tests.csproj", "{D1E2F3A4-B5C6-7890-ABCD-EF1234567895}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cocoar.Primitives", "Cocoar.Primitives\Cocoar.Primitives.csproj", "{D1E2F3A4-B5C6-7890-ABCD-EF1234567896}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cocoar.Auth.ProjectionLab", "Cocoar.Auth.ProjectionLab\Cocoar.Auth.ProjectionLab.csproj", "{93729207-A28F-3065-36B7-0573B41C4E27}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -49,6 +50,13 @@ Global
 		{D1E2F3A4-B5C6-7890-ABCD-EF1234567896}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D1E2F3A4-B5C6-7890-ABCD-EF1234567896}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D1E2F3A4-B5C6-7890-ABCD-EF1234567896}.Release|Any CPU.Build.0 = Release|Any CPU
+		{93729207-A28F-3065-36B7-0573B41C4E27}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{93729207-A28F-3065-36B7-0573B41C4E27}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{93729207-A28F-3065-36B7-0573B41C4E27}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{93729207-A28F-3065-36B7-0573B41C4E27}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{D1E2F3A4-B5C6-7890-ABCD-EF1234567891} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}

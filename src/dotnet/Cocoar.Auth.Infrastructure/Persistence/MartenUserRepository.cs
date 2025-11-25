@@ -1,5 +1,6 @@
 using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Domain.Entities;
+using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using Marten;
 
 namespace Cocoar.Auth.Infrastructure.Persistence;
@@ -32,9 +33,12 @@ public class MartenUserRepository : IUserRepository
 
     public async Task<List<ApplicationUser>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        var result = await _session.Query<ApplicationUser>()
+        // Query from UserState projection for better performance
+        var states = await _session.Query<UserState>()
+            .Where(u => !u.IsDeleted)
             .ToListAsync(cancellationToken);
-        return result.ToList();
+
+        return states.Select(MapToApplicationUser).ToList();
     }
 
     public async Task<(List<ApplicationUser> Users, int TotalCount)> GetPagedAsync(
@@ -43,7 +47,9 @@ public class MartenUserRepository : IUserRepository
         string? search = null,
         CancellationToken cancellationToken = default)
     {
-        IQueryable<ApplicationUser> query = _session.Query<ApplicationUser>();
+        // Query from UserState projection for better performance
+        IQueryable<UserState> query = _session.Query<UserState>()
+            .Where(u => !u.IsDeleted);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -56,21 +62,67 @@ public class MartenUserRepository : IUserRepository
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
-        var users = await query
+        var readModels = await query
             .OrderBy(u => u.UserName)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        return (users.ToList(), totalCount);
+        return (readModels.Select(MapToApplicationUser).ToList(), totalCount);
     }
 
     public async Task<List<ApplicationUser>> GetByRoleIdAsync(Guid roleId, CancellationToken cancellationToken = default)
     {
-        var result = await _session.Query<ApplicationUser>()
-            .Where(u => u.Roles.Contains(roleId))
+        // Query from UserState projection for better performance
+        var states = await _session.Query<UserState>()
+            .Where(u => !u.IsDeleted && u.Roles.Contains(roleId))
             .ToListAsync(cancellationToken);
-        return result.ToList();
+
+        return states.Select(MapToApplicationUser).ToList();
+    }
+
+    /// <summary>
+    /// Maps a UserState to ApplicationUser for backward compatibility.
+    /// Note: Security-sensitive fields (PasswordHash, SecurityStamp, etc.) are NOT included.
+    /// </summary>
+    private static ApplicationUser MapToApplicationUser(UserState state)
+    {
+        var user = new ApplicationUser(state.UserName, state.Email);
+
+        // Use reflection or internal methods to set properties
+        // For now, create a new user and copy properties
+        user.SetPhoneNumber(state.PhoneNumber);
+        user.SetFirstName(state.FirstName);
+        user.SetLastName(state.LastName);
+        user.SetIsActive(state.IsActive);
+        user.SetLockoutEnabled(state.LockoutEnabled);
+        user.SetLockoutEnd(state.LockoutEnd);
+        user.SetTwoFactorEnabled(state.TwoFactorEnabled);
+        user.SetEmailConfirmed(state.EmailConfirmed);
+        user.SetPhoneNumberConfirmed(state.PhoneNumberConfirmed);
+
+        foreach (var roleId in state.Roles)
+        {
+            user.AddRole(roleId);
+        }
+
+        // Set the ID using reflection since it's protected
+        typeof(ApplicationUser).BaseType!
+            .GetProperty("Id")!
+            .SetValue(user, state.Id);
+
+        typeof(ApplicationUser).BaseType!
+            .GetProperty("CreatedAt")!
+            .SetValue(user, state.CreatedAt);
+
+        if (state.ModifiedAt.HasValue)
+        {
+            typeof(ApplicationUser).BaseType!
+                .GetProperty("ModifiedAt")!
+                .SetValue(user, state.ModifiedAt);
+        }
+
+        return user;
     }
 
     public async Task CreateAsync(ApplicationUser user, CancellationToken cancellationToken = default)

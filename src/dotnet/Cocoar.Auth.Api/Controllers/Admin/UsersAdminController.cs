@@ -2,6 +2,7 @@ using Cocoar.Auth.Api.Extensions;
 using Cocoar.Auth.Application.Commands.Users;
 using Cocoar.Auth.Application.DTOs.Users;
 using Cocoar.Auth.Application.Mappers;
+using Cocoar.Auth.Application.Models;
 using Cocoar.Auth.Application.Queries.Users;
 using Cocoar.Auth.Domain.Entities;
 using Cocoar.Primitives;
@@ -61,7 +62,7 @@ public class UsersAdminController : ApiControllerBase
             return BadRequest("Invalid user ID format.");
         }
 
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<ApplicationUser>>(
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<UserDetailsReadModel>>(
             new GetUserByIdQuery(userId),
             cancellationToken);
 

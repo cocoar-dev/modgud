@@ -1,71 +1,92 @@
 # Cocoar.Auth
 
-Authentication and authorization services for COCOAR applications.
+Authentication and authorization Identity Provider for COCOAR applications.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
+[![Tests](https://img.shields.io/badge/tests-63%20passing-brightgreen)]()
 
 ---
 
 ## Overview
 
-Cocoar.Auth provides a comprehensive authentication and authorization solution built with:
-- **Backend**: ASP.NET Core 9.0 API
-- **Frontend**: Angular 20 with Nx
-- **Standards**: OAuth 2.0 / OpenID Connect
-- **Database**: PostgreSQL
-- **Deployment**: Docker containers
+Cocoar.Auth is a full-featured Identity Provider built with:
+
+| Component | Technology |
+|-----------|------------|
+| **Backend** | ASP.NET Core 10.0 with Clean Architecture |
+| **Identity** | ASP.NET Core Identity |
+| **Database** | PostgreSQL via Marten 8.16.1 |
+| **Event Sourcing** | Marten Event Store with inline projections |
+| **CQRS/Mediator** | Wolverine 5.3.0 |
+| **Testing** | xUnit + Testcontainers |
 
 ## Architecture
 
 ```
 cocoar.auth/
 ├── src/
-│   ├── dotnet/      # ASP.NET Core API
-│   └── frontend/     # Angular UI
-├── docker/           # Docker deployment configurations
-└── docs/             # Documentation
+│   ├── dotnet/                      # ASP.NET Core API
+│   │   ├── Cocoar.Auth.Domain/      # Entities, Events, Aggregates
+│   │   ├── Cocoar.Auth.Application/ # CQRS Commands/Queries, Services
+│   │   ├── Cocoar.Auth.Infrastructure/ # Marten stores, Projections
+│   │   ├── Cocoar.Auth.Api/         # REST Controllers
+│   │   └── Cocoar.Auth.Tests/       # Integration Tests
+│   └── frontend/                    # Angular UI (planned)
+├── docker/                          # Docker deployment
+└── docs/                            # Documentation
 ```
 
-## Features
+## Current Status
 
-- 🔐 OAuth 2.0 / OpenID Connect support
-- 👤 User management
-- 🔑 API key management
-- 🎫 Token-based authentication
-- 🛡️ Role-based access control (RBAC)
-- 🔒 Multi-factor authentication (MFA)
-- 📱 Social login providers
+### ✅ Phase 1-2: Complete (63/63 tests passing)
 
-## Development
+| Feature | Status |
+|---------|--------|
+| User Registration & Email Confirmation | ✅ |
+| Login/Logout (cookie-based) | ✅ |
+| Password Reset | ✅ |
+| User Profile Management | ✅ |
+| Admin User CRUD | ✅ |
+| Admin Role CRUD | ✅ |
+| Event Sourcing for Users & Roles | ✅ |
+| Inline State Projections (UserState, RoleState) | ✅ |
+| Async Projections (UserDetailsReadModel) | ✅ |
 
-**Prerequisites:**
-- .NET 9.0 SDK
-- Node.js 20+
-- Docker Desktop
-- PostgreSQL (via Docker)
+### 🔲 Planned Features
 
-**Getting Started:**
+| Feature | Phase |
+|---------|-------|
+| OAuth 2.0 / OpenID Connect (OpenIddict) | Phase 3 |
+| Two-Factor Authentication (TOTP) | Phase 4 |
+| External Login Providers (Google, Microsoft) | Phase 5 |
+| Audit Logging & Session Management | Phase 6 |
 
+## Quick Start
+
+### Prerequisites
+- .NET 10 SDK
+- Docker Desktop (for PostgreSQL via Testcontainers)
+
+### Run the API
 ```powershell
-# Clone repository
-git clone https://github.com/cocoar-dev/cocoar.auth.git
-cd cocoar.auth
-
-# Backend
 cd src/dotnet
 dotnet restore
 dotnet build
-dotnet run
-
-# Frontend
-cd src/frontend
-npm install
-npm start
+dotnet run --project Cocoar.Auth.Api
 ```
 
-## Project Status
+### Run Tests
+```powershell
+cd src/dotnet
+dotnet test
+```
 
-🚧 **In Development** - Early stage
+## Documentation
+
+- [Architecture](docs/architecture.md) - System design, layers, event sourcing
+- [API Reference](docs/api-reference.md) - Complete REST API documentation
+- [Backend README](src/dotnet/README.md) - Detailed implementation guide
 
 ## License
 

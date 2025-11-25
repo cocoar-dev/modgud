@@ -595,3 +595,43 @@ All error responses follow the RFC 7807 Problem Details format:
 | 404 | Not Found - Resource not found |
 | 409 | Conflict - Resource already exists |
 | 500 | Internal Server Error - Unexpected error |
+
+---
+
+## Implementation Notes
+
+### Event Sourcing
+
+The User domain uses event sourcing. When user operations are performed:
+
+1. **Events are appended** to the user's event stream (e.g., `UserCreated`, `UserEmailChanged`)
+2. **Inline State projection** (`UserStateProjection`) updates the `UserState` synchronously
+3. **Async projection** (`UserDetailsProjection`) updates `UserDetailsReadModel` for API responses
+4. **API queries** read from the denormalized projections for fast access
+
+### Naming Convention
+
+- **`*State`** = Inline projections for validation and Identity (synchronous)
+- **`*ReadModel`** = Async projections for API display (eventually consistent)
+
+### Security Data Separation
+
+Sensitive data (password hashes, security stamps) is stored separately in `UserSecurityData` documents and is **NOT** included in the event stream for security reasons.
+
+### Future Endpoints
+
+The following endpoints are planned for future phases:
+
+**OAuth 2.0 / OpenID Connect (Phase 3):**
+- `GET /.well-known/openid-configuration` - Discovery endpoint
+- `POST /connect/authorize` - Authorization endpoint
+- `POST /connect/token` - Token endpoint
+- `POST /connect/introspect` - Token introspection
+- `POST /connect/revoke` - Token revocation
+- `GET /connect/userinfo` - UserInfo endpoint
+
+**Two-Factor Authentication (Phase 4):**
+- `POST /api/auth/2fa/enable` - Enable 2FA
+- `POST /api/auth/2fa/disable` - Disable 2FA
+- `POST /api/auth/2fa/verify` - Verify 2FA code
+- `GET /api/auth/2fa/recovery-codes` - Get recovery codes

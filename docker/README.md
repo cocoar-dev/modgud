@@ -1,20 +1,38 @@
 # Docker Configuration
 
-Docker compose and Dockerfile configurations for Cocoar.Auth
+🚧 **Planned for Phase 7** - Docker deployment configurations for Cocoar.Auth
 
-## Quick Start
+## Current Status
+
+Docker deployment is planned for a future phase. Currently, the application runs in development mode using Testcontainers for PostgreSQL during testing.
+
+## Planned Services
+
+- **cocoar-auth-api**: Backend API service (.NET 10)
+- **cocoar-auth-ui**: Frontend UI service (Angular)
+- **postgres**: PostgreSQL 16 database
+
+## Planned Quick Start
 
 ```powershell
+# Build and run (when available)
 docker-compose up -d
 ```
 
-## Services
+## Development (Current)
 
-- **auth-api**: Backend API service
-- **auth-ui**: Frontend UI service
-- **postgres**: PostgreSQL database
-- **redis**: Redis cache (optional)
+For development, use the dotnet CLI:
 
-## Environment Variables
+```powershell
+cd src/dotnet
+dotnet run --project Cocoar.Auth.Api
+```
 
-See `.env.example` for required environment variables.
+## Testing
+
+Tests use Testcontainers to automatically spin up PostgreSQL:
+
+```powershell
+cd src/dotnet
+dotnet test
+```

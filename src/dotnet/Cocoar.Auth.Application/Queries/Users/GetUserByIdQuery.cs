@@ -1,6 +1,6 @@
 using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Application.Interfaces;
-using Cocoar.Auth.Domain.Entities;
+using Cocoar.Auth.Application.Models;
 using Cocoar.Primitives;
 using ErrorOr;
 
@@ -16,16 +16,16 @@ public record GetUserByIdQuery(ShortGuid Id);
 /// </summary>
 public class GetUserByIdHandler
 {
-    private readonly IUserRepository _userRepository;
+    private readonly IUserDetailsRepository _userDetailsRepository;
 
-    public GetUserByIdHandler(IUserRepository userRepository)
+    public GetUserByIdHandler(IUserDetailsRepository userDetailsRepository)
     {
-        _userRepository = userRepository;
+        _userDetailsRepository = userDetailsRepository;
     }
 
-    public async Task<ErrorOr<ApplicationUser>> HandleAsync(GetUserByIdQuery query, CancellationToken cancellationToken)
+    public async Task<ErrorOr<UserDetailsReadModel>> HandleAsync(GetUserByIdQuery query, CancellationToken cancellationToken)
     {
-        var user = await _userRepository.GetByIdAsync(query.Id.Guid, cancellationToken);
+        var user = await _userDetailsRepository.GetByIdAsync(query.Id.Guid, cancellationToken);
         if (user is null)
         {
             return UserErrors.NotFound(query.Id.Guid);

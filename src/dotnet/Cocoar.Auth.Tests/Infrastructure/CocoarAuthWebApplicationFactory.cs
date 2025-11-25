@@ -1,9 +1,13 @@
 using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Domain.Entities;
+using Cocoar.Auth.Domain.Events;
+using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using Cocoar.Auth.Infrastructure.Services;
 using Cocoar.Primitives;
 using Cocoar.Primitives.OptionalAware;
+using JasperFx.Events.Projections;
 using Marten;
+using Marten.Events.Projections;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -12,6 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Text.Json;
 using JasperFx;
+using Npgsql;
 using Testcontainers.PostgreSql;
 
 namespace Cocoar.Auth.Tests.Infrastructure;
@@ -67,12 +72,75 @@ public class CocoarAuthWebApplicationFactory : WebApplicationFactory<Program>, I
                 options.Connection(_postgresContainer.GetConnectionString());
                 options.AutoCreateSchemaObjects = AutoCreate.All;
 
+                // ═══════════════════════════════════════════════════════════════
+                // DOCUMENT CONFIGURATION
+                // ═══════════════════════════════════════════════════════════════
+
                 options.Schema.For<ApplicationUser>()
                     .Identity(x => x.Id)
                     .Index(x => x.NormalizedUserName!, x => x.IsUnique = true)
                     .Index(x => x.NormalizedEmail!);
 
                 options.Schema.For<ApplicationRole>()
+                    .Identity(x => x.Id)
+                    .Index(x => x.NormalizedName, x => x.IsUnique = true);
+
+                options.Schema.For<UserSecurityData>()
+                    .Identity(x => x.Id);
+
+                // ═══════════════════════════════════════════════════════════════
+                // EVENT SOURCING CONFIGURATION
+                // ═══════════════════════════════════════════════════════════════
+
+                // Register user events for the event store
+                options.Events.AddEventType<UserCreated>();
+                options.Events.AddEventType<UserNameChanged>();
+                options.Events.AddEventType<UserEmailChanged>();
+                options.Events.AddEventType<UserPhoneNumberChanged>();
+                options.Events.AddEventType<UserProfileNameChanged>();
+                options.Events.AddEventType<UserActivated>();
+                options.Events.AddEventType<UserDeactivated>();
+                options.Events.AddEventType<UserDeleted>();
+                options.Events.AddEventType<UserRoleAssigned>();
+                options.Events.AddEventType<UserRoleRemoved>();
+                options.Events.AddEventType<UserClaimAdded>();
+                options.Events.AddEventType<UserClaimRemoved>();
+                options.Events.AddEventType<UserTwoFactorEnabled>();
+                options.Events.AddEventType<UserTwoFactorDisabled>();
+                options.Events.AddEventType<UserRecoveryCodesRegenerated>();
+                options.Events.AddEventType<UserSessionsInvalidated>();
+                options.Events.AddEventType<UserLoggedIn>();
+                options.Events.AddEventType<UserLoginFailed>();
+                options.Events.AddEventType<UserLockedOut>();
+                options.Events.AddEventType<UserUnlocked>();
+                options.Events.AddEventType<UserEmailConfirmed>();
+                options.Events.AddEventType<UserPhoneNumberConfirmed>();
+
+                // Register role events for the event store
+                options.Events.AddEventType<RoleCreated>();
+                options.Events.AddEventType<RoleNameChanged>();
+                options.Events.AddEventType<RoleDescriptionChanged>();
+                options.Events.AddEventType<RoleDeleted>();
+                options.Events.AddEventType<RoleClaimAdded>();
+                options.Events.AddEventType<RoleClaimRemoved>();
+
+                // ═══════════════════════════════════════════════════════════════
+                // STATE PROJECTIONS (Inline for tests - immediate consistency)
+                // ═══════════════════════════════════════════════════════════════
+
+                options.Projections.Add(new UserStateProjection(), ProjectionLifecycle.Inline);
+                options.Projections.Add(new RoleStateProjection(), ProjectionLifecycle.Inline);
+                // Use inline projection in tests for immediate consistency
+                options.Projections.Add(new UserDetailsProjection(), ProjectionLifecycle.Inline);
+
+                // Configure UserState indexes for fast lookups
+                options.Schema.For<UserState>()
+                    .Identity(x => x.Id)
+                    .Index(x => x.NormalizedUserName, x => x.IsUnique = true)
+                    .Index(x => x.NormalizedEmail);
+
+                // Configure RoleState indexes for fast lookups
+                options.Schema.For<RoleState>()
                     .Identity(x => x.Id)
                     .Index(x => x.NormalizedName, x => x.IsUnique = true);
             })
@@ -168,8 +236,27 @@ public class CocoarAuthWebApplicationFactory : WebApplicationFactory<Program>, I
         using var scope = Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
+        // Clear all user-related documents (these are safe - Marten handles missing tables)
         session.DeleteWhere<ApplicationUser>(u => true);
         session.DeleteWhere<ApplicationRole>(r => true);
+        session.DeleteWhere<UserSecurityData>(u => true);
+        session.DeleteWhere<UserState>(u => true);
+        session.DeleteWhere<RoleState>(r => true);
+        session.DeleteWhere<Cocoar.Auth.Application.Models.UserDetailsReadModel>(u => true);
         await session.SaveChangesAsync();
+
+        // Clear event streams - only if tables exist (first test run may not have them yet)
+        await using var conn = new NpgsqlConnection(_postgresContainer.GetConnectionString());
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand(
+            "TRUNCATE public.mt_events, public.mt_streams CASCADE;", conn);
+        try
+        {
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch (PostgresException ex) when (ex.SqlState == "42P01") // relation does not exist
+        {
+            // Tables don't exist yet, that's fine - nothing to clean
+        }
     }
 }

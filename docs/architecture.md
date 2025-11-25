@@ -2,15 +2,15 @@
 
 ## Overview
 
-Cocoar.Auth is a full-featured Identity Provider built using Clean Architecture principles with ASP.NET Core, Marten (PostgreSQL document database), and Wolverine (CQRS mediator).
+Cocoar.Auth is a full-featured Identity Provider built using Clean Architecture principles with ASP.NET Core, Marten (PostgreSQL document database + event store), and Wolverine (CQRS mediator).
 
 ## Project Structure
 
 ```
 src/dotnet/
-├── Cocoar.Auth.Domain/          # Domain Layer - Entities, Value Objects
+├── Cocoar.Auth.Domain/          # Domain Layer - Entities, Events, Aggregates
 ├── Cocoar.Auth.Application/     # Application Layer - CQRS, Services, DTOs
-├── Cocoar.Auth.Infrastructure/  # Infrastructure Layer - Data Access
+├── Cocoar.Auth.Infrastructure/  # Infrastructure Layer - Data Access, Projections
 ├── Cocoar.Auth.Api/             # Presentation Layer - REST API
 ├── Cocoar.Auth.Tests/           # Integration Tests
 └── Cocoar.Primitives/           # Shared primitives (Optional, ShortGuid, etc.)
@@ -25,6 +25,44 @@ The innermost layer containing enterprise business rules.
 **Entities:**
 - `ApplicationUser` - User entity with identity properties
 - `ApplicationRole` - Role entity for authorization
+
+**Aggregates:**
+- `UserAggregate` - Event-sourced aggregate for user profile data
+- `RoleAggregate` - Event-sourced aggregate for role data
+
+**Events (20+ domain events):**
+```
+User Events/
+├── UserCreated              # User creation with initial data
+├── UserNameChanged          # Username modification
+├── UserEmailChanged         # Email address change
+├── UserPhoneNumberChanged   # Phone number change
+├── UserProfileNameChanged   # First/Last name change
+├── UserActivated            # User activation
+├── UserDeactivated          # User deactivation with reason
+├── UserDeleted              # Soft delete with reason
+├── UserRoleAssigned         # Role assignment
+├── UserRoleRemoved          # Role removal
+├── UserClaimAdded           # Claim added to user
+├── UserClaimRemoved         # Claim removed from user
+├── UserPasswordChanged      # Password change (metadata only)
+├── UserSecurityStampChanged # Security stamp rotation
+├── UserEmailConfirmed       # Email confirmation
+├── UserPhoneNumberConfirmed # Phone confirmation
+├── UserLockedOut            # Account lockout
+├── UserLockoutEnded         # Lockout release
+├── UserTwoFactorEnabled     # 2FA enabled
+├── UserTwoFactorDisabled    # 2FA disabled
+└── UserAccessFailed         # Failed login attempt
+
+Role Events/
+├── RoleCreated              # Role creation
+├── RoleNameChanged          # Role name modification
+├── RoleDescriptionChanged   # Role description modification
+├── RoleDeleted              # Soft delete
+├── RoleClaimAdded           # Claim added to role
+└── RoleClaimRemoved         # Claim removed from role
+```
 
 **Value Objects:**
 - `UserClaim` - User claim (type/value pair)
@@ -86,6 +124,21 @@ Implements interfaces defined in the Application layer.
 **Repositories:**
 - `MartenUserRepository` - User repository using Marten
 - `MartenRoleRepository` - Role repository using Marten
+
+**Projections (Event Sourcing):**
+- `UserStateProjection` - Inline projection maintaining `UserState` from events
+- `RoleStateProjection` - Inline projection maintaining `RoleState` from events
+- `UserDetailsProjection` - Async projection for denormalized API responses
+
+**State Models** (Inline, for validation):
+- `UserState` - Normalized user state for validation and Identity
+- `RoleState` - Normalized role state for validation and Identity
+
+**Read Models** (Async, for display):
+- `UserDetailsReadModel` - Denormalized user data with embedded role info
+
+**Security Data:**
+- `UserSecurityData` - Separate document for sensitive data (password hash, security stamp)
 
 **Services:**
 - `SmtpEmailSender` - SMTP email sender (production)
@@ -225,16 +278,140 @@ public static class DomainErrors
 ### Command Flow (Write)
 ```
 Controller → IMessageBus → CommandHandler → UserManager/Repository → Marten → PostgreSQL
+                                         ↓
+                              Append Events to Event Stream
+                                         ↓
+                              Inline Projection → UserState
 ```
 
 ### Query Flow (Read)
 ```
-Controller → IMessageBus → QueryHandler → Repository → Marten → PostgreSQL
+Controller → IMessageBus → QueryHandler → Repository → Marten (UserState/UserDetailsReadModel) → PostgreSQL
 ```
 
 ### Auth Flow (Service-based)
 ```
 Controller → AuthService → UserManager/SignInManager → Marten → PostgreSQL
+```
+
+## Event Sourcing
+
+### Architecture
+
+The user domain uses event sourcing to maintain a full audit trail of all changes:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        User Domain                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────┐     ┌─────────────────┐     ┌─────────────────┐  │
+│  │ UserAggregate│     │  Event Stream   │     │ UserState       │  │
+│  │              │ ──► │  (mt_streams)   │ ──► │ (Inline Proj)   │  │
+│  │  Apply()     │     │                 │     │                 │  │
+│  └──────────────┘     │  UserCreated    │     │ For validation  │  │
+│                       │  UserUpdated    │     └─────────────────┘  │
+│                       │  RoleAssigned   │                          │
+│                       │  ...            │     ┌─────────────────┐  │
+│                       └─────────────────┘     │ UserDetails     │  │
+│                                             │ ReadModel       │  │
+│  ┌──────────────────┐                       │ (Async Proj)    │  │
+│  │ UserSecurityData │  ← Separate document │ For API display │  │
+│  │ (password hash,  │    NOT in events    └─────────────────┘  │
+│  │  security stamp) │                                               │
+│  └──────────────────┘                                               │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Design Decisions
+
+1. **Separate Security Data**: Password hashes and security stamps are stored in a separate `UserSecurityData` document, NOT in the event stream. This prevents sensitive data from being part of the audit trail.
+
+2. **Naming Convention**: 
+   - `*State` = Inline projections for validation and Identity (synchronous, immediate consistency)
+   - `*ReadModel` = Async projections for API display (eventually consistent, denormalized)
+
+3. **Event Types**: Events are categorized:
+   - **Profile Events** - Contain data (UserCreated, UserNameChanged, etc.)
+   - **Security Events** - Metadata only (UserPasswordChanged stores timestamp, not password)
+
+### Projection Pattern
+
+The `UserStateProjection` uses Marten's `EventProjection` base class:
+
+```csharp
+public class UserStateProjection : EventProjection
+{
+    // Create new state model from UserCreated event
+    public UserState Create(IEvent<UserCreated> @event)
+    {
+        var e = @event.Data;
+        return new UserState
+        {
+            Id = e.UserId,
+            UserName = e.UserName,
+            NormalizedUserName = e.UserName.ToUpperInvariant(),
+            // ... map all fields
+        };
+    }
+    
+    // Update state model from subsequent events
+    public void Project(IEvent<UserNameChanged> @event, IDocumentOperations ops)
+    {
+        var model = ops.LoadAsync<UserState>(@event.Data.UserId)
+            .GetAwaiter().GetResult();
+        if (model != null)
+        {
+            model.UserName = @event.Data.NewUserName;
+            model.NormalizedUserName = @event.Data.NewUserName.ToUpperInvariant();
+            ops.Store(model);
+        }
+    }
+}
+```
+
+## Naming Conventions
+
+Consistent naming conventions help identify the purpose of each type at a glance.
+
+### Projection & Model Naming
+
+| Suffix | Type | Lifecycle | Purpose | Example |
+|--------|------|-----------|---------|---------|
+| `*State` | Inline Projection | Synchronous | Validation, Identity, uniqueness checks | `UserState`, `RoleState` |
+| `*ReadModel` | Async Projection | Eventually consistent | API responses, UI display, denormalized views | `UserDetailsReadModel` |
+| `*Data` | Value Object | N/A | Embedded data, not a standalone projection | `ClaimData`, `RoleInfo` |
+
+### When to Use Each
+
+**`*State` (Inline Projection)**
+- ONE per entity (e.g., `UserState` for users)
+- Used for validation and Identity stores
+- Contains minimal data needed for business rules
+- Runs synchronously with writes (immediate consistency)
+
+**`*ReadModel` (Async Projection)**  
+- MANY possible per entity (based on use case)
+- Used for API responses and UI display
+- Contains denormalized data (embedded related objects)
+- Runs via Async Daemon (eventually consistent)
+- Examples: `UserDetailsReadModel`, `UserAuditReadModel`, `RolePermissionsReadModel`
+
+**`*Data` (Value Object)**
+- Simple embedded objects within projections
+- Not a standalone document/projection
+- Examples: `ClaimData` (type/value), `RoleInfo` (id/name/description)
+
+### File Organization
+
+```
+Projections/
+├── UserStateProjection.cs       # Contains: UserState, ClaimData, UserStateProjection
+├── RoleStateProjection.cs       # Contains: RoleState, RoleStateProjection  
+└── UserDetailsProjection.cs     # Contains: UserDetailsProjection (model in Application layer)
+
+Application/Models/
+└── UserDetailsReadModel.cs      # Async projection model (can be in App layer)
 ```
 
 ## Authentication
@@ -292,6 +469,15 @@ public class CocoarAuthWebApplicationFactory : WebApplicationFactory<Program>, I
             services.AddMarten(options =>
             {
                 options.Connection(_postgresContainer.GetConnectionString());
+                
+                // Register all user events
+                options.Events.AddEventType<UserCreated>();
+                options.Events.AddEventType<UserNameChanged>();
+                // ... all other event types
+                
+                // Add inline state projection
+                options.Projections.Add(new UserStateProjection(), 
+                    ProjectionLifecycle.Inline);
             });
         });
     }
