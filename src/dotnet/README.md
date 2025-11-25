@@ -4,7 +4,8 @@ A full-featured Identity Provider built with ASP.NET Core, Marten (PostgreSQL do
 
 ## Current Status
 
-✅ **Phase 1: Core Identity Management** - Complete (37/37 tests passing)
+✅ **Phase 1: Core Identity Management** - Complete
+✅ **Phase 2: User Self-Service** - Complete (63/63 tests passing)
 
 ---
 
@@ -13,6 +14,16 @@ A full-featured Identity Provider built with ASP.NET Core, Marten (PostgreSQL do
 ### Authentication
 - ✅ Login (cookie-based)
 - ✅ Logout
+- ✅ User Registration
+- ✅ Email Confirmation
+- ✅ Resend Email Confirmation
+- ✅ Password Reset (forgot password)
+
+### User Self-Service
+- ✅ Get Profile
+- ✅ Update Profile
+- ✅ Change Password
+- ✅ Get Current User Info
 
 ### Admin - User Management
 - ✅ Create User
@@ -45,17 +56,13 @@ A full-featured Identity Provider built with ASP.NET Core, Marten (PostgreSQL do
 - ❌ Client Application Management
 - ❌ Scope Management
 
-### User Self-Service
-- ❌ User Registration
-- ❌ Password Reset (forgot password)
-- ❌ Email Confirmation
-- ❌ Profile Management
-- ❌ External Login Providers (Google, Microsoft, etc.)
-
 ### Security
 - ❌ Two-Factor Authentication (TOTP)
 - ❌ Rate Limiting
 - ❌ Account Lockout Policies
+
+### External Login
+- ❌ External Login Providers (Google, Microsoft, etc.)
 
 ### Advanced
 - ❌ Audit Logging
@@ -92,11 +99,24 @@ src/dotnet/
 
 ## API Endpoints
 
-### Authentication
+### Authentication (Public)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/auth/login` | Login with username/password |
-| POST | `/api/auth/logout` | Logout |
+| POST | `/api/auth/logout` | Logout (requires auth) |
+| POST | `/api/auth/register` | Register new user account |
+| GET | `/api/auth/confirm-email` | Confirm email address |
+| POST | `/api/auth/resend-confirmation` | Resend confirmation email |
+| POST | `/api/auth/forgot-password` | Request password reset email |
+| POST | `/api/auth/reset-password` | Reset password with token |
+
+### User Self-Service (requires authentication)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/auth/me` | Get current user info |
+| GET | `/api/auth/profile` | Get current user profile |
+| PUT | `/api/auth/profile` | Update current user profile |
+| POST | `/api/auth/change-password` | Change password |
 
 ### Admin - Users (requires Admin role)
 | Method | Endpoint | Description |
@@ -192,6 +212,15 @@ src/dotnet/
 - **AuthController** (`/api/auth`):
   - `POST /login` - Cookie-based authentication
   - `POST /logout` - Sign out
+  - `POST /register` - User registration with email confirmation
+  - `GET /confirm-email` - Confirm email address
+  - `POST /resend-confirmation` - Resend confirmation email
+  - `POST /forgot-password` - Request password reset
+  - `POST /reset-password` - Reset password with token
+  - `GET /me` - Get current user info
+  - `GET /profile` - Get current user profile
+  - `PUT /profile` - Update current user profile
+  - `POST /change-password` - Change current user's password
 
 - **UsersAdminController** (`/api/admin/users`) - Requires `Admin` role:
   - `GET /` - List all users
@@ -212,16 +241,18 @@ src/dotnet/
 
 ### Tests (`Cocoar.Auth.Tests`)
 
-- **37 integration tests** - All passing ✅
+- **63 integration tests** - All passing ✅
 - Uses Testcontainers for PostgreSQL
 - Cookie-based authentication testing
 - Full CRUD coverage for users and roles
+- Registration, email confirmation, password reset tests
+- Profile management tests
 
 ---
 
 ## What's Missing (Future Phases)
 
-### Phase 2: OpenIddict Integration
+### Phase 3: OpenIddict Integration
 - [ ] OAuth 2.0 / OpenID Connect support
 - [ ] Authorization server endpoints
 - [ ] Token endpoint (access tokens, refresh tokens)
@@ -232,22 +263,17 @@ src/dotnet/
 - [ ] Client application management
 - [ ] Scope management
 
-### Phase 3: Enhanced Security
+### Phase 4: Enhanced Security
 - [ ] Two-factor authentication (TOTP)
-- [ ] Email confirmation workflow
-- [ ] Password reset workflow
 - [ ] Account lockout policies
 - [ ] Refresh token rotation
 - [ ] Rate limiting
 
-### Phase 4: User Self-Service
-- [ ] User registration endpoint
-- [ ] Profile management endpoints
-- [ ] Password change (self-service)
-- [ ] Email change workflow
+### Phase 5: External Login
 - [ ] External login providers (Google, Microsoft, etc.)
+- [ ] Email change workflow
 
-### Phase 5: Advanced Features
+### Phase 6: Advanced Features
 - [ ] Consent management
 - [ ] Audit logging
 - [ ] Session management
@@ -255,7 +281,7 @@ src/dotnet/
 - [ ] API key authentication
 - [ ] Device authorization grant
 
-### Phase 6: Operations
+### Phase 7: Operations
 - [ ] Health checks
 - [ ] Metrics/telemetry
 - [ ] Docker containerization
@@ -302,7 +328,3 @@ The API uses cookie-based authentication. To access admin endpoints:
 1. Login via `POST /api/auth/login` with admin credentials
 2. The response sets an authentication cookie
 3. Include the cookie in subsequent requests to admin endpoints
-
-## Cleanup Notes
-
-The `Newtonsoft.Json` package in `Directory.Packages.props` is no longer used and can be removed.

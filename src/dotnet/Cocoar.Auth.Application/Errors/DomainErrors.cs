@@ -27,6 +27,30 @@ public static class AuthErrors
     public static Error NotAuthenticated => Error.Unauthorized(
         code: "Auth.NotAuthenticated",
         description: "User is not authenticated.");
+
+    public static Error EmailNotConfirmed => Error.Validation(
+        code: "Auth.EmailNotConfirmed",
+        description: "Email address has not been confirmed.");
+
+    public static Error EmailAlreadyConfirmed => Error.Validation(
+        code: "Auth.EmailAlreadyConfirmed",
+        description: "Email address has already been confirmed.");
+
+    public static Error InvalidEmailConfirmationToken => Error.Validation(
+        code: "Auth.InvalidEmailConfirmationToken",
+        description: "Invalid or expired email confirmation token.");
+
+    public static Error InvalidPasswordResetToken => Error.Validation(
+        code: "Auth.InvalidPasswordResetToken",
+        description: "Invalid or expired password reset token.");
+
+    public static Error RegistrationFailed(IEnumerable<string> errors) => Error.Validation(
+        code: "Auth.RegistrationFailed",
+        description: string.Join("; ", errors));
+
+    public static Error PasswordResetFailed(IEnumerable<string> errors) => Error.Validation(
+        code: "Auth.PasswordResetFailed",
+        description: string.Join("; ", errors));
 }
 
 public static class UserErrors

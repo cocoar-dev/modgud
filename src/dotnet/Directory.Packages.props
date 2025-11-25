@@ -5,6 +5,7 @@
   <ItemGroup>
     <!-- ASP.NET Core & Identity -->
     <PackageVersion Include="Microsoft.AspNetCore.Identity" Version="2.3.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Identity.Stores" Version="10.0.0" />
     <!-- Marten -->
@@ -13,8 +14,6 @@
     <PackageVersion Include="Riok.Mapperly" Version="4.3.0" />
     <!-- ErrorOr -->
     <PackageVersion Include="ErrorOr" Version="2.0.1" />
-    <!-- JSON -->
-    <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <!-- Swagger -->
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.0.1" />
     <!-- Testing -->

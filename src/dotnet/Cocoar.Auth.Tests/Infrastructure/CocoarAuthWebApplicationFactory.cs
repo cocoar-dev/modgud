@@ -152,6 +152,10 @@ public class CocoarAuthWebApplicationFactory : WebApplicationFactory<Program>, I
     {
         ClearCookies();
 
+        // Clear mock email sender
+        var emailSender = GetMockEmailSender();
+        emailSender.Clear();
+
         using var scope = Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 

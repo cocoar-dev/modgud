@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="ErrorOr" />
+    <PackageReference Include="Microsoft.AspNetCore.WebUtilities" />
     <PackageReference Include="Microsoft.Extensions.Identity.Core" />
     <PackageReference Include="Riok.Mapperly" />
   </ItemGroup>
