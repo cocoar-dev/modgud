@@ -1,0 +1,130 @@
+@page "/login/recovery"
+@inject AuthStateProvider AuthState
+@inject NavigationManager Navigation
+@inject MessageService Message
+
+<PageTitle>Recovery Code Login - Cocoar Auth</PageTitle>
+
+<div style="max-width: 400px; margin: 50px auto;">
+    <Card Title="Recovery Code Login" Style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+        @if (!AuthState.RequiresTwoFactor)
+        {
+            <Result Status="@ResultStatus.Warning"
+                    Title="Session Expired"
+                    SubTitle="Please login again to continue.">
+                <Extra>
+                    <Button Type="@ButtonType.Primary" OnClick="@(() => Navigation.NavigateTo("/login"))">
+                        Go to Login
+                    </Button>
+                </Extra>
+            </Result>
+        }
+        else
+        {
+            <Alert Type="@AlertType.Warning"
+                   Message="Recovery Code"
+                   Description="Enter one of your recovery codes. Each code can only be used once. You have a limited number of recovery codes, so consider re-enabling 2FA after login."
+                   ShowIcon="true"
+                   Style="margin-bottom: 24px;" />
+
+            <Form Model="_model"
+                  OnFinish="HandleRecoveryCodeLogin"
+                  Layout="@FormLayout.Vertical">
+
+                <FormItem Label="Recovery Code">
+                    <Input @bind-Value="@context.Code"
+                           Placeholder="Enter recovery code"
+                           Size="@InputSize.Large"
+                           Style="font-family: monospace;" />
+                </FormItem>
+
+                <FormItem>
+                    <Button Type="@ButtonType.Primary"
+                            HtmlType="submit"
+                            Loading="_loading"
+                            Block
+                            Size="@ButtonSize.Large">
+                        Login with Recovery Code
+                    </Button>
+                </FormItem>
+            </Form>
+
+            <Divider Plain>Or</Divider>
+
+            <div style="text-align: center;">
+                <Space Direction="SpaceDirection.Vertical">
+                    <SpaceItem>
+                        <a @onclick="GoToTwoFactor" style="cursor: pointer;">
+                            Use authenticator code instead
+                        </a>
+                    </SpaceItem>
+                    <SpaceItem>
+                        <a @onclick="CancelAndGoBack" style="cursor: pointer;">
+                            Cancel and return to login
+                        </a>
+                    </SpaceItem>
+                </Space>
+            </div>
+        }
+    </Card>
+</div>
+
+@code {
+    private RecoveryCodeModel _model = new();
+    private bool _loading;
+
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    private class RecoveryCodeModel
+    {
+        public string Code { get; set; } = string.Empty;
+    }
+
+    private async Task HandleRecoveryCodeLogin()
+    {
+        if (string.IsNullOrWhiteSpace(_model.Code))
+        {
+            Message.Error("Please enter a recovery code.");
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            var result = await AuthState.RecoveryCodeLoginAsync(_model.Code.Trim());
+
+            if (result.Succeeded)
+            {
+                Message.Success("Login successful! Consider generating new recovery codes in your profile settings.");
+                var redirectUrl = string.IsNullOrEmpty(ReturnUrl) ? "/" : ReturnUrl;
+                Navigation.NavigateTo(redirectUrl);
+            }
+            else
+            {
+                Message.Error(result.Error ?? "Invalid recovery code. Please try again.");
+                _model.Code = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Login failed: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void GoToTwoFactor()
+    {
+        var returnParam = string.IsNullOrEmpty(ReturnUrl) ? "" : $"?returnUrl={Uri.EscapeDataString(ReturnUrl)}";
+        Navigation.NavigateTo($"/login/2fa{returnParam}");
+    }
+
+    private void CancelAndGoBack()
+    {
+        AuthState.ClearTwoFactorState();
+        Navigation.NavigateTo("/login");
+    }
+}

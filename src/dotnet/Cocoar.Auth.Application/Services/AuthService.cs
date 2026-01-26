@@ -2,6 +2,7 @@ using Cocoar.Auth.Application.DTOs.Auth;
 using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Domain.Entities;
+using Cocoar.Auth.Domain.Events;
 using ErrorOr;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
@@ -15,36 +16,44 @@ public class AuthService
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IRoleRepository _roleRepository;
     private readonly IEmailSender _emailSender;
+    private readonly ILoginAuditService _loginAuditService;
 
     public AuthService(
         IAuthenticationService authenticationService,
         UserManager<ApplicationUser> userManager,
         IRoleRepository roleRepository,
-        IEmailSender emailSender)
+        IEmailSender emailSender,
+        ILoginAuditService loginAuditService)
     {
         _authenticationService = authenticationService;
         _userManager = userManager;
         _roleRepository = roleRepository;
         _emailSender = emailSender;
+        _loginAuditService = loginAuditService;
     }
 
-    public async Task<ErrorOr<LoginResultDto>> LoginAsync(LoginDto dto, CancellationToken cancellationToken = default)
+    public async Task<ErrorOr<LoginResultDto>> LoginAsync(
+        LoginDto dto,
+        string? ipAddress = null,
+        string? userAgent = null,
+        CancellationToken cancellationToken = default)
     {
         var user = await _userManager.FindByNameAsync(dto.UserName);
         if (user is null)
         {
+            // Don't record audit for non-existent users to avoid enumeration attacks
             return new LoginResultDto
             {
                 Succeeded = false,
-                ErrorMessage = $"User not found for username: {dto.UserName}"
+                ErrorMessage = "Invalid username or password."
             };
         }
 
-        // Debug: Check if user has password hash
-        var hasPassword = !string.IsNullOrEmpty(user.PasswordHash);
-
         if (!user.IsActive)
         {
+            await _loginAuditService.RecordLoginFailedAsync(
+                user.Id, ipAddress, userAgent, LoginFailureReason.AccountInactive, cancellationToken);
+
             return new LoginResultDto
             {
                 Succeeded = false,
@@ -62,11 +71,13 @@ public class AuthService
 
         if (result.Succeeded)
         {
+            await _loginAuditService.RecordLoginAsync(user.Id, ipAddress, userAgent, cancellationToken);
             return new LoginResultDto { Succeeded = true };
         }
 
         if (result.RequiresTwoFactor)
         {
+            // Don't record failure for 2FA requirement - user hasn't failed yet
             return new LoginResultDto
             {
                 Succeeded = false,
@@ -77,6 +88,17 @@ public class AuthService
 
         if (result.IsLockedOut)
         {
+            await _loginAuditService.RecordLoginFailedAsync(
+                user.Id, ipAddress, userAgent, LoginFailureReason.LockedOut, cancellationToken);
+
+            // Also record the lockout event if this is a fresh lockout
+            var lockoutEnd = await _userManager.GetLockoutEndDateAsync(user);
+            if (lockoutEnd.HasValue)
+            {
+                await _loginAuditService.RecordLockoutAsync(
+                    user.Id, lockoutEnd, LockoutReason.TooManyFailedAttempts, cancellationToken);
+            }
+
             return new LoginResultDto
             {
                 Succeeded = false,
@@ -87,6 +109,9 @@ public class AuthService
 
         if (result.IsNotAllowed)
         {
+            await _loginAuditService.RecordLoginFailedAsync(
+                user.Id, ipAddress, userAgent, LoginFailureReason.NotAllowed, cancellationToken);
+
             return new LoginResultDto
             {
                 Succeeded = false,
@@ -95,10 +120,14 @@ public class AuthService
             };
         }
 
+        // Invalid password
+        await _loginAuditService.RecordLoginFailedAsync(
+            user.Id, ipAddress, userAgent, LoginFailureReason.InvalidPassword, cancellationToken);
+
         return new LoginResultDto
         {
             Succeeded = false,
-            ErrorMessage = $"Invalid username or password. HasPassword: {hasPassword}, IsLockedOut: {result.IsLockedOut}, IsNotAllowed: {result.IsNotAllowed}"
+            ErrorMessage = "Invalid username or password."
         };
     }
 

@@ -88,6 +88,12 @@ public class CocoarAuthWebApplicationFactory : WebApplicationFactory<Program>, I
                 options.Schema.For<UserSecurityData>()
                     .Identity(x => x.Id);
 
+                // Configure UserSession document (ephemeral state, not event-sourced)
+                options.Schema.For<UserSession>()
+                    .Identity(x => x.Id)
+                    .Index(x => x.UserId)
+                    .Index(x => x.SessionId);
+
                 // ═══════════════════════════════════════════════════════════════
                 // EVENT SOURCING CONFIGURATION
                 // ═══════════════════════════════════════════════════════════════
@@ -115,6 +121,13 @@ public class CocoarAuthWebApplicationFactory : WebApplicationFactory<Program>, I
                 options.Events.AddEventType<UserUnlocked>();
                 options.Events.AddEventType<UserEmailConfirmed>();
                 options.Events.AddEventType<UserPhoneNumberConfirmed>();
+
+                // Register GDPR events for the event store
+                options.Events.AddEventType<UserDeletionRequested>();
+                options.Events.AddEventType<UserDeletionCancelled>();
+                options.Events.AddEventType<UserDataMasked>();
+                options.Events.AddEventType<UserDataExported>();
+                options.Events.AddEventType<UserRestored>();
 
                 // Register role events for the event store
                 options.Events.AddEventType<RoleCreated>();
@@ -242,6 +255,7 @@ public class CocoarAuthWebApplicationFactory : WebApplicationFactory<Program>, I
         session.DeleteWhere<UserSecurityData>(u => true);
         session.DeleteWhere<UserState>(u => true);
         session.DeleteWhere<RoleState>(r => true);
+        session.DeleteWhere<UserSession>(s => true);
         session.DeleteWhere<Cocoar.Auth.Application.Models.UserDetailsReadModel>(u => true);
         await session.SaveChangesAsync();
 

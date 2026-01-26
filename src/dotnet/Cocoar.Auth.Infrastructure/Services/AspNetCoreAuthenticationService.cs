@@ -34,6 +34,43 @@ public class AspNetCoreAuthenticationService : IAuthenticationService
         };
     }
 
+    public async Task<SignInResultInfo> TwoFactorSignInAsync(
+        string code,
+        bool isPersistent,
+        bool rememberClient,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _signInManager.TwoFactorAuthenticatorSignInAsync(code, isPersistent, rememberClient);
+
+        return new SignInResultInfo
+        {
+            Succeeded = result.Succeeded,
+            IsLockedOut = result.IsLockedOut,
+            IsNotAllowed = result.IsNotAllowed,
+            RequiresTwoFactor = result.RequiresTwoFactor
+        };
+    }
+
+    public async Task<SignInResultInfo> RecoveryCodeSignInAsync(
+        string recoveryCode,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _signInManager.TwoFactorRecoveryCodeSignInAsync(recoveryCode);
+
+        return new SignInResultInfo
+        {
+            Succeeded = result.Succeeded,
+            IsLockedOut = result.IsLockedOut,
+            IsNotAllowed = result.IsNotAllowed,
+            RequiresTwoFactor = result.RequiresTwoFactor
+        };
+    }
+
+    public async Task<ApplicationUser?> GetTwoFactorAuthenticationUserAsync(CancellationToken cancellationToken = default)
+    {
+        return await _signInManager.GetTwoFactorAuthenticationUserAsync();
+    }
+
     public async Task SignOutAsync(CancellationToken cancellationToken = default)
     {
         await _signInManager.SignOutAsync();

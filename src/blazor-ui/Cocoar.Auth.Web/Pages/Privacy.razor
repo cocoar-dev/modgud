@@ -1,0 +1,282 @@
+@page "/privacy"
+@inject AuthService AuthService
+@inject MessageService Message
+@inject IJSRuntime JS
+@attribute [Authorize]
+
+<PageTitle>Privacy & Data - Cocoar Auth</PageTitle>
+
+<PageContainer Title="Privacy & Data">
+    <ChildContent>
+        <Row Gutter="24">
+            <AntDesign.Col Span="12">
+                <Card Title="Export My Data" Style="height: 100%;">
+                    <Paragraph>
+                        Download a copy of all your personal data stored in your account.
+                        This includes your profile information, security settings, login history, and active sessions.
+                    </Paragraph>
+
+                    <Paragraph Type="@TextElementType.Secondary">
+                        Your data will be exported in JSON format.
+                    </Paragraph>
+
+                    <Button Type="@ButtonType.Primary"
+                            OnClick="HandleExportData"
+                            Loading="_exporting"
+                            Block
+                            Size="@ButtonSize.Large">
+                        <Icon Type="download" Theme="IconThemeType.Outline" />
+                        Download My Data
+                    </Button>
+                </Card>
+            </AntDesign.Col>
+
+            <AntDesign.Col Span="12">
+                <Card Title="Delete My Account" Style="height: 100%;">
+                    <Spin Spinning="_loadingDeletionStatus">
+                        @if (_deletionStatus?.IsPending == true)
+                        {
+                            <Alert Type="@AlertType.Warning"
+                                   Message="Deletion Pending"
+                                   Description="@($"Your account deletion was requested on {_deletionStatus.RequestedAt?.ToString("f")}. The request will expire on {_deletionStatus.ConfirmationDeadline?.ToString("f")}. After that, your account will be permanently deleted.")"
+                                   ShowIcon="true"
+                                   Style="margin-bottom: 16px;" />
+
+                            <Button OnClick="HandleCancelDeletion"
+                                    Loading="_cancellingDeletion"
+                                    Block
+                                    Size="@ButtonSize.Large">
+                                <Icon Type="undo" Theme="IconThemeType.Outline" />
+                                Cancel Deletion Request
+                            </Button>
+                        }
+                        else if (_deletionStatus?.IsDeleted == true)
+                        {
+                            <Alert Type="@AlertType.Error"
+                                   Message="Account Deleted"
+                                   Description="Your account has been deleted. You will be logged out shortly."
+                                   ShowIcon="true" />
+                        }
+                        else
+                        {
+                            <Alert Type="@AlertType.Error"
+                                   Message="Warning"
+                                   Description="Deleting your account is permanent. All your data will be erased and cannot be recovered."
+                                   ShowIcon="true"
+                                   Style="margin-bottom: 16px;" />
+
+                            <Button Danger
+                                    OnClick="ShowDeleteModal"
+                                    Block
+                                    Size="@ButtonSize.Large">
+                                <Icon Type="delete" Theme="IconThemeType.Outline" />
+                                Request Account Deletion
+                            </Button>
+                        }
+                    </Spin>
+                </Card>
+            </AntDesign.Col>
+        </Row>
+
+        <Card Title="Your Data Rights (GDPR)" Style="margin-top: 24px;">
+            <Row Gutter="24">
+                <AntDesign.Col Span="8">
+                    <div style="text-align: center; padding: 16px;">
+                        <Icon Type="eye" Theme="IconThemeType.Outline" Style="font-size: 48px; color: #1890ff; margin-bottom: 16px;" />
+                        <Title Level="4">Right to Access</Title>
+                        <Paragraph Type="@TextElementType.Secondary">
+                            You can view and download all personal data we store about you at any time.
+                        </Paragraph>
+                    </div>
+                </AntDesign.Col>
+                <AntDesign.Col Span="8">
+                    <div style="text-align: center; padding: 16px;">
+                        <Icon Type="edit" Theme="IconThemeType.Outline" Style="font-size: 48px; color: #52c41a; margin-bottom: 16px;" />
+                        <Title Level="4">Right to Rectification</Title>
+                        <Paragraph Type="@TextElementType.Secondary">
+                            You can update your personal information through your profile settings.
+                        </Paragraph>
+                    </div>
+                </AntDesign.Col>
+                <AntDesign.Col Span="8">
+                    <div style="text-align: center; padding: 16px;">
+                        <Icon Type="delete" Theme="IconThemeType.Outline" Style="font-size: 48px; color: #ff4d4f; margin-bottom: 16px;" />
+                        <Title Level="4">Right to Erasure</Title>
+                        <Paragraph Type="@TextElementType.Secondary">
+                            You can request permanent deletion of your account and all associated data.
+                        </Paragraph>
+                    </div>
+                </AntDesign.Col>
+            </Row>
+        </Card>
+    </ChildContent>
+</PageContainer>
+
+@* Delete Account Modal *@
+<Modal Title="Delete Your Account"
+       Visible="_showDeleteModal"
+       OnOk="HandleRequestDeletion"
+       OnCancel="@(() => _showDeleteModal = false)"
+       ConfirmLoading="_requestingDeletion"
+       OkText="@("Request Deletion")"
+       OkButtonProps="@(new ButtonProps { Danger = true })">
+
+    <Alert Type="@AlertType.Error"
+           Message="This action cannot be undone"
+           Description="Once confirmed, your account and all associated data will be permanently deleted."
+           ShowIcon="true"
+           Style="margin-bottom: 16px;" />
+
+    <Form Model="_deleteModel" Layout="@FormLayout.Vertical">
+        <FormItem Label="Enter your password to confirm">
+            <InputPassword @bind-Value="@context.Password"
+                           Placeholder="Your current password"
+                           Size="@InputSize.Large" />
+        </FormItem>
+
+        <FormItem Label="Reason for leaving (optional)">
+            <TextArea @bind-Value="@context.Reason"
+                      Placeholder="Help us improve by telling us why you're leaving..."
+                      Rows="3" />
+        </FormItem>
+    </Form>
+</Modal>
+
+@code {
+    private DeletionStatusResponse? _deletionStatus;
+    private bool _loadingDeletionStatus;
+    private bool _exporting;
+    private bool _showDeleteModal;
+    private DeleteAccountModel _deleteModel = new();
+    private bool _requestingDeletion;
+    private bool _cancellingDeletion;
+
+    private class DeleteAccountModel
+    {
+        public string Password { get; set; } = string.Empty;
+        public string? Reason { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDeletionStatus();
+    }
+
+    private async Task LoadDeletionStatus()
+    {
+        _loadingDeletionStatus = true;
+        try
+        {
+            _deletionStatus = await AuthService.GetDeletionStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to load deletion status: {ex.Message}");
+        }
+        finally
+        {
+            _loadingDeletionStatus = false;
+        }
+    }
+
+    private async Task HandleExportData()
+    {
+        _exporting = true;
+        try
+        {
+            var data = await AuthService.ExportDataAsync();
+            if (data != null)
+            {
+                // Convert to JSON and trigger download
+                var json = System.Text.Json.JsonSerializer.Serialize(data, new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = true
+                });
+
+                var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+                var base64 = Convert.ToBase64String(bytes);
+                var fileName = $"my-data-export-{DateTime.UtcNow:yyyy-MM-dd}.json";
+
+                await JS.InvokeVoidAsync("downloadFile", fileName, "application/json", base64);
+                Message.Success("Your data has been exported successfully!");
+            }
+            else
+            {
+                Message.Error("Failed to export data.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to export data: {ex.Message}");
+        }
+        finally
+        {
+            _exporting = false;
+        }
+    }
+
+    private void ShowDeleteModal()
+    {
+        _deleteModel = new DeleteAccountModel();
+        _showDeleteModal = true;
+    }
+
+    private async Task HandleRequestDeletion()
+    {
+        if (string.IsNullOrWhiteSpace(_deleteModel.Password))
+        {
+            Message.Error("Please enter your password.");
+            return;
+        }
+
+        _requestingDeletion = true;
+        try
+        {
+            var result = await AuthService.RequestDeletionAsync(_deleteModel.Password, _deleteModel.Reason);
+            if (result != null)
+            {
+                Message.Success("Account deletion requested. " + result.Message);
+                _showDeleteModal = false;
+                await LoadDeletionStatus();
+            }
+            else
+            {
+                Message.Error("Failed to request deletion. Please check your password.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to request deletion: {ex.Message}");
+        }
+        finally
+        {
+            _requestingDeletion = false;
+        }
+    }
+
+    private async Task HandleCancelDeletion()
+    {
+        _cancellingDeletion = true;
+        try
+        {
+            var result = await AuthService.CancelDeletionAsync();
+            if (result)
+            {
+                Message.Success("Account deletion has been cancelled.");
+                await LoadDeletionStatus();
+            }
+            else
+            {
+                Message.Error("Failed to cancel deletion.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to cancel deletion: {ex.Message}");
+        }
+        finally
+        {
+            _cancellingDeletion = false;
+        }
+    }
+}

@@ -57,6 +57,12 @@ public static class DependencyInjection
             options.Schema.For<UserSecurityData>()
                 .Identity(x => x.Id);
 
+            // Configure UserSession document (ephemeral state, not event-sourced)
+            options.Schema.For<UserSession>()
+                .Identity(x => x.Id)
+                .Index(x => x.UserId)
+                .Index(x => x.SessionId);
+
             // ═══════════════════════════════════════════════════════════════
             // EVENT SOURCING CONFIGURATION
             // ═══════════════════════════════════════════════════════════════
@@ -85,6 +91,54 @@ public static class DependencyInjection
             options.Events.AddEventType<UserUnlocked>();
             options.Events.AddEventType<UserEmailConfirmed>();
             options.Events.AddEventType<UserPhoneNumberConfirmed>();
+
+            // Register GDPR events for the event store
+            options.Events.AddEventType<UserDeletionRequested>();
+            options.Events.AddEventType<UserDeletionCancelled>();
+            options.Events.AddEventType<UserDataMasked>();
+            options.Events.AddEventType<UserDataExported>();
+            options.Events.AddEventType<UserRestored>();
+
+            // ═══════════════════════════════════════════════════════════════
+            // GDPR DATA MASKING RULES
+            // These rules define how PII is masked when ApplyEventDataMasking is called
+            // ═══════════════════════════════════════════════════════════════
+
+            // Mask PII in UserCreated events
+            options.Events.AddMaskingRuleForProtectedInformation<UserCreated>(x =>
+                new UserCreated(
+                    x.UserId,
+                    "[DELETED]",
+                    "[DELETED]",
+                    null,
+                    null,
+                    null,
+                    x.IsActive,
+                    x.LockoutEnabled,
+                    x.Roles));
+
+            // Mask PII in UserNameChanged events
+            options.Events.AddMaskingRuleForProtectedInformation<UserNameChanged>(x =>
+                new UserNameChanged(x.UserId, "[DELETED]", "[DELETED]"));
+
+            // Mask PII in UserEmailChanged events
+            options.Events.AddMaskingRuleForProtectedInformation<UserEmailChanged>(x =>
+                new UserEmailChanged(x.UserId, "[DELETED]", "[DELETED]"));
+
+            // Mask PII in UserPhoneNumberChanged events
+            options.Events.AddMaskingRuleForProtectedInformation<UserPhoneNumberChanged>(x =>
+                new UserPhoneNumberChanged(x.UserId, null, null));
+
+            // Mask PII in UserProfileNameChanged events
+            options.Events.AddMaskingRuleForProtectedInformation<UserProfileNameChanged>(x =>
+                new UserProfileNameChanged(x.UserId, null, null, null, null));
+
+            // Mask IP addresses in login events (considered PII under GDPR)
+            options.Events.AddMaskingRuleForProtectedInformation<UserLoggedIn>(x =>
+                new UserLoggedIn(x.UserId, null, null));
+
+            options.Events.AddMaskingRuleForProtectedInformation<UserLoginFailed>(x =>
+                new UserLoginFailed(x.UserId, null, null, x.FailureReason));
 
             // Register role events for the event store
             options.Events.AddEventType<RoleCreated>();
@@ -152,10 +206,23 @@ public static class DependencyInjection
         // Register authentication service
         services.AddScoped<IAuthenticationService, AspNetCoreAuthenticationService>();
 
+        // Register login audit service
+        services.AddScoped<ILoginAuditService, LoginAuditService>();
+
+        // Register device info service
+        services.AddSingleton<IDeviceInfoService, DeviceInfoService>();
+
+        // Register session repository
+        services.AddScoped<ISessionRepository, MartenSessionRepository>();
+        services.AddScoped<ISessionService, Cocoar.Auth.Application.Services.SessionService>();
+
         // Register repositories
         services.AddScoped<IUserRepository, MartenUserRepository>();
         services.AddScoped<IRoleRepository, MartenRoleRepository>();
         services.AddScoped<IUserDetailsRepository, UserDetailsRepository>();
+
+        // Register GDPR service
+        services.AddScoped<IGdprService, GdprService>();
 
         return services;
     }

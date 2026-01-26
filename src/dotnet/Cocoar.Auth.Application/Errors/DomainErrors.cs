@@ -86,6 +86,83 @@ public static class UserErrors
     public static Error InvalidPassword => Error.Validation(
         code: "User.InvalidPassword",
         description: "The current password is incorrect.");
+
+    public static Error NotLockedOut(Guid id) => Error.Validation(
+        code: "User.NotLockedOut",
+        description: $"User with ID '{id}' is not currently locked out.");
+}
+
+public static class TwoFactorErrors
+{
+    public static Error InvalidVerificationCode => Error.Validation(
+        code: "TwoFactor.InvalidVerificationCode",
+        description: "The verification code is invalid.");
+
+    public static Error InvalidRecoveryCode => Error.Validation(
+        code: "TwoFactor.InvalidRecoveryCode",
+        description: "The recovery code is invalid or has already been used.");
+
+    public static Error TwoFactorNotEnabled => Error.Validation(
+        code: "TwoFactor.NotEnabled",
+        description: "Two-factor authentication is not enabled for this account.");
+
+    public static Error FailedToGenerateKey => Error.Failure(
+        code: "TwoFactor.FailedToGenerateKey",
+        description: "Failed to generate authenticator key.");
+
+    public static Error FailedToGenerateCodes => Error.Failure(
+        code: "TwoFactor.FailedToGenerateCodes",
+        description: "Failed to generate recovery codes.");
+
+    public static Error NoTwoFactorUser => Error.Validation(
+        code: "TwoFactor.NoTwoFactorUser",
+        description: "No two-factor authentication user found. Please login first.");
+}
+
+public static class SessionErrors
+{
+    public static Error NotFound(Guid id) => Error.NotFound(
+        code: "Session.NotFound",
+        description: $"Session with ID '{id}' was not found.");
+
+    public static Error NotOwner => Error.Forbidden(
+        code: "Session.NotOwner",
+        description: "You do not have permission to manage this session.");
+}
+
+public static class GdprErrors
+{
+    public static Error DeletionAlreadyRequested => Error.Conflict(
+        code: "Gdpr.DeletionAlreadyRequested",
+        description: "A deletion request is already pending for this account.");
+
+    public static Error NoDeletionPending => Error.Validation(
+        code: "Gdpr.NoDeletionPending",
+        description: "No deletion request is pending for this account.");
+
+    public static Error DeletionExpired => Error.Validation(
+        code: "Gdpr.DeletionExpired",
+        description: "The deletion confirmation period has expired. Please request deletion again.");
+
+    public static Error InvalidDeletionToken => Error.Validation(
+        code: "Gdpr.InvalidDeletionToken",
+        description: "Invalid or expired deletion confirmation token.");
+
+    public static Error UserAlreadyDeleted => Error.Conflict(
+        code: "Gdpr.UserAlreadyDeleted",
+        description: "This user account has already been deleted.");
+
+    public static Error UserNotDeleted => Error.Validation(
+        code: "Gdpr.UserNotDeleted",
+        description: "This user account is not deleted.");
+
+    public static Error DataAlreadyMasked => Error.Conflict(
+        code: "Gdpr.DataAlreadyMasked",
+        description: "User data has already been masked. This operation cannot be undone.");
+
+    public static Error CannotRestoreMaskedUser => Error.Validation(
+        code: "Gdpr.CannotRestoreMaskedUser",
+        description: "Cannot restore a user whose data has been permanently erased.");
 }
 
 public static class RoleErrors

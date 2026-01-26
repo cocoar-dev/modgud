@@ -1,0 +1,731 @@
+@page "/profile"
+@inject AuthService AuthService
+@inject AuthStateProvider AuthState
+@inject MessageService Message
+@inject IJSRuntime JS
+@attribute [Authorize]
+
+<PageTitle>Profile - Cocoar Auth</PageTitle>
+
+<PageContainer Title="Profile">
+    <Spin Spinning="_loading">
+        @if (_profile != null)
+        {
+            <Row Gutter="24">
+                <AntDesign.Col Span="8">
+                    <Card Title="Profile Information">
+                        <div style="text-align: center; margin-bottom: 24px;">
+                            <Avatar Size="@AvatarSize.Large" Style="width: 100px; height: 100px; font-size: 48px;">
+                                @GetInitials()
+                            </Avatar>
+                        </div>
+                        
+                        <Descriptions Column="1" Bordered>
+                            <DescriptionsItem Title="Username">@_profile.UserName</DescriptionsItem>
+                            <DescriptionsItem Title="Email">@_profile.Email</DescriptionsItem>
+                            <DescriptionsItem Title="Name">@_profile.FirstName @_profile.LastName</DescriptionsItem>
+                            <DescriptionsItem Title="Email Verified">
+                                @if (_profile.EmailConfirmed)
+                                {
+                                    <Tag Color="@PresetColor.Green.ToString()">Verified</Tag>
+                                }
+                                else
+                                {
+                                    <Tag Color="@PresetColor.Orange.ToString()">Not Verified</Tag>
+                                }
+                            </DescriptionsItem>
+                            <DescriptionsItem Title="Roles">
+                                @foreach (var role in _profile.Roles)
+                                {
+                                    <Tag Color="@PresetColor.Blue.ToString()">@role</Tag>
+                                }
+                            </DescriptionsItem>
+                        </Descriptions>
+                    </Card>
+                </AntDesign.Col>
+                
+                <AntDesign.Col Span="16">
+                    <Tabs DefaultActiveKey="1">
+                        <TabPane Key="1" Tab="Edit Profile">
+                            <Card>
+                                <Form Model="_editModel"
+                                      OnFinish="HandleUpdateProfile"
+                                      Layout="@FormLayout.Vertical">
+                                    
+                                    <FormItem Label="First Name">
+                                        <Input @bind-Value="@context.FirstName" 
+                                               Size="@InputSize.Large" />
+                                    </FormItem>
+                                    
+                                    <FormItem Label="Last Name">
+                                        <Input @bind-Value="@context.LastName" 
+                                               Size="@InputSize.Large" />
+                                    </FormItem>
+                                    
+                                    <FormItem Label="Email">
+                                        <Input @bind-Value="@context.Email"
+                                               Size="@InputSize.Large" />
+                                    </FormItem>
+                                    
+                                    <FormItem>
+                                        <Button Type="@ButtonType.Primary" 
+                                                HtmlType="submit" 
+                                                Loading="_saving">
+                                            Save Changes
+                                        </Button>
+                                    </FormItem>
+                                </Form>
+                            </Card>
+                        </TabPane>
+                        
+                        <TabPane Key="2" Tab="Change Password">
+                            <Card>
+                                <Form Model="_passwordModel"
+                                      OnFinish="HandleChangePassword"
+                                      Layout="@FormLayout.Vertical">
+
+                                    <FormItem Label="Current Password">
+                                        <InputPassword @bind-Value="@context.CurrentPassword"
+                                                       Size="@InputSize.Large" />
+                                    </FormItem>
+
+                                    <FormItem Label="New Password">
+                                        <InputPassword @bind-Value="@context.NewPassword"
+                                                       Size="@InputSize.Large" />
+                                    </FormItem>
+
+                                    <FormItem Label="Confirm New Password">
+                                        <InputPassword @bind-Value="@context.ConfirmPassword"
+                                                       Size="@InputSize.Large" />
+                                    </FormItem>
+
+                                    <FormItem>
+                                        <Button Type="@ButtonType.Primary"
+                                                HtmlType="submit"
+                                                Loading="_changingPassword">
+                                            Change Password
+                                        </Button>
+                                    </FormItem>
+                                </Form>
+                            </Card>
+                        </TabPane>
+
+                        <TabPane Key="3" Tab="Two-Factor Authentication">
+                            <Card>
+                                <Spin Spinning="_loadingTwoFactor">
+                                    @if (_twoFactorStatus == null)
+                                    {
+                                        <Empty Description="@("Unable to load 2FA status")">
+                                            <ChildContent>
+                                                <Button OnClick="LoadTwoFactorStatus">Retry</Button>
+                                            </ChildContent>
+                                        </Empty>
+                                    }
+                                    else if (_twoFactorStatus.IsEnabled)
+                                    {
+                                        <Alert Type="@AlertType.Success"
+                                               Message="Two-Factor Authentication is Enabled"
+                                               Description="Your account is protected with two-factor authentication."
+                                               ShowIcon="true"
+                                               Style="margin-bottom: 24px;" />
+
+                                        <Descriptions Column="1" Bordered Style="margin-bottom: 24px;">
+                                            <DescriptionsItem Title="Status">
+                                                <Tag Color="@PresetColor.Green.ToString()">Enabled</Tag>
+                                            </DescriptionsItem>
+                                            <DescriptionsItem Title="Recovery Codes Remaining">
+                                                @if (_twoFactorStatus.RecoveryCodesRemaining <= 2)
+                                                {
+                                                    <Tag Color="@PresetColor.Red.ToString()">@_twoFactorStatus.RecoveryCodesRemaining</Tag>
+                                                    <span style="color: #faad14;"> - Consider generating new codes</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>@_twoFactorStatus.RecoveryCodesRemaining</span>
+                                                }
+                                            </DescriptionsItem>
+                                        </Descriptions>
+
+                                        <Space Direction="SpaceDirection.Vertical" Style="width: 100%;">
+                                            <SpaceItem>
+                                                <Button OnClick="ShowGenerateRecoveryCodesModal" Block>
+                                                    <Icon Type="key" Theme="IconThemeType.Outline" />
+                                                    Generate New Recovery Codes
+                                                </Button>
+                                            </SpaceItem>
+                                            <SpaceItem>
+                                                <Button Danger OnClick="ShowDisableTwoFactorModal" Block>
+                                                    <Icon Type="stop" Theme="IconThemeType.Outline" />
+                                                    Disable Two-Factor Authentication
+                                                </Button>
+                                            </SpaceItem>
+                                        </Space>
+                                    }
+                                    else
+                                    {
+                                        @if (!_showSetupWizard)
+                                        {
+                                            <Alert Type="@AlertType.Warning"
+                                                   Message="Two-Factor Authentication is Disabled"
+                                                   Description="Add an extra layer of security to your account by enabling two-factor authentication."
+                                                   ShowIcon="true"
+                                                   Style="margin-bottom: 24px;" />
+
+                                            <Button Type="@ButtonType.Primary" OnClick="StartTwoFactorSetup" Block Size="@ButtonSize.Large">
+                                                <Icon Type="safety" Theme="IconThemeType.Outline" />
+                                                Set Up Two-Factor Authentication
+                                            </Button>
+                                        }
+                                        else
+                                        {
+                                            @if (_setupResponse == null)
+                                            {
+                                                <Spin Tip="Loading setup..." />
+                                            }
+                                            else
+                                            {
+                                                <Steps Current="_setupStep" Style="margin-bottom: 24px;">
+                                                    <Step Title="Scan QR Code" />
+                                                    <Step Title="Verify Code" />
+                                                    <Step Title="Save Recovery Codes" />
+                                                </Steps>
+
+                                                @if (_setupStep == 0)
+                                                {
+                                                    <div style="text-align: center; margin-bottom: 24px;">
+                                                        <Title Level="4">Scan this QR code with your authenticator app</Title>
+                                                        <Paragraph>Use Google Authenticator, Microsoft Authenticator, or any TOTP-compatible app.</Paragraph>
+
+                                                        <div id="qrcode" style="display: inline-block; padding: 16px; background: white; border-radius: 8px; margin: 16px 0;"></div>
+
+                                                        <Paragraph Type="@TextElementType.Secondary">
+                                                            Or enter this key manually:
+                                                            <br />
+                                                            <Text Code Copyable CopyConfig="@(new TypographyCopyableConfig { Text = _setupResponse.SharedKey })">
+                                                                @_setupResponse.SharedKey
+                                                            </Text>
+                                                        </Paragraph>
+                                                    </div>
+
+                                                    <Space Style="width: 100%; justify-content: center;">
+                                                        <SpaceItem>
+                                                            <Button OnClick="CancelSetup">Cancel</Button>
+                                                        </SpaceItem>
+                                                        <SpaceItem>
+                                                            <Button Type="@ButtonType.Primary" OnClick="@(() => _setupStep = 1)">
+                                                                Next: Verify Code
+                                                            </Button>
+                                                        </SpaceItem>
+                                                    </Space>
+                                                }
+                                                else if (_setupStep == 1)
+                                                {
+                                                    <div style="max-width: 400px; margin: 0 auto;">
+                                                        <Title Level="4" Style="text-align: center;">Enter the code from your authenticator app</Title>
+
+                                                        <Form Model="_verifyModel" OnFinish="HandleEnableTwoFactor" Layout="@FormLayout.Vertical">
+                                                            <FormItem Label="Verification Code">
+                                                                <Input @bind-Value="@context.Code"
+                                                                       Placeholder="Enter 6-digit code"
+                                                                       MaxLength="6"
+                                                                       Size="@InputSize.Large"
+                                                                       Style="text-align: center; letter-spacing: 8px; font-size: 24px;" />
+                                                            </FormItem>
+
+                                                            <FormItem>
+                                                                <Space Style="width: 100%; justify-content: center;">
+                                                                    <SpaceItem>
+                                                                        <Button OnClick="@(() => _setupStep = 0)">Back</Button>
+                                                                    </SpaceItem>
+                                                                    <SpaceItem>
+                                                                        <Button Type="@ButtonType.Primary" HtmlType="submit" Loading="_enablingTwoFactor">
+                                                                            Enable Two-Factor Authentication
+                                                                        </Button>
+                                                                    </SpaceItem>
+                                                                </Space>
+                                                            </FormItem>
+                                                        </Form>
+                                                    </div>
+                                                }
+                                                else if (_setupStep == 2)
+                                                {
+                                                    <Alert Type="@AlertType.Success"
+                                                           Message="Two-Factor Authentication Enabled!"
+                                                           Description="Save these recovery codes in a safe place. Each code can only be used once."
+                                                           ShowIcon="true"
+                                                           Style="margin-bottom: 24px;" />
+
+                                                    @if (_recoveryCodes != null)
+                                                    {
+                                                        <Card Style="background: #f5f5f5; margin-bottom: 24px;">
+                                                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-family: monospace; font-size: 16px;">
+                                                                @foreach (var recoveryCode in _recoveryCodes)
+                                                                {
+                                                                    <div style="padding: 8px; background: white; border-radius: 4px; text-align: center;">
+                                                                        @recoveryCode
+                                                                    </div>
+                                                                }
+                                                            </div>
+                                                        </Card>
+
+                                                        <Space Style="width: 100%; justify-content: center;">
+                                                            <SpaceItem>
+                                                                <Button OnClick="CopyRecoveryCodes">
+                                                                    <Icon Type="copy" Theme="IconThemeType.Outline" />
+                                                                    Copy Codes
+                                                                </Button>
+                                                            </SpaceItem>
+                                                            <SpaceItem>
+                                                                <Button Type="@ButtonType.Primary" OnClick="FinishSetup">
+                                                                    I've Saved My Codes
+                                                                </Button>
+                                                            </SpaceItem>
+                                                        </Space>
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                </Spin>
+                            </Card>
+                        </TabPane>
+                    </Tabs>
+                </AntDesign.Col>
+            </Row>
+        }
+        else if (!_loading)
+        {
+            <Result Status="ResultStatus.Error"
+                    Title="Failed to load profile"
+                    SubTitle="Unable to load your profile information.">
+                <Extra>
+                    <Button Type="@ButtonType.Primary" OnClick="LoadProfile">
+                        Try Again
+                    </Button>
+                </Extra>
+            </Result>
+        }
+    </Spin>
+</PageContainer>
+
+@* Disable 2FA Modal *@
+<Modal Title="Disable Two-Factor Authentication"
+       Visible="_showDisableModal"
+       OnOk="HandleDisableTwoFactor"
+       OnCancel="@(() => _showDisableModal = false)"
+       ConfirmLoading="_disablingTwoFactor"
+       OkText="@("Disable 2FA")"
+       OkButtonProps="@(new ButtonProps { Danger = true })">
+    <Alert Type="@AlertType.Warning"
+           Message="Warning"
+           Description="Disabling two-factor authentication will make your account less secure."
+           ShowIcon="true"
+           Style="margin-bottom: 16px;" />
+
+    <Form Model="_disableModel" Layout="@FormLayout.Vertical">
+        <FormItem Label="Enter your authenticator code to confirm">
+            <Input @bind-Value="@context.Code"
+                   Placeholder="Enter 6-digit code"
+                   MaxLength="6" />
+        </FormItem>
+    </Form>
+</Modal>
+
+@* Generate Recovery Codes Modal *@
+<Modal Title="Generate New Recovery Codes"
+       Visible="_showRecoveryCodesModal"
+       OnCancel="@(() => { _showRecoveryCodesModal = false; _recoveryCodes = null; })"
+       Footer="null"
+       Width="500">
+    @if (_recoveryCodes == null)
+    {
+        <Alert Type="@AlertType.Warning"
+               Message="Warning"
+               Description="Generating new recovery codes will invalidate all existing codes."
+               ShowIcon="true"
+               Style="margin-bottom: 16px;" />
+
+        <Button Type="@ButtonType.Primary"
+                OnClick="HandleGenerateRecoveryCodes"
+                Loading="_generatingRecoveryCodes"
+                Block>
+            Generate New Codes
+        </Button>
+    }
+    else
+    {
+        <Alert Type="@AlertType.Success"
+               Message="New Recovery Codes Generated"
+               Description="Save these codes in a safe place. Your old codes are no longer valid."
+               ShowIcon="true"
+               Style="margin-bottom: 16px;" />
+
+        <Card Style="background: #f5f5f5; margin-bottom: 16px;">
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-family: monospace; font-size: 16px;">
+                @foreach (var recoveryCode in _recoveryCodes)
+                {
+                    <div style="padding: 8px; background: white; border-radius: 4px; text-align: center;">
+                        @recoveryCode
+                    </div>
+                }
+            </div>
+        </Card>
+
+        <Space Style="width: 100%; justify-content: flex-end;">
+            <SpaceItem>
+                <Button OnClick="CopyRecoveryCodes">
+                    <Icon Type="copy" Theme="IconThemeType.Outline" />
+                    Copy Codes
+                </Button>
+            </SpaceItem>
+            <SpaceItem>
+                <Button Type="@ButtonType.Primary" OnClick="@(() => { _showRecoveryCodesModal = false; _recoveryCodes = null; })">
+                    Done
+                </Button>
+            </SpaceItem>
+        </Space>
+    }
+</Modal>
+
+@code {
+    private UserProfileDto? _profile;
+    private ProfileEditModel _editModel = new();
+    private ChangePasswordModel _passwordModel = new();
+    private bool _loading = true;
+    private bool _saving;
+    private bool _changingPassword;
+
+    // 2FA State
+    private TwoFactorStatusResponse? _twoFactorStatus;
+    private TwoFactorSetupResponse? _setupResponse;
+    private bool _loadingTwoFactor;
+    private bool _showSetupWizard;
+    private int _setupStep;
+    private VerifyCodeModel _verifyModel = new();
+    private bool _enablingTwoFactor;
+    private List<string>? _recoveryCodes;
+    private bool _showDisableModal;
+    private bool _showRecoveryCodesModal;
+    private DisableTwoFactorModel _disableModel = new();
+    private bool _disablingTwoFactor;
+    private bool _generatingRecoveryCodes;
+
+    private class ProfileEditModel
+    {
+        public string FirstName { get; set; } = string.Empty;
+        public string LastName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+    }
+
+    private class ChangePasswordModel
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+
+    private class VerifyCodeModel
+    {
+        public string Code { get; set; } = string.Empty;
+    }
+
+    private class DisableTwoFactorModel
+    {
+        public string Code { get; set; } = string.Empty;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProfile();
+        await LoadTwoFactorStatus();
+    }
+
+    private async Task LoadProfile()
+    {
+        _loading = true;
+        try
+        {
+            _profile = await AuthService.GetProfileAsync();
+            if (_profile != null)
+            {
+                _editModel = new ProfileEditModel
+                {
+                    FirstName = _profile.FirstName,
+                    LastName = _profile.LastName,
+                    Email = _profile.Email
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to load profile: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private string GetInitials()
+    {
+        if (_profile == null) return "?";
+        var first = string.IsNullOrEmpty(_profile.FirstName) ? "" : _profile.FirstName[0].ToString();
+        var last = string.IsNullOrEmpty(_profile.LastName) ? "" : _profile.LastName[0].ToString();
+        return $"{first}{last}".ToUpper();
+    }
+
+    private async Task HandleUpdateProfile()
+    {
+        _saving = true;
+        try
+        {
+            var request = new UpdateProfileRequest(
+                _editModel.FirstName,
+                _editModel.LastName,
+                _editModel.Email
+            );
+            
+            var result = await AuthService.UpdateProfileAsync(request);
+            if (result != null)
+            {
+                _profile = result;
+                Message.Success("Profile updated successfully!");
+            }
+            else
+            {
+                Message.Error("Failed to update profile.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to update profile: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task HandleChangePassword()
+    {
+        if (_passwordModel.NewPassword != _passwordModel.ConfirmPassword)
+        {
+            Message.Error("Passwords do not match.");
+            return;
+        }
+
+        _changingPassword = true;
+        try
+        {
+            var request = new ChangePasswordRequest(
+                _passwordModel.CurrentPassword,
+                _passwordModel.NewPassword
+            );
+
+            var result = await AuthService.ChangePasswordAsync(request);
+            if (result)
+            {
+                Message.Success("Password changed successfully!");
+                _passwordModel = new ChangePasswordModel();
+            }
+            else
+            {
+                Message.Error("Failed to change password. Please check your current password.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to change password: {ex.Message}");
+        }
+        finally
+        {
+            _changingPassword = false;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TWO-FACTOR AUTHENTICATION
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private async Task LoadTwoFactorStatus()
+    {
+        _loadingTwoFactor = true;
+        try
+        {
+            _twoFactorStatus = await AuthService.GetTwoFactorStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to load 2FA status: {ex.Message}");
+        }
+        finally
+        {
+            _loadingTwoFactor = false;
+        }
+    }
+
+    private async Task StartTwoFactorSetup()
+    {
+        _showSetupWizard = true;
+        _setupStep = 0;
+        _setupResponse = null;
+        _verifyModel = new VerifyCodeModel();
+        _recoveryCodes = null;
+
+        try
+        {
+            _setupResponse = await AuthService.SetupTwoFactorAsync();
+            if (_setupResponse != null)
+            {
+                // Generate QR code using JS interop
+                await JS.InvokeVoidAsync("generateQRCode", "qrcode", _setupResponse.AuthenticatorUri);
+            }
+            else
+            {
+                Message.Error("Failed to start 2FA setup.");
+                _showSetupWizard = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to start 2FA setup: {ex.Message}");
+            _showSetupWizard = false;
+        }
+    }
+
+    private void CancelSetup()
+    {
+        _showSetupWizard = false;
+        _setupStep = 0;
+        _setupResponse = null;
+        _verifyModel = new VerifyCodeModel();
+        _recoveryCodes = null;
+    }
+
+    private async Task HandleEnableTwoFactor()
+    {
+        if (string.IsNullOrWhiteSpace(_verifyModel.Code) || _verifyModel.Code.Length != 6)
+        {
+            Message.Error("Please enter a valid 6-digit code.");
+            return;
+        }
+
+        _enablingTwoFactor = true;
+        try
+        {
+            var result = await AuthService.EnableTwoFactorAsync(_verifyModel.Code);
+            if (result)
+            {
+                // Get recovery codes
+                var codesResponse = await AuthService.GenerateRecoveryCodesAsync();
+                _recoveryCodes = codesResponse?.Codes ?? [];
+                _setupStep = 2;
+                await LoadTwoFactorStatus();
+            }
+            else
+            {
+                Message.Error("Invalid verification code. Please try again.");
+                _verifyModel.Code = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to enable 2FA: {ex.Message}");
+        }
+        finally
+        {
+            _enablingTwoFactor = false;
+        }
+    }
+
+    private async Task CopyRecoveryCodes()
+    {
+        if (_recoveryCodes != null)
+        {
+            var codesText = string.Join("\n", _recoveryCodes);
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", codesText);
+            Message.Success("Recovery codes copied to clipboard!");
+        }
+    }
+
+    private void FinishSetup()
+    {
+        _showSetupWizard = false;
+        _setupStep = 0;
+        _setupResponse = null;
+        _verifyModel = new VerifyCodeModel();
+        _recoveryCodes = null;
+    }
+
+    private void ShowDisableTwoFactorModal()
+    {
+        _disableModel = new DisableTwoFactorModel();
+        _showDisableModal = true;
+    }
+
+    private async Task HandleDisableTwoFactor()
+    {
+        if (string.IsNullOrWhiteSpace(_disableModel.Code))
+        {
+            Message.Error("Please enter your verification code.");
+            return;
+        }
+
+        _disablingTwoFactor = true;
+        try
+        {
+            var result = await AuthService.DisableTwoFactorAsync(_disableModel.Code);
+            if (result)
+            {
+                Message.Success("Two-factor authentication has been disabled.");
+                _showDisableModal = false;
+                await LoadTwoFactorStatus();
+            }
+            else
+            {
+                Message.Error("Invalid verification code. Please try again.");
+                _disableModel.Code = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to disable 2FA: {ex.Message}");
+        }
+        finally
+        {
+            _disablingTwoFactor = false;
+        }
+    }
+
+    private void ShowGenerateRecoveryCodesModal()
+    {
+        _recoveryCodes = null;
+        _showRecoveryCodesModal = true;
+    }
+
+    private async Task HandleGenerateRecoveryCodes()
+    {
+        _generatingRecoveryCodes = true;
+        try
+        {
+            var response = await AuthService.GenerateRecoveryCodesAsync();
+            if (response != null)
+            {
+                _recoveryCodes = response.Codes;
+                await LoadTwoFactorStatus();
+            }
+            else
+            {
+                Message.Error("Failed to generate recovery codes.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to generate recovery codes: {ex.Message}");
+        }
+        finally
+        {
+            _generatingRecoveryCodes = false;
+        }
+    }
+}

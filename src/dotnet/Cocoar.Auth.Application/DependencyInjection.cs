@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Domain.Entities;
@@ -13,6 +14,10 @@ public static class DependencyInjection
         services.AddScoped<UserService>();
         services.AddScoped<RoleService>();
         services.AddScoped<AuthService>();
+        services.AddScoped<ITwoFactorService, TwoFactorService>();
+
+        // Add UrlEncoder if not already registered
+        services.AddSingleton(UrlEncoder.Default);
 
         return services;
     }

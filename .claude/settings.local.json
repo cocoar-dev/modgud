@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(ls -la \"C:\\\\git\\\\cocoar\\\\cocoar.auth\\\\src\\\\dotnet\\\\Cocoar.Auth.Application\"\" | grep -E \"^d \")",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(dotnet test:*)",
+      "WebSearch",
+      "WebFetch(domain:martendb.io)"
+    ]
+  }
+}

@@ -111,6 +111,18 @@ public class ApplicationUser : Entity
     public bool IsActive { get; private set; } = true;
 
     /// <summary>
+    /// Whether this user has been deleted (soft delete).
+    /// </summary>
+    [JsonInclude]
+    public bool IsDeleted { get; private set; }
+
+    /// <summary>
+    /// Whether this user's personal data has been erased (GDPR).
+    /// </summary>
+    [JsonInclude]
+    public bool IsDataErased { get; private set; }
+
+    /// <summary>
     /// The roles assigned to this user (role IDs).
     /// </summary>
     [JsonInclude]
@@ -335,6 +347,49 @@ public class ApplicationUser : Entity
             Tokens.Remove(token);
             MarkModified();
         }
+    }
+
+    /// <summary>
+    /// Marks the user as deleted (soft delete).
+    /// </summary>
+    public void MarkAsDeleted()
+    {
+        IsDeleted = true;
+        IsActive = false;
+        MarkModified();
+    }
+
+    /// <summary>
+    /// Restores a soft-deleted user.
+    /// </summary>
+    public void Restore()
+    {
+        IsDeleted = false;
+        IsActive = true;
+        MarkModified();
+    }
+
+    /// <summary>
+    /// Clears all personal data from this user (GDPR erasure).
+    /// The user document remains but PII is removed.
+    /// </summary>
+    public void ClearPersonalData()
+    {
+        UserName = "[DELETED]";
+        NormalizedUserName = "[DELETED]";
+        Email = null;
+        NormalizedEmail = null;
+        PhoneNumber = null;
+        FirstName = null;
+        LastName = null;
+        PasswordHash = null;
+        SecurityStamp = Guid.NewGuid().ToString(); // Invalidate all tokens
+        TwoFactorEnabled = false;
+        Claims.Clear();
+        Tokens.Clear();
+        Logins.Clear();
+        IsDataErased = true;
+        MarkModified();
     }
 }
 

@@ -1,0 +1,110 @@
+@page "/login"
+@inject AuthStateProvider AuthState
+@inject NavigationManager Navigation
+@inject MessageService Message
+
+<PageTitle>Login - Cocoar Auth</PageTitle>
+
+<div style="max-width: 400px; margin: 50px auto;">
+    <Card Title="Login" Style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+        <Form Model="_model"
+              OnFinish="HandleLogin"
+              Layout="@FormLayout.Vertical">
+            
+            <FormItem Label="Username">
+                <Input @bind-Value="@context.UserName" 
+                       Placeholder="Enter your username"
+                       PrefixIcon="user"
+                       Size="@InputSize.Large" />
+            </FormItem>
+            
+            <FormItem Label="Password">
+                <InputPassword @bind-Value="@context.Password" 
+                               Placeholder="Enter your password"
+                               PrefixIcon="lock"
+                               Size="@InputSize.Large" />
+            </FormItem>
+            
+            <FormItem>
+                <Checkbox @bind-Value="@context.RememberMe">Remember me</Checkbox>
+            </FormItem>
+            
+            <FormItem>
+                <Button Type="@ButtonType.Primary" 
+                        HtmlType="submit" 
+                        Loading="_loading"
+                        Block
+                        Size="@ButtonSize.Large">
+                    Login
+                </Button>
+            </FormItem>
+        </Form>
+        
+        <Divider Plain>Or</Divider>
+        
+        <div style="text-align: center;">
+            <Space Direction="SpaceDirection.Vertical">
+                <SpaceItem>
+                    <a @onclick="@(() => Navigation.NavigateTo("/register"))">
+                        Don't have an account? Register
+                    </a>
+                </SpaceItem>
+                <SpaceItem>
+                    <a @onclick="@(() => Navigation.NavigateTo("/forgot-password"))">
+                        Forgot password?
+                    </a>
+                </SpaceItem>
+            </Space>
+        </div>
+    </Card>
+</div>
+
+@code {
+    private LoginModel _model = new();
+    private bool _loading;
+
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    private class LoginModel
+    {
+        public string UserName { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public bool RememberMe { get; set; }
+    }
+
+    private async Task HandleLogin()
+    {
+        _loading = true;
+        try
+        {
+            var request = new LoginRequest(_model.UserName, _model.Password, _model.RememberMe);
+            var result = await AuthState.LoginAsync(request);
+
+            if (result.Succeeded)
+            {
+                Message.Success("Login successful!");
+                var redirectUrl = string.IsNullOrEmpty(ReturnUrl) ? "/" : ReturnUrl;
+                Navigation.NavigateTo(redirectUrl);
+            }
+            else if (result.RequiresTwoFactor)
+            {
+                // Redirect to 2FA login page
+                var returnParam = string.IsNullOrEmpty(ReturnUrl) ? "" : $"?returnUrl={Uri.EscapeDataString(ReturnUrl)}";
+                Navigation.NavigateTo($"/login/2fa{returnParam}");
+            }
+            else
+            {
+                Message.Error(result.Error ?? "Invalid username or password.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Login failed: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

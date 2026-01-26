@@ -1,0 +1,29 @@
+﻿<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+                <NotAuthorized>
+                    @if (context.User.Identity?.IsAuthenticated != true)
+                    {
+                        <RedirectToLogin />
+                    }
+                    else
+                    {
+                        <div style="padding: 48px; text-align: center;">
+                            <Result Status="ResultStatus.Warning"
+                                    Title="403 - Forbidden"
+                                    SubTitle="Sorry, you are not authorized to access this page.">
+                                <Extra>
+                                    <Button Type="@ButtonType.Primary" Href="/">
+                                        Back Home
+                                    </Button>
+                                </Extra>
+                            </Result>
+                        </div>
+                    }
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        </Found>
+    </Router>
+</CascadingAuthenticationState>

@@ -15,6 +15,27 @@ public interface IAuthenticationService
         bool lockoutOnFailure,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Signs in a user with a two-factor authentication code.
+    /// </summary>
+    Task<SignInResultInfo> TwoFactorSignInAsync(
+        string code,
+        bool isPersistent,
+        bool rememberClient,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Signs in a user with a recovery code.
+    /// </summary>
+    Task<SignInResultInfo> RecoveryCodeSignInAsync(
+        string recoveryCode,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the user that is awaiting two-factor authentication.
+    /// </summary>
+    Task<ApplicationUser?> GetTwoFactorAuthenticationUserAsync(CancellationToken cancellationToken = default);
+
     Task SignOutAsync(CancellationToken cancellationToken = default);
 }
 

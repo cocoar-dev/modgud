@@ -1,6 +1,9 @@
+using System.Security.Claims;
 using Cocoar.Auth.Api.Extensions;
 using Cocoar.Auth.Application.Commands.Users;
+using Cocoar.Auth.Application.DTOs.Auth;
 using Cocoar.Auth.Application.DTOs.Users;
+using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Application.Mappers;
 using Cocoar.Auth.Application.Models;
 using Cocoar.Auth.Application.Queries.Users;
@@ -17,10 +20,14 @@ namespace Cocoar.Auth.Api.Controllers.Admin;
 public class UsersAdminController : ApiControllerBase
 {
     private readonly IMessageBus _messageBus;
+    private readonly ISessionService _sessionService;
+    private readonly IGdprService _gdprService;
 
-    public UsersAdminController(IMessageBus messageBus)
+    public UsersAdminController(IMessageBus messageBus, ISessionService sessionService, IGdprService gdprService)
     {
         _messageBus = messageBus;
+        _sessionService = sessionService;
+        _gdprService = gdprService;
     }
 
     /// <summary>
@@ -162,5 +169,191 @@ public class UsersAdminController : ApiControllerBase
         }
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Unlock a locked-out user account (admin action).
+    /// </summary>
+    [HttpPost("{id}/unlock")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UnlockUser(string id, CancellationToken cancellationToken)
+    {
+        if (!ShortGuid.TryParse(id, out Guid userId))
+        {
+            return BadRequest("Invalid user ID format.");
+        }
+
+        // Get the admin user ID from claims
+        var adminUserId = GetCurrentUserId();
+
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
+            new UnlockUserCommand(userId, adminUserId),
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            return Problem(result.Errors);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Get all active sessions for a user (admin action).
+    /// </summary>
+    [HttpGet("{id}/sessions")]
+    [ProducesResponseType(typeof(SessionListDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetUserSessions(string id, CancellationToken cancellationToken)
+    {
+        if (!ShortGuid.TryParse(id, out Guid userId))
+        {
+            return BadRequest("Invalid user ID format.");
+        }
+
+        var result = await _sessionService.GetSessionsAsync(userId, currentSessionId: null, cancellationToken);
+        return FromErrorOr(result);
+    }
+
+    /// <summary>
+    /// Force logout: revoke all sessions for a user (admin action).
+    /// </summary>
+    [HttpDelete("{id}/sessions")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RevokeAllUserSessions(string id, CancellationToken cancellationToken)
+    {
+        if (!ShortGuid.TryParse(id, out Guid userId))
+        {
+            return BadRequest("Invalid user ID format.");
+        }
+
+        var result = await _sessionService.RevokeAllSessionsAsync(userId, exceptSessionId: null, cancellationToken);
+        if (result.IsError)
+        {
+            return Problem(result.Errors);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Soft delete a user (admin action).
+    /// User can be restored later.
+    /// </summary>
+    [HttpPost("{id}/soft-delete")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SoftDeleteUser(string id, [FromBody] AdminSoftDeleteDto? dto, CancellationToken cancellationToken)
+    {
+        if (!ShortGuid.TryParse(id, out Guid userId))
+        {
+            return BadRequest("Invalid user ID format.");
+        }
+
+        var adminUserId = GetCurrentUserId();
+        if (adminUserId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _gdprService.SoftDeleteUserAsync(userId, adminUserId.Value, dto?.Reason, cancellationToken);
+        if (result.IsError)
+        {
+            return Problem(result.Errors);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Restore a soft-deleted user (admin action).
+    /// </summary>
+    [HttpPost("{id}/restore")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RestoreUser(string id, [FromBody] AdminRestoreDto? dto, CancellationToken cancellationToken)
+    {
+        if (!ShortGuid.TryParse(id, out Guid userId))
+        {
+            return BadRequest("Invalid user ID format.");
+        }
+
+        var adminUserId = GetCurrentUserId();
+        if (adminUserId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _gdprService.RestoreUserAsync(userId, adminUserId.Value, dto?.Reason, cancellationToken);
+        if (result.IsError)
+        {
+            return Problem(result.Errors);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Permanently erase user data (GDPR - admin action).
+    /// This masks all PII in the event stream and archives it. Cannot be undone.
+    /// </summary>
+    [HttpDelete("{id}/permanent")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> PermanentlyEraseUser(string id, [FromBody] AdminPermanentEraseDto dto, CancellationToken cancellationToken)
+    {
+        if (!ShortGuid.TryParse(id, out Guid userId))
+        {
+            return BadRequest("Invalid user ID format.");
+        }
+
+        var adminUserId = GetCurrentUserId();
+        if (adminUserId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _gdprService.PermanentlyEraseUserDataAsync(userId, adminUserId.Value, dto.Reason, cancellationToken);
+        if (result.IsError)
+        {
+            return Problem(result.Errors);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Get a user's deletion status (admin action).
+    /// </summary>
+    [HttpGet("{id}/deletion-status")]
+    [ProducesResponseType(typeof(DeletionStatusDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetUserDeletionStatus(string id, CancellationToken cancellationToken)
+    {
+        if (!ShortGuid.TryParse(id, out Guid userId))
+        {
+            return BadRequest("Invalid user ID format.");
+        }
+
+        var result = await _gdprService.GetDeletionStatusAsync(userId, cancellationToken);
+        return FromErrorOr(result);
+    }
+
+    private Guid? GetCurrentUserId()
+    {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            return null;
+        }
+
+        return userId;
     }
 }

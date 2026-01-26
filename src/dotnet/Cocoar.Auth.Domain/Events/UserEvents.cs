@@ -238,3 +238,50 @@ public record UserEmailConfirmed(Guid UserId);
 /// Event raised when a user's phone number is confirmed.
 /// </summary>
 public record UserPhoneNumberConfirmed(Guid UserId);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GDPR / DATA PROTECTION EVENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Event raised when a user requests account deletion.
+/// This initiates the deletion workflow with a confirmation period.
+/// </summary>
+public record UserDeletionRequested(
+    Guid UserId,
+    string? Reason,
+    DateTimeOffset RequestedAt,
+    DateTimeOffset ConfirmationDeadline);
+
+/// <summary>
+/// Event raised when a user cancels their deletion request.
+/// </summary>
+public record UserDeletionCancelled(
+    Guid UserId,
+    DateTimeOffset CancelledAt);
+
+/// <summary>
+/// Event raised when a user's data has been masked (GDPR erasure).
+/// PII is replaced with masked values but audit trail is preserved.
+/// </summary>
+public record UserDataMasked(
+    Guid UserId,
+    DateTimeOffset MaskedAt,
+    Guid? MaskedByUserId,
+    string MaskingReason);
+
+/// <summary>
+/// Event raised when a user's data has been exported (GDPR portability).
+/// </summary>
+public record UserDataExported(
+    Guid UserId,
+    DateTimeOffset ExportedAt,
+    string ExportFormat);
+
+/// <summary>
+/// Event raised when a soft-deleted user is restored.
+/// </summary>
+public record UserRestored(
+    Guid UserId,
+    Guid? RestoredByUserId,
+    string? Reason);

@@ -101,6 +101,36 @@ public class UserState
     public bool IsDeleted { get; set; }
 
     /// <summary>
+    /// When the user was deleted (if deleted).
+    /// </summary>
+    public DateTimeOffset? DeletedAt { get; set; }
+
+    /// <summary>
+    /// Whether the user's PII has been masked (GDPR erasure).
+    /// </summary>
+    public bool IsDataMasked { get; set; }
+
+    /// <summary>
+    /// When the user's data was masked (if masked).
+    /// </summary>
+    public DateTimeOffset? DataMaskedAt { get; set; }
+
+    /// <summary>
+    /// Whether a deletion request is pending confirmation.
+    /// </summary>
+    public bool IsDeletionPending { get; set; }
+
+    /// <summary>
+    /// When the deletion was requested (if pending).
+    /// </summary>
+    public DateTimeOffset? DeletionRequestedAt { get; set; }
+
+    /// <summary>
+    /// Deadline for confirming deletion (if pending).
+    /// </summary>
+    public DateTimeOffset? DeletionConfirmationDeadline { get; set; }
+
+    /// <summary>
     /// The roles assigned to this user (role IDs only - normalized).
     /// </summary>
     public List<Guid> Roles { get; set; } = [];
@@ -226,7 +256,11 @@ public class UserStateProjection : EventProjection
         if (model is null) return;
 
         model.IsDeleted = true;
+        model.DeletedAt = @event.Timestamp;
         model.IsActive = false;
+        model.IsDeletionPending = false;
+        model.DeletionRequestedAt = null;
+        model.DeletionConfirmationDeadline = null;
         model.ModifiedAt = DateTimeOffset.UtcNow;
         ops.Store(model);
     }
@@ -358,6 +392,66 @@ public class UserStateProjection : EventProjection
         if (model is null) return;
 
         model.AccessFailedCount = 0;
+        ops.Store(model);
+    }
+
+    // GDPR Event Handlers
+
+    public void Project(IEvent<UserDeletionRequested> @event, IDocumentOperations ops)
+    {
+        var model = ops.LoadAsync<UserState>(@event.Data.UserId).GetAwaiter().GetResult();
+        if (model is null) return;
+
+        model.IsDeletionPending = true;
+        model.DeletionRequestedAt = @event.Data.RequestedAt;
+        model.DeletionConfirmationDeadline = @event.Data.ConfirmationDeadline;
+        model.ModifiedAt = DateTimeOffset.UtcNow;
+        ops.Store(model);
+    }
+
+    public void Project(IEvent<UserDeletionCancelled> @event, IDocumentOperations ops)
+    {
+        var model = ops.LoadAsync<UserState>(@event.Data.UserId).GetAwaiter().GetResult();
+        if (model is null) return;
+
+        model.IsDeletionPending = false;
+        model.DeletionRequestedAt = null;
+        model.DeletionConfirmationDeadline = null;
+        model.ModifiedAt = DateTimeOffset.UtcNow;
+        ops.Store(model);
+    }
+
+    public void Project(IEvent<UserDataMasked> @event, IDocumentOperations ops)
+    {
+        var model = ops.LoadAsync<UserState>(@event.Data.UserId).GetAwaiter().GetResult();
+        if (model is null) return;
+
+        model.IsDataMasked = true;
+        model.DataMaskedAt = @event.Data.MaskedAt;
+        model.IsDeletionPending = false;
+        model.DeletionRequestedAt = null;
+        model.DeletionConfirmationDeadline = null;
+        // Clear PII fields after masking
+        model.UserName = "[DELETED]";
+        model.NormalizedUserName = "[DELETED]";
+        model.Email = null;
+        model.NormalizedEmail = null;
+        model.PhoneNumber = null;
+        model.FirstName = null;
+        model.LastName = null;
+        model.ModifiedAt = DateTimeOffset.UtcNow;
+        ops.Store(model);
+    }
+
+    public void Project(IEvent<UserRestored> @event, IDocumentOperations ops)
+    {
+        var model = ops.LoadAsync<UserState>(@event.Data.UserId).GetAwaiter().GetResult();
+        if (model is null) return;
+
+        model.IsDeleted = false;
+        model.DeletedAt = null;
+        model.IsActive = true;
+        model.ModifiedAt = DateTimeOffset.UtcNow;
         ops.Store(model);
     }
 }

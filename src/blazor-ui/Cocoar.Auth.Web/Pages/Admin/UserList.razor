@@ -1,0 +1,272 @@
+@page "/admin/users"
+@inject UserService UserService
+@inject NavigationManager Navigation
+@inject MessageService Message
+@inject ModalService Modal
+@attribute [Authorize(Roles = "Admin")]
+
+<PageTitle>Users - Cocoar Auth</PageTitle>
+
+<PageContainer Title="User Management">
+    <Extra>
+        <Button Type="@ButtonType.Primary" 
+                OnClick="@(() => Navigation.NavigateTo("/admin/users/create"))">
+            <Icon Type="plus" Theme="IconThemeType.Outline" />
+            Create User
+        </Button>
+    </Extra>
+    <ChildContent>
+        <Card>
+            <Row Gutter="16" Style="margin-bottom: 16px;">
+                <AntDesign.Col Span="8">
+                    <Search Placeholder="Search users..."
+                            @bind-Value="_searchTerm"
+                            OnSearch="HandleSearch"
+                            EnterButton="true" />
+                </AntDesign.Col>
+                <AntDesign.Col Span="4">
+                    <Select @bind-Value="_statusFilter"
+                            TItem="string"
+                            TItemValue="string"
+                            Placeholder="Filter by status"
+                            OnSelectedItemChanged="HandleStatusFilterChange"
+                            Style="width: 100%;">
+                        <SelectOptions>
+                            <SelectOption TItem="string" TItemValue="string" Value="@("all")" Label="All Users" />
+                            <SelectOption TItem="string" TItemValue="string" Value="@("active")" Label="Active" />
+                            <SelectOption TItem="string" TItemValue="string" Value="@("deleted")" Label="Soft Deleted" />
+                            <SelectOption TItem="string" TItemValue="string" Value="@("erased")" Label="Erased (GDPR)" />
+                        </SelectOptions>
+                    </Select>
+                </AntDesign.Col>
+            </Row>
+            
+            <Table TItem="UserDto"
+                   DataSource="_users"
+                   Loading="_loading"
+                   Responsive>
+                <PropertyColumn Property="c => c.UserName" Title="Username" Sortable />
+                <PropertyColumn Property="c => c.Email" Title="Email" Sortable />
+                <PropertyColumn Property="c => c.FirstName" Title="First Name" />
+                <PropertyColumn Property="c => c.LastName" Title="Last Name" />
+                <PropertyColumn Property="c => c.EmailConfirmed" Title="Email Verified">
+                    @if (context.EmailConfirmed)
+                    {
+                        <Tag Color="@PresetColor.Green.ToString()">Verified</Tag>
+                    }
+                    else
+                    {
+                        <Tag Color="@PresetColor.Orange.ToString()">Not Verified</Tag>
+                    }
+                </PropertyColumn>
+                <PropertyColumn Property="c => c.LockoutEnabled" Title="Status">
+                    @if (context.IsDataMasked)
+                    {
+                        <Tag Color="@PresetColor.Magenta.ToString()">Erased (GDPR)</Tag>
+                    }
+                    else if (context.IsDeleted)
+                    {
+                        <Tag Color="@PresetColor.Orange.ToString()">Soft Deleted</Tag>
+                    }
+                    else if (context.IsLockedOut)
+                    {
+                        <Tag Color="@PresetColor.Red.ToString()">Locked</Tag>
+                    }
+                    else
+                    {
+                        <Tag Color="@PresetColor.Green.ToString()">Active</Tag>
+                    }
+                </PropertyColumn>
+                <ActionColumn Title="Actions">
+                    <Space>
+                        <SpaceItem>
+                            <Tooltip Title="@("Edit")">
+                                <Button Type="@ButtonType.Text" 
+                                        OnClick="@(() => Navigation.NavigateTo($"/admin/users/{context.Id}"))">
+                                    <Icon Type="edit" Theme="IconThemeType.Outline" />
+                                </Button>
+                            </Tooltip>
+                        </SpaceItem>
+                        <SpaceItem>
+                            @if (context.IsLockedOut)
+                            {
+                                <Tooltip Title="@("Unlock")">
+                                    <Button Type="@ButtonType.Text" 
+                                            OnClick="@(() => HandleUnlock(context))">
+                                        <Icon Type="unlock" Theme="IconThemeType.Outline" />
+                                    </Button>
+                                </Tooltip>
+                            }
+                            else
+                            {
+                                <Tooltip Title="@("Lock")">
+                                    <Button Type="@ButtonType.Text" 
+                                            OnClick="@(() => HandleLock(context))">
+                                        <Icon Type="lock" Theme="IconThemeType.Outline" />
+                                    </Button>
+                                </Tooltip>
+                            }
+                        </SpaceItem>
+                        <SpaceItem>
+                            <Tooltip Title="@("Delete")">
+                                <Popconfirm Title="Are you sure you want to delete this user?"
+                                            OnConfirm="@(() => HandleDelete(context))"
+                                            OkText="Yes"
+                                            CancelText="No">
+                                    <Button Type="@ButtonType.Text" Danger>
+                                        <Icon Type="delete" Theme="IconThemeType.Outline" />
+                                    </Button>
+                                </Popconfirm>
+                            </Tooltip>
+                        </SpaceItem>
+                    </Space>
+                </ActionColumn>
+            </Table>
+        </Card>
+    </ChildContent>
+</PageContainer>
+
+@code {
+    private List<UserDto> _users = new();
+    private List<UserDto> _allUsers = new();
+    private bool _loading = true;
+    private string _searchTerm = string.Empty;
+    private string _statusFilter = "all";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        _loading = true;
+        try
+        {
+            _allUsers = await UserService.GetUsersAsync();
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to load users: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task HandleSearch(string value)
+    {
+        _loading = true;
+        try
+        {
+            _allUsers = await UserService.GetUsersAsync();
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Search failed: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void HandleStatusFilterChange(string value)
+    {
+        _statusFilter = value;
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
+        var filtered = _allUsers.AsEnumerable();
+
+        // Apply status filter
+        filtered = _statusFilter switch
+        {
+            "active" => filtered.Where(u => !u.IsDeleted && !u.IsDataMasked),
+            "deleted" => filtered.Where(u => u.IsDeleted && !u.IsDataMasked),
+            "erased" => filtered.Where(u => u.IsDataMasked),
+            _ => filtered
+        };
+
+        // Apply search filter
+        if (!string.IsNullOrWhiteSpace(_searchTerm))
+        {
+            filtered = filtered.Where(u =>
+                u.UserName.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                u.Email.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                u.FirstName.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                u.LastName.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase)
+            );
+        }
+
+        _users = filtered.ToList();
+    }
+
+    private async Task HandleLock(UserDto user)
+    {
+        try
+        {
+            var result = await UserService.LockUserAsync(user.Id);
+            if (result)
+            {
+                Message.Success($"User '{user.UserName}' has been locked.");
+                await LoadUsers();
+            }
+            else
+            {
+                Message.Error("Failed to lock user.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to lock user: {ex.Message}");
+        }
+    }
+
+    private async Task HandleUnlock(UserDto user)
+    {
+        try
+        {
+            var result = await UserService.UnlockUserAsync(user.Id);
+            if (result)
+            {
+                Message.Success($"User '{user.UserName}' has been unlocked.");
+                await LoadUsers();
+            }
+            else
+            {
+                Message.Error("Failed to unlock user.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to unlock user: {ex.Message}");
+        }
+    }
+
+    private async Task HandleDelete(UserDto user)
+    {
+        try
+        {
+            var result = await UserService.DeleteUserAsync(user.Id);
+            if (result)
+            {
+                Message.Success($"User '{user.UserName}' has been deleted.");
+                await LoadUsers();
+            }
+            else
+            {
+                Message.Error("Failed to delete user.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Message.Error($"Failed to delete user: {ex.Message}");
+        }
+    }
+}

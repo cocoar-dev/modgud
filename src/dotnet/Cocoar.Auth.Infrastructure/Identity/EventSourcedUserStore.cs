@@ -23,7 +23,9 @@ public class EventSourcedUserStore :
     IUserLoginStore<ApplicationUser>,
     IUserAuthenticationTokenStore<ApplicationUser>,
     IUserRoleStore<ApplicationUser>,
-    IQueryableUserStore<ApplicationUser>
+    IQueryableUserStore<ApplicationUser>,
+    IUserAuthenticatorKeyStore<ApplicationUser>,
+    IUserTwoFactorRecoveryCodeStore<ApplicationUser>
 {
     private readonly IDocumentSession _session;
 
@@ -695,6 +697,99 @@ public class EventSourcedUserStore :
             .ToListAsync(cancellationToken);
 
         return users.ToList();
+    }
+
+    #endregion
+
+    #region IUserAuthenticatorKeyStore
+
+    public async Task SetAuthenticatorKeyAsync(ApplicationUser user, string key, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(user);
+
+        var securityData = await _session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
+        if (securityData is null)
+        {
+            securityData = UserSecurityData.Create(user.Id);
+        }
+
+        securityData.AuthenticatorKey = key;
+        securityData.UpdateConcurrencyStamp();
+        _session.Store(securityData);
+        await _session.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<string?> GetAuthenticatorKeyAsync(ApplicationUser user, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(user);
+
+        var securityData = await _session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
+        return securityData?.AuthenticatorKey;
+    }
+
+    #endregion
+
+    #region IUserTwoFactorRecoveryCodeStore
+
+    public async Task ReplaceCodesAsync(ApplicationUser user, IEnumerable<string> recoveryCodes, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(user);
+        ArgumentNullException.ThrowIfNull(recoveryCodes);
+
+        var securityData = await _session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
+        if (securityData is null)
+        {
+            securityData = UserSecurityData.Create(user.Id);
+        }
+
+        securityData.RecoveryCodes = recoveryCodes.ToList();
+        securityData.UpdateConcurrencyStamp();
+        _session.Store(securityData);
+
+        // Append event for audit trail (no sensitive data)
+        _session.Events.Append(user.Id, new UserRecoveryCodesRegenerated(user.Id, securityData.RecoveryCodes.Count));
+
+        await _session.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<bool> RedeemCodeAsync(ApplicationUser user, string code, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(user);
+        ArgumentNullException.ThrowIfNull(code);
+
+        var securityData = await _session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
+        if (securityData is null)
+        {
+            return false;
+        }
+
+        // Recovery codes are stored hashed, but Identity's default implementation stores them plain
+        // We follow the same pattern here
+        var matchingCode = securityData.RecoveryCodes.FirstOrDefault(c => c == code);
+        if (matchingCode is null)
+        {
+            return false;
+        }
+
+        securityData.RecoveryCodes.Remove(matchingCode);
+        securityData.UpdateConcurrencyStamp();
+        _session.Store(securityData);
+        await _session.SaveChangesAsync(cancellationToken);
+
+        return true;
+    }
+
+    public async Task<int> CountCodesAsync(ApplicationUser user, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(user);
+
+        var securityData = await _session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
+        return securityData?.RecoveryCodes.Count ?? 0;
     }
 
     #endregion
