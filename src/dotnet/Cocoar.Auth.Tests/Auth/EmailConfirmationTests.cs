@@ -6,19 +6,25 @@ using Cocoar.Auth.Tests.Infrastructure;
 
 namespace Cocoar.Auth.Tests.Auth;
 
-public class EmailConfirmationTests : IClassFixture<CocoarAuthWebApplicationFactory>, IAsyncLifetime
+[Collection(IntegrationTestCollection.Name)]
+public class EmailConfirmationTests : IAsyncLifetime
 {
     private readonly CocoarAuthWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
-    public EmailConfirmationTests(CocoarAuthWebApplicationFactory factory)
+    public EmailConfirmationTests(SharedPostgresFixture fixture)
     {
-        _factory = factory;
-        _client = factory.CreateClientWithCookies();
+        _factory = new CocoarAuthWebApplicationFactory(fixture);
+        _client = _factory.CreateClientWithCookies();
     }
 
     public Task InitializeAsync() => _factory.CleanDatabaseAsync();
-    public Task DisposeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _factory.DisposeAsync();
+    }
 
     [Fact]
     public async Task ConfirmEmail_WithValidToken_Succeeds()

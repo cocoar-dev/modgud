@@ -23,10 +23,10 @@ namespace Cocoar.Auth.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString)
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString, bool useAsyncProjections = true)
     {
         // Configure Marten
-        services.AddMarten(options =>
+        var martenBuilder = services.AddMarten(options =>
         {
             options.Connection(connectionString);
             options.AutoCreateSchemaObjects = AutoCreate.All;
@@ -163,13 +163,15 @@ public static class DependencyInjection
             options.Projections.Add(new RoleStateProjection(), ProjectionLifecycle.Inline);
 
             // ═══════════════════════════════════════════════════════════════
-            // ASYNC PROJECTIONS (for API responses, UI, eventually consistent)
+            // READ MODEL PROJECTIONS (configurable: async for prod, inline for tests)
             // ═══════════════════════════════════════════════════════════════
 
-            // UserDetailsReadModel projection - runs async via daemon
+            // UserDetailsReadModel projection
             // Use for: API responses, admin UI, user listings, search results
             // Contains denormalized role info (name, description) - no security data
-            options.Projections.Add(new UserDetailsProjection(), ProjectionLifecycle.Async);
+            // Async mode uses daemon (eventually consistent), Inline mode runs synchronously
+            var readModelLifecycle = useAsyncProjections ? ProjectionLifecycle.Async : ProjectionLifecycle.Inline;
+            options.Projections.Add(new UserDetailsProjection(), readModelLifecycle);
 
             // ═══════════════════════════════════════════════════════════════
             // STATE MODEL INDEXES
@@ -192,8 +194,13 @@ public static class DependencyInjection
                 .Index(x => x.Email)
                 .Index(x => x.IsActive);
         })
-        .UseLightweightSessions()
-        .AddAsyncDaemon(DaemonMode.HotCold); // Enable async daemon for async projections
+        .UseLightweightSessions();
+
+        // Only enable async daemon when using async projections (not in tests)
+        if (useAsyncProjections)
+        {
+            martenBuilder.AddAsyncDaemon(DaemonMode.HotCold);
+        }
 
         // Register repositories
         services.AddScoped<IUserRepository, MartenUserRepository>();

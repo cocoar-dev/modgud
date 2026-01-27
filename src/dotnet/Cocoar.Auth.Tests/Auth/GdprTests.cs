@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using Cocoar.Auth.Application.DTOs.Auth;
-using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Domain.Entities;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using Cocoar.Auth.Tests.Infrastructure;
@@ -11,23 +10,25 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Cocoar.Auth.Tests.Auth;
 
-public class GdprTests : IClassFixture<CocoarAuthWebApplicationFactory>, IAsyncLifetime
+[Collection(IntegrationTestCollection.Name)]
+public class GdprTests : IAsyncLifetime
 {
     private readonly CocoarAuthWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
-    public GdprTests(CocoarAuthWebApplicationFactory factory)
+    public GdprTests(SharedPostgresFixture fixture)
     {
-        _factory = factory;
-        _client = factory.CreateClientWithCookies();
+        _factory = new CocoarAuthWebApplicationFactory(fixture);
+        _client = _factory.CreateClientWithCookies();
     }
 
-    public async Task InitializeAsync()
-    {
-        await _factory.CleanDatabaseAsync();
-    }
+    public Task InitializeAsync() => _factory.CleanDatabaseAsync();
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _factory.DisposeAsync();
+    }
 
     #region Data Export Tests
 

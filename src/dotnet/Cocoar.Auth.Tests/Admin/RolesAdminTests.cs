@@ -7,23 +7,25 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Cocoar.Auth.Tests.Admin;
 
-public class RolesAdminTests : IClassFixture<CocoarAuthWebApplicationFactory>, IAsyncLifetime
+[Collection(IntegrationTestCollection.Name)]
+public class RolesAdminTests : IAsyncLifetime
 {
     private readonly CocoarAuthWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
-    public RolesAdminTests(CocoarAuthWebApplicationFactory factory)
+    public RolesAdminTests(SharedPostgresFixture fixture)
     {
-        _factory = factory;
-        _client = factory.CreateClientWithCookies();
+        _factory = new CocoarAuthWebApplicationFactory(fixture);
+        _client = _factory.CreateClientWithCookies();
     }
 
-    public async Task InitializeAsync()
-    {
-        await _factory.CleanDatabaseAsync();
-    }
+    public Task InitializeAsync() => _factory.CleanDatabaseAsync();
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _factory.DisposeAsync();
+    }
 
     private async Task LoginAsAdminAsync()
     {

@@ -7,7 +7,11 @@
       "Bash(dotnet restore:*)",
       "Bash(dotnet test:*)",
       "WebSearch",
-      "WebFetch(domain:martendb.io)"
+      "WebFetch(domain:martendb.io)",
+      "Bash(tree:*)",
+      "Bash(findstr:*)",
+      "Bash(pnpm ls:*)",
+      "WebFetch(domain:wolverinefx.net)"
     ]
   }
 }

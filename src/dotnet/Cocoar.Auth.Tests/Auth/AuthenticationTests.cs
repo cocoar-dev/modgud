@@ -6,23 +6,30 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Cocoar.Auth.Tests.Auth;
 
-public class AuthenticationTests : IClassFixture<CocoarAuthWebApplicationFactory>, IAsyncLifetime
+[Collection(IntegrationTestCollection.Name)]
+public class AuthenticationTests : IAsyncLifetime
 {
-    private readonly CocoarAuthWebApplicationFactory _factory;
-    private readonly HttpClient _client;
+    private readonly SharedPostgresFixture _fixture;
+    private CocoarAuthWebApplicationFactory _factory = null!;
+    private HttpClient _client = null!;
 
-    public AuthenticationTests(CocoarAuthWebApplicationFactory factory)
+    public AuthenticationTests(SharedPostgresFixture fixture)
     {
-        _factory = factory;
-        _client = factory.CreateClientWithCookies();
+        _fixture = fixture;
     }
 
     public async Task InitializeAsync()
     {
+        _factory = new CocoarAuthWebApplicationFactory(_fixture);
+        _client = _factory.CreateClientWithCookies();
         await _factory.CleanDatabaseAsync();
     }
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _factory.DisposeAsync();
+    }
 
     [Fact]
     public async Task Login_WithValidCredentials_ReturnsSuccess()
@@ -77,13 +84,7 @@ public class AuthenticationTests : IClassFixture<CocoarAuthWebApplicationFactory
     {
         // Arrange
         var password = "Test123!@#";
-        var user = await _factory.CreateTestUserAsync(password: password);
-
-        // Make user inactive
-        using var scope = _factory.Services.CreateScope();
-        var userManager = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Cocoar.Auth.Domain.Entities.ApplicationUser>>();
-        user.SetIsActive(false);
-        await userManager.UpdateAsync(user);
+        var user = await _factory.CreateTestUserAsync(password: password, isActive: false);
 
         // Act
         var response = await _client.LoginAsync(user.UserName, password, _factory.JsonOptions);

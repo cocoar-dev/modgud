@@ -5,19 +5,25 @@ using Cocoar.Auth.Tests.Infrastructure;
 
 namespace Cocoar.Auth.Tests.Auth;
 
-public class RegistrationTests : IClassFixture<CocoarAuthWebApplicationFactory>, IAsyncLifetime
+[Collection(IntegrationTestCollection.Name)]
+public class RegistrationTests : IAsyncLifetime
 {
     private readonly CocoarAuthWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
-    public RegistrationTests(CocoarAuthWebApplicationFactory factory)
+    public RegistrationTests(SharedPostgresFixture fixture)
     {
-        _factory = factory;
-        _client = factory.CreateClientWithCookies();
+        _factory = new CocoarAuthWebApplicationFactory(fixture);
+        _client = _factory.CreateClientWithCookies();
     }
 
     public Task InitializeAsync() => _factory.CleanDatabaseAsync();
-    public Task DisposeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _factory.DisposeAsync();
+    }
 
     [Fact]
     public async Task Register_WithValidData_ReturnsSuccessAndSendsEmail()

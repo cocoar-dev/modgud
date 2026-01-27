@@ -32,6 +32,9 @@ importers:
       '@cocoar/ui':
         specifier: 0.1.0-beta.153
         version: 0.1.0-beta.153(ef1ef71ce04aef0470aada0897d2643f)
+      '@cocoar/ui-tokens':
+        specifier: 0.1.0-beta.153
+        version: 0.1.0-beta.153
       rxjs:
         specifier: ~7.8.0
         version: 7.8.2
