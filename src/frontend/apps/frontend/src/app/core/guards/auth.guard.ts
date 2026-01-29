@@ -12,6 +12,7 @@ export const authGuard: CanMatchFn = (route, segments) => {
   const authState = inject(AuthStateService);
   const router = inject(Router);
 
+
   // Reconstruct the URL from segments
   const url = '/' + segments.map((s) => s.path).join('/');
 

@@ -1,0 +1,87 @@
+<div class="user-list">
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">Users</h1>
+      <p class="page-subtitle">Manage user accounts</p>
+    </div>
+    <coar-button
+      variant="primary"
+      iconStart="plus"
+      routerLink="/admin/users/create">
+      Create User
+    </coar-button>
+  </header>
+
+  <div class="filters">
+    <coar-text-input
+      placeholder="Search users..."
+      [value]="searchQuery()"
+      (valueChange)="onSearch($event)"
+      prefix="search" />
+  </div>
+
+  @if (error()) {
+    <coar-note color="error" padding="sm" class="message">
+      {{ error() }}
+    </coar-note>
+  }
+
+  @if (success()) {
+    <coar-note color="success" padding="sm" class="message">
+      {{ success() }}
+    </coar-note>
+  }
+
+  <div class="grid-container">
+    <ag-grid-angular
+      class="ag-theme-cocoar"
+      [coarDataGrid]="usersGrid"
+      style="height: 600px; width: 100%;"
+    />
+    <div class="grid-actions-overlay">
+      @for (user of users(); track user.id) {
+        <div class="grid-action-row">
+          <coar-button
+            variant="ghost"
+            size="sm"
+            iconStart="edit"
+            [routerLink]="['/admin/users', user.id]">
+            Edit
+          </coar-button>
+          @if (user.lockoutEnd) {
+            <coar-button
+              variant="ghost"
+              size="sm"
+              iconStart="unlock"
+              [loading]="unlockingId() === user.id"
+              (clicked)="onUnlock(user.id)">
+              Unlock
+            </coar-button>
+          }
+        </div>
+      }
+    </div>
+  </div>
+
+  @if (totalCount() > pageSize) {
+    <div class="pagination">
+      <coar-button
+        variant="ghost"
+        size="sm"
+        [disabled]="page() === 1"
+        (clicked)="onPageChange(page() - 1)">
+        Previous
+      </coar-button>
+      <span class="page-info">
+        Page {{ page() }} of {{ totalPages() }}
+      </span>
+      <coar-button
+        variant="ghost"
+        size="sm"
+        [disabled]="page() >= totalPages()"
+        (clicked)="onPageChange(page() + 1)">
+        Next
+      </coar-button>
+    </div>
+  }
+</div>

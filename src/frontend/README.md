@@ -6,6 +6,30 @@
 
 [Learn more about this workspace setup and its capabilities](https://nx.dev/getting-started/tutorials/angular-monorepo-tutorial?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
 
+## Architecture & Design Decisions
+
+### Responsive Design Strategy
+
+This application follows a **context-aware responsive design approach**:
+
+#### User-Facing Areas (Mobile-First)
+- **Login & Registration** - Must work seamlessly on phones, tablets, and desktop
+- **Profile Management** - Responsive design for users accessing from any device
+- **Password Reset & 2FA** - Mobile-optimized authentication flows
+- **Session Management** - Accessible from any device
+
+**Rationale**: End users access authentication flows from various devices. Modern users expect responsive, mobile-friendly experiences for account management.
+
+#### Admin Area (Desktop-Optimized)
+- **User Management** - Designed for desktop screens (1024px+)
+- **Role Configuration** - Optimized for larger screens with complex data tables
+- **System Settings** - Desktop-focused administrative interface
+- **Data Grids (AG Grid)** - Leverages full screen real estate for data operations
+
+**Rationale**: Administrative tasks are performed by system administrators working from desktop workstations. Complex data tables, multi-column forms, and bulk operations benefit from larger screens. Mobile admin access is not a current requirement (YAGNI principle).
+
+**Future Considerations**: If tablet/mobile admin access becomes necessary, specific high-priority actions can be made responsive while keeping complex operations desktop-only (progressive enhancement).
+
 ## Run tasks
 
 To run the dev server for your app, use:

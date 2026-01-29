@@ -32,7 +32,8 @@ builder.AddCocoarConfiguration(rule =>
     rule.For<CorsSettings>().FromEnvironment("CORS_"),
 
     // Static configuration (cannot be overridden by JSON files, but can be overridden in tests)
-    rule.For<ProjectionSettings>().FromStatic(_ => new ProjectionSettings { UseAsyncProjections = true })
+    // Use inline projections in development to avoid async daemon lock acquisition issues
+    rule.For<ProjectionSettings>().FromStatic(_ => new ProjectionSettings { UseAsyncProjections = builder.Environment.IsProduction() })
 ], setup =>
 [
     // Expose settings as singletons for DI

@@ -14,6 +14,10 @@ import {
   provideCoarI18nHttpSource,
   provideCoarL10nHttpSource,
 } from '@cocoar/localization';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
+
+// Register AG Grid modules
+ModuleRegistry.registerModules([AllCommunityModule]);
 
 /**
  * Initialize authentication state on app startup.

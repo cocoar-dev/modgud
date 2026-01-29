@@ -1,0 +1,41 @@
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+coar-sidebar {
+  width: 260px;
+  min-width: 260px;
+  height: 100vh;
+  box-shadow: var(--coar-shadow-right);
+  position: relative;
+  z-index: 10;
+  background: var(--coar-background-neutral-secondary);
+}
+
+.sidebar-header {
+  padding: 1.5rem;
+}
+
+.sidebar-header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sidebar-logo {
+  margin: 0;
+  font-size: 1.5rem;
+  flex: 1;
+}
+
+.language-switcher {
+  display: flex;
+  align-items: center;
+}
+
+.main-content {
+  flex: 1;
+  overflow: hidden;
+}

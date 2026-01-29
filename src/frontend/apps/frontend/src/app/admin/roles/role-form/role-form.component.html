@@ -1,0 +1,79 @@
+<div class="role-form">
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">{{ isEditMode() ? 'Edit Role' : 'Create Role' }}</h1>
+      <p class="page-subtitle">
+        {{ isEditMode() ? 'Update role information' : 'Create a new role' }}
+      </p>
+    </div>
+  </header>
+
+  @if (error()) {
+    <coar-note color="error" padding="sm" class="message">
+      {{ error() }}
+    </coar-note>
+  }
+
+  @if (isLoading()) {
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>Loading...</p>
+    </div>
+  } @else {
+    <coar-card padding="lg">
+      <form [formGroup]="form" (ngSubmit)="onSubmit()">
+        <div class="form-group">
+          <coar-text-input
+            label="Role Name"
+            placeholder="Enter role name"
+            formControlName="name"
+            [required]="true"
+            [error]="getFieldError('name')" />
+        </div>
+
+        <div class="form-group">
+          <coar-text-input
+            label="Description"
+            placeholder="Enter role description"
+            formControlName="description"
+            [rows]="3" />
+        </div>
+
+        <div class="form-actions">
+          <coar-button
+            variant="ghost"
+            routerLink="/admin/roles">
+            Cancel
+          </coar-button>
+          <coar-button
+            type="submit"
+            variant="primary"
+            [loading]="isSaving()"
+            [disabled]="form.invalid || form.pristine">
+            {{ isEditMode() ? 'Save Changes' : 'Create Role' }}
+          </coar-button>
+        </div>
+      </form>
+    </coar-card>
+
+    @if (isEditMode() && role()) {
+      <coar-card padding="lg" color="error" class="danger-zone">
+        <h2>Danger Zone</h2>
+
+        <div class="danger-action">
+          <div>
+            <strong>Delete Role</strong>
+            <p>Permanently delete this role. Users with this role will lose it.</p>
+          </div>
+          <coar-button
+            variant="danger"
+            size="sm"
+            [loading]="isDeleting()"
+            (clicked)="onDelete()">
+            Delete Role
+          </coar-button>
+        </div>
+      </coar-card>
+    }
+  }
+</div>

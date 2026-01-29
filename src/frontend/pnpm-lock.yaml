@@ -26,6 +26,9 @@ importers:
       '@angular/router':
         specifier: ~21.1.0
         version: 21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@angular/platform-browser@21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(rxjs@7.8.2)
+      '@cocoar/data-grid':
+        specifier: 0.1.0-beta.153
+        version: 0.1.0-beta.153(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(ag-grid-angular@35.0.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(ag-grid-community@35.0.1)(rxjs@7.8.2)
       '@cocoar/localization':
         specifier: 0.1.0-beta.153
         version: 0.1.0-beta.153(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@js-temporal/polyfill@0.5.1)(rxjs@7.8.2)
@@ -35,6 +38,15 @@ importers:
       '@cocoar/ui-tokens':
         specifier: 0.1.0-beta.153
         version: 0.1.0-beta.153
+      ag-grid-angular:
+        specifier: ^35.0.1
+        version: 35.0.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))
+      ag-grid-community:
+        specifier: ^35.0.1
+        version: 35.0.1
+      overlayscrollbars:
+        specifier: ^2.13.0
+        version: 2.13.0
       rxjs:
         specifier: ~7.8.0
         version: 7.8.2
@@ -938,6 +950,14 @@ packages:
 
   '@bufbuild/protobuf@2.11.0':
     resolution: {integrity: sha512-sBXGT13cpmPR5BMgHE6UEEfEaShh5Ror6rfN3yEK5si7QVrtZg8LEPQb0VVhiLRUslD2yLnXtnRzG035J/mZXQ==}
+
+  '@cocoar/data-grid@0.1.0-beta.153':
+    resolution: {integrity: sha512-fbfHAg0Oh9l113S98QyjNhPmH48oCV333HubGq+bf/XQjFa3wbiMg4pQKzVA9B0i2//D7LRuK6tX13uW/DaXhg==}
+    peerDependencies:
+      '@angular/core': ^21.0.0
+      ag-grid-angular: ^33.0.0
+      ag-grid-community: ^33.0.0
+      rxjs: ^7.8.0
 
   '@cocoar/localization@0.1.0-beta.153':
     resolution: {integrity: sha512-2shPqqgbxP1705LParZzLHUEauUfjlynicxTuB7bW1xc4Umpoh9vF/H8iX6sQMzWjMsFBoCHKWoroMRP34YafA==}
@@ -2991,6 +3011,18 @@ packages:
   adm-zip@0.5.16:
     resolution: {integrity: sha512-TGw5yVi4saajsSEgz25grObGHEUaDrniwvA2qwSC060KfqGPdglhvPMA2lPIoxs3PQIItj2iag35fONcQqgUaQ==}
     engines: {node: '>=12.0'}
+
+  ag-charts-types@13.0.1:
+    resolution: {integrity: sha512-qg9adyiAaeUaDtWZEEPF45dv55kdJTe6Ghi0EQXCS79h/7KvOd6dxhqGZjPL1zeFl/L9qEXuYgb+LkGStq4mgQ==}
+
+  ag-grid-angular@35.0.1:
+    resolution: {integrity: sha512-+Y1K/ZxiEbd3GhZcRWzLf60yiP4ECNoTCCqI65EgHiiRGInz3g1pDueArR7hE7V+z5gluA3NMGB3VrOZYUBKLg==}
+    peerDependencies:
+      '@angular/common': '>= 18.0.0'
+      '@angular/core': '>= 18.0.0'
+
+  ag-grid-community@35.0.1:
+    resolution: {integrity: sha512-fYYZdymWKsN9/tZv+R6uZRnuiWYEQr+GHl85ZrB0ixbFcE8opYK4NJI29NnMc9ShYiCBnAO9hj54IFa+FI4aDA==}
 
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
@@ -7850,6 +7882,14 @@ snapshots:
 
   '@bufbuild/protobuf@2.11.0': {}
 
+  '@cocoar/data-grid@0.1.0-beta.153(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(ag-grid-angular@35.0.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(ag-grid-community@35.0.1)(rxjs@7.8.2)':
+    dependencies:
+      '@angular/core': 21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)
+      ag-grid-angular: 35.0.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))
+      ag-grid-community: 35.0.1
+      rxjs: 7.8.2
+      tslib: 2.8.1
+
   '@cocoar/localization@0.1.0-beta.153(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@js-temporal/polyfill@0.5.1)(rxjs@7.8.2)':
     dependencies:
       '@angular/common': 21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
@@ -10279,6 +10319,19 @@ snapshots:
   address@1.2.2: {}
 
   adm-zip@0.5.16: {}
+
+  ag-charts-types@13.0.1: {}
+
+  ag-grid-angular@35.0.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)):
+    dependencies:
+      '@angular/common': 21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@angular/core': 21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)
+      ag-grid-community: 35.0.1
+      tslib: 2.8.1
+
+  ag-grid-community@35.0.1:
+    dependencies:
+      ag-charts-types: 13.0.1
 
   agent-base@7.1.4: {}
 

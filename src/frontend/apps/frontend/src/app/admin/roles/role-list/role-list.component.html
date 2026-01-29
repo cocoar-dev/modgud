@@ -1,0 +1,55 @@
+<div class="role-list">
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">Roles</h1>
+      <p class="page-subtitle">Manage user roles</p>
+    </div>
+    <coar-button
+      variant="primary"
+      iconStart="plus"
+      routerLink="/admin/roles/create">
+      Create Role
+    </coar-button>
+  </header>
+
+  @if (error()) {
+    <coar-note color="error" padding="sm" class="message">
+      {{ error() }}
+    </coar-note>
+  }
+
+  @if (success()) {
+    <coar-note color="success" padding="sm" class="message">
+      {{ success() }}
+    </coar-note>
+  }
+
+  <div class="grid-container">
+    <ag-grid-angular
+      class="ag-theme-cocoar"
+      [coarDataGrid]="rolesGrid"
+      style="height: 500px; width: 100%;"
+    />
+    <div class="grid-actions-overlay">
+      @for (role of roles(); track role.id) {
+        <div class="grid-action-row">
+          <coar-button
+            variant="ghost"
+            size="sm"
+            iconStart="edit"
+            [routerLink]="['/admin/roles', role.id]">
+            Edit
+          </coar-button>
+          <coar-button
+            variant="ghost"
+            size="sm"
+            iconStart="trash-2"
+            [loading]="deletingId() === role.id"
+            (clicked)="onDelete(role)">
+            Delete
+          </coar-button>
+        </div>
+      }
+    </div>
+  </div>
+</div>

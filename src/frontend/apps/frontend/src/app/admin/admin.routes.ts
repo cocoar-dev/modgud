@@ -4,8 +4,8 @@ export const adminRoutes: Route[] = [
   {
     path: '',
     loadComponent: () =>
-      import('./admin-layout/admin-layout.component').then(
-        (m) => m.AdminLayoutComponent
+      import('./admin.component').then(
+        (m) => m.AdminComponent
       ),
     children: [
       {
