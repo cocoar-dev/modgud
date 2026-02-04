@@ -1,9 +1,12 @@
-import { Component, inject, computed } from '@angular/core';
+import { Component, inject, computed, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule, Router } from '@angular/router';
+import { RouterModule, Router, ChildActivationStart } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { filter } from 'rxjs';
 import { AuthStateService } from '../core/services/auth-state.service';
 import { CoarMenuComponent, CoarMenuHeadingComponent, CoarMenuItemComponent, CoarSidebarComponent } from '@cocoar/ui';
 import { CoarI18nPipe, CoarLocalizationService } from '@cocoar/localization';
+import { UIService } from '../ui';
 
 @Component({
   selector: 'app-main-layout',
@@ -21,8 +24,22 @@ import { CoarI18nPipe, CoarLocalizationService } from '@cocoar/localization';
 export class MainLayoutComponent {
   private readonly authState = inject(AuthStateService);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
+  public readonly ui = inject(UIService);
   readonly locale = inject(CoarLocalizationService);
+
+  constructor() {
+    // Reset UI state on navigation
+    this.router.events
+      .pipe(
+        filter((event) => event instanceof ChildActivationStart),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        this.ui.reset();
+      });
+  }
 
   readonly isAuthenticated = this.authState.isAuthenticated;
   readonly isAdmin = this.authState.isAdmin;

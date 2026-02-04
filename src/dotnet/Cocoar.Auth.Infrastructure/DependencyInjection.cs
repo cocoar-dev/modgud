@@ -6,10 +6,12 @@ using Cocoar.Auth.Domain.Aggregates;
 using Cocoar.Auth.Domain.Entities;
 using Cocoar.Auth.Domain.Events;
 using Cocoar.Auth.Infrastructure.Identity;
+using Cocoar.Auth.Infrastructure.Interfaces;
 using Cocoar.Auth.Infrastructure.Persistence;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using Cocoar.Auth.Infrastructure.Persistence.Repositories;
 using Cocoar.Auth.Infrastructure.Services;
+using Cocoar.Configuration.Reactive;
 using JasperFx;
 using JasperFx.Events.Daemon;
 using JasperFx.Events.Projections;
@@ -17,250 +19,329 @@ using Marten;
 using Marten.Events.Projections;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using Weasel.Core.Migrations;
+using StoreOptions = Marten.StoreOptions;
 
 namespace Cocoar.Auth.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString, bool useAsyncProjections = true)
-    {
-        // Configure Marten
-        var martenBuilder = services.AddMarten(options =>
-        {
-            options.Connection(connectionString);
-            options.AutoCreateSchemaObjects = AutoCreate.All;
+	public static IServiceCollection AddInfrastructure(this IServiceCollection services, bool useAsyncProjections = true)
+	{
 
-            // Configure System.Text.Json to handle private setters
-            options.UseSystemTextJsonForSerialization(configure: o =>
-            {
-                o.PropertyNamingPolicy = null; // Use exact property names
-                o.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-            });
+		services.AddSingleton<NpgsqlDataSource>(sp =>
+		{
+			var dbSettings = sp.GetRequiredService<IReactiveConfig<IDatabaseSettings>>();
+			var builder = new NpgsqlDataSourceBuilder(dbSettings.CurrentValue.ConnectionString);
 
-            // ═══════════════════════════════════════════════════════════════
-            // DOCUMENT STORAGE (Non-Event-Sourced)
-            // ═══════════════════════════════════════════════════════════════
+			builder.UsePasswordProvider(
+				(csb) =>
+				{
+					using var password = dbSettings.CurrentValue.Password.Open();
+					return password.Value;
+				},
+				(csb, token) =>
+				{
+					using var password = dbSettings.CurrentValue.Password.Open();
+					return ValueTask.FromResult(password.Value);
+				});
 
-            // Configure ApplicationUser document (legacy, will migrate to event sourcing)
-            options.Schema.For<ApplicationUser>()
-                .Identity(x => x.Id)
-                .Index(x => x.NormalizedUserName!, x => x.IsUnique = true)
-                .Index(x => x.NormalizedEmail!);
+			return builder.Build();
+		});
 
-            // Configure ApplicationRole document
-            options.Schema.For<ApplicationRole>()
-                .Identity(x => x.Id)
-                .Index(x => x.NormalizedName, x => x.IsUnique = true);
+		// Configure Marten
+		var martenBuilder = services.AddMarten(sp =>
+		{
+			var options = new StoreOptions();
 
-            // Configure UserSecurityData document (security-sensitive data, not event-sourced)
-            options.Schema.For<UserSecurityData>()
-                .Identity(x => x.Id);
+			var dataSource = sp.GetRequiredService<NpgsqlDataSource>();
+			options.Connection(dataSource);
 
-            // Configure UserSession document (ephemeral state, not event-sourced)
-            options.Schema.For<UserSession>()
-                .Identity(x => x.Id)
-                .Index(x => x.UserId)
-                .Index(x => x.SessionId);
 
-            // ═══════════════════════════════════════════════════════════════
-            // EVENT SOURCING CONFIGURATION
-            // ═══════════════════════════════════════════════════════════════
+			options.AutoCreateSchemaObjects = AutoCreate.All;
 
-            // Register user events for the event store
-            options.Events.AddEventType<UserCreated>();
-            options.Events.AddEventType<UserNameChanged>();
-            options.Events.AddEventType<UserEmailChanged>();
-            options.Events.AddEventType<UserPhoneNumberChanged>();
-            options.Events.AddEventType<UserProfileNameChanged>();
-            options.Events.AddEventType<UserActivated>();
-            options.Events.AddEventType<UserDeactivated>();
-            options.Events.AddEventType<UserDeleted>();
-            options.Events.AddEventType<UserRoleAssigned>();
-            options.Events.AddEventType<UserRoleRemoved>();
-            options.Events.AddEventType<UserClaimAdded>();
-            options.Events.AddEventType<UserClaimRemoved>();
-            options.Events.AddEventType<UserPasswordChanged>();
-            options.Events.AddEventType<UserTwoFactorEnabled>();
-            options.Events.AddEventType<UserTwoFactorDisabled>();
-            options.Events.AddEventType<UserRecoveryCodesRegenerated>();
-            options.Events.AddEventType<UserSessionsInvalidated>();
-            options.Events.AddEventType<UserLoggedIn>();
-            options.Events.AddEventType<UserLoginFailed>();
-            options.Events.AddEventType<UserLockedOut>();
-            options.Events.AddEventType<UserUnlocked>();
-            options.Events.AddEventType<UserEmailConfirmed>();
-            options.Events.AddEventType<UserPhoneNumberConfirmed>();
+			// Configure System.Text.Json to handle private setters
+			options.UseSystemTextJsonForSerialization(configure: o =>
+			{
+				o.PropertyNamingPolicy = null; // Use exact property names
+				o.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+			});
 
-            // Register GDPR events for the event store
-            options.Events.AddEventType<UserDeletionRequested>();
-            options.Events.AddEventType<UserDeletionCancelled>();
-            options.Events.AddEventType<UserDataMasked>();
-            options.Events.AddEventType<UserDataExported>();
-            options.Events.AddEventType<UserRestored>();
+			// Extracted: Document storage and event configuration
+			ConfigureMartenDocuments(options);
+			ConfigureMartenEvents(options, useAsyncProjections);
+			return options;
+		})
+		.UseLightweightSessions();
 
-            // ═══════════════════════════════════════════════════════════════
-            // GDPR DATA MASKING RULES
-            // These rules define how PII is masked when ApplyEventDataMasking is called
-            // ═══════════════════════════════════════════════════════════════
+		// Only enable async daemon when using async projections (not in tests)
+		if (useAsyncProjections)
+		{
+			martenBuilder.AddAsyncDaemon(DaemonMode.HotCold);
+		}
 
-            // Mask PII in UserCreated events
-            options.Events.AddMaskingRuleForProtectedInformation<UserCreated>(x =>
-                new UserCreated(
-                    x.UserId,
-                    "[DELETED]",
-                    "[DELETED]",
-                    null,
-                    null,
-                    null,
-                    x.IsActive,
-                    x.LockoutEnabled,
-                    x.Roles));
+		// Register repositories and services
+		RegisterRepositories(services);
+		RegisterInfrastructureServices(services);
 
-            // Mask PII in UserNameChanged events
-            options.Events.AddMaskingRuleForProtectedInformation<UserNameChanged>(x =>
-                new UserNameChanged(x.UserId, "[DELETED]", "[DELETED]"));
+		return services;
+	}
 
-            // Mask PII in UserEmailChanged events
-            options.Events.AddMaskingRuleForProtectedInformation<UserEmailChanged>(x =>
-                new UserEmailChanged(x.UserId, "[DELETED]", "[DELETED]"));
+	/// <summary>
+	/// Registers all repository implementations.
+	/// </summary>
+	private static void RegisterRepositories(IServiceCollection services)
+	{
+		services.AddScoped<IUserRepository, MartenUserRepository>();
+		services.AddScoped<IRoleRepository, MartenRoleRepository>();
+		services.AddScoped<ISessionRepository, MartenSessionRepository>();
+		services.AddScoped<IUserDetailsRepository, UserDetailsRepository>();
+	}
 
-            // Mask PII in UserPhoneNumberChanged events
-            options.Events.AddMaskingRuleForProtectedInformation<UserPhoneNumberChanged>(x =>
-                new UserPhoneNumberChanged(x.UserId, null, null));
+	/// <summary>
+	/// Registers all infrastructure services (email, authentication, audit, device info, session, GDPR).
+	/// </summary>
+	private static void RegisterInfrastructureServices(IServiceCollection services)
+	{
+		// Register email sender
+		services.AddSingleton<MockEmailSender>();
+		services.AddSingleton<IEmailSender>(sp => sp.GetRequiredService<MockEmailSender>());
 
-            // Mask PII in UserProfileNameChanged events
-            options.Events.AddMaskingRuleForProtectedInformation<UserProfileNameChanged>(x =>
-                new UserProfileNameChanged(x.UserId, null, null, null, null));
+		// Register authentication service
+		services.AddScoped<IAuthenticationService, AspNetCoreAuthenticationService>();
 
-            // Mask IP addresses in login events (considered PII under GDPR)
-            options.Events.AddMaskingRuleForProtectedInformation<UserLoggedIn>(x =>
-                new UserLoggedIn(x.UserId, null, null));
+		// Register login audit service
+		services.AddScoped<ILoginAuditService, LoginAuditService>();
 
-            options.Events.AddMaskingRuleForProtectedInformation<UserLoginFailed>(x =>
-                new UserLoginFailed(x.UserId, null, null, x.FailureReason));
+		// Register device info service
+		services.AddSingleton<IDeviceInfoService, DeviceInfoService>();
 
-            // Register role events for the event store
-            options.Events.AddEventType<RoleCreated>();
-            options.Events.AddEventType<RoleNameChanged>();
-            options.Events.AddEventType<RoleDescriptionChanged>();
-            options.Events.AddEventType<RoleDeleted>();
-            options.Events.AddEventType<RoleClaimAdded>();
-            options.Events.AddEventType<RoleClaimRemoved>();
+		// Register session service
+		services.AddScoped<ISessionService, Cocoar.Auth.Application.Services.SessionService>();
 
-            // ═══════════════════════════════════════════════════════════════
-            // ═══════════════════════════════════════════════════════════════
-            // INLINE STATE PROJECTIONS (for validation, Identity, immediate consistency)
-            // Naming Convention: *State = Inline projection, single source of truth
-            // ═══════════════════════════════════════════════════════════════
+		// Register GDPR service
+		services.AddScoped<IGdprService, GdprService>();
 
-            // UserState projection - runs inline for immediate consistency
-            // Use for: validation, uniqueness checks, authentication, Identity stores
-            options.Projections.Add(new UserStateProjection(), ProjectionLifecycle.Inline);
+		// Register Email OTP service
+		services.AddScoped<IEmailOtpService, EmailOtpService>();
 
-            // RoleState projection - runs inline for immediate consistency
-            // Use for: role validation, claims lookup, Identity stores
-            options.Projections.Add(new RoleStateProjection(), ProjectionLifecycle.Inline);
+		// Register WebAuthn service
+		services.AddScoped<IWebAuthnService, WebAuthnService>();
+	}
 
-            // ═══════════════════════════════════════════════════════════════
-            // READ MODEL PROJECTIONS (configurable: async for prod, inline for tests)
-            // ═══════════════════════════════════════════════════════════════
+	/// <summary>
+	/// Configures Marten document storage schemas for non-event-sourced entities.
+	/// </summary>
+	private static void ConfigureMartenDocuments(StoreOptions options)
+	{
+		// ═══════════════════════════════════════════════════════════════
+		// DOCUMENT STORAGE (Non-Event-Sourced)
+		// ═══════════════════════════════════════════════════════════════
 
-            // UserDetailsReadModel projection
-            // Use for: API responses, admin UI, user listings, search results
-            // Contains denormalized role info (name, description) - no security data
-            // Async mode uses daemon (eventually consistent), Inline mode runs synchronously
-            var readModelLifecycle = useAsyncProjections ? ProjectionLifecycle.Async : ProjectionLifecycle.Inline;
-            options.Projections.Add(new UserDetailsProjection(), readModelLifecycle);
+		// Configure ApplicationUser document (legacy, will migrate to event sourcing)
+		options.Schema.For<ApplicationUser>()
+			.Identity(x => x.Id)
+			.Index(x => x.NormalizedUserName!, x => x.IsUnique = true)
+			.Index(x => x.NormalizedEmail!);
 
-            // ═══════════════════════════════════════════════════════════════
-            // STATE MODEL INDEXES
-            // ═══════════════════════════════════════════════════════════════
+		// Configure ApplicationRole document
+		options.Schema.For<ApplicationRole>()
+			.Identity(x => x.Id)
+			.Index(x => x.NormalizedName, x => x.IsUnique = true);
 
-            // Configure UserState indexes for fast lookups
-            options.Schema.For<UserState>()
-                .Identity(x => x.Id)
-                .Index(x => x.NormalizedUserName, x => x.IsUnique = true)
-                .Index(x => x.NormalizedEmail);
+		// Configure UserSecurityData document (security-sensitive data, not event-sourced)
+		options.Schema.For<UserSecurityData>()
+			.Identity(x => x.Id);
 
-            // Configure RoleState indexes for fast lookups
-            options.Schema.For<RoleState>()
-                .Identity(x => x.Id)
-                .Index(x => x.NormalizedName, x => x.IsUnique = true);
+		// Configure UserSession document (ephemeral state, not event-sourced)
+		options.Schema.For<UserSession>()
+			.Identity(x => x.Id)
+			.Index(x => x.UserId)
+			.Index(x => x.SessionId);
 
-            // Configure UserDetailsReadModel indexes
-            options.Schema.For<UserDetailsReadModel>()
-                .Identity(x => x.Id)
-                .Index(x => x.Email)
-                .Index(x => x.IsActive);
-        })
-        .UseLightweightSessions();
+		// Configure EmailOtpChallenge document (ephemeral, for email OTP verification)
+		options.Schema.For<EmailOtpChallenge>()
+			.Identity(x => x.Id);
 
-        // Only enable async daemon when using async projections (not in tests)
-        if (useAsyncProjections)
-        {
-            martenBuilder.AddAsyncDaemon(DaemonMode.HotCold);
-        }
+		// Configure WebAuthnChallenge document (ephemeral, for WebAuthn ceremonies)
+		options.Schema.For<WebAuthnChallenge>()
+			.Identity(x => x.Id)
+			.Index(x => x.UserId);
+	}
 
-        // Register repositories
-        services.AddScoped<IUserRepository, MartenUserRepository>();
-        services.AddScoped<IRoleRepository, MartenRoleRepository>();
+	/// <summary>
+	/// Configures Marten event types, masking rules, projections, and event-sourced indexes.
+	/// </summary>
+	private static void ConfigureMartenEvents(StoreOptions options, bool useAsyncProjections)
+	{
+		// ═══════════════════════════════════════════════════════════════
+		// EVENT SOURCING CONFIGURATION
+		// ═══════════════════════════════════════════════════════════════
 
-        // Register email sender
-        services.AddSingleton<MockEmailSender>();
-        services.AddSingleton<IEmailSender>(sp => sp.GetRequiredService<MockEmailSender>());
+		// Register user events for the event store
+		options.Events.AddEventType<UserCreated>();
+		options.Events.AddEventType<UserNameChanged>();
+		options.Events.AddEventType<UserEmailChanged>();
+		options.Events.AddEventType<UserPhoneNumberChanged>();
+		options.Events.AddEventType<UserProfileNameChanged>();
+		options.Events.AddEventType<UserActivated>();
+		options.Events.AddEventType<UserDeactivated>();
+		options.Events.AddEventType<UserDeleted>();
+		options.Events.AddEventType<UserRoleAssigned>();
+		options.Events.AddEventType<UserRoleRemoved>();
+		options.Events.AddEventType<UserClaimAdded>();
+		options.Events.AddEventType<UserClaimRemoved>();
+		options.Events.AddEventType<UserPasswordChanged>();
+		options.Events.AddEventType<UserTwoFactorEnabled>();
+		options.Events.AddEventType<UserTwoFactorDisabled>();
+		options.Events.AddEventType<UserRecoveryCodesRegenerated>();
+		options.Events.AddEventType<UserSessionsInvalidated>();
+		options.Events.AddEventType<UserLoggedIn>();
+		options.Events.AddEventType<UserLoginFailed>();
+		options.Events.AddEventType<UserLockedOut>();
+		options.Events.AddEventType<UserUnlocked>();
+		options.Events.AddEventType<UserEmailConfirmed>();
+		options.Events.AddEventType<UserPhoneNumberConfirmed>();
 
-        // Register authentication service
-        services.AddScoped<IAuthenticationService, AspNetCoreAuthenticationService>();
+		// Register Email OTP events
+		options.Events.AddEventType<UserEmailOtpRequested>();
+		options.Events.AddEventType<UserEmailOtpVerified>();
 
-        // Register login audit service
-        services.AddScoped<ILoginAuditService, LoginAuditService>();
+		// Register WebAuthn events
+		options.Events.AddEventType<WebAuthnCredentialRegistered>();
+		options.Events.AddEventType<WebAuthnCredentialDeleted>();
+		options.Events.AddEventType<WebAuthnCredentialUsed>();
 
-        // Register device info service
-        services.AddSingleton<IDeviceInfoService, DeviceInfoService>();
+		// Register GDPR events for the event store
+		options.Events.AddEventType<UserDeletionRequested>();
+		options.Events.AddEventType<UserDeletionCancelled>();
+		options.Events.AddEventType<UserDataMasked>();
+		options.Events.AddEventType<UserDataExported>();
+		options.Events.AddEventType<UserRestored>();
 
-        // Register session repository
-        services.AddScoped<ISessionRepository, MartenSessionRepository>();
-        services.AddScoped<ISessionService, Cocoar.Auth.Application.Services.SessionService>();
+		// ═══════════════════════════════════════════════════════════════
+		// GDPR DATA MASKING RULES
+		// These rules define how PII is masked when ApplyEventDataMasking is called
+		// ═══════════════════════════════════════════════════════════════
 
-        // Register repositories
-        services.AddScoped<IUserRepository, MartenUserRepository>();
-        services.AddScoped<IRoleRepository, MartenRoleRepository>();
-        services.AddScoped<IUserDetailsRepository, UserDetailsRepository>();
+		// Mask PII in UserCreated events
+		options.Events.AddMaskingRuleForProtectedInformation<UserCreated>(x =>
+			new UserCreated(
+				x.UserId,
+				"[DELETED]",
+				"[DELETED]",
+				null,
+				null,
+				null,
+				x.IsActive,
+				x.LockoutEnabled,
+				x.Roles));
 
-        // Register GDPR service
-        services.AddScoped<IGdprService, GdprService>();
+		// Mask PII in UserNameChanged events
+		options.Events.AddMaskingRuleForProtectedInformation<UserNameChanged>(x =>
+			new UserNameChanged(x.UserId, "[DELETED]", "[DELETED]"));
 
-        return services;
-    }
+		// Mask PII in UserEmailChanged events
+		options.Events.AddMaskingRuleForProtectedInformation<UserEmailChanged>(x =>
+			new UserEmailChanged(x.UserId, "[DELETED]", "[DELETED]"));
 
-    public static IdentityBuilder AddIdentityWithMarten(this IServiceCollection services)
-    {
-        return services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
-        {
-            // Password settings
-            options.Password.RequireDigit = true;
-            options.Password.RequireLowercase = true;
-            options.Password.RequireUppercase = true;
-            options.Password.RequireNonAlphanumeric = true;
-            options.Password.RequiredLength = 8;
-            options.Password.RequiredUniqueChars = 1;
+		// Mask PII in UserPhoneNumberChanged events
+		options.Events.AddMaskingRuleForProtectedInformation<UserPhoneNumberChanged>(x =>
+			new UserPhoneNumberChanged(x.UserId, null, null));
 
-            // Lockout settings
-            options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
-            options.Lockout.MaxFailedAccessAttempts = 5;
-            options.Lockout.AllowedForNewUsers = true;
+		// Mask PII in UserProfileNameChanged events
+		options.Events.AddMaskingRuleForProtectedInformation<UserProfileNameChanged>(x =>
+			new UserProfileNameChanged(x.UserId, null, null, null, null));
 
-            // User settings
-            options.User.AllowedUserNameCharacters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._@+";
-            options.User.RequireUniqueEmail = false; // We handle this in the service layer
+		// Mask IP addresses in login events (considered PII under GDPR)
+		options.Events.AddMaskingRuleForProtectedInformation<UserLoggedIn>(x =>
+			new UserLoggedIn(x.UserId, null, null));
 
-            // Sign-in settings
-            options.SignIn.RequireConfirmedEmail = false; // Can be enabled later
-            options.SignIn.RequireConfirmedPhoneNumber = false;
-        })
-        .AddUserStore<EventSourcedUserStore>()
-        .AddRoleStore<EventSourcedRoleStore>()
-        .AddDefaultTokenProviders();
-    }
+		options.Events.AddMaskingRuleForProtectedInformation<UserLoginFailed>(x =>
+			new UserLoginFailed(x.UserId, null, null, x.FailureReason));
+
+		// Register role events for the event store
+		options.Events.AddEventType<RoleCreated>();
+		options.Events.AddEventType<RoleNameChanged>();
+		options.Events.AddEventType<RoleDescriptionChanged>();
+		options.Events.AddEventType<RoleDeleted>();
+		options.Events.AddEventType<RoleClaimAdded>();
+		options.Events.AddEventType<RoleClaimRemoved>();
+
+		// ═══════════════════════════════════════════════════════════════
+		// INLINE STATE PROJECTIONS (for validation, Identity, immediate consistency)
+		// Naming Convention: *State = Inline projection, single source of truth
+		// ═══════════════════════════════════════════════════════════════
+
+		// UserState projection - runs inline for immediate consistency
+		// Use for: validation, uniqueness checks, authentication, Identity stores
+		options.Projections.Add(new UserStateProjection(), ProjectionLifecycle.Inline);
+
+		// RoleState projection - runs inline for immediate consistency
+		// Use for: role validation, claims lookup, Identity stores
+		options.Projections.Add(new RoleStateProjection(), ProjectionLifecycle.Inline);
+
+		// ═══════════════════════════════════════════════════════════════
+		// READ MODEL PROJECTIONS (configurable: async for prod, inline for tests)
+		// ═══════════════════════════════════════════════════════════════
+
+		// UserDetailsReadModel projection
+		// Use for: API responses, admin UI, user listings, search results
+		// Contains denormalized role info (name, description) - no security data
+		// Async mode uses daemon (eventually consistent), Inline mode runs synchronously
+		var readModelLifecycle = useAsyncProjections ? ProjectionLifecycle.Async : ProjectionLifecycle.Inline;
+		options.Projections.Add(new UserDetailsProjection(), readModelLifecycle);
+
+		// ═══════════════════════════════════════════════════════════════
+		// STATE MODEL INDEXES
+		// ═══════════════════════════════════════════════════════════════
+
+		// Configure UserState indexes for fast lookups
+		options.Schema.For<UserState>()
+			.Identity(x => x.Id)
+			.Index(x => x.NormalizedUserName, x => x.IsUnique = true)
+			.Index(x => x.NormalizedEmail);
+
+		// Configure RoleState indexes for fast lookups
+		options.Schema.For<RoleState>()
+			.Identity(x => x.Id)
+			.Index(x => x.NormalizedName, x => x.IsUnique = true);
+
+		// Configure UserDetailsReadModel indexes
+		options.Schema.For<UserDetailsReadModel>()
+			.Identity(x => x.Id)
+			.Index(x => x.Email)
+			.Index(x => x.IsActive);
+	}
+
+	public static IdentityBuilder AddIdentityWithMarten(this IServiceCollection services)
+	{
+		return services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
+		{
+			// Password settings
+			options.Password.RequireDigit = true;
+			options.Password.RequireLowercase = true;
+			options.Password.RequireUppercase = true;
+			options.Password.RequireNonAlphanumeric = true;
+			options.Password.RequiredLength = 8;
+			options.Password.RequiredUniqueChars = 1;
+
+			// Lockout settings
+			options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
+			options.Lockout.MaxFailedAccessAttempts = 5;
+			options.Lockout.AllowedForNewUsers = true;
+
+			// User settings
+			options.User.AllowedUserNameCharacters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._@+";
+			options.User.RequireUniqueEmail = false; // We handle this in the service layer
+
+			// Sign-in settings
+			options.SignIn.RequireConfirmedEmail = false; // Can be enabled later
+			options.SignIn.RequireConfirmedPhoneNumber = false;
+		})
+		.AddUserStore<EventSourcedUserStore>()
+		.AddRoleStore<EventSourcedRoleStore>()
+		.AddDefaultTokenProviders();
+	}
 }

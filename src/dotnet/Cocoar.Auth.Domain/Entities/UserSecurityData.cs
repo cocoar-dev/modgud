@@ -60,6 +60,12 @@ public class UserSecurityData
     public List<UserToken> Tokens { get; set; } = [];
 
     /// <summary>
+    /// WebAuthn credentials for passwordless and 2FA authentication.
+    /// </summary>
+    [JsonInclude]
+    public List<WebAuthnCredential> WebAuthnCredentials { get; set; } = [];
+
+    /// <summary>
     /// Creates a new UserSecurityData with fresh stamps.
     /// </summary>
     public static UserSecurityData Create(Guid userId)

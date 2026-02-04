@@ -83,6 +83,20 @@ public class MockEmailSender : IEmailSender
 
         return SendEmailAsync(email, subject, body, cancellationToken);
     }
+
+    public Task SendEmailOtpAsync(string email, string userName, string code, CancellationToken cancellationToken = default)
+    {
+        var subject = "Your verification code";
+        var body = $"""
+            <h1>Verification Code</h1>
+            <p>Hello {userName},</p>
+            <p>Your verification code is: <strong>{code}</strong></p>
+            <p>This code will expire in 10 minutes.</p>
+            <p>If you did not request this code, please ignore this email.</p>
+            """;
+
+        return SendEmailAsync(email, subject, body, cancellationToken);
+    }
 }
 
 public record SentEmail(string To, string Subject, string Body, DateTimeOffset SentAt);

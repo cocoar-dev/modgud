@@ -1,9 +1,11 @@
+using Cocoar.Auth.Infrastructure.Interfaces;
+
 namespace Cocoar.Auth.Api.Configuration;
 
 /// <summary>
 /// Marten projection configuration settings.
 /// </summary>
-public class ProjectionSettings
+public class ProjectionSettings: IProjectionSettings
 {
     /// <summary>
     /// Whether to use async projections with the async daemon.

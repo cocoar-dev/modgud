@@ -11,7 +11,13 @@
       "Bash(tree:*)",
       "Bash(findstr:*)",
       "Bash(pnpm ls:*)",
-      "WebFetch(domain:wolverinefx.net)"
+      "WebFetch(domain:wolverinefx.net)",
+      "mcp__chrome-devtools__list_console_messages",
+      "mcp__chrome-devtools__handle_dialog",
+      "mcp__chrome-devtools__list_network_requests",
+      "mcp__chrome-devtools__click",
+      "mcp__chrome-devtools__get_network_request",
+      "mcp__chrome-devtools__fill"
     ]
   }
 }

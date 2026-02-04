@@ -191,3 +191,65 @@ public static class RoleErrors
         code: "Role.CannotDeleteWithUsers",
         description: "Cannot delete a role that has users assigned to it.");
 }
+
+public static class EmailOtpErrors
+{
+    public static Error InvalidCode => Error.Validation(
+        code: "EmailOtp.InvalidCode",
+        description: "The verification code is invalid.");
+
+    public static Error Expired => Error.Validation(
+        code: "EmailOtp.Expired",
+        description: "The verification code has expired. Please request a new one.");
+
+    public static Error TooManyAttempts => Error.Validation(
+        code: "EmailOtp.TooManyAttempts",
+        description: "Too many failed attempts. Please request a new code.");
+
+    public static Error AlreadySent => Error.Validation(
+        code: "EmailOtp.AlreadySent",
+        description: "A verification code was recently sent. Please wait before requesting a new one.");
+
+    public static Error NoPendingChallenge => Error.Validation(
+        code: "EmailOtp.NoPendingChallenge",
+        description: "No pending verification code found. Please request a new one.");
+
+    public static Error EmailRequired => Error.Validation(
+        code: "EmailOtp.EmailRequired",
+        description: "A verified email address is required to use email OTP.");
+}
+
+public static class WebAuthnErrors
+{
+    public static Error InvalidChallenge => Error.Validation(
+        code: "WebAuthn.InvalidChallenge",
+        description: "The authentication challenge is invalid or has expired.");
+
+    public static Error AttestationFailed => Error.Validation(
+        code: "WebAuthn.AttestationFailed",
+        description: "Failed to verify the credential registration.");
+
+    public static Error AssertionFailed => Error.Validation(
+        code: "WebAuthn.AssertionFailed",
+        description: "Failed to verify the authentication response.");
+
+    public static Error CredentialNotFound => Error.NotFound(
+        code: "WebAuthn.CredentialNotFound",
+        description: "The specified credential was not found.");
+
+    public static Error SignCountMismatch => Error.Validation(
+        code: "WebAuthn.SignCountMismatch",
+        description: "Credential sign count indicates possible cloned authenticator.");
+
+    public static Error NoCredentialsRegistered => Error.Validation(
+        code: "WebAuthn.NoCredentialsRegistered",
+        description: "No WebAuthn credentials are registered for this account.");
+
+    public static Error CredentialAlreadyRegistered => Error.Conflict(
+        code: "WebAuthn.CredentialAlreadyRegistered",
+        description: "This credential is already registered.");
+
+    public static Error UserNotFound => Error.NotFound(
+        code: "WebAuthn.UserNotFound",
+        description: "User not found for the specified credential.");
+}

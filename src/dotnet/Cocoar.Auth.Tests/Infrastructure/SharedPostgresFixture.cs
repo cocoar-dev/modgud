@@ -8,8 +8,7 @@ namespace Cocoar.Auth.Tests.Infrastructure;
 /// </summary>
 public class SharedPostgresFixture : IAsyncLifetime
 {
-    public PostgreSqlContainer Container { get; } = new PostgreSqlBuilder()
-        .WithImage("postgres:16-alpine")
+    public PostgreSqlContainer Container { get; } = new PostgreSqlBuilder("postgres:16-alpine")
         .WithDatabase("cocoar_auth_test")
         .Build();
 

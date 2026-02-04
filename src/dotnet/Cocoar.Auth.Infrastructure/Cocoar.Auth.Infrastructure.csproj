@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <RootNamespace>Cocoar.Auth.Infrastructure</RootNamespace>
@@ -9,9 +9,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Cocoar.Configuration.Abstractions" />
+    <PackageReference Include="Cocoar.Configuration.Secrets.Abstractions" />
     <PackageReference Include="Marten" />
     <PackageReference Include="Weasel.Core" />
     <PackageReference Include="UAParser" />
+    <PackageReference Include="Fido2" />
   </ItemGroup>
 
   <ItemGroup>

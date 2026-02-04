@@ -36,6 +36,22 @@ public interface IAuthenticationService
     /// </summary>
     Task<ApplicationUser?> GetTwoFactorAuthenticationUserAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Signs in a user directly (after successful 2FA verification).
+    /// </summary>
+    Task SignInAsync(
+        ApplicationUser user,
+        bool isPersistent,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Signs in a user by their ID (for passwordless flows).
+    /// </summary>
+    Task SignInByIdAsync(
+        Guid userId,
+        bool isPersistent,
+        CancellationToken cancellationToken = default);
+
     Task SignOutAsync(CancellationToken cancellationToken = default);
 }
 

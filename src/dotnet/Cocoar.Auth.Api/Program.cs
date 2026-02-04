@@ -1,12 +1,17 @@
 using Cocoar.Auth.Api.Configuration;
 using Cocoar.Auth.Application;
+using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Infrastructure;
+using Cocoar.Auth.Infrastructure.Interfaces;
+using Cocoar.Auth.Infrastructure.Services;
 using Cocoar.Configuration.AspNetCore;
 using Cocoar.Configuration.DI;
 using Cocoar.Configuration.DI.Extensions;
 using Cocoar.Configuration.Providers;
+using Cocoar.Configuration.Secrets;
 using Cocoar.Primitives;
 using Cocoar.Primitives.OptionalAware;
+using Fido2NetLib;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Wolverine;
@@ -17,19 +22,25 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddCocoarConfiguration(rule =>
 [
     // Base configuration
-    rule.For<DatabaseSettings>().FromFile("appsettings.json").Select("Database").Required(),
-    rule.For<AuthSettings>().FromFile("appsettings.json").Select("Auth"),
-    rule.For<CorsSettings>().FromFile("appsettings.json").Select("Cors"),
+    rule.For<DatabaseSettings>().FromFile("configs/database-settings.json").Required(),
+    rule.For<AuthSettings>().FromFile("configs/auth-settings.json"),
+    rule.For<CorsSettings>().FromFile("configs/cors-settings.json"),
+    rule.For<SmtpSettings>().FromFile("configs/smtp-settings.json"),
+    rule.For<WebAuthnSettings>().FromFile("configs/webauthn-settings.json"),
 
     // Environment-specific overrides (e.g., appsettings.Development.json)
-    rule.For<DatabaseSettings>().FromFile($"appsettings.{builder.Environment.EnvironmentName}.json").Select("Database"),
-    rule.For<AuthSettings>().FromFile($"appsettings.{builder.Environment.EnvironmentName}.json").Select("Auth"),
-    rule.For<CorsSettings>().FromFile($"appsettings.{builder.Environment.EnvironmentName}.json").Select("Cors"),
+    //rule.For<DatabaseSettings>().FromFile($"configs/database-settings.{builder.Environment.EnvironmentName}.json"),
+    rule.For<AuthSettings>().FromFile($"configs/auth-settings.{builder.Environment.EnvironmentName}.json"),
+    rule.For<CorsSettings>().FromFile($"configs/cors-settings.{builder.Environment.EnvironmentName}.json"),
+    rule.For<SmtpSettings>().FromFile($"configs/smtp-settings.{builder.Environment.EnvironmentName}.json"),
+    rule.For<WebAuthnSettings>().FromFile($"configs/webauthn-settings.{builder.Environment.EnvironmentName}.json"),
 
     // Environment variable overrides (highest priority)
     rule.For<DatabaseSettings>().FromEnvironment("DATABASE_"),
     rule.For<AuthSettings>().FromEnvironment("AUTH_"),
     rule.For<CorsSettings>().FromEnvironment("CORS_"),
+    rule.For<SmtpSettings>().FromEnvironment("SMTP_"),
+    rule.For<WebAuthnSettings>().FromEnvironment("WEBAUTHN_"),
 
     // Static configuration (cannot be overridden by JSON files, but can be overridden in tests)
     // Use inline projections in development to avoid async daemon lock acquisition issues
@@ -40,23 +51,60 @@ builder.AddCocoarConfiguration(rule =>
     setup.ConcreteType<DatabaseSettings>().AsSingleton(),
     setup.ConcreteType<AuthSettings>().AsSingleton(),
     setup.ConcreteType<CorsSettings>().AsSingleton(),
-    setup.ConcreteType<ProjectionSettings>().AsSingleton()
+    setup.ConcreteType<ProjectionSettings>().AsSingleton(),
+    setup.ConcreteType<SmtpSettings>().AsSingleton(),
+    setup.ConcreteType<WebAuthnSettings>().AsSingleton(),
+
+	setup.ConcreteType<DatabaseSettings>().ExposeAs<IDatabaseSettings>(),
+	setup.ExposedType<IDatabaseSettings>().AsSingleton(),
+	setup.ConcreteType<ProjectionSettings>().ExposeAs<IProjectionSettings>(),
+	setup.ConcreteType<SmtpSettings>().ExposeAs<ISmtpSettings>(),
+	setup.ExposedType<ISmtpSettings>().AsSingleton(),
+	setup.ConcreteType<WebAuthnSettings>().ExposeAs<IWebAuthnSettings>(),
+	setup.ExposedType<IWebAuthnSettings>().AsSingleton(),
+	setup.Secrets().UseCertificatesFromFolder("configs/certificates").AllowPlaintext(),
 ]);
 
 // Get configuration manager for bootstrap access
 var configManager = builder.GetCocoarConfigManager();
-var dbSettings = configManager.GetRequiredConfig<DatabaseSettings>();
-var projectionSettings = configManager.GetRequiredConfig<ProjectionSettings>();
+var projectionSettings = configManager.GetConfig<ProjectionSettings>();
+var dbSettings = configManager.GetConfig<DatabaseSettings>();
 
 // Add services to the container
-builder.Services.AddInfrastructure(dbSettings.ConnectionString, projectionSettings.UseAsyncProjections);
+builder.Services.AddInfrastructure(projectionSettings.UseAsyncProjections);
 builder.Services.AddIdentityWithMarten();
 builder.Services.AddApplication();
+
+// Register SMTP email sender (overrides mock from AddInfrastructure)
+var smtpSettings = configManager.GetConfig<SmtpSettings>();
+builder.Services.AddSingleton(new SmtpEmailSenderOptions
+{
+    Host = smtpSettings.Host,
+    Port = smtpSettings.Port,
+    UseSsl = smtpSettings.UseSsl,
+    Username = smtpSettings.Username,
+    Password = smtpSettings.Password,
+    FromAddress = smtpSettings.FromAddress,
+    FromName = smtpSettings.FromName
+});
+builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+
+// Register Fido2 for WebAuthn
+var webAuthnSettings = configManager.GetConfig<WebAuthnSettings>();
+var fido2Config = new Fido2Configuration
+{
+    ServerDomain = webAuthnSettings.RelyingPartyId,
+    ServerName = webAuthnSettings.RelyingPartyName,
+    Origins = webAuthnSettings.Origins.ToHashSet(),
+    TimestampDriftTolerance = 300000 // 5 minutes
+};
+builder.Services.AddSingleton(fido2Config);
+builder.Services.AddSingleton<IFido2, Fido2>();
 
 // Configure Wolverine
 builder.Host.UseWolverine(opts =>
 {
-    // Discover handlers in the Application assembly
+	// Discover handlers in the Application assembly
     opts.Discovery.IncludeAssembly(typeof(Cocoar.Auth.Application.DependencyInjection).Assembly);
 
     // Use local, in-memory queue (no external message transport needed)
@@ -155,14 +203,14 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 
-app.Run();
+app.Run("http://0.0.0.0:80");
 
 // Make the implicit Program class public for integration tests
 public partial class Program { }

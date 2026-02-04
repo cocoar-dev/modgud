@@ -17,19 +17,22 @@ public class AuthService
     private readonly IRoleRepository _roleRepository;
     private readonly IEmailSender _emailSender;
     private readonly ILoginAuditService _loginAuditService;
+    private readonly IWebAuthnService _webAuthnService;
 
     public AuthService(
         IAuthenticationService authenticationService,
         UserManager<ApplicationUser> userManager,
         IRoleRepository roleRepository,
         IEmailSender emailSender,
-        ILoginAuditService loginAuditService)
+        ILoginAuditService loginAuditService,
+        IWebAuthnService webAuthnService)
     {
         _authenticationService = authenticationService;
         _userManager = userManager;
         _roleRepository = roleRepository;
         _emailSender = emailSender;
         _loginAuditService = loginAuditService;
+        _webAuthnService = webAuthnService;
     }
 
     public async Task<ErrorOr<LoginResultDto>> LoginAsync(
@@ -78,11 +81,15 @@ public class AuthService
         if (result.RequiresTwoFactor)
         {
             // Don't record failure for 2FA requirement - user hasn't failed yet
+            // Determine available 2FA methods
+            var availableMethods = await GetAvailable2FAMethodsAsync(user, cancellationToken);
+
             return new LoginResultDto
             {
                 Succeeded = false,
                 RequiresTwoFactor = true,
-                ErrorMessage = "Two-factor authentication is required."
+                ErrorMessage = "Two-factor authentication is required.",
+                AvailableTwoFactorMethods = availableMethods
             };
         }
 
@@ -391,5 +398,32 @@ public class AuthService
             TwoFactorEnabled = user.TwoFactorEnabled,
             CreatedAt = user.CreatedAt
         };
+    }
+
+    private async Task<List<string>> GetAvailable2FAMethodsAsync(ApplicationUser user, CancellationToken cancellationToken)
+    {
+        var methods = new List<string>();
+
+        // Check if TOTP authenticator is configured
+        var authenticatorKey = await _userManager.GetAuthenticatorKeyAsync(user);
+        if (!string.IsNullOrEmpty(authenticatorKey))
+        {
+            methods.Add("totp");
+        }
+
+        // Check if WebAuthn credentials are registered
+        var webAuthnCount = await _webAuthnService.GetCredentialCountAsync(user.Id, cancellationToken);
+        if (webAuthnCount > 0)
+        {
+            methods.Add("webauthn");
+        }
+
+        // Email OTP is always available if user has a confirmed email
+        if (!string.IsNullOrEmpty(user.Email))
+        {
+            methods.Add("email");
+        }
+
+        return methods;
     }
 }

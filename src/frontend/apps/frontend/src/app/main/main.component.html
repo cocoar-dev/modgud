@@ -43,7 +43,34 @@
 
   <!-- Main Content Area -->
   <main class="main-content">
-    <router-outlet />
+    @let uiHeader = ui.state.header();
+    @let uiContent = ui.state.content();
+
+    @if (uiHeader.show && uiHeader.title) {
+      <header class="page-header">
+        <div class="page-header-content">
+          @if (uiHeader.icon) {
+            <span class="page-header-icon">{{ uiHeader.icon }}</span>
+          }
+          <div class="page-header-titles">
+            <h1 class="page-title">{{ uiHeader.title }}</h1>
+            @if (uiHeader.subTitle) {
+              <span class="page-subtitle">{{ uiHeader.subTitle }}</span>
+            }
+          </div>
+        </div>
+      </header>
+    }
+
+    @if (uiContent.showLoadingBar) {
+      <div class="loading-bar">
+        <div class="loading-bar-progress"></div>
+      </div>
+    }
+
+    <div class="page-content" [class.scrollable]="uiContent.scrollable">
+      <router-outlet />
+    </div>
   </main>
 </div>
 

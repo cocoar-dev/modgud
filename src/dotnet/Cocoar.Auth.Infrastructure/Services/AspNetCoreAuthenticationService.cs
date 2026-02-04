@@ -10,10 +10,14 @@ namespace Cocoar.Auth.Infrastructure.Services;
 public class AspNetCoreAuthenticationService : IAuthenticationService
 {
     private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly UserManager<ApplicationUser> _userManager;
 
-    public AspNetCoreAuthenticationService(SignInManager<ApplicationUser> signInManager)
+    public AspNetCoreAuthenticationService(
+        SignInManager<ApplicationUser> signInManager,
+        UserManager<ApplicationUser> userManager)
     {
         _signInManager = signInManager;
+        _userManager = userManager;
     }
 
     public async Task<SignInResultInfo> PasswordSignInAsync(
@@ -69,6 +73,26 @@ public class AspNetCoreAuthenticationService : IAuthenticationService
     public async Task<ApplicationUser?> GetTwoFactorAuthenticationUserAsync(CancellationToken cancellationToken = default)
     {
         return await _signInManager.GetTwoFactorAuthenticationUserAsync();
+    }
+
+    public async Task SignInAsync(
+        ApplicationUser user,
+        bool isPersistent,
+        CancellationToken cancellationToken = default)
+    {
+        await _signInManager.SignInAsync(user, isPersistent);
+    }
+
+    public async Task SignInByIdAsync(
+        Guid userId,
+        bool isPersistent,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is not null)
+        {
+            await _signInManager.SignInAsync(user, isPersistent);
+        }
     }
 
     public async Task SignOutAsync(CancellationToken cancellationToken = default)

@@ -15,15 +15,20 @@ namespace Cocoar.Auth.Application.Services;
 public class TwoFactorService : ITwoFactorService
 {
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IWebAuthnService _webAuthnService;
     private readonly UrlEncoder _urlEncoder;
 
     private const string AuthenticatorUriFormat = "otpauth://totp/{0}:{1}?secret={2}&issuer={0}&digits=6";
     private const string Issuer = "CocoarAuth";
     private const int RecoveryCodeCount = 10;
 
-    public TwoFactorService(UserManager<ApplicationUser> userManager, UrlEncoder urlEncoder)
+    public TwoFactorService(
+        UserManager<ApplicationUser> userManager,
+        IWebAuthnService webAuthnService,
+        UrlEncoder urlEncoder)
     {
         _userManager = userManager;
+        _webAuthnService = webAuthnService;
         _urlEncoder = urlEncoder;
     }
 
@@ -39,11 +44,19 @@ public class TwoFactorService : ITwoFactorService
         var hasAuthenticator = !string.IsNullOrEmpty(await _userManager.GetAuthenticatorKeyAsync(user));
         var recoveryCodesCount = await _userManager.CountRecoveryCodesAsync(user);
 
+        // Check for email OTP availability (user has email)
+        var hasEmailOtp = !string.IsNullOrEmpty(user.Email);
+
+        // Check for WebAuthn credentials
+        var webAuthnCredentialCount = await _webAuthnService.GetCredentialCountAsync(userId, cancellationToken);
+
         return new TwoFactorStatusDto
         {
             IsEnabled = isEnabled,
             HasAuthenticator = hasAuthenticator,
-            RecoveryCodesRemaining = recoveryCodesCount
+            RecoveryCodesRemaining = recoveryCodesCount,
+            HasEmailOtp = hasEmailOtp,
+            WebAuthnCredentialCount = webAuthnCredentialCount
         };
     }
 

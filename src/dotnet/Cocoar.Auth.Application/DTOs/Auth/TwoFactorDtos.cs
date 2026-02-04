@@ -50,7 +50,7 @@ public record TwoFactorStatusDto
     public bool IsEnabled { get; init; }
 
     /// <summary>
-    /// Whether the user has an authenticator key set up.
+    /// Whether the user has an authenticator key set up (TOTP).
     /// </summary>
     public bool HasAuthenticator { get; init; }
 
@@ -58,6 +58,16 @@ public record TwoFactorStatusDto
     /// The number of recovery codes remaining.
     /// </summary>
     public int RecoveryCodesRemaining { get; init; }
+
+    /// <summary>
+    /// Whether email OTP is available (requires verified email).
+    /// </summary>
+    public bool HasEmailOtp { get; init; }
+
+    /// <summary>
+    /// The number of WebAuthn credentials registered.
+    /// </summary>
+    public int WebAuthnCredentialCount { get; init; }
 }
 
 /// <summary>

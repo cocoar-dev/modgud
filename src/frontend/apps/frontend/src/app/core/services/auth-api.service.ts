@@ -30,6 +30,16 @@ import {
   SetupStatus,
   CreateAdminRequest,
   SetupResult,
+  EmailOtpStatus,
+  VerifyEmailOtpRequest,
+  EmailOtpLoginRequest,
+  WebAuthnRegistrationOptions,
+  CompleteWebAuthnRegistrationRequest,
+  WebAuthnRegistrationResult,
+  WebAuthnAuthenticationOptions,
+  CompleteWebAuthnAuthenticationRequest,
+  WebAuthnCredentialList,
+  RenameWebAuthnCredentialRequest,
 } from '../models/auth.models';
 
 @Injectable({
@@ -140,6 +150,104 @@ export class AuthApiService {
   recoveryCodeLogin(request: RecoveryCodeLoginRequest): Observable<void> {
     return this.http.post<void>(
       `${this.baseUrl}/auth/2fa/recovery-login`,
+      request
+    );
+  }
+
+  // ============================================================================
+  // Email OTP Authentication
+  // ============================================================================
+
+  requestEmailOtp(): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/auth/2fa/email-otp/request`, {});
+  }
+
+  getEmailOtpStatus(): Observable<EmailOtpStatus> {
+    return this.http.get<EmailOtpStatus>(`${this.baseUrl}/auth/2fa/email-otp/status`);
+  }
+
+  verifyEmailOtp(request: VerifyEmailOtpRequest): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/auth/2fa/email-otp/verify`, request);
+  }
+
+  emailOtpLogin(request: EmailOtpLoginRequest): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/auth/2fa/email-otp/login`, request);
+  }
+
+  // ============================================================================
+  // WebAuthn / Passkey Authentication
+  // ============================================================================
+
+  getWebAuthnRegistrationOptions(): Observable<WebAuthnRegistrationOptions> {
+    return this.http.post<WebAuthnRegistrationOptions>(
+      `${this.baseUrl}/auth/webauthn/register/options`,
+      {}
+    );
+  }
+
+  completeWebAuthnRegistration(
+    request: CompleteWebAuthnRegistrationRequest
+  ): Observable<WebAuthnRegistrationResult> {
+    return this.http.post<WebAuthnRegistrationResult>(
+      `${this.baseUrl}/auth/webauthn/register/complete`,
+      request
+    );
+  }
+
+  // 2FA WebAuthn (requires prior password login)
+  getWebAuthnAuthenticationOptions(userId?: string): Observable<WebAuthnAuthenticationOptions> {
+    const body = userId ? { userId } : {};
+    return this.http.post<WebAuthnAuthenticationOptions>(
+      `${this.baseUrl}/auth/webauthn/authenticate/options`,
+      body
+    );
+  }
+
+  completeWebAuthnAuthentication(
+    request: CompleteWebAuthnAuthenticationRequest
+  ): Observable<void> {
+    return this.http.post<void>(
+      `${this.baseUrl}/auth/webauthn/authenticate/complete`,
+      request
+    );
+  }
+
+  // Passwordless WebAuthn (no prior login required)
+  getWebAuthnLoginOptions(userName?: string): Observable<WebAuthnAuthenticationOptions> {
+    const body = userName ? { userName } : {};
+    return this.http.post<WebAuthnAuthenticationOptions>(
+      `${this.baseUrl}/auth/webauthn/login/options`,
+      body
+    );
+  }
+
+  completeWebAuthnLogin(
+    request: CompleteWebAuthnAuthenticationRequest
+  ): Observable<{ succeeded: boolean; errorMessage?: string }> {
+    return this.http.post<{ succeeded: boolean; errorMessage?: string }>(
+      `${this.baseUrl}/auth/webauthn/login/complete`,
+      request
+    );
+  }
+
+  getWebAuthnCredentials(): Observable<WebAuthnCredentialList> {
+    return this.http.get<WebAuthnCredentialList>(
+      `${this.baseUrl}/auth/webauthn/credentials`
+    );
+  }
+
+  deleteWebAuthnCredential(credentialId: string): Observable<void> {
+    return this.http.delete<void>(
+      `${this.baseUrl}/auth/webauthn/credentials/${encodeURIComponent(credentialId)}`
+    );
+  }
+
+  renameWebAuthnCredential(
+    credentialId: string,
+    request: RenameWebAuthnCredentialRequest
+  ): Observable<void> {
+    return this.http.patch<void>(
+      `${this.baseUrl}/auth/webauthn/credentials/${encodeURIComponent(credentialId)}`,
       request
     );
   }

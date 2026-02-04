@@ -36,6 +36,28 @@ public class UserService
         return UserMapper.ToDto(user);
     }
 
+    public async Task<ErrorOr<UserDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdAsync(id, cancellationToken);
+        if (user is null)
+        {
+            return UserErrors.NotFound(id);
+        }
+
+        return UserMapper.ToDto(user);
+    }
+
+    public async Task<ErrorOr<UserDto>> GetByUserNameAsync(string userName, CancellationToken cancellationToken = default)
+    {
+        var user = await _userManager.FindByNameAsync(userName);
+        if (user is null)
+        {
+            return UserErrors.NotFoundByUserName(userName);
+        }
+
+        return UserMapper.ToDto(user);
+    }
+
     public async Task<ErrorOr<UserListDto>> GetPagedAsync(int page, int pageSize, string? search = null, CancellationToken cancellationToken = default)
     {
         var (users, totalCount) = await _userRepository.GetPagedAsync(page, pageSize, search, cancellationToken);

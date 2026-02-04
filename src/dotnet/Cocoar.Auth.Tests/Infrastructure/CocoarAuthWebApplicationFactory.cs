@@ -17,6 +17,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using Cocoar.Configuration.Secrets;
+using Cocoar.Configuration.Secrets.SecretTypes;
 using Npgsql;
 
 namespace Cocoar.Auth.Tests.Infrastructure;
@@ -27,12 +29,18 @@ namespace Cocoar.Auth.Tests.Infrastructure;
 /// </summary>
 public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly string _connectionString;
+	
+	private readonly string _connectionString;
+	private readonly string _password;
 
-    public CocoarAuthWebApplicationFactory(SharedPostgresFixture fixture)
+	public CocoarAuthWebApplicationFactory(SharedPostgresFixture fixture)
     {
-        _connectionString = fixture.ConnectionString;
-    }
+        //_connectionString = fixture.ConnectionString;
+		var npgsqlBuilder = new NpgsqlConnectionStringBuilder(fixture.ConnectionString);
+		_password = npgsqlBuilder.Password ?? "";
+		npgsqlBuilder.Password = null;
+		_connectionString = npgsqlBuilder.ConnectionString;
+	}
 
     public JsonSerializerOptions JsonOptions { get; } = new JsonSerializerOptions
     {
@@ -65,7 +73,8 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         [
             rule.For<DatabaseSettings>().FromStatic(_ => new DatabaseSettings
             {
-                ConnectionString = _connectionString
+                ConnectionString = _connectionString,
+				Password = Secret.FromPlain(_password)
             }),
             rule.For<AuthSettings>().FromStatic(_ => new AuthSettings
             {
@@ -84,7 +93,10 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
             {
                 UseAsyncProjections = false
             })
-        ]);
+        ],
+	        setup => [
+				setup.Secrets().AllowPlaintext()
+				]);
 
         return base.CreateHost(builder);
     }
@@ -190,9 +202,10 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         session.DeleteWhere<Cocoar.Auth.Application.Models.UserDetailsReadModel>(u => true);
         await session.SaveChangesAsync();
 
-        // Clear event streams
-        await using var conn = new NpgsqlConnection(_connectionString);
-        await conn.OpenAsync();
+		// Clear event streams
+		var dataSource = Services.GetRequiredService<NpgsqlDataSource>();
+
+		await using var conn = await dataSource.OpenConnectionAsync();
         await using var cmd = new NpgsqlCommand(
             "TRUNCATE public.mt_events, public.mt_streams CASCADE;", conn);
         try

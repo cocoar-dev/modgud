@@ -285,3 +285,46 @@ public record UserRestored(
     Guid UserId,
     Guid? RestoredByUserId,
     string? Reason);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EMAIL OTP EVENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Event raised when an email OTP is requested for two-factor authentication.
+/// </summary>
+public record UserEmailOtpRequested(
+    Guid UserId,
+    string? IpAddress);
+
+/// <summary>
+/// Event raised when an email OTP is successfully verified.
+/// </summary>
+public record UserEmailOtpVerified(Guid UserId);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WEBAUTHN EVENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Event raised when a WebAuthn credential is registered for a user.
+/// </summary>
+public record WebAuthnCredentialRegistered(
+    Guid UserId,
+    string CredentialId,
+    string? DeviceName);
+
+/// <summary>
+/// Event raised when a WebAuthn credential is deleted.
+/// </summary>
+public record WebAuthnCredentialDeleted(
+    Guid UserId,
+    string CredentialId);
+
+/// <summary>
+/// Event raised when a WebAuthn credential is used for authentication.
+/// </summary>
+public record WebAuthnCredentialUsed(
+    Guid UserId,
+    string CredentialId,
+    string? IpAddress);

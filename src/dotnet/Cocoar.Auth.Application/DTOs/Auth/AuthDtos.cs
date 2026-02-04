@@ -20,6 +20,12 @@ public record LoginResultDto
     public bool IsLockedOut { get; init; }
     public bool IsNotAllowed { get; init; }
     public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// Available 2FA methods when RequiresTwoFactor is true.
+    /// Possible values: "totp", "email", "webauthn", "recovery"
+    /// </summary>
+    public List<string>? AvailableTwoFactorMethods { get; init; }
 }
 
 /// <summary>

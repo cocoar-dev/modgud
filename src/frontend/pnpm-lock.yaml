@@ -27,17 +27,23 @@ importers:
         specifier: ~21.1.0
         version: 21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@angular/platform-browser@21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(rxjs@7.8.2)
       '@cocoar/data-grid':
-        specifier: 0.1.0-beta.153
-        version: 0.1.0-beta.153(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(ag-grid-angular@35.0.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(ag-grid-community@35.0.1)(rxjs@7.8.2)
+        specifier: 0.1.0-beta.155
+        version: 0.1.0-beta.155(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(ag-grid-angular@35.0.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(ag-grid-community@35.0.1)(rxjs@7.8.2)
       '@cocoar/localization':
-        specifier: 0.1.0-beta.153
-        version: 0.1.0-beta.153(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@js-temporal/polyfill@0.5.1)(rxjs@7.8.2)
+        specifier: 0.1.0-beta.155
+        version: 0.1.0-beta.155(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@js-temporal/polyfill@0.5.1)(rxjs@7.8.2)
       '@cocoar/ui':
-        specifier: 0.1.0-beta.153
-        version: 0.1.0-beta.153(ef1ef71ce04aef0470aada0897d2643f)
+        specifier: 0.1.0-beta.155
+        version: 0.1.0-beta.155(dc64af49c5c3998ddd4928e6470aded3)
+      '@cocoar/ui-routing':
+        specifier: 0.1.0-beta.155
+        version: 0.1.0-beta.155(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@angular/router@21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@angular/platform-browser@21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(rxjs@7.8.2))(rxjs@7.8.2)
       '@cocoar/ui-tokens':
-        specifier: 0.1.0-beta.153
-        version: 0.1.0-beta.153
+        specifier: 0.1.0-beta.155
+        version: 0.1.0-beta.155
+      '@ngrx/signals':
+        specifier: ^21.0.1
+        version: 21.0.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
       ag-grid-angular:
         specifier: ^35.0.1
         version: 35.0.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))
@@ -951,36 +957,36 @@ packages:
   '@bufbuild/protobuf@2.11.0':
     resolution: {integrity: sha512-sBXGT13cpmPR5BMgHE6UEEfEaShh5Ror6rfN3yEK5si7QVrtZg8LEPQb0VVhiLRUslD2yLnXtnRzG035J/mZXQ==}
 
-  '@cocoar/data-grid@0.1.0-beta.153':
-    resolution: {integrity: sha512-fbfHAg0Oh9l113S98QyjNhPmH48oCV333HubGq+bf/XQjFa3wbiMg4pQKzVA9B0i2//D7LRuK6tX13uW/DaXhg==}
+  '@cocoar/data-grid@0.1.0-beta.155':
+    resolution: {integrity: sha512-hW4moKgmi8sugb2A8QAi6Iw1Um3DOkaVftVW+5ZtBadN+kezhWR13Sa4kikzE5afv6IrlYZ1XFV4cj82x6iOBg==}
     peerDependencies:
       '@angular/core': ^21.0.0
       ag-grid-angular: ^33.0.0
       ag-grid-community: ^33.0.0
       rxjs: ^7.8.0
 
-  '@cocoar/localization@0.1.0-beta.153':
-    resolution: {integrity: sha512-2shPqqgbxP1705LParZzLHUEauUfjlynicxTuB7bW1xc4Umpoh9vF/H8iX6sQMzWjMsFBoCHKWoroMRP34YafA==}
+  '@cocoar/localization@0.1.0-beta.155':
+    resolution: {integrity: sha512-3dxMTE29mxWDpIAj6T69F16r+uV2UkgpOWK0JmSy4gpyNkLYB5qdblpllaLo/7nRGxNU45y4wxkbFtiM4ClkjA==}
     peerDependencies:
       '@angular/common': 21.0.6
       '@angular/core': ^21.0.0
       '@js-temporal/polyfill': ^0.5.1
       rxjs: ^7.0.0
 
-  '@cocoar/ts-utils@0.1.0-beta.153':
-    resolution: {integrity: sha512-MmibZq5WAqBXKpzanYWA/vWlNqkpGjKLSaBLu0Tyl+7v1QlhhQw/0U9ujuXunNWdUzqwVOmYnDHn4ePn3hyAyQ==}
+  '@cocoar/ts-utils@0.1.0-beta.155':
+    resolution: {integrity: sha512-Gbf5oJ5zh2G6+oc9By/vUErAz0bIymqdPXD8Zy/tTzOzpQZKWaJGTrjejf1blMWarRMB7ZXRYdAwLwbDg/JtNw==}
     peerDependencies:
       rxjs: ^7.0.0
 
-  '@cocoar/ui-components@0.1.0-beta.153':
-    resolution: {integrity: sha512-+Fa4s+wjbtSybL74YUmybMXEBRD7YLAoDWCeXVb0HzsMQdXOr9wfSl27/FFnxIgCGkcVTAUS4b7v0CsbWrw14w==}
+  '@cocoar/ui-components@0.1.0-beta.155':
+    resolution: {integrity: sha512-cQd3JfOBKqmP63Se7VjtaX98TTMazJKGEyjrfXISsGZw8gKCTG0l5V9iPaHEezCjLkDmLo9LEOz6s6RY8ZGf/g==}
     peerDependencies:
       '@angular/common': ^21.0.0
       '@angular/core': ^21.0.0
       '@angular/forms': ^21.0.0
       '@angular/platform-browser': ^21.0.0
-      '@cocoar/localization': 0.1.0-beta.153
-      '@cocoar/ui-overlay': 0.1.0-beta.153
+      '@cocoar/localization': 0.1.0-beta.155
+      '@cocoar/ui-overlay': 0.1.0-beta.155
       '@js-temporal/polyfill': ^0.5.0
       '@maskito/core': ^4.0.0
       '@maskito/kit': ^4.0.0
@@ -988,25 +994,32 @@ packages:
       prismjs: ^1.0.0
       rxjs: ^7.8.0
 
-  '@cocoar/ui-menu@0.1.0-beta.153':
-    resolution: {integrity: sha512-XwoL2WKfmBedguBIAEDNLzNGgDxO0ZD8DIWaLtUIW3Iv3EaazkxcU8lAXa/jcNeU4NjfXVNbPmMyUGnl2SBIig==}
+  '@cocoar/ui-menu@0.1.0-beta.155':
+    resolution: {integrity: sha512-U8zj2vEMtIaNHy8bJluayZY0tCAeyvtRTTF6At6XASCZG6P+S73kl/HX280tAKfWV6pXc5TuiugaxKI4Frx23g==}
     peerDependencies:
       '@angular/common': ^21.0.0
       '@angular/core': ^21.0.0
-      '@cocoar/ui-components': 0.1.0-beta.153
-      '@cocoar/ui-overlay': 0.1.0-beta.153
+      '@cocoar/ui-components': 0.1.0-beta.155
+      '@cocoar/ui-overlay': 0.1.0-beta.155
 
-  '@cocoar/ui-overlay@0.1.0-beta.153':
-    resolution: {integrity: sha512-eqtmesPwRI2l8GLIpX9Acc0wfgVbkikar4T5+DBcHiPgpKbougti1Ca8fOthg2pvx94kt8KO5SnFIkfOediv/g==}
+  '@cocoar/ui-overlay@0.1.0-beta.155':
+    resolution: {integrity: sha512-+NetDzb/nIlRAQTr2GcLWNNkBDTuK6IOHGtnrVemoI3aAVCcgrvliQ3pJCzGnV5+xBBW7dWcMuJeBf6TDa1qiA==}
     peerDependencies:
       '@angular/core': ^21.0.0
       rxjs: ^7.8.0
 
-  '@cocoar/ui-tokens@0.1.0-beta.153':
-    resolution: {integrity: sha512-BA0nSsjHKfB57oWfHuAz2fpcWEbUYEVCgvyBH/aldzv/NddBabMH6CAiUnrUj4pvngJPrxH9ojwJp+y7HWtZWw==}
+  '@cocoar/ui-routing@0.1.0-beta.155':
+    resolution: {integrity: sha512-3uvG67m16VskP8a0owO5YROTJ7uv1OcL8p1lDbx5/mXaTq2UbY+9NT4BifEGP96DghD0wonSZ4H6a5xRBVZOlQ==}
+    peerDependencies:
+      '@angular/core': ^21.0.0
+      '@angular/router': ^21.0.0
+      rxjs: ^7.8.0
 
-  '@cocoar/ui@0.1.0-beta.153':
-    resolution: {integrity: sha512-wBPkq4TFYECWI5owIwsNTMFC3iEfsWk3xgjWXlprvizyOyxD9kl2gWZVnFdXhHQe5y1HJj4ZgK2j8QNDyXvbdQ==}
+  '@cocoar/ui-tokens@0.1.0-beta.155':
+    resolution: {integrity: sha512-dd+q83EcRnv58coKg6ZbXHLxxavZ9I1Mw6PEJOiZJQ7KwDjb3eo9IQ5jG89hDUzjnPfdJYqMCQvkzo4dyuxmCA==}
+
+  '@cocoar/ui@0.1.0-beta.155':
+    resolution: {integrity: sha512-iaM5Ab4RGUD5yU/MAw+6/UD48XhzSUTEr4FUAMYCyAmQjGfXB4h5fscueygLOy9zXxVNarkghR61eOI3DOOfPQ==}
     peerDependencies:
       '@angular/core': ^20.3.0
 
@@ -1974,6 +1987,15 @@ packages:
 
   '@napi-rs/wasm-runtime@1.1.1':
     resolution: {integrity: sha512-p64ah1M1ld8xjWv3qbvFwHiFVWrq1yFvV4f7w+mzaqiR4IlSgkqhcRdHwsGgomwzBH51sRY4NEowLxnaBjcW/A==}
+
+  '@ngrx/signals@21.0.1':
+    resolution: {integrity: sha512-krmZDhgHrnmZrxfEJ41bp/aM8Mc55k5B2N7oCLT5w4M3YbOkbnWPkP6bBWMv4XPI+2rqVgkLRW6DaWLwoESaBw==}
+    peerDependencies:
+      '@angular/core': ^21.0.0
+      rxjs: ^6.5.3 || ^7.4.0
+    peerDependenciesMeta:
+      rxjs:
+        optional: true
 
   '@noble/hashes@1.4.0':
     resolution: {integrity: sha512-V1JJ1WTRUqHHrOSh597hURcMqVKVGL/ea3kv0gSnEdsEZ0/+VyPghM1lMNGc00z7CIQorSvbKpuJkxvuHbvdbg==}
@@ -7882,7 +7904,7 @@ snapshots:
 
   '@bufbuild/protobuf@2.11.0': {}
 
-  '@cocoar/data-grid@0.1.0-beta.153(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(ag-grid-angular@35.0.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(ag-grid-community@35.0.1)(rxjs@7.8.2)':
+  '@cocoar/data-grid@0.1.0-beta.155(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(ag-grid-angular@35.0.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(ag-grid-community@35.0.1)(rxjs@7.8.2)':
     dependencies:
       '@angular/core': 21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)
       ag-grid-angular: 35.0.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))
@@ -7890,28 +7912,28 @@ snapshots:
       rxjs: 7.8.2
       tslib: 2.8.1
 
-  '@cocoar/localization@0.1.0-beta.153(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@js-temporal/polyfill@0.5.1)(rxjs@7.8.2)':
+  '@cocoar/localization@0.1.0-beta.155(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@js-temporal/polyfill@0.5.1)(rxjs@7.8.2)':
     dependencies:
       '@angular/common': 21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
       '@angular/core': 21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)
-      '@cocoar/ts-utils': 0.1.0-beta.153(rxjs@7.8.2)
+      '@cocoar/ts-utils': 0.1.0-beta.155(rxjs@7.8.2)
       '@js-temporal/polyfill': 0.5.1
       rxjs: 7.8.2
       tslib: 2.8.1
 
-  '@cocoar/ts-utils@0.1.0-beta.153(rxjs@7.8.2)':
+  '@cocoar/ts-utils@0.1.0-beta.155(rxjs@7.8.2)':
     dependencies:
       rxjs: 7.8.2
       tslib: 2.8.1
 
-  '@cocoar/ui-components@0.1.0-beta.153(a24cb606862149a7a481de036dfaa5b2)':
+  '@cocoar/ui-components@0.1.0-beta.155(9e933ed7c8c25144ac7055369fd73974)':
     dependencies:
       '@angular/common': 21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
       '@angular/core': 21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)
       '@angular/forms': 21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@angular/platform-browser@21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(rxjs@7.8.2)
       '@angular/platform-browser': 21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))
-      '@cocoar/localization': 0.1.0-beta.153(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@js-temporal/polyfill@0.5.1)(rxjs@7.8.2)
-      '@cocoar/ui-overlay': 0.1.0-beta.153(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@cocoar/localization': 0.1.0-beta.155(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@js-temporal/polyfill@0.5.1)(rxjs@7.8.2)
+      '@cocoar/ui-overlay': 0.1.0-beta.155(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
       '@js-temporal/polyfill': 0.5.1
       '@maskito/core': 4.0.1
       '@maskito/kit': 4.0.1(@maskito/core@4.0.1)
@@ -7920,31 +7942,39 @@ snapshots:
       rxjs: 7.8.2
       tslib: 2.8.1
 
-  '@cocoar/ui-menu@0.1.0-beta.153(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@cocoar/ui-components@0.1.0-beta.153(a24cb606862149a7a481de036dfaa5b2))(@cocoar/ui-overlay@0.1.0-beta.153(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))':
+  '@cocoar/ui-menu@0.1.0-beta.155(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@cocoar/ui-components@0.1.0-beta.155(9e933ed7c8c25144ac7055369fd73974))(@cocoar/ui-overlay@0.1.0-beta.155(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))':
     dependencies:
       '@angular/common': 21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
       '@angular/core': 21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)
-      '@cocoar/ui-components': 0.1.0-beta.153(a24cb606862149a7a481de036dfaa5b2)
-      '@cocoar/ui-overlay': 0.1.0-beta.153(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@cocoar/ui-components': 0.1.0-beta.155(9e933ed7c8c25144ac7055369fd73974)
+      '@cocoar/ui-overlay': 0.1.0-beta.155(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
       tslib: 2.8.1
 
-  '@cocoar/ui-overlay@0.1.0-beta.153(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)':
+  '@cocoar/ui-overlay@0.1.0-beta.155(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)':
     dependencies:
       '@angular/core': 21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)
       rxjs: 7.8.2
       tslib: 2.8.1
 
-  '@cocoar/ui-tokens@0.1.0-beta.153':
+  '@cocoar/ui-routing@0.1.0-beta.155(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@angular/router@21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@angular/platform-browser@21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(rxjs@7.8.2))(rxjs@7.8.2)':
+    dependencies:
+      '@angular/core': 21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)
+      '@angular/router': 21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@angular/platform-browser@21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(rxjs@7.8.2)
+      path-to-regexp: 8.3.0
+      rxjs: 7.8.2
+      tslib: 2.8.1
+
+  '@cocoar/ui-tokens@0.1.0-beta.155':
     dependencies:
       tslib: 2.8.1
 
-  '@cocoar/ui@0.1.0-beta.153(ef1ef71ce04aef0470aada0897d2643f)':
+  '@cocoar/ui@0.1.0-beta.155(dc64af49c5c3998ddd4928e6470aded3)':
     dependencies:
       '@angular/core': 21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)
-      '@cocoar/ui-components': 0.1.0-beta.153(a24cb606862149a7a481de036dfaa5b2)
-      '@cocoar/ui-menu': 0.1.0-beta.153(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@cocoar/ui-components@0.1.0-beta.153(a24cb606862149a7a481de036dfaa5b2))(@cocoar/ui-overlay@0.1.0-beta.153(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))
-      '@cocoar/ui-overlay': 0.1.0-beta.153(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
-      '@cocoar/ui-tokens': 0.1.0-beta.153
+      '@cocoar/ui-components': 0.1.0-beta.155(9e933ed7c8c25144ac7055369fd73974)
+      '@cocoar/ui-menu': 0.1.0-beta.155(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@cocoar/ui-components@0.1.0-beta.155(9e933ed7c8c25144ac7055369fd73974))(@cocoar/ui-overlay@0.1.0-beta.155(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))
+      '@cocoar/ui-overlay': 0.1.0-beta.155(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@cocoar/ui-tokens': 0.1.0-beta.155
     transitivePeerDependencies:
       - '@angular/common'
       - '@angular/forms'
@@ -8949,6 +8979,13 @@ snapshots:
       '@emnapi/runtime': 1.8.1
       '@tybys/wasm-util': 0.10.1
     optional: true
+
+  '@ngrx/signals@21.0.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)':
+    dependencies:
+      '@angular/core': 21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)
+      tslib: 2.8.1
+    optionalDependencies:
+      rxjs: 7.8.2
 
   '@noble/hashes@1.4.0': {}
 

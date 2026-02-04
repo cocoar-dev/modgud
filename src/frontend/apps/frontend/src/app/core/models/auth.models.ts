@@ -14,6 +14,7 @@ export interface LoginResult {
   isLockedOut: boolean;
   isNotAllowed: boolean;
   errorMessage?: string;
+  availableTwoFactorMethods?: string[];
 }
 
 export interface CurrentUser {
@@ -99,6 +100,8 @@ export interface TwoFactorStatus {
   isEnabled: boolean;
   hasAuthenticator: boolean;
   recoveryCodesRemaining: number;
+  hasEmailOtp: boolean;
+  webAuthnCredentialCount: number;
 }
 
 export interface RecoveryCodes {
@@ -112,6 +115,68 @@ export interface TwoFactorLoginRequest {
 
 export interface RecoveryCodeLoginRequest {
   code: string;
+}
+
+// ============================================================================
+// Email OTP DTOs
+// ============================================================================
+
+export interface EmailOtpStatus {
+  isPending: boolean;
+  expiresInSeconds?: number;
+}
+
+export interface VerifyEmailOtpRequest {
+  code: string;
+}
+
+export interface EmailOtpLoginRequest {
+  code: string;
+  rememberMachine: boolean;
+}
+
+// ============================================================================
+// WebAuthn DTOs
+// ============================================================================
+
+export interface WebAuthnRegistrationOptions {
+  options: unknown; // PublicKeyCredentialCreationOptions from WebAuthn API
+}
+
+export interface CompleteWebAuthnRegistrationRequest {
+  attestationResponse: unknown;
+  deviceName?: string;
+}
+
+export interface WebAuthnRegistrationResult {
+  credentialId: string;
+  deviceName: string;
+  createdAt: string;
+}
+
+export interface WebAuthnAuthenticationOptions {
+  options: unknown; // PublicKeyCredentialRequestOptions from WebAuthn API
+}
+
+export interface CompleteWebAuthnAuthenticationRequest {
+  assertionResponse: unknown;
+  rememberMachine?: boolean;
+}
+
+export interface WebAuthnCredential {
+  id: string;
+  deviceName: string;
+  authenticatorType?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+}
+
+export interface WebAuthnCredentialList {
+  credentials: WebAuthnCredential[];
+}
+
+export interface RenameWebAuthnCredentialRequest {
+  name: string;
 }
 
 // ============================================================================

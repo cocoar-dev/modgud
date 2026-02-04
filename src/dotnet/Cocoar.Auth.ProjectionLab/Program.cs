@@ -11,8 +11,7 @@ Console.WriteLine("=== Marten Projection Lab ===\n");
 
 // Start PostgreSQL container
 Console.WriteLine("Starting PostgreSQL container...");
-var postgres = new PostgreSqlBuilder()
-    .WithImage("postgres:16-alpine")
+var postgres = new PostgreSqlBuilder("postgres:16-alpine")
     .Build();
 
 await postgres.StartAsync();

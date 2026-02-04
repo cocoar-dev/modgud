@@ -1,0 +1,4 @@
+{
+  "ConnectionString": "Host=localhost;Database=cocoar_auth;Username=postgres",
+  "Password":  "postgres"
+}

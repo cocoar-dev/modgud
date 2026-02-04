@@ -16,6 +16,8 @@ public class AuthController : ApiControllerBase
     private readonly AuthService _authService;
     private readonly UserService _userService;
     private readonly ITwoFactorService _twoFactorService;
+    private readonly IEmailOtpService _emailOtpService;
+    private readonly IWebAuthnService _webAuthnService;
     private readonly IAuthenticationService _authenticationService;
     private readonly ILoginAuditService _loginAuditService;
     private readonly ISessionService _sessionService;
@@ -25,6 +27,8 @@ public class AuthController : ApiControllerBase
         AuthService authService,
         UserService userService,
         ITwoFactorService twoFactorService,
+        IEmailOtpService emailOtpService,
+        IWebAuthnService webAuthnService,
         IAuthenticationService authenticationService,
         ILoginAuditService loginAuditService,
         ISessionService sessionService,
@@ -33,6 +37,8 @@ public class AuthController : ApiControllerBase
         _authService = authService;
         _userService = userService;
         _twoFactorService = twoFactorService;
+        _emailOtpService = emailOtpService;
+        _webAuthnService = webAuthnService;
         _authenticationService = authenticationService;
         _loginAuditService = loginAuditService;
         _sessionService = sessionService;
@@ -450,6 +456,411 @@ public class AuthController : ApiControllerBase
             Succeeded = false,
             ErrorMessage = "Invalid recovery code."
         });
+    }
+
+    #endregion
+
+    #region Email OTP Two-Factor Authentication
+
+    /// <summary>
+    /// Get the current email OTP status.
+    /// </summary>
+    [HttpGet("2fa/email-otp/status")]
+    [Authorize]
+    [ProducesResponseType(typeof(EmailOtpStatusDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetEmailOtpStatus(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _emailOtpService.GetStatusAsync(userId.Value, cancellationToken);
+        return FromErrorOr(result);
+    }
+
+    /// <summary>
+    /// Request an OTP code to be sent to the user's email.
+    /// </summary>
+    [HttpPost("2fa/email-otp/request")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> RequestEmailOtp(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var ipAddress = GetClientIpAddress();
+        var result = await _emailOtpService.RequestOtpAsync(userId.Value, ipAddress, cancellationToken);
+
+        if (result.IsError)
+        {
+            return Problem(result.Errors);
+        }
+
+        return Ok(new { message = "Verification code sent to your email." });
+    }
+
+    /// <summary>
+    /// Verify an OTP code (for setup/verification purposes).
+    /// </summary>
+    [HttpPost("2fa/email-otp/verify")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> VerifyEmailOtp([FromBody] VerifyEmailOtpDto dto, CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _emailOtpService.VerifyOtpAsync(userId.Value, dto.Code, cancellationToken);
+
+        if (result.IsError)
+        {
+            return Problem(result.Errors);
+        }
+
+        return Ok(new { message = "Verification successful." });
+    }
+
+    /// <summary>
+    /// Request an OTP code during 2FA login flow (unauthenticated).
+    /// </summary>
+    [HttpPost("2fa/email-otp/login/request")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> RequestEmailOtpForLogin(CancellationToken cancellationToken)
+    {
+        var user = await _authenticationService.GetTwoFactorAuthenticationUserAsync(cancellationToken);
+        if (user is null)
+        {
+            return Problem(TwoFactorErrors.NoTwoFactorUser);
+        }
+
+        var ipAddress = GetClientIpAddress();
+        var result = await _emailOtpService.RequestOtpAsync(user.Id, ipAddress, cancellationToken);
+
+        if (result.IsError)
+        {
+            return Problem(result.Errors);
+        }
+
+        return Ok(new { message = "Verification code sent to your email." });
+    }
+
+    /// <summary>
+    /// Complete login with an email OTP code.
+    /// </summary>
+    [HttpPost("2fa/email-otp/login")]
+    [ProducesResponseType(typeof(LoginResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> EmailOtpLogin([FromBody] EmailOtpLoginDto dto, CancellationToken cancellationToken)
+    {
+        var user = await _authenticationService.GetTwoFactorAuthenticationUserAsync(cancellationToken);
+        if (user is null)
+        {
+            return Problem(TwoFactorErrors.NoTwoFactorUser);
+        }
+
+        var ipAddress = GetClientIpAddress();
+        var userAgent = Request.Headers.UserAgent.ToString();
+
+        // Verify the OTP code
+        var verifyResult = await _emailOtpService.VerifyOtpAsync(user.Id, dto.Code, cancellationToken);
+
+        if (verifyResult.IsError)
+        {
+            await _loginAuditService.RecordLoginFailedAsync(
+                user.Id, ipAddress, userAgent, LoginFailureReason.TwoFactorFailed, cancellationToken);
+
+            var error = verifyResult.FirstError;
+            return Ok(new LoginResultDto
+            {
+                Succeeded = false,
+                ErrorMessage = error.Description
+            });
+        }
+
+        // Sign in the user
+        await _authenticationService.SignInAsync(user, isPersistent: false, cancellationToken);
+        await _loginAuditService.RecordLoginAsync(user.Id, ipAddress, userAgent, cancellationToken);
+
+        return Ok(new LoginResultDto { Succeeded = true });
+    }
+
+    #endregion
+
+    #region WebAuthn Two-Factor Authentication
+
+    /// <summary>
+    /// Get registration options for a new WebAuthn credential.
+    /// </summary>
+    [HttpPost("webauthn/register/options")]
+    [Authorize]
+    [ProducesResponseType(typeof(WebAuthnRegistrationOptionsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetWebAuthnRegistrationOptions(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _webAuthnService.GetRegistrationOptionsAsync(userId.Value, cancellationToken);
+        return FromErrorOr(result);
+    }
+
+    /// <summary>
+    /// Complete WebAuthn credential registration.
+    /// </summary>
+    [HttpPost("webauthn/register/complete")]
+    [Authorize]
+    [ProducesResponseType(typeof(WebAuthnRegistrationResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> CompleteWebAuthnRegistration(
+        [FromBody] CompleteWebAuthnRegistrationDto dto,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _webAuthnService.CompleteRegistrationAsync(
+            userId.Value,
+            dto.AttestationResponse,
+            dto.DeviceName,
+            cancellationToken);
+
+        return FromErrorOr(result);
+    }
+
+    /// <summary>
+    /// Get authentication options for WebAuthn 2FA login.
+    /// </summary>
+    [HttpPost("webauthn/authenticate/options")]
+    [ProducesResponseType(typeof(WebAuthnAuthenticationOptionsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetWebAuthnAuthenticationOptions(CancellationToken cancellationToken)
+    {
+        var user = await _authenticationService.GetTwoFactorAuthenticationUserAsync(cancellationToken);
+        if (user is null)
+        {
+            return Problem(TwoFactorErrors.NoTwoFactorUser);
+        }
+
+        var result = await _webAuthnService.GetAuthenticationOptionsAsync(user.Id, cancellationToken);
+        return FromErrorOr(result);
+    }
+
+    /// <summary>
+    /// Complete WebAuthn 2FA login.
+    /// </summary>
+    [HttpPost("webauthn/authenticate/complete")]
+    [ProducesResponseType(typeof(LoginResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CompleteWebAuthnAuthentication(
+        [FromBody] CompleteWebAuthnAuthenticationDto dto,
+        CancellationToken cancellationToken)
+    {
+        var user = await _authenticationService.GetTwoFactorAuthenticationUserAsync(cancellationToken);
+        if (user is null)
+        {
+            return Problem(TwoFactorErrors.NoTwoFactorUser);
+        }
+
+        var ipAddress = GetClientIpAddress();
+        var userAgent = Request.Headers.UserAgent.ToString();
+
+        var result = await _webAuthnService.VerifyAuthenticationAsync(
+            user.Id,
+            dto.AssertionResponse,
+            ipAddress,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            await _loginAuditService.RecordLoginFailedAsync(
+                user.Id, ipAddress, userAgent, LoginFailureReason.TwoFactorFailed, cancellationToken);
+
+            var error = result.FirstError;
+            return Ok(new LoginResultDto
+            {
+                Succeeded = false,
+                ErrorMessage = error.Description
+            });
+        }
+
+        // Sign in the user
+        await _authenticationService.SignInAsync(user, isPersistent: false, cancellationToken);
+        await _loginAuditService.RecordLoginAsync(user.Id, ipAddress, userAgent, cancellationToken);
+
+        return Ok(new LoginResultDto { Succeeded = true });
+    }
+
+    /// <summary>
+    /// Get authentication options for passwordless WebAuthn login.
+    /// </summary>
+    [HttpPost("webauthn/login/options")]
+    [ProducesResponseType(typeof(WebAuthnAuthenticationOptionsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetWebAuthnLoginOptions(
+        [FromBody] WebAuthnLoginOptionsRequestDto? dto,
+        CancellationToken cancellationToken)
+    {
+        Guid? userId = null;
+
+        // If username is provided, look up the user
+        if (!string.IsNullOrEmpty(dto?.UserName))
+        {
+            var user = await _userService.GetByUserNameAsync(dto.UserName, cancellationToken);
+            if (user.IsError)
+            {
+                // Don't reveal if user exists - just return options for discoverable credentials
+                userId = null;
+            }
+            else
+            {
+                userId = Guid.Parse(user.Value.Id);
+            }
+        }
+
+        var result = await _webAuthnService.GetAuthenticationOptionsAsync(userId, cancellationToken);
+        return FromErrorOr(result);
+    }
+
+    /// <summary>
+    /// Complete passwordless WebAuthn login.
+    /// </summary>
+    [HttpPost("webauthn/login/complete")]
+    [ProducesResponseType(typeof(LoginResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CompleteWebAuthnLogin(
+        [FromBody] CompleteWebAuthnAuthenticationDto dto,
+        CancellationToken cancellationToken)
+    {
+        var ipAddress = GetClientIpAddress();
+        var userAgent = Request.Headers.UserAgent.ToString();
+
+        var result = await _webAuthnService.VerifyAuthenticationAsync(
+            null,
+            dto.AssertionResponse,
+            ipAddress,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            var error = result.FirstError;
+            return Ok(new LoginResultDto
+            {
+                Succeeded = false,
+                ErrorMessage = error.Description
+            });
+        }
+
+        // Get the user and sign in
+        var user = await _userService.GetByIdAsync(result.Value, cancellationToken);
+        if (user.IsError)
+        {
+            return Ok(new LoginResultDto
+            {
+                Succeeded = false,
+                ErrorMessage = "User not found."
+            });
+        }
+
+        await _authenticationService.SignInByIdAsync(result.Value, isPersistent: false, cancellationToken);
+        await _loginAuditService.RecordLoginAsync(result.Value, ipAddress, userAgent, cancellationToken);
+
+        return Ok(new LoginResultDto { Succeeded = true });
+    }
+
+    /// <summary>
+    /// Get all WebAuthn credentials for the current user.
+    /// </summary>
+    [HttpGet("webauthn/credentials")]
+    [Authorize]
+    [ProducesResponseType(typeof(WebAuthnCredentialListDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetWebAuthnCredentials(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _webAuthnService.GetCredentialsAsync(userId.Value, cancellationToken);
+        return FromErrorOr(result);
+    }
+
+    /// <summary>
+    /// Delete a WebAuthn credential.
+    /// </summary>
+    [HttpDelete("webauthn/credentials/{credentialId}")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteWebAuthnCredential(string credentialId, CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _webAuthnService.DeleteCredentialAsync(userId.Value, credentialId, cancellationToken);
+
+        if (result.IsError)
+        {
+            return Problem(result.Errors);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Rename a WebAuthn credential.
+    /// </summary>
+    [HttpPatch("webauthn/credentials/{credentialId}")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RenameWebAuthnCredential(
+        string credentialId,
+        [FromBody] RenameWebAuthnCredentialDto dto,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _webAuthnService.RenameCredentialAsync(userId.Value, credentialId, dto.Name, cancellationToken);
+
+        if (result.IsError)
+        {
+            return Problem(result.Errors);
+        }
+
+        return NoContent();
     }
 
     #endregion
