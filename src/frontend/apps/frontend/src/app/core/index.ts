@@ -1,5 +1,6 @@
 // Models
 export * from './models/auth.models';
+export * from './models/oauth.models';
 
 // Services
 export * from './services/auth-api.service';

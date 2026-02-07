@@ -1,0 +1,55 @@
+<div class="client-list">
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">OAuth Clients</h1>
+      <p class="page-subtitle">Manage OAuth 2.0 / OpenID Connect clients</p>
+    </div>
+    <coar-button
+      variant="primary"
+      iconStart="plus"
+      routerLink="/admin/oauth/clients/create">
+      Create Client
+    </coar-button>
+  </header>
+
+  @if (error()) {
+    <coar-note color="error" padding="sm" class="message">
+      {{ error() }}
+    </coar-note>
+  }
+
+  @if (success()) {
+    <coar-note color="success" padding="sm" class="message">
+      {{ success() }}
+    </coar-note>
+  }
+
+  <div class="grid-container">
+    <ag-grid-angular
+      class="ag-theme-cocoar"
+      [coarDataGrid]="clientsGrid"
+      style="height: 500px; width: 100%;"
+    />
+    <div class="grid-actions-overlay">
+      @for (client of clients(); track client.id) {
+        <div class="grid-action-row">
+          <coar-button
+            variant="ghost"
+            size="sm"
+            iconStart="edit"
+            [routerLink]="['/admin/oauth/clients', client.id]">
+            Edit
+          </coar-button>
+          <coar-button
+            variant="ghost"
+            size="sm"
+            iconStart="trash-2"
+            [loading]="deletingId() === client.id"
+            (clicked)="onDelete(client)">
+            Delete
+          </coar-button>
+        </div>
+      }
+    </div>
+  </div>
+</div>

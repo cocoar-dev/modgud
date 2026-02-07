@@ -1,0 +1,190 @@
+<div class="api-resource-form">
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">{{ isEditMode() ? 'Edit API Resource' : 'Create API Resource' }}</h1>
+      <p class="page-subtitle">
+        {{ isEditMode() ? 'Update API resource configuration' : 'Register a new API resource for introspection' }}
+      </p>
+    </div>
+  </header>
+
+  @if (error()) {
+    <coar-note color="error" padding="sm" class="message">
+      {{ error() }}
+    </coar-note>
+  }
+
+  @if (success()) {
+    <coar-note color="success" padding="sm" class="message">
+      {{ success() }}
+    </coar-note>
+  }
+
+  @if (generatedSecret()) {
+    <coar-card padding="md" color="warning" class="secret-card">
+      <h3>API Secret</h3>
+      <p>Copy this secret now. It will not be shown again.</p>
+      <div class="secret-display">
+        <code>{{ generatedSecret() }}</code>
+        <coar-button
+          variant="ghost"
+          size="sm"
+          iconStart="copy"
+          (clicked)="copyToClipboard(generatedSecret()!)">
+          Copy
+        </coar-button>
+      </div>
+      @if (!isEditMode()) {
+        <coar-button
+          variant="primary"
+          class="done-button"
+          routerLink="/admin/oauth/api-resources">
+          Done
+        </coar-button>
+      }
+    </coar-card>
+  }
+
+  @if (isLoading()) {
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>Loading...</p>
+    </div>
+  } @else {
+    <coar-card padding="lg">
+      <form [formGroup]="form" (ngSubmit)="onSubmit()">
+        <div class="form-section">
+          <h2>Basic Information</h2>
+
+          <div class="form-group">
+            <coar-text-input
+              label="Name"
+              placeholder="my-api"
+              formControlName="name"
+              [required]="true"
+              [disabled]="isEditMode()"
+              [error]="getFieldError('name')" />
+            <span class="field-hint">This is the audience value that will appear in access tokens.</span>
+          </div>
+
+          <div class="form-group">
+            <coar-text-input
+              label="Display Name"
+              placeholder="My API"
+              formControlName="displayName" />
+          </div>
+
+          <div class="form-group">
+            <coar-text-input
+              label="Description"
+              placeholder="Description of this API resource"
+              formControlName="description" />
+          </div>
+
+          <div class="form-group">
+            <coar-checkbox
+              label="Enabled"
+              formControlName="enabled" />
+            <span class="field-hint">Disabled API resources cannot authenticate for introspection.</span>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h2>Allowed Scopes</h2>
+          <p class="section-description">
+            Select which scopes grant access to this API resource.
+          </p>
+
+          <div class="scopes-grid">
+            @for (scope of availableScopes(); track scope.id; let i = $index) {
+              <div class="scope-item">
+                <coar-checkbox
+                  [label]="scope.displayName || scope.name"
+                  [formControl]="$any(scopesArray.at(i))" />
+                @if (scope.description) {
+                  <span class="scope-description">{{ scope.description }}</span>
+                }
+              </div>
+            }
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h2>User Claims</h2>
+          <p class="section-description">
+            Claims from the user to include in access tokens for this API.
+          </p>
+
+          @for (control of userClaimsArray.controls; track $index) {
+            <div class="claim-row">
+              <coar-text-input
+                placeholder="e.g., email, name, role"
+                [formControl]="$any(control)" />
+              <coar-button
+                variant="ghost"
+                size="sm"
+                iconStart="x"
+                (clicked)="removeUserClaim($index)"
+                [disabled]="userClaimsArray.length === 1" />
+            </div>
+          }
+
+          <coar-button
+            variant="ghost"
+            size="sm"
+            iconStart="plus"
+            (clicked)="addUserClaim()">
+            Add User Claim
+          </coar-button>
+        </div>
+
+        <div class="form-actions">
+          <coar-button
+            variant="ghost"
+            routerLink="/admin/oauth/api-resources">
+            Cancel
+          </coar-button>
+          <coar-button
+            type="submit"
+            variant="primary"
+            [loading]="isSaving()"
+            [disabled]="form.invalid || form.pristine">
+            {{ isEditMode() ? 'Save Changes' : 'Create API Resource' }}
+          </coar-button>
+        </div>
+      </form>
+    </coar-card>
+
+    @if (isEditMode() && apiResource()) {
+      <coar-card padding="lg" class="secret-section">
+        <h2>API Secret</h2>
+        <p>Regenerate the API secret if it has been compromised.</p>
+        <coar-button
+          variant="secondary"
+          size="sm"
+          [loading]="isRegenerating()"
+          (clicked)="onRegenerateSecret()">
+          Regenerate Secret
+        </coar-button>
+      </coar-card>
+
+      <coar-card padding="lg" color="error" class="danger-zone">
+        <h2>Danger Zone</h2>
+
+        <div class="danger-action">
+          <div>
+            <strong>Delete API Resource</strong>
+            <p>Permanently delete this API resource. This action cannot be undone.</p>
+          </div>
+          <coar-button
+            variant="danger"
+            size="sm"
+            [loading]="isDeleting()"
+            (clicked)="onDelete()">
+            Delete
+          </coar-button>
+        </div>
+      </coar-card>
+    }
+  }
+</div>

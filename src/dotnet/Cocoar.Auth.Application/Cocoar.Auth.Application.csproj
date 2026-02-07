@@ -5,9 +5,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="BCrypt.Net-Next" />
     <PackageReference Include="ErrorOr" />
     <PackageReference Include="Microsoft.AspNetCore.WebUtilities" />
     <PackageReference Include="Microsoft.Extensions.Identity.Core" />
+    <PackageReference Include="OpenIddict.Abstractions" />
     <PackageReference Include="Riok.Mapperly" />
     <PackageReference Include="WolverineFx" />
   </ItemGroup>

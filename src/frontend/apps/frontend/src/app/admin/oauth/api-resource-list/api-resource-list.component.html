@@ -1,0 +1,55 @@
+<div class="api-resource-list">
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">API Resources</h1>
+      <p class="page-subtitle">Manage API resources for reference token introspection</p>
+    </div>
+    <coar-button
+      variant="primary"
+      iconStart="plus"
+      routerLink="/admin/oauth/api-resources/create">
+      Create API Resource
+    </coar-button>
+  </header>
+
+  @if (error()) {
+    <coar-note color="error" padding="sm" class="message">
+      {{ error() }}
+    </coar-note>
+  }
+
+  @if (success()) {
+    <coar-note color="success" padding="sm" class="message">
+      {{ success() }}
+    </coar-note>
+  }
+
+  <div class="grid-container">
+    <ag-grid-angular
+      class="ag-theme-cocoar"
+      [coarDataGrid]="apiResourcesGrid"
+      style="height: 500px; width: 100%;"
+    />
+    <div class="grid-actions-overlay">
+      @for (resource of apiResources(); track resource.id) {
+        <div class="grid-action-row">
+          <coar-button
+            variant="ghost"
+            size="sm"
+            iconStart="edit"
+            [routerLink]="['/admin/oauth/api-resources', resource.id]">
+            Edit
+          </coar-button>
+          <coar-button
+            variant="ghost"
+            size="sm"
+            iconStart="trash-2"
+            [loading]="deletingId() === resource.id"
+            (clicked)="onDelete(resource)">
+            Delete
+          </coar-button>
+        </div>
+      }
+    </div>
+  </div>
+</div>

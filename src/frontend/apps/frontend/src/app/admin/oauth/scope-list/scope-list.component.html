@@ -1,0 +1,63 @@
+<div class="scope-list">
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">OAuth Scopes</h1>
+      <p class="page-subtitle">Manage OAuth 2.0 / OpenID Connect scopes</p>
+    </div>
+    <coar-button
+      variant="primary"
+      iconStart="plus"
+      routerLink="/admin/oauth/scopes/create">
+      Create Scope
+    </coar-button>
+  </header>
+
+  @if (error()) {
+    <coar-note color="error" padding="sm" class="message">
+      {{ error() }}
+    </coar-note>
+  }
+
+  @if (success()) {
+    <coar-note color="success" padding="sm" class="message">
+      {{ success() }}
+    </coar-note>
+  }
+
+  <coar-note color="info" padding="sm" class="message">
+    Standard OpenID Connect scopes (openid, email, profile, etc.) are read-only and cannot be modified or deleted.
+  </coar-note>
+
+  <div class="grid-container">
+    <ag-grid-angular
+      class="ag-theme-cocoar"
+      [coarDataGrid]="scopesGrid"
+      style="height: 500px; width: 100%;"
+    />
+    <div class="grid-actions-overlay">
+      @for (scope of scopes(); track scope.id) {
+        <div class="grid-action-row">
+          @if (!isStandardScope(scope)) {
+            <coar-button
+              variant="ghost"
+              size="sm"
+              iconStart="edit"
+              [routerLink]="['/admin/oauth/scopes', scope.id]">
+              Edit
+            </coar-button>
+            <coar-button
+              variant="ghost"
+              size="sm"
+              iconStart="trash-2"
+              [loading]="deletingId() === scope.id"
+              (clicked)="onDelete(scope)">
+              Delete
+            </coar-button>
+          } @else {
+            <coar-badge color="neutral" size="sm">Standard</coar-badge>
+          }
+        </div>
+      }
+    </div>
+  </div>
+</div>

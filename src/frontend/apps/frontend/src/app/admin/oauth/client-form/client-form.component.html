@@ -1,0 +1,225 @@
+<div class="client-form">
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">{{ isEditMode() ? 'Edit OAuth Client' : 'Create OAuth Client' }}</h1>
+      <p class="page-subtitle">
+        {{ isEditMode() ? 'Update OAuth client configuration' : 'Register a new OAuth 2.0 / OIDC client' }}
+      </p>
+    </div>
+  </header>
+
+  @if (error()) {
+    <coar-note color="error" padding="sm" class="message">
+      {{ error() }}
+    </coar-note>
+  }
+
+  @if (success()) {
+    <coar-note color="success" padding="sm" class="message">
+      {{ success() }}
+    </coar-note>
+  }
+
+  @if (generatedSecret()) {
+    <coar-card padding="md" color="warning" class="secret-card">
+      <h3>Client Secret</h3>
+      <p>Copy this secret now. It will not be shown again.</p>
+      <div class="secret-display">
+        <code>{{ generatedSecret() }}</code>
+        <coar-button
+          variant="ghost"
+          size="sm"
+          iconStart="copy"
+          (clicked)="copyToClipboard(generatedSecret()!)">
+          Copy
+        </coar-button>
+      </div>
+      @if (!isEditMode()) {
+        <coar-button
+          variant="primary"
+          class="done-button"
+          routerLink="/admin/oauth/clients">
+          Done
+        </coar-button>
+      }
+    </coar-card>
+  }
+
+  @if (isLoading()) {
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>Loading...</p>
+    </div>
+  } @else {
+    <coar-card padding="lg">
+      <form [formGroup]="form" (ngSubmit)="onSubmit()">
+        <div class="form-section">
+          <h2>Basic Information</h2>
+
+          <div class="form-group">
+            <coar-text-input
+              label="Client ID"
+              placeholder="my-app-client"
+              formControlName="clientId"
+              [required]="true"
+              [disabled]="isEditMode()"
+              [error]="getFieldError('clientId')" />
+          </div>
+
+          <div class="form-group">
+            <coar-text-input
+              label="Display Name"
+              placeholder="My Application"
+              formControlName="displayName" />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="select-label">Client Type <span class="required">*</span></label>
+              <select formControlName="clientType" class="select-input" [attr.disabled]="isEditMode() ? true : null">
+                @for (option of clientTypeOptions; track option.value) {
+                  <option [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="select-label">Consent Type <span class="required">*</span></label>
+              <select formControlName="consentType" class="select-input">
+                @for (option of consentTypeOptions; track option.value) {
+                  <option [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h2>Redirect URIs</h2>
+          <p class="section-description">
+            URIs where users will be redirected after authentication.
+          </p>
+
+          @for (control of redirectUrisArray.controls; track $index) {
+            <div class="uri-row">
+              <coar-text-input
+                placeholder="https://myapp.example.com/callback"
+                [formControl]="$any(control)" />
+              <coar-button
+                variant="ghost"
+                size="sm"
+                iconStart="x"
+                (clicked)="removeRedirectUri($index)"
+                [disabled]="redirectUrisArray.length === 1" />
+            </div>
+          }
+
+          <coar-button
+            variant="ghost"
+            size="sm"
+            iconStart="plus"
+            (clicked)="addRedirectUri()">
+            Add Redirect URI
+          </coar-button>
+        </div>
+
+        <div class="form-section">
+          <h2>Post-Logout Redirect URIs</h2>
+          <p class="section-description">
+            URIs where users will be redirected after logout.
+          </p>
+
+          @for (control of postLogoutRedirectUrisArray.controls; track $index) {
+            <div class="uri-row">
+              <coar-text-input
+                placeholder="https://myapp.example.com/"
+                [formControl]="$any(control)" />
+              <coar-button
+                variant="ghost"
+                size="sm"
+                iconStart="x"
+                (clicked)="removePostLogoutRedirectUri($index)" />
+            </div>
+          }
+
+          <coar-button
+            variant="ghost"
+            size="sm"
+            iconStart="plus"
+            (clicked)="addPostLogoutRedirectUri()">
+            Add Post-Logout URI
+          </coar-button>
+        </div>
+
+        <div class="form-section">
+          <h2>Allowed Scopes</h2>
+          <p class="section-description">
+            Select which scopes this client can request.
+          </p>
+
+          <div class="scopes-grid">
+            @for (scope of availableScopes(); track scope.id; let i = $index) {
+              <div class="scope-item">
+                <coar-checkbox
+                  [label]="scope.displayName || scope.name"
+                  [formControl]="$any(scopesArray.at(i))" />
+                @if (scope.description) {
+                  <span class="scope-description">{{ scope.description }}</span>
+                }
+              </div>
+            }
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <coar-button
+            variant="ghost"
+            routerLink="/admin/oauth/clients">
+            Cancel
+          </coar-button>
+          <coar-button
+            type="submit"
+            variant="primary"
+            [loading]="isSaving()"
+            [disabled]="form.invalid || form.pristine">
+            {{ isEditMode() ? 'Save Changes' : 'Create Client' }}
+          </coar-button>
+        </div>
+      </form>
+    </coar-card>
+
+    @if (isEditMode() && client()) {
+      @if (client()?.clientType === 'confidential') {
+        <coar-card padding="lg" class="secret-section">
+          <h2>Client Secret</h2>
+          <p>Regenerate the client secret if it has been compromised.</p>
+          <coar-button
+            variant="secondary"
+            size="sm"
+            [loading]="isRegenerating()"
+            (clicked)="onRegenerateSecret()">
+            Regenerate Secret
+          </coar-button>
+        </coar-card>
+      }
+
+      <coar-card padding="lg" color="error" class="danger-zone">
+        <h2>Danger Zone</h2>
+
+        <div class="danger-action">
+          <div>
+            <strong>Delete Client</strong>
+            <p>Permanently delete this OAuth client. This action cannot be undone.</p>
+          </div>
+          <coar-button
+            variant="danger"
+            size="sm"
+            [loading]="isDeleting()"
+            (clicked)="onDelete()">
+            Delete Client
+          </coar-button>
+        </div>
+      </coar-card>
+    }
+  }
+</div>

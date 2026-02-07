@@ -55,6 +55,69 @@ export const adminRoutes: Route[] = [
             (m) => m.RoleFormComponent
           ),
       },
+      {
+        path: 'oauth/clients',
+        loadComponent: () =>
+          import('./oauth/client-list/client-list.component').then(
+            (m) => m.OAuthClientListComponent
+          ),
+      },
+      {
+        path: 'oauth/clients/create',
+        loadComponent: () =>
+          import('./oauth/client-form/client-form.component').then(
+            (m) => m.OAuthClientFormComponent
+          ),
+      },
+      {
+        path: 'oauth/clients/:id',
+        loadComponent: () =>
+          import('./oauth/client-form/client-form.component').then(
+            (m) => m.OAuthClientFormComponent
+          ),
+      },
+      {
+        path: 'oauth/scopes',
+        loadComponent: () =>
+          import('./oauth/scope-list/scope-list.component').then(
+            (m) => m.OAuthScopeListComponent
+          ),
+      },
+      {
+        path: 'oauth/scopes/create',
+        loadComponent: () =>
+          import('./oauth/scope-form/scope-form.component').then(
+            (m) => m.OAuthScopeFormComponent
+          ),
+      },
+      {
+        path: 'oauth/scopes/:id',
+        loadComponent: () =>
+          import('./oauth/scope-form/scope-form.component').then(
+            (m) => m.OAuthScopeFormComponent
+          ),
+      },
+      {
+        path: 'oauth/api-resources',
+        loadComponent: () =>
+          import('./oauth/api-resource-list/api-resource-list.component').then(
+            (m) => m.OAuthApiResourceListComponent
+          ),
+      },
+      {
+        path: 'oauth/api-resources/create',
+        loadComponent: () =>
+          import('./oauth/api-resource-form/api-resource-form.component').then(
+            (m) => m.OAuthApiResourceFormComponent
+          ),
+      },
+      {
+        path: 'oauth/api-resources/:id',
+        loadComponent: () =>
+          import('./oauth/api-resource-form/api-resource-form.component').then(
+            (m) => m.OAuthApiResourceFormComponent
+          ),
+      },
     ],
   },
 ];

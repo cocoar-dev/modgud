@@ -10,6 +10,7 @@ using Cocoar.Auth.Infrastructure.Interfaces;
 using Cocoar.Auth.Infrastructure.Persistence;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using Cocoar.Auth.Infrastructure.Persistence.Repositories;
+using Cocoar.Auth.Infrastructure.Repositories;
 using Cocoar.Auth.Infrastructure.Services;
 using Cocoar.Configuration.Reactive;
 using JasperFx;
@@ -97,6 +98,7 @@ public static class DependencyInjection
 		services.AddScoped<IRoleRepository, MartenRoleRepository>();
 		services.AddScoped<ISessionRepository, MartenSessionRepository>();
 		services.AddScoped<IUserDetailsRepository, UserDetailsRepository>();
+		services.AddScoped<IOAuthApiResourceRepository, OAuthApiResourceRepository>();
 	}
 
 	/// <summary>
@@ -168,6 +170,28 @@ public static class DependencyInjection
 		options.Schema.For<WebAuthnChallenge>()
 			.Identity(x => x.Id)
 			.Index(x => x.UserId);
+
+		// ═══════════════════════════════════════════════════════════════
+		// OPENIDDICT DOCUMENT STORAGE (Security-sensitive, not event-sourced)
+		// ═══════════════════════════════════════════════════════════════
+
+		// Configure OAuthApplicationSecurityData document (sensitive data like ClientSecret)
+		options.Schema.For<OAuthApplicationSecurityData>()
+			.Identity(x => x.Id);
+
+		// Configure OpenIddict Authorization document (ephemeral, consent records)
+		options.Schema.For<OpenIddictAuthorizationDocument>()
+			.Identity(x => x.Id)
+			.Index(x => x.ApplicationId)
+			.Index(x => x.Subject);
+
+		// Configure OpenIddict Token document (sensitive, ephemeral)
+		options.Schema.For<OpenIddictTokenDocument>()
+			.Identity(x => x.Id)
+			.Index(x => x.ApplicationId)
+			.Index(x => x.AuthorizationId)
+			.Index(x => x.Subject)
+			.Index(x => x.ReferenceId);
 	}
 
 	/// <summary>
@@ -269,6 +293,41 @@ public static class DependencyInjection
 		options.Events.AddEventType<RoleClaimAdded>();
 		options.Events.AddEventType<RoleClaimRemoved>();
 
+		// Register OAuth application events for the event store
+		options.Events.AddEventType<OAuthApplicationCreated>();
+		options.Events.AddEventType<OAuthApplicationDisplayNameChanged>();
+		options.Events.AddEventType<OAuthApplicationClientTypeChanged>();
+		options.Events.AddEventType<OAuthApplicationConsentTypeChanged>();
+		options.Events.AddEventType<OAuthApplicationRedirectUrisChanged>();
+		options.Events.AddEventType<OAuthApplicationPostLogoutRedirectUrisChanged>();
+		options.Events.AddEventType<OAuthApplicationPermissionsChanged>();
+		options.Events.AddEventType<OAuthApplicationRequirementsChanged>();
+		options.Events.AddEventType<OAuthApplicationSettingsChanged>();
+		options.Events.AddEventType<OAuthApplicationDisplayNamesChanged>();
+		options.Events.AddEventType<OAuthApplicationPropertiesChanged>();
+		options.Events.AddEventType<OAuthApplicationDeleted>();
+
+		// Register OAuth scope events for the event store
+		options.Events.AddEventType<OAuthScopeCreated>();
+		options.Events.AddEventType<OAuthScopeDisplayNameChanged>();
+		options.Events.AddEventType<OAuthScopeDescriptionChanged>();
+		options.Events.AddEventType<OAuthScopeResourcesChanged>();
+		options.Events.AddEventType<OAuthScopeDisplayNamesChanged>();
+		options.Events.AddEventType<OAuthScopeDescriptionsChanged>();
+		options.Events.AddEventType<OAuthScopePropertiesChanged>();
+		options.Events.AddEventType<OAuthScopeDeleted>();
+
+		// Register OAuth API resource events for the event store
+		options.Events.AddEventType<OAuthApiResourceCreated>();
+		options.Events.AddEventType<OAuthApiResourceDisplayNameChanged>();
+		options.Events.AddEventType<OAuthApiResourceDescriptionChanged>();
+		options.Events.AddEventType<OAuthApiResourceEnabled>();
+		options.Events.AddEventType<OAuthApiResourceDisabled>();
+		options.Events.AddEventType<OAuthApiResourceScopesChanged>();
+		options.Events.AddEventType<OAuthApiResourceUserClaimsChanged>();
+		options.Events.AddEventType<OAuthApiResourcePropertiesChanged>();
+		options.Events.AddEventType<OAuthApiResourceDeleted>();
+
 		// ═══════════════════════════════════════════════════════════════
 		// INLINE STATE PROJECTIONS (for validation, Identity, immediate consistency)
 		// Naming Convention: *State = Inline projection, single source of truth
@@ -281,6 +340,18 @@ public static class DependencyInjection
 		// RoleState projection - runs inline for immediate consistency
 		// Use for: role validation, claims lookup, Identity stores
 		options.Projections.Add(new RoleStateProjection(), ProjectionLifecycle.Inline);
+
+		// OAuthApplicationState projection - runs inline for immediate consistency
+		// Use for: OpenIddict store operations, validation
+		options.Projections.Add(new OAuthApplicationStateProjection(), ProjectionLifecycle.Inline);
+
+		// OAuthScopeState projection - runs inline for immediate consistency
+		// Use for: OpenIddict store operations, validation
+		options.Projections.Add(new OAuthScopeStateProjection(), ProjectionLifecycle.Inline);
+
+		// OAuthApiResourceState projection - runs inline for immediate consistency
+		// Use for: API resource management, introspection validation
+		options.Projections.Add(new OAuthApiResourceStateProjection(), ProjectionLifecycle.Inline);
 
 		// ═══════════════════════════════════════════════════════════════
 		// READ MODEL PROJECTIONS (configurable: async for prod, inline for tests)
@@ -313,6 +384,25 @@ public static class DependencyInjection
 			.Identity(x => x.Id)
 			.Index(x => x.Email)
 			.Index(x => x.IsActive);
+
+		// Configure OAuthApplicationState indexes for fast lookups
+		options.Schema.For<OAuthApplicationState>()
+			.Identity(x => x.Id)
+			.Index(x => x.ClientId, x => x.IsUnique = true);
+
+		// Configure OAuthScopeState indexes for fast lookups
+		options.Schema.For<OAuthScopeState>()
+			.Identity(x => x.Id)
+			.Index(x => x.Name, x => x.IsUnique = true);
+
+		// Configure OAuthApiResourceState indexes for fast lookups
+		options.Schema.For<OAuthApiResourceState>()
+			.Identity(x => x.Id)
+			.Index(x => x.Name, x => x.IsUnique = true);
+
+		// Configure OAuthApiResourceSecurityData document (security-sensitive data, not event-sourced)
+		options.Schema.For<OAuthApiResourceSecurityData>()
+			.Identity(x => x.Id);
 	}
 
 	public static IdentityBuilder AddIdentityWithMarten(this IServiceCollection services)

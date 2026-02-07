@@ -1,0 +1,127 @@
+<div class="scope-form">
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">{{ isEditMode() ? 'Edit Scope' : 'Create Scope' }}</h1>
+      <p class="page-subtitle">
+        {{ isEditMode() ? 'Update scope configuration' : 'Create a new OAuth scope' }}
+      </p>
+    </div>
+  </header>
+
+  @if (error()) {
+    <coar-note color="error" padding="sm" class="message">
+      {{ error() }}
+    </coar-note>
+  }
+
+  @if (isStandard()) {
+    <coar-note color="warning" padding="sm" class="message">
+      This is a standard OpenID Connect scope and cannot be modified.
+    </coar-note>
+  }
+
+  @if (isLoading()) {
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>Loading...</p>
+    </div>
+  } @else {
+    <coar-card padding="lg">
+      <form [formGroup]="form" (ngSubmit)="onSubmit()">
+        <div class="form-group">
+          <coar-text-input
+            label="Scope Name"
+            placeholder="api:read"
+            formControlName="name"
+            [required]="true"
+            [disabled]="isEditMode()"
+            [error]="getFieldError('name')" />
+          <p class="field-hint">
+            Scope names should be lowercase and may contain letters, numbers, underscores, colons, dots, or hyphens.
+          </p>
+        </div>
+
+        <div class="form-group">
+          <coar-text-input
+            label="Display Name"
+            placeholder="API Read Access"
+            formControlName="displayName" />
+        </div>
+
+        <div class="form-group">
+          <coar-text-input
+            label="Description"
+            placeholder="Allows read-only access to the API"
+            formControlName="description"
+            [rows]="3" />
+        </div>
+
+        <div class="form-section">
+          <h2>Resources / Audiences</h2>
+          <p class="section-description">
+            Specify which resources or APIs this scope grants access to.
+          </p>
+
+          @for (control of resourcesArray.controls; track $index) {
+            <div class="resource-row">
+              <coar-text-input
+                placeholder="https://api.example.com"
+                [formControl]="$any(control)" />
+              <coar-button
+                variant="ghost"
+                size="sm"
+                iconStart="x"
+                (clicked)="removeResource($index)" />
+            </div>
+          }
+
+          <coar-button
+            variant="ghost"
+            size="sm"
+            iconStart="plus"
+            [disabled]="isStandard()"
+            (clicked)="addResource()">
+            Add Resource
+          </coar-button>
+        </div>
+
+        <div class="form-actions">
+          <coar-button
+            variant="ghost"
+            routerLink="/admin/oauth/scopes">
+            Cancel
+          </coar-button>
+          @if (!isStandard()) {
+            <coar-button
+              type="submit"
+              variant="primary"
+              [loading]="isSaving()"
+              [disabled]="form.invalid || form.pristine">
+              {{ isEditMode() ? 'Save Changes' : 'Create Scope' }}
+            </coar-button>
+          }
+        </div>
+      </form>
+    </coar-card>
+
+    @if (isEditMode() && scope() && !isStandard()) {
+      <coar-card padding="lg" color="error" class="danger-zone">
+        <h2>Danger Zone</h2>
+
+        <div class="danger-action">
+          <div>
+            <strong>Delete Scope</strong>
+            <p>Permanently delete this scope. Clients using this scope will lose access.</p>
+          </div>
+          <coar-button
+            variant="danger"
+            size="sm"
+            [loading]="isDeleting()"
+            (clicked)="onDelete()">
+            Delete Scope
+          </coar-button>
+        </div>
+      </coar-card>
+    }
+  }
+</div>

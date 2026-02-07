@@ -253,3 +253,50 @@ public static class WebAuthnErrors
         code: "WebAuthn.UserNotFound",
         description: "User not found for the specified credential.");
 }
+
+public static class OAuthErrors
+{
+    public static Error ClientIdAlreadyExists(string clientId) => Error.Conflict(
+        code: "OAuth.ClientIdAlreadyExists",
+        description: $"An OAuth client with ID '{clientId}' already exists.");
+
+    public static Error ClientNotFound(string id) => Error.NotFound(
+        code: "OAuth.ClientNotFound",
+        description: $"OAuth client with ID '{id}' was not found.");
+
+    public static Error InvalidClientType(string clientType) => Error.Validation(
+        code: "OAuth.InvalidClientType",
+        description: $"Invalid client type '{clientType}'. Must be 'public' or 'confidential'.");
+
+    public static Error InvalidConsentType(string consentType) => Error.Validation(
+        code: "OAuth.InvalidConsentType",
+        description: $"Invalid consent type '{consentType}'. Must be 'explicit', 'implicit', or 'external'.");
+
+    public static Error CannotRegenerateSecretForPublicClient => Error.Validation(
+        code: "OAuth.CannotRegenerateSecretForPublicClient",
+        description: "Cannot regenerate secret for a public client. Only confidential clients have secrets.");
+
+    public static Error ScopeNameAlreadyExists(string name) => Error.Conflict(
+        code: "OAuth.ScopeNameAlreadyExists",
+        description: $"An OAuth scope with name '{name}' already exists.");
+
+    public static Error ScopeNotFound(string id) => Error.NotFound(
+        code: "OAuth.ScopeNotFound",
+        description: $"OAuth scope with ID '{id}' was not found.");
+
+    public static Error CannotModifyStandardScope(string name) => Error.Validation(
+        code: "OAuth.CannotModifyStandardScope",
+        description: $"Cannot modify the standard scope '{name}'.");
+
+    public static Error CannotDeleteStandardScope(string name) => Error.Validation(
+        code: "OAuth.CannotDeleteStandardScope",
+        description: $"Cannot delete the standard scope '{name}'.");
+
+    public static Error ApiResourceNameAlreadyExists(string name) => Error.Conflict(
+        code: "OAuth.ApiResourceNameAlreadyExists",
+        description: $"An API resource with name '{name}' already exists.");
+
+    public static Error ApiResourceNotFound(string id) => Error.NotFound(
+        code: "OAuth.ApiResourceNotFound",
+        description: $"API resource with ID '{id}' was not found.");
+}

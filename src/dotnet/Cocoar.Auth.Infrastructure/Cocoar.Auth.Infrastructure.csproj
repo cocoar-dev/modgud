@@ -15,6 +15,9 @@
     <PackageReference Include="Weasel.Core" />
     <PackageReference Include="UAParser" />
     <PackageReference Include="Fido2" />
+    <!-- OpenIddict (using custom Marten stores, no EF Core) -->
+    <PackageReference Include="OpenIddict" />
+    <PackageReference Include="OpenIddict.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>

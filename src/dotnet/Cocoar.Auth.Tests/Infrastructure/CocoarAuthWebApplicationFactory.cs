@@ -1,5 +1,6 @@
 using Cocoar.Auth.Api.Configuration;
 using Cocoar.Auth.Domain.Entities;
+using Cocoar.Auth.Infrastructure.Persistence;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using Cocoar.Auth.Infrastructure.Services;
 using Cocoar.Configuration.Providers;
@@ -92,6 +93,31 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
             rule.For<ProjectionSettings>().FromStatic(_ => new ProjectionSettings
             {
                 UseAsyncProjections = false
+            }),
+            // SMTP settings (not used in tests, but required for configuration)
+            rule.For<SmtpSettings>().FromStatic(_ => new SmtpSettings
+            {
+                Host = "localhost",
+                Port = 25,
+                UseSsl = false,
+                FromAddress = "test@localhost",
+                FromName = "Test"
+            }),
+            // WebAuthn settings
+            rule.For<WebAuthnSettings>().FromStatic(_ => new WebAuthnSettings
+            {
+                RelyingPartyId = "localhost",
+                RelyingPartyName = "Cocoar Auth Test",
+                Origins = ["http://localhost"]
+            }),
+            // OpenIddict settings
+            rule.For<OpenIddictSettings>().FromStatic(_ => new OpenIddictSettings
+            {
+                Issuer = "http://localhost",
+                DevelopmentMode = true,
+                AccessTokenLifetimeMinutes = 60,
+                RefreshTokenLifetimeDays = 14,
+                AuthorizationCodeLifetimeMinutes = 5
             })
         ],
 	        setup => [
@@ -183,6 +209,11 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         return Services.GetRequiredService<MockEmailSender>();
     }
 
+    public async Task SeedOpenIddictScopesAsync()
+    {
+        await Cocoar.Auth.Infrastructure.OpenIddict.OpenIddictExtensions.SeedOpenIddictScopesAsync(Services);
+    }
+
     public async Task CleanDatabaseAsync()
     {
         // Clear mock email sender
@@ -200,6 +231,15 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         session.DeleteWhere<RoleState>(r => true);
         session.DeleteWhere<UserSession>(s => true);
         session.DeleteWhere<Cocoar.Auth.Application.Models.UserDetailsReadModel>(u => true);
+
+        // Clear OAuth-related documents
+        session.DeleteWhere<OAuthApplicationState>(o => true);
+        session.DeleteWhere<OAuthApplicationSecurityData>(o => true);
+        session.DeleteWhere<OAuthScopeState>(o => true);
+        session.DeleteWhere<OAuthApiResourceState>(o => true);
+        session.DeleteWhere<OAuthApiResourceSecurityData>(o => true);
+        session.DeleteWhere<OpenIddictAuthorizationDocument>(o => true);
+        session.DeleteWhere<OpenIddictTokenDocument>(o => true);
         await session.SaveChangesAsync();
 
 		// Clear event streams

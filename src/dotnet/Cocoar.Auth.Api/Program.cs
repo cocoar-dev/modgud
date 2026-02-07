@@ -1,8 +1,10 @@
 using Cocoar.Auth.Api.Configuration;
 using Cocoar.Auth.Application;
 using Cocoar.Auth.Application.Interfaces;
+using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Infrastructure;
 using Cocoar.Auth.Infrastructure.Interfaces;
+using Cocoar.Auth.Infrastructure.OpenIddict;
 using Cocoar.Auth.Infrastructure.Services;
 using Cocoar.Configuration.AspNetCore;
 using Cocoar.Configuration.DI;
@@ -27,6 +29,7 @@ builder.AddCocoarConfiguration(rule =>
     rule.For<CorsSettings>().FromFile("configs/cors-settings.json"),
     rule.For<SmtpSettings>().FromFile("configs/smtp-settings.json"),
     rule.For<WebAuthnSettings>().FromFile("configs/webauthn-settings.json"),
+    rule.For<OpenIddictSettings>().FromFile("configs/openiddict-settings.json"),
 
     // Environment-specific overrides (e.g., appsettings.Development.json)
     //rule.For<DatabaseSettings>().FromFile($"configs/database-settings.{builder.Environment.EnvironmentName}.json"),
@@ -34,6 +37,7 @@ builder.AddCocoarConfiguration(rule =>
     rule.For<CorsSettings>().FromFile($"configs/cors-settings.{builder.Environment.EnvironmentName}.json"),
     rule.For<SmtpSettings>().FromFile($"configs/smtp-settings.{builder.Environment.EnvironmentName}.json"),
     rule.For<WebAuthnSettings>().FromFile($"configs/webauthn-settings.{builder.Environment.EnvironmentName}.json"),
+    rule.For<OpenIddictSettings>().FromFile($"configs/openiddict-settings.{builder.Environment.EnvironmentName}.json"),
 
     // Environment variable overrides (highest priority)
     rule.For<DatabaseSettings>().FromEnvironment("DATABASE_"),
@@ -41,6 +45,7 @@ builder.AddCocoarConfiguration(rule =>
     rule.For<CorsSettings>().FromEnvironment("CORS_"),
     rule.For<SmtpSettings>().FromEnvironment("SMTP_"),
     rule.For<WebAuthnSettings>().FromEnvironment("WEBAUTHN_"),
+    rule.For<OpenIddictSettings>().FromEnvironment("OPENIDDICT_"),
 
     // Static configuration (cannot be overridden by JSON files, but can be overridden in tests)
     // Use inline projections in development to avoid async daemon lock acquisition issues
@@ -62,6 +67,9 @@ builder.AddCocoarConfiguration(rule =>
 	setup.ExposedType<ISmtpSettings>().AsSingleton(),
 	setup.ConcreteType<WebAuthnSettings>().ExposeAs<IWebAuthnSettings>(),
 	setup.ExposedType<IWebAuthnSettings>().AsSingleton(),
+	setup.ConcreteType<OpenIddictSettings>().AsSingleton(),
+	setup.ConcreteType<OpenIddictSettings>().ExposeAs<IOpenIddictSettings>(),
+	setup.ExposedType<IOpenIddictSettings>().AsSingleton(),
 	setup.Secrets().UseCertificatesFromFolder("configs/certificates").AllowPlaintext(),
 ]);
 
@@ -75,19 +83,31 @@ builder.Services.AddInfrastructure(projectionSettings.UseAsyncProjections);
 builder.Services.AddIdentityWithMarten();
 builder.Services.AddApplication();
 
+// Add OpenIddict with Marten for OAuth 2.0 / OpenID Connect
+var openIddictSettings = configManager.GetConfig<OpenIddictSettings>();
+builder.Services.AddOpenIddictWithMarten(openIddictSettings);
+builder.Services.ConfigureOpenIddictServerOptions<OpenIddictSettings>();
+
+// Register OAuth admin service
+builder.Services.AddScoped<OAuthAdminService>();
+
 // Register SMTP email sender (overrides mock from AddInfrastructure)
-var smtpSettings = configManager.GetConfig<SmtpSettings>();
-builder.Services.AddSingleton(new SmtpEmailSenderOptions
+// Skip in Testing environment to use MockEmailSender for tests
+if (!builder.Environment.IsEnvironment("Testing"))
 {
-    Host = smtpSettings.Host,
-    Port = smtpSettings.Port,
-    UseSsl = smtpSettings.UseSsl,
-    Username = smtpSettings.Username,
-    Password = smtpSettings.Password,
-    FromAddress = smtpSettings.FromAddress,
-    FromName = smtpSettings.FromName
-});
-builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+    var smtpSettings = configManager.GetConfig<SmtpSettings>();
+    builder.Services.AddSingleton(new SmtpEmailSenderOptions
+    {
+        Host = smtpSettings.Host,
+        Port = smtpSettings.Port,
+        UseSsl = smtpSettings.UseSsl,
+        Username = smtpSettings.Username,
+        Password = smtpSettings.Password,
+        FromAddress = smtpSettings.FromAddress,
+        FromName = smtpSettings.FromName
+    });
+    builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+}
 
 // Register Fido2 for WebAuthn
 var webAuthnSettings = configManager.GetConfig<WebAuthnSettings>();
@@ -134,9 +154,18 @@ builder.Services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.Appli
         options.LogoutPath = "/api/auth/logout";
         options.AccessDeniedPath = "/api/auth/access-denied";
 
-        // Return 401/403 for API instead of redirects
+        // Return 401/403 for API instead of redirects, except for OAuth flows
         options.Events.OnRedirectToLogin = context =>
         {
+            // For OAuth authorization endpoint, redirect to login page
+            if (context.Request.Path.StartsWithSegments("/connect"))
+            {
+                // Let the default redirect behavior happen for OAuth flows
+                // The frontend login page will handle returning to the authorize endpoint
+                return Task.CompletedTask;
+            }
+
+            // For API calls, return 401
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return Task.CompletedTask;
         };
@@ -209,6 +238,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Seed default OAuth scopes (openid, email, profile, roles, offline_access)
+await app.Services.SeedOpenIddictScopesAsync();
 
 app.Run("http://0.0.0.0:80");
 
