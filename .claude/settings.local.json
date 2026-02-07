@@ -18,7 +18,8 @@
       "mcp__chrome-devtools__click",
       "mcp__chrome-devtools__get_network_request",
       "mcp__chrome-devtools__fill",
-      "Bash(pnpm build:*)"
+      "Bash(pnpm build:*)",
+      "Bash(ls:*)"
     ]
   }
 }
