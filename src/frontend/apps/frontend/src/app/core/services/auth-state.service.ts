@@ -229,6 +229,13 @@ export class AuthStateService {
   }
 
   /**
+   * Set an error message to display to the user.
+   */
+  setError(message: string): void {
+    this._error.set(message);
+  }
+
+  /**
    * Reset to unauthenticated state (e.g., after session expiry).
    */
   resetToUnauthenticated(): void {

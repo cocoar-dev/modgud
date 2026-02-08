@@ -16,6 +16,7 @@
     "@cocoar/data-grid": "0.1.0-beta.155",
     "@cocoar/localization": "0.1.0-beta.155",
     "@cocoar/ui": "0.1.0-beta.155",
+    "@cocoar/ui-overlay": "0.1.0-beta.155",
     "@cocoar/ui-routing": "0.1.0-beta.155",
     "@cocoar/ui-tokens": "0.1.0-beta.155",
     "@ngrx/signals": "^21.0.1",

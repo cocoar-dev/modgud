@@ -52,8 +52,8 @@ These items are critical for a production-ready identity provider.
 
 | # | Item | Area | Status |
 |---|------|------|--------|
-| 13 | Fix ModalService stub — implement with Angular CDK or @cocoar/ui-overlay | Frontend | [ ] |
-| 14 | Replace `alert()` in passkey login error handling with proper signal-based errors | Frontend | [ ] |
+| 13 | Fix ModalService stub — implement with @cocoar/ui-overlay | Frontend | [x] |
+| 14 | Replace `alert()` in passkey login error handling with proper signal-based errors | Frontend | [x] |
 
 ---
 
@@ -165,6 +165,8 @@ Items are moved here with completion date when done.
 | 10 | OAuth authorization flow tests | 2026-02-08 | 6 tests: full roundtrip, PKCE enforcement, unauthenticated user, inactive user, userinfo, email scope |
 | 11 | Token refresh flow tests | 2026-02-08 | 2 tests: valid refresh, inactive user refresh rejection |
 | 12 | Client credentials flow tests | 2026-02-08 | 3 tests: valid secret, invalid secret, public client rejection. Also fixed 4 bugs: auth scheme, subject claim, double-hashed secrets, missing CC grant permission |
+| 13 | Fix ModalService stub | 2026-02-08 | Rewritten to use CoarOverlayService.openComponent() with coarModalPreset, ModalHostUIService falls back to COAR_OVERLAY_REF |
+| 14 | Replace alert() in passkey login | 2026-02-08 | Added AuthStateService.setError(), passkey errors now display via signal-bound coar-note |
 
 ---
 

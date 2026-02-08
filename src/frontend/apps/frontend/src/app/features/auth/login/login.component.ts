@@ -362,9 +362,7 @@ export class LoginComponent {
       if (error.name === 'NotAllowedError') {
         // User cancelled or no credentials available - don't show error
       } else {
-        this.authState.clearError();
-        // Set error through a different mechanism since authState.error is readonly
-        alert(error.message || 'Passkey login failed. Please try again.');
+        this.authState.setError(error.message || 'Passkey login failed. Please try again.');
       }
     } finally {
       this.isPasskeyLoading.set(false);

@@ -35,6 +35,9 @@ importers:
       '@cocoar/ui':
         specifier: 0.1.0-beta.155
         version: 0.1.0-beta.155(dc64af49c5c3998ddd4928e6470aded3)
+      '@cocoar/ui-overlay':
+        specifier: 0.1.0-beta.155
+        version: 0.1.0-beta.155(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
       '@cocoar/ui-routing':
         specifier: 0.1.0-beta.155
         version: 0.1.0-beta.155(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@angular/router@21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(@angular/platform-browser@21.1.1(@angular/common@21.1.1(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@21.1.1(@angular/compiler@21.1.1)(rxjs@7.8.2)))(rxjs@7.8.2))(rxjs@7.8.2)

@@ -1,4 +1,5 @@
 import { Injectable, InjectionToken, inject } from '@angular/core';
+import { COAR_OVERLAY_REF } from '@cocoar/ui-overlay';
 import { UIService } from '../ui.service';
 import { UIContextInfo } from '../ui.context';
 
@@ -23,14 +24,18 @@ export interface ModalOverlayRef {
 export class ModalHostUIService extends UIService {
   protected override uiContextInfo: UIContextInfo = { type: 'modal' };
 
-  private overlayRef = inject(MODAL_OVERLAY_REF, { optional: true });
+  private modalOverlayRef = inject(MODAL_OVERLAY_REF, { optional: true });
+  private coarOverlayRef = inject(COAR_OVERLAY_REF, { optional: true });
 
   /**
    * In modal context, navigateBack() closes the modal instead of navigating.
+   * Falls back to COAR_OVERLAY_REF when opened via CoarOverlayService.
    */
   public override navigateBack(): void {
-    if (this.overlayRef) {
-      this.overlayRef.close();
+    if (this.modalOverlayRef) {
+      this.modalOverlayRef.close();
+    } else if (this.coarOverlayRef) {
+      this.coarOverlayRef.close();
     }
   }
 }
