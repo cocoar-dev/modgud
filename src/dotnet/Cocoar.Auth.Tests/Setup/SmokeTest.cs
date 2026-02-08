@@ -38,15 +38,9 @@ public class SmokeTest : IAsyncLifetime
     [Fact]
     public async Task Application_Starts_And_Responds()
     {
-        // Just verify the app is running and responds to ANY request
-        // 404 is fine - we just want to prove the server is up
         var response = await _client.GetAsync("/health");
 
-        // We don't have a health endpoint, so 404 is expected
-        // The point is: the app started and responded
-        Assert.True(
-            response.StatusCode != HttpStatusCode.InternalServerError,
-            $"Server returned 500: {await response.Content.ReadAsStringAsync()}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]

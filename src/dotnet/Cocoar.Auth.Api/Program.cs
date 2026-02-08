@@ -1,3 +1,4 @@
+using System.Threading.RateLimiting;
 using Cocoar.Auth.Api.Configuration;
 using Cocoar.Auth.Application;
 using Cocoar.Auth.Application.Interfaces;
@@ -16,9 +17,21 @@ using Cocoar.Primitives.OptionalAware;
 using Fido2NetLib;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
+using Serilog;
 using Wolverine;
 
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateBootstrapLogger();
+
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .WriteTo.Console());
 
 // Configure Cocoar.Configuration with layered sources (using builder extension like finoxl)
 builder.AddCocoarConfiguration(rule =>
@@ -184,13 +197,48 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.TypeInfoResolver = new OptionalAwareTypeInfoResolver();
     });
 
+builder.Services.AddHealthChecks()
+    .AddNpgSql(name: "postgresql");
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Add rate limiting
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("auth-strict", opt =>
+    {
+        opt.PermitLimit = 10;
+        opt.Window = TimeSpan.FromMinutes(1);
+        opt.QueueLimit = 0;
+    });
+
+    options.AddFixedWindowLimiter("general", opt =>
+    {
+        opt.PermitLimit = 60;
+        opt.Window = TimeSpan.FromMinutes(1);
+        opt.QueueLimit = 0;
+    });
+
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
 
 // Add CORS with deferred configuration
 builder.Services.AddCors();
 
 var app = builder.Build();
+
+// Security headers
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["X-XSS-Protection"] = "0";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+    context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'";
+    await next();
+});
 
 // Configure CORS policy using resolved configuration
 var corsSettings = app.Services.GetRequiredService<CorsSettings>();
@@ -234,9 +282,14 @@ if (app.Environment.IsDevelopment())
 
 //app.UseHttpsRedirection();
 
+app.UseSerilogRequestLogging();
+
+app.UseRateLimiter();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapHealthChecks("/health");
 app.MapControllers();
 
 // Seed default OAuth scopes (openid, email, profile, roles, offline_access)

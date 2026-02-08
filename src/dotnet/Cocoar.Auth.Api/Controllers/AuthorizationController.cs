@@ -3,7 +3,6 @@ using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Domain.Entities;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -54,7 +53,7 @@ public class AuthorizationController : Controller
 			throw new InvalidOperationException("The OpenID Connect request cannot be retrieved.");
 
 		// If the user is not authenticated, redirect to the login page
-		var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+		var result = await HttpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
 
 		// Check if user needs to be redirected to login
 		var needsLogin = !result.Succeeded;
@@ -79,7 +78,7 @@ public class AuthorizationController : Controller
 		if (needsLogin)
 		{
 			return Challenge(
-				authenticationSchemes: CookieAuthenticationDefaults.AuthenticationScheme,
+				authenticationSchemes: IdentityConstants.ApplicationScheme,
 				properties: new AuthenticationProperties
 				{
 					RedirectUri = Request.PathBase + Request.Path + Request.QueryString
@@ -95,7 +94,7 @@ public class AuthorizationController : Controller
 		if (user is null)
 		{
 			return Challenge(
-				authenticationSchemes: CookieAuthenticationDefaults.AuthenticationScheme,
+				authenticationSchemes: IdentityConstants.ApplicationScheme,
 				properties: new AuthenticationProperties
 				{
 					RedirectUri = Request.PathBase + Request.Path + Request.QueryString
@@ -378,6 +377,9 @@ public class AuthorizationController : Controller
 	{
 		var principal = await _signInManager.CreateUserPrincipalAsync(user);
 		var identity = (ClaimsIdentity)principal.Identity!;
+
+		// Set the mandatory subject claim required by OpenIddict
+		identity.SetClaim(Claims.Subject, user.Id.ToString());
 
 		// Set the requested scopes
 		var scopes = request.GetScopes();

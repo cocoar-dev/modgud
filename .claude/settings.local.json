@@ -19,7 +19,11 @@
       "mcp__chrome-devtools__get_network_request",
       "mcp__chrome-devtools__fill",
       "Bash(pnpm build:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(xargs:*)",
+      "Bash(find:*)",
+      "Bash(Select-String -Pattern \"Failed|Error Message|Actual:|Expected:\")",
+      "Bash(Select-Object -First 50)"
     ]
   }
 }

@@ -7,12 +7,15 @@ using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Domain.Events;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Cocoar.Auth.Api.Controllers;
 
 [Route("api/[controller]")]
 public class AuthController : ApiControllerBase
 {
+    private const string SessionCookieName = "cocoar.session_id";
+
     private readonly AuthService _authService;
     private readonly UserService _userService;
     private readonly ITwoFactorService _twoFactorService;
@@ -49,6 +52,7 @@ public class AuthController : ApiControllerBase
     /// Authenticate a user with username and password.
     /// </summary>
     [HttpPost("login")]
+    [EnableRateLimiting("auth-strict")]
     [ProducesResponseType(typeof(LoginResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Login([FromBody] LoginDto dto, CancellationToken cancellationToken)
@@ -57,6 +61,12 @@ public class AuthController : ApiControllerBase
         var userAgent = Request.Headers.UserAgent.ToString();
 
         var result = await _authService.LoginAsync(dto, ipAddress, userAgent, cancellationToken);
+
+        if (!result.IsError && result.Value.Succeeded && result.Value.UserId.HasValue)
+        {
+            await CreateSessionCookieAsync(result.Value.UserId.Value, cancellationToken);
+        }
+
         return FromErrorOr(result);
     }
 
@@ -79,8 +89,17 @@ public class AuthController : ApiControllerBase
     [HttpPost("logout")]
     [Authorize]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> Logout()
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
     {
+        var userId = GetCurrentUserId();
+        var sessionId = GetCurrentSessionId();
+
+        if (userId.HasValue && sessionId.HasValue)
+        {
+            await _sessionService.RevokeSessionAsync(userId.Value, sessionId.Value, cancellationToken);
+        }
+
+        DeleteSessionCookie();
         await _authService.LogoutAsync();
         return NoContent();
     }
@@ -89,6 +108,7 @@ public class AuthController : ApiControllerBase
     /// Register a new user account.
     /// </summary>
     [HttpPost("register")]
+    [EnableRateLimiting("auth-strict")]
     [ProducesResponseType(typeof(RegisterResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -136,6 +156,7 @@ public class AuthController : ApiControllerBase
     /// Request a password reset link.
     /// </summary>
     [HttpPost("forgot-password")]
+    [EnableRateLimiting("auth-strict")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto, CancellationToken cancellationToken)
     {
@@ -150,6 +171,7 @@ public class AuthController : ApiControllerBase
     /// Reset password using a reset token.
     /// </summary>
     [HttpPost("reset-password")]
+    [EnableRateLimiting("auth-strict")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequestDto dto, CancellationToken cancellationToken)
@@ -362,6 +384,7 @@ public class AuthController : ApiControllerBase
     /// Complete login with a 2FA TOTP code.
     /// </summary>
     [HttpPost("2fa/login")]
+    [EnableRateLimiting("auth-strict")]
     [ProducesResponseType(typeof(LoginResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> TwoFactorLogin([FromBody] TwoFactorLoginDto dto, CancellationToken cancellationToken)
@@ -384,6 +407,7 @@ public class AuthController : ApiControllerBase
         if (result.Succeeded)
         {
             await _loginAuditService.RecordLoginAsync(user.Id, ipAddress, userAgent, cancellationToken);
+            await CreateSessionCookieAsync(user.Id, cancellationToken);
             return Ok(new LoginResultDto { Succeeded = true });
         }
 
@@ -414,6 +438,7 @@ public class AuthController : ApiControllerBase
     /// Complete login with a recovery code.
     /// </summary>
     [HttpPost("2fa/recovery-login")]
+    [EnableRateLimiting("auth-strict")]
     [ProducesResponseType(typeof(LoginResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> RecoveryCodeLogin([FromBody] RecoveryCodeLoginDto dto, CancellationToken cancellationToken)
@@ -432,6 +457,7 @@ public class AuthController : ApiControllerBase
         if (result.Succeeded)
         {
             await _loginAuditService.RecordLoginAsync(user.Id, ipAddress, userAgent, cancellationToken);
+            await CreateSessionCookieAsync(user.Id, cancellationToken);
             return Ok(new LoginResultDto { Succeeded = true });
         }
 
@@ -563,6 +589,7 @@ public class AuthController : ApiControllerBase
     /// Complete login with an email OTP code.
     /// </summary>
     [HttpPost("2fa/email-otp/login")]
+    [EnableRateLimiting("auth-strict")]
     [ProducesResponseType(typeof(LoginResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> EmailOtpLogin([FromBody] EmailOtpLoginDto dto, CancellationToken cancellationToken)
@@ -595,6 +622,7 @@ public class AuthController : ApiControllerBase
         // Sign in the user
         await _authenticationService.SignInAsync(user, isPersistent: false, cancellationToken);
         await _loginAuditService.RecordLoginAsync(user.Id, ipAddress, userAgent, cancellationToken);
+        await CreateSessionCookieAsync(user.Id, cancellationToken);
 
         return Ok(new LoginResultDto { Succeeded = true });
     }
@@ -708,6 +736,7 @@ public class AuthController : ApiControllerBase
         // Sign in the user
         await _authenticationService.SignInAsync(user, isPersistent: false, cancellationToken);
         await _loginAuditService.RecordLoginAsync(user.Id, ipAddress, userAgent, cancellationToken);
+        await CreateSessionCookieAsync(user.Id, cancellationToken);
 
         return Ok(new LoginResultDto { Succeeded = true });
     }
@@ -785,6 +814,7 @@ public class AuthController : ApiControllerBase
 
         await _authenticationService.SignInByIdAsync(result.Value, isPersistent: false, cancellationToken);
         await _loginAuditService.RecordLoginAsync(result.Value, ipAddress, userAgent, cancellationToken);
+        await CreateSessionCookieAsync(result.Value, cancellationToken);
 
         return Ok(new LoginResultDto { Succeeded = true });
     }
@@ -940,7 +970,9 @@ public class AuthController : ApiControllerBase
 
     private Guid? GetCurrentSessionId()
     {
-        // TODO: Get current session ID from cookie/claims when session creation is integrated
+        if (Request.Cookies.TryGetValue(SessionCookieName, out var value)
+            && Guid.TryParse(value, out var id))
+            return id;
         return null;
     }
 
@@ -1060,6 +1092,25 @@ public class AuthController : ApiControllerBase
     }
 
     #endregion
+
+    private async Task CreateSessionCookieAsync(Guid userId, CancellationToken ct)
+    {
+        var ip = GetClientIpAddress();
+        var ua = Request.Headers.UserAgent.ToString();
+        var result = await _sessionService.CreateSessionAsync(userId, ip, ua, ct);
+        if (!result.IsError)
+        {
+            Response.Cookies.Append(SessionCookieName, result.Value.Id.ToString(), new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = Request.IsHttps,
+                SameSite = SameSiteMode.Lax,
+                IsEssential = true
+            });
+        }
+    }
+
+    private void DeleteSessionCookie() => Response.Cookies.Delete(SessionCookieName);
 
     private Guid? GetCurrentUserId()
     {

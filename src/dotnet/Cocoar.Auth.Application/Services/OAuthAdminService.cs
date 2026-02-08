@@ -141,6 +141,12 @@ public class OAuthAdminService
 		descriptor.Permissions.Add(Permissions.GrantTypes.RefreshToken);
 		descriptor.Permissions.Add(Permissions.ResponseTypes.Code);
 
+		// Confidential clients can also use client credentials flow
+		if (dto.ClientType == ClientTypes.Confidential)
+		{
+			descriptor.Permissions.Add(Permissions.GrantTypes.ClientCredentials);
+		}
+
 		// Add scope permissions
 		foreach (var scope in dto.Scopes)
 		{
@@ -148,11 +154,10 @@ public class OAuthAdminService
 		}
 
 		// Create the application
-		// For confidential clients, hash the secret using BCrypt before storing
+		// For confidential clients, set the raw secret — OpenIddict will hash it via ObfuscateClientSecretAsync
 		if (clientSecret is not null)
 		{
-			// Hash the secret using BCrypt (compatible with OpenIddict's credential validation)
-			descriptor.ClientSecret = HashClientSecret(clientSecret);
+			descriptor.ClientSecret = clientSecret;
 		}
 		await _applicationManager.CreateAsync(descriptor, cancellationToken);
 
@@ -283,8 +288,8 @@ public class OAuthAdminService
 
 		var descriptor = new OpenIddictApplicationDescriptor();
 		await _applicationManager.PopulateAsync(descriptor, application, cancellationToken);
-		// Hash the new secret using BCrypt before storing
-		descriptor.ClientSecret = HashClientSecret(newSecret);
+		// Set the raw secret — OpenIddict will hash it via ObfuscateClientSecretAsync
+		descriptor.ClientSecret = newSecret;
 
 		await _applicationManager.UpdateAsync(application, descriptor, cancellationToken);
 

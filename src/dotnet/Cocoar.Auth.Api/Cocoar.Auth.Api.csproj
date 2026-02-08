@@ -9,6 +9,8 @@
     <PackageReference Include="Cocoar.Configuration.AspNetCore" />
     <PackageReference Include="Cocoar.Configuration.Secrets" />
     <PackageReference Include="Fido2" />
+    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+    <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="WolverineFx.Marten" />
   </ItemGroup>

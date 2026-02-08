@@ -18,6 +18,10 @@
     <!-- Wolverine CQRS -->
     <PackageVersion Include="WolverineFx" Version="5.13.0" />
     <PackageVersion Include="WolverineFx.Marten" Version="5.13.0" />
+    <!-- Health Checks -->
+    <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
+    <!-- Logging -->
+    <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <!-- Swagger -->
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.1" />
     <!-- UserAgent Parsing -->

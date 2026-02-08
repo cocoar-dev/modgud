@@ -75,7 +75,7 @@ public class AuthService
         if (result.Succeeded)
         {
             await _loginAuditService.RecordLoginAsync(user.Id, ipAddress, userAgent, cancellationToken);
-            return new LoginResultDto { Succeeded = true };
+            return new LoginResultDto { Succeeded = true, UserId = user.Id };
         }
 
         if (result.RequiresTwoFactor)

@@ -149,6 +149,13 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
                 {
                     options.Cookie.SecurePolicy = CookieSecurePolicy.None;
                 });
+
+            // Disable HTTPS requirement for OpenIddict in tests
+            services.PostConfigure<OpenIddict.Server.AspNetCore.OpenIddictServerAspNetCoreOptions>(
+                options =>
+                {
+                    options.DisableTransportSecurityRequirement = true;
+                });
         });
     }
 

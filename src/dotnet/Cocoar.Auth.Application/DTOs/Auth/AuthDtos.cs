@@ -16,6 +16,7 @@ public record LoginDto
 public record LoginResultDto
 {
     public required bool Succeeded { get; init; }
+    public Guid? UserId { get; init; }
     public bool RequiresTwoFactor { get; init; }
     public bool IsLockedOut { get; init; }
     public bool IsNotAllowed { get; init; }

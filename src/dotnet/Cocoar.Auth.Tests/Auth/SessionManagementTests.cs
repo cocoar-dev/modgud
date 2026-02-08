@@ -84,11 +84,12 @@ public class SessionManagementTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await response.Content.ReadFromJsonAsync<SessionListDto>(_factory.JsonOptions);
         Assert.NotNull(result);
-        Assert.Single(result.Sessions);
+        // Login now creates a session automatically, so we expect 2 sessions:
+        // 1 manually created + 1 from login
+        Assert.Equal(2, result.Sessions.Count);
 
-        var sessionDto = result.Sessions[0];
-        Assert.Equal(session.Id.ToString(), sessionDto.Id);
-        Assert.Equal("192.168.1.100", sessionDto.IpAddress);
+        var manualSession = result.Sessions.First(s => s.Id == session.Id.ToString());
+        Assert.Equal("192.168.1.100", manualSession.IpAddress);
     }
 
     #endregion
@@ -171,7 +172,7 @@ public class SessionManagementTests : IAsyncLifetime
     #region Revoke All Sessions Tests
 
     [Fact]
-    public async Task RevokeAllSessions_RemovesAllUserSessions()
+    public async Task RevokeAllSessions_RemovesAllExceptCurrentSession()
     {
         // Arrange
         var password = "Test123!@#";
@@ -190,11 +191,11 @@ public class SessionManagementTests : IAsyncLifetime
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
-        // Verify all sessions are deleted
+        // Verify only the current session (created during login) remains
         using var scope = _factory.Services.CreateScope();
         var sessionRepository = scope.ServiceProvider.GetRequiredService<ISessionRepository>();
         var remainingSessions = await sessionRepository.GetByUserIdAsync(user.Id);
-        Assert.Empty(remainingSessions);
+        Assert.Single(remainingSessions);
     }
 
     [Fact]
