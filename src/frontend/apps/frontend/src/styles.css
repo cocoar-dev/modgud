@@ -1,11 +1,11 @@
 /* ========================================
    COCOAR AUTH - GLOBAL STYLES
    ========================================
-   Design system foundation using @cocoar/ui-tokens.
+   Design system foundation using @cocoar/ui.
    ======================================== */
 
-/* Import Design Tokens from ui-tokens */
-@import '@cocoar/ui-tokens/css/all.css';
+/* Import Design Tokens */
+@import '@cocoar/ui/styles/tokens/all.css';
 
 /* Import OverlayScrollbars styles */
 @import 'overlayscrollbars/overlayscrollbars.css';

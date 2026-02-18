@@ -1,5 +1,5 @@
 import { Injectable, InjectionToken, inject } from '@angular/core';
-import { COAR_OVERLAY_REF } from '@cocoar/ui-overlay';
+import { COAR_OVERLAY_REF } from '@cocoar/ui/overlay';
 import { UIService } from '../ui.service';
 import { UIContextInfo } from '../ui.context';
 

@@ -2,12 +2,6 @@
   "folders": [
     {
       "path": "."
-    },
-    {
-      "path": "../../../cocoar-ui"
-    },
-    {
-      "path": "../../../timetodo/src/frontend"
     }
   ],
 }

@@ -1,6 +1,6 @@
 import { Injectable, Type } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { createOverlayBuilder, coarModalPreset } from '@cocoar/ui-overlay';
+import { createOverlayBuilder, coarModalPreset } from '@cocoar/ui/overlay';
 import { ComponentInputs, ModalContext, ModalOptions } from './modal-context';
 import { ModalHostComponent } from './modal-host.component';
 
