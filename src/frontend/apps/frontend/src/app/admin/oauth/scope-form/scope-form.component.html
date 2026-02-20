@@ -1,21 +1,13 @@
 <div class="scope-form">
-  <header class="page-header">
-    <div>
-      <h1 class="page-title">{{ isEditMode() ? 'Edit Scope' : 'Create Scope' }}</h1>
-      <p class="page-subtitle">
-        {{ isEditMode() ? 'Update scope configuration' : 'Create a new OAuth scope' }}
-      </p>
-    </div>
-  </header>
 
   @if (error()) {
-    <coar-note color="error" padding="sm" class="message">
+    <coar-note variant="error" padding="s" class="message">
       {{ error() }}
     </coar-note>
   }
 
   @if (isStandard()) {
-    <coar-note color="warning" padding="sm" class="message">
+    <coar-note variant="warning" padding="s" class="message">
       This is a standard OpenID Connect scope and cannot be modified.
     </coar-note>
   }
@@ -26,7 +18,7 @@
       <p>Loading...</p>
     </div>
   } @else {
-    <coar-card padding="lg">
+    <coar-card padding="l">
       <form [formGroup]="form" (ngSubmit)="onSubmit()">
         <div class="form-group">
           <coar-text-input
@@ -69,7 +61,7 @@
                 [formControl]="$any(control)" />
               <coar-button
                 variant="ghost"
-                size="sm"
+                size="s"
                 iconStart="x"
                 (clicked)="removeResource($index)" />
             </div>
@@ -77,7 +69,7 @@
 
           <coar-button
             variant="ghost"
-            size="sm"
+            size="s"
             iconStart="plus"
             [disabled]="isStandard()"
             (clicked)="addResource()">
@@ -105,7 +97,7 @@
     </coar-card>
 
     @if (isEditMode() && scope() && !isStandard()) {
-      <coar-card padding="lg" color="error" class="danger-zone">
+      <coar-card padding="l" variant="error" class="danger-zone">
         <h2>Danger Zone</h2>
 
         <div class="danger-action">
@@ -115,7 +107,7 @@
           </div>
           <coar-button
             variant="danger"
-            size="sm"
+            size="s"
             [loading]="isDeleting()"
             (clicked)="onDelete()">
             Delete Scope

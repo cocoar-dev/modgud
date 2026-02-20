@@ -1,202 +1,45 @@
-.client-form {
-  max-width: 800px;
-}
-
-.page-header {
-  margin-bottom: 1.5rem;
-}
-
-.page-title {
-  margin: 0 0 0.25rem;
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.page-subtitle {
-  margin: 0;
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
-}
-
-.message {
-  margin-bottom: 1rem;
-}
-
-.loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 3rem;
-}
-
-.spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--color-border-primary);
-  border-top-color: var(--color-primary);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.secret-card {
-  margin-bottom: 1rem;
-}
-
-.secret-card h3 {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.secret-card p {
-  margin: 0 0 1rem;
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
-}
-
-.secret-display {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  background: var(--color-surface-primary);
-  border-radius: var(--radius-md);
-  margin-bottom: 1rem;
-}
-
-.secret-display code {
-  flex: 1;
-  font-family: monospace;
-  font-size: 0.875rem;
-  word-break: break-all;
-}
-
-.done-button {
-  margin-top: 0.5rem;
-}
-
-.form-section {
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--color-border-primary);
-}
-
-.form-section:last-of-type {
-  border-bottom: none;
-}
-
-.form-section h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.section-description {
-  margin: 0 0 1rem;
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
-}
-
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}
-
+/* Native <select> element styling used for client type / consent type dropdowns.
+   These use plain HTML <select> rather than a cocoar component. */
 .select-label {
   display: block;
   margin-bottom: 0.5rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--color-text-primary);
+  color: var(--coar-text-neutral-primary);
 }
 
 .select-label .required {
-  color: var(--color-error);
+  color: var(--coar-text-semantic-error-bold);
 }
 
 .select-input {
   width: 100%;
-  padding: 0.625rem 0.75rem;
+  padding: 0.625rem 2.5rem 0.625rem 0.75rem;
   font-size: 0.875rem;
-  color: var(--color-text-primary);
-  background: var(--color-surface-primary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  appearance: none;
+  color: var(--coar-text-neutral-primary);
+  background-color: var(--coar-surface-input);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.75rem center;
-  padding-right: 2.5rem;
+  border: 1px solid var(--coar-border-input);
+  border-radius: var(--coar-radius-m);
+  appearance: none;
+  cursor: pointer;
+  transition: border-color var(--coar-duration-fast) var(--coar-ease-out);
 }
 
 .select-input:hover {
-  border-color: var(--color-border-hover);
+  border-color: var(--coar-border-input-hover);
 }
 
 .select-input:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-alpha);
+  box-shadow: var(--coar-focus-shadow);
 }
 
 .select-input:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.uri-row {
-  display: flex;
-  gap: 0.5rem;
-  align-items: flex-start;
-  margin-bottom: 0.75rem;
-}
-
-.uri-row coar-text-input {
-  flex: 1;
-}
-
-.scopes-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 0.75rem;
-}
-
-.scope-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.scope-description {
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-  margin-left: 1.5rem;
-}
-
-.form-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: flex-end;
-  padding-top: 1rem;
-  border-top: 1px solid var(--color-border-primary);
-}
-
-.secret-section {
-  margin-top: 1.5rem;
 }
 
 .secret-section h2 {

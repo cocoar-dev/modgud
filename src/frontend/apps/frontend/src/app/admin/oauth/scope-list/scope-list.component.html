@@ -1,30 +1,26 @@
 <div class="scope-list">
-  <header class="page-header">
-    <div>
-      <h1 class="page-title">OAuth Scopes</h1>
-      <p class="page-subtitle">Manage OAuth 2.0 / OpenID Connect scopes</p>
-    </div>
+  <div class="list-actions">
     <coar-button
       variant="primary"
       iconStart="plus"
-      routerLink="/admin/oauth/scopes/create">
+      (clicked)="ui.navigateToModal('create')">
       Create Scope
     </coar-button>
-  </header>
+  </div>
 
   @if (error()) {
-    <coar-note color="error" padding="sm" class="message">
+    <coar-note variant="error" padding="s" class="message">
       {{ error() }}
     </coar-note>
   }
 
   @if (success()) {
-    <coar-note color="success" padding="sm" class="message">
+    <coar-note variant="success" padding="s" class="message">
       {{ success() }}
     </coar-note>
   }
 
-  <coar-note color="info" padding="sm" class="message">
+  <coar-note variant="info" padding="s" class="message">
     Standard OpenID Connect scopes (openid, email, profile, etc.) are read-only and cannot be modified or deleted.
   </coar-note>
 
@@ -40,21 +36,21 @@
           @if (!isStandardScope(scope)) {
             <coar-button
               variant="ghost"
-              size="sm"
+              size="s"
               iconStart="edit"
               [routerLink]="['/admin/oauth/scopes', scope.id]">
               Edit
             </coar-button>
             <coar-button
               variant="ghost"
-              size="sm"
+              size="s"
               iconStart="trash-2"
               [loading]="deletingId() === scope.id"
               (clicked)="onDelete(scope)">
               Delete
             </coar-button>
           } @else {
-            <coar-badge color="neutral" size="sm">Standard</coar-badge>
+            <coar-badge variant="secondary" size="s">Standard</coar-badge>
           }
         </div>
       }

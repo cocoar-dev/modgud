@@ -1,25 +1,21 @@
 <div class="role-list">
-  <header class="page-header">
-    <div>
-      <h1 class="page-title">Roles</h1>
-      <p class="page-subtitle">Manage user roles</p>
-    </div>
+  <div class="list-actions">
     <coar-button
       variant="primary"
       iconStart="plus"
-      routerLink="/admin/roles/create">
+      (clicked)="ui.navigateToModal('create')">
       Create Role
     </coar-button>
-  </header>
+  </div>
 
   @if (error()) {
-    <coar-note color="error" padding="sm" class="message">
+    <coar-note variant="error" padding="s" class="message">
       {{ error() }}
     </coar-note>
   }
 
   @if (success()) {
-    <coar-note color="success" padding="sm" class="message">
+    <coar-note variant="success" padding="s" class="message">
       {{ success() }}
     </coar-note>
   }
@@ -35,14 +31,14 @@
         <div class="grid-action-row">
           <coar-button
             variant="ghost"
-            size="sm"
+            size="s"
             iconStart="edit"
             [routerLink]="['/admin/roles', role.id]">
             Edit
           </coar-button>
           <coar-button
             variant="ghost"
-            size="sm"
+            size="s"
             iconStart="trash-2"
             [loading]="deletingId() === role.id"
             (clicked)="onDelete(role)">

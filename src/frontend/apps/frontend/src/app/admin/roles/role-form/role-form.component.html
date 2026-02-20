@@ -1,15 +1,7 @@
 <div class="role-form">
-  <header class="page-header">
-    <div>
-      <h1 class="page-title">{{ isEditMode() ? 'Edit Role' : 'Create Role' }}</h1>
-      <p class="page-subtitle">
-        {{ isEditMode() ? 'Update role information' : 'Create a new role' }}
-      </p>
-    </div>
-  </header>
 
   @if (error()) {
-    <coar-note color="error" padding="sm" class="message">
+    <coar-note variant="error" padding="s" class="message">
       {{ error() }}
     </coar-note>
   }
@@ -20,7 +12,7 @@
       <p>Loading...</p>
     </div>
   } @else {
-    <coar-card padding="lg">
+    <coar-card padding="l">
       <form [formGroup]="form" (ngSubmit)="onSubmit()">
         <div class="form-group">
           <coar-text-input
@@ -57,7 +49,7 @@
     </coar-card>
 
     @if (isEditMode() && role()) {
-      <coar-card padding="lg" color="error" class="danger-zone">
+      <coar-card padding="l" variant="error" class="danger-zone">
         <h2>Danger Zone</h2>
 
         <div class="danger-action">
@@ -67,7 +59,7 @@
           </div>
           <coar-button
             variant="danger"
-            size="sm"
+            size="s"
             [loading]="isDeleting()"
             (clicked)="onDelete()">
             Delete Role

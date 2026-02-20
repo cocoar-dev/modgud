@@ -13,6 +13,7 @@ import {
 } from '@cocoar/ui';
 import { catchError, of, finalize, forkJoin } from 'rxjs';
 import { AdminApiService, Role, User } from '../../../core';
+import { UIService } from '../../../ui';
 
 @Component({
   selector: 'app-user-form',
@@ -36,6 +37,7 @@ export class UserFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly adminApi = inject(AdminApiService);
   private readonly router = inject(Router);
+  private readonly ui = inject(UIService);
 
   // Route param input
   id = input<string>();
@@ -74,6 +76,11 @@ export class UserFormComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    this.ui.set((ctx) => {
+      ctx.header.title = this.isEditMode() ? 'Edit User' : 'Create User';
+      ctx.header.subTitle = this.isEditMode() ? 'Update user information' : 'Create a new user account';
+      ctx.content.scrollable = true;
+    });
     if (this.isEditMode()) {
       this.loadUserAndRoles();
     } else {

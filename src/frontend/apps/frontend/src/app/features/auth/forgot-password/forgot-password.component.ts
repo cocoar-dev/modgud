@@ -25,20 +25,20 @@ import { catchError, of, finalize } from 'rxjs';
   ],
   template: `
     <div class="forgot-container">
-      <coar-card elevated padding="lg" class="forgot-card">
+      <coar-card elevated padding="l" class="forgot-card">
         <h1 class="forgot-title">Forgot Password</h1>
         <p class="forgot-subtitle">
           Enter your email address and we'll send you a link to reset your password.
         </p>
 
         @if (error()) {
-          <coar-note color="error" padding="sm" class="error-note">
+          <coar-note variant="error" padding="s" class="error-note">
             {{ error() }}
           </coar-note>
         }
 
         @if (success()) {
-          <coar-note color="success" padding="sm" class="success-note">
+          <coar-note variant="success" padding="s" class="success-note">
             {{ success() }}
           </coar-note>
           <p class="back-link">

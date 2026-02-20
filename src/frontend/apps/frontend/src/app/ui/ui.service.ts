@@ -69,4 +69,22 @@ export class UIService {
   public navigateBack(): void {
     this.router.navigate(['..']);
   }
+
+  /**
+   * Open a routed modal by setting the URL fragment.
+   * The fragment is matched against the current route's routedFragments config,
+   * causing RoutedModalService to open the corresponding component as a modal.
+   *
+   * @param path Fragment path (e.g. 'create' or an entity id like 'abc-123')
+   *
+   * @example
+   * this.ui.navigateToModal('create');           // Opens create modal
+   * this.ui.navigateToModal(user.id);            // Opens edit modal
+   */
+  public navigateToModal(path: string): void {
+    this.router.navigate([], {
+      fragment: path,
+      queryParamsHandling: 'preserve',
+    });
+  }
 }

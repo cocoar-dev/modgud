@@ -10,6 +10,7 @@ import { CoarGridBuilder, CoarDataGridDirective } from '@cocoar/data-grid';
 
 import { catchError, of, finalize } from 'rxjs';
 import { AdminApiService, Role } from '../../../core';
+import { UIService } from '../../../ui';
 
 @Component({
   selector: 'app-role-list',
@@ -28,6 +29,7 @@ import { AdminApiService, Role } from '../../../core';
 export class RoleListComponent implements OnInit {
   private readonly adminApi = inject(AdminApiService);
   private readonly router = inject(Router);
+  readonly ui = inject(UIService);
 
   readonly roles = signal<Role[]>([]);
   readonly isLoading = signal(true);
@@ -53,11 +55,16 @@ export class RoleListComponent implements OnInit {
     .rowId(params => params.data?.id || '')
     .onRowDoubleClicked(event => {
       if (event.data?.id) {
-        this.router.navigate(['/admin/roles', event.data.id]);
+        this.ui.navigateToModal(event.data.id);
       }
     });
 
   ngOnInit(): void {
+    this.ui.set((ctx) => {
+      ctx.header.title = 'Roles';
+      ctx.header.subTitle = 'Manage user roles';
+      ctx.content.scrollable = false;
+    });
     this.loadRoles();
   }
 

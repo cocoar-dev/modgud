@@ -10,7 +10,6 @@ coar-sidebar {
   box-shadow: var(--coar-shadow-right);
   position: relative;
   z-index: 10;
-  background: var(--coar-background-neutral-secondary);
 }
 
 .sidebar-header {
@@ -37,45 +36,33 @@ coar-sidebar {
   flex-direction: column;
 }
 
-/* Page Header */
-.page-header {
+/* Layout-level page header (driven by UIService) */
+.layout-header {
   padding: 20px 24px;
-  border-bottom: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
+  border-bottom: 1px solid var(--coar-border-neutral);
   flex-shrink: 0;
 }
 
-.page-header-content {
+.layout-header-content {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.page-header-icon {
+.layout-header-icon {
   font-size: 1.5rem;
 }
 
-.page-header-titles {
+.layout-header-titles {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.page-title {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--coar-text-primary, #111827);
-}
-
-.page-subtitle {
-  font-size: 0.875rem;
-  color: var(--coar-text-secondary, #6b7280);
-}
-
 /* Loading Bar */
 .loading-bar {
   height: 3px;
-  background: var(--coar-background-neutral-secondary, #f3f4f6);
+  background: var(--coar-background-neutral-secondary);
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -83,7 +70,7 @@ coar-sidebar {
 .loading-bar-progress {
   height: 100%;
   width: 30%;
-  background: var(--coar-background-primary, #3b82f6);
+  background: var(--coar-background-accent-primary);
   animation: loading-progress 1.5s ease-in-out infinite;
 }
 
@@ -101,6 +88,7 @@ coar-sidebar {
   flex: 1;
   min-height: 0;
   padding: 24px;
+  max-width: 1440px;
 }
 
 .page-content.scrollable {

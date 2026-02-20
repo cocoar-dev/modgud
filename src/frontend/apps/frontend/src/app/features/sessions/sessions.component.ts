@@ -39,13 +39,13 @@ import { catchError, of, finalize } from 'rxjs';
       </header>
 
       @if (error()) {
-        <coar-note color="error" padding="sm" class="message">
+        <coar-note variant="error" padding="s" class="message">
           {{ error() }}
         </coar-note>
       }
 
       @if (success()) {
-        <coar-note color="success" padding="sm" class="message">
+        <coar-note variant="success" padding="s" class="message">
           {{ success() }}
         </coar-note>
       }
@@ -56,16 +56,16 @@ import { catchError, of, finalize } from 'rxjs';
           <p>Loading sessions...</p>
         </div>
       } @else if (sessions().length === 0) {
-        <coar-note color="info" padding="md">
+        <coar-note variant="info" padding="m">
           No active sessions found.
         </coar-note>
       } @else {
         <div class="sessions-list">
           @for (session of sessions(); track session.id) {
-            <coar-card padding="md" class="session-card" [class.current]="session.isCurrent">
+            <coar-card padding="m" class="session-card" [class.current]="session.isCurrent">
               <div class="session-info">
                 <div class="session-device">
-                  <coar-icon [name]="getDeviceIcon(session.deviceType)" size="lg" class="device-icon" />
+                  <coar-icon [name]="getDeviceIcon(session.deviceType)" size="l" class="device-icon" />
                   <div class="device-details">
                     <div class="device-name">
                       {{ session.browser || 'Unknown Browser' }}
@@ -73,7 +73,7 @@ import { catchError, of, finalize } from 'rxjs';
                         <span class="version">{{ session.browserVersion }}</span>
                       }
                       @if (session.isCurrent) {
-                        <coar-badge color="success" size="sm">Current</coar-badge>
+                        <coar-badge variant="success" size="s">Current</coar-badge>
                       }
                     </div>
                     <div class="device-os">
@@ -86,15 +86,15 @@ import { catchError, of, finalize } from 'rxjs';
                 </div>
                 <div class="session-meta">
                   <div class="meta-item">
-                    <coar-icon name="map-pin" size="sm" />
+                    <coar-icon name="map-pin" size="s" />
                     <span>{{ session.ipAddress || 'Unknown IP' }}</span>
                   </div>
                   <div class="meta-item">
-                    <coar-icon name="clock" size="sm" />
+                    <coar-icon name="clock" size="s" />
                     <span>Last active: {{ formatDate(session.lastActiveAt) }}</span>
                   </div>
                   <div class="meta-item">
-                    <coar-icon name="calendar" size="sm" />
+                    <coar-icon name="calendar" size="s" />
                     <span>Started: {{ formatDate(session.createdAt) }}</span>
                   </div>
                 </div>
@@ -103,7 +103,7 @@ import { catchError, of, finalize } from 'rxjs';
                 @if (!session.isCurrent) {
                   <coar-button
                     variant="ghost"
-                    size="sm"
+                    size="s"
                     [loading]="revokingId() === session.id"
                     (clicked)="onRevokeSession(session.id)">
                     Revoke

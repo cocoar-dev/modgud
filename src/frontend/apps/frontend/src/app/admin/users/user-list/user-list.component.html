@@ -1,16 +1,12 @@
 <div class="user-list">
-  <header class="page-header">
-    <div>
-      <h1 class="page-title">Users</h1>
-      <p class="page-subtitle">Manage user accounts</p>
-    </div>
+  <div class="list-actions">
     <coar-button
       variant="primary"
       iconStart="plus"
-      routerLink="/admin/users/create">
+      (clicked)="ui.navigateToModal('create')">
       Create User
     </coar-button>
-  </header>
+  </div>
 
   <div class="filters">
     <coar-text-input
@@ -21,13 +17,13 @@
   </div>
 
   @if (error()) {
-    <coar-note color="error" padding="sm" class="message">
+    <coar-note variant="error" padding="s" class="message">
       {{ error() }}
     </coar-note>
   }
 
   @if (success()) {
-    <coar-note color="success" padding="sm" class="message">
+    <coar-note variant="success" padding="s" class="message">
       {{ success() }}
     </coar-note>
   }
@@ -43,7 +39,7 @@
         <div class="grid-action-row">
           <coar-button
             variant="ghost"
-            size="sm"
+            size="s"
             iconStart="edit"
             [routerLink]="['/admin/users', user.id]">
             Edit
@@ -51,7 +47,7 @@
           @if (user.lockoutEnd) {
             <coar-button
               variant="ghost"
-              size="sm"
+              size="s"
               iconStart="unlock"
               [loading]="unlockingId() === user.id"
               (clicked)="onUnlock(user.id)">
@@ -67,7 +63,7 @@
     <div class="pagination">
       <coar-button
         variant="ghost"
-        size="sm"
+        size="s"
         [disabled]="page() === 1"
         (clicked)="onPageChange(page() - 1)">
         Previous
@@ -77,7 +73,7 @@
       </span>
       <coar-button
         variant="ghost"
-        size="sm"
+        size="s"
         [disabled]="page() >= totalPages()"
         (clicked)="onPageChange(page() + 1)">
         Next

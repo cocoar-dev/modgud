@@ -11,6 +11,7 @@ import { CoarGridBuilder, CoarDataGridDirective } from '@cocoar/data-grid';
 
 import { catchError, of, finalize } from 'rxjs';
 import { AdminApiService, OAuthScope, isStandardScope } from '../../../core';
+import { UIService } from '../../../ui';
 
 @Component({
   selector: 'app-oauth-scope-list',
@@ -30,6 +31,7 @@ import { AdminApiService, OAuthScope, isStandardScope } from '../../../core';
 export class OAuthScopeListComponent implements OnInit {
   private readonly adminApi = inject(AdminApiService);
   private readonly router = inject(Router);
+  readonly ui = inject(UIService);
 
   readonly scopes = signal<OAuthScope[]>([]);
   readonly isLoading = signal(true);
@@ -57,11 +59,16 @@ export class OAuthScopeListComponent implements OnInit {
     .rowId(params => params.data?.id || '')
     .onRowDoubleClicked(event => {
       if (event.data?.id && !this.isStandardScope(event.data)) {
-        this.router.navigate(['/admin/oauth/scopes', event.data.id]);
+        this.ui.navigateToModal(event.data.id);
       }
     });
 
   ngOnInit(): void {
+    this.ui.set((ctx) => {
+      ctx.header.title = 'OAuth Scopes';
+      ctx.header.subTitle = 'Manage OAuth 2.0 / OpenID Connect scopes';
+      ctx.content.scrollable = false;
+    });
     this.loadScopes();
   }
 

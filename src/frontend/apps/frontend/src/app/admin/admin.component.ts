@@ -1,10 +1,8 @@
-import { Component, inject, DestroyRef } from '@angular/core';
+import { Component, inject, Injector, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule, Router, ChildActivationStart } from '@angular/router';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { filter } from 'rxjs';
+import { RouterModule } from '@angular/router';
 import { CoarMenuComponent, CoarMenuHeadingComponent, CoarMenuItemComponent, CoarSidebarComponent } from '@cocoar/ui';
-import { UIService } from '../ui';
+import { RoutedModalService, UIService } from '../ui';
 
 @Component({
   selector: 'app-auth-layout',
@@ -20,21 +18,13 @@ import { UIService } from '../ui';
   templateUrl: './admin.component.html',
   styleUrl: './admin.component.css',
 })
-export class AdminComponent {
-  private readonly router = inject(Router);
-  private readonly destroyRef = inject(DestroyRef);
-
+export class AdminComponent implements OnInit {
   public readonly ui = inject(UIService);
+  private readonly injector = inject(Injector);
 
-  constructor() {
-    // Reset UI state on navigation
-    this.router.events
-      .pipe(
-        filter((event) => event instanceof ChildActivationStart),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe(() => {
-        this.ui.reset();
-      });
+  ngOnInit(): void {
+    // Instantiate lazily — after the route is fully resolved so RoutedFragmentService
+    // can safely read the ActivatedRoute snapshot without hitting undefined.
+    this.injector.get(RoutedModalService);
   }
 }

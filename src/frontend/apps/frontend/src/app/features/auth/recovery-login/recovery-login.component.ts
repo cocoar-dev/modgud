@@ -26,19 +26,19 @@ import { catchError, of, finalize } from 'rxjs';
   ],
   template: `
     <div class="recovery-container">
-      <coar-card elevated padding="lg" class="recovery-card">
+      <coar-card elevated padding="l" class="recovery-card">
         <h1 class="recovery-title">Recovery Code</h1>
         <p class="recovery-subtitle">
           Enter one of your recovery codes to sign in.
         </p>
 
         @if (error()) {
-          <coar-note color="error" padding="sm" class="error-note">
+          <coar-note variant="error" padding="s" class="error-note">
             {{ error() }}
           </coar-note>
         }
 
-        <coar-note color="warning" padding="sm" class="warning-note">
+        <coar-note variant="warning" padding="s" class="warning-note">
           Each recovery code can only be used once. After signing in,
           consider generating new recovery codes.
         </coar-note>

@@ -1,34 +1,26 @@
 <div class="client-form">
-  <header class="page-header">
-    <div>
-      <h1 class="page-title">{{ isEditMode() ? 'Edit OAuth Client' : 'Create OAuth Client' }}</h1>
-      <p class="page-subtitle">
-        {{ isEditMode() ? 'Update OAuth client configuration' : 'Register a new OAuth 2.0 / OIDC client' }}
-      </p>
-    </div>
-  </header>
 
   @if (error()) {
-    <coar-note color="error" padding="sm" class="message">
+    <coar-note variant="error" padding="s" class="message">
       {{ error() }}
     </coar-note>
   }
 
   @if (success()) {
-    <coar-note color="success" padding="sm" class="message">
+    <coar-note variant="success" padding="s" class="message">
       {{ success() }}
     </coar-note>
   }
 
   @if (generatedSecret()) {
-    <coar-card padding="md" color="warning" class="secret-card">
+    <coar-card padding="m" variant="warning" class="secret-card">
       <h3>Client Secret</h3>
       <p>Copy this secret now. It will not be shown again.</p>
       <div class="secret-display">
         <code>{{ generatedSecret() }}</code>
         <coar-button
           variant="ghost"
-          size="sm"
+          size="s"
           iconStart="copy"
           (clicked)="copyToClipboard(generatedSecret()!)">
           Copy
@@ -51,7 +43,7 @@
       <p>Loading...</p>
     </div>
   } @else {
-    <coar-card padding="lg">
+    <coar-card padding="l">
       <form [formGroup]="form" (ngSubmit)="onSubmit()">
         <div class="form-section">
           <h2>Basic Information</h2>
@@ -107,7 +99,7 @@
                 [formControl]="$any(control)" />
               <coar-button
                 variant="ghost"
-                size="sm"
+                size="s"
                 iconStart="x"
                 (clicked)="removeRedirectUri($index)"
                 [disabled]="redirectUrisArray.length === 1" />
@@ -116,7 +108,7 @@
 
           <coar-button
             variant="ghost"
-            size="sm"
+            size="s"
             iconStart="plus"
             (clicked)="addRedirectUri()">
             Add Redirect URI
@@ -136,7 +128,7 @@
                 [formControl]="$any(control)" />
               <coar-button
                 variant="ghost"
-                size="sm"
+                size="s"
                 iconStart="x"
                 (clicked)="removePostLogoutRedirectUri($index)" />
             </div>
@@ -144,7 +136,7 @@
 
           <coar-button
             variant="ghost"
-            size="sm"
+            size="s"
             iconStart="plus"
             (clicked)="addPostLogoutRedirectUri()">
             Add Post-Logout URI
@@ -190,12 +182,12 @@
 
     @if (isEditMode() && client()) {
       @if (client()?.clientType === 'confidential') {
-        <coar-card padding="lg" class="secret-section">
+        <coar-card padding="l" class="secret-section">
           <h2>Client Secret</h2>
           <p>Regenerate the client secret if it has been compromised.</p>
           <coar-button
             variant="secondary"
-            size="sm"
+            size="s"
             [loading]="isRegenerating()"
             (clicked)="onRegenerateSecret()">
             Regenerate Secret
@@ -203,7 +195,7 @@
         </coar-card>
       }
 
-      <coar-card padding="lg" color="error" class="danger-zone">
+      <coar-card padding="l" variant="error" class="danger-zone">
         <h2>Danger Zone</h2>
 
         <div class="danger-action">
@@ -213,7 +205,7 @@
           </div>
           <coar-button
             variant="danger"
-            size="sm"
+            size="s"
             [loading]="isDeleting()"
             (clicked)="onDelete()">
             Delete Client

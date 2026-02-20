@@ -19,6 +19,7 @@ export { ModalHostUIService, MODAL_OVERLAY_REF } from './modal/modal-host-ui.ser
 export { ModalHostComponent } from './modal/modal-host.component';
 export type { ModalRef } from './modal/modal.service';
 export { ModalService } from './modal/modal.service';
+export { RoutedModalService } from './modal/routed-modal.service';
 
 // Utils
 export { deepClone } from './utils/deep-clone';

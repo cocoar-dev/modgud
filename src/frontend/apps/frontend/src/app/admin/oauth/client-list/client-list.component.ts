@@ -10,6 +10,7 @@ import { CoarGridBuilder, CoarDataGridDirective } from '@cocoar/data-grid';
 
 import { catchError, of, finalize } from 'rxjs';
 import { AdminApiService, OAuthClient } from '../../../core';
+import { UIService } from '../../../ui';
 
 @Component({
   selector: 'app-oauth-client-list',
@@ -28,6 +29,7 @@ import { AdminApiService, OAuthClient } from '../../../core';
 export class OAuthClientListComponent implements OnInit {
   private readonly adminApi = inject(AdminApiService);
   private readonly router = inject(Router);
+  readonly ui = inject(UIService);
 
   readonly clients = signal<OAuthClient[]>([]);
   readonly isLoading = signal(true);
@@ -63,11 +65,16 @@ export class OAuthClientListComponent implements OnInit {
     .rowId(params => params.data?.id || '')
     .onRowDoubleClicked(event => {
       if (event.data?.id) {
-        this.router.navigate(['/admin/oauth/clients', event.data.id]);
+        this.ui.navigateToModal(event.data.id);
       }
     });
 
   ngOnInit(): void {
+    this.ui.set((ctx) => {
+      ctx.header.title = 'OAuth Clients';
+      ctx.header.subTitle = 'Manage OAuth 2.0 / OpenID Connect clients';
+      ctx.content.scrollable = false;
+    });
     this.loadClients();
   }
 

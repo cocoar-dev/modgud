@@ -23,7 +23,7 @@ import { catchError, of, finalize } from 'rxjs';
   ],
   template: `
     <div class="confirm-container">
-      <coar-card elevated padding="lg" class="confirm-card">
+      <coar-card elevated padding="l" class="confirm-card">
         @if (isLoading()) {
           <div class="loading-state">
             <div class="spinner"></div>
@@ -33,7 +33,7 @@ import { catchError, of, finalize } from 'rxjs';
           <div class="error-state">
             <coar-icon name="x-circle" size="xl" class="error-icon" />
             <h1 class="confirm-title">Confirmation Failed</h1>
-            <coar-note color="error" padding="sm">
+            <coar-note variant="error" padding="s">
               {{ error() }}
             </coar-note>
             <p class="help-text">

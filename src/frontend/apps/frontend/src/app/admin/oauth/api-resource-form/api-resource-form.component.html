@@ -1,34 +1,26 @@
 <div class="api-resource-form">
-  <header class="page-header">
-    <div>
-      <h1 class="page-title">{{ isEditMode() ? 'Edit API Resource' : 'Create API Resource' }}</h1>
-      <p class="page-subtitle">
-        {{ isEditMode() ? 'Update API resource configuration' : 'Register a new API resource for introspection' }}
-      </p>
-    </div>
-  </header>
 
   @if (error()) {
-    <coar-note color="error" padding="sm" class="message">
+    <coar-note variant="error" padding="s" class="message">
       {{ error() }}
     </coar-note>
   }
 
   @if (success()) {
-    <coar-note color="success" padding="sm" class="message">
+    <coar-note variant="success" padding="s" class="message">
       {{ success() }}
     </coar-note>
   }
 
   @if (generatedSecret()) {
-    <coar-card padding="md" color="warning" class="secret-card">
+    <coar-card padding="m" variant="warning" class="secret-card">
       <h3>API Secret</h3>
       <p>Copy this secret now. It will not be shown again.</p>
       <div class="secret-display">
         <code>{{ generatedSecret() }}</code>
         <coar-button
           variant="ghost"
-          size="sm"
+          size="s"
           iconStart="copy"
           (clicked)="copyToClipboard(generatedSecret()!)">
           Copy
@@ -51,7 +43,7 @@
       <p>Loading...</p>
     </div>
   } @else {
-    <coar-card padding="lg">
+    <coar-card padding="l">
       <form [formGroup]="form" (ngSubmit)="onSubmit()">
         <div class="form-section">
           <h2>Basic Information</h2>
@@ -122,7 +114,7 @@
                 [formControl]="$any(control)" />
               <coar-button
                 variant="ghost"
-                size="sm"
+                size="s"
                 iconStart="x"
                 (clicked)="removeUserClaim($index)"
                 [disabled]="userClaimsArray.length === 1" />
@@ -131,7 +123,7 @@
 
           <coar-button
             variant="ghost"
-            size="sm"
+            size="s"
             iconStart="plus"
             (clicked)="addUserClaim()">
             Add User Claim
@@ -156,19 +148,19 @@
     </coar-card>
 
     @if (isEditMode() && apiResource()) {
-      <coar-card padding="lg" class="secret-section">
+      <coar-card padding="l" class="secret-section">
         <h2>API Secret</h2>
         <p>Regenerate the API secret if it has been compromised.</p>
         <coar-button
           variant="secondary"
-          size="sm"
+          size="s"
           [loading]="isRegenerating()"
           (clicked)="onRegenerateSecret()">
           Regenerate Secret
         </coar-button>
       </coar-card>
 
-      <coar-card padding="lg" color="error" class="danger-zone">
+      <coar-card padding="l" variant="error" class="danger-zone">
         <h2>Danger Zone</h2>
 
         <div class="danger-action">
@@ -178,7 +170,7 @@
           </div>
           <coar-button
             variant="danger"
-            size="sm"
+            size="s"
             [loading]="isDeleting()"
             (clicked)="onDelete()">
             Delete

@@ -11,6 +11,7 @@ import {
 
 import { catchError, of, finalize } from 'rxjs';
 import { AdminApiService, OAuthScope, isStandardScope } from '../../../core';
+import { UIService } from '../../../ui';
 
 @Component({
   selector: 'app-oauth-scope-form',
@@ -31,6 +32,7 @@ export class OAuthScopeFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly adminApi = inject(AdminApiService);
   private readonly router = inject(Router);
+  private readonly ui = inject(UIService);
 
   id = input<string>();
 
@@ -55,6 +57,11 @@ export class OAuthScopeFormComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    this.ui.set((ctx) => {
+      ctx.header.title = this.isEditMode() ? 'Edit Scope' : 'Create Scope';
+      ctx.header.subTitle = this.isEditMode() ? 'Update scope configuration' : 'Create a new OAuth scope';
+      ctx.content.scrollable = true;
+    });
     if (this.isEditMode()) {
       this.loadScope();
       this.form.get('name')?.disable();

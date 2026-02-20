@@ -33,9 +33,9 @@ import { catchError, of, finalize } from 'rxjs';
       <p class="page-subtitle">Manage your data and account deletion</p>
 
       <!-- Data Export Section -->
-      <coar-card padding="lg" class="section-card">
+      <coar-card padding="l" class="section-card">
         <div class="section-header">
-          <coar-icon name="download" size="lg" class="section-icon" />
+          <coar-icon name="download" size="l" class="section-icon" />
           <div>
             <h2>Export Your Data</h2>
             <p>Download a copy of all your personal data (GDPR Article 20)</p>
@@ -43,7 +43,7 @@ import { catchError, of, finalize } from 'rxjs';
         </div>
 
         @if (exportError()) {
-          <coar-note color="error" padding="sm" class="message">
+          <coar-note variant="error" padding="s" class="message">
             {{ exportError() }}
           </coar-note>
         }
@@ -58,9 +58,9 @@ import { catchError, of, finalize } from 'rxjs';
       </coar-card>
 
       <!-- Account Deletion Section -->
-      <coar-card padding="lg" class="section-card">
+      <coar-card padding="l" class="section-card">
         <div class="section-header">
-          <coar-icon name="trash-2" size="lg" class="section-icon danger" />
+          <coar-icon name="trash-2" size="l" class="section-icon danger" />
           <div>
             <h2>Delete Account</h2>
             <p>Permanently delete your account and all associated data</p>
@@ -68,19 +68,19 @@ import { catchError, of, finalize } from 'rxjs';
         </div>
 
         @if (deletionError()) {
-          <coar-note color="error" padding="sm" class="message">
+          <coar-note variant="error" padding="s" class="message">
             {{ deletionError() }}
           </coar-note>
         }
 
         @if (deletionSuccess()) {
-          <coar-note color="success" padding="sm" class="message">
+          <coar-note variant="success" padding="s" class="message">
             {{ deletionSuccess() }}
           </coar-note>
         }
 
         @if (deletionStatus()?.isPending) {
-          <coar-note color="warning" padding="md" class="message">
+          <coar-note variant="warning" padding="m" class="message">
             <strong>Deletion Pending</strong>
             <p>
               Your account is scheduled for deletion. Please check your email
@@ -98,7 +98,7 @@ import { catchError, of, finalize } from 'rxjs';
             </coar-button>
           </div>
         } @else {
-          <coar-note color="warning" padding="md" class="message">
+          <coar-note variant="warning" padding="m" class="message">
             <strong>Warning:</strong> This action cannot be undone. All your data
             will be permanently deleted.
           </coar-note>
@@ -149,26 +149,26 @@ import { catchError, of, finalize } from 'rxjs';
       </coar-card>
 
       <!-- Data Rights Info -->
-      <coar-card padding="lg" class="section-card info-card">
+      <coar-card padding="l" class="section-card info-card">
         <h2>Your Data Rights</h2>
         <div class="rights-grid">
           <div class="right-item">
-            <coar-icon name="eye" size="md" />
+            <coar-icon name="eye" size="m" />
             <h3>Right to Access</h3>
             <p>You can request a copy of all personal data we hold about you.</p>
           </div>
           <div class="right-item">
-            <coar-icon name="edit" size="md" />
+            <coar-icon name="edit" size="m" />
             <h3>Right to Rectification</h3>
             <p>You can update your personal information in your profile settings.</p>
           </div>
           <div class="right-item">
-            <coar-icon name="trash-2" size="md" />
+            <coar-icon name="trash-2" size="m" />
             <h3>Right to Erasure</h3>
             <p>You can request permanent deletion of your account and data.</p>
           </div>
           <div class="right-item">
-            <coar-icon name="download" size="md" />
+            <coar-icon name="download" size="m" />
             <h3>Right to Portability</h3>
             <p>You can export your data in a machine-readable format.</p>
           </div>

@@ -16,6 +16,7 @@ import {
   OAuthClient,
   OAuthScope,
 } from '../../../core';
+import { UIService } from '../../../ui';
 
 @Component({
   selector: 'app-oauth-client-form',
@@ -37,6 +38,7 @@ export class OAuthClientFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly adminApi = inject(AdminApiService);
   private readonly router = inject(Router);
+  private readonly ui = inject(UIService);
 
   id = input<string>();
 
@@ -86,6 +88,11 @@ export class OAuthClientFormComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    this.ui.set((ctx) => {
+      ctx.header.title = this.isEditMode() ? 'Edit OAuth Client' : 'Create OAuth Client';
+      ctx.header.subTitle = this.isEditMode() ? 'Update OAuth client configuration' : 'Register a new OAuth 2.0 / OIDC client';
+      ctx.content.scrollable = true;
+    });
     this.loadScopes();
     if (this.isEditMode()) {
       this.loadClient();

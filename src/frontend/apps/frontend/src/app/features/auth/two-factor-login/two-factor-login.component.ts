@@ -30,17 +30,17 @@ type TwoFactorMethod = 'totp' | 'email' | 'webauthn';
   ],
   template: `
     <div class="tfa-container">
-      <coar-card elevated padding="lg" class="tfa-card">
+      <coar-card elevated padding="l" class="tfa-card">
         <h1 class="tfa-title">Two-Factor Authentication</h1>
 
         @if (error()) {
-          <coar-note color="error" padding="sm" class="error-note">
+          <coar-note variant="error" padding="s" class="error-note">
             {{ error() }}
           </coar-note>
         }
 
         @if (success()) {
-          <coar-note color="success" padding="sm" class="success-note">
+          <coar-note variant="success" padding="s" class="success-note">
             {{ success() }}
           </coar-note>
         }

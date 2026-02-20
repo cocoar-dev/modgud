@@ -1,4 +1,8 @@
 import { Route } from '@angular/router';
+import { createRouteData, IRoutedFragmentConfig, ComponentRoutedFragment } from '@cocoar/ui-routing';
+import { ModalOptions } from '../ui';
+
+type FragmentConfig = IRoutedFragmentConfig<ComponentRoutedFragment<ModalOptions>>;
 
 export const adminRoutes: Route[] = [
   {
@@ -19,6 +23,24 @@ export const adminRoutes: Route[] = [
           import('./users/user-list/user-list.component').then(
             (m) => m.UserListComponent
           ),
+        data: createRouteData<FragmentConfig>({
+          routedFragments: [
+            {
+              type: 'component',
+              path: 'create',
+              loadComponent: () =>
+                import('./users/user-form/user-form.component').then((m) => m.UserFormComponent),
+              options: { closeOnBackdropClick: false },
+            },
+            {
+              type: 'component',
+              path: ':id',
+              loadComponent: () =>
+                import('./users/user-form/user-form.component').then((m) => m.UserFormComponent),
+              options: { closeOnBackdropClick: false },
+            },
+          ],
+        }),
       },
       {
         path: 'users/create',
@@ -40,6 +62,24 @@ export const adminRoutes: Route[] = [
           import('./roles/role-list/role-list.component').then(
             (m) => m.RoleListComponent
           ),
+        data: createRouteData<FragmentConfig>({
+          routedFragments: [
+            {
+              type: 'component',
+              path: 'create',
+              loadComponent: () =>
+                import('./roles/role-form/role-form.component').then((m) => m.RoleFormComponent),
+              options: { closeOnBackdropClick: false },
+            },
+            {
+              type: 'component',
+              path: ':id',
+              loadComponent: () =>
+                import('./roles/role-form/role-form.component').then((m) => m.RoleFormComponent),
+              options: { closeOnBackdropClick: false },
+            },
+          ],
+        }),
       },
       {
         path: 'roles/create',
@@ -61,6 +101,24 @@ export const adminRoutes: Route[] = [
           import('./oauth/client-list/client-list.component').then(
             (m) => m.OAuthClientListComponent
           ),
+        data: createRouteData<FragmentConfig>({
+          routedFragments: [
+            {
+              type: 'component',
+              path: 'create',
+              loadComponent: () =>
+                import('./oauth/client-form/client-form.component').then((m) => m.OAuthClientFormComponent),
+              options: { closeOnBackdropClick: false },
+            },
+            {
+              type: 'component',
+              path: ':id',
+              loadComponent: () =>
+                import('./oauth/client-form/client-form.component').then((m) => m.OAuthClientFormComponent),
+              options: { closeOnBackdropClick: false },
+            },
+          ],
+        }),
       },
       {
         path: 'oauth/clients/create',
@@ -82,6 +140,24 @@ export const adminRoutes: Route[] = [
           import('./oauth/scope-list/scope-list.component').then(
             (m) => m.OAuthScopeListComponent
           ),
+        data: createRouteData<FragmentConfig>({
+          routedFragments: [
+            {
+              type: 'component',
+              path: 'create',
+              loadComponent: () =>
+                import('./oauth/scope-form/scope-form.component').then((m) => m.OAuthScopeFormComponent),
+              options: { closeOnBackdropClick: false },
+            },
+            {
+              type: 'component',
+              path: ':id',
+              loadComponent: () =>
+                import('./oauth/scope-form/scope-form.component').then((m) => m.OAuthScopeFormComponent),
+              options: { closeOnBackdropClick: false },
+            },
+          ],
+        }),
       },
       {
         path: 'oauth/scopes/create',
@@ -103,6 +179,24 @@ export const adminRoutes: Route[] = [
           import('./oauth/api-resource-list/api-resource-list.component').then(
             (m) => m.OAuthApiResourceListComponent
           ),
+        data: createRouteData<FragmentConfig>({
+          routedFragments: [
+            {
+              type: 'component',
+              path: 'create',
+              loadComponent: () =>
+                import('./oauth/api-resource-form/api-resource-form.component').then((m) => m.OAuthApiResourceFormComponent),
+              options: { closeOnBackdropClick: false },
+            },
+            {
+              type: 'component',
+              path: ':id',
+              loadComponent: () =>
+                import('./oauth/api-resource-form/api-resource-form.component').then((m) => m.OAuthApiResourceFormComponent),
+              options: { closeOnBackdropClick: false },
+            },
+          ],
+        }),
       },
       {
         path: 'oauth/api-resources/create',

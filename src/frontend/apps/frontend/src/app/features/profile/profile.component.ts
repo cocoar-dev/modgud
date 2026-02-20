@@ -63,15 +63,15 @@ type TabId = 'personal' | 'password' | 'tfa';
 
       <!-- Personal Info Tab -->
       @if (activeTab() === 'personal') {
-        <coar-card padding="lg" class="section-card">
+        <coar-card padding="l" class="section-card">
           @if (profileError()) {
-            <coar-note color="error" padding="sm" class="message">
+            <coar-note variant="error" padding="s" class="message">
               {{ profileError() }}
             </coar-note>
           }
 
           @if (profileSuccess()) {
-            <coar-note color="success" padding="sm" class="message">
+            <coar-note variant="success" padding="s" class="message">
               {{ profileSuccess() }}
             </coar-note>
           }
@@ -136,15 +136,15 @@ type TabId = 'personal' | 'password' | 'tfa';
 
       <!-- Change Password Tab -->
       @if (activeTab() === 'password') {
-        <coar-card padding="lg" class="section-card">
+        <coar-card padding="l" class="section-card">
           @if (passwordError()) {
-            <coar-note color="error" padding="sm" class="message">
+            <coar-note variant="error" padding="s" class="message">
               {{ passwordError() }}
             </coar-note>
           }
 
           @if (passwordSuccess()) {
-            <coar-note color="success" padding="sm" class="message">
+            <coar-note variant="success" padding="s" class="message">
               {{ passwordSuccess() }}
             </coar-note>
           }
@@ -193,15 +193,15 @@ type TabId = 'personal' | 'password' | 'tfa';
 
       <!-- Two-Factor Auth Tab -->
       @if (activeTab() === 'tfa') {
-        <coar-card padding="lg" class="section-card">
+        <coar-card padding="l" class="section-card">
           @if (tfaError()) {
-            <coar-note color="error" padding="sm" class="message">
+            <coar-note variant="error" padding="s" class="message">
               {{ tfaError() }}
             </coar-note>
           }
 
           @if (tfaSuccess()) {
-            <coar-note color="success" padding="sm" class="message">
+            <coar-note variant="success" padding="s" class="message">
               {{ tfaSuccess() }}
             </coar-note>
           }
@@ -212,7 +212,7 @@ type TabId = 'personal' | 'password' | 'tfa';
 
             @if (tfaStatus()?.hasAuthenticator) {
               <div class="tfa-enabled">
-                <coar-note color="success" padding="md">
+                <coar-note variant="success" padding="m">
                   <strong>Authenticator app is configured</strong>
                   <p>
                     Recovery codes remaining:
@@ -238,7 +238,7 @@ type TabId = 'personal' | 'password' | 'tfa';
                 @if (recoveryCodes().length > 0) {
                   <div class="recovery-codes">
                     <h4>Recovery Codes</h4>
-                    <coar-note color="warning" padding="sm">
+                    <coar-note variant="warning" padding="s">
                       Save these codes in a secure place. Each code can only be
                       used once.
                     </coar-note>
@@ -353,13 +353,13 @@ type TabId = 'personal' | 'password' | 'tfa';
                             <coar-button
                               type="submit"
                               variant="primary"
-                              size="sm"
+                              size="s"
                               [loading]="isRenamingCredential()">
                               Save
                             </coar-button>
                             <coar-button
                               variant="ghost"
-                              size="sm"
+                              size="s"
                               (clicked)="cancelEditCredential()">
                               Cancel
                             </coar-button>
@@ -437,7 +437,7 @@ type TabId = 'personal' | 'password' | 'tfa';
           <!-- Email OTP Info -->
           <div class="tfa-section">
             <h3 class="section-title">Email Verification</h3>
-            <coar-note color="info" padding="md">
+            <coar-note variant="info" padding="m">
               <strong>Always available</strong>
               <p>
                 You can always request a one-time code via email during login.

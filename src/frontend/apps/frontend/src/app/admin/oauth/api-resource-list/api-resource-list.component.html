@@ -1,25 +1,21 @@
 <div class="api-resource-list">
-  <header class="page-header">
-    <div>
-      <h1 class="page-title">API Resources</h1>
-      <p class="page-subtitle">Manage API resources for reference token introspection</p>
-    </div>
+  <div class="list-actions">
     <coar-button
       variant="primary"
       iconStart="plus"
-      routerLink="/admin/oauth/api-resources/create">
+      (clicked)="ui.navigateToModal('create')">
       Create API Resource
     </coar-button>
-  </header>
+  </div>
 
   @if (error()) {
-    <coar-note color="error" padding="sm" class="message">
+    <coar-note variant="error" padding="s" class="message">
       {{ error() }}
     </coar-note>
   }
 
   @if (success()) {
-    <coar-note color="success" padding="sm" class="message">
+    <coar-note variant="success" padding="s" class="message">
       {{ success() }}
     </coar-note>
   }
@@ -35,14 +31,14 @@
         <div class="grid-action-row">
           <coar-button
             variant="ghost"
-            size="sm"
+            size="s"
             iconStart="edit"
             [routerLink]="['/admin/oauth/api-resources', resource.id]">
             Edit
           </coar-button>
           <coar-button
             variant="ghost"
-            size="sm"
+            size="s"
             iconStart="trash-2"
             [loading]="deletingId() === resource.id"
             (clicked)="onDelete(resource)">

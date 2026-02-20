@@ -19,34 +19,34 @@ import { AuthStateService } from '../../core/services/auth-state.service';
       </header>
 
       <div class="card-grid">
-        <coar-card elevated padding="lg" class="feature-card">
+        <coar-card elevated padding="l" class="feature-card">
           <a routerLink="/profile" class="card-link">
-            <coar-icon name="user" size="lg" class="card-icon" />
+            <coar-icon name="user" size="l" class="card-icon" />
             <h2>Profile</h2>
             <p>View and edit your personal information</p>
           </a>
         </coar-card>
 
-        <coar-card elevated padding="lg" class="feature-card">
+        <coar-card elevated padding="l" class="feature-card">
           <a routerLink="/sessions" class="card-link">
-            <coar-icon name="monitor" size="lg" class="card-icon" />
+            <coar-icon name="monitor" size="l" class="card-icon" />
             <h2>Sessions</h2>
             <p>Manage your active sessions and devices</p>
           </a>
         </coar-card>
 
-        <coar-card elevated padding="lg" class="feature-card">
+        <coar-card elevated padding="l" class="feature-card">
           <a routerLink="/privacy" class="card-link">
-            <coar-icon name="shield" size="lg" class="card-icon" />
+            <coar-icon name="shield" size="l" class="card-icon" />
             <h2>Privacy</h2>
             <p>Export your data or manage account deletion</p>
           </a>
         </coar-card>
 
         @if (isAdmin()) {
-          <coar-card elevated padding="lg" class="feature-card admin-card">
+          <coar-card elevated padding="l" class="feature-card admin-card">
             <a routerLink="/admin" class="card-link">
-              <coar-icon name="settings" size="lg" class="card-icon" />
+              <coar-icon name="settings" size="l" class="card-icon" />
               <h2>Admin Panel</h2>
               <p>Manage users and roles</p>
             </a>

@@ -27,25 +27,25 @@ import { catchError, of, finalize } from 'rxjs';
   ],
   template: `
     <div class="reset-container">
-      <coar-card elevated padding="lg" class="reset-card">
+      <coar-card elevated padding="l" class="reset-card">
         <h1 class="reset-title">Reset Password</h1>
         <p class="reset-subtitle">Enter your new password below.</p>
 
         @if (error()) {
-          <coar-note color="error" padding="sm" class="error-note">
+          <coar-note variant="error" padding="s" class="error-note">
             {{ error() }}
           </coar-note>
         }
 
         @if (success()) {
-          <coar-note color="success" padding="sm" class="success-note">
+          <coar-note variant="success" padding="s" class="success-note">
             {{ success() }}
           </coar-note>
           <p class="back-link">
             <a routerLink="/login">Sign in with your new password</a>
           </p>
         } @else if (!hasToken()) {
-          <coar-note color="error" padding="sm">
+          <coar-note variant="error" padding="s">
             Invalid or missing reset token. Please request a new password reset link.
           </coar-note>
           <p class="back-link">

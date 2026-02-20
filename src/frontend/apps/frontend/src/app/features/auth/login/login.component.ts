@@ -29,12 +29,12 @@ import { AuthApiService } from '../../../core/services/auth-api.service';
   ],
   template: `
     <div class="login-container">
-      <coar-card elevated padding="lg" class="login-card">
+      <coar-card elevated padding="l" class="login-card">
         <h1 class="login-title">Sign In</h1>
         <p class="login-subtitle">Welcome back! Please enter your credentials.</p>
 
         @if (error()) {
-          <coar-note color="error" padding="sm" class="error-note">
+          <coar-note variant="error" padding="s" class="error-note">
             {{ error() }}
           </coar-note>
         }

@@ -1,15 +1,7 @@
 <div class="user-form">
-  <header class="page-header">
-    <div>
-      <h1 class="page-title">{{ isEditMode() ? 'Edit User' : 'Create User' }}</h1>
-      <p class="page-subtitle">
-        {{ isEditMode() ? 'Update user information' : 'Create a new user account' }}
-      </p>
-    </div>
-  </header>
 
   @if (error()) {
-    <coar-note color="error" padding="sm" class="message">
+    <coar-note variant="error" padding="s" class="message">
       {{ error() }}
     </coar-note>
   }
@@ -20,7 +12,7 @@
       <p>Loading...</p>
     </div>
   } @else {
-    <coar-card padding="lg">
+    <coar-card padding="l">
       <form [formGroup]="form" (ngSubmit)="onSubmit()">
         <div class="form-section">
           <h2>Account Information</h2>
@@ -144,7 +136,7 @@
     </coar-card>
 
     @if (isEditMode() && user()) {
-      <coar-card padding="lg" color="error" class="danger-zone">
+      <coar-card padding="l" variant="error" class="danger-zone">
         <h2>Danger Zone</h2>
 
         <div class="danger-actions">
@@ -155,7 +147,7 @@
             </div>
             <coar-button
               variant="secondary"
-              size="sm"
+              size="s"
               (clicked)="showResetPassword.set(true)">
               Reset Password
             </coar-button>
@@ -168,7 +160,7 @@
             </div>
             <coar-button
               variant="danger"
-              size="sm"
+              size="s"
               [loading]="isDeleting()"
               (clicked)="onDelete()">
               Delete
@@ -186,13 +178,13 @@
             <div class="reset-actions">
               <coar-button
                 variant="ghost"
-                size="sm"
+                size="s"
                 (clicked)="showResetPassword.set(false); newPassword = ''">
                 Cancel
               </coar-button>
               <coar-button
                 variant="primary"
-                size="sm"
+                size="s"
                 [loading]="isResettingPassword()"
                 [disabled]="!newPassword"
                 (clicked)="onResetPassword()">

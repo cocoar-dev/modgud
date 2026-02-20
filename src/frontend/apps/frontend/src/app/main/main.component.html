@@ -79,7 +79,7 @@
   <header class="header">
     <div class="header-left">
       <a routerLink="/" class="logo">
-        <coar-icon name="shield" size="lg" />
+        <coar-icon name="shield" size="l" />
         <span class="logo-text">Cocoar Auth</span>
       </a>
     </div>
@@ -112,7 +112,7 @@
           <span class="user-name">{{ displayName() }}</span>
           <coar-button
             variant="ghost"
-            size="sm"
+            size="s"
             iconStart="logout"
             (clicked)="onLogout()">
             Logout
@@ -121,7 +121,7 @@
       } @else {
         <coar-button
           variant="primary"
-          size="sm"
+          size="s"
           routerLink="/login">
           Login
         </coar-button>

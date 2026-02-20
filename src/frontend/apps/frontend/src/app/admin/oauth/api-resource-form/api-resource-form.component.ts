@@ -16,6 +16,7 @@ import {
   OAuthApiResource,
   OAuthScope,
 } from '../../../core';
+import { UIService } from '../../../ui';
 
 @Component({
   selector: 'app-oauth-api-resource-form',
@@ -37,6 +38,7 @@ export class OAuthApiResourceFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly adminApi = inject(AdminApiService);
   private readonly router = inject(Router);
+  private readonly ui = inject(UIService);
 
   id = input<string>();
 
@@ -70,6 +72,11 @@ export class OAuthApiResourceFormComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    this.ui.set((ctx) => {
+      ctx.header.title = this.isEditMode() ? 'Edit API Resource' : 'Create API Resource';
+      ctx.header.subTitle = this.isEditMode() ? 'Update API resource configuration' : 'Register a new API resource for introspection';
+      ctx.content.scrollable = true;
+    });
     this.loadScopes();
     if (this.isEditMode()) {
       this.loadApiResource();

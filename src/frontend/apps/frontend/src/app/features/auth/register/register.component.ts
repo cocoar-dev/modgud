@@ -27,18 +27,18 @@ import { catchError, of, finalize } from 'rxjs';
   ],
   template: `
     <div class="register-container">
-      <coar-card elevated padding="lg" class="register-card">
+      <coar-card elevated padding="l" class="register-card">
         <h1 class="register-title">Create Account</h1>
         <p class="register-subtitle">Join us today. Fill in your details below.</p>
 
         @if (error()) {
-          <coar-note color="error" padding="sm" class="error-note">
+          <coar-note variant="error" padding="s" class="error-note">
             {{ error() }}
           </coar-note>
         }
 
         @if (success()) {
-          <coar-note color="success" padding="sm" class="success-note">
+          <coar-note variant="success" padding="s" class="success-note">
             {{ success() }}
           </coar-note>
         } @else {

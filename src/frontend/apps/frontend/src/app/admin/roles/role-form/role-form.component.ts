@@ -11,6 +11,7 @@ import {
 
 import { catchError, of, finalize } from 'rxjs';
 import { AdminApiService, Role } from '../../../core';
+import { UIService } from '../../../ui';
 
 @Component({
   selector: 'app-role-form',
@@ -31,6 +32,7 @@ export class RoleFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly adminApi = inject(AdminApiService);
   private readonly router = inject(Router);
+  private readonly ui = inject(UIService);
 
   // Route param input
   id = input<string>();
@@ -49,6 +51,11 @@ export class RoleFormComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    this.ui.set((ctx) => {
+      ctx.header.title = this.isEditMode() ? 'Edit Role' : 'Create Role';
+      ctx.header.subTitle = this.isEditMode() ? 'Update role information' : 'Create a new role';
+      ctx.content.scrollable = true;
+    });
     if (this.isEditMode()) {
       this.loadRole();
     }

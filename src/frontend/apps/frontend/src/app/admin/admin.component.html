@@ -44,12 +44,12 @@
     @let uiContent = ui.state.content();
 
     @if (uiHeader.show && uiHeader.title) {
-      <header class="page-header">
-        <div class="page-header-content">
+      <header class="layout-header">
+        <div class="layout-header-content">
           @if (uiHeader.icon) {
-            <span class="page-header-icon">{{ uiHeader.icon }}</span>
+            <span class="layout-header-icon">{{ uiHeader.icon }}</span>
           }
-          <div class="page-header-titles">
+          <div class="layout-header-titles">
             <h1 class="page-title">{{ uiHeader.title }}</h1>
             @if (uiHeader.subTitle) {
               <span class="page-subtitle">{{ uiHeader.subTitle }}</span>

@@ -12,6 +12,7 @@ import { CoarGridBuilder, CoarDataGridDirective } from '@cocoar/data-grid';
 
 import { catchError, of, finalize, debounceTime, Subject } from 'rxjs';
 import { AdminApiService, PaginationParams, User } from '../../../core';
+import { UIService } from '../../../ui';
 
 @Component({
   selector: 'app-user-list',
@@ -32,6 +33,7 @@ import { AdminApiService, PaginationParams, User } from '../../../core';
 export class UserListComponent implements OnInit {
   private readonly adminApi = inject(AdminApiService);
   private readonly router = inject(Router);
+  readonly ui = inject(UIService);
   private readonly searchSubject = new Subject<string>();
 
   readonly users = signal<User[]>([]);
@@ -89,11 +91,16 @@ export class UserListComponent implements OnInit {
     .rowId(params => params.data?.id || '')
     .onRowDoubleClicked(event => {
       if (event.data?.id) {
-        this.router.navigate(['/admin/users', event.data.id]);
+        this.ui.navigateToModal(event.data.id);
       }
     });
 
   ngOnInit(): void {
+    this.ui.set((ctx) => {
+      ctx.header.title = 'Users';
+      ctx.header.subTitle = 'Manage user accounts';
+      ctx.content.scrollable = false;
+    });
     this.loadUsers();
 
     this.searchSubject.pipe(debounceTime(300)).subscribe((query) => {

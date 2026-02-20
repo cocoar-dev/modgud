@@ -10,6 +10,7 @@ import { CoarGridBuilder, CoarDataGridDirective } from '@cocoar/data-grid';
 
 import { catchError, of, finalize } from 'rxjs';
 import { AdminApiService, OAuthApiResource } from '../../../core';
+import { UIService } from '../../../ui';
 
 @Component({
   selector: 'app-oauth-api-resource-list',
@@ -28,6 +29,7 @@ import { AdminApiService, OAuthApiResource } from '../../../core';
 export class OAuthApiResourceListComponent implements OnInit {
   private readonly adminApi = inject(AdminApiService);
   private readonly router = inject(Router);
+  readonly ui = inject(UIService);
 
   readonly apiResources = signal<OAuthApiResource[]>([]);
   readonly isLoading = signal(true);
@@ -60,11 +62,16 @@ export class OAuthApiResourceListComponent implements OnInit {
     .rowId(params => params.data?.id || '')
     .onRowDoubleClicked(event => {
       if (event.data?.id) {
-        this.router.navigate(['/admin/oauth/api-resources', event.data.id]);
+        this.ui.navigateToModal(event.data.id);
       }
     });
 
   ngOnInit(): void {
+    this.ui.set((ctx) => {
+      ctx.header.title = 'API Resources';
+      ctx.header.subTitle = 'Manage API resources for reference token introspection';
+      ctx.content.scrollable = false;
+    });
     this.loadApiResources();
   }
 
