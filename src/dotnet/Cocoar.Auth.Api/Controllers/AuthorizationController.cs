@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Domain.Entities;
+using Cocoar.Auth.Infrastructure.Persistence.Projections;
+using Marten;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -24,6 +26,7 @@ public class AuthorizationController : Controller
 	private readonly SignInManager<ApplicationUser> _signInManager;
 	private readonly UserManager<ApplicationUser> _userManager;
 	private readonly IRoleRepository _roleRepository;
+	private readonly IDocumentStore _documentStore;
 
 	public AuthorizationController(
 		IOpenIddictApplicationManager applicationManager,
@@ -31,7 +34,8 @@ public class AuthorizationController : Controller
 		IOpenIddictScopeManager scopeManager,
 		SignInManager<ApplicationUser> signInManager,
 		UserManager<ApplicationUser> userManager,
-		IRoleRepository roleRepository)
+		IRoleRepository roleRepository,
+		IDocumentStore documentStore)
 	{
 		_applicationManager = applicationManager;
 		_authorizationManager = authorizationManager;
@@ -39,6 +43,7 @@ public class AuthorizationController : Controller
 		_signInManager = signInManager;
 		_userManager = userManager;
 		_roleRepository = roleRepository;
+		_documentStore = documentStore;
 	}
 
 	/// <summary>
@@ -155,20 +160,10 @@ public class AuthorizationController : Controller
 				}));
 		}
 
-		// For first-party IdP, auto-approve explicit consent
-		// In a production system with third-party apps, you'd redirect to a consent page
-		var consentPrincipal = await CreateClaimsPrincipalAsync(user, request);
-
-		var consentAuthorization = await _authorizationManager.CreateAsync(
-			principal: consentPrincipal,
-			subject: await _userManager.GetUserIdAsync(user),
-			client: await _applicationManager.GetIdAsync(application) ?? string.Empty,
-			type: AuthorizationTypes.Permanent,
-			scopes: consentPrincipal.GetScopes());
-
-		consentPrincipal.SetAuthorizationId(await _authorizationManager.GetIdAsync(consentAuthorization));
-
-		return SignIn(consentPrincipal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+		// Redirect to the consent page so the user can approve or deny the requested scopes
+		var authorizeUrl = Request.PathBase + Request.Path + Request.QueryString;
+		var consentUrl = $"/consent?returnUrl={Uri.EscapeDataString(authorizeUrl)}";
+		return Redirect(consentUrl);
 	}
 
 	/// <summary>
@@ -224,7 +219,10 @@ public class AuthorizationController : Controller
 					}));
 			}
 
-			var principal = await CreateClaimsPrincipalAsync(user, request);
+			// Use scopes from the original authorization code / refresh token principal,
+			// since the token exchange request does not include the scope parameter.
+			var originalScopes = result.Principal?.GetScopes();
+			var principal = await CreateClaimsPrincipalAsync(user, request, originalScopes);
 
 			// Set the existing authorization id
 			principal.SetAuthorizationId(result.Principal?.GetAuthorizationId());
@@ -251,7 +249,50 @@ public class AuthorizationController : Controller
 			identity.SetClaim(Claims.Name, await _applicationManager.GetDisplayNameAsync(application));
 
 			identity.SetScopes(request.GetScopes());
-			identity.SetResources(await _scopeManager.ListResourcesAsync(identity.GetScopes()).ToListAsync());
+			// Include the client's own client_id as a resource so it can
+			// introspect its own tokens and receive the full set of claims.
+			var clientResources = await _scopeManager.ListResourcesAsync(identity.GetScopes()).ToListAsync();
+			var clientId = await _applicationManager.GetClientIdAsync(application);
+			if (!string.IsNullOrEmpty(clientId) && !clientResources.Contains(clientId))
+			{
+				clientResources.Add(clientId);
+			}
+			identity.SetResources(clientResources);
+
+			// Add client's configured claims and roles from application Properties.
+			// Clients can have "cocoar:roles" and "cocoar:client_claims" in their Properties.
+			var properties = await _applicationManager.GetPropertiesAsync(application);
+			if (properties is not null)
+			{
+				// Add client roles as "role" claims
+				if (properties.TryGetValue("cocoar:roles", out var rolesElement)
+					&& rolesElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+				{
+					foreach (var roleEl in rolesElement.EnumerateArray())
+					{
+						var roleName = roleEl.GetString();
+						if (!string.IsNullOrEmpty(roleName))
+						{
+							identity.AddClaim(new Claim(Claims.Role, roleName));
+						}
+					}
+				}
+
+				// Add client custom claims (array of {type, value} objects)
+				if (properties.TryGetValue("cocoar:client_claims", out var claimsElement)
+					&& claimsElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+				{
+					foreach (var claimEl in claimsElement.EnumerateArray())
+					{
+						var claimType = claimEl.TryGetProperty("Type", out var typeEl) ? typeEl.GetString() : null;
+						var claimValue = claimEl.TryGetProperty("Value", out var valueEl) ? valueEl.GetString() : null;
+						if (!string.IsNullOrEmpty(claimType) && claimValue is not null)
+						{
+							identity.AddClaim(new Claim(claimType, claimValue));
+						}
+					}
+				}
+			}
 
 			identity.SetDestinations(static claim => claim.Type switch
 			{
@@ -346,6 +387,35 @@ public class AuthorizationController : Controller
 			}
 		}
 
+		// Include custom user claims based on scope and API resource UserClaims configuration
+		var userScopes = User.GetScopes();
+		var allowedClaimTypes = await GetAllowedClaimTypesAsync(userScopes);
+		if (allowedClaimTypes.Count > 0 && user.Claims.Count > 0)
+		{
+			foreach (var userClaim in user.Claims)
+			{
+				if (allowedClaimTypes.Contains(userClaim.Type))
+				{
+					// If multiple claims of the same type exist, collect them as an array
+					if (claims.TryGetValue(userClaim.Type, out var existing))
+					{
+						if (existing is List<string> list)
+						{
+							list.Add(userClaim.Value);
+						}
+						else
+						{
+							claims[userClaim.Type] = new List<string> { existing.ToString()!, userClaim.Value };
+						}
+					}
+					else
+					{
+						claims[userClaim.Type] = userClaim.Value;
+					}
+				}
+			}
+		}
+
 		return Ok(claims);
 	}
 
@@ -373,20 +443,36 @@ public class AuthorizationController : Controller
 	/// </summary>
 	private async Task<ClaimsPrincipal> CreateClaimsPrincipalAsync(
 		ApplicationUser user,
-		OpenIddictRequest request)
+		OpenIddictRequest request,
+		IEnumerable<string>? scopeOverrides = null)
 	{
-		var principal = await _signInManager.CreateUserPrincipalAsync(user);
-		var identity = (ClaimsIdentity)principal.Identity!;
+		// Create a new identity with the authentication type expected by OpenIddict.
+		// SignInManager creates an identity with IdentityConstants.ApplicationScheme,
+		// but OpenIddict only processes claims from identities with
+		// TokenValidationParameters.DefaultAuthenticationType.
+		var identity = new ClaimsIdentity(
+			authenticationType: TokenValidationParameters.DefaultAuthenticationType,
+			nameType: Claims.Name,
+			roleType: Claims.Role);
 
 		// Set the mandatory subject claim required by OpenIddict
 		identity.SetClaim(Claims.Subject, user.Id.ToString());
+		var principal = new ClaimsPrincipal(identity);
 
-		// Set the requested scopes
-		var scopes = request.GetScopes();
+		// Set the requested scopes.
+		// For authorization code / refresh token exchange, scopes come from the original
+		// authorization principal (scopeOverrides), not from the token exchange request.
+		var scopes = scopeOverrides ?? request.GetScopes();
 		principal.SetScopes(scopes);
 
-		// Set the resources based on the requested scopes
-		var resources = await _scopeManager.ListResourcesAsync(scopes).ToListAsync();
+		// Set the resources based on the requested scopes.
+		// Include the requesting client's client_id as a resource so it can
+		// introspect its own tokens and receive the full set of claims.
+		var resources = await _scopeManager.ListResourcesAsync(principal.GetScopes()).ToListAsync();
+		if (!string.IsNullOrEmpty(request.ClientId) && !resources.Contains(request.ClientId))
+		{
+			resources.Add(request.ClientId);
+		}
 		principal.SetResources(resources);
 
 		// Add additional claims based on scopes
@@ -427,6 +513,22 @@ public class AuthorizationController : Controller
 			}
 		}
 
+		// Add custom user claims based on scope and API resource UserClaims configuration.
+		// Collect the set of claim types that should be included based on:
+		// 1. Scope UserClaims - each scope can declare which claim types it needs
+		// 2. API Resource UserClaims - each API resource can declare which claim types it needs
+		var allowedClaimTypes = await GetAllowedClaimTypesAsync(scopes);
+		if (allowedClaimTypes.Count > 0 && user.Claims.Count > 0)
+		{
+			foreach (var userClaim in user.Claims)
+			{
+				if (allowedClaimTypes.Contains(userClaim.Type))
+				{
+					identity.AddClaim(new Claim(userClaim.Type, userClaim.Value));
+				}
+			}
+		}
+
 		// Set the destinations for each claim
 		principal.SetDestinations(GetDestinations);
 
@@ -463,6 +565,55 @@ public class AuthorizationController : Controller
 		}
 
 		return roleNames;
+	}
+
+	/// <summary>
+	/// Collects the set of allowed claim types based on the requested scopes.
+	/// This combines UserClaims from both scope definitions and their associated API resources.
+	/// </summary>
+	private async Task<HashSet<string>> GetAllowedClaimTypesAsync(IEnumerable<string> requestedScopes)
+	{
+		var allowedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var scopeNames = requestedScopes.ToList();
+
+		if (scopeNames.Count == 0)
+		{
+			return allowedTypes;
+		}
+
+		await using var session = _documentStore.QuerySession();
+
+		// Get scope definitions to find their UserClaims
+		var scopeStates = await session.Query<OAuthScopeState>()
+			.Where(s => s.Name.IsOneOf(scopeNames) && !s.IsDeleted)
+			.ToListAsync();
+
+		foreach (var scope in scopeStates)
+		{
+			foreach (var claimType in scope.UserClaims)
+			{
+				allowedTypes.Add(claimType);
+			}
+		}
+
+		// Get API resources that are associated with the requested scopes
+		// API resources have a Scopes list; if any requested scope is in that list, include the resource's UserClaims
+		var apiResources = await session.Query<OAuthApiResourceState>()
+			.Where(r => !r.IsDeleted && r.Enabled)
+			.ToListAsync();
+
+		foreach (var resource in apiResources)
+		{
+			if (resource.Scopes.Any(s => scopeNames.Contains(s)))
+			{
+				foreach (var claimType in resource.UserClaims)
+				{
+					allowedTypes.Add(claimType);
+				}
+			}
+		}
+
+		return allowedTypes;
 	}
 
 	/// <summary>

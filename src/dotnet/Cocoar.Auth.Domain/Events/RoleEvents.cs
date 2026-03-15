@@ -54,3 +54,31 @@ public record RoleClaimRemoved(
     Guid RoleId,
     string ClaimType,
     string ClaimValue);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ROLE EXTENDED PROPERTY EVENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Event raised when a role's display name is changed.
+/// </summary>
+public record RoleDisplayNameChanged(
+    Guid RoleId,
+    string? OldDisplayName,
+    string? NewDisplayName);
+
+/// <summary>
+/// Event raised when a role's email is changed.
+/// </summary>
+public record RoleEmailChanged(
+    Guid RoleId,
+    string? OldEmail,
+    string? NewEmail);
+
+/// <summary>
+/// Event raised when a role's bound API resource is changed.
+/// </summary>
+public record RoleBoundToApiResourceChanged(
+    Guid RoleId,
+    Guid? OldApiResourceId,
+    Guid? NewApiResourceId);

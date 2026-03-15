@@ -33,6 +33,24 @@ public class ApplicationRole : Entity
     public string? Description { get; private set; }
 
     /// <summary>
+    /// A human-friendly display name for the role.
+    /// </summary>
+    [JsonInclude]
+    public string? DisplayName { get; private set; }
+
+    /// <summary>
+    /// An email address associated with the role.
+    /// </summary>
+    [JsonInclude]
+    public string? Email { get; private set; }
+
+    /// <summary>
+    /// The ID of the API resource this role is bound to, if any.
+    /// </summary>
+    [JsonInclude]
+    public Guid? BoundToApiResourceId { get; private set; }
+
+    /// <summary>
     /// Role claims.
     /// </summary>
     [JsonInclude]
@@ -58,6 +76,24 @@ public class ApplicationRole : Entity
     public void SetDescription(string? description)
     {
         Description = description;
+        MarkModified();
+    }
+
+    public void SetDisplayName(string? displayName)
+    {
+        DisplayName = displayName;
+        MarkModified();
+    }
+
+    public void SetEmail(string? email)
+    {
+        Email = email;
+        MarkModified();
+    }
+
+    public void SetBoundToApiResourceId(Guid? apiResourceId)
+    {
+        BoundToApiResourceId = apiResourceId;
         MarkModified();
     }
 

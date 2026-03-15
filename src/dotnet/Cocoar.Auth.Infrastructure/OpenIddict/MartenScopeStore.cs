@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Cocoar.Auth.Domain.Aggregates;
+using Cocoar.Auth.Domain.Common;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using Marten;
 using OpenIddict.Abstractions;
@@ -67,6 +68,34 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 		if (scope.Properties.Count > 0)
 		{
 			session.Events.Append(scope.Id, new Domain.Events.OAuthScopePropertiesChanged(scope.Id, scope.Properties));
+		}
+
+		// Extract identity resource properties from the Properties dictionary and emit individual events
+		ExtractAndApplyIdentityResourceProperties(scope);
+
+		if (!scope.Enabled)
+		{
+			session.Events.Append(scope.Id, new Domain.Events.OAuthScopeEnabledChanged(scope.Id, scope.Enabled));
+		}
+
+		if (scope.Required)
+		{
+			session.Events.Append(scope.Id, new Domain.Events.OAuthScopeRequiredChanged(scope.Id, scope.Required));
+		}
+
+		if (scope.Emphasize)
+		{
+			session.Events.Append(scope.Id, new Domain.Events.OAuthScopeEmphasizeChanged(scope.Id, scope.Emphasize));
+		}
+
+		if (!scope.ShowInDiscoveryDocument)
+		{
+			session.Events.Append(scope.Id, new Domain.Events.OAuthScopeShowInDiscoveryDocumentChanged(scope.Id, scope.ShowInDiscoveryDocument));
+		}
+
+		if (scope.UserClaims.Count > 0)
+		{
+			session.Events.Append(scope.Id, new Domain.Events.OAuthScopeUserClaimsChanged(scope.Id, scope.UserClaims));
 		}
 
 		await session.SaveChangesAsync(cancellationToken);
@@ -198,9 +227,22 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 		OAuthScopeState scope,
 		CancellationToken cancellationToken)
 	{
-		var properties = scope.Properties
-			.ToImmutableDictionary(x => x.Key, x => JsonSerializer.SerializeToElement(x.Value));
-		return new ValueTask<ImmutableDictionary<string, JsonElement>>(properties);
+		var builder = ImmutableDictionary.CreateBuilder<string, JsonElement>();
+
+		// Include generic properties
+		foreach (var kvp in scope.Properties)
+		{
+			builder[kvp.Key] = JsonSerializer.SerializeToElement(kvp.Value);
+		}
+
+		// Include identity resource properties so the service layer can read them
+		builder[ScopePropertyKeys.Enabled] = JsonSerializer.SerializeToElement(scope.Enabled);
+		builder[ScopePropertyKeys.Required] = JsonSerializer.SerializeToElement(scope.Required);
+		builder[ScopePropertyKeys.Emphasize] = JsonSerializer.SerializeToElement(scope.Emphasize);
+		builder[ScopePropertyKeys.ShowInDiscoveryDocument] = JsonSerializer.SerializeToElement(scope.ShowInDiscoveryDocument);
+		builder[ScopePropertyKeys.UserClaims] = JsonSerializer.SerializeToElement(scope.UserClaims);
+
+		return new ValueTask<ImmutableDictionary<string, JsonElement>>(builder.ToImmutable());
 	}
 
 	public ValueTask<ImmutableArray<string>> GetResourcesAsync(
@@ -336,6 +378,9 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 			return;
 		}
 
+		// Extract identity resource properties from Properties dictionary before comparing
+		ExtractAndApplyIdentityResourceProperties(scope);
+
 		// Emit events for changed properties
 		if (scope.DisplayName != currentState.DisplayName)
 		{
@@ -373,7 +418,112 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 			session.Events.Append(scope.Id, evt);
 		}
 
+		if (scope.Enabled != currentState.Enabled)
+		{
+			var evt = aggregate.SetEnabled(scope.Enabled);
+			session.Events.Append(scope.Id, evt);
+		}
+
+		if (scope.Required != currentState.Required)
+		{
+			var evt = aggregate.SetRequired(scope.Required);
+			session.Events.Append(scope.Id, evt);
+		}
+
+		if (scope.Emphasize != currentState.Emphasize)
+		{
+			var evt = aggregate.SetEmphasize(scope.Emphasize);
+			session.Events.Append(scope.Id, evt);
+		}
+
+		if (scope.ShowInDiscoveryDocument != currentState.ShowInDiscoveryDocument)
+		{
+			var evt = aggregate.SetShowInDiscoveryDocument(scope.ShowInDiscoveryDocument);
+			session.Events.Append(scope.Id, evt);
+		}
+
+		if (!scope.UserClaims.SequenceEqual(currentState.UserClaims))
+		{
+			var evt = aggregate.SetUserClaims(scope.UserClaims);
+			session.Events.Append(scope.Id, evt);
+		}
+
 		await session.SaveChangesAsync(cancellationToken);
+	}
+
+	/// <summary>
+	/// Extracts identity resource properties from the Properties dictionary
+	/// into first-class fields on the scope state, then removes them from Properties
+	/// so they are stored as individual events rather than in the generic Properties bag.
+	/// </summary>
+	private static void ExtractAndApplyIdentityResourceProperties(OAuthScopeState scope)
+	{
+		if (TryGetJsonProperty(scope.Properties, ScopePropertyKeys.Enabled, out var enabledEl)
+		    && enabledEl.ValueKind is JsonValueKind.True or JsonValueKind.False)
+		{
+			scope.Enabled = enabledEl.GetBoolean();
+			scope.Properties.Remove(ScopePropertyKeys.Enabled);
+		}
+
+		if (TryGetJsonProperty(scope.Properties, ScopePropertyKeys.Required, out var requiredEl)
+		    && requiredEl.ValueKind is JsonValueKind.True or JsonValueKind.False)
+		{
+			scope.Required = requiredEl.GetBoolean();
+			scope.Properties.Remove(ScopePropertyKeys.Required);
+		}
+
+		if (TryGetJsonProperty(scope.Properties, ScopePropertyKeys.Emphasize, out var emphasizeEl)
+		    && emphasizeEl.ValueKind is JsonValueKind.True or JsonValueKind.False)
+		{
+			scope.Emphasize = emphasizeEl.GetBoolean();
+			scope.Properties.Remove(ScopePropertyKeys.Emphasize);
+		}
+
+		if (TryGetJsonProperty(scope.Properties, ScopePropertyKeys.ShowInDiscoveryDocument, out var showEl)
+		    && showEl.ValueKind is JsonValueKind.True or JsonValueKind.False)
+		{
+			scope.ShowInDiscoveryDocument = showEl.GetBoolean();
+			scope.Properties.Remove(ScopePropertyKeys.ShowInDiscoveryDocument);
+		}
+
+		if (TryGetJsonProperty(scope.Properties, ScopePropertyKeys.UserClaims, out var claimsEl)
+		    && claimsEl.ValueKind == JsonValueKind.Array)
+		{
+			scope.UserClaims = claimsEl.EnumerateArray()
+				.Where(e => e.ValueKind == JsonValueKind.String)
+				.Select(e => e.GetString()!)
+				.ToList();
+			scope.Properties.Remove(ScopePropertyKeys.UserClaims);
+		}
+	}
+
+	/// <summary>
+	/// Tries to get a JSON element from the Properties dictionary.
+	/// Properties values may be stored as JsonElement or deserialized objects.
+	/// </summary>
+	private static bool TryGetJsonProperty(
+		IDictionary<string, object?> properties,
+		string key,
+		out JsonElement element)
+	{
+		if (properties.TryGetValue(key, out var value))
+		{
+			if (value is JsonElement je)
+			{
+				element = je;
+				return true;
+			}
+
+			// Value may have been deserialized to a primitive; re-serialize to JsonElement
+			if (value is not null)
+			{
+				element = JsonSerializer.SerializeToElement(value);
+				return true;
+			}
+		}
+
+		element = default;
+		return false;
 	}
 
 	private static bool DictionaryEquals<TKey, TValue>(IDictionary<TKey, TValue> a, IDictionary<TKey, TValue> b)

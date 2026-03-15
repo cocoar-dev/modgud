@@ -39,20 +39,11 @@ export class ModalService {
     options: ModalOptions = {}
   ): ModalRef {
     // Start from the modal preset
-    const builder = createOverlayBuilder(coarModalPreset);
-
-    // Apply size overrides
-    if (options.width || options.height) {
-      builder.size({
-        mode: 'content-clamped' as const,
-        ...(options.width ? { maxWidth: parseInt(options.width) || 'viewport' } : {}),
-        ...(options.height ? { maxHeight: parseInt(options.height) || 'viewport' } : {}),
-      });
-    }
+    let builder = createOverlayBuilder(coarModalPreset).size({...options});
 
     // Apply backdrop overrides
     if (options.closeOnBackdropClick === false) {
-      builder.backdrop({ kind: 'modal' as const, closeOnBackdropClick: false });
+      builder = builder.backdrop({ kind: 'modal' as const, closeOnBackdropClick: false });
     }
 
     // Build the modal context for ModalHostComponent

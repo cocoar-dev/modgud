@@ -18,6 +18,11 @@ public class OAuthScopeState
 	public Dictionary<string, string> DisplayNames { get; set; } = new();
 	public Dictionary<string, string> Descriptions { get; set; } = new();
 	public Dictionary<string, object?> Properties { get; set; } = new();
+	public bool Enabled { get; set; } = true;
+	public bool Required { get; set; }
+	public bool Emphasize { get; set; }
+	public bool ShowInDiscoveryDocument { get; set; } = true;
+	public List<string> UserClaims { get; set; } = new();
 	public bool IsDeleted { get; set; }
 }
 
@@ -66,6 +71,31 @@ public class OAuthScopeStateProjection : SingleStreamProjection<OAuthScopeState,
 	public void Apply(OAuthScopePropertiesChanged @event, OAuthScopeState state)
 	{
 		state.Properties = new Dictionary<string, object?>(@event.Properties);
+	}
+
+	public void Apply(OAuthScopeEnabledChanged @event, OAuthScopeState state)
+	{
+		state.Enabled = @event.Enabled;
+	}
+
+	public void Apply(OAuthScopeRequiredChanged @event, OAuthScopeState state)
+	{
+		state.Required = @event.Required;
+	}
+
+	public void Apply(OAuthScopeEmphasizeChanged @event, OAuthScopeState state)
+	{
+		state.Emphasize = @event.Emphasize;
+	}
+
+	public void Apply(OAuthScopeShowInDiscoveryDocumentChanged @event, OAuthScopeState state)
+	{
+		state.ShowInDiscoveryDocument = @event.ShowInDiscoveryDocument;
+	}
+
+	public void Apply(OAuthScopeUserClaimsChanged @event, OAuthScopeState state)
+	{
+		state.UserClaims = @event.UserClaims.ToList();
 	}
 
 	public void Apply(OAuthScopeDeleted @event, OAuthScopeState state)

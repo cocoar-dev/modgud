@@ -99,6 +99,7 @@ public static class DependencyInjection
 		services.AddScoped<ISessionRepository, MartenSessionRepository>();
 		services.AddScoped<IUserDetailsRepository, UserDetailsRepository>();
 		services.AddScoped<IOAuthApiResourceRepository, OAuthApiResourceRepository>();
+		services.AddScoped<ILoginProviderRepository, LoginProviderRepository>();
 	}
 
 	/// <summary>
@@ -214,6 +215,7 @@ public static class DependencyInjection
 		options.Events.AddEventType<UserDeleted>();
 		options.Events.AddEventType<UserRoleAssigned>();
 		options.Events.AddEventType<UserRoleRemoved>();
+		options.Events.AddEventType<UserExpirationChanged>();
 		options.Events.AddEventType<UserClaimAdded>();
 		options.Events.AddEventType<UserClaimRemoved>();
 		options.Events.AddEventType<UserPasswordChanged>();
@@ -292,6 +294,9 @@ public static class DependencyInjection
 		options.Events.AddEventType<RoleDeleted>();
 		options.Events.AddEventType<RoleClaimAdded>();
 		options.Events.AddEventType<RoleClaimRemoved>();
+		options.Events.AddEventType<RoleDisplayNameChanged>();
+		options.Events.AddEventType<RoleEmailChanged>();
+		options.Events.AddEventType<RoleBoundToApiResourceChanged>();
 
 		// Register OAuth application events for the event store
 		options.Events.AddEventType<OAuthApplicationCreated>();
@@ -315,7 +320,20 @@ public static class DependencyInjection
 		options.Events.AddEventType<OAuthScopeDisplayNamesChanged>();
 		options.Events.AddEventType<OAuthScopeDescriptionsChanged>();
 		options.Events.AddEventType<OAuthScopePropertiesChanged>();
+		options.Events.AddEventType<OAuthScopeEnabledChanged>();
+		options.Events.AddEventType<OAuthScopeRequiredChanged>();
+		options.Events.AddEventType<OAuthScopeEmphasizeChanged>();
+		options.Events.AddEventType<OAuthScopeShowInDiscoveryDocumentChanged>();
+		options.Events.AddEventType<OAuthScopeUserClaimsChanged>();
 		options.Events.AddEventType<OAuthScopeDeleted>();
+
+		// Register login provider events for the event store
+		options.Events.AddEventType<LoginProviderCreated>();
+		options.Events.AddEventType<LoginProviderNameChanged>();
+		options.Events.AddEventType<LoginProviderDisplayNameChanged>();
+		options.Events.AddEventType<LoginProviderDescriptionChanged>();
+		options.Events.AddEventType<LoginProviderConfigurationChanged>();
+		options.Events.AddEventType<LoginProviderDeleted>();
 
 		// Register OAuth API resource events for the event store
 		options.Events.AddEventType<OAuthApiResourceCreated>();
@@ -352,6 +370,10 @@ public static class DependencyInjection
 		// OAuthApiResourceState projection - runs inline for immediate consistency
 		// Use for: API resource management, introspection validation
 		options.Projections.Add(new OAuthApiResourceStateProjection(), ProjectionLifecycle.Inline);
+
+		// LoginProviderState projection - runs inline for immediate consistency
+		// Use for: login provider validation, lookups
+		options.Projections.Add(new LoginProviderStateProjection(), ProjectionLifecycle.Inline);
 
 		// ═══════════════════════════════════════════════════════════════
 		// READ MODEL PROJECTIONS (configurable: async for prod, inline for tests)
@@ -397,6 +419,11 @@ public static class DependencyInjection
 
 		// Configure OAuthApiResourceState indexes for fast lookups
 		options.Schema.For<OAuthApiResourceState>()
+			.Identity(x => x.Id)
+			.Index(x => x.Name, x => x.IsUnique = true);
+
+		// Configure LoginProviderState indexes for fast lookups
+		options.Schema.For<LoginProviderState>()
 			.Identity(x => x.Id)
 			.Index(x => x.Name, x => x.IsUnique = true);
 

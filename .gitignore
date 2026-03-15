@@ -383,3 +383,6 @@ dist/
 # Angular
 .angular/
 nul
+
+# Lucide icons - generated via lucide-static, not committed
+src/frontend-vue/apps/frontend/public/icons/lucide/

@@ -1,0 +1,10 @@
+{
+  "app.title": "Cocoar Auth",
+  "nav.account": "Account",
+  "nav.home": "Home",
+  "nav.profile": "Profile",
+  "nav.sessions": "Sessions",
+  "nav.privacy": "Privacy",
+  "nav.settings": "Settings",
+  "nav.logout": "Logout"
+}

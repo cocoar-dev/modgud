@@ -91,6 +91,11 @@ public class UserState
     public string? LastName { get; set; }
 
     /// <summary>
+    /// When this user account expires (null means no expiration).
+    /// </summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
+
+    /// <summary>
     /// Whether this user is active.
     /// </summary>
     public bool IsActive { get; set; } = true;
@@ -226,6 +231,16 @@ public class UserStateProjection : EventProjection
 
         model.FirstName = @event.Data.NewFirstName;
         model.LastName = @event.Data.NewLastName;
+        model.ModifiedAt = DateTimeOffset.UtcNow;
+        ops.Store(model);
+    }
+
+    public void Project(IEvent<UserExpirationChanged> @event, IDocumentOperations ops)
+    {
+        var model = ops.LoadAsync<UserState>(@event.Data.UserId).GetAwaiter().GetResult();
+        if (model is null) return;
+
+        model.ExpiresAt = @event.Data.NewExpiresAt;
         model.ModifiedAt = DateTimeOffset.UtcNow;
         ops.Store(model);
     }

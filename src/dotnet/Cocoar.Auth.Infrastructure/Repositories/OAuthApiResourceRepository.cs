@@ -41,7 +41,11 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 			.Take(pagination.PageSize)
 			.ToListAsync(cancellationToken);
 
-		var items = resources.Select(MapToDto).ToList();
+		var items = new List<OAuthApiResourceDto>();
+		foreach (var resource in resources)
+		{
+			items.Add(await MapToDtoAsync(session, resource, cancellationToken));
+		}
 
 		return new OAuthApiResourceListDto
 		{
@@ -67,7 +71,7 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 			return null;
 		}
 
-		return MapToDto(resource);
+		return await MapToDtoAsync(session, resource, cancellationToken);
 	}
 
 	public async Task<ErrorOr<OAuthApiResourceCreatedDto>> CreateAsync(
@@ -108,6 +112,16 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 		var apiSecret = GenerateSecret();
 		var securityData = OAuthApiResourceSecurityData.Create(id);
 		securityData.ApiSecret = HashSecret(apiSecret);
+
+		// Also add to the Secrets list with metadata
+		securityData.Secrets.Add(new ApiSecretEntry
+		{
+			Type = "SharedSecret",
+			HashedValue = securityData.ApiSecret,
+			Description = "Initial secret",
+			CreatedAt = DateTimeOffset.UtcNow
+		});
+
 		session.Store(securityData);
 
 		await session.SaveChangesAsync(cancellationToken);
@@ -192,7 +206,7 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 
 		// Reload the state to get updated values
 		var updatedState = await session.LoadAsync<OAuthApiResourceState>(guid, cancellationToken);
-		return MapToDto(updatedState!);
+		return await MapToDtoAsync(session, updatedState!, cancellationToken);
 	}
 
 	public async Task<ErrorOr<bool>> DeleteAsync(
@@ -253,6 +267,100 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 		return new ApiSecretDto { ApiSecret = newSecret };
 	}
 
+	public async Task<ErrorOr<ApiSecretCreatedDto>> CreateSecretAsync(
+		string id,
+		CreateApiSecretDto dto,
+		CancellationToken cancellationToken = default)
+	{
+		if (!Guid.TryParse(id, out var guid))
+		{
+			return OAuthErrors.ApiResourceNotFound(id);
+		}
+
+		await using var session = _documentStore.LightweightSession();
+
+		var currentState = await session.LoadAsync<OAuthApiResourceState>(guid, cancellationToken);
+		if (currentState is null || currentState.IsDeleted)
+		{
+			return OAuthErrors.ApiResourceNotFound(id);
+		}
+
+		var securityData = await session.LoadAsync<OAuthApiResourceSecurityData>(guid, cancellationToken)
+			?? OAuthApiResourceSecurityData.Create(guid);
+
+		var newSecret = GenerateSecret();
+		var hashedSecret = HashSecret(newSecret);
+		var secretEntry = new ApiSecretEntry
+		{
+			Type = dto.Type,
+			HashedValue = hashedSecret,
+			Description = dto.Description,
+			Expiration = dto.Expiration,
+			CreatedAt = DateTimeOffset.UtcNow
+		};
+
+		securityData.Secrets.Add(secretEntry);
+
+		// Also update the legacy ApiSecret field to the latest secret
+		securityData.ApiSecret = hashedSecret;
+		securityData.UpdateConcurrencyToken();
+		session.Store(securityData);
+
+		await session.SaveChangesAsync(cancellationToken);
+
+		return new ApiSecretCreatedDto
+		{
+			SecretId = secretEntry.SecretId.ToString(),
+			ApiSecret = newSecret
+		};
+	}
+
+	public async Task<ErrorOr<bool>> DeleteSecretAsync(
+		string id,
+		string secretId,
+		CancellationToken cancellationToken = default)
+	{
+		if (!Guid.TryParse(id, out var guid))
+		{
+			return OAuthErrors.ApiResourceNotFound(id);
+		}
+
+		if (!Guid.TryParse(secretId, out var secretGuid))
+		{
+			return OAuthErrors.ApiSecretNotFound(secretId);
+		}
+
+		await using var session = _documentStore.LightweightSession();
+
+		var currentState = await session.LoadAsync<OAuthApiResourceState>(guid, cancellationToken);
+		if (currentState is null || currentState.IsDeleted)
+		{
+			return OAuthErrors.ApiResourceNotFound(id);
+		}
+
+		var securityData = await session.LoadAsync<OAuthApiResourceSecurityData>(guid, cancellationToken);
+		if (securityData is null)
+		{
+			return OAuthErrors.ApiSecretNotFound(secretId);
+		}
+
+		var entry = securityData.Secrets.FirstOrDefault(s => s.SecretId == secretGuid);
+		if (entry is null)
+		{
+			return OAuthErrors.ApiSecretNotFound(secretId);
+		}
+
+		securityData.Secrets.Remove(entry);
+
+		// Update the legacy ApiSecret to the most recent remaining secret, or null
+		securityData.ApiSecret = securityData.Secrets.LastOrDefault()?.HashedValue;
+		securityData.UpdateConcurrencyToken();
+		session.Store(securityData);
+
+		await session.SaveChangesAsync(cancellationToken);
+		return true;
+	}
+
 	public async Task<bool> ValidateCredentialsAsync(
 		string name,
 		string secret,
@@ -269,16 +377,53 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 		}
 
 		var securityData = await session.LoadAsync<OAuthApiResourceSecurityData>(resource.Id, cancellationToken);
-		if (securityData?.ApiSecret is null)
+		if (securityData is null)
 		{
 			return false;
 		}
 
-		return VerifySecret(secret, securityData.ApiSecret);
+		// Check against all secrets in the list (supports key rotation)
+		foreach (var entry in securityData.Secrets)
+		{
+			// Skip expired secrets
+			if (entry.Expiration.HasValue && entry.Expiration.Value < DateTimeOffset.UtcNow)
+			{
+				continue;
+			}
+
+			if (VerifySecret(secret, entry.HashedValue))
+			{
+				return true;
+			}
+		}
+
+		// Fall back to the legacy single secret field for backward compatibility
+		if (securityData.ApiSecret is not null)
+		{
+			return VerifySecret(secret, securityData.ApiSecret);
+		}
+
+		return false;
 	}
 
-	private static OAuthApiResourceDto MapToDto(OAuthApiResourceState state)
+	private static async Task<OAuthApiResourceDto> MapToDtoAsync(
+		IQuerySession session,
+		OAuthApiResourceState state,
+		CancellationToken cancellationToken)
 	{
+		var securityData = await session.LoadAsync<OAuthApiResourceSecurityData>(state.Id, cancellationToken);
+
+		var secrets = securityData?.Secrets
+			.Select(s => new ApiSecretEntryDto
+			{
+				SecretId = s.SecretId.ToString(),
+				Type = s.Type,
+				Description = s.Description,
+				Expiration = s.Expiration,
+				CreatedAt = s.CreatedAt
+			})
+			.ToList() ?? new List<ApiSecretEntryDto>();
+
 		return new OAuthApiResourceDto
 		{
 			Id = state.Id.ToString(),
@@ -287,7 +432,8 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 			Description = state.Description,
 			Enabled = state.Enabled,
 			Scopes = state.Scopes,
-			UserClaims = state.UserClaims
+			UserClaims = state.UserClaims,
+			Secrets = secrets
 		};
 	}
 

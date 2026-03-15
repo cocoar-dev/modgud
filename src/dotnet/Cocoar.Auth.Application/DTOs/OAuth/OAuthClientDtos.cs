@@ -1,3 +1,5 @@
+using Cocoar.Auth.Domain.Common;
+
 namespace Cocoar.Auth.Application.DTOs.OAuth;
 
 /// <summary>
@@ -13,7 +15,44 @@ public record OAuthClientDto
 	public required List<string> RedirectUris { get; init; }
 	public required List<string> PostLogoutRedirectUris { get; init; }
 	public required List<string> Permissions { get; init; }
+	public AccessTokenType AccessTokenType { get; init; } = AccessTokenType.Reference;
 	public DateTimeOffset? CreatedAt { get; init; }
+
+	// Extended client properties
+	public bool Enabled { get; init; } = true;
+	public RefreshTokenUsage RefreshTokenUsage { get; init; } = RefreshTokenUsage.OneTimeOnly;
+	public bool AllowAccessTokensViaBrowser { get; init; }
+	public bool RequireClientSecret { get; init; } = true;
+	public bool EnableLocalLogin { get; init; } = true;
+	public bool RequireConsent { get; init; }
+	public bool AllowRememberConsent { get; init; } = true;
+	public List<string> AllowedGrantTypes { get; init; } = [];
+	public List<string> AllowedCorsOrigins { get; init; } = [];
+
+	// Token lifetime options
+	public int? IdentityTokenLifetime { get; init; }
+	public int? AccessTokenLifetime { get; init; }
+	public int? AuthorizationCodeLifetime { get; init; }
+	public int? AbsoluteRefreshTokenLifetime { get; init; }
+	public int? SlidingRefreshTokenLifetime { get; init; }
+
+	// Client claims
+	public bool AlwaysSendClientClaims { get; init; }
+	public bool UpdateAccessTokenClaimsOnRefresh { get; init; }
+	public string? ClientClaimsPrefix { get; init; }
+	public List<OAuthClientClaimDto> Claims { get; init; } = [];
+
+	// Client roles
+	public List<string> Roles { get; init; } = [];
+}
+
+/// <summary>
+/// Represents a claim associated with an OAuth client.
+/// </summary>
+public record OAuthClientClaimDto
+{
+	public required string Type { get; init; }
+	public required string Value { get; init; }
 }
 
 /// <summary>
@@ -29,6 +68,39 @@ public record CreateOAuthClientDto
 	public List<string> RedirectUris { get; init; } = [];
 	public List<string> PostLogoutRedirectUris { get; init; } = [];
 	public List<string> Scopes { get; init; } = [];
+
+	/// <summary>
+	/// The type of access token to issue for this client.
+	/// Defaults to Reference (opaque, server-side stored) for maximum security.
+	/// </summary>
+	public AccessTokenType AccessTokenType { get; init; } = AccessTokenType.Reference;
+
+	// Extended client properties
+	public bool Enabled { get; init; } = true;
+	public RefreshTokenUsage RefreshTokenUsage { get; init; } = RefreshTokenUsage.OneTimeOnly;
+	public bool AllowAccessTokensViaBrowser { get; init; }
+	public bool RequireClientSecret { get; init; } = true;
+	public bool EnableLocalLogin { get; init; } = true;
+	public bool RequireConsent { get; init; }
+	public bool AllowRememberConsent { get; init; } = true;
+	public List<string> AllowedGrantTypes { get; init; } = [];
+	public List<string> AllowedCorsOrigins { get; init; } = [];
+
+	// Token lifetime options (null = use server defaults)
+	public int? IdentityTokenLifetime { get; init; }
+	public int? AccessTokenLifetime { get; init; }
+	public int? AuthorizationCodeLifetime { get; init; }
+	public int? AbsoluteRefreshTokenLifetime { get; init; }
+	public int? SlidingRefreshTokenLifetime { get; init; }
+
+	// Client claims
+	public bool AlwaysSendClientClaims { get; init; }
+	public bool UpdateAccessTokenClaimsOnRefresh { get; init; }
+	public string? ClientClaimsPrefix { get; init; }
+	public List<OAuthClientClaimDto> Claims { get; init; } = [];
+
+	// Client roles
+	public List<string> Roles { get; init; } = [];
 }
 
 /// <summary>
@@ -41,6 +113,39 @@ public record UpdateOAuthClientDto
 	public List<string>? RedirectUris { get; init; }
 	public List<string>? PostLogoutRedirectUris { get; init; }
 	public List<string>? Scopes { get; init; }
+
+	/// <summary>
+	/// The type of access token to issue for this client.
+	/// Null means no change.
+	/// </summary>
+	public AccessTokenType? AccessTokenType { get; init; }
+
+	// Extended client properties (null = no change)
+	public bool? Enabled { get; init; }
+	public RefreshTokenUsage? RefreshTokenUsage { get; init; }
+	public bool? AllowAccessTokensViaBrowser { get; init; }
+	public bool? RequireClientSecret { get; init; }
+	public bool? EnableLocalLogin { get; init; }
+	public bool? RequireConsent { get; init; }
+	public bool? AllowRememberConsent { get; init; }
+	public List<string>? AllowedGrantTypes { get; init; }
+	public List<string>? AllowedCorsOrigins { get; init; }
+
+	// Token lifetime options (null = no change)
+	public int? IdentityTokenLifetime { get; init; }
+	public int? AccessTokenLifetime { get; init; }
+	public int? AuthorizationCodeLifetime { get; init; }
+	public int? AbsoluteRefreshTokenLifetime { get; init; }
+	public int? SlidingRefreshTokenLifetime { get; init; }
+
+	// Client claims (null = no change)
+	public bool? AlwaysSendClientClaims { get; init; }
+	public bool? UpdateAccessTokenClaimsOnRefresh { get; init; }
+	public string? ClientClaimsPrefix { get; init; }
+	public List<OAuthClientClaimDto>? Claims { get; init; }
+
+	// Client roles (null = no change)
+	public List<string>? Roles { get; init; }
 }
 
 /// <summary>

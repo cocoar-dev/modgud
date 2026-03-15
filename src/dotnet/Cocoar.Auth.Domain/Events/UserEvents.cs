@@ -53,6 +53,14 @@ public record UserProfileNameChanged(
     string? NewLastName);
 
 /// <summary>
+/// Event raised when a user's expiration date is changed.
+/// </summary>
+public record UserExpirationChanged(
+    Guid UserId,
+    DateTimeOffset? OldExpiresAt,
+    DateTimeOffset? NewExpiresAt);
+
+/// <summary>
 /// Event raised when a user is activated.
 /// </summary>
 public record UserActivated(Guid UserId);

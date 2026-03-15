@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Cocoar.Auth.Domain.Common;
 using Cocoar.Auth.Domain.Events;
 using Marten.Events.Aggregation;
 
@@ -24,6 +25,7 @@ public class OAuthApplicationState
 	public Dictionary<string, string> Settings { get; set; } = new();
 	public Dictionary<string, string> DisplayNames { get; set; } = new();
 	public Dictionary<string, object?> Properties { get; set; } = new();
+	public AccessTokenType AccessTokenType { get; set; } = AccessTokenType.Reference;
 	public bool IsDeleted { get; set; }
 
 	/// <summary>
@@ -103,6 +105,13 @@ public class OAuthApplicationStateProjection : SingleStreamProjection<OAuthAppli
 	public void Apply(OAuthApplicationSettingsChanged @event, OAuthApplicationState state)
 	{
 		state.Settings = new Dictionary<string, string>(@event.Settings);
+
+		// Sync AccessTokenType from settings if present
+		if (state.Settings.TryGetValue(OAuthApplicationSettingKeys.AccessTokenType, out var tokenTypeValue)
+			&& Enum.TryParse<AccessTokenType>(tokenTypeValue, out var parsedTokenType))
+		{
+			state.AccessTokenType = parsedTokenType;
+		}
 	}
 
 	public void Apply(OAuthApplicationDisplayNamesChanged @event, OAuthApplicationState state)

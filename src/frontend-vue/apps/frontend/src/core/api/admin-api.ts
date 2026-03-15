@@ -1,0 +1,131 @@
+import { http } from './http';
+import type {
+  User,
+  UserList,
+  CreateUserRequest,
+  UpdateUserRequest,
+  AdminResetPasswordRequest,
+  SessionList,
+  AdminSoftDeleteRequest,
+  AdminRestoreRequest,
+  AdminPermanentEraseRequest,
+  Role,
+  RoleList,
+  CreateRoleRequest,
+  UpdateRoleRequest,
+  PaginationParams,
+} from '../models/auth.models';
+import type {
+  OAuthClient,
+  OAuthClientList,
+  CreateOAuthClientRequest,
+  UpdateOAuthClientRequest,
+  OAuthClientCreated,
+  ClientSecret,
+  OAuthScope,
+  OAuthScopeList,
+  CreateOAuthScopeRequest,
+  UpdateOAuthScopeRequest,
+  OAuthApiResource,
+  OAuthApiResourceList,
+  CreateOAuthApiResourceRequest,
+  UpdateOAuthApiResourceRequest,
+  OAuthApiResourceCreated,
+  ApiSecret,
+  CreateApiSecretRequest,
+  ApiSecretCreated,
+} from '../models/oauth.models';
+import type {
+  LoginProviderDto,
+  LoginProviderList,
+  CreateLoginProviderDto,
+  UpdateLoginProviderDto,
+} from '../models/login-provider.models';
+
+function buildQuery(params?: PaginationParams): string {
+  if (!params) return '';
+  const q = new URLSearchParams();
+  if (params.page !== undefined) q.set('page', String(params.page));
+  if (params.pageSize !== undefined) q.set('pageSize', String(params.pageSize));
+  if (params.search) q.set('search', params.search);
+  if (params.sortBy) q.set('sortBy', params.sortBy);
+  if (params.sortDescending !== undefined) q.set('sortDescending', String(params.sortDescending));
+  const s = q.toString();
+  return s ? `?${s}` : '';
+}
+
+export const adminApi = {
+  // Users
+  getUsers: (params?: PaginationParams) => http.get<UserList>(`/admin/users${buildQuery(params)}`),
+  getUser: (id: string) => http.get<User>(`/admin/users/${id}`),
+  createUser: (req: CreateUserRequest) => http.post<User>('/admin/users', req),
+  updateUser: (id: string, req: UpdateUserRequest) => http.patch<User>(`/admin/users/${id}`, req),
+  deleteUser: (id: string) => http.delete<void>(`/admin/users/${id}`),
+  resetUserPassword: (id: string, req: AdminResetPasswordRequest) =>
+    http.post<void>(`/admin/users/${id}/reset-password`, req),
+  unlockUser: (id: string) => http.post<void>(`/admin/users/${id}/unlock`, {}),
+  getUserSessions: (id: string) => http.get<SessionList>(`/admin/users/${id}/sessions`),
+  revokeUserSessions: (id: string) => http.delete<void>(`/admin/users/${id}/sessions`),
+  softDeleteUser: (id: string, req?: AdminSoftDeleteRequest) =>
+    http.post<void>(`/admin/users/${id}/soft-delete`, req ?? {}),
+  restoreUser: (id: string, req?: AdminRestoreRequest) =>
+    http.post<void>(`/admin/users/${id}/restore`, req ?? {}),
+  permanentlyEraseUser: (id: string, req: AdminPermanentEraseRequest) =>
+    http.delete<void>(`/admin/users/${id}/permanent`, req),
+
+  // Roles
+  getRoles: () => http.get<RoleList>('/admin/roles'),
+  getRole: (id: string) => http.get<Role>(`/admin/roles/${id}`),
+  createRole: (req: CreateRoleRequest) => http.post<Role>('/admin/roles', req),
+  updateRole: (id: string, req: UpdateRoleRequest) => http.patch<Role>(`/admin/roles/${id}`, req),
+  deleteRole: (id: string) => http.delete<void>(`/admin/roles/${id}`),
+
+  // OAuth Clients
+  getOAuthClients: (params?: PaginationParams) =>
+    http.get<OAuthClientList>(`/admin/oauth/clients${buildQuery(params)}`),
+  getOAuthClient: (id: string) => http.get<OAuthClient>(`/admin/oauth/clients/${id}`),
+  createOAuthClient: (req: CreateOAuthClientRequest) =>
+    http.post<OAuthClientCreated>('/admin/oauth/clients', req),
+  updateOAuthClient: (id: string, req: UpdateOAuthClientRequest) =>
+    http.put<OAuthClient>(`/admin/oauth/clients/${id}`, req),
+  deleteOAuthClient: (id: string) => http.delete<void>(`/admin/oauth/clients/${id}`),
+  regenerateClientSecret: (id: string) =>
+    http.post<ClientSecret>(`/admin/oauth/clients/${id}/regenerate-secret`, {}),
+
+  // OAuth Scopes
+  getOAuthScopes: () => http.get<OAuthScopeList>('/admin/oauth/scopes'),
+  getOAuthScope: (id: string) => http.get<OAuthScope>(`/admin/oauth/scopes/${id}`),
+  createOAuthScope: (req: CreateOAuthScopeRequest) =>
+    http.post<OAuthScope>('/admin/oauth/scopes', req),
+  updateOAuthScope: (id: string, req: UpdateOAuthScopeRequest) =>
+    http.put<OAuthScope>(`/admin/oauth/scopes/${id}`, req),
+  deleteOAuthScope: (id: string) => http.delete<void>(`/admin/oauth/scopes/${id}`),
+
+  // OAuth API Resources
+  getOAuthApiResources: (params?: PaginationParams) =>
+    http.get<OAuthApiResourceList>(`/admin/oauth/api-resources${buildQuery(params)}`),
+  getOAuthApiResource: (id: string) =>
+    http.get<OAuthApiResource>(`/admin/oauth/api-resources/${id}`),
+  createOAuthApiResource: (req: CreateOAuthApiResourceRequest) =>
+    http.post<OAuthApiResourceCreated>('/admin/oauth/api-resources', req),
+  updateOAuthApiResource: (id: string, req: UpdateOAuthApiResourceRequest) =>
+    http.put<OAuthApiResource>(`/admin/oauth/api-resources/${id}`, req),
+  deleteOAuthApiResource: (id: string) =>
+    http.delete<void>(`/admin/oauth/api-resources/${id}`),
+  regenerateApiSecret: (id: string) =>
+    http.post<ApiSecret>(`/admin/oauth/api-resources/${id}/regenerate-secret`, {}),
+  createApiSecret: (id: string, req: CreateApiSecretRequest) =>
+    http.post<ApiSecretCreated>(`/admin/oauth/api-resources/${id}/secrets`, req),
+  deleteApiSecret: (id: string, secretId: string) =>
+    http.delete<void>(`/admin/oauth/api-resources/${id}/secrets/${secretId}`),
+
+  // Login Providers
+  getLoginProviders: () => http.get<LoginProviderList>('/admin/login-providers'),
+  getLoginProvider: (id: string) => http.get<LoginProviderDto>(`/admin/login-providers/${id}`),
+  createLoginProvider: (req: CreateLoginProviderDto) =>
+    http.post<LoginProviderDto>('/admin/login-providers', req),
+  updateLoginProvider: (id: string, req: UpdateLoginProviderDto) =>
+    http.put<void>(`/admin/login-providers/${id}`, req),
+  deleteLoginProvider: (id: string) => http.delete<void>(`/admin/login-providers/${id}`),
+
+};

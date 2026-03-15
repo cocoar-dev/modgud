@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+/* ── Design token overrides ──────────────────────────────────────────────── */
+
+:root {
+  /* More rounded corners for a modern feel */
+  --coar-radius-xxs: 2px;
+  --coar-radius-xs:  3px;
+  --coar-radius-s:   5px;
+  --coar-radius-m:   7px;
+  --coar-radius-l:   9px;
+  --coar-radius-xl:  12px;
+
+  /* Crisper, more visible shadows */
+  --coar-shadow-color:        rgba(15, 23, 42, 0.07);
+  --coar-shadow-color-strong: rgba(15, 23, 42, 0.14);
+}
+
+/* ── Page background ─────────────────────────────────────────────────────── */
+
+body {
+  background-color: var(--coar-background-neutral-secondary);
+}
+
+/* ── Sidebar active state — use design system tokens ─────────────────────── */
+
+.coar-menu-item.router-link-active,
+.coar-menu-item.active {
+  background: var(--coar-menu-item-background-active);
+  color: var(--coar-menu-item-text-active);
+  font-weight: 500;
+}
+
+/* ── Full height layout ──────────────────────────────────────────────────── */
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+/* ── Auth pages — light background ───────────────────────────────────────── */
+
+.auth-page {
+  background: var(--coar-background-neutral-secondary) !important;
+}
+
+/* ── Admin list pages — fill available height for grids ───────────────────── */
+
+.list-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.form-page .page-title,
+.list-page .page-title {
+  font-size: 1.375rem !important;
+  letter-spacing: -0.02em !important;
+}
+
+/* ── Content pages — consistent page chrome ──────────────────────────────── */
+
+.page-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+/* Section card — matches Angular showcase card shadow */
+.section-card {
+  margin-bottom: 1.25rem;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Section title — divider below for visual structure */
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  color: var(--coar-text-neutral-primary) !important;
+  padding-bottom: 0.875rem !important;
+  margin-bottom: 1.25rem !important;
+  border-bottom: 1px solid var(--coar-border-neutral-secondary);
+}
+
+/* Page title consistency across user/profile/privacy/sessions */
+.page > .page-title,
+.page > .page-header > .page-title,
+.page > .page-header-row > .page-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+/* ── Shared utility classes ──────────────────────────────────────────────── */
+
+.mb-3 { margin-bottom: 0.75rem; }
+.mb-4 { margin-bottom: 1rem; }
+.mt-3 { margin-top: 0.75rem; }
+.ml-2 { margin-left: 0.5rem; }
+
+.centered {
+  display: flex;
+  justify-content: center;
+  padding: 3rem;
+}
+
+.form-group { margin-bottom: 1rem; }
+
+.form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.form-card { margin-bottom: 1.5rem; }

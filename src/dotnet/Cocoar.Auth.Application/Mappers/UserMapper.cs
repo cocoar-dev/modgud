@@ -22,4 +22,10 @@ public static partial class UserMapper
 
     private static List<ShortGuid> MapRoleInfoToShortGuids(List<RoleInfo> roles) =>
         roles.Select(r => new ShortGuid(r.Id)).ToList();
+
+    private static List<UserClaimDto> MapUserClaimsToDto(List<UserClaim> claims) =>
+        claims.Select(c => new UserClaimDto { Type = c.Type, Value = c.Value }).ToList();
+
+    private static List<UserClaimDto> MapClaimInfoToDto(List<ClaimInfo> claims) =>
+        claims.Select(c => new UserClaimDto { Type = c.Type, Value = c.Value }).ToList();
 }

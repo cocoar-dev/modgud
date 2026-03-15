@@ -1,4 +1,4 @@
-<div class="admin-layout">
+<div class="tw:flex tw:h-full">
   <coar-sidebar>
     <!-- Header -->
     <div coar-sidebar-header class="sidebar-header">
@@ -39,23 +39,33 @@
   </coar-sidebar>
 
   <!-- Main Content Area -->
-  <main class="admin-content">
+  <main class="tw:flex tw:grow tw:flex-col tw:h-full tw:overflow-hidden">
     @let uiHeader = ui.state.header();
     @let uiContent = ui.state.content();
 
-    @if (uiHeader.show && uiHeader.title) {
+    @if (uiHeader.show) {
       <header class="layout-header">
-        <div class="layout-header-content">
+        <div class="tw:flex tw:items-center container">
           @if (uiHeader.icon) {
-            <span class="layout-header-icon">{{ uiHeader.icon }}</span>
+            <coar-icon [name]="uiHeader.icon" style="font-size: xx-large; width: 52px; text-align: left" />
           }
-          <div class="layout-header-titles">
-            <h1 class="page-title">{{ uiHeader.title }}</h1>
+
+          <div class="tw:flex tw:flex-col" style="justify-content: center; line-height: 1.5em">
+            <div class="title" [class.title-only]="!uiHeader.subTitle">
+              {{ uiHeader.title }}
+            </div>
             @if (uiHeader.subTitle) {
-              <span class="page-subtitle">{{ uiHeader.subTitle }}</span>
+              <div class="subtitle">
+                {{ uiHeader.subTitle }}
+              </div>
             }
           </div>
+
+          <div class="tw:grow"></div>
+
+          <ng-container duiPortalOutlet="Header-Outlet-Right" hook="OnInit"></ng-container>
         </div>
+
       </header>
     }
 
@@ -65,8 +75,22 @@
       </div>
     }
 
-    <div class="page-content" [class.scrollable]="uiContent.scrollable">
-      <router-outlet />
-    </div>
+    <div
+        class="main-content tw:flex tw:grow"
+        style="overflow: hidden"
+        (contextmenu)="uiContent.onContextMenu?.($event)"
+        (click)="uiContent.onClick?.($event)"
+      >
+
+
+        <div
+          class="tw:flex"
+          [class.tw:grow]="!uiContent.container"
+          [class.container]="uiContent.container"
+          [class.scrollable]="uiContent.scrollable"
+        >
+          <router-outlet></router-outlet>
+        </div>
+      </div>
   </main>
 </div>

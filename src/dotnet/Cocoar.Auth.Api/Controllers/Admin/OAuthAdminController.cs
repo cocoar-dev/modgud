@@ -329,5 +329,46 @@ public class OAuthAdminController : ApiControllerBase
 			errors => Problem(errors));
 	}
 
+	/// <summary>
+	/// Create a new API secret for an API resource.
+	/// Returns the plaintext secret only once.
+	/// </summary>
+	[HttpPost("api-resources/{id}/secrets")]
+	[ProducesResponseType(typeof(ApiSecretCreatedDto), StatusCodes.Status201Created)]
+	[ProducesResponseType(StatusCodes.Status400BadRequest)]
+	[ProducesResponseType(StatusCodes.Status404NotFound)]
+	public async Task<IActionResult> CreateApiSecret(
+		string id,
+		[FromBody] CreateApiSecretDto dto,
+		CancellationToken cancellationToken)
+	{
+		var result = await _oAuthAdminService.CreateApiSecretAsync(id, dto, cancellationToken);
+
+		return result.Match(
+			created => StatusCode(StatusCodes.Status201Created, created),
+			errors => Problem(errors));
+	}
+
+	/// <summary>
+	/// Delete a specific API secret from an API resource.
+	/// </summary>
+	[HttpDelete("api-resources/{id}/secrets/{secretId}")]
+	[ProducesResponseType(StatusCodes.Status204NoContent)]
+	[ProducesResponseType(StatusCodes.Status404NotFound)]
+	public async Task<IActionResult> DeleteApiSecret(
+		string id,
+		string secretId,
+		CancellationToken cancellationToken)
+	{
+		var result = await _oAuthAdminService.DeleteApiSecretAsync(id, secretId, cancellationToken);
+
+		if (result.IsError)
+		{
+			return Problem(result.Errors);
+		}
+
+		return NoContent();
+	}
+
 	#endregion
 }

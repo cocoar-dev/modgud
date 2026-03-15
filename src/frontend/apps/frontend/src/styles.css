@@ -4,6 +4,9 @@
    Design system foundation using @cocoar/ui.
    ======================================== */
 
+/* Import Tailwind CSS */
+@import 'tailwindcss' prefix(tw);
+
 /* Import Design Tokens */
 @import '@cocoar/ui/styles/tokens/all.css';
 
@@ -21,7 +24,6 @@
 }
 
 html {
-  font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   scroll-behavior: smooth;
@@ -31,532 +33,70 @@ body {
   margin: 0;
   padding: 0;
   font-family: var(--coar-body-base-family, 'Poppins', sans-serif);
-  font-size: var(--coar-body-base-size, 16px);
-  font-weight: var(--coar-body-base-weight, 400);
-  line-height: 1.6;
-  color: var(--coar-text-neutral-primary);
-  background: var(--coar-background-neutral-primary);
-}
-
-/* ========================================
-   TYPOGRAPHY UTILITY CLASSES
-   ======================================== */
-
-/* Titles - Inter */
-.coar-display {
-  font-family: var(--coar-titles-display-family, 'Inter', sans-serif);
-  font-size: var(--coar-titles-display-size, 3rem);
-  font-weight: var(--coar-titles-display-weight, 700);
-  line-height: 1.15;
-  color: var(--coar-text-neutral-primary);
-}
-
-.coar-title {
-  font-family: var(--coar-titles-title-family, 'Inter', sans-serif);
-  font-size: var(--coar-titles-title-size, 2.25rem);
-  font-weight: var(--coar-titles-title-weight, 700);
-  line-height: 1.2;
-  color: var(--coar-text-neutral-primary);
-}
-
-.coar-subtitle {
-  font-family: var(--coar-titles-subtitle-family, 'Inter', sans-serif);
-  font-size: var(--coar-titles-subtitle-size, 1.5rem);
-  font-weight: var(--coar-titles-subtitle-weight, 600);
-  line-height: 1.3;
-  color: var(--coar-text-neutral-primary);
-}
-
-/* Headings - Poppins */
-.coar-heading {
-  font-family: var(--coar-headings-heading-family, 'Poppins', sans-serif);
-  font-size: var(--coar-headings-heading-size, 1.25rem);
-  font-weight: var(--coar-headings-heading-weight, 600);
-  line-height: 1.3;
-  color: var(--coar-text-neutral-primary);
-}
-
-.coar-subheading {
-  font-family: var(--coar-headings-subheading-family, 'Poppins', sans-serif);
-  font-size: var(--coar-headings-subheading-size, 1rem);
-  font-weight: var(--coar-headings-subheading-weight, 500);
-  line-height: 1.4;
-  color: var(--coar-text-neutral-primary);
-}
-
-/* Body - Poppins */
-.coar-body {
-  font-family: var(--coar-body-base-family, 'Poppins', sans-serif);
-  font-size: var(--coar-body-base-size, 1rem);
-  font-weight: var(--coar-body-base-weight, 400);
-  line-height: 1.6;
-  color: var(--coar-text-neutral-primary);
-}
-
-.coar-body-bold {
-  font-family: var(--coar-body-bold-family, 'Poppins', sans-serif);
-  font-size: var(--coar-body-bold-size, 1rem);
-  font-weight: var(--coar-body-bold-weight, 600);
-  line-height: 1.6;
-  color: var(--coar-text-neutral-primary);
-}
-
-.coar-body-small {
-  font-family: var(--coar-body-small-base-family, 'Poppins', sans-serif);
-  font-size: var(--coar-body-small-base-size, 0.875rem);
-  font-weight: var(--coar-body-small-base-weight, 400);
-  line-height: 1.5;
-  color: var(--coar-text-neutral-primary);
-}
-
-.coar-caption {
-  font-family: var(--coar-body-caption-family, 'Poppins', sans-serif);
-  font-size: var(--coar-body-caption-size, 0.75rem);
-  font-weight: var(--coar-body-caption-weight, 500);
-  line-height: 1.4;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--coar-text-neutral-secondary);
-}
-
-/* ========================================
-   TEXT COLOR UTILITIES
-   ======================================== */
-
-.coar-text-primary {
-  color: var(--coar-text-neutral-primary);
-}
-.coar-text-secondary {
-  color: var(--coar-text-neutral-secondary);
-}
-.coar-text-tertiary {
-  color: var(--coar-text-neutral-tertiary);
-}
-.coar-text-brand {
-  color: var(--coar-text-brand-primary);
-}
-.coar-text-accent {
-  color: var(--coar-text-accent-primary);
-}
-.coar-text-error {
-  color: var(--coar-text-error-primary);
-}
-.coar-text-success {
-  color: var(--coar-text-success-primary);
-}
-
-/* ========================================
-   FOCUS STYLES
-   ======================================== */
-
-:focus-visible {
-  outline: 2px solid var(--coar-focus-ring-color, #3b82f6);
-  outline-offset: 2px;
-}
-
-/* ========================================
-   LINKS
-   ======================================== */
-
-a {
-  color: var(--coar-text-brand-primary);
-  text-decoration: none;
-}
-
-a:hover {
-  text-decoration: underline;
-}
-
-/* ========================================
-   HEADINGS
-   ======================================== */
-
-h1, h2, h3, h4, h5, h6 {
-  margin: 0;
-  font-weight: 600;
-  line-height: 1.25;
-}
-
-/* ========================================
-   PARAGRAPHS & LISTS
-   ======================================== */
-
-p {
-  margin: 0;
-}
-
-ul, ol {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* ========================================
-   SELECTION
-   ======================================== */
-
-::selection {
-  background-color: var(--coar-background-brand-subtle);
-  color: var(--coar-text-brand-primary);
-}
-
-/* ========================================
-   SCROLLBAR STYLING
-   ======================================== */
-
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--coar-background-neutral-secondary);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--coar-border-neutral-primary);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--coar-text-neutral-tertiary);
-}
-
-/* ========================================
-   UTILITY CLASSES
-   ======================================== */
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
+  height: 100vh;
+  min-height: 100vh;
+  max-height: 100vh;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 
-/* ========================================
-   AG GRID CUSTOM STYLES
-   ======================================== */
-
-.grid-actions {
+.container {
   display: flex;
-  gap: 0.5rem;
+  max-width: 90%;
+  width: 90%;
+  margin-left: auto;
+  margin-right: auto;
 }
 
-.grid-action-btn {
-  padding: 0.375rem 0.75rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--coar-text-neutral-secondary);
-  background: transparent;
-  border: none;
-  border-radius: var(--coar-radius-s);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.grid-action-btn:hover {
-  color: var(--coar-text-neutral-primary);
-  background: var(--coar-background-neutral-secondary);
-}
-
-.grid-action-btn-danger {
-  color: var(--coar-text-semantic-error-bold);
-}
-
-.grid-action-btn-danger:hover {
-  color: var(--coar-text-semantic-error-bold);
-  background: var(--coar-background-semantic-error-subtle);
-}
-
-/* ========================================
-   ADMIN - SHARED PAGE STYLES
-   Shared across all admin list and form pages.
-   Consolidates patterns that were copy-pasted
-   per-component before.
-   ======================================== */
-
-/* Page header */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1.5rem;
-}
-
-.page-title {
-  margin: 0 0 0.25rem;
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--coar-text-neutral-primary);
-}
-
-.page-subtitle {
-  margin: 0;
-  font-size: 0.875rem;
-  color: var(--coar-text-neutral-secondary);
-}
-
-/* List page action bar (Create button) */
-.list-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 1rem;
-}
-
-/* Feedback messages (error / success notes) */
-.message {
-  margin-bottom: 1rem;
-}
-
-/* Loading spinner */
-.loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  padding: 3rem;
-}
-
-.spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--coar-border-neutral);
-  border-top-color: var(--coar-background-accent-primary);
-  border-radius: 50%;
-  animation: admin-spin 1s linear infinite;
-}
-
-@keyframes admin-spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Grid layout helpers */
-.grid-container {
-  margin-bottom: 1rem;
+coar-sidebar {
+  width: 260px;
+  min-width: 260px;
+  height: 100vh;
+  box-shadow: var(--coar-shadow-right);
   position: relative;
+  z-index: 10;
+  background: var(--coar-background-neutral-secondary);
 }
 
-.grid-actions-overlay {
-  position: absolute;
-  top: 0;
-  right: 0;
-  pointer-events: none;
-  z-index: 1;
+.sidebar-header {
+  padding: 1.5rem;
 }
 
-.grid-action-row {
-  height: 42px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  padding-right: 1rem;
-  pointer-events: all;
-}
-
-/* Grid pagination */
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
-.page-info {
-  font-size: 0.875rem;
-  color: var(--coar-text-neutral-secondary);
-}
-
-/* Form structure */
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}
-
-.checkbox-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.form-section {
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--coar-border-neutral);
-}
-
-.form-section:last-of-type {
-  padding-bottom: 0;
-  border-bottom: none;
-}
-
-.form-section h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--coar-text-neutral-primary);
-}
-
-.section-description {
-  margin: 0 0 1rem;
-  font-size: 0.875rem;
-  color: var(--coar-text-neutral-secondary);
-}
-
-.field-hint {
-  display: block;
-  margin-top: 0.25rem;
-  font-size: 0.75rem;
-  color: var(--coar-text-neutral-secondary);
-}
-
-.form-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: flex-end;
-  padding-top: 1rem;
-  border-top: 1px solid var(--coar-border-neutral);
-  margin-top: 1.5rem;
-}
-
-/* Danger zone */
-.danger-zone {
-  margin-top: 1.5rem;
-}
-
-.danger-zone h2 {
-  margin: 0 0 1rem;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--coar-text-semantic-error-bold);
-}
-
-.danger-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.danger-action {
+.sidebar-header-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem;
-  background: var(--coar-background-neutral-secondary);
-  border-radius: var(--coar-radius-m);
-}
-
-.danger-action strong {
-  display: block;
-  font-size: 0.875rem;
-  color: var(--coar-text-neutral-primary);
-}
-
-.danger-action p {
-  margin: 0.25rem 0 0;
-  font-size: 0.75rem;
-  color: var(--coar-text-neutral-secondary);
-}
-
-/* One-time secret reveal */
-.secret-card {
-  margin-bottom: 1rem;
-}
-
-.secret-card h3 {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--coar-text-neutral-primary);
-}
-
-.secret-card p {
-  margin: 0 0 1rem;
-  font-size: 0.875rem;
-  color: var(--coar-text-neutral-secondary);
-}
-
-.secret-display {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  background: var(--coar-background-neutral-secondary);
-  border-radius: var(--coar-radius-m);
-  margin-bottom: 1rem;
-}
-
-.secret-display code {
-  flex: 1;
-  font-family: monospace;
-  font-size: 0.875rem;
-  word-break: break-all;
-  color: var(--coar-text-neutral-primary);
-}
-
-.done-button {
-  margin-top: 0.5rem;
-}
-
-.secret-section {
-  margin-top: 1.5rem;
-}
-
-.secret-section h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--coar-text-neutral-primary);
-}
-
-.secret-section p {
-  margin: 0 0 1rem;
-  font-size: 0.875rem;
-  color: var(--coar-text-neutral-secondary);
-}
-
-/* Checkboxes/scopes grid */
-.scopes-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 0.75rem;
-}
-
-.scope-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.scope-description {
-  font-size: 0.75rem;
-  color: var(--coar-text-neutral-secondary);
-  margin-left: 1.5rem;
-}
-
-/* Dynamic list rows (redirect URIs, API resource names, claims) */
-.uri-row,
-.resource-row,
-.claim-row {
-  display: flex;
   gap: 0.5rem;
-  align-items: flex-start;
-  margin-bottom: 0.75rem;
 }
 
-.uri-row coar-text-input,
-.resource-row coar-text-input,
-.claim-row coar-text-input {
+.sidebar-logo {
+  margin: 0;
+  font-size: 1.5rem;
   flex: 1;
 }
+
+
+
+/* Layout-level page header (driven by UIService) */
+.layout-header {
+  min-height: 64px;
+  max-height: 64px;
+  background-color: var(--coar-background-semantic-info-subtle);
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+
+.title {
+  font-size: 1.5em;
+  font-weight: bold;
+}
+
+.title.title-only {
+  font-size: 2em;
+}
+
+.subtitle {
+  font-size: 0.9em;
+  font-weight: initial;
+}
+

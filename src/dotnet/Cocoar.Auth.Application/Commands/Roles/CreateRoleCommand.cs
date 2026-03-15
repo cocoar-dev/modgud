@@ -8,7 +8,12 @@ namespace Cocoar.Auth.Application.Commands.Roles;
 /// <summary>
 /// Command to create a new role.
 /// </summary>
-public record CreateRoleCommand(string Name, string? Description);
+public record CreateRoleCommand(
+    string Name,
+    string? Description,
+    string? DisplayName = null,
+    string? Email = null,
+    Guid? BoundToApiResourceId = null);
 
 /// <summary>
 /// Handler for CreateRoleCommand.
@@ -31,6 +36,9 @@ public class CreateRoleHandler
         }
 
         var role = new ApplicationRole(command.Name, command.Description);
+        role.SetDisplayName(command.DisplayName);
+        role.SetEmail(command.Email);
+        role.SetBoundToApiResourceId(command.BoundToApiResourceId);
 
         var result = await _roleManager.CreateAsync(role);
         if (!result.Succeeded)

@@ -89,6 +89,16 @@ public class UserDetailsProjection : EventProjection
         ops.Store(model);
     }
 
+    public void Project(IEvent<UserExpirationChanged> @event, IDocumentOperations ops)
+    {
+        var model = ops.LoadAsync<UserDetailsReadModel>(@event.Data.UserId).GetAwaiter().GetResult();
+        if (model is null) return;
+
+        model.ExpiresAt = @event.Data.NewExpiresAt;
+        model.ModifiedAt = @event.Timestamp;
+        ops.Store(model);
+    }
+
     public void Project(IEvent<UserActivated> @event, IDocumentOperations ops)
     {
         var model = ops.LoadAsync<UserDetailsReadModel>(@event.Data.UserId).GetAwaiter().GetResult();

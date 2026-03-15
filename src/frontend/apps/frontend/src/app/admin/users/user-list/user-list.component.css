@@ -1,4 +1,7 @@
-.filters {
-  margin-bottom: 1rem;
-  max-width: 320px;
+:host {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  padding: 10px 0px;
 }
+

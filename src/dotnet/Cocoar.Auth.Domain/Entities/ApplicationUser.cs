@@ -105,6 +105,12 @@ public class ApplicationUser : Entity
     public string? LastName { get; private set; }
 
     /// <summary>
+    /// When this user account expires (null means no expiration).
+    /// </summary>
+    [JsonInclude]
+    public DateTimeOffset? ExpiresAt { get; private set; }
+
+    /// <summary>
     /// Whether this user is active.
     /// </summary>
     [JsonInclude]
@@ -251,6 +257,12 @@ public class ApplicationUser : Entity
     public void SetLastName(string? lastName)
     {
         LastName = lastName;
+        MarkModified();
+    }
+
+    public void SetExpiresAt(DateTimeOffset? expiresAt)
+    {
+        ExpiresAt = expiresAt;
         MarkModified();
     }
 

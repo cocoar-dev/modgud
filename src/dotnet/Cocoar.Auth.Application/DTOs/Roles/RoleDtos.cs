@@ -11,6 +11,9 @@ public record RoleDto
     public required ShortGuid Id { get; init; }
     public required string Name { get; init; }
     public string? Description { get; init; }
+    public string? DisplayName { get; init; }
+    public string? Email { get; init; }
+    public ShortGuid? BoundToApiResourceId { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? ModifiedAt { get; init; }
 }
@@ -22,6 +25,9 @@ public record CreateRoleDto
 {
     public required string Name { get; init; }
     public string? Description { get; init; }
+    public string? DisplayName { get; init; }
+    public string? Email { get; init; }
+    public ShortGuid? BoundToApiResourceId { get; init; }
 }
 
 /// <summary>
@@ -31,6 +37,9 @@ public record UpdateRoleDto
 {
     public Optional<string> Name { get; init; }
     public Optional<string?> Description { get; init; }
+    public Optional<string?> DisplayName { get; init; }
+    public Optional<string?> Email { get; init; }
+    public Optional<ShortGuid?> BoundToApiResourceId { get; init; }
 }
 
 /// <summary>

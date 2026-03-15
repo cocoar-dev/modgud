@@ -75,6 +75,11 @@ public class UserDetailsReadModel
         : $"{FirstName} {LastName}".Trim();
 
     /// <summary>
+    /// When this user account expires (null means no expiration).
+    /// </summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
+
+    /// <summary>
     /// Whether this user is active.
     /// </summary>
     public bool IsActive { get; set; } = true;

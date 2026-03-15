@@ -41,6 +41,21 @@ public class RoleState
     public string? Description { get; set; }
 
     /// <summary>
+    /// A human-friendly display name for the role.
+    /// </summary>
+    public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// An email address associated with the role.
+    /// </summary>
+    public string? Email { get; set; }
+
+    /// <summary>
+    /// The ID of the API resource this role is bound to, if any.
+    /// </summary>
+    public Guid? BoundToApiResourceId { get; set; }
+
+    /// <summary>
     /// Whether this role has been deleted (soft delete).
     /// </summary>
     public bool IsDeleted { get; set; }
@@ -134,6 +149,36 @@ public class RoleStateProjection : EventProjection
         if (model is null) return;
 
         model.Claims.RemoveAll(c => c.Type == @event.Data.ClaimType && c.Value == @event.Data.ClaimValue);
+        model.ModifiedAt = DateTimeOffset.UtcNow;
+        ops.Store(model);
+    }
+
+    public void Project(IEvent<RoleDisplayNameChanged> @event, IDocumentOperations ops)
+    {
+        var model = ops.LoadAsync<RoleState>(@event.Data.RoleId).GetAwaiter().GetResult();
+        if (model is null) return;
+
+        model.DisplayName = @event.Data.NewDisplayName;
+        model.ModifiedAt = DateTimeOffset.UtcNow;
+        ops.Store(model);
+    }
+
+    public void Project(IEvent<RoleEmailChanged> @event, IDocumentOperations ops)
+    {
+        var model = ops.LoadAsync<RoleState>(@event.Data.RoleId).GetAwaiter().GetResult();
+        if (model is null) return;
+
+        model.Email = @event.Data.NewEmail;
+        model.ModifiedAt = DateTimeOffset.UtcNow;
+        ops.Store(model);
+    }
+
+    public void Project(IEvent<RoleBoundToApiResourceChanged> @event, IDocumentOperations ops)
+    {
+        var model = ops.LoadAsync<RoleState>(@event.Data.RoleId).GetAwaiter().GetResult();
+        if (model is null) return;
+
+        model.BoundToApiResourceId = @event.Data.NewApiResourceId;
         model.ModifiedAt = DateTimeOffset.UtcNow;
         ops.Store(model);
     }

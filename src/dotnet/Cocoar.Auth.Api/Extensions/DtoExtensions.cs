@@ -17,13 +17,16 @@ public static class DtoExtensions
     /// Converts a CreateRoleDto to a CreateRoleCommand.
     /// </summary>
     public static CreateRoleCommand ToCommand(this CreateRoleDto dto) =>
-        new(dto.Name, dto.Description);
+        new(dto.Name, dto.Description, dto.DisplayName, dto.Email, dto.BoundToApiResourceId?.Guid);
 
     /// <summary>
     /// Converts an UpdateRoleDto to an UpdateRoleCommand.
     /// </summary>
     public static UpdateRoleCommand ToCommand(this UpdateRoleDto dto, ShortGuid id) =>
-        new(id, dto.Name, dto.Description);
+        new(id, dto.Name, dto.Description, dto.DisplayName, dto.Email,
+            dto.BoundToApiResourceId.HasValue
+                ? new Cocoar.Primitives.OptionalAware.Optional<Guid?>(dto.BoundToApiResourceId.Value?.Guid)
+                : default);
 
     #endregion
 
@@ -42,7 +45,9 @@ public static class DtoExtensions
             dto.LastName,
             dto.IsActive,
             dto.LockoutEnabled,
-            dto.Roles);
+            dto.Roles,
+            dto.ExpiresAt,
+            dto.Claims);
 
     /// <summary>
     /// Converts an UpdateUserDto to an UpdateUserCommand.
@@ -55,12 +60,14 @@ public static class DtoExtensions
             dto.PhoneNumber,
             dto.FirstName,
             dto.LastName,
+            dto.ExpiresAt,
             dto.IsActive,
             dto.LockoutEnabled,
             dto.EmailConfirmed,
             dto.PhoneNumberConfirmed,
             dto.TwoFactorEnabled,
-            dto.Roles);
+            dto.Roles,
+            dto.Claims);
 
     /// <summary>
     /// Converts a ResetPasswordDto to a ResetUserPasswordCommand.

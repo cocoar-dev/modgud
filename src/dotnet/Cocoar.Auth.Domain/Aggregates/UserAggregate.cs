@@ -80,6 +80,11 @@ public class UserAggregate
     public string? LastName { get; private set; }
 
     /// <summary>
+    /// When this user account expires (null means no expiration).
+    /// </summary>
+    public DateTimeOffset? ExpiresAt { get; private set; }
+
+    /// <summary>
     /// Whether this user is active.
     /// </summary>
     public bool IsActive { get; private set; } = true;
@@ -161,6 +166,12 @@ public class UserAggregate
     {
         FirstName = @event.NewFirstName;
         LastName = @event.NewLastName;
+        ModifiedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void Apply(UserExpirationChanged @event)
+    {
+        ExpiresAt = @event.NewExpiresAt;
         ModifiedAt = DateTimeOffset.UtcNow;
     }
 

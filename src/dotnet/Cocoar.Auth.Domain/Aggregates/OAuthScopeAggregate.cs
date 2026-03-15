@@ -16,6 +16,11 @@ public class OAuthScopeAggregate
 	public Dictionary<string, string> DisplayNames { get; private set; } = new();
 	public Dictionary<string, string> Descriptions { get; private set; } = new();
 	public Dictionary<string, object?> Properties { get; private set; } = new();
+	public bool Enabled { get; private set; } = true;
+	public bool Required { get; private set; }
+	public bool Emphasize { get; private set; }
+	public bool ShowInDiscoveryDocument { get; private set; } = true;
+	public List<string> UserClaims { get; private set; } = new();
 	public bool IsDeleted { get; private set; }
 
 	// For Marten event sourcing
@@ -76,6 +81,41 @@ public class OAuthScopeAggregate
 		return @event;
 	}
 
+	public OAuthScopeEnabledChanged SetEnabled(bool enabled)
+	{
+		var @event = new OAuthScopeEnabledChanged(Id, enabled);
+		Apply(@event);
+		return @event;
+	}
+
+	public OAuthScopeRequiredChanged SetRequired(bool required)
+	{
+		var @event = new OAuthScopeRequiredChanged(Id, required);
+		Apply(@event);
+		return @event;
+	}
+
+	public OAuthScopeEmphasizeChanged SetEmphasize(bool emphasize)
+	{
+		var @event = new OAuthScopeEmphasizeChanged(Id, emphasize);
+		Apply(@event);
+		return @event;
+	}
+
+	public OAuthScopeShowInDiscoveryDocumentChanged SetShowInDiscoveryDocument(bool showInDiscoveryDocument)
+	{
+		var @event = new OAuthScopeShowInDiscoveryDocumentChanged(Id, showInDiscoveryDocument);
+		Apply(@event);
+		return @event;
+	}
+
+	public OAuthScopeUserClaimsChanged SetUserClaims(IReadOnlyList<string> userClaims)
+	{
+		var @event = new OAuthScopeUserClaimsChanged(Id, userClaims);
+		Apply(@event);
+		return @event;
+	}
+
 	public OAuthScopeDeleted Delete()
 	{
 		var @event = new OAuthScopeDeleted(Id);
@@ -121,6 +161,31 @@ public class OAuthScopeAggregate
 	public void Apply(OAuthScopePropertiesChanged @event)
 	{
 		Properties = new Dictionary<string, object?>(@event.Properties);
+	}
+
+	public void Apply(OAuthScopeEnabledChanged @event)
+	{
+		Enabled = @event.Enabled;
+	}
+
+	public void Apply(OAuthScopeRequiredChanged @event)
+	{
+		Required = @event.Required;
+	}
+
+	public void Apply(OAuthScopeEmphasizeChanged @event)
+	{
+		Emphasize = @event.Emphasize;
+	}
+
+	public void Apply(OAuthScopeShowInDiscoveryDocumentChanged @event)
+	{
+		ShowInDiscoveryDocument = @event.ShowInDiscoveryDocument;
+	}
+
+	public void Apply(OAuthScopeUserClaimsChanged @event)
+	{
+		UserClaims = @event.UserClaims.ToList();
 	}
 
 	public void Apply(OAuthScopeDeleted @event)

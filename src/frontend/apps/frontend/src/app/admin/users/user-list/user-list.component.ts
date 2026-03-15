@@ -10,7 +10,7 @@ import {
 import { AgGridAngular } from 'ag-grid-angular';
 import { CoarGridBuilder, CoarDataGridDirective } from '@cocoar/data-grid';
 
-import { catchError, of, finalize, debounceTime, Subject } from 'rxjs';
+import { catchError, of, finalize, debounceTime, Subject, map } from 'rxjs';
 import { AdminApiService, PaginationParams, User } from '../../../core';
 import { UIService } from '../../../ui';
 
@@ -36,7 +36,11 @@ export class UserListComponent implements OnInit {
   readonly ui = inject(UIService);
   private readonly searchSubject = new Subject<string>();
 
-  readonly users = signal<User[]>([]);
+  readonly users$ = this.adminApi.getUsers();
+  readonly users = this.users$.pipe(
+    map(result => result.items),
+  )
+
   readonly totalCount = signal(0);
   readonly page = signal(1);
   readonly pageSize = 20;
@@ -51,24 +55,15 @@ export class UserListComponent implements OnInit {
 
   readonly usersGrid = CoarGridBuilder.create<User>()
     .columns([
-      col => col.field('userName').header('Username').flex(1).sortable(),
-      col => col.field('email').header('Email').flex(1).sortable()
-        .valueFormatter((params) => {
-          if (!params.value) return '-';
-          const user = params.data as User;
-          const verified = user.emailConfirmed ? '' : ' (Unverified)';
-          return params.value + verified;
-        }),
-      col => col.field('firstName').header('Name').flex(1)
+      col => col.field('userName').header('Username').sortable().pinned("left").lockPosition("left").cellClass('tw:font-semibold'),
+
+      col => col.field('firstName').header('Firstname'),
+      col => col.field('lastName').header('Lastname'),
+      col => col.field('email').header('Email').sortable().cellStyle(params => ({
+        opacity: params.data?.emailConfirmed ? '1' : '0.5',
+      })),
+      col => col.field('isActive').header('Status').flex(1)
         .valueGetter((params) => {
-          const user = params.data as User;
-          if (user.firstName || user.lastName) {
-            return `${user.firstName || ''} ${user.lastName || ''}`.trim();
-          }
-          return '-';
-        }),
-      col => col.field('isActive').header('Status').width(150)
-        .valueFormatter((params) => {
           const user = params.data as User;
           if (!user.isActive) {
             return 'Inactive';
@@ -78,16 +73,9 @@ export class UserListComponent implements OnInit {
           const twoFa = user.twoFactorEnabled ? ' (2FA)' : '';
           return 'Active' + twoFa;
         }),
-      col => col.field('createdAt').header('Created').width(120)
-        .valueFormatter((params) => {
-          const value = params.value as string;
-          return value ? this.formatDate(value) : '-';
-        }),
-      col => col.field('id').header('Actions').width(180).sortable(false)
-        .valueFormatter(() => '')
-        .cellClass('grid-actions-cell'),
+      col => col.date('createdAt').header('Created').width(120),
     ])
-    .rowData(this.users())
+    .rowData$(this.users)
     .rowId(params => params.data?.id || '')
     .onRowDoubleClicked(event => {
       if (event.data?.id) {
@@ -101,40 +89,6 @@ export class UserListComponent implements OnInit {
       ctx.header.subTitle = 'Manage user accounts';
       ctx.content.scrollable = false;
     });
-    this.loadUsers();
-
-    this.searchSubject.pipe(debounceTime(300)).subscribe((query) => {
-      this.searchQuery.set(query);
-      this.page.set(1);
-      this.loadUsers();
-    });
-  }
-
-  private loadUsers(): void {
-    this.isLoading.set(true);
-    this.error.set(null);
-
-    const params: PaginationParams = {
-      page: this.page(),
-      pageSize: this.pageSize,
-      search: this.searchQuery() || undefined,
-    };
-
-    this.adminApi
-      .getUsers(params)
-      .pipe(
-        finalize(() => this.isLoading.set(false)),
-        catchError((err) => {
-          this.error.set(err?.error?.message || 'Failed to load users.');
-          return of({ items: [], totalCount: 0, page: 1, pageSize: this.pageSize });
-        })
-      )
-      .subscribe((result) => {
-        this.users.set(result.items);
-        this.totalCount.set(result.totalCount);
-        // Update grid data
-        this.usersGrid.api?.setGridOption('rowData', result.items);
-      });
   }
 
   onSearch(query: string): void {
@@ -143,7 +97,6 @@ export class UserListComponent implements OnInit {
 
   onPageChange(newPage: number): void {
     this.page.set(newPage);
-    this.loadUsers();
   }
 
   onUnlock(userId: string): void {
@@ -163,17 +116,8 @@ export class UserListComponent implements OnInit {
       .subscribe((result) => {
         if (result !== null) {
           this.success.set('User unlocked successfully.');
-          this.loadUsers();
         }
       });
   }
 
-  formatDate(dateStr: string): string {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  }
 }

@@ -1,7 +1,9 @@
 using Cocoar.Auth.Api.Configuration;
+using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Domain.Entities;
 using Cocoar.Auth.Infrastructure.Persistence;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
+using Cocoar.Auth.Infrastructure.Repositories;
 using Cocoar.Auth.Infrastructure.Services;
 using Cocoar.Configuration.Providers;
 using Cocoar.Configuration.Testing;
@@ -247,6 +249,9 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         session.DeleteWhere<OAuthApiResourceSecurityData>(o => true);
         session.DeleteWhere<OpenIddictAuthorizationDocument>(o => true);
         session.DeleteWhere<OpenIddictTokenDocument>(o => true);
+
+        // Clear login provider documents
+        session.DeleteWhere<LoginProviderState>(l => true);
         await session.SaveChangesAsync();
 
 		// Clear event streams
@@ -263,5 +268,14 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         {
             // Tables don't exist yet
         }
+    }
+
+    /// <summary>
+    /// Re-seeds the built-in login providers after database cleanup.
+    /// Call this in tests that need the seeded "Internal" provider.
+    /// </summary>
+    public async Task SeedLoginProvidersAsync()
+    {
+        await Services.SeedLoginProvidersAsync();
     }
 }

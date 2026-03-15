@@ -83,6 +83,24 @@ public class EventSourcedRoleStore :
             events.Add(new RoleDescriptionChanged(updated.Id, existing.Description, updated.Description));
         }
 
+        // DisplayName change
+        if (existing.DisplayName != updated.DisplayName)
+        {
+            events.Add(new RoleDisplayNameChanged(updated.Id, existing.DisplayName, updated.DisplayName));
+        }
+
+        // Email change
+        if (existing.Email != updated.Email)
+        {
+            events.Add(new RoleEmailChanged(updated.Id, existing.Email, updated.Email));
+        }
+
+        // BoundToApiResource change
+        if (existing.BoundToApiResourceId != updated.BoundToApiResourceId)
+        {
+            events.Add(new RoleBoundToApiResourceChanged(updated.Id, existing.BoundToApiResourceId, updated.BoundToApiResourceId));
+        }
+
         // Claim changes
         var existingClaims = existing.Claims.Select(c => (c.Type, c.Value)).ToHashSet();
         var updatedClaims = updated.Claims.Select(c => (c.Type, c.Value)).ToHashSet();

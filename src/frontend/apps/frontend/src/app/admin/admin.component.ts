@@ -1,7 +1,7 @@
 import { Component, inject, Injector, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
-import { CoarMenuComponent, CoarMenuHeadingComponent, CoarMenuItemComponent, CoarSidebarComponent } from '@cocoar/ui';
+import { CoarIconComponent, CoarMenuComponent, CoarMenuHeadingComponent, CoarMenuItemComponent, CoarSidebarComponent } from '@cocoar/ui';
 import { RoutedModalService, UIService } from '../ui';
 
 @Component({
@@ -14,6 +14,7 @@ import { RoutedModalService, UIService } from '../ui';
     CoarMenuComponent,
     CoarMenuItemComponent,
     CoarMenuHeadingComponent,
+    CoarIconComponent
   ],
   templateUrl: './admin.component.html',
   styleUrl: './admin.component.css',

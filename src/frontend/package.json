@@ -13,15 +13,17 @@
     "@angular/forms": "~21.1.0",
     "@angular/platform-browser": "~21.1.0",
     "@angular/router": "~21.1.0",
-    "@cocoar/data-grid": "0.2.0",
-    "@cocoar/localization": "0.2.0",
-    "@cocoar/ui": "0.2.0",
-    "@cocoar/ui-routing": "0.2.0",
+    "@cocoar/data-grid": "0.2.1",
+    "@cocoar/localization": "0.2.1",
+    "@cocoar/ui": "0.2.1",
+    "@cocoar/ui-routing": "0.2.1",
     "@ngrx/signals": "^21.0.1",
+    "@tailwindcss/postcss": "^4.2.0",
     "ag-grid-angular": "^35.1.0",
     "ag-grid-community": "^35.1.0",
     "overlayscrollbars": "^2.14.0",
-    "rxjs": "~7.8.0"
+    "rxjs": "~7.8.0",
+    "tailwindcss": "^4.2.0"
   },
   "devDependencies": {
     "@angular-devkit/core": "~21.1.0",

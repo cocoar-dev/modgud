@@ -8,7 +8,9 @@
   "targets": {
     "build": {
       "executor": "@angular/build:application",
-      "outputs": ["{options.outputPath}"],
+      "outputs": [
+        "{options.outputPath}"
+      ],
       "options": {
         "outputPath": "dist/apps/frontend",
         "browser": "apps/frontend/src/main.ts",
@@ -43,7 +45,11 @@
         "development": {
           "optimization": false,
           "extractLicenses": false,
-          "sourceMap": true
+          "sourceMap": {
+            "scripts": true,
+            "styles": false,
+            "vendor": false
+          }
         }
       },
       "defaultConfiguration": "production"

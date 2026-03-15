@@ -20,10 +20,21 @@ public record UserDto
     public int AccessFailedCount { get; init; }
     public string? FirstName { get; init; }
     public string? LastName { get; init; }
+    public DateTimeOffset? ExpiresAt { get; init; }
     public bool IsActive { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? ModifiedAt { get; init; }
     public List<ShortGuid> Roles { get; init; } = [];
+    public List<UserClaimDto> Claims { get; init; } = [];
+}
+
+/// <summary>
+/// DTO for a user claim.
+/// </summary>
+public record UserClaimDto
+{
+    public required string Type { get; init; }
+    public required string Value { get; init; }
 }
 
 /// <summary>
@@ -37,9 +48,11 @@ public record CreateUserDto
     public string? PhoneNumber { get; init; }
     public string? FirstName { get; init; }
     public string? LastName { get; init; }
+    public DateTimeOffset? ExpiresAt { get; init; }
     public bool IsActive { get; init; } = true;
     public bool LockoutEnabled { get; init; } = true;
     public List<ShortGuid> Roles { get; init; } = [];
+    public List<UserClaimDto> Claims { get; init; } = [];
 }
 
 /// <summary>
@@ -52,12 +65,14 @@ public record UpdateUserDto
     public Optional<string?> PhoneNumber { get; init; }
     public Optional<string?> FirstName { get; init; }
     public Optional<string?> LastName { get; init; }
+    public Optional<DateTimeOffset?> ExpiresAt { get; init; }
     public Optional<bool> IsActive { get; init; }
     public Optional<bool> LockoutEnabled { get; init; }
     public Optional<bool> EmailConfirmed { get; init; }
     public Optional<bool> PhoneNumberConfirmed { get; init; }
     public Optional<bool> TwoFactorEnabled { get; init; }
     public Optional<List<ShortGuid>> Roles { get; init; }
+    public Optional<List<UserClaimDto>> Claims { get; init; }
 }
 
 /// <summary>

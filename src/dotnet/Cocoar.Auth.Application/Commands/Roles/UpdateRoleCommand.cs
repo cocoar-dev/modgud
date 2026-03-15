@@ -14,7 +14,10 @@ namespace Cocoar.Auth.Application.Commands.Roles;
 public record UpdateRoleCommand(
     ShortGuid Id,
     Optional<string> Name,
-    Optional<string?> Description);
+    Optional<string?> Description,
+    Optional<string?> DisplayName,
+    Optional<string?> Email,
+    Optional<Guid?> BoundToApiResourceId);
 
 /// <summary>
 /// Handler for UpdateRoleCommand.
@@ -54,6 +57,21 @@ public class UpdateRoleHandler
         if (command.Description.HasValue)
         {
             role.SetDescription(command.Description.Value);
+        }
+
+        if (command.DisplayName.HasValue)
+        {
+            role.SetDisplayName(command.DisplayName.Value);
+        }
+
+        if (command.Email.HasValue)
+        {
+            role.SetEmail(command.Email.Value);
+        }
+
+        if (command.BoundToApiResourceId.HasValue)
+        {
+            role.SetBoundToApiResourceId(command.BoundToApiResourceId.Value);
         }
 
         var result = await _roleManager.UpdateAsync(role);

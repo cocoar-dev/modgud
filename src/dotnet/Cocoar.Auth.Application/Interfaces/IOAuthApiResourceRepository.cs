@@ -46,10 +46,26 @@ public interface IOAuthApiResourceRepository
 		CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Regenerates the API secret for an API resource.
+	/// Regenerates the API secret for an API resource (legacy single-secret).
 	/// </summary>
 	Task<ErrorOr<ApiSecretDto>> RegenerateSecretAsync(
 		string id,
+		CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Creates a new API secret with metadata for an API resource.
+	/// </summary>
+	Task<ErrorOr<ApiSecretCreatedDto>> CreateSecretAsync(
+		string id,
+		CreateApiSecretDto dto,
+		CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Deletes a specific API secret by its secret ID.
+	/// </summary>
+	Task<ErrorOr<bool>> DeleteSecretAsync(
+		string id,
+		string secretId,
 		CancellationToken cancellationToken = default);
 
 	/// <summary>

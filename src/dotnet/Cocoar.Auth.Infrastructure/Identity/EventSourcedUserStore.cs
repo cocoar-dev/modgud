@@ -134,6 +134,12 @@ public class EventSourcedUserStore :
                 updated.FirstName, updated.LastName));
         }
 
+        // Expiration change
+        if (existing.ExpiresAt != updated.ExpiresAt)
+        {
+            events.Add(new UserExpirationChanged(updated.Id, existing.ExpiresAt, updated.ExpiresAt));
+        }
+
         // Active status change
         if (existing.IsActive != updated.IsActive)
         {

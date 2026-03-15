@@ -53,6 +53,41 @@ public record OAuthScopePropertiesChanged(
 	IReadOnlyDictionary<string, object?> Properties);
 
 /// <summary>
+/// Event raised when an OAuth scope's enabled status is changed.
+/// </summary>
+public record OAuthScopeEnabledChanged(
+	Guid ScopeId,
+	bool Enabled);
+
+/// <summary>
+/// Event raised when an OAuth scope's required flag is changed.
+/// </summary>
+public record OAuthScopeRequiredChanged(
+	Guid ScopeId,
+	bool Required);
+
+/// <summary>
+/// Event raised when an OAuth scope's emphasize flag is changed.
+/// </summary>
+public record OAuthScopeEmphasizeChanged(
+	Guid ScopeId,
+	bool Emphasize);
+
+/// <summary>
+/// Event raised when an OAuth scope's show in discovery document flag is changed.
+/// </summary>
+public record OAuthScopeShowInDiscoveryDocumentChanged(
+	Guid ScopeId,
+	bool ShowInDiscoveryDocument);
+
+/// <summary>
+/// Event raised when an OAuth scope's user claims are changed.
+/// </summary>
+public record OAuthScopeUserClaimsChanged(
+	Guid ScopeId,
+	IReadOnlyList<string> UserClaims);
+
+/// <summary>
 /// Event raised when an OAuth scope is deleted.
 /// </summary>
 public record OAuthScopeDeleted(Guid ScopeId);

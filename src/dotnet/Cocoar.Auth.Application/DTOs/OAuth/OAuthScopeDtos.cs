@@ -10,6 +10,11 @@ public record OAuthScopeDto
 	public string? DisplayName { get; init; }
 	public string? Description { get; init; }
 	public List<string> Resources { get; init; } = [];
+	public bool Enabled { get; init; } = true;
+	public bool Required { get; init; }
+	public bool Emphasize { get; init; }
+	public bool ShowInDiscoveryDocument { get; init; } = true;
+	public List<string> UserClaims { get; init; } = [];
 }
 
 /// <summary>
@@ -21,6 +26,11 @@ public record CreateOAuthScopeDto
 	public string? DisplayName { get; init; }
 	public string? Description { get; init; }
 	public List<string> Resources { get; init; } = [];
+	public bool Enabled { get; init; } = true;
+	public bool Required { get; init; }
+	public bool Emphasize { get; init; }
+	public bool ShowInDiscoveryDocument { get; init; } = true;
+	public List<string> UserClaims { get; init; } = [];
 }
 
 /// <summary>
@@ -31,6 +41,11 @@ public record UpdateOAuthScopeDto
 	public string? DisplayName { get; init; }
 	public string? Description { get; init; }
 	public List<string>? Resources { get; init; }
+	public bool? Enabled { get; init; }
+	public bool? Required { get; init; }
+	public bool? Emphasize { get; init; }
+	public bool? ShowInDiscoveryDocument { get; init; }
+	public List<string>? UserClaims { get; init; }
 }
 
 /// <summary>

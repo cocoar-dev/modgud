@@ -37,7 +37,7 @@ export const adminRoutes: Route[] = [
               path: ':id',
               loadComponent: () =>
                 import('./users/user-form/user-form.component').then((m) => m.UserFormComponent),
-              options: { closeOnBackdropClick: false },
+              options: { closeOnBackdropClick: false, width: '70%', height: '80%'},
             },
           ],
         }),

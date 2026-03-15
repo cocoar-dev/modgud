@@ -18,12 +18,14 @@ public record UpdateUserCommand(
     Optional<string?> PhoneNumber,
     Optional<string?> FirstName,
     Optional<string?> LastName,
+    Optional<DateTimeOffset?> ExpiresAt,
     Optional<bool> IsActive,
     Optional<bool> LockoutEnabled,
     Optional<bool> EmailConfirmed,
     Optional<bool> PhoneNumberConfirmed,
     Optional<bool> TwoFactorEnabled,
-    Optional<List<ShortGuid>> Roles);
+    Optional<List<ShortGuid>> Roles,
+    Optional<List<DTOs.Users.UserClaimDto>> Claims);
 
 /// <summary>
 /// Handler for UpdateUserCommand.
@@ -97,6 +99,9 @@ public class UpdateUserHandler
         if (command.TwoFactorEnabled.HasValue)
             user.SetTwoFactorEnabled(command.TwoFactorEnabled.Value);
 
+        if (command.ExpiresAt.HasValue)
+            user.SetExpiresAt(command.ExpiresAt.Value);
+
         if (command.Roles.HasValue)
         {
             // Replace all roles
@@ -105,6 +110,17 @@ public class UpdateUserHandler
             foreach (var roleId in newRoles)
             {
                 user.AddRole(roleId.Guid);
+            }
+        }
+
+        if (command.Claims.HasValue)
+        {
+            // Replace all claims
+            user.Claims.Clear();
+            var newClaims = command.Claims.Value ?? [];
+            foreach (var claim in newClaims)
+            {
+                user.AddClaim(claim.Type, claim.Value);
             }
         }
 

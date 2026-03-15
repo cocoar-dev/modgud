@@ -6,6 +6,7 @@ using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Infrastructure;
 using Cocoar.Auth.Infrastructure.Interfaces;
 using Cocoar.Auth.Infrastructure.OpenIddict;
+using Cocoar.Auth.Infrastructure.Repositories;
 using Cocoar.Auth.Infrastructure.Services;
 using Cocoar.Configuration.AspNetCore;
 using Cocoar.Configuration.DI;
@@ -294,6 +295,9 @@ app.MapControllers();
 
 // Seed default OAuth scopes (openid, email, profile, roles, offline_access)
 await app.Services.SeedOpenIddictScopesAsync();
+
+// Seed built-in "Internal" login provider
+await app.Services.SeedLoginProvidersAsync();
 
 app.Run("http://0.0.0.0:80");
 

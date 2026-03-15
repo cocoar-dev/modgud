@@ -15,6 +15,7 @@ public static class DependencyInjection
         services.AddScoped<RoleService>();
         services.AddScoped<AuthService>();
         services.AddScoped<ITwoFactorService, TwoFactorService>();
+        services.AddScoped<LoginProviderService>();
 
         // Add UrlEncoder if not already registered
         services.AddSingleton(UrlEncoder.Default);

@@ -18,7 +18,9 @@ public record CreateUserCommand(
     string? LastName,
     bool IsActive = true,
     bool LockoutEnabled = true,
-    List<ShortGuid>? Roles = null);
+    List<ShortGuid>? Roles = null,
+    DateTimeOffset? ExpiresAt = null,
+    List<DTOs.Users.UserClaimDto>? Claims = null);
 
 /// <summary>
 /// Handler for CreateUserCommand.
@@ -55,6 +57,7 @@ public class CreateUserHandler
         user.SetPhoneNumber(command.PhoneNumber);
         user.SetFirstName(command.FirstName);
         user.SetLastName(command.LastName);
+        user.SetExpiresAt(command.ExpiresAt);
         user.SetIsActive(command.IsActive);
         user.SetLockoutEnabled(command.LockoutEnabled);
 
@@ -64,6 +67,15 @@ public class CreateUserHandler
             foreach (var roleId in command.Roles)
             {
                 user.AddRole(roleId.Guid);
+            }
+        }
+
+        // Add claims
+        if (command.Claims is not null)
+        {
+            foreach (var claim in command.Claims)
+            {
+                user.AddClaim(claim.Type, claim.Value);
             }
         }
 

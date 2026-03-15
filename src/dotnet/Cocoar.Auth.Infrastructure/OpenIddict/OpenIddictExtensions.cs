@@ -75,6 +75,13 @@ public static class OpenIddictExtensions
 				// Enable the client credentials flow (for machine-to-machine)
 				options.AllowClientCredentialsFlow();
 
+				// Enable reference tokens - store token payloads server-side,
+				// return opaque reference identifiers to clients.
+				// This is the PRIMARY reason for building this custom identity server.
+				// Per-client token type (Reference vs JWT) is controlled via application settings.
+				options.UseReferenceAccessTokens()
+					.UseReferenceRefreshTokens();
+
 				// Register the standard scopes
 				options.RegisterScopes(
 					Scopes.OpenId,

@@ -29,6 +29,21 @@ public class RoleAggregate
     public string? Description { get; private set; }
 
     /// <summary>
+    /// A human-friendly display name for the role.
+    /// </summary>
+    public string? DisplayName { get; private set; }
+
+    /// <summary>
+    /// An email address associated with the role.
+    /// </summary>
+    public string? Email { get; private set; }
+
+    /// <summary>
+    /// The ID of the API resource this role is bound to, if any.
+    /// </summary>
+    public Guid? BoundToApiResourceId { get; private set; }
+
+    /// <summary>
     /// Whether this role has been deleted (soft delete).
     /// </summary>
     public bool IsDeleted { get; private set; }
@@ -99,6 +114,24 @@ public class RoleAggregate
     public void Apply(RoleClaimRemoved @event)
     {
         Claims.Remove((Type: @event.ClaimType, Value: @event.ClaimValue));
+        ModifiedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void Apply(RoleDisplayNameChanged @event)
+    {
+        DisplayName = @event.NewDisplayName;
+        ModifiedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void Apply(RoleEmailChanged @event)
+    {
+        Email = @event.NewEmail;
+        ModifiedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void Apply(RoleBoundToApiResourceChanged @event)
+    {
+        BoundToApiResourceId = @event.NewApiResourceId;
         ModifiedAt = DateTimeOffset.UtcNow;
     }
 }
