@@ -1,13 +1,16 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth.store';
+import { authApi } from '@/core/api/auth-api';
+import { realmContext } from '@/composables/useRealmContext';
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(realmContext.baseHref),
   routes: [
     // ── Setup ──────────────────────────────────────────────────
     {
       path: '/setup',
       component: () => import('@/views/SetupView.vue'),
+      meta: { public: true },
     },
 
     // ── Public auth ────────────────────────────────────────────
@@ -69,6 +72,11 @@ export const router = createRouter({
         { path: 'sessions', component: () => import('@/views/SessionsView.vue') },
         { path: 'privacy', component: () => import('@/views/PrivacyView.vue') },
 
+        // Admin — Realms (System Realm Only)
+        { path: 'admin/realms', component: () => import('@/views/admin/realms/RealmListView.vue'), meta: { requiresAdmin: true } },
+        { path: 'admin/realms/create', component: () => import('@/views/admin/realms/RealmFormView.vue'), meta: { requiresAdmin: true } },
+        { path: 'admin/realms/:slug', component: () => import('@/views/admin/realms/RealmFormView.vue'), meta: { requiresAdmin: true } },
+
         // Admin
         { path: 'admin', redirect: '/admin/users' },
         { path: 'admin/users', component: () => import('@/views/admin/users/UserListView.vue'), meta: { requiresAdmin: true } },
@@ -98,12 +106,31 @@ export const router = createRouter({
   ],
 });
 
+// Cache setup status to avoid repeated API calls
+let setupChecked = false;
+let needsSetup = false;
+
 // Navigation guards
 router.beforeEach(async (to) => {
   const auth = useAuthStore();
 
   // Wait for auth to finish initializing (handles concurrent calls)
   await auth.initialize();
+
+  // Check setup status once when not authenticated
+  if (!auth.isAuthenticated && !setupChecked && to.path !== '/setup') {
+    try {
+      const status = await authApi.getSetupStatus();
+      needsSetup = status.needsSetup;
+    } catch {
+      needsSetup = false;
+    }
+    setupChecked = true;
+
+    if (needsSetup) {
+      return '/setup';
+    }
+  }
 
   if (to.meta.requiresAdmin && !auth.isAdmin) {
     return auth.isAuthenticated ? '/' : `/login?returnUrl=${encodeURIComponent(to.fullPath)}`;
@@ -114,6 +141,10 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.public && auth.isAuthenticated) {
+    // Don't redirect away from setup if just completed (avoids loop)
+    if (to.path === '/setup') {
+      return '/';
+    }
     return '/';
   }
 });

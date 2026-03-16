@@ -6,6 +6,7 @@ using Cocoar.Auth.Domain.Events;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using ErrorOr;
 using Marten;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 
 namespace Cocoar.Auth.Infrastructure.Services;
@@ -21,6 +22,7 @@ public class GdprService : IGdprService
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ISessionRepository _sessionRepository;
     private readonly IEmailSender _emailSender;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
     // Confirmation period for self-initiated deletion
     private static readonly TimeSpan DeletionConfirmationPeriod = TimeSpan.FromDays(7);
@@ -30,13 +32,15 @@ public class GdprService : IGdprService
         IDocumentSession session,
         UserManager<ApplicationUser> userManager,
         ISessionRepository sessionRepository,
-        IEmailSender emailSender)
+        IEmailSender emailSender,
+        IHttpContextAccessor httpContextAccessor)
     {
         _store = store;
         _session = session;
         _userManager = userManager;
         _sessionRepository = sessionRepository;
         _emailSender = emailSender;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async Task<ErrorOr<UserDataExportDto>> ExportUserDataAsync(
@@ -350,8 +354,10 @@ public class GdprService : IGdprService
 
         // 3. Apply Marten's data masking to the event stream
         // This replaces PII with masked values according to the rules configured in DependencyInjection
+        var tenantId = _httpContextAccessor.HttpContext?.Items["TenantId"] as string ?? "system";
         await _store.Advanced.ApplyEventDataMasking(x =>
         {
+            x.ForTenant(tenantId);
             x.IncludeStream(userId);
             x.AddHeader("gdpr_masked", true);
             x.AddHeader("masked_at", DateTimeOffset.UtcNow.ToString("O"));

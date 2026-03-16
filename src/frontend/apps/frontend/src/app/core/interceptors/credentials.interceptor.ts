@@ -2,7 +2,7 @@ import { HttpInterceptorFn, HttpErrorResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { catchError, throwError } from 'rxjs';
 import { AuthStateService } from '../services/auth-state.service';
-import { environment } from '../../../environments/environment';
+import { RealmContextService } from '../services/realm-context.service';
 
 /**
  * HTTP interceptor that adds credentials to all API requests
@@ -10,9 +10,10 @@ import { environment } from '../../../environments/environment';
  */
 export const credentialsInterceptor: HttpInterceptorFn = (req, next) => {
   const authState = inject(AuthStateService);
+  const realm = inject(RealmContextService);
 
   // Only add credentials for requests to our API
-  if (req.url.startsWith(environment.apiUrl)) {
+  if (req.url.startsWith(realm.apiUrl)) {
     const clonedRequest = req.clone({
       withCredentials: true,
     });

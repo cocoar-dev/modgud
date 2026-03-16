@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
 import { CoarCard, CoarButton, CoarTextInput, CoarPasswordInput, CoarNote, CoarSpinner } from '@cocoar/vue-ui';
 import { authApi } from '@/core/api/auth-api';
+import { useAuthStore } from '@/stores/auth.store';
 import { ApiError } from '@/core/api/http';
 
-const router = useRouter();
+const auth = useAuthStore();
 
 const isChecking = ref(true);
 const needsSetup = ref(false);
@@ -45,7 +45,11 @@ async function onSubmit() {
       firstName: firstName.value || undefined,
       lastName: lastName.value || undefined,
     });
-    router.push('/login');
+    // Backend set the auth cookie — reload user into store and navigate home
+    await auth.login(
+      { userName: userName.value, password: password.value },
+      { redirectTo: '/' },
+    );
   } catch (err) {
     error.value = err instanceof ApiError ? err.message : 'Setup failed. Please try again.';
   } finally {

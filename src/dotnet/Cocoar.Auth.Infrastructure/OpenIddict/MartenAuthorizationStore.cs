@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Cocoar.Auth.Domain.Entities;
+using Cocoar.Auth.Infrastructure.Persistence;
 using Marten;
 using OpenIddict.Abstractions;
 
@@ -12,16 +13,16 @@ namespace Cocoar.Auth.Infrastructure.OpenIddict;
 /// </summary>
 public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddictAuthorizationDocument>
 {
-	private readonly IDocumentStore _store;
+	private readonly ITenantSessionFactory _sessionFactory;
 
-	public MartenAuthorizationStore(IDocumentStore store)
+	public MartenAuthorizationStore(ITenantSessionFactory sessionFactory)
 	{
-		_store = store;
+		_sessionFactory = sessionFactory;
 	}
 
 	public async ValueTask<long> CountAsync(CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		return await session.Query<OpenIddictAuthorizationDocument>().CountAsync(cancellationToken);
 	}
 
@@ -29,7 +30,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		Func<IQueryable<OpenIddictAuthorizationDocument>, IQueryable<TResult>> query,
 		CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		return query(session.Query<OpenIddictAuthorizationDocument>()).LongCount();
 	}
 
@@ -37,7 +38,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		OpenIddictAuthorizationDocument authorization,
 		CancellationToken cancellationToken)
 	{
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 		session.Store(authorization);
 		await session.SaveChangesAsync(cancellationToken);
 	}
@@ -46,7 +47,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		OpenIddictAuthorizationDocument authorization,
 		CancellationToken cancellationToken)
 	{
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 		session.Delete(authorization);
 		await session.SaveChangesAsync(cancellationToken);
 	}
@@ -56,7 +57,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		string? client,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var query = session.Query<OpenIddictAuthorizationDocument>().AsQueryable();
 
 		if (!string.IsNullOrEmpty(subject))
@@ -83,7 +84,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		string? status,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var query = session.Query<OpenIddictAuthorizationDocument>().AsQueryable();
 
 		if (!string.IsNullOrEmpty(subject))
@@ -116,7 +117,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		string? type,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var query = session.Query<OpenIddictAuthorizationDocument>().AsQueryable();
 
 		if (!string.IsNullOrEmpty(subject))
@@ -155,7 +156,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		ImmutableArray<string>? scopes,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var query = session.Query<OpenIddictAuthorizationDocument>().AsQueryable();
 
 		if (!string.IsNullOrEmpty(subject))
@@ -194,7 +195,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		string identifier,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var authorizations = await session.Query<OpenIddictAuthorizationDocument>()
 			.Where(x => x.ApplicationId == identifier)
 			.ToListAsync(cancellationToken);
@@ -209,7 +210,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		string identifier,
 		CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		return await session.LoadAsync<OpenIddictAuthorizationDocument>(identifier, cancellationToken);
 	}
 
@@ -217,7 +218,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		string subject,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var authorizations = await session.Query<OpenIddictAuthorizationDocument>()
 			.Where(x => x.Subject == subject)
 			.ToListAsync(cancellationToken);
@@ -304,7 +305,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		int? offset,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var query = session.Query<OpenIddictAuthorizationDocument>().OrderBy(x => x.Id);
 
 		if (offset.HasValue)
@@ -334,7 +335,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 
 	public async ValueTask<long> PruneAsync(DateTimeOffset threshold, CancellationToken cancellationToken)
 	{
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 		var authorizations = await session.Query<OpenIddictAuthorizationDocument>()
 			.Where(x => x.CreationDate < threshold &&
 				(x.Status == OpenIddictConstants.Statuses.Inactive ||
@@ -357,7 +358,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		string? type,
 		CancellationToken cancellationToken)
 	{
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 		var query = session.Query<OpenIddictAuthorizationDocument>().AsQueryable();
 
 		if (!string.IsNullOrEmpty(subject))
@@ -394,7 +395,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 
 	public async ValueTask<long> RevokeByApplicationIdAsync(string identifier, CancellationToken cancellationToken)
 	{
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 		var authorizations = await session.Query<OpenIddictAuthorizationDocument>()
 			.Where(x => x.ApplicationId == identifier)
 			.ToListAsync(cancellationToken);
@@ -411,7 +412,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 
 	public async ValueTask<long> RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
 	{
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 		var authorizations = await session.Query<OpenIddictAuthorizationDocument>()
 			.Where(x => x.Subject == subject)
 			.ToListAsync(cancellationToken);
@@ -494,7 +495,7 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 		CancellationToken cancellationToken)
 	{
 		authorization.ConcurrencyToken = Guid.NewGuid().ToString();
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 		session.Store(authorization);
 		await session.SaveChangesAsync(cancellationToken);
 	}

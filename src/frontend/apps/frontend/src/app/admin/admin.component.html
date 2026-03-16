@@ -9,6 +9,13 @@
 
     <!-- Content -->
     <coar-menu borderless>
+      @if (isSystemRealm) {
+        <coar-menu-heading>System</coar-menu-heading>
+        <coar-menu-item icon="globe" routerLink="/admin/realms" routerLinkActive="active">
+          Realms
+        </coar-menu-item>
+      }
+
       <coar-menu-heading>Administration</coar-menu-heading>
       <coar-menu-item icon="users" routerLink="/admin/users" routerLinkActive="active">
         Users

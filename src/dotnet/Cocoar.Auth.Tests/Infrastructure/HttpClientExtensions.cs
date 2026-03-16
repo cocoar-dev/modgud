@@ -22,6 +22,23 @@ public static class HttpClientExtensions
         return await client.PostAsJsonAsync("/api/auth/login", loginDto, jsonOptions);
     }
 
+    public static async Task<HttpResponseMessage> LoginInRealmAsync(
+        this HttpClient client,
+        string realmSlug,
+        string userName,
+        string password,
+        JsonSerializerOptions jsonOptions)
+    {
+        var loginDto = new LoginDto
+        {
+            UserName = userName,
+            Password = password,
+            RememberMe = false
+        };
+
+        return await client.PostAsJsonAsync($"/realms/{realmSlug}/api/auth/login", loginDto, jsonOptions);
+    }
+
     public static async Task<T?> ReadFromJsonAsync<T>(
         this HttpResponseMessage response,
         JsonSerializerOptions jsonOptions)

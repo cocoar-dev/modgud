@@ -18,6 +18,7 @@ using JasperFx.Events.Daemon;
 using JasperFx.Events.Projections;
 using Marten;
 using Marten.Events.Projections;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -28,37 +29,52 @@ namespace Cocoar.Auth.Infrastructure;
 
 public static class DependencyInjection
 {
-	public static IServiceCollection AddInfrastructure(this IServiceCollection services, bool useAsyncProjections = true)
+	public static IServiceCollection AddInfrastructure(
+		this IServiceCollection services,
+		bool useAsyncProjections = true,
+		string? masterConnectionString = null,
+		string? defaultConnectionString = null)
 	{
-
-		services.AddSingleton<NpgsqlDataSource>(sp =>
-		{
-			var dbSettings = sp.GetRequiredService<IReactiveConfig<IDatabaseSettings>>();
-			var builder = new NpgsqlDataSourceBuilder(dbSettings.CurrentValue.ConnectionString);
-
-			builder.UsePasswordProvider(
-				(csb) =>
-				{
-					using var password = dbSettings.CurrentValue.Password.Open();
-					return password.Value;
-				},
-				(csb, token) =>
-				{
-					using var password = dbSettings.CurrentValue.Password.Open();
-					return ValueTask.FromResult(password.Value);
-				});
-
-			return builder.Build();
-		});
+		services.AddHttpContextAccessor();
 
 		// Configure Marten
 		var martenBuilder = services.AddMarten(sp =>
 		{
 			var options = new StoreOptions();
 
-			var dataSource = sp.GetRequiredService<NpgsqlDataSource>();
-			options.Connection(dataSource);
+			if (masterConnectionString is not null && defaultConnectionString is not null)
+			{
+				// Multi-tenant mode: master DB + per-tenant databases
+				options.MultiTenantedDatabasesWithMasterDatabaseTable(x =>
+				{
+					x.ConnectionString = masterConnectionString;
+					x.SchemaName = "realms";
+					x.AutoCreate = AutoCreate.CreateOrUpdate;
+					x.ApplicationName = "CocoarAuth";
+					x.RegisterDatabase("system", defaultConnectionString);
+				});
+			}
+			else
+			{
+				// Legacy single-tenant mode (fallback for tests that haven't been updated)
+				var dbSettings = sp.GetRequiredService<IReactiveConfig<IDatabaseSettings>>();
+				var dataSourceBuilder = new NpgsqlDataSourceBuilder(dbSettings.CurrentValue.ConnectionString);
 
+				dataSourceBuilder.UsePasswordProvider(
+					(csb) =>
+					{
+						using var password = dbSettings.CurrentValue.Password.Open();
+						return password.Value;
+					},
+					(csb, token) =>
+					{
+						using var password = dbSettings.CurrentValue.Password.Open();
+						return ValueTask.FromResult(password.Value);
+					});
+
+				var dataSource = dataSourceBuilder.Build();
+				options.Connection(dataSource);
+			}
 
 			options.AutoCreateSchemaObjects = AutoCreate.All;
 
@@ -74,7 +90,28 @@ public static class DependencyInjection
 			ConfigureMartenEvents(options, useAsyncProjections);
 			return options;
 		})
-		.UseLightweightSessions();
+		.UseLightweightSessions()
+		.ApplyAllDatabaseChangesOnStartup();
+
+		// Override scoped session registrations with tenant-aware versions
+		services.AddScoped<IDocumentSession>(sp =>
+		{
+			var store = sp.GetRequiredService<IDocumentStore>();
+			var accessor = sp.GetRequiredService<IHttpContextAccessor>();
+			var tenantId = accessor.HttpContext?.Items["TenantId"] as string ?? "system";
+			return store.LightweightSession(tenantId);
+		});
+
+		services.AddScoped<IQuerySession>(sp =>
+		{
+			var store = sp.GetRequiredService<IDocumentStore>();
+			var accessor = sp.GetRequiredService<IHttpContextAccessor>();
+			var tenantId = accessor.HttpContext?.Items["TenantId"] as string ?? "system";
+			return store.QuerySession(tenantId);
+		});
+
+		// Register tenant session factory
+		services.AddScoped<ITenantSessionFactory, HttpContextTenantSessionFactory>();
 
 		// Only enable async daemon when using async projections (not in tests)
 		if (useAsyncProjections)
@@ -193,6 +230,15 @@ public static class DependencyInjection
 			.Index(x => x.AuthorizationId)
 			.Index(x => x.Subject)
 			.Index(x => x.ReferenceId);
+
+		// ═══════════════════════════════════════════════════════════════
+		// REALM DOCUMENT STORAGE (stored in system tenant)
+		// ═══════════════════════════════════════════════════════════════
+
+		// Configure Realm document (tenant metadata, stored in system tenant DB)
+		options.Schema.For<Realm>()
+			.Identity(x => x.Id)
+			.Index(x => x.Slug, x => x.IsUnique = true);
 	}
 
 	/// <summary>

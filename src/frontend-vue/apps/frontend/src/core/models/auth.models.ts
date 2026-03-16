@@ -20,6 +20,7 @@ export interface CurrentUser {
   firstName?: string;
   lastName?: string;
   roles: string[];
+  realm: string;
 }
 
 export interface RegisterRequest {
@@ -253,4 +254,33 @@ export interface CreateAdminRequest {
 export interface SetupResult {
   success: boolean;
   message: string;
+}
+
+// Realm DTOs
+export interface Realm {
+  id: string;
+  slug: string;
+  displayName: string;
+  description?: string;
+  isActive: boolean;
+  isSystem: boolean;
+  needsSetup: boolean;
+  createdAt: string;
+}
+
+export interface CreateRealmRequest {
+  slug: string;
+  displayName: string;
+  description?: string;
+}
+
+export interface UpdateRealmRequest {
+  displayName?: string;
+  description?: string | null;
+  isActive?: boolean;
+}
+
+export interface RealmList {
+  items: Realm[];
+  totalCount: number;
 }

@@ -1,4 +1,6 @@
-const BASE_URL = '/api';
+import { realmContext } from '@/composables/useRealmContext';
+
+const BASE_URL = realmContext.apiUrl;
 
 export class ApiError extends Error {
   constructor(
@@ -23,22 +25,35 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
 
+  // Error handling — must come BEFORE the empty-body shortcut
+  if (!response.ok) {
+    if (response.status === 401) {
+      // Only redirect on session expiry (mid-use), not during auth initialization.
+      // The router guard handles the unauthenticated → login redirect on its own.
+      const { useAuthStore } = await import('@/stores/auth.store');
+      const auth = useAuthStore();
+      if (auth.status === 'authenticated') {
+        auth.currentUser = null;
+        auth.status = 'unauthenticated';
+        const { router } = await import('@/router');
+        if (router.currentRoute.value.path !== '/login') {
+          router.push('/login?sessionExpired=true');
+        }
+      }
+    }
+    const contentType = response.headers.get('content-type') ?? '';
+    const errData = contentType.includes('application/json')
+      ? await response.json().catch(() => null)
+      : await response.text().catch(() => null);
+    throw new ApiError(response.status, errData);
+  }
+
   if (response.status === 204 || response.headers.get('content-length') === '0') {
     return undefined as T;
   }
 
   const contentType = response.headers.get('content-type') ?? '';
   const data = contentType.includes('application/json') ? await response.json() : await response.text();
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      const { router } = await import('@/router');
-      if (router.currentRoute.value.path !== '/login') {
-        router.push('/login?sessionExpired=true');
-      }
-    }
-    throw new ApiError(response.status, data);
-  }
 
   return data as T;
 }

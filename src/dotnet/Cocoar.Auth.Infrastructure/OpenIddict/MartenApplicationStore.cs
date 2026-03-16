@@ -5,6 +5,7 @@ using System.Text.Json;
 using Cocoar.Auth.Domain.Aggregates;
 using Cocoar.Auth.Domain.Entities;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
+using Cocoar.Auth.Infrastructure.Persistence;
 using Marten;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
@@ -19,16 +20,16 @@ namespace Cocoar.Auth.Infrastructure.OpenIddict;
 /// </summary>
 public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicationState>
 {
-	private readonly IDocumentStore _store;
+	private readonly ITenantSessionFactory _sessionFactory;
 
-	public MartenApplicationStore(IDocumentStore store)
+	public MartenApplicationStore(ITenantSessionFactory sessionFactory)
 	{
-		_store = store;
+		_sessionFactory = sessionFactory;
 	}
 
 	public async ValueTask<long> CountAsync(CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		return await session.Query<OAuthApplicationState>()
 			.Where(x => !x.IsDeleted)
 			.CountAsync(cancellationToken);
@@ -38,13 +39,13 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
 		Func<IQueryable<OAuthApplicationState>, IQueryable<TResult>> query,
 		CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		return query(session.Query<OAuthApplicationState>().Where(x => !x.IsDeleted)).LongCount();
 	}
 
 	public async ValueTask CreateAsync(OAuthApplicationState application, CancellationToken cancellationToken)
 	{
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		// Create the aggregate and emit the creation event
 		var (_, createdEvent) = OAuthApplicationAggregate.Create(
@@ -98,7 +99,7 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
 
 	public async ValueTask DeleteAsync(OAuthApplicationState application, CancellationToken cancellationToken)
 	{
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		// Load the aggregate to emit delete event
 		var aggregate = await session.Events.AggregateStreamAsync<OAuthApplicationAggregate>(application.Id, token: cancellationToken);
@@ -118,7 +119,7 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
 		string identifier,
 		CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		return await session.Query<OAuthApplicationState>()
 			.FirstOrDefaultAsync(x => x.ClientId == identifier && !x.IsDeleted, cancellationToken);
 	}
@@ -132,7 +133,7 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
 			return null;
 		}
 
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var state = await session.LoadAsync<OAuthApplicationState>(id, cancellationToken);
 		return state?.IsDeleted == true ? null : state;
 	}
@@ -141,7 +142,7 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
 		string uri,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var applications = await session.Query<OAuthApplicationState>()
 			.Where(x => x.PostLogoutRedirectUris.Contains(uri) && !x.IsDeleted)
 			.ToListAsync(cancellationToken);
@@ -156,7 +157,7 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
 		string uri,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var applications = await session.Query<OAuthApplicationState>()
 			.Where(x => x.RedirectUris.Contains(uri) && !x.IsDeleted)
 			.ToListAsync(cancellationToken);
@@ -200,7 +201,7 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
 		}
 
 		// Client secret is stored in security data document, not in event-sourced state
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var securityData = await session.LoadAsync<OAuthApplicationSecurityData>(application.Id, cancellationToken);
 		return securityData?.ClientSecret;
 	}
@@ -247,7 +248,7 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
 		CancellationToken cancellationToken)
 	{
 		// JSON Web Key Set is stored in security data document, not in event-sourced state
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var securityData = await session.LoadAsync<OAuthApplicationSecurityData>(application.Id, cancellationToken);
 
 		if (string.IsNullOrEmpty(securityData?.JsonWebKeySet))
@@ -315,7 +316,7 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
 		int? offset,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var query = session.Query<OAuthApplicationState>()
 			.Where(x => !x.IsDeleted)
 			.OrderBy(x => x.Id);
@@ -479,7 +480,7 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
 		OAuthApplicationState application,
 		CancellationToken cancellationToken)
 	{
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		// Load the current state from projection to compare changes
 		var currentState = await session.LoadAsync<OAuthApplicationState>(application.Id, cancellationToken);

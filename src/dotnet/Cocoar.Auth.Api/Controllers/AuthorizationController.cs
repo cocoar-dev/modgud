@@ -26,7 +26,7 @@ public class AuthorizationController : Controller
 	private readonly SignInManager<ApplicationUser> _signInManager;
 	private readonly UserManager<ApplicationUser> _userManager;
 	private readonly IRoleRepository _roleRepository;
-	private readonly IDocumentStore _documentStore;
+	private readonly IQuerySession _querySession;
 
 	public AuthorizationController(
 		IOpenIddictApplicationManager applicationManager,
@@ -35,7 +35,7 @@ public class AuthorizationController : Controller
 		SignInManager<ApplicationUser> signInManager,
 		UserManager<ApplicationUser> userManager,
 		IRoleRepository roleRepository,
-		IDocumentStore documentStore)
+		IQuerySession querySession)
 	{
 		_applicationManager = applicationManager;
 		_authorizationManager = authorizationManager;
@@ -43,7 +43,7 @@ public class AuthorizationController : Controller
 		_signInManager = signInManager;
 		_userManager = userManager;
 		_roleRepository = roleRepository;
-		_documentStore = documentStore;
+		_querySession = querySession;
 	}
 
 	/// <summary>
@@ -581,10 +581,8 @@ public class AuthorizationController : Controller
 			return allowedTypes;
 		}
 
-		await using var session = _documentStore.QuerySession();
-
 		// Get scope definitions to find their UserClaims
-		var scopeStates = await session.Query<OAuthScopeState>()
+		var scopeStates = await _querySession.Query<OAuthScopeState>()
 			.Where(s => s.Name.IsOneOf(scopeNames) && !s.IsDeleted)
 			.ToListAsync();
 
@@ -598,7 +596,7 @@ public class AuthorizationController : Controller
 
 		// Get API resources that are associated with the requested scopes
 		// API resources have a Scopes list; if any requested scope is in that list, include the resource's UserClaims
-		var apiResources = await session.Query<OAuthApiResourceState>()
+		var apiResources = await _querySession.Query<OAuthApiResourceState>()
 			.Where(r => !r.IsDeleted && r.Enabled)
 			.ToListAsync();
 

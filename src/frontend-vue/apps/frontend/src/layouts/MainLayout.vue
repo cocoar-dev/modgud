@@ -4,6 +4,7 @@ import { CoarSidebar, CoarMenu, CoarMenuItem, CoarMenuHeading, CoarAvatar, CoarB
 import { useAuthStore } from '@/stores/auth.store';
 import { useDarkMode } from '@/composables/useDarkMode';
 import { useUI } from '@/composables/useUI';
+import { realmContext } from '@/composables/useRealmContext';
 
 const route = useRoute();
 const router = useRouter();
@@ -24,6 +25,10 @@ function onLogout() {
           <div class="sidebar-brand">
             <span class="sidebar-brand-icon">⚡</span>
             <h1 class="sidebar-logo">Cocoar Auth</h1>
+          </div>
+          <div class="sidebar-realm">
+            <span class="sidebar-realm-label">Realm</span>
+            <span class="sidebar-realm-name">{{ realmContext.slug }}</span>
           </div>
           <div class="sidebar-user">
             <CoarAvatar :name="auth.displayName || auth.currentUser?.userName || '?'" size="s" />
@@ -58,6 +63,16 @@ function onLogout() {
           :class="{ 'nav-item--active': route.path === '/privacy' }"
           @clicked="router.push('/privacy')"
         />
+
+        <template v-if="auth.isAdmin && realmContext.isSystem">
+          <CoarMenuHeading>System</CoarMenuHeading>
+          <CoarMenuItem
+            label="Realms"
+            icon="globe"
+            :class="{ 'nav-item--active': route.path.startsWith('/admin/realms') }"
+            @clicked="router.push('/admin/realms')"
+          />
+        </template>
 
         <template v-if="auth.isAdmin">
           <CoarMenuHeading>Administration</CoarMenuHeading>
@@ -217,6 +232,30 @@ function onLogout() {
   font-weight: 700;
   color: var(--coar-text-neutral-primary);
   letter-spacing: -0.01em;
+}
+
+.sidebar-realm {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  background: var(--coar-background-accent-tertiary, #eff6ff);
+  border-radius: 6px;
+  margin-top: 0.25rem;
+}
+
+.sidebar-realm-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--coar-text-neutral-secondary);
+}
+
+.sidebar-realm-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--coar-text-accent-primary);
 }
 
 .sidebar-user {

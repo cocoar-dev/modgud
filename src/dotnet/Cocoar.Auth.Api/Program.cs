@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Cocoar.Auth.Api.Configuration;
+using Cocoar.Auth.Api.Middleware;
 using Cocoar.Auth.Application;
 using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Application.Services;
@@ -19,6 +21,7 @@ using Fido2NetLib;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
+using Npgsql;
 using Serilog;
 using Wolverine;
 
@@ -92,10 +95,30 @@ var configManager = builder.GetCocoarConfigManager();
 var projectionSettings = configManager.GetConfig<ProjectionSettings>();
 var dbSettings = configManager.GetConfig<DatabaseSettings>();
 
+// Build full connection strings with embedded password for Marten multi-tenancy
+// Config DB name is the base prefix: "cocoar_auth" → master: "cocoar_auth_master", system: "cocoar_auth_system"
+var csBuilder = new NpgsqlConnectionStringBuilder(dbSettings.ConnectionString);
+using (var pwd = dbSettings.Password.Open())
+{
+    csBuilder.Password = pwd.Value;
+}
+var baseDbName = csBuilder.Database ?? "cocoar_auth";
+csBuilder.Database = baseDbName + "_system";
+var systemRealmCs = csBuilder.ConnectionString;
+csBuilder.Database = baseDbName + "_master";
+var masterCs = csBuilder.ConnectionString;
+
+// Register master connection string for realm provisioning
+builder.Services.AddSingleton<IMasterConnectionString>(new MasterConnectionString(masterCs));
+
 // Add services to the container
-builder.Services.AddInfrastructure(projectionSettings.UseAsyncProjections);
+builder.Services.AddInfrastructure(projectionSettings.UseAsyncProjections, masterCs, systemRealmCs);
 builder.Services.AddIdentityWithMarten();
 builder.Services.AddApplication();
+
+// Register realm services
+builder.Services.AddSingleton<IRealmCache, RealmCache>();
+builder.Services.AddScoped<IRealmProvisioningService, RealmProvisioningService>();
 
 // Add OpenIddict with Marten for OAuth 2.0 / OpenID Connect
 var openIddictSettings = configManager.GetConfig<OpenIddictSettings>();
@@ -188,6 +211,23 @@ builder.Services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.Appli
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return Task.CompletedTask;
         };
+
+        // Scope cookie path to realm to prevent cross-realm session leakage
+        var originalOnSigningIn = options.Events.OnSigningIn;
+        options.Events.OnSigningIn = context =>
+        {
+            var realmSlug = context.HttpContext.Items["RealmSlug"] as string ?? "system";
+
+            // Add cocoar:realm claim for auditing/logging
+            var identity = (ClaimsIdentity)context.Principal!.Identity!;
+            identity.AddClaim(new Claim("cocoar:realm", realmSlug));
+
+            if (realmSlug != "system")
+            {
+                context.CookieOptions.Path = $"/realms/{realmSlug}";
+            }
+            return originalOnSigningIn?.Invoke(context) ?? Task.CompletedTask;
+        };
     });
 
 builder.Services.AddControllers()
@@ -199,7 +239,7 @@ builder.Services.AddControllers()
     });
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(name: "postgresql");
+    .AddNpgSql(systemRealmCs, name: "postgresql");
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -287,11 +327,55 @@ app.UseSerilogRequestLogging();
 
 app.UseRateLimiter();
 
+// Realm middleware: resolves tenant from URL path (/realms/{slug}/... or system fallback)
+// Must run BEFORE UseRouting so that PathBase is set before route matching occurs.
+app.UseMiddleware<RealmMiddleware>();
+
+app.UseRouting();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health");
 app.MapControllers();
+
+// Ensure the master and system databases exist (auto-created on first start)
+var masterDbName = baseDbName + "_master";
+var systemDbName = baseDbName + "_system";
+var bootstrapBuilder = new NpgsqlConnectionStringBuilder(masterCs) { Database = "postgres" };
+await using (var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString))
+{
+    await bootstrapConn.OpenAsync();
+    foreach (var dbName in new[] { masterDbName, systemDbName })
+    {
+        await using var checkCmd = new NpgsqlCommand(
+            $"SELECT 1 FROM pg_database WHERE datname = '{dbName}'", bootstrapConn);
+        var exists = await checkCmd.ExecuteScalarAsync();
+        if (exists is null)
+        {
+            await using var createCmd = new NpgsqlCommand(
+                $"CREATE DATABASE \"{dbName}\"", bootstrapConn);
+            await createCmd.ExecuteNonQueryAsync();
+        }
+    }
+}
+
+// Apply Marten schema changes (creates realms.mt_tenant_databases table, document schemas, etc.)
+// Must happen before any Marten session usage since ApplyAllDatabaseChangesOnStartup runs as
+// a hosted service which hasn't started yet at this point in Program.cs.
+var store = app.Services.GetRequiredService<Marten.IDocumentStore>();
+await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
+
+// Seed system realm document (idempotent)
+using (var realmScope = app.Services.CreateScope())
+{
+    var realmService = realmScope.ServiceProvider.GetRequiredService<IRealmProvisioningService>();
+    await realmService.EnsureSystemRealmExistsAsync();
+}
+
+// Initialize the realm cache
+var realmCache = app.Services.GetRequiredService<IRealmCache>();
+await realmCache.InitializeAsync();
 
 // Seed default OAuth scopes (openid, email, profile, roles, offline_access)
 await app.Services.SeedOpenIddictScopesAsync();
@@ -303,3 +387,12 @@ app.Run("http://0.0.0.0:80");
 
 // Make the implicit Program class public for integration tests
 public partial class Program { }
+
+/// <summary>
+/// Simple implementation of IMasterConnectionString for DI registration.
+/// </summary>
+internal sealed class MasterConnectionString : IMasterConnectionString
+{
+    public string Value { get; }
+    public MasterConnectionString(string value) => Value = value;
+}

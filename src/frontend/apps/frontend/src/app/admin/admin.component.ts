@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { CoarIconComponent, CoarMenuComponent, CoarMenuHeadingComponent, CoarMenuItemComponent, CoarSidebarComponent } from '@cocoar/ui';
 import { RoutedModalService, UIService } from '../ui';
+import { RealmContextService } from '../core/services/realm-context.service';
 
 @Component({
   selector: 'app-auth-layout',
@@ -22,6 +23,8 @@ import { RoutedModalService, UIService } from '../ui';
 export class AdminComponent implements OnInit {
   public readonly ui = inject(UIService);
   private readonly injector = inject(Injector);
+  private readonly realmContext = inject(RealmContextService);
+  readonly isSystemRealm = this.realmContext.isSystem;
 
   ngOnInit(): void {
     // Instantiate lazily — after the route is fully resolved so RoutedFragmentService

@@ -6,6 +6,7 @@ using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Domain.Aggregates;
 using Cocoar.Auth.Domain.Entities;
 using Cocoar.Auth.Domain.Events;
+using Cocoar.Auth.Infrastructure.Persistence;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using ErrorOr;
 using Marten;
@@ -18,18 +19,18 @@ namespace Cocoar.Auth.Infrastructure.Repositories;
 /// </summary>
 public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 {
-	private readonly IDocumentStore _documentStore;
+	private readonly ITenantSessionFactory _sessionFactory;
 
-	public OAuthApiResourceRepository(IDocumentStore documentStore)
+	public OAuthApiResourceRepository(ITenantSessionFactory sessionFactory)
 	{
-		_documentStore = documentStore;
+		_sessionFactory = sessionFactory;
 	}
 
 	public async Task<OAuthApiResourceListDto> GetAllAsync(
 		PaginationRequest pagination,
 		CancellationToken cancellationToken = default)
 	{
-		await using var session = _documentStore.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 
 		var query = session.Query<OAuthApiResourceState>()
 			.Where(x => !x.IsDeleted);
@@ -63,7 +64,7 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 			return null;
 		}
 
-		await using var session = _documentStore.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var resource = await session.LoadAsync<OAuthApiResourceState>(guid, cancellationToken);
 
 		if (resource is null || resource.IsDeleted)
@@ -78,7 +79,7 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 		CreateOAuthApiResourceDto dto,
 		CancellationToken cancellationToken = default)
 	{
-		await using var session = _documentStore.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		// Check if API resource name already exists
 		var existing = await session.Query<OAuthApiResourceState>()
@@ -149,7 +150,7 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 			return OAuthErrors.ApiResourceNotFound(id);
 		}
 
-		await using var session = _documentStore.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		var currentState = await session.LoadAsync<OAuthApiResourceState>(guid, cancellationToken);
 		if (currentState is null || currentState.IsDeleted)
@@ -218,7 +219,7 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 			return OAuthErrors.ApiResourceNotFound(id);
 		}
 
-		await using var session = _documentStore.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		var aggregate = await session.Events.AggregateStreamAsync<OAuthApiResourceAggregate>(guid, token: cancellationToken);
 		if (aggregate is null || aggregate.IsDeleted)
@@ -245,7 +246,7 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 			return OAuthErrors.ApiResourceNotFound(id);
 		}
 
-		await using var session = _documentStore.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		var currentState = await session.LoadAsync<OAuthApiResourceState>(guid, cancellationToken);
 		if (currentState is null || currentState.IsDeleted)
@@ -277,7 +278,7 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 			return OAuthErrors.ApiResourceNotFound(id);
 		}
 
-		await using var session = _documentStore.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		var currentState = await session.LoadAsync<OAuthApiResourceState>(guid, cancellationToken);
 		if (currentState is null || currentState.IsDeleted)
@@ -330,7 +331,7 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 			return OAuthErrors.ApiSecretNotFound(secretId);
 		}
 
-		await using var session = _documentStore.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		var currentState = await session.LoadAsync<OAuthApiResourceState>(guid, cancellationToken);
 		if (currentState is null || currentState.IsDeleted)
@@ -366,7 +367,7 @@ public class OAuthApiResourceRepository : IOAuthApiResourceRepository
 		string secret,
 		CancellationToken cancellationToken = default)
 	{
-		await using var session = _documentStore.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 
 		var resource = await session.Query<OAuthApiResourceState>()
 			.FirstOrDefaultAsync(x => x.Name == name && !x.IsDeleted && x.Enabled, cancellationToken);

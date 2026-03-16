@@ -57,6 +57,45 @@ export const adminRoutes: Route[] = [
           ),
       },
       {
+        path: 'realms',
+        loadComponent: () =>
+          import('./realms/realm-list/realm-list.component').then(
+            (m) => m.RealmListComponent
+          ),
+        data: createRouteData<FragmentConfig>({
+          routedFragments: [
+            {
+              type: 'component',
+              path: 'create',
+              loadComponent: () =>
+                import('./realms/realm-form/realm-form.component').then((m) => m.RealmFormComponent),
+              options: { closeOnBackdropClick: false },
+            },
+            {
+              type: 'component',
+              path: ':slug',
+              loadComponent: () =>
+                import('./realms/realm-form/realm-form.component').then((m) => m.RealmFormComponent),
+              options: { closeOnBackdropClick: false },
+            },
+          ],
+        }),
+      },
+      {
+        path: 'realms/create',
+        loadComponent: () =>
+          import('./realms/realm-form/realm-form.component').then(
+            (m) => m.RealmFormComponent
+          ),
+      },
+      {
+        path: 'realms/:slug',
+        loadComponent: () =>
+          import('./realms/realm-form/realm-form.component').then(
+            (m) => m.RealmFormComponent
+          ),
+      },
+      {
         path: 'roles',
         loadComponent: () =>
           import('./roles/role-list/role-list.component').then(

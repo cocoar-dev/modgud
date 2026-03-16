@@ -14,6 +14,10 @@ import type {
   CreateRoleRequest,
   UpdateRoleRequest,
   PaginationParams,
+  Realm,
+  RealmList,
+  CreateRealmRequest,
+  UpdateRealmRequest,
 } from '../models/auth.models';
 import type {
   OAuthClient,
@@ -118,6 +122,13 @@ export const adminApi = {
     http.post<ApiSecretCreated>(`/admin/oauth/api-resources/${id}/secrets`, req),
   deleteApiSecret: (id: string, secretId: string) =>
     http.delete<void>(`/admin/oauth/api-resources/${id}/secrets/${secretId}`),
+
+  // Realms (System Realm Only)
+  getRealms: () => http.get<RealmList>('/admin/realms'),
+  getRealm: (slug: string) => http.get<Realm>(`/admin/realms/${slug}`),
+  createRealm: (req: CreateRealmRequest) => http.post<Realm>('/admin/realms', req),
+  updateRealm: (slug: string, req: UpdateRealmRequest) => http.patch<Realm>(`/admin/realms/${slug}`, req),
+  deleteRealm: (slug: string) => http.delete<void>(`/admin/realms/${slug}`),
 
   // Login Providers
   getLoginProviders: () => http.get<LoginProviderList>('/admin/login-providers'),

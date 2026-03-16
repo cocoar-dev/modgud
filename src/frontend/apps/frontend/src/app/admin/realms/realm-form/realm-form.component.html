@@ -1,0 +1,60 @@
+<div class="realm-form">
+
+  @if (error()) {
+    <coar-note variant="error" padding="s" class="message">
+      {{ error() }}
+    </coar-note>
+  }
+
+  @if (isLoading()) {
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>Loading...</p>
+    </div>
+  } @else {
+    <coar-card padding="l">
+      <form [formGroup]="form" (ngSubmit)="onSubmit()">
+        <div class="form-group">
+          <coar-text-input
+            label="Slug"
+            placeholder="e.g. my-realm"
+            formControlName="slug"
+            [required]="true"
+            [error]="getFieldError('slug')" />
+        </div>
+
+        <div class="form-group">
+          <coar-text-input
+            label="Display Name"
+            placeholder="Enter display name"
+            formControlName="displayName"
+            [required]="true"
+            [error]="getFieldError('displayName')" />
+        </div>
+
+        <div class="form-group">
+          <coar-text-input
+            label="Description"
+            placeholder="Enter realm description"
+            formControlName="description"
+            [rows]="3" />
+        </div>
+
+        <div class="form-actions">
+          <coar-button
+            variant="ghost"
+            routerLink="/admin/realms">
+            Back
+          </coar-button>
+          <coar-button
+            type="submit"
+            variant="primary"
+            [loading]="isSaving()"
+            [disabled]="form.invalid || form.pristine">
+            {{ isEditMode() ? 'Save Changes' : 'Create Realm' }}
+          </coar-button>
+        </div>
+      </form>
+    </coar-card>
+  }
+</div>

@@ -201,8 +201,9 @@ public class AuthController : ApiControllerBase
             return Unauthorized();
         }
 
+        var realm = User.FindFirstValue("cocoar:realm") ?? "system";
         var result = await _authService.GetCurrentUserAsync(userId.Value, cancellationToken);
-        return FromErrorOr(result);
+        return FromErrorOr(result, user => Ok(user with { Realm = realm }));
     }
 
     /// <summary>

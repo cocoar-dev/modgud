@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Cocoar.Auth.Domain.Aggregates;
 using Cocoar.Auth.Domain.Common;
+using Cocoar.Auth.Infrastructure.Persistence;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using Marten;
 using OpenIddict.Abstractions;
@@ -16,16 +17,16 @@ namespace Cocoar.Auth.Infrastructure.OpenIddict;
 /// </summary>
 public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 {
-	private readonly IDocumentStore _store;
+	private readonly ITenantSessionFactory _sessionFactory;
 
-	public MartenScopeStore(IDocumentStore store)
+	public MartenScopeStore(ITenantSessionFactory sessionFactory)
 	{
-		_store = store;
+		_sessionFactory = sessionFactory;
 	}
 
 	public async ValueTask<long> CountAsync(CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		return await session.Query<OAuthScopeState>()
 			.Where(x => !x.IsDeleted)
 			.CountAsync(cancellationToken);
@@ -35,13 +36,13 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 		Func<IQueryable<OAuthScopeState>, IQueryable<TResult>> query,
 		CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		return query(session.Query<OAuthScopeState>().Where(x => !x.IsDeleted)).LongCount();
 	}
 
 	public async ValueTask CreateAsync(OAuthScopeState scope, CancellationToken cancellationToken)
 	{
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		// Create the aggregate and emit the creation event
 		var (_, createdEvent) = OAuthScopeAggregate.Create(
@@ -103,7 +104,7 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 
 	public async ValueTask DeleteAsync(OAuthScopeState scope, CancellationToken cancellationToken)
 	{
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		// Load the aggregate to emit delete event
 		var aggregate = await session.Events.AggregateStreamAsync<OAuthScopeAggregate>(scope.Id, token: cancellationToken);
@@ -125,7 +126,7 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 			return null;
 		}
 
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var state = await session.LoadAsync<OAuthScopeState>(id, cancellationToken);
 		return state?.IsDeleted == true ? null : state;
 	}
@@ -134,7 +135,7 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 		string name,
 		CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		return await session.Query<OAuthScopeState>()
 			.FirstOrDefaultAsync(x => x.Name == name && !x.IsDeleted, cancellationToken);
 	}
@@ -143,7 +144,7 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 		ImmutableArray<string> names,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var scopes = await session.Query<OAuthScopeState>()
 			.Where(x => x.Name != null && names.Contains(x.Name) && !x.IsDeleted)
 			.ToListAsync(cancellationToken);
@@ -158,7 +159,7 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 		string resource,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var scopes = await session.Query<OAuthScopeState>()
 			.Where(x => x.Resources.Contains(resource) && !x.IsDeleted)
 			.ToListAsync(cancellationToken);
@@ -265,7 +266,7 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 		int? offset,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		await using var session = _store.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var query = session.Query<OAuthScopeState>()
 			.Where(x => !x.IsDeleted)
 			.OrderBy(x => x.Id);
@@ -360,7 +361,7 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
 
 	public async ValueTask UpdateAsync(OAuthScopeState scope, CancellationToken cancellationToken)
 	{
-		await using var session = _store.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		// Load the current state from projection to compare changes
 		var currentState = await session.LoadAsync<OAuthScopeState>(scope.Id, cancellationToken);

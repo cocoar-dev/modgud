@@ -36,7 +36,7 @@ public class SeedDataTests : IAsyncLifetime
 		// Act
 		using var scope = _factory.Services.CreateScope();
 		var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-		await using var session = store.QuerySession();
+		await using var session = store.QuerySession("system");
 
 		var internalProvider = await session.Query<LoginProviderState>()
 			.FirstOrDefaultAsync(x => x.Name == "Internal" && !x.IsDeleted);

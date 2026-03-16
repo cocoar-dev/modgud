@@ -386,3 +386,12 @@ nul
 
 # Lucide icons - generated via lucide-static, not committed
 src/frontend-vue/apps/frontend/public/icons/lucide/
+
+# Claude Code - local settings are user-specific
+.claude/settings.local.json
+
+# Vite
+*.local
+
+# pnpm
+.pnpm-store/

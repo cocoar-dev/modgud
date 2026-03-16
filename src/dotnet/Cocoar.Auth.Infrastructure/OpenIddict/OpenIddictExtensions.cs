@@ -1,6 +1,7 @@
 using Cocoar.Auth.Domain.Entities;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using Cocoar.Configuration.Reactive;
+using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using OpenIddict.Abstractions;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -113,6 +114,9 @@ public static class OpenIddictExtensions
 					.EnableUserInfoEndpointPassthrough()
 					.EnableEndSessionEndpointPassthrough()
 					.EnableStatusCodePagesIntegration();
+
+				// Register realm-aware issuer handler for discovery document
+				options.AddEventHandler(RealmIssuerHandler.Descriptor);
 			})
 			// Register the validation components
 			.AddValidation(options =>
@@ -201,13 +205,55 @@ public static class OpenIddictExtensions
 	}
 
 	/// <summary>
-	/// Seeds default scopes if they don't exist.
+	/// Seeds default scopes if they don't exist (system realm).
 	/// </summary>
 	public static async Task SeedOpenIddictScopesAsync(this IServiceProvider serviceProvider)
 	{
 		using var scope = serviceProvider.CreateScope();
 		var scopeManager = scope.ServiceProvider.GetRequiredService<IOpenIddictScopeManager>();
 
+		await SeedScopesWithManagerAsync(scopeManager);
+	}
+
+	/// <summary>
+	/// Seeds default scopes for a specific tenant realm.
+	/// Uses the document store directly to target the correct tenant database.
+	/// </summary>
+	public static async Task SeedOpenIddictScopesAsync(this IServiceProvider serviceProvider, string tenantId)
+	{
+		using var scope = serviceProvider.CreateScope();
+		var store = scope.ServiceProvider.GetRequiredService<Marten.IDocumentStore>();
+		await using var session = store.LightweightSession(tenantId);
+
+		// Standard scopes to seed
+		var standardScopes = new[]
+		{
+			(Scopes.OpenId, "OpenID", "Required scope for OpenID Connect"),
+			(Scopes.Email, "Email", "Access to email address"),
+			(Scopes.Profile, "Profile", "Access to profile information"),
+			(Scopes.Roles, "Roles", "Access to user roles"),
+			(Scopes.OfflineAccess, "Offline Access", "Issue refresh tokens for offline access")
+		};
+
+		foreach (var (name, displayName, description) in standardScopes)
+		{
+			var existing = await session.Query<OAuthScopeState>()
+				.FirstOrDefaultAsync(s => s.Name == name && !s.IsDeleted);
+
+			if (existing is null)
+			{
+				var id = Guid.NewGuid();
+				var (_, createdEvent) = Domain.Aggregates.OAuthScopeAggregate.Create(
+					id, name, displayName, description, Array.Empty<string>());
+				session.Events.StartStream<Domain.Aggregates.OAuthScopeAggregate>(id, createdEvent);
+			}
+		}
+
+		await session.SaveChangesAsync();
+	}
+
+	private static async Task SeedScopesWithManagerAsync(IOpenIddictScopeManager scopeManager)
+	{
 		// Standard scopes to seed
 		var standardScopes = new[]
 		{

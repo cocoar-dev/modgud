@@ -16,13 +16,16 @@ public class SetupController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly RoleManager<ApplicationRole> _roleManager;
+    private readonly SignInManager<ApplicationUser> _signInManager;
 
     public SetupController(
         UserManager<ApplicationUser> userManager,
-        RoleManager<ApplicationRole> roleManager)
+        RoleManager<ApplicationRole> roleManager,
+        SignInManager<ApplicationUser> signInManager)
     {
         _userManager = userManager;
         _roleManager = roleManager;
+        _signInManager = signInManager;
     }
 
     /// <summary>
@@ -115,10 +118,13 @@ public class SetupController : ControllerBase
             });
         }
 
+        // Auto-login so the user is immediately authenticated with the Admin role
+        await _signInManager.SignInAsync(user, isPersistent: false);
+
         return Ok(new SetupResultDto
         {
             Success = true,
-            Message = "Admin account created successfully. You can now log in."
+            Message = "Admin account created successfully."
         });
     }
 

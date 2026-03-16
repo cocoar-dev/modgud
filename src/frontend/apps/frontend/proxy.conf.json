@@ -1,4 +1,12 @@
 {
+  "/realms/*/api": {
+    "target": "http://localhost",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "debug",
+    "cookieDomainRewrite": "localhost",
+    "cookiePathRewrite": "/"
+  },
   "/api": {
     "target": "http://localhost",
     "secure": false,

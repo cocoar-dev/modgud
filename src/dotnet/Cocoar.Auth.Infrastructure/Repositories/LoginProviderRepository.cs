@@ -3,6 +3,7 @@ using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Application.Interfaces;
 using Cocoar.Auth.Domain.Aggregates;
 using Cocoar.Auth.Domain.Events;
+using Cocoar.Auth.Infrastructure.Persistence;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using ErrorOr;
 using Marten;
@@ -15,16 +16,16 @@ namespace Cocoar.Auth.Infrastructure.Repositories;
 /// </summary>
 public class LoginProviderRepository : ILoginProviderRepository
 {
-	private readonly IDocumentStore _documentStore;
+	private readonly ITenantSessionFactory _sessionFactory;
 
-	public LoginProviderRepository(IDocumentStore documentStore)
+	public LoginProviderRepository(ITenantSessionFactory sessionFactory)
 	{
-		_documentStore = documentStore;
+		_sessionFactory = sessionFactory;
 	}
 
 	public async Task<LoginProviderListDto> GetAllAsync(CancellationToken cancellationToken = default)
 	{
-		await using var session = _documentStore.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 
 		var providers = await session.Query<LoginProviderState>()
 			.Where(x => !x.IsDeleted)
@@ -49,7 +50,7 @@ public class LoginProviderRepository : ILoginProviderRepository
 			return null;
 		}
 
-		await using var session = _documentStore.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 		var provider = await session.LoadAsync<LoginProviderState>(guid, cancellationToken);
 
 		if (provider is null || provider.IsDeleted)
@@ -64,7 +65,7 @@ public class LoginProviderRepository : ILoginProviderRepository
 		string name,
 		CancellationToken cancellationToken = default)
 	{
-		await using var session = _documentStore.QuerySession();
+		await using var session = _sessionFactory.OpenQuerySession();
 
 		var provider = await session.Query<LoginProviderState>()
 			.FirstOrDefaultAsync(x => x.Name == name && !x.IsDeleted, cancellationToken);
@@ -81,7 +82,7 @@ public class LoginProviderRepository : ILoginProviderRepository
 		CreateLoginProviderDto dto,
 		CancellationToken cancellationToken = default)
 	{
-		await using var session = _documentStore.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		// Check if login provider name already exists
 		var existing = await session.Query<LoginProviderState>()
@@ -123,7 +124,7 @@ public class LoginProviderRepository : ILoginProviderRepository
 			return LoginProviderErrors.NotFound(id);
 		}
 
-		await using var session = _documentStore.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		var currentState = await session.LoadAsync<LoginProviderState>(guid, cancellationToken);
 		if (currentState is null || currentState.IsDeleted)
@@ -187,7 +188,7 @@ public class LoginProviderRepository : ILoginProviderRepository
 			return LoginProviderErrors.NotFound(id);
 		}
 
-		await using var session = _documentStore.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		var currentState = await session.LoadAsync<LoginProviderState>(guid, cancellationToken);
 		if (currentState is null || currentState.IsDeleted)
@@ -215,7 +216,7 @@ public class LoginProviderRepository : ILoginProviderRepository
 
 	public async Task EnsureInternalProviderExistsAsync(CancellationToken cancellationToken = default)
 	{
-		await using var session = _documentStore.LightweightSession();
+		await using var session = _sessionFactory.OpenSession();
 
 		var existing = await session.Query<LoginProviderState>()
 			.FirstOrDefaultAsync(x => x.Name == "Internal" && !x.IsDeleted, cancellationToken);

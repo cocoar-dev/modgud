@@ -4,11 +4,13 @@ import {
   APP_INITIALIZER,
   inject,
 } from '@angular/core';
+import { APP_BASE_HREF } from '@angular/common';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { appRoutes } from './app.routes';
 import { credentialsInterceptor } from './core/interceptors/credentials.interceptor';
 import { AuthStateService } from './core/services/auth-state.service';
+import { RealmContextService } from './core/services/realm-context.service';
 import {
   provideCoarLocalization,
   provideCoarI18nHttpSource,
@@ -36,6 +38,10 @@ export const appConfig: ApplicationConfig = {
       provide: APP_INITIALIZER,
       useFactory: initializeAuth,
       multi: true,
+    },
+    {
+      provide: APP_BASE_HREF,
+      useFactory: () => inject(RealmContextService).baseHref,
     },
     // Core localization system (language management + L10n + i18n)
     provideCoarLocalization({

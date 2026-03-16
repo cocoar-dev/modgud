@@ -1,3 +1,4 @@
+using Npgsql;
 using Testcontainers.PostgreSql;
 
 namespace Cocoar.Auth.Tests.Infrastructure;
@@ -14,11 +15,38 @@ public class SharedPostgresFixture : IAsyncLifetime
 
     public string ConnectionString => Container.GetConnectionString();
 
+    /// <summary>
+    /// Base DB name from container config. Program.cs derives _master and _system from this.
+    /// </summary>
+    private string BaseDbName
+    {
+        get
+        {
+            var builder = new NpgsqlConnectionStringBuilder(ConnectionString);
+            return builder.Database ?? "cocoar_auth_test";
+        }
+    }
+
     public async Task InitializeAsync()
     {
         await Container.StartAsync();
-        // Note: CocoarTestConfiguration.ReplaceAllRules is called in WebApplicationFactory
-        // because AsyncLocal requires it to be in the same async context as host creation
+
+        // Pre-create master + system databases (same names Program.cs will derive)
+        await using var conn = new NpgsqlConnection(ConnectionString);
+        await conn.OpenAsync();
+        foreach (var suffix in new[] { "_master", "_system" })
+        {
+            var dbName = BaseDbName + suffix;
+            await using var checkCmd = new NpgsqlCommand(
+                $"SELECT 1 FROM pg_database WHERE datname = '{dbName}'", conn);
+            var exists = await checkCmd.ExecuteScalarAsync();
+            if (exists is null)
+            {
+                await using var createCmd = new NpgsqlCommand(
+                    $"CREATE DATABASE \"{dbName}\"", conn);
+                await createCmd.ExecuteNonQueryAsync();
+            }
+        }
     }
 
     public async Task DisposeAsync()

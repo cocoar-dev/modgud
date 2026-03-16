@@ -19,7 +19,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
+using Cocoar.Auth.Application.DTOs.Realms;
 using Cocoar.Configuration.Secrets;
 using Cocoar.Configuration.Secrets.SecretTypes;
 using Npgsql;
@@ -32,13 +35,20 @@ namespace Cocoar.Auth.Tests.Infrastructure;
 /// </summary>
 public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Program>
 {
-	
+
 	private readonly string _connectionString;
 	private readonly string _password;
+	private readonly string _systemDbConnectionString;
 
 	public CocoarAuthWebApplicationFactory(SharedPostgresFixture fixture)
     {
-        //_connectionString = fixture.ConnectionString;
+		// Derive the system DB connection string for direct DB access in tests
+		var fullBuilder = new NpgsqlConnectionStringBuilder(fixture.ConnectionString);
+		var baseDbName = fullBuilder.Database ?? "cocoar_auth_test";
+		fullBuilder.Database = baseDbName + "_system";
+		_systemDbConnectionString = fullBuilder.ConnectionString;
+
+		// Config connection string: password stripped (Program.cs adds it back via Secret)
 		var npgsqlBuilder = new NpgsqlConnectionStringBuilder(fixture.ConnectionString);
 		_password = npgsqlBuilder.Password ?? "";
 		npgsqlBuilder.Password = null;
@@ -252,12 +262,15 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
 
         // Clear login provider documents
         session.DeleteWhere<LoginProviderState>(l => true);
+
+		// Clean non-system realms (stored as documents in system tenant)
+		session.DeleteWhere<Cocoar.Auth.Domain.Entities.Realm>(r => !r.IsSystem);
+
         await session.SaveChangesAsync();
 
-		// Clear event streams
-		var dataSource = Services.GetRequiredService<NpgsqlDataSource>();
-
-		await using var conn = await dataSource.OpenConnectionAsync();
+		// Clear event streams (in the system realm database)
+		await using var conn = new NpgsqlConnection(_systemDbConnectionString);
+		await conn.OpenAsync();
         await using var cmd = new NpgsqlCommand(
             "TRUNCATE public.mt_events, public.mt_streams CASCADE;", conn);
         try
@@ -268,6 +281,10 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         {
             // Tables don't exist yet
         }
+
+		// Invalidate realm cache
+		var realmCache = Services.GetRequiredService<Cocoar.Auth.Infrastructure.Services.IRealmCache>();
+		realmCache.Invalidate();
     }
 
     /// <summary>
@@ -277,5 +294,32 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
     public async Task SeedLoginProvidersAsync()
     {
         await Services.SeedLoginProvidersAsync();
+    }
+
+    /// <summary>
+    /// Creates a realm and sets up an admin user in it in one call.
+    /// Requires the caller to be logged in as system admin.
+    /// </summary>
+    public async Task CreateRealmWithAdminAsync(
+        HttpClient adminClient, string slug, string adminUser, string adminPassword)
+    {
+        // Create the realm via system admin API
+        var createDto = new CreateRealmDto { Slug = slug, DisplayName = slug };
+        var createResponse = await adminClient.PostAsJsonAsync("/api/admin/realms", createDto, JsonOptions);
+        if (createResponse.StatusCode != HttpStatusCode.Created)
+        {
+            var body = await createResponse.Content.ReadAsStringAsync();
+            throw new Exception($"Failed to create realm '{slug}': {(int)createResponse.StatusCode} {body}");
+        }
+
+        // Create admin user via the realm's setup endpoint
+        var setupDto = new { UserName = adminUser, Password = adminPassword, Email = $"{adminUser}@test.com" };
+        var setupResponse = await adminClient.PostAsJsonAsync(
+            $"/realms/{slug}/api/setup/create-admin", setupDto, JsonOptions);
+        if (!setupResponse.IsSuccessStatusCode)
+        {
+            var body = await setupResponse.Content.ReadAsStringAsync();
+            throw new Exception($"Failed to create admin in realm '{slug}': {(int)setupResponse.StatusCode} {body}");
+        }
     }
 }

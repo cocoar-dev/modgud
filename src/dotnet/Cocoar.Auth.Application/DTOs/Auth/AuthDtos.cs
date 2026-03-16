@@ -40,6 +40,7 @@ public record CurrentUserDto
     public string? FirstName { get; init; }
     public string? LastName { get; init; }
     public List<string> Roles { get; init; } = [];
+    public string Realm { get; init; } = "system";
 }
 
 /// <summary>

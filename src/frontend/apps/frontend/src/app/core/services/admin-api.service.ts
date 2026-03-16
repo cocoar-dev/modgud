@@ -1,7 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { environment } from '../../../environments/environment';
 import {
   User,
   UserList,
@@ -18,7 +17,12 @@ import {
   CreateRoleRequest,
   UpdateRoleRequest,
   PaginationParams,
+  Realm,
+  RealmList,
+  CreateRealmRequest,
+  UpdateRealmRequest,
 } from '../models/auth.models';
+import { RealmContextService } from './realm-context.service';
 import {
   OAuthClient,
   OAuthClientList,
@@ -43,7 +47,7 @@ import {
 })
 export class AdminApiService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = environment.apiUrl;
+  private readonly baseUrl = inject(RealmContextService).apiUrl;
 
   // ============================================================================
   // User Management
@@ -273,5 +277,29 @@ export class AdminApiService {
       `${this.baseUrl}/admin/oauth/api-resources/${id}/regenerate-secret`,
       {}
     );
+  }
+
+  // ============================================================================
+  // Realm Management (System Realm Only)
+  // ============================================================================
+
+  getRealms(): Observable<RealmList> {
+    return this.http.get<RealmList>(`${this.baseUrl}/admin/realms`);
+  }
+
+  getRealm(slug: string): Observable<Realm> {
+    return this.http.get<Realm>(`${this.baseUrl}/admin/realms/${slug}`);
+  }
+
+  createRealm(request: CreateRealmRequest): Observable<Realm> {
+    return this.http.post<Realm>(`${this.baseUrl}/admin/realms`, request);
+  }
+
+  updateRealm(slug: string, request: UpdateRealmRequest): Observable<Realm> {
+    return this.http.patch<Realm>(`${this.baseUrl}/admin/realms/${slug}`, request);
+  }
+
+  deleteRealm(slug: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/admin/realms/${slug}`);
   }
 }

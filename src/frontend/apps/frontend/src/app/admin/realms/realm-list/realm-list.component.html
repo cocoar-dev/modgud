@@ -1,0 +1,53 @@
+<div class="realm-list">
+  <div class="list-actions">
+    <coar-button
+      variant="primary"
+      iconStart="plus"
+      (clicked)="ui.navigateToModal('create')">
+      Create Realm
+    </coar-button>
+  </div>
+
+  @if (error()) {
+    <coar-note variant="error" padding="s" class="message">
+      {{ error() }}
+    </coar-note>
+  }
+
+  @if (success()) {
+    <coar-note variant="success" padding="s" class="message">
+      {{ success() }}
+    </coar-note>
+  }
+
+  <div class="grid-container">
+    <ag-grid-angular
+      class="ag-theme-cocoar"
+      [coarDataGrid]="realmsGrid"
+      style="height: 500px; width: 100%;"
+    />
+    <div class="grid-actions-overlay">
+      @for (realm of realms(); track realm.slug) {
+        <div class="grid-action-row">
+          <coar-button
+            variant="ghost"
+            size="s"
+            iconStart="edit"
+            [routerLink]="['/admin/realms', realm.slug]">
+            Edit
+          </coar-button>
+          @if (!realm.isSystem) {
+            <coar-button
+              variant="ghost"
+              size="s"
+              iconStart="trash-2"
+              [loading]="deletingSlug() === realm.slug"
+              (clicked)="onDelete(realm)">
+              Delete
+            </coar-button>
+          }
+        </div>
+      }
+    </div>
+  </div>
+</div>

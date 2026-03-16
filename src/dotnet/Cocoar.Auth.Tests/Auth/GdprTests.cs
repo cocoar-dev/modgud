@@ -338,7 +338,7 @@ public class GdprTests : IAsyncLifetime
         // Verify ApplicationUser document is updated (this is done last in the deletion process)
         using var scope = _factory.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-        await using var querySession = store.QuerySession();
+        await using var querySession = store.QuerySession("system");
 
         var user = await querySession.LoadAsync<ApplicationUser>(targetUser.Id);
         Assert.NotNull(user);
