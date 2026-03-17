@@ -393,5 +393,9 @@ src/frontend-vue/apps/frontend/public/icons/lucide/
 # Vite
 *.local
 
+# VitePress
+website/.vitepress/cache/
+website/.vitepress/dist/
+
 # pnpm
 .pnpm-store/
