@@ -13,7 +13,7 @@ public record RoleDto
     public string? Description { get; init; }
     public string? DisplayName { get; init; }
     public string? Email { get; init; }
-    public ShortGuid? BoundToApiResourceId { get; init; }
+    public ShortGuid? BoundToApiId { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? ModifiedAt { get; init; }
 }
@@ -27,7 +27,7 @@ public record CreateRoleDto
     public string? Description { get; init; }
     public string? DisplayName { get; init; }
     public string? Email { get; init; }
-    public ShortGuid? BoundToApiResourceId { get; init; }
+    public ShortGuid? BoundToApiId { get; init; }
 }
 
 /// <summary>
@@ -39,7 +39,7 @@ public record UpdateRoleDto
     public Optional<string?> Description { get; init; }
     public Optional<string?> DisplayName { get; init; }
     public Optional<string?> Email { get; init; }
-    public Optional<ShortGuid?> BoundToApiResourceId { get; init; }
+    public Optional<ShortGuid?> BoundToApiId { get; init; }
 }
 
 /// <summary>

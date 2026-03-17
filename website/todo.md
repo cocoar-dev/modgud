@@ -4,11 +4,11 @@ Tracking page for outstanding implementation tasks. Items here represent decisio
 
 ## Naming / Refactoring
 
-- [ ] **Rename "API Resource" → "API" in code and UI**
-  - Backend: `OAuthApiResource` → `OAuthApi`, `ApiResourceListView` → `ApiListView`, endpoints `/admin/oauth/api-resources` → `/admin/oauth/apis`
-  - Frontend: Vue views, admin-api.ts methods, models, router paths
-  - Database: Marten document types, projection names
-  - Scope: Full rename across backend + frontend + tests
+- [x] **Rename "API Resource" → "API" in code and UI**
+  - Backend: 25 files, 8 file renames (classes, DTOs, events, routes, errors, DI)
+  - Vue Frontend: 7 files, 2 view renames
+  - Angular Frontend: 8 files, 2 component directory renames
+  - Endpoints: `/admin/oauth/api-resources` → `/admin/oauth/apis`
 
 ## Features
 

@@ -368,53 +368,53 @@ public class OAuthAdminTests : IAsyncLifetime
 
 	#endregion
 
-	#region OAuth API Resources
+	#region OAuth APIs
 
 	[Fact]
-	public async Task GetApiResources_WithoutAuthentication_ReturnsUnauthorized()
+	public async Task GetApis_WithoutAuthentication_ReturnsUnauthorized()
 	{
 		// Act
-		var response = await _client.GetAsync("/api/admin/oauth/api-resources");
+		var response = await _client.GetAsync("/api/admin/oauth/apis");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
 	}
 
 	[Fact]
-	public async Task GetApiResources_WithNonAdminUser_ReturnsForbidden()
+	public async Task GetApis_WithNonAdminUser_ReturnsForbidden()
 	{
 		// Arrange
 		var user = await _factory.CreateTestUserAsync(isAdmin: false);
 		await _client.LoginAsync(user.UserName, "Test123!@#", _factory.JsonOptions);
 
 		// Act
-		var response = await _client.GetAsync("/api/admin/oauth/api-resources");
+		var response = await _client.GetAsync("/api/admin/oauth/apis");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 	}
 
 	[Fact]
-	public async Task CreateApiResource_WithValidData_ReturnsCreatedWithSecret()
+	public async Task CreateApi_WithValidData_ReturnsCreatedWithSecret()
 	{
 		// Arrange
 		await LoginAsAdminAsync();
-		var createDto = new CreateOAuthApiResourceDto
+		var createDto = new CreateOAuthApiDto
 		{
 			Name = "my-api",
 			DisplayName = "My API",
-			Description = "Test API resource",
+			Description = "Test API",
 			Enabled = true,
 			Scopes = new List<string> { "openid", "profile" },
 			UserClaims = new List<string> { "email", "name" }
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/api-resources", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-		var result = await response.ReadFromJsonAsync<OAuthApiResourceCreatedDto>(_factory.JsonOptions);
+		var result = await response.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
 		Assert.Equal("my-api", result.Name);
 		Assert.Equal("My API", result.DisplayName);
@@ -426,100 +426,100 @@ public class OAuthAdminTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task CreateApiResource_WithDuplicateName_ReturnsConflict()
+	public async Task CreateApi_WithDuplicateName_ReturnsConflict()
 	{
 		// Arrange
 		await LoginAsAdminAsync();
-		var createDto = new CreateOAuthApiResourceDto
+		var createDto = new CreateOAuthApiDto
 		{
 			Name = "duplicate-api",
 			Enabled = true
 		};
 
 		// Create first
-		await _client.PostAsJsonAsync("/api/admin/oauth/api-resources", createDto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 
 		// Act - try duplicate
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/api-resources", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 	}
 
 	[Fact]
-	public async Task GetApiResources_AsAdmin_ReturnsResourceList()
+	public async Task GetApis_AsAdmin_ReturnsResourceList()
 	{
 		// Arrange
 		await LoginAsAdminAsync();
-		var createDto = new CreateOAuthApiResourceDto
+		var createDto = new CreateOAuthApiDto
 		{
 			Name = "list-test-api",
 			DisplayName = "List Test API"
 		};
-		await _client.PostAsJsonAsync("/api/admin/oauth/api-resources", createDto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 
 		// Act
-		var response = await _client.GetAsync("/api/admin/oauth/api-resources");
+		var response = await _client.GetAsync("/api/admin/oauth/apis");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-		var result = await response.ReadFromJsonAsync<OAuthApiResourceListDto>(_factory.JsonOptions);
+		var result = await response.ReadFromJsonAsync<OAuthApiListDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
 		Assert.True(result.TotalCount >= 1);
 		Assert.Contains(result.Items, r => r.Name == "list-test-api");
 	}
 
 	[Fact]
-	public async Task GetApiResource_WithValidId_ReturnsResource()
+	public async Task GetApi_WithValidId_ReturnsResource()
 	{
 		// Arrange
 		await LoginAsAdminAsync();
-		var createDto = new CreateOAuthApiResourceDto
+		var createDto = new CreateOAuthApiDto
 		{
 			Name = "get-test-api",
 			DisplayName = "Get Test API"
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/api-resources", createDto, _factory.JsonOptions);
-		var created = await createResponse.ReadFromJsonAsync<OAuthApiResourceCreatedDto>(_factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		var created = await createResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 
 		// Act
-		var response = await _client.GetAsync($"/api/admin/oauth/api-resources/{created!.Id}");
+		var response = await _client.GetAsync($"/api/admin/oauth/apis/{created!.Id}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-		var result = await response.ReadFromJsonAsync<OAuthApiResourceDto>(_factory.JsonOptions);
+		var result = await response.ReadFromJsonAsync<OAuthApiDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
 		Assert.Equal("get-test-api", result.Name);
 	}
 
 	[Fact]
-	public async Task GetApiResource_WithInvalidId_ReturnsNotFound()
+	public async Task GetApi_WithInvalidId_ReturnsNotFound()
 	{
 		// Arrange
 		await LoginAsAdminAsync();
 
 		// Act
-		var response = await _client.GetAsync($"/api/admin/oauth/api-resources/{Guid.NewGuid()}");
+		var response = await _client.GetAsync($"/api/admin/oauth/apis/{Guid.NewGuid()}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
 	}
 
 	[Fact]
-	public async Task UpdateApiResource_WithValidData_ReturnsUpdatedResource()
+	public async Task UpdateApi_WithValidData_ReturnsUpdatedResource()
 	{
 		// Arrange
 		await LoginAsAdminAsync();
-		var createDto = new CreateOAuthApiResourceDto
+		var createDto = new CreateOAuthApiDto
 		{
 			Name = "update-test-api",
 			DisplayName = "Original Name",
 			Enabled = true
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/api-resources", createDto, _factory.JsonOptions);
-		var created = await createResponse.ReadFromJsonAsync<OAuthApiResourceCreatedDto>(_factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		var created = await createResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 
-		var updateDto = new UpdateOAuthApiResourceDto
+		var updateDto = new UpdateOAuthApiDto
 		{
 			DisplayName = "Updated Name",
 			Description = "New description",
@@ -529,11 +529,11 @@ public class OAuthAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PutAsJsonAsync($"/api/admin/oauth/api-resources/{created!.Id}", updateDto, _factory.JsonOptions);
+		var response = await _client.PutAsJsonAsync($"/api/admin/oauth/apis/{created!.Id}", updateDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-		var result = await response.ReadFromJsonAsync<OAuthApiResourceDto>(_factory.JsonOptions);
+		var result = await response.ReadFromJsonAsync<OAuthApiDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
 		Assert.Equal("Updated Name", result.DisplayName);
 		Assert.Equal("New description", result.Description);
@@ -543,36 +543,36 @@ public class OAuthAdminTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task DeleteApiResource_WithValidId_ReturnsNoContent()
+	public async Task DeleteApi_WithValidId_ReturnsNoContent()
 	{
 		// Arrange
 		await LoginAsAdminAsync();
-		var createDto = new CreateOAuthApiResourceDto
+		var createDto = new CreateOAuthApiDto
 		{
 			Name = "delete-test-api"
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/api-resources", createDto, _factory.JsonOptions);
-		var created = await createResponse.ReadFromJsonAsync<OAuthApiResourceCreatedDto>(_factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		var created = await createResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 
 		// Act
-		var response = await _client.DeleteAsync($"/api/admin/oauth/api-resources/{created!.Id}");
+		var response = await _client.DeleteAsync($"/api/admin/oauth/apis/{created!.Id}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
 		// Verify deleted
-		var getResponse = await _client.GetAsync($"/api/admin/oauth/api-resources/{created.Id}");
+		var getResponse = await _client.GetAsync($"/api/admin/oauth/apis/{created.Id}");
 		Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
 	}
 
 	[Fact]
-	public async Task DeleteApiResource_WithNonExistentId_ReturnsNotFound()
+	public async Task DeleteApi_WithNonExistentId_ReturnsNotFound()
 	{
 		// Arrange
 		await LoginAsAdminAsync();
 
 		// Act
-		var response = await _client.DeleteAsync($"/api/admin/oauth/api-resources/{Guid.NewGuid()}");
+		var response = await _client.DeleteAsync($"/api/admin/oauth/apis/{Guid.NewGuid()}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -583,16 +583,16 @@ public class OAuthAdminTests : IAsyncLifetime
 	{
 		// Arrange
 		await LoginAsAdminAsync();
-		var createDto = new CreateOAuthApiResourceDto
+		var createDto = new CreateOAuthApiDto
 		{
 			Name = "regen-secret-api"
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/api-resources", createDto, _factory.JsonOptions);
-		var created = await createResponse.ReadFromJsonAsync<OAuthApiResourceCreatedDto>(_factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		var created = await createResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 		var originalSecret = created!.ApiSecret;
 
 		// Act
-		var response = await _client.PostAsync($"/api/admin/oauth/api-resources/{created.Id}/regenerate-secret", null);
+		var response = await _client.PostAsync($"/api/admin/oauth/apis/{created.Id}/regenerate-secret", null);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -610,7 +610,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		// Act
-		var response = await _client.PostAsync($"/api/admin/oauth/api-resources/{Guid.NewGuid()}/regenerate-secret", null);
+		var response = await _client.PostAsync($"/api/admin/oauth/apis/{Guid.NewGuid()}/regenerate-secret", null);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);

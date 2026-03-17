@@ -39,9 +39,9 @@ public class RoleAggregate
     public string? Email { get; private set; }
 
     /// <summary>
-    /// The ID of the API resource this role is bound to, if any.
+    /// The ID of the API this role is bound to, if any.
     /// </summary>
-    public Guid? BoundToApiResourceId { get; private set; }
+    public Guid? BoundToApiId { get; private set; }
 
     /// <summary>
     /// Whether this role has been deleted (soft delete).
@@ -129,9 +129,9 @@ public class RoleAggregate
         ModifiedAt = DateTimeOffset.UtcNow;
     }
 
-    public void Apply(RoleBoundToApiResourceChanged @event)
+    public void Apply(RoleBoundToApiChanged @event)
     {
-        BoundToApiResourceId = @event.NewApiResourceId;
+        BoundToApiId = @event.NewApiId;
         ModifiedAt = DateTimeOffset.UtcNow;
     }
 }

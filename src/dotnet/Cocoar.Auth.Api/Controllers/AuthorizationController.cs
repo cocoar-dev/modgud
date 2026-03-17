@@ -387,7 +387,7 @@ public class AuthorizationController : Controller
 			}
 		}
 
-		// Include custom user claims based on scope and API resource UserClaims configuration
+		// Include custom user claims based on scope and API UserClaims configuration
 		var userScopes = User.GetScopes();
 		var allowedClaimTypes = await GetAllowedClaimTypesAsync(userScopes);
 		if (allowedClaimTypes.Count > 0 && user.Claims.Count > 0)
@@ -513,10 +513,10 @@ public class AuthorizationController : Controller
 			}
 		}
 
-		// Add custom user claims based on scope and API resource UserClaims configuration.
+		// Add custom user claims based on scope and API UserClaims configuration.
 		// Collect the set of claim types that should be included based on:
 		// 1. Scope UserClaims - each scope can declare which claim types it needs
-		// 2. API Resource UserClaims - each API resource can declare which claim types it needs
+		// 2. API UserClaims - each API can declare which claim types it needs
 		var allowedClaimTypes = await GetAllowedClaimTypesAsync(scopes);
 		if (allowedClaimTypes.Count > 0 && user.Claims.Count > 0)
 		{
@@ -569,7 +569,7 @@ public class AuthorizationController : Controller
 
 	/// <summary>
 	/// Collects the set of allowed claim types based on the requested scopes.
-	/// This combines UserClaims from both scope definitions and their associated API resources.
+	/// This combines UserClaims from both scope definitions and their associated APIs.
 	/// </summary>
 	private async Task<HashSet<string>> GetAllowedClaimTypesAsync(IEnumerable<string> requestedScopes)
 	{
@@ -594,17 +594,17 @@ public class AuthorizationController : Controller
 			}
 		}
 
-		// Get API resources that are associated with the requested scopes
-		// API resources have a Scopes list; if any requested scope is in that list, include the resource's UserClaims
-		var apiResources = await _querySession.Query<OAuthApiResourceState>()
+		// Get APIs that are associated with the requested scopes
+		// APIs have a Scopes list; if any requested scope is in that list, include the resource's UserClaims
+		var apis = await _querySession.Query<OAuthApiState>()
 			.Where(r => !r.IsDeleted && r.Enabled)
 			.ToListAsync();
 
-		foreach (var resource in apiResources)
+		foreach (var api in apis)
 		{
-			if (resource.Scopes.Any(s => scopeNames.Contains(s)))
+			if (api.Scopes.Any(s => scopeNames.Contains(s)))
 			{
-				foreach (var claimType in resource.UserClaims)
+				foreach (var claimType in api.UserClaims)
 				{
 					allowedTypes.Add(claimType);
 				}

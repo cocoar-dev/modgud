@@ -213,10 +213,10 @@ export const adminRoutes: Route[] = [
           ),
       },
       {
-        path: 'oauth/api-resources',
+        path: 'oauth/apis',
         loadComponent: () =>
-          import('./oauth/api-resource-list/api-resource-list.component').then(
-            (m) => m.OAuthApiResourceListComponent
+          import('./oauth/api-list/api-list.component').then(
+            (m) => m.OAuthApiListComponent
           ),
         data: createRouteData<FragmentConfig>({
           routedFragments: [
@@ -224,31 +224,31 @@ export const adminRoutes: Route[] = [
               type: 'component',
               path: 'create',
               loadComponent: () =>
-                import('./oauth/api-resource-form/api-resource-form.component').then((m) => m.OAuthApiResourceFormComponent),
+                import('./oauth/api-form/api-form.component').then((m) => m.OAuthApiFormComponent),
               options: { closeOnBackdropClick: false },
             },
             {
               type: 'component',
               path: ':id',
               loadComponent: () =>
-                import('./oauth/api-resource-form/api-resource-form.component').then((m) => m.OAuthApiResourceFormComponent),
+                import('./oauth/api-form/api-form.component').then((m) => m.OAuthApiFormComponent),
               options: { closeOnBackdropClick: false },
             },
           ],
         }),
       },
       {
-        path: 'oauth/api-resources/create',
+        path: 'oauth/apis/create',
         loadComponent: () =>
-          import('./oauth/api-resource-form/api-resource-form.component').then(
-            (m) => m.OAuthApiResourceFormComponent
+          import('./oauth/api-form/api-form.component').then(
+            (m) => m.OAuthApiFormComponent
           ),
       },
       {
-        path: 'oauth/api-resources/:id',
+        path: 'oauth/apis/:id',
         loadComponent: () =>
-          import('./oauth/api-resource-form/api-resource-form.component').then(
-            (m) => m.OAuthApiResourceFormComponent
+          import('./oauth/api-form/api-form.component').then(
+            (m) => m.OAuthApiFormComponent
           ),
       },
     ],

@@ -1,10 +1,10 @@
-<div class="api-resource-list">
+<div class="api-list">
   <div class="list-actions">
     <coar-button
       variant="primary"
       iconStart="plus"
       (clicked)="ui.navigateToModal('create')">
-      Create API Resource
+      Create API
     </coar-button>
   </div>
 
@@ -23,25 +23,25 @@
   <div class="grid-container">
     <ag-grid-angular
       class="ag-theme-cocoar"
-      [coarDataGrid]="apiResourcesGrid"
+      [coarDataGrid]="apisGrid"
       style="height: 500px; width: 100%;"
     />
     <div class="grid-actions-overlay">
-      @for (resource of apiResources(); track resource.id) {
+      @for (api of apis(); track api.id) {
         <div class="grid-action-row">
           <coar-button
             variant="ghost"
             size="s"
             iconStart="edit"
-            [routerLink]="['/admin/oauth/api-resources', resource.id]">
+            [routerLink]="['/admin/oauth/apis', api.id]">
             Edit
           </coar-button>
           <coar-button
             variant="ghost"
             size="s"
             iconStart="trash-2"
-            [loading]="deletingId() === resource.id"
-            (clicked)="onDelete(resource)">
+            [loading]="deletingId() === api.id"
+            (clicked)="onDelete(api)">
             Delete
           </coar-button>
         </div>

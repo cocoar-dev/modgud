@@ -6,7 +6,7 @@ import { adminApi } from '@/core/api/admin-api';
 import { ApiError } from '@/core/api/http';
 import { useDirtyGuard } from '@/composables/useDirtyGuard';
 import { useUI } from '@/composables/useUI';
-import type { OAuthApiResource } from '@/core/models/oauth.models';
+import type { OAuthApi } from '@/core/models/oauth.models';
 
 const route = useRoute();
 const router = useRouter();
@@ -24,21 +24,21 @@ const name = ref('');
 const displayName = ref('');
 const emailField = ref('');
 const description = ref('');
-const boundToApiResource = ref('');
+const boundToApi = ref('');
 
-// API Resources for dropdown
-const apiResources = ref<OAuthApiResource[]>([]);
+// APIs for dropdown
+const apis = ref<OAuthApi[]>([]);
 
 const isLoading = ref(false);
 const isSaving = ref(false);
 const error = ref('');
 
-const apiResourceOptions = computed(() => [
+const apiOptions = computed(() => [
   { value: '', label: '(None)' },
-  ...apiResources.value.map((r) => ({ value: r.id, label: r.displayName || r.name })),
+  ...apis.value.map((r) => ({ value: r.id, label: r.displayName || r.name })),
 ]);
 
-watch([name, displayName, emailField, description, boundToApiResource], () => { isDirty.value = true; });
+watch([name, displayName, emailField, description, boundToApi], () => { isDirty.value = true; });
 
 // Set UI state synchronously (before first render)
 ui.set(ctx => {
@@ -61,15 +61,15 @@ onMounted(async () => {
   try {
     const [roleData, resourcesResult] = await Promise.all([
       isEditMode.value ? adminApi.getRole(id.value!) : Promise.resolve(null),
-      adminApi.getOAuthApiResources(),
+      adminApi.getOAuthApis(),
     ]);
 
-    apiResources.value = resourcesResult.items;
+    apis.value = resourcesResult.items;
 
     if (roleData) {
       name.value = roleData.name;
       description.value = roleData.description || '';
-      // TODO: load displayName, email, boundToApiResource when backend supports it
+      // TODO: load displayName, email, boundToApi when backend supports it
     }
   } catch {
     error.value = 'Failed to load data.';
@@ -88,13 +88,13 @@ async function onSubmit() {
       await adminApi.updateRole(id.value!, {
         name: name.value,
         description: description.value || null,
-        // TODO: send displayName, email, boundToApiResource when backend supports them
+        // TODO: send displayName, email, boundToApi when backend supports them
       });
     } else {
       await adminApi.createRole({
         name: name.value,
         description: description.value || undefined,
-        // TODO: send displayName, email, boundToApiResource when backend supports them
+        // TODO: send displayName, email, boundToApi when backend supports them
       });
     }
     isDirty.value = false;
@@ -140,15 +140,15 @@ async function onSubmit() {
                   </CoarCard>
                 </div>
 
-                <!-- Right sidebar: Bound API Resource -->
+                <!-- Right sidebar: Bound API -->
                 <div class="form-sidebar">
                   <CoarCard padding="l" class="form-card">
-                    <h2 class="section-title">Bound To API Resource</h2>
+                    <h2 class="section-title">Bound To API</h2>
                     <div class="form-group">
                       <CoarSelect
-                        v-model="boundToApiResource"
-                        label="API Resource"
-                        :options="apiResourceOptions"
+                        v-model="boundToApi"
+                        label="API"
+                        :options="apiOptions"
                       />
                     </div>
                   </CoarCard>

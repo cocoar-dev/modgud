@@ -255,8 +255,8 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         session.DeleteWhere<OAuthApplicationState>(o => true);
         session.DeleteWhere<OAuthApplicationSecurityData>(o => true);
         session.DeleteWhere<OAuthScopeState>(o => true);
-        session.DeleteWhere<OAuthApiResourceState>(o => true);
-        session.DeleteWhere<OAuthApiResourceSecurityData>(o => true);
+        session.DeleteWhere<OAuthApiState>(o => true);
+        session.DeleteWhere<OAuthApiSecurityData>(o => true);
         session.DeleteWhere<OpenIddictAuthorizationDocument>(o => true);
         session.DeleteWhere<OpenIddictTokenDocument>(o => true);
 

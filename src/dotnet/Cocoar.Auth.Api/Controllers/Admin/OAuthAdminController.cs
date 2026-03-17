@@ -220,32 +220,32 @@ public class OAuthAdminController : ApiControllerBase
 
 	#endregion
 
-	#region API Resources
+	#region APIs
 
 	/// <summary>
-	/// Get all OAuth API resources with pagination.
+	/// Get all OAuth APIs with pagination.
 	/// </summary>
-	[HttpGet("api-resources")]
-	[ProducesResponseType(typeof(OAuthApiResourceListDto), StatusCodes.Status200OK)]
-	public async Task<IActionResult> GetApiResources(
+	[HttpGet("apis")]
+	[ProducesResponseType(typeof(OAuthApiListDto), StatusCodes.Status200OK)]
+	public async Task<IActionResult> GetApis(
 		[FromQuery] int page = 1,
 		[FromQuery] int pageSize = 20,
 		CancellationToken cancellationToken = default)
 	{
 		var pagination = new PaginationRequest { Page = page, PageSize = pageSize };
-		var result = await _oAuthAdminService.GetApiResourcesAsync(pagination, cancellationToken);
+		var result = await _oAuthAdminService.GetApisAsync(pagination, cancellationToken);
 		return Ok(result);
 	}
 
 	/// <summary>
-	/// Get an OAuth API resource by ID.
+	/// Get an OAuth API by ID.
 	/// </summary>
-	[HttpGet("api-resources/{id}")]
-	[ProducesResponseType(typeof(OAuthApiResourceDto), StatusCodes.Status200OK)]
+	[HttpGet("apis/{id}")]
+	[ProducesResponseType(typeof(OAuthApiDto), StatusCodes.Status200OK)]
 	[ProducesResponseType(StatusCodes.Status404NotFound)]
-	public async Task<IActionResult> GetApiResource(string id, CancellationToken cancellationToken)
+	public async Task<IActionResult> GetApi(string id, CancellationToken cancellationToken)
 	{
-		var result = await _oAuthAdminService.GetApiResourceByIdAsync(id, cancellationToken);
+		var result = await _oAuthAdminService.GetApiByIdAsync(id, cancellationToken);
 		if (result is null)
 		{
 			return NotFound();
@@ -255,54 +255,54 @@ public class OAuthAdminController : ApiControllerBase
 	}
 
 	/// <summary>
-	/// Create a new OAuth API resource.
+	/// Create a new OAuth API.
 	/// </summary>
-	[HttpPost("api-resources")]
-	[ProducesResponseType(typeof(OAuthApiResourceCreatedDto), StatusCodes.Status201Created)]
+	[HttpPost("apis")]
+	[ProducesResponseType(typeof(OAuthApiCreatedDto), StatusCodes.Status201Created)]
 	[ProducesResponseType(StatusCodes.Status400BadRequest)]
 	[ProducesResponseType(StatusCodes.Status409Conflict)]
-	public async Task<IActionResult> CreateApiResource(
-		[FromBody] CreateOAuthApiResourceDto dto,
+	public async Task<IActionResult> CreateApi(
+		[FromBody] CreateOAuthApiDto dto,
 		CancellationToken cancellationToken)
 	{
-		var result = await _oAuthAdminService.CreateApiResourceAsync(dto, cancellationToken);
+		var result = await _oAuthAdminService.CreateApiAsync(dto, cancellationToken);
 
 		return result.Match(
 			created => CreatedAtAction(
-				nameof(GetApiResource),
+				nameof(GetApi),
 				new { id = created.Id },
 				created),
 			errors => Problem(errors));
 	}
 
 	/// <summary>
-	/// Update an existing OAuth API resource.
+	/// Update an existing OAuth API.
 	/// </summary>
-	[HttpPut("api-resources/{id}")]
-	[ProducesResponseType(typeof(OAuthApiResourceDto), StatusCodes.Status200OK)]
+	[HttpPut("apis/{id}")]
+	[ProducesResponseType(typeof(OAuthApiDto), StatusCodes.Status200OK)]
 	[ProducesResponseType(StatusCodes.Status400BadRequest)]
 	[ProducesResponseType(StatusCodes.Status404NotFound)]
-	public async Task<IActionResult> UpdateApiResource(
+	public async Task<IActionResult> UpdateApi(
 		string id,
-		[FromBody] UpdateOAuthApiResourceDto dto,
+		[FromBody] UpdateOAuthApiDto dto,
 		CancellationToken cancellationToken)
 	{
-		var result = await _oAuthAdminService.UpdateApiResourceAsync(id, dto, cancellationToken);
+		var result = await _oAuthAdminService.UpdateApiAsync(id, dto, cancellationToken);
 
 		return result.Match(
-			apiResource => Ok(apiResource),
+			api => Ok(api),
 			errors => Problem(errors));
 	}
 
 	/// <summary>
-	/// Delete an OAuth API resource.
+	/// Delete an OAuth API.
 	/// </summary>
-	[HttpDelete("api-resources/{id}")]
+	[HttpDelete("apis/{id}")]
 	[ProducesResponseType(StatusCodes.Status204NoContent)]
 	[ProducesResponseType(StatusCodes.Status404NotFound)]
-	public async Task<IActionResult> DeleteApiResource(string id, CancellationToken cancellationToken)
+	public async Task<IActionResult> DeleteApi(string id, CancellationToken cancellationToken)
 	{
-		var result = await _oAuthAdminService.DeleteApiResourceAsync(id, cancellationToken);
+		var result = await _oAuthAdminService.DeleteApiAsync(id, cancellationToken);
 
 		if (result.IsError)
 		{
@@ -313,9 +313,9 @@ public class OAuthAdminController : ApiControllerBase
 	}
 
 	/// <summary>
-	/// Regenerate the API secret for an API resource.
+	/// Regenerate the API secret for an API.
 	/// </summary>
-	[HttpPost("api-resources/{id}/regenerate-secret")]
+	[HttpPost("apis/{id}/regenerate-secret")]
 	[ProducesResponseType(typeof(ApiSecretDto), StatusCodes.Status200OK)]
 	[ProducesResponseType(StatusCodes.Status404NotFound)]
 	public async Task<IActionResult> RegenerateApiSecret(
@@ -330,10 +330,10 @@ public class OAuthAdminController : ApiControllerBase
 	}
 
 	/// <summary>
-	/// Create a new API secret for an API resource.
+	/// Create a new API secret for an API.
 	/// Returns the plaintext secret only once.
 	/// </summary>
-	[HttpPost("api-resources/{id}/secrets")]
+	[HttpPost("apis/{id}/secrets")]
 	[ProducesResponseType(typeof(ApiSecretCreatedDto), StatusCodes.Status201Created)]
 	[ProducesResponseType(StatusCodes.Status400BadRequest)]
 	[ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -350,9 +350,9 @@ public class OAuthAdminController : ApiControllerBase
 	}
 
 	/// <summary>
-	/// Delete a specific API secret from an API resource.
+	/// Delete a specific API secret from an API.
 	/// </summary>
-	[HttpDelete("api-resources/{id}/secrets/{secretId}")]
+	[HttpDelete("apis/{id}/secrets/{secretId}")]
 	[ProducesResponseType(StatusCodes.Status204NoContent)]
 	[ProducesResponseType(StatusCodes.Status404NotFound)]
 	public async Task<IActionResult> DeleteApiSecret(

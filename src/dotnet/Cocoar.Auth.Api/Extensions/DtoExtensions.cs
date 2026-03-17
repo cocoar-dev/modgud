@@ -17,15 +17,15 @@ public static class DtoExtensions
     /// Converts a CreateRoleDto to a CreateRoleCommand.
     /// </summary>
     public static CreateRoleCommand ToCommand(this CreateRoleDto dto) =>
-        new(dto.Name, dto.Description, dto.DisplayName, dto.Email, dto.BoundToApiResourceId?.Guid);
+        new(dto.Name, dto.Description, dto.DisplayName, dto.Email, dto.BoundToApiId?.Guid);
 
     /// <summary>
     /// Converts an UpdateRoleDto to an UpdateRoleCommand.
     /// </summary>
     public static UpdateRoleCommand ToCommand(this UpdateRoleDto dto, ShortGuid id) =>
         new(id, dto.Name, dto.Description, dto.DisplayName, dto.Email,
-            dto.BoundToApiResourceId.HasValue
-                ? new Cocoar.Primitives.OptionalAware.Optional<Guid?>(dto.BoundToApiResourceId.Value?.Guid)
+            dto.BoundToApiId.HasValue
+                ? new Cocoar.Primitives.OptionalAware.Optional<Guid?>(dto.BoundToApiId.Value?.Guid)
                 : default);
 
     #endregion

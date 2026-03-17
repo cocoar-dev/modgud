@@ -373,7 +373,7 @@ public class TokenClaimsTests : IAsyncLifetime
 	[Fact]
 	public async Task UserInfo_ReturnsCustomClaims()
 	{
-		// Arrange - create a custom scope and API resource with UserClaims
+		// Arrange - create a custom scope and API with UserClaims
 		await _factory.CreateTestUserAsync("admin", "Admin123!@#", isAdmin: true);
 		await _client.LoginAsync("admin", "Admin123!@#", _factory.JsonOptions);
 		await _factory.SeedOpenIddictScopesAsync();

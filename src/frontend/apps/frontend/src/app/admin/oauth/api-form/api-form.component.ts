@@ -13,13 +13,13 @@ import {
 import { catchError, of, finalize } from 'rxjs';
 import {
   AdminApiService,
-  OAuthApiResource,
+  OAuthApi,
   OAuthScope,
 } from '../../../core';
 import { UIService } from '../../../ui';
 
 @Component({
-  selector: 'app-oauth-api-resource-form',
+  selector: 'app-oauth-api-form',
   standalone: true,
   imports: [
     CommonModule,
@@ -31,10 +31,10 @@ import { UIService } from '../../../ui';
     CoarTextInputComponent,
     CoarCheckboxComponent,
   ],
-  templateUrl: './api-resource-form.component.html',
-  styleUrl: './api-resource-form.component.css',
+  templateUrl: './api-form.component.html',
+  styleUrl: './api-form.component.css',
 })
-export class OAuthApiResourceFormComponent implements OnInit {
+export class OAuthApiFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly adminApi = inject(AdminApiService);
   private readonly router = inject(Router);
@@ -42,7 +42,7 @@ export class OAuthApiResourceFormComponent implements OnInit {
 
   id = input<string>();
 
-  readonly apiResource = signal<OAuthApiResource | null>(null);
+  readonly api = signal<OAuthApi | null>(null);
   readonly availableScopes = signal<OAuthScope[]>([]);
   readonly isLoading = signal(false);
   readonly isSaving = signal(false);
@@ -73,13 +73,13 @@ export class OAuthApiResourceFormComponent implements OnInit {
 
   ngOnInit(): void {
     this.ui.set((ctx) => {
-      ctx.header.title = this.isEditMode() ? 'Edit API Resource' : 'Create API Resource';
-      ctx.header.subTitle = this.isEditMode() ? 'Update API resource configuration' : 'Register a new API resource for introspection';
+      ctx.header.title = this.isEditMode() ? 'Edit API' : 'Create API';
+      ctx.header.subTitle = this.isEditMode() ? 'Update API configuration' : 'Register a new API for introspection';
       ctx.content.scrollable = true;
     });
     this.loadScopes();
     if (this.isEditMode()) {
-      this.loadApiResource();
+      this.loadApi();
       this.form.get('name')?.disable();
     } else {
       this.addUserClaim();
@@ -105,39 +105,39 @@ export class OAuthApiResourceFormComponent implements OnInit {
     });
   }
 
-  private loadApiResource(): void {
-    const resourceId = this.id();
-    if (!resourceId) return;
+  private loadApi(): void {
+    const apiId = this.id();
+    if (!apiId) return;
 
     this.isLoading.set(true);
 
     this.adminApi
-      .getOAuthApiResource(resourceId)
+      .getOAuthApi(apiId)
       .pipe(
         finalize(() => this.isLoading.set(false)),
         catchError((err) => {
-          this.error.set(err?.error?.message || 'Failed to load API resource.');
+          this.error.set(err?.error?.message || 'Failed to load API.');
           return of(null);
         })
       )
-      .subscribe((resource) => {
-        if (resource) {
-          this.apiResource.set(resource);
-          this.populateForm(resource);
+      .subscribe((api) => {
+        if (api) {
+          this.api.set(api);
+          this.populateForm(api);
         }
       });
   }
 
-  private populateForm(resource: OAuthApiResource): void {
+  private populateForm(api: OAuthApi): void {
     this.form.patchValue({
-      name: resource.name,
-      displayName: resource.displayName || '',
-      description: resource.description || '',
-      enabled: resource.enabled,
+      name: api.name,
+      displayName: api.displayName || '',
+      description: api.description || '',
+      enabled: api.enabled,
     });
 
     this.userClaimsArray.clear();
-    resource.userClaims.forEach(claim => {
+    api.userClaims.forEach(claim => {
       this.userClaimsArray.push(this.fb.control(claim));
     });
     if (this.userClaimsArray.length === 0) {
@@ -145,7 +145,7 @@ export class OAuthApiResourceFormComponent implements OnInit {
     }
 
     this.availableScopes().forEach((scope, index) => {
-      this.scopesArray.at(index)?.setValue(resource.scopes.includes(scope.name));
+      this.scopesArray.at(index)?.setValue(api.scopes.includes(scope.name));
     });
 
     this.form.markAsPristine();
@@ -178,7 +178,7 @@ export class OAuthApiResourceFormComponent implements OnInit {
 
     if (this.isEditMode()) {
       this.adminApi
-        .updateOAuthApiResource(this.id()!, {
+        .updateOAuthApi(this.id()!, {
           displayName: formValue.displayName || undefined,
           description: formValue.description || undefined,
           enabled: formValue.enabled,
@@ -188,18 +188,18 @@ export class OAuthApiResourceFormComponent implements OnInit {
         .pipe(
           finalize(() => this.isSaving.set(false)),
           catchError((err) => {
-            this.error.set(err?.error?.message || 'Failed to update API resource.');
+            this.error.set(err?.error?.message || 'Failed to update API.');
             return of(null);
           })
         )
         .subscribe((result) => {
           if (result) {
-            this.router.navigate(['/admin/oauth/api-resources']);
+            this.router.navigate(['/admin/oauth/apis']);
           }
         });
     } else {
       this.adminApi
-        .createOAuthApiResource({
+        .createOAuthApi({
           name: formValue.name,
           displayName: formValue.displayName || undefined,
           description: formValue.description || undefined,
@@ -210,22 +210,22 @@ export class OAuthApiResourceFormComponent implements OnInit {
         .pipe(
           finalize(() => this.isSaving.set(false)),
           catchError((err) => {
-            this.error.set(err?.error?.message || 'Failed to create API resource.');
+            this.error.set(err?.error?.message || 'Failed to create API.');
             return of(null);
           })
         )
         .subscribe((result) => {
           if (result) {
             this.generatedSecret.set(result.apiSecret);
-            this.success.set('API resource created successfully. Copy the API secret below - it will not be shown again.');
+            this.success.set('API created successfully. Copy the API secret below - it will not be shown again.');
           }
         });
     }
   }
 
   onRegenerateSecret(): void {
-    const resourceId = this.id();
-    if (!resourceId || !confirm('Are you sure you want to regenerate the API secret? The old secret will stop working immediately.')) {
+    const apiId = this.id();
+    if (!apiId || !confirm('Are you sure you want to regenerate the API secret? The old secret will stop working immediately.')) {
       return;
     }
 
@@ -234,7 +234,7 @@ export class OAuthApiResourceFormComponent implements OnInit {
     this.generatedSecret.set(null);
 
     this.adminApi
-      .regenerateApiSecret(resourceId)
+      .regenerateApiSecret(apiId)
       .pipe(
         finalize(() => this.isRegenerating.set(false)),
         catchError((err) => {
@@ -251,9 +251,9 @@ export class OAuthApiResourceFormComponent implements OnInit {
   }
 
   onDelete(): void {
-    const resourceId = this.id();
-    const resourceName = this.apiResource()?.name;
-    if (!resourceId || !confirm(`Are you sure you want to delete the API resource "${resourceName}"?`)) {
+    const apiId = this.id();
+    const apiName = this.api()?.name;
+    if (!apiId || !confirm(`Are you sure you want to delete the API "${apiName}"?`)) {
       return;
     }
 
@@ -261,17 +261,17 @@ export class OAuthApiResourceFormComponent implements OnInit {
     this.error.set(null);
 
     this.adminApi
-      .deleteOAuthApiResource(resourceId)
+      .deleteOAuthApi(apiId)
       .pipe(
         finalize(() => this.isDeleting.set(false)),
         catchError((err) => {
-          this.error.set(err?.error?.message || 'Failed to delete API resource.');
+          this.error.set(err?.error?.message || 'Failed to delete API.');
           return of(null);
         })
       )
       .subscribe((result) => {
         if (result !== null) {
-          this.router.navigate(['/admin/oauth/api-resources']);
+          this.router.navigate(['/admin/oauth/apis']);
         }
       });
   }

@@ -101,10 +101,10 @@ function onLogout() {
             @clicked="router.push('/admin/oauth/scopes')"
           />
           <CoarMenuItem
-            label="API Resources"
+            label="APIs"
             icon="server"
-            :class="{ 'nav-item--active': route.path.startsWith('/admin/oauth/api-resources') }"
-            @clicked="router.push('/admin/oauth/api-resources')"
+            :class="{ 'nav-item--active': route.path.startsWith('/admin/oauth/apis') }"
+            @clicked="router.push('/admin/oauth/apis')"
           />
           <CoarMenuItem
             label="Login Providers"

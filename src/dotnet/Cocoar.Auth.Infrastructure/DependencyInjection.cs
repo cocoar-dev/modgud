@@ -135,7 +135,7 @@ public static class DependencyInjection
 		services.AddScoped<IRoleRepository, MartenRoleRepository>();
 		services.AddScoped<ISessionRepository, MartenSessionRepository>();
 		services.AddScoped<IUserDetailsRepository, UserDetailsRepository>();
-		services.AddScoped<IOAuthApiResourceRepository, OAuthApiResourceRepository>();
+		services.AddScoped<IOAuthApiRepository, OAuthApiRepository>();
 		services.AddScoped<ILoginProviderRepository, LoginProviderRepository>();
 	}
 
@@ -342,7 +342,7 @@ public static class DependencyInjection
 		options.Events.AddEventType<RoleClaimRemoved>();
 		options.Events.AddEventType<RoleDisplayNameChanged>();
 		options.Events.AddEventType<RoleEmailChanged>();
-		options.Events.AddEventType<RoleBoundToApiResourceChanged>();
+		options.Events.AddEventType<RoleBoundToApiChanged>();
 
 		// Register OAuth application events for the event store
 		options.Events.AddEventType<OAuthApplicationCreated>();
@@ -381,16 +381,16 @@ public static class DependencyInjection
 		options.Events.AddEventType<LoginProviderConfigurationChanged>();
 		options.Events.AddEventType<LoginProviderDeleted>();
 
-		// Register OAuth API resource events for the event store
-		options.Events.AddEventType<OAuthApiResourceCreated>();
-		options.Events.AddEventType<OAuthApiResourceDisplayNameChanged>();
-		options.Events.AddEventType<OAuthApiResourceDescriptionChanged>();
-		options.Events.AddEventType<OAuthApiResourceEnabled>();
-		options.Events.AddEventType<OAuthApiResourceDisabled>();
-		options.Events.AddEventType<OAuthApiResourceScopesChanged>();
-		options.Events.AddEventType<OAuthApiResourceUserClaimsChanged>();
-		options.Events.AddEventType<OAuthApiResourcePropertiesChanged>();
-		options.Events.AddEventType<OAuthApiResourceDeleted>();
+		// Register OAuth API events for the event store
+		options.Events.AddEventType<OAuthApiCreated>();
+		options.Events.AddEventType<OAuthApiDisplayNameChanged>();
+		options.Events.AddEventType<OAuthApiDescriptionChanged>();
+		options.Events.AddEventType<OAuthApiEnabled>();
+		options.Events.AddEventType<OAuthApiDisabled>();
+		options.Events.AddEventType<OAuthApiScopesChanged>();
+		options.Events.AddEventType<OAuthApiUserClaimsChanged>();
+		options.Events.AddEventType<OAuthApiPropertiesChanged>();
+		options.Events.AddEventType<OAuthApiDeleted>();
 
 		// ═══════════════════════════════════════════════════════════════
 		// INLINE STATE PROJECTIONS (for validation, Identity, immediate consistency)
@@ -413,9 +413,9 @@ public static class DependencyInjection
 		// Use for: OpenIddict store operations, validation
 		options.Projections.Add(new OAuthScopeStateProjection(), ProjectionLifecycle.Inline);
 
-		// OAuthApiResourceState projection - runs inline for immediate consistency
-		// Use for: API resource management, introspection validation
-		options.Projections.Add(new OAuthApiResourceStateProjection(), ProjectionLifecycle.Inline);
+		// OAuthApiState projection - runs inline for immediate consistency
+		// Use for: API management, introspection validation
+		options.Projections.Add(new OAuthApiStateProjection(), ProjectionLifecycle.Inline);
 
 		// LoginProviderState projection - runs inline for immediate consistency
 		// Use for: login provider validation, lookups
@@ -463,8 +463,8 @@ public static class DependencyInjection
 			.Identity(x => x.Id)
 			.Index(x => x.Name, x => x.IsUnique = true);
 
-		// Configure OAuthApiResourceState indexes for fast lookups
-		options.Schema.For<OAuthApiResourceState>()
+		// Configure OAuthApiState indexes for fast lookups
+		options.Schema.For<OAuthApiState>()
 			.Identity(x => x.Id)
 			.Index(x => x.Name, x => x.IsUnique = true);
 
@@ -473,8 +473,8 @@ public static class DependencyInjection
 			.Identity(x => x.Id)
 			.Index(x => x.Name, x => x.IsUnique = true);
 
-		// Configure OAuthApiResourceSecurityData document (security-sensitive data, not event-sourced)
-		options.Schema.For<OAuthApiResourceSecurityData>()
+		// Configure OAuthApiSecurityData document (security-sensitive data, not event-sourced)
+		options.Schema.For<OAuthApiSecurityData>()
 			.Identity(x => x.Id);
 	}
 

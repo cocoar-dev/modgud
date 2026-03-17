@@ -307,13 +307,13 @@ public static class OAuthErrors
         code: "OAuth.CannotDeleteStandardScope",
         description: $"Cannot delete the standard scope '{name}'.");
 
-    public static Error ApiResourceNameAlreadyExists(string name) => Error.Conflict(
-        code: "OAuth.ApiResourceNameAlreadyExists",
-        description: $"An API resource with name '{name}' already exists.");
+    public static Error ApiNameAlreadyExists(string name) => Error.Conflict(
+        code: "OAuth.ApiNameAlreadyExists",
+        description: $"An API with name '{name}' already exists.");
 
-    public static Error ApiResourceNotFound(string id) => Error.NotFound(
-        code: "OAuth.ApiResourceNotFound",
-        description: $"API resource with ID '{id}' was not found.");
+    public static Error ApiNotFound(string id) => Error.NotFound(
+        code: "OAuth.ApiNotFound",
+        description: $"API with ID '{id}' was not found.");
 
     public static Error ApiSecretNotFound(string secretId) => Error.NotFound(
         code: "OAuth.ApiSecretNotFound",

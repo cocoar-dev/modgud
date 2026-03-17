@@ -9,11 +9,11 @@ import { AgGridAngular } from 'ag-grid-angular';
 import { CoarGridBuilder, CoarDataGridDirective } from '@cocoar/data-grid';
 
 import { catchError, of, finalize } from 'rxjs';
-import { AdminApiService, OAuthApiResource } from '../../../core';
+import { AdminApiService, OAuthApi } from '../../../core';
 import { UIService } from '../../../ui';
 
 @Component({
-  selector: 'app-oauth-api-resource-list',
+  selector: 'app-oauth-api-list',
   standalone: true,
   imports: [
     CommonModule,
@@ -23,21 +23,21 @@ import { UIService } from '../../../ui';
     AgGridAngular,
     CoarDataGridDirective,
   ],
-  templateUrl: './api-resource-list.component.html',
-  styleUrl: './api-resource-list.component.css',
+  templateUrl: './api-list.component.html',
+  styleUrl: './api-list.component.css',
 })
-export class OAuthApiResourceListComponent implements OnInit {
+export class OAuthApiListComponent implements OnInit {
   private readonly adminApi = inject(AdminApiService);
   private readonly router = inject(Router);
   readonly ui = inject(UIService);
 
-  readonly apiResources = signal<OAuthApiResource[]>([]);
+  readonly apis = signal<OAuthApi[]>([]);
   readonly isLoading = signal(true);
   readonly deletingId = signal<string | null>(null);
   readonly error = signal<string | null>(null);
   readonly success = signal<string | null>(null);
 
-  readonly apiResourcesGrid = CoarGridBuilder.create<OAuthApiResource>()
+  readonly apisGrid = CoarGridBuilder.create<OAuthApi>()
     .columns([
       col => col.field('name').header('Name').flex(1).sortable(),
       col => col.field('displayName').header('Display Name').flex(1)
@@ -58,7 +58,7 @@ export class OAuthApiResourceListComponent implements OnInit {
         .valueFormatter(() => '')
         .cellClass('grid-actions-cell'),
     ])
-    .rowData(this.apiResources())
+    .rowData(this.apis())
     .rowId(params => params.data?.id || '')
     .onRowDoubleClicked(event => {
       if (event.data?.id) {
@@ -68,54 +68,54 @@ export class OAuthApiResourceListComponent implements OnInit {
 
   ngOnInit(): void {
     this.ui.set((ctx) => {
-      ctx.header.title = 'API Resources';
-      ctx.header.subTitle = 'Manage API resources for reference token introspection';
+      ctx.header.title = 'APIs';
+      ctx.header.subTitle = 'Manage APIs for reference token introspection';
       ctx.content.scrollable = false;
     });
-    this.loadApiResources();
+    this.loadApis();
   }
 
-  private loadApiResources(): void {
+  private loadApis(): void {
     this.isLoading.set(true);
     this.error.set(null);
 
     this.adminApi
-      .getOAuthApiResources()
+      .getOAuthApis()
       .pipe(
         finalize(() => this.isLoading.set(false)),
         catchError((err) => {
-          this.error.set(err?.error?.message || 'Failed to load API resources.');
+          this.error.set(err?.error?.message || 'Failed to load APIs.');
           return of({ items: [], totalCount: 0 });
         })
       )
       .subscribe((result) => {
-        this.apiResources.set(result.items);
-        this.apiResourcesGrid.api?.setGridOption('rowData', result.items);
+        this.apis.set(result.items);
+        this.apisGrid.api?.setGridOption('rowData', result.items);
       });
   }
 
-  onDelete(apiResource: OAuthApiResource): void {
-    if (!confirm(`Are you sure you want to delete the API resource "${apiResource.name}"?`)) {
+  onDelete(api: OAuthApi): void {
+    if (!confirm(`Are you sure you want to delete the API "${api.name}"?`)) {
       return;
     }
 
-    this.deletingId.set(apiResource.id);
+    this.deletingId.set(api.id);
     this.error.set(null);
     this.success.set(null);
 
     this.adminApi
-      .deleteOAuthApiResource(apiResource.id)
+      .deleteOAuthApi(api.id)
       .pipe(
         finalize(() => this.deletingId.set(null)),
         catchError((err) => {
-          this.error.set(err?.error?.message || 'Failed to delete API resource.');
+          this.error.set(err?.error?.message || 'Failed to delete API.');
           return of(null);
         })
       )
       .subscribe((result) => {
         if (result !== null) {
-          this.success.set('API resource deleted successfully.');
-          this.loadApiResources();
+          this.success.set('API deleted successfully.');
+          this.loadApis();
         }
       });
   }

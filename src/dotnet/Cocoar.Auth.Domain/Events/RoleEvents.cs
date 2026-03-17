@@ -76,9 +76,9 @@ public record RoleEmailChanged(
     string? NewEmail);
 
 /// <summary>
-/// Event raised when a role's bound API resource is changed.
+/// Event raised when a role's bound API is changed.
 /// </summary>
-public record RoleBoundToApiResourceChanged(
+public record RoleBoundToApiChanged(
     Guid RoleId,
-    Guid? OldApiResourceId,
-    Guid? NewApiResourceId);
+    Guid? OldApiId,
+    Guid? NewApiId);

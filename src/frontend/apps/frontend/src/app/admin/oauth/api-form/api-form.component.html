@@ -1,4 +1,4 @@
-<div class="api-resource-form">
+<div class="api-form">
 
   @if (error()) {
     <coar-note variant="error" padding="s" class="message">
@@ -30,7 +30,7 @@
         <coar-button
           variant="primary"
           class="done-button"
-          routerLink="/admin/oauth/api-resources">
+          routerLink="/admin/oauth/apis">
           Done
         </coar-button>
       }
@@ -69,7 +69,7 @@
           <div class="form-group">
             <coar-text-input
               label="Description"
-              placeholder="Description of this API resource"
+              placeholder="Description of this API"
               formControlName="description" />
           </div>
 
@@ -77,14 +77,14 @@
             <coar-checkbox
               label="Enabled"
               formControlName="enabled" />
-            <span class="field-hint">Disabled API resources cannot authenticate for introspection.</span>
+            <span class="field-hint">Disabled APIs cannot authenticate for introspection.</span>
           </div>
         </div>
 
         <div class="form-section">
           <h2>Allowed Scopes</h2>
           <p class="section-description">
-            Select which scopes grant access to this API resource.
+            Select which scopes grant access to this API.
           </p>
 
           <div class="scopes-grid">
@@ -133,7 +133,7 @@
         <div class="form-actions">
           <coar-button
             variant="ghost"
-            routerLink="/admin/oauth/api-resources">
+            routerLink="/admin/oauth/apis">
             Cancel
           </coar-button>
           <coar-button
@@ -141,13 +141,13 @@
             variant="primary"
             [loading]="isSaving()"
             [disabled]="form.invalid || form.pristine">
-            {{ isEditMode() ? 'Save Changes' : 'Create API Resource' }}
+            {{ isEditMode() ? 'Save Changes' : 'Create API' }}
           </coar-button>
         </div>
       </form>
     </coar-card>
 
-    @if (isEditMode() && apiResource()) {
+    @if (isEditMode() && api()) {
       <coar-card padding="l" class="secret-section">
         <h2>API Secret</h2>
         <p>Regenerate the API secret if it has been compromised.</p>
@@ -165,8 +165,8 @@
 
         <div class="danger-action">
           <div>
-            <strong>Delete API Resource</strong>
-            <p>Permanently delete this API resource. This action cannot be undone.</p>
+            <strong>Delete API</strong>
+            <p>Permanently delete this API. This action cannot be undone.</p>
           </div>
           <coar-button
             variant="danger"

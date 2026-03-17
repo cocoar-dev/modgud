@@ -13,7 +13,7 @@ public record CreateRoleCommand(
     string? Description,
     string? DisplayName = null,
     string? Email = null,
-    Guid? BoundToApiResourceId = null);
+    Guid? BoundToApiId = null);
 
 /// <summary>
 /// Handler for CreateRoleCommand.
@@ -38,7 +38,7 @@ public class CreateRoleHandler
         var role = new ApplicationRole(command.Name, command.Description);
         role.SetDisplayName(command.DisplayName);
         role.SetEmail(command.Email);
-        role.SetBoundToApiResourceId(command.BoundToApiResourceId);
+        role.SetBoundToApiId(command.BoundToApiId);
 
         var result = await _roleManager.CreateAsync(role);
         if (!result.Succeeded)

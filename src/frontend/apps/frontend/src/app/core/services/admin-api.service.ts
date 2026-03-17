@@ -34,11 +34,11 @@ import {
   OAuthScopeList,
   CreateOAuthScopeRequest,
   UpdateOAuthScopeRequest,
-  OAuthApiResource,
-  OAuthApiResourceList,
-  CreateOAuthApiResourceRequest,
-  UpdateOAuthApiResourceRequest,
-  OAuthApiResourceCreated,
+  OAuthApi,
+  OAuthApiList,
+  CreateOAuthApiRequest,
+  UpdateOAuthApiRequest,
+  OAuthApiCreated,
   ApiSecret,
 } from '../models/oauth.models';
 
@@ -238,10 +238,10 @@ export class AdminApiService {
   }
 
   // ============================================================================
-  // OAuth API Resource Management
+  // OAuth API Management
   // ============================================================================
 
-  getOAuthApiResources(params?: PaginationParams): Observable<OAuthApiResourceList> {
+  getOAuthApis(params?: PaginationParams): Observable<OAuthApiList> {
     let httpParams = new HttpParams();
     if (params) {
       if (params.page !== undefined) {
@@ -251,30 +251,30 @@ export class AdminApiService {
         httpParams = httpParams.set('pageSize', params.pageSize.toString());
       }
     }
-    return this.http.get<OAuthApiResourceList>(`${this.baseUrl}/admin/oauth/api-resources`, {
+    return this.http.get<OAuthApiList>(`${this.baseUrl}/admin/oauth/apis`, {
       params: httpParams,
     });
   }
 
-  getOAuthApiResource(id: string): Observable<OAuthApiResource> {
-    return this.http.get<OAuthApiResource>(`${this.baseUrl}/admin/oauth/api-resources/${id}`);
+  getOAuthApi(id: string): Observable<OAuthApi> {
+    return this.http.get<OAuthApi>(`${this.baseUrl}/admin/oauth/apis/${id}`);
   }
 
-  createOAuthApiResource(request: CreateOAuthApiResourceRequest): Observable<OAuthApiResourceCreated> {
-    return this.http.post<OAuthApiResourceCreated>(`${this.baseUrl}/admin/oauth/api-resources`, request);
+  createOAuthApi(request: CreateOAuthApiRequest): Observable<OAuthApiCreated> {
+    return this.http.post<OAuthApiCreated>(`${this.baseUrl}/admin/oauth/apis`, request);
   }
 
-  updateOAuthApiResource(id: string, request: UpdateOAuthApiResourceRequest): Observable<OAuthApiResource> {
-    return this.http.put<OAuthApiResource>(`${this.baseUrl}/admin/oauth/api-resources/${id}`, request);
+  updateOAuthApi(id: string, request: UpdateOAuthApiRequest): Observable<OAuthApi> {
+    return this.http.put<OAuthApi>(`${this.baseUrl}/admin/oauth/apis/${id}`, request);
   }
 
-  deleteOAuthApiResource(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/admin/oauth/api-resources/${id}`);
+  deleteOAuthApi(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/admin/oauth/apis/${id}`);
   }
 
   regenerateApiSecret(id: string): Observable<ApiSecret> {
     return this.http.post<ApiSecret>(
-      `${this.baseUrl}/admin/oauth/api-resources/${id}/regenerate-secret`,
+      `${this.baseUrl}/admin/oauth/apis/${id}/regenerate-secret`,
       {}
     );
   }

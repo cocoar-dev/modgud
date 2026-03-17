@@ -17,7 +17,7 @@ public record UpdateRoleCommand(
     Optional<string?> Description,
     Optional<string?> DisplayName,
     Optional<string?> Email,
-    Optional<Guid?> BoundToApiResourceId);
+    Optional<Guid?> BoundToApiId);
 
 /// <summary>
 /// Handler for UpdateRoleCommand.
@@ -69,9 +69,9 @@ public class UpdateRoleHandler
             role.SetEmail(command.Email.Value);
         }
 
-        if (command.BoundToApiResourceId.HasValue)
+        if (command.BoundToApiId.HasValue)
         {
-            role.SetBoundToApiResourceId(command.BoundToApiResourceId.Value);
+            role.SetBoundToApiId(command.BoundToApiId.Value);
         }
 
         var result = await _roleManager.UpdateAsync(role);

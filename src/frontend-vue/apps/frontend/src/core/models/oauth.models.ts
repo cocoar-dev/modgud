@@ -168,7 +168,7 @@ export interface ApiSecretEntry {
   createdAt: string;
 }
 
-export interface OAuthApiResource {
+export interface OAuthApi {
   id: string;
   name: string;
   displayName?: string;
@@ -179,7 +179,7 @@ export interface OAuthApiResource {
   secrets: ApiSecretEntry[];
 }
 
-export interface CreateOAuthApiResourceRequest {
+export interface CreateOAuthApiRequest {
   name: string;
   displayName?: string;
   description?: string;
@@ -188,7 +188,7 @@ export interface CreateOAuthApiResourceRequest {
   userClaims?: string[];
 }
 
-export interface UpdateOAuthApiResourceRequest {
+export interface UpdateOAuthApiRequest {
   displayName?: string;
   description?: string;
   enabled?: boolean;
@@ -196,12 +196,12 @@ export interface UpdateOAuthApiResourceRequest {
   userClaims?: string[];
 }
 
-export interface OAuthApiResourceList {
-  items: OAuthApiResource[];
+export interface OAuthApiList {
+  items: OAuthApi[];
   totalCount: number;
 }
 
-export interface OAuthApiResourceCreated extends OAuthApiResource {
+export interface OAuthApiCreated extends OAuthApi {
   apiSecret: string;
 }
 

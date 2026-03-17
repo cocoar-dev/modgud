@@ -45,10 +45,10 @@ public class ApplicationRole : Entity
     public string? Email { get; private set; }
 
     /// <summary>
-    /// The ID of the API resource this role is bound to, if any.
+    /// The ID of the API this role is bound to, if any.
     /// </summary>
     [JsonInclude]
-    public Guid? BoundToApiResourceId { get; private set; }
+    public Guid? BoundToApiId { get; private set; }
 
     /// <summary>
     /// Role claims.
@@ -91,9 +91,9 @@ public class ApplicationRole : Entity
         MarkModified();
     }
 
-    public void SetBoundToApiResourceId(Guid? apiResourceId)
+    public void SetBoundToApiId(Guid? apiId)
     {
-        BoundToApiResourceId = apiResourceId;
+        BoundToApiId = apiId;
         MarkModified();
     }
 

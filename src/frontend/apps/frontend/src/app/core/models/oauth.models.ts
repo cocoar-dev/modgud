@@ -98,10 +98,10 @@ export function isStandardScope(scope: string): scope is StandardScope {
 }
 
 // ============================================================================
-// OAuth API Resource DTOs
+// OAuth API DTOs
 // ============================================================================
 
-export interface OAuthApiResource {
+export interface OAuthApi {
   id: string;
   name: string;
   displayName?: string;
@@ -111,7 +111,7 @@ export interface OAuthApiResource {
   userClaims: string[];
 }
 
-export interface CreateOAuthApiResourceRequest {
+export interface CreateOAuthApiRequest {
   name: string;
   displayName?: string;
   description?: string;
@@ -120,7 +120,7 @@ export interface CreateOAuthApiResourceRequest {
   userClaims?: string[];
 }
 
-export interface UpdateOAuthApiResourceRequest {
+export interface UpdateOAuthApiRequest {
   displayName?: string;
   description?: string;
   enabled?: boolean;
@@ -128,12 +128,12 @@ export interface UpdateOAuthApiResourceRequest {
   userClaims?: string[];
 }
 
-export interface OAuthApiResourceList {
-  items: OAuthApiResource[];
+export interface OAuthApiList {
+  items: OAuthApi[];
   totalCount: number;
 }
 
-export interface OAuthApiResourceCreated extends OAuthApiResource {
+export interface OAuthApiCreated extends OAuthApi {
   apiSecret: string;
 }
 

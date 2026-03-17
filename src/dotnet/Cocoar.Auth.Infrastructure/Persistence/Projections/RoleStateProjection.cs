@@ -51,9 +51,9 @@ public class RoleState
     public string? Email { get; set; }
 
     /// <summary>
-    /// The ID of the API resource this role is bound to, if any.
+    /// The ID of the API this role is bound to, if any.
     /// </summary>
-    public Guid? BoundToApiResourceId { get; set; }
+    public Guid? BoundToApiId { get; set; }
 
     /// <summary>
     /// Whether this role has been deleted (soft delete).
@@ -173,12 +173,12 @@ public class RoleStateProjection : EventProjection
         ops.Store(model);
     }
 
-    public void Project(IEvent<RoleBoundToApiResourceChanged> @event, IDocumentOperations ops)
+    public void Project(IEvent<RoleBoundToApiChanged> @event, IDocumentOperations ops)
     {
         var model = ops.LoadAsync<RoleState>(@event.Data.RoleId).GetAwaiter().GetResult();
         if (model is null) return;
 
-        model.BoundToApiResourceId = @event.Data.NewApiResourceId;
+        model.BoundToApiId = @event.Data.NewApiId;
         model.ModifiedAt = DateTimeOffset.UtcNow;
         ops.Store(model);
     }

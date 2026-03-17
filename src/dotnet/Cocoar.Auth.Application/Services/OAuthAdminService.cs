@@ -13,23 +13,23 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 namespace Cocoar.Auth.Application.Services;
 
 /// <summary>
-/// Service for managing OAuth clients, scopes, and API resources.
-/// Clients and scopes use OpenIddict managers, API resources use repository.
+/// Service for managing OAuth clients, scopes, and APIs.
+/// Clients and scopes use OpenIddict managers, APIs use repository.
 /// </summary>
 public class OAuthAdminService
 {
 	private readonly IOpenIddictApplicationManager _applicationManager;
 	private readonly IOpenIddictScopeManager _scopeManager;
-	private readonly IOAuthApiResourceRepository _apiResourceRepository;
+	private readonly IOAuthApiRepository _apiRepository;
 
 	public OAuthAdminService(
 		IOpenIddictApplicationManager applicationManager,
 		IOpenIddictScopeManager scopeManager,
-		IOAuthApiResourceRepository apiResourceRepository)
+		IOAuthApiRepository apiRepository)
 	{
 		_applicationManager = applicationManager;
 		_scopeManager = scopeManager;
-		_apiResourceRepository = apiResourceRepository;
+		_apiRepository = apiRepository;
 	}
 
 	#region Clients
@@ -571,83 +571,83 @@ public class OAuthAdminService
 
 	#endregion
 
-	#region API Resources
+	#region APIs
 
 	/// <summary>
-	/// Gets all API resources with pagination.
+	/// Gets all APIs with pagination.
 	/// </summary>
-	public Task<OAuthApiResourceListDto> GetApiResourcesAsync(
+	public Task<OAuthApiListDto> GetApisAsync(
 		PaginationRequest pagination,
 		CancellationToken cancellationToken = default)
-		=> _apiResourceRepository.GetAllAsync(pagination, cancellationToken);
+		=> _apiRepository.GetAllAsync(pagination, cancellationToken);
 
 	/// <summary>
-	/// Gets an API resource by its internal ID.
+	/// Gets an API by its internal ID.
 	/// </summary>
-	public Task<OAuthApiResourceDto?> GetApiResourceByIdAsync(
+	public Task<OAuthApiDto?> GetApiByIdAsync(
 		string id,
 		CancellationToken cancellationToken = default)
-		=> _apiResourceRepository.GetByIdAsync(id, cancellationToken);
+		=> _apiRepository.GetByIdAsync(id, cancellationToken);
 
 	/// <summary>
-	/// Creates a new API resource.
+	/// Creates a new API.
 	/// </summary>
-	public Task<ErrorOr<OAuthApiResourceCreatedDto>> CreateApiResourceAsync(
-		CreateOAuthApiResourceDto dto,
+	public Task<ErrorOr<OAuthApiCreatedDto>> CreateApiAsync(
+		CreateOAuthApiDto dto,
 		CancellationToken cancellationToken = default)
-		=> _apiResourceRepository.CreateAsync(dto, cancellationToken);
+		=> _apiRepository.CreateAsync(dto, cancellationToken);
 
 	/// <summary>
-	/// Updates an existing API resource.
+	/// Updates an existing API.
 	/// </summary>
-	public Task<ErrorOr<OAuthApiResourceDto>> UpdateApiResourceAsync(
+	public Task<ErrorOr<OAuthApiDto>> UpdateApiAsync(
 		string id,
-		UpdateOAuthApiResourceDto dto,
+		UpdateOAuthApiDto dto,
 		CancellationToken cancellationToken = default)
-		=> _apiResourceRepository.UpdateAsync(id, dto, cancellationToken);
+		=> _apiRepository.UpdateAsync(id, dto, cancellationToken);
 
 	/// <summary>
-	/// Deletes an API resource.
+	/// Deletes an API.
 	/// </summary>
-	public Task<ErrorOr<bool>> DeleteApiResourceAsync(
+	public Task<ErrorOr<bool>> DeleteApiAsync(
 		string id,
 		CancellationToken cancellationToken = default)
-		=> _apiResourceRepository.DeleteAsync(id, cancellationToken);
+		=> _apiRepository.DeleteAsync(id, cancellationToken);
 
 	/// <summary>
-	/// Regenerates the API secret for an API resource.
+	/// Regenerates the API secret for an API.
 	/// </summary>
 	public Task<ErrorOr<ApiSecretDto>> RegenerateApiSecretAsync(
 		string id,
 		CancellationToken cancellationToken = default)
-		=> _apiResourceRepository.RegenerateSecretAsync(id, cancellationToken);
+		=> _apiRepository.RegenerateSecretAsync(id, cancellationToken);
 
 	/// <summary>
-	/// Creates a new API secret for an API resource.
+	/// Creates a new API secret for an API.
 	/// </summary>
 	public Task<ErrorOr<ApiSecretCreatedDto>> CreateApiSecretAsync(
 		string id,
 		CreateApiSecretDto dto,
 		CancellationToken cancellationToken = default)
-		=> _apiResourceRepository.CreateSecretAsync(id, dto, cancellationToken);
+		=> _apiRepository.CreateSecretAsync(id, dto, cancellationToken);
 
 	/// <summary>
-	/// Deletes a specific API secret from an API resource.
+	/// Deletes a specific API secret from an API.
 	/// </summary>
 	public Task<ErrorOr<bool>> DeleteApiSecretAsync(
 		string id,
 		string secretId,
 		CancellationToken cancellationToken = default)
-		=> _apiResourceRepository.DeleteSecretAsync(id, secretId, cancellationToken);
+		=> _apiRepository.DeleteSecretAsync(id, secretId, cancellationToken);
 
 	/// <summary>
-	/// Validates an API resource's credentials for introspection.
+	/// Validates an API's credentials for introspection.
 	/// </summary>
-	public Task<bool> ValidateApiResourceCredentialsAsync(
+	public Task<bool> ValidateApiCredentialsAsync(
 		string name,
 		string secret,
 		CancellationToken cancellationToken = default)
-		=> _apiResourceRepository.ValidateCredentialsAsync(name, secret, cancellationToken);
+		=> _apiRepository.ValidateCredentialsAsync(name, secret, cancellationToken);
 
 	#endregion
 

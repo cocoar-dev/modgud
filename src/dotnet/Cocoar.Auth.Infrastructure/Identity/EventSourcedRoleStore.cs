@@ -95,10 +95,10 @@ public class EventSourcedRoleStore :
             events.Add(new RoleEmailChanged(updated.Id, existing.Email, updated.Email));
         }
 
-        // BoundToApiResource change
-        if (existing.BoundToApiResourceId != updated.BoundToApiResourceId)
+        // BoundToApi change
+        if (existing.BoundToApiId != updated.BoundToApiId)
         {
-            events.Add(new RoleBoundToApiResourceChanged(updated.Id, existing.BoundToApiResourceId, updated.BoundToApiResourceId));
+            events.Add(new RoleBoundToApiChanged(updated.Id, existing.BoundToApiId, updated.BoundToApiId));
         }
 
         // Claim changes

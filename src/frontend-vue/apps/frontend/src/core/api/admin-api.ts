@@ -30,11 +30,11 @@ import type {
   OAuthScopeList,
   CreateOAuthScopeRequest,
   UpdateOAuthScopeRequest,
-  OAuthApiResource,
-  OAuthApiResourceList,
-  CreateOAuthApiResourceRequest,
-  UpdateOAuthApiResourceRequest,
-  OAuthApiResourceCreated,
+  OAuthApi,
+  OAuthApiList,
+  CreateOAuthApiRequest,
+  UpdateOAuthApiRequest,
+  OAuthApiCreated,
   ApiSecret,
   CreateApiSecretRequest,
   ApiSecretCreated,
@@ -105,23 +105,23 @@ export const adminApi = {
     http.put<OAuthScope>(`/admin/oauth/scopes/${id}`, req),
   deleteOAuthScope: (id: string) => http.delete<void>(`/admin/oauth/scopes/${id}`),
 
-  // OAuth API Resources
-  getOAuthApiResources: (params?: PaginationParams) =>
-    http.get<OAuthApiResourceList>(`/admin/oauth/api-resources${buildQuery(params)}`),
-  getOAuthApiResource: (id: string) =>
-    http.get<OAuthApiResource>(`/admin/oauth/api-resources/${id}`),
-  createOAuthApiResource: (req: CreateOAuthApiResourceRequest) =>
-    http.post<OAuthApiResourceCreated>('/admin/oauth/api-resources', req),
-  updateOAuthApiResource: (id: string, req: UpdateOAuthApiResourceRequest) =>
-    http.put<OAuthApiResource>(`/admin/oauth/api-resources/${id}`, req),
-  deleteOAuthApiResource: (id: string) =>
-    http.delete<void>(`/admin/oauth/api-resources/${id}`),
+  // OAuth APIs
+  getOAuthApis: (params?: PaginationParams) =>
+    http.get<OAuthApiList>(`/admin/oauth/apis${buildQuery(params)}`),
+  getOAuthApi: (id: string) =>
+    http.get<OAuthApi>(`/admin/oauth/apis/${id}`),
+  createOAuthApi: (req: CreateOAuthApiRequest) =>
+    http.post<OAuthApiCreated>('/admin/oauth/apis', req),
+  updateOAuthApi: (id: string, req: UpdateOAuthApiRequest) =>
+    http.put<OAuthApi>(`/admin/oauth/apis/${id}`, req),
+  deleteOAuthApi: (id: string) =>
+    http.delete<void>(`/admin/oauth/apis/${id}`),
   regenerateApiSecret: (id: string) =>
-    http.post<ApiSecret>(`/admin/oauth/api-resources/${id}/regenerate-secret`, {}),
+    http.post<ApiSecret>(`/admin/oauth/apis/${id}/regenerate-secret`, {}),
   createApiSecret: (id: string, req: CreateApiSecretRequest) =>
-    http.post<ApiSecretCreated>(`/admin/oauth/api-resources/${id}/secrets`, req),
+    http.post<ApiSecretCreated>(`/admin/oauth/apis/${id}/secrets`, req),
   deleteApiSecret: (id: string, secretId: string) =>
-    http.delete<void>(`/admin/oauth/api-resources/${id}/secrets/${secretId}`),
+    http.delete<void>(`/admin/oauth/apis/${id}/secrets/${secretId}`),
 
   // Realms (System Realm Only)
   getRealms: () => http.get<RealmList>('/admin/realms'),

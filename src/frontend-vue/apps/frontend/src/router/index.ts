@@ -95,9 +95,9 @@ export const router = createRouter({
         { path: 'admin/oauth/scopes', component: () => import('@/views/admin/oauth/ScopeListView.vue'), meta: { requiresAdmin: true } },
         { path: 'admin/oauth/scopes/create', component: () => import('@/views/admin/oauth/ScopeFormView.vue'), meta: { requiresAdmin: true } },
         { path: 'admin/oauth/scopes/:id', component: () => import('@/views/admin/oauth/ScopeFormView.vue'), meta: { requiresAdmin: true } },
-        { path: 'admin/oauth/api-resources', component: () => import('@/views/admin/oauth/ApiResourceListView.vue'), meta: { requiresAdmin: true } },
-        { path: 'admin/oauth/api-resources/create', component: () => import('@/views/admin/oauth/ApiResourceFormView.vue'), meta: { requiresAdmin: true } },
-        { path: 'admin/oauth/api-resources/:id', component: () => import('@/views/admin/oauth/ApiResourceFormView.vue'), meta: { requiresAdmin: true } },
+        { path: 'admin/oauth/apis', component: () => import('@/views/admin/oauth/ApiListView.vue'), meta: { requiresAdmin: true } },
+        { path: 'admin/oauth/apis/create', component: () => import('@/views/admin/oauth/ApiFormView.vue'), meta: { requiresAdmin: true } },
+        { path: 'admin/oauth/apis/:id', component: () => import('@/views/admin/oauth/ApiFormView.vue'), meta: { requiresAdmin: true } },
       ],
     },
 

@@ -41,13 +41,13 @@ watch([name, displayName, description, enabled, scopes, userClaims], () => { isD
 
 // Set UI state synchronously (before first render)
 ui.set(ctx => {
-  ctx.header.title = isEditMode.value ? 'Edit API Resource' : 'Create API Resource';
-  ctx.header.subTitle = isEditMode.value ? 'Update API resource configuration' : 'Register a new API resource';
+  ctx.header.title = isEditMode.value ? 'Edit API' : 'Create API';
+  ctx.header.subTitle = isEditMode.value ? 'Update API configuration' : 'Register a new API';
   ctx.content.scrollable = true;
   ctx.footer.show = true;
   ctx.footer.button1.visible = true;
   ctx.footer.button1.text = 'Back';
-  ctx.footer.button1.onClick = () => router.push('/admin/oauth/api-resources');
+  ctx.footer.button1.onClick = () => router.push('/admin/oauth/apis');
   ctx.footer.button3.visible = true;
   ctx.footer.button3.text = isEditMode.value ? 'Save Changes' : 'Create';
   ctx.footer.button3.onClick = () => onSubmit();
@@ -59,7 +59,7 @@ onMounted(async () => {
   if (!isEditMode.value) return;
   isLoading.value = true;
   try {
-    const resource = await adminApi.getOAuthApiResource(id.value!);
+    const resource = await adminApi.getOAuthApi(id.value!);
     name.value = resource.name;
     displayName.value = resource.displayName || '';
     description.value = resource.description || '';
@@ -68,7 +68,7 @@ onMounted(async () => {
     userClaims.value = resource.userClaims.join('\n');
     secrets.value = resource.secrets || [];
   } catch {
-    error.value = 'Failed to load API resource.';
+    error.value = 'Failed to load API.';
   } finally {
     isLoading.value = false;
     setTimeout(() => { isDirty.value = false; }, 0);
@@ -81,7 +81,7 @@ async function onSubmit() {
   error.value = '';
   try {
     if (isEditMode.value) {
-      await adminApi.updateOAuthApiResource(id.value!, {
+      await adminApi.updateOAuthApi(id.value!, {
         displayName: displayName.value || undefined,
         description: description.value || undefined,
         enabled: enabled.value,
@@ -89,9 +89,9 @@ async function onSubmit() {
         userClaims: parseLines(userClaims.value),
       });
       isDirty.value = false;
-      router.push('/admin/oauth/api-resources');
+      router.push('/admin/oauth/apis');
     } else {
-      const result = await adminApi.createOAuthApiResource({
+      const result = await adminApi.createOAuthApi({
         name: name.value,
         displayName: displayName.value || undefined,
         description: description.value || undefined,
@@ -103,11 +103,11 @@ async function onSubmit() {
       if (result.apiSecret) {
         newSecret.value = result.apiSecret;
       } else {
-        router.push('/admin/oauth/api-resources');
+        router.push('/admin/oauth/apis');
       }
     }
   } catch (err) {
-    error.value = err instanceof ApiError ? err.message : 'Failed to save API resource.';
+    error.value = err instanceof ApiError ? err.message : 'Failed to save API.';
   } finally {
     isSaving.value = false;
   }
@@ -124,7 +124,7 @@ async function onCreateSecret() {
     });
     newSecret.value = result.apiSecret;
     // Reload to get updated secrets list
-    const resource = await adminApi.getOAuthApiResource(id.value);
+    const resource = await adminApi.getOAuthApi(id.value);
     secrets.value = resource.secrets || [];
     isAddingSecret.value = false;
     newSecretDescription.value = '';
@@ -167,7 +167,7 @@ function maskValue(): string {
       </CoarNote>
       <CoarCard padding="l" class="form-card">
         <CoarCodeBlock :code="newSecret" language="text" />
-        <CoarButton variant="primary" class="mt-3" @click="newSecret = ''; if (!isEditMode) router.push('/admin/oauth/api-resources');">Done</CoarButton>
+        <CoarButton variant="primary" class="mt-3" @click="newSecret = ''; if (!isEditMode) router.push('/admin/oauth/apis');">Done</CoarButton>
       </CoarCard>
     </template>
 
@@ -181,7 +181,7 @@ function maskValue(): string {
             <CoarCard padding="l" class="form-card">
               <h2 class="section-title">Details</h2>
               <div class="form-group">
-                <CoarTextInput v-model="name" label="Resource Name" :required="true" :disabled="isEditMode" />
+                <CoarTextInput v-model="name" label="API Name" :required="true" :disabled="isEditMode" />
               </div>
               <div class="form-group">
                 <CoarTextInput v-model="displayName" label="Display Name" />

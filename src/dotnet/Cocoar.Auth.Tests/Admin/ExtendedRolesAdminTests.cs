@@ -59,27 +59,27 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task Create_WithBoundToApiResource_Succeeds()
+	public async Task Create_WithBoundToApi_Succeeds()
 	{
 		// Arrange
 		await LoginAsAdminAsync();
 
-		// Create an API resource first
-		var apiResourceDto = new CreateOAuthApiResourceDto
+		// Create an API first
+		var apiDto = new CreateOAuthApiDto
 		{
 			Name = "bound-api",
 			DisplayName = "Bound API",
 			Enabled = true
 		};
-		var apiResponse = await _client.PostAsJsonAsync("/api/admin/oauth/api-resources", apiResourceDto, _factory.JsonOptions);
-		var apiResource = await apiResponse.ReadFromJsonAsync<OAuthApiResourceCreatedDto>(_factory.JsonOptions);
-		var apiResourceId = new ShortGuid(Guid.Parse(apiResource!.Id));
+		var apiResponse = await _client.PostAsJsonAsync("/api/admin/oauth/apis", apiDto, _factory.JsonOptions);
+		var api = await apiResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
+		var apiId = new ShortGuid(Guid.Parse(api!.Id));
 
 		var createDto = new CreateRoleDto
 		{
 			Name = "ApiRole",
-			Description = "Role bound to API resource",
-			BoundToApiResourceId = apiResourceId
+			Description = "Role bound to API",
+			BoundToApiId = apiId
 		};
 
 		// Act
@@ -90,7 +90,7 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 		var result = await response.ReadFromJsonAsync<RoleDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
 		Assert.Equal("ApiRole", result.Name);
-		Assert.Equal(apiResourceId.Value, result.BoundToApiResourceId!.Value.Value);
+		Assert.Equal(apiId.Value, result.BoundToApiId!.Value.Value);
 	}
 
 	[Fact]
@@ -119,25 +119,25 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task Update_BoundToApiResource_Succeeds()
+	public async Task Update_BoundToApi_Succeeds()
 	{
 		// Arrange
 		await LoginAsAdminAsync();
 		var role = await _factory.CreateTestRoleAsync("BindRole", "Bind to API");
 		var shortGuid = new ShortGuid(role.Id);
 
-		// Create an API resource
-		var apiResourceDto = new CreateOAuthApiResourceDto
+		// Create an API
+		var apiDto = new CreateOAuthApiDto
 		{
 			Name = "bind-api",
 			DisplayName = "Bind API",
 			Enabled = true
 		};
-		var apiResponse = await _client.PostAsJsonAsync("/api/admin/oauth/api-resources", apiResourceDto, _factory.JsonOptions);
-		var apiResource = await apiResponse.ReadFromJsonAsync<OAuthApiResourceCreatedDto>(_factory.JsonOptions);
-		var apiResourceId = new ShortGuid(Guid.Parse(apiResource!.Id));
+		var apiResponse = await _client.PostAsJsonAsync("/api/admin/oauth/apis", apiDto, _factory.JsonOptions);
+		var api = await apiResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
+		var apiId = new ShortGuid(Guid.Parse(api!.Id));
 
-		var updateDto = new { BoundToApiResourceId = apiResourceId };
+		var updateDto = new { BoundToApiId = apiId };
 
 		// Act
 		var response = await _client.PatchAsJsonAsync($"/api/admin/roles/{shortGuid}", updateDto, _factory.JsonOptions);
@@ -146,6 +146,6 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 		var result = await response.ReadFromJsonAsync<RoleDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
-		Assert.Equal(apiResourceId.Value, result.BoundToApiResourceId!.Value.Value);
+		Assert.Equal(apiId.Value, result.BoundToApiId!.Value.Value);
 	}
 }
