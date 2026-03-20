@@ -336,3 +336,23 @@ public record WebAuthnCredentialUsed(
     Guid UserId,
     string CredentialId,
     string? IpAddress);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXTERNAL LOGIN EVENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Event raised when an external login is linked to a user account.
+/// Does NOT contain the ProviderKey (PII).
+/// </summary>
+public record UserExternalLoginLinked(
+    Guid UserId,
+    string ProviderName,
+    string? ProviderDisplayName);
+
+/// <summary>
+/// Event raised when an external login is removed from a user account.
+/// </summary>
+public record UserExternalLoginRemoved(
+    Guid UserId,
+    string ProviderName);

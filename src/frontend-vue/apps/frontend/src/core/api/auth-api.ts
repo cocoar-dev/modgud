@@ -24,6 +24,8 @@ import type {
   SetupStatus,
   CreateAdminRequest,
   SetupResult,
+  ExternalProviderList,
+  LinkedExternalLoginList,
 } from '../models/auth.models';
 
 export const authApi = {
@@ -62,6 +64,11 @@ export const authApi = {
   requestDeletion: (req: RequestDeletionRequest) => http.post<void>('/auth/delete-account', req),
   confirmDeletion: (req: ConfirmDeletionRequest) => http.post<void>('/auth/confirm-deletion', req),
   cancelDeletion: () => http.post<void>('/auth/cancel-deletion', {}),
+
+  // External Login
+  getExternalProviders: () => http.get<ExternalProviderList>('/auth/external-providers'),
+  getLinkedExternalLogins: () => http.get<LinkedExternalLoginList>('/auth/external-logins'),
+  unlinkExternalLogin: (provider: string) => http.delete<void>(`/auth/external-link/${encodeURIComponent(provider)}`),
 
   // Setup
   getSetupStatus: () => http.get<SetupStatus>('/setup/status'),

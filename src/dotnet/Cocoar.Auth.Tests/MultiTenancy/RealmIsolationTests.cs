@@ -15,16 +15,21 @@ namespace Cocoar.Auth.Tests.MultiTenancy;
 [Collection(IntegrationTestCollection.Name)]
 public class RealmIsolationTests : IAsyncLifetime
 {
-	private readonly CocoarAuthWebApplicationFactory _factory;
-	private readonly HttpClient _systemAdmin;
+	private readonly SharedPostgresFixture _fixture;
+	private CocoarAuthWebApplicationFactory _factory = null!;
+	private HttpClient _systemAdmin = null!;
 
 	public RealmIsolationTests(SharedPostgresFixture fixture)
 	{
-		_factory = new CocoarAuthWebApplicationFactory(fixture);
-		_systemAdmin = _factory.CreateClientWithCookies();
+		_fixture = fixture;
 	}
 
-	public Task InitializeAsync() => _factory.CleanDatabaseAsync();
+	public async Task InitializeAsync()
+	{
+		var connectionString = await _fixture.CreateIsolatedDatabasesAsync();
+		_factory = new CocoarAuthWebApplicationFactory(connectionString);
+		_systemAdmin = _factory.CreateClientWithCookies();
+	}
 
 	public async Task DisposeAsync()
 	{

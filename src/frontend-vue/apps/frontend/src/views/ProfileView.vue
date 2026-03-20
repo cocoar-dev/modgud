@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import QRCode from 'qrcode';
 import { CoarCard, CoarButton, CoarTextInput, CoarNote, CoarSpinner, CoarPasswordInput, CoarTag, useToast } from '@cocoar/vue-ui';
 import { authApi } from '@/core/api/auth-api';
 import { ApiError } from '@/core/api/http';
 import { useUI } from '@/composables/useUI';
-import type { Profile, TwoFactorStatus, TwoFactorSetup } from '@/core/models/auth.models';
+import { realmContext } from '@/composables/useRealmContext';
+import type { Profile, TwoFactorStatus, TwoFactorSetup, ExternalProvider, LinkedExternalLogin } from '@/core/models/auth.models';
 
 const ui = useUI();
 
@@ -39,6 +40,12 @@ const twoFactorError = ref('');
 const twoFactorSuccess = ref('');
 const copySuccess = ref(false);
 
+// External logins state
+const externalProviders = ref<ExternalProvider[]>([]);
+const linkedLogins = ref<LinkedExternalLogin[]>([]);
+const isLoadingExternalLogins = ref(false);
+const externalLoginError = ref('');
+
 // Set UI state synchronously (before first render)
 ui.set(ctx => {
   ctx.header.title = 'My Profile';
@@ -47,15 +54,19 @@ ui.set(ctx => {
 
 onMounted(async () => {
   try {
-    const [profileData, tfaStatus] = await Promise.all([
+    const [profileData, tfaStatus, providers, linked] = await Promise.all([
       authApi.getProfile(),
       authApi.getTwoFactorStatus(),
+      authApi.getExternalProviders().catch(() => ({ providers: [] })),
+      authApi.getLinkedExternalLogins().catch(() => ({ logins: [] })),
     ]);
     profile.value = profileData;
     firstName.value = profileData.firstName || '';
     lastName.value = profileData.lastName || '';
     phoneNumber.value = profileData.phoneNumber || '';
     twoFactorStatus.value = tfaStatus;
+    externalProviders.value = providers.providers;
+    linkedLogins.value = linked.logins;
   } catch {
     profileError.value = 'Failed to load profile.';
   } finally {
@@ -203,6 +214,36 @@ function downloadRecoveryCodes() {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+// External login methods
+function linkExternalLogin(providerName: string) {
+  const returnUrl = '/profile';
+  const url = `${realmContext.apiUrl}/auth/external-login?provider=${encodeURIComponent(providerName)}&returnUrl=${encodeURIComponent(returnUrl)}`;
+  window.location.href = url;
+}
+
+async function unlinkExternalLogin(providerName: string) {
+  isLoadingExternalLogins.value = true;
+  externalLoginError.value = '';
+  try {
+    await authApi.unlinkExternalLogin(providerName);
+    linkedLogins.value = linkedLogins.value.filter(l => l.providerName !== providerName);
+    toast.success(`${providerName} has been unlinked.`);
+  } catch (err) {
+    externalLoginError.value = err instanceof ApiError ? err.message : 'Failed to unlink provider.';
+  } finally {
+    isLoadingExternalLogins.value = false;
+  }
+}
+
+function isLinked(providerName: string): boolean {
+  return linkedLogins.value.some(l => l.providerName === providerName);
+}
+
+const hasPassword = computed(() => !!profile.value?.userName);
+const canUnlink = computed(() => {
+  return hasPassword.value || linkedLogins.value.length > 1;
+});
 </script>
 
 <template>
@@ -351,6 +392,48 @@ function downloadRecoveryCodes() {
           </template>
         </template>
       </CoarCard>
+
+      <CoarCard v-if="externalProviders.length > 0" padding="l" class="section-card">
+        <h2 class="section-title">Connected Accounts</h2>
+
+        <CoarNote v-if="externalLoginError" variant="error" padding="s" class="mb-3">{{ externalLoginError }}</CoarNote>
+
+        <p class="section-description mb-3">
+          Link external accounts to sign in with them. You can also use these as an alternative to your password.
+        </p>
+
+        <div class="external-login-list">
+          <div v-for="provider in externalProviders" :key="provider.name" class="external-login-item">
+            <div class="external-login-info">
+              <span class="external-login-name">{{ provider.displayName || provider.name }}</span>
+              <CoarTag v-if="isLinked(provider.name)" variant="success" size="s">Connected</CoarTag>
+              <CoarTag v-else variant="neutral" size="s">Not connected</CoarTag>
+            </div>
+            <CoarButton
+              v-if="isLinked(provider.name)"
+              variant="danger"
+              size="s"
+              :loading="isLoadingExternalLogins"
+              :disabled="!canUnlink"
+              @click="unlinkExternalLogin(provider.name)"
+            >
+              Unlink
+            </CoarButton>
+            <CoarButton
+              v-else
+              variant="secondary"
+              size="s"
+              @click="linkExternalLogin(provider.name)"
+            >
+              Link
+            </CoarButton>
+          </div>
+        </div>
+
+        <CoarNote v-if="linkedLogins.length === 1 && !hasPassword" variant="info" padding="s" class="mt-3">
+          You cannot unlink your only login method. Set a password first or link another account.
+        </CoarNote>
+      </CoarCard>
     </template>
   </div>
 </template>
@@ -382,4 +465,19 @@ function downloadRecoveryCodes() {
 .tfa-recovery-code { font-family: monospace; font-size: 0.875rem; background: var(--coar-color-slate-50); border: 1px solid var(--coar-color-slate-100); padding: 0.375rem 0.625rem; border-radius: 6px; }
 
 .button-row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+.section-description { font-size: 0.875rem; color: var(--coar-text-neutral-secondary); margin: 0; }
+.mt-3 { margin-top: 0.75rem; }
+
+.external-login-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.external-login-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--coar-border-neutral-secondary);
+  border-radius: 8px;
+}
+.external-login-info { display: flex; align-items: center; gap: 0.75rem; }
+.external-login-name { font-size: 0.9375rem; font-weight: 500; color: var(--coar-text-neutral-primary); }
 </style>

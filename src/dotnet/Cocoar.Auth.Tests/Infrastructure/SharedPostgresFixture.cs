@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -6,47 +7,51 @@ namespace Cocoar.Auth.Tests.Infrastructure;
 /// <summary>
 /// Shared PostgreSQL container for all integration tests.
 /// Starts once, reused across all test classes in the collection.
+/// Each test class gets its own isolated set of databases via CreateIsolatedDatabases().
 /// </summary>
 public class SharedPostgresFixture : IAsyncLifetime
 {
+    private int _dbCounter;
+    private readonly ConcurrentBag<string> _createdDatabases = [];
+
     public PostgreSqlContainer Container { get; } = new PostgreSqlBuilder("postgres:16-alpine")
-        .WithDatabase("cocoar_auth_test")
+        .WithDatabase("postgres") // Connect to default DB; test DBs created on demand
         .Build();
 
     public string ConnectionString => Container.GetConnectionString();
 
-    /// <summary>
-    /// Base DB name from container config. Program.cs derives _master and _system from this.
-    /// </summary>
-    private string BaseDbName
-    {
-        get
-        {
-            var builder = new NpgsqlConnectionStringBuilder(ConnectionString);
-            return builder.Database ?? "cocoar_auth_test";
-        }
-    }
-
     public async Task InitializeAsync()
     {
         await Container.StartAsync();
+    }
 
-        // Pre-create master + system databases (same names Program.cs will derive)
+    /// <summary>
+    /// Creates an isolated set of databases (base + _master + _system) for a test class.
+    /// Returns a connection string pointing at the base DB name.
+    /// Program.cs will derive _master and _system from this base name.
+    /// </summary>
+    public async Task<string> CreateIsolatedDatabasesAsync()
+    {
+        var id = Interlocked.Increment(ref _dbCounter);
+        var baseName = $"test_{id}";
+
         await using var conn = new NpgsqlConnection(ConnectionString);
         await conn.OpenAsync();
-        foreach (var suffix in new[] { "_master", "_system" })
+
+        foreach (var suffix in new[] { "", "_master", "_system" })
         {
-            var dbName = BaseDbName + suffix;
-            await using var checkCmd = new NpgsqlCommand(
-                $"SELECT 1 FROM pg_database WHERE datname = '{dbName}'", conn);
-            var exists = await checkCmd.ExecuteScalarAsync();
-            if (exists is null)
-            {
-                await using var createCmd = new NpgsqlCommand(
-                    $"CREATE DATABASE \"{dbName}\"", conn);
-                await createCmd.ExecuteNonQueryAsync();
-            }
+            var dbName = baseName + suffix;
+            await using var cmd = new NpgsqlCommand($"CREATE DATABASE \"{dbName}\"", conn);
+            await cmd.ExecuteNonQueryAsync();
+            _createdDatabases.Add(dbName);
         }
+
+        // Return connection string with the base DB name
+        var builder = new NpgsqlConnectionStringBuilder(ConnectionString)
+        {
+            Database = baseName
+        };
+        return builder.ConnectionString;
     }
 
     public async Task DisposeAsync()
@@ -56,10 +61,10 @@ public class SharedPostgresFixture : IAsyncLifetime
 }
 
 /// <summary>
-/// Collection definition - all test classes with [Collection(Name)] share the same fixtures.
-/// DisableParallelization ensures tests run sequentially to avoid conflicts with shared database.
+/// Collection definition — all test classes share ONE PostgreSQL container
+/// but each gets its own isolated databases, so parallelization is safe.
 /// </summary>
-[CollectionDefinition(Name, DisableParallelization = true)]
+[CollectionDefinition(Name)]
 public class IntegrationTestCollection : ICollectionFixture<SharedPostgresFixture>
 {
     public const string Name = "Integration Tests";

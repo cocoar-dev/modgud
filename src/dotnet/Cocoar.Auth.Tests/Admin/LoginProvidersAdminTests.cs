@@ -9,18 +9,20 @@ namespace Cocoar.Auth.Tests.Admin;
 [Collection(IntegrationTestCollection.Name)]
 public class LoginProvidersAdminTests : IAsyncLifetime
 {
-	private readonly CocoarAuthWebApplicationFactory _factory;
-	private readonly HttpClient _client;
+	private readonly SharedPostgresFixture _fixture;
+	private CocoarAuthWebApplicationFactory _factory = null!;
+	private HttpClient _client = null!;
 
 	public LoginProvidersAdminTests(SharedPostgresFixture fixture)
 	{
-		_factory = new CocoarAuthWebApplicationFactory(fixture);
-		_client = _factory.CreateClientWithCookies();
+		_fixture = fixture;
 	}
 
 	public async Task InitializeAsync()
 	{
-		await _factory.CleanDatabaseAsync();
+		var connectionString = await _fixture.CreateIsolatedDatabasesAsync();
+		_factory = new CocoarAuthWebApplicationFactory(connectionString);
+		_client = _factory.CreateClientWithCookies();
 		await _factory.SeedLoginProvidersAsync();
 	}
 

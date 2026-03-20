@@ -233,6 +233,15 @@ builder.Services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.Appli
             }
             return originalOnSigningIn?.Invoke(context) ?? Task.CompletedTask;
         };
+
+        // Match cookie path on sign-out so the browser actually deletes the cookie
+        var originalOnSigningOut = options.Events.OnSigningOut;
+        options.Events.OnSigningOut = context =>
+        {
+            var realmSlug = context.HttpContext.Items["RealmSlug"] as string ?? "system";
+            context.CookieOptions.Path = realmSlug == "system" ? "/" : $"/{realmSlug}";
+            return originalOnSigningOut?.Invoke(context) ?? Task.CompletedTask;
+        };
     });
 
 builder.Services.AddControllers()

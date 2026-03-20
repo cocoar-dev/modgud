@@ -16,6 +16,8 @@
     <PackageReference Include="UAParser" />
     <PackageReference Include="Fido2" />
     <!-- OpenIddict (using custom Marten stores, no EF Core) -->
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="OpenIddict" />
     <PackageReference Include="OpenIddict.AspNetCore" />
   </ItemGroup>

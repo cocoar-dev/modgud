@@ -52,6 +52,14 @@ public interface IAuthenticationService
         bool isPersistent,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Stores the user for two-factor authentication (sets the 2FA cookie).
+    /// Used when external login detects that the user has 2FA enabled.
+    /// </summary>
+    Task StoreTwoFactorUserAsync(
+        ApplicationUser user,
+        CancellationToken cancellationToken = default);
+
     Task SignOutAsync(CancellationToken cancellationToken = default);
 }
 

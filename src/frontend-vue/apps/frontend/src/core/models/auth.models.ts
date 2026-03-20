@@ -284,3 +284,23 @@ export interface RealmList {
   items: Realm[];
   totalCount: number;
 }
+
+// External Login
+export interface ExternalProvider {
+  name: string;
+  displayName?: string;
+  type: string;
+}
+
+export interface ExternalProviderList {
+  providers: ExternalProvider[];
+}
+
+export interface LinkedExternalLogin {
+  providerName: string;
+  providerDisplayName?: string;
+}
+
+export interface LinkedExternalLoginList {
+  logins: LinkedExternalLogin[];
+}

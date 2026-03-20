@@ -25,6 +25,7 @@ public class AuthController : ApiControllerBase
     private readonly ILoginAuditService _loginAuditService;
     private readonly ISessionService _sessionService;
     private readonly IGdprService _gdprService;
+    private readonly IExternalLoginService _externalLoginService;
 
     public AuthController(
         AuthService authService,
@@ -35,7 +36,8 @@ public class AuthController : ApiControllerBase
         IAuthenticationService authenticationService,
         ILoginAuditService loginAuditService,
         ISessionService sessionService,
-        IGdprService gdprService)
+        IGdprService gdprService,
+        IExternalLoginService externalLoginService)
     {
         _authService = authService;
         _userService = userService;
@@ -46,6 +48,7 @@ public class AuthController : ApiControllerBase
         _loginAuditService = loginAuditService;
         _sessionService = sessionService;
         _gdprService = gdprService;
+        _externalLoginService = externalLoginService;
     }
 
     /// <summary>
@@ -892,6 +895,154 @@ public class AuthController : ApiControllerBase
         }
 
         return NoContent();
+    }
+
+    #endregion
+
+    #region External Login
+
+    /// <summary>
+    /// Get available external login providers.
+    /// </summary>
+    [HttpGet("external-providers")]
+    [ProducesResponseType(typeof(ExternalProviderListDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetExternalProviders(CancellationToken cancellationToken)
+    {
+        var result = await _externalLoginService.GetAvailableProvidersAsync(cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Initiate external login by redirecting to the OIDC provider.
+    /// </summary>
+    [HttpGet("external-login")]
+    [ProducesResponseType(StatusCodes.Status302Found)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ExternalLogin(
+        [FromQuery] string provider,
+        [FromQuery] string? returnUrl,
+        CancellationToken cancellationToken)
+    {
+        var callbackUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/api/auth/external-callback";
+        var result = await _externalLoginService.InitiateLoginAsync(
+            provider, callbackUrl, returnUrl ?? "/", cancellationToken);
+
+        if (result.IsError)
+        {
+            return Problem(result.Errors);
+        }
+
+        return Redirect(result.Value.RedirectUrl);
+    }
+
+    /// <summary>
+    /// OIDC callback endpoint - processes the authorization code from the provider.
+    /// </summary>
+    [HttpGet("external-callback")]
+    [ProducesResponseType(StatusCodes.Status302Found)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ExternalCallback(
+        [FromQuery] string code,
+        [FromQuery] string state,
+        CancellationToken cancellationToken)
+    {
+        var callbackUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/api/auth/external-callback";
+        var ipAddress = GetClientIpAddress();
+        var userAgent = Request.Headers.UserAgent.ToString();
+
+        var result = await _externalLoginService.ProcessCallbackAsync(
+            code, state, callbackUrl, ipAddress, userAgent, cancellationToken);
+
+        if (result.IsError)
+        {
+            // Redirect to frontend with error
+            return Redirect($"/?error=external_login_failed");
+        }
+
+        var callbackResult = result.Value;
+
+        // Create session cookie for successful logins
+        if (callbackResult.UserId.HasValue && !callbackResult.RequiresTwoFactor && !callbackResult.IsLinkOperation)
+        {
+            await CreateSessionCookieAsync(callbackResult.UserId.Value, cancellationToken);
+        }
+
+        if (callbackResult.RequiresTwoFactor)
+        {
+            return Redirect($"{callbackResult.ReturnUrl}?requires2fa=true");
+        }
+
+        return Redirect(callbackResult.ReturnUrl);
+    }
+
+    /// <summary>
+    /// Initiate account linking with an external provider.
+    /// </summary>
+    [HttpPost("external-link")]
+    [Authorize]
+    [ProducesResponseType(typeof(ExternalLoginRedirectDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ExternalLink(
+        [FromQuery] string provider,
+        [FromQuery] string? returnUrl,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var callbackUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/api/auth/external-callback";
+        var result = await _externalLoginService.InitiateLinkAsync(
+            userId.Value, provider, callbackUrl, returnUrl ?? "/", cancellationToken);
+
+        return FromErrorOr(result);
+    }
+
+    /// <summary>
+    /// Unlink an external login from the current user.
+    /// </summary>
+    [HttpDelete("external-link/{provider}")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> UnlinkExternalLogin(string provider, CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _externalLoginService.UnlinkAsync(userId.Value, provider, cancellationToken);
+        if (result.IsError)
+        {
+            return Problem(result.Errors);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Get the current user's linked external logins.
+    /// </summary>
+    [HttpGet("external-logins")]
+    [Authorize]
+    [ProducesResponseType(typeof(LinkedExternalLoginListDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetLinkedExternalLogins(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _externalLoginService.GetLinkedLoginsAsync(userId.Value, cancellationToken);
+        return Ok(result);
     }
 
     #endregion

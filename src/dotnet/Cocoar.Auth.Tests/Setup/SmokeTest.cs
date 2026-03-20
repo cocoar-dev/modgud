@@ -24,9 +24,9 @@ public class SmokeTest : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _factory = new CocoarAuthWebApplicationFactory(_fixture);
+        var connectionString = await _fixture.CreateIsolatedDatabasesAsync();
+        _factory = new CocoarAuthWebApplicationFactory(connectionString);
         _client = _factory.CreateClientWithCookies();
-        // Note: NOT cleaning database - this is just a smoke test
     }
 
     public async Task DisposeAsync()

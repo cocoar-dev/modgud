@@ -3,13 +3,41 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { CoarCard, CoarButton, CoarTextInput, CoarPasswordInput, CoarCheckbox, CoarNote } from '@cocoar/vue-ui';
 import { useAuthStore } from '@/stores/auth.store';
+import { authApi } from '@/core/api/auth-api';
+import { realmContext } from '@/composables/useRealmContext';
+import type { ExternalProvider } from '@/core/models/auth.models';
 
 const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
 
-onMounted(() => {
+const externalProviders = ref<ExternalProvider[]>([]);
+const loadingProviders = ref(true);
+
+onMounted(async () => {
   auth.clearError();
+
+  // Handle external login callback errors
+  if (route.query.error === 'external_login_failed') {
+    auth.setError('External login failed. Please try again or use a different method.');
+  }
+
+  // Handle 2FA required from external login callback
+  if (route.query.requires2fa === 'true') {
+    const returnUrl = (route.query.returnUrl as string) || '/';
+    router.push({ path: '/login/2fa', query: { returnUrl } });
+    return;
+  }
+
+  // Load external providers
+  try {
+    const result = await authApi.getExternalProviders();
+    externalProviders.value = result.providers;
+  } catch {
+    // Silently fail — external providers are optional
+  } finally {
+    loadingProviders.value = false;
+  }
 });
 
 const userName = ref('');
@@ -44,6 +72,12 @@ async function onSubmit() {
     }
     router.push({ path: '/login/2fa', query });
   }
+}
+
+function externalLogin(providerName: string) {
+  const returnUrl = (route.query.returnUrl as string) || '/';
+  const url = `${realmContext.apiUrl}/auth/external-login?provider=${encodeURIComponent(providerName)}&returnUrl=${encodeURIComponent(returnUrl)}`;
+  window.location.href = url;
 }
 </script>
 
@@ -103,6 +137,24 @@ async function onSubmit() {
             Sign In
           </CoarButton>
         </form>
+
+        <template v-if="externalProviders.length > 0">
+          <div class="divider">
+            <span class="divider-text">or continue with</span>
+          </div>
+
+          <div class="external-providers">
+            <CoarButton
+              v-for="provider in externalProviders"
+              :key="provider.name"
+              variant="secondary"
+              :full-width="true"
+              @click="externalLogin(provider.name)"
+            >
+              {{ provider.displayName || provider.name }}
+            </CoarButton>
+          </div>
+        </template>
 
         <p class="auth-footer">
           Don't have an account?
@@ -186,6 +238,33 @@ async function onSubmit() {
 
 .link:hover {
   text-decoration: underline;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--coar-border-neutral-secondary);
+}
+
+.divider-text {
+  font-size: 0.8125rem;
+  color: var(--coar-text-neutral-tertiary);
+  white-space: nowrap;
+}
+
+.external-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .auth-footer {

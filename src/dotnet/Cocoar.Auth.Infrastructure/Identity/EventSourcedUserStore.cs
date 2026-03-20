@@ -217,6 +217,26 @@ public class EventSourcedUserStore :
             events.Add(new UserPasswordChanged(updated.Id, PasswordChangeType.UserChange, null));
         }
 
+        // External login changes
+        var existingLogins = existing.Logins.Select(l => l.LoginProvider).ToHashSet();
+        var updatedLogins = updated.Logins.Select(l => l.LoginProvider).ToHashSet();
+
+        foreach (var login in updated.Logins)
+        {
+            if (!existingLogins.Contains(login.LoginProvider))
+            {
+                events.Add(new UserExternalLoginLinked(updated.Id, login.LoginProvider, login.ProviderDisplayName));
+            }
+        }
+
+        foreach (var login in existing.Logins)
+        {
+            if (!updatedLogins.Contains(login.LoginProvider))
+            {
+                events.Add(new UserExternalLoginRemoved(updated.Id, login.LoginProvider));
+            }
+        }
+
         // Append all events
         if (events.Count > 0)
         {

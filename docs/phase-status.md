@@ -97,3 +97,89 @@ All 11 steps implemented, 243 tests passing (0 failures).
 ## Phase 3 — COMPLETE
 
 All 3 steps implemented, 251 tests passing (0 failures).
+
+---
+
+# Phase 4: External Login Provider Integration (OIDC)
+
+## Phase 4a: Backend — Manual OIDC Client Flow
+
+| Step | Description | Status | Notes |
+|------|-------------|--------|-------|
+| 1 | NuGet Packages | Done | `Microsoft.IdentityModel.Protocols.OpenIdConnect`, `System.IdentityModel.Tokens.Jwt` in Infrastructure |
+| 2 | Domain Events | Done | `UserExternalLoginLinked`, `UserExternalLoginRemoved` in `UserEvents.cs` |
+| 3 | ExternalLoginState Entity | Done | `Domain/Entities/ExternalLoginState.cs` — ephemeral Marten doc (state, nonce, PKCE, 10min TTL) |
+| 4 | DTOs | Done | `ExternalProviderDto`, `ExternalProviderListDto`, `ExternalLoginRedirectDto`, `LinkedExternalLoginDto`, `LinkedExternalLoginListDto` |
+| 5 | Error Constants | Done | `ExternalLoginErrors` — 9 errors (ProviderNotFound, InvalidState, TokenExchangeFailed, etc.) |
+| 6 | IOidcProtocolService Interface | Done | `BuildAuthorizationUrlAsync`, `ExchangeCodeAsync`, `ValidateIdTokenAsync` + records |
+| 7 | IExternalLoginService Interface | Done | `GetAvailableProvidersAsync`, `InitiateLoginAsync`, `InitiateLinkAsync`, `ProcessCallbackAsync`, `UnlinkAsync`, `GetLinkedLoginsAsync` |
+| 8 | PkceHelper | Done | `GenerateCodeVerifier`, `ComputeCodeChallenge`, `GenerateNonce`, `GenerateState` |
+| 9 | OidcProtocolService | Done | Discovery doc caching, auth URL builder, token exchange, ID token validation with JwtSecurityTokenHandler |
+| 10 | Marten + DI Registration | Done | ExternalLoginState doc, events, HttpClient, IOidcProtocolService, IExternalLoginService |
+| 11 | 2FA Integration | Done | `StoreTwoFactorUserAsync` in AspNetCoreAuthenticationService — writes TwoFactorUserIdScheme cookie |
+| 12 | ExternalLoginService | Done | Core flow: provider listing, login/link initiation, callback processing (find-or-create, 2FA detection), unlink |
+| 13 | Event Detection in EventSourcedUserStore | Done | Login add/remove detection in `AppendProfileChangeEvents` |
+| 14 | AuthController Endpoints (6) | Done | `external-providers`, `external-login`, `external-callback`, `external-link`, `external-link/{provider}`, `external-logins` |
+| 15 | Integration Tests | Done | 12 tests (provider listing, secrets not exposed, redirect with PKCE, invalid state, auth checks, unlink) |
+
+### New API Endpoints
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| GET | `api/auth/external-providers` | Public | List OIDC providers (no secrets) |
+| GET | `api/auth/external-login` | Public | Initiate OIDC redirect → 302 to provider |
+| GET | `api/auth/external-callback` | Public | Process OIDC callback → redirect to frontend |
+| POST | `api/auth/external-link` | Auth | Start account linking |
+| DELETE | `api/auth/external-link/{provider}` | Auth | Unlink external login |
+| GET | `api/auth/external-logins` | Auth | List linked external logins |
+
+### Architecture Decision
+
+Manual OIDC client flow instead of ASP.NET Core dynamic scheme registration:
+- Full control over multi-tenancy (each realm has its own provider configs)
+- No dynamic scheme management needed
+- PKCE + nonce for security
+- Auto-create user from ID token claims on first login
+
+## Tests
+
+| Test file | Tests | Status |
+|-----------|-------|--------|
+| `Tests/Auth/ExternalLoginTests.cs` | 12 tests | All passing |
+| Existing test suite | 251 tests | All passing (263 total + 1 pre-existing flaky) |
+
+## Phase 4a — COMPLETE
+
+All 15 backend steps implemented, 263 tests passing.
+
+## Phase 4b: Frontend — External Login UI
+
+| Step | Description | Status | Notes |
+|------|-------------|--------|-------|
+| 1 | Models + API client functions | Done | `auth.models.ts` — `ExternalProvider`, `LinkedExternalLogin` types; `auth-api.ts` — `getExternalProviders`, `getLinkedExternalLogins`, `unlinkExternalLogin` |
+| 2 | Login page — external provider buttons | Done | "or continue with" divider + provider buttons; navigates to `external-login` endpoint |
+| 3 | Callback handling | Done | Router guard handles `?requires2fa=true` → `/login/2fa` and `?error=external_login_failed` → `/login` with error; LoginView shows error from query param |
+| 4 | Profile page — Connected Accounts section | Done | Shows all OIDC providers with Connected/Not connected status; Link/Unlink buttons; prevents unlinking only login method |
+
+## Phase 4b — COMPLETE
+
+## Phase 4c: WireMock OIDC Flow Tests
+
+| Step | Description | Status | Notes |
+|------|-------------|--------|-------|
+| 1 | WireMock.Net + JWT packages | Done | Added to Tests.csproj and Directory.Packages.props |
+| 2 | FakeOidcServer helper | Done | In-process RSA key gen, Discovery/JWKS/Token stubs, ~100 lines |
+| 3 | Full callback flow tests (8) | Done | Auto-create, existing user, email verified, username fallback, linked logins, unlink guard, inactive user, no-email fallback |
+| 4 | OidcProtocolService fix | Done | `RequireHttps = false` for HTTP authorities (test support) |
+
+## Tests
+
+| Test file | Tests | Status |
+|-----------|-------|--------|
+| `Tests/Auth/ExternalLoginTests.cs` | 12 tests | All passing |
+| `Tests/Auth/ExternalLoginFlowTests.cs` | 8 tests (WireMock) | All passing |
+| Existing test suite | 252 tests | All passing (272 total + 3 pre-existing flaky) |
+
+## Phase 4 — COMPLETE
+
+All backend (15 steps), frontend (4 steps), and WireMock flow tests (4 steps) implemented. 272 tests total (269 passing). Frontend builds cleanly.

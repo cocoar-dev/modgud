@@ -9,16 +9,21 @@ namespace Cocoar.Auth.Tests.Auth;
 [Collection(IntegrationTestCollection.Name)]
 public class SeedDataTests : IAsyncLifetime
 {
-	private readonly CocoarAuthWebApplicationFactory _factory;
+	private readonly SharedPostgresFixture _fixture;
+	private CocoarAuthWebApplicationFactory _factory = null!;
 
 	public SeedDataTests(SharedPostgresFixture fixture)
 	{
-		_factory = new CocoarAuthWebApplicationFactory(fixture);
+		_fixture = fixture;
+	}
+
+	public async Task InitializeAsync()
+	{
+		var connectionString = await _fixture.CreateIsolatedDatabasesAsync();
+		_factory = new CocoarAuthWebApplicationFactory(connectionString);
 		// Force the host to start by creating a client (triggers host initialization and seed data)
 		_ = _factory.CreateClientWithCookies();
 	}
-
-	public Task InitializeAsync() => _factory.CleanDatabaseAsync();
 
 	public async Task DisposeAsync()
 	{

@@ -114,6 +114,16 @@ let needsSetup = false;
 router.beforeEach(async (to) => {
   const auth = useAuthStore();
 
+  // Handle external login callback with 2FA requirement
+  if (to.query.requires2fa === 'true') {
+    return { path: '/login/2fa', query: { returnUrl: to.path } };
+  }
+
+  // Handle external login error
+  if (to.query.error === 'external_login_failed' && to.path !== '/login') {
+    return { path: '/login', query: { error: 'external_login_failed' } };
+  }
+
   // Wait for auth to finish initializing (handles concurrent calls)
   await auth.initialize();
 

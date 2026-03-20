@@ -95,6 +95,27 @@ public class AspNetCoreAuthenticationService : IAuthenticationService
         }
     }
 
+    public async Task StoreTwoFactorUserAsync(
+        ApplicationUser user,
+        CancellationToken cancellationToken = default)
+    {
+        // Store the user principal for the TwoFactorUserIdScheme cookie.
+        // This allows GetTwoFactorAuthenticationUserAsync() to find the user
+        // after the initial external login step.
+        var userId = await _userManager.GetUserIdAsync(user);
+        var identity = new System.Security.Claims.ClaimsIdentity(Microsoft.AspNetCore.Identity.IdentityConstants.TwoFactorUserIdScheme);
+        identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, userId));
+
+        // Use the HttpContext to sign in with the TwoFactorUserIdScheme
+        if (_signInManager.Context is not null)
+        {
+            await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.SignInAsync(
+                _signInManager.Context,
+                IdentityConstants.TwoFactorUserIdScheme,
+                new System.Security.Claims.ClaimsPrincipal(identity));
+        }
+    }
+
     public async Task SignOutAsync(CancellationToken cancellationToken = default)
     {
         await _signInManager.SignOutAsync();

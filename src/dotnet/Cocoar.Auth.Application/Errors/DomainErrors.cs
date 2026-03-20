@@ -269,6 +269,45 @@ public static class LoginProviderErrors
         description: $"Cannot delete the built-in login provider '{name}'.");
 }
 
+public static class ExternalLoginErrors
+{
+    public static Error ProviderNotFound(string name) => Error.NotFound(
+        code: "ExternalLogin.ProviderNotFound",
+        description: $"External login provider '{name}' was not found.");
+
+    public static Error ProviderNotOidc(string name) => Error.Validation(
+        code: "ExternalLogin.ProviderNotOidc",
+        description: $"Login provider '{name}' is not an OpenID Connect provider.");
+
+    public static Error InvalidState => Error.Validation(
+        code: "ExternalLogin.InvalidState",
+        description: "Invalid or expired external login state.");
+
+    public static Error TokenExchangeFailed => Error.Failure(
+        code: "ExternalLogin.TokenExchangeFailed",
+        description: "Failed to exchange authorization code for tokens.");
+
+    public static Error IdTokenValidationFailed => Error.Validation(
+        code: "ExternalLogin.IdTokenValidationFailed",
+        description: "Failed to validate the ID token from the external provider.");
+
+    public static Error ExternalLoginAlreadyLinked => Error.Conflict(
+        code: "ExternalLogin.AlreadyLinked",
+        description: "This external login is already linked to another account.");
+
+    public static Error CannotUnlinkOnlyLogin => Error.Validation(
+        code: "ExternalLogin.CannotUnlinkOnlyLogin",
+        description: "Cannot unlink the only login method. Set a password or link another provider first.");
+
+    public static Error MissingConfiguration(string key) => Error.Validation(
+        code: "ExternalLogin.MissingConfiguration",
+        description: $"The login provider is missing required configuration: '{key}'.");
+
+    public static Error UserAccountInactive => Error.Validation(
+        code: "ExternalLogin.UserAccountInactive",
+        description: "The user account is not active.");
+}
+
 public static class OAuthErrors
 {
     public static Error ClientIdAlreadyExists(string clientId) => Error.Conflict(

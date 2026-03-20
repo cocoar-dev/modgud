@@ -119,6 +119,9 @@ public static class DependencyInjection
 			martenBuilder.AddAsyncDaemon(DaemonMode.HotCold);
 		}
 
+		// Register HttpClient factory for OIDC protocol operations
+		services.AddHttpClient();
+
 		// Register repositories and services
 		RegisterRepositories(services);
 		RegisterInfrastructureServices(services);
@@ -168,6 +171,12 @@ public static class DependencyInjection
 
 		// Register WebAuthn service
 		services.AddScoped<IWebAuthnService, WebAuthnService>();
+
+		// Register OIDC protocol service
+		services.AddSingleton<IOidcProtocolService, OidcProtocolService>();
+
+		// Register external login service
+		services.AddScoped<IExternalLoginService, ExternalLoginService>();
 	}
 
 	/// <summary>
@@ -208,6 +217,11 @@ public static class DependencyInjection
 		options.Schema.For<WebAuthnChallenge>()
 			.Identity(x => x.Id)
 			.Index(x => x.UserId);
+
+		// Configure ExternalLoginState document (ephemeral, for OIDC login flows)
+		options.Schema.For<ExternalLoginState>()
+			.Identity(x => x.Id)
+			.Index(x => x.State);
 
 		// ═══════════════════════════════════════════════════════════════
 		// OPENIDDICT DOCUMENT STORAGE (Security-sensitive, not event-sourced)
@@ -284,6 +298,10 @@ public static class DependencyInjection
 		options.Events.AddEventType<WebAuthnCredentialRegistered>();
 		options.Events.AddEventType<WebAuthnCredentialDeleted>();
 		options.Events.AddEventType<WebAuthnCredentialUsed>();
+
+		// Register External Login events
+		options.Events.AddEventType<UserExternalLoginLinked>();
+		options.Events.AddEventType<UserExternalLoginRemoved>();
 
 		// Register GDPR events for the event store
 		options.Events.AddEventType<UserDeletionRequested>();

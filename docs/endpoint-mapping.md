@@ -41,6 +41,12 @@ These endpoints use **service-based** architecture (no CQRS commands).
 | GET | `/profile` | `AuthService.GetProfileAsync` | ❌ | ❌ | - (read-only) |
 | PUT | `/profile` | `AuthService.UpdateProfileAsync` | ❌ | ✅ | `UserProfileNameChanged`, `UserPhoneNumberChanged`, etc. (via UserManager → EventSourcedUserStore) |
 | POST | `/change-password` | `UserService.ChangePasswordAsync` | ❌ | ✅ | `UserPasswordChanged` (via UserManager → EventSourcedUserStore) |
+| GET | `/external-providers` | `ExternalLoginService.GetAvailableProvidersAsync` | ❌ | ❌ | - (read-only, public) |
+| GET | `/external-login` | `ExternalLoginService.InitiateLoginAsync` | ❌ | ❌ | - (creates ExternalLoginState doc, returns 302) |
+| GET | `/external-callback` | `ExternalLoginService.ProcessCallbackAsync` | ❌ | ✅ | `UserCreated` (auto-create), `UserExternalLoginLinked`, `UserLoggedIn` (via UserManager + LoginAudit) |
+| POST | `/external-link` | `ExternalLoginService.InitiateLinkAsync` | ❌ | ❌ | - (creates ExternalLoginState doc) |
+| DELETE | `/external-link/{provider}` | `ExternalLoginService.UnlinkAsync` | ❌ | ✅ | `UserExternalLoginRemoved` (via UserManager → EventSourcedUserStore) |
+| GET | `/external-logins` | `ExternalLoginService.GetLinkedLoginsAsync` | ❌ | ❌ | - (read-only) |
 
 ---
 
@@ -125,6 +131,13 @@ Endpoint → Command → RoleManager → EventSourcedRoleStore → Marten Event 
 | `UserUnlocked` | UpdateUser | Lockout release |
 | `UserTwoFactorEnabled` | UpdateUser | 2FA enabled |
 | `UserTwoFactorDisabled` | UpdateUser | 2FA disabled |
+
+### External Login Events
+
+| Event | Emitted By | Description |
+|-------|------------|-------------|
+| `UserExternalLoginLinked` | ExternalCallback, ExternalLink | External provider linked to account (no PII) |
+| `UserExternalLoginRemoved` | UnlinkExternalLogin | External provider unlinked |
 
 ### Role Events
 

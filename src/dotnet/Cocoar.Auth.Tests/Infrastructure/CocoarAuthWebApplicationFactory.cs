@@ -31,25 +31,21 @@ namespace Cocoar.Auth.Tests.Infrastructure;
 
 /// <summary>
 /// WebApplicationFactory for integration tests.
-/// Requires SharedPostgresFixture to be initialized first (sets up Cocoar.Configuration).
+/// Each instance gets its own isolated set of databases from SharedPostgresFixture.
 /// </summary>
 public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Program>
 {
-
 	private readonly string _connectionString;
 	private readonly string _password;
-	private readonly string _systemDbConnectionString;
 
-	public CocoarAuthWebApplicationFactory(SharedPostgresFixture fixture)
-    {
-		// Derive the system DB connection string for direct DB access in tests
-		var fullBuilder = new NpgsqlConnectionStringBuilder(fixture.ConnectionString);
-		var baseDbName = fullBuilder.Database ?? "cocoar_auth_test";
-		fullBuilder.Database = baseDbName + "_system";
-		_systemDbConnectionString = fullBuilder.ConnectionString;
-
+	/// <summary>
+	/// Creates a factory with isolated databases.
+	/// Call SharedPostgresFixture.CreateIsolatedDatabasesAsync() first to get the connection string.
+	/// </summary>
+	public CocoarAuthWebApplicationFactory(string isolatedConnectionString)
+	{
 		// Config connection string: password stripped (Program.cs adds it back via Secret)
-		var npgsqlBuilder = new NpgsqlConnectionStringBuilder(fixture.ConnectionString);
+		var npgsqlBuilder = new NpgsqlConnectionStringBuilder(isolatedConnectionString);
 		_password = npgsqlBuilder.Password ?? "";
 		npgsqlBuilder.Password = null;
 		_connectionString = npgsqlBuilder.ConnectionString;
@@ -231,60 +227,6 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
     public async Task SeedOpenIddictScopesAsync()
     {
         await Cocoar.Auth.Infrastructure.OpenIddict.OpenIddictExtensions.SeedOpenIddictScopesAsync(Services);
-    }
-
-    public async Task CleanDatabaseAsync()
-    {
-        // Clear mock email sender
-        var emailSender = GetMockEmailSender();
-        emailSender.Clear();
-
-        using var scope = Services.CreateScope();
-        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-
-        // Clear all user-related documents
-        session.DeleteWhere<ApplicationUser>(u => true);
-        session.DeleteWhere<ApplicationRole>(r => true);
-        session.DeleteWhere<UserSecurityData>(u => true);
-        session.DeleteWhere<UserState>(u => true);
-        session.DeleteWhere<RoleState>(r => true);
-        session.DeleteWhere<UserSession>(s => true);
-        session.DeleteWhere<Cocoar.Auth.Application.Models.UserDetailsReadModel>(u => true);
-
-        // Clear OAuth-related documents
-        session.DeleteWhere<OAuthApplicationState>(o => true);
-        session.DeleteWhere<OAuthApplicationSecurityData>(o => true);
-        session.DeleteWhere<OAuthScopeState>(o => true);
-        session.DeleteWhere<OAuthApiState>(o => true);
-        session.DeleteWhere<OAuthApiSecurityData>(o => true);
-        session.DeleteWhere<OpenIddictAuthorizationDocument>(o => true);
-        session.DeleteWhere<OpenIddictTokenDocument>(o => true);
-
-        // Clear login provider documents
-        session.DeleteWhere<LoginProviderState>(l => true);
-
-		// Clean non-system realms (stored as documents in system tenant)
-		session.DeleteWhere<Cocoar.Auth.Domain.Entities.Realm>(r => !r.IsSystem);
-
-        await session.SaveChangesAsync();
-
-		// Clear event streams (in the system realm database)
-		await using var conn = new NpgsqlConnection(_systemDbConnectionString);
-		await conn.OpenAsync();
-        await using var cmd = new NpgsqlCommand(
-            "TRUNCATE public.mt_events, public.mt_streams CASCADE;", conn);
-        try
-        {
-            await cmd.ExecuteNonQueryAsync();
-        }
-        catch (PostgresException ex) when (ex.SqlState == "42P01")
-        {
-            // Tables don't exist yet
-        }
-
-		// Invalidate realm cache
-		var realmCache = Services.GetRequiredService<Cocoar.Auth.Infrastructure.Services.IRealmCache>();
-		realmCache.Invalidate();
     }
 
     /// <summary>

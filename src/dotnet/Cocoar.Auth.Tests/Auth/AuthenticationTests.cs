@@ -20,9 +20,9 @@ public class AuthenticationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _factory = new CocoarAuthWebApplicationFactory(_fixture);
+        var connectionString = await _fixture.CreateIsolatedDatabasesAsync();
+        _factory = new CocoarAuthWebApplicationFactory(connectionString);
         _client = _factory.CreateClientWithCookies();
-        await _factory.CleanDatabaseAsync();
     }
 
     public async Task DisposeAsync()
