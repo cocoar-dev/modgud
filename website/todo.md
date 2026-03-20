@@ -2,7 +2,7 @@
 
 Tracking page for outstanding implementation tasks, ordered by priority.
 
-**Stand: 2026-03-20** · 272 Tests passing
+**Stand: 2026-03-20** · 272 Tests passing (0 Failures)
 
 ---
 
@@ -116,6 +116,12 @@ Home, Profile, Sessions, Privacy, Login, 2FA, Register, Admin (Users, Roles, OAu
 
 ### External Login Provider Integration ✅
 Manueller OIDC-Flow (PKCE, nonce, Discovery Docs, ID Token Validation). Auto-Create User, Account-Linking, 2FA-Integration. 6 neue API-Endpoints, 20 Tests (12 API + 8 WireMock Full-Flow), Vue Login-Seite mit Provider-Buttons, Profilseite mit Connected Accounts. 272 Tests.
+
+### Test-Infrastruktur: Isolierte Datenbanken ✅
+Refactoring von Shared-DB mit `CleanDatabaseAsync()` auf isolierte Datenbanken pro Test-Klasse. 1 PostgreSQL-Container, N Datenbanken via `CREATE DATABASE`. Tests laufen jetzt parallel. Laufzeit 23 min → 12 min, Flaky Tests (2-3 pro Run) → 0. Logout-Cookie-Path-Bug nebenbei gefixt (`OnSigningOut` setzte falschen Path).
+
+### Playwright E2E Tests ✅
+Playwright-Infrastruktur unter `src/frontend-vue/apps/e2e/`. 16 Tests (Login, Navigation, Profile), 7.5s Laufzeit, parallel. Auth-Setup mit Auto-Admin-Creation bei frischer DB. Cookie-State-Reuse für authentifizierte Tests.
 
 ### VitePress Dokumentation ✅
 35 Seiten: Concepts, User Guide, Developer Guide, API Reference.
