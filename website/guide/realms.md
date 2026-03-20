@@ -10,24 +10,24 @@ The user-facing term is **realm** (UI, API, URLs, documentation). The codebase u
 
 ### URL-Based Realm Detection
 
-The realm is determined from the URL path:
+The realm is determined from the first path segment:
 
 | URL Pattern | Realm | API Base |
 |------------|-------|----------|
-| `/api/...` | `system` | `/api` |
-| `/realms/acme/api/...` | `acme` | `/realms/acme/api` |
-| `/realms/corp/api/...` | `corp` | `/realms/corp/api` |
+| `/system/api/...` | `system` | `/system/api` |
+| `/acme/api/...` | `acme` | `/acme/api` |
+| `/corp/api/...` | `corp` | `/corp/api` |
+
+`https://auth.example.com/` (root) redirects to `/system/`.
 
 ### RealmMiddleware
 
 The `RealmMiddleware` runs before routing and:
 
-1. Extracts the slug from `/realms/{slug}/...`
+1. Extracts the slug from the first path segment `/{slug}/...`
 2. Validates the realm exists and is active (via `IRealmCache`)
 3. Sets `HttpContext.Items["TenantId"]` and `HttpContext.Items["RealmSlug"]`
 4. Rewrites `PathBase` so controllers see clean `/api/...` paths
-
-For requests without `/realms/` prefix, the system realm is used (backward compatible).
 
 ### Database-per-Tenant
 
@@ -55,8 +55,8 @@ services.AddScoped<IDocumentSession>(sp =>
 
 Auth cookies are scoped per realm to prevent cross-realm session leakage:
 
-- System realm: cookie path = `/` (default)
-- Tenant realm: cookie path = `/realms/{slug}`
+- System realm: cookie path = `/system`
+- Tenant realm: cookie path = `/{slug}`
 
 The `cocoar:realm` claim is added to the user's identity during sign-in.
 
@@ -64,7 +64,7 @@ The `cocoar:realm` claim is added to the user's identity during sign-in.
 
 ### Creating a Realm
 
-1. System admin calls `POST /api/admin/realms` with `{ slug, displayName, description }`
+1. System admin calls `POST /system/api/admin/realms` with `{ slug, displayName, description }`
 2. `RealmProvisioningService` creates a new PostgreSQL database
 3. Registers the tenant in Marten's master table
 4. Applies Marten schema (tables, indexes, functions)
@@ -73,7 +73,7 @@ The `cocoar:realm` claim is added to the user's identity during sign-in.
 
 ### Realm Setup
 
-New realms start with `needsSetup: true`. The first visitor to `/realms/{slug}/` is redirected to the setup flow where they create the realm's first admin account.
+New realms start with `needsSetup: true`. The first visitor to `/{slug}/` is redirected to the setup flow where they create the realm's first admin account.
 
 ### The System Realm
 
@@ -85,11 +85,15 @@ The Vue SPA is realm-agnostic by design:
 
 ```typescript
 // composables/useRealmContext.ts
-const match = window.location.pathname.match(/^\/realms\/([a-z][a-z0-9-]+)(\/|$)/);
+const match = window.location.pathname.match(/^\/([a-z][a-z0-9-]+)(\/|$)/);
+const slug = match?.[1] ?? 'system';
 
-export const realmContext = match
-  ? { slug: match[1], apiUrl: `/realms/${match[1]}/api`, baseHref: `/realms/${match[1]}/`, isSystem: false }
-  : { slug: 'system', apiUrl: '/api', baseHref: '/', isSystem: true };
+export const realmContext = {
+  slug,
+  apiUrl: `/${slug}/api`,
+  baseHref: `/${slug}/`,
+  isSystem: slug === 'system',
+};
 ```
 
 - **API calls**: `http.ts` uses `realmContext.apiUrl` as base URL

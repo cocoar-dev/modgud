@@ -40,7 +40,7 @@ After creation, you'll receive an **API Secret** for token introspection.
 
 **Your API validates:**
 ```
-POST /connect/introspect
+POST /{realm}/connect/introspect
 Authorization: Basic base64(billing-api:SECRET)
 { token: "access-token-from-client" }
 

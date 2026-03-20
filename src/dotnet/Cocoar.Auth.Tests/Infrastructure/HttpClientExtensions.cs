@@ -19,7 +19,7 @@ public static class HttpClientExtensions
             RememberMe = false
         };
 
-        return await client.PostAsJsonAsync("/api/auth/login", loginDto, jsonOptions);
+        return await client.PostAsJsonAsync("/system/api/auth/login", loginDto, jsonOptions);
     }
 
     public static async Task<HttpResponseMessage> LoginInRealmAsync(
@@ -36,7 +36,7 @@ public static class HttpClientExtensions
             RememberMe = false
         };
 
-        return await client.PostAsJsonAsync($"/realms/{realmSlug}/api/auth/login", loginDto, jsonOptions);
+        return await client.PostAsJsonAsync($"/{realmSlug}/api/auth/login", loginDto, jsonOptions);
     }
 
     public static async Task<T?> ReadFromJsonAsync<T>(

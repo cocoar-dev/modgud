@@ -87,13 +87,13 @@ public class TokenClaimsTests : IAsyncLifetime
 		await _client.LoginAsync("admin", "Admin123!@#", _factory.JsonOptions);
 		await _factory.SeedOpenIddictScopesAsync();
 
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 		var result = await response.ReadFromJsonAsync<OAuthClientCreatedDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
 
 		// Logout admin
-		await _client.PostAsync("/api/auth/logout", null);
+		await _client.PostAsync("/system/api/auth/logout", null);
 
 		return result;
 	}
@@ -108,7 +108,7 @@ public class TokenClaimsTests : IAsyncLifetime
 			$"&code_challenge={Uri.EscapeDataString(codeChallenge)}" +
 			$"&code_challenge_method=S256";
 
-		var response = await _client.GetAsync($"/connect/authorize{query}");
+		var response = await _client.GetAsync($"/system/connect/authorize{query}");
 
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 		var location = response.Headers.Location!;
@@ -135,7 +135,7 @@ public class TokenClaimsTests : IAsyncLifetime
 			parameters["client_secret"] = clientSecret;
 		}
 
-		var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
 		var tokenResponse = await response.Content.ReadFromJsonAsync<TokenResponse>();
@@ -188,7 +188,7 @@ public class TokenClaimsTests : IAsyncLifetime
 			["client_secret"] = clientSecret
 		};
 
-		var response = await _client.PostAsync("/connect/introspect", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/system/connect/introspect", new FormUrlEncodedContent(parameters));
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 		return await response.Content.ReadFromJsonAsync<JsonElement>();
 	}
@@ -260,7 +260,7 @@ public class TokenClaimsTests : IAsyncLifetime
 		await _factory.SeedOpenIddictScopesAsync();
 
 		// Create a custom scope with UserClaims configured
-		var scopeResponse = await _client.PostAsJsonAsync("/api/admin/oauth/scopes",
+		var scopeResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/scopes",
 			new CreateOAuthScopeDto
 			{
 				Name = "custom-claims",
@@ -271,7 +271,7 @@ public class TokenClaimsTests : IAsyncLifetime
 		Assert.Equal(HttpStatusCode.Created, scopeResponse.StatusCode);
 
 		// Create confidential client with the custom scope so we can introspect
-		var clientResponse = await _client.PostAsJsonAsync("/api/admin/oauth/clients",
+		var clientResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients",
 			new CreateOAuthClientDto
 			{
 				ClientId = "custom-claims-client",
@@ -286,7 +286,7 @@ public class TokenClaimsTests : IAsyncLifetime
 		Assert.Equal(HttpStatusCode.Created, clientResponse.StatusCode);
 
 		// Logout admin
-		await _client.PostAsync("/api/auth/logout", null);
+		await _client.PostAsync("/system/api/auth/logout", null);
 
 		// Create user with custom claims
 		await CreateTestUserWithRolesAndClaimsAsync(
@@ -346,7 +346,7 @@ public class TokenClaimsTests : IAsyncLifetime
 			code, "userinfo-roles-client", "http://localhost/callback", codeVerifier);
 
 		// Act - call userinfo
-		var request = new HttpRequestMessage(HttpMethod.Get, "/connect/userinfo");
+		var request = new HttpRequestMessage(HttpMethod.Get, "/system/connect/userinfo");
 		request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
 		var response = await _client.SendAsync(request);
 
@@ -379,7 +379,7 @@ public class TokenClaimsTests : IAsyncLifetime
 		await _factory.SeedOpenIddictScopesAsync();
 
 		// Create a custom scope with UserClaims
-		var scopeResponse = await _client.PostAsJsonAsync("/api/admin/oauth/scopes",
+		var scopeResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/scopes",
 			new CreateOAuthScopeDto
 			{
 				Name = "userinfo-custom",
@@ -389,7 +389,7 @@ public class TokenClaimsTests : IAsyncLifetime
 		Assert.Equal(HttpStatusCode.Created, scopeResponse.StatusCode);
 
 		// Create client with the custom scope
-		var clientResponse = await _client.PostAsJsonAsync("/api/admin/oauth/clients",
+		var clientResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients",
 			new CreateOAuthClientDto
 			{
 				ClientId = "userinfo-custom-client",
@@ -403,7 +403,7 @@ public class TokenClaimsTests : IAsyncLifetime
 		Assert.Equal(HttpStatusCode.Created, clientResponse.StatusCode);
 
 		// Logout admin
-		await _client.PostAsync("/api/auth/logout", null);
+		await _client.PostAsync("/system/api/auth/logout", null);
 
 		// Create user with custom claims
 		await CreateTestUserWithRolesAndClaimsAsync(
@@ -420,7 +420,7 @@ public class TokenClaimsTests : IAsyncLifetime
 			code, "userinfo-custom-client", "http://localhost/callback", codeVerifier);
 
 		// Act - call userinfo
-		var request = new HttpRequestMessage(HttpMethod.Get, "/connect/userinfo");
+		var request = new HttpRequestMessage(HttpMethod.Get, "/system/connect/userinfo");
 		request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
 		var response = await _client.SendAsync(request);
 
@@ -458,7 +458,7 @@ public class TokenClaimsTests : IAsyncLifetime
 			["scope"] = "openid"
 		};
 
-		var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -516,7 +516,7 @@ public class TokenClaimsTests : IAsyncLifetime
 			["scope"] = "openid"
 		};
 
-		var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);

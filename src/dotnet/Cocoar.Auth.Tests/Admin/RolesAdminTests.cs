@@ -37,7 +37,7 @@ public class RolesAdminTests : IAsyncLifetime
     public async Task GetRoles_WithoutAuthentication_ReturnsUnauthorized()
     {
         // Act
-        var response = await _client.GetAsync("/api/admin/roles");
+        var response = await _client.GetAsync("/system/api/admin/roles");
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -51,7 +51,7 @@ public class RolesAdminTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName, "Test123!@#", _factory.JsonOptions);
 
         // Act
-        var response = await _client.GetAsync("/api/admin/roles");
+        var response = await _client.GetAsync("/system/api/admin/roles");
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -66,7 +66,7 @@ public class RolesAdminTests : IAsyncLifetime
         await _factory.CreateTestRoleAsync("Role2");
 
         // Act
-        var response = await _client.GetAsync("/api/admin/roles");
+        var response = await _client.GetAsync("/system/api/admin/roles");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -84,7 +84,7 @@ public class RolesAdminTests : IAsyncLifetime
         var shortGuid = new ShortGuid(role.Id);
 
         // Act
-        var response = await _client.GetAsync($"/api/admin/roles/{shortGuid}");
+        var response = await _client.GetAsync($"/system/api/admin/roles/{shortGuid}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -102,7 +102,7 @@ public class RolesAdminTests : IAsyncLifetime
         var nonExistentId = new ShortGuid(Guid.NewGuid());
 
         // Act
-        var response = await _client.GetAsync($"/api/admin/roles/{nonExistentId}");
+        var response = await _client.GetAsync($"/system/api/admin/roles/{nonExistentId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -120,7 +120,7 @@ public class RolesAdminTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/admin/roles", createDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/system/api/admin/roles", createDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -143,7 +143,7 @@ public class RolesAdminTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/admin/roles", createDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/system/api/admin/roles", createDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -160,7 +160,7 @@ public class RolesAdminTests : IAsyncLifetime
         var updateDto = new { Name = "UpdatedRole", Description = "New description" };
 
         // Act
-        var response = await _client.PatchAsJsonAsync($"/api/admin/roles/{shortGuid}", updateDto, _factory.JsonOptions);
+        var response = await _client.PatchAsJsonAsync($"/system/api/admin/roles/{shortGuid}", updateDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -182,7 +182,7 @@ public class RolesAdminTests : IAsyncLifetime
         var updateDto = new { Description = "Updated description only" };
 
         // Act
-        var response = await _client.PatchAsJsonAsync($"/api/admin/roles/{shortGuid}", updateDto, _factory.JsonOptions);
+        var response = await _client.PatchAsJsonAsync($"/system/api/admin/roles/{shortGuid}", updateDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -204,7 +204,7 @@ public class RolesAdminTests : IAsyncLifetime
         var updateDto = new { Name = "ExistingName" };
 
         // Act
-        var response = await _client.PatchAsJsonAsync($"/api/admin/roles/{shortGuid}", updateDto, _factory.JsonOptions);
+        var response = await _client.PatchAsJsonAsync($"/system/api/admin/roles/{shortGuid}", updateDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -219,13 +219,13 @@ public class RolesAdminTests : IAsyncLifetime
         var shortGuid = new ShortGuid(role.Id);
 
         // Act
-        var response = await _client.DeleteAsync($"/api/admin/roles/{shortGuid}");
+        var response = await _client.DeleteAsync($"/system/api/admin/roles/{shortGuid}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         // Verify role is deleted
-        var getResponse = await _client.GetAsync($"/api/admin/roles/{shortGuid}");
+        var getResponse = await _client.GetAsync($"/system/api/admin/roles/{shortGuid}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
     }
 
@@ -237,7 +237,7 @@ public class RolesAdminTests : IAsyncLifetime
         var nonExistentId = new ShortGuid(Guid.NewGuid());
 
         // Act
-        var response = await _client.DeleteAsync($"/api/admin/roles/{nonExistentId}");
+        var response = await _client.DeleteAsync($"/system/api/admin/roles/{nonExistentId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -260,7 +260,7 @@ public class RolesAdminTests : IAsyncLifetime
         var shortGuid = new ShortGuid(role.Id);
 
         // Act
-        var response = await _client.DeleteAsync($"/api/admin/roles/{shortGuid}");
+        var response = await _client.DeleteAsync($"/system/api/admin/roles/{shortGuid}");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

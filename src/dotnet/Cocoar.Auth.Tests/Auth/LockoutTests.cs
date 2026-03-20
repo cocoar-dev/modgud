@@ -49,7 +49,7 @@ public class LockoutTests : IAsyncLifetime
         var shortGuid = new ShortGuid(user.Id);
 
         // Act
-        var response = await _client.PostAsync($"/api/admin/users/{shortGuid}/unlock", null);
+        var response = await _client.PostAsync($"/system/api/admin/users/{shortGuid}/unlock", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -71,7 +71,7 @@ public class LockoutTests : IAsyncLifetime
         var shortGuid = new ShortGuid(user.Id);
 
         // Act
-        var response = await _client.PostAsync($"/api/admin/users/{shortGuid}/unlock", null);
+        var response = await _client.PostAsync($"/system/api/admin/users/{shortGuid}/unlock", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -85,7 +85,7 @@ public class LockoutTests : IAsyncLifetime
         var nonExistentId = new ShortGuid(Guid.NewGuid());
 
         // Act
-        var response = await _client.PostAsync($"/api/admin/users/{nonExistentId}/unlock", null);
+        var response = await _client.PostAsync($"/system/api/admin/users/{nonExistentId}/unlock", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -99,7 +99,7 @@ public class LockoutTests : IAsyncLifetime
         var shortGuid = new ShortGuid(user.Id);
 
         // Act
-        var response = await _client.PostAsync($"/api/admin/users/{shortGuid}/unlock", null);
+        var response = await _client.PostAsync($"/system/api/admin/users/{shortGuid}/unlock", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -116,7 +116,7 @@ public class LockoutTests : IAsyncLifetime
         var shortGuid = new ShortGuid(lockedUser.Id);
 
         // Act
-        var response = await _client.PostAsync($"/api/admin/users/{shortGuid}/unlock", null);
+        var response = await _client.PostAsync($"/system/api/admin/users/{shortGuid}/unlock", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -160,11 +160,11 @@ public class LockoutTests : IAsyncLifetime
         var shortGuid = new ShortGuid(user.Id);
 
         // Act - Unlock the user
-        var unlockResponse = await _client.PostAsync($"/api/admin/users/{shortGuid}/unlock", null);
+        var unlockResponse = await _client.PostAsync($"/system/api/admin/users/{shortGuid}/unlock", null);
         Assert.Equal(HttpStatusCode.NoContent, unlockResponse.StatusCode);
 
         // Logout admin
-        await _client.PostAsync("/api/auth/logout", null);
+        await _client.PostAsync("/system/api/auth/logout", null);
 
         // Try to login as the unlocked user
         var loginResponse = await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);

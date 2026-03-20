@@ -305,7 +305,7 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
     {
         // Create the realm via system admin API
         var createDto = new CreateRealmDto { Slug = slug, DisplayName = slug };
-        var createResponse = await adminClient.PostAsJsonAsync("/api/admin/realms", createDto, JsonOptions);
+        var createResponse = await adminClient.PostAsJsonAsync("/system/api/admin/realms", createDto, JsonOptions);
         if (createResponse.StatusCode != HttpStatusCode.Created)
         {
             var body = await createResponse.Content.ReadAsStringAsync();
@@ -315,7 +315,7 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         // Create admin user via the realm's setup endpoint
         var setupDto = new { UserName = adminUser, Password = adminPassword, Email = $"{adminUser}@test.com" };
         var setupResponse = await adminClient.PostAsJsonAsync(
-            $"/realms/{slug}/api/setup/create-admin", setupDto, JsonOptions);
+            $"/{slug}/api/setup/create-admin", setupDto, JsonOptions);
         if (!setupResponse.IsSuccessStatusCode)
         {
             var body = await setupResponse.Content.ReadAsStringAsync();

@@ -38,7 +38,6 @@ OAuth/OIDC admin endpoints for managing clients, scopes, and API resources. All 
 
 Each realm has its own OIDC discovery endpoint:
 
-- System: `/.well-known/openid-configuration`
-- Tenant: `/realms/{slug}/.well-known/openid-configuration`
+- `/{slug}/.well-known/openid-configuration` (e.g. `/system/.well-known/openid-configuration`, `/acme/.well-known/openid-configuration`)
 
 The issuer URL is realm-specific, ensuring tokens from one realm are not valid in another.

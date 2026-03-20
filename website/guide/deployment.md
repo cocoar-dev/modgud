@@ -29,18 +29,19 @@ volumes:
 The SPA must be served for realm paths:
 
 ```nginx
+# Proxy API/connect/discovery requests to backend
+location ~ ^/[a-z][a-z0-9-]+/(api|connect|\.well-known) {
+  proxy_pass http://backend:80;
+}
+
+# Redirect root to system realm
+location = / {
+  return 302 /system/;
+}
+
 # Serve SPA for all realm navigation paths
-location /realms/ {
+location ~ ^/[a-z][a-z0-9-]+/ {
   try_files $uri /index.html;
-}
-
-# Proxy API requests to backend
-location /api {
-  proxy_pass http://backend:80;
-}
-
-location ~ ^/realms/[^/]+/(api|connect|\.well-known) {
-  proxy_pass http://backend:80;
 }
 ```
 

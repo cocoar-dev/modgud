@@ -1,8 +1,8 @@
 # Auth Endpoints
 
-All endpoints are relative to the realm's API base URL:
-- System realm: `/api/auth/...`
-- Tenant realm: `/realms/{slug}/api/auth/...`
+All endpoints are relative to the realm's API base URL: `/{slug}/api/auth/...`
+
+For example: `/system/api/auth/login`, `/acme/api/auth/login`.
 
 ## Public Authentication
 

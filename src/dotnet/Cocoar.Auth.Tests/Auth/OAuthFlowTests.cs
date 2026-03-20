@@ -95,13 +95,13 @@ public class OAuthFlowTests : IAsyncLifetime
 		await _client.LoginAsync("admin", "Admin123!@#", _factory.JsonOptions);
 		await _factory.SeedOpenIddictScopesAsync();
 
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 		var result = await response.ReadFromJsonAsync<OAuthClientCreatedDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
 
 		// Logout admin
-		await _client.PostAsync("/api/auth/logout", null);
+		await _client.PostAsync("/system/api/auth/logout", null);
 
 		return result;
 	}
@@ -132,7 +132,7 @@ public class OAuthFlowTests : IAsyncLifetime
 			$"&code_challenge={Uri.EscapeDataString(codeChallenge)}" +
 			$"&code_challenge_method=S256";
 
-		var response = await _client.GetAsync($"/connect/authorize{query}");
+		var response = await _client.GetAsync($"/system/connect/authorize{query}");
 
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 		var location = response.Headers.Location!;
@@ -159,7 +159,7 @@ public class OAuthFlowTests : IAsyncLifetime
 			parameters["client_secret"] = clientSecret;
 		}
 
-		var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
 		var tokenResponse = await response.Content.ReadFromJsonAsync<TokenResponse>();
@@ -244,7 +244,7 @@ public class OAuthFlowTests : IAsyncLifetime
 			$"&redirect_uri={Uri.EscapeDataString("http://localhost/callback")}" +
 			"&scope=openid%20profile&state=test-state";
 
-		var response = await _client.GetAsync($"/connect/authorize{query}");
+		var response = await _client.GetAsync($"/system/connect/authorize{query}");
 
 		// Assert - OpenIddict rejects the request directly when PKCE is missing
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -278,7 +278,7 @@ public class OAuthFlowTests : IAsyncLifetime
 			$"&code_challenge={Uri.EscapeDataString(codeChallenge)}" +
 			"&code_challenge_method=S256";
 
-		var response = await freshClient.GetAsync($"/connect/authorize{query}");
+		var response = await freshClient.GetAsync($"/system/connect/authorize{query}");
 
 		// Assert - unauthenticated user should not get a successful authorization
 		// The server may return a redirect (302) to login, or a 200 with login page content,
@@ -287,7 +287,7 @@ public class OAuthFlowTests : IAsyncLifetime
 		if (response.StatusCode == HttpStatusCode.Redirect)
 		{
 			var location = response.Headers.Location!;
-			Assert.Contains("/api/auth/login", location.PathAndQuery);
+			Assert.Contains("/system/api/auth/login", location.PathAndQuery);
 		}
 		else
 		{
@@ -331,7 +331,7 @@ public class OAuthFlowTests : IAsyncLifetime
 			$"&code_challenge={Uri.EscapeDataString(codeChallenge)}" +
 			"&code_challenge_method=S256";
 
-		var response = await _client.GetAsync($"/connect/authorize{query}");
+		var response = await _client.GetAsync($"/system/connect/authorize{query}");
 
 		// Assert - should redirect with access_denied error
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
@@ -366,7 +366,7 @@ public class OAuthFlowTests : IAsyncLifetime
 			code, "userinfo-client", "http://localhost/callback", codeVerifier);
 
 		// Act - call userinfo with access token
-		var request = new HttpRequestMessage(HttpMethod.Get, "/connect/userinfo");
+		var request = new HttpRequestMessage(HttpMethod.Get, "/system/connect/userinfo");
 		request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
 		var response = await _client.SendAsync(request);
 
@@ -406,7 +406,7 @@ public class OAuthFlowTests : IAsyncLifetime
 			code, "email-scope-client", "http://localhost/callback", codeVerifier);
 
 		// Act - call userinfo
-		var request = new HttpRequestMessage(HttpMethod.Get, "/connect/userinfo");
+		var request = new HttpRequestMessage(HttpMethod.Get, "/system/connect/userinfo");
 		request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
 		var response = await _client.SendAsync(request);
 
@@ -456,7 +456,7 @@ public class OAuthFlowTests : IAsyncLifetime
 			["client_id"] = "refresh-client"
 		};
 
-		var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -504,7 +504,7 @@ public class OAuthFlowTests : IAsyncLifetime
 			["client_id"] = "refresh-inactive-client"
 		};
 
-		var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
 
 		// Assert
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -534,7 +534,7 @@ public class OAuthFlowTests : IAsyncLifetime
 			["scope"] = "openid"
 		};
 
-		var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -561,7 +561,7 @@ public class OAuthFlowTests : IAsyncLifetime
 			["scope"] = "openid"
 		};
 
-		var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
 
 		// Assert - invalid client credentials returns 401 per RFC 6749 §5.2
 		Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -592,7 +592,7 @@ public class OAuthFlowTests : IAsyncLifetime
 			["scope"] = "openid"
 		};
 
-		var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
 
 		// Assert - public clients cannot use client_credentials (missing client_secret)
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

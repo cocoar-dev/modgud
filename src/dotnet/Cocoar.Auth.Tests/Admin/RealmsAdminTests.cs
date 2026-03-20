@@ -34,7 +34,7 @@ public class RealmsAdminTests : IAsyncLifetime
 	[Fact]
 	public async Task GetRealms_WithoutAuthentication_ReturnsUnauthorized()
 	{
-		var response = await _client.GetAsync("/api/admin/realms");
+		var response = await _client.GetAsync("/system/api/admin/realms");
 		Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
 	}
 
@@ -43,7 +43,7 @@ public class RealmsAdminTests : IAsyncLifetime
 	{
 		await LoginAsAdminAsync();
 
-		var response = await _client.GetAsync("/api/admin/realms");
+		var response = await _client.GetAsync("/system/api/admin/realms");
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
 		var result = await response.ReadFromJsonAsync<RealmListDto>(_factory.JsonOptions);
@@ -64,7 +64,7 @@ public class RealmsAdminTests : IAsyncLifetime
 			Description = "A test realm"
 		};
 
-		var response = await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
 		var realm = await response.ReadFromJsonAsync<RealmDto>(_factory.JsonOptions);
@@ -83,10 +83,10 @@ public class RealmsAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		var dto = new CreateRealmDto { Slug = "dup-realm", DisplayName = "First" };
-		var first = await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
+		var first = await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.Created, first.StatusCode);
 
-		var second = await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
+		var second = await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
 	}
 
@@ -96,7 +96,7 @@ public class RealmsAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		var dto = new CreateRealmDto { Slug = "INVALID", DisplayName = "Bad" };
-		var response = await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 	}
 
@@ -106,7 +106,7 @@ public class RealmsAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		var dto = new CreateRealmDto { Slug = "system", DisplayName = "Nope" };
-		var response = await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 	}
 
@@ -116,9 +116,9 @@ public class RealmsAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		var dto = new CreateRealmDto { Slug = "get-test", DisplayName = "Get Test" };
-		await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
 
-		var response = await _client.GetAsync("/api/admin/realms/get-test");
+		var response = await _client.GetAsync("/system/api/admin/realms/get-test");
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
 		var realm = await response.ReadFromJsonAsync<RealmDto>(_factory.JsonOptions);
@@ -131,7 +131,7 @@ public class RealmsAdminTests : IAsyncLifetime
 	{
 		await LoginAsAdminAsync();
 
-		var response = await _client.GetAsync("/api/admin/realms/nonexistent");
+		var response = await _client.GetAsync("/system/api/admin/realms/nonexistent");
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
 	}
 
@@ -141,10 +141,10 @@ public class RealmsAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		var dto = new CreateRealmDto { Slug = "update-test", DisplayName = "Original" };
-		await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
 
 		var updateDto = new UpdateRealmDto { DisplayName = "Updated" };
-		var request = new HttpRequestMessage(HttpMethod.Patch, "/api/admin/realms/update-test")
+		var request = new HttpRequestMessage(HttpMethod.Patch, "/system/api/admin/realms/update-test")
 		{
 			Content = JsonContent.Create(updateDto, options: _factory.JsonOptions)
 		};
@@ -162,13 +162,13 @@ public class RealmsAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		var dto = new CreateRealmDto { Slug = "delete-test", DisplayName = "Delete Me" };
-		await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
 
-		var response = await _client.DeleteAsync("/api/admin/realms/delete-test");
+		var response = await _client.DeleteAsync("/system/api/admin/realms/delete-test");
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
 		// Verify realm is deactivated
-		var getResponse = await _client.GetAsync("/api/admin/realms/delete-test");
+		var getResponse = await _client.GetAsync("/system/api/admin/realms/delete-test");
 		Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
 		var realm = await getResponse.ReadFromJsonAsync<RealmDto>(_factory.JsonOptions);
 		Assert.NotNull(realm);
@@ -180,7 +180,7 @@ public class RealmsAdminTests : IAsyncLifetime
 	{
 		await LoginAsAdminAsync();
 
-		var response = await _client.DeleteAsync("/api/admin/realms/system");
+		var response = await _client.DeleteAsync("/system/api/admin/realms/system");
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 	}
 }

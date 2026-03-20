@@ -1,5 +1,5 @@
 {
-  "/realms/*/api": {
+  "/*/api": {
     "target": "http://localhost",
     "secure": false,
     "changeOrigin": true,
@@ -7,7 +7,15 @@
     "cookieDomainRewrite": "localhost",
     "cookiePathRewrite": "/"
   },
-  "/api": {
+  "/*/connect": {
+    "target": "http://localhost",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "debug",
+    "cookieDomainRewrite": "localhost",
+    "cookiePathRewrite": "/"
+  },
+  "/*/.well-known": {
     "target": "http://localhost",
     "secure": false,
     "changeOrigin": true,

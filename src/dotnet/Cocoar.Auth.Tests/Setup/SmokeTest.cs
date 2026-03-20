@@ -62,7 +62,7 @@ public class SmokeTest : IAsyncLifetime
     {
         // Test an actual API endpoint - just verify the API layer is working
         var loginRequest = new { userName = "nonexistent", password = "wrong" };
-        var response = await _client.PostAsJsonAsync("/api/auth/login", loginRequest);
+        var response = await _client.PostAsJsonAsync("/system/api/auth/login", loginRequest);
 
         // We just want to prove the API is reachable and processes requests
         // The actual status code depends on implementation details

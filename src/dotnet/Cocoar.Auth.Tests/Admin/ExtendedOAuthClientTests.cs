@@ -48,7 +48,7 @@ public class ExtendedOAuthClientTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -73,7 +73,7 @@ public class ExtendedOAuthClientTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -98,7 +98,7 @@ public class ExtendedOAuthClientTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -128,7 +128,7 @@ public class ExtendedOAuthClientTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -156,7 +156,7 @@ public class ExtendedOAuthClientTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -188,7 +188,7 @@ public class ExtendedOAuthClientTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -215,7 +215,7 @@ public class ExtendedOAuthClientTests : IAsyncLifetime
 			ClientSecret = "Secret123!",
 			AccessTokenType = AccessTokenType.Reference
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<OAuthClientCreatedDto>(_factory.JsonOptions);
 
 		var updateDto = new UpdateOAuthClientDto
@@ -248,7 +248,7 @@ public class ExtendedOAuthClientTests : IAsyncLifetime
 
 		// Act
 		var response = await _client.PutAsJsonAsync(
-			$"/api/admin/oauth/clients/{created!.Client.Id}", updateDto, _factory.JsonOptions);
+			$"/system/api/admin/oauth/clients/{created!.Client.Id}", updateDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);

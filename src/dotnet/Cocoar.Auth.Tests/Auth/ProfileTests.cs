@@ -34,7 +34,7 @@ public class ProfileTests : IAsyncLifetime
         await _client.LoginAsync("profileuser", "Test123!@#", _factory.JsonOptions);
 
         // Act
-        var response = await _client.GetAsync("/api/auth/profile");
+        var response = await _client.GetAsync("/system/api/auth/profile");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -51,7 +51,7 @@ public class ProfileTests : IAsyncLifetime
     public async Task GetProfile_WhenNotAuthenticated_ReturnsUnauthorized()
     {
         // Act
-        var response = await _client.GetAsync("/api/auth/profile");
+        var response = await _client.GetAsync("/system/api/auth/profile");
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -71,7 +71,7 @@ public class ProfileTests : IAsyncLifetime
             LastName = "Name",
             PhoneNumber = "+1234567890"
         };
-        var response = await _client.PutAsJsonAsync("/api/auth/profile", updateDto, _factory.JsonOptions);
+        var response = await _client.PutAsJsonAsync("/system/api/auth/profile", updateDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -95,7 +95,7 @@ public class ProfileTests : IAsyncLifetime
         {
             FirstName = "OnlyFirst"
         };
-        var response = await _client.PutAsJsonAsync("/api/auth/profile", updateDto, _factory.JsonOptions);
+        var response = await _client.PutAsJsonAsync("/system/api/auth/profile", updateDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -111,7 +111,7 @@ public class ProfileTests : IAsyncLifetime
     {
         // Act
         var updateDto = new UpdateProfileDto { FirstName = "Test" };
-        var response = await _client.PutAsJsonAsync("/api/auth/profile", updateDto, _factory.JsonOptions);
+        var response = await _client.PutAsJsonAsync("/system/api/auth/profile", updateDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -130,13 +130,13 @@ public class ProfileTests : IAsyncLifetime
             CurrentPassword = "Test123!@#",
             NewPassword = "NewPass123!@#"
         };
-        var response = await _client.PostAsJsonAsync("/api/auth/change-password", changeDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/system/api/auth/change-password", changeDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         // Verify new password works
-        await _client.PostAsync("/api/auth/logout", null);
+        await _client.PostAsync("/system/api/auth/logout", null);
         var loginResponse = await _client.LoginAsync("changepassword", "NewPass123!@#", _factory.JsonOptions);
         Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
     }
@@ -154,7 +154,7 @@ public class ProfileTests : IAsyncLifetime
             CurrentPassword = "WrongPassword!@#",
             NewPassword = "NewPass123!@#"
         };
-        var response = await _client.PostAsJsonAsync("/api/auth/change-password", changeDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/system/api/auth/change-password", changeDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -169,7 +169,7 @@ public class ProfileTests : IAsyncLifetime
             CurrentPassword = "Test123!@#",
             NewPassword = "NewPass123!@#"
         };
-        var response = await _client.PostAsJsonAsync("/api/auth/change-password", changeDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/system/api/auth/change-password", changeDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -183,7 +183,7 @@ public class ProfileTests : IAsyncLifetime
         await _client.LoginAsync("meuser", "Test123!@#", _factory.JsonOptions);
 
         // Act
-        var response = await _client.GetAsync("/api/auth/me");
+        var response = await _client.GetAsync("/system/api/auth/me");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

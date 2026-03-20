@@ -102,13 +102,13 @@ public class ReferenceTokenTests : IAsyncLifetime
 		await _client.LoginAsync("admin", "Admin123!@#", _factory.JsonOptions);
 		await _factory.SeedOpenIddictScopesAsync();
 
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 		var result = await response.ReadFromJsonAsync<OAuthClientCreatedDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
 
 		// Logout admin
-		await _client.PostAsync("/api/auth/logout", null);
+		await _client.PostAsync("/system/api/auth/logout", null);
 
 		return result;
 	}
@@ -123,7 +123,7 @@ public class ReferenceTokenTests : IAsyncLifetime
 			$"&code_challenge={Uri.EscapeDataString(codeChallenge)}" +
 			$"&code_challenge_method=S256";
 
-		var response = await _client.GetAsync($"/connect/authorize{query}");
+		var response = await _client.GetAsync($"/system/connect/authorize{query}");
 
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 		var location = response.Headers.Location!;
@@ -150,7 +150,7 @@ public class ReferenceTokenTests : IAsyncLifetime
 			parameters["client_secret"] = clientSecret;
 		}
 
-		var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
 		var tokenResponse = await response.Content.ReadFromJsonAsync<TokenResponse>();
@@ -248,7 +248,7 @@ public class ReferenceTokenTests : IAsyncLifetime
 			["client_secret"] = clientSecret
 		};
 
-		var introspectResponse = await _client.PostAsync("/connect/introspect",
+		var introspectResponse = await _client.PostAsync("/system/connect/introspect",
 			new FormUrlEncodedContent(introspectParams));
 
 		// Assert
@@ -298,7 +298,7 @@ public class ReferenceTokenTests : IAsyncLifetime
 			["client_secret"] = clientSecret
 		};
 
-		var revokeResponse = await _client.PostAsync("/connect/revoke",
+		var revokeResponse = await _client.PostAsync("/system/connect/revoke",
 			new FormUrlEncodedContent(revokeParams));
 
 		// Assert - revocation should succeed (200 OK per RFC 7009)
@@ -345,7 +345,7 @@ public class ReferenceTokenTests : IAsyncLifetime
 			["client_secret"] = clientSecret
 		};
 
-		await _client.PostAsync("/connect/revoke", new FormUrlEncodedContent(revokeParams));
+		await _client.PostAsync("/system/connect/revoke", new FormUrlEncodedContent(revokeParams));
 
 		// Act - introspect the revoked token
 		var introspectParams = new Dictionary<string, string>
@@ -355,7 +355,7 @@ public class ReferenceTokenTests : IAsyncLifetime
 			["client_secret"] = clientSecret
 		};
 
-		var introspectResponse = await _client.PostAsync("/connect/introspect",
+		var introspectResponse = await _client.PostAsync("/system/connect/introspect",
 			new FormUrlEncodedContent(introspectParams));
 
 		// Assert
@@ -391,7 +391,7 @@ public class ReferenceTokenTests : IAsyncLifetime
 			["scope"] = "openid"
 		};
 
-		var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);

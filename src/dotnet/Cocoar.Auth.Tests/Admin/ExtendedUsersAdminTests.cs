@@ -47,7 +47,7 @@ public class ExtendedUsersAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/users", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/users", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -77,7 +77,7 @@ public class ExtendedUsersAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/users", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/users", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -101,7 +101,7 @@ public class ExtendedUsersAdminTests : IAsyncLifetime
 		var updateDto = new { ExpiresAt = newExpiresAt };
 
 		// Act
-		var response = await _client.PatchAsJsonAsync($"/api/admin/users/{shortGuid}", updateDto, _factory.JsonOptions);
+		var response = await _client.PatchAsJsonAsync($"/system/api/admin/users/{shortGuid}", updateDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -129,7 +129,7 @@ public class ExtendedUsersAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PatchAsJsonAsync($"/api/admin/users/{shortGuid}", updateDto, _factory.JsonOptions);
+		var response = await _client.PatchAsJsonAsync($"/system/api/admin/users/{shortGuid}", updateDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -157,7 +157,7 @@ public class ExtendedUsersAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/users", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/users", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);

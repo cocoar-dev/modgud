@@ -32,11 +32,20 @@ public class RealmRoutingTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task SystemPaths_WithoutRealmPrefix_StillWork()
+	public async Task SystemRealm_FirstSegment_RoutesToSystemRealm()
 	{
-		// Backward compatibility: requests without /realms/ prefix go to system realm
-		var response = await _client.GetAsync("/api/setup/status");
+		// System realm is accessed via /system/ as first path segment
+		var response = await _client.GetAsync("/system/api/setup/status");
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+	}
+
+	[Fact]
+	public async Task RootPath_Redirects_ToSystem()
+	{
+		// GET / should return 302 redirect to /system/
+		var response = await _client.GetAsync("/");
+		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+		Assert.Equal("/system/", response.Headers.Location?.OriginalString);
 	}
 
 	[Fact]
@@ -47,38 +56,38 @@ public class RealmRoutingTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task RealmPath_InvalidRealm_Returns404()
+	public async Task InvalidRealm_Returns404()
 	{
-		var response = await _client.GetAsync("/realms/nonexistent/api/setup/status");
+		var response = await _client.GetAsync("/nonexistent/api/setup/status");
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
 	}
 
 	[Fact]
-	public async Task RealmPath_ValidRealm_RoutesToRealmEndpoint()
+	public async Task ValidRealm_RoutesToRealmEndpoint()
 	{
 		// Create a realm first
 		await LoginAsAdminAsync();
 		var dto = new CreateRealmDto { Slug = "routing-test", DisplayName = "Routing Test" };
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
 
 		// Access the realm's setup status via realm-scoped URL
-		var response = await _client.GetAsync("/realms/routing-test/api/setup/status");
+		var response = await _client.GetAsync("/routing-test/api/setup/status");
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 	}
 
 	[Fact]
-	public async Task RealmPath_DeactivatedRealm_Returns404()
+	public async Task DeactivatedRealm_Returns404()
 	{
 		await LoginAsAdminAsync();
 
 		// Create and deactivate
 		var dto = new CreateRealmDto { Slug = "deactivated", DisplayName = "Deactivated" };
-		await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
-		await _client.DeleteAsync("/api/admin/realms/deactivated");
+		await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
+		await _client.DeleteAsync("/system/api/admin/realms/deactivated");
 
 		// Access should fail
-		var response = await _client.GetAsync("/realms/deactivated/api/setup/status");
+		var response = await _client.GetAsync("/deactivated/api/setup/status");
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
 	}
 
@@ -89,10 +98,10 @@ public class RealmRoutingTests : IAsyncLifetime
 
 		// Create a realm
 		var dto = new CreateRealmDto { Slug = "non-system", DisplayName = "Non System" };
-		await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
 
 		// Try to access realm admin from non-system realm path
-		var response = await _client.GetAsync("/realms/non-system/api/admin/realms");
+		var response = await _client.GetAsync("/non-system/api/admin/realms");
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
 	}
 
@@ -102,10 +111,10 @@ public class RealmRoutingTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		var dto = new CreateRealmDto { Slug = "needs-setup", DisplayName = "Needs Setup" };
-		await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
 
 		// New realm should need setup (no admin user)
-		var response = await _client.GetAsync("/realms/needs-setup/api/setup/status");
+		var response = await _client.GetAsync("/needs-setup/api/setup/status");
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
 		var content = await response.Content.ReadAsStringAsync();

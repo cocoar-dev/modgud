@@ -9,7 +9,7 @@ System Admin creates realm
        ↓
 Realm has needsSetup: true
        ↓
-First visitor to /realms/{slug}/ → redirected to /realms/{slug}/setup
+First visitor to /{slug}/ → redirected to /{slug}/setup
        ↓
 Create first admin account
        ↓
@@ -22,7 +22,7 @@ needsSetup: false (setup endpoint disabled)
 
 Navigate to:
 ```
-http://your-server/realms/{slug}/
+http://your-server/{slug}/
 ```
 
 If the realm needs setup, you'll be automatically redirected to the setup form. If not, you'll see the login page.

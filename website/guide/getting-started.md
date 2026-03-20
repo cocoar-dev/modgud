@@ -28,7 +28,7 @@ pnpm install
 pnpm dev
 ```
 
-The Vue dev server starts on `http://localhost:4200` with proxy rules forwarding `/api` and `/realms/*/api` to the backend.
+The Vue dev server starts on `http://localhost:4200` with proxy rules forwarding `/{realm}/api` requests to the backend.
 
 ## First-Time Setup
 

@@ -4,8 +4,7 @@ namespace Cocoar.Auth.Api.Middleware;
 
 /// <summary>
 /// Resolves the realm (tenant) from the URL path.
-/// URLs with /realms/{slug}/... set TenantId to the slug and rewrite PathBase.
-/// URLs without /realms/ prefix route to the system realm (backward compatibility).
+/// The first path segment is always the realm slug (e.g. /system/api/..., /acme/api/...).
 /// </summary>
 public class RealmMiddleware
 {
@@ -31,32 +30,31 @@ public class RealmMiddleware
 			return;
 		}
 
-		if (path is not null && path.StartsWith("/realms/", StringComparison.OrdinalIgnoreCase))
+		// Redirect root to system realm
+		if (string.IsNullOrEmpty(path) || path == "/")
 		{
-			// Extract slug from /realms/{slug}/...
-			var afterRealms = path["/realms/".Length..];
-			var slashIdx = afterRealms.IndexOf('/');
-			var slug = slashIdx >= 0 ? afterRealms[..slashIdx] : afterRealms;
-			var remainingPath = slashIdx >= 0 ? afterRealms[slashIdx..] : "/";
-
-			// Validate realm exists and is active
-			if (string.IsNullOrEmpty(slug) || !await _realmCache.IsValidRealmAsync(slug))
-			{
-				context.Response.StatusCode = 404;
-				return;
-			}
-
-			context.Items["TenantId"] = slug;
-			context.Items["RealmSlug"] = slug;
-			context.Request.PathBase = new PathString($"/realms/{slug}");
-			context.Request.Path = new PathString(remainingPath);
+			context.Response.StatusCode = 302;
+			context.Response.Headers.Location = "/system/";
+			return;
 		}
-		else
+
+		// Extract first path segment as realm slug
+		var trimmed = path.AsSpan(1); // skip leading '/'
+		var slashIdx = trimmed.IndexOf('/');
+		var slug = (slashIdx >= 0 ? trimmed[..slashIdx] : trimmed).ToString();
+		var remainingPath = slashIdx >= 0 ? trimmed[slashIdx..].ToString() : "/";
+
+		// Validate realm exists and is active
+		if (string.IsNullOrEmpty(slug) || !await _realmCache.IsValidRealmAsync(slug))
 		{
-			// No realm prefix → system realm (backward compat)
-			context.Items["TenantId"] = "system";
-			context.Items["RealmSlug"] = "system";
+			context.Response.StatusCode = 404;
+			return;
 		}
+
+		context.Items["TenantId"] = slug;
+		context.Items["RealmSlug"] = slug;
+		context.Request.PathBase = new PathString($"/{slug}");
+		context.Request.Path = new PathString(remainingPath);
 
 		await _next(context);
 	}

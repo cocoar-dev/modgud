@@ -49,7 +49,7 @@ public class ExtendedScopeTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/scopes", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/scopes", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -83,7 +83,7 @@ public class ExtendedScopeTests : IAsyncLifetime
 			ShowInDiscoveryDocument = true,
 			UserClaims = new List<string> { "sub" }
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/scopes", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/scopes", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<OAuthScopeDto>(_factory.JsonOptions);
 
 		var updateDto = new UpdateOAuthScopeDto
@@ -99,7 +99,7 @@ public class ExtendedScopeTests : IAsyncLifetime
 
 		// Act
 		var response = await _client.PutAsJsonAsync(
-			$"/api/admin/oauth/scopes/{created!.Id}", updateDto, _factory.JsonOptions);
+			$"/system/api/admin/oauth/scopes/{created!.Id}", updateDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);

@@ -9,11 +9,15 @@ The Vue frontend is realm-agnostic. It detects the realm from its URL at startup
 At module load time (before any component renders):
 
 ```typescript
-const match = window.location.pathname.match(/^\/realms\/([a-z][a-z0-9-]+)(\/|$)/);
+const match = window.location.pathname.match(/^\/([a-z][a-z0-9-]+)(\/|$)/);
+const slug = match?.[1] ?? 'system';
 
-export const realmContext = match
-  ? { slug: match[1], apiUrl: `/realms/${match[1]}/api`, baseHref: `/realms/${match[1]}/`, isSystem: false }
-  : { slug: 'system', apiUrl: '/api', baseHref: '/', isSystem: true };
+export const realmContext = {
+  slug,
+  apiUrl: `/${slug}/api`,
+  baseHref: `/${slug}/`,
+  isSystem: slug === 'system',
+};
 ```
 
 Values are **immutable** — computed once, never change during SPA lifetime.
@@ -22,8 +26,8 @@ Values are **immutable** — computed once, never change during SPA lifetime.
 
 ```typescript
 const BASE_URL = realmContext.apiUrl;
-// System:  /api/auth/me
-// Acme:    /realms/acme/api/auth/me
+// System:  /system/api/auth/me
+// Acme:    /acme/api/auth/me
 ```
 
 ### 3. Router Base (`router/index.ts`)
@@ -36,8 +40,8 @@ export const router = createRouter({
 ```
 
 This ensures all client-side navigations stay within the realm prefix:
-- System: `/login`, `/admin/users`
-- Acme: `/realms/acme/login`, `/realms/acme/admin/users`
+- System: `/system/login`, `/system/admin/users`
+- Acme: `/acme/login`, `/acme/admin/users`
 
 ### 4. Conditional Menu (`MainLayout.vue`)
 
@@ -58,17 +62,11 @@ The dev server proxies API requests while serving the SPA for navigation:
 
 ```typescript
 proxy: {
-  '/realms': {
+  // Proxy /{realm}/api, /{realm}/connect, /{realm}/.well-known to backend
+  // Serve SPA for all other /{realm}/... navigation paths
+  '^/[a-z][a-z0-9-]+/(api|connect|\\.well-known)': {
     target: 'http://localhost',
-    bypass(req) {
-      // Only proxy API/connect requests, serve SPA for navigation
-      if (req.url && !/\/realms\/[^/]+\/(api|connect|\.well-known)/.test(req.url)) {
-        return '/index.html';
-      }
-    },
   },
-  '/api': { target: 'http://localhost' },
-  '/connect': { target: 'http://localhost' },
 }
 ```
 
@@ -77,7 +75,8 @@ proxy: {
 For production, the reverse proxy (nginx) must serve `index.html` for realm paths:
 
 ```nginx
-location /realms/ {
+# Serve SPA for realm navigation paths (non-API)
+location ~ ^/[a-z][a-z0-9-]+/ {
   try_files $uri /index.html;
 }
 ```

@@ -29,7 +29,7 @@ public class SetupTests : IAsyncLifetime
     public async Task GetStatus_WhenNoAdminExists_ReturnsNeedsSetupTrue()
     {
         // Act
-        var response = await _client.GetAsync("/api/setup/status");
+        var response = await _client.GetAsync("/system/api/setup/status");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -45,7 +45,7 @@ public class SetupTests : IAsyncLifetime
         await _factory.CreateTestUserAsync("admin", "Admin123!@#", isAdmin: true);
 
         // Act
-        var response = await _client.GetAsync("/api/setup/status");
+        var response = await _client.GetAsync("/system/api/setup/status");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -68,7 +68,7 @@ public class SetupTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/setup/create-admin", request, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/system/api/setup/create-admin", request, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -81,7 +81,7 @@ public class SetupTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
 
         // Verify setup is no longer needed
-        var statusResponse = await _client.GetAsync("/api/setup/status");
+        var statusResponse = await _client.GetAsync("/system/api/setup/status");
         var statusResult = await statusResponse.ReadFromJsonAsync<SetupStatusDto>(_factory.JsonOptions);
         Assert.NotNull(statusResult);
         Assert.False(statusResult.NeedsSetup);
@@ -100,7 +100,7 @@ public class SetupTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/setup/create-admin", request, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/system/api/setup/create-admin", request, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -117,7 +117,7 @@ public class SetupTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/setup/create-admin", request, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/system/api/setup/create-admin", request, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -134,7 +134,7 @@ public class SetupTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/setup/create-admin", request, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/system/api/setup/create-admin", request, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -153,7 +153,7 @@ public class SetupTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/setup/create-admin", request, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/system/api/setup/create-admin", request, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

@@ -4,18 +4,20 @@ Realm management is only available from the **system realm**. The `[SystemRealmO
 
 ## Endpoints
 
+All realm management endpoints are under the **system realm** (`/system/api/...`):
+
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/admin/realms` | List all realms |
-| `GET` | `/api/admin/realms/{slug}` | Get realm by slug |
-| `POST` | `/api/admin/realms` | Create new realm |
-| `PATCH` | `/api/admin/realms/{slug}` | Update realm |
-| `DELETE` | `/api/admin/realms/{slug}` | Delete realm |
+| `GET` | `/system/api/admin/realms` | List all realms |
+| `GET` | `/system/api/admin/realms/{slug}` | Get realm by slug |
+| `POST` | `/system/api/admin/realms` | Create new realm |
+| `PATCH` | `/system/api/admin/realms/{slug}` | Update realm |
+| `DELETE` | `/system/api/admin/realms/{slug}` | Delete realm |
 
 ## Create Realm
 
 ```json
-POST /api/admin/realms
+POST /system/api/admin/realms
 {
   "slug": "acme",
   "displayName": "Acme Corp",
@@ -50,7 +52,7 @@ POST /api/admin/realms
 ## Update Realm
 
 ```json
-PATCH /api/admin/realms/acme
+PATCH /system/api/admin/realms/acme
 {
   "displayName": "Acme Corporation",
   "isActive": false
@@ -63,9 +65,9 @@ The system realm cannot be deactivated or deleted.
 
 ## Realm Setup Flow
 
-After creating a realm, the first visitor to `/realms/{slug}/` triggers the setup flow:
+After creating a realm, the first visitor to `/{slug}/` triggers the setup flow:
 
-1. Frontend detects `needsSetup: true` from `GET /realms/{slug}/api/setup/status`
-2. Redirects to `/realms/{slug}/setup`
+1. Frontend detects `needsSetup: true` from `GET /{slug}/api/setup/status`
+2. Redirects to `/{slug}/setup`
 3. User creates the realm's first admin account
 4. Auto-login completes the setup

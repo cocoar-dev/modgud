@@ -58,7 +58,7 @@ All API calls go through `http.ts` which:
 ## Auth Store
 
 The Pinia auth store manages:
-- `currentUser` — the logged-in user's info (from `/api/auth/me`)
+- `currentUser` — the logged-in user's info (from `/{realm}/api/auth/me`)
 - `status` — `initial` | `loading` | `authenticated` | `unauthenticated` | `requires-2fa`
 - `isAdmin` — computed from `currentUser.roles.includes('Admin')`
 

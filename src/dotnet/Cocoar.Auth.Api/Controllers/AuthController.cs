@@ -114,7 +114,7 @@ public class AuthController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Register([FromBody] RegisterDto dto, CancellationToken cancellationToken)
     {
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var baseUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}";
         var result = await _authService.RegisterAsync(dto, baseUrl, cancellationToken);
         return FromErrorOr(result);
     }
@@ -145,7 +145,7 @@ public class AuthController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> ResendConfirmation([FromBody] ResendConfirmationDto dto, CancellationToken cancellationToken)
     {
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var baseUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}";
         await _authService.ResendConfirmationEmailAsync(dto, baseUrl, cancellationToken);
 
         // Always return success to not reveal if email exists
@@ -160,7 +160,7 @@ public class AuthController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto, CancellationToken cancellationToken)
     {
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var baseUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}";
         await _authService.ForgotPasswordAsync(dto, baseUrl, cancellationToken);
 
         // Always return success to not reveal if email exists

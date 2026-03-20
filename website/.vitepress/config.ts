@@ -10,7 +10,7 @@ export default defineConfig({
       { text: 'User Guide', link: '/user-guide/realms' },
       { text: 'Developer Guide', link: '/guide/overview' },
       { text: 'API Reference', link: '/reference/auth-api' },
-      { text: 'TODOs', link: '/todo' },
+      { text: 'Roadmap', link: '/todo' },
     ],
 
     sidebar: {

@@ -1,51 +1,169 @@
-# TODOs
+# Roadmap & Open Items
 
-Tracking page for outstanding implementation tasks. Items here represent decisions made during documentation that need to be reflected in code.
+Tracking page for outstanding implementation tasks, ordered by priority.
 
-## Naming / Refactoring
+**Stand: 2026-03-20** · 252 Tests passing
 
-- [x] **Rename "API Resource" → "API" in code and UI**
-  - Backend: 25 files, 8 file renames (classes, DTOs, events, routes, errors, DI)
-  - Vue Frontend: 7 files, 2 view renames
-  - Angular Frontend: 8 files, 2 component directory renames
-  - Endpoints: `/admin/oauth/api-resources` → `/admin/oauth/apis`
+---
 
-## Features
+## P0 — Realm URL Simplification (Commit)
 
-- [ ] **Per-client access token type (Reference vs JWT)**
-  - Add `AccessTokenType` setting to OAuth client configuration (Reference = default, JWT = optional)
-  - UI: dropdown in client form
-  - Backend: configure OpenIddict per-client token format
-  - See: [Glossary > Access Token Types](/concepts/glossary#access-token-types)
+> 56 geänderte Dateien, alle Tests grün. Nur noch committen.
 
-- [ ] **Device Code grant type**
-  - For Smart TVs, CLI tools
-  - See: [Glossary > Grant Types](/concepts/glossary#grant-type)
+- [x] RealmMiddleware: `/{realm}/api/...` statt `/realms/{slug}/api/...`
+- [x] Root `/` redirected zu `/system/`
+- [x] System-Realm Cookie-Pfad explizit auf `/`
+- [x] Alle Tests auf neues URL-Schema aktualisiert
+- [x] Vue + Angular Frontend angepasst
+- [x] VitePress Dokumentation aktualisiert
+- [ ] **Commit erstellen**
 
-## Architecture
+---
 
-- [ ] **Simplify realm URL scheme**
-  - Remove `/realms/` prefix — realm is always the first path segment: `/{realm}/api/...`
-  - `https://auth.example.com/` redirects to `/{system-realm}/`
-  - System realm is just another realm at `/system/api/...`
-  - Three resolution strategies (checked in order):
-    1. **Custom FQDN** — `https://login.acme.com/api` → realm lookup by configured hostname
-    2. **Subdomain** — `https://acme.auth.example.com/api` → subdomain as slug
-    3. **Path** — `https://auth.example.com/acme/api` → first path segment as slug
-  - Each realm can configure its public URLs (one or more FQDNs/subdomains)
-  - Realm slug validation must reject reserved names (`swagger`, `health`, etc.) — though with realm-first routing these paths live under `/{realm}/` anyway
-  - Scope: RealmMiddleware, frontend RealmContext, Vite proxy, cookie paths, OIDC issuer URLs, tests
+## P1 — External Login Provider Integration
 
-## Documentation
+> Admin-CRUD (Backend + Frontend) existiert. Die Authentication-Integration fehlt.
 
-- [ ] **Mermaid diagrams for flows**
-  - Replace ASCII flow diagrams with Mermaid (VitePress supports it natively)
-  - OAuth flow, account lifecycle, realm resolution, token validation
-  - Install `mermaid` plugin for VitePress or use built-in markdown support
+### Backend — Dynamic OIDC Registration
 
-## Known Issues
+- [ ] Service: LoginProvider aus DB lesen → ASP.NET Core Authentication Schemes registrieren
+- [ ] `IAuthenticationSchemeProvider`-Integration für dynamische Scheme-Registrierung
+- [ ] Mapping: `Dictionary<string, string>` → `OpenIdConnectOptions` (Authority, ClientId, ClientSecret, Scopes, CallbackPath)
+- [ ] Invalidierungsmechanismus bei Provider-Änderungen (analog RealmCache)
 
-- [ ] **Realm deletion does not drop tenant database**
-  - Requires Wolverine daemon coordination
-  - Currently only removes realm metadata from system tenant
-  - See: [User Guide > Managing Realms](/user-guide/realms#deleting-a-realm)
+### Backend — Auth Endpoints
+
+- [ ] `POST /api/auth/external-login` — Challenge an externen Provider initiieren
+- [ ] `GET /api/auth/external-callback` — OAuth-Callback, Code → Token
+- [ ] Claims-Mapping: Externe Claims (sub, email, name) → lokaler User
+- [ ] Auto-Create: Neuen User anlegen bei unbekanntem externen Account
+- [ ] Account-Linking: Externen Account mit lokalem User verknüpfen
+- [ ] Domain Events: `ExternalLoginLinked`, `ExternalLoginRemoved`, `UserCreatedViaExternalLogin`
+
+### Backend — Konfigurationsvalidierung
+
+- [ ] Schema-Validierung für OpenIdConnect-Konfiguration (Authority, ClientId required)
+- [ ] Validierung beim Erstellen/Updaten eines Providers
+
+### Frontend — Login-Seite
+
+- [ ] Verfügbare externe Provider über API laden
+- [ ] "Login mit Google/Microsoft/..."-Buttons dynamisch rendern
+- [ ] Redirect-Flow zum externen Provider + Callback-Handling
+
+### Frontend — Profil & Account-Linking
+
+- [ ] Verknüpfte externe Accounts auf Profilseite anzeigen
+- [ ] Account verknüpfen / entknüpfen
+
+### Admin-UI Verbesserungen
+
+- [ ] Konfigurationsformular mit spezifischen Feldern statt Raw-JSON
+- [ ] Validierung im Formular
+
+### Tests
+
+- [ ] Integration Tests mit Mock-OIDC-Provider
+- [ ] Realm-Isolation für Provider
+- [ ] Account-Linking Tests
+- [ ] Negative Tests (ungültige Konfiguration, deaktivierter Provider)
+
+---
+
+## P1 — Frontend Views fertigstellen
+
+> Einige Views sind nur Skeletons oder ~90% fertig.
+
+- [ ] `ResetPasswordView.vue` — Skeleton fertigstellen
+- [ ] `ConfirmEmailView.vue` — Skeleton fertigstellen
+- [ ] `ConsentView.vue` — Template vervollständigen (~90%)
+- [ ] `ConsentDeniedView.vue` — Fehlermeldung + "Zurück"-Button
+- [ ] `SetupView.vue` — Template vervollständigen (~90%)
+
+---
+
+## P2 — Per-Client Access Token Type
+
+> Aktuell Reference Tokens als Standard. Manche Clients brauchen JWTs.
+
+- [ ] `AccessTokenType` Property zum OAuth Client hinzufügen (Enum: `Reference` | `Jwt`)
+- [ ] OpenIddict per-Client Token-Format konfigurieren
+- [ ] Admin-UI: Dropdown in Client-Formular
+- [ ] Migration/Default: Bestehende Clients behalten `Reference`
+- [ ] Tests
+- [ ] Dokumentation: [Glossary > Access Token Types](/concepts/glossary#access-token-types)
+
+---
+
+## P2 — Dokumentation auffüllen
+
+> 9 Seiten sind Stubs (<50 Zeilen). Inhalt vertiefen.
+
+### Developer Guide
+
+- [ ] `guide/auth-cookies.md` (28 Zeilen) — Cookie-Architektur, Path-Scoping, SameSite, Realm-Isolation
+- [ ] `guide/oauth.md` (43 Zeilen) — OpenIddict-Konfiguration, Flows, Token-Typen, Consent
+- [ ] `guide/two-factor.md` (27 Zeilen) — TOTP, Email OTP, WebAuthn Implementierung
+- [ ] `guide/database.md` (44 Zeilen) — Marten-Konfiguration, Tenancy, Projections, Migrations
+- [ ] `guide/deployment.md` (54 Zeilen) — Docker, Kubernetes, Umgebungsvariablen, Zertifikate
+- [ ] `guide/architecture.md` (48 Zeilen) — Clean Architecture Layers, DI, Error Handling
+
+### User Guide
+
+- [ ] `user-guide/scopes.md` (38 Zeilen) — Scope-Verwaltung, Standard-Scopes, Custom Scopes
+- [ ] `user-guide/sessions.md` (37 Zeilen) — Session-Verwaltung, Force Logout, Device Info
+
+### Diagramme
+
+- [ ] Mermaid-Diagramme: OAuth Flow, Account Lifecycle, Realm Resolution, Token Validation
+
+---
+
+## P3 — Device Code Grant
+
+> Für Smart TVs, CLI Tools, IoT-Geräte.
+
+- [ ] OpenIddict Device Code Flow aktivieren
+- [ ] Device Authorization Endpoint (`/connect/device`)
+- [ ] User-Verification-Seite im Frontend (Code eingeben + bestätigen)
+- [ ] Polling-Endpoint für Device
+- [ ] Admin-UI: Device Code als Grant Type auswählbar
+- [ ] Tests
+- [ ] Dokumentation
+
+---
+
+## P3 — Realm Hard-Delete
+
+> Aktuell nur Soft-Delete. Tenant-Datenbank wird nicht gelöscht.
+
+- [ ] Wolverine Background-Job für DB-Drop
+- [ ] Bestätigungs-Flow (Admin muss Realm-Slug eintippen)
+- [ ] Cleanup: Realm aus Cache entfernen, Sessions invalidieren
+- [ ] Tests
+- [ ] Dokumentation: [User Guide > Managing Realms](/user-guide/realms#deleting-a-realm)
+
+---
+
+## Erledigte Meilensteine
+
+### Phase 1 — Core Identity ✅
+Login, Registrierung, Email-Bestätigung, Password Reset, Profil, 2FA (TOTP + Email OTP + WebAuthn), Sessions, GDPR, Admin CRUD (Users, Roles).
+
+### Phase 2 — Realm Management & Multi-Tenant Routing ✅
+Realm Entity, Provisioning, CRUD API, RealmMiddleware, RealmCache, Cookie Scoping, Dynamic Issuer. 243 Tests.
+
+### Phase 3 — Realm Isolation ✅
+Cross-Realm Isolation Tests, `cocoar:realm` Claim, Cookie Path Scoping. 251 Tests.
+
+### OAuth 2.0 / OpenID Connect ✅
+Authorization Code + PKCE, Client Credentials, Refresh Tokens, Reference Tokens, Consent Flow, Introspection, Revocation, UserInfo. OpenIddict mit Marten Stores.
+
+### Naming Refactoring ✅
+"API Resource" → "API" in Code, UI und Endpoints.
+
+### Vue Frontend ✅
+Home, Profile, Sessions, Privacy, Login, 2FA, Register, Admin (Users, Roles, OAuth Clients/Scopes/APIs, Realms, Login Providers).
+
+### VitePress Dokumentation ✅
+35 Seiten: Concepts, User Guide, Developer Guide, API Reference.

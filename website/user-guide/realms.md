@@ -7,7 +7,7 @@ Realm management is only available to **system realm admins**. The "Realms" menu
 1. Navigate to **System > Realms** in the sidebar
 2. Click **"New Realm"**
 3. Fill in:
-   - **Slug** (required) — lowercase, letters/numbers/hyphens, e.g. `acme`. This cannot be changed later. It becomes part of the realm's URL: `/realms/acme/`
+   - **Slug** (required) — lowercase, letters/numbers/hyphens, e.g. `acme`. This cannot be changed later. It becomes part of the realm's URL: `/acme/`
    - **Display Name** (required) — human-readable name, e.g. "Acme Corporation"
    - **Description** (optional)
 4. Click **"Create"**
@@ -24,7 +24,7 @@ Realm management is only available to **system realm admins**. The "Realms" menu
 
 After creating a realm, it needs its first admin:
 
-1. Open `/realms/{slug}/` in a **new browser tab** (e.g., `http://localhost:4200/realms/acme/`)
+1. Open `/{slug}/` in a **new browser tab** (e.g., `http://localhost:4200/acme/`)
 2. You'll be redirected to the **Initial Setup** page
 3. Create the realm's first admin account (same form as system setup)
 4. You're auto-logged-in as the realm admin
@@ -51,7 +51,7 @@ Deactivating a realm makes it inaccessible — all API requests return 404. The 
 
 Edit the realm and set `isActive` to false via the API:
 ```
-PATCH /api/admin/realms/{slug}
+PATCH /system/api/admin/realms/{slug}
 { "isActive": false }
 ```
 

@@ -43,7 +43,7 @@ public class ExtendedApiTests : IAsyncLifetime
 			Enabled = true,
 			Scopes = new List<string> { "openid" }
 		};
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 		var result = await response.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
@@ -66,7 +66,7 @@ public class ExtendedApiTests : IAsyncLifetime
 
 		// Act
 		var response = await _client.PostAsJsonAsync(
-			$"/api/admin/oauth/apis/{api.Id}/secrets", secretDto, _factory.JsonOptions);
+			$"/system/api/admin/oauth/apis/{api.Id}/secrets", secretDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -92,7 +92,7 @@ public class ExtendedApiTests : IAsyncLifetime
 
 		// Act
 		var response = await _client.PostAsJsonAsync(
-			$"/api/admin/oauth/apis/{api.Id}/secrets", secretDto, _factory.JsonOptions);
+			$"/system/api/admin/oauth/apis/{api.Id}/secrets", secretDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -103,7 +103,7 @@ public class ExtendedApiTests : IAsyncLifetime
 		Assert.True(result.ApiSecret.Length > 10);
 
 		// Verify the secret is NOT returned when fetching the API details
-		var getResponse = await _client.GetAsync($"/api/admin/oauth/apis/{api.Id}");
+		var getResponse = await _client.GetAsync($"/system/api/admin/oauth/apis/{api.Id}");
 		var apiDto = await getResponse.ReadFromJsonAsync<OAuthApiDto>(_factory.JsonOptions);
 		Assert.NotNull(apiDto);
 		// Secret metadata should be present but not plaintext values
@@ -122,18 +122,18 @@ public class ExtendedApiTests : IAsyncLifetime
 		// Create a secret
 		var secretDto = new CreateApiSecretDto { Description = "Delete me" };
 		var createResponse = await _client.PostAsJsonAsync(
-			$"/api/admin/oauth/apis/{api.Id}/secrets", secretDto, _factory.JsonOptions);
+			$"/system/api/admin/oauth/apis/{api.Id}/secrets", secretDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<ApiSecretCreatedDto>(_factory.JsonOptions);
 
 		// Act
 		var response = await _client.DeleteAsync(
-			$"/api/admin/oauth/apis/{api.Id}/secrets/{created!.SecretId}");
+			$"/system/api/admin/oauth/apis/{api.Id}/secrets/{created!.SecretId}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
 		// Verify the secret is gone
-		var getResponse = await _client.GetAsync($"/api/admin/oauth/apis/{api.Id}");
+		var getResponse = await _client.GetAsync($"/system/api/admin/oauth/apis/{api.Id}");
 		var apiDto = await getResponse.ReadFromJsonAsync<OAuthApiDto>(_factory.JsonOptions);
 		Assert.NotNull(apiDto);
 		Assert.DoesNotContain(apiDto.Secrets, s => s.SecretId == created.SecretId);
@@ -157,15 +157,15 @@ public class ExtendedApiTests : IAsyncLifetime
 			Description = "Second secret"
 		};
 		var create1 = await _client.PostAsJsonAsync(
-			$"/api/admin/oauth/apis/{api.Id}/secrets", secret1Dto, _factory.JsonOptions);
+			$"/system/api/admin/oauth/apis/{api.Id}/secrets", secret1Dto, _factory.JsonOptions);
 		var created1 = await create1.ReadFromJsonAsync<ApiSecretCreatedDto>(_factory.JsonOptions);
 
 		var create2 = await _client.PostAsJsonAsync(
-			$"/api/admin/oauth/apis/{api.Id}/secrets", secret2Dto, _factory.JsonOptions);
+			$"/system/api/admin/oauth/apis/{api.Id}/secrets", secret2Dto, _factory.JsonOptions);
 		var created2 = await create2.ReadFromJsonAsync<ApiSecretCreatedDto>(_factory.JsonOptions);
 
 		// Act
-		var response = await _client.GetAsync($"/api/admin/oauth/apis/{api.Id}");
+		var response = await _client.GetAsync($"/system/api/admin/oauth/apis/{api.Id}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);

@@ -8,7 +8,7 @@ This page explains the OAuth flows supported by Cocoar.Auth and when to use each
 
 ```
 1. App redirects user to:
-   /connect/authorize?
+   /{realm}/connect/authorize?
      response_type=code
      &client_id=my-app
      &redirect_uri=http://localhost:3000/callback
@@ -24,7 +24,7 @@ This page explains the OAuth flows supported by Cocoar.Auth and when to use each
    http://localhost:3000/callback?code=AUTH_CODE
 
 5. App exchanges code for tokens:
-   POST /connect/token
+   POST /{realm}/connect/token
    {
      grant_type: authorization_code,
      code: AUTH_CODE,
@@ -52,7 +52,7 @@ All authorization code requests must include `code_challenge` and `code_challeng
 **Use for:** Machine-to-machine communication where no user is involved.
 
 ```
-POST /connect/token
+POST /{realm}/connect/token
 {
   grant_type: client_credentials,
   client_id: billing-service,
@@ -75,7 +75,7 @@ No user context — the token represents the service itself.
 **Use for:** Renewing expired access tokens without re-authentication.
 
 ```
-POST /connect/token
+POST /{realm}/connect/token
 {
   grant_type: refresh_token,
   client_id: my-app,
@@ -100,7 +100,7 @@ Each refresh token use issues a new refresh token and invalidates the old one. T
 **Use for:** Resource servers validating access tokens.
 
 ```
-POST /connect/introspect
+POST /{realm}/connect/introspect
 Authorization: Basic base64(resource-id:resource-secret)
 {
   token: ACCESS_TOKEN,
@@ -126,7 +126,7 @@ Response (revoked/expired token):
 ## Token Revocation
 
 ```
-POST /connect/revocation
+POST /{realm}/connect/revocation
 {
   client_id: my-app,
   client_secret: SECRET,        // For confidential clients
@@ -139,12 +139,14 @@ Revocation is immediate — the next introspection call will return `active: fal
 
 ## Per-Realm Endpoints
 
-All OAuth endpoints are realm-scoped:
+All OAuth endpoints are realm-scoped. The realm slug is always the first path segment:
 
-| System Realm | Other Realms |
-|-------------|-------------|
-| `/connect/authorize` | `/realms/{slug}/connect/authorize` |
-| `/connect/token` | `/realms/{slug}/connect/token` |
-| `/connect/introspect` | `/realms/{slug}/connect/introspect` |
-| `/connect/revocation` | `/realms/{slug}/connect/revocation` |
-| `/.well-known/openid-configuration` | `/realms/{slug}/.well-known/openid-configuration` |
+| Example |
+|---------|
+| `/{slug}/connect/authorize` |
+| `/{slug}/connect/token` |
+| `/{slug}/connect/introspect` |
+| `/{slug}/connect/revocation` |
+| `/{slug}/.well-known/openid-configuration` |
+
+The system realm uses `/system/` as its slug: `/system/connect/token`, `/system/.well-known/openid-configuration`, etc.

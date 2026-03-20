@@ -103,10 +103,6 @@ This ensures there's always a known entry point to manage the system, even if DN
 
 `https://auth.example.com/` (root without realm) redirects to the system realm.
 
-::: danger TODO
-The current implementation uses `/realms/{slug}/api` with a special case for the system realm at `/api`. The simplified scheme described here (realm as first path segment, subdomain and custom domain support) is planned. See [TODOs](/todo#architecture).
-:::
-
 ## Database Isolation
 
 Each realm gets a dedicated PostgreSQL database:

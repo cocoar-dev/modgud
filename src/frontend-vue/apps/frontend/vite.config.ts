@@ -12,29 +12,19 @@ export default defineConfig({
   server: {
     port: 4200,
     proxy: {
-      '/realms': {
-        target: 'http://localhost',
-        changeOrigin: true,
-        secure: false,
-        cookieDomainRewrite: 'localhost',
-        // Only proxy API/connect requests, serve SPA for realm navigation
-        bypass(req) {
-          if (req.url && !/\/realms\/[^/]+\/(api|connect|\.well-known)/.test(req.url)) {
-            return '/index.html';
-          }
-        },
-      },
-      '/api': {
+      // Proxy realm API/connect/.well-known requests to backend
+      // Regex: any path starting with /{slug}/(api|connect|.well-known)
+      '^/[a-z][a-z0-9-]+/(api|connect|\\.well-known)': {
         target: 'http://localhost',
         changeOrigin: true,
         secure: false,
         cookieDomainRewrite: 'localhost',
       },
-      '/connect': {
+      // Global health endpoint
+      '/health': {
         target: 'http://localhost',
         changeOrigin: true,
         secure: false,
-        cookieDomainRewrite: 'localhost',
       },
     },
   },

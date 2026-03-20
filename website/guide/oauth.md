@@ -21,15 +21,17 @@ All access tokens are **reference tokens**, not JWTs. This is a core architectur
 
 ## Per-Realm OIDC
 
-Each realm has its own OpenID Connect endpoints:
+Each realm has its own OpenID Connect endpoints. The realm slug is always the first path segment:
 
-| Endpoint | System | Tenant |
-|----------|--------|--------|
-| Discovery | `/.well-known/openid-configuration` | `/realms/{slug}/.well-known/openid-configuration` |
-| Authorize | `/connect/authorize` | `/realms/{slug}/connect/authorize` |
-| Token | `/connect/token` | `/realms/{slug}/connect/token` |
-| Introspect | `/connect/introspect` | `/realms/{slug}/connect/introspect` |
-| Revoke | `/connect/revocation` | `/realms/{slug}/connect/revocation` |
+| Endpoint | URL |
+|----------|-----|
+| Discovery | `/{slug}/.well-known/openid-configuration` |
+| Authorize | `/{slug}/connect/authorize` |
+| Token | `/{slug}/connect/token` |
+| Introspect | `/{slug}/connect/introspect` |
+| Revoke | `/{slug}/connect/revocation` |
+
+For example, the system realm uses `/system/connect/token` and the Acme realm uses `/acme/connect/token`.
 
 The issuer URL includes the realm prefix, ensuring tokens from one realm cannot be used in another.
 

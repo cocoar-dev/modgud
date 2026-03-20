@@ -222,9 +222,14 @@ builder.Services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.Appli
             var identity = (ClaimsIdentity)context.Principal!.Identity!;
             identity.AddClaim(new Claim("cocoar:realm", realmSlug));
 
-            if (realmSlug != "system")
+            if (realmSlug == "system")
             {
-                context.CookieOptions.Path = $"/realms/{realmSlug}";
+                // System admin cookie needs path "/" to reach all realm paths
+                context.CookieOptions.Path = "/";
+            }
+            else
+            {
+                context.CookieOptions.Path = $"/{realmSlug}";
             }
             return originalOnSigningIn?.Invoke(context) ?? Task.CompletedTask;
         };
@@ -327,7 +332,7 @@ app.UseSerilogRequestLogging();
 
 app.UseRateLimiter();
 
-// Realm middleware: resolves tenant from URL path (/realms/{slug}/... or system fallback)
+// Realm middleware: resolves tenant from first path segment (/{slug}/...)
 // Must run BEFORE UseRouting so that PathBase is set before route matching occurs.
 app.UseMiddleware<RealmMiddleware>();
 

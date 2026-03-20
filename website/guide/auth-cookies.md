@@ -9,7 +9,7 @@ Cocoar.Auth uses cookie-based authentication with ASP.NET Core Identity. No JWTs
 | HttpOnly | `true` (not accessible via JavaScript) |
 | Secure | Configurable (Always/SameAsRequest) |
 | SameSite | `Lax` (CSRF protection) |
-| Path | `/` for system, `/realms/{slug}` for tenants |
+| Path | `/{slug}` (e.g. `/system`, `/acme`) |
 
 ## Session Tracking
 
@@ -22,7 +22,7 @@ Users can view and revoke individual sessions or all sessions at once.
 
 ## Realm Cookie Scoping
 
-Cookies are scoped per realm path to prevent cross-realm session leakage. When signing in to `/realms/acme/api/auth/login`, the cookie path is set to `/realms/acme`. This means:
-- The cookie is only sent for requests to `/realms/acme/...`
+Cookies are scoped per realm path to prevent cross-realm session leakage. When signing in to `/acme/api/auth/login`, the cookie path is set to `/acme`. This means:
+- The cookie is only sent for requests to `/acme/...`
 - A user logged into the `acme` realm cannot access `system` realm endpoints
 - Multiple realm sessions can coexist in the same browser

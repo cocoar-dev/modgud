@@ -37,7 +37,7 @@ public class OAuthAdminTests : IAsyncLifetime
 	public async Task GetClients_WithoutAuthentication_ReturnsUnauthorized()
 	{
 		// Act
-		var response = await _client.GetAsync("/api/admin/oauth/clients");
+		var response = await _client.GetAsync("/system/api/admin/oauth/clients");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -51,7 +51,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		await _client.LoginAsync(user.UserName, "Test123!@#", _factory.JsonOptions);
 
 		// Act
-		var response = await _client.GetAsync("/api/admin/oauth/clients");
+		var response = await _client.GetAsync("/system/api/admin/oauth/clients");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -74,7 +74,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -102,7 +102,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -125,10 +125,10 @@ public class OAuthAdminTests : IAsyncLifetime
 		};
 
 		// Create first client
-		await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 
 		// Act - try to create duplicate
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -145,10 +145,10 @@ public class OAuthAdminTests : IAsyncLifetime
 			ClientType = "public",
 			ConsentType = "implicit"
 		};
-		await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 
 		// Act
-		var response = await _client.GetAsync("/api/admin/oauth/clients");
+		var response = await _client.GetAsync("/system/api/admin/oauth/clients");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -170,7 +170,7 @@ public class OAuthAdminTests : IAsyncLifetime
 			ClientType = "public",
 			ConsentType = "implicit"
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<OAuthClientCreatedDto>(_factory.JsonOptions);
 
 		var updateDto = new UpdateOAuthClientDto
@@ -180,7 +180,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PutAsJsonAsync($"/api/admin/oauth/clients/{created!.Client.Id}", updateDto, _factory.JsonOptions);
+		var response = await _client.PutAsJsonAsync($"/system/api/admin/oauth/clients/{created!.Client.Id}", updateDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -201,17 +201,17 @@ public class OAuthAdminTests : IAsyncLifetime
 			ClientType = "public",
 			ConsentType = "implicit"
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<OAuthClientCreatedDto>(_factory.JsonOptions);
 
 		// Act
-		var response = await _client.DeleteAsync($"/api/admin/oauth/clients/{created!.Client.Id}");
+		var response = await _client.DeleteAsync($"/system/api/admin/oauth/clients/{created!.Client.Id}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
 		// Verify deleted
-		var getResponse = await _client.GetAsync($"/api/admin/oauth/clients/{created.Client.Id}");
+		var getResponse = await _client.GetAsync($"/system/api/admin/oauth/clients/{created.Client.Id}");
 		Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
 	}
 
@@ -227,11 +227,11 @@ public class OAuthAdminTests : IAsyncLifetime
 			ConsentType = "implicit",
 			ClientSecret = "OriginalSecret123!" // Provide explicit initial secret
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<OAuthClientCreatedDto>(_factory.JsonOptions);
 
 		// Act
-		var response = await _client.PostAsync($"/api/admin/oauth/clients/{created!.Client.Id}/regenerate-secret", null);
+		var response = await _client.PostAsync($"/system/api/admin/oauth/clients/{created!.Client.Id}/regenerate-secret", null);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -252,11 +252,11 @@ public class OAuthAdminTests : IAsyncLifetime
 			ClientType = "public",
 			ConsentType = "implicit"
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<OAuthClientCreatedDto>(_factory.JsonOptions);
 
 		// Act
-		var response = await _client.PostAsync($"/api/admin/oauth/clients/{created!.Client.Id}/regenerate-secret", null);
+		var response = await _client.PostAsync($"/system/api/admin/oauth/clients/{created!.Client.Id}/regenerate-secret", null);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -274,7 +274,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		await _factory.SeedOpenIddictScopesAsync();
 
 		// Act
-		var response = await _client.GetAsync("/api/admin/oauth/scopes");
+		var response = await _client.GetAsync("/system/api/admin/oauth/scopes");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -300,7 +300,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/scopes", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/scopes", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -322,10 +322,10 @@ public class OAuthAdminTests : IAsyncLifetime
 		};
 
 		// Create first
-		await _client.PostAsJsonAsync("/api/admin/oauth/scopes", createDto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/system/api/admin/oauth/scopes", createDto, _factory.JsonOptions);
 
 		// Act - try duplicate
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/scopes", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/scopes", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -339,12 +339,12 @@ public class OAuthAdminTests : IAsyncLifetime
 		await _factory.SeedOpenIddictScopesAsync();
 
 		// Get the openid scope
-		var scopesResponse = await _client.GetAsync("/api/admin/oauth/scopes");
+		var scopesResponse = await _client.GetAsync("/system/api/admin/oauth/scopes");
 		var scopes = await scopesResponse.ReadFromJsonAsync<OAuthScopeListDto>(_factory.JsonOptions);
 		var openIdScope = scopes!.Items.First(s => s.Name == "openid");
 
 		// Act
-		var response = await _client.DeleteAsync($"/api/admin/oauth/scopes/{openIdScope.Id}");
+		var response = await _client.DeleteAsync($"/system/api/admin/oauth/scopes/{openIdScope.Id}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -356,11 +356,11 @@ public class OAuthAdminTests : IAsyncLifetime
 		// Arrange
 		await LoginAsAdminAsync();
 		var createDto = new CreateOAuthScopeDto { Name = "deletable-scope" };
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/scopes", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/scopes", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<OAuthScopeDto>(_factory.JsonOptions);
 
 		// Act
-		var response = await _client.DeleteAsync($"/api/admin/oauth/scopes/{created!.Id}");
+		var response = await _client.DeleteAsync($"/system/api/admin/oauth/scopes/{created!.Id}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -374,7 +374,7 @@ public class OAuthAdminTests : IAsyncLifetime
 	public async Task GetApis_WithoutAuthentication_ReturnsUnauthorized()
 	{
 		// Act
-		var response = await _client.GetAsync("/api/admin/oauth/apis");
+		var response = await _client.GetAsync("/system/api/admin/oauth/apis");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -388,7 +388,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		await _client.LoginAsync(user.UserName, "Test123!@#", _factory.JsonOptions);
 
 		// Act
-		var response = await _client.GetAsync("/api/admin/oauth/apis");
+		var response = await _client.GetAsync("/system/api/admin/oauth/apis");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -410,7 +410,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -437,10 +437,10 @@ public class OAuthAdminTests : IAsyncLifetime
 		};
 
 		// Create first
-		await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/system/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 
 		// Act - try duplicate
-		var response = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -456,10 +456,10 @@ public class OAuthAdminTests : IAsyncLifetime
 			Name = "list-test-api",
 			DisplayName = "List Test API"
 		};
-		await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/system/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 
 		// Act
-		var response = await _client.GetAsync("/api/admin/oauth/apis");
+		var response = await _client.GetAsync("/system/api/admin/oauth/apis");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -479,11 +479,11 @@ public class OAuthAdminTests : IAsyncLifetime
 			Name = "get-test-api",
 			DisplayName = "Get Test API"
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 
 		// Act
-		var response = await _client.GetAsync($"/api/admin/oauth/apis/{created!.Id}");
+		var response = await _client.GetAsync($"/system/api/admin/oauth/apis/{created!.Id}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -499,7 +499,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		// Act
-		var response = await _client.GetAsync($"/api/admin/oauth/apis/{Guid.NewGuid()}");
+		var response = await _client.GetAsync($"/system/api/admin/oauth/apis/{Guid.NewGuid()}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -516,7 +516,7 @@ public class OAuthAdminTests : IAsyncLifetime
 			DisplayName = "Original Name",
 			Enabled = true
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 
 		var updateDto = new UpdateOAuthApiDto
@@ -529,7 +529,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PutAsJsonAsync($"/api/admin/oauth/apis/{created!.Id}", updateDto, _factory.JsonOptions);
+		var response = await _client.PutAsJsonAsync($"/system/api/admin/oauth/apis/{created!.Id}", updateDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -551,17 +551,17 @@ public class OAuthAdminTests : IAsyncLifetime
 		{
 			Name = "delete-test-api"
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 
 		// Act
-		var response = await _client.DeleteAsync($"/api/admin/oauth/apis/{created!.Id}");
+		var response = await _client.DeleteAsync($"/system/api/admin/oauth/apis/{created!.Id}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
 		// Verify deleted
-		var getResponse = await _client.GetAsync($"/api/admin/oauth/apis/{created.Id}");
+		var getResponse = await _client.GetAsync($"/system/api/admin/oauth/apis/{created.Id}");
 		Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
 	}
 
@@ -572,7 +572,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		// Act
-		var response = await _client.DeleteAsync($"/api/admin/oauth/apis/{Guid.NewGuid()}");
+		var response = await _client.DeleteAsync($"/system/api/admin/oauth/apis/{Guid.NewGuid()}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -587,12 +587,12 @@ public class OAuthAdminTests : IAsyncLifetime
 		{
 			Name = "regen-secret-api"
 		};
-		var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/apis", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/apis", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 		var originalSecret = created!.ApiSecret;
 
 		// Act
-		var response = await _client.PostAsync($"/api/admin/oauth/apis/{created.Id}/regenerate-secret", null);
+		var response = await _client.PostAsync($"/system/api/admin/oauth/apis/{created.Id}/regenerate-secret", null);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -610,7 +610,7 @@ public class OAuthAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		// Act
-		var response = await _client.PostAsync($"/api/admin/oauth/apis/{Guid.NewGuid()}/regenerate-secret", null);
+		var response = await _client.PostAsync($"/system/api/admin/oauth/apis/{Guid.NewGuid()}/regenerate-secret", null);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
