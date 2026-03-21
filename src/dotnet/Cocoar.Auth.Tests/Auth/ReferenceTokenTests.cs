@@ -165,9 +165,9 @@ public class ReferenceTokenTests : IAsyncLifetime
 
 	private static bool IsJwtFormat(string token)
 	{
-		// A JWT has exactly 3 base64url-encoded parts separated by dots
+		// A JWS (signed JWT) has 3 parts, a JWE (encrypted JWT) has 5 parts
 		var parts = token.Split('.');
-		return parts.Length == 3;
+		return parts.Length == 3 || parts.Length == 5;
 	}
 
 	#endregion
@@ -406,6 +406,153 @@ public class ReferenceTokenTests : IAsyncLifetime
 		Assert.NotEmpty(tokens.AccessToken);
 		Assert.False(IsJwtFormat(tokens.AccessToken),
 			"Reference token from client_credentials should be opaque and not in JWT format");
+	}
+
+	#endregion
+
+	#region JWT Access Token Tests
+
+	[Fact]
+	public async Task AuthorizationCodeFlow_WithJwtTokenClient_ReturnsJwtToken()
+	{
+		// Arrange - create OAuth client with JWT access token type
+		var created = await CreateOAuthClientViaAdminAsync(new CreateOAuthClientDto
+		{
+			ClientId = "jwt-token-client",
+			DisplayName = "JWT Token Client",
+			ClientType = "public",
+			ConsentType = "implicit",
+			AccessTokenType = AccessTokenType.Jwt,
+			RedirectUris = ["http://localhost/callback"],
+			PostLogoutRedirectUris = ["http://localhost"],
+			Scopes = ["openid", "profile"]
+		});
+
+		// Login as test user
+		await _factory.CreateTestUserAsync("jwtuser", "Test123!@#");
+		await _client.LoginAsync("jwtuser", "Test123!@#", _factory.JsonOptions);
+
+		// Generate PKCE
+		var (codeVerifier, codeChallenge) = GeneratePkce();
+
+		// Get authorization code
+		var code = await GetAuthorizationCodeAsync(
+			"jwt-token-client", "http://localhost/callback", codeChallenge,
+			"openid profile", "test-state");
+
+		// Exchange code for tokens
+		var tokens = await ExchangeCodeForTokensAsync(
+			code, "jwt-token-client", "http://localhost/callback", codeVerifier);
+
+		// Assert - JWT token should be in JWT format (3 parts separated by dots)
+		Assert.NotNull(tokens.AccessToken);
+		Assert.NotEmpty(tokens.AccessToken);
+		Assert.True(IsJwtFormat(tokens.AccessToken),
+			$"JWT access token should be in JWT format (header.payload.signature) but got: {tokens.AccessToken[..Math.Min(50, tokens.AccessToken.Length)]}...");
+	}
+
+	[Fact]
+	public async Task ClientCredentials_WithJwtTokenClient_ReturnsJwtToken()
+	{
+		// Arrange - create confidential client with JWT access token type
+		var clientSecret = "CCJwtSecret123!";
+		var created = await CreateOAuthClientViaAdminAsync(new CreateOAuthClientDto
+		{
+			ClientId = "cc-jwt-client",
+			DisplayName = "CC JWT Token Client",
+			ClientType = "confidential",
+			ClientSecret = clientSecret,
+			ConsentType = "implicit",
+			AccessTokenType = AccessTokenType.Jwt,
+			RedirectUris = ["http://localhost/callback"],
+			Scopes = ["openid"]
+		});
+
+		// Act - request token with client credentials
+		var parameters = new Dictionary<string, string>
+		{
+			["grant_type"] = "client_credentials",
+			["client_id"] = "cc-jwt-client",
+			["client_secret"] = clientSecret,
+			["scope"] = "openid"
+		};
+
+		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
+
+		// Assert
+		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+		var tokens = await response.Content.ReadFromJsonAsync<TokenResponse>();
+		Assert.NotNull(tokens);
+		Assert.NotNull(tokens.AccessToken);
+		Assert.NotEmpty(tokens.AccessToken);
+		Assert.True(IsJwtFormat(tokens.AccessToken),
+			$"JWT access token from client_credentials should be in JWT format but got: {tokens.AccessToken[..Math.Min(50, tokens.AccessToken.Length)]}...");
+	}
+
+	[Fact]
+	public async Task ReferenceClient_And_JwtClient_ReturnDifferentFormats()
+	{
+		// Arrange - create both client types
+		var refSecret = "DualRefSecret123!";
+		var jwtSecret = "DualJwtSecret123!";
+
+		await CreateOAuthClientViaAdminAsync(new CreateOAuthClientDto
+		{
+			ClientId = "dual-ref-client",
+			DisplayName = "Dual Reference Client",
+			ClientType = "confidential",
+			ClientSecret = refSecret,
+			ConsentType = "implicit",
+			AccessTokenType = AccessTokenType.Reference,
+			Scopes = ["openid"]
+		});
+
+		await _factory.CreateTestUserAsync("admin2", "Admin123!@#", isAdmin: true);
+		await _client.LoginAsync("admin2", "Admin123!@#", _factory.JsonOptions);
+		await _factory.SeedOpenIddictScopesAsync();
+
+		var jwtResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", new CreateOAuthClientDto
+		{
+			ClientId = "dual-jwt-client",
+			DisplayName = "Dual JWT Client",
+			ClientType = "confidential",
+			ClientSecret = jwtSecret,
+			ConsentType = "implicit",
+			AccessTokenType = AccessTokenType.Jwt,
+			Scopes = ["openid"]
+		}, _factory.JsonOptions);
+		Assert.Equal(HttpStatusCode.Created, jwtResponse.StatusCode);
+		await _client.PostAsync("/system/api/auth/logout", null);
+
+		// Act - get tokens from both clients
+		var refParams = new Dictionary<string, string>
+		{
+			["grant_type"] = "client_credentials",
+			["client_id"] = "dual-ref-client",
+			["client_secret"] = refSecret,
+			["scope"] = "openid"
+		};
+
+		var jwtParams = new Dictionary<string, string>
+		{
+			["grant_type"] = "client_credentials",
+			["client_id"] = "dual-jwt-client",
+			["client_secret"] = jwtSecret,
+			["scope"] = "openid"
+		};
+
+		var refTokenResponse = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(refParams));
+		var jwtTokenResponse = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(jwtParams));
+
+		var refTokens = await refTokenResponse.Content.ReadFromJsonAsync<TokenResponse>();
+		var jwtTokens = await jwtTokenResponse.Content.ReadFromJsonAsync<TokenResponse>();
+
+		// Assert - different formats from the same server
+		Assert.NotNull(refTokens?.AccessToken);
+		Assert.NotNull(jwtTokens?.AccessToken);
+
+		Assert.False(IsJwtFormat(refTokens.AccessToken), "Reference client should get opaque token");
+		Assert.True(IsJwtFormat(jwtTokens.AccessToken), "JWT client should get JWT token");
 	}
 
 	#endregion

@@ -37,9 +37,14 @@ public static class OpenIddictExtensions
 		where TSettings : class, IOpenIddictSettings
 	{
 		// Configure OpenIddict
-		// Note: Store registrations are handled by OpenIddict's Add*Store methods
+		// Register custom Marten stores as DI services (OpenIddict 7 pattern)
+		services.AddScoped<IOpenIddictApplicationStore<OAuthApplicationState>, MartenApplicationStore>();
+		services.AddScoped<IOpenIddictAuthorizationStore<OpenIddictAuthorizationDocument>, MartenAuthorizationStore>();
+		services.AddScoped<IOpenIddictScopeStore<OAuthScopeState>, MartenScopeStore>();
+		services.AddScoped<IOpenIddictTokenStore<OpenIddictTokenDocument>, MartenTokenStore>();
+
 		services.AddOpenIddict()
-			// Register the core services with custom stores
+			// Register the core services
 			.AddCore(options =>
 			{
 				// Applications and Scopes use inline projections from event sourcing
@@ -48,12 +53,6 @@ public static class OpenIddictExtensions
 					.SetDefaultAuthorizationEntity<OpenIddictAuthorizationDocument>()
 					.SetDefaultScopeEntity<OAuthScopeState>()
 					.SetDefaultTokenEntity<OpenIddictTokenDocument>();
-
-				// Register custom stores
-				options.AddApplicationStore<MartenApplicationStore>();
-				options.AddAuthorizationStore<MartenAuthorizationStore>();
-				options.AddScopeStore<MartenScopeStore>();
-				options.AddTokenStore<MartenTokenStore>();
 			})
 			// Register the ASP.NET Core host and configure the authorization server
 			.AddServer(options =>
@@ -64,7 +63,9 @@ public static class OpenIddictExtensions
 					.SetUserInfoEndpointUris("connect/userinfo")
 					.SetEndSessionEndpointUris("connect/logout")
 					.SetIntrospectionEndpointUris("connect/introspect")
-					.SetRevocationEndpointUris("connect/revoke");
+					.SetRevocationEndpointUris("connect/revoke")
+					.SetDeviceAuthorizationEndpointUris("connect/device")
+					.SetEndUserVerificationEndpointUris("connect/verify");
 
 				// Enable the authorization code flow with PKCE
 				options.AllowAuthorizationCodeFlow()
@@ -75,6 +76,9 @@ public static class OpenIddictExtensions
 
 				// Enable the client credentials flow (for machine-to-machine)
 				options.AllowClientCredentialsFlow();
+
+				// Enable the device code flow (for TVs, CLI tools, IoT)
+				options.AllowDeviceAuthorizationFlow();
 
 				// Enable reference tokens - store token payloads server-side,
 				// return opaque reference identifiers to clients.
@@ -113,10 +117,14 @@ public static class OpenIddictExtensions
 					.EnableTokenEndpointPassthrough()
 					.EnableUserInfoEndpointPassthrough()
 					.EnableEndSessionEndpointPassthrough()
+					.EnableEndUserVerificationEndpointPassthrough()
 					.EnableStatusCodePagesIntegration();
 
 				// Register realm-aware issuer handler for discovery document
 				options.AddEventHandler(RealmIssuerHandler.Descriptor);
+
+				// Register per-client access token type handler (Reference vs JWT)
+				options.AddEventHandler(AccessTokenTypeHandler.Descriptor);
 			})
 			// Register the validation components
 			.AddValidation(options =>

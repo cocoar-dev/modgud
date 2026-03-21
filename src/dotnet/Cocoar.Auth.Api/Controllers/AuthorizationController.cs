@@ -230,6 +230,42 @@ public class AuthorizationController : Controller
 			return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 		}
 
+		if (request.IsDeviceCodeGrantType())
+		{
+			// Device code flow: the principal is populated by OpenIddict
+			// from the verification step (when the user approved)
+			var result = await HttpContext.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+			var subject = result.Principal?.GetClaim(Claims.Subject);
+			if (string.IsNullOrEmpty(subject))
+			{
+				return Forbid(
+					authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
+					properties: new AuthenticationProperties(new Dictionary<string, string?>
+					{
+						[OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
+						[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The device code is no longer valid."
+					}));
+			}
+
+			var user = await _userManager.FindByIdAsync(subject);
+			if (user is null || !user.IsActive || user.IsDeleted)
+			{
+				return Forbid(
+					authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
+					properties: new AuthenticationProperties(new Dictionary<string, string?>
+					{
+						[OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
+						[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The user is no longer allowed to sign in."
+					}));
+			}
+
+			var originalScopes = result.Principal?.GetScopes();
+			var principal = await CreateClaimsPrincipalAsync(user, request, originalScopes);
+			principal.SetAuthorizationId(result.Principal?.GetAuthorizationId());
+
+			return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+		}
+
 		if (request.IsClientCredentialsGrantType())
 		{
 			// For client credentials grant, create a minimal principal for the client
@@ -417,6 +453,57 @@ public class AuthorizationController : Controller
 		}
 
 		return Ok(claims);
+	}
+
+	/// <summary>
+	/// Verification endpoint - handles device code user verification.
+	/// The user enters their code and approves/denies the request.
+	/// </summary>
+	[Authorize]
+	[HttpGet("~/connect/verify")]
+	[HttpPost("~/connect/verify")]
+	[IgnoreAntiforgeryToken]
+	public async Task<IActionResult> Verify()
+	{
+		var request = HttpContext.GetOpenIddictServerRequest() ??
+			throw new InvalidOperationException("The OpenID Connect request cannot be retrieved.");
+
+		// If this is a GET request, redirect to the frontend verification page
+		if (HttpContext.Request.Method == HttpMethods.Get)
+		{
+			var userCode = request.UserCode;
+			var verifyUrl = $"/device?user_code={Uri.EscapeDataString(userCode ?? "")}";
+			return Redirect(verifyUrl);
+		}
+
+		// POST: Process the verification (approve/deny)
+		var user = await _userManager.GetUserAsync(User);
+		if (user is null)
+		{
+			return Challenge(
+				authenticationSchemes: IdentityConstants.ApplicationScheme,
+				properties: new AuthenticationProperties
+				{
+					RedirectUri = Request.PathBase + Request.Path + Request.QueryString
+				});
+		}
+
+		// Check if user denied
+		if (!string.IsNullOrEmpty(Request.Form["deny"]))
+		{
+			return Forbid(
+				authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
+				properties: new AuthenticationProperties(new Dictionary<string, string?>
+				{
+					[OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.AccessDenied,
+					[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The user denied the device authorization request."
+				}));
+		}
+
+		// User approved — create claims principal
+		var principal = await CreateClaimsPrincipalAsync(user, request);
+
+		return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 	}
 
 	/// <summary>

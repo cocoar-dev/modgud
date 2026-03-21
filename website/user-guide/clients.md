@@ -41,6 +41,17 @@ If a client secret is compromised:
 The old secret is immediately invalidated. Your application will stop working until you update the secret.
 :::
 
+## Access Token Type
+
+Each client can be configured to receive either **Reference Tokens** (default) or **JWTs**:
+
+| Format | Description |
+|--------|-------------|
+| **Reference** (default) | Opaque string stored server-side. APIs validate via introspection. Instantly revocable. |
+| **JWT** | Self-contained signed token. APIs validate locally without calling Cocoar.Auth. Cannot be revoked before expiry. |
+
+Set this under **Access Token Type** when creating or editing a client. See [Glossary > Access Token Types](/concepts/glossary#access-token-types) for detailed guidance.
+
 ## Common Client Configurations
 
 ### SPA (Single-Page Application)
@@ -49,6 +60,7 @@ The old secret is immediately invalidated. Your application will stop working un
 |---------|-------|
 | Client Type | Public |
 | Grant Types | Authorization Code |
+| Access Token Type | Reference |
 | Redirect URIs | `http://localhost:3000/callback` |
 | Scopes | `openid profile email roles` |
 
@@ -58,6 +70,7 @@ The old secret is immediately invalidated. Your application will stop working un
 |---------|-------|
 | Client Type | Confidential |
 | Grant Types | Client Credentials |
+| Access Token Type | JWT |
 | Redirect URIs | _(none)_ |
 | Scopes | Custom API scopes |
 
@@ -67,5 +80,6 @@ The old secret is immediately invalidated. Your application will stop working un
 |---------|-------|
 | Client Type | Confidential |
 | Grant Types | Authorization Code |
+| Access Token Type | Reference |
 | Redirect URIs | `https://myapp.com/signin-oidc` |
 | Scopes | `openid profile email roles offline_access` |

@@ -4,39 +4,39 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- ASP.NET Core & Identity -->
-    <PackageVersion Include="JasperFx.Events" Version="1.18.0" />
+    <PackageVersion Include="JasperFx.Events" Version="1.24.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Identity" Version="2.3.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.2" />
-    <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.2" />
+    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Identity.Stores" Version="10.0.0" />
     <!-- Marten -->
-    <PackageVersion Include="Marten" Version="8.20.0" />
+    <PackageVersion Include="Marten" Version="8.26.0" />
     <!-- Mapping -->
     <PackageVersion Include="Riok.Mapperly" Version="4.3.1" />
     <!-- ErrorOr -->
     <PackageVersion Include="ErrorOr" Version="2.0.1" />
     <!-- Wolverine CQRS -->
-    <PackageVersion Include="WolverineFx" Version="5.13.0" />
-    <PackageVersion Include="WolverineFx.Marten" Version="5.13.0" />
+    <PackageVersion Include="WolverineFx" Version="5.21.0" />
+    <PackageVersion Include="WolverineFx.Marten" Version="5.21.0" />
     <!-- Health Checks -->
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
     <!-- Logging -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <!-- Swagger -->
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.1" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.5" />
     <!-- UserAgent Parsing -->
     <PackageVersion Include="UAParser" Version="3.1.47" />
     <!-- WebAuthn / FIDO2 -->
     <PackageVersion Include="Fido2" Version="4.0.0" />
     <!-- OIDC / JWT -->
-    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.11.0" />
-    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.11.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.16.0" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.16.0" />
     <!-- OpenIddict (using custom Marten stores, no EF Core) -->
-    <PackageVersion Include="OpenIddict" Version="6.3.0" />
-    <PackageVersion Include="OpenIddict.Abstractions" Version="6.3.0" />
-    <PackageVersion Include="OpenIddict.AspNetCore" Version="6.3.0" />
+    <PackageVersion Include="OpenIddict" Version="7.4.0" />
+    <PackageVersion Include="OpenIddict.Abstractions" Version="7.4.0" />
+    <PackageVersion Include="OpenIddict.AspNetCore" Version="7.4.0" />
     <!-- BCrypt for client secret hashing (compatible with OpenIddict) -->
-    <PackageVersion Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageVersion Include="BCrypt.Net-Next" Version="4.1.0" />
     <!-- Cocoar Configuration -->
     <PackageVersion Include="Cocoar.Configuration" Version="4.2.1" />
     <PackageVersion Include="Cocoar.Configuration.AspNetCore" Version="4.2.1" />
@@ -44,14 +44,14 @@
     <PackageVersion Include="Cocoar.Configuration.Secrets" Version="4.2.1" />
     <PackageVersion Include="Cocoar.Configuration.Secrets.Abstractions" Version="4.2.1" />
     <!-- Testing -->
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.2" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.5" />
     <PackageVersion Include="Otp.NET" Version="1.4.1" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
-    <PackageVersion Include="Weasel.Core" Version="8.5.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
+    <PackageVersion Include="Weasel.Core" Version="8.9.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
-    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.10.0" />
-    <PackageVersion Include="WireMock.Net" Version="1.6.12" />
+    <PackageVersion Include="coverlet.collector" Version="8.0.1" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
+    <PackageVersion Include="WireMock.Net" Version="2.0.0" />
   </ItemGroup>
 </Project>

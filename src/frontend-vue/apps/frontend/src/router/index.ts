@@ -55,6 +55,11 @@ export const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/device',
+      component: () => import('@/views/auth/DeviceVerificationView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/consent/denied',
       component: () => import('@/views/auth/ConsentDeniedView.vue'),
       meta: { public: true },

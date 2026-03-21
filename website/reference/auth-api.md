@@ -105,6 +105,27 @@ If the user has 2FA enabled, the callback redirects with `?requires2fa=true` and
 | `POST` | `/auth/cancel-deletion` | Cancel pending deletion |
 | `GET` | `/auth/deletion-status` | Get deletion status |
 
+## Device Code Flow (RFC 8628)
+
+For devices without a browser (Smart TVs, CLI tools, IoT).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/connect/device` | Request device + user codes |
+| `GET/POST` | `/connect/verify` | User verification endpoint (redirects to frontend) |
+
+### Device Code Flow
+
+```
+1. Device: POST /connect/device → receives device_code, user_code, verification_uri
+2. Device displays user_code and verification_uri to user
+3. User opens verification_uri in browser, logs in, enters user_code
+4. User approves → device code is marked as authorized
+5. Device polls: POST /connect/token (grant_type=device_code) → receives tokens
+```
+
+Polling responses before user approval: `{ "error": "authorization_pending" }`
+
 ## Setup
 
 | Method | Path | Description |

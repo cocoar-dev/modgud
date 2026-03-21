@@ -2,58 +2,11 @@
 
 Tracking page for outstanding implementation tasks, ordered by priority.
 
-**Stand: 2026-03-21** · 272 Backend-Tests (0 Failures, 12 min) · 26 Playwright E2E Tests (9s)
+**Stand: 2026-03-21** · 278 Backend-Tests (0 Failures, ~12 min) · 26 Playwright E2E Tests (9s)
 
 ---
 
-## P2 — Per-Client Access Token Type
-
-> Aktuell Reference Tokens als Standard. Manche Clients brauchen JWTs.
-
-- [ ] `AccessTokenType` Property zum OAuth Client hinzufügen (Enum: `Reference` | `Jwt`)
-- [ ] OpenIddict per-Client Token-Format konfigurieren
-- [ ] Admin-UI: Dropdown in Client-Formular
-- [ ] Migration/Default: Bestehende Clients behalten `Reference`
-- [ ] Tests
-- [ ] Dokumentation: [Glossary > Access Token Types](/concepts/glossary#access-token-types)
-
 ---
-
-## P2 — Dokumentation auffüllen
-
-> 9 Seiten sind Stubs (<50 Zeilen). Inhalt vertiefen.
-
-### Developer Guide
-
-- [ ] `guide/auth-cookies.md` (28 Zeilen) — Cookie-Architektur, Path-Scoping, SameSite, Realm-Isolation
-- [ ] `guide/oauth.md` (43 Zeilen) — OpenIddict-Konfiguration, Flows, Token-Typen, Consent
-- [ ] `guide/two-factor.md` (27 Zeilen) — TOTP, Email OTP, WebAuthn Implementierung
-- [ ] `guide/database.md` (44 Zeilen) — Marten-Konfiguration, Tenancy, Projections, Migrations
-- [ ] `guide/deployment.md` (54 Zeilen) — Docker, Kubernetes, Umgebungsvariablen, Zertifikate
-- [ ] `guide/architecture.md` (48 Zeilen) — Clean Architecture Layers, DI, Error Handling
-
-### User Guide
-
-- [ ] `user-guide/scopes.md` (38 Zeilen) — Scope-Verwaltung, Standard-Scopes, Custom Scopes
-- [ ] `user-guide/sessions.md` (37 Zeilen) — Session-Verwaltung, Force Logout, Device Info
-
-### Diagramme
-
-- [ ] Mermaid-Diagramme: OAuth Flow, Account Lifecycle, Realm Resolution, Token Validation
-
----
-
-## P3 — Device Code Grant
-
-> Für Smart TVs, CLI Tools, IoT-Geräte.
-
-- [ ] OpenIddict Device Code Flow aktivieren
-- [ ] Device Authorization Endpoint (`/connect/device`)
-- [ ] User-Verification-Seite im Frontend (Code eingeben + bestätigen)
-- [ ] Polling-Endpoint für Device
-- [ ] Admin-UI: Device Code als Grant Type auswählbar
-- [ ] Tests
-- [ ] Dokumentation
 
 ---
 
@@ -106,6 +59,18 @@ Raw-JSON-Textarea ersetzt durch spezifische Felder (Authority, ClientId, ClientS
 
 ### Frontend Views ✅
 Alle Auth-Views waren bereits implementiert (ResetPassword, ConfirmEmail, Consent, ConsentDenied). SetupView Bug gefixt (fehlender Router-Import + `rememberMe`). Playwright-Tests für alle Views.
+
+### Per-Client Access Token Type ✅
+`AccessTokenTypeHandler` (OpenIddict Server Event Handler) schaltet zwischen Reference und JWT pro Client. DTOs, Aggregate, Projection, Frontend-Form waren bereits vorbereitet — nur der Runtime-Handler fehlte. 3 neue Tests (JWT Auth-Code, JWT Client-Credentials, Dual-Format-Vergleich). 275 Tests.
+
+### Package-Upgrade ✅
+Alle Packages auf latest stable: OpenIddict 6.3→7.4, Marten 8.20→8.26, Wolverine 5.13→5.21, WireMock 1.6→2.0, + 10 weitere. Store-Registration auf OpenIddict 7 API migriert. 275 Tests, 0 Failures.
+
+### Device Code Grant (RFC 8628) ✅
+OpenIddict 7 Device Authorization Flow aktiviert. `POST /connect/device` → Device/User Codes, `GET/POST /connect/verify` → User Verification mit Frontend-Seite (`DeviceVerificationView.vue`), Token-Polling via `POST /connect/token`. 3 neue Tests (Device Auth Response, Authorization Pending, Full Roundtrip). 278 Tests.
+
+### Dokumentation aufgefüllt ✅
+6 Developer Guide Stubs erweitert: auth-cookies (→193 Zeilen), oauth (→221), two-factor (→214), database (→210), deployment (→291), architecture (→277). Inkl. Mermaid-Diagramme, Code-Beispiele, Konfigurationsdetails.
 
 ### VitePress Dokumentation ✅
 35 Seiten: Concepts, User Guide, Developer Guide, API Reference.

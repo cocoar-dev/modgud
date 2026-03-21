@@ -165,6 +165,7 @@ public class OAuthAdminService
 		descriptor.Permissions.Add(Permissions.Endpoints.EndSession);
 		descriptor.Permissions.Add(Permissions.Endpoints.Introspection);
 		descriptor.Permissions.Add(Permissions.Endpoints.Revocation);
+		descriptor.Permissions.Add(Permissions.Endpoints.DeviceAuthorization);
 
 		// Add grant type permissions - use explicit list if provided, otherwise defaults
 		if (dto.AllowedGrantTypes.Count > 0)
