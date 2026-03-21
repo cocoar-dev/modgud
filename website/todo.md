@@ -2,29 +2,7 @@
 
 Tracking page for outstanding implementation tasks, ordered by priority.
 
-**Stand: 2026-03-20** · 272 Tests passing (0 Failures)
-
----
-
-## P1 — Admin-UI: Login Provider Formular
-
-> Aktuell Raw-JSON Textarea für OIDC-Konfiguration. Besser: spezifische Felder.
-
-- [ ] Konfigurationsformular mit Feldern (Authority, ClientId, ClientSecret, Scopes) statt Raw-JSON
-- [ ] Client-seitige Validierung (Authority + ClientId required für OIDC)
-- [ ] `type`-Enum korrekt als Integer senden (aktuell Bug: String `"OpenIdConnect"` statt `1`)
-
----
-
-## P1 — Frontend Views fertigstellen
-
-> Einige Views sind nur Skeletons oder ~90% fertig.
-
-- [ ] `ResetPasswordView.vue` — Skeleton fertigstellen
-- [ ] `ConfirmEmailView.vue` — Skeleton fertigstellen
-- [ ] `ConsentView.vue` — Template vervollständigen (~90%)
-- [ ] `ConsentDeniedView.vue` — Fehlermeldung + "Zurück"-Button
-- [ ] `SetupView.vue` — Template vervollständigen (~90%)
+**Stand: 2026-03-21** · 272 Backend-Tests (0 Failures, 12 min) · 26 Playwright E2E Tests (9s)
 
 ---
 
@@ -121,7 +99,13 @@ Manueller OIDC-Flow (PKCE, nonce, Discovery Docs, ID Token Validation). Auto-Cre
 Refactoring von Shared-DB mit `CleanDatabaseAsync()` auf isolierte Datenbanken pro Test-Klasse. 1 PostgreSQL-Container, N Datenbanken via `CREATE DATABASE`. Tests laufen jetzt parallel. Laufzeit 23 min → 12 min, Flaky Tests (2-3 pro Run) → 0. Logout-Cookie-Path-Bug nebenbei gefixt (`OnSigningOut` setzte falschen Path).
 
 ### Playwright E2E Tests ✅
-Playwright-Infrastruktur unter `src/frontend-vue/apps/e2e/`. 16 Tests (Login, Navigation, Profile), 7.5s Laufzeit, parallel. Auth-Setup mit Auto-Admin-Creation bei frischer DB. Cookie-State-Reuse für authentifizierte Tests.
+Playwright-Infrastruktur unter `src/frontend-vue/apps/e2e/`. 26 Tests (Login, Navigation, Profile, Auth Flows, Admin Login Providers), 9s Laufzeit, parallel. Auth-Setup mit Auto-Admin-Creation bei frischer DB. Cookie-State-Reuse für authentifizierte Tests.
+
+### Admin-UI: Login Provider Formular ✅
+Raw-JSON-Textarea ersetzt durch spezifische Felder (Authority, ClientId, ClientSecret, Scopes). Client-seitige Validierung. String-Enums durchgängig (UI → API → Marten DB) via `JsonStringEnumConverter`.
+
+### Frontend Views ✅
+Alle Auth-Views waren bereits implementiert (ResetPassword, ConfirmEmail, Consent, ConsentDenied). SetupView Bug gefixt (fehlender Router-Import + `rememberMe`). Playwright-Tests für alle Views.
 
 ### VitePress Dokumentation ✅
 35 Seiten: Concepts, User Guide, Developer Guide, API Reference.
