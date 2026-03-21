@@ -17,7 +17,7 @@ app.use(CoarIconPlugin, {
     {
       key: 'lucide',
       source: new CoarHttpIconSource(
-        (name) => `/icons/lucide/${name}.svg`
+        (name: string) => `/icons/lucide/${name}.svg`
       ),
     },
   ],
