@@ -61,6 +61,32 @@ For example: `/system/api/auth/login`, `/acme/api/auth/login`.
 | `DELETE` | `/auth/webauthn/credentials/{id}` | Delete credential |
 | `PATCH` | `/auth/webauthn/credentials/{id}` | Rename credential |
 
+## External Login
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/auth/external-providers` | List available OIDC providers (public, no secrets) |
+| `GET` | `/auth/external-login?provider=...&returnUrl=...` | Initiate OIDC login (redirects to provider) |
+| `GET` | `/auth/external-callback?code=...&state=...` | OIDC callback (processes code, redirects to frontend) |
+| `POST` | `/auth/external-link?provider=...&returnUrl=...` | Start account linking (requires auth) |
+| `DELETE` | `/auth/external-link/{provider}` | Unlink external login (requires auth) |
+| `GET` | `/auth/external-logins` | List linked external logins (requires auth) |
+
+### External Login Flow
+
+```
+1. Frontend calls GET /auth/external-providers → shows provider buttons
+2. User clicks "Login with Google"
+3. Browser navigates to GET /auth/external-login?provider=google&returnUrl=/
+4. Backend builds OIDC auth URL (with PKCE, state, nonce) → 302 redirect to Google
+5. User authenticates at Google
+6. Google redirects to GET /auth/external-callback?code=xxx&state=yyy
+7. Backend: validates state, exchanges code for tokens, validates ID token
+8. Backend: finds or auto-creates user → signs in → redirects to returnUrl
+```
+
+If the user has 2FA enabled, the callback redirects with `?requires2fa=true` and the user completes 2FA via the existing `/auth/2fa/login` endpoint.
+
 ## Sessions
 
 | Method | Path | Description |

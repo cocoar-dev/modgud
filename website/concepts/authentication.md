@@ -27,11 +27,26 @@ Three independent 2FA methods, any combination per user:
 
 Plus **recovery codes** as a last-resort backup.
 
+## External Login (OIDC Providers)
+
+Users can authenticate via external OpenID Connect providers (Google, Microsoft, etc.):
+
+1. Admin configures an OIDC provider in the Login Providers admin UI (Authority, Client ID, Client Secret)
+2. The login page shows "Login with {Provider}" buttons automatically
+3. Clicking a button redirects to the external provider via OIDC Authorization Code + PKCE
+4. On successful authentication, Cocoar.Auth either:
+   - **Signs in** the user (if already linked)
+   - **Auto-creates** a new user from the ID token claims (email, name)
+5. If the user has 2FA enabled, the standard 2FA flow is triggered after the external login
+
+Users can also **link/unlink** external accounts on their profile page. Each realm has its own set of configured providers.
+
 ## Account Lifecycle
 
-Users can enter the system in two ways:
+Users can enter the system in three ways:
 
 - **Self-registration** — user signs up via the registration form (if enabled for the realm)
+- **External login** — user authenticates via an OIDC provider (auto-creates account on first login)
 - **Admin-created** — a realm admin creates the user via the admin UI
 
 From there:

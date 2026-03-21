@@ -116,6 +116,16 @@ Each client can be configured to use one of two access token formats:
 
 ## Login Provider
 
-An external identity source (Google, Microsoft, SAML IdP) that users can authenticate with. Each realm can configure its own set of login providers independently.
+An authentication method that users can sign in with. Each realm can configure its own set of login providers independently.
 
-The built-in `Internal` provider represents local username/password authentication.
+| Type | Description |
+|------|-------------|
+| **Internal** | Built-in username/password authentication. Always present, cannot be deleted. |
+| **OpenID Connect** | External OIDC provider (Google, Microsoft, etc.). Configured with Authority, Client ID, and Client Secret. |
+
+When an OIDC provider is configured:
+- The login page shows a "Login with {Provider}" button
+- Users are redirected to the external provider for authentication (using Authorization Code + PKCE)
+- On first login, a local user account is auto-created from the ID token claims
+- Users can link/unlink external accounts on their profile page
+- If 2FA is enabled, it is enforced after external authentication
