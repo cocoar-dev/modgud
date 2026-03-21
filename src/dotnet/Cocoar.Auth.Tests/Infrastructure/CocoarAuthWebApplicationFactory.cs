@@ -58,7 +58,8 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         Converters =
         {
             new OptionalJsonConverterFactory(),
-            new ShortGuidJsonConverter()
+            new ShortGuidJsonConverter(),
+            new System.Text.Json.Serialization.JsonStringEnumConverter()
         },
         TypeInfoResolver = new OptionalAwareTypeInfoResolver()
     };

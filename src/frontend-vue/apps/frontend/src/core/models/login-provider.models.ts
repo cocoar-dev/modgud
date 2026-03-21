@@ -6,7 +6,8 @@ export interface LoginProviderDto {
   displayName?: string;
   description?: string;
   type: LoginProviderType;
-  configuration?: string;
+  configuration: Record<string, string>;
+  isBuiltIn: boolean;
   createdAt: string;
   modifiedAt?: string;
 }
@@ -24,13 +25,13 @@ export interface CreateLoginProviderDto {
   displayName?: string;
   description?: string;
   type: LoginProviderType;
-  configuration?: string;
+  configuration?: Record<string, string>;
 }
 
 export interface UpdateLoginProviderDto {
   displayName?: string;
   description?: string | null;
-  configuration?: string | null;
+  configuration?: Record<string, string> | null;
 }
 
 export interface LoginProviderList {

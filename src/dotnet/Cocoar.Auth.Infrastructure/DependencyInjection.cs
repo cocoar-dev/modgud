@@ -83,6 +83,7 @@ public static class DependencyInjection
 			{
 				o.PropertyNamingPolicy = null; // Use exact property names
 				o.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+				o.Converters.Add(new JsonStringEnumConverter());
 			});
 
 			// Extracted: Document storage and event configuration

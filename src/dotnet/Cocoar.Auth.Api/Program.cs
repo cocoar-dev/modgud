@@ -249,6 +249,7 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.Converters.Add(new OptionalJsonConverterFactory());
         options.JsonSerializerOptions.Converters.Add(new ShortGuidJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
         options.JsonSerializerOptions.TypeInfoResolver = new OptionalAwareTypeInfoResolver();
     });
 

@@ -20,7 +20,12 @@ const name = ref('');
 const displayName = ref('');
 const description = ref('');
 const type = ref<LoginProviderType>('Internal');
-const configuration = ref('');
+
+// OIDC configuration fields
+const authority = ref('');
+const clientId = ref('');
+const clientSecret = ref('');
+const scopes = ref('openid profile email');
 
 const activeTab = ref<'basic' | 'configuration'>('basic');
 
@@ -33,7 +38,16 @@ const typeOptions = [
   { value: 'OpenIdConnect', label: 'OpenID Connect' },
 ];
 
-watch([name, displayName, description, type, configuration], () => {
+const isOidc = computed(() => type.value === 'OpenIdConnect');
+
+const configValidationError = computed(() => {
+  if (!isOidc.value) return '';
+  if (!authority.value) return 'Authority is required for OIDC providers.';
+  if (!clientId.value) return 'Client ID is required for OIDC providers.';
+  return '';
+});
+
+watch([name, displayName, description, type, authority, clientId, clientSecret, scopes], () => {
   isDirty.value = true;
 });
 
@@ -62,7 +76,13 @@ onMounted(async () => {
     displayName.value = provider.displayName || '';
     description.value = provider.description || '';
     type.value = provider.type;
-    configuration.value = provider.configuration || '';
+    // Populate OIDC fields from configuration object
+    if (provider.configuration) {
+      authority.value = provider.configuration['Authority'] || '';
+      clientId.value = provider.configuration['ClientId'] || '';
+      clientSecret.value = provider.configuration['ClientSecret'] || '';
+      scopes.value = provider.configuration['Scopes'] || 'openid profile email';
+    }
   } catch {
     error.value = 'Failed to load login provider.';
   } finally {
@@ -71,8 +91,23 @@ onMounted(async () => {
   }
 });
 
+function buildConfiguration(): Record<string, string> | undefined {
+  if (!isOidc.value) return undefined;
+  const config: Record<string, string> = {};
+  if (authority.value) config['Authority'] = authority.value;
+  if (clientId.value) config['ClientId'] = clientId.value;
+  if (clientSecret.value) config['ClientSecret'] = clientSecret.value;
+  if (scopes.value) config['Scopes'] = scopes.value;
+  return Object.keys(config).length > 0 ? config : undefined;
+}
+
 async function onSubmit() {
   if (!name.value) return;
+  if (isOidc.value && configValidationError.value) {
+    error.value = configValidationError.value;
+    activeTab.value = 'configuration';
+    return;
+  }
   isSaving.value = true;
   error.value = '';
   try {
@@ -80,7 +115,7 @@ async function onSubmit() {
       await adminApi.updateLoginProvider(id.value!, {
         displayName: displayName.value || undefined,
         description: description.value || null,
-        configuration: type.value === 'OpenIdConnect' ? (configuration.value || null) : null,
+        configuration: isOidc.value ? (buildConfiguration() ?? null) : null,
       });
     } else {
       await adminApi.createLoginProvider({
@@ -88,7 +123,7 @@ async function onSubmit() {
         displayName: displayName.value || undefined,
         description: description.value || undefined,
         type: type.value,
-        configuration: type.value === 'OpenIdConnect' ? (configuration.value || undefined) : undefined,
+        configuration: buildConfiguration(),
       });
     }
     isDirty.value = false;
@@ -99,8 +134,6 @@ async function onSubmit() {
     isSaving.value = false;
   }
 }
-
-
 </script>
 
 <template>
@@ -132,12 +165,42 @@ async function onSubmit() {
             </template>
           </CoarTab>
 
-          <CoarTab v-if="(type as string) === 'OpenIdConnect'" id="configuration">
+          <CoarTab v-if="isOidc" id="configuration">
             <template #default>Configuration</template>
             <template #content>
               <CoarCard padding="l" class="form-card">
                 <div class="form-group">
-                  <CoarTextInput v-model="configuration" label="Configuration (JSON)" :rows="12" />
+                  <CoarTextInput
+                    v-model="authority"
+                    label="Authority"
+                    placeholder="https://accounts.google.com"
+                    :required="true"
+                  />
+                  <p class="field-hint">The OIDC issuer URL (e.g., https://accounts.google.com or https://login.microsoftonline.com/{tenant}/v2.0)</p>
+                </div>
+                <div class="form-group">
+                  <CoarTextInput
+                    v-model="clientId"
+                    label="Client ID"
+                    placeholder="your-client-id"
+                    :required="true"
+                  />
+                </div>
+                <div class="form-group">
+                  <CoarTextInput
+                    v-model="clientSecret"
+                    label="Client Secret"
+                    placeholder="your-client-secret"
+                  />
+                  <p class="field-hint">Required for confidential clients. Leave empty for public clients.</p>
+                </div>
+                <div class="form-group">
+                  <CoarTextInput
+                    v-model="scopes"
+                    label="Scopes"
+                    placeholder="openid profile email"
+                  />
+                  <p class="field-hint">Space-separated list of scopes to request. Default: openid profile email</p>
                 </div>
               </CoarCard>
             </template>
@@ -153,5 +216,9 @@ async function onSubmit() {
 .form-group { margin-bottom: 1rem; }
 .mb-3 { margin-bottom: 0.75rem; }
 .centered { display: flex; justify-content: center; padding: 3rem; }
-
+.field-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--coar-text-neutral-tertiary);
+}
 </style>
