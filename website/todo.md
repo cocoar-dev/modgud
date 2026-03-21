@@ -2,21 +2,40 @@
 
 Tracking page for outstanding implementation tasks, ordered by priority.
 
-**Stand: 2026-03-21** · 278 Backend-Tests (0 Failures, ~12 min) · 26 Playwright E2E Tests (9s)
+**Stand: 2026-03-21** · 312 Backend-Tests (0 Failures, ~12 min) · 26 Playwright E2E Tests (9s)
 
 ---
 
----
+## Next Up — Realm Hard-Delete
 
----
+> Aktuell nur Soft-Delete (Deaktivierung). Tenant-Datenbank wird nicht gelöscht.
 
-## P3 — Realm Hard-Delete
+### Herausforderungen
 
-> Aktuell nur Soft-Delete. Tenant-Datenbank wird nicht gelöscht.
+Dies ist ein komplexes Feature, da mehrere Subsysteme koordiniert werden müssen:
 
-- [ ] Wolverine Background-Job für DB-Drop
-- [ ] Bestätigungs-Flow (Admin muss Realm-Slug eintippen)
-- [ ] Cleanup: Realm aus Cache entfernen, Sessions invalidieren
+1. **Wolverine Durability Agent** — Der Async Daemon pro Tenant muss sauber heruntergefahren werden bevor die DB entfernt wird
+2. **Marten Tenant-Registry** — Der Tenant muss aus `realms.mt_tenant_databases` entfernt werden
+3. **Offene Messages/Events** — Wolverine Queue-Einträge für den Realm müssen abgearbeitet oder verworfen werden
+4. **RealmCache** — Cache invalidieren, damit keine neuen Requests zum gelöschten Realm routen
+5. **Aktive Sessions** — Sessions für den Realm invalidieren (Cookie-Path `/{slug}` wird ungültig)
+6. **PostgreSQL `DROP DATABASE`** — Erst wenn alles andere erledigt ist
+7. **Idempotenz** — Muss crash-safe sein (was wenn der Server während des Löschens abstürzt?)
+
+### Offene Recherche-Fragen
+
+- [ ] Hat Wolverine eine API zum Entfernen eines Tenants zur Laufzeit?
+- [ ] Hat Marten eine `RemoveDatabaseRecord` API (Gegenstück zu `AddDatabaseRecordAsync`)?
+- [ ] Muss der Async Daemon für den Tenant gestoppt werden bevor die DB gedroppt wird?
+- [ ] Soll das als Wolverine Background-Job (Saga?) oder synchron laufen?
+- [ ] Bestätigungs-Flow: Admin tippt Realm-Slug ein (wie bei GitHub repo deletion)
+
+### Implementierung (nach Recherche)
+
+- [ ] Recherche: Wolverine/Marten Tenant-Removal APIs
+- [ ] Admin-Endpoint: `DELETE /api/admin/realms/{slug}/permanent` mit Bestätigungsfeld
+- [ ] Background-Job oder synchrone Implementierung (abhängig von Recherche)
+- [ ] Cleanup-Reihenfolge: Cache → Sessions → Wolverine → Marten Registry → DROP DATABASE
 - [ ] Tests
 - [ ] Dokumentation: [User Guide > Managing Realms](/user-guide/realms#deleting-a-realm)
 
@@ -36,41 +55,23 @@ Cross-Realm Isolation Tests, `cocoar:realm` Claim, Cookie Path Scoping. 251 Test
 ### OAuth 2.0 / OpenID Connect ✅
 Authorization Code + PKCE, Client Credentials, Refresh Tokens, Reference Tokens, Consent Flow, Introspection, Revocation, UserInfo. OpenIddict mit Marten Stores.
 
-### Naming Refactoring ✅
-"API Resource" → "API" in Code, UI und Endpoints.
-
-### Vue Frontend ✅
-Home, Profile, Sessions, Privacy, Login, 2FA, Register, Admin (Users, Roles, OAuth Clients/Scopes/APIs, Realms, Login Providers).
-
-### Realm URL Simplification ✅
-`/{realm}/api/...` statt `/realms/{slug}/api/...`. Root `/` → `/system/`. 252 Tests.
-
 ### External Login Provider Integration ✅
-Manueller OIDC-Flow (PKCE, nonce, Discovery Docs, ID Token Validation). Auto-Create User, Account-Linking, 2FA-Integration. 6 neue API-Endpoints, 20 Tests (12 API + 8 WireMock Full-Flow), Vue Login-Seite mit Provider-Buttons, Profilseite mit Connected Accounts. 272 Tests.
-
-### Test-Infrastruktur: Isolierte Datenbanken ✅
-Refactoring von Shared-DB mit `CleanDatabaseAsync()` auf isolierte Datenbanken pro Test-Klasse. 1 PostgreSQL-Container, N Datenbanken via `CREATE DATABASE`. Tests laufen jetzt parallel. Laufzeit 23 min → 12 min, Flaky Tests (2-3 pro Run) → 0. Logout-Cookie-Path-Bug nebenbei gefixt (`OnSigningOut` setzte falschen Path).
-
-### Playwright E2E Tests ✅
-Playwright-Infrastruktur unter `src/frontend-vue/apps/e2e/`. 26 Tests (Login, Navigation, Profile, Auth Flows, Admin Login Providers), 9s Laufzeit, parallel. Auth-Setup mit Auto-Admin-Creation bei frischer DB. Cookie-State-Reuse für authentifizierte Tests.
-
-### Admin-UI: Login Provider Formular ✅
-Raw-JSON-Textarea ersetzt durch spezifische Felder (Authority, ClientId, ClientSecret, Scopes). Client-seitige Validierung. String-Enums durchgängig (UI → API → Marten DB) via `JsonStringEnumConverter`.
-
-### Frontend Views ✅
-Alle Auth-Views waren bereits implementiert (ResetPassword, ConfirmEmail, Consent, ConsentDenied). SetupView Bug gefixt (fehlender Router-Import + `rememberMe`). Playwright-Tests für alle Views.
+Manueller OIDC-Flow (PKCE, nonce, Discovery Docs, ID Token Validation). Auto-Create User, Account-Linking, 2FA-Integration. 6 neue API-Endpoints, 20 Tests (12 API + 8 WireMock Full-Flow), Vue Login-Seite mit Provider-Buttons, Profilseite mit Connected Accounts.
 
 ### Per-Client Access Token Type ✅
-`AccessTokenTypeHandler` (OpenIddict Server Event Handler) schaltet zwischen Reference und JWT pro Client. DTOs, Aggregate, Projection, Frontend-Form waren bereits vorbereitet — nur der Runtime-Handler fehlte. 3 neue Tests (JWT Auth-Code, JWT Client-Credentials, Dual-Format-Vergleich). 275 Tests.
-
-### Package-Upgrade ✅
-Alle Packages auf latest stable: OpenIddict 6.3→7.4, Marten 8.20→8.26, Wolverine 5.13→5.21, WireMock 1.6→2.0, + 10 weitere. Store-Registration auf OpenIddict 7 API migriert. 275 Tests, 0 Failures.
+`AccessTokenTypeHandler` (OpenIddict Server Event Handler) schaltet zwischen Reference und JWT pro Client. 3 neue Tests.
 
 ### Device Code Grant (RFC 8628) ✅
-OpenIddict 7 Device Authorization Flow aktiviert. `POST /connect/device` → Device/User Codes, `GET/POST /connect/verify` → User Verification mit Frontend-Seite (`DeviceVerificationView.vue`), Token-Polling via `POST /connect/token`. 3 neue Tests (Device Auth Response, Authorization Pending, Full Roundtrip). 278 Tests.
+OpenIddict 7 Device Authorization Flow. `POST /connect/device` → Device/User Codes, `GET/POST /connect/verify` → User Verification mit Frontend-Seite, Token-Polling. 3 neue Tests.
 
-### Dokumentation aufgefüllt ✅
-6 Developer Guide Stubs erweitert: auth-cookies (→193 Zeilen), oauth (→221), two-factor (→214), database (→210), deployment (→291), architecture (→277). Inkl. Mermaid-Diagramme, Code-Beispiele, Konfigurationsdetails.
+### Test-Infrastruktur ✅
+Isolierte Datenbanken pro Test-Klasse (1 Container, N DBs). Tests parallel. 23 min → 12 min, 0 Flaky. Playwright E2E (26 Tests, 9s). WireMock Fake-OIDC-Server für External Login Flow Tests. Test-Abdeckung erweitert: Email OTP (9), WebAuthn (12), Device Code Edge Cases (5), Admin User Lifecycle (9). WebAuthn NullReferenceException Bug gefixt. 312 Tests.
+
+### Package-Upgrade ✅
+OpenIddict 6.3→7.4, Marten 8.20→8.26, Wolverine 5.13→5.21, + 10 weitere Packages.
+
+### Admin-UI & Frontend ✅
+Login Provider Formular mit spezifischen OIDC-Feldern. String-Enums durchgängig. Alle Auth-Views komplett. SetupView Bug gefixt.
 
 ### VitePress Dokumentation ✅
-35 Seiten: Concepts, User Guide, Developer Guide, API Reference.
+35+ Seiten vollständig: Concepts, User Guide, Developer Guide, API Reference. Alle Guides aufgefüllt.

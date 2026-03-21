@@ -1,0 +1,13 @@
+**/node_modules
+**/bin
+**/obj
+**/dist
+**/.git
+**/.vs
+**/.vscode
+**/test-results
+**/playwright-report
+**/playwright/.auth
+website/node_modules
+website/.vitepress/cache
+website/.vitepress/dist

@@ -351,8 +351,14 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Serve Vue SPA static files from wwwroot (CSS, JS, assets)
+app.UseStaticFiles();
+
 app.MapHealthChecks("/health");
 app.MapControllers();
+
+// SPA fallback: any unmatched route → index.html (Vue router handles it)
+app.MapFallbackToFile("index.html");
 
 // Ensure the master and system databases exist (auto-created on first start)
 var masterDbName = baseDbName + "_master";

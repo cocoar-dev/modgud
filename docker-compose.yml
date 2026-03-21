@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cocoar-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  auth:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cocoar-auth
+    ports:
+      - "4200:80"
+    environment:
+      # Database
+      Cocoar__Database__ConnectionString: "Host=postgres;Database=cocoar_auth;Username=postgres"
+      Cocoar__Database__Password: "postgres"
+      # Auth
+      Cocoar__Auth__Cookie__SecurePolicy: "None"
+      # CORS (allow browser access)
+      Cocoar__Cors__AllowedOrigins__0: "http://localhost:4200"
+      Cocoar__Cors__AllowCredentials: "true"
+      # OpenIddict
+      Cocoar__OpenIddict__Issuer: "http://localhost:4200"
+      Cocoar__OpenIddict__DevelopmentMode: "true"
+      Cocoar__OpenIddict__AccessTokenLifetimeMinutes: "60"
+      Cocoar__OpenIddict__RefreshTokenLifetimeDays: "14"
+      Cocoar__OpenIddict__AuthorizationCodeLifetimeMinutes: "5"
+      # SMTP (disabled — uses mock sender)
+      Cocoar__Smtp__Host: "localhost"
+      Cocoar__Smtp__Port: "25"
+      Cocoar__Smtp__UseSsl: "false"
+      Cocoar__Smtp__FromAddress: "noreply@localhost"
+      Cocoar__Smtp__FromName: "Cocoar Auth"
+      # WebAuthn
+      Cocoar__WebAuthn__RelyingPartyId: "localhost"
+      Cocoar__WebAuthn__RelyingPartyName: "Cocoar Auth"
+      Cocoar__WebAuthn__Origins__0: "http://localhost:4200"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

@@ -252,7 +252,7 @@ public class WebAuthnService : IWebAuthnService
             // Parse the assertion response
             var assertionResponseJson = assertionResponse.GetRawText();
             var assertionResponseObj = JsonSerializer.Deserialize<AuthenticatorAssertionRawResponse>(assertionResponseJson);
-            if (assertionResponseObj is null)
+            if (assertionResponseObj?.Response is null || assertionResponseObj.Id is null)
             {
                 return WebAuthnErrors.AssertionFailed;
             }

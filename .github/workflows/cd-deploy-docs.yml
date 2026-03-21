@@ -1,0 +1,60 @@
+name: CD - Deploy Docs
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. v1.0, v1.1)'
+        required: true
+
+concurrency:
+  group: deploy-docs
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & Deploy Docs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Build VitePress
+        working-directory: website
+        run: npx vitepress build
+
+      - name: Package
+        run: cd website/.vitepress/dist && zip -r $GITHUB_WORKSPACE/docs.zip .
+
+      - name: Upload to Shelf
+        env:
+          KEY: ${{ secrets.SHELF_API_KEY }}
+          URL: ${{ secrets.SHELF_BASE_URL }}
+          VER: ${{ inputs.version }}
+        run: |
+          echo "Deploying docs $VER to $URL"
+          curl -f -X POST \
+            -H "Authorization: Bearer $KEY" \
+            -H "Content-Type: application/zip" \
+            --data-binary @$GITHUB_WORKSPACE/docs.zip \
+            "${URL}/_api/products/cocoar-auth/versions/${VER}"
+
+      - name: Deployment summary
+        run: |
+          echo "### Docs Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Product:** cocoar-auth" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ secrets.SHELF_BASE_URL }}/cocoar-auth/" >> $GITHUB_STEP_SUMMARY

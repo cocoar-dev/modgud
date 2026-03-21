@@ -1,0 +1,49 @@
+name: CI - PR Validation
+
+on:
+  pull_request:
+    branches: [develop]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Build Vue Frontend
+        working-directory: ./src/frontend-vue
+        run: pnpm install --frozen-lockfile && pnpm build
+
+      - name: Restore dependencies
+        run: dotnet restore
+        working-directory: ./src/dotnet
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+        working-directory: ./src/dotnet
+
+      - name: Test
+        run: dotnet test -c Release --no-build --verbosity normal
+        working-directory: ./src/dotnet
