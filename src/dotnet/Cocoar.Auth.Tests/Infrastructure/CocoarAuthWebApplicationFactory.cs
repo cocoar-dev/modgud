@@ -79,7 +79,7 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
     {
         // IMPORTANT: Must set test configuration in the SAME async context as host creation
         // because CocoarTestConfiguration uses AsyncLocal<T>
-        CocoarTestConfiguration.ReplaceAllRules(rule =>
+        CocoarTestConfiguration.ReplaceConfiguration(rule =>
         [
             rule.For<DatabaseSettings>().FromStatic(_ => new DatabaseSettings
             {
@@ -127,11 +127,10 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
                 AccessTokenLifetimeMinutes = 60,
                 RefreshTokenLifetimeDays = 14,
                 AuthorizationCodeLifetimeMinutes = 5
-            })
-        ],
-	        setup => [
-				setup.Secrets().AllowPlaintext()
-				]);
+            }),
+            // Server settings (no SSL in tests)
+            rule.For<ServerSettings>().FromStatic(_ => new ServerSettings())
+        ]).ReplaceSecretsSetup(secrets => secrets.AllowPlaintext());
 
         return base.CreateHost(builder);
     }

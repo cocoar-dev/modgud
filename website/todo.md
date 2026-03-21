@@ -68,10 +68,16 @@ OpenIddict 7 Device Authorization Flow. `POST /connect/device` → Device/User C
 Isolierte Datenbanken pro Test-Klasse (1 Container, N DBs). Tests parallel. 23 min → 12 min, 0 Flaky. Playwright E2E (26 Tests, 9s). WireMock Fake-OIDC-Server für External Login Flow Tests. Test-Abdeckung erweitert: Email OTP (9), WebAuthn (12), Device Code Edge Cases (5), Admin User Lifecycle (9). WebAuthn NullReferenceException Bug gefixt. 312 Tests.
 
 ### Package-Upgrade ✅
-OpenIddict 6.3→7.4, Marten 8.20→8.26, Wolverine 5.13→5.21, + 10 weitere Packages.
+OpenIddict 6.3→7.4, Marten 8.20→8.26, Wolverine 5.13→5.21, Cocoar.Configuration 4.2→5.0, + 10 weitere Packages.
+
+### Docker & CI/CD ✅
+Multi-Stage Dockerfile (lokaler Build) + CI Dockerfile (vorgebaute Artefakte). docker-compose.yml für Full-Stack. 5 GitHub Actions Workflows: PR Validation, Develop CI, Staging Deploy (Multi-Arch Docker → GHCR), Production Deploy (Release → GHCR + Docs → Shelf), Manual Docs Deploy.
+
+### SSL/TLS Support ✅
+Kestrel HTTPS direkt via `ServerSettings` (AppUrl, CertPath, CertPassword). Kein Nginx nötig. Self-Signed-Zertifikat wird automatisch generiert wenn CertPath gesetzt aber Datei nicht vorhanden.
 
 ### Admin-UI & Frontend ✅
 Login Provider Formular mit spezifischen OIDC-Feldern. String-Enums durchgängig. Alle Auth-Views komplett. SetupView Bug gefixt.
 
 ### VitePress Dokumentation ✅
-35+ Seiten vollständig: Concepts, User Guide, Developer Guide, API Reference. Alle Guides aufgefüllt.
+35+ Seiten vollständig: Concepts, User Guide, Developer Guide, API Reference. Alle Guides aufgefüllt. Docker Image Doku mit allen Env-Vars.

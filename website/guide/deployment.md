@@ -27,6 +27,7 @@ Cocoar.Auth uses the `Cocoar.Configuration` library for layered configuration. S
 | `configs/smtp-settings.json` | `SmtpSettings` | `SMTP_` |
 | `configs/webauthn-settings.json` | `WebAuthnSettings` | `WEBAUTHN_` |
 | `configs/openiddict-settings.json` | `OpenIddictSettings` | `OPENIDDICT_` |
+| `configs/server-settings.json` | `ServerSettings` | `SERVER_` |
 
 ### DatabaseSettings
 
@@ -121,30 +122,225 @@ In development, a `MockEmailSender` logs emails to the console. In production (w
 
 `RelyingPartyId` must match the domain users access the application from. `Origins` must list all allowed origins for WebAuthn operations.
 
-## Docker Compose (Development)
+### ServerSettings
+
+```json
+{
+  "AppUrl": "http://0.0.0.0:80",
+  "CertPath": null,
+  "CertPassword": null
+}
+```
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `AppUrl` | `http://0.0.0.0:80` | Listen URL. Set to `https://0.0.0.0:443` for TLS. |
+| `CertPath` | _(auto)_ | Path to PFX certificate. When `AppUrl` is HTTPS and no path is set, defaults to `certs/cocoar-auth.pfx`. |
+| `CertPassword` | _(none)_ | Password for the PFX file. Optional — passwordless certificates are supported. |
+
+### TLS Behavior
+
+| AppUrl | CertPath | What happens |
+|--------|----------|--------------|
+| `http://...` | _(any)_ | HTTP only, no TLS |
+| `https://...` | not set | Self-signed certificate auto-generated at `certs/cocoar-auth.pfx` |
+| `https://...` | set, file exists | Uses the provided certificate |
+| `https://...` | set, file missing | Self-signed certificate auto-generated at the specified path |
+
+### HTTPS with Self-Signed Certificate (Zero Config)
+
+To enable HTTPS without providing a certificate, just set the URL. A self-signed certificate is generated automatically on first start:
+
+```yaml
+auth:
+  image: ghcr.io/cocoar/cocoar.auth:latest
+  ports:
+    - "443:443"
+  environment:
+    SERVER_APPURL: "https://0.0.0.0:443"
+    DATABASE_CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres"
+    DATABASE_PASSWORD: "postgres"
+    OPENIDDICT_ISSUER: "https://localhost"
+    OPENIDDICT_DEVELOPMENTMODE: "true"
+    AUTH_COOKIE__SECUREPOLICY: "SameAsRequest"
+  volumes:
+    - certs:/app/certs    # persist the auto-generated certificate across restarts
+
+volumes:
+  certs:
+```
+
+The certificate is saved at `certs/cocoar-auth.pfx` (passwordless). It is reused on subsequent starts if the volume is persisted.
+
+::: warning
+Browsers will show a security warning for self-signed certificates. This is expected and fine for local development or internal testing. For production, use a real certificate from a trusted CA.
+:::
+
+### HTTPS with Your Own Certificate
+
+For production, mount a real PFX certificate:
+
+```yaml
+auth:
+  image: ghcr.io/cocoar/cocoar.auth:latest
+  ports:
+    - "443:443"
+  environment:
+    SERVER_APPURL: "https://0.0.0.0:443"
+    SERVER_CERTPATH: "/certs/auth.pfx"
+    SERVER_CERTPASSWORD: "your-password"   # omit if passwordless
+    DATABASE_CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres"
+    DATABASE_PASSWORD: "postgres"
+    OPENIDDICT_ISSUER: "https://auth.example.com"
+    AUTH_COOKIE__SECUREPOLICY: "Always"
+  volumes:
+    - ./certs:/certs:ro
+```
+
+## Docker Image
+
+The official Docker image contains the backend (.NET) and the built Vue SPA. It is published to GitHub Container Registry on every release.
+
+```
+ghcr.io/cocoar/cocoar.auth:latest        # Latest production release
+ghcr.io/cocoar/cocoar.auth:staging       # Latest staging build
+ghcr.io/cocoar/cocoar.auth:1.0.0         # Specific version
+```
+
+The image supports **linux/amd64** and **linux/arm64**.
+
+### Quick Start
+
+```bash
+docker run -d \
+  --name cocoar-auth \
+  -p 4200:80 \
+  -e DATABASE_CONNECTIONSTRING="Host=your-postgres;Database=cocoar_auth;Username=postgres" \
+  -e DATABASE_PASSWORD="your-password" \
+  -e OPENIDDICT_ISSUER="http://localhost:4200" \
+  -e OPENIDDICT_DEVELOPMENTMODE="true" \
+  ghcr.io/cocoar/cocoar.auth:latest
+```
+
+Then open `http://localhost:4200/system/` and create the initial admin account.
+
+### Environment Variables
+
+All settings are configurable via environment variables with a prefix matching the settings class:
+
+#### Required
+
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `DATABASE_CONNECTIONSTRING` | `Host=postgres;Database=cocoar_auth;Username=postgres` | PostgreSQL connection (without password) |
+| `DATABASE_PASSWORD` | `your-password` | Database password |
+| `OPENIDDICT_ISSUER` | `https://auth.example.com` | Public URL of the identity provider |
+| `SERVER_APPURL` | `http://0.0.0.0:80` | Listen URL. Set to `https://0.0.0.0:443` for auto-TLS. |
+
+#### Authentication
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUTH_COOKIE__SECUREPOLICY` | `SameAsRequest` | `Always` for HTTPS, `None` for HTTP dev |
+| `AUTH_COOKIE__SAMESITE` | `Lax` | Cookie SameSite policy |
+| `AUTH_SESSIONEXPIRATIONDAYS` | `14` | Session lifetime in days |
+
+#### OpenIddict
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENIDDICT_DEVELOPMENTMODE` | `false` | `true` uses ephemeral signing keys |
+| `OPENIDDICT_SIGNINGCERTIFICATEPATH` | _(none)_ | Path to X.509 PFX (required when not in dev mode) |
+| `OPENIDDICT_ACCESSTOKENLIFETIMEMINUTES` | `60` | Access token lifetime |
+| `OPENIDDICT_REFRESHTOKENLIFETIMEDAYS` | `14` | Refresh token lifetime |
+| `OPENIDDICT_AUTHORIZATIONCODELIFETIMEMINUTES` | `5` | Auth code lifetime |
+
+#### CORS
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CORS_ALLOWEDORIGINS__0` | _(none)_ | First allowed origin (use `__1`, `__2` for more) |
+| `CORS_ALLOWCREDENTIALS` | `true` | Allow credentials in CORS requests |
+
+#### SMTP (Email)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SMTP_HOST` | `localhost` | SMTP server host |
+| `SMTP_PORT` | `25` | SMTP server port |
+| `SMTP_USESSL` | `false` | Use TLS |
+| `SMTP_USERNAME` | _(none)_ | SMTP username |
+| `SMTP_PASSWORD` | _(none)_ | SMTP password |
+| `SMTP_FROMADDRESS` | `noreply@localhost` | Sender email address |
+| `SMTP_FROMNAME` | `Cocoar Auth` | Sender display name |
+
+#### WebAuthn
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WEBAUTHN_RELYINGPARTYID` | `localhost` | Domain for WebAuthn (must match user-facing domain) |
+| `WEBAUTHN_RELYINGPARTYNAME` | `Cocoar Auth` | Display name shown in authenticator prompts |
+| `WEBAUTHN_ORIGINS__0` | _(none)_ | Allowed WebAuthn origin |
+
+### Docker Compose (Full Stack)
 
 ```yaml
 services:
   postgres:
-    image: postgres:17
-    container_name: cocoar-postgres
-    ports:
-      - "5432:5432"
+    image: postgres:17-alpine
     environment:
       POSTGRES_PASSWORD: postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  auth:
+    image: ghcr.io/cocoar/cocoar.auth:latest
+    ports:
+      - "4200:80"
+    environment:
+      DATABASE_CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres"
+      DATABASE_PASSWORD: "postgres"
+      AUTH_COOKIE__SECUREPOLICY: "None"
+      CORS_ALLOWEDORIGINS__0: "http://localhost:4200"
+      CORS_ALLOWCREDENTIALS: "true"
+      OPENIDDICT_ISSUER: "http://localhost:4200"
+      OPENIDDICT_DEVELOPMENTMODE: "true"
+      WEBAUTHN_RELYINGPARTYID: "localhost"
+      WEBAUTHN_RELYINGPARTYNAME: "Cocoar Auth"
+      WEBAUTHN_ORIGINS__0: "http://localhost:4200"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:
 ```
 
-Start the database and run the API:
-
 ```bash
 docker compose up -d
+# Open http://localhost:4200/system/ and create admin account
+```
+
+## Docker Compose (Development — Source Build)
+
+For development without a published Docker image:
+
+```bash
+docker compose up -d postgres    # Start PostgreSQL only
 cd src/dotnet
-dotnet run --project Cocoar.Auth.Api
+dotnet run --project Cocoar.Auth.Api  # Run backend from source
+```
+
+In a separate terminal:
+
+```bash
+cd src/frontend-vue
+pnpm dev                          # Start Vue dev server on :4200
 ```
 
 ## Database Auto-Provisioning
@@ -191,9 +387,9 @@ curl http://localhost:5000/health
 
 It checks PostgreSQL connectivity to the system realm database.
 
-## Production: Nginx Reverse Proxy
+## Optional: Nginx Reverse Proxy
 
-The SPA and API share the same origin. Nginx routes requests based on the path:
+If you prefer to terminate TLS at a reverse proxy instead of Kestrel, Nginx can proxy everything to the container:
 
 ```nginx
 server {
@@ -205,47 +401,27 @@ server {
 
     # Security headers
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
 
-    # Proxy API, OAuth, and discovery requests to backend
-    location ~ ^/[a-z][a-z0-9-]+/(api|connect|\.well-known) {
-        proxy_pass http://backend:5000;
+    # Proxy everything to the Cocoar.Auth container
+    location / {
+        proxy_pass http://auth:80;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
-
-    # Health check (no realm prefix)
-    location = /health {
-        proxy_pass http://backend:5000;
-    }
-
-    # Setup endpoint
-    location ~ ^/[a-z][a-z0-9-]+/api/setup {
-        proxy_pass http://backend:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # Redirect root to system realm
-    location = / {
-        return 302 /system/;
-    }
-
-    # Serve SPA for all realm navigation paths
-    location ~ ^/[a-z][a-z0-9-]+/ {
-        try_files $uri /index.html;
-    }
 }
 ```
 
+The backend handles all routing internally:
+- **Static files** (JS, CSS, assets) are served from `wwwroot/`
+- **API, OAuth, discovery** requests are handled by controllers
+- **All other paths** fall back to `index.html` (SPA routing)
+
 ### Key Nginx Considerations
 
-- **Realm-aware routing**: API/OAuth/discovery requests are proxied to the backend. All other realm paths serve the SPA's `index.html`.
 - **`X-Forwarded-Proto`**: Required for the `Secure` cookie flag and OpenIddict's HTTPS issuer URL.
-- **`X-Forwarded-For`**: Used by the backend for session IP tracking.
+- **`X-Forwarded-For`**: Used by the backend for session IP tracking and login audit.
 
 ## SSL / TLS
 

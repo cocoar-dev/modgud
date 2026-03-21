@@ -38,7 +38,7 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
     .WriteTo.Console());
 
 // Configure Cocoar.Configuration with layered sources (using builder extension like finoxl)
-builder.AddCocoarConfiguration(rule =>
+builder.AddCocoarConfiguration(c => c.UseConfiguration(rule =>
 [
     // Base configuration
     rule.For<DatabaseSettings>().FromFile("configs/database-settings.json").Required(),
@@ -47,6 +47,7 @@ builder.AddCocoarConfiguration(rule =>
     rule.For<SmtpSettings>().FromFile("configs/smtp-settings.json"),
     rule.For<WebAuthnSettings>().FromFile("configs/webauthn-settings.json"),
     rule.For<OpenIddictSettings>().FromFile("configs/openiddict-settings.json"),
+    rule.For<ServerSettings>().FromFile("configs/server-settings.json"),
 
     // Environment-specific overrides (e.g., appsettings.Development.json)
     //rule.For<DatabaseSettings>().FromFile($"configs/database-settings.{builder.Environment.EnvironmentName}.json"),
@@ -63,6 +64,7 @@ builder.AddCocoarConfiguration(rule =>
     rule.For<SmtpSettings>().FromEnvironment("SMTP_"),
     rule.For<WebAuthnSettings>().FromEnvironment("WEBAUTHN_"),
     rule.For<OpenIddictSettings>().FromEnvironment("OPENIDDICT_"),
+    rule.For<ServerSettings>().FromEnvironment("SERVER_"),
 
     // Static configuration (cannot be overridden by JSON files, but can be overridden in tests)
     // Use inline projections in development to avoid async daemon lock acquisition issues
@@ -85,15 +87,60 @@ builder.AddCocoarConfiguration(rule =>
 	setup.ConcreteType<WebAuthnSettings>().ExposeAs<IWebAuthnSettings>(),
 	setup.ExposedType<IWebAuthnSettings>().AsSingleton(),
 	setup.ConcreteType<OpenIddictSettings>().AsSingleton(),
+	setup.ConcreteType<ServerSettings>().AsSingleton(),
 	setup.ConcreteType<OpenIddictSettings>().ExposeAs<IOpenIddictSettings>(),
 	setup.ExposedType<IOpenIddictSettings>().AsSingleton(),
-	setup.Secrets().UseCertificatesFromFolder("configs/certificates").AllowPlaintext(),
-]);
+]).UseSecretsSetup(secrets => secrets.UseCertificatesFromFolder("configs/certificates").AllowPlaintext()));
 
 // Get configuration manager for bootstrap access
 var configManager = builder.GetCocoarConfigManager();
-var projectionSettings = configManager.GetConfig<ProjectionSettings>();
-var dbSettings = configManager.GetConfig<DatabaseSettings>();
+var projectionSettings = configManager.GetConfig<ProjectionSettings>()!;
+var dbSettings = configManager.GetConfig<DatabaseSettings>()!;
+var serverSettings = configManager.GetConfig<ServerSettings>()!;
+
+// Configure Kestrel with TLS certificate if HTTPS is requested
+var needsSsl = serverSettings.AppUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+var effectiveCertPath = serverSettings.CertPath;
+
+// If HTTPS but no CertPath configured, use a default path
+if (needsSsl && string.IsNullOrWhiteSpace(effectiveCertPath))
+{
+    effectiveCertPath = "certs/cocoar-auth.pfx";
+}
+
+if (!string.IsNullOrWhiteSpace(effectiveCertPath))
+{
+    var certPath = Path.GetFullPath(effectiveCertPath);
+    // Normalize empty password to null (passwordless PFX)
+    var certPassword = string.IsNullOrEmpty(serverSettings.CertPassword) ? null : serverSettings.CertPassword;
+
+    // Auto-generate self-signed certificate if the file doesn't exist
+    if (!File.Exists(certPath))
+    {
+        Log.Information("Certificate not found at {CertPath} — generating self-signed certificate", certPath);
+        using var rsa = System.Security.Cryptography.RSA.Create(2048);
+        var request = new System.Security.Cryptography.X509Certificates.CertificateRequest(
+            "CN=Cocoar Auth (Self-Signed)", rsa,
+            System.Security.Cryptography.HashAlgorithmName.SHA256,
+            System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+        var selfSigned = request.CreateSelfSigned(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddYears(1));
+        var pfxBytes = selfSigned.Export(System.Security.Cryptography.X509Certificates.X509ContentType.Pfx, certPassword);
+        var certDir = Path.GetDirectoryName(certPath);
+        if (!string.IsNullOrEmpty(certDir)) Directory.CreateDirectory(certDir);
+        File.WriteAllBytes(certPath, pfxBytes);
+        Log.Information("Self-signed certificate saved to {CertPath}", certPath);
+    }
+
+    var cert = System.Security.Cryptography.X509Certificates.X509CertificateLoader
+        .LoadPkcs12FromFile(certPath, certPassword);
+    builder.WebHost.ConfigureKestrel(options =>
+    {
+        options.ConfigureHttpsDefaults(httpsOptions =>
+        {
+            httpsOptions.ServerCertificate = cert;
+        });
+    });
+}
 
 // Build full connection strings with embedded password for Marten multi-tenancy
 // Config DB name is the base prefix: "cocoar_auth" → master: "cocoar_auth_master", system: "cocoar_auth_system"
@@ -121,7 +168,7 @@ builder.Services.AddSingleton<IRealmCache, RealmCache>();
 builder.Services.AddScoped<IRealmProvisioningService, RealmProvisioningService>();
 
 // Add OpenIddict with Marten for OAuth 2.0 / OpenID Connect
-var openIddictSettings = configManager.GetConfig<OpenIddictSettings>();
+var openIddictSettings = configManager.GetConfig<OpenIddictSettings>()!;
 builder.Services.AddOpenIddictWithMarten(openIddictSettings);
 builder.Services.ConfigureOpenIddictServerOptions<OpenIddictSettings>();
 
@@ -132,7 +179,7 @@ builder.Services.AddScoped<OAuthAdminService>();
 // Skip in Testing environment to use MockEmailSender for tests
 if (!builder.Environment.IsEnvironment("Testing"))
 {
-    var smtpSettings = configManager.GetConfig<SmtpSettings>();
+    var smtpSettings = configManager.GetConfig<SmtpSettings>()!;
     builder.Services.AddSingleton(new SmtpEmailSenderOptions
     {
         Host = smtpSettings.Host,
@@ -147,7 +194,7 @@ if (!builder.Environment.IsEnvironment("Testing"))
 }
 
 // Register Fido2 for WebAuthn
-var webAuthnSettings = configManager.GetConfig<WebAuthnSettings>();
+var webAuthnSettings = configManager.GetConfig<WebAuthnSettings>()!;
 var fido2Config = new Fido2Configuration
 {
     ServerDomain = webAuthnSettings.RelyingPartyId,
@@ -404,7 +451,7 @@ await app.Services.SeedOpenIddictScopesAsync();
 // Seed built-in "Internal" login provider
 await app.Services.SeedLoginProvidersAsync();
 
-app.Run("http://0.0.0.0:80");
+app.Run(serverSettings.AppUrl);
 
 // Make the implicit Program class public for integration tests
 public partial class Program { }

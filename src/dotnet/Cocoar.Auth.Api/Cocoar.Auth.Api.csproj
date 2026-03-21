@@ -7,7 +7,6 @@
   <ItemGroup>
     <PackageReference Include="Cocoar.Configuration" />
     <PackageReference Include="Cocoar.Configuration.AspNetCore" />
-    <PackageReference Include="Cocoar.Configuration.Secrets" />
     <PackageReference Include="Fido2" />
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
     <PackageReference Include="Serilog.AspNetCore" />

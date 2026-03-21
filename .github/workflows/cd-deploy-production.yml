@@ -29,8 +29,8 @@ jobs:
             exit 1
           fi
 
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error ::Invalid release version format. Expected X.Y.Z (e.g., 1.2.3), got: $VERSION"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
+            echo "::error ::Invalid release version format. Expected X.Y.Z or X.Y.Z-label (e.g., 1.2.3, 1.2.3-beta.1), got: $VERSION"
             exit 1
           fi
 
@@ -194,9 +194,15 @@ jobs:
         env:
           VERSION: ${{ needs.validate-version.outputs.version }}
         run: |
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
-          echo "value=v${MAJOR}.${MINOR}" >> $GITHUB_OUTPUT
+          if [[ "$VERSION" == *-* ]]; then
+            # Pre-release: use full version (e.g. v1.0.0-beta.1)
+            echo "value=v${VERSION}" >> $GITHUB_OUTPUT
+          else
+            # Stable: use major.minor (e.g. v1.0)
+            MAJOR=$(echo "$VERSION" | cut -d. -f1)
+            MINOR=$(echo "$VERSION" | cut -d. -f2)
+            echo "value=v${MAJOR}.${MINOR}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Upload to Shelf
         env:

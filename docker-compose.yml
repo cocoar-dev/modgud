@@ -23,29 +23,29 @@ services:
       - "4200:80"
     environment:
       # Database
-      Cocoar__Database__ConnectionString: "Host=postgres;Database=cocoar_auth;Username=postgres"
-      Cocoar__Database__Password: "postgres"
+      DATABASE_CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres"
+      DATABASE_PASSWORD: "postgres"
       # Auth
-      Cocoar__Auth__Cookie__SecurePolicy: "None"
-      # CORS (allow browser access)
-      Cocoar__Cors__AllowedOrigins__0: "http://localhost:4200"
-      Cocoar__Cors__AllowCredentials: "true"
+      AUTH_COOKIE__SECUREPOLICY: "None"
+      # CORS
+      CORS_ALLOWEDORIGINS__0: "http://localhost:4200"
+      CORS_ALLOWCREDENTIALS: "true"
       # OpenIddict
-      Cocoar__OpenIddict__Issuer: "http://localhost:4200"
-      Cocoar__OpenIddict__DevelopmentMode: "true"
-      Cocoar__OpenIddict__AccessTokenLifetimeMinutes: "60"
-      Cocoar__OpenIddict__RefreshTokenLifetimeDays: "14"
-      Cocoar__OpenIddict__AuthorizationCodeLifetimeMinutes: "5"
-      # SMTP (disabled — uses mock sender)
-      Cocoar__Smtp__Host: "localhost"
-      Cocoar__Smtp__Port: "25"
-      Cocoar__Smtp__UseSsl: "false"
-      Cocoar__Smtp__FromAddress: "noreply@localhost"
-      Cocoar__Smtp__FromName: "Cocoar Auth"
+      OPENIDDICT_ISSUER: "http://localhost:4200"
+      OPENIDDICT_DEVELOPMENTMODE: "true"
+      OPENIDDICT_ACCESSTOKENLIFETIMEMINUTES: "60"
+      OPENIDDICT_REFRESHTOKENLIFETIMEDAYS: "14"
+      OPENIDDICT_AUTHORIZATIONCODELIFETIMEMINUTES: "5"
+      # SMTP (mock — emails logged to console)
+      SMTP_HOST: "localhost"
+      SMTP_PORT: "25"
+      SMTP_USESSL: "false"
+      SMTP_FROMADDRESS: "noreply@localhost"
+      SMTP_FROMNAME: "Cocoar Auth"
       # WebAuthn
-      Cocoar__WebAuthn__RelyingPartyId: "localhost"
-      Cocoar__WebAuthn__RelyingPartyName: "Cocoar Auth"
-      Cocoar__WebAuthn__Origins__0: "http://localhost:4200"
+      WEBAUTHN_RELYINGPARTYID: "localhost"
+      WEBAUTHN_RELYINGPARTYNAME: "Cocoar Auth"
+      WEBAUTHN_ORIGINS__0: "http://localhost:4200"
     depends_on:
       postgres:
         condition: service_healthy

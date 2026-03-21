@@ -4,6 +4,6 @@ WORKDIR /app
 COPY app/ .
 
 ENV ASPNETCORE_ENVIRONMENT=Production
-EXPOSE 80
+EXPOSE 80 443
 
 ENTRYPOINT ["dotnet", "Cocoar.Auth.Api.dll"]
