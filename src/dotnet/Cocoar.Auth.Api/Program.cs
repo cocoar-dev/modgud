@@ -348,7 +348,7 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-XSS-Protection"] = "0";
     context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
-    context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'";
+    context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'";
     await next();
 });
 
@@ -398,6 +398,10 @@ app.UseSerilogRequestLogging();
 
 app.UseRateLimiter();
 
+// Serve Vue SPA static files from wwwroot BEFORE realm middleware
+// so that /assets/*.js, /assets/*.css are served directly without realm resolution.
+app.UseStaticFiles();
+
 // Realm middleware: resolves tenant from first path segment (/{slug}/...)
 // Must run BEFORE UseRouting so that PathBase is set before route matching occurs.
 app.UseMiddleware<RealmMiddleware>();
@@ -406,9 +410,6 @@ app.UseRouting();
 
 app.UseAuthentication();
 app.UseAuthorization();
-
-// Serve Vue SPA static files from wwwroot (CSS, JS, assets)
-app.UseStaticFiles();
 
 app.MapHealthChecks("/health");
 app.MapControllers();
