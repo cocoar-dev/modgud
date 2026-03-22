@@ -1,4 +1,4 @@
-name: CD - Deploy Production
+name: CD - Release
 
 on:
   release:
@@ -12,7 +12,7 @@ jobs:
   validate-version:
     name: Validate & Extract Version
     if: github.event.release.target_commitish == 'develop'
-    runs-on: [self-hosted, hetzner]
+    runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
@@ -40,7 +40,7 @@ jobs:
   build:
     name: Build & Test
     needs: validate-version
-    runs-on: [self-hosted, hetzner]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
 
@@ -77,9 +77,12 @@ jobs:
         run: dotnet build -c Release --no-restore -p:Version=${{ needs.validate-version.outputs.version }}
         working-directory: ./src/dotnet
 
-      - name: Test
-        run: dotnet test -c Release --no-build --verbosity normal
+      - name: Test (All Categories)
         working-directory: ./src/dotnet
+        run: |
+          for cat in Smoke Auth TwoFactor OAuth Admin ExternalLogin MultiTenancy GDPR; do
+            echo "=== $cat ===" && dotnet test -c Release --no-build --verbosity minimal --filter "Category=$cat"
+          done
 
       - name: Publish
         run: dotnet publish Cocoar.Auth.Api/Cocoar.Auth.Api.csproj -c Release --no-build -o ../publish
@@ -97,7 +100,7 @@ jobs:
   deploy:
     name: Deploy to Production
     needs: [validate-version, build]
-    runs-on: [self-hosted, hetzner]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -163,7 +166,7 @@ jobs:
   deploy-docs:
     name: Deploy Documentation
     needs: [validate-version, deploy]
-    runs-on: [self-hosted, hetzner]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
 

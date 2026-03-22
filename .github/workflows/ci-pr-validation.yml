@@ -1,4 +1,4 @@
-name: CI - PR Validation
+name: CI - Pull Request
 
 on:
   pull_request:
