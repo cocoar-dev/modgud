@@ -15,37 +15,25 @@ services:
       retries: 10
 
   auth:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/cocoar-dev/cocoar.auth:0.1.0-beta.45
     container_name: cocoar-auth
     ports:
       - "4200:80"
     environment:
-      # Database
-      DATABASE_CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres"
+      # Database (override Host for Docker networking)
+      DATABASE_CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres;Keepalive=30"
       DATABASE_PASSWORD: "postgres"
       # Auth
-      AUTH_COOKIE__SECUREPOLICY: "None"
-      # CORS
-      CORS_ALLOWEDORIGINS__0: "http://localhost:4200"
-      CORS_ALLOWCREDENTIALS: "true"
+      AUTH_COOKIESECUREPOLICY: "None"
       # OpenIddict
       OPENIDDICT_ISSUER: "http://localhost:4200"
       OPENIDDICT_DEVELOPMENTMODE: "true"
-      OPENIDDICT_ACCESSTOKENLIFETIMEMINUTES: "60"
-      OPENIDDICT_REFRESHTOKENLIFETIMEDAYS: "14"
-      OPENIDDICT_AUTHORIZATIONCODELIFETIMEMINUTES: "5"
       # SMTP (mock — emails logged to console)
       SMTP_HOST: "localhost"
       SMTP_PORT: "25"
       SMTP_USESSL: "false"
       SMTP_FROMADDRESS: "noreply@localhost"
       SMTP_FROMNAME: "Cocoar Auth"
-      # WebAuthn
-      WEBAUTHN_RELYINGPARTYID: "localhost"
-      WEBAUTHN_RELYINGPARTYNAME: "Cocoar Auth"
-      WEBAUTHN_ORIGINS__0: "http://localhost:4200"
     depends_on:
       postgres:
         condition: service_healthy
