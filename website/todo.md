@@ -1,83 +1,38 @@
-# Roadmap & Open Items
+# Roadmap
 
 Tracking page for outstanding implementation tasks, ordered by priority.
-
-**Stand: 2026-03-21** · 312 Backend-Tests (0 Failures, ~12 min) · 26 Playwright E2E Tests (9s)
 
 ---
 
 ## Next Up — Realm Hard-Delete
 
-> Aktuell nur Soft-Delete (Deaktivierung). Tenant-Datenbank wird nicht gelöscht.
+> Currently only soft-delete (deactivation). The tenant database is not dropped.
 
-### Herausforderungen
+### Challenges
 
-Dies ist ein komplexes Feature, da mehrere Subsysteme koordiniert werden müssen:
+This is a complex feature because multiple subsystems need to be coordinated:
 
-1. **Wolverine Durability Agent** — Der Async Daemon pro Tenant muss sauber heruntergefahren werden bevor die DB entfernt wird
-2. **Marten Tenant-Registry** — Der Tenant muss aus `realms.mt_tenant_databases` entfernt werden
-3. **Offene Messages/Events** — Wolverine Queue-Einträge für den Realm müssen abgearbeitet oder verworfen werden
-4. **RealmCache** — Cache invalidieren, damit keine neuen Requests zum gelöschten Realm routen
-5. **Aktive Sessions** — Sessions für den Realm invalidieren (Cookie-Path `/{slug}` wird ungültig)
-6. **PostgreSQL `DROP DATABASE`** — Erst wenn alles andere erledigt ist
-7. **Idempotenz** — Muss crash-safe sein (was wenn der Server während des Löschens abstürzt?)
+1. **Wolverine Durability Agent** — The async daemon per tenant must be cleanly shut down before the database is removed
+2. **Marten Tenant Registry** — The tenant must be removed from `realms.mt_tenant_databases`
+3. **Pending Messages/Events** — Wolverine queue entries for the realm must be drained or discarded
+4. **RealmCache** — Invalidate cache so no new requests are routed to the deleted realm
+5. **Active Sessions** — Invalidate sessions for the realm (cookie path `/{slug}` becomes invalid)
+6. **PostgreSQL `DROP DATABASE`** — Only after everything else is completed
+7. **Idempotency** — Must be crash-safe (what if the server crashes during deletion?)
 
-### Offene Recherche-Fragen
+### Open Research Questions
 
-- [ ] Hat Wolverine eine API zum Entfernen eines Tenants zur Laufzeit?
-- [ ] Hat Marten eine `RemoveDatabaseRecord` API (Gegenstück zu `AddDatabaseRecordAsync`)?
-- [ ] Muss der Async Daemon für den Tenant gestoppt werden bevor die DB gedroppt wird?
-- [ ] Soll das als Wolverine Background-Job (Saga?) oder synchron laufen?
-- [ ] Bestätigungs-Flow: Admin tippt Realm-Slug ein (wie bei GitHub repo deletion)
+- [ ] Does Wolverine have an API for removing a tenant at runtime?
+- [ ] Does Marten have a `RemoveDatabaseRecord` API (counterpart to `AddDatabaseRecordAsync`)?
+- [ ] Must the async daemon for the tenant be stopped before the database is dropped?
+- [ ] Should this run as a Wolverine background job (Saga?) or synchronously?
+- [ ] Confirmation flow: Admin types realm slug (like GitHub repo deletion)
 
-### Implementierung (nach Recherche)
+### Implementation (after research)
 
-- [ ] Recherche: Wolverine/Marten Tenant-Removal APIs
-- [ ] Admin-Endpoint: `DELETE /api/admin/realms/{slug}/permanent` mit Bestätigungsfeld
-- [ ] Background-Job oder synchrone Implementierung (abhängig von Recherche)
-- [ ] Cleanup-Reihenfolge: Cache → Sessions → Wolverine → Marten Registry → DROP DATABASE
+- [ ] Research: Wolverine/Marten tenant-removal APIs
+- [ ] Admin endpoint: `DELETE /api/admin/realms/{slug}/permanent` with confirmation field
+- [ ] Background job or synchronous implementation (depends on research)
+- [ ] Cleanup order: Cache → Sessions → Wolverine → Marten Registry → DROP DATABASE
 - [ ] Tests
-- [ ] Dokumentation: [User Guide > Managing Realms](/user-guide/realms#deleting-a-realm)
-
----
-
-## Erledigte Meilensteine
-
-### Phase 1 — Core Identity ✅
-Login, Registrierung, Email-Bestätigung, Password Reset, Profil, 2FA (TOTP + Email OTP + WebAuthn), Sessions, GDPR, Admin CRUD (Users, Roles).
-
-### Phase 2 — Realm Management & Multi-Tenant Routing ✅
-Realm Entity, Provisioning, CRUD API, RealmMiddleware, RealmCache, Cookie Scoping, Dynamic Issuer. 243 Tests.
-
-### Phase 3 — Realm Isolation ✅
-Cross-Realm Isolation Tests, `cocoar:realm` Claim, Cookie Path Scoping. 251 Tests.
-
-### OAuth 2.0 / OpenID Connect ✅
-Authorization Code + PKCE, Client Credentials, Refresh Tokens, Reference Tokens, Consent Flow, Introspection, Revocation, UserInfo. OpenIddict mit Marten Stores.
-
-### External Login Provider Integration ✅
-Manueller OIDC-Flow (PKCE, nonce, Discovery Docs, ID Token Validation). Auto-Create User, Account-Linking, 2FA-Integration. 6 neue API-Endpoints, 20 Tests (12 API + 8 WireMock Full-Flow), Vue Login-Seite mit Provider-Buttons, Profilseite mit Connected Accounts.
-
-### Per-Client Access Token Type ✅
-`AccessTokenTypeHandler` (OpenIddict Server Event Handler) schaltet zwischen Reference und JWT pro Client. 3 neue Tests.
-
-### Device Code Grant (RFC 8628) ✅
-OpenIddict 7 Device Authorization Flow. `POST /connect/device` → Device/User Codes, `GET/POST /connect/verify` → User Verification mit Frontend-Seite, Token-Polling. 3 neue Tests.
-
-### Test-Infrastruktur ✅
-Isolierte Datenbanken pro Test-Klasse (1 Container, N DBs). Tests parallel. 23 min → 12 min, 0 Flaky. Playwright E2E (26 Tests, 9s). WireMock Fake-OIDC-Server für External Login Flow Tests. Test-Abdeckung erweitert: Email OTP (9), WebAuthn (12), Device Code Edge Cases (5), Admin User Lifecycle (9). WebAuthn NullReferenceException Bug gefixt. 312 Tests.
-
-### Package-Upgrade ✅
-OpenIddict 6.3→7.4, Marten 8.20→8.26, Wolverine 5.13→5.21, Cocoar.Configuration 4.2→5.0, + 10 weitere Packages.
-
-### Docker & CI/CD ✅
-Funktionierendes Docker Image (Backend + Vue SPA) auf GHCR. CI-Tests sequentiell per Kategorie (OOM-Fix für GitHub-hosted Runner). 5 Workflows: CI Pull Request, CI Build & Test, CD Docker Image (Staging), CD Release, CD Documentation. CSP mit `unsafe-inline` für Inline-Styles. Static Files vor RealmMiddleware.
-
-### SSL/TLS Support ✅
-Kestrel HTTPS direkt via `ServerSettings` (AppUrl, CertPath, CertPassword). Kein Nginx nötig. Self-Signed-Zertifikat wird automatisch generiert wenn CertPath gesetzt aber Datei nicht vorhanden.
-
-### Admin-UI & Frontend ✅
-Login Provider Formular mit spezifischen OIDC-Feldern. String-Enums durchgängig. Alle Auth-Views komplett. SetupView Bug gefixt.
-
-### VitePress Dokumentation ✅
-35+ Seiten vollständig: Concepts, User Guide, Developer Guide, API Reference. Alle Guides aufgefüllt. Docker Image Doku mit allen Env-Vars.
+- [ ] Documentation: [User Guide > Managing Realms](/user-guide/realms#deleting-a-realm)
