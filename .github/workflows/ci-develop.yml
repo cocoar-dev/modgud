@@ -45,6 +45,10 @@ jobs:
         run: dotnet build -c Release --no-restore
         working-directory: ./src/dotnet
 
-      - name: Test (Smoke + Auth + OAuth + Admin)
-        run: dotnet test -c Release --no-build --verbosity normal --filter "Category=Smoke|Category=Auth|Category=OAuth|Category=Admin"
+      - name: Test (Category by Category)
+        run: |
+          echo "=== Smoke ===" && dotnet test -c Release --no-build --verbosity minimal --filter "Category=Smoke" && \
+          echo "=== Auth ===" && dotnet test -c Release --no-build --verbosity minimal --filter "Category=Auth" && \
+          echo "=== OAuth ===" && dotnet test -c Release --no-build --verbosity minimal --filter "Category=OAuth" && \
+          echo "=== Admin ===" && dotnet test -c Release --no-build --verbosity minimal --filter "Category=Admin"
         working-directory: ./src/dotnet
