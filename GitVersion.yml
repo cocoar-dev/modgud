@@ -1,57 +1,31 @@
-version: 2
-
-before:
-  hooks:
-    - go mod tidy
-
-assembly-versioning-scheme: MajorMinorPatch
-assembly-file-versioning-scheme: MajorMinorPatch
-mode: ContinuousDelivery
-tag-prefix: v
-major-version-bump-message: "^(breaking|major)"
-minor-version-bump-message: "^(feat|feature|minor)"
-patch-version-bump-message: "^(fix|patch|chore)"
-no-bump-message: '\[skip ci\]'
-commit-message-incrementing: Enabled
+mode: ContinuousDeployment
 
 branches:
-  main:
-    regex: ^main$
-    mode: ContinuousDelivery
-    tag: ''
-    increment: Patch
-    prevent-increment-of-merged-branch-version: true
-    track-merge-target: false
-    tracks-release-branches: false
-    is-release-branch: true
   develop:
-    regex: ^dev(elop)?(ment)?$
-    mode: ContinuousDeployment
-    tag: alpha
-    increment: Minor
-    prevent-increment-of-merged-branch-version: false
-    track-merge-target: true
-    tracks-release-branches: true
-    is-release-branch: false
-  feature:
-    regex: ^features?[/-]
-    mode: ContinuousDeployment
-    tag: feature
-    increment: Inherit
-    prevent-increment-of-merged-branch-version: false
-    track-merge-target: false
-    tracks-release-branches: false
-    is-release-branch: false
-  pull-request:
-    regex: ^(pull|pull\-requests|pr)[/-]
-    mode: ContinuousDeployment
-    tag: pr
-    increment: Inherit
-    prevent-increment-of-merged-branch-version: false
-    tag-number-pattern: '[/-](?<number>\d+)[-/]'
-    track-merge-target: false
-    tracks-release-branches: false
-    is-release-branch: false
+    regex: ^develop$
+    label: beta
+    is-main-branch: true
 
+  release:
+    regex: ^release[/-]
+    label: rc
+
+  feature:
+    regex: ^(feature|bugfix|fix)[/-](?<BranchName>.+)
+    label: '{BranchName}'
+
+  hotfix:
+    regex: ^hotfix[/-]
+    label: hotfix
+
+  pull-request:
+    label: pr
+
+  other:
+    regex: .*
+    label: alpha
+
+tag-prefix: 'v'
+commit-message-incrementing: Enabled
 ignore:
   sha: []
