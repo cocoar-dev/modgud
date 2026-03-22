@@ -78,7 +78,7 @@ jobs:
         working-directory: ./src/dotnet
 
       - name: Test
-        run: dotnet test -c Release --no-build --verbosity normal
+        run: dotnet test -c Release --no-build --verbosity normal -- xUnit.MaxParallelThreads=4
         working-directory: ./src/dotnet
 
       - name: Publish

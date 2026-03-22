@@ -46,5 +46,5 @@ jobs:
         working-directory: ./src/dotnet
 
       - name: Test (Smoke + Auth + OAuth + Admin)
-        run: dotnet test -c Release --no-build --verbosity normal --filter "Category=Smoke|Category=Auth|Category=OAuth|Category=Admin"
+        run: dotnet test -c Release --no-build --verbosity normal --filter "Category=Smoke|Category=Auth|Category=OAuth|Category=Admin" -- xUnit.MaxParallelThreads=4
         working-directory: ./src/dotnet
