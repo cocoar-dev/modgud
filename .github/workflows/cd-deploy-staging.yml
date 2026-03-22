@@ -91,11 +91,13 @@ jobs:
           done
 
       - name: Publish
-        run: dotnet publish Cocoar.Auth.Api/Cocoar.Auth.Api.csproj -c Release --no-build -o ../publish
+        run: dotnet publish Cocoar.Auth.Api/Cocoar.Auth.Api.csproj -c Release --no-build -o $GITHUB_WORKSPACE/publish
         working-directory: ./src/dotnet
 
       - name: Copy frontend to publish wwwroot
-        run: cp -r src/frontend-vue/apps/frontend/dist/* publish/wwwroot/ 2>/dev/null || mkdir -p publish/wwwroot && cp -r src/frontend-vue/apps/frontend/dist/* publish/wwwroot/
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/publish/wwwroot
+          cp -r src/frontend-vue/apps/frontend/dist/* $GITHUB_WORKSPACE/publish/wwwroot/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
