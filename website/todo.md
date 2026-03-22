@@ -71,7 +71,7 @@ Isolierte Datenbanken pro Test-Klasse (1 Container, N DBs). Tests parallel. 23 m
 OpenIddict 6.3→7.4, Marten 8.20→8.26, Wolverine 5.13→5.21, Cocoar.Configuration 4.2→5.0, + 10 weitere Packages.
 
 ### Docker & CI/CD ✅
-Multi-Stage Dockerfile (lokaler Build) + CI Dockerfile (vorgebaute Artefakte). docker-compose.yml für Full-Stack. 5 GitHub Actions Workflows: PR Validation, Develop CI, Staging Deploy (Multi-Arch Docker → GHCR), Production Deploy (Release → GHCR + Docs → Shelf), Manual Docs Deploy.
+Funktionierendes Docker Image (Backend + Vue SPA) auf GHCR. CI-Tests sequentiell per Kategorie (OOM-Fix für GitHub-hosted Runner). 5 Workflows: CI Pull Request, CI Build & Test, CD Docker Image (Staging), CD Release, CD Documentation. CSP mit `unsafe-inline` für Inline-Styles. Static Files vor RealmMiddleware.
 
 ### SSL/TLS Support ✅
 Kestrel HTTPS direkt via `ServerSettings` (AppUrl, CertPath, CertPassword). Kein Nginx nötig. Self-Signed-Zertifikat wird automatisch generiert wenn CertPath gesetzt aber Datei nicht vorhanden.
