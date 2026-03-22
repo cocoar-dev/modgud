@@ -137,6 +137,58 @@ POST /{realm}/connect/revocation
 
 Revocation is immediate — the next introspection call will return `active: false`.
 
+## Device Code Flow
+
+**Use for:** Devices with limited input capabilities (smart TVs, CLI tools, IoT devices) where the user authenticates on a separate device.
+
+```
+1. Device requests authorization:
+   POST /{realm}/connect/deviceauthorization
+   {
+     client_id: my-cli-tool,
+     scope: openid profile
+   }
+
+   Response:
+   {
+     device_code: "DEVICE_CODE",
+     user_code: "XXXX-XXXX",
+     verification_uri: "https://auth.example.com/{realm}/device",
+     expires_in: 600,
+     interval: 5
+   }
+
+2. Device shows the user code and verification URL
+
+3. User opens the verification URL in their browser
+   → Logs in (if not already)
+   → Enters the user code (XXXX-XXXX)
+   → Clicks "Approve"
+
+4. Device polls for the token:
+   POST /{realm}/connect/token
+   {
+     grant_type: urn:ietf:params:oauth:grant-type:device_code,
+     client_id: my-cli-tool,
+     device_code: DEVICE_CODE
+   }
+
+   While pending:
+   { error: "authorization_pending" }
+
+   After user approves:
+   {
+     access_token: "CfDJ8...",
+     id_token: "eyJhbG...",
+     token_type: "Bearer",
+     expires_in: 3600
+   }
+```
+
+::: tip User Code Format
+The user code is displayed as `XXXX-XXXX` (8 characters with a dash). The user enters it on the verification page in their browser. The code expires after 10 minutes.
+:::
+
 ## Per-Realm Endpoints
 
 All OAuth endpoints are realm-scoped. The realm slug is always the first path segment:
@@ -147,6 +199,8 @@ All OAuth endpoints are realm-scoped. The realm slug is always the first path se
 | `/{slug}/connect/token` |
 | `/{slug}/connect/introspect` |
 | `/{slug}/connect/revocation` |
+| `/{slug}/connect/deviceauthorization` |
+| `/{slug}/connect/verify` |
 | `/{slug}/.well-known/openid-configuration` |
 
 The system realm uses `/system/` as its slug: `/system/connect/token`, `/system/.well-known/openid-configuration`, etc.

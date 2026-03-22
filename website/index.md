@@ -24,6 +24,8 @@ features:
     details: HttpOnly, Secure, SameSite=Lax cookies scoped per realm. Reference tokens for OAuth. No JWTs in the browser.
   - title: Full 2FA Support
     details: TOTP authenticator apps, email OTP, WebAuthn/Passkeys, and recovery codes. All per-realm isolated.
+  - title: External Login
+    details: Sign in with Google, Microsoft, or any OpenID Connect provider. Automatic account creation and account linking per realm.
   - title: GDPR Compliant
     details: Data export (Article 20), account deletion with confirmation period, and Marten's built-in data masking.
 ---

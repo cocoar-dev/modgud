@@ -83,3 +83,15 @@ Set this under **Access Token Type** when creating or editing a client. See [Glo
 | Access Token Type | Reference |
 | Redirect URIs | `https://myapp.com/signin-oidc` |
 | Scopes | `openid profile email roles offline_access` |
+
+### CLI Tool / IoT Device
+
+| Setting | Value |
+|---------|-------|
+| Client Type | Public |
+| Grant Types | Device Code |
+| Access Token Type | Reference |
+| Redirect URIs | _(none)_ |
+| Scopes | `openid profile` |
+
+See [Device Code Flow](/user-guide/client-flows#device-code-flow) for the full flow documentation.

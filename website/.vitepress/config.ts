@@ -1,10 +1,30 @@
 import { defineConfig } from 'vitepress'
+import { withMermaid } from 'vitepress-plugin-mermaid'
+import llmstxt from 'vitepress-plugin-llms'
 
-export default defineConfig({
-  title: 'Cocoar.Auth',
-  description: 'Multi-tenant Identity Provider built with ASP.NET Core, Marten, and Vue',
+export default withMermaid(
+  defineConfig({
+    title: 'Cocoar.Auth',
+    description: 'Multi-tenant Identity Provider built with ASP.NET Core, Marten, and Vue',
 
-  themeConfig: {
+    head: [
+      ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo_light.svg' }],
+      ['link', { rel: 'alternate', type: 'text/plain', href: '/llms.txt', title: 'LLM documentation (summary)' }],
+      ['link', { rel: 'alternate', type: 'text/plain', href: '/llms-full.txt', title: 'LLM documentation (full)' }],
+    ],
+
+    vite: {
+      plugins: [llmstxt({
+        excludeUnnecessaryFiles: false,
+        ignoreFiles: ['changelog.md'],
+      })],
+    },
+
+    themeConfig: {
+      logo: {
+        light: '/logo_light.svg',
+        dark: '/logo_dark.svg',
+      },
     nav: [
       { text: 'Concepts', link: '/concepts/glossary' },
       { text: 'User Guide', link: '/user-guide/realms' },
@@ -57,10 +77,18 @@ export default defineConfig({
           ],
         },
         {
+          text: 'External Login',
+          items: [
+            { text: 'Login Providers', link: '/user-guide/login-providers' },
+            { text: 'External Login', link: '/user-guide/external-login' },
+          ],
+        },
+        {
           text: 'Security',
           items: [
             { text: 'Two-Factor Authentication', link: '/user-guide/two-factor' },
             { text: 'Session Management', link: '/user-guide/sessions' },
+            { text: 'Privacy & Data Protection', link: '/user-guide/privacy' },
           ],
         },
       ],
@@ -117,7 +145,7 @@ export default defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/cocoar/cocoar.auth' },
+      { icon: 'github', link: 'https://github.com/cocoar-dev/Cocoar.Auth' },
     ],
 
     search: {
@@ -129,4 +157,11 @@ export default defineConfig({
       copyright: 'Copyright 2025-present Cocoar',
     },
   },
-})
+
+  mermaid: {},
+
+  mermaidPlugin: {
+    class: 'mermaid',
+  },
+}),
+)
