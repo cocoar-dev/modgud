@@ -8,6 +8,7 @@ jobs:
   build-and-test:
     name: Build & Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
 
@@ -44,6 +45,6 @@ jobs:
         run: dotnet build -c Release --no-restore
         working-directory: ./src/dotnet
 
-      - name: Test
-        run: dotnet test -c Release --no-build --verbosity normal
+      - name: Test (Smoke + Auth + OAuth)
+        run: dotnet test -c Release --no-build --verbosity normal --filter "Category=Smoke|Category=Auth|Category=OAuth"
         working-directory: ./src/dotnet

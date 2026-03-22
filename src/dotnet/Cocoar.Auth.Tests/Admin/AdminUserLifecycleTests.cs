@@ -9,6 +9,7 @@ using Cocoar.Primitives;
 namespace Cocoar.Auth.Tests.Admin;
 
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.GDPR)]
 public class AdminUserLifecycleTests : IAsyncLifetime
 {
     private readonly SharedPostgresFixture _fixture;

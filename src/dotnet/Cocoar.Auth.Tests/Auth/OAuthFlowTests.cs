@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cocoar.Auth.Tests.Auth;
 
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.OAuth)]
 public class OAuthFlowTests : IAsyncLifetime
 {
 	private readonly SharedPostgresFixture _fixture;

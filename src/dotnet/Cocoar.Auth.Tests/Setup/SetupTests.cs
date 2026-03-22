@@ -6,6 +6,7 @@ using Cocoar.Auth.Tests.Infrastructure;
 namespace Cocoar.Auth.Tests.Setup;
 
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.Smoke)]
 public class SetupTests : IAsyncLifetime
 {
     private readonly SharedPostgresFixture _fixture;

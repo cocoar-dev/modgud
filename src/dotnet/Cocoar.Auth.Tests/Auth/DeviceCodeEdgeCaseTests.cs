@@ -8,6 +8,7 @@ using Cocoar.Auth.Tests.Infrastructure;
 namespace Cocoar.Auth.Tests.Auth;
 
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.OAuth)]
 public class DeviceCodeEdgeCaseTests : IAsyncLifetime
 {
     private readonly SharedPostgresFixture _fixture;

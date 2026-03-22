@@ -11,6 +11,7 @@ namespace Cocoar.Auth.Tests;
 /// This should be the FIRST test to pass before anything else.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.Smoke)]
 public class SmokeTest : IAsyncLifetime
 {
     private readonly SharedPostgresFixture _fixture;

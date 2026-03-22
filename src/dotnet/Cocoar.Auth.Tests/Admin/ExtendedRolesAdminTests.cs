@@ -8,6 +8,7 @@ using Cocoar.Primitives;
 namespace Cocoar.Auth.Tests.Admin;
 
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.Admin)]
 public class ExtendedRolesAdminTests : IAsyncLifetime
 {
 	private readonly SharedPostgresFixture _fixture;

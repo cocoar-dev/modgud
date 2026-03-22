@@ -139,10 +139,11 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
     {
         builder.UseEnvironment("Testing");
 
-        // Clear logging providers to avoid Event Log dispose issues on Windows
+        // Suppress verbose logging in tests (Marten schema SQL, Wolverine startup, etc.)
         builder.ConfigureLogging(logging =>
         {
             logging.ClearProviders();
+            logging.SetMinimumLevel(LogLevel.Warning);
         });
 
         builder.ConfigureServices(services =>

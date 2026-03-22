@@ -16,6 +16,7 @@ namespace Cocoar.Auth.Tests.Projections;
 /// These tests verify that the denormalized user view stays consistent with role changes.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.GDPR)]
 public class UserDetailsProjectionTests : IAsyncLifetime
 {
     private readonly SharedPostgresFixture _fixture;

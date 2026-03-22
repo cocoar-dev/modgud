@@ -12,6 +12,7 @@ namespace Cocoar.Auth.Tests.Auth;
 /// Tests the complete chain: Provider → Redirect → Callback → User Creation/Login.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.ExternalLogin)]
 public class ExternalLoginFlowTests : IAsyncLifetime
 {
 	private readonly SharedPostgresFixture _fixture;

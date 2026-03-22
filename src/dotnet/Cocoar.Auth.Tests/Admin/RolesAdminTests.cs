@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cocoar.Auth.Tests.Admin;
 
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.Admin)]
 public class RolesAdminTests : IAsyncLifetime
 {
     private readonly SharedPostgresFixture _fixture;

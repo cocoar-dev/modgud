@@ -6,6 +6,7 @@ using Cocoar.Auth.Tests.Infrastructure;
 namespace Cocoar.Auth.Tests.MultiTenancy;
 
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.MultiTenancy)]
 public class RealmRoutingTests : IAsyncLifetime
 {
 	private readonly SharedPostgresFixture _fixture;

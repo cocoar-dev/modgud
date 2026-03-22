@@ -10,6 +10,7 @@ using OtpNet;
 namespace Cocoar.Auth.Tests.Auth;
 
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.TwoFactor)]
 public class TwoFactorAuthTests : IAsyncLifetime
 {
     private readonly SharedPostgresFixture _fixture;

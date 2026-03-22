@@ -7,6 +7,7 @@ using OpenIddict.Abstractions;
 namespace Cocoar.Auth.Tests.Auth;
 
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.Smoke)]
 public class SeedDataTests : IAsyncLifetime
 {
 	private readonly SharedPostgresFixture _fixture;

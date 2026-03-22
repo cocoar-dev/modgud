@@ -6,6 +6,7 @@ using Cocoar.Auth.Tests.Infrastructure;
 namespace Cocoar.Auth.Tests.Admin;
 
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.Admin)]
 public class OAuthAdminTests : IAsyncLifetime
 {
 	private readonly SharedPostgresFixture _fixture;

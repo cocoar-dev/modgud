@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cocoar.Auth.Tests.Auth;
 
 [Collection(IntegrationTestCollection.Name)]
+[Trait("Category", TestCategories.Auth)]
 public class LockoutTests : IAsyncLifetime
 {
     private readonly SharedPostgresFixture _fixture;
