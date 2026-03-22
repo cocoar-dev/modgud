@@ -7,7 +7,7 @@ on:
 jobs:
   build-and-test:
     name: Build & Test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -46,5 +46,5 @@ jobs:
         working-directory: ./src/dotnet
 
       - name: Test (Smoke + Auth + OAuth + Admin)
-        run: dotnet test -c Release --no-build --verbosity normal --filter "Category=Smoke|Category=Auth|Category=OAuth|Category=Admin" -- xUnit.MaxParallelThreads=4
+        run: dotnet test -c Release --no-build --verbosity normal --filter "Category=Smoke|Category=Auth|Category=OAuth|Category=Admin"
         working-directory: ./src/dotnet

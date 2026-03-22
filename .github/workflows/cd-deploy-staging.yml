@@ -15,7 +15,7 @@ concurrency:
 jobs:
   version:
     name: Calculate Version
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner]
     outputs:
       version: ${{ steps.build_version.outputs.VERSION }}
     steps:
@@ -48,7 +48,7 @@ jobs:
   build:
     name: Build & Test
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner]
     permissions:
       contents: read
 
@@ -84,7 +84,7 @@ jobs:
         working-directory: ./src/dotnet
 
       - name: Test
-        run: dotnet test -c Release --no-build --verbosity normal -- xUnit.MaxParallelThreads=4
+        run: dotnet test -c Release --no-build --verbosity normal
         working-directory: ./src/dotnet
 
       - name: Publish
@@ -103,7 +103,7 @@ jobs:
   deploy:
     name: Deploy to Staging
     needs: [version, build]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner]
     permissions:
       contents: read
       packages: write
