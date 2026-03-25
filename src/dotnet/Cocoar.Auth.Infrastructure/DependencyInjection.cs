@@ -9,6 +9,7 @@ using Cocoar.Auth.Infrastructure.Identity;
 using Cocoar.Auth.Infrastructure.Interfaces;
 using Cocoar.Auth.Infrastructure.Persistence;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
+using Async = Cocoar.Auth.Infrastructure.Persistence.Projections.Async;
 using Cocoar.Auth.Infrastructure.Persistence.Repositories;
 using Cocoar.Auth.Infrastructure.Repositories;
 using Cocoar.Auth.Infrastructure.Services;
@@ -141,6 +142,8 @@ public static class DependencyInjection
 		services.AddScoped<IUserDetailsRepository, UserDetailsRepository>();
 		services.AddScoped<IOAuthApiRepository, OAuthApiRepository>();
 		services.AddScoped<ILoginProviderRepository, LoginProviderRepository>();
+		services.AddScoped<IUserListRepository, UserListRepository>();
+		services.AddScoped<IRoleListRepository, RoleListRepository>();
 	}
 
 	/// <summary>
@@ -450,6 +453,8 @@ public static class DependencyInjection
 		// Async mode uses daemon (eventually consistent), Inline mode runs synchronously
 		var readModelLifecycle = useAsyncProjections ? ProjectionLifecycle.Async : ProjectionLifecycle.Inline;
 		options.Projections.Add(new UserDetailsProjection(), readModelLifecycle);
+		options.Projections.Add(new Async.UserListProjection(), readModelLifecycle);
+		options.Projections.Add(new Async.RoleListProjection(), readModelLifecycle);
 
 		// ═══════════════════════════════════════════════════════════════
 		// STATE MODEL INDEXES
@@ -471,6 +476,18 @@ public static class DependencyInjection
 			.Identity(x => x.Id)
 			.Index(x => x.Email)
 			.Index(x => x.IsActive);
+
+		// Configure UserListReadModel indexes
+		options.Schema.For<Application.ReadModels.UserListReadModel>()
+			.Identity(x => x.Id)
+			.Index(x => x.UserName)
+			.Index(x => x.Email)
+			.Index(x => x.IsActive);
+
+		// Configure RoleListReadModel indexes
+		options.Schema.For<Application.ReadModels.RoleListReadModel>()
+			.Identity(x => x.Id)
+			.Index(x => x.Name);
 
 		// Configure OAuthApplicationState indexes for fast lookups
 		options.Schema.For<OAuthApplicationState>()

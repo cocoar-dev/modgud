@@ -3,6 +3,7 @@ using Cocoar.Auth.Application.Commands.Roles;
 using Cocoar.Auth.Application.DTOs.Roles;
 using Cocoar.Auth.Application.Mappers;
 using Cocoar.Auth.Application.Queries.Roles;
+using Cocoar.Auth.Application.ReadModels;
 using Cocoar.Auth.Domain.Entities;
 using Cocoar.Primitives;
 using Microsoft.AspNetCore.Authorization;
@@ -32,14 +33,14 @@ public class RolesAdminController : ApiControllerBase
     [ProducesResponseType(typeof(RoleListDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetRoles(CancellationToken cancellationToken)
     {
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<IReadOnlyList<ApplicationRole>>>(
+        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<IReadOnlyList<RoleListReadModel>>>(
             new GetAllRolesQuery(),
             cancellationToken);
 
         return result.Match(
             roles => Ok(new RoleListDto
             {
-                Items = roles.Select(RoleMapper.ToDto).ToList(),
+                Items = roles.Select(RoleMapper.ToListDto).ToList(),
                 TotalCount = roles.Count
             }),
             errors => Problem(errors));

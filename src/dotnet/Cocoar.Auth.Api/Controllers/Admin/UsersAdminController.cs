@@ -51,7 +51,7 @@ public class UsersAdminController : ApiControllerBase
         return result.Match(
             pagedResult => Ok(new UserListDto
             {
-                Items = pagedResult.Users.Select(UserMapper.ToDto).ToList(),
+                Items = pagedResult.Users.Select(UserMapper.ToListDto).ToList(),
                 TotalCount = pagedResult.TotalCount,
                 Page = page,
                 PageSize = pageSize
