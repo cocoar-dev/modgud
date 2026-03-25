@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { CoarButton, CoarNote, CoarSpinner } from '@cocoar/vue-ui';
+import { CoarButton, CoarNote, CoarSpinner, CoarContextMenu, CoarMenuItem, CoarMenuHeading, useContextMenu, useToast } from '@cocoar/vue-ui';
 import { CoarDataGrid, useDataGrid } from '@cocoar/vue-data-grid';
 import { adminApi } from '@/core/api/admin-api';
+import { ApiError } from '@/core/api/http';
 import { useUI } from '@/composables/useUI';
+import { useAdminHub } from '@/composables/useAdminHub';
 import type { OAuthApi } from '@/core/models/oauth.models';
 
 const ui = useUI();
-
 const router = useRouter();
+const toast = useToast();
 const resources = ref<OAuthApi[] | null>(null);
 const isLoading = ref(true);
 const error = ref('');
+const contextRow = ref<OAuthApi | null>(null);
 
+const menu = useContextMenu();
 const { builder } = useDataGrid();
 
 builder
@@ -25,11 +29,12 @@ builder
   ])
   .rowDataRef(resources)
   .rowId((params: any) => params.data?.id || '')
-  .onRowClicked((event: any) => {
+  .onRowDoubleClicked((event: any) => {
     if (event.data?.id) router.push(`/admin/oauth/apis/${event.data.id}`);
-  });
+  })
+  .onCellContextMenu((event: any) => { contextRow.value = event.data ?? null; menu.open(event.event); })
+  .onViewportContextMenu(($event: MouseEvent) => { contextRow.value = null; menu.open($event); });
 
-// Set UI state synchronously (before first render)
 ui.set(ctx => {
   ctx.header.title = 'APIs';
   ctx.header.subTitle = 'Manage OAuth 2.0 APIs';
@@ -37,16 +42,22 @@ ui.set(ctx => {
   ctx.content.container = false;
 });
 
-onMounted(async () => {
-  try {
-    const result = await adminApi.getOAuthApis();
-    resources.value = result.items;
-  } catch {
-    error.value = 'Failed to load APIs.';
-  } finally {
-    isLoading.value = false;
-  }
-});
+const { onEntityChanged } = useAdminHub();
+
+async function loadApis() {
+  try { const result = await adminApi.getOAuthApis(); resources.value = result.items; }
+  catch { error.value = 'Failed to load APIs.'; }
+  finally { isLoading.value = false; }
+}
+
+async function onDelete(api: OAuthApi) {
+  if (!confirm(`Delete API "${api.name}"?`)) return;
+  try { await adminApi.deleteOAuthApi(api.id); toast.success(`API "${api.name}" deleted.`); loadApis(); }
+  catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed to delete API.'); }
+}
+
+onMounted(loadApis);
+onEntityChanged('oauth-api', loadApis);
 </script>
 
 <template>
@@ -57,6 +68,15 @@ onMounted(async () => {
     <CoarNote v-if="error" variant="error" padding="s" class="mb-3">{{ error }}</CoarNote>
     <div v-if="isLoading" class="centered"><CoarSpinner size="l" /></div>
     <CoarDataGrid v-else :builder="builder" />
+
+    <CoarContextMenu :menu="menu">
+      <CoarMenuItem label="New API" icon="plus" @clicked="router.push('/admin/oauth/apis/create')" />
+      <template v-if="contextRow">
+        <CoarMenuHeading :label="contextRow.name" />
+        <CoarMenuItem label="Edit" icon="pencil" @clicked="router.push(`/admin/oauth/apis/${contextRow.id}`)" />
+        <CoarMenuItem label="Delete" icon="trash-2" @clicked="onDelete(contextRow)" />
+      </template>
+    </CoarContextMenu>
   </div>
 </template>
 

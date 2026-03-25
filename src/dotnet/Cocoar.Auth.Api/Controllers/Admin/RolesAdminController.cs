@@ -7,6 +7,7 @@ using Cocoar.Auth.Domain.Entities;
 using Cocoar.Primitives;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Cocoar.Auth.Api.Hubs;
 using Wolverine;
 
 namespace Cocoar.Auth.Api.Controllers.Admin;
@@ -16,10 +17,12 @@ namespace Cocoar.Auth.Api.Controllers.Admin;
 public class RolesAdminController : ApiControllerBase
 {
     private readonly IMessageBus _messageBus;
+    private readonly IAdminHubNotifier _hubNotifier;
 
-    public RolesAdminController(IMessageBus messageBus)
+    public RolesAdminController(IMessageBus messageBus, IAdminHubNotifier hubNotifier)
     {
         _messageBus = messageBus;
+        _hubNotifier = hubNotifier;
     }
 
     /// <summary>
@@ -77,9 +80,11 @@ public class RolesAdminController : ApiControllerBase
             dto.ToCommand(),
             cancellationToken);
 
-        return result.Match(
-            role => CreatedAtAction(nameof(GetRole), new { id = role.Id.ToString() }, RoleMapper.ToDto(role)),
-            errors => Problem(errors));
+        if (result.IsError) return Problem(result.Errors);
+
+        var role = result.Value;
+        await _hubNotifier.EntityChangedAsync("role", "created", role.Id.ToString());
+        return CreatedAtAction(nameof(GetRole), new { id = role.Id.ToString() }, RoleMapper.ToDto(role));
     }
 
     /// <summary>
@@ -101,9 +106,11 @@ public class RolesAdminController : ApiControllerBase
             dto.ToCommand(roleId),
             cancellationToken);
 
-        return result.Match(
-            role => Ok(RoleMapper.ToDto(role)),
-            errors => Problem(errors));
+        if (result.IsError) return Problem(result.Errors);
+
+        var role = result.Value;
+        await _hubNotifier.EntityChangedAsync("role", "updated", role.Id.ToString());
+        return Ok(RoleMapper.ToDto(role));
     }
 
     /// <summary>
@@ -129,6 +136,7 @@ public class RolesAdminController : ApiControllerBase
             return Problem(result.Errors);
         }
 
+        await _hubNotifier.EntityChangedAsync("role", "deleted", id);
         return NoContent();
     }
 }

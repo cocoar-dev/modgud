@@ -46,14 +46,14 @@ const rememberMe = ref(false);
 const touched = ref({ userName: false, password: false });
 
 const userNameError = computed(() => {
-  if (!touched.value.userName) return '';
+  if (!touched.value.userName) return undefined;
   if (!userName.value) return 'Username is required';
-  return '';
+  return undefined;
 });
 const passwordError = computed(() => {
-  if (!touched.value.password) return '';
+  if (!touched.value.password) return undefined;
   if (!password.value) return 'Password is required';
-  return '';
+  return undefined;
 });
 
 const isValid = computed(() => !!userName.value && !!password.value);

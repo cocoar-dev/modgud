@@ -21,29 +21,29 @@ const error = ref('');
 const success = ref(false);
 
 const userNameError = computed(() => {
-  if (!touched.value.userName) return '';
+  if (!touched.value.userName) return undefined;
   if (!userName.value) return 'Username is required';
-  return '';
+  return undefined;
 });
 
 const emailError = computed(() => {
-  if (!touched.value.email) return '';
+  if (!touched.value.email) return undefined;
   if (!email.value) return 'Email is required';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) return 'Enter a valid email address';
-  return '';
+  return undefined;
 });
 
 const passwordError = computed(() => {
-  if (!touched.value.password) return '';
+  if (!touched.value.password) return undefined;
   if (!password.value) return 'Password is required';
-  return '';
+  return undefined;
 });
 
 const confirmPasswordError = computed(() => {
-  if (!touched.value.confirmPassword) return '';
+  if (!touched.value.confirmPassword) return undefined;
   if (!confirmPassword.value) return 'Please confirm your password';
   if (confirmPassword.value !== password.value) return 'Passwords do not match';
-  return '';
+  return undefined;
 });
 
 const isValid = computed(

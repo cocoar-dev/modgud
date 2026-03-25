@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { CoarButton, CoarNote, CoarSpinner } from '@cocoar/vue-ui';
+import { CoarButton, CoarNote, CoarSpinner, CoarContextMenu, CoarMenuItem, CoarMenuHeading, useContextMenu, useToast } from '@cocoar/vue-ui';
 import { CoarDataGrid, useDataGrid } from '@cocoar/vue-data-grid';
 import { adminApi } from '@/core/api/admin-api';
+import { ApiError } from '@/core/api/http';
 import { useUI } from '@/composables/useUI';
+import { useAdminHub } from '@/composables/useAdminHub';
 import type { User } from '@/core/models/auth.models';
 
 const ui = useUI();
-
 const router = useRouter();
+const toast = useToast();
 const users = ref<User[] | null>(null);
 const isLoading = ref(true);
 const error = ref('');
+const contextRow = ref<User | null>(null);
 
+const menu = useContextMenu();
 const { builder } = useDataGrid();
 
 builder
@@ -38,11 +42,18 @@ builder
   ])
   .rowDataRef(users)
   .rowId((params: any) => params.data?.id || '')
-  .onRowClicked((event: any) => {
+  .onRowDoubleClicked((event: any) => {
     if (event.data?.id) router.push(`/admin/users/${event.data.id}`);
+  })
+  .onCellContextMenu((event: any) => {
+    contextRow.value = event.data ?? null;
+    menu.open(event.event);
+  })
+  .onViewportContextMenu(($event: MouseEvent) => {
+    contextRow.value = null;
+    menu.open($event);
   });
 
-// Set UI state synchronously (before first render)
 ui.set(ctx => {
   ctx.header.title = 'Users';
   ctx.header.subTitle = 'Manage user accounts';
@@ -51,7 +62,9 @@ ui.set(ctx => {
   ctx.content.padding = true;
 });
 
-onMounted(async () => {
+const { onEntityChanged } = useAdminHub();
+
+async function loadUsers() {
   try {
     const result = await adminApi.getUsers();
     users.value = result.items;
@@ -60,7 +73,21 @@ onMounted(async () => {
   } finally {
     isLoading.value = false;
   }
-});
+}
+
+async function onDelete(user: User) {
+  if (!confirm(`Delete user "${user.userName}"?`)) return;
+  try {
+    await adminApi.softDeleteUser(user.id);
+    toast.success(`User "${user.userName}" deleted.`);
+    loadUsers();
+  } catch (err) {
+    toast.error(err instanceof ApiError ? err.message : 'Failed to delete user.');
+  }
+}
+
+onMounted(loadUsers);
+onEntityChanged('user', loadUsers);
 </script>
 
 <template>
@@ -75,6 +102,15 @@ onMounted(async () => {
 
     <div v-if="isLoading" class="centered"><CoarSpinner size="l" /></div>
     <CoarDataGrid v-else :builder="builder" />
+
+    <CoarContextMenu :menu="menu">
+      <CoarMenuItem label="New User" icon="user-plus" @clicked="router.push('/admin/users/create')" />
+      <template v-if="contextRow">
+        <CoarMenuHeading :label="contextRow.userName" />
+        <CoarMenuItem label="Edit" icon="pencil" @clicked="router.push(`/admin/users/${contextRow.id}`)" />
+        <CoarMenuItem label="Delete" icon="trash-2" @clicked="onDelete(contextRow)" />
+      </template>
+    </CoarContextMenu>
   </div>
 </template>
 

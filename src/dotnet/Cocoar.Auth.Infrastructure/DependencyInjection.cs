@@ -12,6 +12,7 @@ using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using Cocoar.Auth.Infrastructure.Persistence.Repositories;
 using Cocoar.Auth.Infrastructure.Repositories;
 using Cocoar.Auth.Infrastructure.Services;
+using Cocoar.Configuration.Core;
 using Cocoar.Configuration.Reactive;
 using JasperFx;
 using JasperFx.Events.Daemon;
@@ -54,8 +55,7 @@ public static class DependencyInjection
 					x.RegisterDatabase("system", defaultConnectionString);
 				});
 			}
-			else
-			{
+			else {
 				// Legacy single-tenant mode (fallback for tests that haven't been updated)
 				var dbSettings = sp.GetRequiredService<IReactiveConfig<IDatabaseSettings>>();
 				var dataSourceBuilder = new NpgsqlDataSourceBuilder(dbSettings.CurrentValue.ConnectionString);

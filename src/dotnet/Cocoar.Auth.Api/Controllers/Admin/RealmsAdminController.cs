@@ -1,4 +1,5 @@
 using Cocoar.Auth.Api.Filters;
+using Cocoar.Auth.Api.Hubs;
 using Cocoar.Auth.Application.DTOs.Realms;
 using Cocoar.Auth.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -15,10 +16,12 @@ namespace Cocoar.Auth.Api.Controllers.Admin;
 public class RealmsAdminController : ApiControllerBase
 {
 	private readonly IRealmProvisioningService _realmService;
+	private readonly IAdminHubNotifier _hubNotifier;
 
-	public RealmsAdminController(IRealmProvisioningService realmService)
+	public RealmsAdminController(IRealmProvisioningService realmService, IAdminHubNotifier hubNotifier)
 	{
 		_realmService = realmService;
+		_hubNotifier = hubNotifier;
 	}
 
 	/// <summary>
@@ -91,20 +94,24 @@ public class RealmsAdminController : ApiControllerBase
 	{
 		var result = await _realmService.CreateRealmAsync(dto, cancellationToken);
 
-		return FromErrorOr(result, realm => CreatedAtAction(
-			nameof(GetRealm),
-			new { slug = realm.Slug },
-			new RealmDto
-			{
-				Id = realm.Id,
-				Slug = realm.Slug,
-				DisplayName = realm.DisplayName,
-				Description = realm.Description,
-				IsActive = realm.IsActive,
-				IsSystem = realm.IsSystem,
-				NeedsSetup = true,
-				CreatedAt = realm.CreatedAt
-			}));
+		if (result.IsError)
+		{
+			return Problem(result.Errors);
+		}
+
+		var realm = result.Value;
+		await _hubNotifier.EntityChangedAsync("realm", "created", realm.Slug);
+		return CreatedAtAction(nameof(GetRealm), new { slug = realm.Slug }, new RealmDto
+		{
+			Id = realm.Id,
+			Slug = realm.Slug,
+			DisplayName = realm.DisplayName,
+			Description = realm.Description,
+			IsActive = realm.IsActive,
+			IsSystem = realm.IsSystem,
+			NeedsSetup = true,
+			CreatedAt = realm.CreatedAt
+		});
 	}
 
 	/// <summary>
@@ -118,7 +125,14 @@ public class RealmsAdminController : ApiControllerBase
 	{
 		var result = await _realmService.UpdateRealmAsync(slug, dto, cancellationToken);
 
-		return FromErrorOr(result, realm => Ok(new RealmDto
+		if (result.IsError)
+		{
+			return Problem(result.Errors);
+		}
+
+		var realm = result.Value;
+		await _hubNotifier.EntityChangedAsync("realm", "updated", realm.Slug);
+		return Ok(new RealmDto
 		{
 			Id = realm.Id,
 			Slug = realm.Slug,
@@ -128,7 +142,7 @@ public class RealmsAdminController : ApiControllerBase
 			IsSystem = realm.IsSystem,
 			NeedsSetup = realm.IsActive,
 			CreatedAt = realm.CreatedAt
-		}));
+		});
 	}
 
 	/// <summary>
@@ -147,6 +161,7 @@ public class RealmsAdminController : ApiControllerBase
 			return Problem(result.Errors);
 		}
 
+		await _hubNotifier.EntityChangedAsync("realm", "deleted", slug);
 		return NoContent();
 	}
 }

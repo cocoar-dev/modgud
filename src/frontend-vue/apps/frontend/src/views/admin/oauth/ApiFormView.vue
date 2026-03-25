@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
-  CoarCard, CoarButton, CoarNote, CoarTextInput, CoarCheckbox, CoarSpinner, CoarCodeBlock, CoarSwitch,
+  CoarCard, CoarButton, CoarNote, CoarTextInput, CoarCheckbox, CoarSpinner, CoarCodeBlock, CoarSwitch, useToast,
 } from '@cocoar/vue-ui';
 import { adminApi } from '@/core/api/admin-api';
 import { ApiError } from '@/core/api/http';
@@ -48,12 +48,29 @@ ui.set(ctx => {
   ctx.footer.button1.visible = true;
   ctx.footer.button1.text = 'Back';
   ctx.footer.button1.onClick = () => router.push('/admin/oauth/apis');
+  ctx.footer.button2.visible = isEditMode.value;
+  ctx.footer.button2.text = 'Delete';
+  ctx.footer.button2.onClick = () => onDeleteApi();
   ctx.footer.button3.visible = true;
   ctx.footer.button3.text = isEditMode.value ? 'Save Changes' : 'Create';
   ctx.footer.button3.onClick = () => onSubmit();
 });
 
 watch(isSaving, (val) => { ui.state.footer.button3.loading = val; });
+
+const toast = useToast();
+
+async function onDeleteApi() {
+  if (!confirm('Are you sure you want to delete this API?')) return;
+  try {
+    await adminApi.deleteOAuthApi(id.value!);
+    isDirty.value = false;
+    toast.success('API deleted.');
+    router.push('/admin/oauth/apis');
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : 'Failed to delete API.';
+  }
+}
 
 onMounted(async () => {
   if (!isEditMode.value) return;

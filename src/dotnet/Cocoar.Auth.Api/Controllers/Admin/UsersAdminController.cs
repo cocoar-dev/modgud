@@ -11,6 +11,7 @@ using Cocoar.Auth.Domain.Entities;
 using Cocoar.Primitives;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Cocoar.Auth.Api.Hubs;
 using Wolverine;
 
 namespace Cocoar.Auth.Api.Controllers.Admin;
@@ -22,12 +23,14 @@ public class UsersAdminController : ApiControllerBase
     private readonly IMessageBus _messageBus;
     private readonly ISessionService _sessionService;
     private readonly IGdprService _gdprService;
+    private readonly IAdminHubNotifier _hubNotifier;
 
-    public UsersAdminController(IMessageBus messageBus, ISessionService sessionService, IGdprService gdprService)
+    public UsersAdminController(IMessageBus messageBus, ISessionService sessionService, IGdprService gdprService, IAdminHubNotifier hubNotifier)
     {
         _messageBus = messageBus;
         _sessionService = sessionService;
         _gdprService = gdprService;
+        _hubNotifier = hubNotifier;
     }
 
     /// <summary>
@@ -91,9 +94,11 @@ public class UsersAdminController : ApiControllerBase
             dto.ToCommand(),
             cancellationToken);
 
-        return result.Match(
-            user => CreatedAtAction(nameof(GetUser), new { id = user.Id.ToString() }, UserMapper.ToDto(user)),
-            errors => Problem(errors));
+        if (result.IsError) return Problem(result.Errors);
+
+        var user = result.Value;
+        await _hubNotifier.EntityChangedAsync("user", "created", user.Id.ToString());
+        return CreatedAtAction(nameof(GetUser), new { id = user.Id.ToString() }, UserMapper.ToDto(user));
     }
 
     /// <summary>
@@ -115,9 +120,11 @@ public class UsersAdminController : ApiControllerBase
             dto.ToCommand(userId),
             cancellationToken);
 
-        return result.Match(
-            user => Ok(UserMapper.ToDto(user)),
-            errors => Problem(errors));
+        if (result.IsError) return Problem(result.Errors);
+
+        var user = result.Value;
+        await _hubNotifier.EntityChangedAsync("user", "updated", user.Id.ToString());
+        return Ok(UserMapper.ToDto(user));
     }
 
     /// <summary>
@@ -142,6 +149,7 @@ public class UsersAdminController : ApiControllerBase
             return Problem(result.Errors);
         }
 
+        await _hubNotifier.EntityChangedAsync("user", "deleted", id);
         return NoContent();
     }
 

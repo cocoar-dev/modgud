@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   CoarCard, CoarButton, CoarNote, CoarTextInput, CoarPasswordInput,
-  CoarSelect, CoarCheckbox, CoarSpinner, CoarCodeBlock, CoarTabGroup, CoarTab,
+  CoarSelect, CoarCheckbox, CoarSpinner, CoarCodeBlock, CoarTabGroup, CoarTab, useToast,
 } from '@cocoar/vue-ui';
 import { adminApi } from '@/core/api/admin-api';
 import { ApiError } from '@/core/api/http';
@@ -127,12 +127,29 @@ ui.set(ctx => {
   ctx.footer.button1.visible = true;
   ctx.footer.button1.text = 'Back';
   ctx.footer.button1.onClick = () => router.push('/admin/oauth/clients');
+  ctx.footer.button2.visible = isEditMode.value;
+  ctx.footer.button2.text = 'Delete';
+  ctx.footer.button2.onClick = () => onDeleteClient();
   ctx.footer.button3.visible = true;
   ctx.footer.button3.text = isEditMode.value ? 'Save Changes' : 'Create';
   ctx.footer.button3.onClick = () => onSubmit();
 });
 
 watch(isSaving, (val) => { ui.state.footer.button3.loading = val; });
+
+const toast = useToast();
+
+async function onDeleteClient() {
+  if (!confirm('Are you sure you want to delete this OAuth client?')) return;
+  try {
+    await adminApi.deleteOAuthClient(id.value!);
+    isDirty.value = false;
+    toast.success('OAuth client deleted.');
+    router.push('/admin/oauth/clients');
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : 'Failed to delete OAuth client.';
+  }
+}
 
 onMounted(async () => {
   isLoading.value = true;

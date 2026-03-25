@@ -3,6 +3,8 @@ using Cocoar.Auth.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
+using Cocoar.Auth.Api.Hubs;
+
 namespace Cocoar.Auth.Api.Controllers.Admin;
 
 /// <summary>
@@ -13,10 +15,12 @@ namespace Cocoar.Auth.Api.Controllers.Admin;
 public class LoginProvidersAdminController : ApiControllerBase
 {
 	private readonly LoginProviderService _loginProviderService;
+	private readonly IAdminHubNotifier _hubNotifier;
 
-	public LoginProvidersAdminController(LoginProviderService loginProviderService)
+	public LoginProvidersAdminController(LoginProviderService loginProviderService, IAdminHubNotifier hubNotifier)
 	{
 		_loginProviderService = loginProviderService;
+		_hubNotifier = hubNotifier;
 	}
 
 	/// <summary>
@@ -58,12 +62,11 @@ public class LoginProvidersAdminController : ApiControllerBase
 	{
 		var result = await _loginProviderService.CreateAsync(dto, cancellationToken);
 
-		return result.Match(
-			provider => CreatedAtAction(
-				nameof(GetLoginProvider),
-				new { id = provider.Id },
-				provider),
-			errors => Problem(errors));
+		if (result.IsError) return Problem(result.Errors);
+
+		var provider = result.Value;
+		await _hubNotifier.EntityChangedAsync("login-provider", "created", provider.Id);
+		return CreatedAtAction(nameof(GetLoginProvider), new { id = provider.Id }, provider);
 	}
 
 	/// <summary>
@@ -81,9 +84,10 @@ public class LoginProvidersAdminController : ApiControllerBase
 	{
 		var result = await _loginProviderService.UpdateAsync(id, dto, cancellationToken);
 
-		return result.Match(
-			provider => Ok(provider),
-			errors => Problem(errors));
+		if (result.IsError) return Problem(result.Errors);
+
+		await _hubNotifier.EntityChangedAsync("login-provider", "updated", id);
+		return Ok(result.Value);
 	}
 
 	/// <summary>
@@ -102,6 +106,7 @@ public class LoginProvidersAdminController : ApiControllerBase
 			return Problem(result.Errors);
 		}
 
+		await _hubNotifier.EntityChangedAsync("login-provider", "deleted", id);
 		return NoContent();
 	}
 }

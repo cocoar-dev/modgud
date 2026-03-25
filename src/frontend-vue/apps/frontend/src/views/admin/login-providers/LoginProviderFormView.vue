@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { CoarCard, CoarNote, CoarTextInput, CoarSelect, CoarSpinner, CoarTabGroup, CoarTab } from '@cocoar/vue-ui';
+import { CoarCard, CoarNote, CoarTextInput, CoarSelect, CoarSpinner, CoarTabGroup, CoarTab, useToast } from '@cocoar/vue-ui';
 import { adminApi } from '@/core/api/admin-api';
 import { ApiError } from '@/core/api/http';
 import { useDirtyGuard } from '@/composables/useDirtyGuard';
@@ -60,12 +60,29 @@ ui.set(ctx => {
   ctx.footer.button1.visible = true;
   ctx.footer.button1.text = 'Back';
   ctx.footer.button1.onClick = () => router.push('/admin/login-providers');
+  ctx.footer.button2.visible = isEditMode.value;
+  ctx.footer.button2.text = 'Delete';
+  ctx.footer.button2.onClick = () => onDelete();
   ctx.footer.button3.visible = true;
   ctx.footer.button3.text = isEditMode.value ? 'Save Changes' : 'Create';
   ctx.footer.button3.onClick = () => onSubmit();
 });
 
 watch(isSaving, (val) => { ui.state.footer.button3.loading = val; });
+
+const toast = useToast();
+
+async function onDelete() {
+  if (!confirm('Are you sure you want to delete this login provider?')) return;
+  try {
+    await adminApi.deleteLoginProvider(id.value!);
+    isDirty.value = false;
+    toast.success('Login provider deleted.');
+    router.push('/admin/login-providers');
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : 'Failed to delete login provider.';
+  }
+}
 
 onMounted(async () => {
   if (!isEditMode.value) return;

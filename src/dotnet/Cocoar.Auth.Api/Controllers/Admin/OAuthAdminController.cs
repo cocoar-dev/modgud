@@ -4,6 +4,8 @@ using Cocoar.Auth.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
+using Cocoar.Auth.Api.Hubs;
+
 namespace Cocoar.Auth.Api.Controllers.Admin;
 
 /// <summary>
@@ -14,10 +16,12 @@ namespace Cocoar.Auth.Api.Controllers.Admin;
 public class OAuthAdminController : ApiControllerBase
 {
 	private readonly OAuthAdminService _oAuthAdminService;
+	private readonly IAdminHubNotifier _hubNotifier;
 
-	public OAuthAdminController(OAuthAdminService oAuthAdminService)
+	public OAuthAdminController(OAuthAdminService oAuthAdminService, IAdminHubNotifier hubNotifier)
 	{
 		_oAuthAdminService = oAuthAdminService;
+		_hubNotifier = hubNotifier;
 	}
 
 	#region Clients
@@ -67,12 +71,11 @@ public class OAuthAdminController : ApiControllerBase
 	{
 		var result = await _oAuthAdminService.CreateClientAsync(dto, cancellationToken);
 
-		return result.Match(
-			created => CreatedAtAction(
-				nameof(GetClient),
-				new { id = created.Client.Id },
-				created),
-			errors => Problem(errors));
+		if (result.IsError) return Problem(result.Errors);
+
+		var created = result.Value;
+		await _hubNotifier.EntityChangedAsync("oauth-client", "created", created.Client.Id);
+		return CreatedAtAction(nameof(GetClient), new { id = created.Client.Id }, created);
 	}
 
 	/// <summary>
@@ -89,9 +92,10 @@ public class OAuthAdminController : ApiControllerBase
 	{
 		var result = await _oAuthAdminService.UpdateClientAsync(id, dto, cancellationToken);
 
-		return result.Match(
-			client => Ok(client),
-			errors => Problem(errors));
+		if (result.IsError) return Problem(result.Errors);
+
+		await _hubNotifier.EntityChangedAsync("oauth-client", "updated", id);
+		return Ok(result.Value);
 	}
 
 	/// <summary>
@@ -109,6 +113,7 @@ public class OAuthAdminController : ApiControllerBase
 			return Problem(result.Errors);
 		}
 
+		await _hubNotifier.EntityChangedAsync("oauth-client", "deleted", id);
 		return NoContent();
 	}
 
@@ -175,9 +180,11 @@ public class OAuthAdminController : ApiControllerBase
 	{
 		var result = await _oAuthAdminService.CreateScopeAsync(dto, cancellationToken);
 
-		return result.Match(
-			scope => CreatedAtAction(nameof(GetScope), new { id = scope.Id }, scope),
-			errors => Problem(errors));
+		if (result.IsError) return Problem(result.Errors);
+
+		var scope = result.Value;
+		await _hubNotifier.EntityChangedAsync("oauth-scope", "created", scope.Id);
+		return CreatedAtAction(nameof(GetScope), new { id = scope.Id }, scope);
 	}
 
 	/// <summary>
@@ -194,9 +201,10 @@ public class OAuthAdminController : ApiControllerBase
 	{
 		var result = await _oAuthAdminService.UpdateScopeAsync(id, dto, cancellationToken);
 
-		return result.Match(
-			scope => Ok(scope),
-			errors => Problem(errors));
+		if (result.IsError) return Problem(result.Errors);
+
+		await _hubNotifier.EntityChangedAsync("oauth-scope", "updated", id);
+		return Ok(result.Value);
 	}
 
 	/// <summary>
@@ -215,6 +223,7 @@ public class OAuthAdminController : ApiControllerBase
 			return Problem(result.Errors);
 		}
 
+		await _hubNotifier.EntityChangedAsync("oauth-scope", "deleted", id);
 		return NoContent();
 	}
 
@@ -267,12 +276,11 @@ public class OAuthAdminController : ApiControllerBase
 	{
 		var result = await _oAuthAdminService.CreateApiAsync(dto, cancellationToken);
 
-		return result.Match(
-			created => CreatedAtAction(
-				nameof(GetApi),
-				new { id = created.Id },
-				created),
-			errors => Problem(errors));
+		if (result.IsError) return Problem(result.Errors);
+
+		var created = result.Value;
+		await _hubNotifier.EntityChangedAsync("oauth-api", "created", created.Id);
+		return CreatedAtAction(nameof(GetApi), new { id = created.Id }, created);
 	}
 
 	/// <summary>
@@ -289,9 +297,10 @@ public class OAuthAdminController : ApiControllerBase
 	{
 		var result = await _oAuthAdminService.UpdateApiAsync(id, dto, cancellationToken);
 
-		return result.Match(
-			api => Ok(api),
-			errors => Problem(errors));
+		if (result.IsError) return Problem(result.Errors);
+
+		await _hubNotifier.EntityChangedAsync("oauth-api", "updated", id);
+		return Ok(result.Value);
 	}
 
 	/// <summary>
@@ -309,6 +318,7 @@ public class OAuthAdminController : ApiControllerBase
 			return Problem(result.Errors);
 		}
 
+		await _hubNotifier.EntityChangedAsync("oauth-api", "deleted", id);
 		return NoContent();
 	}
 

@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   CoarCard, CoarNote, CoarTextInput, CoarPasswordInput,
-  CoarCheckbox, CoarSpinner, CoarTabGroup, CoarTab,
+  CoarCheckbox, CoarSpinner, CoarTabGroup, CoarTab, useToast,
 } from '@cocoar/vue-ui';
 import { adminApi } from '@/core/api/admin-api';
 import { ApiError } from '@/core/api/http';
@@ -67,13 +67,29 @@ ui.set(ctx => {
   ctx.footer.button1.visible = true;
   ctx.footer.button1.text = 'Back';
   ctx.footer.button1.onClick = () => router.push('/admin/users');
+  ctx.footer.button2.visible = isEditMode.value;
+  ctx.footer.button2.text = 'Delete';
+  ctx.footer.button2.onClick = () => onDelete();
   ctx.footer.button3.visible = true;
   ctx.footer.button3.text = isEditMode.value ? 'Save Changes' : 'Create';
   ctx.footer.button3.onClick = () => onSubmit();
-
 });
 
 watch(isSaving, (val) => { ui.state.footer.button3.loading = val; });
+
+const toast = useToast();
+
+async function onDelete() {
+  if (!confirm('Are you sure you want to delete this user? The account will be deactivated and data anonymized after the retention period.')) return;
+  try {
+    await adminApi.softDeleteUser(id.value!);
+    isDirty.value = false;
+    toast.success('User deleted.');
+    router.push('/admin/users');
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : 'Failed to delete user.';
+  }
+}
 
 onMounted(async () => {
   isLoading.value = true;

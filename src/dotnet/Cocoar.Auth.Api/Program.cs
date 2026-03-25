@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Cocoar.Auth.Api.Configuration;
+using Cocoar.Auth.Api.Extensions;
 using Cocoar.Auth.Api.Middleware;
 using Cocoar.Auth.Application;
 using Cocoar.Auth.Application.Interfaces;
@@ -13,6 +14,7 @@ using Cocoar.Auth.Infrastructure.Services;
 using Cocoar.Configuration.AspNetCore;
 using Cocoar.Configuration.DI;
 using Cocoar.Configuration.DI.Extensions;
+using Cocoar.Configuration.Fluent;
 using Cocoar.Configuration.Providers;
 using Cocoar.Configuration.Secrets;
 using Cocoar.Primitives;
@@ -23,6 +25,9 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Npgsql;
 using Serilog;
+using Cocoar.Auth.Api.Hubs;
+using Cocoar.Configuration.Reactive;
+using Cocoar.SignalARRR.Server.ExtensionMethods;
 using Wolverine;
 
 Log.Logger = new LoggerConfiguration()
@@ -46,59 +51,25 @@ builder.Host.UseSerilog((context, services, configuration) =>
     }
 });
 
-// Configure Cocoar.Configuration with layered sources (using builder extension like finoxl)
+// Configure Cocoar.Configuration with layered sources
+var env = builder.Environment.EnvironmentName;
 builder.AddCocoarConfiguration(c => c.UseConfiguration(rule =>
 [
-    // Base configuration
-    rule.For<DatabaseSettings>().FromFile("configs/database-settings.json").Required(),
-    rule.For<AuthSettings>().FromFile("configs/auth-settings.json"),
-    rule.For<CorsSettings>().FromFile("configs/cors-settings.json"),
-    rule.For<SmtpSettings>().FromFile("configs/smtp-settings.json"),
-    rule.For<WebAuthnSettings>().FromFile("configs/webauthn-settings.json"),
-    rule.For<OpenIddictSettings>().FromFile("configs/openiddict-settings.json"),
-    rule.For<ServerSettings>().FromFile("configs/server-settings.json"),
-
-    // Environment-specific overrides (e.g., appsettings.Development.json)
-    //rule.For<DatabaseSettings>().FromFile($"configs/database-settings.{builder.Environment.EnvironmentName}.json"),
-    rule.For<AuthSettings>().FromFile($"configs/auth-settings.{builder.Environment.EnvironmentName}.json"),
-    rule.For<CorsSettings>().FromFile($"configs/cors-settings.{builder.Environment.EnvironmentName}.json"),
-    rule.For<SmtpSettings>().FromFile($"configs/smtp-settings.{builder.Environment.EnvironmentName}.json"),
-    rule.For<WebAuthnSettings>().FromFile($"configs/webauthn-settings.{builder.Environment.EnvironmentName}.json"),
-    rule.For<OpenIddictSettings>().FromFile($"configs/openiddict-settings.{builder.Environment.EnvironmentName}.json"),
-
-    // Environment variable overrides (highest priority)
-    rule.For<DatabaseSettings>().FromEnvironment("DATABASE_"),
-    rule.For<AuthSettings>().FromEnvironment("AUTH_"),
-    rule.For<CorsSettings>().FromEnvironment("CORS_"),
-    rule.For<SmtpSettings>().FromEnvironment("SMTP_"),
-    rule.For<WebAuthnSettings>().FromEnvironment("WEBAUTHN_"),
-    rule.For<OpenIddictSettings>().FromEnvironment("OPENIDDICT_"),
-    rule.For<ServerSettings>().FromEnvironment("SERVER_"),
-
-    // Static configuration (cannot be overridden by JSON files, but can be overridden in tests)
-    // Use inline projections in development to avoid async daemon lock acquisition issues
+    rule.For<DatabaseSettings>().Layered("database-settings", "DATABASE_", env).Required(),
+    rule.For<AuthSettings>().Layered("auth-settings", "AUTH_", env),
+    rule.For<CorsSettings>().Layered("cors-settings", "CORS_", env),
+    rule.For<SmtpSettings>().Layered("smtp-settings", "SMTP_", env),
+    rule.For<WebAuthnSettings>().Layered("webauthn-settings", "WEBAUTHN_", env),
+    rule.For<OpenIddictSettings>().Layered("openiddict-settings", "OPENIDDICT_", env),
+    rule.For<ServerSettings>().Layered("server-settings", "SERVER_", env),
     rule.For<ProjectionSettings>().FromStatic(_ => new ProjectionSettings { UseAsyncProjections = builder.Environment.IsProduction() })
 ], setup =>
 [
-    // Expose settings as singletons for DI
-    setup.ConcreteType<DatabaseSettings>().AsSingleton(),
-    setup.ConcreteType<AuthSettings>().AsSingleton(),
-    setup.ConcreteType<CorsSettings>().AsSingleton(),
-    setup.ConcreteType<ProjectionSettings>().AsSingleton(),
-    setup.ConcreteType<SmtpSettings>().AsSingleton(),
-    setup.ConcreteType<WebAuthnSettings>().AsSingleton(),
-
-	setup.ConcreteType<DatabaseSettings>().ExposeAs<IDatabaseSettings>(),
-	setup.ExposedType<IDatabaseSettings>().AsSingleton(),
-	setup.ConcreteType<ProjectionSettings>().ExposeAs<IProjectionSettings>(),
-	setup.ConcreteType<SmtpSettings>().ExposeAs<ISmtpSettings>(),
-	setup.ExposedType<ISmtpSettings>().AsSingleton(),
-	setup.ConcreteType<WebAuthnSettings>().ExposeAs<IWebAuthnSettings>(),
-	setup.ExposedType<IWebAuthnSettings>().AsSingleton(),
-	setup.ConcreteType<OpenIddictSettings>().AsSingleton(),
-	setup.ConcreteType<ServerSettings>().AsSingleton(),
-	setup.ConcreteType<OpenIddictSettings>().ExposeAs<IOpenIddictSettings>(),
-	setup.ExposedType<IOpenIddictSettings>().AsSingleton(),
+    setup.ConcreteType<DatabaseSettings>().ExposeAs<IDatabaseSettings>(),
+    setup.ConcreteType<ProjectionSettings>().ExposeAs<IProjectionSettings>(),
+    setup.ConcreteType<SmtpSettings>().ExposeAs<ISmtpSettings>(),
+    setup.ConcreteType<WebAuthnSettings>().ExposeAs<IWebAuthnSettings>(),
+    setup.ConcreteType<OpenIddictSettings>().ExposeAs<IOpenIddictSettings>(),
 ]).UseSecretsSetup(secrets => secrets.UseCertificatesFromFolder("configs/certificates").AllowPlaintext()));
 
 // Get configuration manager for bootstrap access
@@ -224,9 +195,10 @@ builder.Host.UseWolverine(opts =>
     opts.Durability.Mode = DurabilityMode.Solo;
 });
 
-// Configure authentication cookies using options pattern
+// Configure authentication cookies
+var authSettings = configManager.GetConfig<AuthSettings>()!;
 builder.Services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme)
-    .Configure<AuthSettings>((options, authSettings) =>
+    .Configure(options =>
     {
         options.Cookie.HttpOnly = authSettings.Cookie.HttpOnly;
         options.Cookie.SecurePolicy = authSettings.Cookie.SecurePolicy switch
@@ -335,6 +307,12 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 });
 
+// Add SignalR + SignalARRR for real-time admin notifications
+builder.Services.AddSignalR();
+builder.Services.AddSignalARRR(options =>
+	options.AddServerMethodsFrom(typeof(AdminHub).Assembly));
+builder.Services.AddScoped<IAdminHubNotifier, AdminHubNotifier>();
+
 // Add CORS with deferred configuration
 builder.Services.AddCors();
 
@@ -353,33 +331,33 @@ app.Use(async (context, next) =>
 });
 
 // Configure CORS policy using resolved configuration
-var corsSettings = app.Services.GetRequiredService<CorsSettings>();
+var corsSettings = app.Services.GetRequiredService<IReactiveConfig<CorsSettings>>();
 app.UseCors(policy =>
 {
-    if (corsSettings.AllowedOrigins.Length > 0)
+    if (corsSettings.CurrentValue.AllowedOrigins.Length > 0)
     {
-        policy.WithOrigins(corsSettings.AllowedOrigins);
+        policy.WithOrigins(corsSettings.CurrentValue.AllowedOrigins);
     }
 
-    if (corsSettings.AllowedMethods.Length > 0)
+    if (corsSettings.CurrentValue.AllowedMethods.Length > 0)
     {
-        policy.WithMethods(corsSettings.AllowedMethods);
+        policy.WithMethods(corsSettings.CurrentValue.AllowedMethods);
     }
     else
     {
         policy.AllowAnyMethod();
     }
 
-    if (corsSettings.AllowedHeaders.Length > 0)
+    if (corsSettings.CurrentValue.AllowedHeaders.Length > 0)
     {
-        policy.WithHeaders(corsSettings.AllowedHeaders);
+        policy.WithHeaders(corsSettings.CurrentValue.AllowedHeaders);
     }
     else
     {
         policy.AllowAnyHeader();
     }
 
-    if (corsSettings.AllowCredentials)
+    if (corsSettings.CurrentValue.AllowCredentials)
     {
         policy.AllowCredentials();
     }
@@ -413,6 +391,7 @@ app.UseAuthorization();
 
 app.MapHealthChecks("/health");
 app.MapControllers();
+app.MapHARRRController<AdminHub>("/admin-hub");
 
 // SPA fallback: any unmatched route → index.html (Vue router handles it)
 app.MapFallbackToFile("index.html");
