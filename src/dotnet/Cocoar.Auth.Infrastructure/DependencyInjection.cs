@@ -181,6 +181,9 @@ public static class DependencyInjection
 
 		// Register external login service
 		services.AddScoped<IExternalLoginService, ExternalLoginService>();
+
+		// Register event appender
+		services.AddScoped<IEventAppender, MartenEventAppender>();
 	}
 
 	/// <summary>
@@ -195,13 +198,13 @@ public static class DependencyInjection
 		// Configure ApplicationUser document (legacy, will migrate to event sourcing)
 		options.Schema.For<ApplicationUser>()
 			.Identity(x => x.Id)
-			.Index(x => x.NormalizedUserName!, x => x.IsUnique = true)
+			.Index(x => x.NormalizedUserName!, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsDeleted')::boolean IS NOT TRUE)"; })
 			.Index(x => x.NormalizedEmail!);
 
 		// Configure ApplicationRole document
 		options.Schema.For<ApplicationRole>()
 			.Identity(x => x.Id)
-			.Index(x => x.NormalizedName, x => x.IsUnique = true);
+			.Index(x => x.NormalizedName, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsDeleted')::boolean IS NOT TRUE)"; });
 
 		// Configure UserSecurityData document (security-sensitive data, not event-sourced)
 		options.Schema.For<UserSecurityData>()
@@ -256,7 +259,7 @@ public static class DependencyInjection
 		// Configure Realm document (tenant metadata, stored in system tenant DB)
 		options.Schema.For<Realm>()
 			.Identity(x => x.Id)
-			.Index(x => x.Slug, x => x.IsUnique = true);
+			.Index(x => x.Slug, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsActive')::boolean = true)"; });
 	}
 
 	/// <summary>
@@ -463,13 +466,13 @@ public static class DependencyInjection
 		// Configure UserState indexes for fast lookups
 		options.Schema.For<UserState>()
 			.Identity(x => x.Id)
-			.Index(x => x.NormalizedUserName, x => x.IsUnique = true)
+			.Index(x => x.NormalizedUserName, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsDeleted')::boolean IS NOT TRUE)"; })
 			.Index(x => x.NormalizedEmail);
 
 		// Configure RoleState indexes for fast lookups
 		options.Schema.For<RoleState>()
 			.Identity(x => x.Id)
-			.Index(x => x.NormalizedName, x => x.IsUnique = true);
+			.Index(x => x.NormalizedName, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsDeleted')::boolean IS NOT TRUE)"; });
 
 		// Configure UserDetailsReadModel indexes
 		options.Schema.For<UserDetailsReadModel>()
@@ -492,22 +495,22 @@ public static class DependencyInjection
 		// Configure OAuthApplicationState indexes for fast lookups
 		options.Schema.For<OAuthApplicationState>()
 			.Identity(x => x.Id)
-			.Index(x => x.ClientId, x => x.IsUnique = true);
+			.Index(x => x.ClientId, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsDeleted')::boolean IS NOT TRUE)"; });
 
 		// Configure OAuthScopeState indexes for fast lookups
 		options.Schema.For<OAuthScopeState>()
 			.Identity(x => x.Id)
-			.Index(x => x.Name, x => x.IsUnique = true);
+			.Index(x => x.Name, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsDeleted')::boolean IS NOT TRUE)"; });
 
 		// Configure OAuthApiState indexes for fast lookups
 		options.Schema.For<OAuthApiState>()
 			.Identity(x => x.Id)
-			.Index(x => x.Name, x => x.IsUnique = true);
+			.Index(x => x.Name, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsDeleted')::boolean IS NOT TRUE)"; });
 
 		// Configure LoginProviderState indexes for fast lookups
 		options.Schema.For<LoginProviderState>()
 			.Identity(x => x.Id)
-			.Index(x => x.Name, x => x.IsUnique = true);
+			.Index(x => x.Name, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsDeleted')::boolean IS NOT TRUE)"; });
 
 		// Configure OAuthApiSecurityData document (security-sensitive data, not event-sourced)
 		options.Schema.For<OAuthApiSecurityData>()

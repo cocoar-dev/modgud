@@ -22,7 +22,7 @@ public class EventSourcedRoleStore :
         _session = session;
     }
 
-    public IQueryable<ApplicationRole> Roles => _session.Query<ApplicationRole>();
+    public IQueryable<ApplicationRole> Roles => _session.Query<ApplicationRole>().Where(r => !r.IsDeleted);
 
     #region IRoleStore
 
@@ -130,11 +130,12 @@ public class EventSourcedRoleStore :
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(role);
 
-        // Append delete event (soft delete in event stream)
+        // Append delete event for event sourcing / projection rebuild
         _session.Events.Append(role.Id, new RoleDeleted(role.Id, null));
 
-        // Delete ApplicationRole
-        _session.Delete(role);
+        // Soft-delete the document (keeps it for projection rebuilds)
+        role.MarkDeleted();
+        _session.Store(role);
 
         await _session.SaveChangesAsync(cancellationToken);
         return IdentityResult.Success;
@@ -146,14 +147,15 @@ public class EventSourcedRoleStore :
         if (!Guid.TryParse(roleId, out var id))
             return null;
 
-        return await _session.LoadAsync<ApplicationRole>(id, cancellationToken);
+        var role = await _session.LoadAsync<ApplicationRole>(id, cancellationToken);
+        return role is { IsDeleted: false } ? role : null;
     }
 
     public async Task<ApplicationRole?> FindByNameAsync(string normalizedRoleName, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return await _session.Query<ApplicationRole>()
-            .FirstOrDefaultAsync(r => r.NormalizedName == normalizedRoleName, cancellationToken);
+            .FirstOrDefaultAsync(r => r.NormalizedName == normalizedRoleName && !r.IsDeleted, cancellationToken);
     }
 
     public Task<string?> GetNormalizedRoleNameAsync(ApplicationRole role, CancellationToken cancellationToken)

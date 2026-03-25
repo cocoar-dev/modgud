@@ -15,18 +15,20 @@ public class MartenRoleRepository : IRoleRepository
 
     public async Task<ApplicationRole?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return await _session.LoadAsync<ApplicationRole>(id, cancellationToken);
+        var role = await _session.LoadAsync<ApplicationRole>(id, cancellationToken);
+        return role is { IsDeleted: false } ? role : null;
     }
 
     public async Task<ApplicationRole?> GetByNameAsync(string normalizedName, CancellationToken cancellationToken = default)
     {
         return await _session.Query<ApplicationRole>()
-            .FirstOrDefaultAsync(r => r.NormalizedName == normalizedName, cancellationToken);
+            .FirstOrDefaultAsync(r => r.NormalizedName == normalizedName && !r.IsDeleted, cancellationToken);
     }
 
     public async Task<List<ApplicationRole>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         var roles = await _session.Query<ApplicationRole>()
+            .Where(r => !r.IsDeleted)
             .OrderBy(r => r.Name)
             .ToListAsync(cancellationToken);
         return roles.ToList();
@@ -36,7 +38,7 @@ public class MartenRoleRepository : IRoleRepository
     {
         var idList = ids.ToList();
         var roles = await _session.Query<ApplicationRole>()
-            .Where(r => idList.Contains(r.Id))
+            .Where(r => idList.Contains(r.Id) && !r.IsDeleted)
             .ToListAsync(cancellationToken);
         return roles.ToList();
     }

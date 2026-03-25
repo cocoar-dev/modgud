@@ -21,15 +21,18 @@ public class OAuthAdminService
 	private readonly IOpenIddictApplicationManager _applicationManager;
 	private readonly IOpenIddictScopeManager _scopeManager;
 	private readonly IOAuthApiRepository _apiRepository;
+	private readonly IEventAppender _eventAppender;
 
 	public OAuthAdminService(
 		IOpenIddictApplicationManager applicationManager,
 		IOpenIddictScopeManager scopeManager,
-		IOAuthApiRepository apiRepository)
+		IOAuthApiRepository apiRepository,
+		IEventAppender eventAppender)
 	{
 		_applicationManager = applicationManager;
 		_scopeManager = scopeManager;
 		_apiRepository = apiRepository;
+		_eventAppender = eventAppender;
 	}
 
 	#region Clients
@@ -374,6 +377,10 @@ public class OAuthAdminService
 			return OAuthErrors.ClientNotFound(id);
 		}
 
+		// Append delete event for audit trail and projection rebuild
+		if (Guid.TryParse(id, out var guid))
+			await _eventAppender.AppendAsync(guid, new Domain.Events.OAuthApplicationDeleted(guid), cancellationToken);
+
 		await _applicationManager.DeleteAsync(application, cancellationToken);
 		return true;
 	}
@@ -565,6 +572,10 @@ public class OAuthAdminService
 		{
 			return OAuthErrors.CannotDeleteStandardScope(scopeName!);
 		}
+
+		// Append delete event for audit trail and projection rebuild
+		if (Guid.TryParse(id, out var guid))
+			await _eventAppender.AppendAsync(guid, new Domain.Events.OAuthScopeDeleted(guid), cancellationToken);
 
 		await _scopeManager.DeleteAsync(scope, cancellationToken);
 		return true;

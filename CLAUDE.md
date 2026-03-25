@@ -29,15 +29,17 @@ dotnet run --project Cocoar.Auth.Api
 
 **4-Layer Clean Architecture:**
 - **Domain** - Entities, Aggregates (UserAggregate, RoleAggregate), Domain Events (30+)
-- **Application** - CQRS Commands/Queries via Wolverine, Services, DTOs
-- **Infrastructure** - Marten stores, Projections, Identity implementation
-- **Api** - REST Controllers
+- **Application** - CQRS Commands/Queries via Wolverine, Services, DTOs, ReadModels, Repository Interfaces
+- **Infrastructure** - Marten stores, Projections (Inline + Async), Identity implementation, Repositories
+- **Api** - REST Controllers, SignalARRR Hub
 
 **Key Patterns:**
 - CQRS with Wolverine's `IMessageBus` for admin operations
-- Event Sourcing for users and roles
+- Event Sourcing for users, roles, OAuth entities, login providers
+- Soft-Delete everywhere (no hard deletes — projection rebuild safety)
 - ErrorOr for functional error handling
 - Mapperly for source-generated DTO mapping
+- SignalARRR for real-time admin notifications
 
 ## CQRS Pattern
 
@@ -46,18 +48,49 @@ Commands/Queries are invoked via `IMessageBus`:
 var result = await _messageBus.InvokeAsync<ErrorOr<UserDto>>(command);
 ```
 
-Handlers are static methods discovered automatically:
-```csharp
-public static async Task<ErrorOr<UserDto>> HandleAsync(CreateUserCommand command, ...)
-```
+**Command/Query Separation:**
+- Commands validate against `*State` (inline projections, immediate consistency)
+- List queries read from `*ListReadModel` (async projections, denormalized, 1 DB query)
+- Detail queries read from `*DetailsReadModel` or `*State`
 
 ## Projection Naming Convention
 
 | Suffix | Type | Purpose |
 |--------|------|---------|
 | `*State` | Inline Projection | Validation, Identity (synchronous) |
-| `*ReadModel` | Async Projection | API responses (eventually consistent) |
+| `*ListReadModel` | Async Projection | List/grid views (denormalized, eventually consistent) |
+| `*DetailsReadModel` | Async Projection | Detail views (denormalized, eventually consistent) |
 | `*Data` | Value Object | Embedded data in projections |
+
+**Projection Directory Structure:**
+- `Infrastructure/Persistence/Projections/` — Inline state projections
+- `Infrastructure/Persistence/Projections/Async/` — Async list/detail projections
+- `Application/ReadModels/` — ReadModel classes
+- `Application/Models/` — Legacy ReadModels (UserDetailsReadModel)
+
+## Real-Time Notifications (SignalARRR)
+
+- `AdminHub` at `/admin-hub` — pushes entity change events to admin clients
+- `[Authorize(Roles = "Admin")]` — only admins can connect
+- Realm-scoped groups — notifications isolated per tenant
+- `IAdminHubNotifier` — injected into controllers, fires after CUD operations
+- Frontend: `useAdminHub()` composable auto-refreshes grids on entity changes
+
+## Delete Strategy
+
+All entities use **soft-delete** (no hard deletes) for projection rebuild safety:
+
+| Entity | Delete Mechanism |
+|--------|-----------------|
+| Users | GDPR flow: soft-delete → restore or permanent erase (PII masking) |
+| Roles | `IsDeleted` flag on `ApplicationRole` document + `RoleDeleted` event |
+| OAuth Clients | `OAuthApplicationDeleted` event + OpenIddict store removal |
+| OAuth Scopes | `OAuthScopeDeleted` event + OpenIddict store removal |
+| OAuth APIs | `OAuthApiDeleted` event + `IsDeleted` in state projection |
+| Login Providers | `LoginProviderDeleted` event + `IsDeleted` in state projection |
+| Realms | `IsActive = false` (deactivation) |
+
+**Filtered Unique Indexes:** All unique indexes use PostgreSQL partial indexes (`WHERE IsDeleted IS NOT TRUE`) so names/emails can be reused after soft-delete.
 
 ## Security Architecture
 
@@ -68,21 +101,54 @@ public static async Task<ErrorOr<UserDto>> HandleAsync(CreateUserCommand command
 - Session tracking with device info (UAParser)
 - GDPR compliance using Marten's data masking
 
+## Configuration
+
+Uses `Cocoar.Configuration` with a custom `.Layered()` extension for the standard pattern:
+```csharp
+rule.For<AuthSettings>().Layered("auth-settings", "AUTH_", env)
+// Expands to: base file → environment file → environment variables
+```
+
+Settings are resolved via `ConfigManager` (cached internally) — no explicit `.AsSingleton()` needed.
+Only `ExposeAs<IInterface>()` entries needed in setup when an interface mapping is required.
+
 ## Testing
 
 All tests are integration tests using:
 - Testcontainers (PostgreSQL in Docker)
 - WebApplicationFactory with cookie-based authentication
-- 120+ tests covering all features
+- 312 tests covering all features
 
 ## Key Dependencies
 
-- **Marten 8.16.1** - Document DB + Event Store over PostgreSQL
-- **Wolverine 5.3.0** - CQRS mediator
+- **Marten 8.26.1** - Document DB + Event Store over PostgreSQL
+- **Wolverine 5.23.0** - CQRS mediator
+- **Cocoar.SignalARRR.Server 4.0.0** - Typed bidirectional RPC over SignalR
+- **Cocoar.Configuration 5.0.0** - Layered configuration with secrets
 - **ErrorOr** - Functional error handling
 - **Mapperly** - Source-generated mappers
+- **OpenIddict 7.4.0** - OAuth 2.0 / OpenID Connect
 - **Otp.NET** - TOTP code generation/validation
 - **UAParser** - User-Agent parsing for session tracking
+
+## Frontend
+
+- **Vue 3** with Composition API (`<script setup>`)
+- **@cocoar/vue-ui 1.3.0** — Design system components
+- **@cocoar/vue-data-grid 1.3.0** — AG Grid wrapper
+- **@cocoar/signalarrr 4.0.0** — TypeScript SignalARRR client
+- **Pinia 3** — State management
+- **Vue Router 5** — Routing
+- **Vite 8** — Build tool
+- **Tailwind CSS 4** — Utility CSS
+
+### Frontend Patterns
+- `useUI()` composable for page layout (header, footer buttons, content mode)
+- `useAdminHub()` composable for real-time grid updates
+- `useContextMenu()` + `CoarContextMenu` for grid right-click menus
+- Footer button2 = Delete (danger variant), only visible in edit mode
+- Double-click on grid row opens edit page
+- Error props: use `undefined` (not `''`) for no-error state
 
 ## API Endpoints
 
@@ -133,7 +199,7 @@ All tests are integration tests using:
 - `GET /api/admin/roles/{id}` - Get role
 - `POST /api/admin/roles` - Create role
 - `PATCH /api/admin/roles/{id}` - Update role
-- `DELETE /api/admin/roles/{id}` - Delete role
+- `DELETE /api/admin/roles/{id}` - Delete role (soft)
 
 ## GDPR Implementation
 

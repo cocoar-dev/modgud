@@ -51,6 +51,12 @@ public class ApplicationRole : Entity
     public Guid? BoundToApiId { get; private set; }
 
     /// <summary>
+    /// Whether this role has been soft-deleted.
+    /// </summary>
+    [JsonInclude]
+    public bool IsDeleted { get; private set; }
+
+    /// <summary>
     /// Role claims.
     /// </summary>
     [JsonInclude]
@@ -116,6 +122,12 @@ public class ApplicationRole : Entity
             Claims.Remove(claim);
             MarkModified();
         }
+    }
+
+    public void MarkDeleted()
+    {
+        IsDeleted = true;
+        MarkModified();
     }
 }
 
