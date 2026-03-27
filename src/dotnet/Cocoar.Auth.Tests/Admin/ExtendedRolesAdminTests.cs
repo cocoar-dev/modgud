@@ -65,7 +65,7 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task Create_WithBoundToApi_Succeeds()
+	public async Task Create_WithClientId_Succeeds()
 	{
 		// Arrange
 		await LoginAsAdminAsync();
@@ -85,7 +85,7 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 		{
 			Name = "ApiRole",
 			Description = "Role bound to API",
-			BoundToApiId = apiId
+			ClientId = apiId
 		};
 
 		// Act
@@ -96,7 +96,7 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 		var result = await response.ReadFromJsonAsync<RoleDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
 		Assert.Equal("ApiRole", result.Name);
-		Assert.Equal(apiId.Value, result.BoundToApiId!.Value.Value);
+		Assert.Equal(apiId.Value, result.ClientId!.Value.Value);
 	}
 
 	[Fact]
@@ -125,7 +125,7 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task Update_BoundToApi_Succeeds()
+	public async Task Update_ClientId_Succeeds()
 	{
 		// Arrange
 		await LoginAsAdminAsync();
@@ -143,7 +143,7 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 		var api = await apiResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 		var apiId = new ShortGuid(Guid.Parse(api!.Id));
 
-		var updateDto = new { BoundToApiId = apiId };
+		var updateDto = new { ClientId = apiId };
 
 		// Act
 		var response = await _client.PatchAsJsonAsync($"/system/api/admin/roles/{shortGuid}", updateDto, _factory.JsonOptions);
@@ -152,6 +152,6 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 		var result = await response.ReadFromJsonAsync<RoleDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
-		Assert.Equal(apiId.Value, result.BoundToApiId!.Value.Value);
+		Assert.Equal(apiId.Value, result.ClientId!.Value.Value);
 	}
 }

@@ -308,6 +308,45 @@ public static class ExternalLoginErrors
         description: "The user account is not active.");
 }
 
+public static class GroupErrors
+{
+    public static Error NotFound(Guid id) => Error.NotFound(
+        code: "Group.NotFound",
+        description: $"Group with ID '{id}' was not found.");
+
+    public static Error AlreadyArchived(Guid id) => Error.Conflict(
+        code: "Group.AlreadyArchived",
+        description: $"Group with ID '{id}' is already archived.");
+
+    public static Error CycleDetected => Error.Validation(
+        code: "Group.CycleDetected",
+        description: "Adding this child group would create a circular reference.");
+
+    public static Error CannotBeSelfChild => Error.Validation(
+        code: "Group.CannotBeSelfChild",
+        description: "A group cannot be its own child.");
+
+    public static Error MemberAlreadyExists(Guid userId) => Error.Conflict(
+        code: "Group.MemberAlreadyExists",
+        description: $"User '{userId}' is already a member of this group.");
+
+    public static Error MemberNotFound(Guid userId) => Error.Validation(
+        code: "Group.MemberNotFound",
+        description: $"User '{userId}' is not a member of this group.");
+
+    public static Error ChildAlreadyExists(Guid childGroupId) => Error.Conflict(
+        code: "Group.ChildAlreadyExists",
+        description: $"Group '{childGroupId}' is already a child of this group.");
+
+    public static Error ChildNotFound(Guid childGroupId) => Error.Validation(
+        code: "Group.ChildNotFound",
+        description: $"Group '{childGroupId}' is not a child of this group.");
+
+    public static Error RoleAlreadyGranted(Guid roleId) => Error.Conflict(
+        code: "Group.RoleAlreadyGranted",
+        description: $"Role '{roleId}' is already granted to this group.");
+}
+
 public static class OAuthErrors
 {
     public static Error ClientIdAlreadyExists(string clientId) => Error.Conflict(

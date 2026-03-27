@@ -26,6 +26,7 @@ public class AuthorizationController : Controller
 	private readonly SignInManager<ApplicationUser> _signInManager;
 	private readonly UserManager<ApplicationUser> _userManager;
 	private readonly IRoleRepository _roleRepository;
+	private readonly IEffectiveRolesService _effectiveRolesService;
 	private readonly IQuerySession _querySession;
 
 	public AuthorizationController(
@@ -35,6 +36,7 @@ public class AuthorizationController : Controller
 		SignInManager<ApplicationUser> signInManager,
 		UserManager<ApplicationUser> userManager,
 		IRoleRepository roleRepository,
+		IEffectiveRolesService effectiveRolesService,
 		IQuerySession querySession)
 	{
 		_applicationManager = applicationManager;
@@ -43,6 +45,7 @@ public class AuthorizationController : Controller
 		_signInManager = signInManager;
 		_userManager = userManager;
 		_roleRepository = roleRepository;
+		_effectiveRolesService = effectiveRolesService;
 		_querySession = querySession;
 	}
 
@@ -416,10 +419,10 @@ public class AuthorizationController : Controller
 
 		if (User.HasScope(Scopes.Roles))
 		{
-			var roles = await GetUserRoleNamesAsync(user);
-			if (roles.Any())
+			var roles = await GetUserRolesWithClientInfoAsync(user);
+			if (roles.Count > 0)
 			{
-				claims[Claims.Role] = roles;
+				claims[Claims.Role] = roles.Select(r => r.RoleName).ToList();
 			}
 		}
 
@@ -593,11 +596,53 @@ public class AuthorizationController : Controller
 
 		if (principal.HasScope(Scopes.Roles))
 		{
-			var roles = await GetUserRoleNamesAsync(user);
-			foreach (var role in roles)
+			var allRoles = await GetUserRolesWithClientInfoAsync(user);
+			var requestedScopes = principal.GetScopes().ToHashSet();
+
+			// Filter roles: include if role has no scopes (legacy/simple), or if any scope overlaps with request
+			var matchingRoles = allRoles.Where(r =>
+				r.Scopes.Count == 0 || r.Scopes.Any(s => requestedScopes.Contains(s))).ToList();
+
+			// Separate realm roles (no client) from client roles (scoped to a client)
+			var realmRoles = matchingRoles.Where(r => r.ClientId is null).Select(r => r.RoleName).ToList();
+			var clientRoles = matchingRoles.Where(r => r.ClientId is not null)
+				.GroupBy(r => r.ClientIdentifier!)
+				.ToDictionary(g => g.Key, g => g.Select(r => r.RoleName).ToList());
+
+			// Add realm_access claim (Keycloak-compatible)
+			if (realmRoles.Count > 0)
 			{
-				identity.AddClaim(new Claim(Claims.Role, role));
+				identity.AddClaim(new Claim("realm_access",
+					System.Text.Json.JsonSerializer.Serialize(new { roles = realmRoles }),
+					System.Security.Claims.ClaimValueTypes.String));
 			}
+
+			// Add resource_access claim (Keycloak-compatible)
+			if (clientRoles.Count > 0)
+			{
+				var resourceAccess = clientRoles.ToDictionary(
+					kvp => kvp.Key,
+					kvp => new { roles = kvp.Value });
+				identity.AddClaim(new Claim("resource_access",
+					System.Text.Json.JsonSerializer.Serialize(resourceAccess),
+					System.Security.Claims.ClaimValueTypes.String));
+			}
+
+			// Also add flat role claims for ASP.NET Core [Authorize(Roles = "...")] compatibility
+			foreach (var role in matchingRoles)
+			{
+				identity.AddClaim(new Claim(Claims.Role, role.RoleName));
+			}
+
+			// Filter the token scopes to only include scopes the user actually has via roles
+			var userEffectiveScopes = allRoles.SelectMany(r => r.Scopes).ToHashSet();
+			var grantedScopes = requestedScopes.Where(s =>
+				// Standard OIDC scopes always pass through
+				s == Scopes.OpenId || s == Scopes.Profile || s == Scopes.Email ||
+				s == Scopes.Phone || s == Scopes.Roles || s == Scopes.OfflineAccess ||
+				// Custom scopes must be in user's effective scopes
+				userEffectiveScopes.Contains(s));
+			principal.SetScopes(grantedScopes);
 		}
 
 		// Add custom user claims based on scope and API UserClaims configuration.
@@ -636,22 +681,35 @@ public class AuthorizationController : Controller
 	}
 
 	/// <summary>
-	/// Gets the user's role names.
+	/// Role info with client context and scopes for token generation.
 	/// </summary>
-	private async Task<IList<string>> GetUserRoleNamesAsync(ApplicationUser user)
-	{
-		var roleNames = new List<string>();
+	private record UserRoleInfo(string RoleName, Guid? ClientId, string? ClientIdentifier, List<string> Scopes);
 
-		foreach (var roleId in user.Roles)
+	/// <summary>
+	/// Gets ALL effective roles for a user (direct + group-inherited) with client info.
+	/// Used for realm_access / resource_access token structure.
+	/// </summary>
+	private async Task<IList<UserRoleInfo>> GetUserRolesWithClientInfoAsync(ApplicationUser user)
+	{
+		var effectiveRoles = await _effectiveRolesService.GetEffectiveRolesAsync(user.Id);
+		var roleInfos = new List<UserRoleInfo>();
+
+		foreach (var role in effectiveRoles)
 		{
-			var role = await _roleRepository.GetByIdAsync(roleId);
-			if (role is not null && !string.IsNullOrEmpty(role.Name))
+			string? clientIdentifier = null;
+			if (role.ClientId.HasValue)
 			{
-				roleNames.Add(role.Name);
+				var client = await _applicationManager.FindByIdAsync(role.ClientId.Value.ToString());
+				if (client is not null)
+				{
+					clientIdentifier = await _applicationManager.GetClientIdAsync(client);
+				}
 			}
+
+			roleInfos.Add(new UserRoleInfo(role.Name, role.ClientId, clientIdentifier, role.Scopes));
 		}
 
-		return roleNames;
+		return roleInfos;
 	}
 
 	/// <summary>

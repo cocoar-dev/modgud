@@ -39,9 +39,15 @@ public class RoleAggregate
     public string? Email { get; private set; }
 
     /// <summary>
-    /// The ID of the API this role is bound to, if any.
+    /// The ID of the OAuth client this role is scoped to.
+    /// Null = realm role, set = client role.
     /// </summary>
-    public Guid? BoundToApiId { get; private set; }
+    public Guid? ClientId { get; private set; }
+
+    /// <summary>
+    /// OAuth scopes bundled in this role.
+    /// </summary>
+    public List<string> Scopes { get; private set; } = [];
 
     /// <summary>
     /// Whether this role has been deleted (soft delete).
@@ -79,6 +85,7 @@ public class RoleAggregate
         Name = @event.Name;
         NormalizedName = @event.Name.ToUpperInvariant();
         Description = @event.Description;
+        ClientId = @event.ClientId;
         CreatedAt = DateTimeOffset.UtcNow;
     }
 
@@ -129,9 +136,15 @@ public class RoleAggregate
         ModifiedAt = DateTimeOffset.UtcNow;
     }
 
-    public void Apply(RoleBoundToApiChanged @event)
+    public void Apply(RoleClientChanged @event)
     {
-        BoundToApiId = @event.NewApiId;
+        ClientId = @event.NewClientId;
+        ModifiedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void Apply(RoleScopesChanged @event)
+    {
+        Scopes = @event.NewScopes.ToList();
         ModifiedAt = DateTimeOffset.UtcNow;
     }
 }

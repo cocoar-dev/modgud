@@ -6,11 +6,13 @@ namespace Cocoar.Auth.Domain.Events;
 
 /// <summary>
 /// Event raised when a new role is created.
+/// ClientId is null for realm roles, set for client roles.
 /// </summary>
 public record RoleCreated(
     Guid RoleId,
     string Name,
-    string? Description);
+    string? Description,
+    Guid? ClientId = null);
 
 /// <summary>
 /// Event raised when a role's name is changed.
@@ -76,9 +78,18 @@ public record RoleEmailChanged(
     string? NewEmail);
 
 /// <summary>
-/// Event raised when a role's bound API is changed.
+/// Event raised when a role's client assignment is changed.
+/// Null → realm role, set → client role.
 /// </summary>
-public record RoleBoundToApiChanged(
+public record RoleClientChanged(
     Guid RoleId,
-    Guid? OldApiId,
-    Guid? NewApiId);
+    Guid? OldClientId,
+    Guid? NewClientId);
+
+/// <summary>
+/// Event raised when a role's bundled scopes are changed.
+/// </summary>
+public record RoleScopesChanged(
+    Guid RoleId,
+    IReadOnlyList<string> OldScopes,
+    IReadOnlyList<string> NewScopes);

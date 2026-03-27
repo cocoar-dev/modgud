@@ -18,7 +18,7 @@ const openSections = ref<Record<string, boolean>>({
 watch(
   () => route.path,
   (path) => {
-    if (path.startsWith('/admin/users') || path.startsWith('/admin/roles') || path.startsWith('/admin/login-providers')) {
+    if (path.startsWith('/admin/users') || path.startsWith('/admin/roles') || path.startsWith('/admin/groups') || path.startsWith('/admin/login-providers')) {
       openSections.value['Administration'] = true;
     }
     if (path.startsWith('/admin/oauth')) {
@@ -58,6 +58,12 @@ watch(
             icon="shield"
             :class="{ 'nav-item--active': route.path.startsWith('/admin/roles') }"
             @clicked="router.push('/admin/roles')"
+          />
+          <CoarMenuItem
+            label="Groups"
+            icon="users-round"
+            :class="{ 'nav-item--active': route.path.startsWith('/admin/groups') }"
+            @clicked="router.push('/admin/groups')"
           />
           <CoarMenuItem
             label="Login Providers"

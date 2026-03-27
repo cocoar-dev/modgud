@@ -51,9 +51,15 @@ public class RoleState
     public string? Email { get; set; }
 
     /// <summary>
-    /// The ID of the API this role is bound to, if any.
+    /// OAuth scopes bundled in this role.
     /// </summary>
-    public Guid? BoundToApiId { get; set; }
+    public List<string> Scopes { get; set; } = [];
+
+    /// <summary>
+    /// The ID of the OAuth client this role is scoped to.
+    /// Null = realm role, set = client role.
+    /// </summary>
+    public Guid? ClientId { get; set; }
 
     /// <summary>
     /// Whether this role has been deleted (soft delete).
@@ -94,6 +100,7 @@ public class RoleStateProjection : EventProjection
             Name = data.Name,
             NormalizedName = data.Name.ToUpperInvariant(),
             Description = data.Description,
+            ClientId = data.ClientId,
             CreatedAt = @event.Timestamp
         };
     }
@@ -173,12 +180,22 @@ public class RoleStateProjection : EventProjection
         ops.Store(model);
     }
 
-    public void Project(IEvent<RoleBoundToApiChanged> @event, IDocumentOperations ops)
+    public void Project(IEvent<RoleClientChanged> @event, IDocumentOperations ops)
     {
         var model = ops.LoadAsync<RoleState>(@event.Data.RoleId).GetAwaiter().GetResult();
         if (model is null) return;
 
-        model.BoundToApiId = @event.Data.NewApiId;
+        model.ClientId = @event.Data.NewClientId;
+        model.ModifiedAt = DateTimeOffset.UtcNow;
+        ops.Store(model);
+    }
+
+    public void Project(IEvent<RoleScopesChanged> @event, IDocumentOperations ops)
+    {
+        var model = ops.LoadAsync<RoleState>(@event.Data.RoleId).GetAwaiter().GetResult();
+        if (model is null) return;
+
+        model.Scopes = @event.Data.NewScopes.ToList();
         model.ModifiedAt = DateTimeOffset.UtcNow;
         ops.Store(model);
     }

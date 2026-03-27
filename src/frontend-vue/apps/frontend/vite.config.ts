@@ -20,6 +20,13 @@ export default defineConfig({
         secure: false,
         cookieDomainRewrite: 'localhost',
       },
+      // SignalARRR admin hub (WebSocket)
+      '^/[a-z][a-z0-9-]+/admin-hub': {
+        target: 'http://localhost',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+      },
       // Global health endpoint
       '/health': {
         target: 'http://localhost',

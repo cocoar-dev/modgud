@@ -43,6 +43,7 @@ export default withMermaid(
             { text: 'Authentication Model', link: '/concepts/authentication' },
             { text: 'OAuth & OIDC', link: '/concepts/oauth' },
             { text: 'Tokens & Sessions', link: '/concepts/tokens' },
+            { text: 'Groups & Authorization', link: '/concepts/groups-and-authorization' },
           ],
         },
       ],

@@ -1,5 +1,7 @@
+using Cocoar.Auth.Application.Commands.Groups;
 using Cocoar.Auth.Application.Commands.Roles;
 using Cocoar.Auth.Application.Commands.Users;
+using Cocoar.Auth.Application.DTOs.Groups;
 using Cocoar.Auth.Application.DTOs.Roles;
 using Cocoar.Auth.Application.DTOs.Users;
 using Cocoar.Primitives;
@@ -17,16 +19,17 @@ public static class DtoExtensions
     /// Converts a CreateRoleDto to a CreateRoleCommand.
     /// </summary>
     public static CreateRoleCommand ToCommand(this CreateRoleDto dto) =>
-        new(dto.Name, dto.Description, dto.DisplayName, dto.Email, dto.BoundToApiId?.Guid);
+        new(dto.Name, dto.Description, dto.DisplayName, dto.Email, dto.ClientId?.Guid, dto.Scopes);
 
     /// <summary>
     /// Converts an UpdateRoleDto to an UpdateRoleCommand.
     /// </summary>
     public static UpdateRoleCommand ToCommand(this UpdateRoleDto dto, ShortGuid id) =>
         new(id, dto.Name, dto.Description, dto.DisplayName, dto.Email,
-            dto.BoundToApiId.HasValue
-                ? new Cocoar.Primitives.OptionalAware.Optional<Guid?>(dto.BoundToApiId.Value?.Guid)
-                : default);
+            dto.ClientId.HasValue
+                ? new Cocoar.Primitives.OptionalAware.Optional<Guid?>(dto.ClientId.Value?.Guid)
+                : default,
+            dto.Scopes);
 
     #endregion
 
@@ -74,6 +77,16 @@ public static class DtoExtensions
     /// </summary>
     public static ResetUserPasswordCommand ToCommand(this ResetPasswordDto dto, ShortGuid id) =>
         new(id, dto.NewPassword);
+
+    #endregion
+
+    #region Group Extensions
+
+    public static CreateGroupCommand ToCommand(this CreateGroupDto dto) =>
+        new(dto.Name, dto.Description);
+
+    public static UpdateGroupCommand ToCommand(this UpdateGroupDto dto, Guid id) =>
+        new(id, dto.Name, dto.Description);
 
     #endregion
 }

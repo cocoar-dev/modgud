@@ -13,7 +13,14 @@ public record RoleDto
     public string? Description { get; init; }
     public string? DisplayName { get; init; }
     public string? Email { get; init; }
-    public ShortGuid? BoundToApiId { get; init; }
+    /// <summary>
+    /// Null = realm role (global). Set = client role (scoped to this OAuth client).
+    /// </summary>
+    public ShortGuid? ClientId { get; init; }
+    /// <summary>
+    /// OAuth scopes bundled in this role.
+    /// </summary>
+    public List<string> Scopes { get; init; } = [];
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? ModifiedAt { get; init; }
 }
@@ -27,7 +34,8 @@ public record CreateRoleDto
     public string? Description { get; init; }
     public string? DisplayName { get; init; }
     public string? Email { get; init; }
-    public ShortGuid? BoundToApiId { get; init; }
+    public ShortGuid? ClientId { get; init; }
+    public List<string>? Scopes { get; init; }
 }
 
 /// <summary>
@@ -39,7 +47,8 @@ public record UpdateRoleDto
     public Optional<string?> Description { get; init; }
     public Optional<string?> DisplayName { get; init; }
     public Optional<string?> Email { get; init; }
-    public Optional<ShortGuid?> BoundToApiId { get; init; }
+    public Optional<ShortGuid?> ClientId { get; init; }
+    public Optional<List<string>?> Scopes { get; init; }
 }
 
 /// <summary>

@@ -6,7 +6,7 @@ import { adminApi } from '@/core/api/admin-api';
 import { ApiError } from '@/core/api/http';
 import { useDirtyGuard } from '@/composables/useDirtyGuard';
 import { useUI } from '@/composables/useUI';
-import type { OAuthApi } from '@/core/models/oauth.models';
+import type { OAuthClient } from '@/core/models/oauth.models';
 
 const route = useRoute();
 const router = useRouter();
@@ -24,21 +24,21 @@ const name = ref('');
 const displayName = ref('');
 const emailField = ref('');
 const description = ref('');
-const boundToApi = ref('');
+const clientId = ref('');
 
-// APIs for dropdown
-const apis = ref<OAuthApi[]>([]);
+// OAuth clients for dropdown (realm role vs client role)
+const clients = ref<OAuthClient[]>([]);
 
 const isLoading = ref(false);
 const isSaving = ref(false);
 const error = ref('');
 
-const apiOptions = computed(() => [
-  { value: '', label: '(None)' },
-  ...apis.value.map((r) => ({ value: r.id, label: r.displayName || r.name })),
+const clientOptions = computed(() => [
+  { value: '', label: '(Realm Role — global)' },
+  ...clients.value.map((c) => ({ value: c.id, label: c.displayName || c.clientId })),
 ]);
 
-watch([name, displayName, emailField, description, boundToApi], () => { isDirty.value = true; });
+watch([name, displayName, emailField, description, clientId], () => { isDirty.value = true; });
 
 // Set UI state synchronously (before first render)
 ui.set(ctx => {
@@ -76,17 +76,19 @@ async function onDelete() {
 onMounted(async () => {
   isLoading.value = true;
   try {
-    const [roleData, resourcesResult] = await Promise.all([
+    const [roleData, clientsResult] = await Promise.all([
       isEditMode.value ? adminApi.getRole(id.value!) : Promise.resolve(null),
-      adminApi.getOAuthApis(),
+      adminApi.getOAuthClients(),
     ]);
 
-    apis.value = resourcesResult.items;
+    clients.value = clientsResult.items;
 
     if (roleData) {
       name.value = roleData.name;
+      displayName.value = roleData.displayName || '';
+      emailField.value = roleData.email || '';
       description.value = roleData.description || '';
-      // TODO: load displayName, email, boundToApi when backend supports it
+      clientId.value = roleData.clientId?.toString() || '';
     }
   } catch {
     error.value = 'Failed to load data.';
@@ -105,13 +107,17 @@ async function onSubmit() {
       await adminApi.updateRole(id.value!, {
         name: name.value,
         description: description.value || null,
-        // TODO: send displayName, email, boundToApi when backend supports them
+        displayName: displayName.value || null,
+        email: emailField.value || null,
+        clientId: clientId.value || null,
       });
     } else {
       await adminApi.createRole({
         name: name.value,
         description: description.value || undefined,
-        // TODO: send displayName, email, boundToApi when backend supports them
+        displayName: displayName.value || undefined,
+        email: emailField.value || undefined,
+        clientId: clientId.value || undefined,
       });
     }
     isDirty.value = false;
@@ -122,8 +128,6 @@ async function onSubmit() {
     isSaving.value = false;
   }
 }
-
-
 </script>
 
 <template>
@@ -157,17 +161,20 @@ async function onSubmit() {
                   </CoarCard>
                 </div>
 
-                <!-- Right sidebar: Bound API -->
+                <!-- Right sidebar: Role Type (Realm vs Client) -->
                 <div class="form-sidebar">
                   <CoarCard padding="l" class="form-card">
-                    <h2 class="section-title">Bound To API</h2>
+                    <h2 class="section-title">Role Type</h2>
                     <div class="form-group">
                       <CoarSelect
-                        v-model="boundToApi"
-                        label="API"
-                        :options="apiOptions"
+                        v-model="clientId"
+                        label="Client"
+                        :options="clientOptions"
                       />
                     </div>
+                    <p class="hint-text">
+                      Realm roles are global. Client roles are scoped to a specific OAuth client and appear in the token under <code>resource_access</code>.
+                    </p>
                   </CoarCard>
                 </div>
               </div>
@@ -205,10 +212,22 @@ async function onSubmit() {
 .section-title { margin: 0 0 1rem; font-size: 1rem; font-weight: 600; }
 .form-group { margin-bottom: 1rem; }
 .form-group:last-child { margin-bottom: 0; }
-.form-actions { display: flex; gap: 0.75rem; }
 .mb-3 { margin-bottom: 0.75rem; }
-.mt-3 { margin-top: 0.75rem; }
 .centered { display: flex; justify-content: center; padding: 3rem; }
+
+.hint-text {
+  margin-top: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--coar-text-neutral-secondary);
+  line-height: 1.5;
+}
+
+.hint-text code {
+  font-size: 0.75rem;
+  background: var(--coar-background-neutral-secondary);
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--coar-radius-xs);
+}
 
 .placeholder-text {
   font-size: 0.875rem;

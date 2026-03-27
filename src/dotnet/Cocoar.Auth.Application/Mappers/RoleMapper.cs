@@ -18,6 +18,8 @@ public static partial class RoleMapper
         Name = role.Name,
         Description = role.Description,
         DisplayName = role.DisplayName,
+        ClientId = role.ClientId.HasValue ? new ShortGuid(role.ClientId.Value) : (ShortGuid?)null,
+        Scopes = role.Scopes,
         CreatedAt = role.CreatedAt,
         ModifiedAt = role.ModifiedAt,
     };

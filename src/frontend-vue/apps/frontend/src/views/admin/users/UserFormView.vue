@@ -11,7 +11,7 @@ import { useDirtyGuard } from '@/composables/useDirtyGuard';
 import { useUI } from '@/composables/useUI';
 import DualListSelector from '@/components/DualListSelector.vue';
 import ClaimsGrid from '@/components/ClaimsGrid.vue';
-import type { User, Role } from '@/core/models/auth.models';
+import type { User, Role, DeletionStatus } from '@/core/models/auth.models';
 import type { DualListItem } from '@/components/DualListSelector.vue';
 import type { Claim } from '@/components/ClaimsGrid.vue';
 
@@ -28,6 +28,7 @@ const roles = ref<Role[]>([]);
 const isLoading = ref(false);
 const isSaving = ref(false);
 const error = ref('');
+const deletionStatus = ref<DeletionStatus | null>(null);
 
 // Tabs
 const activeTab = ref<string>('basic');
@@ -91,6 +92,39 @@ async function onDelete() {
   }
 }
 
+async function onRestore() {
+  try {
+    await adminApi.restoreUser(id.value!);
+    toast.success('User restored.');
+    // Reload page to reflect new status
+    window.location.reload();
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : 'Failed to restore user.';
+  }
+}
+
+async function onPermanentErase() {
+  if (!confirm('PERMANENT ERASURE: This will anonymize all personal data and cannot be undone. Continue?')) return;
+  try {
+    await adminApi.permanentlyEraseUser(id.value!, { reason: 'Admin-initiated permanent erasure' });
+    isDirty.value = false;
+    toast.success('User data permanently erased.');
+    router.push('/admin/users');
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : 'Failed to erase user data.';
+  }
+}
+
+function updateFooterForDeletionStatus() {
+  if (!deletionStatus.value?.isDeleted) return;
+
+  // User is soft-deleted — show Restore + Permanent Erase instead of Delete + Save
+  ui.state.footer.button2.text = 'Permanent Erase';
+  ui.state.footer.button2.onClick = () => onPermanentErase();
+  ui.state.footer.button3.text = 'Restore';
+  ui.state.footer.button3.onClick = () => onRestore();
+}
+
 onMounted(async () => {
   isLoading.value = true;
   error.value = '';
@@ -115,8 +149,12 @@ onMounted(async () => {
       emailConfirmed.value = userData.emailConfirmed;
       phoneNumberConfirmed.value = userData.phoneNumberConfirmed;
       twoFactorEnabled.value = userData.twoFactorEnabled;
-      // TODO: load expiresAt when backend supports it
-      // TODO: load claims when backend supports it (e.g. adminApi.getUserClaims(id))
+
+      // Load deletion status and update footer buttons accordingly
+      try {
+        deletionStatus.value = await adminApi.getDeletionStatus(id.value!);
+        updateFooterForDeletionStatus();
+      } catch { /* ignore — user may not have deletion status */ }
     }
   } catch {
     error.value = 'Failed to load data.';
@@ -175,6 +213,10 @@ async function onSubmit() {
     <div v-if="isLoading" class="centered"><CoarSpinner size="l" /></div>
 
     <template v-else>
+      <CoarNote v-if="deletionStatus?.isDeleted" variant="warning" padding="s" class="mb-3">
+        This user has been deleted.
+        {{ deletionStatus.isDataMasked ? 'Personal data has been permanently erased.' : 'You can restore the account or permanently erase all data.' }}
+      </CoarNote>
       <CoarNote v-if="error" variant="error" padding="s" class="mb-3">{{ error }}</CoarNote>
 
       <form @submit.prevent="onSubmit">

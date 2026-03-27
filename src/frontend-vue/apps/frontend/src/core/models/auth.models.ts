@@ -212,6 +212,9 @@ export interface Role {
   id: string;
   name: string;
   description?: string;
+  displayName?: string;
+  email?: string;
+  clientId?: string;
   createdAt: string;
   modifiedAt?: string;
 }
@@ -219,15 +222,57 @@ export interface Role {
 export interface CreateRoleRequest {
   name: string;
   description?: string;
+  displayName?: string;
+  email?: string;
+  clientId?: string;
 }
 
 export interface UpdateRoleRequest {
   name?: string;
   description?: string | null;
+  displayName?: string | null;
+  email?: string | null;
+  clientId?: string | null;
 }
 
 export interface RoleList {
   items: Role[];
+  totalCount: number;
+}
+
+// ── Groups ──
+
+export interface Group {
+  id: string;
+  name: string;
+  description?: string;
+  isArchived: boolean;
+  memberCount: number;
+  childGroupCount: number;
+  roleGrantCount: number;
+  createdAt: string;
+  modifiedAt?: string;
+}
+
+export interface CreateGroupRequest {
+  name: string;
+  description?: string;
+}
+
+export interface UpdateGroupRequest {
+  name?: string;
+  description?: string;
+}
+
+export interface GroupDetail extends Group {
+  memberIds: string[];
+  childGroupIds: string[];
+  realmRoleGrants: { roleId: string }[];
+  clientRoleGrants: { roleId: string; clientId: string }[];
+}
+
+export interface GroupList {
+  items: Group[];
   totalCount: number;
 }
 

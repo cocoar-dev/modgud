@@ -11,6 +11,11 @@ public class RoleListReadModel
 	public string Name { get; set; } = string.Empty;
 	public string? Description { get; set; }
 	public string? DisplayName { get; set; }
+	/// <summary>
+	/// Null = realm role, set = client role scoped to this OAuth client.
+	/// </summary>
+	public Guid? ClientId { get; set; }
+	public List<string> Scopes { get; set; } = [];
 	public bool IsDeleted { get; set; }
 	public int UserCount { get; set; }
 	public DateTimeOffset CreatedAt { get; set; }

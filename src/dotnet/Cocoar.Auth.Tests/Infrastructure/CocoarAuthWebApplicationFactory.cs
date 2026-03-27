@@ -220,6 +220,18 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         return role;
     }
 
+    public async Task<Guid> CreateTestGroupAsync(string name = "TestGroup", string? description = null)
+    {
+        using var scope = Services.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IGroupRepository>();
+
+        var groupId = Guid.CreateVersion7();
+        await repository.StartStreamAsync(groupId,
+            new Cocoar.Auth.Domain.Events.GroupCreated(groupId, name, description));
+
+        return groupId;
+    }
+
     public MockEmailSender GetMockEmailSender()
     {
         return Services.GetRequiredService<MockEmailSender>();

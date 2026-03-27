@@ -144,6 +144,8 @@ public static class DependencyInjection
 		services.AddScoped<ILoginProviderRepository, LoginProviderRepository>();
 		services.AddScoped<IUserListRepository, UserListRepository>();
 		services.AddScoped<IRoleListRepository, RoleListRepository>();
+		services.AddScoped<IGroupListRepository, GroupListRepository>();
+		services.AddScoped<IGroupRepository, GroupRepository>();
 	}
 
 	/// <summary>
@@ -184,6 +186,9 @@ public static class DependencyInjection
 
 		// Register event appender
 		services.AddScoped<IEventAppender, MartenEventAppender>();
+
+		// Register effective roles service (resolves direct + group-inherited roles)
+		services.AddScoped<IEffectiveRolesService, EffectiveRolesService>();
 	}
 
 	/// <summary>
@@ -367,7 +372,22 @@ public static class DependencyInjection
 		options.Events.AddEventType<RoleClaimRemoved>();
 		options.Events.AddEventType<RoleDisplayNameChanged>();
 		options.Events.AddEventType<RoleEmailChanged>();
-		options.Events.AddEventType<RoleBoundToApiChanged>();
+		options.Events.AddEventType<RoleClientChanged>();
+		options.Events.AddEventType<RoleScopesChanged>();
+
+		// Register group events
+		options.Events.AddEventType<GroupCreated>();
+		options.Events.AddEventType<GroupRenamed>();
+		options.Events.AddEventType<GroupDescriptionChanged>();
+		options.Events.AddEventType<GroupArchived>();
+		options.Events.AddEventType<GroupMemberAdded>();
+		options.Events.AddEventType<GroupMemberRemoved>();
+		options.Events.AddEventType<GroupChildAdded>();
+		options.Events.AddEventType<GroupChildRemoved>();
+		options.Events.AddEventType<GroupRealmRoleGranted>();
+		options.Events.AddEventType<GroupRealmRoleRevoked>();
+		options.Events.AddEventType<GroupClientRoleGranted>();
+		options.Events.AddEventType<GroupClientRoleRevoked>();
 
 		// Register OAuth application events for the event store
 		options.Events.AddEventType<OAuthApplicationCreated>();
@@ -445,6 +465,7 @@ public static class DependencyInjection
 		// LoginProviderState projection - runs inline for immediate consistency
 		// Use for: login provider validation, lookups
 		options.Projections.Add(new LoginProviderStateProjection(), ProjectionLifecycle.Inline);
+		options.Projections.Add(new GroupStateProjection(), ProjectionLifecycle.Inline);
 
 		// ═══════════════════════════════════════════════════════════════
 		// READ MODEL PROJECTIONS (configurable: async for prod, inline for tests)
@@ -458,6 +479,7 @@ public static class DependencyInjection
 		options.Projections.Add(new UserDetailsProjection(), readModelLifecycle);
 		options.Projections.Add(new Async.UserListProjection(), readModelLifecycle);
 		options.Projections.Add(new Async.RoleListProjection(), readModelLifecycle);
+		options.Projections.Add(new Async.GroupListProjection(), readModelLifecycle);
 
 		// ═══════════════════════════════════════════════════════════════
 		// STATE MODEL INDEXES
@@ -506,6 +528,16 @@ public static class DependencyInjection
 		options.Schema.For<OAuthApiState>()
 			.Identity(x => x.Id)
 			.Index(x => x.Name, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsDeleted')::boolean IS NOT TRUE)"; });
+
+		// Configure GroupState indexes
+		options.Schema.For<Application.Models.GroupState>()
+			.Identity(x => x.Id)
+			.Index(x => x.Name);
+
+		// Configure GroupListReadModel indexes
+		options.Schema.For<Application.ReadModels.GroupListReadModel>()
+			.Identity(x => x.Id)
+			.Index(x => x.Name);
 
 		// Configure LoginProviderState indexes for fast lookups
 		options.Schema.For<LoginProviderState>()

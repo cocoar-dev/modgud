@@ -9,6 +9,7 @@ import type {
   AdminSoftDeleteRequest,
   AdminRestoreRequest,
   AdminPermanentEraseRequest,
+  DeletionStatus,
   Role,
   RoleList,
   CreateRoleRequest,
@@ -18,6 +19,11 @@ import type {
   RealmList,
   CreateRealmRequest,
   UpdateRealmRequest,
+  Group,
+  GroupDetail,
+  GroupList,
+  CreateGroupRequest,
+  UpdateGroupRequest,
 } from '../models/auth.models';
 import type {
   OAuthClient,
@@ -76,6 +82,7 @@ export const adminApi = {
     http.post<void>(`/admin/users/${id}/restore`, req ?? {}),
   permanentlyEraseUser: (id: string, req: AdminPermanentEraseRequest) =>
     http.delete<void>(`/admin/users/${id}/permanent`, req),
+  getDeletionStatus: (id: string) => http.get<DeletionStatus>(`/admin/users/${id}/deletion-status`),
 
   // Roles
   getRoles: () => http.get<RoleList>('/admin/roles'),
@@ -138,5 +145,20 @@ export const adminApi = {
   updateLoginProvider: (id: string, req: UpdateLoginProviderDto) =>
     http.put<void>(`/admin/login-providers/${id}`, req),
   deleteLoginProvider: (id: string) => http.delete<void>(`/admin/login-providers/${id}`),
+
+  // Groups
+  getGroups: () => http.get<GroupList>('/admin/groups'),
+  getGroup: (id: string) => http.get<GroupDetail>(`/admin/groups/${id}`),
+  createGroup: (req: CreateGroupRequest) => http.post<GroupDetail>('/admin/groups', req),
+  updateGroup: (id: string, req: UpdateGroupRequest) => http.patch<void>(`/admin/groups/${id}`, req),
+  deleteGroup: (id: string) => http.delete<void>(`/admin/groups/${id}`),
+  addGroupMember: (id: string, userId: string) => http.post<void>(`/admin/groups/${id}/members`, { userId }),
+  removeGroupMember: (id: string, userId: string) => http.delete<void>(`/admin/groups/${id}/members/${userId}`),
+  addChildGroup: (id: string, childGroupId: string) => http.post<void>(`/admin/groups/${id}/children`, { childGroupId }),
+  removeChildGroup: (id: string, childId: string) => http.delete<void>(`/admin/groups/${id}/children/${childId}`),
+  grantGroupRole: (id: string, roleId: string, clientId?: string) =>
+    http.post<void>(`/admin/groups/${id}/roles`, { roleId, clientId: clientId || undefined }),
+  revokeGroupRole: (id: string, roleId: string, clientId?: string) =>
+    http.delete<void>(`/admin/groups/${id}/roles/${roleId}${clientId ? `?clientId=${clientId}` : ''}`),
 
 };

@@ -34,7 +34,7 @@ public class EventSourcedUserStore :
         _session = session;
     }
 
-    public IQueryable<ApplicationUser> Users => _session.Query<ApplicationUser>();
+    public IQueryable<ApplicationUser> Users => _session.Query<ApplicationUser>().Where(u => !u.IsDeleted);
 
     #region IUserStore
 
@@ -249,18 +249,12 @@ public class EventSourcedUserStore :
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(user);
 
-        // Append delete event (soft delete in event stream)
+        // Append delete event for audit trail and projection rebuild
         _session.Events.Append(user.Id, new UserDeleted(user.Id, null));
 
-        // Delete security data
-        var securityData = await _session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
-        if (securityData is not null)
-        {
-            _session.Delete(securityData);
-        }
-
-        // Delete ApplicationUser
-        _session.Delete(user);
+        // Soft-delete the document (keeps it for projection rebuilds)
+        user.MarkAsDeleted();
+        _session.Store(user);
 
         await _session.SaveChangesAsync(cancellationToken);
         return IdentityResult.Success;
@@ -272,14 +266,15 @@ public class EventSourcedUserStore :
         if (!Guid.TryParse(userId, out var id))
             return null;
 
-        return await _session.LoadAsync<ApplicationUser>(id, cancellationToken);
+        var user = await _session.LoadAsync<ApplicationUser>(id, cancellationToken);
+        return user is { IsDeleted: false } ? user : null;
     }
 
     public async Task<ApplicationUser?> FindByNameAsync(string normalizedUserName, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return await _session.Query<ApplicationUser>()
-            .FirstOrDefaultAsync(u => u.NormalizedUserName == normalizedUserName, cancellationToken);
+            .FirstOrDefaultAsync(u => u.NormalizedUserName == normalizedUserName && !u.IsDeleted, cancellationToken);
     }
 
     public Task<string?> GetNormalizedUserNameAsync(ApplicationUser user, CancellationToken cancellationToken)
@@ -353,7 +348,7 @@ public class EventSourcedUserStore :
     {
         cancellationToken.ThrowIfCancellationRequested();
         return await _session.Query<ApplicationUser>()
-            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail, cancellationToken);
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail && !u.IsDeleted, cancellationToken);
     }
 
     public Task SetEmailAsync(ApplicationUser user, string? email, CancellationToken cancellationToken)

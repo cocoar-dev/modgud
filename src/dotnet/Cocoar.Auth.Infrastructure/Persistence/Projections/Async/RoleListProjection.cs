@@ -21,6 +21,7 @@ public class RoleListProjection : EventProjection
 			Id = @event.StreamId,
 			Name = data.Name,
 			Description = data.Description,
+			ClientId = data.ClientId,
 			CreatedAt = @event.Timestamp
 		};
 	}

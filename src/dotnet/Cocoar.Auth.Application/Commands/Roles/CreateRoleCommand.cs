@@ -7,13 +7,15 @@ namespace Cocoar.Auth.Application.Commands.Roles;
 
 /// <summary>
 /// Command to create a new role.
+/// ClientId null = realm role, set = client role.
 /// </summary>
 public record CreateRoleCommand(
     string Name,
     string? Description,
     string? DisplayName = null,
     string? Email = null,
-    Guid? BoundToApiId = null);
+    Guid? ClientId = null,
+    List<string>? Scopes = null);
 
 /// <summary>
 /// Handler for CreateRoleCommand.
@@ -35,10 +37,11 @@ public class CreateRoleHandler
             return RoleErrors.DuplicateName(command.Name);
         }
 
-        var role = new ApplicationRole(command.Name, command.Description);
+        var role = new ApplicationRole(command.Name, command.Description, command.ClientId);
         role.SetDisplayName(command.DisplayName);
         role.SetEmail(command.Email);
-        role.SetBoundToApiId(command.BoundToApiId);
+        if (command.Scopes is { Count: > 0 })
+            role.SetScopes(command.Scopes);
 
         var result = await _roleManager.CreateAsync(role);
         if (!result.Succeeded)

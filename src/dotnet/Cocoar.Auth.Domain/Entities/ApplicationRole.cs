@@ -45,16 +45,34 @@ public class ApplicationRole : Entity
     public string? Email { get; private set; }
 
     /// <summary>
-    /// The ID of the API this role is bound to, if any.
+    /// The ID of the OAuth client this role is scoped to.
+    /// Null = realm role (global). Set = client role (scoped to this client).
     /// </summary>
     [JsonInclude]
-    public Guid? BoundToApiId { get; private set; }
+    public Guid? ClientId { get; private set; }
 
     /// <summary>
     /// Whether this role has been soft-deleted.
     /// </summary>
     [JsonInclude]
     public bool IsDeleted { get; private set; }
+
+    /// <summary>
+    /// Whether this is a realm role (global) or a client role (scoped).
+    /// </summary>
+    public bool IsRealmRole => ClientId is null;
+
+    /// <summary>
+    /// Whether this is a client role (scoped to a specific OAuth client).
+    /// </summary>
+    public bool IsClientRole => ClientId is not null;
+
+    /// <summary>
+    /// OAuth scopes bundled in this role.
+    /// These determine what the role grants access to.
+    /// </summary>
+    [JsonInclude]
+    public List<string> Scopes { get; private set; } = [];
 
     /// <summary>
     /// Role claims.
@@ -65,10 +83,11 @@ public class ApplicationRole : Entity
     // For Marten deserialization
     private ApplicationRole() : base() { }
 
-    public ApplicationRole(string name, string? description = null) : base()
+    public ApplicationRole(string name, string? description = null, Guid? clientId = null) : base()
     {
         SetName(name);
         Description = description;
+        ClientId = clientId;
         ConcurrencyStamp = Guid.NewGuid().ToString();
     }
 
@@ -97,9 +116,15 @@ public class ApplicationRole : Entity
         MarkModified();
     }
 
-    public void SetBoundToApiId(Guid? apiId)
+    public void SetClientId(Guid? clientId)
     {
-        BoundToApiId = apiId;
+        ClientId = clientId;
+        MarkModified();
+    }
+
+    public void SetScopes(List<string> scopes)
+    {
+        Scopes = scopes;
         MarkModified();
     }
 

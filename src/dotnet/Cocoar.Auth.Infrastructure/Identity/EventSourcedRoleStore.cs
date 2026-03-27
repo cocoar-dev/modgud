@@ -35,7 +35,8 @@ public class EventSourcedRoleStore :
         var @event = new RoleCreated(
             role.Id,
             role.Name,
-            role.Description);
+            role.Description,
+            role.ClientId);
 
         _session.Events.StartStream<Domain.Aggregates.RoleAggregate>(role.Id, @event);
 
@@ -95,10 +96,16 @@ public class EventSourcedRoleStore :
             events.Add(new RoleEmailChanged(updated.Id, existing.Email, updated.Email));
         }
 
-        // BoundToApi change
-        if (existing.BoundToApiId != updated.BoundToApiId)
+        // Client change (realm role ↔ client role)
+        if (existing.ClientId != updated.ClientId)
         {
-            events.Add(new RoleBoundToApiChanged(updated.Id, existing.BoundToApiId, updated.BoundToApiId));
+            events.Add(new RoleClientChanged(updated.Id, existing.ClientId, updated.ClientId));
+        }
+
+        // Scopes change
+        if (!existing.Scopes.SequenceEqual(updated.Scopes))
+        {
+            events.Add(new RoleScopesChanged(updated.Id, existing.Scopes, updated.Scopes));
         }
 
         // Claim changes
