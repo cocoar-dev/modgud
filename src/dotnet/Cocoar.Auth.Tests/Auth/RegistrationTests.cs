@@ -48,7 +48,7 @@ public class RegistrationTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/auth/register", dto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/register", dto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -80,7 +80,7 @@ public class RegistrationTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/auth/register", dto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/register", dto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -100,7 +100,7 @@ public class RegistrationTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/auth/register", dto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/register", dto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -118,7 +118,7 @@ public class RegistrationTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/auth/register", dto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/register", dto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -141,7 +141,7 @@ public class RegistrationTests : IAsyncLifetime
         };
 
         // Register
-        var registerResponse = await _client.PostAsJsonAsync("/system/api/auth/register", registerDto, _factory.JsonOptions);
+        var registerResponse = await _client.PostAsJsonAsync("/api/auth/register", registerDto, _factory.JsonOptions);
         Assert.Equal(HttpStatusCode.OK, registerResponse.StatusCode);
 
         // Act - Login
@@ -150,7 +150,7 @@ public class RegistrationTests : IAsyncLifetime
             UserName = "logintest",
             Password = "LoginTest123!@#"
         };
-        var loginResponse = await _client.PostAsJsonAsync("/system/api/auth/login", loginDto, _factory.JsonOptions);
+        var loginResponse = await _client.PostAsJsonAsync("/api/auth/login", loginDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);

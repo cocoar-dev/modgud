@@ -49,7 +49,7 @@ public class GroupListProjectionTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 		await _factory.CreateTestGroupAsync("ListTestGroup", "A test group");
 
-		var response = await _client.GetAsync("/system/api/admin/groups");
+		var response = await _client.GetAsync("/api/admin/groups");
 
 		Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
 		var result = await response.ReadFromJsonAsync<GroupListDto>(_factory.JsonOptions);
@@ -65,10 +65,10 @@ public class GroupListProjectionTests : IAsyncLifetime
 		var shortGuid = new ShortGuid(groupId);
 
 		// Archive the group
-		await _client.DeleteAsync($"/system/api/admin/groups/{shortGuid}");
+		await _client.DeleteAsync($"/api/admin/groups/{shortGuid}");
 
 		// Check list
-		var response = await _client.GetAsync("/system/api/admin/groups");
+		var response = await _client.GetAsync("/api/admin/groups");
 		var result = await response.ReadFromJsonAsync<GroupListDto>(_factory.JsonOptions);
 
 		Assert.NotNull(result);
@@ -86,11 +86,11 @@ public class GroupListProjectionTests : IAsyncLifetime
 
 		// Add two members
 		await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{shortGuid}/members",
+			$"/api/admin/groups/{shortGuid}/members",
 			new { userId = new ShortGuid(user1.Id).ToString() },
 			_factory.JsonOptions);
 		await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{shortGuid}/members",
+			$"/api/admin/groups/{shortGuid}/members",
 			new { userId = new ShortGuid(user2.Id).ToString() },
 			_factory.JsonOptions);
 
@@ -113,11 +113,11 @@ public class GroupListProjectionTests : IAsyncLifetime
 		var child2Id = await _factory.CreateTestGroupAsync("ChildCount2");
 
 		await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{new ShortGuid(parentId)}/children",
+			$"/api/admin/groups/{new ShortGuid(parentId)}/children",
 			new { childGroupId = new ShortGuid(child1Id).ToString() },
 			_factory.JsonOptions);
 		await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{new ShortGuid(parentId)}/children",
+			$"/api/admin/groups/{new ShortGuid(parentId)}/children",
 			new { childGroupId = new ShortGuid(child2Id).ToString() },
 			_factory.JsonOptions);
 
@@ -138,7 +138,7 @@ public class GroupListProjectionTests : IAsyncLifetime
 		var role = await _factory.CreateTestRoleAsync("RoleCountRole");
 
 		await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{new ShortGuid(groupId)}/roles",
+			$"/api/admin/groups/{new ShortGuid(groupId)}/roles",
 			new { roleId = new ShortGuid(role.Id).ToString() },
 			_factory.JsonOptions);
 

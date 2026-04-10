@@ -52,7 +52,7 @@ public class SessionManagementTests : IAsyncLifetime
         await _client.LoginAsync("sessionuser", password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.GetAsync("/system/api/auth/sessions");
+        var response = await _client.GetAsync("/api/auth/sessions");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -65,7 +65,7 @@ public class SessionManagementTests : IAsyncLifetime
     public async Task GetSessions_WhenNotAuthenticated_ReturnsUnauthorized()
     {
         // Act
-        var response = await _client.GetAsync("/system/api/auth/sessions");
+        var response = await _client.GetAsync("/api/auth/sessions");
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -84,7 +84,7 @@ public class SessionManagementTests : IAsyncLifetime
         await _client.LoginAsync("detailsuser", password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.GetAsync("/system/api/auth/sessions");
+        var response = await _client.GetAsync("/api/auth/sessions");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -113,7 +113,7 @@ public class SessionManagementTests : IAsyncLifetime
         await _client.LoginAsync("revokeuser", password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.DeleteAsync($"/system/api/auth/sessions/{session.Id}");
+        var response = await _client.DeleteAsync($"/api/auth/sessions/{session.Id}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -136,7 +136,7 @@ public class SessionManagementTests : IAsyncLifetime
         var nonExistentId = Guid.NewGuid();
 
         // Act
-        var response = await _client.DeleteAsync($"/system/api/auth/sessions/{nonExistentId}");
+        var response = await _client.DeleteAsync($"/api/auth/sessions/{nonExistentId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -157,7 +157,7 @@ public class SessionManagementTests : IAsyncLifetime
         await _client.LoginAsync("user1", password, _factory.JsonOptions);
 
         // Act - Try to revoke user2's session
-        var response = await _client.DeleteAsync($"/system/api/auth/sessions/{user2Session.Id}");
+        var response = await _client.DeleteAsync($"/api/auth/sessions/{user2Session.Id}");
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -167,7 +167,7 @@ public class SessionManagementTests : IAsyncLifetime
     public async Task RevokeSession_WhenNotAuthenticated_ReturnsUnauthorized()
     {
         // Act
-        var response = await _client.DeleteAsync($"/system/api/auth/sessions/{Guid.NewGuid()}");
+        var response = await _client.DeleteAsync($"/api/auth/sessions/{Guid.NewGuid()}");
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -192,7 +192,7 @@ public class SessionManagementTests : IAsyncLifetime
         await _client.LoginAsync("revokealluser", password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.DeleteAsync("/system/api/auth/sessions");
+        var response = await _client.DeleteAsync("/api/auth/sessions");
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -208,7 +208,7 @@ public class SessionManagementTests : IAsyncLifetime
     public async Task RevokeAllSessions_WhenNotAuthenticated_ReturnsUnauthorized()
     {
         // Act
-        var response = await _client.DeleteAsync("/system/api/auth/sessions");
+        var response = await _client.DeleteAsync("/api/auth/sessions");
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -231,7 +231,7 @@ public class SessionManagementTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Act
-        var response = await _client.GetAsync($"/system/api/admin/users/{shortGuid}/sessions");
+        var response = await _client.GetAsync($"/api/admin/users/{shortGuid}/sessions");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -252,7 +252,7 @@ public class SessionManagementTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Act
-        var response = await _client.GetAsync($"/system/api/admin/users/{shortGuid}/sessions");
+        var response = await _client.GetAsync($"/api/admin/users/{shortGuid}/sessions");
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -271,7 +271,7 @@ public class SessionManagementTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Act
-        var response = await _client.DeleteAsync($"/system/api/admin/users/{shortGuid}/sessions");
+        var response = await _client.DeleteAsync($"/api/admin/users/{shortGuid}/sessions");
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -295,7 +295,7 @@ public class SessionManagementTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Act
-        var response = await _client.DeleteAsync($"/system/api/admin/users/{shortGuid}/sessions");
+        var response = await _client.DeleteAsync($"/api/admin/users/{shortGuid}/sessions");
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);

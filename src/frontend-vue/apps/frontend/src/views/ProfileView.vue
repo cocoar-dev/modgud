@@ -5,7 +5,6 @@ import { CoarCard, CoarButton, CoarTextInput, CoarNote, CoarSpinner, CoarPasswor
 import { authApi } from '@/core/api/auth-api';
 import { ApiError } from '@/core/api/http';
 import { useUI } from '@/composables/useUI';
-import { realmContext } from '@/composables/useRealmContext';
 import type { Profile, TwoFactorStatus, TwoFactorSetup, ExternalProvider, LinkedExternalLogin } from '@/core/models/auth.models';
 
 const ui = useUI();
@@ -218,7 +217,7 @@ function downloadRecoveryCodes() {
 // External login methods
 function linkExternalLogin(providerName: string) {
   const returnUrl = '/profile';
-  const url = `${realmContext.apiUrl}/auth/external-login?provider=${encodeURIComponent(providerName)}&returnUrl=${encodeURIComponent(returnUrl)}`;
+  const url = `/api/auth/external-login?provider=${encodeURIComponent(providerName)}&returnUrl=${encodeURIComponent(returnUrl)}`;
   window.location.href = url;
 }
 

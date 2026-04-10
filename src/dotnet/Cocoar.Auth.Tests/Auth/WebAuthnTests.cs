@@ -38,7 +38,7 @@ public class WebAuthnTests : IAsyncLifetime
     public async Task GetRegistrationOptions_Unauthenticated_Returns401()
     {
         // Act
-        var response = await _client.PostAsync("/system/api/auth/webauthn/register/options", null);
+        var response = await _client.PostAsync("/api/auth/webauthn/register/options", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -53,7 +53,7 @@ public class WebAuthnTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.PostAsync("/system/api/auth/webauthn/register/options", null);
+        var response = await _client.PostAsync("/api/auth/webauthn/register/options", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -77,7 +77,7 @@ public class WebAuthnTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/auth/webauthn/register/complete", dto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/webauthn/register/complete", dto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -92,7 +92,7 @@ public class WebAuthnTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // First get registration options to create a challenge
-        await _client.PostAsync("/system/api/auth/webauthn/register/options", null);
+        await _client.PostAsync("/api/auth/webauthn/register/options", null);
 
         var dto = new CompleteWebAuthnRegistrationDto
         {
@@ -101,7 +101,7 @@ public class WebAuthnTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/auth/webauthn/register/complete", dto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/webauthn/register/complete", dto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -115,7 +115,7 @@ public class WebAuthnTests : IAsyncLifetime
     public async Task GetCredentials_Unauthenticated_Returns401()
     {
         // Act
-        var response = await _client.GetAsync("/system/api/auth/webauthn/credentials");
+        var response = await _client.GetAsync("/api/auth/webauthn/credentials");
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -130,7 +130,7 @@ public class WebAuthnTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.GetAsync("/system/api/auth/webauthn/credentials");
+        var response = await _client.GetAsync("/api/auth/webauthn/credentials");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -147,7 +147,7 @@ public class WebAuthnTests : IAsyncLifetime
     public async Task DeleteCredential_Unauthenticated_Returns401()
     {
         // Act
-        var response = await _client.DeleteAsync("/system/api/auth/webauthn/credentials/nonexistent-id");
+        var response = await _client.DeleteAsync("/api/auth/webauthn/credentials/nonexistent-id");
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -162,7 +162,7 @@ public class WebAuthnTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.DeleteAsync("/system/api/auth/webauthn/credentials/nonexistent-credential-id");
+        var response = await _client.DeleteAsync("/api/auth/webauthn/credentials/nonexistent-credential-id");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -179,7 +179,7 @@ public class WebAuthnTests : IAsyncLifetime
         var dto = new RenameWebAuthnCredentialDto { Name = "New Name" };
 
         // Act
-        var response = await _client.PatchAsJsonAsync("/system/api/auth/webauthn/credentials/some-id", dto, _factory.JsonOptions);
+        var response = await _client.PatchAsJsonAsync("/api/auth/webauthn/credentials/some-id", dto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -196,7 +196,7 @@ public class WebAuthnTests : IAsyncLifetime
         var dto = new RenameWebAuthnCredentialDto { Name = "New Name" };
 
         // Act
-        var response = await _client.PatchAsJsonAsync("/system/api/auth/webauthn/credentials/nonexistent-id", dto, _factory.JsonOptions);
+        var response = await _client.PatchAsJsonAsync("/api/auth/webauthn/credentials/nonexistent-id", dto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -211,7 +211,7 @@ public class WebAuthnTests : IAsyncLifetime
     {
         // Act - should work without authentication (passwordless flow)
         var dto = new WebAuthnLoginOptionsRequestDto();
-        var response = await _client.PostAsJsonAsync("/system/api/auth/webauthn/login/options", dto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/webauthn/login/options", dto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -228,7 +228,7 @@ public class WebAuthnTests : IAsyncLifetime
     public async Task CompleteLogin_WithInvalidAssertion_DoesNotSucceed()
     {
         // Act - send invalid assertion without prior login options
-        var response = await _client.PostAsync("/system/api/auth/webauthn/login/complete",
+        var response = await _client.PostAsync("/api/auth/webauthn/login/complete",
             JsonContent.Create(new
             {
                 assertionResponse = new { invalid = "garbage", id = "fake", rawId = "fake" },

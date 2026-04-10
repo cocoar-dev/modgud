@@ -12,25 +12,30 @@ export default defineConfig({
   server: {
     port: 4200,
     proxy: {
-      // Proxy realm API/connect/.well-known requests to backend
-      // Regex: any path starting with /{slug}/(api|connect|.well-known)
-      '^/[a-z][a-z0-9-]+/(api|connect|\\.well-known)': {
+      '/api': {
         target: 'http://localhost',
-        changeOrigin: true,
+        changeOrigin: false,
         secure: false,
-        cookieDomainRewrite: 'localhost',
       },
-      // SignalARRR admin hub (WebSocket)
-      '^/[a-z][a-z0-9-]+/admin-hub': {
+      '/connect': {
         target: 'http://localhost',
-        changeOrigin: true,
+        changeOrigin: false,
+        secure: false,
+      },
+      '/.well-known': {
+        target: 'http://localhost',
+        changeOrigin: false,
+        secure: false,
+      },
+      '/admin-hub': {
+        target: 'http://localhost',
+        changeOrigin: false,
         secure: false,
         ws: true,
       },
-      // Global health endpoint
       '/health': {
         target: 'http://localhost',
-        changeOrigin: true,
+        changeOrigin: false,
         secure: false,
       },
     },

@@ -68,7 +68,7 @@ public class UserDetailsProjectionTests : IAsyncLifetime
         var userShortGuid = new ShortGuid(user.Id);
 
         // Act
-        var response = await _client.GetAsync($"/system/api/admin/users/{userShortGuid}");
+        var response = await _client.GetAsync($"/api/admin/users/{userShortGuid}");
 
         // Assert
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
@@ -111,7 +111,7 @@ public class UserDetailsProjectionTests : IAsyncLifetime
             Name = new Optional<string>("Senior Developer")
         };
         var updateResponse = await _client.PatchAsJsonAsync(
-            $"/system/api/admin/roles/{roleShortGuid}",
+            $"/api/admin/roles/{roleShortGuid}",
             updateDto,
             _factory.JsonOptions);
         Assert.Equal(System.Net.HttpStatusCode.OK, updateResponse.StatusCode);
@@ -162,7 +162,7 @@ public class UserDetailsProjectionTests : IAsyncLifetime
             Description = new Optional<string?>("Updated tester description")
         };
         var updateResponse = await _client.PatchAsJsonAsync(
-            $"/system/api/admin/roles/{roleShortGuid}",
+            $"/api/admin/roles/{roleShortGuid}",
             updateDto,
             _factory.JsonOptions);
         Assert.Equal(System.Net.HttpStatusCode.OK, updateResponse.StatusCode);
@@ -192,11 +192,11 @@ public class UserDetailsProjectionTests : IAsyncLifetime
         var user2ShortGuid = new ShortGuid(user2.Id);
 
         // Delete user2
-        var deleteResponse = await _client.DeleteAsync($"/system/api/admin/users/{user2ShortGuid}");
+        var deleteResponse = await _client.DeleteAsync($"/api/admin/users/{user2ShortGuid}");
         Assert.Equal(System.Net.HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
         // Act - Query all users
-        var response = await _client.GetAsync("/system/api/admin/users");
+        var response = await _client.GetAsync("/api/admin/users");
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         var result = await response.ReadFromJsonAsync<UserListDto>(_factory.JsonOptions);
 
@@ -216,11 +216,11 @@ public class UserDetailsProjectionTests : IAsyncLifetime
         var userShortGuid = new ShortGuid(user.Id);
 
         // Delete the user
-        var deleteResponse = await _client.DeleteAsync($"/system/api/admin/users/{userShortGuid}");
+        var deleteResponse = await _client.DeleteAsync($"/api/admin/users/{userShortGuid}");
         Assert.Equal(System.Net.HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
         // Act - Try to get deleted user
-        var getResponse = await _client.GetAsync($"/system/api/admin/users/{userShortGuid}");
+        var getResponse = await _client.GetAsync($"/api/admin/users/{userShortGuid}");
 
         // Assert
         Assert.Equal(System.Net.HttpStatusCode.NotFound, getResponse.StatusCode);
@@ -243,7 +243,7 @@ public class UserDetailsProjectionTests : IAsyncLifetime
         }
 
         // Act
-        var response = await _client.GetAsync("/system/api/admin/users");
+        var response = await _client.GetAsync("/api/admin/users");
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         var result = await response.ReadFromJsonAsync<UserListDto>(_factory.JsonOptions);
 

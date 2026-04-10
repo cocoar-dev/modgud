@@ -57,7 +57,7 @@ public class DeviceCodeEdgeCaseTests : IAsyncLifetime
     public async Task DeviceAuthorization_WithInvalidClient_ReturnsBadRequest()
     {
         // Act - request device code with a client ID that doesn't exist
-        var response = await _client.PostAsync("/system/connect/device", new FormUrlEncodedContent(new Dictionary<string, string>
+        var response = await _client.PostAsync("/connect/device", new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["client_id"] = "nonexistent-client",
             ["scope"] = "openid profile"
@@ -79,7 +79,7 @@ public class DeviceCodeEdgeCaseTests : IAsyncLifetime
         await _client.LoginAsync("admin", "Admin123!@#", _factory.JsonOptions);
         await _factory.SeedOpenIddictScopesAsync();
 
-        var createResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", new CreateOAuthClientDto
+        var createResponse = await _client.PostAsJsonAsync("/api/admin/oauth/clients", new CreateOAuthClientDto
         {
             ClientId = "no-device-client",
             DisplayName = "No Device Grant Client",
@@ -91,10 +91,10 @@ public class DeviceCodeEdgeCaseTests : IAsyncLifetime
         }, _factory.JsonOptions);
 
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
-        await _client.PostAsync("/system/api/auth/logout", null);
+        await _client.PostAsync("/api/auth/logout", null);
 
         // Act - try to use device code flow with this client
-        var response = await _client.PostAsync("/system/connect/device", new FormUrlEncodedContent(new Dictionary<string, string>
+        var response = await _client.PostAsync("/connect/device", new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["client_id"] = "no-device-client",
             ["scope"] = "openid profile"
@@ -115,7 +115,7 @@ public class DeviceCodeEdgeCaseTests : IAsyncLifetime
         await CreateDeviceCodeClientAsync();
 
         // Act - try to exchange a bogus device code
-        var tokenResponse = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
+        var tokenResponse = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code",
             ["device_code"] = "totally-invalid-device-code",
@@ -136,7 +136,7 @@ public class DeviceCodeEdgeCaseTests : IAsyncLifetime
         // Arrange - create client and get a device code
         await CreateDeviceCodeClientAsync();
 
-        var deviceResponse = await _client.PostAsync("/system/connect/device", new FormUrlEncodedContent(new Dictionary<string, string>
+        var deviceResponse = await _client.PostAsync("/connect/device", new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["client_id"] = "edge-device-client",
             ["scope"] = "openid profile"
@@ -151,7 +151,7 @@ public class DeviceCodeEdgeCaseTests : IAsyncLifetime
 
         // Act - GET the verification endpoint (should redirect to frontend /device page)
         var verifyResponse = await _client.GetAsync(
-            $"/system/connect/verify?user_code={Uri.EscapeDataString(deviceResult.UserCode!)}");
+            $"/connect/verify?user_code={Uri.EscapeDataString(deviceResult.UserCode!)}");
 
         // Assert - should redirect to frontend device verification page
         Assert.Equal(HttpStatusCode.Redirect, verifyResponse.StatusCode);
@@ -170,7 +170,7 @@ public class DeviceCodeEdgeCaseTests : IAsyncLifetime
         await _client.LoginAsync("admin", "Admin123!@#", _factory.JsonOptions);
         await _factory.SeedOpenIddictScopesAsync();
 
-        var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", new CreateOAuthClientDto
+        var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", new CreateOAuthClientDto
         {
             ClientId = "edge-device-client",
             DisplayName = "Edge Case Device Client",
@@ -181,7 +181,7 @@ public class DeviceCodeEdgeCaseTests : IAsyncLifetime
         }, _factory.JsonOptions);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        await _client.PostAsync("/system/api/auth/logout", null);
+        await _client.PostAsync("/api/auth/logout", null);
     }
 
     #endregion

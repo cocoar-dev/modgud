@@ -308,7 +308,8 @@ export interface Realm {
   displayName: string;
   description?: string;
   isActive: boolean;
-  isSystem: boolean;
+  domains: string[];
+  canManageTenants: boolean;
   needsSetup: boolean;
   createdAt: string;
 }

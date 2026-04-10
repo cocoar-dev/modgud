@@ -43,7 +43,7 @@ public class EmailOtpTests : IAsyncLifetime
     public async Task GetEmailOtpStatus_Unauthenticated_Returns401()
     {
         // Act
-        var response = await _client.GetAsync("/system/api/auth/2fa/email-otp/status");
+        var response = await _client.GetAsync("/api/auth/2fa/email-otp/status");
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -58,7 +58,7 @@ public class EmailOtpTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.GetAsync("/system/api/auth/2fa/email-otp/status");
+        var response = await _client.GetAsync("/api/auth/2fa/email-otp/status");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -82,7 +82,7 @@ public class EmailOtpTests : IAsyncLifetime
         _factory.GetMockEmailSender().Clear();
 
         // Act
-        var response = await _client.PostAsync("/system/api/auth/2fa/email-otp/request", null);
+        var response = await _client.PostAsync("/api/auth/2fa/email-otp/request", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -102,14 +102,14 @@ public class EmailOtpTests : IAsyncLifetime
         await _client.LoginAsync("admin", "Admin123!@#", _factory.JsonOptions);
 
         // Clear the user's email via admin update
-        await _client.PatchAsJsonAsync($"/system/api/admin/users/{user.Id}", new { email = (string?)null }, _factory.JsonOptions);
-        await _client.PostAsync("/system/api/auth/logout", null);
+        await _client.PatchAsJsonAsync($"/api/admin/users/{user.Id}", new { email = (string?)null }, _factory.JsonOptions);
+        await _client.PostAsync("/api/auth/logout", null);
 
         // Login as the user without email
         await _client.LoginAsync("otpnoemail", password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.PostAsync("/system/api/auth/2fa/email-otp/request", null);
+        var response = await _client.PostAsync("/api/auth/2fa/email-otp/request", null);
 
         // Assert - should fail because user has no email
         Assert.True(
@@ -127,11 +127,11 @@ public class EmailOtpTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // First request should succeed
-        var firstResponse = await _client.PostAsync("/system/api/auth/2fa/email-otp/request", null);
+        var firstResponse = await _client.PostAsync("/api/auth/2fa/email-otp/request", null);
         Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
 
         // Act - Second request immediately should be rate limited
-        var secondResponse = await _client.PostAsync("/system/api/auth/2fa/email-otp/request", null);
+        var secondResponse = await _client.PostAsync("/api/auth/2fa/email-otp/request", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, secondResponse.StatusCode);
@@ -151,7 +151,7 @@ public class EmailOtpTests : IAsyncLifetime
         _factory.GetMockEmailSender().Clear();
 
         // Request OTP
-        await _client.PostAsync("/system/api/auth/2fa/email-otp/request", null);
+        await _client.PostAsync("/api/auth/2fa/email-otp/request", null);
 
         // Extract OTP code from the email body
         var sentEmails = _factory.GetMockEmailSender().SentEmails;
@@ -161,7 +161,7 @@ public class EmailOtpTests : IAsyncLifetime
 
         // Act
         var verifyDto = new VerifyEmailOtpDto { Code = code };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/2fa/email-otp/verify", verifyDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/2fa/email-otp/verify", verifyDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -176,11 +176,11 @@ public class EmailOtpTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Request OTP first so there's a pending challenge
-        await _client.PostAsync("/system/api/auth/2fa/email-otp/request", null);
+        await _client.PostAsync("/api/auth/2fa/email-otp/request", null);
 
         // Act - verify with wrong code
         var verifyDto = new VerifyEmailOtpDto { Code = "000000" };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/2fa/email-otp/verify", verifyDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/2fa/email-otp/verify", verifyDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -196,7 +196,7 @@ public class EmailOtpTests : IAsyncLifetime
 
         // Act - verify without requesting OTP first
         var verifyDto = new VerifyEmailOtpDto { Code = "123456" };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/2fa/email-otp/verify", verifyDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/2fa/email-otp/verify", verifyDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -214,7 +214,7 @@ public class EmailOtpTests : IAsyncLifetime
         var user = await Enable2FAForUserAsync("otploginuser", password);
 
         // Logout to clear session
-        await _client.PostAsync("/system/api/auth/logout", null);
+        await _client.PostAsync("/api/auth/logout", null);
 
         // Login with password - should require 2FA
         var loginResponse = await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
@@ -225,7 +225,7 @@ public class EmailOtpTests : IAsyncLifetime
 
         // Request email OTP during login flow
         _factory.GetMockEmailSender().Clear();
-        var requestResponse = await _client.PostAsync("/system/api/auth/2fa/email-otp/login/request", null);
+        var requestResponse = await _client.PostAsync("/api/auth/2fa/email-otp/login/request", null);
         Assert.Equal(HttpStatusCode.OK, requestResponse.StatusCode);
 
         // Extract OTP code from email
@@ -236,7 +236,7 @@ public class EmailOtpTests : IAsyncLifetime
 
         // Act - complete login with email OTP
         var otpLoginDto = new EmailOtpLoginDto { Code = code, RememberMachine = false };
-        var otpResponse = await _client.PostAsJsonAsync("/system/api/auth/2fa/email-otp/login", otpLoginDto, _factory.JsonOptions);
+        var otpResponse = await _client.PostAsJsonAsync("/api/auth/2fa/email-otp/login", otpLoginDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, otpResponse.StatusCode);

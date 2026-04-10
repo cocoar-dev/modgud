@@ -46,7 +46,7 @@ public class LoginProvidersAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		// Act
-		var response = await _client.GetAsync("/system/api/admin/login-providers");
+		var response = await _client.GetAsync("/api/admin/login-providers");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -63,12 +63,12 @@ public class LoginProvidersAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		// Get the seeded Internal provider
-		var listResponse = await _client.GetAsync("/system/api/admin/login-providers");
+		var listResponse = await _client.GetAsync("/api/admin/login-providers");
 		var list = await listResponse.ReadFromJsonAsync<LoginProviderListDto>(_factory.JsonOptions);
 		var internalProvider = list!.Items.First(p => p.Name == "Internal");
 
 		// Act
-		var response = await _client.GetAsync($"/system/api/admin/login-providers/{internalProvider.Id}");
+		var response = await _client.GetAsync($"/api/admin/login-providers/{internalProvider.Id}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -98,7 +98,7 @@ public class LoginProvidersAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/system/api/admin/login-providers", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/api/admin/login-providers", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -128,7 +128,7 @@ public class LoginProvidersAdminTests : IAsyncLifetime
 				["Authority"] = "https://old.example.com"
 			}
 		};
-		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/login-providers", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/api/admin/login-providers", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<LoginProviderDto>(_factory.JsonOptions);
 
 		var updateDto = new UpdateLoginProviderDto
@@ -144,7 +144,7 @@ public class LoginProvidersAdminTests : IAsyncLifetime
 
 		// Act
 		var response = await _client.PatchAsJsonAsync(
-			$"/system/api/admin/login-providers/{created!.Id}", updateDto, _factory.JsonOptions);
+			$"/api/admin/login-providers/{created!.Id}", updateDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -170,17 +170,17 @@ public class LoginProvidersAdminTests : IAsyncLifetime
 				["Authority"] = "https://delete.example.com"
 			}
 		};
-		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/login-providers", createDto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/api/admin/login-providers", createDto, _factory.JsonOptions);
 		var created = await createResponse.ReadFromJsonAsync<LoginProviderDto>(_factory.JsonOptions);
 
 		// Act
-		var response = await _client.DeleteAsync($"/system/api/admin/login-providers/{created!.Id}");
+		var response = await _client.DeleteAsync($"/api/admin/login-providers/{created!.Id}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
 		// Verify deleted
-		var getResponse = await _client.GetAsync($"/system/api/admin/login-providers/{created.Id}");
+		var getResponse = await _client.GetAsync($"/api/admin/login-providers/{created.Id}");
 		Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
 	}
 
@@ -191,12 +191,12 @@ public class LoginProvidersAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		// Get the seeded Internal provider
-		var listResponse = await _client.GetAsync("/system/api/admin/login-providers");
+		var listResponse = await _client.GetAsync("/api/admin/login-providers");
 		var list = await listResponse.ReadFromJsonAsync<LoginProviderListDto>(_factory.JsonOptions);
 		var internalProvider = list!.Items.First(p => p.Name == "Internal" && p.IsBuiltIn);
 
 		// Act
-		var response = await _client.DeleteAsync($"/system/api/admin/login-providers/{internalProvider.Id}");
+		var response = await _client.DeleteAsync($"/api/admin/login-providers/{internalProvider.Id}");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -206,7 +206,7 @@ public class LoginProvidersAdminTests : IAsyncLifetime
 	public async Task GetAll_Unauthenticated_Returns401()
 	{
 		// Act
-		var response = await _client.GetAsync("/system/api/admin/login-providers");
+		var response = await _client.GetAsync("/api/admin/login-providers");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -220,7 +220,7 @@ public class LoginProvidersAdminTests : IAsyncLifetime
 		await _client.LoginAsync(user.UserName, "Test123!@#", _factory.JsonOptions);
 
 		// Act
-		var response = await _client.GetAsync("/system/api/admin/login-providers");
+		var response = await _client.GetAsync("/api/admin/login-providers");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);

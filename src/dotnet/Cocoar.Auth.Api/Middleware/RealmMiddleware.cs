@@ -3,8 +3,9 @@ using Cocoar.Auth.Infrastructure.Services;
 namespace Cocoar.Auth.Api.Middleware;
 
 /// <summary>
-/// Resolves the realm (tenant) from the URL path.
-/// The first path segment is always the realm slug (e.g. /system/api/..., /acme/api/...).
+/// Resolves the realm (tenant) from the HTTP Host header.
+/// Domain-based routing: each tenant has one or more domains configured.
+/// The middleware matches the Host header against the cached domain→tenant mapping.
 /// </summary>
 public class RealmMiddleware
 {
@@ -23,38 +24,26 @@ public class RealmMiddleware
 	{
 		var path = context.Request.Path.Value;
 
-		// Skip system paths
+		// Skip system paths that don't need tenant resolution
 		if (path is not null && SkipPaths.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
 		{
 			await _next(context);
 			return;
 		}
 
-		// Redirect root to system realm
-		if (string.IsNullOrEmpty(path) || path == "/")
-		{
-			context.Response.StatusCode = 302;
-			context.Response.Headers.Location = "/system/";
-			return;
-		}
+		// Resolve tenant from Host header
+		var hostname = context.Request.Host.Host;
+		var tenantInfo = await _realmCache.ResolveDomainAsync(hostname);
 
-		// Extract first path segment as realm slug
-		var trimmed = path.AsSpan(1); // skip leading '/'
-		var slashIdx = trimmed.IndexOf('/');
-		var slug = (slashIdx >= 0 ? trimmed[..slashIdx] : trimmed).ToString();
-		var remainingPath = slashIdx >= 0 ? trimmed[slashIdx..].ToString() : "/";
-
-		// Validate realm exists and is active
-		if (string.IsNullOrEmpty(slug) || !await _realmCache.IsValidRealmAsync(slug))
+		if (tenantInfo is null)
 		{
 			context.Response.StatusCode = 404;
 			return;
 		}
 
-		context.Items["TenantId"] = slug;
-		context.Items["RealmSlug"] = slug;
-		context.Request.PathBase = new PathString($"/{slug}");
-		context.Request.Path = new PathString(remainingPath);
+		context.Items["TenantId"] = tenantInfo.Slug;
+		context.Items["RealmSlug"] = tenantInfo.Slug;
+		context.Items["TenantInfo"] = tenantInfo;
 
 		await _next(context);
 	}

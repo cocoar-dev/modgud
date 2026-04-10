@@ -43,7 +43,7 @@ public class RealmProvisioningService : IRealmProvisioningService
 
 	private static readonly HashSet<string> ReservedSlugs = new(StringComparer.OrdinalIgnoreCase)
 	{
-		"system", "health", "swagger", "api", "connect", "realms", "admin", "static", "assets"
+		"system", "health", "swagger"
 	};
 
 	public RealmProvisioningService(
@@ -137,6 +137,11 @@ public class RealmProvisioningService : IRealmProvisioningService
 		var newTenantDb = await tenancy.FindOrCreateDatabase(dto.Slug);
 		await newTenantDb.ApplyAllConfiguredChangesToDatabaseAsync();
 
+		// Auto-generate domains if not provided
+		var domains = dto.Domains is { Length: > 0 }
+			? dto.Domains
+			: [$"{dto.Slug}.localhost"];
+
 		// Store realm metadata as Marten document in system tenant
 		var realm = new Realm
 		{
@@ -144,8 +149,9 @@ public class RealmProvisioningService : IRealmProvisioningService
 			Slug = dto.Slug,
 			DisplayName = dto.DisplayName,
 			Description = dto.Description,
+			Domains = domains,
+			CanManageTenants = dto.CanManageTenants,
 			IsActive = true,
-			IsSystem = false,
 			CreatedAt = DateTimeOffset.UtcNow
 		};
 
@@ -162,7 +168,6 @@ public class RealmProvisioningService : IRealmProvisioningService
 		catch (Exception ex)
 		{
 			_logger.LogError(ex, "Failed to seed default data for realm {Slug}", dto.Slug);
-			// Don't fail the entire creation — the realm exists, setup can be retried
 		}
 
 		_realmCache.Invalidate();
@@ -182,16 +187,35 @@ public class RealmProvisioningService : IRealmProvisioningService
 			return Error.NotFound("Realm.NotFound", $"Realm '{slug}' not found.");
 		}
 
-		// Cannot deactivate system realm
-		if (realm.IsSystem && dto.IsActive == false)
+		// Cannot deactivate the last tenant that can manage tenants
+		if (realm.CanManageTenants && dto.IsActive == false)
 		{
-			return Error.Validation("Realm.CannotDeactivateSystem",
-				"The system realm cannot be deactivated.");
+			var otherManagers = await session.Query<Realm>()
+				.CountAsync(r => r.CanManageTenants && r.IsActive && r.Slug != slug, ct);
+			if (otherManagers == 0)
+			{
+				return Error.Validation("Realm.CannotDeactivateLastManager",
+					"Cannot deactivate the last tenant that can manage tenants.");
+			}
+		}
+
+		// Cannot remove CanManageTenants from the last managing tenant
+		if (realm.CanManageTenants && dto.CanManageTenants == false)
+		{
+			var otherManagers = await session.Query<Realm>()
+				.CountAsync(r => r.CanManageTenants && r.IsActive && r.Slug != slug, ct);
+			if (otherManagers == 0)
+			{
+				return Error.Validation("Realm.CannotRemoveLastManager",
+					"Cannot remove tenant management capability from the last managing tenant.");
+			}
 		}
 
 		// Apply updates
 		if (dto.DisplayName is not null) realm.DisplayName = dto.DisplayName;
 		if (dto.Description is not null) realm.Description = dto.Description;
+		if (dto.Domains is not null) realm.Domains = dto.Domains;
+		if (dto.CanManageTenants.HasValue) realm.CanManageTenants = dto.CanManageTenants.Value;
 		if (dto.IsActive.HasValue) realm.IsActive = dto.IsActive.Value;
 		realm.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -215,10 +239,16 @@ public class RealmProvisioningService : IRealmProvisioningService
 			return Error.NotFound("Realm.NotFound", $"Realm '{slug}' not found.");
 		}
 
-		if (realm.IsSystem)
+		// Cannot delete the last tenant that can manage tenants
+		if (realm.CanManageTenants)
 		{
-			return Error.Validation("Realm.CannotDeleteSystem",
-				"The system realm cannot be deleted.");
+			var otherManagers = await session.Query<Realm>()
+				.CountAsync(r => r.CanManageTenants && r.IsActive && r.Slug != slug, ct);
+			if (otherManagers == 0)
+			{
+				return Error.Validation("Realm.CannotDeleteLastManager",
+					"Cannot delete the last tenant that can manage tenants.");
+			}
 		}
 
 		// Soft-delete: deactivate
@@ -253,7 +283,6 @@ public class RealmProvisioningService : IRealmProvisioningService
 		}
 		catch
 		{
-			// If we can't query the tenant DB, it likely needs setup
 			return true;
 		}
 	}
@@ -274,8 +303,9 @@ public class RealmProvisioningService : IRealmProvisioningService
 			Slug = "system",
 			DisplayName = "System",
 			Description = "System realm for global administration",
+			Domains = ["system.localhost"],
+			CanManageTenants = true,
 			IsActive = true,
-			IsSystem = true,
 			CreatedAt = DateTimeOffset.UtcNow
 		};
 

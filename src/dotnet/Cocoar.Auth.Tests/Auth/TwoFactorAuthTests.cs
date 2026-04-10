@@ -41,7 +41,7 @@ public class TwoFactorAuthTests : IAsyncLifetime
     public async Task GetTwoFactorStatus_WithoutAuthentication_ReturnsUnauthorized()
     {
         // Act
-        var response = await _client.GetAsync("/system/api/auth/2fa/status");
+        var response = await _client.GetAsync("/api/auth/2fa/status");
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -56,7 +56,7 @@ public class TwoFactorAuthTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.GetAsync("/system/api/auth/2fa/status");
+        var response = await _client.GetAsync("/api/auth/2fa/status");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -80,7 +80,7 @@ public class TwoFactorAuthTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.PostAsync("/system/api/auth/2fa/setup", null);
+        var response = await _client.PostAsync("/api/auth/2fa/setup", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -103,7 +103,7 @@ public class TwoFactorAuthTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Setup 2FA and get the key
-        var setupResponse = await _client.PostAsync("/system/api/auth/2fa/setup", null);
+        var setupResponse = await _client.PostAsync("/api/auth/2fa/setup", null);
         var setupResult = await setupResponse.ReadFromJsonAsync<TwoFactorSetupDto>(_factory.JsonOptions);
 
         // Generate a valid TOTP code
@@ -113,7 +113,7 @@ public class TwoFactorAuthTests : IAsyncLifetime
 
         // Act
         var enableDto = new { Code = code };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/2fa/enable", enableDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/2fa/enable", enableDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -122,7 +122,7 @@ public class TwoFactorAuthTests : IAsyncLifetime
         Assert.Equal(10, result.Codes.Count); // Default recovery code count
 
         // Verify 2FA is now enabled
-        var statusResponse = await _client.GetAsync("/system/api/auth/2fa/status");
+        var statusResponse = await _client.GetAsync("/api/auth/2fa/status");
         var status = await statusResponse.ReadFromJsonAsync<TwoFactorStatusDto>(_factory.JsonOptions);
         Assert.True(status?.IsEnabled);
     }
@@ -136,11 +136,11 @@ public class TwoFactorAuthTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Setup 2FA
-        await _client.PostAsync("/system/api/auth/2fa/setup", null);
+        await _client.PostAsync("/api/auth/2fa/setup", null);
 
         // Act - try to enable with invalid code
         var enableDto = new { Code = "000000" };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/2fa/enable", enableDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/2fa/enable", enableDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -159,20 +159,20 @@ public class TwoFactorAuthTests : IAsyncLifetime
         // Complete 2FA login
         var key = await GetAuthenticatorKeyAsync(user);
         var totp = new Totp(Base32Encoding.ToBytes(key!));
-        await _client.PostAsJsonAsync("/system/api/auth/2fa/login", new { Code = totp.ComputeTotp(), RememberMachine = false }, _factory.JsonOptions);
+        await _client.PostAsJsonAsync("/api/auth/2fa/login", new { Code = totp.ComputeTotp(), RememberMachine = false }, _factory.JsonOptions);
 
         // Generate a new code for disabling (previous code may have expired)
         var disableCode = totp.ComputeTotp();
 
         // Act
         var disableDto = new { Code = disableCode };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/2fa/disable", disableDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/2fa/disable", disableDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         // Verify 2FA is now disabled
-        var statusResponse = await _client.GetAsync("/system/api/auth/2fa/status");
+        var statusResponse = await _client.GetAsync("/api/auth/2fa/status");
         var status = await statusResponse.ReadFromJsonAsync<TwoFactorStatusDto>(_factory.JsonOptions);
         Assert.False(status?.IsEnabled);
     }
@@ -189,7 +189,7 @@ public class TwoFactorAuthTests : IAsyncLifetime
         var user = await Enable2FAForUserAsync("login2fauser", password);
 
         // Logout to clear session
-        await _client.PostAsync("/system/api/auth/logout", null);
+        await _client.PostAsync("/api/auth/logout", null);
 
         // Act - Try to login
         var loginResponse = await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
@@ -210,7 +210,7 @@ public class TwoFactorAuthTests : IAsyncLifetime
         var user = await Enable2FAForUserAsync("2faloginvalid", password);
 
         // Logout and login to trigger 2FA
-        await _client.PostAsync("/system/api/auth/logout", null);
+        await _client.PostAsync("/api/auth/logout", null);
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Get the authenticator key and generate code
@@ -220,7 +220,7 @@ public class TwoFactorAuthTests : IAsyncLifetime
 
         // Act
         var twoFactorDto = new { Code = code, RememberMachine = false };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/2fa/login", twoFactorDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/2fa/login", twoFactorDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -229,7 +229,7 @@ public class TwoFactorAuthTests : IAsyncLifetime
         Assert.True(result.Succeeded);
 
         // Verify we're now authenticated
-        var meResponse = await _client.GetAsync("/system/api/auth/me");
+        var meResponse = await _client.GetAsync("/api/auth/me");
         Assert.Equal(HttpStatusCode.OK, meResponse.StatusCode);
     }
 
@@ -241,12 +241,12 @@ public class TwoFactorAuthTests : IAsyncLifetime
         var user = await Enable2FAForUserAsync("2faloginbad", password);
 
         // Logout and login to trigger 2FA
-        await _client.PostAsync("/system/api/auth/logout", null);
+        await _client.PostAsync("/api/auth/logout", null);
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Act
         var twoFactorDto = new { Code = "000000", RememberMachine = false };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/2fa/login", twoFactorDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/2fa/login", twoFactorDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -271,10 +271,10 @@ public class TwoFactorAuthTests : IAsyncLifetime
         // Complete 2FA login
         var key = await GetAuthenticatorKeyAsync(user);
         var totp = new Totp(Base32Encoding.ToBytes(key!));
-        await _client.PostAsJsonAsync("/system/api/auth/2fa/login", new { Code = totp.ComputeTotp(), RememberMachine = false }, _factory.JsonOptions);
+        await _client.PostAsJsonAsync("/api/auth/2fa/login", new { Code = totp.ComputeTotp(), RememberMachine = false }, _factory.JsonOptions);
 
         // Act
-        var response = await _client.PostAsync("/system/api/auth/2fa/recovery-codes", null);
+        var response = await _client.PostAsync("/api/auth/2fa/recovery-codes", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -292,12 +292,12 @@ public class TwoFactorAuthTests : IAsyncLifetime
         var recoveryCodes = await GetRecoveryCodesAsync(user);
 
         // Logout and login to trigger 2FA
-        await _client.PostAsync("/system/api/auth/logout", null);
+        await _client.PostAsync("/api/auth/logout", null);
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Act
         var recoveryDto = new { Code = recoveryCodes.First() };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/2fa/recovery-login", recoveryDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/2fa/recovery-login", recoveryDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -316,16 +316,16 @@ public class TwoFactorAuthTests : IAsyncLifetime
         var codeToUse = recoveryCodes.First();
 
         // Use the code once
-        await _client.PostAsync("/system/api/auth/logout", null);
+        await _client.PostAsync("/api/auth/logout", null);
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
-        await _client.PostAsJsonAsync("/system/api/auth/2fa/recovery-login", new { Code = codeToUse }, _factory.JsonOptions);
+        await _client.PostAsJsonAsync("/api/auth/2fa/recovery-login", new { Code = codeToUse }, _factory.JsonOptions);
 
         // Logout and try again
-        await _client.PostAsync("/system/api/auth/logout", null);
+        await _client.PostAsync("/api/auth/logout", null);
         await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
         // Act - Try to use the same code again
-        var response = await _client.PostAsJsonAsync("/system/api/auth/2fa/recovery-login", new { Code = codeToUse }, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/2fa/recovery-login", new { Code = codeToUse }, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

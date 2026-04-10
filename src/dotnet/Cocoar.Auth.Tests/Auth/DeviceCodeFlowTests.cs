@@ -76,7 +76,7 @@ public class DeviceCodeFlowTests : IAsyncLifetime
 		await _client.LoginAsync("admin", "Admin123!@#", _factory.JsonOptions);
 		await _factory.SeedOpenIddictScopesAsync();
 
-		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", new CreateOAuthClientDto
+		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", new CreateOAuthClientDto
 		{
 			ClientId = "device-client",
 			DisplayName = "Device Test Client",
@@ -90,7 +90,7 @@ public class DeviceCodeFlowTests : IAsyncLifetime
 		var result = await response.ReadFromJsonAsync<OAuthClientCreatedDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
 
-		await _client.PostAsync("/system/api/auth/logout", null);
+		await _client.PostAsync("/api/auth/logout", null);
 		return result;
 	}
 
@@ -101,7 +101,7 @@ public class DeviceCodeFlowTests : IAsyncLifetime
 		await CreateDeviceCodeClientAsync();
 
 		// Act - request device code
-		var response = await _client.PostAsync("/system/connect/device", new FormUrlEncodedContent(new Dictionary<string, string>
+		var response = await _client.PostAsync("/connect/device", new FormUrlEncodedContent(new Dictionary<string, string>
 		{
 			["client_id"] = "device-client",
 			["scope"] = "openid profile"
@@ -130,7 +130,7 @@ public class DeviceCodeFlowTests : IAsyncLifetime
 		await CreateDeviceCodeClientAsync();
 
 		// Get device code
-		var deviceResponse = await _client.PostAsync("/system/connect/device", new FormUrlEncodedContent(new Dictionary<string, string>
+		var deviceResponse = await _client.PostAsync("/connect/device", new FormUrlEncodedContent(new Dictionary<string, string>
 		{
 			["client_id"] = "device-client",
 			["scope"] = "openid profile"
@@ -138,7 +138,7 @@ public class DeviceCodeFlowTests : IAsyncLifetime
 		var deviceResult = await deviceResponse.Content.ReadFromJsonAsync<DeviceAuthorizationResponse>();
 
 		// Act - poll for token before user verification
-		var tokenResponse = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
+		var tokenResponse = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
 		{
 			["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code",
 			["device_code"] = deviceResult!.DeviceCode!,
@@ -158,7 +158,7 @@ public class DeviceCodeFlowTests : IAsyncLifetime
 		await CreateDeviceCodeClientAsync();
 
 		// Step 1: Device requests authorization
-		var deviceResponse = await _client.PostAsync("/system/connect/device", new FormUrlEncodedContent(new Dictionary<string, string>
+		var deviceResponse = await _client.PostAsync("/connect/device", new FormUrlEncodedContent(new Dictionary<string, string>
 		{
 			["client_id"] = "device-client",
 			["scope"] = "openid profile"
@@ -172,7 +172,7 @@ public class DeviceCodeFlowTests : IAsyncLifetime
 		await _client.LoginAsync("deviceuser", "Test123!@#", _factory.JsonOptions);
 
 		// Step 3: User verifies the device code
-		var verifyResponse = await _client.PostAsync("/system/connect/verify",
+		var verifyResponse = await _client.PostAsync("/connect/verify",
 			new FormUrlEncodedContent(new Dictionary<string, string>
 			{
 				["user_code"] = deviceResult.UserCode!
@@ -185,7 +185,7 @@ public class DeviceCodeFlowTests : IAsyncLifetime
 
 		// Step 4: Device polls for token (should now succeed)
 		using var pollingClient = _factory.CreateClientWithCookies();
-		var tokenResponse = await pollingClient.PostAsync("/system/connect/token",
+		var tokenResponse = await pollingClient.PostAsync("/connect/token",
 			new FormUrlEncodedContent(new Dictionary<string, string>
 			{
 				["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code",

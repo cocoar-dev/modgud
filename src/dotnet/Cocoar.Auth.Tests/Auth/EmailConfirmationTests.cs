@@ -43,7 +43,7 @@ public class EmailConfirmationTests : IAsyncLifetime
             Password = "Confirm123!@#"
         };
 
-        var registerResponse = await _client.PostAsJsonAsync("/system/api/auth/register", registerDto, _factory.JsonOptions);
+        var registerResponse = await _client.PostAsJsonAsync("/api/auth/register", registerDto, _factory.JsonOptions);
         Assert.Equal(HttpStatusCode.OK, registerResponse.StatusCode);
 
         var registerResult = await registerResponse.Content.ReadFromJsonAsync<RegisterResultDto>(_factory.JsonOptions);
@@ -81,11 +81,11 @@ public class EmailConfirmationTests : IAsyncLifetime
             Password = "Invalid123!@#"
         };
 
-        var registerResponse = await _client.PostAsJsonAsync("/system/api/auth/register", registerDto, _factory.JsonOptions);
+        var registerResponse = await _client.PostAsJsonAsync("/api/auth/register", registerDto, _factory.JsonOptions);
         var registerResult = await registerResponse.Content.ReadFromJsonAsync<RegisterResultDto>(_factory.JsonOptions);
 
         // Act - Try to confirm with invalid token
-        var confirmResponse = await _client.GetAsync($"/system/api/auth/confirm-email?userId={registerResult!.UserId}&token=invalidtoken");
+        var confirmResponse = await _client.GetAsync($"/api/auth/confirm-email?userId={registerResult!.UserId}&token=invalidtoken");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, confirmResponse.StatusCode);
@@ -95,7 +95,7 @@ public class EmailConfirmationTests : IAsyncLifetime
     public async Task ConfirmEmail_WithInvalidUserId_ReturnsNotFound()
     {
         // Act
-        var response = await _client.GetAsync($"/system/api/auth/confirm-email?userId={Guid.NewGuid()}&token=sometoken");
+        var response = await _client.GetAsync($"/api/auth/confirm-email?userId={Guid.NewGuid()}&token=sometoken");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -112,7 +112,7 @@ public class EmailConfirmationTests : IAsyncLifetime
             Password = "Already123!@#"
         };
 
-        await _client.PostAsJsonAsync("/system/api/auth/register", registerDto, _factory.JsonOptions);
+        await _client.PostAsJsonAsync("/api/auth/register", registerDto, _factory.JsonOptions);
 
         var emailSender = _factory.GetMockEmailSender();
         var sentEmail = emailSender.SentEmails.First(e => e.To == "alreadyconfirmed@test.com");
@@ -141,14 +141,14 @@ public class EmailConfirmationTests : IAsyncLifetime
             Password = "Resend123!@#"
         };
 
-        await _client.PostAsJsonAsync("/system/api/auth/register", registerDto, _factory.JsonOptions);
+        await _client.PostAsJsonAsync("/api/auth/register", registerDto, _factory.JsonOptions);
 
         var emailSender = _factory.GetMockEmailSender();
         var initialCount = emailSender.SentEmails.Count;
 
         // Act
         var resendDto = new ResendConfirmationDto { Email = "resendtest@test.com" };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/resend-confirmation", resendDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/resend-confirmation", resendDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -160,7 +160,7 @@ public class EmailConfirmationTests : IAsyncLifetime
     {
         // Act - Resend for non-existent user (should not reveal user doesn't exist)
         var resendDto = new ResendConfirmationDto { Email = "nonexistent@test.com" };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/resend-confirmation", resendDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/resend-confirmation", resendDto, _factory.JsonOptions);
 
         // Assert - Should return OK to not reveal user existence
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

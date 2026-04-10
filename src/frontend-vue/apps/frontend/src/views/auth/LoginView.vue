@@ -4,7 +4,6 @@ import { useRouter, useRoute } from 'vue-router';
 import { CoarCard, CoarButton, CoarTextInput, CoarPasswordInput, CoarCheckbox, CoarNote } from '@cocoar/vue-ui';
 import { useAuthStore } from '@/stores/auth.store';
 import { authApi } from '@/core/api/auth-api';
-import { realmContext } from '@/composables/useRealmContext';
 import type { ExternalProvider } from '@/core/models/auth.models';
 
 const router = useRouter();
@@ -76,7 +75,7 @@ async function onSubmit() {
 
 function externalLogin(providerName: string) {
   const returnUrl = (route.query.returnUrl as string) || '/';
-  const url = `${realmContext.apiUrl}/auth/external-login?provider=${encodeURIComponent(providerName)}&returnUrl=${encodeURIComponent(returnUrl)}`;
+  const url = `/api/auth/external-login?provider=${encodeURIComponent(providerName)}&returnUrl=${encodeURIComponent(returnUrl)}`;
   window.location.href = url;
 }
 </script>

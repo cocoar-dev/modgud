@@ -52,7 +52,7 @@ public class AdminUserLifecycleTests : IAsyncLifetime
 
         // Act
         var response = await _client.PostAsJsonAsync(
-            $"/system/api/admin/users/{shortGuid}/soft-delete",
+            $"/api/admin/users/{shortGuid}/soft-delete",
             new AdminSoftDeleteDto { Reason = "Test soft delete" },
             _factory.JsonOptions);
 
@@ -73,7 +73,7 @@ public class AdminUserLifecycleTests : IAsyncLifetime
 
         // Act
         var response = await _client.PostAsJsonAsync(
-            $"/system/api/admin/users/{shortGuid}/soft-delete",
+            $"/api/admin/users/{shortGuid}/soft-delete",
             new AdminSoftDeleteDto { Reason = "Unauthorized attempt" },
             _factory.JsonOptions);
 
@@ -90,7 +90,7 @@ public class AdminUserLifecycleTests : IAsyncLifetime
 
         // Act
         var response = await _client.PostAsJsonAsync(
-            $"/system/api/admin/users/{nonExistentId}/soft-delete",
+            $"/api/admin/users/{nonExistentId}/soft-delete",
             new AdminSoftDeleteDto { Reason = "No such user" },
             _factory.JsonOptions);
 
@@ -112,13 +112,13 @@ public class AdminUserLifecycleTests : IAsyncLifetime
 
         // Soft delete first
         await _client.PostAsJsonAsync(
-            $"/system/api/admin/users/{shortGuid}/soft-delete",
+            $"/api/admin/users/{shortGuid}/soft-delete",
             new AdminSoftDeleteDto { Reason = "Will restore" },
             _factory.JsonOptions);
 
         // Act
         var response = await _client.PostAsJsonAsync(
-            $"/system/api/admin/users/{shortGuid}/restore",
+            $"/api/admin/users/{shortGuid}/restore",
             new AdminRestoreDto { Reason = "Restoring user" },
             _factory.JsonOptions);
 
@@ -136,7 +136,7 @@ public class AdminUserLifecycleTests : IAsyncLifetime
 
         // Act - try to restore a user that is not soft-deleted
         var response = await _client.PostAsJsonAsync(
-            $"/system/api/admin/users/{shortGuid}/restore",
+            $"/api/admin/users/{shortGuid}/restore",
             new AdminRestoreDto { Reason = "Not deleted" },
             _factory.JsonOptions);
 
@@ -157,7 +157,7 @@ public class AdminUserLifecycleTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Delete, $"/system/api/admin/users/{shortGuid}/permanent");
+        var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/admin/users/{shortGuid}/permanent");
         request.Content = JsonContent.Create(new AdminPermanentEraseDto { Reason = "GDPR request" }, options: _factory.JsonOptions);
         var response = await _client.SendAsync(request);
 
@@ -174,13 +174,13 @@ public class AdminUserLifecycleTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Erase once
-        var firstRequest = new HttpRequestMessage(HttpMethod.Delete, $"/system/api/admin/users/{shortGuid}/permanent");
+        var firstRequest = new HttpRequestMessage(HttpMethod.Delete, $"/api/admin/users/{shortGuid}/permanent");
         firstRequest.Content = JsonContent.Create(new AdminPermanentEraseDto { Reason = "First GDPR erase" }, options: _factory.JsonOptions);
         var firstResponse = await _client.SendAsync(firstRequest);
         Assert.Equal(HttpStatusCode.NoContent, firstResponse.StatusCode);
 
         // Act - try to erase again
-        var secondRequest = new HttpRequestMessage(HttpMethod.Delete, $"/system/api/admin/users/{shortGuid}/permanent");
+        var secondRequest = new HttpRequestMessage(HttpMethod.Delete, $"/api/admin/users/{shortGuid}/permanent");
         secondRequest.Content = JsonContent.Create(new AdminPermanentEraseDto { Reason = "Second attempt" }, options: _factory.JsonOptions);
         var secondResponse = await _client.SendAsync(secondRequest);
 
@@ -202,12 +202,12 @@ public class AdminUserLifecycleTests : IAsyncLifetime
 
         // Soft delete
         await _client.PostAsJsonAsync(
-            $"/system/api/admin/users/{shortGuid}/soft-delete",
+            $"/api/admin/users/{shortGuid}/soft-delete",
             new AdminSoftDeleteDto { Reason = "Check status" },
             _factory.JsonOptions);
 
         // Act - check deletion status via the admin deletion-status endpoint
-        var statusResponse = await _client.GetAsync($"/system/api/admin/users/{shortGuid}/deletion-status");
+        var statusResponse = await _client.GetAsync($"/api/admin/users/{shortGuid}/deletion-status");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, statusResponse.StatusCode);
@@ -226,17 +226,17 @@ public class AdminUserLifecycleTests : IAsyncLifetime
 
         // Soft delete then restore
         await _client.PostAsJsonAsync(
-            $"/system/api/admin/users/{shortGuid}/soft-delete",
+            $"/api/admin/users/{shortGuid}/soft-delete",
             new AdminSoftDeleteDto { Reason = "Will restore" },
             _factory.JsonOptions);
 
         await _client.PostAsJsonAsync(
-            $"/system/api/admin/users/{shortGuid}/restore",
+            $"/api/admin/users/{shortGuid}/restore",
             new AdminRestoreDto { Reason = "Restoring" },
             _factory.JsonOptions);
 
         // Act - check deletion status
-        var statusResponse = await _client.GetAsync($"/system/api/admin/users/{shortGuid}/deletion-status");
+        var statusResponse = await _client.GetAsync($"/api/admin/users/{shortGuid}/deletion-status");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, statusResponse.StatusCode);

@@ -52,7 +52,7 @@ public class RoleListProjectionTests : IAsyncLifetime
         await _factory.CreateTestRoleAsync("ListTestRole", "A test role");
 
         // Act
-        var response = await _client.GetAsync("/system/api/admin/roles");
+        var response = await _client.GetAsync("/api/admin/roles");
 
         // Assert
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
@@ -70,10 +70,10 @@ public class RoleListProjectionTests : IAsyncLifetime
         var shortGuid = new ShortGuid(role.Id);
 
         // Delete the role
-        await _client.DeleteAsync($"/system/api/admin/roles/{shortGuid}");
+        await _client.DeleteAsync($"/api/admin/roles/{shortGuid}");
 
         // Act
-        var response = await _client.GetAsync("/system/api/admin/roles");
+        var response = await _client.GetAsync("/api/admin/roles");
         var result = await response.ReadFromJsonAsync<RoleListDto>(_factory.JsonOptions);
 
         // Assert

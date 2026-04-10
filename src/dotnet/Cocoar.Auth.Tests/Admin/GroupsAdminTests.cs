@@ -43,7 +43,7 @@ public class GroupsAdminTests : IAsyncLifetime
 	[Fact]
 	public async Task GetGroups_WithoutAuthentication_ReturnsUnauthorized()
 	{
-		var response = await _client.GetAsync("/system/api/admin/groups");
+		var response = await _client.GetAsync("/api/admin/groups");
 		Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
 	}
 
@@ -56,7 +56,7 @@ public class GroupsAdminTests : IAsyncLifetime
 		await _factory.CreateTestGroupAsync("Group1");
 		await _factory.CreateTestGroupAsync("Group2");
 
-		var response = await _client.GetAsync("/system/api/admin/groups");
+		var response = await _client.GetAsync("/api/admin/groups");
 
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 		var result = await response.ReadFromJsonAsync<GroupListDto>(_factory.JsonOptions);
@@ -71,7 +71,7 @@ public class GroupsAdminTests : IAsyncLifetime
 		var groupId = await _factory.CreateTestGroupAsync("DetailGroup", "Test description");
 		var shortGuid = new ShortGuid(groupId);
 
-		var response = await _client.GetAsync($"/system/api/admin/groups/{shortGuid}");
+		var response = await _client.GetAsync($"/api/admin/groups/{shortGuid}");
 
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 		var result = await response.ReadFromJsonAsync<GroupDetailDto>(_factory.JsonOptions);
@@ -90,7 +90,7 @@ public class GroupsAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 		var nonExistentId = new ShortGuid(Guid.NewGuid());
 
-		var response = await _client.GetAsync($"/system/api/admin/groups/{nonExistentId}");
+		var response = await _client.GetAsync($"/api/admin/groups/{nonExistentId}");
 
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
 	}
@@ -101,7 +101,7 @@ public class GroupsAdminTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 		var dto = new CreateGroupDto { Name = "NewGroup", Description = "A new group" };
 
-		var response = await _client.PostAsJsonAsync("/system/api/admin/groups", dto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/api/admin/groups", dto, _factory.JsonOptions);
 
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 		var result = await response.ReadFromJsonAsync<GroupDetailDto>(_factory.JsonOptions);
@@ -119,7 +119,7 @@ public class GroupsAdminTests : IAsyncLifetime
 
 		var updateDto = new { Name = "UpdatedGroup", Description = "New description" };
 
-		var response = await _client.PatchAsJsonAsync($"/system/api/admin/groups/{shortGuid}", updateDto, _factory.JsonOptions);
+		var response = await _client.PatchAsJsonAsync($"/api/admin/groups/{shortGuid}", updateDto, _factory.JsonOptions);
 
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 		var result = await response.ReadFromJsonAsync<GroupDetailDto>(_factory.JsonOptions);
@@ -135,12 +135,12 @@ public class GroupsAdminTests : IAsyncLifetime
 		var groupId = await _factory.CreateTestGroupAsync("ArchiveMe");
 		var shortGuid = new ShortGuid(groupId);
 
-		var response = await _client.DeleteAsync($"/system/api/admin/groups/{shortGuid}");
+		var response = await _client.DeleteAsync($"/api/admin/groups/{shortGuid}");
 
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
 		// Verify archived group is not found via GetById
-		var getResponse = await _client.GetAsync($"/system/api/admin/groups/{shortGuid}");
+		var getResponse = await _client.GetAsync($"/api/admin/groups/{shortGuid}");
 		Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
 	}
 
@@ -155,14 +155,14 @@ public class GroupsAdminTests : IAsyncLifetime
 		var shortGuid = new ShortGuid(groupId);
 
 		var response = await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{shortGuid}/members",
+			$"/api/admin/groups/{shortGuid}/members",
 			new { userId = new ShortGuid(user.Id).ToString() },
 			_factory.JsonOptions);
 
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
 		// Verify member is in the group detail
-		var getResponse = await _client.GetAsync($"/system/api/admin/groups/{shortGuid}");
+		var getResponse = await _client.GetAsync($"/api/admin/groups/{shortGuid}");
 		var group = await getResponse.ReadFromJsonAsync<GroupDetailDto>(_factory.JsonOptions);
 		Assert.Contains(group!.MemberIds, id => id == new ShortGuid(user.Id));
 	}
@@ -177,10 +177,10 @@ public class GroupsAdminTests : IAsyncLifetime
 		var body = new { userId = new ShortGuid(user.Id).ToString() };
 
 		// Add once
-		await _client.PostAsJsonAsync($"/system/api/admin/groups/{shortGuid}/members", body, _factory.JsonOptions);
+		await _client.PostAsJsonAsync($"/api/admin/groups/{shortGuid}/members", body, _factory.JsonOptions);
 
 		// Add again
-		var response = await _client.PostAsJsonAsync($"/system/api/admin/groups/{shortGuid}/members", body, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync($"/api/admin/groups/{shortGuid}/members", body, _factory.JsonOptions);
 
 		Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 	}
@@ -195,13 +195,13 @@ public class GroupsAdminTests : IAsyncLifetime
 
 		// Add first
 		await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{shortGuid}/members",
+			$"/api/admin/groups/{shortGuid}/members",
 			new { userId = new ShortGuid(user.Id).ToString() },
 			_factory.JsonOptions);
 
 		// Remove
 		var response = await _client.DeleteAsync(
-			$"/system/api/admin/groups/{shortGuid}/members/{new ShortGuid(user.Id)}");
+			$"/api/admin/groups/{shortGuid}/members/{new ShortGuid(user.Id)}");
 
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 	}
@@ -216,14 +216,14 @@ public class GroupsAdminTests : IAsyncLifetime
 		var childId = await _factory.CreateTestGroupAsync("ChildGroup");
 
 		var response = await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{new ShortGuid(parentId)}/children",
+			$"/api/admin/groups/{new ShortGuid(parentId)}/children",
 			new { childGroupId = new ShortGuid(childId).ToString() },
 			_factory.JsonOptions);
 
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
 		// Verify child is in the group detail
-		var getResponse = await _client.GetAsync($"/system/api/admin/groups/{new ShortGuid(parentId)}");
+		var getResponse = await _client.GetAsync($"/api/admin/groups/{new ShortGuid(parentId)}");
 		var group = await getResponse.ReadFromJsonAsync<GroupDetailDto>(_factory.JsonOptions);
 		Assert.Contains(group!.ChildGroupIds, id => id == new ShortGuid(childId));
 	}
@@ -236,7 +236,7 @@ public class GroupsAdminTests : IAsyncLifetime
 		var shortGuid = new ShortGuid(groupId);
 
 		var response = await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{shortGuid}/children",
+			$"/api/admin/groups/{shortGuid}/children",
 			new { childGroupId = shortGuid.ToString() },
 			_factory.JsonOptions);
 
@@ -252,13 +252,13 @@ public class GroupsAdminTests : IAsyncLifetime
 
 		// A -> B
 		await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{new ShortGuid(groupA)}/children",
+			$"/api/admin/groups/{new ShortGuid(groupA)}/children",
 			new { childGroupId = new ShortGuid(groupB).ToString() },
 			_factory.JsonOptions);
 
 		// B -> A (should be rejected)
 		var response = await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{new ShortGuid(groupB)}/children",
+			$"/api/admin/groups/{new ShortGuid(groupB)}/children",
 			new { childGroupId = new ShortGuid(groupA).ToString() },
 			_factory.JsonOptions);
 
@@ -274,13 +274,13 @@ public class GroupsAdminTests : IAsyncLifetime
 
 		// Add
 		await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{new ShortGuid(parentId)}/children",
+			$"/api/admin/groups/{new ShortGuid(parentId)}/children",
 			new { childGroupId = new ShortGuid(childId).ToString() },
 			_factory.JsonOptions);
 
 		// Remove
 		var response = await _client.DeleteAsync(
-			$"/system/api/admin/groups/{new ShortGuid(parentId)}/children/{new ShortGuid(childId)}");
+			$"/api/admin/groups/{new ShortGuid(parentId)}/children/{new ShortGuid(childId)}");
 
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 	}
@@ -295,14 +295,14 @@ public class GroupsAdminTests : IAsyncLifetime
 		var role = await _factory.CreateTestRoleAsync("GrantedRole");
 
 		var response = await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{new ShortGuid(groupId)}/roles",
+			$"/api/admin/groups/{new ShortGuid(groupId)}/roles",
 			new { roleId = new ShortGuid(role.Id).ToString() },
 			_factory.JsonOptions);
 
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
 		// Verify grant is in group detail
-		var getResponse = await _client.GetAsync($"/system/api/admin/groups/{new ShortGuid(groupId)}");
+		var getResponse = await _client.GetAsync($"/api/admin/groups/{new ShortGuid(groupId)}");
 		var group = await getResponse.ReadFromJsonAsync<GroupDetailDto>(_factory.JsonOptions);
 		Assert.Single(group!.RealmRoleGrants);
 	}
@@ -316,13 +316,13 @@ public class GroupsAdminTests : IAsyncLifetime
 
 		// Grant first
 		await _client.PostAsJsonAsync(
-			$"/system/api/admin/groups/{new ShortGuid(groupId)}/roles",
+			$"/api/admin/groups/{new ShortGuid(groupId)}/roles",
 			new { roleId = new ShortGuid(role.Id).ToString() },
 			_factory.JsonOptions);
 
 		// Revoke
 		var response = await _client.DeleteAsync(
-			$"/system/api/admin/groups/{new ShortGuid(groupId)}/roles/{new ShortGuid(role.Id)}");
+			$"/api/admin/groups/{new ShortGuid(groupId)}/roles/{new ShortGuid(role.Id)}");
 
 		Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 	}

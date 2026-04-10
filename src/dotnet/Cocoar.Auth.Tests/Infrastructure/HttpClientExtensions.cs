@@ -6,6 +6,9 @@ namespace Cocoar.Auth.Tests.Infrastructure;
 
 public static class HttpClientExtensions
 {
+    /// <summary>
+    /// Login via the current client's Host header (default: system.localhost).
+    /// </summary>
     public static async Task<HttpResponseMessage> LoginAsync(
         this HttpClient client,
         string userName,
@@ -19,9 +22,12 @@ public static class HttpClientExtensions
             RememberMe = false
         };
 
-        return await client.PostAsJsonAsync("/system/api/auth/login", loginDto, jsonOptions);
+        return await client.PostAsJsonAsync("/api/auth/login", loginDto, jsonOptions);
     }
 
+    /// <summary>
+    /// Login in a specific realm by temporarily setting the Host header.
+    /// </summary>
     public static async Task<HttpResponseMessage> LoginInRealmAsync(
         this HttpClient client,
         string realmSlug,
@@ -36,7 +42,22 @@ public static class HttpClientExtensions
             RememberMe = false
         };
 
-        return await client.PostAsJsonAsync($"/{realmSlug}/api/auth/login", loginDto, jsonOptions);
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
+        {
+            Content = JsonContent.Create(loginDto, options: jsonOptions)
+        };
+        request.Headers.Host = $"{realmSlug}.localhost";
+
+        return await client.SendAsync(request);
+    }
+
+    /// <summary>
+    /// Sets the default Host header for all subsequent requests from this client.
+    /// </summary>
+    public static HttpClient WithHost(this HttpClient client, string hostname)
+    {
+        client.DefaultRequestHeaders.Host = hostname;
+        return client;
     }
 
     public static async Task<T?> ReadFromJsonAsync<T>(

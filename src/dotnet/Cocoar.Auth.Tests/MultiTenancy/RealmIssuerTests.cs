@@ -64,36 +64,36 @@ public class RealmIssuerTests : IAsyncLifetime
 	private async Task CreateRealmAsync(string slug)
 	{
 		var dto = new CreateRealmDto { Slug = slug, DisplayName = slug };
-		var response = await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 	}
 
 	[Fact]
-	public async Task Discovery_SystemRealm_ReturnsBaseIssuer()
+	public async Task Discovery_SystemRealm_ReturnsDomainBasedIssuer()
 	{
-		// System realm discovery document
-		var response = await _client.GetAsync("/system/.well-known/openid-configuration");
+		// System realm discovery document (Host: system.localhost is default)
+		var response = await _client.GetAsync("/.well-known/openid-configuration");
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
 		var config = await response.Content.ReadFromJsonAsync<OpenIdConfiguration>();
 		Assert.NotNull(config);
 		Assert.NotNull(config.Issuer);
 
-		// System realm issuer includes /system PathBase
-		Assert.Equal("http://localhost/system", config.Issuer);
+		// System realm issuer is domain-based (OpenIddict appends trailing slash)
+		Assert.Equal("http://system.localhost/", config.Issuer);
 	}
 
 	[Fact]
-	public async Task Discovery_RealmScoped_ReturnsRealmIssuer()
+	public async Task Discovery_RealmScoped_ReturnsDomainBasedIssuer()
 	{
 		await LoginAsAdminAsync();
 		await CreateRealmAsync("issuer-test");
 
-		// Realm-scoped discovery document
-		// Try both with and without trailing content to debug routing
-		var response = await _client.GetAsync("/issuer-test/.well-known/openid-configuration");
+		// Realm-scoped discovery document via Host header
+		var request = new HttpRequestMessage(HttpMethod.Get, "/.well-known/openid-configuration");
+		request.Headers.Host = "issuer-test.localhost";
+		var response = await _client.SendAsync(request);
 
-		// If 404, the OpenIddict endpoint router doesn't see the rewritten path
 		var body = await response.Content.ReadAsStringAsync();
 		Assert.True(response.StatusCode == HttpStatusCode.OK,
 			$"Discovery returned {(int)response.StatusCode}. Body: '{body}'");
@@ -102,25 +102,29 @@ public class RealmIssuerTests : IAsyncLifetime
 		Assert.NotNull(config);
 		Assert.NotNull(config.Issuer);
 
-		// Realm-scoped issuer should include the realm path
-		Assert.StartsWith("http://localhost/issuer-test", config.Issuer);
+		// Realm-scoped issuer should be domain-based (OpenIddict appends trailing slash)
+		Assert.Equal("http://issuer-test.localhost/", config.Issuer);
 	}
 
 	[Fact]
-	public async Task Discovery_RealmScoped_EndpointsAreRealmScoped()
+	public async Task Discovery_RealmScoped_EndpointsAreDomainScoped()
 	{
 		await LoginAsAdminAsync();
 		await CreateRealmAsync("endpoints-test");
 
-		var response = await _client.GetAsync("/endpoints-test/.well-known/openid-configuration");
+		var request = new HttpRequestMessage(HttpMethod.Get, "/.well-known/openid-configuration");
+		request.Headers.Host = "endpoints-test.localhost";
+		var response = await _client.SendAsync(request);
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
 		var config = await response.Content.ReadFromJsonAsync<OpenIdConfiguration>();
 		Assert.NotNull(config);
 
-		// Token endpoint should be realm-scoped
+		// Token endpoint should be at /connect/token (no realm prefix in path)
 		Assert.NotNull(config.TokenEndpoint);
-		Assert.Contains("/endpoints-test/", config.TokenEndpoint);
+		Assert.Contains("/connect/token", config.TokenEndpoint);
+		// Should NOT contain a path-based realm prefix
+		Assert.DoesNotContain("/endpoints-test/", config.TokenEndpoint);
 	}
 
 	[Fact]
@@ -130,15 +134,7 @@ public class RealmIssuerTests : IAsyncLifetime
 		await _factory.SeedOpenIddictScopesAsync();
 		await CreateRealmAsync("cc-realm");
 
-		// Create an OAuth client in the new realm (via system admin, then register in realm)
-		// We need to seed scopes in the realm first (done by CreateRealmAsync)
-		// Then create a client in the realm by posting to the realm-scoped admin endpoint
-		// But RealmsAdminController is SystemRealmOnly, so we create the client via the system realm
-		// and the realm's own OAuthAdmin endpoint
-
-		// First seed scopes in the realm (already done by CreateRealmAsync provisioning)
-
-		// Create a confidential client in the realm
+		// Create a confidential client in the realm via Host header
 		var createDto = new CreateOAuthClientDto
 		{
 			ClientId = "realm-cc-client",
@@ -151,24 +147,24 @@ public class RealmIssuerTests : IAsyncLifetime
 			Scopes = ["openid"]
 		};
 
-		// Post to the realm-scoped OAuth admin endpoint
-		var createResponse = await _client.PostAsJsonAsync(
-			"/cc-realm/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		// Post to the realm-scoped OAuth admin endpoint via Host header
+		var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/admin/oauth/clients")
+		{
+			Content = JsonContent.Create(createDto, options: _factory.JsonOptions)
+		};
+		createRequest.Headers.Host = "cc-realm.localhost";
+		var createResponse = await _client.SendAsync(createRequest);
 
-		// If admin auth doesn't carry over to realm (cookie path scoping),
-		// we may get 401. In that case, the system realm admin endpoint works.
 		if (createResponse.StatusCode == HttpStatusCode.Unauthorized)
 		{
-			// Admin cookie is for system realm (path "/"), should work for all paths
-			// If not, create via system and this test needs adjustment
 			Assert.Fail($"Admin auth did not carry over to realm. Status: {createResponse.StatusCode}");
 		}
 		Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
 
 		// Logout admin
-		await _client.PostAsync("/system/api/auth/logout", null);
+		await _client.PostAsync("/api/auth/logout", null);
 
-		// Request token via realm-scoped endpoint
+		// Request token via realm-scoped endpoint using Host header
 		var tokenParams = new Dictionary<string, string>
 		{
 			["grant_type"] = "client_credentials",
@@ -177,9 +173,12 @@ public class RealmIssuerTests : IAsyncLifetime
 			["scope"] = "openid"
 		};
 
-		var tokenResponse = await _client.PostAsync(
-			"/cc-realm/connect/token",
-			new FormUrlEncodedContent(tokenParams));
+		var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
+		{
+			Content = new FormUrlEncodedContent(tokenParams)
+		};
+		tokenRequest.Headers.Host = "cc-realm.localhost";
+		var tokenResponse = await _client.SendAsync(tokenRequest);
 
 		Assert.Equal(HttpStatusCode.OK, tokenResponse.StatusCode);
 

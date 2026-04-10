@@ -4,7 +4,6 @@ import { CoarSidebar, CoarMenu, CoarMenuItem, CoarMenuHeading, CoarAvatar, CoarB
 import { useAuthStore } from '@/stores/auth.store';
 import { useDarkMode } from '@/composables/useDarkMode';
 import { useUI } from '@/composables/useUI';
-import { realmContext } from '@/composables/useRealmContext';
 
 const route = useRoute();
 const router = useRouter();
@@ -28,7 +27,7 @@ function onLogout() {
           </div>
           <div class="sidebar-realm">
             <span class="sidebar-realm-label">Realm</span>
-            <span class="sidebar-realm-name">{{ realmContext.slug }}</span>
+            <span class="sidebar-realm-name">{{ auth.currentUser?.realm ?? '—' }}</span>
           </div>
           <div class="sidebar-user">
             <CoarAvatar :name="auth.displayName || auth.currentUser?.userName || '?'" size="s" />
@@ -64,7 +63,7 @@ function onLogout() {
           @clicked="router.push('/privacy')"
         />
 
-        <template v-if="auth.isAdmin && realmContext.isSystem">
+        <template v-if="auth.isAdmin">
           <CoarMenuHeading>System</CoarMenuHeading>
           <CoarMenuItem
             label="Realms"

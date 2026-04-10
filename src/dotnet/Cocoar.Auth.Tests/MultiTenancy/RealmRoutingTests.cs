@@ -38,20 +38,11 @@ public class RealmRoutingTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task SystemRealm_FirstSegment_RoutesToSystemRealm()
+	public async Task SystemRealm_HostHeader_RoutesToSystemRealm()
 	{
-		// System realm is accessed via /system/ as first path segment
-		var response = await _client.GetAsync("/system/api/setup/status");
+		// System realm is accessed via Host: system.localhost (set by default in CreateClientWithCookies)
+		var response = await _client.GetAsync("/api/setup/status");
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-	}
-
-	[Fact]
-	public async Task RootPath_Redirects_ToSystem()
-	{
-		// GET / should return 302 redirect to /system/
-		var response = await _client.GetAsync("/");
-		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-		Assert.Equal("/system/", response.Headers.Location?.OriginalString);
 	}
 
 	[Fact]
@@ -62,9 +53,11 @@ public class RealmRoutingTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task InvalidRealm_Returns404()
+	public async Task UnknownHost_Returns404()
 	{
-		var response = await _client.GetAsync("/nonexistent/api/setup/status");
+		var request = new HttpRequestMessage(HttpMethod.Get, "/api/setup/status");
+		request.Headers.Host = "nonexistent.localhost";
+		var response = await _client.SendAsync(request);
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
 	}
 
@@ -74,11 +67,13 @@ public class RealmRoutingTests : IAsyncLifetime
 		// Create a realm first
 		await LoginAsAdminAsync();
 		var dto = new CreateRealmDto { Slug = "routing-test", DisplayName = "Routing Test" };
-		var createResponse = await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
+		var createResponse = await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
 
-		// Access the realm's setup status via realm-scoped URL
-		var response = await _client.GetAsync("/routing-test/api/setup/status");
+		// Access the realm's setup status via Host header
+		var request = new HttpRequestMessage(HttpMethod.Get, "/api/setup/status");
+		request.Headers.Host = "routing-test.localhost";
+		var response = await _client.SendAsync(request);
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 	}
 
@@ -89,11 +84,13 @@ public class RealmRoutingTests : IAsyncLifetime
 
 		// Create and deactivate
 		var dto = new CreateRealmDto { Slug = "deactivated", DisplayName = "Deactivated" };
-		await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
-		await _client.DeleteAsync("/system/api/admin/realms/deactivated");
+		await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
+		await _client.DeleteAsync("/api/admin/realms/deactivated");
 
 		// Access should fail
-		var response = await _client.GetAsync("/deactivated/api/setup/status");
+		var request = new HttpRequestMessage(HttpMethod.Get, "/api/setup/status");
+		request.Headers.Host = "deactivated.localhost";
+		var response = await _client.SendAsync(request);
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
 	}
 
@@ -104,10 +101,12 @@ public class RealmRoutingTests : IAsyncLifetime
 
 		// Create a realm
 		var dto = new CreateRealmDto { Slug = "non-system", DisplayName = "Non System" };
-		await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
 
-		// Try to access realm admin from non-system realm path
-		var response = await _client.GetAsync("/non-system/api/admin/realms");
+		// Try to access realm admin from non-system realm host
+		var request = new HttpRequestMessage(HttpMethod.Get, "/api/admin/realms");
+		request.Headers.Host = "non-system.localhost";
+		var response = await _client.SendAsync(request);
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
 	}
 
@@ -117,10 +116,12 @@ public class RealmRoutingTests : IAsyncLifetime
 		await LoginAsAdminAsync();
 
 		var dto = new CreateRealmDto { Slug = "needs-setup", DisplayName = "Needs Setup" };
-		await _client.PostAsJsonAsync("/system/api/admin/realms", dto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/api/admin/realms", dto, _factory.JsonOptions);
 
 		// New realm should need setup (no admin user)
-		var response = await _client.GetAsync("/needs-setup/api/setup/status");
+		var request = new HttpRequestMessage(HttpMethod.Get, "/api/setup/status");
+		request.Headers.Host = "needs-setup.localhost";
+		var response = await _client.SendAsync(request);
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
 		var content = await response.Content.ReadAsStringAsync();

@@ -72,7 +72,10 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
             AllowAutoRedirect = false
         };
 
-        return CreateClient(options);
+        var client = CreateClient(options);
+        // Default to system.localhost for domain-based routing
+        client.DefaultRequestHeaders.Host = "system.localhost";
+        return client;
     }
 
     protected override IHost CreateHost(IHostBuilder builder)
@@ -258,19 +261,23 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
     public async Task CreateRealmWithAdminAsync(
         HttpClient adminClient, string slug, string adminUser, string adminPassword)
     {
-        // Create the realm via system admin API
+        // Create the realm via admin API (client should have Host=system.localhost or similar)
         var createDto = new CreateRealmDto { Slug = slug, DisplayName = slug };
-        var createResponse = await adminClient.PostAsJsonAsync("/system/api/admin/realms", createDto, JsonOptions);
+        var createResponse = await adminClient.PostAsJsonAsync("/api/admin/realms", createDto, JsonOptions);
         if (createResponse.StatusCode != HttpStatusCode.Created)
         {
             var body = await createResponse.Content.ReadAsStringAsync();
             throw new Exception($"Failed to create realm '{slug}': {(int)createResponse.StatusCode} {body}");
         }
 
-        // Create admin user via the realm's setup endpoint
+        // Create admin user via the realm's setup endpoint (switch Host to realm domain)
         var setupDto = new { UserName = adminUser, Password = adminPassword, Email = $"{adminUser}@test.com" };
-        var setupResponse = await adminClient.PostAsJsonAsync(
-            $"/{slug}/api/setup/create-admin", setupDto, JsonOptions);
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/setup/create-admin")
+        {
+            Content = JsonContent.Create(setupDto, options: JsonOptions)
+        };
+        request.Headers.Host = $"{slug}.localhost";
+        var setupResponse = await adminClient.SendAsync(request);
         if (!setupResponse.IsSuccessStatusCode)
         {
             var body = await setupResponse.Content.ReadAsStringAsync();

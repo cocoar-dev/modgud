@@ -135,13 +135,13 @@ public class ConsentFlowTests : IAsyncLifetime
 		await _client.LoginAsync("admin", "Admin123!@#", _factory.JsonOptions);
 		await _factory.SeedOpenIddictScopesAsync();
 
-		var response = await _client.PostAsJsonAsync("/system/api/admin/oauth/clients", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/api/admin/oauth/clients", createDto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 		var result = await response.ReadFromJsonAsync<OAuthClientCreatedDto>(_factory.JsonOptions);
 		Assert.NotNull(result);
 
 		// Logout admin
-		await _client.PostAsync("/system/api/auth/logout", null);
+		await _client.PostAsync("/api/auth/logout", null);
 
 		return result;
 	}
@@ -168,7 +168,7 @@ public class ConsentFlowTests : IAsyncLifetime
 			["code_verifier"] = codeVerifier
 		};
 
-		var response = await _client.PostAsync("/system/connect/token", new FormUrlEncodedContent(parameters));
+		var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(parameters));
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
 		var tokenResponse = await response.Content.ReadFromJsonAsync<TokenResponse>();
@@ -203,7 +203,7 @@ public class ConsentFlowTests : IAsyncLifetime
 		var query = BuildAuthorizeQuery("explicit-consent-client", codeChallenge, "openid profile email", "test-state");
 
 		// Act - start authorization flow
-		var response = await _client.GetAsync($"/system/connect/authorize{query}");
+		var response = await _client.GetAsync($"/connect/authorize{query}");
 
 		// Assert - should redirect to consent page
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
@@ -235,7 +235,7 @@ public class ConsentFlowTests : IAsyncLifetime
 		var query = BuildAuthorizeQuery("consent-model-client", codeChallenge, "openid profile email", "test-state");
 
 		// Start auth flow to get redirect to consent
-		var authResponse = await _client.GetAsync($"/system/connect/authorize{query}");
+		var authResponse = await _client.GetAsync($"/connect/authorize{query}");
 		Assert.Equal(HttpStatusCode.Redirect, authResponse.StatusCode);
 		var consentLocation = EnsureAbsoluteUri(authResponse.Headers.Location!);
 
@@ -245,7 +245,7 @@ public class ConsentFlowTests : IAsyncLifetime
 		Assert.NotNull(returnUrl);
 
 		// Act - call the consent API to get the model
-		var consentApiUrl = $"/system/api/consent?returnUrl={Uri.EscapeDataString(returnUrl)}";
+		var consentApiUrl = $"/api/consent?returnUrl={Uri.EscapeDataString(returnUrl)}";
 		var consentResponse = await _client.GetAsync(consentApiUrl);
 
 		// Assert
@@ -290,7 +290,7 @@ public class ConsentFlowTests : IAsyncLifetime
 		var query = BuildAuthorizeQuery("consent-approve-client", codeChallenge, "openid profile", "test-state");
 
 		// Start auth flow to get redirect to consent
-		var authResponse = await _client.GetAsync($"/system/connect/authorize{query}");
+		var authResponse = await _client.GetAsync($"/connect/authorize{query}");
 		Assert.Equal(HttpStatusCode.Redirect, authResponse.StatusCode);
 		var consentLocation = EnsureAbsoluteUri(authResponse.Headers.Location!);
 
@@ -307,7 +307,7 @@ public class ConsentFlowTests : IAsyncLifetime
 			returnUrl = returnUrl
 		};
 
-		var submitResponse = await _client.PostAsJsonAsync("/system/api/consent", consentDecision);
+		var submitResponse = await _client.PostAsJsonAsync("/api/consent", consentDecision);
 		Assert.Equal(HttpStatusCode.OK, submitResponse.StatusCode);
 
 		var consentResult = await submitResponse.Content.ReadFromJsonAsync<ConsentResult>();
@@ -355,7 +355,7 @@ public class ConsentFlowTests : IAsyncLifetime
 		var query = BuildAuthorizeQuery("consent-deny-client", codeChallenge, "openid profile", "test-state");
 
 		// Start auth flow to get redirect to consent
-		var authResponse = await _client.GetAsync($"/system/connect/authorize{query}");
+		var authResponse = await _client.GetAsync($"/connect/authorize{query}");
 		Assert.Equal(HttpStatusCode.Redirect, authResponse.StatusCode);
 		var consentLocation = EnsureAbsoluteUri(authResponse.Headers.Location!);
 
@@ -372,7 +372,7 @@ public class ConsentFlowTests : IAsyncLifetime
 			returnUrl = returnUrl
 		};
 
-		var submitResponse = await _client.PostAsJsonAsync("/system/api/consent", consentDecision);
+		var submitResponse = await _client.PostAsJsonAsync("/api/consent", consentDecision);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, submitResponse.StatusCode);
@@ -406,7 +406,7 @@ public class ConsentFlowTests : IAsyncLifetime
 		var query = BuildAuthorizeQuery("implicit-consent-client", codeChallenge, "openid profile", "test-state");
 
 		// Act - start authorization flow
-		var response = await _client.GetAsync($"/system/connect/authorize{query}");
+		var response = await _client.GetAsync($"/connect/authorize{query}");
 
 		// Assert - should redirect directly to callback with code (skipping consent)
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
@@ -440,7 +440,7 @@ public class ConsentFlowTests : IAsyncLifetime
 		var query1 = BuildAuthorizeQuery("prior-consent-client", codeChallenge1, "openid profile", "test-state-1");
 
 		// First authorization request - should redirect to consent
-		var firstAuthResponse = await _client.GetAsync($"/system/connect/authorize{query1}");
+		var firstAuthResponse = await _client.GetAsync($"/connect/authorize{query1}");
 		Assert.Equal(HttpStatusCode.Redirect, firstAuthResponse.StatusCode);
 		var consentLocation = EnsureAbsoluteUri(firstAuthResponse.Headers.Location!);
 		Assert.StartsWith("/consent", consentLocation.AbsolutePath);
@@ -456,13 +456,13 @@ public class ConsentFlowTests : IAsyncLifetime
 			approvedScopes = new[] { "openid", "profile" },
 			returnUrl = returnUrl
 		};
-		await _client.PostAsJsonAsync("/system/api/consent", consentDecision);
+		await _client.PostAsJsonAsync("/api/consent", consentDecision);
 
 		// Act - second authorization request with same scopes should skip consent
 		var (_, codeChallenge2) = GeneratePkce();
 		var query2 = BuildAuthorizeQuery("prior-consent-client", codeChallenge2, "openid profile", "test-state-2");
 
-		var secondAuthResponse = await _client.GetAsync($"/system/connect/authorize{query2}");
+		var secondAuthResponse = await _client.GetAsync($"/connect/authorize{query2}");
 
 		// Assert - should redirect directly to callback (prior consent found)
 		Assert.Equal(HttpStatusCode.Redirect, secondAuthResponse.StatusCode);

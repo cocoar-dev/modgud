@@ -42,7 +42,7 @@ public class PasswordResetTests : IAsyncLifetime
 
         // Act
         var dto = new ForgotPasswordDto { Email = "resetuser@test.com" };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/forgot-password", dto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/forgot-password", dto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -59,7 +59,7 @@ public class PasswordResetTests : IAsyncLifetime
 
         // Act - Should not reveal user doesn't exist
         var dto = new ForgotPasswordDto { Email = "nonexistent@test.com" };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/forgot-password", dto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/forgot-password", dto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -73,7 +73,7 @@ public class PasswordResetTests : IAsyncLifetime
         await _factory.CreateTestUserAsync("resetvalid", email: "resetvalid@test.com");
 
         var forgotDto = new ForgotPasswordDto { Email = "resetvalid@test.com" };
-        await _client.PostAsJsonAsync("/system/api/auth/forgot-password", forgotDto, _factory.JsonOptions);
+        await _client.PostAsJsonAsync("/api/auth/forgot-password", forgotDto, _factory.JsonOptions);
 
         // Extract token from email
         var emailSender = _factory.GetMockEmailSender();
@@ -89,7 +89,7 @@ public class PasswordResetTests : IAsyncLifetime
             Token = token,
             NewPassword = "NewPassword123!@#"
         };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/reset-password", resetDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/reset-password", resetDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -100,7 +100,7 @@ public class PasswordResetTests : IAsyncLifetime
             UserName = "resetvalid",
             Password = "NewPassword123!@#"
         };
-        var loginResponse = await _client.PostAsJsonAsync("/system/api/auth/login", loginDto, _factory.JsonOptions);
+        var loginResponse = await _client.PostAsJsonAsync("/api/auth/login", loginDto, _factory.JsonOptions);
         var loginResult = await loginResponse.Content.ReadFromJsonAsync<LoginResultDto>(_factory.JsonOptions);
         Assert.True(loginResult!.Succeeded);
     }
@@ -118,7 +118,7 @@ public class PasswordResetTests : IAsyncLifetime
             Token = "invalidtoken",
             NewPassword = "NewPassword123!@#"
         };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/reset-password", resetDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/reset-password", resetDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -134,7 +134,7 @@ public class PasswordResetTests : IAsyncLifetime
             Token = "sometoken",
             NewPassword = "NewPassword123!@#"
         };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/reset-password", resetDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/reset-password", resetDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -147,7 +147,7 @@ public class PasswordResetTests : IAsyncLifetime
         await _factory.CreateTestUserAsync("weakpassword", email: "weakpassword@test.com");
 
         var forgotDto = new ForgotPasswordDto { Email = "weakpassword@test.com" };
-        await _client.PostAsJsonAsync("/system/api/auth/forgot-password", forgotDto, _factory.JsonOptions);
+        await _client.PostAsJsonAsync("/api/auth/forgot-password", forgotDto, _factory.JsonOptions);
 
         var emailSender = _factory.GetMockEmailSender();
         var sentEmail = emailSender.SentEmails.First(e => e.To == "weakpassword@test.com");
@@ -161,7 +161,7 @@ public class PasswordResetTests : IAsyncLifetime
             Token = token,
             NewPassword = "weak" // Too weak
         };
-        var response = await _client.PostAsJsonAsync("/system/api/auth/reset-password", resetDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/reset-password", resetDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

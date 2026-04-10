@@ -2,8 +2,6 @@
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { CoarCard, CoarButton, CoarTextInput, CoarNote, CoarSpinner } from '@cocoar/vue-ui';
-import { realmContext } from '@/composables/useRealmContext';
-
 const route = useRoute();
 
 const userCode = ref('');
@@ -28,7 +26,7 @@ async function onApprove() {
     const form = new URLSearchParams();
     form.set('user_code', userCode.value);
 
-    const response = await fetch(`${realmContext.apiUrl.replace('/api', '')}/connect/verify`, {
+    const response = await fetch(`/connect/verify`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -60,7 +58,7 @@ async function onDeny() {
     form.set('user_code', userCode.value);
     form.set('deny', 'true');
 
-    await fetch(`${realmContext.apiUrl.replace('/api', '')}/connect/verify`, {
+    await fetch(`/connect/verify`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

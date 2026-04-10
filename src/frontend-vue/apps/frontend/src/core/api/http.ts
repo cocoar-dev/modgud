@@ -1,6 +1,4 @@
-import { realmContext } from '@/composables/useRealmContext';
-
-const BASE_URL = realmContext.apiUrl;
+const BASE_URL = '/api';
 
 export class ApiError extends Error {
   constructor(

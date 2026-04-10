@@ -240,35 +240,14 @@ builder.Services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.Appli
             return Task.CompletedTask;
         };
 
-        // Scope cookie path to realm to prevent cross-realm session leakage
+        // Add realm claim for auditing (cookie isolation is automatic per domain)
         var originalOnSigningIn = options.Events.OnSigningIn;
         options.Events.OnSigningIn = context =>
         {
             var realmSlug = context.HttpContext.Items["RealmSlug"] as string ?? "system";
-
-            // Add cocoar:realm claim for auditing/logging
             var identity = (ClaimsIdentity)context.Principal!.Identity!;
             identity.AddClaim(new Claim("cocoar:realm", realmSlug));
-
-            if (realmSlug == "system")
-            {
-                // System admin cookie needs path "/" to reach all realm paths
-                context.CookieOptions.Path = "/";
-            }
-            else
-            {
-                context.CookieOptions.Path = $"/{realmSlug}";
-            }
             return originalOnSigningIn?.Invoke(context) ?? Task.CompletedTask;
-        };
-
-        // Match cookie path on sign-out so the browser actually deletes the cookie
-        var originalOnSigningOut = options.Events.OnSigningOut;
-        options.Events.OnSigningOut = context =>
-        {
-            var realmSlug = context.HttpContext.Items["RealmSlug"] as string ?? "system";
-            context.CookieOptions.Path = realmSlug == "system" ? "/" : $"/{realmSlug}";
-            return originalOnSigningOut?.Invoke(context) ?? Task.CompletedTask;
         };
     });
 
@@ -380,8 +359,8 @@ app.UseRateLimiter();
 // so that /assets/*.js, /assets/*.css are served directly without realm resolution.
 app.UseStaticFiles();
 
-// Realm middleware: resolves tenant from first path segment (/{slug}/...)
-// Must run BEFORE UseRouting so that PathBase is set before route matching occurs.
+// Realm middleware: resolves tenant from Host header (domain-based routing).
+// Must run BEFORE UseRouting so tenant context is available for all downstream middleware.
 app.UseMiddleware<RealmMiddleware>();
 
 app.UseRouting();

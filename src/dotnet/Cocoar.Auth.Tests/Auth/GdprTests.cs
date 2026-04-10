@@ -47,7 +47,7 @@ public class GdprTests : IAsyncLifetime
         await _client.LoginAsync("exportuser", password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.GetAsync("/system/api/auth/export-data");
+        var response = await _client.GetAsync("/api/auth/export-data");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -62,7 +62,7 @@ public class GdprTests : IAsyncLifetime
     public async Task ExportData_WhenNotAuthenticated_ReturnsUnauthorized()
     {
         // Act
-        var response = await _client.GetAsync("/system/api/auth/export-data");
+        var response = await _client.GetAsync("/api/auth/export-data");
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -81,7 +81,7 @@ public class GdprTests : IAsyncLifetime
         await _client.LoginAsync("deleteuser", password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/auth/delete-account",
+        var response = await _client.PostAsJsonAsync("/api/auth/delete-account",
             new RequestDeletionDto { Password = password, Reason = "Test deletion" },
             _factory.JsonOptions);
 
@@ -108,7 +108,7 @@ public class GdprTests : IAsyncLifetime
         await _client.LoginAsync("deletewrong", password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/auth/delete-account",
+        var response = await _client.PostAsJsonAsync("/api/auth/delete-account",
             new RequestDeletionDto { Password = "WrongPassword123!" },
             _factory.JsonOptions);
 
@@ -125,12 +125,12 @@ public class GdprTests : IAsyncLifetime
         await _client.LoginAsync("deletepending", password, _factory.JsonOptions);
 
         // First request
-        await _client.PostAsJsonAsync("/system/api/auth/delete-account",
+        await _client.PostAsJsonAsync("/api/auth/delete-account",
             new RequestDeletionDto { Password = password },
             _factory.JsonOptions);
 
         // Act - Second request
-        var response = await _client.PostAsJsonAsync("/system/api/auth/delete-account",
+        var response = await _client.PostAsJsonAsync("/api/auth/delete-account",
             new RequestDeletionDto { Password = password },
             _factory.JsonOptions);
 
@@ -151,12 +151,12 @@ public class GdprTests : IAsyncLifetime
         await _client.LoginAsync("canceluser", password, _factory.JsonOptions);
 
         // Request deletion first
-        await _client.PostAsJsonAsync("/system/api/auth/delete-account",
+        await _client.PostAsJsonAsync("/api/auth/delete-account",
             new RequestDeletionDto { Password = password },
             _factory.JsonOptions);
 
         // Act
-        var response = await _client.PostAsync("/system/api/auth/cancel-deletion", null);
+        var response = await _client.PostAsync("/api/auth/cancel-deletion", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -178,7 +178,7 @@ public class GdprTests : IAsyncLifetime
         await _client.LoginAsync("cancelnotpending", password, _factory.JsonOptions);
 
         // Act
-        var response = await _client.PostAsync("/system/api/auth/cancel-deletion", null);
+        var response = await _client.PostAsync("/api/auth/cancel-deletion", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -197,16 +197,16 @@ public class GdprTests : IAsyncLifetime
         await _client.LoginAsync("statususer", password, _factory.JsonOptions);
 
         // Act - Before request
-        var response1 = await _client.GetAsync("/system/api/auth/deletion-status");
+        var response1 = await _client.GetAsync("/api/auth/deletion-status");
         var status1 = await response1.Content.ReadFromJsonAsync<DeletionStatusDto>(_factory.JsonOptions);
 
         // Request deletion
-        await _client.PostAsJsonAsync("/system/api/auth/delete-account",
+        await _client.PostAsJsonAsync("/api/auth/delete-account",
             new RequestDeletionDto { Password = password },
             _factory.JsonOptions);
 
         // Act - After request
-        var response2 = await _client.GetAsync("/system/api/auth/deletion-status");
+        var response2 = await _client.GetAsync("/api/auth/deletion-status");
         var status2 = await response2.Content.ReadFromJsonAsync<DeletionStatusDto>(_factory.JsonOptions);
 
         // Assert
@@ -233,7 +233,7 @@ public class GdprTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Act
-        var response = await _client.PostAsJsonAsync($"/system/api/admin/users/{shortGuid}/soft-delete",
+        var response = await _client.PostAsJsonAsync($"/api/admin/users/{shortGuid}/soft-delete",
             new AdminSoftDeleteDto { Reason = "Test soft delete" },
             _factory.JsonOptions);
 
@@ -260,7 +260,7 @@ public class GdprTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Act
-        var response = await _client.PostAsJsonAsync($"/system/api/admin/users/{shortGuid}/soft-delete",
+        var response = await _client.PostAsJsonAsync($"/api/admin/users/{shortGuid}/soft-delete",
             new AdminSoftDeleteDto { Reason = "Test" },
             _factory.JsonOptions);
 
@@ -282,12 +282,12 @@ public class GdprTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Soft delete first
-        await _client.PostAsJsonAsync($"/system/api/admin/users/{shortGuid}/soft-delete",
+        await _client.PostAsJsonAsync($"/api/admin/users/{shortGuid}/soft-delete",
             new AdminSoftDeleteDto { Reason = "Test" },
             _factory.JsonOptions);
 
         // Act
-        var response = await _client.PostAsJsonAsync($"/system/api/admin/users/{shortGuid}/restore",
+        var response = await _client.PostAsJsonAsync($"/api/admin/users/{shortGuid}/restore",
             new AdminRestoreDto { Reason = "Test restore" },
             _factory.JsonOptions);
 
@@ -312,7 +312,7 @@ public class GdprTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Act
-        var response = await _client.PostAsJsonAsync($"/system/api/admin/users/{shortGuid}/restore",
+        var response = await _client.PostAsJsonAsync($"/api/admin/users/{shortGuid}/restore",
             new AdminRestoreDto { Reason = "Test" },
             _factory.JsonOptions);
 
@@ -334,7 +334,7 @@ public class GdprTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Act - Send DELETE with body using SendAsync
-        var request = new HttpRequestMessage(HttpMethod.Delete, $"/system/api/admin/users/{shortGuid}/permanent");
+        var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/admin/users/{shortGuid}/permanent");
         request.Content = JsonContent.Create(new AdminPermanentEraseDto { Reason = "GDPR request" }, options: _factory.JsonOptions);
         var eraseResponse = await _client.SendAsync(request);
 
@@ -363,12 +363,12 @@ public class GdprTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Erase once
-        var request1 = new HttpRequestMessage(HttpMethod.Delete, $"/system/api/admin/users/{shortGuid}/permanent");
+        var request1 = new HttpRequestMessage(HttpMethod.Delete, $"/api/admin/users/{shortGuid}/permanent");
         request1.Content = JsonContent.Create(new AdminPermanentEraseDto { Reason = "First erase" }, options: _factory.JsonOptions);
         await _client.SendAsync(request1);
 
         // Act - Try to erase again
-        var request2 = new HttpRequestMessage(HttpMethod.Delete, $"/system/api/admin/users/{shortGuid}/permanent");
+        var request2 = new HttpRequestMessage(HttpMethod.Delete, $"/api/admin/users/{shortGuid}/permanent");
         request2.Content = JsonContent.Create(new AdminPermanentEraseDto { Reason = "Second erase" }, options: _factory.JsonOptions);
         var response = await _client.SendAsync(request2);
 
@@ -386,12 +386,12 @@ public class GdprTests : IAsyncLifetime
         var shortGuid = new ShortGuid(targetUser.Id);
 
         // Permanently erase
-        var eraseRequest = new HttpRequestMessage(HttpMethod.Delete, $"/system/api/admin/users/{shortGuid}/permanent");
+        var eraseRequest = new HttpRequestMessage(HttpMethod.Delete, $"/api/admin/users/{shortGuid}/permanent");
         eraseRequest.Content = JsonContent.Create(new AdminPermanentEraseDto { Reason = "GDPR request" }, options: _factory.JsonOptions);
         await _client.SendAsync(eraseRequest);
 
         // Act - Try to restore
-        var response = await _client.PostAsJsonAsync($"/system/api/admin/users/{shortGuid}/restore",
+        var response = await _client.PostAsJsonAsync($"/api/admin/users/{shortGuid}/restore",
             new AdminRestoreDto { Reason = "Restore attempt" },
             _factory.JsonOptions);
 

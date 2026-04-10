@@ -1,7 +1,5 @@
 import { onUnmounted } from 'vue';
 import { HARRRConnection } from '@cocoar/signalarrr';
-import { realmContext } from './useRealmContext';
-
 type EntityChangeCallback = () => void;
 
 const listeners = new Map<string, Set<EntityChangeCallback>>();
@@ -11,7 +9,7 @@ let connectPromise: Promise<void> | null = null;
 function ensureConnection(): Promise<void> {
   if (!connectPromise) {
     connection = HARRRConnection.create(builder => {
-      builder.withUrl(`/${realmContext.slug}/admin-hub`);
+      builder.withUrl(`/admin-hub`);
       builder.withAutomaticReconnect();
     });
 

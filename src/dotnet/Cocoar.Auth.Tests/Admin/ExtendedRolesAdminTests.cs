@@ -53,7 +53,7 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/system/api/admin/roles", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/api/admin/roles", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -77,7 +77,7 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 			DisplayName = "Bound API",
 			Enabled = true
 		};
-		var apiResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/apis", apiDto, _factory.JsonOptions);
+		var apiResponse = await _client.PostAsJsonAsync("/api/admin/oauth/apis", apiDto, _factory.JsonOptions);
 		var api = await apiResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 		var apiId = new ShortGuid(Guid.Parse(api!.Id));
 
@@ -89,7 +89,7 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PostAsJsonAsync("/system/api/admin/roles", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/api/admin/roles", createDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -114,7 +114,7 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 		};
 
 		// Act
-		var response = await _client.PatchAsJsonAsync($"/system/api/admin/roles/{shortGuid}", updateDto, _factory.JsonOptions);
+		var response = await _client.PatchAsJsonAsync($"/api/admin/roles/{shortGuid}", updateDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -139,14 +139,14 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 			DisplayName = "Bind API",
 			Enabled = true
 		};
-		var apiResponse = await _client.PostAsJsonAsync("/system/api/admin/oauth/apis", apiDto, _factory.JsonOptions);
+		var apiResponse = await _client.PostAsJsonAsync("/api/admin/oauth/apis", apiDto, _factory.JsonOptions);
 		var api = await apiResponse.ReadFromJsonAsync<OAuthApiCreatedDto>(_factory.JsonOptions);
 		var apiId = new ShortGuid(Guid.Parse(api!.Id));
 
 		var updateDto = new { ClientId = apiId };
 
 		// Act
-		var response = await _client.PatchAsJsonAsync($"/system/api/admin/roles/{shortGuid}", updateDto, _factory.JsonOptions);
+		var response = await _client.PatchAsJsonAsync($"/api/admin/roles/{shortGuid}", updateDto, _factory.JsonOptions);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);

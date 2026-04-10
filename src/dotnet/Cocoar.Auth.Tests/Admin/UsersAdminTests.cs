@@ -43,7 +43,7 @@ public class UsersAdminTests : IAsyncLifetime
     public async Task GetUsers_WithoutAuthentication_ReturnsUnauthorized()
     {
         // Act
-        var response = await _client.GetAsync("/system/api/admin/users");
+        var response = await _client.GetAsync("/api/admin/users");
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -57,7 +57,7 @@ public class UsersAdminTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName, "Test123!@#", _factory.JsonOptions);
 
         // Act
-        var response = await _client.GetAsync("/system/api/admin/users");
+        var response = await _client.GetAsync("/api/admin/users");
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -72,7 +72,7 @@ public class UsersAdminTests : IAsyncLifetime
         await _factory.CreateTestUserAsync("user2");
 
         // Act
-        var response = await _client.GetAsync("/system/api/admin/users");
+        var response = await _client.GetAsync("/api/admin/users");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -90,7 +90,7 @@ public class UsersAdminTests : IAsyncLifetime
         await _factory.CreateTestUserAsync("other");
 
         // Act
-        var response = await _client.GetAsync("/system/api/admin/users?search=searchable");
+        var response = await _client.GetAsync("/api/admin/users?search=searchable");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -109,7 +109,7 @@ public class UsersAdminTests : IAsyncLifetime
         var shortGuid = new ShortGuid(user.Id);
 
         // Act
-        var response = await _client.GetAsync($"/system/api/admin/users/{shortGuid}");
+        var response = await _client.GetAsync($"/api/admin/users/{shortGuid}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -126,7 +126,7 @@ public class UsersAdminTests : IAsyncLifetime
         var nonExistentId = new ShortGuid(Guid.NewGuid());
 
         // Act
-        var response = await _client.GetAsync($"/system/api/admin/users/{nonExistentId}");
+        var response = await _client.GetAsync($"/api/admin/users/{nonExistentId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -149,7 +149,7 @@ public class UsersAdminTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/admin/users", createDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/admin/users", createDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -176,7 +176,7 @@ public class UsersAdminTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/admin/users", createDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/admin/users", createDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -194,7 +194,7 @@ public class UsersAdminTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/admin/users", createDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/admin/users", createDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -211,7 +211,7 @@ public class UsersAdminTests : IAsyncLifetime
         var updateDto = new { FirstName = "Updated", LastName = "Name" };
 
         // Act
-        var response = await _client.PatchAsJsonAsync($"/system/api/admin/users/{shortGuid}", updateDto, _factory.JsonOptions);
+        var response = await _client.PatchAsJsonAsync($"/api/admin/users/{shortGuid}", updateDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -233,7 +233,7 @@ public class UsersAdminTests : IAsyncLifetime
         var updateDto = new { FirstName = "OnlyFirst" };
 
         // Act
-        var response = await _client.PatchAsJsonAsync($"/system/api/admin/users/{shortGuid}", updateDto, _factory.JsonOptions);
+        var response = await _client.PatchAsJsonAsync($"/api/admin/users/{shortGuid}", updateDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -252,13 +252,13 @@ public class UsersAdminTests : IAsyncLifetime
         var shortGuid = new ShortGuid(user.Id);
 
         // Act
-        var response = await _client.DeleteAsync($"/system/api/admin/users/{shortGuid}");
+        var response = await _client.DeleteAsync($"/api/admin/users/{shortGuid}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         // Verify user is deleted
-        var getResponse = await _client.GetAsync($"/system/api/admin/users/{shortGuid}");
+        var getResponse = await _client.GetAsync($"/api/admin/users/{shortGuid}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
     }
 
@@ -270,7 +270,7 @@ public class UsersAdminTests : IAsyncLifetime
         var nonExistentId = new ShortGuid(Guid.NewGuid());
 
         // Act
-        var response = await _client.DeleteAsync($"/system/api/admin/users/{nonExistentId}");
+        var response = await _client.DeleteAsync($"/api/admin/users/{nonExistentId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -287,13 +287,13 @@ public class UsersAdminTests : IAsyncLifetime
         var resetDto = new { NewPassword = "NewPassword456!@#" };
 
         // Act
-        var response = await _client.PostAsJsonAsync($"/system/api/admin/users/{shortGuid}/reset-password", resetDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync($"/api/admin/users/{shortGuid}/reset-password", resetDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         // Verify new password works
-        await _client.PostAsync("/system/api/auth/logout", null);
+        await _client.PostAsync("/api/auth/logout", null);
         var loginResponse = await _client.LoginAsync("resetpwduser", "NewPassword456!@#", _factory.JsonOptions);
         Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
     }
@@ -314,7 +314,7 @@ public class UsersAdminTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/admin/users", createDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/admin/users", createDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);

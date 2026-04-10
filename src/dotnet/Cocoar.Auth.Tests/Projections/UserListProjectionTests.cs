@@ -53,7 +53,7 @@ public class UserListProjectionTests : IAsyncLifetime
         await _factory.CreateTestUserAsync("listuser");
 
         // Act
-        var response = await _client.GetAsync("/system/api/admin/users");
+        var response = await _client.GetAsync("/api/admin/users");
 
         // Assert
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
@@ -71,10 +71,10 @@ public class UserListProjectionTests : IAsyncLifetime
         var shortGuid = new ShortGuid(user.Id);
 
         // Soft-delete via GDPR endpoint
-        await _client.PostAsync($"/system/api/admin/users/{shortGuid}/soft-delete", new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+        await _client.PostAsync($"/api/admin/users/{shortGuid}/soft-delete", new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
 
         // Act
-        var response = await _client.GetAsync("/system/api/admin/users");
+        var response = await _client.GetAsync("/api/admin/users");
 
         // Assert
         var result = await response.ReadFromJsonAsync<UserListDto>(_factory.JsonOptions);
@@ -98,7 +98,7 @@ public class UserListProjectionTests : IAsyncLifetime
         }
 
         // Act
-        var response = await _client.GetAsync("/system/api/admin/users");
+        var response = await _client.GetAsync("/api/admin/users");
         var result = await response.ReadFromJsonAsync<UserListDto>(_factory.JsonOptions);
 
         // Assert
@@ -129,7 +129,7 @@ public class UserListProjectionTests : IAsyncLifetime
         {
             Name = new Optional<string>("NewName")
         };
-        await _client.PatchAsJsonAsync($"/system/api/admin/roles/{roleShortGuid}", updateDto, _factory.JsonOptions);
+        await _client.PatchAsJsonAsync($"/api/admin/roles/{roleShortGuid}", updateDto, _factory.JsonOptions);
 
         // Act — verify via repository that the UserListReadModel has the updated name
         using (var scope = _factory.Services.CreateScope())

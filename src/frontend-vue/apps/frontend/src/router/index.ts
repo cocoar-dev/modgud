@@ -1,10 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth.store';
 import { authApi } from '@/core/api/auth-api';
-import { realmContext } from '@/composables/useRealmContext';
-
 export const router = createRouter({
-  history: createWebHistory(realmContext.baseHref),
+  history: createWebHistory('/'),
   routes: [
     // ── Setup ──────────────────────────────────────────────────
     {

@@ -57,11 +57,11 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 			Configuration = _oidcServer.GetProviderConfiguration()
 		};
 
-		var response = await _client.PostAsJsonAsync("/system/api/admin/login-providers", createDto, _factory.JsonOptions);
+		var response = await _client.PostAsJsonAsync("/api/admin/login-providers", createDto, _factory.JsonOptions);
 		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
 		// Logout admin so subsequent calls are unauthenticated
-		await _client.PostAsync("/system/api/auth/logout", null);
+		await _client.PostAsync("/api/auth/logout", null);
 	}
 
 	/// <summary>
@@ -72,7 +72,7 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 	{
 		using var anonClient = _factory.CreateClientWithCookies();
 		var response = await anonClient.GetAsync(
-			$"/system/api/auth/external-login?provider={providerName}&returnUrl={Uri.EscapeDataString(returnUrl)}");
+			$"/api/auth/external-login?provider={providerName}&returnUrl={Uri.EscapeDataString(returnUrl)}");
 
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 		var redirectUrl = response.Headers.Location!.ToString();
@@ -99,7 +99,7 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 		// Act — simulate the callback from the OIDC provider
 		using var callbackClient = _factory.CreateClientWithCookies();
 		var response = await callbackClient.GetAsync(
-			$"/system/api/auth/external-callback?code=fake-auth-code&state={Uri.EscapeDataString(state)}");
+			$"/api/auth/external-callback?code=fake-auth-code&state={Uri.EscapeDataString(state)}");
 
 		// Assert — should redirect to the return URL
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
@@ -107,7 +107,7 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 		Assert.Equal("/dashboard", location);
 
 		// Verify user was created and is authenticated
-		var meResponse = await callbackClient.GetAsync("/system/api/auth/me");
+		var meResponse = await callbackClient.GetAsync("/api/auth/me");
 		Assert.Equal(HttpStatusCode.OK, meResponse.StatusCode);
 		var user = await meResponse.ReadFromJsonAsync<CurrentUserDto>(_factory.JsonOptions);
 		Assert.NotNull(user);
@@ -126,7 +126,7 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 		var (state1, nonce1, _) = await InitiateExternalLoginAsync();
 		_oidcServer.SetupTokenEndpoint(subject: "returning-user", email: "returning@example.com", nonce: nonce1);
 		using var client1 = _factory.CreateClientWithCookies();
-		await client1.GetAsync($"/system/api/auth/external-callback?code=code1&state={Uri.EscapeDataString(state1)}");
+		await client1.GetAsync($"/api/auth/external-callback?code=code1&state={Uri.EscapeDataString(state1)}");
 
 		// Second login: same external user
 		var (state2, nonce2, _) = await InitiateExternalLoginAsync();
@@ -135,11 +135,11 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 		// Act
 		using var client2 = _factory.CreateClientWithCookies();
 		var response = await client2.GetAsync(
-			$"/system/api/auth/external-callback?code=code2&state={Uri.EscapeDataString(state2)}");
+			$"/api/auth/external-callback?code=code2&state={Uri.EscapeDataString(state2)}");
 
 		// Assert — same user, signed in
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-		var meResponse = await client2.GetAsync("/system/api/auth/me");
+		var meResponse = await client2.GetAsync("/api/auth/me");
 		Assert.Equal(HttpStatusCode.OK, meResponse.StatusCode);
 		var user = await meResponse.ReadFromJsonAsync<CurrentUserDto>(_factory.JsonOptions);
 		Assert.NotNull(user);
@@ -161,10 +161,10 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 		// Act
 		using var callbackClient = _factory.CreateClientWithCookies();
 		await callbackClient.GetAsync(
-			$"/system/api/auth/external-callback?code=code&state={Uri.EscapeDataString(state)}");
+			$"/api/auth/external-callback?code=code&state={Uri.EscapeDataString(state)}");
 
 		// Assert — check profile shows email as confirmed
-		var profileResponse = await callbackClient.GetAsync("/system/api/auth/profile");
+		var profileResponse = await callbackClient.GetAsync("/api/auth/profile");
 		Assert.Equal(HttpStatusCode.OK, profileResponse.StatusCode);
 		var body = await profileResponse.Content.ReadAsStringAsync();
 		Assert.Contains("\"emailConfirmed\":true", body);
@@ -186,11 +186,11 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 		// Act
 		using var callbackClient = _factory.CreateClientWithCookies();
 		var response = await callbackClient.GetAsync(
-			$"/system/api/auth/external-callback?code=code&state={Uri.EscapeDataString(state)}");
+			$"/api/auth/external-callback?code=code&state={Uri.EscapeDataString(state)}");
 
 		// Assert — should still succeed with fallback username
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-		var meResponse = await callbackClient.GetAsync("/system/api/auth/me");
+		var meResponse = await callbackClient.GetAsync("/api/auth/me");
 		Assert.Equal(HttpStatusCode.OK, meResponse.StatusCode);
 		var user = await meResponse.ReadFromJsonAsync<CurrentUserDto>(_factory.JsonOptions);
 		Assert.NotNull(user);
@@ -209,10 +209,10 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 		// Act — auto-create via external login
 		using var callbackClient = _factory.CreateClientWithCookies();
 		await callbackClient.GetAsync(
-			$"/system/api/auth/external-callback?code=code&state={Uri.EscapeDataString(state)}");
+			$"/api/auth/external-callback?code=code&state={Uri.EscapeDataString(state)}");
 
 		// Assert — linked logins should show the provider
-		var loginsResponse = await callbackClient.GetAsync("/system/api/auth/external-logins");
+		var loginsResponse = await callbackClient.GetAsync("/api/auth/external-logins");
 		Assert.Equal(HttpStatusCode.OK, loginsResponse.StatusCode);
 		var logins = await loginsResponse.ReadFromJsonAsync<LinkedExternalLoginListDto>(_factory.JsonOptions);
 		Assert.NotNull(logins);
@@ -231,10 +231,10 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 
 		using var callbackClient = _factory.CreateClientWithCookies();
 		await callbackClient.GetAsync(
-			$"/system/api/auth/external-callback?code=code&state={Uri.EscapeDataString(state)}");
+			$"/api/auth/external-callback?code=code&state={Uri.EscapeDataString(state)}");
 
 		// The auto-created user has no password, so unlinking should fail
-		var failResponse = await callbackClient.DeleteAsync("/system/api/auth/external-link/FakeOidc");
+		var failResponse = await callbackClient.DeleteAsync("/api/auth/external-link/FakeOidc");
 		Assert.Equal(HttpStatusCode.BadRequest, failResponse.StatusCode);
 	}
 
@@ -248,7 +248,7 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 		var (state1, nonce1, _) = await InitiateExternalLoginAsync();
 		_oidcServer.SetupTokenEndpoint(subject: "inactive-ext", email: "inactive@example.com", nonce: nonce1);
 		using var client1 = _factory.CreateClientWithCookies();
-		await client1.GetAsync($"/system/api/auth/external-callback?code=c1&state={Uri.EscapeDataString(state1)}");
+		await client1.GetAsync($"/api/auth/external-callback?code=c1&state={Uri.EscapeDataString(state1)}");
 
 		// Deactivate user via admin
 		await _factory.CreateTestUserAsync("admin2", "Admin123!@#", isAdmin: true);
@@ -256,11 +256,11 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 		await adminClient.LoginAsync("admin2", "Admin123!@#", _factory.JsonOptions);
 
 		// Find the user
-		var meResponse = await client1.GetAsync("/system/api/auth/me");
+		var meResponse = await client1.GetAsync("/api/auth/me");
 		var user = await meResponse.ReadFromJsonAsync<CurrentUserDto>(_factory.JsonOptions);
 
 		// Deactivate
-		await adminClient.PatchAsJsonAsync($"/system/api/admin/users/{user!.Id}",
+		await adminClient.PatchAsJsonAsync($"/api/admin/users/{user!.Id}",
 			new { isActive = false }, _factory.JsonOptions);
 
 		// Second login attempt with inactive user
@@ -270,7 +270,7 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 		// Act
 		using var client2 = _factory.CreateClientWithCookies();
 		var response = await client2.GetAsync(
-			$"/system/api/auth/external-callback?code=c2&state={Uri.EscapeDataString(state2)}");
+			$"/api/auth/external-callback?code=c2&state={Uri.EscapeDataString(state2)}");
 
 		// Assert — should redirect with error
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
@@ -292,10 +292,10 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 		// Act
 		using var callbackClient = _factory.CreateClientWithCookies();
 		await callbackClient.GetAsync(
-			$"/system/api/auth/external-callback?code=code&state={Uri.EscapeDataString(state)}");
+			$"/api/auth/external-callback?code=code&state={Uri.EscapeDataString(state)}");
 
 		// Assert
-		var meResponse = await callbackClient.GetAsync("/system/api/auth/me");
+		var meResponse = await callbackClient.GetAsync("/api/auth/me");
 		Assert.Equal(HttpStatusCode.OK, meResponse.StatusCode);
 		var user = await meResponse.ReadFromJsonAsync<CurrentUserDto>(_factory.JsonOptions);
 		Assert.NotNull(user);

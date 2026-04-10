@@ -102,7 +102,7 @@ public class AuthenticationTests : IAsyncLifetime
     public async Task GetCurrentUser_WithoutAuthentication_ReturnsUnauthorized()
     {
         // Act
-        var response = await _client.GetAsync("/system/api/auth/me");
+        var response = await _client.GetAsync("/api/auth/me");
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -119,7 +119,7 @@ public class AuthenticationTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
 
         // Act
-        var response = await _client.GetAsync("/system/api/auth/me");
+        var response = await _client.GetAsync("/api/auth/me");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -139,11 +139,11 @@ public class AuthenticationTests : IAsyncLifetime
         await _client.LoginAsync(user.UserName, password, _factory.JsonOptions);
 
         // Act
-        var logoutResponse = await _client.PostAsync("/system/api/auth/logout", null);
+        var logoutResponse = await _client.PostAsync("/api/auth/logout", null);
         Assert.Equal(HttpStatusCode.NoContent, logoutResponse.StatusCode);
 
         // Assert - should be unauthorized after logout
-        var meResponse = await _client.GetAsync("/system/api/auth/me");
+        var meResponse = await _client.GetAsync("/api/auth/me");
         Assert.Equal(HttpStatusCode.Unauthorized, meResponse.StatusCode);
     }
 
@@ -160,13 +160,13 @@ public class AuthenticationTests : IAsyncLifetime
         var changePasswordDto = new { CurrentPassword = currentPassword, NewPassword = newPassword };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/auth/change-password", changePasswordDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/change-password", changePasswordDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         // Verify new password works
-        await _client.PostAsync("/system/api/auth/logout", null);
+        await _client.PostAsync("/api/auth/logout", null);
         var loginResponse = await _client.LoginAsync(user.UserName, newPassword, _factory.JsonOptions);
         var loginResult = await loginResponse.ReadFromJsonAsync<LoginResultDto>(_factory.JsonOptions);
         Assert.True(loginResult?.Succeeded);
@@ -184,7 +184,7 @@ public class AuthenticationTests : IAsyncLifetime
         var changePasswordDto = new { CurrentPassword = "WrongPassword!", NewPassword = "NewTest456!@#" };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/system/api/auth/change-password", changePasswordDto, _factory.JsonOptions);
+        var response = await _client.PostAsJsonAsync("/api/auth/change-password", changePasswordDto, _factory.JsonOptions);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

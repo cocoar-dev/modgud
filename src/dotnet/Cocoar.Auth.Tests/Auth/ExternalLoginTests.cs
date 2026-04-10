@@ -58,14 +58,14 @@ public class ExternalLoginTests : IAsyncLifetime
 			}
 		};
 
-		await _client.PostAsJsonAsync("/system/api/admin/login-providers", createDto, _factory.JsonOptions);
+		await _client.PostAsJsonAsync("/api/admin/login-providers", createDto, _factory.JsonOptions);
 	}
 
 	[Fact]
 	public async Task GetExternalProviders_NoOidcProviders_ReturnsEmptyList()
 	{
 		// Act
-		var response = await _client.GetAsync("/system/api/auth/external-providers");
+		var response = await _client.GetAsync("/api/auth/external-providers");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -81,10 +81,10 @@ public class ExternalLoginTests : IAsyncLifetime
 		await CreateOidcProviderAsync();
 
 		// Logout admin before testing public endpoint
-		await _client.PostAsync("/system/api/auth/logout", null);
+		await _client.PostAsync("/api/auth/logout", null);
 
 		// Act
-		var response = await _client.GetAsync("/system/api/auth/external-providers");
+		var response = await _client.GetAsync("/api/auth/external-providers");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -103,7 +103,7 @@ public class ExternalLoginTests : IAsyncLifetime
 		await CreateOidcProviderAsync();
 
 		// Act
-		var response = await _client.GetAsync("/system/api/auth/external-providers");
+		var response = await _client.GetAsync("/api/auth/external-providers");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -116,7 +116,7 @@ public class ExternalLoginTests : IAsyncLifetime
 	public async Task ExternalLogin_InvalidProvider_ReturnsBadRequest()
 	{
 		// Act
-		var response = await _client.GetAsync("/system/api/auth/external-login?provider=nonexistent&returnUrl=/");
+		var response = await _client.GetAsync("/api/auth/external-login?provider=nonexistent&returnUrl=/");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -126,7 +126,7 @@ public class ExternalLoginTests : IAsyncLifetime
 	public async Task ExternalLogin_InternalProvider_ReturnsBadRequest()
 	{
 		// Act - Internal provider is not OIDC
-		var response = await _client.GetAsync("/system/api/auth/external-login?provider=Internal&returnUrl=/");
+		var response = await _client.GetAsync("/api/auth/external-login?provider=Internal&returnUrl=/");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -143,7 +143,7 @@ public class ExternalLoginTests : IAsyncLifetime
 
 		// Act
 		var response = await anonClient.GetAsync(
-			"/system/api/auth/external-login?provider=TestGoogle&returnUrl=/dashboard");
+			"/api/auth/external-login?provider=TestGoogle&returnUrl=/dashboard");
 
 		// Assert - should redirect to Google's authorization endpoint
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
@@ -163,7 +163,7 @@ public class ExternalLoginTests : IAsyncLifetime
 	{
 		// Act
 		var response = await _client.GetAsync(
-			"/system/api/auth/external-callback?code=fake&state=invalid-state");
+			"/api/auth/external-callback?code=fake&state=invalid-state");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
@@ -176,7 +176,7 @@ public class ExternalLoginTests : IAsyncLifetime
 	public async Task GetLinkedExternalLogins_Unauthenticated_Returns401()
 	{
 		// Act
-		var response = await _client.GetAsync("/system/api/auth/external-logins");
+		var response = await _client.GetAsync("/api/auth/external-logins");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -190,7 +190,7 @@ public class ExternalLoginTests : IAsyncLifetime
 		await _client.LoginAsync("testuser", "Test123!@#", _factory.JsonOptions);
 
 		// Act
-		var response = await _client.GetAsync("/system/api/auth/external-logins");
+		var response = await _client.GetAsync("/api/auth/external-logins");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -207,7 +207,7 @@ public class ExternalLoginTests : IAsyncLifetime
 		await _client.LoginAsync("testuser", "Test123!@#", _factory.JsonOptions);
 
 		// Act
-		var response = await _client.DeleteAsync("/system/api/auth/external-link/google");
+		var response = await _client.DeleteAsync("/api/auth/external-link/google");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -217,7 +217,7 @@ public class ExternalLoginTests : IAsyncLifetime
 	public async Task UnlinkExternalLogin_Unauthenticated_Returns401()
 	{
 		// Act
-		var response = await _client.DeleteAsync("/system/api/auth/external-link/google");
+		var response = await _client.DeleteAsync("/api/auth/external-link/google");
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -228,7 +228,7 @@ public class ExternalLoginTests : IAsyncLifetime
 	{
 		// Act
 		var response = await _client.PostAsync(
-			"/system/api/auth/external-link?provider=google&returnUrl=/", null);
+			"/api/auth/external-link?provider=google&returnUrl=/", null);
 
 		// Assert
 		Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
