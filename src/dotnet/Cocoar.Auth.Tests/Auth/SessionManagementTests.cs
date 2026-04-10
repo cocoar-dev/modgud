@@ -320,7 +320,7 @@ public class SessionManagementTests : IAsyncLifetime
         var sessionService = scope.ServiceProvider.GetRequiredService<ISessionService>();
 
         var result = await sessionService.CreateSessionAsync(userId, ipAddress, userAgent);
-        Assert.False(result.IsError, $"Failed to create session: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+        Assert.False(result.IsError, "Failed to create session");
 
         return result.Value;
     }

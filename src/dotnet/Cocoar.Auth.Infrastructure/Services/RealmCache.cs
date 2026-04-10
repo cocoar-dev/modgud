@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Cocoar.Auth.Domain.Entities;
+using Cocoar.Auth.Infrastructure.Persistence;
 using Marten;
 
 namespace Cocoar.Auth.Infrastructure.Services;
@@ -22,14 +23,12 @@ public interface IRealmCache
 
 public class RealmCache : IRealmCache
 {
-	private readonly IDocumentStore _store;
+	private readonly IGlobalStore _globalStore;
 	private volatile ConcurrentDictionary<string, TenantInfo>? _domainCache;
 
-	private const string SystemTenantId = "system";
-
-	public RealmCache(IDocumentStore store)
+	public RealmCache(IGlobalStore globalStore)
 	{
-		_store = store;
+		_globalStore = globalStore;
 	}
 
 	public async Task<TenantInfo?> ResolveDomainAsync(string hostname)
@@ -61,7 +60,7 @@ public class RealmCache : IRealmCache
 	{
 		var newCache = new ConcurrentDictionary<string, TenantInfo>(StringComparer.OrdinalIgnoreCase);
 
-		await using var session = _store.QuerySession(SystemTenantId);
+		await using var session = _globalStore.QuerySession();
 		var activeRealms = await session.Query<Realm>()
 			.Where(r => r.IsActive)
 			.ToListAsync(ct);

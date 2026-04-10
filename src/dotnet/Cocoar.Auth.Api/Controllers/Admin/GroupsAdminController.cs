@@ -30,8 +30,8 @@ public class GroupsAdminController : ApiControllerBase
 	[ProducesResponseType(typeof(GroupListDto), StatusCodes.Status200OK)]
 	public async Task<IActionResult> GetGroups(CancellationToken ct)
 	{
-		var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<IReadOnlyList<GroupListReadModel>>>(
-			new GetAllGroupsQuery(), ct);
+		var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<IReadOnlyList<GroupListReadModel>>>(
+			GetTenantId(), new GetAllGroupsQuery(), ct);
 
 		return result.Match(
 			groups => Ok(new GroupListDto
@@ -50,8 +50,8 @@ public class GroupsAdminController : ApiControllerBase
 		if (!ShortGuid.TryParse(id, out Guid groupId))
 			return BadRequest("Invalid group ID format.");
 
-		var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<GroupState>>(
-			new GetGroupByIdQuery(groupId), ct);
+		var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<GroupState>>(
+			GetTenantId(), new GetGroupByIdQuery(groupId), ct);
 
 		return result.Match(
 			group => Ok(GroupMapper.ToDetailDto(group)),
@@ -63,8 +63,8 @@ public class GroupsAdminController : ApiControllerBase
 	[ProducesResponseType(StatusCodes.Status400BadRequest)]
 	public async Task<IActionResult> CreateGroup([FromBody] CreateGroupDto dto, CancellationToken ct)
 	{
-		var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<GroupDetailDto>>(
-			dto.ToCommand(), ct);
+		var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<GroupDetailDto>>(
+			GetTenantId(), dto.ToCommand(), ct);
 
 		if (result.IsError) return Problem(result.Errors);
 
@@ -81,8 +81,8 @@ public class GroupsAdminController : ApiControllerBase
 		if (!ShortGuid.TryParse(id, out Guid groupId))
 			return BadRequest("Invalid group ID format.");
 
-		var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<GroupDetailDto>>(
-			dto.ToCommand(groupId), ct);
+		var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<GroupDetailDto>>(
+			GetTenantId(), dto.ToCommand(groupId), ct);
 
 		if (result.IsError) return Problem(result.Errors);
 
@@ -98,8 +98,8 @@ public class GroupsAdminController : ApiControllerBase
 		if (!ShortGuid.TryParse(id, out Guid groupId))
 			return BadRequest("Invalid group ID format.");
 
-		var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
-			new ArchiveGroupCommand(groupId), ct);
+		var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<bool>>(
+			GetTenantId(), new ArchiveGroupCommand(groupId), ct);
 
 		if (result.IsError) return Problem(result.Errors);
 
@@ -118,8 +118,8 @@ public class GroupsAdminController : ApiControllerBase
 		if (!ShortGuid.TryParse(id, out Guid groupId))
 			return BadRequest("Invalid group ID format.");
 
-		var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
-			new AddGroupMemberCommand(groupId, dto.UserId.Guid), ct);
+		var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<bool>>(
+			GetTenantId(), new AddGroupMemberCommand(groupId, dto.UserId.Guid), ct);
 
 		if (result.IsError) return Problem(result.Errors);
 
@@ -135,8 +135,8 @@ public class GroupsAdminController : ApiControllerBase
 		if (!ShortGuid.TryParse(id, out Guid groupId) || !ShortGuid.TryParse(userId, out Guid uid))
 			return BadRequest("Invalid ID format.");
 
-		var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
-			new RemoveGroupMemberCommand(groupId, uid), ct);
+		var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<bool>>(
+			GetTenantId(), new RemoveGroupMemberCommand(groupId, uid), ct);
 
 		if (result.IsError) return Problem(result.Errors);
 
@@ -155,8 +155,8 @@ public class GroupsAdminController : ApiControllerBase
 		if (!ShortGuid.TryParse(id, out Guid groupId))
 			return BadRequest("Invalid group ID format.");
 
-		var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
-			new AddChildGroupCommand(groupId, dto.ChildGroupId.Guid), ct);
+		var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<bool>>(
+			GetTenantId(), new AddChildGroupCommand(groupId, dto.ChildGroupId.Guid), ct);
 
 		if (result.IsError) return Problem(result.Errors);
 
@@ -172,8 +172,8 @@ public class GroupsAdminController : ApiControllerBase
 		if (!ShortGuid.TryParse(id, out Guid groupId) || !ShortGuid.TryParse(childId, out Guid cid))
 			return BadRequest("Invalid ID format.");
 
-		var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
-			new RemoveChildGroupCommand(groupId, cid), ct);
+		var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<bool>>(
+			GetTenantId(), new RemoveChildGroupCommand(groupId, cid), ct);
 
 		if (result.IsError) return Problem(result.Errors);
 
@@ -192,8 +192,8 @@ public class GroupsAdminController : ApiControllerBase
 		if (!ShortGuid.TryParse(id, out Guid groupId))
 			return BadRequest("Invalid group ID format.");
 
-		var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
-			new GrantGroupRoleCommand(groupId, dto.RoleId.Guid, dto.ClientId?.Guid), ct);
+		var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<bool>>(
+			GetTenantId(), new GrantGroupRoleCommand(groupId, dto.RoleId.Guid, dto.ClientId?.Guid), ct);
 
 		if (result.IsError) return Problem(result.Errors);
 
@@ -213,8 +213,8 @@ public class GroupsAdminController : ApiControllerBase
 			? parsedCid
 			: null;
 
-		var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
-			new RevokeGroupRoleCommand(groupId, rid, cid), ct);
+		var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<bool>>(
+			GetTenantId(), new RevokeGroupRoleCommand(groupId, rid, cid), ct);
 
 		if (result.IsError) return Problem(result.Errors);
 

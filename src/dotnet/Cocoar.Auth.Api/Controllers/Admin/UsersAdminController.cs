@@ -44,8 +44,8 @@ public class UsersAdminController : ApiControllerBase
         [FromQuery] string? search = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<GetUsersPagedResult>>(
-            new GetUsersPagedQuery(page, pageSize, search),
+        var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<GetUsersPagedResult>>(
+            GetTenantId(), new GetUsersPagedQuery(page, pageSize, search),
             cancellationToken);
 
         return result.Match(
@@ -72,8 +72,8 @@ public class UsersAdminController : ApiControllerBase
             return BadRequest("Invalid user ID format.");
         }
 
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<UserDetailsReadModel>>(
-            new GetUserByIdQuery(userId),
+        var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<UserDetailsReadModel>>(
+            GetTenantId(), new GetUserByIdQuery(userId),
             cancellationToken);
 
         return result.Match(
@@ -90,8 +90,8 @@ public class UsersAdminController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserDto dto, CancellationToken cancellationToken)
     {
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<ApplicationUser>>(
-            dto.ToCommand(),
+        var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<ApplicationUser>>(
+            GetTenantId(), dto.ToCommand(),
             cancellationToken);
 
         if (result.IsError) return Problem(result.Errors);
@@ -116,8 +116,8 @@ public class UsersAdminController : ApiControllerBase
             return BadRequest("Invalid user ID format.");
         }
 
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<ApplicationUser>>(
-            dto.ToCommand(userId),
+        var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<ApplicationUser>>(
+            GetTenantId(), dto.ToCommand(userId),
             cancellationToken);
 
         if (result.IsError) return Problem(result.Errors);
@@ -140,8 +140,8 @@ public class UsersAdminController : ApiControllerBase
             return BadRequest("Invalid user ID format.");
         }
 
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
-            new DeleteUserCommand(userId),
+        var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<bool>>(
+            GetTenantId(), new DeleteUserCommand(userId),
             cancellationToken);
 
         if (result.IsError)
@@ -167,8 +167,8 @@ public class UsersAdminController : ApiControllerBase
             return BadRequest("Invalid user ID format.");
         }
 
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
-            dto.ToCommand(userId),
+        var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<bool>>(
+            GetTenantId(), dto.ToCommand(userId),
             cancellationToken);
 
         if (result.IsError)
@@ -196,8 +196,8 @@ public class UsersAdminController : ApiControllerBase
         // Get the admin user ID from claims
         var adminUserId = GetCurrentUserId();
 
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
-            new UnlockUserCommand(userId, adminUserId),
+        var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<bool>>(
+            GetTenantId(), new UnlockUserCommand(userId, adminUserId),
             cancellationToken);
 
         if (result.IsError)

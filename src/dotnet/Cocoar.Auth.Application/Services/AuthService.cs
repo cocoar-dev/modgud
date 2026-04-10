@@ -57,11 +57,11 @@ public class AuthService
             await _loginAuditService.RecordLoginFailedAsync(
                 user.Id, ipAddress, userAgent, LoginFailureReason.AccountInactive, cancellationToken);
 
+            // Return generic message to prevent user enumeration
             return new LoginResultDto
             {
                 Succeeded = false,
-                IsNotAllowed = true,
-                ErrorMessage = "This account is not active."
+                ErrorMessage = "Invalid username or password."
             };
         }
 
@@ -106,11 +106,11 @@ public class AuthService
                     user.Id, lockoutEnd, LockoutReason.TooManyFailedAttempts, cancellationToken);
             }
 
+            // Return generic message to prevent user enumeration
             return new LoginResultDto
             {
                 Succeeded = false,
-                IsLockedOut = true,
-                ErrorMessage = "This account has been locked out. Please try again later."
+                ErrorMessage = "Invalid username or password."
             };
         }
 
@@ -119,11 +119,11 @@ public class AuthService
             await _loginAuditService.RecordLoginFailedAsync(
                 user.Id, ipAddress, userAgent, LoginFailureReason.NotAllowed, cancellationToken);
 
+            // Return generic message to prevent user enumeration
             return new LoginResultDto
             {
                 Succeeded = false,
-                IsNotAllowed = true,
-                ErrorMessage = "This account is not allowed to sign in."
+                ErrorMessage = "Invalid username or password."
             };
         }
 
@@ -223,18 +223,21 @@ public class AuthService
     {
         if (!Guid.TryParse(dto.UserId, out var userId))
         {
-            return AuthErrors.UserNotFound;
+            // Return same error as invalid token to prevent user enumeration
+            return AuthErrors.InvalidEmailConfirmationToken;
         }
 
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user is null)
         {
-            return AuthErrors.UserNotFound;
+            // Return same error as invalid token to prevent user enumeration
+            return AuthErrors.InvalidEmailConfirmationToken;
         }
 
         if (user.EmailConfirmed)
         {
-            return AuthErrors.EmailAlreadyConfirmed;
+            // Return same error to prevent enumeration of confirmed status
+            return AuthErrors.InvalidEmailConfirmationToken;
         }
 
         // Decode the token
@@ -312,7 +315,8 @@ public class AuthService
         var user = await _userManager.FindByEmailAsync(dto.Email);
         if (user is null)
         {
-            return AuthErrors.UserNotFound;
+            // Return same error as invalid token to prevent user enumeration
+            return AuthErrors.InvalidPasswordResetToken;
         }
 
         // Decode the token

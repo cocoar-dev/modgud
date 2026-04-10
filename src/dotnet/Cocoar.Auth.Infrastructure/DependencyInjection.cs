@@ -31,95 +31,80 @@ namespace Cocoar.Auth.Infrastructure;
 
 public static class DependencyInjection
 {
-	public static IServiceCollection AddInfrastructure(
-		this IServiceCollection services,
-		bool useAsyncProjections = true,
-		string? masterConnectionString = null,
-		string? defaultConnectionString = null)
+	/// <summary>
+	/// Configures Marten StoreOptions for the auth system.
+	/// Called from Program.cs inside UseWolverine() for IntegrateWithWolverine compatibility.
+	/// Single DB architecture: the main connection is both tenant registry AND system tenant.
+	/// </summary>
+	public static StoreOptions ConfigureMartenOptions(
+		string connectionString,
+		bool useAsyncProjections)
 	{
-		services.AddHttpContextAccessor();
+		var options = new StoreOptions();
 
-		// Configure Marten
-		var martenBuilder = services.AddMarten(sp =>
+		// Multi-tenant mode: master table tenancy in the same global DB.
+		// No RegisterDatabase needed — tenants are registered dynamically via AddDatabaseRecordAsync.
+		// Realm documents are stored in IGlobalStore (non-tenanted), not here.
+		options.MultiTenantedDatabasesWithMasterDatabaseTable(x =>
 		{
-			var options = new StoreOptions();
+			x.ConnectionString = connectionString;
+			x.SchemaName = "realms";
+			x.AutoCreate = AutoCreate.CreateOrUpdate;
+			x.ApplicationName = "CocoarAuth";
+		});
 
-			if (masterConnectionString is not null && defaultConnectionString is not null)
+		options.AutoCreateSchemaObjects = AutoCreate.All;
+
+		// Enable side effects in inline projections — allows RaiseSideEffects()
+		// to publish messages via Wolverine after the projection commits.
+		options.Events.EnableSideEffectsOnInlineProjections = true;
+
+		// Configure System.Text.Json to handle private setters
+		options.UseSystemTextJsonForSerialization(configure: o =>
+		{
+			o.PropertyNamingPolicy = null; // Use exact property names
+			o.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+			o.Converters.Add(new JsonStringEnumConverter());
+		});
+
+		// Document storage and event configuration
+		ConfigureMartenDocuments(options);
+		ConfigureMartenEvents(options, useAsyncProjections);
+		return options;
+	}
+
+	/// <summary>
+	/// Registers the global (non-tenanted) Marten DocumentStore for cross-tenant data like Realm.
+	/// Uses the same database as the tenanted store's master table.
+	/// </summary>
+	public static IServiceCollection AddGlobalStore(this IServiceCollection services, string connectionString)
+	{
+		services.AddMartenStore<IGlobalStore>(opts =>
+		{
+			opts.Connection(connectionString);
+			opts.AutoCreateSchemaObjects = AutoCreate.CreateOrUpdate;
+
+			opts.Schema.For<Realm>()
+				.Identity(x => x.Id)
+				.Index(x => x.Slug, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsActive')::boolean = true)"; });
+
+			opts.UseSystemTextJsonForSerialization(configure: o =>
 			{
-				// Multi-tenant mode: master DB + per-tenant databases
-				options.MultiTenantedDatabasesWithMasterDatabaseTable(x =>
-				{
-					x.ConnectionString = masterConnectionString;
-					x.SchemaName = "realms";
-					x.AutoCreate = AutoCreate.CreateOrUpdate;
-					x.ApplicationName = "CocoarAuth";
-					x.RegisterDatabase("system", defaultConnectionString);
-				});
-			}
-			else {
-				// Legacy single-tenant mode (fallback for tests that haven't been updated)
-				var dbSettings = sp.GetRequiredService<IReactiveConfig<IDatabaseSettings>>();
-				var dataSourceBuilder = new NpgsqlDataSourceBuilder(dbSettings.CurrentValue.ConnectionString);
-
-				dataSourceBuilder.UsePasswordProvider(
-					(csb) =>
-					{
-						using var password = dbSettings.CurrentValue.Password.Open();
-						return password.Value;
-					},
-					(csb, token) =>
-					{
-						using var password = dbSettings.CurrentValue.Password.Open();
-						return ValueTask.FromResult(password.Value);
-					});
-
-				var dataSource = dataSourceBuilder.Build();
-				options.Connection(dataSource);
-			}
-
-			options.AutoCreateSchemaObjects = AutoCreate.All;
-
-			// Configure System.Text.Json to handle private setters
-			options.UseSystemTextJsonForSerialization(configure: o =>
-			{
-				o.PropertyNamingPolicy = null; // Use exact property names
+				o.PropertyNamingPolicy = null;
 				o.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 				o.Converters.Add(new JsonStringEnumConverter());
 			});
+		}).ApplyAllDatabaseChangesOnStartup();
 
-			// Extracted: Document storage and event configuration
-			ConfigureMartenDocuments(options);
-			ConfigureMartenEvents(options, useAsyncProjections);
-			return options;
-		})
-		.UseLightweightSessions()
-		.ApplyAllDatabaseChangesOnStartup();
+		return services;
+	}
 
-		// Override scoped session registrations with tenant-aware versions
-		services.AddScoped<IDocumentSession>(sp =>
-		{
-			var store = sp.GetRequiredService<IDocumentStore>();
-			var accessor = sp.GetRequiredService<IHttpContextAccessor>();
-			var tenantId = accessor.HttpContext?.Items["TenantId"] as string ?? "system";
-			return store.LightweightSession(tenantId);
-		});
-
-		services.AddScoped<IQuerySession>(sp =>
-		{
-			var store = sp.GetRequiredService<IDocumentStore>();
-			var accessor = sp.GetRequiredService<IHttpContextAccessor>();
-			var tenantId = accessor.HttpContext?.Items["TenantId"] as string ?? "system";
-			return store.QuerySession(tenantId);
-		});
+	public static IServiceCollection AddInfrastructure(this IServiceCollection services)
+	{
+		services.AddHttpContextAccessor();
 
 		// Register tenant session factory
 		services.AddScoped<ITenantSessionFactory, HttpContextTenantSessionFactory>();
-
-		// Only enable async daemon when using async projections (not in tests)
-		if (useAsyncProjections)
-		{
-			martenBuilder.AddAsyncDaemon(DaemonMode.HotCold);
-		}
 
 		// Register HttpClient factory for OIDC protocol operations
 		services.AddHttpClient();
@@ -257,14 +242,8 @@ public static class DependencyInjection
 			.Index(x => x.Subject)
 			.Index(x => x.ReferenceId);
 
-		// ═══════════════════════════════════════════════════════════════
-		// REALM DOCUMENT STORAGE (stored in system tenant)
-		// ═══════════════════════════════════════════════════════════════
-
-		// Configure Realm document (tenant metadata, stored in system tenant DB)
-		options.Schema.For<Realm>()
-			.Identity(x => x.Id)
-			.Index(x => x.Slug, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsActive')::boolean = true)"; });
+		// NOTE: Realm documents are stored in IGlobalStore (non-tenanted), not in
+		// the tenanted store. See AddGlobalStore() for Realm schema configuration.
 	}
 
 	/// <summary>
@@ -561,8 +540,9 @@ public static class DependencyInjection
 			options.Password.RequiredLength = 8;
 			options.Password.RequiredUniqueChars = 1;
 
-			// Lockout settings
-			options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
+			// Lockout settings — 1-minute lockout minimizes targeted DoS impact
+			// while still protecting against brute force (knowledge base best practice)
+			options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(1);
 			options.Lockout.MaxFailedAccessAttempts = 5;
 			options.Lockout.AllowedForNewUsers = true;
 

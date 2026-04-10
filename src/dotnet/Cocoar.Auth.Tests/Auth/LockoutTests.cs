@@ -148,12 +148,12 @@ public class LockoutTests : IAsyncLifetime
         // Try to login with correct password
         var response = await _client.LoginAsync(user.UserName!, password, _factory.JsonOptions);
 
-        // Assert
+        // Assert — generic error to prevent user enumeration (no IsLockedOut flag)
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await response.ReadFromJsonAsync<LoginResultDto>(_factory.JsonOptions);
         Assert.NotNull(result);
         Assert.False(result.Succeeded);
-        Assert.True(result.IsLockedOut);
+        Assert.Equal("Invalid username or password.", result.ErrorMessage);
     }
 
     [Fact]
@@ -296,7 +296,7 @@ public class LockoutTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await response.ReadFromJsonAsync<LoginResultDto>(_factory.JsonOptions);
         Assert.False(result?.Succeeded);
-        Assert.True(result?.IsNotAllowed);
+        Assert.Equal("Invalid username or password.", result?.ErrorMessage);
 
         // Verify event was recorded
         using var verifyScope = _factory.Services.CreateScope();

@@ -16,6 +16,7 @@ public class SharedPostgresFixture : IAsyncLifetime
 
     public PostgreSqlContainer Container { get; } = new PostgreSqlBuilder("postgres:16-alpine")
         .WithDatabase("postgres") // Connect to default DB; test DBs created on demand
+        .WithCommand("-c", "max_connections=500") // Wolverine + parallel tests need more connections
         .Build();
 
     public string ConnectionString => Container.GetConnectionString();
@@ -26,30 +27,26 @@ public class SharedPostgresFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// Creates an isolated set of databases (base + _master + _system) for a test class.
-    /// Returns a connection string pointing at the base DB name.
-    /// Program.cs will derive _master and _system from this base name.
+    /// Creates an isolated database for a test class.
+    /// Single DB serves as both tenant registry and system tenant (like alert-hub pattern).
+    /// Returns a connection string pointing at the isolated DB.
     /// </summary>
     public async Task<string> CreateIsolatedDatabasesAsync()
     {
         var id = Interlocked.Increment(ref _dbCounter);
-        var baseName = $"test_{id}";
+        var dbName = $"test_{id}";
 
         await using var conn = new NpgsqlConnection(ConnectionString);
         await conn.OpenAsync();
 
-        foreach (var suffix in new[] { "", "_master", "_system" })
-        {
-            var dbName = baseName + suffix;
-            await using var cmd = new NpgsqlCommand($"CREATE DATABASE \"{dbName}\"", conn);
-            await cmd.ExecuteNonQueryAsync();
-            _createdDatabases.Add(dbName);
-        }
+        await using var cmd = new NpgsqlCommand($"CREATE DATABASE \"{dbName}\"", conn);
+        await cmd.ExecuteNonQueryAsync();
+        _createdDatabases.Add(dbName);
 
-        // Return connection string with the base DB name
+        // Return connection string pointing at the isolated DB
         var builder = new NpgsqlConnectionStringBuilder(ConnectionString)
         {
-            Database = baseName
+            Database = dbName
         };
         return builder.ConnectionString;
     }

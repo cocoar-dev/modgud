@@ -159,7 +159,7 @@ public class AuthController : ApiControllerBase
     /// Request a password reset link.
     /// </summary>
     [HttpPost("forgot-password")]
-    [EnableRateLimiting("auth-strict")]
+    [EnableRateLimiting("password-reset")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto, CancellationToken cancellationToken)
     {
@@ -388,7 +388,7 @@ public class AuthController : ApiControllerBase
     /// Complete login with a 2FA TOTP code.
     /// </summary>
     [HttpPost("2fa/login")]
-    [EnableRateLimiting("auth-strict")]
+    [EnableRateLimiting("2fa-strict")]
     [ProducesResponseType(typeof(LoginResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> TwoFactorLogin([FromBody] TwoFactorLoginDto dto, CancellationToken cancellationToken)
@@ -442,7 +442,7 @@ public class AuthController : ApiControllerBase
     /// Complete login with a recovery code.
     /// </summary>
     [HttpPost("2fa/recovery-login")]
-    [EnableRateLimiting("auth-strict")]
+    [EnableRateLimiting("2fa-strict")]
     [ProducesResponseType(typeof(LoginResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> RecoveryCodeLogin([FromBody] RecoveryCodeLoginDto dto, CancellationToken cancellationToken)
@@ -593,7 +593,7 @@ public class AuthController : ApiControllerBase
     /// Complete login with an email OTP code.
     /// </summary>
     [HttpPost("2fa/email-otp/login")]
-    [EnableRateLimiting("auth-strict")]
+    [EnableRateLimiting("2fa-strict")]
     [ProducesResponseType(typeof(LoginResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> EmailOtpLogin([FromBody] EmailOtpLoginDto dto, CancellationToken cancellationToken)

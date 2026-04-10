@@ -28,7 +28,10 @@ using Serilog;
 using Cocoar.Auth.Api.Hubs;
 using Cocoar.Configuration.Reactive;
 using Cocoar.SignalARRR.Server.ExtensionMethods;
+using JasperFx.Events.Daemon;
+using Marten;
 using Wolverine;
+using Wolverine.Marten;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -122,24 +125,23 @@ if (!string.IsNullOrWhiteSpace(effectiveCertPath))
     });
 }
 
-// Build full connection strings with embedded password for Marten multi-tenancy
-// Config DB name is the base prefix: "cocoar_auth" → master: "cocoar_auth_master", system: "cocoar_auth_system"
+// Build connection string with embedded password for Marten multi-tenancy.
+// Single DB serves as both tenant registry (master) AND system tenant data.
+// This enables IntegrateWithWolverine (needs a valid default DB for outbox tables).
 var csBuilder = new NpgsqlConnectionStringBuilder(dbSettings.ConnectionString);
 using (var pwd = dbSettings.Password.Open())
 {
     csBuilder.Password = pwd.Value;
 }
+var mainCs = csBuilder.ConnectionString;
 var baseDbName = csBuilder.Database ?? "cocoar_auth";
-csBuilder.Database = baseDbName + "_system";
-var systemRealmCs = csBuilder.ConnectionString;
-csBuilder.Database = baseDbName + "_master";
-var masterCs = csBuilder.ConnectionString;
 
-// Register master connection string for realm provisioning
-builder.Services.AddSingleton<IMasterConnectionString>(new MasterConnectionString(masterCs));
+// Register main connection string for realm provisioning
+builder.Services.AddSingleton<IMasterConnectionString>(new MasterConnectionString(mainCs));
 
 // Add services to the container
-builder.Services.AddInfrastructure(projectionSettings.UseAsyncProjections, masterCs, systemRealmCs);
+builder.Services.AddGlobalStore(mainCs);
+builder.Services.AddInfrastructure();
 builder.Services.AddIdentityWithMarten();
 builder.Services.AddApplication();
 
@@ -185,14 +187,45 @@ var fido2Config = new Fido2Configuration
 builder.Services.AddSingleton(fido2Config);
 builder.Services.AddSingleton<IFido2, Fido2>();
 
-// Configure Wolverine
+// Configure Wolverine + Marten (integrated for transactional outbox support)
 builder.Host.UseWolverine(opts =>
 {
-	// Discover handlers in the Application assembly
     opts.Discovery.IncludeAssembly(typeof(Cocoar.Auth.Application.DependencyInjection).Assembly);
-
-    // Use local, in-memory queue (no external message transport needed)
     opts.Durability.Mode = DurabilityMode.Solo;
+
+    // Marten — configured inside UseWolverine for IntegrateWithWolverine compatibility.
+    // No RegisterDatabase needed — tenants registered dynamically via AddDatabaseRecordAsync.
+    // Realm documents stored in IGlobalStore (non-tenanted), not here.
+    var martenBuilder = opts.Services.AddMarten(
+            Cocoar.Auth.Infrastructure.DependencyInjection.ConfigureMartenOptions(mainCs, projectionSettings.UseAsyncProjections))
+        .IntegrateWithWolverine(x =>
+        {
+            x.MainDatabaseConnectionString = mainCs;
+        })
+        .ApplyAllDatabaseChangesOnStartup();
+
+    if (projectionSettings.UseAsyncProjections)
+    {
+        martenBuilder.AddAsyncDaemon(DaemonMode.HotCold);
+    }
+
+    // Tenant-aware session registrations — MUST be AFTER AddMarten().IntegrateWithWolverine()
+    // so our registrations win over Marten/Wolverine defaults (last-wins DI).
+    opts.Services.AddScoped<IDocumentSession>(sp =>
+    {
+        var store = sp.GetRequiredService<IDocumentStore>();
+        var accessor = sp.GetRequiredService<IHttpContextAccessor>();
+        var tenantId = accessor.HttpContext?.Items["TenantId"] as string ?? "system";
+        return store.LightweightSession(tenantId);
+    });
+
+    opts.Services.AddScoped<IQuerySession>(sp =>
+    {
+        var store = sp.GetRequiredService<IDocumentStore>();
+        var accessor = sp.GetRequiredService<IHttpContextAccessor>();
+        var tenantId = accessor.HttpContext?.Items["TenantId"] as string ?? "system";
+        return store.QuerySession(tenantId);
+    });
 });
 
 // Configure authentication cookies
@@ -261,7 +294,7 @@ builder.Services.AddControllers()
     });
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(systemRealmCs, name: "postgresql");
+    .AddNpgSql(mainCs, name: "postgresql");
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -273,6 +306,20 @@ builder.Services.AddRateLimiter(options =>
     {
         opt.PermitLimit = 10;
         opt.Window = TimeSpan.FromMinutes(1);
+        opt.QueueLimit = 0;
+    });
+
+    options.AddFixedWindowLimiter("2fa-strict", opt =>
+    {
+        opt.PermitLimit = 3;
+        opt.Window = TimeSpan.FromMinutes(5);
+        opt.QueueLimit = 0;
+    });
+
+    options.AddFixedWindowLimiter("password-reset", opt =>
+    {
+        opt.PermitLimit = 3;
+        opt.Window = TimeSpan.FromHours(1);
         opt.QueueLimit = 0;
     });
 
@@ -305,7 +352,8 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-XSS-Protection"] = "0";
     context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
-    context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'";
+    context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
+    context.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
     await next();
 });
 
@@ -349,7 +397,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-//app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
 
 app.UseSerilogRequestLogging();
 
@@ -375,34 +427,36 @@ app.MapHARRRController<AdminHub>("/admin-hub");
 // SPA fallback: any unmatched route → index.html (Vue router handles it)
 app.MapFallbackToFile("index.html");
 
-// Ensure the master and system databases exist (auto-created on first start)
-var masterDbName = baseDbName + "_master";
-var systemDbName = baseDbName + "_system";
-var bootstrapBuilder = new NpgsqlConnectionStringBuilder(masterCs) { Database = "postgres" };
+// Ensure the main database exists (auto-created on first start)
+// Single DB serves as both tenant registry and system tenant data.
+var bootstrapBuilder = new NpgsqlConnectionStringBuilder(mainCs) { Database = "postgres" };
 await using (var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString))
 {
     await bootstrapConn.OpenAsync();
-    foreach (var dbName in new[] { masterDbName, systemDbName })
+    await using var checkCmd = new NpgsqlCommand(
+        "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
+    checkCmd.Parameters.AddWithValue("@dbName", baseDbName);
+    var exists = await checkCmd.ExecuteScalarAsync();
+    if (exists is null)
     {
-        await using var checkCmd = new NpgsqlCommand(
-            $"SELECT 1 FROM pg_database WHERE datname = '{dbName}'", bootstrapConn);
-        var exists = await checkCmd.ExecuteScalarAsync();
-        if (exists is null)
-        {
-            await using var createCmd = new NpgsqlCommand(
-                $"CREATE DATABASE \"{dbName}\"", bootstrapConn);
-            await createCmd.ExecuteNonQueryAsync();
-        }
+        var quotedName = "\"" + baseDbName.Replace("\"", "\"\"") + "\"";
+        await using var createCmd = new NpgsqlCommand(
+            $"CREATE DATABASE {quotedName}", bootstrapConn);
+        await createCmd.ExecuteNonQueryAsync();
     }
 }
 
 // Apply Marten schema changes (creates realms.mt_tenant_databases table, document schemas, etc.)
-// Must happen before any Marten session usage since ApplyAllDatabaseChangesOnStartup runs as
-// a hosted service which hasn't started yet at this point in Program.cs.
 var store = app.Services.GetRequiredService<Marten.IDocumentStore>();
 await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
 
-// Seed system realm document (idempotent)
+// Register "system" tenant in Marten's tenancy at runtime (same DB as main connection).
+// This is required because MasterTableTenancy doesn't support a default tenant —
+// all tenants must be explicitly registered before sessions can be opened.
+var tenancy = (Marten.Storage.MasterTableTenancy)store.Options.Tenancy;
+await tenancy.AddDatabaseRecordAsync("system", mainCs);
+
+// Seed system realm document in IGlobalStore (idempotent)
 using (var realmScope = app.Services.CreateScope())
 {
     var realmService = realmScope.ServiceProvider.GetRequiredService<IRealmProvisioningService>();

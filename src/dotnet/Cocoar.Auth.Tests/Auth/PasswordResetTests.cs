@@ -125,7 +125,7 @@ public class PasswordResetTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ResetPassword_WithNonExistentUser_ReturnsNotFound()
+    public async Task ResetPassword_WithNonExistentUser_ReturnsBadRequest()
     {
         // Act
         var resetDto = new ResetPasswordRequestDto
@@ -136,8 +136,8 @@ public class PasswordResetTests : IAsyncLifetime
         };
         var response = await _client.PostAsJsonAsync("/api/auth/reset-password", resetDto, _factory.JsonOptions);
 
-        // Assert
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        // Assert — returns same error as invalid token to prevent user enumeration
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]

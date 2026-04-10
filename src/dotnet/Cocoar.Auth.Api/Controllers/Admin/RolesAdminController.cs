@@ -33,8 +33,8 @@ public class RolesAdminController : ApiControllerBase
     [ProducesResponseType(typeof(RoleListDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetRoles(CancellationToken cancellationToken)
     {
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<IReadOnlyList<RoleListReadModel>>>(
-            new GetAllRolesQuery(),
+        var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<IReadOnlyList<RoleListReadModel>>>(
+            GetTenantId(), new GetAllRolesQuery(),
             cancellationToken);
 
         return result.Match(
@@ -59,8 +59,8 @@ public class RolesAdminController : ApiControllerBase
             return BadRequest("Invalid role ID format.");
         }
 
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<ApplicationRole>>(
-            new GetRoleByIdQuery(roleId),
+        var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<ApplicationRole>>(
+            GetTenantId(), new GetRoleByIdQuery(roleId),
             cancellationToken);
 
         return result.Match(
@@ -77,8 +77,8 @@ public class RolesAdminController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateRole([FromBody] CreateRoleDto dto, CancellationToken cancellationToken)
     {
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<ApplicationRole>>(
-            dto.ToCommand(),
+        var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<ApplicationRole>>(
+            GetTenantId(), dto.ToCommand(),
             cancellationToken);
 
         if (result.IsError) return Problem(result.Errors);
@@ -103,8 +103,8 @@ public class RolesAdminController : ApiControllerBase
             return BadRequest("Invalid role ID format.");
         }
 
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<ApplicationRole>>(
-            dto.ToCommand(roleId),
+        var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<ApplicationRole>>(
+            GetTenantId(), dto.ToCommand(roleId),
             cancellationToken);
 
         if (result.IsError) return Problem(result.Errors);
@@ -128,8 +128,8 @@ public class RolesAdminController : ApiControllerBase
             return BadRequest("Invalid role ID format.");
         }
 
-        var result = await _messageBus.InvokeAsync<ErrorOr.ErrorOr<bool>>(
-            new DeleteRoleCommand(roleId),
+        var result = await _messageBus.InvokeForTenantAsync<ErrorOr.ErrorOr<bool>>(
+            GetTenantId(), new DeleteRoleCommand(roleId),
             cancellationToken);
 
         if (result.IsError)

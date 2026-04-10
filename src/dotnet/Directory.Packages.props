@@ -4,26 +4,26 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- ASP.NET Core & Identity -->
-    <PackageVersion Include="JasperFx.Events" Version="1.24.1" />
+    <PackageVersion Include="JasperFx.Events" Version="1.26.1" />
     <PackageVersion Include="Microsoft.AspNetCore.Identity" Version="2.3.0" />
     <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Identity.Stores" Version="10.0.0" />
     <!-- Marten -->
-    <PackageVersion Include="Marten" Version="8.26.1" />
+    <PackageVersion Include="Marten" Version="8.29.2" />
     <!-- Mapping -->
     <PackageVersion Include="Riok.Mapperly" Version="4.3.1" />
     <!-- ErrorOr -->
-    <PackageVersion Include="ErrorOr" Version="2.0.1" />
+    <PackageVersion Include="ErrorOr" Version="2.1.0" />
     <!-- Wolverine CQRS -->
-    <PackageVersion Include="WolverineFx" Version="5.23.0" />
-    <PackageVersion Include="WolverineFx.Marten" Version="5.23.0" />
+    <PackageVersion Include="WolverineFx" Version="5.28.0" />
+    <PackageVersion Include="WolverineFx.Marten" Version="5.28.0" />
     <!-- Health Checks -->
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
     <!-- Logging -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <!-- Swagger -->
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.6" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.7" />
     <!-- UserAgent Parsing -->
     <PackageVersion Include="UAParser" Version="3.1.47" />
     <!-- WebAuthn / FIDO2 -->
@@ -38,7 +38,7 @@
     <!-- BCrypt for client secret hashing (compatible with OpenIddict) -->
     <PackageVersion Include="BCrypt.Net-Next" Version="4.1.0" />
     <!-- SignalARRR (typed bidirectional RPC over SignalR) -->
-    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="4.0.0" />
+    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="4.2.2" />
     <!-- Cocoar Configuration (5.0: Secrets + Flags merged into core packages) -->
     <PackageVersion Include="Cocoar.Configuration" Version="5.0.0" />
     <PackageVersion Include="Cocoar.Configuration.AspNetCore" Version="5.0.0" />
@@ -46,8 +46,8 @@
     <!-- Testing -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.5" />
     <PackageVersion Include="Otp.NET" Version="1.4.1" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
-    <PackageVersion Include="Weasel.Core" Version="8.10.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
+    <PackageVersion Include="Weasel.Core" Version="8.12.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="coverlet.collector" Version="8.0.1" />

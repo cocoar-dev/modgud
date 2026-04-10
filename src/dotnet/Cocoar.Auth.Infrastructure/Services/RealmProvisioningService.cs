@@ -3,6 +3,7 @@ using Cocoar.Auth.Application.DTOs.Realms;
 using Cocoar.Auth.Domain.Entities;
 using Cocoar.Auth.Infrastructure.Interfaces;
 using Cocoar.Auth.Infrastructure.OpenIddict;
+using Cocoar.Auth.Infrastructure.Persistence;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using Cocoar.Auth.Infrastructure.Repositories;
 using ErrorOr;
@@ -31,7 +32,8 @@ public interface IRealmProvisioningService
 
 public class RealmProvisioningService : IRealmProvisioningService
 {
-	private readonly IDocumentStore _store;
+	private readonly IGlobalStore _globalStore;
+	private readonly IDocumentStore _tenantedStore;
 	private readonly IMasterConnectionString _masterCs;
 	private readonly IRealmCache _realmCache;
 	private readonly IServiceProvider _serviceProvider;
@@ -47,13 +49,15 @@ public class RealmProvisioningService : IRealmProvisioningService
 	};
 
 	public RealmProvisioningService(
-		IDocumentStore store,
+		IGlobalStore globalStore,
+		IDocumentStore tenantedStore,
 		IMasterConnectionString masterCs,
 		IRealmCache realmCache,
 		IServiceProvider serviceProvider,
 		ILogger<RealmProvisioningService> logger)
 	{
-		_store = store;
+		_globalStore = globalStore;
+		_tenantedStore = tenantedStore;
 		_masterCs = masterCs;
 		_realmCache = realmCache;
 		_serviceProvider = serviceProvider;
@@ -62,7 +66,7 @@ public class RealmProvisioningService : IRealmProvisioningService
 
 	public async Task<List<Realm>> GetAllRealmsAsync(CancellationToken ct = default)
 	{
-		await using var session = _store.QuerySession(SystemTenantId);
+		await using var session = _globalStore.QuerySession();
 		var realms = await session.Query<Realm>()
 			.OrderBy(r => r.CreatedAt)
 			.ToListAsync(ct);
@@ -71,7 +75,7 @@ public class RealmProvisioningService : IRealmProvisioningService
 
 	public async Task<Realm?> GetRealmBySlugAsync(string slug, CancellationToken ct = default)
 	{
-		await using var session = _store.QuerySession(SystemTenantId);
+		await using var session = _globalStore.QuerySession();
 		return await session.Query<Realm>()
 			.FirstOrDefaultAsync(r => r.Slug == slug, ct);
 	}
@@ -93,7 +97,7 @@ public class RealmProvisioningService : IRealmProvisioningService
 		}
 
 		// Check uniqueness via Marten
-		await using var session = _store.LightweightSession(SystemTenantId);
+		await using var session = _globalStore.LightweightSession();
 		var existing = await session.Query<Realm>()
 			.FirstOrDefaultAsync(r => r.Slug == dto.Slug, ct);
 
@@ -105,11 +109,8 @@ public class RealmProvisioningService : IRealmProvisioningService
 
 		// Build the tenant database connection string
 		var csBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value);
-		var masterDbName = csBuilder.Database!;
-		var baseDbName = masterDbName.EndsWith("_master")
-			? masterDbName[..^"_master".Length]
-			: masterDbName;
-		var tenantDbName = $"{baseDbName}_{dto.Slug}";
+		var mainDbName = csBuilder.Database!;
+		var tenantDbName = $"{mainDbName}_{dto.Slug}";
 		csBuilder.Database = tenantDbName;
 		var tenantCs = csBuilder.ConnectionString;
 
@@ -119,18 +120,21 @@ public class RealmProvisioningService : IRealmProvisioningService
 		{
 			await bootstrapConn.OpenAsync(ct);
 			await using var checkDbCmd = new NpgsqlCommand(
-				$"SELECT 1 FROM pg_database WHERE datname = '{tenantDbName}'", bootstrapConn);
+				"SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
+			checkDbCmd.Parameters.AddWithValue("@dbName", tenantDbName);
 			if (await checkDbCmd.ExecuteScalarAsync(ct) is null)
 			{
+				// CREATE DATABASE does not support parameters — quote identifier to prevent injection
+				var quotedName = "\"" + tenantDbName.Replace("\"", "\"\"") + "\"";
 				await using var createDbCmd = new NpgsqlCommand(
-					$"CREATE DATABASE \"{tenantDbName}\"", bootstrapConn);
+					$"CREATE DATABASE {quotedName}", bootstrapConn);
 				await createDbCmd.ExecuteNonQueryAsync(ct);
 				_logger.LogInformation("Created database {DbName} for realm {Slug}", tenantDbName, dto.Slug);
 			}
 		}
 
 		// Register in Marten's tenant registry via its built-in API
-		var tenancy = (Marten.Storage.MasterTableTenancy)_store.Options.Tenancy;
+		var tenancy = (Marten.Storage.MasterTableTenancy)_tenantedStore.Options.Tenancy;
 		await tenancy.AddDatabaseRecordAsync(dto.Slug, tenantCs);
 
 		// Apply Marten schema to the new tenant database (tables, functions, indexes)
@@ -177,7 +181,7 @@ public class RealmProvisioningService : IRealmProvisioningService
 
 	public async Task<ErrorOr<Realm>> UpdateRealmAsync(string slug, UpdateRealmDto dto, CancellationToken ct = default)
 	{
-		await using var session = _store.LightweightSession(SystemTenantId);
+		await using var session = _globalStore.LightweightSession();
 
 		var realm = await session.Query<Realm>()
 			.FirstOrDefaultAsync(r => r.Slug == slug, ct);
@@ -229,7 +233,7 @@ public class RealmProvisioningService : IRealmProvisioningService
 
 	public async Task<ErrorOr<bool>> DeleteRealmAsync(string slug, CancellationToken ct = default)
 	{
-		await using var session = _store.LightweightSession(SystemTenantId);
+		await using var session = _globalStore.LightweightSession();
 
 		var realm = await session.Query<Realm>()
 			.FirstOrDefaultAsync(r => r.Slug == slug, ct);
@@ -268,7 +272,7 @@ public class RealmProvisioningService : IRealmProvisioningService
 		// A realm needs setup if it has no users with the Admin role
 		try
 		{
-			await using var session = _store.QuerySession(slug);
+			await using var session = _tenantedStore.QuerySession(slug);
 
 			var adminRole = await session.Query<RoleState>()
 				.FirstOrDefaultAsync(r => r.NormalizedName == "ADMIN" && !r.IsDeleted, ct);
@@ -289,7 +293,7 @@ public class RealmProvisioningService : IRealmProvisioningService
 
 	public async Task EnsureSystemRealmExistsAsync(CancellationToken ct = default)
 	{
-		await using var session = _store.LightweightSession(SystemTenantId);
+		await using var session = _globalStore.LightweightSession();
 
 		var existing = await session.Query<Realm>()
 			.FirstOrDefaultAsync(r => r.Slug == SystemTenantId, ct);

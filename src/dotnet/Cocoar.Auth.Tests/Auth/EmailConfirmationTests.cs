@@ -92,13 +92,13 @@ public class EmailConfirmationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ConfirmEmail_WithInvalidUserId_ReturnsNotFound()
+    public async Task ConfirmEmail_WithInvalidUserId_ReturnsBadRequest()
     {
         // Act
         var response = await _client.GetAsync($"/api/auth/confirm-email?userId={Guid.NewGuid()}&token=sometoken");
 
-        // Assert
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        // Assert — returns same error as invalid token to prevent user enumeration
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]

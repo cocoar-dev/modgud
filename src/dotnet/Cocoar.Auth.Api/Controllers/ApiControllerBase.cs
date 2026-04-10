@@ -52,6 +52,14 @@ public abstract class ApiControllerBase : ControllerBase
         return ValidationProblem(modelStateDictionary);
     }
 
+    /// <summary>
+    /// Returns the current tenant ID from the HTTP context.
+    /// Used with IMessageBus.InvokeForTenantAsync to propagate tenant context to Wolverine handlers.
+    /// </summary>
+    protected string GetTenantId()
+        => HttpContext.Items["TenantId"] as string
+           ?? throw new InvalidOperationException("No tenant context available.");
+
     protected IActionResult FromErrorOr<T>(ErrorOr<T> result, Func<T, IActionResult>? successFunc = null)
     {
         if (result.IsError)

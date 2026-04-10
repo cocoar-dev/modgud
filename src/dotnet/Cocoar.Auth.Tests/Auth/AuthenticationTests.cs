@@ -81,7 +81,7 @@ public class AuthenticationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Login_WithInactiveUser_ReturnsNotAllowed()
+    public async Task Login_WithInactiveUser_ReturnsGenericError()
     {
         // Arrange
         var password = "Test123!@#";
@@ -90,12 +90,12 @@ public class AuthenticationTests : IAsyncLifetime
         // Act
         var response = await _client.LoginAsync(user.UserName, password, _factory.JsonOptions);
 
-        // Assert
+        // Assert — generic error to prevent user enumeration (no IsNotAllowed flag)
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await response.ReadFromJsonAsync<LoginResultDto>(_factory.JsonOptions);
         Assert.NotNull(result);
         Assert.False(result.Succeeded);
-        Assert.True(result.IsNotAllowed);
+        Assert.Equal("Invalid username or password.", result.ErrorMessage);
     }
 
     [Fact]
