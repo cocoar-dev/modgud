@@ -1,10 +1,7 @@
 using Cocoar.Auth.Application.Models;
-using Cocoar.Auth.Domain.Aggregates;
 using Cocoar.Auth.Domain.Authorization;
 using Cocoar.Auth.Domain.Authorization.Events;
 using Cocoar.Auth.Domain.Entities;
-using Cocoar.Auth.Domain.Enums;
-using Cocoar.Auth.Domain.Events;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -126,11 +123,6 @@ public class SetupController : ControllerBase
         }
 
         var session = HttpContext.RequestServices.GetRequiredService<IDocumentSession>();
-
-        // Legacy permission grant — removed once Phase 2.1 finalizes ABAC migration.
-        var grantId = Guid.CreateVersion7();
-        session.Events.StartStream<PermissionGrantAggregate>(grantId,
-            new PermissionGrantCreated(grantId, SubjectType.User, user.Id, null, "tenant:admin", user.Id));
 
         // ── ABAC bootstrap ──
         // Create the "System Admin" PermissionRole with full system+tenant admin scope,

@@ -1,6 +1,11 @@
 using Cocoar.Auth.Api.Configuration;
 using Cocoar.Auth.Application.Interfaces;
+using Cocoar.Auth.Application.Models;
+using Cocoar.Auth.Domain.Aggregates;
 using Cocoar.Auth.Domain.Entities;
+using Cocoar.Auth.Domain.Authorization;
+using Cocoar.Auth.Domain.Authorization.Events;
+using Cocoar.Auth.Domain.Events;
 using Cocoar.Auth.Infrastructure.Persistence;
 using Cocoar.Auth.Infrastructure.Persistence.Projections;
 using Cocoar.Auth.Infrastructure.Repositories;
@@ -195,6 +200,8 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
 
         if (isAdmin)
         {
+            // ASP.NET Identity role — kept for backward compat with legacy [Authorize(Roles="Admin")]
+            // checks that still sit on non-ABAC endpoints during the transition.
             var adminRole = await roleManager.FindByNameAsync("Admin");
             if (adminRole is null)
             {
@@ -202,6 +209,64 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
                 await roleManager.CreateAsync(adminRole);
             }
             await userManager.AddToRoleAsync(user, "Admin");
+
+            // ABAC: reuse-or-create "System Admin" role + "System Administrators" group
+            // and add the test user as a direct member. Mirrors the SetupController bootstrap.
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+
+            var systemAdminRole = await session.Query<PermissionRole>()
+                .FirstOrDefaultAsync(r => r.Name == "System Admin" && !r.IsDeleted);
+            Guid systemAdminRoleId;
+            if (systemAdminRole is null)
+            {
+                systemAdminRoleId = Guid.CreateVersion7();
+                session.Events.StartStream<PermissionRole>(systemAdminRoleId,
+                    new PermissionRoleCreatedEvent(
+                        Id: systemAdminRoleId,
+                        Name: "System Admin",
+                        Description: "Test harness — full admin.",
+                        ResourceType: "system",
+                        Permissions: ["system:admin", "tenant:admin"]));
+            }
+            else
+            {
+                systemAdminRoleId = systemAdminRole.Id;
+            }
+
+            var systemAdminGroup = await session.Query<AuthorizationGroup>()
+                .FirstOrDefaultAsync(g => g.Name == "System Administrators" && !g.IsDeleted);
+            if (systemAdminGroup is null)
+            {
+                var groupId = Guid.CreateVersion7();
+                session.Events.StartStream<AuthorizationGroup>(groupId,
+                    new AuthorizationGroupCreatedEvent(
+                        Id: groupId,
+                        Name: "System Administrators",
+                        Description: "Test harness — holds System Admin.",
+                        MemberIds: [user.Id],
+                        RoleIds: [systemAdminRoleId],
+                        AccessScripts: []));
+            }
+            else if (!systemAdminGroup.MemberIds.Contains(user.Id))
+            {
+                var newMembers = new List<Guid>(systemAdminGroup.MemberIds) { user.Id };
+                session.Events.Append(systemAdminGroup.Id,
+                    new AuthorizationGroupUpdatedEvent(
+                        Id: systemAdminGroup.Id,
+                        Name: systemAdminGroup.Name,
+                        Description: systemAdminGroup.Description,
+                        MemberIds: newMembers,
+                        RoleIds: systemAdminGroup.RoleIds,
+                        AccessScripts: systemAdminGroup.AccessScripts,
+                        MembershipMode: systemAdminGroup.MembershipMode,
+                        MembershipScript: systemAdminGroup.MembershipScript,
+                        CompiledMembershipScript: systemAdminGroup.CompiledMembershipScript,
+                        MembershipScriptDependencies: systemAdminGroup.MembershipScriptDependencies,
+                        Email: systemAdminGroup.Email,
+                        EmailMode: systemAdminGroup.EmailMode));
+            }
+
+            await session.SaveChangesAsync();
         }
 
         return user;

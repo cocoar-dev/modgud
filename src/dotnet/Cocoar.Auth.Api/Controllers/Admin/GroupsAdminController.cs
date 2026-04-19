@@ -1,5 +1,5 @@
+using Cocoar.Auth.Api.Authorization;
 using Cocoar.Auth.Api.Extensions;
-using Cocoar.Auth.Api.Hubs;
 using Cocoar.Auth.Application.Commands.Groups;
 using Cocoar.Auth.Application.DTOs.Groups;
 using Cocoar.Auth.Application.Mappers;
@@ -14,16 +14,14 @@ using Wolverine;
 namespace Cocoar.Auth.Api.Controllers.Admin;
 
 [Route("api/admin/groups")]
-[Authorize(Roles = "Admin")]
+[RequiresAbacPermission("tenant:admin")]
 public class GroupsAdminController : ApiControllerBase
 {
 	private readonly IMessageBus _messageBus;
-	private readonly IAdminHubNotifier _hubNotifier;
 
-	public GroupsAdminController(IMessageBus messageBus, IAdminHubNotifier hubNotifier)
+	public GroupsAdminController(IMessageBus messageBus)
 	{
 		_messageBus = messageBus;
-		_hubNotifier = hubNotifier;
 	}
 
 	[HttpGet]
@@ -69,8 +67,7 @@ public class GroupsAdminController : ApiControllerBase
 		if (result.IsError) return Problem(result.Errors);
 
 		var group = result.Value;
-		await _hubNotifier.EntityChangedAsync("group", "created", group.Id.ToString());
-		return CreatedAtAction(nameof(GetGroup), new { id = group.Id.ToString() }, group);
+return CreatedAtAction(nameof(GetGroup), new { id = group.Id.ToString() }, group);
 	}
 
 	[HttpPatch("{id}")]
@@ -86,7 +83,6 @@ public class GroupsAdminController : ApiControllerBase
 
 		if (result.IsError) return Problem(result.Errors);
 
-		await _hubNotifier.EntityChangedAsync("group", "updated", id);
 		return Ok(result.Value);
 	}
 
@@ -103,7 +99,6 @@ public class GroupsAdminController : ApiControllerBase
 
 		if (result.IsError) return Problem(result.Errors);
 
-		await _hubNotifier.EntityChangedAsync("group", "deleted", id);
 		return NoContent();
 	}
 
@@ -123,7 +118,6 @@ public class GroupsAdminController : ApiControllerBase
 
 		if (result.IsError) return Problem(result.Errors);
 
-		await _hubNotifier.EntityChangedAsync("group", "updated", id);
 		return NoContent();
 	}
 
@@ -140,7 +134,6 @@ public class GroupsAdminController : ApiControllerBase
 
 		if (result.IsError) return Problem(result.Errors);
 
-		await _hubNotifier.EntityChangedAsync("group", "updated", id);
 		return NoContent();
 	}
 
@@ -160,7 +153,6 @@ public class GroupsAdminController : ApiControllerBase
 
 		if (result.IsError) return Problem(result.Errors);
 
-		await _hubNotifier.EntityChangedAsync("group", "updated", id);
 		return NoContent();
 	}
 
@@ -177,7 +169,6 @@ public class GroupsAdminController : ApiControllerBase
 
 		if (result.IsError) return Problem(result.Errors);
 
-		await _hubNotifier.EntityChangedAsync("group", "updated", id);
 		return NoContent();
 	}
 
@@ -197,7 +188,6 @@ public class GroupsAdminController : ApiControllerBase
 
 		if (result.IsError) return Problem(result.Errors);
 
-		await _hubNotifier.EntityChangedAsync("group", "updated", id);
 		return NoContent();
 	}
 
@@ -218,7 +208,6 @@ public class GroupsAdminController : ApiControllerBase
 
 		if (result.IsError) return Problem(result.Errors);
 
-		await _hubNotifier.EntityChangedAsync("group", "updated", id);
 		return NoContent();
 	}
 }

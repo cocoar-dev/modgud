@@ -1,4 +1,4 @@
-using Cocoar.Auth.Api.Filters;
+using Cocoar.Auth.Api.Authorization;
 using Cocoar.Auth.Api.Hubs;
 using Cocoar.Auth.Application.DTOs.Realms;
 using Cocoar.Auth.Infrastructure.Services;
@@ -11,8 +11,7 @@ namespace Cocoar.Auth.Api.Controllers.Admin;
 /// Realm management API. Only accessible from tenants with CanManageTenants enabled.
 /// </summary>
 [Route("api/admin/realms")]
-[Authorize(Roles = "Admin")]
-[CanManageTenants]
+[RequiresAbacPermission("system:admin")]
 public class RealmsAdminController : ApiControllerBase
 {
 	private readonly IRealmProvisioningService _realmService;

@@ -1,3 +1,4 @@
+using Cocoar.Auth.Api.Authorization;
 using Cocoar.Auth.Application.DTOs.LoginProviders;
 using Cocoar.Auth.Application.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -11,7 +12,7 @@ namespace Cocoar.Auth.Api.Controllers.Admin;
 /// Admin controller for managing login providers.
 /// </summary>
 [Route("api/admin/login-providers")]
-[Authorize(Roles = "Admin")]
+[RequiresAbacPermission("tenant:admin")]
 public class LoginProvidersAdminController : ApiControllerBase
 {
 	private readonly LoginProviderService _loginProviderService;

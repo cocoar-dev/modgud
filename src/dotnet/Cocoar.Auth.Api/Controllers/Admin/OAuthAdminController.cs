@@ -1,3 +1,4 @@
+using Cocoar.Auth.Api.Authorization;
 using Cocoar.Auth.Application.DTOs.Common;
 using Cocoar.Auth.Application.DTOs.OAuth;
 using Cocoar.Auth.Application.Services;
@@ -12,7 +13,7 @@ namespace Cocoar.Auth.Api.Controllers.Admin;
 /// Admin controller for managing OAuth clients and scopes.
 /// </summary>
 [Route("api/admin/oauth")]
-[Authorize(Roles = "Admin")]
+[RequiresAbacPermission("tenant:admin")]
 public class OAuthAdminController : ApiControllerBase
 {
 	private readonly OAuthAdminService _oAuthAdminService;

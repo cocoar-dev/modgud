@@ -483,8 +483,7 @@ using (var realmScope = app.Services.CreateScope())
 var realmCache = app.Services.GetRequiredService<IRealmCache>();
 await realmCache.InitializeAsync();
 
-// Initialize permission resource registry — both legacy and new ABAC (removed in Phase 2.1)
-Cocoar.Auth.Application.Authorization.ResourceRegistry.Initialize();
+// Initialize ABAC resource registry
 Cocoar.Auth.Domain.Authorization.ResourceRegistry.Initialize();
 
 // Seed default OAuth scopes (openid, email, profile, roles, offline_access)
@@ -492,10 +491,6 @@ await app.Services.SeedOpenIddictScopesAsync();
 
 // Seed built-in "Internal" login provider
 await app.Services.SeedLoginProvidersAsync();
-
-// Seed default permission roles and migrate existing Admin users
-await app.Services.SeedDefaultPermissionRolesAsync();
-await app.Services.MigrateAdminUsersToPermissionsAsync();
 
 // Use RunJasperFxCommands to support Wolverine CLI commands (e.g., `dotnet run -- codegen write`
 // to pre-generate handler code and eliminate runtime Roslyn compilation).
