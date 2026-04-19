@@ -26,6 +26,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Weasel.Core.Migrations;
 using StoreOptions = Marten.StoreOptions;
+// ABAC namespaces (new authorization system — coexists with legacy until Phase 2.1)
+using Abac = Cocoar.Auth.Application.Authorization;
+using AbacInf = Cocoar.Auth.Infrastructure.Authorization;
+using AbacEvents = Cocoar.Auth.Domain.Authorization.Events;
+using Cocoar.JsEval.Engine;
+using Cocoar.JsEval.Linq;
+using Cocoar.JsEval.TsDefinition;
+using Cocoar.JsEval.TypeScript;
 
 namespace Cocoar.Auth.Infrastructure;
 
@@ -65,7 +73,7 @@ public static class DependencyInjection
 			o.PropertyNamingPolicy = null; // Use exact property names
 			o.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 			o.Converters.Add(new JsonStringEnumConverter());
-		});
+		}, enumStorage: Weasel.Core.EnumStorage.AsString);
 
 		// Document storage and event configuration
 		ConfigureMartenDocuments(options);
@@ -131,6 +139,7 @@ public static class DependencyInjection
 		services.AddScoped<IRoleListRepository, RoleListRepository>();
 		services.AddScoped<IGroupListRepository, GroupListRepository>();
 		services.AddScoped<IGroupRepository, GroupRepository>();
+		services.AddScoped<IPermissionRepository, PermissionRepository>();
 	}
 
 	/// <summary>
@@ -172,8 +181,20 @@ public static class DependencyInjection
 		// Register event appender
 		services.AddScoped<IEventAppender, MartenEventAppender>();
 
+		// Register permission service
+		services.AddScoped<IPermissionService, PermissionService>();
+
 		// Register effective roles service (resolves direct + group-inherited roles)
 		services.AddScoped<IEffectiveRolesService, EffectiveRolesService>();
+
+		// ── ABAC services (script-based authorization, see Domain/Authorization) ──
+		// Replaces the legacy IPermissionService + 4D-tuple PermissionGrant model in Phase 2.1.
+		services.AddJsEval(b => b.AddLinq());
+		services.AddTsTranspiler();
+		services.AddTsDefinition();
+		services.AddScoped<Abac.IPermissionService, AbacInf.PermissionService>();
+		services.AddScoped<Abac.IAccessPolicyEngine, AbacInf.AccessPolicyEngine>();
+		services.AddScoped<Abac.IMembershipEvaluator, AbacInf.MembershipEvaluator>();
 	}
 
 	/// <summary>
@@ -416,6 +437,23 @@ public static class DependencyInjection
 		options.Events.AddEventType<OAuthApiPropertiesChanged>();
 		options.Events.AddEventType<OAuthApiDeleted>();
 
+		// Register permission events (legacy 4D-tuple model — removed in Phase 2.1)
+		options.Events.AddEventType<PermissionRoleCreated>();
+		options.Events.AddEventType<PermissionRoleUpdated>();
+		options.Events.AddEventType<PermissionRoleDeleted>();
+		options.Events.AddEventType<PermissionGrantCreated>();
+		options.Events.AddEventType<PermissionGrantRevoked>();
+
+		// Register ABAC events (new script-based authorization system)
+		options.Events.AddEventType<AbacEvents.PermissionRoleCreatedEvent>();
+		options.Events.AddEventType<AbacEvents.PermissionRoleUpdatedEvent>();
+		options.Events.AddEventType<AbacEvents.PermissionRoleDeletedEvent>();
+		options.Events.AddEventType<AbacEvents.AuthorizationGroupCreatedEvent>();
+		options.Events.AddEventType<AbacEvents.AuthorizationGroupUpdatedEvent>();
+		options.Events.AddEventType<AbacEvents.AuthorizationGroupDeletedEvent>();
+		options.Events.AddEventType<AbacEvents.AuthorizationGroupMembershipRecomputedEvent>();
+		options.Events.AddEventType<AbacEvents.AuthorizationGroupMembershipRecomputeFailedEvent>();
+
 		// ═══════════════════════════════════════════════════════════════
 		// INLINE STATE PROJECTIONS (for validation, Identity, immediate consistency)
 		// Naming Convention: *State = Inline projection, single source of truth
@@ -445,6 +483,15 @@ public static class DependencyInjection
 		// Use for: login provider validation, lookups
 		options.Projections.Add(new LoginProviderStateProjection(), ProjectionLifecycle.Inline);
 		options.Projections.Add(new GroupStateProjection(), ProjectionLifecycle.Inline);
+
+		// PermissionRoleState + PermissionGrantState — inline for immediate permission checks
+		// (legacy — removed in Phase 2.1)
+		options.Projections.Add(new PermissionRoleStateProjection(), ProjectionLifecycle.Inline);
+		options.Projections.Add(new PermissionGrantStateProjection(), ProjectionLifecycle.Inline);
+
+		// ABAC projections — inline because permission checks need immediate consistency
+		options.Projections.Add<AbacInf.PermissionRoleProjection>(ProjectionLifecycle.Inline);
+		options.Projections.Add<AbacInf.AuthorizationGroupProjection>(ProjectionLifecycle.Inline);
 
 		// ═══════════════════════════════════════════════════════════════
 		// READ MODEL PROJECTIONS (configurable: async for prod, inline for tests)
@@ -522,6 +569,16 @@ public static class DependencyInjection
 		options.Schema.For<LoginProviderState>()
 			.Identity(x => x.Id)
 			.Index(x => x.Name, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsDeleted')::boolean IS NOT TRUE)"; });
+
+		// Configure PermissionRoleState indexes
+		options.Schema.For<PermissionRoleState>()
+			.Identity(x => x.Id)
+			.Index(x => x.Name, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsDeleted')::boolean IS NOT TRUE)"; });
+
+		// Configure PermissionGrantState indexes
+		options.Schema.For<PermissionGrantState>()
+			.Identity(x => x.Id)
+			.Index(x => x.SubjectId);
 
 		// Configure OAuthApiSecurityData document (security-sensitive data, not event-sourced)
 		options.Schema.For<OAuthApiSecurityData>()

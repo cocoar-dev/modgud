@@ -10,6 +10,11 @@
 
   <ItemGroup>
     <PackageReference Include="Cocoar.Configuration.Abstractions" />
+    <PackageReference Include="Cocoar.JsEval.Engine" />
+    <PackageReference Include="Cocoar.JsEval.Linq" />
+    <PackageReference Include="Cocoar.JsEval.TsDefinition" />
+    <PackageReference Include="Cocoar.JsEval.TypeScript" />
+    <PackageReference Include="Cocoar.Reflectensions" />
     <PackageReference Include="Marten" />
     <PackageReference Include="Weasel.Core" />
     <PackageReference Include="UAParser" />
