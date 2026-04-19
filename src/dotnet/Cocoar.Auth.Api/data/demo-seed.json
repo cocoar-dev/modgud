@@ -1,0 +1,85 @@
+{
+  "password": "Demo1234!",
+  "users": [
+    { "key": "alice",   "userName": "alice.mueller",  "firstName": "Alice",   "lastName": "Mueller",  "email": "alice@demo.local" },
+    { "key": "bob",     "userName": "bob.schmidt",    "firstName": "Bob",     "lastName": "Schmidt",  "email": "bob@demo.local" },
+    { "key": "clara",   "userName": "clara.weber",    "firstName": "Clara",   "lastName": "Weber",    "email": "clara@demo.local" },
+    { "key": "daniel",  "userName": "daniel.koch",    "firstName": "Daniel",  "lastName": "Koch",     "email": "daniel@example.com" },
+    { "key": "emma",    "userName": "emma.fischer",   "firstName": "Emma",    "lastName": "Fischer",  "email": "emma@demo.local" },
+    { "key": "fabian",  "userName": "fabian.bauer",   "firstName": "Fabian",  "lastName": "Bauer",    "email": "fabian@demo.local" },
+    { "key": "greta",   "userName": "greta.lang",     "firstName": "Greta",   "lastName": "Lang",     "email": "greta@partner.com" }
+  ],
+  "permissionRoles": [
+    {
+      "key": "user-manager",
+      "name": "User Manager",
+      "description": "Can view, create, update and unlock users in the realm.",
+      "resourceType": "user",
+      "permissions": ["read", "create", "update", "unlock"]
+    },
+    {
+      "key": "oauth-admin",
+      "name": "OAuth Admin",
+      "description": "Full CRUD over OAuth clients, scopes and APIs.",
+      "resourceType": "oauth-client",
+      "permissions": ["oauth-client:read", "oauth-client:create", "oauth-client:update", "oauth-client:delete", "oauth-scope:read", "oauth-scope:create", "oauth-scope:update", "oauth-scope:delete", "oauth-api:read", "oauth-api:create", "oauth-api:update", "oauth-api:delete"]
+    },
+    {
+      "key": "read-only",
+      "name": "Read-only Viewer",
+      "description": "Can only read user and role lists — no mutations.",
+      "resourceType": "user",
+      "permissions": ["user:read", "role:read", "authorization-group:read", "permission-role:read"]
+    },
+    {
+      "key": "group-admin",
+      "name": "Group Admin",
+      "description": "Manages AuthorizationGroups: members, roles and access scripts.",
+      "resourceType": "authorization-group",
+      "permissions": ["read", "create", "update", "manage-members", "manage-roles", "edit-scripts"]
+    }
+  ],
+  "authorizationGroups": [
+    {
+      "key": "user-managers",
+      "name": "User Managers",
+      "description": "Staff who create and manage users inside the realm. Demonstrates classic MANUAL membership: explicit member list, role grants flow through the group.",
+      "memberIds": ["@alice"],
+      "roleIds": ["@user-manager"],
+      "membershipMode": "Manual"
+    },
+    {
+      "key": "oauth-admins",
+      "name": "OAuth Administrators",
+      "description": "Responsible for OAuth clients, scopes and APIs. Also manual membership.",
+      "memberIds": ["@bob"],
+      "roleIds": ["@oauth-admin"],
+      "membershipMode": "Manual"
+    },
+    {
+      "key": "demo-domain-users",
+      "name": "Demo Domain Users (auto)",
+      "description": "AUTO-MEMBERSHIP showcase: every Person whose email ends with @demo.local is a member automatically. Try creating a new user with a matching email and watch the member list grow.",
+      "memberIds": [],
+      "roleIds": ["@read-only"],
+      "membershipMode": "Auto",
+      "membershipScript": "(p) => p.Type === 'Person' && p.Email !== null && p.Email.endsWith('@demo.local')"
+    },
+    {
+      "key": "group-admins",
+      "name": "Group Admins",
+      "description": "Holds the Group Admin role. Clara manages authorization groups without touching users or OAuth.",
+      "memberIds": ["@clara"],
+      "roleIds": ["@group-admin"],
+      "membershipMode": "Manual"
+    },
+    {
+      "key": "all-staff",
+      "name": "All Staff (nested)",
+      "description": "NESTED GROUP showcase: this group has no direct person members — its members are other groups. Permissions flow transitively: anyone in User Managers, OAuth Administrators or Group Admins inherits everything this group grants.",
+      "memberIds": ["@user-managers", "@oauth-admins", "@group-admins"],
+      "roleIds": [],
+      "membershipMode": "Manual"
+    }
+  ]
+}

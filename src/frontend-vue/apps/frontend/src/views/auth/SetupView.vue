@@ -12,6 +12,7 @@ const password = ref('')
 const email = ref('')
 const firstName = ref('')
 const lastName = ref('')
+const loadDemoData = ref(false)
 const loading = ref(false)
 const errorMessage = ref<string | undefined>(undefined)
 
@@ -31,6 +32,7 @@ async function submit() {
             Email: email.value || undefined,
             FirstName: firstName.value || undefined,
             LastName: lastName.value || undefined,
+            LoadDemoData: loadDemoData.value,
         })
         router.push('/')
     } catch (err: unknown) {
@@ -85,6 +87,19 @@ async function submit() {
                         :disabled="loading"
                     />
                 </div>
+
+                <label class="demo-toggle">
+                    <input type="checkbox" v-model="loadDemoData" :disabled="loading" />
+                    <span class="demo-toggle-label">
+                        <strong>Load demo data</strong>
+                        <small>
+                            Seeds 7 demo users, 4 permission-roles and 5 authorization-groups —
+                            including an auto-membership group that matches on email, and a
+                            nested group-of-groups. Default password for every demo user is
+                            <code>Demo1234!</code>. Skip this on production installs.
+                        </small>
+                    </span>
+                </label>
 
                 <CoarNote v-if="errorMessage" variant="error">{{ errorMessage }}</CoarNote>
 
@@ -163,5 +178,43 @@ async function submit() {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.75rem;
+}
+
+.demo-toggle {
+    display: flex;
+    gap: 0.625rem;
+    align-items: flex-start;
+    padding: 0.75rem 0.875rem;
+    border: 1px solid var(--coar-border-neutral-secondary);
+    border-radius: 8px;
+    background: var(--coar-background-neutral-tertiary, rgba(0,0,0,0.02));
+    cursor: pointer;
+    user-select: none;
+}
+
+.demo-toggle input[type=checkbox] {
+    margin-top: 0.2rem;
+}
+
+.demo-toggle-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.875rem;
+    color: var(--coar-text-neutral-primary);
+}
+
+.demo-toggle-label small {
+    color: var(--coar-text-neutral-secondary);
+    line-height: 1.4;
+    font-size: 0.8125rem;
+}
+
+.demo-toggle-label code {
+    background: var(--coar-background-neutral-secondary);
+    padding: 0.05rem 0.25rem;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
 }
 </style>

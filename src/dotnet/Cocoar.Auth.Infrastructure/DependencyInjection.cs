@@ -190,6 +190,7 @@ public static class DependencyInjection
 		services.AddScoped<Abac.IAccessPolicyEngine, AbacInf.AccessPolicyEngine>();
 		services.AddScoped<Abac.IMembershipEvaluator, AbacInf.MembershipEvaluator>();
 		services.AddScoped<AbacInf.AutoMembershipRecalculator>();
+		services.AddScoped<DemoSeedImportService>();
 	}
 
 	/// <summary>

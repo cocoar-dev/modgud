@@ -2,6 +2,7 @@ using Cocoar.Auth.Application.Models;
 using Cocoar.Auth.Domain.Authorization;
 using Cocoar.Auth.Domain.Authorization.Events;
 using Cocoar.Auth.Domain.Entities;
+using Cocoar.Auth.Infrastructure.Services;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -150,13 +151,41 @@ public class SetupController : ControllerBase
 
         await session.SaveChangesAsync();
 
+        // Optionally load the ABAC-flavoured demo seed — extra users, permission-roles
+        // and groups (including an auto-membership group and a nested-groups group)
+        // so the fresh install isn't an empty admin screen.
+        DemoSeedResult? demoResult = null;
+        if (dto.LoadDemoData)
+        {
+            try
+            {
+                var importer = HttpContext.RequestServices.GetRequiredService<DemoSeedImportService>();
+                var env = HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>();
+                var jsonPath = Path.Combine(env.ContentRootPath, "data", "demo-seed.json");
+                demoResult = await importer.ImportAsync(jsonPath);
+            }
+            catch (Exception ex)
+            {
+                // Setup itself already succeeded; treat demo-seed failure as non-fatal
+                // so the admin can still sign in and investigate.
+                HttpContext.RequestServices.GetRequiredService<ILogger<SetupController>>()
+                    .LogError(ex, "Demo seed import failed during setup. Admin was created; demo data was not.");
+            }
+        }
+
         // Auto-login so the user is immediately authenticated with the Admin role
         await _signInManager.SignInAsync(user, isPersistent: false);
+
+        var message = demoResult is null
+            ? "Admin account created successfully."
+            : $"Admin account created. Demo seed loaded: {demoResult.Users} users, " +
+              $"{demoResult.PermissionRoles} permission roles, {demoResult.AuthorizationGroups} groups " +
+              $"({demoResult.AutoGroups} auto). Demo users sign in with password \"{demoResult.DefaultPassword}\".";
 
         return Ok(new SetupResultDto
         {
             Success = true,
-            Message = "Admin account created successfully."
+            Message = message
         });
     }
 
@@ -185,6 +214,14 @@ public record CreateAdminDto
     public string? Email { get; init; }
     public string? FirstName { get; init; }
     public string? LastName { get; init; }
+
+    /// <summary>
+    /// When true, imports <c>data/demo-seed.json</c> after creating the bootstrap
+    /// admin: a handful of Persons plus PermissionRoles and AuthorizationGroups
+    /// demonstrating manual membership, auto-membership with a TS predicate, and
+    /// nested groups. Default false — production installs stay clean.
+    /// </summary>
+    public bool LoadDemoData { get; init; }
 }
 
 public record SetupResultDto

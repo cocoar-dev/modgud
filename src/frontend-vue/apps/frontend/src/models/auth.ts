@@ -53,6 +53,12 @@ export interface CreateAdminRequest {
   Email?: string
   FirstName?: string
   LastName?: string
+  /**
+   * Optional: import the ABAC demo seed after creating the admin.
+   * Adds users, permission-roles and authorization-groups that showcase
+   * manual/auto-membership and nested groups.
+   */
+  LoadDemoData?: boolean
 }
 
 /**
