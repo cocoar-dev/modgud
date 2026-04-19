@@ -187,6 +187,19 @@ var fido2Config = new Fido2Configuration
 builder.Services.AddSingleton(fido2Config);
 builder.Services.AddSingleton<IFido2, Fido2>();
 
+// Tell JasperFx/Marten/Wolverine to prefer pre-generated artifacts when available.
+// Auto = try pre-built code, fall back to runtime Roslyn (safe in dev).
+// CI/prod should run `dotnet run -- codegen write` and can tighten Production
+// to TypeLoadMode.Static for guaranteed-fast boots.
+builder.Services.CritterStackDefaults(x =>
+{
+    x.ApplicationAssembly = typeof(Program).Assembly;
+    x.Development.GeneratedCodeMode = JasperFx.CodeGeneration.TypeLoadMode.Auto;
+    x.Development.SourceCodeWritingEnabled = false;
+    x.Production.GeneratedCodeMode = JasperFx.CodeGeneration.TypeLoadMode.Static;
+    x.Production.SourceCodeWritingEnabled = false;
+});
+
 // Configure Wolverine + Marten (integrated for transactional outbox support)
 builder.Host.UseWolverine(opts =>
 {
