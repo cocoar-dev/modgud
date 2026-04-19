@@ -24,7 +24,7 @@ public class MembershipEvaluator(
         return JsExpressionTranslator.Translate<TPrincipalView, bool>(jsFn, jsEngine.UnderlyingEngine);
     }
 
-    public IReadOnlyList<string>? CollectDependencies<TPrincipalView>(string compiledScript)
+    public IReadOnlyList<string>? CollectDependencies<TPrincipalView>(string compiledScript, string viewTypeName)
     {
         var predicate = BuildPredicate<TPrincipalView>(compiledScript);
         var deps = ExpressionDependencyCollector.Collect(predicate);
@@ -34,7 +34,9 @@ public class MembershipEvaluator(
 
         // Store as FQN ("PrincipalDirectory.Person.Firstname") so the dependency set
         // is unambiguous if/when access-script dep-tracking is added on other view types.
-        var prefix = typeof(TPrincipalView).Name + ".";
+        // viewTypeName must match the runtime prefix in PrincipalPaths so DepsIntersect
+        // sees a real overlap when a principal-side change comes in.
+        var prefix = viewTypeName + ".";
         return deps.Paths.Select(p => prefix + p).ToList();
     }
 }

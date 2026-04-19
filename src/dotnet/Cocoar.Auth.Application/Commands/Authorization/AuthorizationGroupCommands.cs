@@ -179,7 +179,9 @@ internal static class ScriptCompilation
             {
                 try
                 {
-                    var collected = evaluator.CollectDependencies<IPrincipal>(compiledMembership);
+                    // "PrincipalDirectory" prefix matches PrincipalPaths.Prefix so the
+                    // recalculator's DepsIntersect can match incoming changedPaths.
+                    var collected = evaluator.CollectDependencies<IPrincipal>(compiledMembership, "PrincipalDirectory");
                     deps = collected?.ToList();
                 }
                 catch (Exception ex)

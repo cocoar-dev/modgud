@@ -26,6 +26,11 @@ public interface IMembershipEvaluator
     /// it reads from the principal view. Returns <c>null</c> when the collector flags
     /// any unanalyzable access ("invalidate-all") so callers know they must always
     /// re-run the script on principal-side changes.
+    /// <para>
+    /// <paramref name="viewTypeName"/> is the prefix for stored paths (e.g.
+    /// <c>"PrincipalDirectory"</c>). Must match the prefix used by the consumer
+    /// of <c>MembershipScriptDependencies</c> — see <c>PrincipalPaths.Prefix</c>.
+    /// </para>
     /// </summary>
-    IReadOnlyList<string>? CollectDependencies<TPrincipalView>(string compiledScript);
+    IReadOnlyList<string>? CollectDependencies<TPrincipalView>(string compiledScript, string viewTypeName);
 }
