@@ -16,8 +16,15 @@
     <!-- ErrorOr -->
     <PackageVersion Include="ErrorOr" Version="2.1.0" />
     <!-- Wolverine CQRS -->
-    <PackageVersion Include="WolverineFx" Version="5.28.0" />
-    <PackageVersion Include="WolverineFx.Marten" Version="5.28.0" />
+    <PackageVersion Include="WolverineFx" Version="5.30.0" />
+    <PackageVersion Include="WolverineFx.Marten" Version="5.30.0" />
+    <!-- Cocoar JsEval (ABAC scripting) -->
+    <PackageVersion Include="Cocoar.JsEval" Version="3.1.3" />
+    <PackageVersion Include="Cocoar.JsEval.Engine" Version="3.1.3" />
+    <PackageVersion Include="Cocoar.JsEval.Linq" Version="3.1.3" />
+    <PackageVersion Include="Cocoar.JsEval.TsDefinition" Version="3.1.3" />
+    <PackageVersion Include="Cocoar.JsEval.TypeScript" Version="3.1.3" />
+    <PackageVersion Include="Cocoar.Reflectensions" Version="1.0.2" />
     <!-- Health Checks -->
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
     <!-- Logging -->
@@ -38,7 +45,8 @@
     <!-- BCrypt for client secret hashing (compatible with OpenIddict) -->
     <PackageVersion Include="BCrypt.Net-Next" Version="4.1.0" />
     <!-- SignalARRR (typed bidirectional RPC over SignalR) -->
-    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="4.2.2" />
+    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="4.2.3" />
+    <PackageVersion Include="Cocoar.SignalARRR.Contracts" Version="4.2.3" />
     <!-- Cocoar Configuration (5.0: Secrets + Flags merged into core packages) -->
     <PackageVersion Include="Cocoar.Configuration" Version="5.0.0" />
     <PackageVersion Include="Cocoar.Configuration.AspNetCore" Version="5.0.0" />
