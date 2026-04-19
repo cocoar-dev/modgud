@@ -14,7 +14,7 @@ using Wolverine;
 namespace Cocoar.Auth.Api.Controllers.Admin;
 
 [Route("api/admin/groups")]
-[RequiresAbacPermission("tenant:admin")]
+[RequiresAbacPermission("authorization-group:read")]
 public class GroupsAdminController : ApiControllerBase
 {
 	private readonly IMessageBus _messageBus;

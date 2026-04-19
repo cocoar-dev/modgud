@@ -12,7 +12,7 @@ namespace Cocoar.Auth.Api.Controllers.Admin;
 /// Admin controller for managing login providers.
 /// </summary>
 [Route("api/admin/login-providers")]
-[RequiresAbacPermission("tenant:admin")]
+[RequiresAbacPermission("login-provider:read")]
 public class LoginProvidersAdminController : ApiControllerBase
 {
 	private readonly LoginProviderService _loginProviderService;

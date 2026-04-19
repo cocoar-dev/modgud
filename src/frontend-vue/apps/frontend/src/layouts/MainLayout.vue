@@ -58,9 +58,32 @@ const connectionColor = computed(() =>
         : 'var(--coar-background-semantic-error-bold)',
 )
 
-// Navigation items (only shown to users with appropriate permissions)
-const canSeeAdmin = computed(() => authStore.isAdmin)
-const canSeeSystem = computed(() => authStore.hasPermission('system:admin'))
+// Per-item gating — sidebar only shows what the user can read. system:admin /
+// tenant:admin bypass via hasPermission, so super-admins see everything.
+const canSeeUsers = computed(() => authStore.hasPermission('user:read'))
+const canSeeRoles = computed(() => authStore.hasPermission('role:read'))
+const canSeeOAuthClients = computed(() => authStore.hasPermission('oauth-client:read'))
+const canSeeOAuthScopes = computed(() => authStore.hasPermission('oauth-scope:read'))
+const canSeeOAuthApis = computed(() => authStore.hasPermission('oauth-api:read'))
+const canSeeLoginProviders = computed(() => authStore.hasPermission('login-provider:read'))
+const canSeeAuthGroups = computed(() => authStore.hasPermission('authorization-group:read'))
+const canSeePermissionRoles = computed(() => authStore.hasPermission('permission-role:read'))
+const canSeeRealms = computed(() => authStore.hasPermission('realm:read'))
+
+// Section headings only show when at least one item underneath is visible.
+const canSeeAdminSection = computed(
+  () =>
+    canSeeUsers.value ||
+    canSeeRoles.value ||
+    canSeeOAuthClients.value ||
+    canSeeOAuthScopes.value ||
+    canSeeOAuthApis.value ||
+    canSeeLoginProviders.value,
+)
+const canSeeAuthorizationSection = computed(
+  () => canSeeAuthGroups.value || canSeePermissionRoles.value,
+)
+const canSeeSystemSection = computed(() => canSeeRealms.value)
 </script>
 
 <template>
@@ -121,55 +144,65 @@ const canSeeSystem = computed(() => authStore.hasPermission('system:admin'))
                     @click="router.push('/dashboard')"
                 />
 
-                <template v-if="canSeeAdmin">
+                <template v-if="canSeeAdminSection">
                     <CoarSidebarDivider />
                     <CoarSidebarHeading label="Administration" />
                     <CoarSidebarItem
+                        v-if="canSeeUsers"
                         icon="users"
                         label="Users"
                         :active="route.path.startsWith('/admin/users')"
                         @click="router.push('/admin/users')"
                     />
                     <CoarSidebarItem
+                        v-if="canSeeRoles"
                         icon="shield-check"
                         label="Roles"
                         :active="route.path.startsWith('/admin/roles')"
                         @click="router.push('/admin/roles')"
                     />
                     <CoarSidebarItem
+                        v-if="canSeeOAuthClients"
                         icon="key-round"
                         label="OAuth Clients"
                         :active="route.path.startsWith('/admin/oauth/clients')"
                         @click="router.push('/admin/oauth/clients')"
                     />
                     <CoarSidebarItem
+                        v-if="canSeeOAuthScopes"
                         icon="scan-line"
                         label="OAuth Scopes"
                         :active="route.path.startsWith('/admin/oauth/scopes')"
                         @click="router.push('/admin/oauth/scopes')"
                     />
                     <CoarSidebarItem
+                        v-if="canSeeOAuthApis"
                         icon="server"
                         label="OAuth APIs"
                         :active="route.path.startsWith('/admin/oauth/apis')"
                         @click="router.push('/admin/oauth/apis')"
                     />
                     <CoarSidebarItem
+                        v-if="canSeeLoginProviders"
                         icon="lock"
                         label="Login Providers"
                         :active="route.path.startsWith('/admin/login-providers')"
                         @click="router.push('/admin/login-providers')"
                     />
+                </template>
 
+                <template v-if="canSeeAuthorizationSection">
                     <CoarSidebarDivider />
                     <CoarSidebarHeading label="Authorization" />
                     <CoarSidebarItem
+                        v-if="canSeeAuthGroups"
                         icon="users-round"
                         label="Authorization Groups"
                         :active="route.path.startsWith('/admin/authorization-groups')"
                         @click="router.push('/admin/authorization-groups')"
                     />
                     <CoarSidebarItem
+                        v-if="canSeePermissionRoles"
                         icon="shield"
                         label="Permission Roles"
                         :active="route.path.startsWith('/admin/permission-roles')"
@@ -177,10 +210,11 @@ const canSeeSystem = computed(() => authStore.hasPermission('system:admin'))
                     />
                 </template>
 
-                <template v-if="canSeeSystem">
+                <template v-if="canSeeSystemSection">
                     <CoarSidebarDivider />
                     <CoarSidebarHeading label="System" />
                     <CoarSidebarItem
+                        v-if="canSeeRealms"
                         icon="globe"
                         label="Realms"
                         :active="route.path.startsWith('/admin/realms')"

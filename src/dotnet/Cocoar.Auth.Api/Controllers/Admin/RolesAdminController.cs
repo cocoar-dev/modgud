@@ -14,7 +14,7 @@ using Wolverine;
 namespace Cocoar.Auth.Api.Controllers.Admin;
 
 [Route("api/admin/roles")]
-[RequiresAbacPermission("tenant:admin")]
+[RequiresAbacPermission("role:read")]
 public class RolesAdminController : ApiControllerBase
 {
     private readonly IMessageBus _messageBus;
