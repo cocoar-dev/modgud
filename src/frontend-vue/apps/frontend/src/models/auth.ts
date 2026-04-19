@@ -73,3 +73,20 @@ export interface RegisterRequest {
   FirstName?: string
   LastName?: string
 }
+
+/** Request body for POST /api/auth/forgot-password. */
+export interface ForgotPasswordRequest {
+  Email: string
+}
+
+/** Request body for POST /api/auth/reset-password. */
+export interface ResetPasswordRequest {
+  UserId: string
+  Token: string
+  NewPassword: string
+}
+
+/** Request body for POST /api/auth/resend-confirmation. */
+export interface ResendConfirmationRequest {
+  Email: string
+}

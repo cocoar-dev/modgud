@@ -4,8 +4,11 @@ import { useHttpClient } from '@/composables/useHttpClient'
 import type {
   CreateAdminRequest,
   CurrentUserDto,
+  ForgotPasswordRequest,
   LoginResult,
   RegisterRequest,
+  ResendConfirmationRequest,
+  ResetPasswordRequest,
   SetupStatus,
 } from '@/models/auth'
 
@@ -82,6 +85,26 @@ export const useAuthStore = defineStore('auth', () => {
     await http.addPath('register').post(data)
   }
 
+  async function forgotPassword(data: ForgotPasswordRequest): Promise<void> {
+    await http.addPath('forgot-password').post(data)
+  }
+
+  async function resetPassword(data: ResetPasswordRequest): Promise<void> {
+    await http.addPath('reset-password').post(data)
+  }
+
+  async function resendConfirmation(data: ResendConfirmationRequest): Promise<void> {
+    await http.addPath('resend-confirmation').post(data)
+  }
+
+  async function confirmEmail(userId: string, token: string): Promise<void> {
+    await http
+      .addPath('confirm-email')
+      .setQueryParameter('userId', userId)
+      .setQueryParameter('token', token)
+      .get()
+  }
+
   async function fetchMe(): Promise<boolean> {
     try {
       user.value = await http.addPath('me').get<CurrentUserDto>()
@@ -112,6 +135,10 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     logout,
     register,
+    forgotPassword,
+    resetPassword,
+    resendConfirmation,
+    confirmEmail,
     fetchMe,
     fetchSetupStatus,
     createAdmin,

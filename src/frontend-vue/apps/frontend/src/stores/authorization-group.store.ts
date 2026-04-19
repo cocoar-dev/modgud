@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
 import { useEntityService } from '@/composables/useEntityService'
 
-export type MembershipMode = 'Manual' | 'Dynamic'
-export type EmailMode = 'Shared' | 'Broadcast'
+export type MembershipMode = 'Manual' | 'Auto'
+export type EmailMode = 'Shared' | 'ExpandToMembers'
 
 export interface ResourceAccessScriptDto {
   ResourceType: string

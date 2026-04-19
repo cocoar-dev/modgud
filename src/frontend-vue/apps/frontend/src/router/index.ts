@@ -15,6 +15,26 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true },
   },
   {
+    path: '/register',
+    component: () => import('@/views/auth/RegisterView.vue'),
+    meta: { public: true },
+  },
+  {
+    path: '/forgot-password',
+    component: () => import('@/views/auth/ForgotPasswordView.vue'),
+    meta: { public: true },
+  },
+  {
+    path: '/reset-password',
+    component: () => import('@/views/auth/ResetPasswordView.vue'),
+    meta: { public: true },
+  },
+  {
+    path: '/confirm-email',
+    component: () => import('@/views/auth/ConfirmEmailView.vue'),
+    meta: { public: true },
+  },
+  {
     path: '/',
     component: () => import('@/layouts/MainLayout.vue'),
     children: [
@@ -31,6 +51,31 @@ const routes: RouteRecordRaw[] = [
           {
             path: 'users',
             component: () => import('@/views/admin/users/UserList.vue'),
+          },
+          {
+            path: 'roles',
+            component: () => import('@/views/admin/roles/RoleList.vue'),
+          },
+          {
+            path: 'oauth/clients',
+            component: () => import('@/views/admin/oauth/ClientList.vue'),
+          },
+          {
+            path: 'oauth/scopes',
+            component: () => import('@/views/admin/oauth/ScopeList.vue'),
+          },
+          {
+            path: 'oauth/apis',
+            component: () => import('@/views/admin/oauth/ApiList.vue'),
+          },
+          {
+            path: 'login-providers',
+            component: () =>
+              import('@/views/admin/login-providers/LoginProviderList.vue'),
+          },
+          {
+            path: 'realms',
+            component: () => import('@/views/admin/realms/RealmList.vue'),
           },
           {
             path: 'authorization-groups',

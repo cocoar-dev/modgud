@@ -95,6 +95,12 @@ async function submit() {
                 >
                     Sign in
                 </CoarButton>
+
+                <div class="auth-links">
+                    <a href="#" @click.prevent="router.push('/forgot-password')">Forgot password?</a>
+                    <span class="auth-links-sep">·</span>
+                    <a href="#" @click.prevent="router.push('/register')">Create account</a>
+                </div>
             </form>
         </CoarCard>
     </div>
@@ -169,5 +175,26 @@ async function submit() {
 
 .remember-me input {
     margin: 0;
+}
+
+.auth-links {
+    margin-top: 0.5rem;
+    text-align: center;
+    font-size: 0.875rem;
+    color: var(--coar-text-neutral-secondary);
+}
+
+.auth-links a {
+    color: var(--coar-text-accent-primary, #2563eb);
+    text-decoration: none;
+}
+
+.auth-links a:hover {
+    text-decoration: underline;
+}
+
+.auth-links-sep {
+    margin: 0 0.5rem;
+    color: var(--coar-text-neutral-tertiary);
 }
 </style>
