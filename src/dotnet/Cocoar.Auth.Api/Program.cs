@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Threading.RateLimiting;
+using JasperFx;
 using Cocoar.Auth.Api.Configuration;
 using Cocoar.Auth.Api.Extensions;
 using Cocoar.Auth.Api.Middleware;
@@ -33,22 +34,21 @@ using Marten;
 using Wolverine;
 using Wolverine.Marten;
 
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .CreateBootstrapLogger();
-
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((context, services, configuration) =>
+// Configure Serilog via DI (NOT static bootstrap logger).
+// Using AddSerilog avoids ReloadableLogger.Freeze() which throws
+// "The logger is already frozen" when multiple WebApplicationFactory
+// instances start in parallel during test execution.
+builder.Services.AddSerilog(configuration =>
 {
     configuration
-        .ReadFrom.Configuration(context.Configuration)
-        .ReadFrom.Services(services)
+        .ReadFrom.Configuration(builder.Configuration)
         .Enrich.FromLogContext()
         .WriteTo.Console();
 
     // Suppress verbose Marten/Wolverine logging in tests
-    if (context.HostingEnvironment.IsEnvironment("Testing"))
+    if (builder.Environment.IsEnvironment("Testing"))
     {
         configuration.MinimumLevel.Warning();
     }
@@ -193,6 +193,15 @@ builder.Host.UseWolverine(opts =>
     opts.Discovery.IncludeAssembly(typeof(Cocoar.Auth.Application.DependencyInjection).Assembly);
     opts.Durability.Mode = DurabilityMode.Solo;
 
+    // Use pre-generated handler code when available (Auto = try pre-built, fallback to dynamic).
+    // Generate with: dotnet run -- codegen write
+    opts.CodeGeneration.TypeLoadMode = JasperFx.CodeGeneration.TypeLoadMode.Auto;
+
+    // Auto-register reference-sync subscriptions for every ReferenceSyncHandler<TEvent>
+    // discovered in this assembly. Each handler runs on the "reference-sync" local
+    // durable queue with at-least-once delivery semantics.
+    Cocoar.Auth.Api.Authorization.ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
+
     // Marten — configured inside UseWolverine for IntegrateWithWolverine compatibility.
     // No RegisterDatabase needed — tenants registered dynamically via AddDatabaseRecordAsync.
     // Realm documents stored in IGlobalStore (non-tenanted), not here.
@@ -211,12 +220,16 @@ builder.Host.UseWolverine(opts =>
 
     // Tenant-aware session registrations — MUST be AFTER AddMarten().IntegrateWithWolverine()
     // so our registrations win over Marten/Wolverine defaults (last-wins DI).
+    // CRITICAL: Use DirtyTrackedSession, NOT LightweightSession — dirty tracking
+    // auto-detects mutations on loaded documents (no explicit Store() needed),
+    // enables the PendingEvents pattern on entities, and ensures inline projections
+    // work correctly with the identity map.
     opts.Services.AddScoped<IDocumentSession>(sp =>
     {
         var store = sp.GetRequiredService<IDocumentStore>();
         var accessor = sp.GetRequiredService<IHttpContextAccessor>();
         var tenantId = accessor.HttpContext?.Items["TenantId"] as string ?? "system";
-        return store.LightweightSession(tenantId);
+        return store.DirtyTrackedSession(tenantId);
     });
 
     opts.Services.AddScoped<IQuerySession>(sp =>
@@ -292,6 +305,9 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
         options.JsonSerializerOptions.TypeInfoResolver = new OptionalAwareTypeInfoResolver();
     });
+
+// Anti-forgery (CSRF) — belt-and-suspenders protection alongside SameSite cookies
+builder.Services.AddAntiforgery(options => options.HeaderName = "X-XSRF-TOKEN");
 
 builder.Services.AddHealthChecks()
     .AddNpgSql(mainCs, name: "postgresql");
@@ -467,13 +483,24 @@ using (var realmScope = app.Services.CreateScope())
 var realmCache = app.Services.GetRequiredService<IRealmCache>();
 await realmCache.InitializeAsync();
 
+// Initialize permission resource registry — both legacy and new ABAC (removed in Phase 2.1)
+Cocoar.Auth.Application.Authorization.ResourceRegistry.Initialize();
+Cocoar.Auth.Domain.Authorization.ResourceRegistry.Initialize();
+
 // Seed default OAuth scopes (openid, email, profile, roles, offline_access)
 await app.Services.SeedOpenIddictScopesAsync();
 
 // Seed built-in "Internal" login provider
 await app.Services.SeedLoginProvidersAsync();
 
-app.Run(serverSettings.AppUrl);
+// Seed default permission roles and migrate existing Admin users
+await app.Services.SeedDefaultPermissionRolesAsync();
+await app.Services.MigrateAdminUsersToPermissionsAsync();
+
+// Use RunJasperFxCommands to support Wolverine CLI commands (e.g., `dotnet run -- codegen write`
+// to pre-generate handler code and eliminate runtime Roslyn compilation).
+app.Urls.Add(serverSettings.AppUrl);
+await app.RunJasperFxCommands(args);
 
 // Make the implicit Program class public for integration tests
 public partial class Program { }

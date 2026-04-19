@@ -195,6 +195,7 @@ public static class DependencyInjection
 		services.AddScoped<Abac.IPermissionService, AbacInf.PermissionService>();
 		services.AddScoped<Abac.IAccessPolicyEngine, AbacInf.AccessPolicyEngine>();
 		services.AddScoped<Abac.IMembershipEvaluator, AbacInf.MembershipEvaluator>();
+		services.AddScoped<AbacInf.AutoMembershipRecalculator>();
 	}
 
 	/// <summary>
@@ -492,6 +493,15 @@ public static class DependencyInjection
 		// ABAC projections — inline because permission checks need immediate consistency
 		options.Projections.Add<AbacInf.PermissionRoleProjection>(ProjectionLifecycle.Inline);
 		options.Projections.Add<AbacInf.AuthorizationGroupProjection>(ProjectionLifecycle.Inline);
+
+		// PrincipalDirectory — cross-type inline projection (Person + Group). Backs
+		// auto-membership predicate evaluation and cross-type principal lookup.
+		options.Projections.Add<AbacInf.PrincipalDirectoryProjection>(ProjectionLifecycle.Inline);
+		options.Schema.For<AbacInf.PrincipalDirectory>()
+			.Identity(x => x.Id)
+			.Index(x => x.Type)
+			.Index(x => x.IsDeleted)
+			.Index(x => x.NormalizedEmail);
 
 		// ═══════════════════════════════════════════════════════════════
 		// READ MODEL PROJECTIONS (configurable: async for prod, inline for tests)
