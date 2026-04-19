@@ -1,409 +1,332 @@
 <script setup lang="ts">
-import { useRoute, useRouter, RouterView } from 'vue-router';
-import { CoarSidebar, CoarMenu, CoarMenuItem, CoarMenuHeading, CoarAvatar, CoarButton } from '@cocoar/vue-ui';
-import { useAuthStore } from '@/stores/auth.store';
-import { useDarkMode } from '@/composables/useDarkMode';
-import { useUI } from '@/composables/useUI';
+import { computed, ref } from 'vue'
+import { useRouter, useRoute, RouterView } from 'vue-router'
+import {
+    CoarIcon,
+    CoarButton,
+    CoarContextMenu,
+    CoarMenuItem,
+    CoarMenuDivider,
+    CoarSidebar,
+    CoarSidebarItem,
+    CoarSidebarHeading,
+    CoarSidebarDivider,
+    CoarSidebarSpacer,
+    useContextMenu,
+} from '@cocoar/vue-ui'
+import { useSignalR } from '@/composables/useSignalR'
+import { provideUI } from '@/composables/useUI'
+import { useAuthStore } from '@/stores/auth.store'
 
-const route = useRoute();
-const router = useRouter();
-const auth = useAuthStore();
-const { isDark, toggle: toggleDark } = useDarkMode();
-const ui = useUI();
+const signalR = useSignalR()
+const router = useRouter()
+const route = useRoute()
+const { state: ui } = provideUI()
+const authStore = useAuthStore()
 
-function onLogout() {
-  auth.logout('/login');
+const collapsed = ref(localStorage.getItem('sidebar-collapsed') === 'true')
+
+function toggleCollapsed() {
+    collapsed.value = !collapsed.value
+    localStorage.setItem('sidebar-collapsed', String(collapsed.value))
 }
+
+const userInitials = computed(() => {
+    const u = authStore.user
+    if (u?.FirstName && u?.LastName) return (u.FirstName[0] + u.LastName[0]).toUpperCase()
+    return u?.UserName?.substring(0, 2).toUpperCase() ?? '??'
+})
+
+const userDisplayName = computed(() => authStore.displayName)
+
+const userMenu = useContextMenu()
+
+function openUserMenu(event: MouseEvent) {
+    const btn = event.currentTarget as HTMLElement
+    const rect = btn.getBoundingClientRect()
+    userMenu.open({ clientX: rect.right, clientY: rect.bottom + 4 })
+}
+
+async function logout() {
+    await authStore.logout()
+    router.push('/login')
+}
+
+const connectionColor = computed(() =>
+    signalR.state.value === 'Connected'
+        ? 'var(--coar-background-semantic-success-bold)'
+        : 'var(--coar-background-semantic-error-bold)',
+)
+
+// Navigation items (only shown to users with appropriate permissions)
+const canSeeAdmin = computed(() => authStore.isAdmin)
+const canSeeSystem = computed(() => authStore.hasPermission('system:admin'))
 </script>
 
 <template>
-  <div class="app-layout">
-    <CoarSidebar class="app-sidebar">
-      <template #header>
-        <div class="sidebar-header">
-          <div class="sidebar-brand">
-            <span class="sidebar-brand-icon">⚡</span>
-            <h1 class="sidebar-logo">Cocoar Auth</h1>
-          </div>
-          <div class="sidebar-realm">
-            <span class="sidebar-realm-label">Realm</span>
-            <span class="sidebar-realm-name">{{ auth.currentUser?.realm ?? '—' }}</span>
-          </div>
-          <div class="sidebar-user">
-            <CoarAvatar :name="auth.displayName || auth.currentUser?.userName || '?'" size="s" />
-            <span class="sidebar-user-name">{{ auth.displayName || auth.currentUser?.userName }}</span>
-          </div>
-        </div>
-      </template>
+    <div class="flex h-screen flex-col">
+        <!-- Header (full width, above sidebar + content) -->
+        <header v-if="ui.header.show" class="main-header">
+            <!-- Logo area (aligned with sidebar width) -->
+            <button
+                @click="router.push('/')"
+                class="header-logo"
+                :style="{ width: collapsed ? '4rem' : '16rem' }"
+            >
+                <span class="text-lg font-bold">CA</span>
+                <span v-if="!collapsed" class="text-sm font-medium tracking-wide opacity-80">Cocoar Auth</span>
+            </button>
 
-      <CoarMenu borderless>
-        <CoarMenuHeading>Account</CoarMenuHeading>
-        <CoarMenuItem
-          label="Home"
-          icon="home"
-          :class="{ 'nav-item--active': route.path === '/' }"
-          @clicked="router.push('/')"
-        />
-        <CoarMenuItem
-          label="Profile"
-          icon="user"
-          :class="{ 'nav-item--active': route.path === '/profile' }"
-          @clicked="router.push('/profile')"
-        />
-        <CoarMenuItem
-          label="Sessions"
-          icon="monitor"
-          :class="{ 'nav-item--active': route.path === '/sessions' }"
-          @clicked="router.push('/sessions')"
-        />
-        <CoarMenuItem
-          label="Privacy"
-          icon="shield"
-          :class="{ 'nav-item--active': route.path === '/privacy' }"
-          @clicked="router.push('/privacy')"
-        />
+            <!-- Header content -->
+            <div class="header-content">
+                <CoarIcon v-if="ui.header.icon" :name="ui.header.icon" class="header-icon" />
+                <div class="flex flex-col justify-center" style="line-height: 1.5em">
+                    <div class="title" :class="{ 'title-only': !ui.header.subTitle }">
+                        {{ ui.header.title }}
+                    </div>
+                    <div v-if="ui.header.subTitle" class="subtitle">
+                        {{ ui.header.subTitle }}
+                    </div>
+                </div>
+                <div class="flex-1"></div>
+                <div id="header-outlet-right"></div>
 
-        <template v-if="auth.isAdmin">
-          <CoarMenuHeading>System</CoarMenuHeading>
-          <CoarMenuItem
-            label="Realms"
-            icon="globe"
-            :class="{ 'nav-item--active': route.path.startsWith('/admin/realms') }"
-            @clicked="router.push('/admin/realms')"
-          />
-        </template>
+                <!-- User Avatar -->
+                <button
+                    class="ml-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-sm font-bold text-white transition hover:bg-white/30"
+                    :title="userDisplayName"
+                    @click="openUserMenu"
+                >
+                    {{ userInitials }}
+                </button>
+            </div>
+        </header>
 
-        <template v-if="auth.isAdmin">
-          <CoarMenuHeading>Administration</CoarMenuHeading>
-          <CoarMenuItem
-            label="Users"
-            icon="users"
-            :class="{ 'nav-item--active': route.path.startsWith('/admin/users') }"
-            @clicked="router.push('/admin/users')"
-          />
-          <CoarMenuItem
-            label="Roles"
-            icon="shield-check"
-            :class="{ 'nav-item--active': route.path.startsWith('/admin/roles') }"
-            @clicked="router.push('/admin/roles')"
-          />
-          <CoarMenuItem
-            label="Clients"
-            icon="key-round"
-            :class="{ 'nav-item--active': route.path.startsWith('/admin/oauth/clients') }"
-            @clicked="router.push('/admin/oauth/clients')"
-          />
-          <CoarMenuItem
-            label="Scopes"
-            icon="scan-line"
-            :class="{ 'nav-item--active': route.path.startsWith('/admin/oauth/scopes') }"
-            @clicked="router.push('/admin/oauth/scopes')"
-          />
-          <CoarMenuItem
-            label="APIs"
-            icon="server"
-            :class="{ 'nav-item--active': route.path.startsWith('/admin/oauth/apis') }"
-            @clicked="router.push('/admin/oauth/apis')"
-          />
-          <CoarMenuItem
-            label="Login Providers"
-            icon="lock"
-            :class="{ 'nav-item--active': route.path.startsWith('/admin/login-providers') }"
-            @clicked="router.push('/admin/login-providers')"
-          />
-        </template>
-      </CoarMenu>
+        <!-- User Menu -->
+        <CoarContextMenu :menu="userMenu">
+            <CoarMenuItem :label="userDisplayName" icon="user" />
+            <CoarMenuDivider />
+            <CoarMenuItem label="Logout" icon="log-out" @clicked="logout" />
+        </CoarContextMenu>
 
-      <template #footer>
-        <div class="sidebar-footer">
-          <CoarMenu borderless>
-            <CoarMenuItem
-              :label="isDark ? 'Light Mode' : 'Dark Mode'"
-              :icon="isDark ? 'sun' : 'moon'"
-              @clicked="toggleDark"
-            />
-            <CoarMenuItem
-              label="Sign Out"
-              icon="log-out"
-              @clicked="onLogout"
-            />
-          </CoarMenu>
-        </div>
-      </template>
-    </CoarSidebar>
+        <!-- Body (sidebar + content) -->
+        <div class="flex flex-1 overflow-hidden">
+            <!-- Sidebar (below header) -->
+            <CoarSidebar v-model:collapsed="collapsed" elevated class="z-10">
+                <CoarSidebarSpacer height="4px" />
+                <CoarSidebarItem
+                    icon="layout-dashboard"
+                    label="Dashboard"
+                    :active="route.path === '/dashboard' || route.path === '/'"
+                    @click="router.push('/dashboard')"
+                />
 
-    <div class="main-wrapper">
-      <header v-if="ui.state.header.show && ui.state.header.title" class="page-header">
-        <div class="page-container">
-          <div class="page-header-titles">
-            <h1 class="page-title">{{ ui.state.header.title }}</h1>
-            <p v-if="ui.state.header.subTitle" class="page-subtitle">{{ ui.state.header.subTitle }}</p>
-          </div>
+                <template v-if="canSeeAdmin">
+                    <CoarSidebarDivider />
+                    <CoarSidebarHeading label="Administration" />
+                    <CoarSidebarItem
+                        icon="users"
+                        label="Users"
+                        :active="route.path.startsWith('/admin/users')"
+                        @click="router.push('/admin/users')"
+                    />
+                    <CoarSidebarItem
+                        icon="shield-check"
+                        label="Roles"
+                        :active="route.path.startsWith('/admin/roles')"
+                        @click="router.push('/admin/roles')"
+                    />
+                    <CoarSidebarItem
+                        icon="key-round"
+                        label="OAuth Clients"
+                        :active="route.path.startsWith('/admin/oauth/clients')"
+                        @click="router.push('/admin/oauth/clients')"
+                    />
+                    <CoarSidebarItem
+                        icon="scan-line"
+                        label="OAuth Scopes"
+                        :active="route.path.startsWith('/admin/oauth/scopes')"
+                        @click="router.push('/admin/oauth/scopes')"
+                    />
+                    <CoarSidebarItem
+                        icon="server"
+                        label="OAuth APIs"
+                        :active="route.path.startsWith('/admin/oauth/apis')"
+                        @click="router.push('/admin/oauth/apis')"
+                    />
+                    <CoarSidebarItem
+                        icon="lock"
+                        label="Login Providers"
+                        :active="route.path.startsWith('/admin/login-providers')"
+                        @click="router.push('/admin/login-providers')"
+                    />
+
+                    <CoarSidebarDivider />
+                    <CoarSidebarHeading label="Authorization" />
+                    <CoarSidebarItem
+                        icon="users-round"
+                        label="Authorization Groups"
+                        :active="route.path.startsWith('/admin/authorization-groups')"
+                        @click="router.push('/admin/authorization-groups')"
+                    />
+                    <CoarSidebarItem
+                        icon="shield"
+                        label="Permission Roles"
+                        :active="route.path.startsWith('/admin/permission-roles')"
+                        @click="router.push('/admin/permission-roles')"
+                    />
+                </template>
+
+                <template v-if="canSeeSystem">
+                    <CoarSidebarDivider />
+                    <CoarSidebarHeading label="System" />
+                    <CoarSidebarItem
+                        icon="globe"
+                        label="Realms"
+                        :active="route.path.startsWith('/admin/realms')"
+                        @click="router.push('/admin/realms')"
+                    />
+                </template>
+
+                <CoarSidebarSpacer grow />
+
+                <template #footer="{ collapsed: c }">
+                    <CoarSidebarDivider />
+                    <CoarSidebarItem
+                        :icon="c ? 'chevron-right' : 'chevron-left'"
+                        :label="c ? 'Expand' : 'Collapse'"
+                        @click="toggleCollapsed"
+                    />
+                    <!-- SignalR Status -->
+                    <div class="h-1 w-full" :style="{ backgroundColor: connectionColor }"></div>
+                </template>
+            </CoarSidebar>
+
+            <div class="flex flex-1 flex-col overflow-hidden">
+                <!-- Content -->
+                <main class="flex flex-1" :style="{ overflow: ui.content.container ? 'auto' : 'hidden' }">
+                    <div
+                        class="main-container flex"
+                        :class="ui.content.container ? 'container-mode' : 'flex-1'"
+                    >
+                        <RouterView />
+                    </div>
+                </main>
+
+                <!-- Footer (optional, shown when views enable it) -->
+                <footer v-if="ui.footer.show" class="main-footer">
+                    <div v-if="ui.content.hasSubNav" class="sub-nav-spacer"></div>
+                    <div class="flex flex-1 justify-center min-w-0">
+                        <div class="flex items-center w-11/12">
+                            <div class="flex-1"></div>
+                            <div class="flex items-center gap-2">
+                                <CoarButton
+                                    v-if="ui.footer.button3.visible"
+                                    variant="ghost"
+                                    size="s"
+                                    :disabled="ui.footer.button3.disabled"
+                                    :loading="ui.footer.button3.loading"
+                                    @click="ui.footer.button3.onClick?.()"
+                                >
+                                    {{ ui.footer.button3.text }}
+                                </CoarButton>
+                                <CoarButton
+                                    v-if="ui.footer.button2.visible"
+                                    variant="danger"
+                                    size="s"
+                                    :disabled="ui.footer.button2.disabled"
+                                    :loading="ui.footer.button2.loading"
+                                    @click="ui.footer.button2.onClick?.()"
+                                >
+                                    {{ ui.footer.button2.text }}
+                                </CoarButton>
+                                <CoarButton
+                                    v-if="ui.footer.button1.visible"
+                                    variant="primary"
+                                    size="s"
+                                    :disabled="ui.footer.button1.disabled"
+                                    :loading="ui.footer.button1.loading"
+                                    @click="ui.footer.button1.onClick?.()"
+                                >
+                                    {{ ui.footer.button1.text }}
+                                </CoarButton>
+                            </div>
+                        </div>
+                    </div>
+                </footer>
+            </div>
         </div>
-      </header>
-      <div v-if="ui.state.content.showLoadingBar" class="loading-bar">
-        <div class="loading-bar-progress" />
-      </div>
-      <main class="main-content" :class="{ 'main-content--scrollable': ui.state.content.scrollable, 'main-content--padded': ui.state.content.padding }">
-        <div v-if="ui.state.content.container" class="page-container page-container--content">
-          <RouterView />
-        </div>
-        <div v-else class="page-fullwidth">
-          <RouterView />
-        </div>
-      </main>
-      <footer v-if="ui.state.footer.show" class="page-footer">
-        <div class="page-container page-footer-inner">
-          <CoarButton
-            v-if="ui.state.footer.button1.visible"
-            variant="secondary"
-            :disabled="ui.state.footer.button1.disabled"
-            :loading="ui.state.footer.button1.loading"
-            @click="ui.state.footer.button1.onClick?.()"
-          >
-            {{ ui.state.footer.button1.text }}
-          </CoarButton>
-          <div class="footer-spacer" />
-          <CoarButton
-            v-if="ui.state.footer.button2.visible"
-            variant="danger"
-            :disabled="ui.state.footer.button2.disabled"
-            :loading="ui.state.footer.button2.loading"
-            @click="ui.state.footer.button2.onClick?.()"
-          >
-            {{ ui.state.footer.button2.text }}
-          </CoarButton>
-          <CoarButton
-            v-if="ui.state.footer.button3.visible"
-            variant="primary"
-            :disabled="ui.state.footer.button3.disabled"
-            :loading="ui.state.footer.button3.loading"
-            @click="ui.state.footer.button3.onClick?.()"
-          >
-            {{ ui.state.footer.button3.text }}
-          </CoarButton>
-        </div>
-      </footer>
     </div>
-  </div>
 </template>
 
 <style scoped>
-.app-layout {
-  display: flex;
-  min-height: 100vh;
-  max-height: 100vh;
-  overflow: hidden;
+.main-header {
+    min-height: 64px;
+    max-height: 64px;
+    background-color: var(--coar-background-accent-primary, #1f2937);
+    color: white;
+    display: flex;
+    flex-direction: row;
+    box-shadow: 0px 2px 6px #00152959;
+    position: relative;
+    z-index: 30;
 }
 
-.app-sidebar {
-  width: 260px;
-  min-width: 260px;
-  height: 100vh;
-  --coar-sidebar-background: var(--coar-background-neutral-secondary);
-  --coar-sidebar-border: none;
-  box-shadow: var(--coar-shadow-right);
-  position: relative;
-  z-index: 10;
+.header-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    color: white;
+    transition: width 0.2s ease;
 }
 
-.sidebar-header {
-  padding: 1.25rem 1.25rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+.header-content {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    width: 90%;
+    max-width: 100%;
+    padding: 0 1.5rem;
 }
 
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.header-icon {
+    font-size: xx-large;
+    width: 52px;
+    text-align: left;
 }
 
-.sidebar-brand-icon {
-  font-size: 1.25rem;
-  line-height: 1;
+.title {
+    font-size: 1.5em;
+    font-weight: bold;
 }
 
-.sidebar-logo {
-  margin: 0;
-  font-size: 0.9375rem;
-  font-weight: 700;
-  color: var(--coar-text-neutral-primary);
-  letter-spacing: -0.01em;
+.title.title-only {
+    font-size: 2em;
 }
 
-.sidebar-realm {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.375rem 0.5rem;
-  background: var(--coar-background-accent-tertiary, #eff6ff);
-  border-radius: 6px;
-  margin-top: 0.25rem;
+.subtitle {
+    font-size: 0.9em;
 }
 
-.sidebar-realm-label {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--coar-text-neutral-secondary);
+.main-footer {
+    display: flex;
+    align-items: center;
+    background: var(--coar-background-neutral-secondary, #f7f7f7);
+    border-top: 1px solid var(--coar-border-neutral-secondary, #e9e9e9);
+    padding: 12px 8px;
 }
 
-.sidebar-realm-name {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--coar-text-accent-primary);
+.sub-nav-spacer {
+    width: 13rem;
+    flex-shrink: 0;
 }
 
-.sidebar-user {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 0.5rem 0.25rem;
-  border-top: 1px solid var(--coar-border-neutral-tertiary, #e2e8f0);
-  padding-top: 0.875rem;
-}
-
-.sidebar-user-name {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--coar-text-neutral-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sidebar-footer {
-  padding: 0.375rem 0.75rem 0.75rem;
-}
-
-.main-wrapper {
-  flex: 1;
-  background: var(--coar-background-neutral-primary);
-  height: 100vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Shared centered container */
-.page-container {
-  width: 85%;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.page-container--content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.page-fullwidth {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  padding: 0 1.5rem;
-}
-
-/* Header - fixed 64px height */
-.page-header {
-  height: 64px;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--coar-border-neutral-tertiary, #e2e8f0);
-  flex-shrink: 0;
-}
-
-.page-header-titles {
-  min-width: 0;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--coar-text-neutral-primary);
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-.page-subtitle {
-  margin: 0.125rem 0 0;
-  font-size: 0.8125rem;
-  color: var(--coar-text-neutral-secondary);
-  line-height: 1.2;
-}
-
-.loading-bar {
-  height: 3px;
-  background: var(--coar-background-neutral-secondary);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.loading-bar-progress {
-  height: 100%;
-  width: 30%;
-  background: var(--coar-text-accent-primary);
-  animation: loading-slide 1.5s ease-in-out infinite;
-}
-
-@keyframes loading-slide {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(400%); }
-}
-
-.main-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.main-content--scrollable {
-  overflow-y: auto;
-}
-
-.main-content--padded {
-  padding-top: 1.5rem;
-  padding-bottom: 1.5rem;
-}
-
-/* Footer - fixed 64px height */
-.page-footer {
-  height: 64px;
-  display: flex;
-  align-items: center;
-  border-top: 1px solid var(--coar-border-neutral-tertiary, #e2e8f0);
-  flex-shrink: 0;
-}
-
-.page-footer-inner {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.footer-spacer {
-  flex: 1;
-}
-</style>
-
-<style>
-/* Active nav item — same pattern as Showcase */
-.nav-item--active {
-  background: var(--coar-background-accent-tertiary) !important;
-  color: var(--coar-text-accent-primary) !important;
-}
-
-.nav-item--active .coar-menu-item__label {
-  color: var(--coar-text-accent-primary) !important;
-  font-weight: var(--coar-body-base-bold-weight) !important;
+.container-mode {
+    max-width: 100%;
+    width: 90%;
+    margin-left: auto;
+    margin-right: auto;
 }
 </style>

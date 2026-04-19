@@ -1,152 +1,119 @@
-import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
-import { authApi } from '@/core/api/auth-api';
-import { ApiError } from '@/core/api/http';
-import { router } from '@/router';
-import type { CurrentUser, LoginRequest, LoginResult } from '@/core/models/auth.models';
+import { defineStore } from 'pinia'
+import { computed, ref } from 'vue'
+import { useHttpClient } from '@/composables/useHttpClient'
+import type {
+  CreateAdminRequest,
+  CurrentUserDto,
+  LoginResult,
+  RegisterRequest,
+  SetupStatus,
+} from '@/models/auth'
 
-export type AuthStatus = 'initial' | 'loading' | 'authenticated' | 'unauthenticated' | 'requires-2fa';
-
+/**
+ * Auth store — manages the current session, fetches the principal from
+ * `/api/auth/me`, and exposes ABAC permission checks.
+ *
+ * `hasPermission(permission)` returns true if the user has
+ *   `system:admin` OR `tenant:admin` OR the specific permission string.
+ */
 export const useAuthStore = defineStore('auth', () => {
-  const currentUser = ref<CurrentUser | null>(null);
-  const status = ref<AuthStatus>('initial');
-  const error = ref<string | null>(null);
+  const http = useHttpClient('/api/auth')
+  const setupHttp = useHttpClient('/api/setup')
 
-  const isAuthenticated = computed(
-    () => status.value === 'authenticated' && currentUser.value !== null,
-  );
-  const isLoading = computed(() => status.value === 'loading');
-  const isAdmin = computed(() => currentUser.value?.roles?.includes('Admin') ?? false);
-  const requiresTwoFactor = computed(() => status.value === 'requires-2fa');
+  const user = ref<CurrentUserDto | null>(null)
+
+  const isAuthenticated = computed(() => user.value !== null)
+  const permissions = computed(() => user.value?.Permissions ?? [])
+  const roles = computed(() => user.value?.Roles ?? [])
+
+  /** System or tenant admin — used to gate top-level admin sections. */
+  const isAdmin = computed(
+    () =>
+      permissions.value.includes('system:admin') ||
+      permissions.value.includes('tenant:admin') ||
+      roles.value.includes('Admin'),
+  )
 
   const displayName = computed(() => {
-    const user = currentUser.value;
-    if (!user) return '';
-    if (user.firstName && user.lastName) return `${user.firstName} ${user.lastName}`;
-    return user.userName;
-  });
+    const u = user.value
+    if (!u) return ''
+    if (u.FirstName && u.LastName) return `${u.FirstName} ${u.LastName}`
+    return u.UserName
+  })
 
-  let _initPromise: Promise<void> | null = null;
-
-  async function initialize(): Promise<void> {
-    if (status.value === 'authenticated' || status.value === 'unauthenticated') return;
-    if (_initPromise) return _initPromise;
-    status.value = 'loading';
-    error.value = null;
-    _initPromise = (async () => {
-      try {
-        const user = await authApi.getCurrentUser();
-        currentUser.value = user;
-        status.value = 'authenticated';
-      } catch {
-        currentUser.value = null;
-        status.value = 'unauthenticated';
-      } finally {
-        _initPromise = null;
-      }
-    })();
-    return _initPromise;
+  /**
+   * ABAC capability check. Admins (system or tenant) bypass all checks.
+   */
+  function hasPermission(permission: string): boolean {
+    const perms = permissions.value
+    if (perms.includes('system:admin')) return true
+    if (perms.includes('tenant:admin')) return true
+    return perms.includes(permission)
   }
 
+  /**
+   * Login with username + password. On 2FA or lockout the result is
+   * returned so the caller can redirect; otherwise `fetchMe()` is called.
+   */
   async function login(
-    request: LoginRequest,
-    options?: { redirectTo?: string },
+    userName: string,
+    password: string,
+    rememberMe = false,
   ): Promise<LoginResult> {
-    status.value = 'loading';
-    error.value = null;
-    try {
-      const result = await authApi.login(request);
-      if (result.succeeded) {
-        await fetchCurrentUser(options?.redirectTo ?? '/');
-      } else if (result.requiresTwoFactor) {
-        status.value = 'requires-2fa';
-      } else {
-        status.value = 'unauthenticated';
-        if (result.isLockedOut) {
-          error.value = 'Your account has been temporarily locked due to multiple failed attempts. Please try again later or reset your password.';
-        } else if (result.isNotAllowed) {
-          error.value = 'Your account is not allowed to sign in. Please confirm your email address or contact support.';
-        } else {
-          error.value = 'Invalid username or password.';
-        }
-      }
-      return result;
-    } catch (err) {
-      status.value = 'unauthenticated';
-      error.value =
-        err instanceof ApiError
-          ? err.message
-          : 'Login failed. Please try again.';
-      return {
-        succeeded: false,
-        requiresTwoFactor: false,
-        isLockedOut: false,
-        isNotAllowed: false,
-        errorMessage: error.value ?? undefined,
-      };
+    const result = await http
+      .addPath('login')
+      .post<LoginResult>({ UserName: userName, Password: password, RememberMe: rememberMe })
+
+    if (result?.Succeeded) {
+      await fetchMe()
     }
+    return result
   }
 
-  async function completeTwoFactorLogin(redirectTo?: string): Promise<void> {
-    await fetchCurrentUser(redirectTo ?? '/');
-  }
-
-  async function logout(redirectTo?: string): Promise<void> {
-    status.value = 'loading';
+  async function logout(): Promise<void> {
     try {
-      await authApi.logout();
+      await http.addPath('logout').post()
     } finally {
-      currentUser.value = null;
-      status.value = 'unauthenticated';
-      error.value = null;
-      router.push(redirectTo ?? '/login');
+      user.value = null
     }
   }
 
-  async function refreshUser(): Promise<void> {
-    if (status.value !== 'authenticated') return;
+  async function register(data: RegisterRequest): Promise<void> {
+    await http.addPath('register').post(data)
+  }
+
+  async function fetchMe(): Promise<boolean> {
     try {
-      currentUser.value = await authApi.getCurrentUser();
+      user.value = await http.addPath('me').get<CurrentUserDto>()
+      return true
     } catch {
-      currentUser.value = null;
-      status.value = 'unauthenticated';
+      user.value = null
+      return false
     }
   }
 
-  function clearError(): void {
-    error.value = null;
+  async function fetchSetupStatus(): Promise<SetupStatus> {
+    return await setupHttp.addPath('status').get<SetupStatus>()
   }
 
-  function setError(message: string): void {
-    error.value = message;
-  }
-
-  async function fetchCurrentUser(redirectTo: string): Promise<void> {
-    try {
-      currentUser.value = await authApi.getCurrentUser();
-      status.value = 'authenticated';
-      router.push(redirectTo);
-    } catch {
-      status.value = 'unauthenticated';
-      error.value = 'Failed to fetch user information.';
-    }
+  async function createAdmin(data: CreateAdminRequest): Promise<void> {
+    await setupHttp.addPath('create-admin').post(data)
+    await fetchMe()
   }
 
   return {
-    currentUser,
-    status,
-    error,
+    user,
     isAuthenticated,
-    isLoading,
     isAdmin,
-    requiresTwoFactor,
+    permissions,
+    roles,
     displayName,
-    initialize,
+    hasPermission,
     login,
-    completeTwoFactorLogin,
     logout,
-    refreshUser,
-    clearError,
-    setError,
-  };
-});
+    register,
+    fetchMe,
+    fetchSetupStatus,
+    createAdmin,
+  }
+})

@@ -1,55 +1,41 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { CoarButton, CoarTextInput, CoarPasswordInput, CoarCard, CoarNote } from '@cocoar/vue-ui'
 import { useAuthStore } from '@/stores/auth.store'
 
 const router = useRouter()
-const route = useRoute()
 const authStore = useAuthStore()
 
 const userName = ref('')
 const password = ref('')
-const rememberMe = ref(false)
+const email = ref('')
+const firstName = ref('')
+const lastName = ref('')
 const loading = ref(false)
 const errorMessage = ref<string | undefined>(undefined)
-
-const redirectPath = computed(() => {
-    const raw = route.query.redirect
-    if (typeof raw === 'string' && raw.length > 0) return raw
-    return '/'
-})
 
 async function submit() {
     if (loading.value) return
     if (!userName.value || !password.value) {
-        errorMessage.value = 'Please enter your username and password.'
+        errorMessage.value = 'Username and password are required.'
         return
     }
 
     loading.value = true
     errorMessage.value = undefined
     try {
-        const result = await authStore.login(userName.value, password.value, rememberMe.value)
-        if (result.Succeeded) {
-            router.push(redirectPath.value)
-            return
-        }
-        if (result.RequiresTwoFactor) {
-            errorMessage.value = 'Two-factor authentication is not yet supported in this build.'
-            return
-        }
-        if (result.IsLockedOut) {
-            errorMessage.value = 'Account locked. Please try again later.'
-            return
-        }
-        if (result.IsNotAllowed) {
-            errorMessage.value = 'Account is not allowed to sign in. Confirm your email and try again.'
-            return
-        }
-        errorMessage.value = result.ErrorMessage ?? 'Invalid username or password.'
+        await authStore.createAdmin({
+            UserName: userName.value,
+            Password: password.value,
+            Email: email.value || undefined,
+            FirstName: firstName.value || undefined,
+            LastName: lastName.value || undefined,
+        })
+        router.push('/')
     } catch (err: unknown) {
-        errorMessage.value = err instanceof Error ? err.message : 'Login failed.'
+        errorMessage.value =
+            err instanceof Error ? err.message : 'Setup failed. Please try again.'
     } finally {
         loading.value = false
     }
@@ -61,29 +47,44 @@ async function submit() {
         <CoarCard class="auth-card">
             <div class="auth-brand">
                 <div class="auth-brand-logo">CA</div>
-                <h1 class="auth-title">Cocoar Auth</h1>
-                <p class="auth-subtitle">Sign in to continue</p>
+                <h1 class="auth-title">First-time setup</h1>
+                <p class="auth-subtitle">Create the initial admin account</p>
             </div>
 
             <form class="auth-form" @submit.prevent="submit">
                 <CoarTextInput
                     v-model="userName"
-                    label="Username"
+                    label="Username *"
                     autocomplete="username"
                     autofocus
                     :disabled="loading"
                 />
                 <CoarPasswordInput
                     v-model="password"
-                    label="Password"
-                    autocomplete="current-password"
+                    label="Password *"
+                    autocomplete="new-password"
                     :disabled="loading"
                 />
-
-                <label class="remember-me">
-                    <input type="checkbox" v-model="rememberMe" :disabled="loading" />
-                    <span>Remember me</span>
-                </label>
+                <CoarTextInput
+                    v-model="email"
+                    label="Email"
+                    autocomplete="email"
+                    :disabled="loading"
+                />
+                <div class="form-row">
+                    <CoarTextInput
+                        v-model="firstName"
+                        label="First name"
+                        autocomplete="given-name"
+                        :disabled="loading"
+                    />
+                    <CoarTextInput
+                        v-model="lastName"
+                        label="Last name"
+                        autocomplete="family-name"
+                        :disabled="loading"
+                    />
+                </div>
 
                 <CoarNote v-if="errorMessage" variant="error">{{ errorMessage }}</CoarNote>
 
@@ -93,7 +94,7 @@ async function submit() {
                     :disabled="loading"
                     :loading="loading"
                 >
-                    Sign in
+                    Create admin account
                 </CoarButton>
             </form>
         </CoarCard>
@@ -112,7 +113,7 @@ async function submit() {
 
 .auth-card {
     width: 100%;
-    max-width: 420px;
+    max-width: 480px;
     padding: 2rem 2rem 2.25rem;
 }
 
@@ -158,16 +159,9 @@ async function submit() {
     gap: 0.875rem;
 }
 
-.remember-me {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    color: var(--coar-text-neutral-secondary);
-    user-select: none;
-}
-
-.remember-me input {
-    margin: 0;
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
 }
 </style>
