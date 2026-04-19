@@ -41,6 +41,14 @@ public record CurrentUserDto
     public string? LastName { get; init; }
     public List<string> Roles { get; init; } = [];
     public string Realm { get; init; } = "system";
+
+    /// <summary>
+    /// Effective ABAC permissions for this user in the current realm
+    /// (resolved transitively through group membership). Frontend stores
+    /// these for client-side capability gating; the backend re-checks on
+    /// every request via the access policy engine.
+    /// </summary>
+    public List<string> Permissions { get; init; } = [];
 }
 
 /// <summary>

@@ -8,6 +8,7 @@ using Cocoar.Auth.Domain.Events;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using AbacPermissions = Cocoar.Auth.Application.Authorization.IPermissionService;
 
 namespace Cocoar.Auth.Api.Controllers;
 
@@ -206,7 +207,14 @@ public class AuthController : ApiControllerBase
 
         var realm = User.FindFirstValue("cocoar:realm") ?? "system";
         var result = await _authService.GetCurrentUserAsync(userId.Value, cancellationToken);
-        return FromErrorOr(result, user => Ok(user with { Realm = realm }));
+
+        // Resolve ABAC permissions for the current realm (transitive via group membership).
+        // Falls back to an empty list if the new system isn't seeded yet — the legacy
+        // role-based path still gates admin endpoints during the migration.
+        var abac = HttpContext.RequestServices.GetRequiredService<AbacPermissions>();
+        var permissions = await abac.GetUserPermissionsAsync(userId.Value, cancellationToken);
+
+        return FromErrorOr(result, user => Ok(user with { Realm = realm, Permissions = permissions }));
     }
 
     /// <summary>

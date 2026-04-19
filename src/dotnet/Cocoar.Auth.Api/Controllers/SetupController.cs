@@ -1,4 +1,11 @@
+using Cocoar.Auth.Application.Models;
+using Cocoar.Auth.Domain.Aggregates;
+using Cocoar.Auth.Domain.Authorization;
+using Cocoar.Auth.Domain.Authorization.Events;
 using Cocoar.Auth.Domain.Entities;
+using Cocoar.Auth.Domain.Enums;
+using Cocoar.Auth.Domain.Events;
+using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -117,6 +124,39 @@ public class SetupController : ControllerBase
                 Errors = addRoleResult.Errors.Select(e => e.Description)
             });
         }
+
+        var session = HttpContext.RequestServices.GetRequiredService<IDocumentSession>();
+
+        // Legacy permission grant — removed once Phase 2.1 finalizes ABAC migration.
+        var grantId = Guid.CreateVersion7();
+        session.Events.StartStream<PermissionGrantAggregate>(grantId,
+            new PermissionGrantCreated(grantId, SubjectType.User, user.Id, null, "tenant:admin", user.Id));
+
+        // ── ABAC bootstrap ──
+        // Create the "System Admin" PermissionRole with full system+tenant admin scope,
+        // wrap it in a "System Administrators" AuthorizationGroup, and add the new user
+        // as the founding member. From here on, any further admin work routes through
+        // group membership, not Identity roles.
+        var systemAdminRoleId = Guid.CreateVersion7();
+        session.Events.StartStream<PermissionRole>(systemAdminRoleId,
+            new PermissionRoleCreatedEvent(
+                Id: systemAdminRoleId,
+                Name: "System Admin",
+                Description: "Full system+tenant access. Granted to the bootstrap administrator.",
+                ResourceType: "system",
+                Permissions: ["system:admin", "tenant:admin"]));
+
+        var systemAdminGroupId = Guid.CreateVersion7();
+        session.Events.StartStream<AuthorizationGroup>(systemAdminGroupId,
+            new AuthorizationGroupCreatedEvent(
+                Id: systemAdminGroupId,
+                Name: "System Administrators",
+                Description: "Bootstrap group for the initial administrator. Holds the System Admin role.",
+                MemberIds: [user.Id],
+                RoleIds: [systemAdminRoleId],
+                AccessScripts: []));
+
+        await session.SaveChangesAsync();
 
         // Auto-login so the user is immediately authenticated with the Admin role
         await _signInManager.SignInAsync(user, isPersistent: false);
