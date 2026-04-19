@@ -313,6 +313,11 @@ builder.Services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.Appli
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
+        // Preserve PascalCase on the wire — the frontend DTOs are authored to
+        // match the C# record/class property names exactly (CurrentUserDto.Permissions,
+        // LoginResult.Succeeded, etc.). Default camelCase would break every call site.
+        options.JsonSerializerOptions.PropertyNamingPolicy = null;
+        options.JsonSerializerOptions.DictionaryKeyPolicy = null;
         options.JsonSerializerOptions.Converters.Add(new OptionalJsonConverterFactory());
         options.JsonSerializerOptions.Converters.Add(new ShortGuidJsonConverter());
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
