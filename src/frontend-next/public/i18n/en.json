@@ -1,0 +1,11 @@
+{
+  "todo": {
+    "status": {
+      "None": "",
+      "New": "New",
+      "InProgress": "In Progress",
+      "Done": "Done",
+      "Info": "Info"
+    }
+  }
+}

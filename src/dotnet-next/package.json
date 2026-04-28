@@ -1,0 +1,5 @@
+{
+	"devDependencies": {
+		"testcontainers": "^11.14.0"
+	}
+}

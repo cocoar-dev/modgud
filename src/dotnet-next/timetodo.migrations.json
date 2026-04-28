@@ -1,0 +1,9 @@
+[
+    {
+        "Alias": "TimeTodo",
+        "Context": "AppDbContext",
+        "Project": "./TimetoDo.Api.DataAccess.Postgres",
+        "StartupProject": "./TimetoDo.Api.DataAccess.MigrationHelper",
+        "Configuration": "postgres"
+    }
+]

@@ -1,0 +1,96 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
+import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
+import {
+  CoarButton,
+  useContextMenu,
+  CoarContextMenu,
+  CoarMenuItem,
+  CoarMenuDivider,
+} from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
+import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
+import { useRoleStore } from '@/stores/role.store'
+import { useUI } from '@/composables/useUI'
+import type { RoleDto } from '@/models/role'
+
+const { t, language } = useI18n()
+useRoutedModals()
+const { navigateToModal } = useFragmentNavigation()
+const roleStore = useRoleStore()
+
+const ui = useUI()
+watch(language, () => ui.set((ctx) => {
+  ctx.header.title = t('nav.administration', {}, 'Administration')
+  ctx.header.subTitle = t('admin.roles.title', {}, 'Roles')
+  ctx.header.icon = 'shield'
+  ctx.content.container = false
+}), { immediate: true })
+
+const roles = computed(() => roleStore.roles)
+
+const cellMenu = useContextMenu()
+const viewportMenu = useContextMenu()
+const selectedIds = ref<string[]>([])
+
+const builder = CoarGridBuilder.create<RoleDto>()
+  .persistColumnState('admin-roles')
+  .option('getRowId', (p: any) => p.data.Id)
+  .rowDataRef(roles)
+  .searchHighlight()
+  .rowSelection('single')
+  .onCellDoubleClicked((event) => {
+    if (event.data) navigateToModal(event.data.Id)
+  })
+  .onCellContextMenu((event) => {
+    if (!event.node.isSelected()) {
+      event.api.deselectAll()
+      event.node.setSelected(true)
+    }
+    selectedIds.value = event.api.getSelectedRows().map((r: RoleDto) => r.Id)
+    cellMenu.open(event.event as MouseEvent)
+  })
+  .onViewportContextMenu(($event) => {
+    viewportMenu.open($event)
+  })
+  .columns([
+    (col) => col.field('Name').header('Name', 'admin.roles.name').flex(1),
+    (col) => col.field('ResourceType').header('Resource', 'admin.roles.resourceType').width(120),
+    (col) => col.field('Description').header('Description', 'admin.roles.description').flex(1),
+    (col) => col.field('Permissions').header('Permissions', 'admin.roles.permissions').flex(2)
+      .option('valueGetter', (p: any) => (p.data?.Permissions || []).join(', ')),
+  ])
+
+async function deleteSelected() {
+  const id = selectedIds.value[0]
+  if (!id) return
+  if (confirm(t('common.confirmDelete', {}, 'Really delete?'))) {
+    await roleStore.deleteRole(id)
+  }
+}
+
+onMounted(() => roleStore.initialize())
+</script>
+
+<template>
+  <div class="flex flex-1 flex-col min-w-0 p-4">
+    <CoarDataGrid :builder="builder" show-search class="flex-1 min-h-0" bordered elevated>
+      <template #toolbar-right>
+        <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">{{ t('common.create', {}, 'Create') }}</CoarButton>
+      </template>
+    </CoarDataGrid>
+
+    <!-- Row context menu -->
+    <CoarContextMenu :menu="cellMenu">
+      <CoarMenuItem :label="t('common.open', {}, 'Open')" icon="pencil" @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />
+      <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus" @clicked="navigateToModal('create')" />
+      <CoarMenuDivider />
+      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteSelected" />
+    </CoarContextMenu>
+
+    <!-- Viewport context menu (empty area) -->
+    <CoarContextMenu :menu="viewportMenu">
+      <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus" @clicked="navigateToModal('create')" />
+    </CoarContextMenu>
+  </div>
+</template>

@@ -1,0 +1,124 @@
+@import "tailwindcss" layer(tailwind);
+@import "@cocoar/vue-ui/styles";
+@import "@cocoar/vue-data-grid/styles";
+
+:root {
+  --color-primary: #525e76;
+  --color-primary-dark: #292f3b;
+  --color-header: #525e76;
+  --color-selection: #e7eaf0;
+  --color-modal: rgba(0, 0, 0, 0.45);
+
+  /* AG Grid row status colors (light mode) */
+  --color-row-done: #eefeee;
+  --color-row-none: #f7f7f7bf;
+  --color-row-info: #fffaf06b;
+  --color-row-child: var(--coar-background-neutral-primary);
+  --color-row-selected: #e7eaf0;
+
+  /* Text emphasis */
+  --color-text-danger: #991b1b;
+}
+
+:root.dark-mode,
+.dark-mode {
+  --color-header: #525e76;
+  --color-selection: #334155;
+
+  /* AG Grid row status colors (dark mode) */
+  --color-row-done: rgba(34, 197, 94, 0.1);
+  --color-row-none: rgba(170, 176, 181, 0.08);
+  --color-row-info: rgba(251, 191, 36, 0.08);
+  --color-row-child: var(--coar-background-neutral-primary);
+  --color-row-selected: #334155;
+
+  --color-text-danger: #fca5a5;
+}
+
+body {
+  font-family: var(--coar-font-family-body, Poppins), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--coar-text-neutral-primary, #333);
+  background: var(--coar-background-neutral-primary);
+}
+
+/* AG Grid: remove vertical cell borders */
+.ag-theme-cocoar {
+  --ag-column-border: 1px solid transparent;
+}
+
+/* AG Grid Status Row Colors */
+.ag-row.status-done {
+  background-color: var(--color-row-done);
+}
+.ag-row.status-none:not(.ag-row-selected) {
+  background-color: var(--color-row-none);
+}
+.ag-row.infoTodo:not(.ag-row-selected) {
+  background-color: var(--color-row-info);
+}
+.ag-row.status-pending {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.ag-row-selected {
+  background-color: var(--color-row-selected) !important;
+}
+
+/* Due date warning (within 3 days) */
+.todo-due-warning {
+  color: var(--color-text-danger);
+}
+.todo-due-warning-bold {
+  font-weight: 600;
+}
+
+/* Parent todo: only title column bold; critical: red */
+.todo-title-parent {
+  font-weight: 600;
+}
+.todo-title-critical {
+  color: var(--color-text-danger);
+}
+
+/* Parent/Child todo styling */
+.ag-row.childTodo:not(.ag-row-selected):not(.infoTodo) {
+  background-color: var(--color-row-child);
+}
+.ag-row.childTodo {
+  font-size: smaller;
+}
+.ag-row.childTodo div[col-id='Critical'] {
+  margin-left: 72px;
+}
+.ag-row.childTodo div[col-id='AwaitingFeedback'] {
+  margin-left: 60px;
+}
+
+/* Phantom parent (parent not visible due to access control) */
+.ag-row.phantomParent {
+  opacity: 0.5;
+  font-style: italic;
+  user-select: none;
+}
+.ag-row.phantomParent .ag-group-contracted,
+.ag-row.phantomParent .ag-group-expanded {
+  visibility: hidden;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Scripter references (project refs for PoC) -->
+    <ProjectReference Include="..\..\..\..\Scripter\src\Scripter.Core\Scripter.Core.csproj" />
+    <ProjectReference Include="..\..\..\..\Scripter\src\Scripter.Shared\Scripter.Shared.csproj" />
+    <ProjectReference Include="..\..\..\..\Scripter\src\Engines\Scripter.Engine.JavaScript\Scripter.Engine.JavaScript.csproj" />
+    <ProjectReference Include="..\..\..\..\Scripter\src\Engines\Scripter.Engine.TypeScript\Scripter.Engine.TypeScript.csproj" />
+  </ItemGroup>
+
+</Project>

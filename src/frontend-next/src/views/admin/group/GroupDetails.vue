@@ -1,0 +1,858 @@
+<script setup lang="ts">
+import { ref, computed, onMounted, watch } from 'vue'
+import { useGroupStore } from '@/stores/group.store'
+import { useRoleStore } from '@/stores/role.store'
+import { useUserStore } from '@/stores/user.store'
+import { usePrincipalStore } from '@/stores/principal.store'
+import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarRadioGroup, CoarRadioButton, CoarTabGroup, CoarTab, CoarPopover, CoarCodeBlock, CoarIcon, CoarListbox, CoarDualListbox } from '@cocoar/vue-ui'
+import type { CoarListboxOption } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
+import ModalLayout from '@/components/ModalLayout.vue'
+import { CoarScriptEditor } from '@cocoar/vue-script-editor'
+import { getPreamble, getPlaceholder, getDefaultScript, getExamples, membershipExamples, membershipPreamble } from './accessScriptTypes'
+import { useScriptTypes } from './useScriptTypes'
+import type { AccessScriptDto, MembershipMode, EmailMode } from '@/models/group'
+import { roleHasWritePermission, RESOURCE_LABELS } from '@/models/role'
+
+const { sharedTypeDefinitions } = useScriptTypes()
+const scriptExtraLibs = computed(() => [
+  { content: sharedTypeDefinitions.value, filePath: 'file:///types/access-policy.d.ts' },
+])
+
+const { t } = useI18n()
+
+const props = defineProps<{
+  id: string
+  close: (result?: unknown) => void
+}>()
+
+const groupStore = useGroupStore()
+const roleStore = useRoleStore()
+const userStore = useUserStore()
+const principalStore = usePrincipalStore()
+const isCreate = computed(() => props.id === 'create')
+const initialLoad = ref(false)
+const saving = ref(false)
+const saveError = ref<string | null>(null)
+const activeTab = ref<'general' | 'members' | 'script' | 'roles' | 'access' | 'effective'>('general')
+const effectiveMembers = ref<import('@/stores/group.store').EffectiveMembersDto | null>(null)
+const effectiveLoading = ref(false)
+
+async function loadEffectiveMembers() {
+  if (isCreate.value) return
+  effectiveLoading.value = true
+  try {
+    effectiveMembers.value = await groupStore.getEffectiveMembers(props.id)
+  } finally {
+    effectiveLoading.value = false
+  }
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'effective' && !effectiveMembers.value) {
+    loadEffectiveMembers()
+  }
+})
+
+const form = ref({
+  Name: '',
+  Description: '',
+  MemberIds: [] as string[],
+  RoleIds: [] as string[],
+  AccessScripts: [] as AccessScriptDto[],
+  MembershipMode: 'Manual' as MembershipMode,
+  MembershipScript: '',
+  MembershipLastError: null as string | null,
+  Email: '' as string | undefined,
+  EmailMode: 'Shared' as EmailMode,
+})
+
+const modalTitle = computed(() => {
+  const name = form.value.Name?.trim()
+  if (name) return name
+  return isCreate.value ? t('admin.groupDetails.createTitle', {}, 'Create Group') : ''
+})
+
+const isAutoMode = computed(() => form.value.MembershipMode === 'Auto')
+
+const membershipModeOptions = computed(() => [
+  { value: 'Manual', label: t('admin.groupDetails.membership.manual', {}, 'Manual') },
+  { value: 'Auto', label: t('admin.groupDetails.membership.auto', {}, 'Automatic (script)') },
+])
+
+// EmailMode as a checkbox: Shared = "group has its own address", Expand = "send to each member".
+const hasOwnEmail = computed({
+  get: () => form.value.EmailMode === 'Shared',
+  set: (v) => { form.value.EmailMode = v ? 'Shared' : 'ExpandToMembers' },
+})
+
+// Script tab disappears in Manual mode — if it was active, fall back to Members
+// so the user doesn't land on a hidden tab.
+watch(isAutoMode, (auto) => {
+  if (!auto && activeTab.value === 'script') activeTab.value = 'members'
+})
+
+const footerButton = computed(() => ({
+  visible: true,
+  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
+  disabled: !form.value.Name.trim()
+    || saving.value
+    || (isAutoMode.value && !form.value.MembershipScript.trim()),
+  loading: saving.value,
+  onClick: save,
+}))
+
+// Member picker now accepts persons AND other groups (nested groups).
+// Exclude the current group itself to prevent trivial self-cycles at the UI level.
+const memberOptions = computed<CoarListboxOption<string>[]>(() =>
+  principalStore.lookupEntities
+    .filter(p => p.Id !== props.id)
+    .map(p => {
+      if (p.Type === 'Group') {
+        return {
+          value: p.Id,
+          label: p.Label || p.Id,
+          subtitle: p.Description ?? undefined,
+          tooltip: p.Description ?? undefined,
+          icon: 'users',
+          group: t('admin.groupDetails.groupsLabel', {}, 'Groups'),
+        }
+      }
+      // Person
+      const fullName = [p.Firstname, p.Lastname].filter(Boolean).join(' ')
+      const subtitleParts = [p.Acronym, fullName].filter(Boolean)
+      return {
+        value: p.Id,
+        label: p.UserName || p.Label || p.Id,
+        subtitle: subtitleParts.length > 0 ? subtitleParts.join(' | ') : undefined,
+        icon: 'circle-user',
+        group: t('admin.groupDetails.usersLabel', {}, 'Users'),
+      }
+    })
+)
+
+const memberLabels = computed(() => {
+  const map = new Map(memberOptions.value.map(o => [o.value, o.label]))
+  return form.value.MemberIds.map(id => map.get(id) ?? id)
+})
+
+// Read-only view of the current members as rich list options — same shape as
+// the picker items so the Script-tab listing looks identical.
+const computedMemberOptions = computed<CoarListboxOption<string>[]>(() => {
+  const byId = new Map(memberOptions.value.map(o => [o.value, o]))
+  return form.value.MemberIds
+    .map(id => byId.get(id))
+    .filter((o): o is CoarListboxOption<string> => !!o)
+})
+
+function mapEffectiveMember(m: import('@/stores/group.store').EffectiveMemberDto, includeVia: boolean): CoarListboxOption<string> {
+  const baseGroup = m.Type === 'Group'
+    ? t('admin.groupDetails.groupsLabel', {}, 'Groups')
+    : t('admin.groupDetails.usersLabel', {}, 'Users')
+  const via = includeVia && m.ViaName ? m.ViaName : null
+  if (m.Type === 'Group') {
+    const desc = m.Description ?? ''
+    const sub = via ? (desc ? `${desc} · über: ${via}` : `über: ${via}`) : desc
+    return {
+      value: m.Id,
+      label: m.Label,
+      subtitle: sub || undefined,
+      tooltip: m.Description || undefined,
+      icon: 'users',
+      group: baseGroup,
+    }
+  }
+  const fullName = [m.Firstname, m.Lastname].filter(Boolean).join(' ')
+  const directPart = [m.Acronym, fullName].filter(Boolean).join(' | ')
+  const sub = via ? (directPart ? `${directPart} · über: ${via}` : `über: ${via}`) : directPart
+  return {
+    value: m.Id,
+    label: m.UserName || m.Label,
+    subtitle: sub || undefined,
+    icon: 'circle-user',
+    group: baseGroup,
+  }
+}
+
+const effectiveDirectOptions = computed<CoarListboxOption<string>[]>(() =>
+  effectiveMembers.value
+    ? effectiveMembers.value.Direct.map(m => mapEffectiveMember(m, false))
+    : [],
+)
+
+const effectiveNestedOptions = computed<CoarListboxOption<string>[]>(() =>
+  effectiveMembers.value
+    ? effectiveMembers.value.Nested.map(m => mapEffectiveMember(m, true))
+    : [],
+)
+
+// Members listbox: Persons on top, Groups below — overrides the default alpha sort.
+const memberGroupOrder = computed(() => [
+  t('admin.groupDetails.usersLabel', {}, 'Users'),
+  t('admin.groupDetails.groupsLabel', {}, 'Groups'),
+])
+const memberGroupSort = (a: string, b: string) => {
+  const order = memberGroupOrder.value
+  const ia = order.indexOf(a), ib = order.indexOf(b)
+  return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+}
+
+const roleOptions = computed<CoarListboxOption<string>[]>(() =>
+  roleStore.roles.map(r => ({
+    value: r.Id,
+    label: r.Name,
+    subtitle: r.Description || (r.ResourceType ? `Resource: ${r.ResourceType}` : undefined),
+    tooltip: r.Description || undefined,
+    icon: 'shield',
+    group: r.ResourceType || 'other',
+  }))
+)
+
+const requiredResourceTypes = computed(() => {
+  const types = new Set<string>()
+  for (const roleId of form.value.RoleIds) {
+    const role = roleStore.roles.find(r => r.Id === roleId)
+    if (role && role.ResourceType !== 'app') {
+      types.add(role.ResourceType)
+    }
+  }
+  return [...types].sort()
+})
+
+/**
+ * Resources where the group has a role that grants write/mutating permissions
+ * but no access script (or an empty script). Script-less = "unrestricted scope"
+ * in the coupled model → the members can touch every row of the resource.
+ * Flag these so the admin can confirm that's intentional before saving.
+ */
+const writeResourcesWithoutScope = computed<string[]>(() => {
+  const out: string[] = []
+  const assignedRoles = form.value.RoleIds
+    .map(id => roleStore.roles.find(r => r.Id === id))
+    .filter((r): r is NonNullable<typeof r> => !!r)
+
+  const writeResources = new Set<string>()
+  for (const role of assignedRoles) {
+    if (roleHasWritePermission(role)) writeResources.add(role.ResourceType)
+  }
+
+  for (const rt of writeResources) {
+    const script = form.value.AccessScripts.find(s => s.ResourceType === rt)
+    if (!script || !script.Script?.trim()) out.push(rt)
+  }
+  return out.sort()
+})
+
+const writeResourceLabels = computed(() =>
+  writeResourcesWithoutScope.value.map(rt => RESOURCE_LABELS[rt] || rt)
+)
+
+// Access tab disappears when no per-resource roles are assigned (app:admin
+// bypasses all access scripts, so the tab has nothing to configure).
+const hasAccessConfig = computed(() => requiredResourceTypes.value.length > 0)
+watch(hasAccessConfig, (has) => {
+  if (!has && activeTab.value === 'access') activeTab.value = 'general'
+})
+
+function syncAccessScripts() {
+  const existing = new Map(form.value.AccessScripts.map(s => [s.ResourceType, s]))
+  form.value.AccessScripts = requiredResourceTypes.value.map(rt =>
+    existing.get(rt) || { ResourceType: rt, Script: '' }
+  )
+}
+
+function getScript(resourceType: string): string {
+  const stored = form.value.AccessScripts.find(s => s.ResourceType === resourceType)?.Script?.trim()
+  return stored || getDefaultScript(resourceType)
+}
+
+function setScript(resourceType: string, value: string) {
+  const script = form.value.AccessScripts.find(s => s.ResourceType === resourceType)
+  if (script) {
+    script.Script = value
+  }
+}
+
+onMounted(async () => {
+  initialLoad.value = true
+  try {
+    await Promise.all([
+      roleStore.initialize(),
+      userStore.loadLookup(),
+      principalStore.loadLookup(),
+    ])
+
+    if (!isCreate.value) {
+      await groupStore.initialize()
+      const group = groupStore.groups.find(g => g.Id === props.id)
+      if (group) {
+        form.value = {
+          Name: group.Name,
+          Description: group.Description || '',
+          MemberIds: [...group.MemberIds],
+          RoleIds: [...group.RoleIds],
+          AccessScripts: group.AccessScripts.map(s => ({ ...s })),
+          MembershipMode: group.MembershipMode || 'Manual',
+          MembershipScript: group.MembershipScript || '',
+          MembershipLastError: group.MembershipLastError ?? null,
+          Email: group.Email || '',
+          EmailMode: group.EmailMode || 'Shared',
+        }
+      }
+    }
+  } finally {
+    initialLoad.value = false
+  }
+})
+
+async function save() {
+  if (!form.value.Name.trim()) return
+  if (isAutoMode.value && !form.value.MembershipScript.trim()) return
+  saving.value = true
+  saveError.value = null
+  try {
+    syncAccessScripts()
+    const dto = {
+      Name: form.value.Name,
+      Description: form.value.Description || undefined,
+      MemberIds: isAutoMode.value ? [] : form.value.MemberIds,
+      RoleIds: form.value.RoleIds,
+      AccessScripts: form.value.AccessScripts,
+      MembershipMode: form.value.MembershipMode,
+      MembershipScript: isAutoMode.value ? form.value.MembershipScript : undefined,
+      Email: form.value.Email?.trim() || undefined,
+      EmailMode: form.value.EmailMode,
+    }
+    const saved = isCreate.value
+      ? await groupStore.createGroup(dto)
+      : await groupStore.updateGroup(props.id, dto)
+
+    // Keep the modal open and surface the script error so the user can fix it
+    // without re-opening. Clearing happens automatically on the next successful save.
+    if (saved?.MembershipLastError) {
+      form.value.MembershipLastError = saved.MembershipLastError
+      return
+    }
+    props.close()
+  } catch (e: any) {
+    // Surface server-side validation errors (TS transpile failures, name-taken, …)
+    // instead of silently logging them. Supports several response shapes:
+    //   { Errors: [{ Code, Description }] }  (GroupEndpoints)
+    //   { error: "..." }                      (ErrorOrExtensions default)
+    //   { detail / title: "..." }             (ASP.NET ProblemDetails)
+    const body = e?.body
+    let detail: string | null = null
+    if (typeof body === 'object' && body !== null) {
+      if (Array.isArray(body.Errors) && body.Errors.length > 0) {
+        detail = body.Errors.map((err: any) => err?.Description ?? err?.description ?? '').filter(Boolean).join('\n')
+      } else {
+        detail = body.error ?? body.detail ?? body.title ?? null
+      }
+    } else if (typeof body === 'string') {
+      detail = body
+    }
+    saveError.value = detail ?? e?.message ?? 'Save failed'
+    console.error('Group save failed', e)
+  } finally {
+    saving.value = false
+  }
+}
+</script>
+
+<template>
+  <ModalLayout :close="close" :title="modalTitle" icon="users" :footer-button="footerButton" width="44rem">
+    <div v-if="!initialLoad" class="flex flex-col min-w-0 min-h-0 flex-1">
+      <CoarTabGroup v-model="activeTab" class="tab-bar">
+        <CoarTab id="general">{{ t('admin.groupDetails.tabs.general', {}, 'General') }}</CoarTab>
+        <CoarTab id="members">{{ t('admin.groupDetails.tabs.members', {}, 'Members') }}</CoarTab>
+        <CoarTab v-if="isAutoMode" id="script">{{ t('admin.groupDetails.tabs.script', {}, 'Script') }}</CoarTab>
+        <CoarTab id="roles">{{ t('admin.groupDetails.tabs.roles', {}, 'Roles') }}</CoarTab>
+        <CoarTab v-if="hasAccessConfig" id="access">{{ t('admin.groupDetails.tabs.access', {}, 'Access') }}</CoarTab>
+        <CoarTab v-if="!isCreate" id="effective">{{ t('admin.groupDetails.tabs.effective', {}, 'Effective') }}</CoarTab>
+      </CoarTabGroup>
+
+      <div v-if="saveError" class="save-error">
+        <div class="save-error-title">{{ t('admin.groupDetails.saveError', {}, 'Save failed') }}</div>
+        <pre class="save-error-message">{{ saveError }}</pre>
+        <button type="button" class="save-error-dismiss" @click="saveError = null" :aria-label="t('common.close', {}, 'Close')">×</button>
+      </div>
+
+      <!-- Warning: write-bearing role combined with no row-level scope script → unrestricted write -->
+      <div v-if="writeResourcesWithoutScope.length > 0" class="write-warning" role="alert">
+        <CoarIcon name="alert-triangle" size="s" class="write-warning-icon" />
+        <div class="write-warning-body">
+          <div class="write-warning-title">
+            {{ t('admin.groupDetails.writeWithoutScope.title', {}, 'Unrestricted write access') }}
+          </div>
+          <div class="write-warning-message">
+            {{ t('admin.groupDetails.writeWithoutScope.message', { resources: writeResourceLabels.join(', ') },
+              `Members of this group can create, update, and delete every row of: ${writeResourceLabels.join(', ')}. Add an access script in the Access tab to limit which rows they can touch, or confirm this is intentional.`) }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: General -->
+      <div v-show="activeTab === 'general'" class="tab-content">
+        <section>
+          <div class="flex flex-col gap-2">
+            <CoarFormField :label="t('admin.groupDetails.name', {}, 'Name')">
+              <CoarTextInput v-model="form.Name" clearable />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.groupDetails.description', {}, 'Description')">
+              <CoarTextInput v-model="form.Description" clearable :rows="3" />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.groupDetails.email', {}, 'Email')">
+              <div class="email-row">
+                <CoarTextInput
+                  v-model="form.Email"
+                  clearable
+                  :disabled="!hasOwnEmail"
+                  placeholder="team@example.com"
+                  class="flex-1 min-w-0"
+                />
+                <CoarCheckbox v-model="hasOwnEmail">
+                  {{ t('admin.groupDetails.emailMode.ownAddress', {}, 'Own address') }}
+                </CoarCheckbox>
+              </div>
+              <p class="script-help">
+                {{ hasOwnEmail
+                  ? t('admin.groupDetails.emailMode.sharedHelp', {}, 'Notifications go to this address.')
+                  : t('admin.groupDetails.emailMode.expandHelp', {}, 'Notifications are sent to each member individually (recursive across nested groups).') }}
+              </p>
+            </CoarFormField>
+            <CoarFormField :label="t('admin.groupDetails.type', {}, 'Type')">
+              <CoarSelect v-model="form.MembershipMode" :options="membershipModeOptions" />
+              <p class="script-help">
+                {{ isAutoMode
+                  ? t('admin.groupDetails.membership.autoHint', {}, 'Members are computed from the script in the Script tab.')
+                  : t('admin.groupDetails.membership.manualHint', {}, 'Pick members directly in the Members tab.') }}
+              </p>
+            </CoarFormField>
+          </div>
+        </section>
+      </div>
+
+      <!-- Tab: Members -->
+      <div v-show="activeTab === 'members'" class="tab-content">
+        <section class="flex-section">
+          <CoarDualListbox
+            v-if="!isAutoMode"
+            class="flex-1 min-h-0"
+            v-model="form.MemberIds"
+            :options="memberOptions"
+            drag-drop
+            :sort-groups="memberGroupSort"
+            sort-options="asc"
+            :search-fields="['label', 'subtitle', 'group']"
+            :available-label="t('admin.groupDetails.availableMembers', {}, 'Available')"
+            :selected-label="t('admin.groupDetails.selectedMembers', {}, 'Members')"
+            :search-placeholder="t('admin.groupDetails.searchMembers', {}, 'Search people & groups…')"
+          />
+          <template v-else>
+            <p class="script-help">
+              {{ t('admin.groupDetails.membership.autoHint', {}, 'Members are computed from the script in the Script tab.') }}
+            </p>
+            <CoarListbox
+              class="flex-1 min-h-0"
+              :options="computedMemberOptions"
+              :sort-groups="memberGroupSort"
+              sort-options="asc"
+              :label="t('admin.groupDetails.membership.currentMembers', {}, 'Current members (computed)')"
+              searchable
+              display-only
+              :search-fields="['label', 'subtitle', 'group']"
+              :search-placeholder="t('admin.groupDetails.searchMembers', {}, 'Search people & groups…')"
+              :empty-text="t('admin.groupDetails.membership.noMembersYet', {}, 'No members yet — will be computed after save.')"
+            />
+          </template>
+        </section>
+      </div>
+
+      <!-- Tab: Effective (resolved members) -->
+      <div v-show="activeTab === 'effective'" class="tab-content">
+        <div v-if="effectiveLoading" class="empty-hint">
+          {{ t('common.loading', {}, 'Loading...') }}
+        </div>
+        <template v-else>
+          <section class="flex-section">
+            <div class="section-heading">{{ t('admin.groupDetails.effective.direct', {}, 'Direct members') }}</div>
+            <CoarListbox
+              class="flex-1 min-h-0"
+              :options="effectiveDirectOptions"
+              :sort-groups="memberGroupSort"
+              sort-options="asc"
+              searchable
+              display-only
+              :search-fields="['label', 'subtitle', 'group']"
+              :search-placeholder="t('admin.groupDetails.searchMembers', {}, 'Search people & groups…')"
+              :empty-text="t('admin.groupDetails.effective.noneDirect', {}, 'No direct members.')"
+            />
+          </section>
+          <section v-if="effectiveNestedOptions.length > 0" class="flex-section">
+            <div class="section-heading">{{ t('admin.groupDetails.effective.nested', {}, 'Via nested groups') }}</div>
+            <CoarListbox
+              class="flex-1 min-h-0"
+              :options="effectiveNestedOptions"
+              :sort-groups="memberGroupSort"
+              sort-options="asc"
+              searchable
+              display-only
+              :search-fields="['label', 'subtitle', 'group']"
+              :search-placeholder="t('admin.groupDetails.searchMembers', {}, 'Search people & groups…')"
+              :empty-text="t('admin.groupDetails.effective.noneNested', {}, 'No nested members.')"
+            />
+          </section>
+        </template>
+      </div>
+
+      <!-- Tab: Roles -->
+      <div v-show="activeTab === 'roles'" class="tab-content">
+        <section class="flex-section">
+          <CoarDualListbox
+            class="flex-1 min-h-0"
+            :model-value="form.RoleIds"
+            @update:model-value="(v: string[]) => { form.RoleIds = v; syncAccessScripts() }"
+            :options="roleOptions"
+            drag-drop
+            sort-options="asc"
+            :search-fields="['label', 'subtitle', 'group']"
+            :available-label="t('admin.groupDetails.availableRoles', {}, 'Available')"
+            :selected-label="t('admin.groupDetails.selectedRoles', {}, 'Assigned')"
+            :search-placeholder="t('admin.groupDetails.searchRoles', {}, 'Search roles…')"
+          />
+        </section>
+      </div>
+
+      <!-- Tab: Script (auto only) -->
+      <div v-show="activeTab === 'script'" class="tab-content">
+        <section class="flex-section">
+          <div class="script-label-row">
+            <p class="script-help flex-1">
+              {{ t('admin.groupDetails.membership.autoHelp', {}, 'Write a TypeScript arrow function returning true for principals that should be members.') }}
+            </p>
+            <CoarPopover mode="click">
+              <button type="button" class="info-btn" :aria-label="t('admin.groupDetails.examples', {}, 'Examples')">
+                <CoarIcon name="info" size="s" />
+              </button>
+              <template #content>
+                <div class="examples-popover">
+                  <p class="examples-intro">
+                    {{ t('admin.groupDetails.examplesIntro', {}, 'Empty = no restriction. Examples:') }}
+                  </p>
+                  <div v-for="(ex, i) in membershipExamples" :key="i" class="example">
+                    <div class="example-desc">{{ ex.description }}</div>
+                    <CoarCodeBlock
+                      :code="ex.code"
+                      language="typescript"
+                      :collapsible="false"
+                      :show-copy="true"
+                    />
+                  </div>
+                </div>
+              </template>
+            </CoarPopover>
+          </div>
+          <CoarScriptEditor
+            class="flex-1 min-h-0"
+            v-model="form.MembershipScript"
+            :extra-libs="scriptExtraLibs"
+            :preamble="membershipPreamble"
+            variant="inline"
+            script-mode
+            placeholder="(p) => Type.Is(p, 'person') && p.IsActive"
+          />
+
+          <div v-if="form.MembershipLastError" class="auto-error">
+            <div class="auto-error-title">
+              {{ t('admin.groupDetails.membership.lastError', {}, 'Script error at last evaluation') }}
+            </div>
+            <pre class="auto-error-message">{{ form.MembershipLastError }}</pre>
+          </div>
+        </section>
+      </div>
+
+      <!-- Tab: Access (Scripts pro Resource-Typ) -->
+      <div v-show="activeTab === 'access'" class="tab-content">
+        <section v-if="requiredResourceTypes.length > 0">
+          <p class="access-policy-help">
+            {{ t('admin.groupDetails.accessScriptsHelp', {}, 'Define which data members of this group can see per resource type.') }}
+          </p>
+          <div class="flex flex-col gap-3">
+            <div v-for="rt in requiredResourceTypes" :key="rt" class="script-block">
+              <div class="script-label-row">
+                <span class="script-label">{{ rt }}</span>
+                <CoarPopover v-if="getExamples(rt).length > 0" mode="click">
+                  <button type="button" class="info-btn" :aria-label="t('admin.groupDetails.examples', {}, 'Examples')">
+                    <CoarIcon name="info" size="s" />
+                  </button>
+                  <template #content>
+                    <div class="examples-popover">
+                      <p class="examples-intro">
+                        {{ t('admin.groupDetails.examplesIntro', {}, 'Empty = no restriction. Examples:') }}
+                      </p>
+                      <div v-for="(ex, i) in getExamples(rt)" :key="i" class="example">
+                        <div class="example-desc">{{ ex.description }}</div>
+                        <CoarCodeBlock
+                          :code="ex.code"
+                          language="typescript"
+                          :collapsible="false"
+                          :show-copy="true"
+                        />
+                      </div>
+                    </div>
+                  </template>
+                </CoarPopover>
+              </div>
+              <CoarScriptEditor
+                :model-value="getScript(rt)"
+                @update:model-value="setScript(rt, $event)"
+                :placeholder="getPlaceholder(rt)"
+                :extra-libs="scriptExtraLibs"
+                :preamble="getPreamble(rt)"
+                variant="inline"
+                height="280px"
+              />
+            </div>
+          </div>
+        </section>
+        <div v-else class="empty-hint">
+          {{ t('admin.groupDetails.access.noRolesHint', {}, 'Select roles in the General tab to configure resource access.') }}
+        </div>
+      </div>
+    </div>
+    <div v-else class="flex flex-1 items-center justify-center p-8">
+      <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
+    </div>
+  </ModalLayout>
+</template>
+
+<style scoped>
+.section-heading {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #525e76;
+  border-bottom: 1px solid #d1d5db;
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+
+.access-policy-help,
+.script-help {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin: 0 0 8px 0;
+}
+
+.script-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.script-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #374151;
+  text-transform: capitalize;
+}
+
+.script-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--coar-text-muted, #6b7280);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.info-btn:hover {
+  background: var(--coar-surface-hover, #f3f4f6);
+  color: var(--coar-text, #1f2937);
+}
+
+.examples-popover {
+  padding: 4px;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.examples-intro {
+  font-size: 0.8rem;
+  color: var(--coar-text-muted, #6b7280);
+  margin: 0;
+}
+
+.example {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.example-desc {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--coar-text, #374151);
+}
+
+.mode-toggle {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+
+.email-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+
+.auto-error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--coar-background-danger-subtle, #fef2f2);
+  border: 1px solid var(--coar-border-danger, #fca5a5);
+  border-radius: 4px;
+}
+
+.auto-error-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--coar-text-danger, #b91c1c);
+  margin-bottom: 4px;
+}
+
+.auto-error-message {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.75rem;
+  color: var(--coar-text-danger, #991b1b);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.tab-bar {
+  margin-bottom: 12px;
+}
+
+.tab-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 2px 2px 16px;
+  min-height: 0;
+}
+
+.flex-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 6px;
+}
+
+.empty-hint {
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--coar-text-muted, #6b7280);
+  font-style: italic;
+}
+
+.save-error {
+  position: relative;
+  padding: 8px 32px 8px 12px;
+  margin-bottom: 8px;
+  background: var(--coar-background-danger-subtle, #fef2f2);
+  border: 1px solid var(--coar-border-danger, #fca5a5);
+  border-radius: 4px;
+}
+
+.save-error-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--coar-text-danger, #b91c1c);
+  margin-bottom: 4px;
+}
+
+.save-error-message {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.75rem;
+  color: var(--coar-text-danger, #991b1b);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.save-error-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--coar-text-danger, #991b1b);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.save-error-dismiss:hover {
+  background: rgba(185, 28, 28, 0.1);
+}
+
+.write-warning {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: var(--coar-background-warning-subtle, #fffbeb);
+  border: 1px solid var(--coar-border-warning, #fcd34d);
+  border-radius: 4px;
+}
+
+.write-warning-icon {
+  flex-shrink: 0;
+  color: var(--coar-text-warning, #b45309);
+  margin-top: 2px;
+}
+
+.write-warning-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.write-warning-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--coar-text-warning, #b45309);
+  margin-bottom: 2px;
+}
+
+.write-warning-message {
+  font-size: 0.75rem;
+  color: var(--coar-text, #374151);
+  line-height: 1.4;
+}
+</style>
