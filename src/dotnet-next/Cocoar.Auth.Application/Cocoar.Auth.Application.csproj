@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Cocoar.Auth.Application</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ErrorOr" />
+    <PackageReference Include="Riok.Mapperly" />
+    <PackageReference Include="WolverineFx.Marten" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cocoar.Auth.Domain\Cocoar.Auth.Domain.csproj" />
+    <ProjectReference Include="..\Common\BuildingBlocks.EventDispatcher\BuildingBlocks.EventDispatcher.csproj" />
+    <ProjectReference Include="..\Common\BuildingBlocks.Helper\BuildingBlocks.Helper.csproj" />
+  </ItemGroup>
+
+</Project>

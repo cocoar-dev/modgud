@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/Common/">
+    <Project Path="Common/BuildingBlocks.EventDispatcher/BuildingBlocks.EventDispatcher.csproj" />
+    <Project Path="Common/BuildingBlocks.Helper/BuildingBlocks.Helper.csproj" />
+  </Folder>
+  <Folder Name="/Cocoar.Auth/">
+    <Project Path="Cocoar.Auth.Authorization/Cocoar.Auth.Authorization.csproj" />
+    <Project Path="Cocoar.Auth.Authentication/Cocoar.Auth.Authentication.csproj" />
+    <Project Path="Cocoar.Auth.Domain/Cocoar.Auth.Domain.csproj" />
+    <Project Path="Cocoar.Auth.Application/Cocoar.Auth.Application.csproj" />
+    <Project Path="Cocoar.Auth.Infrastructure/Cocoar.Auth.Infrastructure.csproj" />
+    <Project Path="Cocoar.Auth.Api/Cocoar.Auth.Api.csproj" />
+    <Project Path="Cocoar.Auth.Api.Tests/Cocoar.Auth.Api.Tests.csproj" />
+  </Folder>
+<Folder Name="/_Solution Items/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+  </Folder>
+</Solution>

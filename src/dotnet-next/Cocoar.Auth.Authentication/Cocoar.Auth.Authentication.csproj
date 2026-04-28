@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Cocoar.Auth.Authentication</RootNamespace>
+    <AssemblyName>Cocoar.Auth.Authentication</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Persistence + messaging -->
+    <PackageReference Include="Marten" />
+    <PackageReference Include="WolverineFx.Marten" />
+
+    <!-- FIDO2 / Passkey -->
+    <PackageReference Include="Fido2.AspNet" />
+
+    <!-- OIDC -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+
+    <!-- Script evaluation for IdP user-update scripts -->
+    <PackageReference Include="Cocoar.JsEval.Engine" />
+    <PackageReference Include="Cocoar.JsEval.TsDefinition" />
+
+    <!-- Optional<T>-aware JSON merge for profile change requests -->
+    <PackageReference Include="Cocoar.Json.Mutable" />
+
+    <!-- Auth log sink -->
+    <PackageReference Include="Serilog.AspNetCore" />
+
+    <!-- Command return-types -->
+    <PackageReference Include="ErrorOr" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cocoar.Auth.Authorization\Cocoar.Auth.Authorization.csproj" />
+    <ProjectReference Include="..\Cocoar.Auth.Domain\Cocoar.Auth.Domain.csproj" />
+    <ProjectReference Include="..\Cocoar.Auth.Infrastructure\Cocoar.Auth.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

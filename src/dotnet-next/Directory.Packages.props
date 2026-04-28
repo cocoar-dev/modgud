@@ -46,9 +46,5 @@
     <PackageVersion Include="Cocoar.Configuration" Version="5.0.0" />
     <PackageVersion Include="Cocoar.Configuration.AspNetCore" Version="5.0.0" />
     <PackageVersion Include="Cocoar.Configuration.Abstractions" Version="5.0.0" />
-    <!-- OpenIddict for TimeToDo.TestIdP (mock OIDC server) -->
-    <PackageVersion Include="OpenIddict.AspNetCore" Version="7.5.0" />
-    <PackageVersion Include="OpenIddict.EntityFrameworkCore" Version="7.5.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.7" />
   </ItemGroup>
 </Project>

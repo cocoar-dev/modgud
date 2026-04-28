@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Cocoar.Auth.Infrastructure</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Cocoar.JsEval.Engine" />
+    <PackageReference Include="Cocoar.JsEval.Linq" />
+    <PackageReference Include="Cocoar.JsEval.TsDefinition" />
+    <PackageReference Include="Cocoar.JsEval.TypeScript" />
+    <PackageReference Include="MailKit" />
+    <PackageReference Include="Postmark" />
+    <PackageReference Include="Microsoft.Extensions.Identity.Stores" />
+    <PackageReference Include="Marten" />
+    <PackageReference Include="Marten.AspNetCore" />
+    <PackageReference Include="WolverineFx.Marten" />
+    <PackageReference Include="Riok.Mapperly" />
+    <PackageReference Include="System.Linq.Async.Queryable" />
+    <PackageReference Include="Cocoar.Reflectensions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cocoar.Auth.Domain\Cocoar.Auth.Domain.csproj" />
+    <ProjectReference Include="..\Cocoar.Auth.Application\Cocoar.Auth.Application.csproj" />
+    <ProjectReference Include="..\Common\BuildingBlocks.EventDispatcher\BuildingBlocks.EventDispatcher.csproj" />
+    <ProjectReference Include="..\Common\BuildingBlocks.Helper\BuildingBlocks.Helper.csproj" />
+  </ItemGroup>
+
+</Project>
