@@ -1,9 +1,14 @@
+using System.Text.Json.Serialization;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Setup;
+using Cocoar.Auth.Domain.Realms;
+using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
+using Cocoar.Auth.Infrastructure.Realms;
 using Cocoar.JsEval.Engine;
 using Cocoar.JsEval.Linq;
 using Cocoar.JsEval.TsDefinition;
 using Cocoar.JsEval.TypeScript;
+using JasperFx;
 using JasperFx.Events.Daemon;
 using Marten;
 using Marten.Events.Daemon;
@@ -28,19 +33,66 @@ public static class DependencyInjection
         string connectionString,
         Action<StoreOptions>? additionalMartenConfig = null)
     {
-        // Configure Marten — auth slice's sub-class mapping + STJ polymorphism +
-        // event aliases all live inside UseCocoarAuthAuthorization() / the
-        // AddCocoarAuthAuthorizationPolymorphism call inside the STJ configure lambda
-        // (see ConfigureDocumentStore).
+        // Make sure HttpContext access is available — TenantedSessionFactory
+        // needs it to resolve the active tenant out of HttpContext.Items.
+        services.AddHttpContextAccessor();
+
+        // Configure Marten — multi-tenant master-table strategy. Each realm has its
+        // own PostgreSQL DB (`{mainDb}_{slug}`); the master DB hosts the tenant
+        // registry table (`realms.mt_tenant_databases`) plus the global Realm store.
+        // Auth slice's sub-class mapping + STJ polymorphism + event aliases all live
+        // inside UseCocoarAuthAuthorization() / the AddCocoarAuthAuthorizationPolymorphism
+        // call inside the STJ configure lambda (see ConfigureDocumentStore).
         var martenBuilder = services.AddMarten(options =>
         {
-            options.Connection(connectionString);
+            // NOTE: do NOT call options.Connection(connectionString) when using
+            // master-table multi-tenancy — Marten resolves connection strings per-tenant
+            // out of the master table.
+            options.UseMasterTableMultiTenancy(connectionString);
             options.ConfigureDocumentStore();
             additionalMartenConfig?.Invoke(options);
             options.ConfigureEventStore();
         })
-        .UseLightweightSessions()
-        .ApplyAllDatabaseChangesOnStartup();
+        // BuildSessionsWith installs our TenantedSessionFactory as the singleton
+        // ISessionFactory. Every IDocumentSession / IQuerySession injection now
+        // resolves the tenant from HttpContext.Items["TenantId"] (set by RealmMiddleware),
+        // falling back to the "system" tenant when no HttpContext is available.
+        // NOTE: this replaces the previous .UseLightweightSessions() call — our factory
+        // also returns LightweightSession()-backed sessions.
+        .BuildSessionsWith<TenantedSessionFactory>(ServiceLifetime.Scoped);
+
+        // Schema migrations are applied manually during bootstrap (after the system
+        // tenant has been registered). Calling .ApplyAllDatabaseChangesOnStartup()
+        // here would race the tenancy registration: at host-start the master table
+        // exists but no tenant DBs are registered, so the per-tenant schema apply
+        // would no-op and never recover for the system tenant.
+
+        // Register the global (non-tenanted) DocumentStore for cross-tenant data.
+        // Uses the same physical DB as the master table — but a separate Marten
+        // store so the schemas don't collide with tenant content.
+        services.AddMartenStore<IGlobalStore>(opts =>
+        {
+            opts.Connection(connectionString);
+            opts.DatabaseSchemaName = "global";
+            opts.AutoCreateSchemaObjects = AutoCreate.CreateOrUpdate;
+
+            opts.Schema.For<Realm>()
+                .Identity(x => x.Id)
+                .Index(x => x.Slug, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsActive')::boolean = true)"; });
+
+            opts.UseSystemTextJsonForSerialization(configure: o =>
+            {
+                o.PropertyNamingPolicy = null;
+                o.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+                o.Converters.Add(new JsonStringEnumConverter());
+            });
+        }).ApplyAllDatabaseChangesOnStartup();
+
+        // Tenancy services
+        services.AddSingleton<IMasterConnectionString>(new MasterConnectionString(connectionString));
+        services.AddScoped<ITenantSessionFactory>(sp => sp.GetRequiredService<TenantedSessionFactory>());
+        services.AddSingleton<IRealmCache, RealmCache>();
+        services.AddScoped<IRealmProvisioningService, RealmProvisioningService>();
 
         // Required for Marten projection side effects to publish messages via Wolverine
         // EventForwardingToWolverine: forwards domain events as Wolverine messages on commit

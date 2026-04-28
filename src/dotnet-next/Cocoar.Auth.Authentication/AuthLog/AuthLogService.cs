@@ -73,9 +73,13 @@ public class AuthLogPersistenceService(IServiceProvider services, AuthLogSink si
             try
             {
                 using var scope = services.CreateScope();
+                // AuthLog runs out-of-band in a HostedService — there is no
+                // HttpContext to drive tenant resolution, so target the master
+                // ("system") tenant explicitly. AuthLog documents live in the
+                // master DB by design (cross-tenant audit log).
                 await using var session = scope.ServiceProvider
                     .GetRequiredService<IDocumentStore>()
-                    .LightweightSession();
+                    .LightweightSession("system");
 
                 session.Store(entry);
                 await session.SaveChangesAsync(stoppingToken);
@@ -94,9 +98,13 @@ public class AuthLogPersistenceService(IServiceProvider services, AuthLogSink si
             try
             {
                 using var scope = services.CreateScope();
+                // AuthLog runs out-of-band in a HostedService — there is no
+                // HttpContext to drive tenant resolution, so target the master
+                // ("system") tenant explicitly. AuthLog documents live in the
+                // master DB by design (cross-tenant audit log).
                 await using var session = scope.ServiceProvider
                     .GetRequiredService<IDocumentStore>()
-                    .LightweightSession();
+                    .LightweightSession("system");
 
                 var cutoff = DateTimeOffset.UtcNow - RetentionPeriod;
                 session.DeleteWhere<AuthLogDocument>(x => x.Timestamp < cutoff);

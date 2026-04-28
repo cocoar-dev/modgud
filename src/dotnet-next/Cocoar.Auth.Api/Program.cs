@@ -40,6 +40,11 @@ using Cocoar.Auth.Authentication.Setup;
 using Cocoar.Auth.Authentication.Identity;
 using Cocoar.Auth.Authentication.Identity.ExternalAuth;
 using Cocoar.Auth.Authentication.Identity.ExternalAuth.Flavors;
+using Cocoar.Auth.Api.Middleware;
+using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
+using Cocoar.Auth.Infrastructure.Realms;
+using Marten.Storage;
+using Npgsql;
 using Wolverine;
 
 
@@ -470,6 +475,11 @@ try
 
     app.UseRouting();
 
+    // Resolve tenant from the Host header BEFORE auth runs so the
+    // TenantedSessionFactory sees the correct tenant for every Marten session
+    // opened during authentication / authorization (e.g. Identity user lookup).
+    app.UseMiddleware<RealmMiddleware>();
+
     app.UseSession();
     app.UseAuthentication();
     app.UseAuthorization();
@@ -480,6 +490,7 @@ try
     app.MapAuthLogEndpoints("api");
     app.MapAppSettingsEndpoints("api");
     app.MapProjectionEndpoints("api");
+    app.MapRealmsEndpoints("api");
     app.MapAdminMagicLinkEndpoints("api");
     app.MapAdminGraceEndpoints("api");
     app.MapAdminChangeRequestEndpoints("api");
@@ -529,6 +540,70 @@ try
     // (prevents WolverineHasNotStartedException during daemon catchup on startup)
     app.Lifetime.ApplicationStarted.Register(() =>
         Cocoar.Auth.Infrastructure.Events.ProjectionSideEffects.Enabled = true);
+
+    // ────────────────────────────────────────────────────────────────────────
+    //  Multi-tenant bootstrap (must run BEFORE app.Run() so the daemon and any
+    //  hosted services see a fully provisioned master + system tenant)
+    //
+    //  Order matters:
+    //   1. Make sure the master DB physically exists (raw SQL — Marten cannot
+    //      `CREATE DATABASE` on a connection that already targets it).
+    //   2. Apply Marten storage to the master DB so `realms.mt_tenant_databases`
+    //      is created — required before any tenant can be registered.
+    //   3. Register the "system" tenant pointing back at the master DB. This is
+    //      the default tenant used when no HttpContext is available (background
+    //      services, hosted services) and during single-realm dev boots.
+    //   4. Apply schema again so the system tenant gets all per-tenant tables.
+    //   5. Ensure the system Realm document exists in IGlobalStore.
+    //   6. Warm the realm cache so middleware never blocks on first request.
+    // ────────────────────────────────────────────────────────────────────────
+    var mainCs = conf.DbSettings.ConnectionString;
+    var bootstrapBuilder = new NpgsqlConnectionStringBuilder(mainCs);
+    var baseDbName = bootstrapBuilder.Database
+        ?? throw new InvalidOperationException("DbSettings.ConnectionString is missing 'Database='");
+    bootstrapBuilder.Database = "postgres";
+
+    await using (var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString))
+    {
+        await bootstrapConn.OpenAsync();
+        await using var checkCmd = new NpgsqlCommand(
+            "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
+        checkCmd.Parameters.AddWithValue("@dbName", baseDbName);
+        if (await checkCmd.ExecuteScalarAsync() is null)
+        {
+            var quotedName = "\"" + baseDbName.Replace("\"", "\"\"") + "\"";
+            await using var createCmd = new NpgsqlCommand(
+                $"CREATE DATABASE {quotedName}", bootstrapConn);
+            await createCmd.ExecuteNonQueryAsync();
+            Log.Information("Created master database {DbName}", baseDbName);
+        }
+    }
+
+    // Apply master-table tenancy schema (creates realms.mt_tenant_databases etc.)
+    var store = app.Services.GetRequiredService<Marten.IDocumentStore>();
+    var tenancy = (MasterTableTenancy)store.Options.Tenancy;
+    await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
+
+    // Register the "system" tenant pointing back at the master DB.
+    // MasterTableTenancy has no "default tenant" concept — every session needs
+    // a tenant id, so we explicitly point "system" at the master DB.
+    await tenancy.AddDatabaseRecordAsync(TenantConstants.SystemTenantId, mainCs);
+
+    // Apply schema again now that the system tenant is registered (no-op the
+    // second time around for objects that already exist; populates per-tenant
+    // documents/events/projections for the system DB).
+    await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
+
+    // Ensure the system Realm document exists in the global store
+    using (var realmScope = app.Services.CreateScope())
+    {
+        var realmService = realmScope.ServiceProvider.GetRequiredService<IRealmProvisioningService>();
+        await realmService.EnsureSystemRealmExistsAsync();
+
+        // Warm the realm cache (used by RealmMiddleware for fast Host → tenant resolution)
+        var realmCache = realmScope.ServiceProvider.GetRequiredService<IRealmCache>();
+        await realmCache.InitializeAsync();
+    }
 
     // Break-glass recovery CLI — run inside the container instead of starting Kestrel.
     //   dotnet Cocoar.Auth.Api.dll recover <command> [args...]

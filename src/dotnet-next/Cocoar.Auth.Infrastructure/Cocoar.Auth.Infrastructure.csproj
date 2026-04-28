@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Cocoar.JsEval.Engine" />
     <PackageReference Include="Cocoar.JsEval.Linq" />
     <PackageReference Include="Cocoar.JsEval.TsDefinition" />

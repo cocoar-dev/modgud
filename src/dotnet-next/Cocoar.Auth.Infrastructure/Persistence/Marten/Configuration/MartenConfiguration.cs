@@ -1,4 +1,5 @@
 using Cocoar.Auth.Authorization.Setup;
+using JasperFx;
 using JasperFx.Events;
 using Marten;
 using Cocoar.Auth.Domain.Common;
@@ -9,6 +10,24 @@ namespace Cocoar.Auth.Infrastructure.Persistence.Marten.Configuration;
 
 public static class MartenConfiguration
 {
+    /// <summary>
+    /// Enables multi-tenancy with the master-table strategy: tenant DBs are
+    /// registered in a <c>realms.mt_tenant_databases</c> table that lives in
+    /// the master DB (= the connection string passed to <c>AddInfrastructure</c>).
+    /// Each tenant gets its own PostgreSQL database; per-realm provisioning is
+    /// handled by <c>RealmProvisioningService</c>.
+    /// </summary>
+    public static void UseMasterTableMultiTenancy(this StoreOptions options, string masterConnectionString)
+    {
+        options.MultiTenantedDatabasesWithMasterDatabaseTable(x =>
+        {
+            x.ConnectionString = masterConnectionString;
+            x.SchemaName = "realms";
+            x.AutoCreate = AutoCreate.CreateOrUpdate;
+            x.ApplicationName = "CocoarAuth";
+        });
+    }
+
     public static void ConfigureDocumentStore(this StoreOptions options)
     {
         // Use System.Text.Json (first-class in Marten 8+, consistent with API + SignalR).
