@@ -9,8 +9,6 @@ import {
     CoarMenuDivider,
     CoarSidebar,
     CoarSidebarItem,
-    CoarSidebarGroup,
-    CoarSidebarHeading,
     CoarSidebarDivider,
     CoarSidebarSpacer,
     useContextMenu,
@@ -93,8 +91,8 @@ const connectionColor = computed(() =>
         <header v-if="ui.header.show" class="main-header">
             <!-- Logo area (aligned with sidebar width) -->
             <button @click="router.push('/')" class="header-logo" :style="{ width: collapsed ? '4rem' : '16rem' }">
-                <img src="/td-logo-white.svg" alt="TimeToDo" class="header-logo-icon" />
-                <span v-if="!collapsed" class="text-sm font-medium tracking-wide opacity-80">TimeToDo</span>
+                <img src="/td-logo-white.svg" alt="Cocoar.Auth" class="header-logo-icon" />
+                <span v-if="!collapsed" class="text-sm font-medium tracking-wide opacity-80">Cocoar.Auth</span>
             </button>
 
             <!-- Header content (90% container) -->
@@ -144,12 +142,6 @@ const connectionColor = computed(() =>
                 <CoarSidebarSpacer height="4px" />
                 <CoarSidebarItem icon="layout-dashboard" :label="t('nav.dashboard', {}, 'Dashboard')"
                     :active="route.path === '/dashboard'" @click="router.push('/dashboard')" />
-                <CoarSidebarItem icon="list" :label="t('nav.tasks', {}, 'Tasks')"
-                    :active="route.path === '/todos' || route.path.startsWith('/todos/')"
-                    @click="router.push('/todos')" />
-                <CoarSidebarItem icon="building-2" :label="t('nav.customers', {}, 'Customers')"
-                    :active="route.path.startsWith('/customers')"
-                    @click="router.push('/customers')" />
                 <template v-if="authStore.hasPermission('app:admin')">
                     <CoarSidebarDivider />
                     <CoarSidebarItem icon="cog"

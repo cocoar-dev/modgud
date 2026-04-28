@@ -45,7 +45,7 @@ interface AutoGroupDrift {
   MissingMembers: string[]
   ExtraMembers: string[]
 }
-interface DanglingRef { GroupId?: string; GroupName?: string; MemberId?: string; RoleId?: string; TodoId?: string; TodoTitle?: string; PrincipalId?: string; Label?: string | null }
+interface DanglingRef { GroupId?: string; GroupName?: string; MemberId?: string; RoleId?: string; PrincipalId?: string; Label?: string | null }
 
 interface ConsistencyReport {
   Status: 'OK' | 'ISSUES_FOUND'
@@ -56,7 +56,6 @@ interface ConsistencyReport {
     PrincipalsPerson: number
     PrincipalsGroup: number
     Roles: number
-    Todos: number
   }
   PrincipalValidation: {
     MissingPerson: string[]
@@ -67,8 +66,6 @@ interface ConsistencyReport {
   DanglingReferences: {
     MembersInGroups: DanglingRef[]
     RolesInGroups: DanglingRef[]
-    ResponsiblesInTodos: DanglingRef[]
-    CreatorsInTodos: DanglingRef[]
   }
   GroupCycles: { Groups: GroupRef[] }[]
   AutoGroupDrift: AutoGroupDrift[]
@@ -100,7 +97,6 @@ const danglingIssueCount = computed(() => {
   const d = checkReport.value?.DanglingReferences
   if (!d) return 0
   return d.MembersInGroups.length + d.RolesInGroups.length
-       + d.ResponsiblesInTodos.length + d.CreatorsInTodos.length
 })
 </script>
 
@@ -142,7 +138,6 @@ const danglingIssueCount = computed(() => {
                 <span>Principals: {{ checkReport.Totals.PrincipalsTotal }}
                   ({{ checkReport.Totals.PrincipalsPerson }} person / {{ checkReport.Totals.PrincipalsGroup }} group)</span>
                 <span>Roles: {{ checkReport.Totals.Roles }}</span>
-                <span>Todos: {{ checkReport.Totals.Todos }}</span>
               </div>
 
               <!-- PrincipalValidation drift -->
@@ -189,22 +184,6 @@ const danglingIssueCount = computed(() => {
                     <ul class="ml-4 list-disc">
                       <li v-for="(r, i) in checkReport.DanglingReferences.RolesInGroups" :key="i">
                         {{ r.GroupName }} → {{ r.RoleId }}
-                      </li>
-                    </ul>
-                  </div>
-                  <div v-if="checkReport.DanglingReferences.ResponsiblesInTodos.length > 0">
-                    <strong>Responsibles in todos</strong> ({{ checkReport.DanglingReferences.ResponsiblesInTodos.length }}):
-                    <ul class="ml-4 list-disc">
-                      <li v-for="(t, i) in checkReport.DanglingReferences.ResponsiblesInTodos" :key="i">
-                        {{ t.TodoTitle }} → {{ t.Label || t.PrincipalId }}
-                      </li>
-                    </ul>
-                  </div>
-                  <div v-if="checkReport.DanglingReferences.CreatorsInTodos.length > 0">
-                    <strong>Creators in todos</strong> ({{ checkReport.DanglingReferences.CreatorsInTodos.length }}):
-                    <ul class="ml-4 list-disc">
-                      <li v-for="(t, i) in checkReport.DanglingReferences.CreatorsInTodos" :key="i">
-                        {{ t.TodoTitle }} → {{ t.PrincipalId }}
                       </li>
                     </ul>
                   </div>

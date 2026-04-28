@@ -23,8 +23,8 @@ test.describe('Magic Link', () => {
     // Step 3: Navigate to magic link URL
     await page.goto(magicUrl!)
 
-    // Should be logged in and redirected to todos
-    await expect(page.locator('.title').getByText('Aufgaben')).toBeVisible({ timeout: 10_000 })
+    // Should be logged in and redirected to dashboard
+    await expect(page.locator('.title').getByText('Dashboard')).toBeVisible({ timeout: 10_000 })
   })
 
   test('Magic link with invalid token redirects to login', async ({ page }) => {

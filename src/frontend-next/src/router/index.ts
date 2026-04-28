@@ -1,4 +1,3 @@
-import { RoutedOverlayFragment } from 'node_modules/@cocoar/vue-fragment-parser/dist/composables/useRoutedModals'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 
@@ -43,48 +42,10 @@ const routes = [
         {
           path: 'dashboard',
           component: () => import('@/views/dashboard/DashboardView.vue'),
-          meta: {
-            routedFragments: [
-              {
-                type: 'modal',
-                path: ':todoId',
-                component: () => import('@/views/todo/TodoDetails.vue'),
-                overlayOptions: { size: { minHeight: '80vh', maxHeight: '80vh' } },
-              },
-            ] satisfies RoutedOverlayFragment[],
-          },
         },
         {
           path: 'profile',
           component: () => import('@/views/profile/ProfileView.vue'),
-        },
-        {
-          path: 'todos',
-          component: () => import('@/views/todo/TodoTableView.vue'),
-          meta: {
-            routedFragments: [
-              {
-                type: 'modal',
-                path: ':todoId',
-                component: () => import('@/views/todo/TodoDetails.vue'),
-                overlayOptions: {size: {minHeight: '90vh', maxHeight: '90vh'}}
-              },
-            ] satisfies RoutedOverlayFragment[],
-          },
-        },
-        // Customers (top-level, not admin-only)
-        {
-          path: 'customers',
-          component: () => import('@/views/customer/CustomerList.vue'),
-          meta: {
-            routedFragments: [
-              {
-                type: 'modal',
-                path: ':id',
-                component: () => import('@/views/customer/CustomerDetails.vue'),
-              },
-            ],
-          },
         },
         // Admin routes (permission check in route guard)
         {
@@ -221,7 +182,7 @@ router.beforeEach(async (to) => {
 
   // Admin routes require app:admin permission
   if (to.path.startsWith('/admin') && !authStore.hasPermission('app:admin')) {
-    return '/todos'
+    return '/dashboard'
   }
 
   return true

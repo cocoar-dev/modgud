@@ -107,7 +107,7 @@ async function createAdmin() {
       Password: password.value,
       LoadDemoData: loadDemoData.value || undefined,
     })
-    router.replace('/todos')
+    router.replace('/dashboard')
   } catch (e: any) {
     errorMessage.value = e?.response?.data?.detail
       ?? e?.response?.data?.Detail
@@ -129,9 +129,9 @@ async function createAdmin() {
     <div class="w-full max-w-md">
       <!-- Logo + Title (same as LoginView) -->
       <div class="mb-8 text-center">
-        <img src="/td-logo.svg" alt="TimeToDo" class="mx-auto mb-1 h-16 w-auto" />
+        <img src="/td-logo.svg" alt="Cocoar.Auth" class="mx-auto mb-1 h-16 w-auto" />
         <h1 class="text-2xl font-bold tracking-tight text-surface-800">
-          Time<span class="text-[#525e76]">ToDo</span>
+          Cocoar<span class="text-[#525e76]">.Auth</span>
         </h1>
         <p class="mt-2 text-sm text-surface-500">
           {{ t('auth.setup.subtitle', {}, 'Initial Setup') }}
@@ -199,7 +199,7 @@ async function createAdmin() {
             <CoarDivider variant="subtle" />
             <CoarCheckbox v-model="loadDemoData" :label="t('auth.setup.demoCheckbox', {}, 'Load demo data')" :disabled="submitting" />
             <p class="text-xs text-surface-400 -mt-2 ml-7">
-              {{ t('auth.setup.demoDescription', {}, 'Creates 10 demo users, 6 customers, todos, and permission scenarios. Demo user password: Demo1234!') }}
+              {{ t('auth.setup.demoDescription', {}, 'Creates demo users, groups, and permission scenarios. Demo user password: Demo1234!') }}
             </p>
           </template>
 

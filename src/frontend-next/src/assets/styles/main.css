@@ -55,56 +55,12 @@ body {
 .ag-row.status-none:not(.ag-row-selected) {
   background-color: var(--color-row-none);
 }
-.ag-row.infoTodo:not(.ag-row-selected) {
-  background-color: var(--color-row-info);
-}
 .ag-row.status-pending {
   opacity: 0.5;
   pointer-events: none;
 }
 .ag-row-selected {
   background-color: var(--color-row-selected) !important;
-}
-
-/* Due date warning (within 3 days) */
-.todo-due-warning {
-  color: var(--color-text-danger);
-}
-.todo-due-warning-bold {
-  font-weight: 600;
-}
-
-/* Parent todo: only title column bold; critical: red */
-.todo-title-parent {
-  font-weight: 600;
-}
-.todo-title-critical {
-  color: var(--color-text-danger);
-}
-
-/* Parent/Child todo styling */
-.ag-row.childTodo:not(.ag-row-selected):not(.infoTodo) {
-  background-color: var(--color-row-child);
-}
-.ag-row.childTodo {
-  font-size: smaller;
-}
-.ag-row.childTodo div[col-id='Critical'] {
-  margin-left: 72px;
-}
-.ag-row.childTodo div[col-id='AwaitingFeedback'] {
-  margin-left: 60px;
-}
-
-/* Phantom parent (parent not visible due to access control) */
-.ag-row.phantomParent {
-  opacity: 0.5;
-  font-style: italic;
-  user-select: none;
-}
-.ag-row.phantomParent .ag-group-contracted,
-.ag-row.phantomParent .ag-group-expanded {
-  visibility: hidden;
 }
 
 /* Scrollbar */

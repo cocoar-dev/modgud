@@ -63,7 +63,7 @@ async function handleSubmit() {
           </svg>
         </div>
         <h1 class="text-2xl font-bold tracking-tight text-surface-800">
-          Time<span class="text-[#525e76]">ToDo</span>
+          Cocoar<span class="text-[#525e76]">.Auth</span>
         </h1>
         <p class="mt-2 text-sm text-surface-500">{{ t('auth.forgotPassword.title', {}, 'Reset Password') }}</p>
       </div>

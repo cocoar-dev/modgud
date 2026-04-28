@@ -20,7 +20,7 @@ const loading = ref(false)
 const form = ref({
   Name: '',
   Description: '',
-  ResourceType: 'todo',
+  ResourceType: 'app',
 })
 
 const permissions = ref<Set<string>>(new Set())

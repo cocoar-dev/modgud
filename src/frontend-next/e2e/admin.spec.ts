@@ -82,35 +82,3 @@ test.describe('Admin — Users', () => {
   })
 })
 
-test.describe('Customers', () => {
-  test.beforeEach(async ({ page }) => {
-    // Customers moved from /admin/customers to top-level /customers
-    await apiLoginAndNavigate(page, 'ka', 'Test1234!', '/customers')
-    await expect(page.getByRole('button', { name: /create|erstellen/i }).first()).toBeVisible({ timeout: 10_000 })
-  })
-
-  test('Create a customer', async ({ page }) => {
-    await page.getByRole('button', { name: /create|erstellen/i }).click()
-    await expect(page.locator('.modal-header')).toBeVisible({ timeout: 5_000 })
-
-    await page.locator('.modal-content input').first().fill('E2E Customer')
-    await page.getByRole('button', { name: /create|erstellen/i }).last().click()
-
-    await expect(page.locator('.modal-header')).not.toBeVisible({ timeout: 5_000 })
-    await expect(page.getByText('E2E Customer')).toBeVisible({ timeout: 5_000 })
-  })
-
-  test('Edit a customer', async ({ page }) => {
-    const row = page.locator('.ag-row', { hasText: 'E2E Customer' })
-    await row.dblclick()
-    await expect(page.locator('.modal-header')).toBeVisible({ timeout: 5_000 })
-
-    const nameInput = page.locator('.modal-content input').first()
-    await nameInput.clear()
-    await nameInput.fill('E2E Customer Updated')
-    await page.getByRole('button', { name: /save|speichern/i }).click()
-
-    await expect(page.locator('.modal-header')).not.toBeVisible({ timeout: 5_000 })
-    await expect(page.getByText('E2E Customer Updated')).toBeVisible({ timeout: 5_000 })
-  })
-})

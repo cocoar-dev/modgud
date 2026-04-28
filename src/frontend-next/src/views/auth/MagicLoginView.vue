@@ -32,7 +32,7 @@ onMounted(async () => {
   try {
     await authStore.magicLinkLogin(userId, token)
     status.value = 'success'
-    router.replace('/todos')
+    router.replace('/dashboard')
   } catch {
     status.value = 'error'
     errorMessage.value = t('auth.magicLogin.expiredLink', {}, 'This login link is invalid or expired.')
@@ -51,7 +51,7 @@ onMounted(async () => {
     <div class="w-full max-w-sm text-center">
       <div class="mb-8">
         <h1 class="text-2xl font-bold tracking-tight text-surface-800">
-          Time<span class="text-[#525e76]">ToDo</span>
+          Cocoar<span class="text-[#525e76]">.Auth</span>
         </h1>
       </div>
 

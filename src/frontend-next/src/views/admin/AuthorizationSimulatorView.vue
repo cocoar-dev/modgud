@@ -50,8 +50,8 @@ type ClaimsMode = 'none' | 'link' | 'custom'
 
 const form = ref({
   userId: '',
-  resourceType: 'todo',
-  action: 'read',
+  resourceType: 'app',
+  action: 'admin',
   resourceId: '',
 })
 

@@ -646,7 +646,7 @@ function onMfaSetupClose(enabled: boolean) {
                 </div>
               </div>
               <p class="text-sm text-surface-600 mb-4">
-                {{ t('profile.externalLinks.description', {}, 'Sign in to TimeToDo using these identity providers.') }}
+                {{ t('profile.externalLinks.description', {}, 'Sign in to Cocoar.Auth using these identity providers.') }}
               </p>
 
               <!-- Existing links — click the row to expand the last known claim snapshot -->
