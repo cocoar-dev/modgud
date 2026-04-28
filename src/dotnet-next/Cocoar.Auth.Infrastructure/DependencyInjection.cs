@@ -60,7 +60,11 @@ public static class DependencyInjection
         // falling back to the "system" tenant when no HttpContext is available.
         // NOTE: this replaces the previous .UseLightweightSessions() call — our factory
         // also returns LightweightSession()-backed sessions.
-        .BuildSessionsWith<TenantedSessionFactory>(ServiceLifetime.Scoped);
+        // Singleton lifetime: the factory is stateless — IHttpContextAccessor (Singleton)
+        // gives a fresh HttpContext per call, IDocumentStore (Singleton) is reused.
+        // Required so Wolverine's Singleton OutboxedSessionFactory can consume it
+        // without DEV-mode scope-validation failing.
+        .BuildSessionsWith<TenantedSessionFactory>(ServiceLifetime.Singleton);
 
         // Schema migrations are applied manually during bootstrap (after the system
         // tenant has been registered). Calling .ApplyAllDatabaseChangesOnStartup()
@@ -91,7 +95,7 @@ public static class DependencyInjection
 
         // Tenancy services
         services.AddSingleton<IMasterConnectionString>(new MasterConnectionString(connectionString));
-        services.AddScoped<ITenantSessionFactory>(sp => sp.GetRequiredService<TenantedSessionFactory>());
+        services.AddSingleton<ITenantSessionFactory>(sp => sp.GetRequiredService<TenantedSessionFactory>());
         services.AddSingleton<IRealmCache, RealmCache>();
         services.AddScoped<IRealmProvisioningService, RealmProvisioningService>();
 

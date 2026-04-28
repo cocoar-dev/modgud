@@ -2,6 +2,7 @@ using Cocoar.Auth.Domain.Identity.LoginProviders;
 using Cocoar.Auth.Domain.OAuth.Apis;
 using Cocoar.Auth.Domain.OAuth.Applications;
 using Cocoar.Auth.Domain.OAuth.Scopes;
+using Cocoar.Auth.Domain.OAuth.Storage;
 using Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.LoginProviders;
 using Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.OAuth;
 using JasperFx.Events.Projections;
@@ -48,6 +49,22 @@ public static class OAuthMartenSetup
             .Identity(x => x.Id)
             .Index(x => x.Name)
             .Index(x => x.IsDeleted);
+
+        // OpenIddict authorization + token documents — string-id (OpenIddict gives
+        // us a Guid-as-string); not event-sourced, ephemeral.
+        options.Schema.For<OpenIddictAuthorizationDocument>()
+            .Identity(x => x.Id)
+            .Index(x => x.Subject)
+            .Index(x => x.ApplicationId)
+            .Index(x => x.Status);
+
+        options.Schema.For<OpenIddictTokenDocument>()
+            .Identity(x => x.Id)
+            .Index(x => x.Subject)
+            .Index(x => x.ApplicationId)
+            .Index(x => x.AuthorizationId)
+            .Index(x => x.ReferenceId)
+            .Index(x => x.Status);
 
         // Stable event-type aliases — copied verbatim from the legacy backend so
         // re-using a legacy DB would also work, and so renames are safe forever.

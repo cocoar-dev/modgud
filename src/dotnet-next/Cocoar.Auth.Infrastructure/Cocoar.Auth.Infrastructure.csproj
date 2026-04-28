@@ -23,6 +23,12 @@
     <PackageReference Include="System.Linq.Async.Queryable" />
     <PackageReference Include="Cocoar.Reflectensions" />
     <PackageReference Include="BCrypt.Net-Next" />
+    <PackageReference Include="OpenIddict" />
+    <PackageReference Include="OpenIddict.Abstractions" />
+    <PackageReference Include="OpenIddict.AspNetCore" />
+    <PackageReference Include="OpenIddict.Server" />
+    <PackageReference Include="OpenIddict.Validation" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" />
   </ItemGroup>
 
   <ItemGroup>

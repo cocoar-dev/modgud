@@ -36,5 +36,12 @@
     },
     "DbSettings": {
         "ConnectionString": "Host=localhost;Database=cocoar_auth_next;Username=postgres;Password=postgres"
+    },
+    "OpenIddict": {
+        "Issuer": "http://localhost:9099",
+        "DevelopmentMode": true,
+        "AccessTokenLifetimeMinutes": 60,
+        "RefreshTokenLifetimeDays": 14,
+        "AuthorizationCodeLifetimeMinutes": 5
     }
 }

@@ -28,6 +28,8 @@
     <PackageReference Include="Cocoar.Configuration.AspNetCore" />
     <PackageReference Include="WolverineFx.Marten" />
     <PackageReference Include="ErrorOr" />
+    <PackageReference Include="OpenIddict.Abstractions" />
+    <PackageReference Include="OpenIddict.Server.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>

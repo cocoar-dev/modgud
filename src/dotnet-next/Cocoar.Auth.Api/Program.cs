@@ -39,6 +39,8 @@ using Cocoar.Auth.Domain.Common;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Infrastructure;
 using Cocoar.Auth.Infrastructure.OAuth;
+using Cocoar.Auth.Infrastructure.OpenIddict;
+using Cocoar.Auth.Api.Features.Auth.OAuth;
 using Cocoar.Auth.Authentication.Setup;
 using Cocoar.Auth.Authentication.Identity;
 using Cocoar.Auth.Authentication.Identity.ExternalAuth;
@@ -85,6 +87,11 @@ try
             rule.For<AppSettings>().FromFile("data/configuration.json").Select("AppSettings"),
             rule.For<AppSettings>().FromFile("data/configuration.local.json").Select("AppSettings"),
             rule.For<AppSettings>().FromEnvironment("AppSettings"),
+
+            // OpenIddict OAuth/OIDC server settings
+            rule.For<OpenIddictSettings>().FromFile("data/configuration.json").Select("OpenIddict"),
+            rule.For<OpenIddictSettings>().FromFile("data/configuration.local.json").Select("OpenIddict"),
+            rule.For<OpenIddictSettings>().FromEnvironment("OpenIddict"),
         ], setup =>
         [
             setup.ConcreteType<StartUpConfiguration>().AsSingleton(),
@@ -92,6 +99,7 @@ try
             setup.ConcreteType<MagicLinkConfiguration>().AsSingleton(),
             setup.ConcreteType<EmailOtpConfiguration>().AsSingleton(),
             setup.ConcreteType<AppSettings>().AsSingleton(),
+            setup.ConcreteType<OpenIddictSettings>().AsSingleton(),
         ]));
 
     // Expose concrete config types as Authentication interfaces so Authentication
@@ -398,6 +406,12 @@ try
             options.UseCocoarAuthOAuth();
         });
 
+    // OpenIddict OAuth 2.0 / OIDC server — uses our custom Marten stores. Settings are
+    // captured at config time so signing certs / lifetimes can be pinned before the
+    // host is built. Per-realm issuer is applied at request time via RealmIssuerHandler.
+    var openIddictSettings = configManager.GetRequiredConfig<OpenIddictSettings>();
+    builder.Services.AddOpenIddictWithMarten(openIddictSettings);
+
     // Migration services for legacy Cocoar.Auth data have been removed in the
     // IdP-only baseline — no historical documents to upgrade to event streams.
 
@@ -494,6 +508,14 @@ try
     app.UseAuthorization();
     app.UseMiddleware<Cocoar.Auth.Authentication.Api.Account.TwoFactorEnforcementMiddleware>();
 
+
+    // OpenIddict OAuth/OIDC endpoints (/connect/authorize, /token, /userinfo, /logout, /consent).
+    // OpenIddict's middleware is registered as part of UseOpenIddict... hooks called by
+    // ASP.NET Core during AddOpenIddict. The discovery + JWKS endpoints are auto-mapped
+    // by OpenIddict; only the passthrough endpoints (authorize/token/userinfo/...) need
+    // explicit minimal-API handlers.
+    app.MapAuthorizationEndpoints();
+    app.MapConsentEndpoints();
 
     app.MapStatusEndpoints();
     app.MapAuthLogEndpoints("api");
