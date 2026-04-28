@@ -4,20 +4,20 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- ASP.NET Core & Identity -->
-    <PackageVersion Include="JasperFx.Events" Version="1.26.1" />
+    <PackageVersion Include="JasperFx.Events" Version="1.28.1" />
     <PackageVersion Include="Microsoft.AspNetCore.Identity" Version="2.3.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.5" />
-    <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.6" />
     <PackageVersion Include="Microsoft.Extensions.Identity.Stores" Version="10.0.0" />
     <!-- Marten -->
-    <PackageVersion Include="Marten" Version="8.29.2" />
+    <PackageVersion Include="Marten" Version="8.30.1" />
     <!-- Mapping -->
     <PackageVersion Include="Riok.Mapperly" Version="4.3.1" />
     <!-- ErrorOr -->
     <PackageVersion Include="ErrorOr" Version="2.1.0" />
     <!-- Wolverine CQRS -->
-    <PackageVersion Include="WolverineFx" Version="5.30.0" />
-    <PackageVersion Include="WolverineFx.Marten" Version="5.30.0" />
+    <PackageVersion Include="WolverineFx" Version="5.31.1" />
+    <PackageVersion Include="WolverineFx.Marten" Version="5.31.1" />
     <!-- Cocoar JsEval (ABAC scripting) -->
     <PackageVersion Include="Cocoar.JsEval" Version="3.1.3" />
     <PackageVersion Include="Cocoar.JsEval.Engine" Version="3.1.3" />
@@ -34,7 +34,7 @@
     <!-- UserAgent Parsing -->
     <PackageVersion Include="UAParser" Version="3.1.47" />
     <!-- WebAuthn / FIDO2 -->
-    <PackageVersion Include="Fido2" Version="4.0.0" />
+    <PackageVersion Include="Fido2" Version="4.0.1" />
     <!-- OIDC / JWT -->
     <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.17.0" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.17.0" />
@@ -52,14 +52,14 @@
     <PackageVersion Include="Cocoar.Configuration.AspNetCore" Version="5.0.0" />
     <PackageVersion Include="Cocoar.Configuration.Abstractions" Version="5.0.0" />
     <!-- Testing -->
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.6" />
     <PackageVersion Include="Otp.NET" Version="1.4.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
-    <PackageVersion Include="Weasel.Core" Version="8.12.1" />
+    <PackageVersion Include="Weasel.Core" Version="8.13.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageVersion Include="coverlet.collector" Version="8.0.1" />
+    <PackageVersion Include="coverlet.collector" Version="10.0.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
-    <PackageVersion Include="WireMock.Net" Version="2.0.0" />
+    <PackageVersion Include="WireMock.Net" Version="2.2.0" />
   </ItemGroup>
 </Project>

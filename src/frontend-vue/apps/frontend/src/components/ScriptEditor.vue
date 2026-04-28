@@ -6,6 +6,7 @@ defineProps<{
   placeholder?: string
   height?: string | number
   preamble?: string
+  extraLibs?: { content: string; filePath: string }[]
   disabled?: boolean
 }>()
 
@@ -25,6 +26,7 @@ function onUpdate(value: string) {
       :placeholder="placeholder"
       :height="height ?? '180px'"
       :preamble="preamble"
+      :extra-libs="extraLibs"
       :disabled="disabled"
       language="typescript"
       variant="inline"

@@ -7,7 +7,7 @@ using Cocoar.Primitives;
 
 namespace Cocoar.Auth.Tests.Admin;
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(AdminCollection.Name)]
 [Trait("Category", TestCategories.Admin)]
 public class ExtendedRolesAdminTests : IAsyncLifetime
 {
@@ -23,14 +23,14 @@ public class ExtendedRolesAdminTests : IAsyncLifetime
 	public async Task InitializeAsync()
 	{
 		var connectionString = await _fixture.CreateIsolatedDatabasesAsync();
-		_factory = new CocoarAuthWebApplicationFactory(connectionString);
+        _factory = new CocoarAuthWebApplicationFactory(connectionString);
 		_client = _factory.CreateClientWithCookies();
 	}
 
 	public async Task DisposeAsync()
 	{
 		_client.Dispose();
-		await _factory.DisposeAsync();
+        await _factory.DisposeAsync();
 	}
 
 	private async Task LoginAsAdminAsync()

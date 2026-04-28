@@ -11,7 +11,7 @@ using Cocoar.Auth.Tests.Infrastructure;
 
 namespace Cocoar.Auth.Tests.Auth;
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(OAuthSecurityCollection.Name)]
 [Trait("Category", TestCategories.OAuth)]
 public class ReferenceTokenTests : IAsyncLifetime
 {
@@ -27,14 +27,14 @@ public class ReferenceTokenTests : IAsyncLifetime
 	public async Task InitializeAsync()
 	{
 		var connectionString = await _fixture.CreateIsolatedDatabasesAsync();
-		_factory = new CocoarAuthWebApplicationFactory(connectionString);
+        _factory = new CocoarAuthWebApplicationFactory(connectionString);
 		_client = _factory.CreateClientWithCookies();
 	}
 
 	public async Task DisposeAsync()
 	{
 		_client.Dispose();
-		await _factory.DisposeAsync();
+        await _factory.DisposeAsync();
 	}
 
 	#region Private DTOs

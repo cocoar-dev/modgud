@@ -43,7 +43,9 @@ public class EventSourcedUserStore :
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(user);
 
-        // Append UserCreated event
+        // Discard events raised during construction — UserCreated covers initial state
+        user.ClearPendingEvents();
+
         var @event = new UserCreated(
             user.Id,
             user.UserName,
@@ -64,7 +66,7 @@ public class EventSourcedUserStore :
         securityData.Tokens = user.Tokens.ToList();
         _session.Store(securityData);
 
-        // Also store ApplicationUser for backward compatibility (during migration)
+        // Store ApplicationUser for backward compatibility
         _session.Store(user);
 
         await _session.SaveChangesAsync(cancellationToken);
@@ -76,15 +78,14 @@ public class EventSourcedUserStore :
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(user);
 
-        // Load existing user to detect changes
-        var existingUser = await _session.LoadAsync<ApplicationUser>(user.Id, cancellationToken);
-        if (existingUser is not null)
+        // Append pending domain events raised by entity mutations
+        if (user.PendingEvents.Count > 0)
         {
-            // Append events for profile changes
-            AppendProfileChangeEvents(existingUser, user);
+            _session.Events.Append(user.Id, user.PendingEvents.ToArray());
+            user.ClearPendingEvents();
         }
 
-        // Update security data
+        // Sync security data — dirty tracking auto-persists loaded documents
         var securityData = await _session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
         if (securityData is not null)
         {
@@ -92,156 +93,17 @@ public class EventSourcedUserStore :
             securityData.Logins = user.Logins.ToList();
             securityData.Tokens = user.Tokens.ToList();
             securityData.UpdateConcurrencyStamp();
-            _session.Store(securityData);
         }
 
-        // Update ApplicationUser for backward compatibility
+        // Eject + Store to handle both tracked and untracked users:
+        // - Tracked (loaded via FindByIdAsync): Eject removes from identity map, Store re-adds with current state
+        // - Untracked (from a different scope): Eject is a no-op, Store adds for upsert
         user.SetConcurrencyStamp(Guid.NewGuid().ToString());
+        _session.Eject(user);
         _session.Store(user);
 
         await _session.SaveChangesAsync(cancellationToken);
         return IdentityResult.Success;
-    }
-
-    private void AppendProfileChangeEvents(ApplicationUser existing, ApplicationUser updated)
-    {
-        var events = new List<object>();
-
-        // Username change
-        if (existing.UserName != updated.UserName)
-        {
-            events.Add(new UserNameChanged(updated.Id, existing.UserName, updated.UserName));
-        }
-
-        // Email change
-        if (existing.Email != updated.Email)
-        {
-            events.Add(new UserEmailChanged(updated.Id, existing.Email, updated.Email));
-        }
-
-        // Phone number change
-        if (existing.PhoneNumber != updated.PhoneNumber)
-        {
-            events.Add(new UserPhoneNumberChanged(updated.Id, existing.PhoneNumber, updated.PhoneNumber));
-        }
-
-        // Name change
-        if (existing.FirstName != updated.FirstName || existing.LastName != updated.LastName)
-        {
-            events.Add(new UserProfileNameChanged(
-                updated.Id,
-                existing.FirstName, existing.LastName,
-                updated.FirstName, updated.LastName));
-        }
-
-        // Expiration change
-        if (existing.ExpiresAt != updated.ExpiresAt)
-        {
-            events.Add(new UserExpirationChanged(updated.Id, existing.ExpiresAt, updated.ExpiresAt));
-        }
-
-        // Active status change
-        if (existing.IsActive != updated.IsActive)
-        {
-            events.Add(updated.IsActive
-                ? new UserActivated(updated.Id)
-                : new UserDeactivated(updated.Id, null));
-        }
-
-        // Email confirmed
-        if (!existing.EmailConfirmed && updated.EmailConfirmed)
-        {
-            events.Add(new UserEmailConfirmed(updated.Id));
-        }
-
-        // Phone confirmed
-        if (!existing.PhoneNumberConfirmed && updated.PhoneNumberConfirmed)
-        {
-            events.Add(new UserPhoneNumberConfirmed(updated.Id));
-        }
-
-        // Two-factor change
-        if (existing.TwoFactorEnabled != updated.TwoFactorEnabled)
-        {
-            events.Add(updated.TwoFactorEnabled
-                ? new UserTwoFactorEnabled(updated.Id)
-                : new UserTwoFactorDisabled(updated.Id));
-        }
-
-        // Lockout change
-        if (existing.LockoutEnd != updated.LockoutEnd)
-        {
-            if (updated.LockoutEnd.HasValue && updated.LockoutEnd > DateTimeOffset.UtcNow)
-            {
-                events.Add(new UserLockedOut(updated.Id, updated.LockoutEnd, LockoutReason.TooManyFailedAttempts));
-            }
-            else if (existing.LockoutEnd.HasValue && !updated.LockoutEnd.HasValue)
-            {
-                events.Add(new UserUnlocked(updated.Id, null));
-            }
-        }
-
-        // Role changes
-        var addedRoles = updated.Roles.Except(existing.Roles);
-        var removedRoles = existing.Roles.Except(updated.Roles);
-
-        foreach (var roleId in addedRoles)
-        {
-            events.Add(new UserRoleAssigned(updated.Id, roleId));
-        }
-
-        foreach (var roleId in removedRoles)
-        {
-            events.Add(new UserRoleRemoved(updated.Id, roleId));
-        }
-
-        // Claim changes
-        var existingClaims = existing.Claims.Select(c => (c.Type, c.Value)).ToHashSet();
-        var updatedClaims = updated.Claims.Select(c => (c.Type, c.Value)).ToHashSet();
-        var addedClaims = updatedClaims.Except(existingClaims);
-        var removedClaims = existingClaims.Except(updatedClaims);
-
-        foreach (var (type, value) in addedClaims)
-        {
-            events.Add(new UserClaimAdded(updated.Id, type, value));
-        }
-
-        foreach (var (type, value) in removedClaims)
-        {
-            events.Add(new UserClaimRemoved(updated.Id, type, value));
-        }
-
-        // Password change (metadata only - no hash stored in event)
-        if (existing.PasswordHash != updated.PasswordHash && !string.IsNullOrEmpty(updated.PasswordHash))
-        {
-            events.Add(new UserPasswordChanged(updated.Id, PasswordChangeType.UserChange, null));
-        }
-
-        // External login changes
-        var existingLogins = existing.Logins.Select(l => l.LoginProvider).ToHashSet();
-        var updatedLogins = updated.Logins.Select(l => l.LoginProvider).ToHashSet();
-
-        foreach (var login in updated.Logins)
-        {
-            if (!existingLogins.Contains(login.LoginProvider))
-            {
-                events.Add(new UserExternalLoginLinked(updated.Id, login.LoginProvider, login.ProviderDisplayName));
-            }
-        }
-
-        foreach (var login in existing.Logins)
-        {
-            if (!updatedLogins.Contains(login.LoginProvider))
-            {
-                events.Add(new UserExternalLoginRemoved(updated.Id, login.LoginProvider));
-            }
-        }
-
-        // Append all events
-        if (events.Count > 0)
-        {
-            _session.Events.Append(updated.Id, events.ToArray());
-        }
     }
 
     public async Task<IdentityResult> DeleteAsync(ApplicationUser user, CancellationToken cancellationToken)
@@ -252,8 +114,9 @@ public class EventSourcedUserStore :
         // Append delete event for audit trail and projection rebuild
         _session.Events.Append(user.Id, new UserDeleted(user.Id, null));
 
-        // Soft-delete the document (keeps it for projection rebuilds)
+        // Soft-delete the document
         user.MarkAsDeleted();
+        _session.Eject(user);
         _session.Store(user);
 
         await _session.SaveChangesAsync(cancellationToken);
@@ -730,14 +593,12 @@ public class EventSourcedUserStore :
         ArgumentNullException.ThrowIfNull(user);
 
         var securityData = await _session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
-        if (securityData is null)
-        {
-            securityData = UserSecurityData.Create(user.Id);
-        }
+        var isNew = securityData is null;
+        securityData ??= UserSecurityData.Create(user.Id);
 
         securityData.AuthenticatorKey = key;
         securityData.UpdateConcurrencyStamp();
-        _session.Store(securityData);
+        if (isNew) _session.Store(securityData);
         await _session.SaveChangesAsync(cancellationToken);
     }
 
@@ -761,14 +622,12 @@ public class EventSourcedUserStore :
         ArgumentNullException.ThrowIfNull(recoveryCodes);
 
         var securityData = await _session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
-        if (securityData is null)
-        {
-            securityData = UserSecurityData.Create(user.Id);
-        }
+        var isNew = securityData is null;
+        securityData ??= UserSecurityData.Create(user.Id);
 
         securityData.RecoveryCodes = recoveryCodes.ToList();
         securityData.UpdateConcurrencyStamp();
-        _session.Store(securityData);
+        if (isNew) _session.Store(securityData);
 
         // Append event for audit trail (no sensitive data)
         _session.Events.Append(user.Id, new UserRecoveryCodesRegenerated(user.Id, securityData.RecoveryCodes.Count));
@@ -798,7 +657,7 @@ public class EventSourcedUserStore :
 
         securityData.RecoveryCodes.Remove(matchingCode);
         securityData.UpdateConcurrencyStamp();
-        _session.Store(securityData);
+        // Dirty tracking persists the loaded SecurityData
         await _session.SaveChangesAsync(cancellationToken);
 
         return true;

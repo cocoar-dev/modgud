@@ -11,7 +11,7 @@ namespace Cocoar.Auth.Tests.Projections;
 /// Tests for GroupListProjection async projection.
 /// Verifies that the denormalized group list maintains correct counts.
 /// </summary>
-[Collection(IntegrationTestCollection.Name)]
+[Collection(PlatformCollection.Name)]
 [Trait("Category", "Projections")]
 public class GroupListProjectionTests : IAsyncLifetime
 {
@@ -27,14 +27,14 @@ public class GroupListProjectionTests : IAsyncLifetime
 	public async Task InitializeAsync()
 	{
 		var connectionString = await _fixture.CreateIsolatedDatabasesAsync();
-		_factory = new CocoarAuthWebApplicationFactory(connectionString);
+        _factory = new CocoarAuthWebApplicationFactory(connectionString);
 		_client = _factory.CreateClientWithCookies();
 	}
 
 	public async Task DisposeAsync()
 	{
 		_client.Dispose();
-		await _factory.DisposeAsync();
+        await _factory.DisposeAsync();
 	}
 
 	private async Task LoginAsAdminAsync()

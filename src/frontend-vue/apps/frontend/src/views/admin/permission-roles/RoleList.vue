@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { CoarDataGridPanel, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import {
+  CoarButton,
   CoarContextMenu,
   CoarMenuItem,
   CoarMenuDivider,
@@ -9,6 +10,7 @@ import {
   useDialog,
   useToast,
 } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import { useModal } from '@/composables/useModal'
 import { usePermissionRoleStore, type PermissionRoleDto } from '@/stores/permission-role.store'
@@ -20,6 +22,7 @@ const store = usePermissionRoleStore()
 const dialog = useDialog()
 const modal = useModal()
 const toast = useToast()
+const { t, language } = useI18n()
 
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
@@ -48,10 +51,10 @@ const builder = CoarGridBuilder.create()
     viewportMenu.open($event)
   })
   .columns([
-    (col: any) => col.field('Name').header('Name').flex(1).minWidth(180),
-    (col: any) => col.field('ResourceType').header('Resource').width(160),
-    (col: any) => col.field('Description').header('Description').flex(2),
-    (col: any) => col.field('Permissions').header('Permissions').flex(2)
+    (col: any) => col.field('Name').header('Name', 'common.name').flex(1).minWidth(180),
+    (col: any) => col.field('ResourceType').header('Resource', 'admin.permissionRoles.resource').width(160),
+    (col: any) => col.field('Description').header('Description', 'common.description').flex(2),
+    (col: any) => col.field('Permissions').header('Permissions', 'admin.permissionRoles.permissions').flex(2)
       .option('valueGetter', (p: any) => (p.data?.Permissions ?? []).join(', ')),
   ])
 
@@ -67,10 +70,10 @@ async function confirmDeleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
   const result = dialog.confirm({
-    title: 'Delete Permission Role',
-    message: 'Delete this permission role? This cannot be undone.',
-    confirmText: 'Delete',
-    cancelText: 'Cancel',
+    title: t('admin.permissionRoles.deleteTitle', {}, 'Delete Permission Role'),
+    message: t('admin.permissionRoles.deleteMessage', {}, 'Delete this permission role? This cannot be undone.'),
+    confirmText: t('common.delete', {}, 'Delete'),
+    cancelText: t('common.cancel', {}, 'Cancel'),
     confirmVariant: 'danger',
   })
   const ok = await result.result
@@ -79,29 +82,26 @@ async function confirmDeleteSelected() {
   try {
     const http = useHttpClient('/api/admin/permission-roles')
     await http.addPath(id).delete()
-    toast.success('Permission role deleted.')
+    toast.success(t('admin.permissionRoles.deleted', {}, 'Permission role deleted.'))
     await store.loadAll()
   } catch (e) {
     const msg = e instanceof HttpClientError
       ? ((e.body as any)?.detail ?? (e.body as any)?.title ?? e.message)
-      : 'Delete failed.'
+      : t('common.deleteFailed', {}, 'Delete failed.')
     toast.error(String(msg))
   }
 }
 
-onMounted(() => {
+watch(language, () => {
   ui.set((ctx) => {
-    ctx.header.title = 'Permission Roles'
-    ctx.header.subTitle = 'Reusable permission bundles for authorization groups'
+    ctx.header.title = t('admin.permissionRoles.title', {}, 'Permission Roles')
+    ctx.header.subTitle = t('admin.permissionRoles.subtitle', {}, 'Reusable permission bundles for authorization groups')
     ctx.header.icon = 'shield'
     ctx.content.container = false
-    ctx.footer.show = true
-    Object.assign(ctx.footer.button1, {
-      visible: true,
-      text: 'New Role',
-      onClick: openCreate,
-    })
   })
+}, { immediate: true })
+
+onMounted(() => {
   store.initialize()
   store.loadAll()
 })
@@ -113,17 +113,21 @@ onUnmounted(() => {
 
 <template>
   <div class="list-wrap">
-    <CoarDataGrid :builder="builder" show-search class="grid flex-1 min-h-0" bordered elevated />
+    <CoarDataGridPanel :builder="builder" class="flex-1 min-h-0" bordered elevated :search-placeholder="t('common.search', {}, 'Search...')">
+      <template #actions>
+        <CoarButton size="s" icon-start="plus" @click="openCreate">{{ t('common.create', {}, 'Create') }}</CoarButton>
+      </template>
+    </CoarDataGridPanel>
 
     <CoarContextMenu :menu="cellMenu">
-      <CoarMenuItem label="Edit" icon="pencil" @clicked="selectedIds[0] && openEdit(selectedIds[0])" />
-      <CoarMenuItem label="New Role" icon="plus" @clicked="openCreate" />
+      <CoarMenuItem :label="t('common.edit', {}, 'Edit')" icon="pencil" @clicked="selectedIds[0] && openEdit(selectedIds[0])" />
+      <CoarMenuItem :label="t('admin.common.newRole', {}, 'New Role')" icon="plus" @clicked="openCreate" />
       <CoarMenuDivider />
-      <CoarMenuItem label="Delete" icon="trash-2" @clicked="confirmDeleteSelected" />
+      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="confirmDeleteSelected" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
-      <CoarMenuItem label="New Role" icon="plus" @clicked="openCreate" />
+      <CoarMenuItem :label="t('admin.common.newRole', {}, 'New Role')" icon="plus" @clicked="openCreate" />
     </CoarContextMenu>
   </div>
 </template>

@@ -21,7 +21,7 @@ public class HttpContextTenantSessionFactory : ITenantSessionFactory
 	public IDocumentSession OpenSession()
 	{
 		var tenantId = ResolveTenantId();
-		return _store.LightweightSession(tenantId);
+		return _store.DirtyTrackedSession(tenantId);
 	}
 
 	public IQuerySession OpenQuerySession()

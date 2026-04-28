@@ -11,7 +11,7 @@ namespace Cocoar.Auth.Tests.Auth;
 /// Integration tests for the full external login flow using a WireMock-based fake OIDC server.
 /// Tests the complete chain: Provider → Redirect → Callback → User Creation/Login.
 /// </summary>
-[Collection(IntegrationTestCollection.Name)]
+[Collection(OAuthSecurityCollection.Name)]
 [Trait("Category", TestCategories.ExternalLogin)]
 public class ExternalLoginFlowTests : IAsyncLifetime
 {
@@ -29,7 +29,7 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 	public async Task InitializeAsync()
 	{
 		var connectionString = await _fixture.CreateIsolatedDatabasesAsync();
-		_factory = new CocoarAuthWebApplicationFactory(connectionString);
+        _factory = new CocoarAuthWebApplicationFactory(connectionString);
 		_client = _factory.CreateClientWithCookies();
 		await _factory.SeedLoginProvidersAsync();
 	}
@@ -37,8 +37,8 @@ public class ExternalLoginFlowTests : IAsyncLifetime
 	public async Task DisposeAsync()
 	{
 		_client.Dispose();
+        await _factory.DisposeAsync();
 		_oidcServer.Dispose();
-		await _factory.DisposeAsync();
 	}
 
 	/// <summary>

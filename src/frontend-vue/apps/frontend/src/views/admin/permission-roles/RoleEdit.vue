@@ -9,6 +9,7 @@ import {
   useToast,
   useDialog,
 } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { usePermissionRoleStore } from '@/stores/permission-role.store'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
@@ -21,6 +22,7 @@ const props = defineProps<{
 const store = usePermissionRoleStore()
 const toast = useToast()
 const dialog = useDialog()
+const { t } = useI18n()
 const isCreate = computed(() => props.id === 'create')
 
 const loading = ref(false)
@@ -56,7 +58,10 @@ const resourceTypeOptions = computed(() =>
 )
 
 const modalTitle = computed(() =>
-  form.value.Name.trim() || (isCreate.value ? 'New Permission Role' : 'Permission Role'),
+  form.value.Name.trim()
+    || (isCreate.value
+      ? t('admin.permissionRoles.createTitle', {}, 'New Permission Role')
+      : t('admin.permissionRoles.singular', {}, 'Permission Role')),
 )
 
 async function load() {
@@ -78,7 +83,7 @@ async function load() {
       Permissions: [...dto.Permissions],
     }
   } catch (e) {
-    saveError.value = extractErrorMessage(e) ?? 'Failed to load permission role.'
+    saveError.value = extractErrorMessage(e) ?? t('admin.permissionRoles.loadFailed', {}, 'Failed to load permission role.')
   } finally {
     loading.value = false
   }
@@ -133,15 +138,15 @@ async function save() {
   try {
     if (isCreate.value) {
       await http.post(dto)
-      toast.success('Permission role created.')
+      toast.success(t('admin.permissionRoles.created', {}, 'Permission role created.'))
     } else {
       await http.addPath(props.id).put(dto)
-      toast.success('Permission role saved.')
+      toast.success(t('admin.permissionRoles.saved', {}, 'Permission role saved.'))
     }
     await store.loadAll()
     props.close({ saved: true })
   } catch (e) {
-    saveError.value = extractErrorMessage(e) ?? 'Save failed.'
+    saveError.value = extractErrorMessage(e) ?? t('common.saveFailed', {}, 'Save failed.')
   } finally {
     saving.value = false
   }
@@ -150,10 +155,10 @@ async function save() {
 async function confirmDelete() {
   if (isCreate.value) return
   const ref = dialog.confirm({
-    title: 'Delete Permission Role',
-    message: 'Delete this permission role? This cannot be undone.',
-    confirmText: 'Delete',
-    cancelText: 'Cancel',
+    title: t('admin.permissionRoles.deleteTitle', {}, 'Delete Permission Role'),
+    message: t('admin.permissionRoles.deleteMessage', {}, 'Delete this permission role? This cannot be undone.'),
+    confirmText: t('common.delete', {}, 'Delete'),
+    cancelText: t('common.cancel', {}, 'Cancel'),
     confirmVariant: 'danger',
   })
   const ok = await ref.result
@@ -163,11 +168,11 @@ async function confirmDelete() {
   try {
     const http = useHttpClient('/api/admin/permission-roles')
     await http.addPath(props.id).delete()
-    toast.success('Permission role deleted.')
+    toast.success(t('admin.permissionRoles.deleted', {}, 'Permission role deleted.'))
     await store.loadAll()
     props.close({ deleted: true })
   } catch (e) {
-    saveError.value = extractErrorMessage(e) ?? 'Delete failed.'
+    saveError.value = extractErrorMessage(e) ?? t('common.deleteFailed', {}, 'Delete failed.')
   } finally {
     deleting.value = false
   }
@@ -175,7 +180,7 @@ async function confirmDelete() {
 
 const footerButton = computed(() => ({
   visible: true,
-  text: isCreate.value ? 'Create' : 'Save',
+  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: !form.value.Name.trim() || !form.value.ResourceType.trim() || saving.value,
   loading: saving.value,
   onClick: save,
@@ -186,7 +191,7 @@ const footerDeleteButton = computed(() =>
     ? undefined
     : {
         visible: true,
-        text: 'Delete',
+        text: t('common.delete', {}, 'Delete'),
         disabled: deleting.value || saving.value,
         loading: deleting.value,
         onClick: confirmDelete,
@@ -205,34 +210,34 @@ onMounted(load)
     :footer-delete-button="footerDeleteButton"
     width="36rem"
   >
-    <div v-if="loading" class="center">Loading...</div>
+    <div v-if="loading" class="center">{{ t('common.loading', {}, 'Loading...') }}</div>
     <div v-else class="form">
       <div v-if="saveError" class="error-banner">
-        <div class="error-title">Operation failed</div>
+        <div class="error-title">{{ t('common.operationFailed', {}, 'Operation failed') }}</div>
         <pre class="error-message">{{ saveError }}</pre>
         <button type="button" class="error-dismiss" @click="saveError = null">&times;</button>
       </div>
 
       <section>
-        <div class="section-heading">General</div>
-        <CoarFormField label="Name" required>
-          <CoarTextInput v-model="form.Name" clearable placeholder="role-name" />
+        <div class="section-heading">{{ t('common.general', {}, 'General') }}</div>
+        <CoarFormField :label="t('common.name', {}, 'Name')" required>
+          <CoarTextInput v-model="form.Name" clearable :placeholder="t('admin.permissionRoles.namePlaceholder', {}, 'role-name')" />
         </CoarFormField>
-        <CoarFormField label="Description">
-          <CoarTextInput v-model="form.Description" clearable placeholder="What this role grants..." />
+        <CoarFormField :label="t('common.description', {}, 'Description')">
+          <CoarTextInput v-model="form.Description" clearable :placeholder="t('admin.permissionRoles.descriptionPlaceholder', {}, 'What this role grants...')" />
         </CoarFormField>
-        <CoarFormField label="Resource Type" required>
+        <CoarFormField :label="t('admin.permissionRoles.resourceType', {}, 'Resource Type')" required>
           <CoarSelect
             v-model="form.ResourceType"
             :options="resourceTypeOptions"
-            placeholder="Pick a resource type"
+            :placeholder="t('admin.permissionRoles.resourceTypePlaceholder', {}, 'Pick a resource type')"
             :disabled="!isCreate"
           />
         </CoarFormField>
       </section>
 
       <section>
-        <div class="section-heading">Permissions</div>
+        <div class="section-heading">{{ t('admin.permissionRoles.permissions', {}, 'Permissions') }}</div>
         <div v-if="form.Permissions.length > 0" class="perm-chips">
           <CoarTag
             v-for="p in form.Permissions"
@@ -251,13 +256,13 @@ onMounted(load)
         <div class="perm-add">
           <CoarTextInput
             v-model="permissionInput"
-            placeholder="Permission (e.g. read, write, admin)"
+            :placeholder="t('admin.permissionRoles.permissionPlaceholder', {}, 'Permission (e.g. read, write, admin)')"
             size="s"
             @keydown="onPermissionKey"
           />
-          <button type="button" class="add-btn" :disabled="!permissionInput.trim()" @click="addPermission">Add</button>
+          <button type="button" class="add-btn" :disabled="!permissionInput.trim()" @click="addPermission">{{ t('common.add', {}, 'Add') }}</button>
         </div>
-        <p class="hint">Enter a permission and press <kbd>Enter</kbd> or comma to add it.</p>
+        <p class="hint">{{ t('admin.permissionRoles.permissionHint', {}, 'Enter a permission and press Enter or comma to add it.') }}</p>
       </section>
     </div>
   </ModalLayout>

@@ -1,47 +1,52 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { computed, watch } from 'vue'
 import { CoarCard } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import { useAuthStore } from '@/stores/auth.store'
 
 const ui = useUI()
 const authStore = useAuthStore()
+const { t, language } = useI18n()
 
-const displayName = computed(() => authStore.displayName || authStore.user?.UserName || 'friend')
+const displayName = computed(() => authStore.displayName || authStore.user?.UserName || t('dashboard.friendFallback', {}, 'friend'))
 const permissionCount = computed(() => authStore.permissions.length)
 const roleCount = computed(() => authStore.roles.length)
 const realm = computed(() => authStore.user?.Realm ?? '—')
 
-onMounted(() => {
+watch(language, () => {
     ui.set((ctx) => {
-        ctx.header.title = 'Dashboard'
-        ctx.header.subTitle = 'Overview of your account'
+        ctx.header.title = t('dashboard.title', {}, 'Dashboard')
+        ctx.header.subTitle = t('dashboard.subtitle', {}, 'Overview of your account')
         ctx.header.icon = 'layout-dashboard'
     })
-})
+}, { immediate: true })
 </script>
 
 <template>
     <div class="dashboard">
         <CoarCard>
-            <h2 class="welcome">Welcome, {{ displayName }}</h2>
-            <p class="muted">Signed in to realm <strong>{{ realm }}</strong>.</p>
+            <h2 class="welcome">{{ t('dashboard.welcome', { name: displayName }, `Welcome, ${displayName}`) }}</h2>
+            <p class="muted">
+                {{ t('dashboard.signedInToPrefix', {}, 'Signed in to realm') }}
+                <strong>{{ realm }}</strong>.
+            </p>
         </CoarCard>
 
         <div class="stats">
             <CoarCard>
-                <div class="stat-label">Roles</div>
+                <div class="stat-label">{{ t('dashboard.roles', {}, 'Roles') }}</div>
                 <div class="stat-value">{{ roleCount }}</div>
             </CoarCard>
             <CoarCard>
-                <div class="stat-label">Permissions</div>
+                <div class="stat-label">{{ t('dashboard.permissions', {}, 'Permissions') }}</div>
                 <div class="stat-value">{{ permissionCount }}</div>
             </CoarCard>
         </div>
 
         <CoarCard>
-            <h3 class="section-title">Your permissions</h3>
-            <div v-if="permissionCount === 0" class="muted">No permissions assigned.</div>
+            <h3 class="section-title">{{ t('dashboard.yourPermissions', {}, 'Your permissions') }}</h3>
+            <div v-if="permissionCount === 0" class="muted">{{ t('dashboard.noPermissions', {}, 'No permissions assigned.') }}</div>
             <ul v-else class="perm-list">
                 <li v-for="perm in authStore.permissions" :key="perm">
                     <code>{{ perm }}</code>

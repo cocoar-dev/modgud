@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Cocoar.Auth.Application.DTOs.Auth;
 using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Application.Interfaces;
@@ -6,7 +8,6 @@ using Cocoar.Auth.Domain.Events;
 using ErrorOr;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
-using System.Text;
 
 namespace Cocoar.Auth.Application.Services;
 
@@ -44,7 +45,8 @@ public class AuthService
         var user = await _userManager.FindByNameAsync(dto.UserName);
         if (user is null)
         {
-            // Don't record audit for non-existent users to avoid enumeration attacks
+            // Anti-timing: simulate password check delay to prevent user enumeration via response time
+            await Task.Delay(RandomNumberGenerator.GetInt32(100, 300), cancellationToken);
             return new LoginResultDto
             {
                 Succeeded = false,
@@ -265,13 +267,15 @@ public class AuthService
         var user = await _userManager.FindByEmailAsync(dto.Email);
         if (user is null)
         {
-            // Don't reveal that the user doesn't exist
+            // Anti-timing: simulate email sending delay to prevent user enumeration via response time
+            await Task.Delay(RandomNumberGenerator.GetInt32(100, 300), cancellationToken);
             return true;
         }
 
         if (user.EmailConfirmed)
         {
-            // Don't reveal that the email is already confirmed
+            // Anti-timing: simulate email sending delay
+            await Task.Delay(RandomNumberGenerator.GetInt32(100, 300), cancellationToken);
             return true;
         }
 
@@ -293,7 +297,8 @@ public class AuthService
         var user = await _userManager.FindByEmailAsync(dto.Email);
         if (user is null)
         {
-            // Don't reveal that the user doesn't exist
+            // Anti-timing: simulate email sending delay to prevent user enumeration via response time
+            await Task.Delay(RandomNumberGenerator.GetInt32(100, 300), cancellationToken);
             return true;
         }
 

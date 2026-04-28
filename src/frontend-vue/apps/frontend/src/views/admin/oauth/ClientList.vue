@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { CoarDataGridPanel, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import {
   CoarContextMenu,
   CoarMenuItem,
   useContextMenu,
 } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import { useModal } from '@/composables/useModal'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
@@ -28,6 +29,7 @@ interface PagedResponse<T> { Items: T[]; TotalCount: number }
 
 const ui = useUI()
 const modal = useModal()
+const { t, language } = useI18n()
 
 const rows = ref<ClientRow[]>([])
 const loadError = ref<string | null>(null)
@@ -62,14 +64,14 @@ const builder = CoarGridBuilder.create()
     cellMenu.open(event.event as MouseEvent)
   })
   .columns([
-    (col: any) => col.field('ClientId').header('Client ID').flex(1).minWidth(180),
-    (col: any) => col.field('DisplayName').header('Display Name').flex(1),
-    (col: any) => col.field('ClientType').header('Type').width(110),
-    (col: any) => col.field('Enabled').header('Enabled').width(100)
+    (col: any) => col.field('ClientId').header('Client ID', 'admin.oauth.clientId').flex(1).minWidth(180),
+    (col: any) => col.field('DisplayName').header('Display Name', 'common.displayName').flex(1),
+    (col: any) => col.field('ClientType').header('Type', 'common.type').width(110),
+    (col: any) => col.field('Enabled').header('Enabled', 'common.enabled').width(100)
       .option('valueGetter', (p: any) => p.data?.Enabled === false ? 'No' : 'Yes'),
-    (col: any) => col.field('RedirectUris').header('Redirect URIs').flex(1)
+    (col: any) => col.field('RedirectUris').header('Redirect URIs', 'admin.oauth.redirectUris').flex(1)
       .option('valueGetter', (p: any) => (p.data?.RedirectUris ?? []).length),
-    (col: any) => col.field('Permissions').header('Permissions').flex(1)
+    (col: any) => col.field('Permissions').header('Permissions', 'admin.permissionRoles.permissions').flex(1)
       .option('valueGetter', (p: any) => (p.data?.Permissions ?? []).length),
   ])
 
@@ -77,15 +79,16 @@ function openDetails(id: string) {
   modal.open(ClientDetails, { id }, { size: 'l', closeOnBackdropClick: true })
 }
 
-onMounted(() => {
+watch(language, () => {
   ui.set((ctx) => {
-    ctx.header.title = 'OAuth Clients'
-    ctx.header.subTitle = 'Registered OAuth client applications'
+    ctx.header.title = t('admin.oauth.clientsTitle', {}, 'OAuth Clients')
+    ctx.header.subTitle = t('admin.oauth.clientsSubtitle', {}, 'Registered OAuth client applications')
     ctx.header.icon = 'key-round'
     ctx.content.container = false
   })
-  load()
-})
+}, { immediate: true })
+
+onMounted(() => load())
 
 onUnmounted(() => { ui.reset() })
 </script>
@@ -93,10 +96,10 @@ onUnmounted(() => { ui.reset() })
 <template>
   <div class="list-wrap">
     <div v-if="loadError" class="load-error">{{ loadError }}</div>
-    <CoarDataGrid :builder="builder" show-search class="grid flex-1 min-h-0" bordered elevated />
+    <CoarDataGridPanel :builder="builder" class="flex-1 min-h-0" bordered elevated :search-placeholder="t('common.search', {}, 'Search...')" />
 
     <CoarContextMenu :menu="cellMenu">
-      <CoarMenuItem label="View Details" icon="eye" @clicked="selectedIds[0] && openDetails(selectedIds[0])" />
+      <CoarMenuItem :label="t('admin.common.viewDetails', {}, 'View Details')" icon="eye" @clicked="selectedIds[0] && openDetails(selectedIds[0])" />
     </CoarContextMenu>
   </div>
 </template>

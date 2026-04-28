@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Cocoar.Auth.Tests.Admin;
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(AdminCollection.Name)]
 [Trait("Category", TestCategories.Admin)]
 public class UsersAdminTests : IAsyncLifetime
 {

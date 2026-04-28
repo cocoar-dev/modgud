@@ -2,11 +2,13 @@
 import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { CoarButton, CoarTextInput, CoarPasswordInput, CoarCard, CoarNote } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { useAuthStore } from '@/stores/auth.store'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const userName = ref('')
 const password = ref('')
@@ -23,7 +25,7 @@ const redirectPath = computed(() => {
 async function submit() {
     if (loading.value) return
     if (!userName.value || !password.value) {
-        errorMessage.value = 'Please enter your username and password.'
+        errorMessage.value = t('auth.login.missingCredentials', {}, 'Please enter your username and password.')
         return
     }
 
@@ -36,20 +38,20 @@ async function submit() {
             return
         }
         if (result.RequiresTwoFactor) {
-            errorMessage.value = 'Two-factor authentication is not yet supported in this build.'
+            errorMessage.value = t('auth.login.twoFactorUnsupported', {}, 'Two-factor authentication is not yet supported in this build.')
             return
         }
         if (result.IsLockedOut) {
-            errorMessage.value = 'Account locked. Please try again later.'
+            errorMessage.value = t('auth.login.lockedOut', {}, 'Account locked. Please try again later.')
             return
         }
         if (result.IsNotAllowed) {
-            errorMessage.value = 'Account is not allowed to sign in. Confirm your email and try again.'
+            errorMessage.value = t('auth.login.notAllowed', {}, 'Account is not allowed to sign in. Confirm your email and try again.')
             return
         }
-        errorMessage.value = result.ErrorMessage ?? 'Invalid username or password.'
+        errorMessage.value = result.ErrorMessage ?? t('auth.login.invalidCredentials', {}, 'Invalid username or password.')
     } catch (err: unknown) {
-        errorMessage.value = err instanceof Error ? err.message : 'Login failed.'
+        errorMessage.value = err instanceof Error ? err.message : t('auth.login.failed', {}, 'Login failed.')
     } finally {
         loading.value = false
     }
@@ -61,28 +63,28 @@ async function submit() {
         <CoarCard class="auth-card">
             <div class="auth-brand">
                 <div class="auth-brand-logo">CA</div>
-                <h1 class="auth-title">Cocoar Auth</h1>
-                <p class="auth-subtitle">Sign in to continue</p>
+                <h1 class="auth-title">{{ t('auth.login.title', {}, 'Cocoar Auth') }}</h1>
+                <p class="auth-subtitle">{{ t('auth.login.subtitle', {}, 'Sign in to continue') }}</p>
             </div>
 
             <form class="auth-form" @submit.prevent="submit">
                 <CoarTextInput
                     v-model="userName"
-                    label="Username"
+                    :label="t('common.username', {}, 'Username')"
                     autocomplete="username"
                     autofocus
                     :disabled="loading"
                 />
                 <CoarPasswordInput
                     v-model="password"
-                    label="Password"
+                    :label="t('common.password', {}, 'Password')"
                     autocomplete="current-password"
                     :disabled="loading"
                 />
 
                 <label class="remember-me">
                     <input type="checkbox" v-model="rememberMe" :disabled="loading" />
-                    <span>Remember me</span>
+                    <span>{{ t('auth.login.rememberMe', {}, 'Remember me') }}</span>
                 </label>
 
                 <CoarNote v-if="errorMessage" variant="error">{{ errorMessage }}</CoarNote>
@@ -93,13 +95,13 @@ async function submit() {
                     :disabled="loading"
                     :loading="loading"
                 >
-                    Sign in
+                    {{ t('auth.login.submit', {}, 'Sign in') }}
                 </CoarButton>
 
                 <div class="auth-links">
-                    <a href="#" @click.prevent="router.push('/forgot-password')">Forgot password?</a>
+                    <a href="#" @click.prevent="router.push('/forgot-password')">{{ t('auth.login.forgotPassword', {}, 'Forgot password?') }}</a>
                     <span class="auth-links-sep">·</span>
-                    <a href="#" @click.prevent="router.push('/register')">Create account</a>
+                    <a href="#" @click.prevent="router.push('/register')">{{ t('auth.login.createAccount', {}, 'Create account') }}</a>
                 </div>
             </form>
         </CoarCard>

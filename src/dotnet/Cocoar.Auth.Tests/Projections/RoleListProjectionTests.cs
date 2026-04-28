@@ -12,7 +12,7 @@ namespace Cocoar.Auth.Tests.Projections;
 /// Tests for RoleListProjection async projection.
 /// Verifies that the denormalized role list maintains correct user counts.
 /// </summary>
-[Collection(IntegrationTestCollection.Name)]
+[Collection(PlatformCollection.Name)]
 [Trait("Category", "Projections")]
 public class RoleListProjectionTests : IAsyncLifetime
 {

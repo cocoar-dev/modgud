@@ -10,7 +10,7 @@ namespace Cocoar.Auth.Tests;
 /// Minimal smoke test to verify the test infrastructure works.
 /// This should be the FIRST test to pass before anything else.
 /// </summary>
-[Collection(IntegrationTestCollection.Name)]
+[Collection(PlatformCollection.Name)]
 [Trait("Category", TestCategories.Smoke)]
 public class SmokeTest : IAsyncLifetime
 {

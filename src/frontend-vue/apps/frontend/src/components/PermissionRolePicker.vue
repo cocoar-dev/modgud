@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { CoarIcon, CoarTag, CoarSelect } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { usePermissionRoleStore } from '@/stores/permission-role.store'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   modelValue: string[]
@@ -73,7 +76,7 @@ onMounted(() => {
     <CoarSelect
       :model-value="null"
       :options="selectOptions"
-      placeholder="Add role..."
+      :placeholder="t('admin.permissionRoles.addRolePlaceholder', {}, 'Add role...')"
       size="s"
       :disabled="disabled || selectOptions.length === 0"
       @update:model-value="addRole"

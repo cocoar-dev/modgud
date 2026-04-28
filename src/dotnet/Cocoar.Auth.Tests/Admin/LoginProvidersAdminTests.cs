@@ -6,7 +6,7 @@ using Cocoar.Auth.Tests.Infrastructure;
 
 namespace Cocoar.Auth.Tests.Admin;
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(AdminCollection.Name)]
 [Trait("Category", TestCategories.Admin)]
 public class LoginProvidersAdminTests : IAsyncLifetime
 {
@@ -22,7 +22,7 @@ public class LoginProvidersAdminTests : IAsyncLifetime
 	public async Task InitializeAsync()
 	{
 		var connectionString = await _fixture.CreateIsolatedDatabasesAsync();
-		_factory = new CocoarAuthWebApplicationFactory(connectionString);
+        _factory = new CocoarAuthWebApplicationFactory(connectionString);
 		_client = _factory.CreateClientWithCookies();
 		await _factory.SeedLoginProvidersAsync();
 	}
@@ -30,7 +30,7 @@ public class LoginProvidersAdminTests : IAsyncLifetime
 	public async Task DisposeAsync()
 	{
 		_client.Dispose();
-		await _factory.DisposeAsync();
+        await _factory.DisposeAsync();
 	}
 
 	private async Task LoginAsAdminAsync()

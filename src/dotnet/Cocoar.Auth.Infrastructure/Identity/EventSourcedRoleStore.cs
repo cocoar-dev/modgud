@@ -31,7 +31,9 @@ public class EventSourcedRoleStore :
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(role);
 
-        // Append RoleCreated event
+        // Discard events raised during construction — RoleCreated covers initial state
+        role.ClearPendingEvents();
+
         var @event = new RoleCreated(
             role.Id,
             role.Name,
@@ -40,7 +42,7 @@ public class EventSourcedRoleStore :
 
         _session.Events.StartStream<Domain.Aggregates.RoleAggregate>(role.Id, @event);
 
-        // Also store ApplicationRole for backward compatibility
+        // Store ApplicationRole for backward compatibility
         _session.Store(role);
 
         await _session.SaveChangesAsync(cancellationToken);
@@ -52,84 +54,19 @@ public class EventSourcedRoleStore :
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(role);
 
-        // Load existing role to detect changes
-        var existingRole = await _session.LoadAsync<ApplicationRole>(role.Id, cancellationToken);
-        if (existingRole is not null)
+        // Append pending domain events raised by entity mutations
+        if (role.PendingEvents.Count > 0)
         {
-            // Append events for changes
-            AppendChangeEvents(existingRole, role);
+            _session.Events.Append(role.Id, role.PendingEvents.ToArray());
+            role.ClearPendingEvents();
         }
 
-        // Update ApplicationRole for backward compatibility
         role.SetConcurrencyStamp(Guid.NewGuid().ToString());
+        _session.Eject(role);
         _session.Store(role);
 
         await _session.SaveChangesAsync(cancellationToken);
         return IdentityResult.Success;
-    }
-
-    private void AppendChangeEvents(ApplicationRole existing, ApplicationRole updated)
-    {
-        var events = new List<object>();
-
-        // Name change
-        if (existing.Name != updated.Name)
-        {
-            events.Add(new RoleNameChanged(updated.Id, existing.Name, updated.Name));
-        }
-
-        // Description change
-        if (existing.Description != updated.Description)
-        {
-            events.Add(new RoleDescriptionChanged(updated.Id, existing.Description, updated.Description));
-        }
-
-        // DisplayName change
-        if (existing.DisplayName != updated.DisplayName)
-        {
-            events.Add(new RoleDisplayNameChanged(updated.Id, existing.DisplayName, updated.DisplayName));
-        }
-
-        // Email change
-        if (existing.Email != updated.Email)
-        {
-            events.Add(new RoleEmailChanged(updated.Id, existing.Email, updated.Email));
-        }
-
-        // Client change (realm role ↔ client role)
-        if (existing.ClientId != updated.ClientId)
-        {
-            events.Add(new RoleClientChanged(updated.Id, existing.ClientId, updated.ClientId));
-        }
-
-        // Scopes change
-        if (!existing.Scopes.SequenceEqual(updated.Scopes))
-        {
-            events.Add(new RoleScopesChanged(updated.Id, existing.Scopes, updated.Scopes));
-        }
-
-        // Claim changes
-        var existingClaims = existing.Claims.Select(c => (c.Type, c.Value)).ToHashSet();
-        var updatedClaims = updated.Claims.Select(c => (c.Type, c.Value)).ToHashSet();
-
-        var addedClaims = updatedClaims.Except(existingClaims);
-        var removedClaims = existingClaims.Except(updatedClaims);
-
-        foreach (var claim in addedClaims)
-        {
-            events.Add(new RoleClaimAdded(updated.Id, claim.Type, claim.Value));
-        }
-
-        foreach (var claim in removedClaims)
-        {
-            events.Add(new RoleClaimRemoved(updated.Id, claim.Type, claim.Value));
-        }
-
-        // Append all events
-        if (events.Count > 0)
-        {
-            _session.Events.Append(updated.Id, events.ToArray());
-        }
     }
 
     public async Task<IdentityResult> DeleteAsync(ApplicationRole role, CancellationToken cancellationToken)
@@ -140,8 +77,8 @@ public class EventSourcedRoleStore :
         // Append delete event for event sourcing / projection rebuild
         _session.Events.Append(role.Id, new RoleDeleted(role.Id, null));
 
-        // Soft-delete the document (keeps it for projection rebuilds)
         role.MarkDeleted();
+        _session.Eject(role);
         _session.Store(role);
 
         await _session.SaveChangesAsync(cancellationToken);

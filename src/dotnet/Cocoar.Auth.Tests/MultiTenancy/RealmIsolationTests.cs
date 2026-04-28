@@ -12,7 +12,7 @@ using Cocoar.Auth.Tests.Infrastructure;
 
 namespace Cocoar.Auth.Tests.MultiTenancy;
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(PlatformCollection.Name)]
 [Trait("Category", TestCategories.MultiTenancy)]
 public class RealmIsolationTests : IAsyncLifetime
 {
@@ -28,14 +28,13 @@ public class RealmIsolationTests : IAsyncLifetime
 	public async Task InitializeAsync()
 	{
 		var connectionString = await _fixture.CreateIsolatedDatabasesAsync();
-		_factory = new CocoarAuthWebApplicationFactory(connectionString);
+        _factory = new CocoarAuthWebApplicationFactory(connectionString);
 		_systemAdmin = _factory.CreateClientWithCookies();
 	}
 
 	public async Task DisposeAsync()
 	{
 		_systemAdmin.Dispose();
-		await _factory.DisposeAsync();
 	}
 
 	private async Task LoginAsSystemAdminAsync()

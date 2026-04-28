@@ -65,7 +65,7 @@ watch(
     <div v-if="ui.footer.show" class="modal-footer">
       <CoarButton
         v-if="ui.footer.button2.visible"
-        variant="danger"
+        variant="ghost"
         size="s"
         :disabled="ui.footer.button2.disabled"
         :loading="ui.footer.button2.loading"
@@ -104,10 +104,10 @@ watch(
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 56px;
-  max-height: 56px;
+  min-height: 64px;
+  max-height: 64px;
   padding: 0 20px;
-  background: var(--coar-background-accent-primary, #1f2937);
+  background: var(--color-header, #525e76);
   color: white;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   z-index: 1;
@@ -147,7 +147,7 @@ watch(
   border-radius: var(--coar-radius-m, 4px);
   border: none;
   background: none;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }

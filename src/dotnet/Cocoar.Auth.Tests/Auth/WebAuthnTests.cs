@@ -6,7 +6,7 @@ using Cocoar.Auth.Tests.Infrastructure;
 
 namespace Cocoar.Auth.Tests.Auth;
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(OAuthSecurityCollection.Name)]
 [Trait("Category", TestCategories.TwoFactor)]
 public class WebAuthnTests : IAsyncLifetime
 {

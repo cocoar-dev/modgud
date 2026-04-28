@@ -10,6 +10,8 @@ namespace Cocoar.Auth.Infrastructure.Persistence.Projections.Async;
 /// Async projection that builds <see cref="UserListReadModel"/> for the admin user list grid.
 /// Denormalizes role names so the list view needs zero joins.
 /// Reacts to both User events and Role events (when a role is renamed, all affected users update).
+/// Uses EventProjection because cross-stream handlers (UserRoleAssigned, RoleNameChanged) require
+/// IDocumentOperations for loading related documents — not supported in MultiStreamProjection's Apply().
 /// </summary>
 public class UserListProjection : EventProjection
 {

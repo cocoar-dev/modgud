@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Cocoar.Auth.Tests.Auth;
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(AuthCollection.Name)]
 [Trait("Category", TestCategories.Auth)]
 public class AuthenticationTests : IAsyncLifetime
 {

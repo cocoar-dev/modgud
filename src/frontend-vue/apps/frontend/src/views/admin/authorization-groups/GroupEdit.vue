@@ -12,6 +12,7 @@ import {
   useToast,
   useDialog,
 } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import PrincipalPicker from '@/components/PrincipalPicker.vue'
 import PermissionRolePicker from '@/components/PermissionRolePicker.vue'
@@ -35,6 +36,7 @@ const groupStore = useAuthorizationGroupStore()
 const roleStore = usePermissionRoleStore()
 const toast = useToast()
 const dialog = useDialog()
+const { t } = useI18n()
 
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
@@ -59,7 +61,10 @@ const form = ref({
 })
 
 const modalTitle = computed(() =>
-  form.value.Name.trim() || (isCreate.value ? 'New Authorization Group' : 'Authorization Group'),
+  form.value.Name.trim()
+    || (isCreate.value
+      ? t('admin.groups.createTitle', {}, 'New Authorization Group')
+      : t('admin.groups.singular', {}, 'Authorization Group')),
 )
 
 const isAutoMode = computed(() => form.value.MembershipMode === 'Auto')
@@ -135,7 +140,7 @@ async function load() {
       }
     }
   } catch (e) {
-    saveError.value = extractErrorMessage(e) ?? 'Failed to load group.'
+    saveError.value = extractErrorMessage(e) ?? t('admin.groups.loadFailed', {}, 'Failed to load group.')
   } finally {
     loading.value = false
   }
@@ -178,10 +183,10 @@ async function save() {
     let saved: AuthorizationGroupDto
     if (isCreate.value) {
       saved = await http.post<AuthorizationGroupDto>(dto)
-      toast.success('Group created.')
+      toast.success(t('admin.groups.created', {}, 'Group created.'))
     } else {
       saved = await http.addPath(props.id).put<AuthorizationGroupDto>(dto)
-      toast.success('Group saved.')
+      toast.success(t('admin.groups.saved', {}, 'Group saved.'))
     }
     await groupStore.loadAll()
 
@@ -192,7 +197,7 @@ async function save() {
     }
     props.close({ saved: true })
   } catch (e) {
-    saveError.value = extractErrorMessage(e) ?? 'Save failed.'
+    saveError.value = extractErrorMessage(e) ?? t('common.saveFailed', {}, 'Save failed.')
   } finally {
     saving.value = false
   }
@@ -201,10 +206,10 @@ async function save() {
 async function confirmDelete() {
   if (isCreate.value) return
   const ref = dialog.confirm({
-    title: 'Delete Authorization Group',
-    message: 'Delete this authorization group? This cannot be undone.',
-    confirmText: 'Delete',
-    cancelText: 'Cancel',
+    title: t('admin.groups.deleteTitle', {}, 'Delete Authorization Group'),
+    message: t('admin.groups.deleteMessageSingle', {}, 'Delete this authorization group? This cannot be undone.'),
+    confirmText: t('common.delete', {}, 'Delete'),
+    cancelText: t('common.cancel', {}, 'Cancel'),
     confirmVariant: 'danger',
   })
   const ok = await ref.result
@@ -214,11 +219,11 @@ async function confirmDelete() {
   try {
     const http = useHttpClient('/api/admin/authorization-groups')
     await http.addPath(props.id).delete()
-    toast.success('Group deleted.')
+    toast.success(t('admin.groups.deleted', {}, 'Group deleted.'))
     await groupStore.loadAll()
     props.close({ deleted: true })
   } catch (e) {
-    saveError.value = extractErrorMessage(e) ?? 'Delete failed.'
+    saveError.value = extractErrorMessage(e) ?? t('common.deleteFailed', {}, 'Delete failed.')
   } finally {
     deleting.value = false
   }
@@ -226,7 +231,7 @@ async function confirmDelete() {
 
 const footerButton = computed(() => ({
   visible: true,
-  text: isCreate.value ? 'Create' : 'Save',
+  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: !form.value.Name.trim()
     || saving.value
     || (isAutoMode.value && !form.value.MembershipScript.trim()),
@@ -239,17 +244,17 @@ const footerDeleteButton = computed(() =>
     ? undefined
     : {
         visible: true,
-        text: 'Delete',
+        text: t('common.delete', {}, 'Delete'),
         disabled: deleting.value || saving.value,
         loading: deleting.value,
         onClick: confirmDelete,
       },
 )
 
-const membershipModeOptions = [
-  { value: 'Manual', label: 'Manual' },
-  { value: 'Auto', label: 'Automatic (script)' },
-]
+const membershipModeOptions = computed(() => [
+  { value: 'Manual', label: t('admin.groups.modeManual', {}, 'Manual') },
+  { value: 'Auto', label: t('admin.groups.modeAuto', {}, 'Automatic (script)') },
+])
 
 onMounted(load)
 </script>
@@ -263,54 +268,54 @@ onMounted(load)
     :footer-delete-button="footerDeleteButton"
     width="44rem"
   >
-    <div v-if="loading" class="center">Loading...</div>
+    <div v-if="loading" class="center">{{ t('common.loading', {}, 'Loading...') }}</div>
     <div v-else class="form">
       <div v-if="form.MembershipLastError" class="error-banner">
-        <div class="error-title">Membership script error (last evaluation)</div>
+        <div class="error-title">{{ t('admin.groups.scriptErrorTitle', {}, 'Membership script error (last evaluation)') }}</div>
         <pre class="error-message">{{ form.MembershipLastError }}</pre>
       </div>
 
       <div v-if="saveError" class="error-banner">
-        <div class="error-title">Operation failed</div>
+        <div class="error-title">{{ t('common.operationFailed', {}, 'Operation failed') }}</div>
         <pre class="error-message">{{ saveError }}</pre>
         <button type="button" class="error-dismiss" @click="saveError = null">&times;</button>
       </div>
 
       <CoarTabGroup v-model="activeTab" class="tab-bar">
-        <CoarTab id="general">General</CoarTab>
-        <CoarTab id="members">Members</CoarTab>
-        <CoarTab v-if="isAutoMode" id="script">Script</CoarTab>
-        <CoarTab id="roles">Roles</CoarTab>
-        <CoarTab v-if="hasAccessConfig" id="access">Access</CoarTab>
+        <CoarTab id="general">{{ t('common.general', {}, 'General') }}</CoarTab>
+        <CoarTab id="members">{{ t('admin.groups.membersTab', {}, 'Members') }}</CoarTab>
+        <CoarTab v-if="isAutoMode" id="script">{{ t('admin.groups.scriptTab', {}, 'Script') }}</CoarTab>
+        <CoarTab id="roles">{{ t('admin.groups.rolesTab', {}, 'Roles') }}</CoarTab>
+        <CoarTab v-if="hasAccessConfig" id="access">{{ t('admin.groups.accessTab', {}, 'Access') }}</CoarTab>
       </CoarTabGroup>
 
       <!-- General -->
       <div v-show="activeTab === 'general'" class="tab-content">
         <section>
-          <CoarFormField label="Name" required>
-            <CoarTextInput v-model="form.Name" clearable placeholder="Group name" />
+          <CoarFormField :label="t('common.name', {}, 'Name')" required>
+            <CoarTextInput v-model="form.Name" clearable :placeholder="t('admin.groups.namePlaceholder', {}, 'Group name')" />
           </CoarFormField>
-          <CoarFormField label="Description">
-            <CoarTextInput v-model="form.Description" clearable placeholder="What this group is for..." />
+          <CoarFormField :label="t('common.description', {}, 'Description')">
+            <CoarTextInput v-model="form.Description" clearable :placeholder="t('admin.groups.descriptionPlaceholder', {}, 'What this group is for...')" />
           </CoarFormField>
-          <CoarFormField label="Email">
+          <CoarFormField :label="t('common.email', {}, 'Email')">
             <CoarTextInput v-model="form.Email" clearable placeholder="team@example.com" />
           </CoarFormField>
-          <CoarFormField label="Email Mode">
+          <CoarFormField :label="t('admin.groups.emailMode', {}, 'Email Mode')">
             <CoarRadioGroup v-model="form.EmailMode" orientation="horizontal">
-              <CoarRadioButton value="Shared">Shared (group mailbox)</CoarRadioButton>
-              <CoarRadioButton value="ExpandToMembers">Expand to members</CoarRadioButton>
+              <CoarRadioButton value="Shared">{{ t('admin.groups.emailModeShared', {}, 'Shared (group mailbox)') }}</CoarRadioButton>
+              <CoarRadioButton value="ExpandToMembers">{{ t('admin.groups.emailModeExpand', {}, 'Expand to members') }}</CoarRadioButton>
             </CoarRadioGroup>
             <p class="hint">
-              <span v-if="form.EmailMode === 'Shared'">Notifications go to this address.</span>
-              <span v-else>Notifications are sent to each member individually.</span>
+              <span v-if="form.EmailMode === 'Shared'">{{ t('admin.groups.emailModeSharedHint', {}, 'Notifications go to this address.') }}</span>
+              <span v-else>{{ t('admin.groups.emailModeExpandHint', {}, 'Notifications are sent to each member individually.') }}</span>
             </p>
           </CoarFormField>
-          <CoarFormField label="Membership Mode">
+          <CoarFormField :label="t('admin.groups.membershipMode', {}, 'Membership Mode')">
             <CoarSelect v-model="form.MembershipMode" :options="membershipModeOptions" />
             <p class="hint">
-              <span v-if="isAutoMode">Members are computed from the script in the Script tab.</span>
-              <span v-else>Pick members directly in the Members tab.</span>
+              <span v-if="isAutoMode">{{ t('admin.groups.membershipAutoHint', {}, 'Members are computed from the script in the Script tab.') }}</span>
+              <span v-else>{{ t('admin.groups.membershipManualHint', {}, 'Pick members directly in the Members tab.') }}</span>
             </p>
           </CoarFormField>
         </section>
@@ -319,18 +324,18 @@ onMounted(load)
       <!-- Members -->
       <div v-show="activeTab === 'members'" class="tab-content">
         <section>
-          <div class="section-heading">Members</div>
+          <div class="section-heading">{{ t('admin.groups.membersTab', {}, 'Members') }}</div>
           <template v-if="!isAutoMode">
             <PrincipalPicker
               v-model="form.MemberIds"
-              placeholder="Search people and groups..."
+              :placeholder="t('admin.groups.searchPrincipals', {}, 'Search people and groups...')"
               :exclude-ids="[props.id].filter(x => x !== 'create')"
             />
-            <p class="hint">Add people or nested groups. Nested groups resolve recursively at evaluation time.</p>
+            <p class="hint">{{ t('admin.groups.membersHint', {}, 'Add people or nested groups. Nested groups resolve recursively at evaluation time.') }}</p>
           </template>
           <template v-else>
             <CoarNote variant="info" padding="sm">
-              Members are computed from the script in the <strong>Script</strong> tab.
+              {{ t('admin.groups.membersAutoNote', {}, 'Members are computed from the script in the Script tab.') }}
             </CoarNote>
           </template>
         </section>
@@ -339,9 +344,9 @@ onMounted(load)
       <!-- Script -->
       <div v-show="activeTab === 'script'" class="tab-content">
         <section>
-          <div class="section-heading">Membership Script</div>
+          <div class="section-heading">{{ t('admin.groups.membershipScript', {}, 'Membership Script') }}</div>
           <p class="hint">
-            TypeScript arrow function returning <code>true</code> for principals that should be members.
+            {{ t('admin.groups.membershipScriptHint', {}, 'TypeScript arrow function returning true for principals that should be members.') }}
           </p>
           <ScriptEditor
             v-model="form.MembershipScript"
@@ -354,8 +359,8 @@ onMounted(load)
       <!-- Roles -->
       <div v-show="activeTab === 'roles'" class="tab-content">
         <section>
-          <div class="section-heading">Permission Roles</div>
-          <p class="hint">Assign permission roles. Each resource type gets its own access script below.</p>
+          <div class="section-heading">{{ t('admin.groups.permissionRoles', {}, 'Permission Roles') }}</div>
+          <p class="hint">{{ t('admin.groups.permissionRolesHint', {}, 'Assign permission roles. Each resource type gets its own access script below.') }}</p>
           <PermissionRolePicker
             :model-value="form.RoleIds"
             @update:model-value="(v: string[]) => { form.RoleIds = v; syncAccessScripts() }"
@@ -366,10 +371,10 @@ onMounted(load)
       <!-- Access -->
       <div v-show="activeTab === 'access'" class="tab-content">
         <section>
-          <div class="section-heading">Access Scripts</div>
-          <p class="hint">Restrict which resources members can see per resource type. Empty = no restriction.</p>
+          <div class="section-heading">{{ t('admin.groups.accessScripts', {}, 'Access Scripts') }}</div>
+          <p class="hint">{{ t('admin.groups.accessScriptsHint', {}, 'Restrict which resources members can see per resource type. Empty = no restriction.') }}</p>
           <div v-if="requiredResourceTypes.length === 0" class="empty-hint">
-            Assign roles to configure per-resource access.
+            {{ t('admin.groups.accessEmpty', {}, 'Assign roles to configure per-resource access.') }}
           </div>
           <div v-else class="script-list">
             <div v-for="rt in requiredResourceTypes" :key="rt" class="script-block">
@@ -392,7 +397,7 @@ onMounted(load)
 .form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   min-height: 420px;
 }
 
@@ -412,7 +417,8 @@ onMounted(load)
 .tab-content {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+  padding: 2px 2px 16px;
   min-height: 0;
 }
 

@@ -8,7 +8,7 @@ using Cocoar.Primitives;
 
 namespace Cocoar.Auth.Tests.Admin;
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(AdminCollection.Name)]
 [Trait("Category", TestCategories.GDPR)]
 public class AdminUserLifecycleTests : IAsyncLifetime
 {

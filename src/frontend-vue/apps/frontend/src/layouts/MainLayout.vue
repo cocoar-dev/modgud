@@ -7,6 +7,7 @@ import {
     CoarContextMenu,
     CoarMenuItem,
     CoarMenuDivider,
+    CoarMenuHeading,
     CoarSidebar,
     CoarSidebarItem,
     CoarSidebarHeading,
@@ -14,15 +15,21 @@ import {
     CoarSidebarSpacer,
     useContextMenu,
 } from '@cocoar/vue-ui'
+import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import { useSignalR } from '@/composables/useSignalR'
 import { provideUI } from '@/composables/useUI'
 import { useAuthStore } from '@/stores/auth.store'
+import { usePreferences, localeOptions } from '@/composables/usePreferences'
 
 const signalR = useSignalR()
 const router = useRouter()
 const route = useRoute()
 const { state: ui } = provideUI()
 const authStore = useAuthStore()
+const { t } = useI18n()
+const localization = useLocalization()!
+const prefs = usePreferences()
+const currentLocale = computed(() => localization.language.value)
 
 const collapsed = ref(localStorage.getItem('sidebar-collapsed') === 'true')
 
@@ -129,7 +136,22 @@ const canSeeSystemSection = computed(() => canSeeRealms.value)
         <CoarContextMenu :menu="userMenu">
             <CoarMenuItem :label="userDisplayName" icon="user" />
             <CoarMenuDivider />
-            <CoarMenuItem label="Logout" icon="log-out" @clicked="logout" />
+            <CoarMenuHeading :label="t('nav.language', {}, 'Language')" />
+            <CoarMenuItem
+                v-for="opt in localeOptions"
+                :key="opt.value"
+                :label="opt.label"
+                :icon="currentLocale === opt.value ? 'check' : 'globe'"
+                @clicked="prefs.setLocale(opt.value)"
+            />
+            <CoarMenuDivider />
+            <CoarMenuItem
+                :label="prefs.darkMode.value ? t('nav.lightMode', {}, 'Light Mode') : t('nav.darkMode', {}, 'Dark Mode')"
+                :icon="prefs.darkMode.value ? 'sun' : 'moon'"
+                @clicked="prefs.toggleDarkMode"
+            />
+            <CoarMenuDivider />
+            <CoarMenuItem :label="t('nav.logout', {}, 'Logout')" icon="log-out" @clicked="logout" />
         </CoarContextMenu>
 
         <!-- Body (sidebar + content) -->
@@ -139,53 +161,53 @@ const canSeeSystemSection = computed(() => canSeeRealms.value)
                 <CoarSidebarSpacer height="4px" />
                 <CoarSidebarItem
                     icon="layout-dashboard"
-                    label="Dashboard"
+                    :label="t('nav.dashboard', {}, 'Dashboard')"
                     :active="route.path === '/dashboard' || route.path === '/'"
                     @click="router.push('/dashboard')"
                 />
 
                 <template v-if="canSeeAdminSection">
                     <CoarSidebarDivider />
-                    <CoarSidebarHeading label="Administration" />
+                    <CoarSidebarHeading :label="t('nav.administration', {}, 'Administration')" />
                     <CoarSidebarItem
                         v-if="canSeeUsers"
                         icon="users"
-                        label="Users"
+                        :label="t('nav.users', {}, 'Users')"
                         :active="route.path.startsWith('/admin/users')"
                         @click="router.push('/admin/users')"
                     />
                     <CoarSidebarItem
                         v-if="canSeeRoles"
                         icon="shield-check"
-                        label="Roles"
+                        :label="t('nav.roles', {}, 'Roles')"
                         :active="route.path.startsWith('/admin/roles')"
                         @click="router.push('/admin/roles')"
                     />
                     <CoarSidebarItem
                         v-if="canSeeOAuthClients"
                         icon="key-round"
-                        label="OAuth Clients"
+                        :label="t('nav.oauthClients', {}, 'OAuth Clients')"
                         :active="route.path.startsWith('/admin/oauth/clients')"
                         @click="router.push('/admin/oauth/clients')"
                     />
                     <CoarSidebarItem
                         v-if="canSeeOAuthScopes"
                         icon="scan-line"
-                        label="OAuth Scopes"
+                        :label="t('nav.oauthScopes', {}, 'OAuth Scopes')"
                         :active="route.path.startsWith('/admin/oauth/scopes')"
                         @click="router.push('/admin/oauth/scopes')"
                     />
                     <CoarSidebarItem
                         v-if="canSeeOAuthApis"
                         icon="server"
-                        label="OAuth APIs"
+                        :label="t('nav.oauthApis', {}, 'OAuth APIs')"
                         :active="route.path.startsWith('/admin/oauth/apis')"
                         @click="router.push('/admin/oauth/apis')"
                     />
                     <CoarSidebarItem
                         v-if="canSeeLoginProviders"
                         icon="lock"
-                        label="Login Providers"
+                        :label="t('nav.loginProviders', {}, 'Login Providers')"
                         :active="route.path.startsWith('/admin/login-providers')"
                         @click="router.push('/admin/login-providers')"
                     />
@@ -193,18 +215,18 @@ const canSeeSystemSection = computed(() => canSeeRealms.value)
 
                 <template v-if="canSeeAuthorizationSection">
                     <CoarSidebarDivider />
-                    <CoarSidebarHeading label="Authorization" />
+                    <CoarSidebarHeading :label="t('nav.authorization', {}, 'Authorization')" />
                     <CoarSidebarItem
                         v-if="canSeeAuthGroups"
                         icon="users-round"
-                        label="Authorization Groups"
+                        :label="t('nav.authorizationGroups', {}, 'Authorization Groups')"
                         :active="route.path.startsWith('/admin/authorization-groups')"
                         @click="router.push('/admin/authorization-groups')"
                     />
                     <CoarSidebarItem
                         v-if="canSeePermissionRoles"
                         icon="shield"
-                        label="Permission Roles"
+                        :label="t('nav.permissionRoles', {}, 'Permission Roles')"
                         :active="route.path.startsWith('/admin/permission-roles')"
                         @click="router.push('/admin/permission-roles')"
                     />
@@ -212,11 +234,11 @@ const canSeeSystemSection = computed(() => canSeeRealms.value)
 
                 <template v-if="canSeeSystemSection">
                     <CoarSidebarDivider />
-                    <CoarSidebarHeading label="System" />
+                    <CoarSidebarHeading :label="t('nav.system', {}, 'System')" />
                     <CoarSidebarItem
                         v-if="canSeeRealms"
                         icon="globe"
-                        label="Realms"
+                        :label="t('nav.realms', {}, 'Realms')"
                         :active="route.path.startsWith('/admin/realms')"
                         @click="router.push('/admin/realms')"
                     />
@@ -228,7 +250,7 @@ const canSeeSystemSection = computed(() => canSeeRealms.value)
                     <CoarSidebarDivider />
                     <CoarSidebarItem
                         :icon="c ? 'chevron-right' : 'chevron-left'"
-                        :label="c ? 'Expand' : 'Collapse'"
+                        :label="c ? t('nav.expand', {}, 'Expand') : t('nav.collapse', {}, 'Collapse')"
                         @click="toggleCollapsed"
                     />
                     <!-- SignalR Status -->
@@ -266,7 +288,7 @@ const canSeeSystemSection = computed(() => canSeeRealms.value)
                                 </CoarButton>
                                 <CoarButton
                                     v-if="ui.footer.button2.visible"
-                                    variant="danger"
+                                    variant="secondary"
                                     size="s"
                                     :disabled="ui.footer.button2.disabled"
                                     :loading="ui.footer.button2.loading"
@@ -297,7 +319,7 @@ const canSeeSystemSection = computed(() => canSeeRealms.value)
 .main-header {
     min-height: 64px;
     max-height: 64px;
-    background-color: var(--coar-background-accent-primary, #1f2937);
+    background-color: var(--color-header, #525e76);
     color: white;
     display: flex;
     flex-direction: row;

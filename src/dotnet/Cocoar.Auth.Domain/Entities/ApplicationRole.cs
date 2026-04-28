@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Cocoar.Auth.Domain.Common;
+using Cocoar.Auth.Domain.Events;
 
 namespace Cocoar.Auth.Domain.Entities;
 
@@ -93,6 +94,8 @@ public class ApplicationRole : Entity
 
     public void SetName(string name)
     {
+        if (Name != name)
+            RaiseEvent(new RoleNameChanged(Id, Name, name));
         Name = name;
         NormalizedName = name.ToUpperInvariant();
         MarkModified();
@@ -100,30 +103,40 @@ public class ApplicationRole : Entity
 
     public void SetDescription(string? description)
     {
+        if (Description != description)
+            RaiseEvent(new RoleDescriptionChanged(Id, Description, description));
         Description = description;
         MarkModified();
     }
 
     public void SetDisplayName(string? displayName)
     {
+        if (DisplayName != displayName)
+            RaiseEvent(new RoleDisplayNameChanged(Id, DisplayName, displayName));
         DisplayName = displayName;
         MarkModified();
     }
 
     public void SetEmail(string? email)
     {
+        if (Email != email)
+            RaiseEvent(new RoleEmailChanged(Id, Email, email));
         Email = email;
         MarkModified();
     }
 
     public void SetClientId(Guid? clientId)
     {
+        if (ClientId != clientId)
+            RaiseEvent(new RoleClientChanged(Id, ClientId, clientId));
         ClientId = clientId;
         MarkModified();
     }
 
     public void SetScopes(List<string> scopes)
     {
+        if (!Scopes.SequenceEqual(scopes))
+            RaiseEvent(new RoleScopesChanged(Id, Scopes, scopes));
         Scopes = scopes;
         MarkModified();
     }
@@ -135,6 +148,7 @@ public class ApplicationRole : Entity
 
     public void AddClaim(string type, string value)
     {
+        RaiseEvent(new RoleClaimAdded(Id, type, value));
         Claims.Add(new RoleClaim(type, value));
         MarkModified();
     }
@@ -144,6 +158,7 @@ public class ApplicationRole : Entity
         var claim = Claims.FirstOrDefault(c => c.Type == type && c.Value == value);
         if (claim is not null)
         {
+            RaiseEvent(new RoleClaimRemoved(Id, type, value));
             Claims.Remove(claim);
             MarkModified();
         }

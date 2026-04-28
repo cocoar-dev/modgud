@@ -6,7 +6,7 @@ using Cocoar.Auth.Tests.Infrastructure;
 
 namespace Cocoar.Auth.Tests.Auth;
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(AuthCollection.Name)]
 [Trait("Category", TestCategories.Auth)]
 public class ProfileTests : IAsyncLifetime
 {

@@ -2,11 +2,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { CoarButton, CoarCard, CoarNote, CoarSpinner } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { useAuthStore } from '@/stores/auth.store'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const userId = computed(() => {
   const v = route.query.userId
@@ -31,7 +33,7 @@ onMounted(async () => {
     status.value = 'success'
   } catch (err: unknown) {
     status.value = 'error'
-    errorMessage.value = err instanceof Error ? err.message : 'Email confirmation failed.'
+    errorMessage.value = err instanceof Error ? err.message : t('auth.confirmEmail.failed', {}, 'Email confirmation failed.')
   }
 })
 </script>
@@ -41,29 +43,29 @@ onMounted(async () => {
     <CoarCard class="auth-card">
       <div class="auth-brand">
         <div class="auth-brand-logo">CA</div>
-        <h1 class="auth-title">Email confirmation</h1>
+        <h1 class="auth-title">{{ t('auth.confirmEmail.title', {}, 'Email confirmation') }}</h1>
       </div>
 
       <div v-if="status === 'pending'" class="state-row">
         <CoarSpinner />
-        <span>Confirming your email…</span>
+        <span>{{ t('auth.confirmEmail.pending', {}, 'Confirming your email…') }}</span>
       </div>
 
       <CoarNote v-else-if="status === 'success'" variant="success">
-        Your email is confirmed. You can sign in now.
+        {{ t('auth.confirmEmail.success', {}, 'Your email is confirmed. You can sign in now.') }}
       </CoarNote>
 
       <CoarNote v-else-if="status === 'invalid'" variant="error">
-        This confirmation link is missing required parameters.
+        {{ t('auth.confirmEmail.invalid', {}, 'This confirmation link is missing required parameters.') }}
       </CoarNote>
 
       <CoarNote v-else variant="error">
-        {{ errorMessage ?? 'Email confirmation failed.' }}
+        {{ errorMessage ?? t('auth.confirmEmail.failed', {}, 'Email confirmation failed.') }}
       </CoarNote>
 
       <div class="auth-actions">
         <CoarButton variant="primary" @click="router.push('/login')">
-          Go to sign in
+          {{ t('auth.confirmEmail.goToSignIn', {}, 'Go to sign in') }}
         </CoarButton>
       </div>
     </CoarCard>

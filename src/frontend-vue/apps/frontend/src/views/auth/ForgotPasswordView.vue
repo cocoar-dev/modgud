@@ -2,10 +2,12 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { CoarButton, CoarTextInput, CoarCard, CoarNote } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { useAuthStore } from '@/stores/auth.store'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const email = ref('')
 const loading = ref(false)
@@ -15,7 +17,7 @@ const successMessage = ref<string | undefined>(undefined)
 async function submit() {
   if (loading.value) return
   if (!email.value) {
-    errorMessage.value = 'Enter the email address on your account.'
+    errorMessage.value = t('auth.forgotPassword.missingEmail', {}, 'Enter the email address on your account.')
     return
   }
 
@@ -24,10 +26,9 @@ async function submit() {
   try {
     await authStore.forgotPassword({ Email: email.value })
     // Backend always returns 200 for anti-enumeration — success is a generic message.
-    successMessage.value =
-      'If that email is on file, a reset link is on the way. Check your inbox.'
+    successMessage.value = t('auth.forgotPassword.success', {}, 'If that email is on file, a reset link is on the way. Check your inbox.')
   } catch (err: unknown) {
-    errorMessage.value = err instanceof Error ? err.message : 'Could not send reset link.'
+    errorMessage.value = err instanceof Error ? err.message : t('auth.forgotPassword.failed', {}, 'Could not send reset link.')
   } finally {
     loading.value = false
   }
@@ -39,22 +40,22 @@ async function submit() {
     <CoarCard class="auth-card">
       <div class="auth-brand">
         <div class="auth-brand-logo">CA</div>
-        <h1 class="auth-title">Forgot password</h1>
-        <p class="auth-subtitle">We'll send you a reset link</p>
+        <h1 class="auth-title">{{ t('auth.forgotPassword.title', {}, 'Forgot password') }}</h1>
+        <p class="auth-subtitle">{{ t('auth.forgotPassword.subtitle', {}, "We'll send you a reset link") }}</p>
       </div>
 
       <form class="auth-form" @submit.prevent="submit">
-        <CoarTextInput v-model="email" label="Email" type="email" autocomplete="email" autofocus :disabled="loading" />
+        <CoarTextInput v-model="email" :label="t('common.email', {}, 'Email')" type="email" autocomplete="email" autofocus :disabled="loading" />
 
         <CoarNote v-if="errorMessage" variant="error">{{ errorMessage }}</CoarNote>
         <CoarNote v-if="successMessage" variant="success">{{ successMessage }}</CoarNote>
 
         <CoarButton type="submit" variant="primary" :disabled="loading" :loading="loading">
-          Send reset link
+          {{ t('auth.forgotPassword.submit', {}, 'Send reset link') }}
         </CoarButton>
 
         <div class="auth-links">
-          <a href="#" @click.prevent="router.push('/login')">Back to sign in</a>
+          <a href="#" @click.prevent="router.push('/login')">{{ t('auth.common.backToSignIn', {}, 'Back to sign in') }}</a>
         </div>
       </form>
     </CoarCard>

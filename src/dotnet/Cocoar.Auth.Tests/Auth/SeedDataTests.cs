@@ -6,7 +6,7 @@ using OpenIddict.Abstractions;
 
 namespace Cocoar.Auth.Tests.Auth;
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(AuthCollection.Name)]
 [Trait("Category", TestCategories.Smoke)]
 public class SeedDataTests : IAsyncLifetime
 {
@@ -21,14 +21,13 @@ public class SeedDataTests : IAsyncLifetime
 	public async Task InitializeAsync()
 	{
 		var connectionString = await _fixture.CreateIsolatedDatabasesAsync();
-		_factory = new CocoarAuthWebApplicationFactory(connectionString);
+        _factory = new CocoarAuthWebApplicationFactory(connectionString);
 		// Force the host to start by creating a client (triggers host initialization and seed data)
 		_ = _factory.CreateClientWithCookies();
 	}
 
 	public async Task DisposeAsync()
 	{
-		await _factory.DisposeAsync();
 	}
 
 	[Fact]

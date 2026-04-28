@@ -5,7 +5,7 @@ using Cocoar.Auth.Tests.Infrastructure;
 
 namespace Cocoar.Auth.Tests.Setup;
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(PlatformCollection.Name)]
 [Trait("Category", TestCategories.Smoke)]
 public class SetupTests : IAsyncLifetime
 {

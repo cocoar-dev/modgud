@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { CoarDataGridPanel, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import {
+  CoarButton,
   CoarContextMenu,
   CoarMenuItem,
   CoarMenuDivider,
@@ -9,6 +10,7 @@ import {
   useDialog,
   useToast,
 } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import { useModal } from '@/composables/useModal'
 import {
@@ -23,6 +25,7 @@ const store = useAuthorizationGroupStore()
 const dialog = useDialog()
 const modal = useModal()
 const toast = useToast()
+const { t, language } = useI18n()
 
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
@@ -51,14 +54,14 @@ const builder = CoarGridBuilder.create()
     viewportMenu.open($event)
   })
   .columns([
-    (col: any) => col.field('Name').header('Name').flex(1).minWidth(180),
-    (col: any) => col.field('MembershipMode').header('Mode').width(110),
-    (col: any) => col.field('MemberIds').header('Members').width(100)
+    (col: any) => col.field('Name').header('Name', 'common.name').flex(1).minWidth(180),
+    (col: any) => col.field('MembershipMode').header('Mode', 'admin.groups.mode').width(110),
+    (col: any) => col.field('MemberIds').header('Members', 'admin.groups.members').width(100)
       .option('valueGetter', (p: any) => (p.data?.MemberIds ?? []).length),
-    (col: any) => col.field('RoleIds').header('Roles').width(90)
+    (col: any) => col.field('RoleIds').header('Roles', 'admin.groups.rolesCount').width(90)
       .option('valueGetter', (p: any) => (p.data?.RoleIds ?? []).length),
-    (col: any) => col.field('Email').header('Email').flex(1),
-    (col: any) => col.field('MembershipLastError').header('Script Error').flex(1)
+    (col: any) => col.field('Email').header('Email', 'common.email').flex(1),
+    (col: any) => col.field('MembershipLastError').header('Script Error', 'admin.groups.scriptError').flex(1)
       .option('cellClass', (p: any) => p.data?.MembershipLastError ? 'cell-error' : ''),
   ])
 
@@ -74,10 +77,10 @@ async function confirmDeleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
   const result = dialog.confirm({
-    title: 'Delete Authorization Group',
-    message: 'Delete this group? This cannot be undone.',
-    confirmText: 'Delete',
-    cancelText: 'Cancel',
+    title: t('admin.groups.deleteTitle', {}, 'Delete Authorization Group'),
+    message: t('admin.groups.deleteMessage', {}, 'Delete this group? This cannot be undone.'),
+    confirmText: t('common.delete', {}, 'Delete'),
+    cancelText: t('common.cancel', {}, 'Cancel'),
     confirmVariant: 'danger',
   })
   const ok = await result.result
@@ -86,29 +89,26 @@ async function confirmDeleteSelected() {
   try {
     const http = useHttpClient('/api/admin/authorization-groups')
     await http.addPath(id).delete()
-    toast.success('Group deleted.')
+    toast.success(t('admin.groups.deleted', {}, 'Group deleted.'))
     await store.loadAll()
   } catch (e) {
     const msg = e instanceof HttpClientError
       ? ((e.body as any)?.detail ?? (e.body as any)?.title ?? e.message)
-      : 'Delete failed.'
+      : t('common.deleteFailed', {}, 'Delete failed.')
     toast.error(String(msg))
   }
 }
 
-onMounted(() => {
+watch(language, () => {
   ui.set((ctx) => {
-    ctx.header.title = 'Authorization Groups'
-    ctx.header.subTitle = 'Group members, roles, and access scripts'
+    ctx.header.title = t('admin.groups.title', {}, 'Authorization Groups')
+    ctx.header.subTitle = t('admin.groups.subtitle', {}, 'Group members, roles, and access scripts')
     ctx.header.icon = 'users-round'
     ctx.content.container = false
-    ctx.footer.show = true
-    Object.assign(ctx.footer.button1, {
-      visible: true,
-      text: 'New Group',
-      onClick: openCreate,
-    })
   })
+}, { immediate: true })
+
+onMounted(() => {
   store.initialize()
   store.loadAll()
 })
@@ -120,17 +120,21 @@ onUnmounted(() => {
 
 <template>
   <div class="list-wrap">
-    <CoarDataGrid :builder="builder" show-search class="grid flex-1 min-h-0" bordered elevated />
+    <CoarDataGridPanel :builder="builder" class="flex-1 min-h-0" bordered elevated :search-placeholder="t('common.search', {}, 'Search...')">
+      <template #actions>
+        <CoarButton size="s" icon-start="plus" @click="openCreate">{{ t('common.create', {}, 'Create') }}</CoarButton>
+      </template>
+    </CoarDataGridPanel>
 
     <CoarContextMenu :menu="cellMenu">
-      <CoarMenuItem label="Edit" icon="pencil" @clicked="selectedIds[0] && openEdit(selectedIds[0])" />
-      <CoarMenuItem label="New Group" icon="plus" @clicked="openCreate" />
+      <CoarMenuItem :label="t('common.edit', {}, 'Edit')" icon="pencil" @clicked="selectedIds[0] && openEdit(selectedIds[0])" />
+      <CoarMenuItem :label="t('admin.common.newGroup', {}, 'New Group')" icon="plus" @clicked="openCreate" />
       <CoarMenuDivider />
-      <CoarMenuItem label="Delete" icon="trash-2" @clicked="confirmDeleteSelected" />
+      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="confirmDeleteSelected" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
-      <CoarMenuItem label="New Group" icon="plus" @clicked="openCreate" />
+      <CoarMenuItem :label="t('admin.common.newGroup', {}, 'New Group')" icon="plus" @clicked="openCreate" />
     </CoarContextMenu>
   </div>
 </template>

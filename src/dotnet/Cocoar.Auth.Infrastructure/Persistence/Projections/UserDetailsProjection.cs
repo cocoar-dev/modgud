@@ -2,31 +2,18 @@ using Cocoar.Auth.Application.Models;
 using Cocoar.Auth.Domain.Events;
 using JasperFx.Events;
 using Marten;
-using Marten.Events;
 using Marten.Events.Projections;
 
 namespace Cocoar.Auth.Infrastructure.Persistence.Projections;
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ASYNC PROJECTION: DENORMALIZED USER DETAILS
-// ═══════════════════════════════════════════════════════════════════════════
-// This projection runs asynchronously via the Async Daemon.
-// It builds a denormalized view of users with embedded role information.
-// Use for: API responses, Admin UI, user listings, search results.
-// DO NOT use for: validation, uniqueness checks, authentication.
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// <summary>
-/// Async projection that builds <see cref="UserDetailsReadModel"/> with denormalized role data.
-/// This projection queries inline projections (RoleState) to embed role information.
-/// Runs via the Async Daemon - eventually consistent.
+/// Projection that builds <see cref="UserDetailsReadModel"/> with denormalized role data.
+/// Queries inline projections (RoleState) to embed role information.
+/// Uses EventProjection because cross-stream handlers (UserRoleAssigned, RoleNameChanged,
+/// RoleDescriptionChanged) require IDocumentOperations — not supported in MultiStreamProjection's Apply().
 /// </summary>
 public class UserDetailsProjection : EventProjection
 {
-    /// <summary>
-    /// Create a new UserDetailsReadModel when a user is created.
-    /// We don't embed roles here since they need to be looked up asynchronously.
-    /// </summary>
     public UserDetailsReadModel Create(IEvent<UserCreated> @event)
     {
         var data = @event.Data;
@@ -42,7 +29,6 @@ public class UserDetailsProjection : EventProjection
             LockoutEnabled = data.LockoutEnabled,
             AccessFailedCount = 0,
             CreatedAt = @event.Timestamp
-            // Roles will be populated by UserRoleAssigned events
         };
     }
 
@@ -138,7 +124,6 @@ public class UserDetailsProjection : EventProjection
         var model = ops.LoadAsync<UserDetailsReadModel>(@event.Data.UserId).GetAwaiter().GetResult();
         if (model is null) return;
 
-        // Query the inline RoleState to get role details
         var role = ops.LoadAsync<RoleState>(@event.Data.RoleId).GetAwaiter().GetResult();
         if (role is not null && !model.Roles.Any(r => r.Id == role.Id))
         {
@@ -259,12 +244,8 @@ public class UserDetailsProjection : EventProjection
     // ROLE CHANGE HANDLERS - Update all affected users
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// When a role's name changes, update all users that have that role.
-    /// </summary>
     public void Project(IEvent<RoleNameChanged> @event, IDocumentOperations ops)
     {
-        // Query all UserDetailsReadModels that have this role
         var usersWithRole = ops.Query<UserDetailsReadModel>()
             .Where(u => u.Roles.Any(r => r.Id == @event.Data.RoleId))
             .ToList();
@@ -281,12 +262,8 @@ public class UserDetailsProjection : EventProjection
         }
     }
 
-    /// <summary>
-    /// When a role's description changes, update all users that have that role.
-    /// </summary>
     public void Project(IEvent<RoleDescriptionChanged> @event, IDocumentOperations ops)
     {
-        // Query all UserDetailsReadModels that have this role
         var usersWithRole = ops.Query<UserDetailsReadModel>()
             .Where(u => u.Roles.Any(r => r.Id == @event.Data.RoleId))
             .ToList();

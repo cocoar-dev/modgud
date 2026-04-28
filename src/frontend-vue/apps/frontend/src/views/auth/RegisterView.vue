@@ -2,10 +2,12 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { CoarButton, CoarTextInput, CoarPasswordInput, CoarCard, CoarNote } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { useAuthStore } from '@/stores/auth.store'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const userName = ref('')
 const email = ref('')
@@ -19,7 +21,7 @@ const successMessage = ref<string | undefined>(undefined)
 async function submit() {
   if (loading.value) return
   if (!userName.value || !email.value || !password.value) {
-    errorMessage.value = 'Username, email and password are required.'
+    errorMessage.value = t('auth.register.missingFields', {}, 'Username, email and password are required.')
     return
   }
 
@@ -34,10 +36,9 @@ async function submit() {
       FirstName: firstName.value || undefined,
       LastName: lastName.value || undefined,
     })
-    successMessage.value =
-      'Account created. Check your inbox for a confirmation link before signing in.'
+    successMessage.value = t('auth.register.success', {}, 'Account created. Check your inbox for a confirmation link before signing in.')
   } catch (err: unknown) {
-    errorMessage.value = err instanceof Error ? err.message : 'Registration failed.'
+    errorMessage.value = err instanceof Error ? err.message : t('auth.register.failed', {}, 'Registration failed.')
   } finally {
     loading.value = false
   }
@@ -49,28 +50,28 @@ async function submit() {
     <CoarCard class="auth-card">
       <div class="auth-brand">
         <div class="auth-brand-logo">CA</div>
-        <h1 class="auth-title">Create account</h1>
-        <p class="auth-subtitle">Sign up to continue</p>
+        <h1 class="auth-title">{{ t('auth.register.title', {}, 'Create account') }}</h1>
+        <p class="auth-subtitle">{{ t('auth.register.subtitle', {}, 'Sign up to continue') }}</p>
       </div>
 
       <form class="auth-form" @submit.prevent="submit">
-        <CoarTextInput v-model="userName" label="Username" autocomplete="username" autofocus :disabled="loading" />
-        <CoarTextInput v-model="email" label="Email" type="email" autocomplete="email" :disabled="loading" />
+        <CoarTextInput v-model="userName" :label="t('common.username', {}, 'Username')" autocomplete="username" autofocus :disabled="loading" />
+        <CoarTextInput v-model="email" :label="t('common.email', {}, 'Email')" type="email" autocomplete="email" :disabled="loading" />
         <div class="auth-row">
-          <CoarTextInput v-model="firstName" label="First name" autocomplete="given-name" :disabled="loading" />
-          <CoarTextInput v-model="lastName" label="Last name" autocomplete="family-name" :disabled="loading" />
+          <CoarTextInput v-model="firstName" :label="t('admin.users.firstName', {}, 'First name')" autocomplete="given-name" :disabled="loading" />
+          <CoarTextInput v-model="lastName" :label="t('admin.users.lastName', {}, 'Last name')" autocomplete="family-name" :disabled="loading" />
         </div>
-        <CoarPasswordInput v-model="password" label="Password" autocomplete="new-password" :disabled="loading" />
+        <CoarPasswordInput v-model="password" :label="t('common.password', {}, 'Password')" autocomplete="new-password" :disabled="loading" />
 
         <CoarNote v-if="errorMessage" variant="error">{{ errorMessage }}</CoarNote>
         <CoarNote v-if="successMessage" variant="success">{{ successMessage }}</CoarNote>
 
         <CoarButton type="submit" variant="primary" :disabled="loading" :loading="loading">
-          Create account
+          {{ t('auth.register.submit', {}, 'Create account') }}
         </CoarButton>
 
         <div class="auth-links">
-          <a href="#" @click.prevent="router.push('/login')">Already have an account? Sign in</a>
+          <a href="#" @click.prevent="router.push('/login')">{{ t('auth.register.haveAccount', {}, 'Already have an account? Sign in') }}</a>
         </div>
       </form>
     </CoarCard>

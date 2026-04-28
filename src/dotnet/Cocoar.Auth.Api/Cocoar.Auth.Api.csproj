@@ -12,6 +12,7 @@
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="Cocoar.SignalARRR.Server" />
+    <PackageReference Include="Cocoar.SignalARRR.Contracts" />
     <PackageReference Include="WolverineFx.Marten" />
   </ItemGroup>
 

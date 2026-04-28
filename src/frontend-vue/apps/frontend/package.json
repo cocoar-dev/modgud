@@ -12,13 +12,13 @@
   },
   "dependencies": {
     "@cocoar/signalarrr": "^4.2.3",
-    "@cocoar/vue-data-grid": "1.11.0",
-    "@cocoar/vue-fragment-parser": "1.11.0",
-    "@cocoar/vue-localization": "1.11.0",
-    "@cocoar/vue-script-editor": "1.11.0",
-    "@cocoar/vue-ui": "1.11.0",
+    "@cocoar/vue-data-grid": "1.12.0",
+    "@cocoar/vue-fragment-parser": "1.12.0",
+    "@cocoar/vue-localization": "1.12.0",
+    "@cocoar/vue-script-editor": "1.12.0",
+    "@cocoar/vue-ui": "1.12.0",
     "monaco-editor": "^0.55.1",
-    "overlayscrollbars": "^2.14.0",
+    "overlayscrollbars": "^2.15.1",
     "pinia": "^3.0.4",
     "qrcode": "^1.5.4",
     "vue": "^3.5.32",
@@ -28,13 +28,13 @@
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/vite": "^4.2.2",
     "@types/qrcode": "^1.5.6",
-    "@vitejs/plugin-vue": "^6.0.5",
+    "@vitejs/plugin-vue": "^6.0.6",
     "@vue/tsconfig": "^0.9.1",
-    "lucide-static": "^1.6.0",
+    "lucide-static": "^1.8.0",
     "tailwindcss": "^4.2.2",
-    "typescript": "~5.9.0",
+    "typescript": "~6.0.3",
     "vite": "^8.0.8",
     "vitest": "^4.1.4",
-    "vue-tsc": "^3.2.6"
+    "vue-tsc": "^3.2.7"
   }
 }

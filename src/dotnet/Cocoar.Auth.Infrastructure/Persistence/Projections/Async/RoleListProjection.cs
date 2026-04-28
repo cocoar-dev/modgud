@@ -1,3 +1,4 @@
+using Cocoar.Auth.Application.Notifications;
 using Cocoar.Auth.Application.ReadModels;
 using Cocoar.Auth.Domain.Events;
 using JasperFx.Events;
@@ -10,15 +11,30 @@ namespace Cocoar.Auth.Infrastructure.Persistence.Projections.Async;
 /// Async projection that builds <see cref="RoleListReadModel"/> for the admin role list grid.
 /// Maintains a pre-computed user count per role.
 /// Reacts to both Role events and User role assignment events.
+/// Uses MultiStreamProjection with RaiseSideEffects for automatic SignalR notifications.
 /// </summary>
-public class RoleListProjection : EventProjection
+public class RoleListProjection : MultiStreamProjection<RoleListReadModel, Guid>
 {
+	public RoleListProjection()
+	{
+		// Role events: stream ID = role ID = document ID
+		Identity<RoleCreated>(e => e.RoleId);
+		Identity<RoleNameChanged>(e => e.RoleId);
+		Identity<RoleDescriptionChanged>(e => e.RoleId);
+		Identity<RoleDisplayNameChanged>(e => e.RoleId);
+		Identity<RoleDeleted>(e => e.RoleId);
+
+		// Cross-stream: user events that update the role's user count
+		Identity<UserRoleAssigned>(e => e.RoleId);
+		Identity<UserRoleRemoved>(e => e.RoleId);
+	}
+
 	public RoleListReadModel Create(IEvent<RoleCreated> @event)
 	{
 		var data = @event.Data;
 		return new RoleListReadModel
 		{
-			Id = @event.StreamId,
+			Id = data.RoleId,
 			Name = data.Name,
 			Description = data.Description,
 			ClientId = data.ClientId,
@@ -26,63 +42,42 @@ public class RoleListProjection : EventProjection
 		};
 	}
 
-	public void Project(IEvent<RoleNameChanged> @event, IDocumentOperations ops)
+	public void Apply(RoleListReadModel model, IEvent<RoleNameChanged> @event)
 	{
-		var model = ops.LoadAsync<RoleListReadModel>(@event.Data.RoleId).GetAwaiter().GetResult();
-		if (model is null) return;
-
 		model.Name = @event.Data.NewName;
 		model.ModifiedAt = @event.Timestamp;
-		ops.Store(model);
 	}
 
-	public void Project(IEvent<RoleDescriptionChanged> @event, IDocumentOperations ops)
+	public void Apply(RoleListReadModel model, IEvent<RoleDescriptionChanged> @event)
 	{
-		var model = ops.LoadAsync<RoleListReadModel>(@event.Data.RoleId).GetAwaiter().GetResult();
-		if (model is null) return;
-
 		model.Description = @event.Data.NewDescription;
 		model.ModifiedAt = @event.Timestamp;
-		ops.Store(model);
 	}
 
-	public void Project(IEvent<RoleDisplayNameChanged> @event, IDocumentOperations ops)
+	public void Apply(RoleListReadModel model, IEvent<RoleDisplayNameChanged> @event)
 	{
-		var model = ops.LoadAsync<RoleListReadModel>(@event.Data.RoleId).GetAwaiter().GetResult();
-		if (model is null) return;
-
 		model.DisplayName = @event.Data.NewDisplayName;
 		model.ModifiedAt = @event.Timestamp;
-		ops.Store(model);
 	}
 
-	public void Project(IEvent<RoleDeleted> @event, IDocumentOperations ops)
+	public void Apply(RoleListReadModel model, IEvent<RoleDeleted> @event)
 	{
-		var model = ops.LoadAsync<RoleListReadModel>(@event.Data.RoleId).GetAwaiter().GetResult();
-		if (model is null) return;
-
 		model.IsDeleted = true;
 		model.ModifiedAt = @event.Timestamp;
-		ops.Store(model);
 	}
 
-	// ── Cross-stream: user role assignments update the user count ──
+	// Cross-stream: user role assignments update the user count
+	public void Apply(RoleListReadModel model, IEvent<UserRoleAssigned> @event) => model.UserCount++;
+	public void Apply(RoleListReadModel model, IEvent<UserRoleRemoved> @event) => model.UserCount = Math.Max(0, model.UserCount - 1);
 
-	public void Project(IEvent<UserRoleAssigned> @event, IDocumentOperations ops)
+	public override ValueTask RaiseSideEffects(IDocumentOperations operations, IEventSlice<RoleListReadModel> slice)
 	{
-		var model = ops.LoadAsync<RoleListReadModel>(@event.Data.RoleId).GetAwaiter().GetResult();
-		if (model is null) return;
+		string changeType;
+		if (slice.Events().Any(e => e.Data is RoleCreated)) changeType = "created";
+		else if (slice.Events().Any(e => e.Data is RoleDeleted)) changeType = "deleted";
+		else changeType = "updated";
 
-		model.UserCount++;
-		ops.Store(model);
-	}
-
-	public void Project(IEvent<UserRoleRemoved> @event, IDocumentOperations ops)
-	{
-		var model = ops.LoadAsync<RoleListReadModel>(@event.Data.RoleId).GetAwaiter().GetResult();
-		if (model is null) return;
-
-		model.UserCount = Math.Max(0, model.UserCount - 1);
-		ops.Store(model);
+		slice.PublishMessage(new EntityChangedNotification("role", changeType, slice.Snapshot?.Id.ToString()));
+		return ValueTask.CompletedTask;
 	}
 }

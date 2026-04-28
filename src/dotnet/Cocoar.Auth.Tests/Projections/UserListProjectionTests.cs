@@ -13,7 +13,7 @@ namespace Cocoar.Auth.Tests.Projections;
 /// Tests for UserListProjection async projection.
 /// Verifies that the denormalized user list stays consistent with user and role changes.
 /// </summary>
-[Collection(IntegrationTestCollection.Name)]
+[Collection(PlatformCollection.Name)]
 [Trait("Category", "Projections")]
 public class UserListProjectionTests : IAsyncLifetime
 {

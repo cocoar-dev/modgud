@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Cocoar.Auth.Domain.Common;
+using Cocoar.Auth.Domain.Events;
 
 namespace Cocoar.Auth.Domain.Entities;
 
@@ -165,6 +166,8 @@ public class ApplicationUser : Entity
 
     public void SetUserName(string userName)
     {
+        if (UserName != userName)
+            RaiseEvent(new UserNameChanged(Id, UserName, userName));
         UserName = userName;
         NormalizedUserName = userName.ToUpperInvariant();
         MarkModified();
@@ -172,6 +175,8 @@ public class ApplicationUser : Entity
 
     public void SetEmail(string? email)
     {
+        if (Email != email)
+            RaiseEvent(new UserEmailChanged(Id, Email, email));
         Email = email;
         NormalizedEmail = email?.ToUpperInvariant();
         MarkModified();
@@ -179,12 +184,16 @@ public class ApplicationUser : Entity
 
     public void SetEmailConfirmed(bool confirmed)
     {
+        if (!EmailConfirmed && confirmed)
+            RaiseEvent(new UserEmailConfirmed(Id));
         EmailConfirmed = confirmed;
         MarkModified();
     }
 
     public void SetPasswordHash(string? passwordHash)
     {
+        if (PasswordHash != passwordHash && !string.IsNullOrEmpty(passwordHash))
+            RaiseEvent(new UserPasswordChanged(Id, PasswordChangeType.UserChange, null));
         PasswordHash = passwordHash;
         MarkModified();
     }
@@ -202,24 +211,37 @@ public class ApplicationUser : Entity
 
     public void SetPhoneNumber(string? phoneNumber)
     {
+        if (PhoneNumber != phoneNumber)
+            RaiseEvent(new UserPhoneNumberChanged(Id, PhoneNumber, phoneNumber));
         PhoneNumber = phoneNumber;
         MarkModified();
     }
 
     public void SetPhoneNumberConfirmed(bool confirmed)
     {
+        if (!PhoneNumberConfirmed && confirmed)
+            RaiseEvent(new UserPhoneNumberConfirmed(Id));
         PhoneNumberConfirmed = confirmed;
         MarkModified();
     }
 
     public void SetTwoFactorEnabled(bool enabled)
     {
+        if (TwoFactorEnabled != enabled)
+            RaiseEvent(enabled ? new UserTwoFactorEnabled(Id) : new UserTwoFactorDisabled(Id));
         TwoFactorEnabled = enabled;
         MarkModified();
     }
 
     public void SetLockoutEnd(DateTimeOffset? lockoutEnd)
     {
+        if (LockoutEnd != lockoutEnd)
+        {
+            if (lockoutEnd.HasValue && lockoutEnd > DateTimeOffset.UtcNow)
+                RaiseEvent(new UserLockedOut(Id, lockoutEnd, LockoutReason.TooManyFailedAttempts));
+            else if (LockoutEnd.HasValue && !lockoutEnd.HasValue)
+                RaiseEvent(new UserUnlocked(Id, null));
+        }
         LockoutEnd = lockoutEnd;
         MarkModified();
     }
@@ -250,24 +272,32 @@ public class ApplicationUser : Entity
 
     public void SetFirstName(string? firstName)
     {
+        if (FirstName != firstName)
+            RaiseEvent(new UserProfileNameChanged(Id, FirstName, LastName, firstName, LastName));
         FirstName = firstName;
         MarkModified();
     }
 
     public void SetLastName(string? lastName)
     {
+        if (LastName != lastName)
+            RaiseEvent(new UserProfileNameChanged(Id, FirstName, LastName, FirstName, lastName));
         LastName = lastName;
         MarkModified();
     }
 
     public void SetExpiresAt(DateTimeOffset? expiresAt)
     {
+        if (ExpiresAt != expiresAt)
+            RaiseEvent(new UserExpirationChanged(Id, ExpiresAt, expiresAt));
         ExpiresAt = expiresAt;
         MarkModified();
     }
 
     public void SetIsActive(bool isActive)
     {
+        if (IsActive != isActive)
+            RaiseEvent(isActive ? new UserActivated(Id) : new UserDeactivated(Id, null));
         IsActive = isActive;
         MarkModified();
     }
@@ -276,6 +306,7 @@ public class ApplicationUser : Entity
     {
         if (!Roles.Contains(roleId))
         {
+            RaiseEvent(new UserRoleAssigned(Id, roleId));
             Roles.Add(roleId);
             MarkModified();
         }
@@ -283,14 +314,17 @@ public class ApplicationUser : Entity
 
     public void RemoveRole(Guid roleId)
     {
-        if (Roles.Remove(roleId))
+        if (Roles.Contains(roleId))
         {
+            RaiseEvent(new UserRoleRemoved(Id, roleId));
+            Roles.Remove(roleId);
             MarkModified();
         }
     }
 
     public void AddClaim(string type, string value)
     {
+        RaiseEvent(new UserClaimAdded(Id, type, value));
         Claims.Add(new UserClaim(type, value));
         MarkModified();
     }
@@ -300,6 +334,7 @@ public class ApplicationUser : Entity
         var claim = Claims.FirstOrDefault(c => c.Type == type && c.Value == value);
         if (claim is not null)
         {
+            RaiseEvent(new UserClaimRemoved(Id, type, value));
             Claims.Remove(claim);
             MarkModified();
         }
@@ -310,6 +345,8 @@ public class ApplicationUser : Entity
         var claim = Claims.FirstOrDefault(c => c.Type == type && c.Value == oldValue);
         if (claim is not null)
         {
+            RaiseEvent(new UserClaimRemoved(Id, type, oldValue));
+            RaiseEvent(new UserClaimAdded(Id, type, newValue));
             Claims.Remove(claim);
             Claims.Add(new UserClaim(type, newValue));
             MarkModified();
@@ -318,6 +355,7 @@ public class ApplicationUser : Entity
 
     public void AddLogin(string loginProvider, string providerKey, string? providerDisplayName)
     {
+        RaiseEvent(new UserExternalLoginLinked(Id, loginProvider, providerDisplayName));
         Logins.Add(new UserLogin(loginProvider, providerKey, providerDisplayName));
         MarkModified();
     }
@@ -327,6 +365,7 @@ public class ApplicationUser : Entity
         var login = Logins.FirstOrDefault(l => l.LoginProvider == loginProvider && l.ProviderKey == providerKey);
         if (login is not null)
         {
+            RaiseEvent(new UserExternalLoginRemoved(Id, loginProvider));
             Logins.Remove(login);
             MarkModified();
         }

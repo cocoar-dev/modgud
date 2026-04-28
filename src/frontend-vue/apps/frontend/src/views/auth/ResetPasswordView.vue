@@ -2,11 +2,13 @@
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { CoarButton, CoarPasswordInput, CoarCard, CoarNote } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { useAuthStore } from '@/stores/auth.store'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const userId = computed(() => {
   const v = route.query.userId
@@ -28,15 +30,15 @@ const tokenMissing = computed(() => !userId.value || !token.value)
 async function submit() {
   if (loading.value) return
   if (tokenMissing.value) {
-    errorMessage.value = 'This reset link is invalid or expired.'
+    errorMessage.value = t('auth.resetPassword.invalidLink', {}, 'This reset link is invalid or expired.')
     return
   }
   if (!newPassword.value || !confirmPassword.value) {
-    errorMessage.value = 'Enter and confirm your new password.'
+    errorMessage.value = t('auth.resetPassword.missingPasswords', {}, 'Enter and confirm your new password.')
     return
   }
   if (newPassword.value !== confirmPassword.value) {
-    errorMessage.value = 'Passwords do not match.'
+    errorMessage.value = t('auth.resetPassword.mismatch', {}, 'Passwords do not match.')
     return
   }
 
@@ -48,10 +50,10 @@ async function submit() {
       Token: token.value,
       NewPassword: newPassword.value,
     })
-    successMessage.value = 'Password updated. You can sign in now.'
+    successMessage.value = t('auth.resetPassword.success', {}, 'Password updated. You can sign in now.')
     setTimeout(() => router.push('/login'), 1500)
   } catch (err: unknown) {
-    errorMessage.value = err instanceof Error ? err.message : 'Could not reset password.'
+    errorMessage.value = err instanceof Error ? err.message : t('auth.resetPassword.failed', {}, 'Could not reset password.')
   } finally {
     loading.value = false
   }
@@ -63,27 +65,27 @@ async function submit() {
     <CoarCard class="auth-card">
       <div class="auth-brand">
         <div class="auth-brand-logo">CA</div>
-        <h1 class="auth-title">Reset password</h1>
-        <p class="auth-subtitle">Choose a new password to continue</p>
+        <h1 class="auth-title">{{ t('auth.resetPassword.title', {}, 'Reset password') }}</h1>
+        <p class="auth-subtitle">{{ t('auth.resetPassword.subtitle', {}, 'Choose a new password to continue') }}</p>
       </div>
 
       <CoarNote v-if="tokenMissing" variant="error">
-        Reset link is missing required parameters. Request a new one from the forgot-password page.
+        {{ t('auth.resetPassword.missingParams', {}, 'Reset link is missing required parameters. Request a new one from the forgot-password page.') }}
       </CoarNote>
 
       <form v-else class="auth-form" @submit.prevent="submit">
-        <CoarPasswordInput v-model="newPassword" label="New password" autocomplete="new-password" :disabled="loading" />
-        <CoarPasswordInput v-model="confirmPassword" label="Confirm new password" autocomplete="new-password" :disabled="loading" />
+        <CoarPasswordInput v-model="newPassword" :label="t('auth.resetPassword.newPassword', {}, 'New password')" autocomplete="new-password" :disabled="loading" />
+        <CoarPasswordInput v-model="confirmPassword" :label="t('auth.resetPassword.confirmPassword', {}, 'Confirm new password')" autocomplete="new-password" :disabled="loading" />
 
         <CoarNote v-if="errorMessage" variant="error">{{ errorMessage }}</CoarNote>
         <CoarNote v-if="successMessage" variant="success">{{ successMessage }}</CoarNote>
 
         <CoarButton type="submit" variant="primary" :disabled="loading" :loading="loading">
-          Reset password
+          {{ t('auth.resetPassword.submit', {}, 'Reset password') }}
         </CoarButton>
 
         <div class="auth-links">
-          <a href="#" @click.prevent="router.push('/login')">Back to sign in</a>
+          <a href="#" @click.prevent="router.push('/login')">{{ t('auth.common.backToSignIn', {}, 'Back to sign in') }}</a>
         </div>
       </form>
     </CoarCard>

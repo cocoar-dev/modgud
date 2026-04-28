@@ -2,10 +2,12 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { CoarButton, CoarTextInput, CoarPasswordInput, CoarCard, CoarNote } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { useAuthStore } from '@/stores/auth.store'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const userName = ref('')
 const password = ref('')
@@ -19,7 +21,7 @@ const errorMessage = ref<string | undefined>(undefined)
 async function submit() {
     if (loading.value) return
     if (!userName.value || !password.value) {
-        errorMessage.value = 'Username and password are required.'
+        errorMessage.value = t('setup.requiredFields', {}, 'Username and password are required.')
         return
     }
 
@@ -37,7 +39,7 @@ async function submit() {
         router.push('/')
     } catch (err: unknown) {
         errorMessage.value =
-            err instanceof Error ? err.message : 'Setup failed. Please try again.'
+            err instanceof Error ? err.message : t('setup.failed', {}, 'Setup failed. Please try again.')
     } finally {
         loading.value = false
     }
@@ -49,40 +51,40 @@ async function submit() {
         <CoarCard class="auth-card">
             <div class="auth-brand">
                 <div class="auth-brand-logo">CA</div>
-                <h1 class="auth-title">First-time setup</h1>
-                <p class="auth-subtitle">Create the initial admin account</p>
+                <h1 class="auth-title">{{ t('setup.title', {}, 'First-time setup') }}</h1>
+                <p class="auth-subtitle">{{ t('setup.subtitle', {}, 'Create the initial admin account') }}</p>
             </div>
 
             <form class="auth-form" @submit.prevent="submit">
                 <CoarTextInput
                     v-model="userName"
-                    label="Username *"
+                    :label="t('setup.usernameRequired', {}, 'Username *')"
                     autocomplete="username"
                     autofocus
                     :disabled="loading"
                 />
                 <CoarPasswordInput
                     v-model="password"
-                    label="Password *"
+                    :label="t('setup.passwordRequired', {}, 'Password *')"
                     autocomplete="new-password"
                     :disabled="loading"
                 />
                 <CoarTextInput
                     v-model="email"
-                    label="Email"
+                    :label="t('common.email', {}, 'Email')"
                     autocomplete="email"
                     :disabled="loading"
                 />
                 <div class="form-row">
                     <CoarTextInput
                         v-model="firstName"
-                        label="First name"
+                        :label="t('admin.users.firstName', {}, 'First name')"
                         autocomplete="given-name"
                         :disabled="loading"
                     />
                     <CoarTextInput
                         v-model="lastName"
-                        label="Last name"
+                        :label="t('admin.users.lastName', {}, 'Last name')"
                         autocomplete="family-name"
                         :disabled="loading"
                     />
@@ -91,12 +93,9 @@ async function submit() {
                 <label class="demo-toggle">
                     <input type="checkbox" v-model="loadDemoData" :disabled="loading" />
                     <span class="demo-toggle-label">
-                        <strong>Load demo data</strong>
+                        <strong>{{ t('setup.loadDemoData', {}, 'Load demo data') }}</strong>
                         <small>
-                            Seeds 7 demo users, 4 permission-roles and 5 authorization-groups —
-                            including an auto-membership group that matches on email, and a
-                            nested group-of-groups. Default password for every demo user is
-                            <code>Demo1234!</code>. Skip this on production installs.
+                            {{ t('setup.loadDemoDataDescription', {}, 'Seeds 7 demo users, 4 permission-roles and 5 authorization-groups — including an auto-membership group that matches on email, and a nested group-of-groups. Default password for every demo user is Demo1234!. Skip this on production installs.') }}
                         </small>
                     </span>
                 </label>
@@ -109,7 +108,7 @@ async function submit() {
                     :disabled="loading"
                     :loading="loading"
                 >
-                    Create admin account
+                    {{ t('setup.createAdmin', {}, 'Create admin account') }}
                 </CoarButton>
             </form>
         </CoarCard>

@@ -11,7 +11,7 @@ using OtpNet;
 
 namespace Cocoar.Auth.Tests.Auth;
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(AuthCollection.Name)]
 [Trait("Category", TestCategories.TwoFactor)]
 public class EmailOtpTests : IAsyncLifetime
 {

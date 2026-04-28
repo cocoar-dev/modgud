@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
+import { CoarDataGridPanel, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import {
+  CoarButton,
   CoarContextMenu,
   CoarMenuItem,
+  CoarMenuDivider,
   useContextMenu,
+  useDialog,
+  useToast,
 } from '@cocoar/vue-ui'
+import { useI18n, useL10n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import { useModal } from '@/composables/useModal'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
@@ -33,6 +38,11 @@ interface PagedResponse<T> {
 
 const ui = useUI()
 const modal = useModal()
+const dialog = useDialog()
+const toast = useToast()
+const viewportMenu = useContextMenu()
+const { t, language } = useI18n()
+const { fmtDate } = useL10n()
 
 const users = ref<UserRow[]>([])
 const loading = ref(false)
@@ -83,30 +93,69 @@ const builder = CoarGridBuilder.create()
     selectedIds.value = event.api.getSelectedRows().map((r: UserRow) => r.Id)
     cellMenu.open(event.event as MouseEvent)
   })
+  .onViewportContextMenu(($event: MouseEvent) => {
+    viewportMenu.open($event)
+  })
   .columns([
-    (col: any) => col.field('UserName').header('Username').flex(1).minWidth(140),
-    (col: any) => col.field('Email').header('Email').flex(1),
-    (col: any) => col.field('FirstName').header('First Name').flex(1),
-    (col: any) => col.field('LastName').header('Last Name').flex(1),
-    (col: any) => col.field('IsActive').header('Active').width(90)
-      .option('valueGetter', (p: any) => p.data?.IsActive ? 'Yes' : 'No'),
-    (col: any) => col.field('CreatedAt').header('Created').width(180)
-      .option('valueGetter', (p: any) => p.data?.CreatedAt ? new Date(p.data.CreatedAt).toLocaleString() : ''),
+    (col: any) => col.field('UserName').header('Username', 'common.username').width(160),
+    (col: any) => col.field('FirstName').header('First Name', 'admin.users.firstName').flex(1),
+    (col: any) => col.field('LastName').header('Last Name', 'admin.users.lastName').flex(1),
+    (col: any) => col.icon('IsActive', { color: '#16a34a', size: 's' })
+      .option('valueGetter', (p: any) => p.data?.IsActive ? 'check' : '')
+      .header('Active', 'common.active').width(80),
+    (col: any) => col.field('Email').header('Email', 'common.email').flex(1),
+    (col: any) => col.field('CreatedAt').header('Created', 'common.created').width(180)
+      .option('valueGetter', (p: any) => p.data?.CreatedAt ? fmtDate(p.data.CreatedAt, true) : ''),
   ])
 
-function openDetails(id: string) {
-  modal.open(UserDetails, { id }, { size: 'm', closeOnBackdropClick: true })
+async function openDetails(id: string) {
+  const result = await modal.open<{ deleted?: boolean } | undefined>(
+    UserDetails, { id }, { size: 'm', closeOnBackdropClick: false },
+  )
+  if (result !== undefined) await loadUsers()
 }
 
-onMounted(() => {
+async function openCreate() {
+  const result = await modal.open<unknown>(UserDetails, { id: 'create' }, { size: 'm' })
+  if (result !== undefined) await loadUsers()
+}
+
+async function confirmDeleteSelected() {
+  const id = selectedIds.value[0]
+  if (!id) return
+  const row = users.value.find(u => u.Id === id)
+  const result = dialog.confirm({
+    title: t('admin.users.deleteTitle', {}, 'Delete User'),
+    message: t('admin.users.deleteMessage', { name: row?.UserName ?? id }, `Delete user "${row?.UserName ?? id}"? This soft-deletes the account.`),
+    confirmText: t('common.delete', {}, 'Delete'),
+    cancelText: t('common.cancel', {}, 'Cancel'),
+    confirmVariant: 'danger',
+  })
+  const ok = await result.result
+  if (!ok) return
+  try {
+    const http = useHttpClient('/api/admin/users')
+    await http.addPath(id).delete()
+    toast.success(t('admin.users.deleted', {}, 'User deleted.'))
+    await loadUsers()
+  } catch (e) {
+    const msg = e instanceof HttpClientError
+      ? ((e.body as any)?.detail ?? (e.body as any)?.title ?? t('common.deleteFailed', {}, 'Delete failed.'))
+      : t('common.deleteFailed', {}, 'Delete failed.')
+    toast.error(String(msg))
+  }
+}
+
+watch(language, () => {
   ui.set((ctx) => {
-    ctx.header.title = 'Users'
-    ctx.header.subTitle = 'Manage user accounts'
+    ctx.header.title = t('admin.users.title', {}, 'Users')
+    ctx.header.subTitle = t('admin.users.subtitle', {}, 'Manage user accounts')
     ctx.header.icon = 'users'
     ctx.content.container = false
   })
-  loadUsers()
-})
+}, { immediate: true })
+
+onMounted(() => loadUsers())
 
 onUnmounted(() => {
   ui.reset()
@@ -116,10 +165,21 @@ onUnmounted(() => {
 <template>
   <div class="list-wrap">
     <div v-if="loadError" class="load-error">{{ loadError }}</div>
-    <CoarDataGrid :builder="builder" show-search class="grid flex-1 min-h-0" bordered elevated />
+    <CoarDataGridPanel :builder="builder" class="flex-1 min-h-0" bordered elevated :search-placeholder="t('common.search', {}, 'Search...')">
+      <template #actions>
+        <CoarButton size="s" icon-start="plus" @click="openCreate">{{ t('common.create', {}, 'Create') }}</CoarButton>
+      </template>
+    </CoarDataGridPanel>
 
     <CoarContextMenu :menu="cellMenu">
-      <CoarMenuItem label="View Details" icon="eye" @clicked="selectedIds[0] && openDetails(selectedIds[0])" />
+      <CoarMenuItem :label="t('common.edit', {}, 'Edit')" icon="pencil" @clicked="selectedIds[0] && openDetails(selectedIds[0])" />
+      <CoarMenuItem :label="t('admin.common.newUser', {}, 'New User')" icon="plus" @clicked="openCreate" />
+      <CoarMenuDivider />
+      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="confirmDeleteSelected" />
+    </CoarContextMenu>
+
+    <CoarContextMenu :menu="viewportMenu">
+      <CoarMenuItem :label="t('admin.common.newUser', {}, 'New User')" icon="plus" @clicked="openCreate" />
     </CoarContextMenu>
   </div>
 </template>

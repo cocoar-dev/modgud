@@ -15,7 +15,7 @@ namespace Cocoar.Auth.Tests.Projections;
 /// Tests for UserDetailsProjection async projection functionality.
 /// These tests verify that the denormalized user view stays consistent with role changes.
 /// </summary>
-[Collection(IntegrationTestCollection.Name)]
+[Collection(PlatformCollection.Name)]
 [Trait("Category", TestCategories.GDPR)]
 public class UserDetailsProjectionTests : IAsyncLifetime
 {

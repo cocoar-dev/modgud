@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { CoarTextInput, CoarIcon, CoarTag, CoarSpinner } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { usePrincipalStore, type PrincipalLookupDto } from '@/stores/principal.store'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   modelValue: string[]
@@ -119,11 +122,11 @@ function onBlur() {
       />
       <div v-if="open && !disabled" class="dropdown">
         <div v-if="loading" class="hint">
-          <CoarSpinner size="xs" /> Searching...
+          <CoarSpinner size="xs" /> {{ t('common.searching', {}, 'Searching...') }}
         </div>
         <div v-else-if="results.length === 0" class="hint">
-          <span v-if="query">No matches.</span>
-          <span v-else>Start typing to search.</span>
+          <span v-if="query">{{ t('common.noMatches', {}, 'No matches.') }}</span>
+          <span v-else>{{ t('common.startTyping', {}, 'Start typing to search.') }}</span>
         </div>
         <button
           v-for="p in results"
