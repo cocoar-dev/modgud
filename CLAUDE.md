@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ Active vs. Legacy
+
+Two parallel codebases live here while we rebuild on TimeToDo's foundation:
+
+| Folder | Status | Purpose |
+|--------|--------|---------|
+| `src/dotnet-next/` | **ACTIVE** | New backend (TimeToDo Authentication + Authorization slices, extended with IdP-specific concerns) |
+| `src/frontend-next/` | **ACTIVE** | New frontend (TimeToDo shell, extended with OAuth/Realm admin views) |
+| `src/dotnet/` | LEGACY (read-only) | Old backend, kept as reference quarry. **Do not modify.** Port code from here into `dotnet-next/` as needed. |
+| `src/frontend-vue/` | LEGACY (read-only) | Old frontend, kept as reference quarry. **Do not modify.** Port views from here into `frontend-next/` as needed. |
+
+**Default to `*-next/` for any new work.** Once the new codebase is production-ready, the legacy folders are deleted and the `-next` ones renamed back. A pre-cutover snapshot will be tagged in git.
+
+The rest of this file describes the **legacy** `src/dotnet/` system. The new system's conventions will be documented in `src/dotnet-next/CLAUDE.md` once it stabilizes; until then, follow TimeToDo's patterns at `C:\git\cocoar\timetodo\website\technik\` and `\konzept\`.
+
 ## Project Overview
 
 Cocoar.Auth is an Identity Provider built with ASP.NET Core 10.0, using Clean Architecture, CQRS (Wolverine), and Event Sourcing (Marten/PostgreSQL).
@@ -15,14 +30,26 @@ cd src/dotnet
 # Build
 dotnet build
 
+# Run unit tests only (< 100ms, no Docker needed)
+dotnet test Cocoar.Auth.Tests.Unit
+
 # Run all tests (requires Docker for Testcontainers)
+# Integration tests run in 4 parallel collections (Admin, Auth, OAuthSecurity, Platform)
 dotnet test
 
 # Run specific test class
 dotnet test --filter "FullyQualifiedName~AuthenticationTests"
 
+# Run by category
+dotnet test --filter "Category=Smoke"
+dotnet test --filter "Category=Auth|Category=OAuth"
+
 # Run the API
 dotnet run --project Cocoar.Auth.Api
+
+# Pre-generate Wolverine/Marten handler code (eliminates runtime Roslyn compilation)
+# Run after changing handlers, projections, or aggregates
+cd Cocoar.Auth.Api && dotnet run --no-launch-profile -- codegen write
 ```
 
 ## Architecture
@@ -114,10 +141,19 @@ Only `ExposeAs<IInterface>()` entries needed in setup when an interface mapping 
 
 ## Testing
 
-All tests are integration tests using:
-- Testcontainers (PostgreSQL in Docker)
-- WebApplicationFactory with cookie-based authentication
-- 312 tests covering all features
+**Test Projects:**
+- **Cocoar.Auth.Tests.Unit** — Pure domain logic tests (< 100ms, no Docker)
+- **Cocoar.Auth.Tests** — Integration tests with Testcontainers (PostgreSQL in Docker)
+
+**Test Architecture:**
+- 4 parallel xUnit collections: Admin, Auth, OAuthSecurity, Platform
+- One shared PostgreSQL container (static singleton across collections)
+- Per-test-class database isolation (each class gets its own DB)
+- `maxParallelThreads: 4` in xunit.runner.json
+- Pre-generated Wolverine/Marten code (TypeLoadMode.Auto) eliminates runtime Roslyn compilation
+
+**Test Categories (filter with `--filter "Category=X"`):**
+Smoke, Auth, TwoFactor, OAuth, Admin, ExternalLogin, MultiTenancy, GDPR
 
 ## Key Dependencies
 

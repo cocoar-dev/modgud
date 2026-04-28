@@ -1,5 +1,13 @@
 # Cocoar.Auth - Identity Provider
 
+> ⚠️ **LEGACY — read-only reference.** Active development happens in `../dotnet-next/`.
+>
+> This folder is kept as a quarry for code we still need to port (Multi-Realm, OpenIddict integration, OAuth aggregates, GDPR masking, sessions, external login, granular gating).
+>
+> **Do not modify.** Bug fixes here are pointless — fix them in `../dotnet-next/` instead.
+>
+> Once `dotnet-next/` is production-ready, this folder is removed and `dotnet-next/` is renamed back to `dotnet/`. A pre-cutover snapshot will be tagged in git.
+
 A full-featured Identity Provider built with ASP.NET Core, Marten (PostgreSQL document database + event store), Wolverine (CQRS), and Clean Architecture.
 
 ## Current Status
