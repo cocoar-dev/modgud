@@ -14,9 +14,9 @@ public class StartUpConfiguration : IServerConfiguration
     /// </summary>
     public string? PublicUrl { get; set; }
 
-    public string? CertPath { get; set; } = "localhost.pfx";
+    public string? CertPath { get; set; } = null;
 
-    public string? CertPassword { get; set; } = "ABC12abc";
+    public string? CertPassword { get; set; } = null;
     
     public Logging Logging { get; set; } = new();
 

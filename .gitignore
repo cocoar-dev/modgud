@@ -399,3 +399,9 @@ website/.vitepress/dist/
 
 # pnpm
 .pnpm-store/
+
+
+# Cocoar.Auth dotnet-next runtime data (local-only secrets, generated keys, demo seeds)
+src/dotnet-next/Cocoar.Auth.Api/data/configuration.local.json
+src/dotnet-next/Cocoar.Auth.Api/data/keys/
+src/dotnet-next/Cocoar.Auth.Api/logs/

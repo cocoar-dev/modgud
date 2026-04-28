@@ -5,10 +5,11 @@
       "launchBrowser": true,
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
-        "UseNewEndpoints": "true"
+        "UseNewEndpoints": "true",
+        "ASPNETCORE_URLS": "http://localhost:9099"
       },
       "dotnetRunMessages": true,
-      "applicationUrl": ""
+      "applicationUrl": "http://localhost:9099"
     },
     "Docker": {
       "commandName": "Docker",
