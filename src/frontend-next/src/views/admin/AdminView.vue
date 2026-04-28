@@ -1,28 +1,82 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter, useRoute, RouterView } from 'vue-router'
 import { CoarMenu, CoarMenuItem } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
+import { useAuthStore } from '@/stores/auth.store'
 
 const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
 
 interface NavItem {
+  /** Section heading the item belongs to. Used to hide empty sections. */
+  section: 'authorization' | 'oauth' | 'identity' | 'system'
   label: string
+  icon: string
   path: string
-  icon?: string
+  /**
+   * Resource permissions that grant visibility. Matches if the user holds
+   * any of these. `app:admin` is a global bypass and applied implicitly by
+   * `authStore.hasPermission`.
+   */
+  requirePermissions: string[]
 }
 
-const navItems: NavItem[] = [
-  { label: '', path: '/admin/users' },
-  { label: '', path: '/admin/roles' },
-  { label: '', path: '/admin/groups' },
-  { label: '', path: '/admin/simulator' },
-  { label: '', path: '/admin/auth-log' },
-  { label: '', path: '/admin/change-requests' },
-  { label: '', path: '/admin/idp-config' },
-  { label: '', path: '/admin/settings' },
+// Order matters — drives both rendering order and the section-grouping below.
+const allNavItems: NavItem[] = [
+  // Authorization
+  { section: 'authorization', label: 'nav.users', icon: 'users', path: '/admin/users', requirePermissions: ['user:read'] },
+  { section: 'authorization', label: 'nav.roles', icon: 'shield', path: '/admin/roles', requirePermissions: ['permission-role:read'] },
+  { section: 'authorization', label: 'nav.groups', icon: 'users-round', path: '/admin/groups', requirePermissions: ['authorization-group:read'] },
+  { section: 'authorization', label: 'admin.simulator.title', icon: 'flask-conical', path: '/admin/simulator', requirePermissions: ['user:read'] },
+  // OAuth & Federation
+  { section: 'oauth', label: 'admin.oauthClients.title', icon: 'app-window', path: '/admin/oauth/clients', requirePermissions: ['oauth-client:read'] },
+  { section: 'oauth', label: 'admin.oauthScopes.title', icon: 'tags', path: '/admin/oauth/scopes', requirePermissions: ['oauth-scope:read'] },
+  { section: 'oauth', label: 'admin.oauthApis.title', icon: 'server', path: '/admin/oauth/apis', requirePermissions: ['oauth-api:read'] },
+  // Identity sources
+  { section: 'identity', label: 'admin.loginProviders.title', icon: 'log-in', path: '/admin/login-providers', requirePermissions: ['login-provider:read'] },
+  { section: 'identity', label: 'admin.idpConfig.title', icon: 'key-round', path: '/admin/idp-config', requirePermissions: ['idp-config:read'] },
+  // System
+  { section: 'system', label: 'admin.realms.title', icon: 'globe', path: '/admin/realms', requirePermissions: ['realm:read'] },
+  { section: 'system', label: 'admin.authLog.title', icon: 'scroll-text', path: '/admin/auth-log', requirePermissions: ['auth-log:read'] },
+  { section: 'system', label: 'admin.changeRequests.title', icon: 'inbox', path: '/admin/change-requests', requirePermissions: ['user:write'] },
+  { section: 'system', label: 'nav.settings', icon: 'settings', path: '/admin/settings', requirePermissions: ['app:admin'] },
 ]
+
+// Per-resource visibility — `authStore.hasPermission` already bypasses on `app:admin`.
+function canSee(item: NavItem): boolean {
+  return item.requirePermissions.some((p) => authStore.hasPermission(p))
+}
+
+const visibleItems = computed(() => allNavItems.filter(canSee))
+
+interface Section {
+  key: NavItem['section']
+  heading: string
+  items: NavItem[]
+}
+
+const sections = computed<Section[]>(() => {
+  const grouped: Record<NavItem['section'], NavItem[]> = {
+    authorization: [],
+    oauth: [],
+    identity: [],
+    system: [],
+  }
+  for (const item of visibleItems.value) {
+    grouped[item.section].push(item)
+  }
+  // Render-order: same as `allNavItems`, but skip empty sections.
+  const all: Section[] = [
+    { key: 'authorization', heading: t('admin.section.authorization', {}, 'Autorisierung'), items: grouped.authorization },
+    { key: 'oauth', heading: t('admin.section.oauth', {}, 'OAuth & Federation'), items: grouped.oauth },
+    { key: 'identity', heading: t('admin.section.identity', {}, 'Identitätsquellen'), items: grouped.identity },
+    { key: 'system', heading: t('admin.section.system', {}, 'System'), items: grouped.system },
+  ]
+  return all.filter((s) => s.items.length > 0)
+})
 
 function isActive(item: NavItem): boolean {
   return route.path.startsWith(item.path)
@@ -32,57 +86,20 @@ function isActive(item: NavItem): boolean {
 <template>
   <div class="flex min-h-0 flex-1">
     <!-- Left: Navigation menu -->
-    <div class="sub-nav flex-shrink-0 p-4 flex flex-col min-h-0">
-      <CoarMenu>
-        <CoarMenuItem
-          icon="users"
-          :label="t('nav.users', {}, 'Users')"
-          :class="{ 'admin-menu-item--active': isActive(navItems[0]) }"
-          @clicked="router.push('/admin/users')"
-        />
-        <CoarMenuItem
-          icon="shield"
-          :label="t('nav.roles', {}, 'Roles')"
-          :class="{ 'admin-menu-item--active': isActive(navItems[1]) }"
-          @clicked="router.push('/admin/roles')"
-        />
-        <CoarMenuItem
-          icon="users"
-          :label="t('nav.groups', {}, 'Groups')"
-          :class="{ 'admin-menu-item--active': isActive(navItems[2]) }"
-          @clicked="router.push('/admin/groups')"
-        />
-        <CoarMenuItem
-          icon="flask-conical"
-          :label="t('admin.simulator.title', {}, 'Policy Simulator')"
-          :class="{ 'admin-menu-item--active': isActive(navItems[3]) }"
-          @clicked="router.push('/admin/simulator')"
-        />
-        <CoarMenuItem
-          icon="scroll-text"
-          :label="t('admin.authLog.title', {}, 'Auth Log')"
-          :class="{ 'admin-menu-item--active': isActive(navItems[4]) }"
-          @clicked="router.push('/admin/auth-log')"
-        />
-        <CoarMenuItem
-          icon="inbox"
-          :label="t('admin.changeRequests.title', {}, 'Change requests')"
-          :class="{ 'admin-menu-item--active': isActive(navItems[5]) }"
-          @clicked="router.push('/admin/change-requests')"
-        />
-        <CoarMenuItem
-          icon="key-round"
-          :label="t('admin.idpConfig.title', {}, 'Identity Providers')"
-          :class="{ 'admin-menu-item--active': isActive(navItems[6]) }"
-          @clicked="router.push('/admin/idp-config')"
-        />
-        <CoarMenuItem
-          icon="settings"
-          :label="t('nav.settings', {}, 'Settings')"
-          :class="{ 'admin-menu-item--active': isActive(navItems[7]) }"
-          @clicked="router.push('/admin/settings')"
-        />
-      </CoarMenu>
+    <div class="sub-nav flex-shrink-0 p-4 flex flex-col min-h-0 overflow-y-auto">
+      <template v-for="section in sections" :key="section.key">
+        <div class="section-heading">{{ section.heading }}</div>
+        <CoarMenu class="mb-3">
+          <CoarMenuItem
+            v-for="item in section.items"
+            :key="item.path"
+            :icon="item.icon"
+            :label="t(item.label, {}, item.label)"
+            :class="{ 'admin-menu-item--active': isActive(item) }"
+            @clicked="router.push(item.path)"
+          />
+        </CoarMenu>
+      </template>
     </div>
 
     <!-- Right: Content -->
@@ -96,9 +113,22 @@ function isActive(item: NavItem): boolean {
 
 <style scoped>
 .sub-nav {
-  width: 13rem;
+  width: 14rem;
   height: 100%;
   --coar-background-neutral-primary: var(--coar-background-neutral-secondary, #f7f7f7);
+}
+
+.section-heading {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #525e76;
+  padding: 0 0.5rem 0.25rem;
+  margin-top: 0.5rem;
+}
+.section-heading:first-of-type {
+  margin-top: 0;
 }
 
 .admin-menu-item--active {

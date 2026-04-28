@@ -47,6 +47,10 @@ const routes = [
           path: 'profile',
           component: () => import('@/views/profile/ProfileView.vue'),
         },
+        {
+          path: 'confirm-deletion',
+          component: () => import('@/views/profile/ConfirmDeletionView.vue'),
+        },
         // Admin routes (permission check in route guard)
         {
           path: 'admin',
@@ -135,6 +139,82 @@ const routes = [
               },
             },
             {
+              path: 'oauth/clients',
+              component: () => import('@/views/admin/oauth/ClientList.vue'),
+              meta: {
+                routedFragments: [
+                  {
+                    type: 'modal',
+                    path: ':id',
+                    component: () => import('@/views/admin/oauth/ClientDetails.vue'),
+                    overlayOptions: {
+                      size: { minHeight: '80vh', maxHeight: '90vh' },
+                    },
+                  },
+                ],
+              },
+            },
+            {
+              path: 'oauth/scopes',
+              component: () => import('@/views/admin/oauth/ScopeList.vue'),
+              meta: {
+                routedFragments: [
+                  {
+                    type: 'modal',
+                    path: ':id',
+                    component: () => import('@/views/admin/oauth/ScopeDetails.vue'),
+                  },
+                ],
+              },
+            },
+            {
+              path: 'oauth/apis',
+              component: () => import('@/views/admin/oauth/ApiList.vue'),
+              meta: {
+                routedFragments: [
+                  {
+                    type: 'modal',
+                    path: ':id',
+                    component: () => import('@/views/admin/oauth/ApiDetails.vue'),
+                    overlayOptions: {
+                      size: { minHeight: '80vh', maxHeight: '90vh' },
+                    },
+                  },
+                ],
+              },
+            },
+            {
+              path: 'login-providers',
+              component: () => import('@/views/admin/login-providers/LoginProviderList.vue'),
+              meta: {
+                routedFragments: [
+                  {
+                    type: 'modal',
+                    path: ':id',
+                    component: () => import('@/views/admin/login-providers/LoginProviderDetails.vue'),
+                    overlayOptions: {
+                      size: { minHeight: '80vh', maxHeight: '90vh' },
+                    },
+                  },
+                ],
+              },
+            },
+            {
+              path: 'realms',
+              component: () => import('@/views/admin/realms/RealmList.vue'),
+              meta: {
+                routedFragments: [
+                  {
+                    // The :id slot is reused as `slug` inside RealmDetails — realms are
+                    // addressed by slug throughout the API.
+                    type: 'modal',
+                    path: ':id',
+                    component: () => import('@/views/admin/realms/RealmDetails.vue'),
+                  },
+                ],
+              },
+            },
+            {
               path: 'settings',
               component: () => import('@/views/admin/AppSettingsView.vue'),
             },
@@ -180,9 +260,20 @@ router.beforeEach(async (to) => {
     return redirect ? `/login?redirect=${encodeURIComponent(redirect)}` : '/login'
   }
 
-  // Admin routes require app:admin permission
-  if (to.path.startsWith('/admin') && !authStore.hasPermission('app:admin')) {
-    return '/dashboard'
+  // Admin routes require *any* admin-resource read permission. The per-resource
+  // sidebar gating in AdminView further hides individual menu items the user
+  // cannot see; this guard just keeps users with zero admin permissions out of
+  // the empty admin shell. `hasPermission` already short-circuits on `app:admin`.
+  if (to.path.startsWith('/admin')) {
+    const ADMIN_PERMS = [
+      'user:read', 'permission-role:read', 'authorization-group:read',
+      'oauth-client:read', 'oauth-scope:read', 'oauth-api:read',
+      'login-provider:read', 'idp-config:read', 'realm:read',
+      'auth-log:read', 'session:read',
+    ]
+    if (!ADMIN_PERMS.some((p) => authStore.hasPermission(p))) {
+      return '/dashboard'
+    }
   }
 
   return true

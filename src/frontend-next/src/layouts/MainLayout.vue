@@ -83,6 +83,28 @@ const connectionColor = computed(() =>
     signalR.state.value === 'Connected' ? 'var(--coar-background-semantic-success-bold)' : 'var(--coar-background-semantic-error-bold)'
 )
 
+// Permissions that grant access to *any* admin area. Mirrors the resource list
+// in `AdminView.vue` so the top-level "Administration" entry hides cleanly when
+// the user has zero admin permissions. `hasPermission` already short-circuits
+// on `app:admin`, so we don't need to list it explicitly.
+const ADMIN_RESOURCE_PERMISSIONS = [
+    'user:read',
+    'permission-role:read',
+    'authorization-group:read',
+    'oauth-client:read',
+    'oauth-scope:read',
+    'oauth-api:read',
+    'login-provider:read',
+    'idp-config:read',
+    'realm:read',
+    'auth-log:read',
+    'session:read',
+] as const
+
+const hasAnyAdminPermission = computed(() =>
+    ADMIN_RESOURCE_PERMISSIONS.some((p) => authStore.hasPermission(p))
+)
+
 </script>
 
 <template>
@@ -142,7 +164,7 @@ const connectionColor = computed(() =>
                 <CoarSidebarSpacer height="4px" />
                 <CoarSidebarItem icon="layout-dashboard" :label="t('nav.dashboard', {}, 'Dashboard')"
                     :active="route.path === '/dashboard'" @click="router.push('/dashboard')" />
-                <template v-if="authStore.hasPermission('app:admin')">
+                <template v-if="hasAnyAdminPermission">
                     <CoarSidebarDivider />
                     <CoarSidebarItem icon="cog"
                         :label="t('nav.administration', {}, 'Administration')" :active="route.path.startsWith('/admin')"

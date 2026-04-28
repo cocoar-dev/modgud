@@ -27,7 +27,159 @@ watch(language, () => ui.set((ctx) => {
 }), { immediate: true })
 
 // Navigation
-const activeSection = ref<'account' | 'security' | 'preferences'>('account')
+const activeSection = ref<'account' | 'security' | 'sessions' | 'privacy' | 'preferences'>('account')
+
+// ─── Sessions self-service ────────────────────────────────────────────────
+import type { SessionDto, SessionListDto } from '@/models/session'
+const sessionsHttp = useHttpClient('/api/auth/sessions')
+const sessions = ref<SessionDto[]>([])
+const sessionsLoading = ref(false)
+const sessionsError = ref('')
+const revokingSessionId = ref<string | null>(null)
+const revokingAll = ref(false)
+
+async function loadSessions() {
+  if (sessionsLoading.value) return
+  sessionsLoading.value = true
+  sessionsError.value = ''
+  try {
+    const res = await sessionsHttp.get<SessionListDto>()
+    sessions.value = res.Sessions ?? []
+  } catch (e: any) {
+    sessionsError.value = e?.message ?? String(e)
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+
+async function revokeSession(id: string) {
+  if (!confirm(t('profile.sessions.confirmRevoke', {}, 'Diese Sitzung wirklich beenden?'))) return
+  revokingSessionId.value = id
+  try {
+    await sessionsHttp.addPath(id).delete()
+    sessions.value = sessions.value.filter((s) => s.Id !== id)
+  } catch (e: any) {
+    sessionsError.value = e?.message ?? String(e)
+  } finally {
+    revokingSessionId.value = null
+  }
+}
+
+async function revokeAllSessions() {
+  if (!confirm(t('profile.sessions.confirmRevokeAll', {}, 'Wirklich überall abmelden? Du wirst neu angemeldet.'))) return
+  revokingAll.value = true
+  try {
+    await sessionsHttp.delete()
+    // Best-effort UX — backend dropped all our sessions, including the current one.
+    // Force a hard redirect to /login so the cleared cookie is honored.
+    window.location.assign('/login')
+  } catch (e: any) {
+    sessionsError.value = e?.message ?? String(e)
+    revokingAll.value = false
+  }
+}
+
+// ─── GDPR / Privacy self-service ──────────────────────────────────────────
+import type { DeletionStatusDto } from '@/models/gdpr'
+const gdprHttp = useHttpClient('/api/auth')
+const deletionStatus = ref<DeletionStatusDto | null>(null)
+const exportRunning = ref(false)
+const deleteRequestRunning = ref(false)
+const deleteCancelRunning = ref(false)
+const deletePassword = ref('')
+const deleteReason = ref('')
+const showDeleteForm = ref(false)
+const privacyError = ref('')
+const privacyMessage = ref('')
+
+async function loadDeletionStatus() {
+  privacyError.value = ''
+  try {
+    deletionStatus.value = await gdprHttp.addPath('deletion-status').get<DeletionStatusDto>()
+  } catch (e: any) {
+    privacyError.value = e?.message ?? String(e)
+  }
+}
+
+async function exportMyData() {
+  if (exportRunning.value) return
+  exportRunning.value = true
+  privacyError.value = ''
+  try {
+    // Fetch the JSON dump and trigger a browser download — keeping the user on the page.
+    const res = await fetch('/api/auth/export-data', { credentials: 'include' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `cocoar-auth-export-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (e: any) {
+    privacyError.value = e?.message ?? String(e)
+  } finally {
+    exportRunning.value = false
+  }
+}
+
+async function requestDeletion() {
+  if (deleteRequestRunning.value) return
+  if (!deletePassword.value) {
+    privacyError.value = t('profile.privacy.passwordRequired', {}, 'Passwort ist erforderlich.')
+    return
+  }
+  deleteRequestRunning.value = true
+  privacyError.value = ''
+  privacyMessage.value = ''
+  try {
+    await gdprHttp.addPath('delete-account').post({
+      Password: deletePassword.value,
+      Reason: deleteReason.value.trim() || null,
+    })
+    privacyMessage.value = t('profile.privacy.deleteRequested', {},
+      'Bestätigungs-Mail wurde gesendet. Bitte über den Link in der Mail bestätigen.')
+    deletePassword.value = ''
+    deleteReason.value = ''
+    showDeleteForm.value = false
+    await loadDeletionStatus()
+  } catch (e: any) {
+    privacyError.value = e?.body?.Message ?? e?.message ?? String(e)
+  } finally {
+    deleteRequestRunning.value = false
+  }
+}
+
+async function cancelDeletion() {
+  if (deleteCancelRunning.value) return
+  if (!confirm(t('profile.privacy.confirmCancel', {}, 'Löschanfrage zurückziehen?'))) return
+  deleteCancelRunning.value = true
+  privacyError.value = ''
+  try {
+    await gdprHttp.addPath('cancel-deletion').post({})
+    privacyMessage.value = t('profile.privacy.cancelled', {}, 'Löschanfrage zurückgezogen.')
+    await loadDeletionStatus()
+  } catch (e: any) {
+    privacyError.value = e?.body?.Message ?? e?.message ?? String(e)
+  } finally {
+    deleteCancelRunning.value = false
+  }
+}
+
+function deviceIcon(s: SessionDto): string {
+  const dt = (s.DeviceType ?? '').toLowerCase()
+  if (dt.includes('mobile') || dt.includes('phone')) return 'smartphone'
+  if (dt.includes('tablet')) return 'tablet'
+  return 'monitor'
+}
+
+function deviceLabel(s: SessionDto): string {
+  const browser = [s.Browser, s.BrowserVersion].filter(Boolean).join(' ')
+  const os = [s.OperatingSystem, s.OsVersion].filter(Boolean).join(' ')
+  return [browser, os].filter(Boolean).join(' · ') || (s.DeviceType ?? t('profile.sessions.unknownDevice', {}, 'Unbekanntes Gerät'))
+}
 
 // MFA state
 const mfaStatus = ref<{ Enabled: boolean } | null>(null)
@@ -249,9 +401,24 @@ onMounted(() => {
   loadRequest()
   loadExternalLinks()
   loadAvailableIdps()
+  // Eagerly fetch deletion status — it drives the "Konto löschen" button state
+  // even if the user never opens the Privacy section.
+  loadDeletionStatus()
 })
 
 watch(() => authStore.user, () => seedProfileForm())
+
+// Lazy-load sessions only when the user actually navigates to the Sessions tab.
+// Same idea for the privacy/GDPR section — keeps the initial profile render
+// snappy and avoids hitting the API for tabs the user never opens.
+watch(activeSection, (section) => {
+  if (section === 'sessions' && sessions.value.length === 0 && !sessionsLoading.value) {
+    loadSessions()
+  }
+  if (section === 'privacy' && !deletionStatus.value) {
+    loadDeletionStatus()
+  }
+})
 
 async function loadMfaStatus() {
   try { mfaStatus.value = await mfaHttp.addPath('status').get() } catch { /* ignore */ }
@@ -397,6 +564,18 @@ function onMfaSetupClose(enabled: boolean) {
           :label="t('profile.tabSecurity', {}, 'Security')"
           :class="{ 'profile-menu-item--active': activeSection === 'security' }"
           @clicked="activeSection = 'security'"
+        />
+        <CoarMenuItem
+          icon="monitor"
+          :label="t('profile.tabSessions', {}, 'Sitzungen')"
+          :class="{ 'profile-menu-item--active': activeSection === 'sessions' }"
+          @clicked="activeSection = 'sessions'"
+        />
+        <CoarMenuItem
+          icon="shield-check"
+          :label="t('profile.tabPrivacy', {}, 'Datenschutz')"
+          :class="{ 'profile-menu-item--active': activeSection === 'privacy' }"
+          @clicked="activeSection = 'privacy'"
         />
         <CoarMenuItem
           icon="sliders-horizontal"
@@ -705,6 +884,146 @@ function onMfaSetupClose(enabled: boolean) {
         </div>
         </template>
 
+        <!-- ═══ Sessions ═══ -->
+        <template v-if="activeSection === 'sessions'">
+          <CoarCard elevated>
+            <div class="p-6">
+              <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-3">
+                  <CoarIcon name="monitor" size="m" class="text-surface-500" />
+                  <div>
+                    <h2 class="text-lg font-semibold">{{ t('profile.sessions.title', {}, 'Aktive Sitzungen') }}</h2>
+                    <p class="text-sm text-surface-500">{{ t('profile.sessions.description', {}, 'Geräte, mit denen du derzeit angemeldet bist.') }}</p>
+                  </div>
+                </div>
+                <CoarButton variant="danger" :loading="revokingAll"
+                  :disabled="sessionsLoading || sessions.length === 0"
+                  @click="revokeAllSessions">
+                  {{ t('profile.sessions.revokeAll', {}, 'Überall abmelden') }}
+                </CoarButton>
+              </div>
+
+              <div v-if="sessionsLoading && sessions.length === 0" class="text-sm text-surface-400">
+                {{ t('common.loading', {}, 'Laden...') }}
+              </div>
+              <div v-else-if="sessionsError" class="text-sm text-red-600">{{ sessionsError }}</div>
+              <div v-else-if="sessions.length === 0" class="text-sm text-surface-400">
+                {{ t('profile.sessions.none', {}, 'Keine Sitzungen vorhanden.') }}
+              </div>
+              <div v-else class="space-y-2">
+                <div v-for="s in sessions" :key="s.Id"
+                  class="flex items-center gap-3 rounded border border-surface-200 bg-surface-50 px-4 py-3"
+                  :class="{ 'session-current': s.IsCurrent }">
+                  <CoarIcon :name="deviceIcon(s)" size="m" class="text-surface-500" />
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium flex items-center gap-2">
+                      {{ deviceLabel(s) }}
+                      <span v-if="s.IsCurrent" class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                        {{ t('profile.sessions.current', {}, 'Aktuelle Sitzung') }}
+                      </span>
+                    </div>
+                    <div class="text-xs text-surface-500 truncate">
+                      <span v-if="s.IpAddress">IP: {{ s.IpAddress }} · </span>
+                      {{ t('profile.sessions.lastActive', {}, 'Zuletzt aktiv:') }}
+                      {{ new Date(s.LastActiveAt).toLocaleString() }}
+                      · {{ t('profile.sessions.created', {}, 'Erstellt:') }}
+                      {{ new Date(s.CreatedAt).toLocaleDateString() }}
+                    </div>
+                  </div>
+                  <button class="text-surface-400 hover:text-red-600 transition"
+                    :disabled="s.IsCurrent || revokingSessionId === s.Id"
+                    :title="s.IsCurrent
+                      ? t('profile.sessions.cantRevokeCurrent', {}, 'Aktuelle Sitzung kann hier nicht beendet werden — bitte abmelden.')
+                      : t('profile.sessions.revoke', {}, 'Beenden')"
+                    @click="revokeSession(s.Id)">
+                    <CoarIcon name="log-out" size="s" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </CoarCard>
+        </template>
+
+        <!-- ═══ Privacy / GDPR ═══ -->
+        <template v-if="activeSection === 'privacy'">
+          <div class="profile-card-grid">
+            <!-- Data export -->
+            <CoarCard elevated>
+              <div class="p-6 space-y-3">
+                <div class="flex items-center gap-3">
+                  <CoarIcon name="download" size="m" class="text-surface-500" />
+                  <h2 class="text-lg font-semibold">{{ t('profile.privacy.exportTitle', {}, 'Daten exportieren') }}</h2>
+                </div>
+                <p class="text-sm text-surface-600">
+                  {{ t('profile.privacy.exportDescription', {},
+                    'Alle Daten, die wir über dich gespeichert haben (Profil, Sicherheit, Sitzungen, Login-Historie), als JSON-Download.') }}
+                </p>
+                <CoarButton :loading="exportRunning" @click="exportMyData">
+                  {{ t('profile.privacy.exportButton', {}, 'Export herunterladen') }}
+                </CoarButton>
+              </div>
+            </CoarCard>
+
+            <!-- Account deletion -->
+            <CoarCard elevated>
+              <div class="p-6 space-y-3">
+                <div class="flex items-center gap-3">
+                  <CoarIcon name="user-x" size="m" class="text-red-600" />
+                  <h2 class="text-lg font-semibold">{{ t('profile.privacy.deleteTitle', {}, 'Konto löschen') }}</h2>
+                </div>
+
+                <CoarNote v-if="deletionStatus?.IsPending" variant="warning">
+                  {{ t('profile.privacy.statusPending', {}, 'Löschanfrage läuft.') }}
+                  <span v-if="deletionStatus.ConfirmationDeadline">
+                    {{ t('profile.privacy.confirmBy', {}, 'Bitte bis') }}
+                    {{ new Date(deletionStatus.ConfirmationDeadline).toLocaleString() }}
+                    {{ t('profile.privacy.confirmEmail', {}, 'über die zugesandte Mail bestätigen.') }}
+                  </span>
+                </CoarNote>
+                <CoarNote v-else-if="deletionStatus?.IsDataMasked" variant="info">
+                  {{ t('profile.privacy.statusMasked', {}, 'Personenbezogene Daten wurden bereits maskiert.') }}
+                </CoarNote>
+                <p v-else class="text-sm text-surface-600">
+                  {{ t('profile.privacy.deleteDescription', {},
+                    'Persönliche Daten werden nach Bestätigung per E-Mail-Link gelöscht. Aus Audit-Gründen bleibt der Event-Stream maskiert erhalten.') }}
+                </p>
+
+                <div v-if="deletionStatus?.IsPending" class="flex gap-2">
+                  <CoarButton variant="secondary" :loading="deleteCancelRunning" @click="cancelDeletion">
+                    {{ t('profile.privacy.cancelButton', {}, 'Anfrage zurückziehen') }}
+                  </CoarButton>
+                </div>
+                <div v-else-if="!deletionStatus?.IsDeleted">
+                  <div v-if="!showDeleteForm">
+                    <CoarButton variant="danger" @click="showDeleteForm = true">
+                      {{ t('profile.privacy.deleteButton', {}, 'Konto löschen anfragen') }}
+                    </CoarButton>
+                  </div>
+                  <div v-else class="space-y-2">
+                    <CoarFormField :label="t('profile.privacy.password', {}, 'Aktuelles Passwort')">
+                      <CoarTextInput v-model="deletePassword" type="password" />
+                    </CoarFormField>
+                    <CoarFormField :label="t('profile.privacy.reason', {}, 'Grund (optional)')">
+                      <CoarTextInput v-model="deleteReason" />
+                    </CoarFormField>
+                    <div class="flex gap-2">
+                      <CoarButton variant="danger" :loading="deleteRequestRunning" @click="requestDeletion">
+                        {{ t('profile.privacy.confirmDelete', {}, 'Bestätigungs-Mail senden') }}
+                      </CoarButton>
+                      <CoarButton variant="ghost" @click="showDeleteForm = false; deletePassword = ''; deleteReason = ''">
+                        {{ t('common.cancel', {}, 'Abbrechen') }}
+                      </CoarButton>
+                    </div>
+                  </div>
+                </div>
+
+                <p v-if="privacyError" class="text-sm text-red-600">{{ privacyError }}</p>
+                <p v-if="privacyMessage" class="text-sm text-green-700">{{ privacyMessage }}</p>
+              </div>
+            </CoarCard>
+          </div>
+        </template>
+
         <!-- ═══ Preferences ═══ -->
         <template v-if="activeSection === 'preferences'">
         <div class="profile-card-grid">
@@ -812,6 +1131,11 @@ function onMfaSetupClose(enabled: boolean) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 1.5rem;
+}
+
+.session-current {
+  border-color: var(--coar-border-semantic-success, #86efac) !important;
+  background: var(--coar-background-semantic-success-subtle, #f0fdf4) !important;
 }
 
 .profile-menu-item--active {
