@@ -22,6 +22,7 @@
     <PackageReference Include="Riok.Mapperly" />
     <PackageReference Include="System.Linq.Async.Queryable" />
     <PackageReference Include="Cocoar.Reflectensions" />
+    <PackageReference Include="BCrypt.Net-Next" />
   </ItemGroup>
 
   <ItemGroup>

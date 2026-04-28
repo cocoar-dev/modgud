@@ -8,6 +8,8 @@
     <PackageReference Include="ErrorOr" />
     <PackageReference Include="Riok.Mapperly" />
     <PackageReference Include="WolverineFx.Marten" />
+    <PackageReference Include="Marten" />
+    <PackageReference Include="BCrypt.Net-Next" />
   </ItemGroup>
 
   <ItemGroup>

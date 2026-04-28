@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Setup;
 using Cocoar.Auth.Domain.Realms;
@@ -117,7 +118,16 @@ public static class DependencyInjection
             // is registered out of the box. App-specific resources (todo, customer, …)
             // are added by the host app's adoption layer.
             opt.RegisterResource("app", "admin");
+            // OAuth admin surface — gated separately from the global app:admin so
+            // an "OAuth Manager" role can be granted without full app admin.
+            opt.RegisterResource("oauth", "admin");
+            opt.RegisterResource("login-provider", "admin");
         });
+
+        // OAuth admin slice services — both consume the tenant-scoped IDocumentSession
+        // injected by TenantedSessionFactory, so calls land in the correct realm DB.
+        services.AddScoped<OAuthAdminService>();
+        services.AddScoped<LoginProviderService>();
 
         // Register JsEval (Linq-enabled + Principal discriminator mappings for Type.Is() in membership scripts)
         services.AddJsEval(b => b

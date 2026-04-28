@@ -1,0 +1,69 @@
+using ErrorOr;
+
+namespace Cocoar.Auth.Application.Errors;
+
+public static class OAuthErrors
+{
+    public static Error ClientIdAlreadyExists(string clientId) => Error.Conflict(
+        code: "OAuth.ClientIdAlreadyExists",
+        description: $"An OAuth client with ID '{clientId}' already exists.");
+
+    public static Error ClientNotFound(string id) => Error.NotFound(
+        code: "OAuth.ClientNotFound",
+        description: $"OAuth client with ID '{id}' was not found.");
+
+    public static Error InvalidClientType(string clientType) => Error.Validation(
+        code: "OAuth.InvalidClientType",
+        description: $"Invalid client type '{clientType}'. Must be 'public' or 'confidential'.");
+
+    public static Error InvalidConsentType(string consentType) => Error.Validation(
+        code: "OAuth.InvalidConsentType",
+        description: $"Invalid consent type '{consentType}'. Must be 'explicit', 'implicit', or 'external'.");
+
+    public static Error CannotRegenerateSecretForPublicClient => Error.Validation(
+        code: "OAuth.CannotRegenerateSecretForPublicClient",
+        description: "Cannot regenerate secret for a public client. Only confidential clients have secrets.");
+
+    public static Error ScopeNameAlreadyExists(string name) => Error.Conflict(
+        code: "OAuth.ScopeNameAlreadyExists",
+        description: $"An OAuth scope with name '{name}' already exists.");
+
+    public static Error ScopeNotFound(string id) => Error.NotFound(
+        code: "OAuth.ScopeNotFound",
+        description: $"OAuth scope with ID '{id}' was not found.");
+
+    public static Error CannotModifyStandardScope(string name) => Error.Validation(
+        code: "OAuth.CannotModifyStandardScope",
+        description: $"Cannot modify the standard scope '{name}'.");
+
+    public static Error CannotDeleteStandardScope(string name) => Error.Validation(
+        code: "OAuth.CannotDeleteStandardScope",
+        description: $"Cannot delete the standard scope '{name}'.");
+
+    public static Error ApiNameAlreadyExists(string name) => Error.Conflict(
+        code: "OAuth.ApiNameAlreadyExists",
+        description: $"An API with name '{name}' already exists.");
+
+    public static Error ApiNotFound(string id) => Error.NotFound(
+        code: "OAuth.ApiNotFound",
+        description: $"API with ID '{id}' was not found.");
+
+    public static Error ApiSecretNotFound(string secretId) => Error.NotFound(
+        code: "OAuth.ApiSecretNotFound",
+        description: $"API secret with ID '{secretId}' was not found.");
+}
+
+public static class LoginProviderErrors
+{
+    public static Error NotFound(string id) => Error.NotFound(
+        code: "LoginProvider.NotFound",
+        description: $"Login provider with ID '{id}' was not found.");
+
+    public static Error DuplicateName(string name) => Error.Conflict(
+        code: "LoginProvider.DuplicateName",
+        description: $"A login provider with name '{name}' already exists.");
+
+    public static Error CannotDeleteBuiltIn(string name) => Error.Validation(
+        code: "LoginProvider.CannotDeleteBuiltIn",
+        description: $"Cannot delete the built-in login provider '{name}'.");
+}

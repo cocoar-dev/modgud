@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Cocoar.Auth.Application.DTOs.Realms;
 using Cocoar.Auth.Domain.Realms;
+using Cocoar.Auth.Infrastructure.OAuth;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using ErrorOr;
 using Marten;
@@ -31,6 +32,7 @@ public sealed partial class RealmProvisioningService : IRealmProvisioningService
     private readonly IDocumentStore _tenantedStore;
     private readonly IMasterConnectionString _masterCs;
     private readonly IRealmCache _realmCache;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<RealmProvisioningService> _logger;
 
     private static readonly Regex SlugRegex = SlugRegexBuilder();
@@ -48,12 +50,14 @@ public sealed partial class RealmProvisioningService : IRealmProvisioningService
         IDocumentStore tenantedStore,
         IMasterConnectionString masterCs,
         IRealmCache realmCache,
+        IServiceProvider serviceProvider,
         ILogger<RealmProvisioningService> logger)
     {
         _globalStore = globalStore;
         _tenantedStore = tenantedStore;
         _masterCs = masterCs;
         _realmCache = realmCache;
+        _serviceProvider = serviceProvider;
         _logger = logger;
     }
 
@@ -148,9 +152,10 @@ public sealed partial class RealmProvisioningService : IRealmProvisioningService
         session.Store(realm);
         await session.SaveChangesAsync(ct);
 
-        // NOTE: per-realm seeding (OAuth scopes, login providers, default Admin role,
-        // etc.) is intentionally skipped here — comes in a later etappe alongside the
-        // realm-admin UI and the per-realm Setup flow.
+        // Per-realm OAuth seeding — standard OIDC scopes + the built-in
+        // "Internal" login provider land in the new tenant DB. Idempotent.
+        // Default Admin role / per-realm Setup flow is still TODO.
+        await OAuthRealmSeeder.SeedAsync(_serviceProvider, dto.Slug, _logger, ct);
 
         _realmCache.Invalidate();
         return realm;

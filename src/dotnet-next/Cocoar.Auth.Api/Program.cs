@@ -22,6 +22,8 @@ using Cocoar.Auth.Authentication.ExtensionMethods;
 using Cocoar.Auth.Authentication.Api.Account;
 using Cocoar.Auth.Authentication.Api.Account.Services;
 using Cocoar.Auth.Api.Features.Admin;
+using Cocoar.Auth.Api.Features.Admin.LoginProviders;
+using Cocoar.Auth.Api.Features.Admin.OAuth;
 using Cocoar.Auth.Authentication.AuthLog;
 using Cocoar.Auth.Authentication.Api.Admin;
 using Cocoar.Auth.Authentication.Api.Admin.IdentityProviders;
@@ -36,6 +38,7 @@ using Cocoar.Auth.Api.Helper;
 using Cocoar.Auth.Domain.Common;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Infrastructure;
+using Cocoar.Auth.Infrastructure.OAuth;
 using Cocoar.Auth.Authentication.Setup;
 using Cocoar.Auth.Authentication.Identity;
 using Cocoar.Auth.Authentication.Identity.ExternalAuth;
@@ -386,8 +389,14 @@ try
     // Infrastructure (Marten + repositories + query services + event dispatcher)
     // Authentication Marten setup (documents + events + projections) is wired via
     // UseCocoarAuthAuthentication() so Infrastructure stays unaware of Authentication.
+    // OAuth admin slice (clients/scopes/APIs/login providers) is wired here too —
+    // it has no separate slice project yet so the wiring lives directly in Infrastructure.
     builder.Services.AddInfrastructure(conf.DbSettings.ConnectionString,
-        options => options.UseCocoarAuthAuthentication());
+        options =>
+        {
+            options.UseCocoarAuthAuthentication();
+            options.UseCocoarAuthOAuth();
+        });
 
     // Migration services for legacy Cocoar.Auth data have been removed in the
     // IdP-only baseline — no historical documents to upgrade to event streams.
@@ -491,6 +500,10 @@ try
     app.MapAppSettingsEndpoints("api");
     app.MapProjectionEndpoints("api");
     app.MapRealmsEndpoints("api");
+    app.MapOAuthClientsEndpoints("api");
+    app.MapOAuthScopesEndpoints("api");
+    app.MapOAuthApisEndpoints("api");
+    app.MapLoginProvidersEndpoints("api");
     app.MapAdminMagicLinkEndpoints("api");
     app.MapAdminGraceEndpoints("api");
     app.MapAdminChangeRequestEndpoints("api");
@@ -599,6 +612,13 @@ try
     {
         var realmService = realmScope.ServiceProvider.GetRequiredService<IRealmProvisioningService>();
         await realmService.EnsureSystemRealmExistsAsync();
+
+        // Seed default OAuth scopes + Internal login provider into the system tenant DB.
+        // Idempotent — re-running on later boots is a no-op.
+        await Cocoar.Auth.Infrastructure.OAuth.OAuthRealmSeeder.SeedAsync(
+            realmScope.ServiceProvider,
+            TenantConstants.SystemTenantId,
+            realmScope.ServiceProvider.GetRequiredService<ILogger<Program>>());
 
         // Warm the realm cache (used by RealmMiddleware for fast Host → tenant resolution)
         var realmCache = realmScope.ServiceProvider.GetRequiredService<IRealmCache>();
