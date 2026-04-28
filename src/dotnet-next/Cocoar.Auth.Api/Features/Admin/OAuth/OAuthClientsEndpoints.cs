@@ -15,50 +15,55 @@ public static class OAuthClientsEndpoints
     {
         var group = app.MapGroup($"{path}/admin/oauth/clients")
             .WithTags("OAuth Clients")
-            .RequireAuthorization()
-            .RequiresPermission("oauth:admin");
+            .RequireAuthorization();
 
         group.MapGet("", async (OAuthAdminService svc, int page, int pageSize, CancellationToken ct) =>
         {
             var pagination = new PaginationRequest { Page = page <= 0 ? 1 : page, PageSize = pageSize <= 0 ? 20 : pageSize };
             return Results.Ok(await svc.GetClientsAsync(pagination, ct));
         })
-        .WithName("OAuth_Clients_List");
+        .WithName("OAuth_Clients_List")
+        .RequiresPermission("oauth-client:read");
 
         group.MapGet("{id}", async (string id, OAuthAdminService svc, CancellationToken ct) =>
         {
             var dto = await svc.GetClientByIdAsync(id, ct);
             return dto is null ? Results.NotFound() : Results.Ok(dto);
         })
-        .WithName("OAuth_Clients_Get");
+        .WithName("OAuth_Clients_Get")
+        .RequiresPermission("oauth-client:read");
 
         group.MapPost("", async (CreateOAuthClientDto dto, OAuthAdminService svc, CancellationToken ct) =>
         {
             var result = await svc.CreateClientAsync(dto, ct);
             return result.ToResult(created => Results.Created($"{path}/admin/oauth/clients/{created.Client.Id}", created));
         })
-        .WithName("OAuth_Clients_Create");
+        .WithName("OAuth_Clients_Create")
+        .RequiresPermission("oauth-client:write");
 
         group.MapPut("{id}", async (string id, UpdateOAuthClientDto dto, OAuthAdminService svc, CancellationToken ct) =>
         {
             var result = await svc.UpdateClientAsync(id, dto, ct);
             return result.ToResult(client => Results.Ok(client));
         })
-        .WithName("OAuth_Clients_Update");
+        .WithName("OAuth_Clients_Update")
+        .RequiresPermission("oauth-client:write");
 
         group.MapDelete("{id}", async (string id, OAuthAdminService svc, CancellationToken ct) =>
         {
             var result = await svc.DeleteClientAsync(id, ct);
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
-        .WithName("OAuth_Clients_Delete");
+        .WithName("OAuth_Clients_Delete")
+        .RequiresPermission("oauth-client:write");
 
         group.MapPost("{id}/regenerate-secret", async (string id, OAuthAdminService svc, CancellationToken ct) =>
         {
             var result = await svc.RegenerateClientSecretAsync(id, ct);
             return result.ToResult(secret => Results.Ok(secret));
         })
-        .WithName("OAuth_Clients_RegenerateSecret");
+        .WithName("OAuth_Clients_RegenerateSecret")
+        .RequiresPermission("oauth-client:write");
 
         return app;
     }

@@ -20,7 +20,9 @@ public static class UserUpdateScriptTestEndpoint
     {
         var group = endpoints.MapGroup($"{path}/admin/idp-config")
             .RequireAuthorization()
-            .RequiresPermission("app:admin");
+            // Read-only test/preview surface — gated on idp-config:read so an
+            // operator can prototype a script without write access.
+            .RequiresPermission("idp-config:read");
 
         // Test-run the script with arbitrary sample claims. Accepts either the
         // IdpConfig's stored script (by id) or a proposed script body (unsaved

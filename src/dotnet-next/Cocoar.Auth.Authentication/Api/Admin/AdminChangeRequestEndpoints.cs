@@ -27,7 +27,10 @@ public static class AdminChangeRequestEndpoints
         var group = application.MapGroup($"{path}/admin/change-requests")
             .WithTags("Admin Change Requests")
             .RequireAuthorization()
-            .RequiresPermission("app:admin");
+            // Approving/rejecting profile change requests is part of the
+            // user-write surface — the same role that can edit users handles
+            // these queue items.
+            .RequiresPermission("user:write");
 
         group.MapGet("", async (IQuerySession session, bool includeTerminal = false) =>
         {

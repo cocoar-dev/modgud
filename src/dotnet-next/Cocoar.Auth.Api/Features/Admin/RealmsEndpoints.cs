@@ -19,7 +19,6 @@ public static class RealmsEndpoints
         var group = application.MapGroup($"{path}/admin/realms")
             .WithTags("Realms")
             .RequireAuthorization()
-            .RequiresPermission("app:admin")
             .AddEndpointFilter<RequireCanManageTenantsFilter>();
 
         group.MapGet("", async (IRealmProvisioningService svc, CancellationToken ct) =>
@@ -28,35 +27,40 @@ public static class RealmsEndpoints
             var items = realms.Select(MapToDto).ToList();
             return Results.Ok(new RealmListDto { Items = items, TotalCount = items.Count });
         })
-        .WithName("Realms_List");
+        .WithName("Realms_List")
+        .RequiresPermission("realm:read");
 
         group.MapGet("{slug}", async (string slug, IRealmProvisioningService svc, CancellationToken ct) =>
         {
             var realm = await svc.GetRealmBySlugAsync(slug, ct);
             return realm is null ? Results.NotFound() : Results.Ok(MapToDto(realm));
         })
-        .WithName("Realms_Get");
+        .WithName("Realms_Get")
+        .RequiresPermission("realm:read");
 
         group.MapPost("", async (CreateRealmDto dto, IRealmProvisioningService svc, CancellationToken ct) =>
         {
             var result = await svc.CreateRealmAsync(dto, ct);
             return result.ToResult(realm => Results.Created($"{path}/admin/realms/{realm.Slug}", MapToDto(realm)));
         })
-        .WithName("Realms_Create");
+        .WithName("Realms_Create")
+        .RequiresPermission("realm:write");
 
         group.MapPatch("{slug}", async (string slug, UpdateRealmDto dto, IRealmProvisioningService svc, CancellationToken ct) =>
         {
             var result = await svc.UpdateRealmAsync(slug, dto, ct);
             return result.ToResult(realm => Results.Ok(MapToDto(realm)));
         })
-        .WithName("Realms_Update");
+        .WithName("Realms_Update")
+        .RequiresPermission("realm:write");
 
         group.MapDelete("{slug}", async (string slug, IRealmProvisioningService svc, CancellationToken ct) =>
         {
             var result = await svc.DeleteRealmAsync(slug, ct);
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
-        .WithName("Realms_Delete");
+        .WithName("Realms_Delete")
+        .RequiresPermission("realm:write");
 
         return application;
     }

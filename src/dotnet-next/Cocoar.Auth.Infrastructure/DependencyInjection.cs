@@ -118,14 +118,42 @@ public static class DependencyInjection
         // on the StoreOptions (see ConfigureDocumentStore).
         services.AddCocoarAuthAuthorization(opt =>
         {
-            // Cocoar.Auth is an Identity Provider — only the global admin resource
-            // is registered out of the box. App-specific resources (todo, customer, …)
-            // are added by the host app's adoption layer.
+            // Cocoar.Auth is an Identity Provider. The full admin surface is split into
+            // per-resource read/write pairs so a "User Manager", "Help-Desk", or
+            // "Viewer" role can be granted in isolation. Global bypass roles:
+            //   - app:admin     — system-wide admin (kept for backwards compatibility,
+            //                     bypasses every check in PermissionService)
+            //   - oauth:admin   — full OAuth admin surface
+            //   - login-provider:admin — login-provider admin surface
             opt.RegisterResource("app", "admin");
-            // OAuth admin surface — gated separately from the global app:admin so
-            // an "OAuth Manager" role can be granted without full app admin.
+
+            // Identity / directory
+            opt.RegisterResource("user", "read", "write");
+            opt.RegisterResource("role", "read", "write");
+            opt.RegisterResource("authorization-group", "read", "write");
+            opt.RegisterResource("permission-role", "read", "write");
+
+            // Sessions + audit
+            opt.RegisterResource("session", "read", "write");
+            opt.RegisterResource("auth-log", "read");
+
+            // GDPR (permanent-erase only — self-service is implicit on the caller)
+            opt.RegisterResource("gdpr", "admin");
+
+            // Realms (multi-tenant management — only meaningful in tenant-management realms)
+            opt.RegisterResource("realm", "read", "write");
+
+            // Identity-provider configs (external OIDC IdPs)
+            opt.RegisterResource("idp-config", "read", "write");
+
+            // OAuth admin surface — granular AND a kept-as-bypass `oauth:admin`.
             opt.RegisterResource("oauth", "admin");
-            opt.RegisterResource("login-provider", "admin");
+            opt.RegisterResource("oauth-client", "read", "write");
+            opt.RegisterResource("oauth-scope", "read", "write");
+            opt.RegisterResource("oauth-api", "read", "write");
+
+            // Login providers (the configurable buttons on the login page)
+            opt.RegisterResource("login-provider", "admin", "read", "write");
         });
 
         // OAuth admin slice services — both consume the tenant-scoped IDocumentSession

@@ -10,6 +10,7 @@ using Cocoar.Auth.Authentication.ExtensionMethods;
 using Cocoar.Auth.Authentication.Api.Account.Services;
 using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Domain;
+using Cocoar.Auth.Authentication.Sessions;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
 
@@ -242,6 +243,7 @@ public static class PasskeyEndpoints
             IFido2 fido2,
             IDocumentSession session,
             SignInManager<ApplicationUser> signInManager,
+            ISessionService sessionService,
             JsonElement body) =>
         {
             // Retrieve challenge from cookie
@@ -303,6 +305,8 @@ public static class PasskeyEndpoints
 
             // Passkey login is always persistent — user can re-authenticate anytime via biometrics
             await signInManager.SignInAsync(user, isPersistent: true);
+
+            await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
 
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
             Serilog.Log.Information("Auth: Passkey login successful. User={UserName} IP={IP}", user.UserName, ip);

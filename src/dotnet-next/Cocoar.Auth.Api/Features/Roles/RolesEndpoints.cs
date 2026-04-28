@@ -47,7 +47,7 @@ public static class RolesEndpoints
                 }));
             })
             .WithName("V2_Role_GetAll")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("permission-role:read");
 
         roleGroup.MapGet("{id}", async (ShortGuid id, IDocumentSession session) =>
             {
@@ -56,7 +56,7 @@ public static class RolesEndpoints
                 return Results.Ok(new { Id = new ShortGuid(role.Id).ToString(), role.Name, role.Description, role.ResourceType, role.Permissions });
             })
             .WithName("V2_Role_GetById")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("permission-role:read");
 
         roleGroup.MapPost("", async (CreateRoleDto dto, IDocumentSession session) =>
             {
@@ -75,7 +75,7 @@ public static class RolesEndpoints
                 return Results.Ok(new { Id = new ShortGuid(role.Id).ToString(), role.Name, role.Description, role.ResourceType, role.Permissions });
             })
             .WithName("V2_Role_Create")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("permission-role:write");
 
         roleGroup.MapPut("{id}", async (ShortGuid id, CreateRoleDto dto, IDocumentSession session) =>
             {
@@ -91,7 +91,7 @@ public static class RolesEndpoints
                 return Results.Ok(new { Id = new ShortGuid(role.Id).ToString(), role.Name, role.Description, role.ResourceType, role.Permissions });
             })
             .WithName("V2_Role_Update")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("permission-role:write");
 
         roleGroup.MapDelete("{id}", async (ShortGuid id, IDocumentSession session) =>
             {
@@ -104,7 +104,7 @@ public static class RolesEndpoints
                 return Results.NoContent();
             })
             .WithName("V2_Role_Delete")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("permission-role:write");
 
         return application;
     }

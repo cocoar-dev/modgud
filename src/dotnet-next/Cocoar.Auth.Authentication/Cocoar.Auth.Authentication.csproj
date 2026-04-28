@@ -30,6 +30,9 @@
     <!-- Auth log sink -->
     <PackageReference Include="Serilog.AspNetCore" />
 
+    <!-- Per-user session device-info parsing (UA → browser/OS/device) -->
+    <PackageReference Include="UAParser" />
+
     <!-- Command return-types -->
     <PackageReference Include="ErrorOr" />
   </ItemGroup>

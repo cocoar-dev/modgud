@@ -58,7 +58,7 @@ public static class UsersEndpoints
                 return result.ToResult();
             })
             .WithName("V2_User_GetById")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("user:read");
 
         userGroup.MapGet("", async (IMessageBus bus, int? skip = null, int? take = null) =>
             {
@@ -67,7 +67,7 @@ public static class UsersEndpoints
                 return result.ToResult();
             })
             .WithName("V2_User_GetAll")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("user:read");
 
         userGroup.MapPost("", async (IMessageBus bus, UserCreateDto createDto) =>
             {
@@ -86,7 +86,7 @@ public static class UsersEndpoints
                 });
             })
             .WithName("V2_User_Create")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("user:write");
 
         userGroup.MapPut("{id}", async (ShortGuid id, IMessageBus bus, UserUpdateDto dto,
             IDocumentSession session, HttpContext context) =>
@@ -131,7 +131,7 @@ public static class UsersEndpoints
                 return Results.Ok(result.Value);
             })
             .WithName("V2_User_Update")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("user:write");
 
         userGroup.MapDelete("{id}", async (string id, IMessageBus bus) =>
             {
@@ -141,7 +141,7 @@ public static class UsersEndpoints
                 return result.ToNoContentResult();
             })
             .WithName("V2_User_DeleteSingle")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("user:write");
 
         userGroup.MapDelete("", async ([FromBody] List<string> ids, IMessageBus bus) =>
             {
@@ -151,7 +151,7 @@ public static class UsersEndpoints
                 return result.ToNoContentResult();
             })
             .WithName("V2_User_Delete")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("user:write");
 
         // Set/Reset password for a user
         userGroup.MapPut("{id}/password", async (ShortGuid id, SetPasswordDto dto, IDocumentSession session, UserManager<ApplicationUser> userManager) =>
@@ -196,7 +196,7 @@ public static class UsersEndpoints
                 return Results.Ok(new { Message = "Password set successfully" });
             })
             .WithName("V2_User_SetPassword")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("user:write");
 
         // Toggle user active/inactive
         userGroup.MapPut("{id}/active", async (ShortGuid id, SetActiveDto dto, IDocumentSession session) =>
@@ -222,7 +222,7 @@ public static class UsersEndpoints
                 return Results.Ok(new { IsActive = dto.IsActive });
             })
             .WithName("V2_User_SetActive")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("user:write");
 
         // ── Group membership — user-centric view and editing ──────────────
 
@@ -286,7 +286,7 @@ public static class UsersEndpoints
                 });
             })
             .WithName("V2_User_GetGroups")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("user:read");
 
         // Add the user to a group. Auto-groups reject the add — membership is
         // script-driven and a manual add would be overwritten on next recompute.
@@ -318,7 +318,7 @@ public static class UsersEndpoints
                 return Results.NoContent();
             })
             .WithName("V2_User_AddGroup")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("user:write");
 
         // Remove the user from a group. Only affects direct membership — inherited
         // groups must be edited at the source.
@@ -349,7 +349,7 @@ public static class UsersEndpoints
                 return Results.NoContent();
             })
             .WithName("V2_User_RemoveGroup")
-            .RequiresPermission("app:admin");
+            .RequiresPermission("user:write");
 
         return application;
     }

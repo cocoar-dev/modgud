@@ -7,6 +7,7 @@ using Cocoar.Auth.Authentication.Api.Account.Services;
 using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Identity;
+using Cocoar.Auth.Authentication.Sessions;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
 
@@ -126,6 +127,7 @@ public static class EmailOtpEndpoints
             HttpContext context,
             SignInManager<ApplicationUser> signInManager,
             IEmailOtpService emailOtpService,
+            ISessionService sessionService,
             CancellationToken ct) =>
         {
             var user = await signInManager.GetTwoFactorAuthenticationUserAsync();
@@ -145,6 +147,8 @@ public static class EmailOtpEndpoints
             // Complete sign-in: set full auth cookie, clear partial cookie
             await context.SignOutAsync(IdentityConstants.TwoFactorUserIdScheme);
             await signInManager.SignInAsync(user, isPersistent: request.RememberMe);
+
+            await SessionTracker.RecordLoginAsync(sessionService, context, user.Id, ct);
 
             return Results.Ok(new { Message = "Login successful" });
         })

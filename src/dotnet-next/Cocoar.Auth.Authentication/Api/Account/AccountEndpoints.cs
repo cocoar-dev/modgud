@@ -9,6 +9,7 @@ using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth;
 using BuildingBlocks.Helper;
 using Cocoar.Auth.Authentication.Identity;
+using Cocoar.Auth.Authentication.Sessions;
 using Cocoar.Auth.Authorization.Services;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
@@ -63,6 +64,7 @@ public static class AccountEndpoints
             IAuthSettings appSettings,
             IDocumentSession docSession,
             IQuerySession session,
+            ISessionService sessionService,
             HttpContext context) =>
         {
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -93,6 +95,9 @@ public static class AccountEndpoints
             if (result.Succeeded)
             {
                 Log.Information("Auth: Login successful. User={UserName} IP={IP}", user.UserName, ip);
+
+                // Track per-user device session (best-effort).
+                await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
 
                 // Level >= 1: check if user needs to set up a secure login method
                 if (appSettings.AuthenticationMinimumLevel >= 1)

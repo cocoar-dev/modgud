@@ -394,6 +394,16 @@ try
     
     builder.Services.AddScoped<IEmailOtpService, EmailOtpService>();
 
+    // Per-user device-session tracking + GDPR self-service.
+    // DeviceInfoService is a pure UAParser wrapper — singleton.
+    // Session + GDPR services hold an IDocumentSession — scoped.
+    builder.Services.AddSingleton<Cocoar.Auth.Authentication.Sessions.IDeviceInfoService,
+        Cocoar.Auth.Authentication.Sessions.DeviceInfoService>();
+    builder.Services.AddScoped<Cocoar.Auth.Authentication.Sessions.ISessionService,
+        Cocoar.Auth.Authentication.Sessions.SessionService>();
+    builder.Services.AddScoped<Cocoar.Auth.Authentication.Gdpr.IGdprService,
+        Cocoar.Auth.Authentication.Gdpr.GdprService>();
+
     // Infrastructure (Marten + repositories + query services + event dispatcher)
     // Authentication Marten setup (documents + events + projections) is wired via
     // UseCocoarAuthAuthentication() so Infrastructure stays unaware of Authentication.
@@ -529,6 +539,8 @@ try
     app.MapAdminMagicLinkEndpoints("api");
     app.MapAdminGraceEndpoints("api");
     app.MapAdminChangeRequestEndpoints("api");
+    app.MapAdminSessionEndpoints("api");
+    app.MapAdminGdprEndpoints("api");
 
     // Account & Setup Endpoints (have additional strict "auth" rate limit)
     app.MapAccountEndpoints("api");
@@ -539,6 +551,8 @@ try
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");
     app.MapSetupEndpoints("api");
+    app.MapSessionEndpoints("api");
+    app.MapGdprEndpoints("api");
     app.MapExternalAuthEndpoints("api");
     app.MapProfileLinkEndpoints("api");
     app.MapIdpConfigEndpoints("api");

@@ -25,7 +25,10 @@ public static class AdminGraceEndpoints
         var group = application.MapGroup($"{path}/admin/users")
             .WithTags("Admin Grace Period")
             .RequireAuthorization()
-            .RequiresPermission("app:admin");
+            // Grace-period management is part of the user-write surface — anyone
+            // who can edit users (reset password, deactivate, …) can also reset
+            // the 2FA grace clock.
+            .RequiresPermission("user:write");
 
         // GET /api/admin/users/{id}/security-info — Has2FA, 2FA methods, grace due date,
         // and per-user overrides (individual grace days + hard exempt flag).

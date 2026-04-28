@@ -20,7 +20,7 @@ public static class AdminMagicLinkEndpoints
         var group = application.MapGroup($"{path}/admin/users")
             .WithTags("Admin Magic Link")
             .RequireAuthorization()
-            .RequiresPermission("app:admin");
+            .RequiresPermission("user:write");
 
         // POST /api/admin/users/{id}/magic-link — Send a magic link to the user
         group.MapPost("{id}/magic-link", async (

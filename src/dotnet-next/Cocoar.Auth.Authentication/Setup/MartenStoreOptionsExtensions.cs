@@ -5,6 +5,9 @@ using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth.Events;
 using Cocoar.Auth.Authentication.Events;
+using Cocoar.Auth.Authentication.Gdpr;
+using Cocoar.Auth.Domain.Common;
+using Cocoar.Auth.Domain.Users.Events;
 using Cocoar.Auth.Authentication.Identity.ExternalAuth;
 using Cocoar.Auth.Authentication.Projections;
 
@@ -52,6 +55,19 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.UserId)
             .Index(x => x.Status);
 
+        // Per-user device sessions (regular Marten document — not event-sourced).
+        // Indexed by UserId for the "list my sessions" view and the admin
+        // force-logout flow.
+        options.Schema.For<UserSession>()
+            .Identity(x => x.Id)
+            .Index(x => x.UserId)
+            .Index(x => x.ExpiresAt);
+
+        // GDPR: per-user deletion bookkeeping (pending request + masked flag).
+        // Keyed on the user id so we can simply Load it.
+        options.Schema.For<UserDeletionState>()
+            .Identity(x => x.Id);
+
         options.Schema.For<IdpConfig>()
             .Identity(x => x.Id)
             .Index(x => x.Flavor)
@@ -97,6 +113,46 @@ public static class MartenStoreOptionsExtensions
         // User-stream mirror events for external auth
         options.Events.MapEventType<UserExternalIdentityLinkedEvent>("user_external_identity_linked");
         options.Events.MapEventType<UserExternalIdentityUnlinkedEvent>("user_external_identity_unlinked");
+
+        // ── GDPR data-masking rules ──────────────────────────────────────
+        // When ApplyEventDataMasking is invoked for a user stream, these
+        // rules rewrite each PII-bearing event to replace personal data
+        // with placeholder values. The user id stays intact so projections
+        // can still associate the masked record with the (now-archived)
+        // user. Masked-out events keep the same shape so deserialization
+        // doesn't break for older daemons.
+
+        options.Events.AddMaskingRuleForProtectedInformation<UserCreatedEvent>(e =>
+            new UserCreatedEvent(
+                e.Id,
+                new Optional<string>("[DELETED]"),
+                new Optional<string>("[DELETED]"),
+                new Optional<string>("[DELETED]"),
+                new Optional<string>("[DELETED]")));
+
+        options.Events.AddMaskingRuleForProtectedInformation<UserUpdatedEvent>(e =>
+            new UserUpdatedEvent(
+                e.Id,
+                new Optional<string>("[DELETED]"),
+                new Optional<string>("[DELETED]"),
+                new Optional<string>("[DELETED]"),
+                new Optional<string>("[DELETED]")));
+
+        options.Events.AddMaskingRuleForProtectedInformation<UserUserNameChangedEvent>(e =>
+            new UserUserNameChangedEvent(e.UserId, "[DELETED]"));
+
+        options.Events.AddMaskingRuleForProtectedInformation<UserProfileUpdatedEvent>(e =>
+            new UserProfileUpdatedEvent(e.UserId, "[DELETED]", "[DELETED]", "[DELETED]"));
+
+        options.Events.AddMaskingRuleForProtectedInformation<UserIdentitySetupEvent>(e =>
+            new UserIdentitySetupEvent(e.UserId, "[DELETED]", e.IsActive));
+
+        // IP addresses are PII under GDPR — strip them from login records.
+        options.Events.AddMaskingRuleForProtectedInformation<UserLoggedInEvent>(e =>
+            new UserLoggedInEvent(e.UserId, IpAddress: null));
+
+        options.Events.AddMaskingRuleForProtectedInformation<UserLoginFailedEvent>(e =>
+            new UserLoginFailedEvent(e.UserId, IpAddress: null));
 
         // External-auth projections — inline (login flow reads these synchronously)
         options.Projections.Add<IdpConfigProjection>(ProjectionLifecycle.Inline);

@@ -8,6 +8,7 @@ using Cocoar.Auth.Authentication.ExtensionMethods;
 using Cocoar.Auth.Authentication.Api.Account.Services;
 using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Domain;
+using Cocoar.Auth.Authentication.Sessions;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
 
@@ -130,15 +131,24 @@ public static class MfaEndpoints
         group.MapPost("login", async (
             SignInManager<ApplicationUser> signInManager,
             MfaLoginRequest request,
+            ISessionService sessionService,
             HttpContext context) =>
         {
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
             var code = request.Code.Replace(" ", "").Replace("-", "");
+
+            // Capture the user that's mid-2FA *before* we sign in — afterwards the
+            // partial sign-in cookie is gone and we lose the handle.
+            var twoFactorUser = await signInManager.GetTwoFactorAuthenticationUserAsync();
+
             var result = await signInManager.TwoFactorAuthenticatorSignInAsync(
                 code, isPersistent: request.RememberMe, rememberClient: request.RememberMachine);
 
             if (result.Succeeded)
             {
+                if (twoFactorUser is not null)
+                    await SessionTracker.RecordLoginAsync(sessionService, context, twoFactorUser.Id);
+
                 Serilog.Log.Information("Auth: MFA login successful. IP={IP}", ip);
                 return Results.Ok(new { Message = "Login successful" });
             }

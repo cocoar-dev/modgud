@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication;
+using Cocoar.Auth.Authentication.Sessions;
 using Cocoar.Auth.Infrastructure.Email;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
@@ -112,6 +113,7 @@ public static class MagicLinkEndpoints
             MagicLinkLoginDto request,
             IDocumentSession session,
             SignInManager<ApplicationUser> signInManager,
+            ISessionService sessionService,
             HttpContext context) =>
         {
             if (string.IsNullOrWhiteSpace(request.Token))
@@ -149,6 +151,8 @@ public static class MagicLinkEndpoints
             // Sign in — bypasses MFA (Magic Link IS the authentication)
             // Magic Link is always persistent — user can request a new link anytime
             await signInManager.SignInAsync(user, isPersistent: true);
+
+            await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
 
             Serilog.Log.Information("Auth: Magic link login successful. User={UserName} IP={IP}", user.UserName, ip);
             return Results.Ok(new { Message = "Login successful" });

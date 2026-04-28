@@ -19,8 +19,7 @@ public static class IdpConfigEndpoints
     public static void MapIdpConfigEndpoints(this IEndpointRouteBuilder endpoints, string path)
     {
         var group = endpoints.MapGroup($"{path}/admin/idp-config")
-            .RequireAuthorization()
-            .RequiresPermission("app:admin");
+            .RequireAuthorization();
 
         // List registered flavors so the admin UI can render the "Add provider"
         // picker with the right schema + defaults for each.
@@ -39,7 +38,8 @@ public static class IdpConfigEndpoints
                         c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder)).ToList(),
                 }).ToArray();
                 return Results.Ok(items);
-            });
+            })
+            .RequiresPermission("idp-config:read");
 
         // List all non-deleted configs for the admin grid.
         group.MapGet("",
@@ -53,7 +53,8 @@ public static class IdpConfigEndpoints
                     .ToListAsync(ct);
                 var publicUrl = ResolvePublicUrl(conf);
                 return Results.Ok(items.Select(c => ToDto(c, publicUrl)).ToArray());
-            });
+            })
+            .RequiresPermission("idp-config:read");
 
         // Single config.
         group.MapGet("{id}",
@@ -66,7 +67,8 @@ public static class IdpConfigEndpoints
                 return c is null || c.IsDeleted
                     ? Results.NotFound()
                     : Results.Ok(ToDto(c, ResolvePublicUrl(conf)));
-            });
+            })
+            .RequiresPermission("idp-config:read");
 
         // Create via Wolverine command (see CreateIdpConfigCommand).
         group.MapPost("",
@@ -83,7 +85,8 @@ public static class IdpConfigEndpoints
                 return result.Match<IResult>(
                     v => Results.Created($"/api/admin/idp-config/{v.Id:N}", ToDto(v, ResolvePublicUrl(conf))),
                     ErrorResponse);
-            });
+            })
+            .RequiresPermission("idp-config:write");
 
         // Save full edit form (everything except secret).
         group.MapPut("{id}",
@@ -115,7 +118,8 @@ public static class IdpConfigEndpoints
                 return result.Match<IResult>(
                     v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
                     ErrorResponse);
-            });
+            })
+            .RequiresPermission("idp-config:write");
 
         // Enable / Disable / Delete.
         group.MapPost("{id}/enable",
@@ -128,7 +132,8 @@ public static class IdpConfigEndpoints
                 return result.Match<IResult>(
                     v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
                     ErrorResponse);
-            });
+            })
+            .RequiresPermission("idp-config:write");
 
         group.MapPost("{id}/disable",
             async (ShortGuid id,
@@ -140,7 +145,8 @@ public static class IdpConfigEndpoints
                 return result.Match<IResult>(
                     v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
                     ErrorResponse);
-            });
+            })
+            .RequiresPermission("idp-config:write");
 
         group.MapDelete("{id}",
             async (ShortGuid id,
@@ -149,7 +155,8 @@ public static class IdpConfigEndpoints
             {
                 var result = await bus.InvokeAsync<ErrorOr<Success>>(new DeleteIdpConfigCommand(id.Guid), ct);
                 return result.Match<IResult>(_ => Results.NoContent(), ErrorResponse);
-            });
+            })
+            .RequiresPermission("idp-config:write");
 
         // Secret rotation — the only endpoint that accepts a plaintext secret.
         group.MapPost("{id}/secret",
@@ -163,7 +170,8 @@ public static class IdpConfigEndpoints
                 var result = await bus.InvokeAsync<ErrorOr<Success>>(
                     new RotateIdpConfigSecretCommand(id.Guid, request.Secret, userId), ct);
                 return result.Match<IResult>(_ => Results.NoContent(), ErrorResponse);
-            });
+            })
+            .RequiresPermission("idp-config:write");
     }
 
     private static string ResolvePublicUrl(IServerConfiguration conf)

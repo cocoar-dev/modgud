@@ -2,6 +2,7 @@ using Marten;
 using Microsoft.AspNetCore.Identity;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Events;
+using Cocoar.Auth.Authentication.Sessions;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Roles;
@@ -32,6 +33,7 @@ public static class SetupEndpoints
             IDocumentSession session,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
+            ISessionService sessionService,
             HttpContext context,
             IDemoSeedService? demoSeedService = null) =>
         {
@@ -80,13 +82,54 @@ public static class SetupEndpoints
             var adminRole = new PermissionRole
             {
                 Id = Guid.NewGuid(),
-                Name = "Admin",
+                Name = "System Admin",
+                Description = "Full system access — bypasses every permission check.",
                 ResourceType = "app",
                 Permissions = ["admin"]
             };
             session.Store(adminRole);
             session.Events.StartStream(adminRole.Id,
                 new PermissionRoleCreatedEvent(adminRole.Id, adminRole.Name, adminRole.Description, adminRole.ResourceType, adminRole.Permissions));
+
+            // Seed two starter roles alongside the bypass role so an operator
+            // can grant a granular role without first having to design one.
+            // These roles are not assigned to anyone — admins drop them onto
+            // groups via the Roles UI as needed.
+            var userManagerRole = new PermissionRole
+            {
+                Id = Guid.NewGuid(),
+                Name = "User Manager",
+                Description = "Read+write users, read roles+groups+permission-roles.",
+                ResourceType = "app",
+                Permissions =
+                [
+                    "user:read", "user:write",
+                    "session:read", "session:write",
+                    "authorization-group:read",
+                    "permission-role:read",
+                    "auth-log:read",
+                ],
+            };
+            session.Store(userManagerRole);
+            session.Events.StartStream(userManagerRole.Id,
+                new PermissionRoleCreatedEvent(userManagerRole.Id, userManagerRole.Name, userManagerRole.Description, userManagerRole.ResourceType, userManagerRole.Permissions));
+
+            var viewerRole = new PermissionRole
+            {
+                Id = Guid.NewGuid(),
+                Name = "Viewer",
+                Description = "Read-only access to users, groups, roles.",
+                ResourceType = "app",
+                Permissions =
+                [
+                    "user:read",
+                    "authorization-group:read",
+                    "permission-role:read",
+                ],
+            };
+            session.Store(viewerRole);
+            session.Events.StartStream(viewerRole.Id,
+                new PermissionRoleCreatedEvent(viewerRole.Id, viewerRole.Name, viewerRole.Description, viewerRole.ResourceType, viewerRole.Permissions));
 
             var adminGroup = new Group
             {
@@ -116,6 +159,8 @@ public static class SetupEndpoints
 
             // Auto-login
             await signInManager.SignInAsync(appUser, isPersistent: false);
+
+            await SessionTracker.RecordLoginAsync(sessionService, context, appUser.Id);
 
             Serilog.Log.Information("Auth: Initial admin created. User={UserName} IP={IP} DemoData={DemoData}", request.UserName, ip, request.LoadDemoData);
             return Results.Ok(new { Message = "Setup completed successfully", DemoData = demoResult });

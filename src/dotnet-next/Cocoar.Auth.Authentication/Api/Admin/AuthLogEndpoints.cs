@@ -10,8 +10,7 @@ public static class AuthLogEndpoints
     {
         var group = application.MapGroup($"{path}/admin/auth-log")
             .WithTags("Admin Auth Log")
-            .RequireAuthorization()
-            .RequiresPermission("app:admin");
+            .RequireAuthorization();
 
         group.MapGet("", async (IQuerySession session, int? limit) =>
         {
@@ -22,15 +21,20 @@ public static class AuthLogEndpoints
 
             return Results.Ok(entries);
         })
-        .WithName("AdminAuthLog_Get");
+        .WithName("AdminAuthLog_Get")
+        .RequiresPermission("auth-log:read");
 
+        // Clearing the auth log is destructive — gate behind the global app:admin
+        // bypass. (We deliberately don't add an `auth-log:write` since the only
+        // write op is wipe-all.)
         group.MapDelete("", async (IDocumentSession session) =>
         {
             session.DeleteWhere<AuthLogDocument>(x => true);
             await session.SaveChangesAsync();
             return Results.Ok(new { Message = "Auth log cleared" });
         })
-        .WithName("AdminAuthLog_Clear");
+        .WithName("AdminAuthLog_Clear")
+        .RequiresPermission("app:admin");
 
         return application;
     }

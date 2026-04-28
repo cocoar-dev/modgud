@@ -19,10 +19,25 @@ public class PermissionService(IQuerySession session) : IPermissionService
     {
         var permissions = await GetUserPermissionsAsync(userId, ct);
 
+        // Global bypass — system-wide admin grants everything.
         if (permissions.Contains("app:admin"))
             return true;
 
-        return permissions.Contains(permission);
+        if (permissions.Contains(permission))
+            return true;
+
+        // Resource-scoped bypass — holding `<resource>:admin` implicitly grants every
+        // other action on that resource (read/write). Lets us define an "OAuth Admin"
+        // role as a single grant instead of enumerating every sub-permission.
+        var colon = permission.IndexOf(':');
+        if (colon > 0)
+        {
+            var resourceAdmin = string.Concat(permission.AsSpan(0, colon), ":admin");
+            if (permissions.Contains(resourceAdmin))
+                return true;
+        }
+
+        return false;
     }
 
     public async Task<List<string>> GetUserPermissionsAsync(Guid userId, CancellationToken ct = default)
