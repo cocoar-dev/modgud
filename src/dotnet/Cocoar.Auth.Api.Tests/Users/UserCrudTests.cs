@@ -49,7 +49,11 @@ public class UserCrudTests : IntegrationTestBase
         var response = await Client.GetAsync("/api/user", TestContext.Current.CancellationToken);
 
         // Assert
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            throw new Xunit.Sdk.XunitException($"HTTP {(int)response.StatusCode}: {body}");
+        }
         var result = await response.ReadSuccessJsonAsync<List<UserDto>>(JsonOptions);
 
         // 3 users: DefaultUser (TU) + Alice + Bob

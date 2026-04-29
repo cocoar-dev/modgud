@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Cocoar.Configuration.Testing;
 using Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.Users;
+using Microsoft.Extensions.DependencyInjection;
+using Wolverine;
 
 namespace Cocoar.Auth.Api.Tests.Infrastructure;
 
@@ -80,6 +82,20 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
         }
 
         return client;
+    }
+
+    /// <summary>
+    /// Resolves <see cref="IMessageBus"/> from the given scope and pre-sets
+    /// <c>TenantId</c> to the system tenant so the OutboxedSessionFactory can
+    /// open a Marten session against MasterTableTenancy. HTTP-driven tests get
+    /// the tenant set by <c>TenantContextMiddleware</c>; tests that resolve
+    /// <c>IMessageBus</c> directly bypass the request pipeline and need this.
+    /// </summary>
+    protected static IMessageBus GetTenantedMessageBus(IServiceScope scope, string tenantId = "system")
+    {
+        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+        bus.TenantId = tenantId;
+        return bus;
     }
 
     public async ValueTask DisposeAsync()

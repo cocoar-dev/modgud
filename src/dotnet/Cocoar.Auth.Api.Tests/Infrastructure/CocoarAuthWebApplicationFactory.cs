@@ -58,10 +58,13 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
     {
         builder.UseEnvironment("Testing");
 
-        // Clear logging providers to avoid Event Log dispose issues on Windows
+        // Clear logging providers to avoid Event Log dispose issues on Windows.
+        // Console provider re-added so server-side errors surface during test debugging.
         builder.ConfigureLogging(logging =>
         {
             logging.ClearProviders();
+            logging.AddConsole();
+            logging.SetMinimumLevel(LogLevel.Warning);
         });
 
         builder.ConfigureServices(services =>
@@ -128,7 +131,10 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
 
         // Wait for async projection to create the UserView
         var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-        await store.WaitForNonStaleProjectionDataAsync(TimeSpan.FromSeconds(10));
+        // Tenant-scoped wait — we run on master-table multi-tenancy, so the helper
+        // needs to know which tenant DB to poll. All test data lands in the "system"
+        // tenant (see TenantedSessionFactory's HttpContext-less fallback).
+        await store.WaitForNonStaleProjectionDataAsync("system", TimeSpan.FromSeconds(10));
 
         var view = await session.LoadAsync<UserView>(id, TestContext.Current.CancellationToken);
         return view!;
@@ -157,7 +163,10 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-        await store.WaitForNonStaleProjectionDataAsync(TimeSpan.FromSeconds(10));
+        // Tenant-scoped wait — we run on master-table multi-tenancy, so the helper
+        // needs to know which tenant DB to poll. All test data lands in the "system"
+        // tenant (see TenantedSessionFactory's HttpContext-less fallback).
+        await store.WaitForNonStaleProjectionDataAsync("system", TimeSpan.FromSeconds(10));
 
         // Step 3: Create ApplicationUser with password via Identity
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
@@ -300,7 +309,7 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
     {
         using var scope = Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-        await store.WaitForNonStaleProjectionDataAsync(timeout ?? TimeSpan.FromSeconds(10));
+        await store.WaitForNonStaleProjectionDataAsync("system", timeout ?? TimeSpan.FromSeconds(10));
     }
 
     /// <summary>

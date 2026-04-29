@@ -25,7 +25,12 @@ public static class HttpClientExtensions
         this HttpResponseMessage response,
         JsonSerializerOptions jsonOptions) where T : class
     {
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            throw new HttpRequestException(
+                $"HTTP {(int)response.StatusCode} {response.StatusCode} from {response.RequestMessage?.RequestUri}\nBody: {body}");
+        }
         var result = await response.ReadFromJsonAsync<T>(jsonOptions);
         Assert.NotNull(result);
         return result;

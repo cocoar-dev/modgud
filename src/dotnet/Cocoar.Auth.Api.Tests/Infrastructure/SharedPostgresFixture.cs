@@ -2,6 +2,7 @@ using Cocoar.Configuration.Providers;
 using Cocoar.Configuration.Testing;
 using Testcontainers.PostgreSql;
 using Cocoar.Auth.Api;
+using Cocoar.Auth.Authentication.Identity;
 
 namespace Cocoar.Auth.Api.Tests.Infrastructure;
 
@@ -46,6 +47,23 @@ public class SharedPostgresFixture : IAsyncLifetime
                 }
             }),
             rule.For<AppSettings>().FromStatic(_ => new AppSettings { AuthenticationMinimumLevel = 0 }),
+            // EmailConfiguration / MagicLinkConfiguration / EmailOtpConfiguration are
+            // overridden at the DI level inside CocoarAuthWebApplicationFactory, but
+            // Cocoar.Configuration still requires a rule per type so GetRequiredConfig
+            // resolves before DI runs. Provide minimal defaults here.
+            rule.For<EmailConfiguration>().FromStatic(_ => new EmailConfiguration()),
+            rule.For<MagicLinkConfiguration>().FromStatic(_ => new MagicLinkConfiguration { Enabled = true }),
+            rule.For<EmailOtpConfiguration>().FromStatic(_ => new EmailOtpConfiguration()),
+            // OpenIddict in DevelopmentMode uses ephemeral signing keys — no cert file
+            // needed, no real signing material required for tests.
+            rule.For<OpenIddictSettings>().FromStatic(_ => new OpenIddictSettings
+            {
+                Issuer = "http://localhost:5000",
+                DevelopmentMode = true,
+                AccessTokenLifetimeMinutes = 60,
+                RefreshTokenLifetimeDays = 14,
+                AuthorizationCodeLifetimeMinutes = 5,
+            }),
         ]);
 
         // Apply config before creating factory (must be in same async context)

@@ -22,7 +22,7 @@ public class IdpConfigTests : IntegrationTestBase
         // command handler, the event is persisted, the inline projection
         // materializes the document with flavor-derived defaults.
         using var scope = Factory.Services.CreateScope();
-        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+        var bus = GetTenantedMessageBus(scope);
 
         var flavorData = JsonDocument.Parse("""{"TenantId": "11111111-2222-3333-4444-555555555555"}""");
         var command = new CreateIdpConfigCommand(
@@ -51,7 +51,7 @@ public class IdpConfigTests : IntegrationTestBase
     public async Task Create_ReplaysFromEventStream()
     {
         using var scope = Factory.Services.CreateScope();
-        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+        var bus = GetTenantedMessageBus(scope);
 
         var flavorData = JsonDocument.Parse("""{"MetadataUri": "https://idp.test/.well-known/openid-configuration"}""");
         var result = await bus.InvokeAsync<ErrorOr<IdpConfig>>(new CreateIdpConfigCommand(
@@ -77,7 +77,7 @@ public class IdpConfigTests : IntegrationTestBase
     public async Task Create_DuplicateDisplayName_Conflicts()
     {
         using var scope = Factory.Services.CreateScope();
-        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+        var bus = GetTenantedMessageBus(scope);
 
         var flavorData = JsonDocument.Parse("""{"MetadataUri": "https://idp.test/.well-known/openid-configuration"}""");
         await bus.InvokeAsync<ErrorOr<IdpConfig>>(new CreateIdpConfigCommand(IdpFlavor.GenericOidc, "Duplicate", flavorData));
@@ -91,7 +91,7 @@ public class IdpConfigTests : IntegrationTestBase
     public async Task Create_UnknownFlavor_ValidationError()
     {
         using var scope = Factory.Services.CreateScope();
-        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+        var bus = GetTenantedMessageBus(scope);
 
         var result = await bus.InvokeAsync<ErrorOr<IdpConfig>>(
             new CreateIdpConfigCommand("NopeFlavor", "X", null));
@@ -104,7 +104,7 @@ public class IdpConfigTests : IntegrationTestBase
     public async Task Create_MissingFlavorRequiredField_ValidationError()
     {
         using var scope = Factory.Services.CreateScope();
-        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+        var bus = GetTenantedMessageBus(scope);
 
         // EntraId flavor requires TenantId — passing null FlavorData must fail.
         var result = await bus.InvokeAsync<ErrorOr<IdpConfig>>(

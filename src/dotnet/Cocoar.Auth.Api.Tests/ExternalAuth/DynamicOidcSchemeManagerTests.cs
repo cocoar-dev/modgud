@@ -127,7 +127,7 @@ public class DynamicOidcSchemeManagerTests : IntegrationTestBase
         string? displayName = null)
     {
         using var scope = Factory.Services.CreateScope();
-        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+        var bus = GetTenantedMessageBus(scope);
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
         var flavorData = JsonDocument.Parse(
