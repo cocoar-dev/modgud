@@ -511,6 +511,7 @@ try
     // TenantedSessionFactory sees the correct tenant for every Marten session
     // opened during authentication / authorization (e.g. Identity user lookup).
     app.UseMiddleware<RealmMiddleware>();
+    app.UseMiddleware<TenantContextMiddleware>();
 
     app.UseSession();
     app.UseAuthentication();
