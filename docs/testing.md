@@ -1,7 +1,7 @@
 # Testing
 
-> **Status as of 2026-04-29 (post UAParser→Wangkanai swap, waves 5+6):**
-> 747 unit tests, 89/96 integration tests green. Coverage swept across
+> **Status as of 2026-04-29 (post TwoFactorHelper extraction, wave 7):**
+> 757 unit tests, 89/96 integration tests green. Coverage swept across
 > Domain, Application, Authorization, Authentication, Infrastructure,
 > Api (incl. Features). **All test-found production bugs from every
 > sweep have been fixed** — see "Production bugs found and fixed"
@@ -42,7 +42,7 @@ dotnet test
 
 ## Unit-test inventory
 
-747 tests. Every entry below is at least one file under
+757 tests. Every entry below is at least one file under
 `src/dotnet/Cocoar.Auth.Tests.Unit/`.
 
 ### Authorization slice
@@ -94,6 +94,7 @@ dotnet test
 | Sessions / SessionTracker | `Authentication/Sessions/SessionTrackerTests.cs` | 5 | best-effort tracking, swallows failures from `ISessionService` |
 | Device info parsing | `Sessions/DeviceInfoServiceTests.cs` | 8 | Wangkanai.Detection mapping pins driven by a fake `IDetectionService`: browser/platform/device → DeviceInfo, "Others" collapse to "Unknown", version-zero collapse to null, defensive throw-swallow. Mac-Safari-as-Mobile pin gone (fix landed with the swap). |
 | EmailOtpConfiguration | `Authentication/Identity/EmailOtpConfigurationTests.cs` | 2 | default values |
+| TwoFactorHelper (extracted) | `Authentication/Account/Services/TwoFactorHelperTests.cs` | 10 | `BuildMethodsList` order/conditions (TOTP/email-with-address-required/passkey count), `TryExpireSetupGrace` exempt-bypass + DueAt overwrite |
 
 ### Infrastructure + Api glue
 
@@ -180,9 +181,11 @@ These are listed so we don't have the same "should we test this?" conversation a
   no logic.
 - **Minimal-API endpoint files** (`*Endpoints.cs`) — need WebApplicationFactory.
   Tested at integration level if at all.
-- **TwoFactorHelper** — both methods are DB-bound (`IQuerySession.Query<T>`,
-  `LoadAsync`); the pure parts can't be cleanly extracted without a bigger
-  refactor.
+- **TwoFactorHelper outer wrappers** — `GetMethodsAsync` and
+  `ExpireSetupGraceAsync` are DB-bound. The pure parts (`BuildMethodsList`,
+  `TryExpireSetupGrace`) were extracted in wave 7 and are pinned by
+  `Authentication/Account/Services/TwoFactorHelperTests.cs`. The
+  load/store/await glue around them is integration-only.
 
 ## Conventions
 
@@ -224,6 +227,7 @@ These are pure-extractions made to enable unit-testing. None changed behaviour.
 | `Cocoar.Auth.Api/Features/Auth/OAuth/AuthorizationEndpoints.cs` | `GetDisplayName(user)`, `GetDestinations(claim)` → `internal static AuthorizationEndpointHelpers` | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` |
 | `Cocoar.Auth.Api/Features/Admin/ProjectionEndpoints.cs` | `DetectCycles`, `HasCycle`, `GroupRef`, `CycleReport` → `internal static GroupCycleDetector` | `Api/Features/Admin/GroupCycleDetectorTests.cs` |
 | `Cocoar.Auth.Api/Features/Admin/RealmsEndpoints.cs` | `MapToDto` private→internal | `Api/Features/Admin/RealmsEndpointsTests.cs` |
+| `Cocoar.Auth.Authentication/Api/Account/Services/TwoFactorHelper.cs` | `BuildMethodsList(user, passkeyCount)` (the inline list-building from `GetMethodsAsync`) and `TryExpireSetupGrace(security, now)` (the exempt-check + stamp from `ExpireSetupGraceAsync`) | `Authentication/Account/Services/TwoFactorHelperTests.cs` |
 
 ## Production bugs found and fixed during the test sweep
 
@@ -319,7 +323,7 @@ where we stopped and what's next.
 
 ### What's done (stop reading further if you only need today's status)
 
-- **Two test projects exist and run.** `Cocoar.Auth.Tests.Unit` (747 tests,
+- **Two test projects exist and run.** `Cocoar.Auth.Tests.Unit` (757 tests,
   ~1 s) and `Cocoar.Auth.Api.Tests` (96 tests, ~90 s, 89 green).
 - **Unit coverage swept across:** Domain (Realms, OAuth aggregates, OAuth
   wire-format constants), Application (OAuthAdminMapping after extraction),
@@ -352,7 +356,8 @@ where we stopped and what's next.
 
 ### What's NOT covered yet (next planned waves)
 
-In rough priority order:
+The pure-unit-test-friendly code paths in this repo are now all pinned.
+Remaining work in `backlog.md` is integration-test or feature work:
 
 1. **Get the 7 red `ProfileSelfService` integration tests green.**
    Needs `GetTenantedSession(scope)` + `GetTenantedStore(scope)`
@@ -360,9 +365,6 @@ In rough priority order:
    `IntegrationTestBase`, then migrate the 7 tests. Brings 96/96 green.
    Worth doing as a separate wave because it's integration-only and
    needs Docker.
-2. **`TwoFactorHelper`** — both methods are currently DB-bound, but the
-   recovery-code generation/check could plausibly be extracted as pure
-   helpers. Light refactor needed.
 
 ### How to start the next pass
 

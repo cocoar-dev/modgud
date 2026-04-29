@@ -187,6 +187,20 @@ feature folder. Probably ~50 LoC if it's needed back.
 
 ## Closed / done
 
+TwoFactorHelper pure-helper extraction on 2026-04-29 (wave 7):
+
+- **`BuildMethodsList(user, passkeyCount)` extracted** from
+  `GetMethodsAsync`. Pure list-builder; the DB-bound wrapper now does
+  one passkey-count query and forwards. 7 tests pin: order
+  (TOTP / email / passkey), the email-needs-an-address rule, the
+  defensive negative-passkey-count guard, and the fresh-instance-per-call
+  invariant.
+- **`TryExpireSetupGrace(security, now)` extracted** from
+  `ExpireSetupGraceAsync`. Pure mutation; returns true/false so the
+  DB-bound wrapper can decide whether to call `session.Store`. 3 tests
+  pin: stamp + return-true for non-exempt, no-mutation + return-false
+  for exempt, overwrite of existing DueAt on repeat calls.
+
 UAParser → Wangkanai.Detection swap on 2026-04-29 (wave 6):
 
 - **DeviceInfoService now wraps Wangkanai.Detection's HttpContext-bound
