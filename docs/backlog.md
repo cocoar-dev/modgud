@@ -4,6 +4,49 @@ Things we know about but consciously left for later. Each entry should say
 **what**, **why we left it**, and **what we'd do** when it's time. Kill entries
 once they're addressed.
 
+> Companion file: [testing.md](testing.md) — what's already pinned and how to
+> resume the test sweep. Pinned bugs in this backlog all have at least one
+> test in `Cocoar.Auth.Tests.Unit` that documents the broken behaviour.
+
+---
+
+## Triage at a glance
+
+**Real production bugs (fix sooner rather than later):**
+- `HttpRequestExtensions.FindSourceIp` crashes on standard
+  `X-Forwarded-For` comma-list (nginx/Cloudflare default)
+- `OAuthApplicationStateProjection` parses `AccessTokenType`
+  case-sensitively → silent fallback
+- `Group.MemberIds` mutability through interface (data leak risk)
+- `UserView.GetDisplayLabel` returns whitespace verbatim
+
+**Polish / consistency (next quiet hour):**
+- `UserSecurityData.RotateSecurityStamp()` rotates both stamps
+  despite name
+- `TwoFactorEnforcementMiddleware.HasFederatedMfa` doc comment is
+  incomplete
+- `ApplicationTypes` is not a constant
+- `UserContext.HasPermission` exact-match vs `PermissionEvaluator`
+  bypass — pick one, align
+
+**Larger deferred work:**
+- Replace `UAParser` with `Wangkanai.Detection` (also fixes
+  Mac-Safari-as-Mobile finding)
+- Extract three more pure helpers from `OAuthAdminService`
+- Get the 7 red `ProfileSelfService` integration tests green
+- Wolverine production-side tenant routing (deeper than current
+  middleware fix)
+- Frontend `AuthorizationSimulator` endpoint missing
+- Frontend consent view
+- Background expired-session cleanup hosted service
+- Real auth-code-flow end-to-end test
+- E2E Playwright Docker container/db rename
+- Cookie naming migration (no production data so non-event today)
+- `IdentityMigrationService` removed during the strip — re-add if
+  needed
+
+The full description for each entry is below.
+
 ---
 
 ## Pinned findings (current behavior is documented in tests)
