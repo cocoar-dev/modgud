@@ -1,20 +1,23 @@
 namespace Cocoar.Auth.Authorization.Resources;
 
 /// <summary>
-/// Default <see cref="IResourceRegistry"/> backed by an in-memory dictionary.
-/// Populated at startup via <c>opt.RegisterResource("todo", "read", …)</c> calls
-/// on the authorization DI-setup.
+/// Default <see cref="IResourceRegistry"/> backed by an in-memory dictionary
+/// keyed by <c>(appSlug, resource) → actions</c>. Populated at startup via
+/// <c>opt.RegisterResource("cocoar-auth", "user", "read", …)</c> calls on the
+/// authorization DI-setup.
 /// </summary>
 public class ResourceRegistry : IResourceRegistry
 {
-    private readonly Dictionary<string, HashSet<string>> _resources = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string App, string Resource), HashSet<string>> _resources
+        = new();
 
-    internal void Register(string resourceType, IEnumerable<string> actions)
+    internal void Register(string appSlug, string resourceType, IEnumerable<string> actions)
     {
-        if (!_resources.TryGetValue(resourceType, out var set))
+        var key = (appSlug, resourceType);
+        if (!_resources.TryGetValue(key, out var set))
         {
             set = new HashSet<string>(StringComparer.Ordinal);
-            _resources[resourceType] = set;
+            _resources[key] = set;
         }
         foreach (var action in actions) set.Add(action);
     }
@@ -22,23 +25,31 @@ public class ResourceRegistry : IResourceRegistry
     public bool IsValidPermission(string permission)
     {
         var parts = permission.Split(':');
-        if (parts.Length != 2) return false;
-        return _resources.TryGetValue(parts[0], out var actions) && actions.Contains(parts[1]);
+        if (parts.Length != 3) return false;
+        return _resources.TryGetValue((parts[0], parts[1]), out var actions)
+            && actions.Contains(parts[2]);
     }
 
-    public bool IsValidAction(string resourceType, string action)
-        => _resources.TryGetValue(resourceType, out var actions) && actions.Contains(action);
+    public bool IsValidAction(string appSlug, string resourceType, string action)
+        => _resources.TryGetValue((appSlug, resourceType), out var actions)
+            && actions.Contains(action);
 
     public IReadOnlyList<string> GetAllPermissions()
         => _resources
-            .SelectMany(kv => kv.Value.Select(a => $"{kv.Key}:{a}"))
+            .SelectMany(kv => kv.Value.Select(a => $"{kv.Key.App}:{kv.Key.Resource}:{a}"))
             .ToList();
 
-    public IReadOnlyList<string> GetActionsForResource(string resourceType)
-        => _resources.TryGetValue(resourceType, out var actions)
+    public IReadOnlyList<string> GetActionsForResource(string appSlug, string resourceType)
+        => _resources.TryGetValue((appSlug, resourceType), out var actions)
             ? actions.ToList()
             : [];
 
-    public IReadOnlyList<string> GetResourceTypes()
-        => _resources.Keys.ToList();
+    public IReadOnlyList<string> GetResourceTypes(string appSlug)
+        => _resources.Keys
+            .Where(k => k.App == appSlug)
+            .Select(k => k.Resource)
+            .ToList();
+
+    public IReadOnlyList<string> GetAppSlugs()
+        => _resources.Keys.Select(k => k.App).Distinct(StringComparer.Ordinal).ToList();
 }

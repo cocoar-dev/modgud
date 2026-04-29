@@ -11,46 +11,59 @@ namespace Cocoar.Auth.Tests.Unit.Resources;
 /// </summary>
 public class ResourceRegistryTests
 {
-    private static IResourceRegistry NewRegistryWith(params (string Resource, string[] Actions)[] specs)
+    private const string A = "cocoar-auth";
+
+    private static IResourceRegistry NewRegistryWith(params (string App, string Resource, string[] Actions)[] specs)
     {
         var options = new AuthorizationOptions();
-        foreach (var (resource, actions) in specs)
-            options.RegisterResource(resource, actions);
+        foreach (var (app, resource, actions) in specs)
+            options.RegisterResource(app, resource, actions);
         return options.ResourceRegistry;
     }
 
     public class IsValidPermission
     {
         [Fact]
-        public void Returns_true_for_known_resource_and_known_action()
+        public void Returns_true_for_known_app_resource_and_action()
         {
-            var registry = NewRegistryWith(("user", ["read", "write"]));
-            Assert.True(registry.IsValidPermission("user:read"));
-            Assert.True(registry.IsValidPermission("user:write"));
+            var registry = NewRegistryWith((A, "user", ["read", "write"]));
+            Assert.True(registry.IsValidPermission($"{A}:user:read"));
+            Assert.True(registry.IsValidPermission($"{A}:user:write"));
         }
 
         [Fact]
         public void Returns_false_for_known_resource_but_unknown_action()
         {
-            var registry = NewRegistryWith(("user", ["read"]));
-            Assert.False(registry.IsValidPermission("user:write"));
+            var registry = NewRegistryWith((A, "user", ["read"]));
+            Assert.False(registry.IsValidPermission($"{A}:user:write"));
         }
 
         [Fact]
         public void Returns_false_for_unknown_resource()
         {
-            var registry = NewRegistryWith(("user", ["read"]));
-            Assert.False(registry.IsValidPermission("role:read"));
+            var registry = NewRegistryWith((A, "user", ["read"]));
+            Assert.False(registry.IsValidPermission($"{A}:role:read"));
+        }
+
+        [Fact]
+        public void Returns_false_when_app_does_not_match()
+        {
+            // Resource "user" exists under cocoar-auth but not under timetodo —
+            // app-scoping must keep them apart.
+            var registry = NewRegistryWith((A, "user", ["read"]));
+            Assert.False(registry.IsValidPermission("timetodo:user:read"));
         }
 
         [Theory]
-        [InlineData("user")]                  // missing colon
-        [InlineData("user:read:extra")]       // too many parts
-        [InlineData(":read")]                 // empty resource
-        [InlineData("user:")]                 // empty action
+        [InlineData("user")]                          // missing colons
+        [InlineData("user:read")]                     // only two parts (legacy shape)
+        [InlineData("cocoar-auth:user:read:extra")]   // four parts
+        [InlineData(":user:read")]                    // empty app
+        [InlineData("cocoar-auth::read")]             // empty resource
+        [InlineData("cocoar-auth:user:")]             // empty action
         public void Returns_false_for_malformed_permissions(string permission)
         {
-            var registry = NewRegistryWith(("user", ["read"]));
+            var registry = NewRegistryWith((A, "user", ["read"]));
             Assert.False(registry.IsValidPermission(permission));
         }
 
@@ -59,34 +72,41 @@ public class ResourceRegistryTests
         {
             // Resources/actions are intentionally ordinal — drift here would silently
             // accept "User:Read" alongside "user:read" and break the permission grammar.
-            var registry = NewRegistryWith(("user", ["read"]));
-            Assert.False(registry.IsValidPermission("User:read"));
-            Assert.False(registry.IsValidPermission("user:Read"));
+            var registry = NewRegistryWith((A, "user", ["read"]));
+            Assert.False(registry.IsValidPermission($"{A}:User:read"));
+            Assert.False(registry.IsValidPermission($"{A}:user:Read"));
         }
     }
 
     public class IsValidAction
     {
         [Fact]
-        public void Returns_true_for_known_resource_and_action()
+        public void Returns_true_for_known_app_resource_and_action()
         {
-            var registry = NewRegistryWith(("user", ["read", "write"]));
-            Assert.True(registry.IsValidAction("user", "read"));
-            Assert.True(registry.IsValidAction("user", "write"));
+            var registry = NewRegistryWith((A, "user", ["read", "write"]));
+            Assert.True(registry.IsValidAction(A, "user", "read"));
+            Assert.True(registry.IsValidAction(A, "user", "write"));
         }
 
         [Fact]
         public void Returns_false_for_unknown_action()
         {
-            var registry = NewRegistryWith(("user", ["read"]));
-            Assert.False(registry.IsValidAction("user", "delete"));
+            var registry = NewRegistryWith((A, "user", ["read"]));
+            Assert.False(registry.IsValidAction(A, "user", "delete"));
         }
 
         [Fact]
         public void Returns_false_for_unknown_resource()
         {
-            var registry = NewRegistryWith(("user", ["read"]));
-            Assert.False(registry.IsValidAction("role", "read"));
+            var registry = NewRegistryWith((A, "user", ["read"]));
+            Assert.False(registry.IsValidAction(A, "role", "read"));
+        }
+
+        [Fact]
+        public void Returns_false_for_unknown_app()
+        {
+            var registry = NewRegistryWith((A, "user", ["read"]));
+            Assert.False(registry.IsValidAction("timetodo", "user", "read"));
         }
     }
 
@@ -100,29 +120,31 @@ public class ResourceRegistryTests
         }
 
         [Fact]
-        public void Returns_resource_action_combinations()
+        public void Returns_app_resource_action_combinations()
         {
             var registry = NewRegistryWith(
-                ("user", ["read", "write"]),
-                ("role", ["read"]));
+                (A, "user", ["read", "write"]),
+                (A, "role", ["read"]),
+                ("timetodo", "todo", ["read"]));
 
             var all = registry.GetAllPermissions();
 
-            Assert.Equal(3, all.Count);
-            Assert.Contains("user:read", all);
-            Assert.Contains("user:write", all);
-            Assert.Contains("role:read", all);
+            Assert.Equal(4, all.Count);
+            Assert.Contains($"{A}:user:read", all);
+            Assert.Contains($"{A}:user:write", all);
+            Assert.Contains($"{A}:role:read", all);
+            Assert.Contains("timetodo:todo:read", all);
         }
 
         [Fact]
         public void Multiple_registrations_for_same_resource_are_merged()
         {
-            // Two RegisterResource calls for "user" are additive — last call doesn't replace.
+            // Two RegisterResource calls for the same (app, resource) are additive.
             var registry = NewRegistryWith(
-                ("user", ["read"]),
-                ("user", ["write", "delete"]));
+                (A, "user", ["read"]),
+                (A, "user", ["write", "delete"]));
 
-            var actions = registry.GetActionsForResource("user");
+            var actions = registry.GetActionsForResource(A, "user");
 
             Assert.Equal(3, actions.Count);
             Assert.Contains("read", actions);
@@ -134,20 +156,20 @@ public class ResourceRegistryTests
         public void Duplicate_action_registrations_do_not_duplicate_in_output()
         {
             var registry = NewRegistryWith(
-                ("user", ["read"]),
-                ("user", ["read"]));
+                (A, "user", ["read"]),
+                (A, "user", ["read"]));
 
-            Assert.Single(registry.GetActionsForResource("user"));
+            Assert.Single(registry.GetActionsForResource(A, "user"));
         }
     }
 
     public class GetActionsForResource
     {
         [Fact]
-        public void Returns_actions_for_known_resource()
+        public void Returns_actions_for_known_app_resource_pair()
         {
-            var registry = NewRegistryWith(("user", ["read", "write"]));
-            var actions = registry.GetActionsForResource("user");
+            var registry = NewRegistryWith((A, "user", ["read", "write"]));
+            var actions = registry.GetActionsForResource(A, "user");
 
             Assert.Equal(2, actions.Count);
             Assert.Contains("read", actions);
@@ -157,8 +179,15 @@ public class ResourceRegistryTests
         [Fact]
         public void Returns_empty_list_for_unknown_resource()
         {
-            var registry = NewRegistryWith(("user", ["read"]));
-            Assert.Empty(registry.GetActionsForResource("nope"));
+            var registry = NewRegistryWith((A, "user", ["read"]));
+            Assert.Empty(registry.GetActionsForResource(A, "nope"));
+        }
+
+        [Fact]
+        public void Returns_empty_list_for_unknown_app_even_with_known_resource()
+        {
+            var registry = NewRegistryWith((A, "user", ["read"]));
+            Assert.Empty(registry.GetActionsForResource("timetodo", "user"));
         }
     }
 
@@ -168,22 +197,50 @@ public class ResourceRegistryTests
         public void Empty_registry_returns_empty()
         {
             var registry = NewRegistryWith();
-            Assert.Empty(registry.GetResourceTypes());
+            Assert.Empty(registry.GetResourceTypes(A));
         }
 
         [Fact]
-        public void Returns_each_distinct_registered_resource_type()
+        public void Returns_each_distinct_resource_type_for_the_given_app()
         {
             var registry = NewRegistryWith(
-                ("user", ["read"]),
-                ("role", ["read"]),
-                ("user", ["write"])); // re-registration, still one resource type
+                (A, "user", ["read"]),
+                (A, "role", ["read"]),
+                (A, "user", ["write"]),       // re-registration
+                ("timetodo", "todo", ["read"])); // different app, must NOT leak
 
-            var types = registry.GetResourceTypes();
+            var types = registry.GetResourceTypes(A);
 
             Assert.Equal(2, types.Count);
             Assert.Contains("user", types);
             Assert.Contains("role", types);
+            Assert.DoesNotContain("todo", types);
+        }
+    }
+
+    public class GetAppSlugs
+    {
+        [Fact]
+        public void Empty_registry_returns_empty()
+        {
+            var registry = NewRegistryWith();
+            Assert.Empty(registry.GetAppSlugs());
+        }
+
+        [Fact]
+        public void Returns_distinct_app_slugs()
+        {
+            var registry = NewRegistryWith(
+                (A, "user", ["read"]),
+                (A, "role", ["read"]),
+                ("timetodo", "todo", ["read"]),
+                ("timetodo", "project", ["read"]));
+
+            var apps = registry.GetAppSlugs();
+
+            Assert.Equal(2, apps.Count);
+            Assert.Contains(A, apps);
+            Assert.Contains("timetodo", apps);
         }
     }
 }

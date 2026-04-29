@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Cocoar.Auth.Application.Services;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Setup;
 using Cocoar.Auth.Domain.Realms;
@@ -118,42 +119,47 @@ public static class DependencyInjection
         // on the StoreOptions (see ConfigureDocumentStore).
         services.AddCocoarAuthAuthorization(opt =>
         {
-            // Cocoar.Auth is an Identity Provider. The full admin surface is split into
-            // per-resource read/write pairs so a "User Manager", "Help-Desk", or
-            // "Viewer" role can be granted in isolation. Global bypass roles:
-            //   - app:admin     — system-wide admin (kept for backwards compatibility,
-            //                     bypasses every check in PermissionService)
-            //   - oauth:admin   — full OAuth admin surface
-            //   - login-provider:admin — login-provider admin surface
-            opt.RegisterResource("app", "admin");
+            // Cocoar.Auth is an Identity Provider — its admin surface lives under
+            // the system app `cocoar-auth`. Permissions are validated as
+            // <app>:<resource>:<action>, so this registry's keys are
+            // (appSlug, resource) → actions.
+            //
+            // Bypasses recognised by PermissionEvaluator (no entry needed here):
+            //   - realm:admin                  — realm-wide bypass
+            //   - <app>:admin                  — bypass within a single app
+            //   - cocoar-auth:oauth:admin      — full OAuth admin surface
+            //   - cocoar-auth:login-provider:admin — login-provider admin surface
+            const string app = AppSlugs.CocoarAuth;
+
+            opt.RegisterResource(app, "app", "admin");
 
             // Identity / directory
-            opt.RegisterResource("user", "read", "write");
-            opt.RegisterResource("role", "read", "write");
-            opt.RegisterResource("authorization-group", "read", "write");
-            opt.RegisterResource("permission-role", "read", "write");
+            opt.RegisterResource(app, "user", "read", "write");
+            opt.RegisterResource(app, "role", "read", "write");
+            opt.RegisterResource(app, "authorization-group", "read", "write");
+            opt.RegisterResource(app, "permission-role", "read", "write");
 
             // Sessions + audit
-            opt.RegisterResource("session", "read", "write");
-            opt.RegisterResource("auth-log", "read");
+            opt.RegisterResource(app, "session", "read", "write");
+            opt.RegisterResource(app, "auth-log", "read");
 
             // GDPR (permanent-erase only — self-service is implicit on the caller)
-            opt.RegisterResource("gdpr", "admin");
+            opt.RegisterResource(app, "gdpr", "admin");
 
             // Realms (multi-tenant management — only meaningful in tenant-management realms)
-            opt.RegisterResource("realm", "read", "write");
+            opt.RegisterResource(app, "realm", "read", "write");
 
             // Identity-provider configs (external OIDC IdPs)
-            opt.RegisterResource("idp-config", "read", "write");
+            opt.RegisterResource(app, "idp-config", "read", "write");
 
             // OAuth admin surface — granular AND a kept-as-bypass `oauth:admin`.
-            opt.RegisterResource("oauth", "admin");
-            opt.RegisterResource("oauth-client", "read", "write");
-            opt.RegisterResource("oauth-scope", "read", "write");
-            opt.RegisterResource("oauth-api", "read", "write");
+            opt.RegisterResource(app, "oauth", "admin");
+            opt.RegisterResource(app, "oauth-client", "read", "write");
+            opt.RegisterResource(app, "oauth-scope", "read", "write");
+            opt.RegisterResource(app, "oauth-api", "read", "write");
 
             // Login providers (the configurable buttons on the login page)
-            opt.RegisterResource("login-provider", "admin", "read", "write");
+            opt.RegisterResource(app, "login-provider", "admin", "read", "write");
         });
 
         // OAuth admin slice services — both consume the tenant-scoped IDocumentSession
