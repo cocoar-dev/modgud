@@ -1,277 +1,181 @@
-# Authorization Model
+# Autorisierung & ABAC
 
-## Overview
+cocoar.auth nutzt eine kombinierte **RBAC + ABAC**-Architektur:
 
-Cocoar.Auth implements a flexible authorization model based on **Grants** — assignments that connect users or groups to roles, optionally scoped to specific API resources. The model scales from simple single-role setups to complex enterprise structures with nested groups and resource-scoped permissions.
+- **RBAC** (Role-Based Access Control) entscheidet **was** ein User
+  darf (`user:write`, `oauth-client:read`)
+- **ABAC** (Attribute-Based Access Control) entscheidet **welche
+  Zeilen** er sehen oder bearbeiten darf — über JavaScript-basierte
+  Access-Scripts pro Gruppe × Resource
 
-Every authorization decision follows one principle: **the token contains only what was requested and what the user is allowed to access.**
+Beide Achsen sind unabhängig und implementiert im
+**Authorization-Slice** (`Cocoar.Auth.Authorization`).
 
-## Core Concepts
+## RBAC: User → Group → Role → Permission
 
-### OAuth Scope
-
-The smallest unit of authorization. A scope describes a single action on an API resource.
-
-- Defined on API resources by the developer
-- Examples: `billing.read`, `billing.write`, `repo.delete`
-- Scopes appear in OAuth tokens — consumer apps use them to make access decisions
-- Scopes are never assigned directly to users, they are bundled in roles
-
-### API Resource
-
-A protected service or API endpoint.
-
-- Examples: "Billing API", "Code Repository", "Dashboard API"
-- Each API resource defines the set of scopes it supports
-- API resources serve as the **scope boundary** for grants
-
-### Role
-
-A named bundle of scopes. Roles describe **capabilities** — what someone can do.
-
-- Example: "Billing Manager" = `billing.read` + `billing.write` + `billing.export`
-- Roles are admin-configurable — new roles can be created from any combination of existing scopes
-- Roles can be **realm roles** (global) or **client roles** (scoped to a specific OAuth client)
-
-### Group
-
-An organizational unit that groups users together. Groups describe **belonging** — who works together.
-
-- Examples: "Backend Team", "Finance Department", "Team Leads"
-- Groups can be **nested** — a group can contain other groups as children
-- A user can be a member of multiple groups
-- Groups are **optional** — direct role assignments work without groups
-
-### Grant
-
-The assignment that connects everything. A grant has three dimensions:
+Permissions fließen **ausschließlich** über Gruppen:
 
 ```
-Grant = {
-  Subject:   User or Group          (who)
-  Role:      Role with scopes       (can do what)
-  Scope:     API Resource/Client    (where — optional)
-}
+User ──► Group ──► PermissionRole ──► "<resource>:<action>"
 ```
 
-When the scope is omitted, the grant applies globally (realm role). When scoped, the role and its scopes apply only to that specific API resource or OAuth client.
+Keine direkten User → Role-Zuweisungen, keine User → Permission-Overrides.
+Pfad: welche Gruppen ist der User in (transitiv, inkl. nested) → welche
+Rollen haben diese Gruppen → welche Permissions resultieren.
 
-## How It All Fits Together
+### Permission-Format
 
-```
-User ──► Grant ──► Role ──► OAuth Scopes
-  │         │
-  │      Scope (API Resource / Client)
-  │
-  └──► Group ──► Grant ──► Role ──► OAuth Scopes
-                    │
-                 Scope (API Resource / Client)
-```
+`<resource>:<action>` — z.B.:
 
-A user's effective scopes are the **union** of all grants — from direct assignments and from all groups they belong to (including nested group inheritance).
+| Permission | Bedeutung |
+|---|---|
+| `user:read` | User lesen |
+| `user:write` | User erstellen/ändern |
+| `user:delete` | User löschen |
+| `oauth-client:write` | OAuth-Clients pflegen |
+| `realm:read` | Realm-Liste sehen (nur in Tenant-Manager-Realms) |
+| `<resource>:admin` | **Per-Resource-Bypass** für alle Actions dieser Resource |
+| `app:admin` | **Globaler Bypass** für alle Resources |
 
-### Example Setup
+Alle Resource-Strings in cocoar.auth siehe
+[Permissions & Gating](/authorization-slice/permissions).
 
-```
-API Resource: "Billing API"
-  └── Scopes: billing.read, billing.write, billing.export
+### Bypass-Hierarchie
 
-API Resource: "Dashboard API"
-  └── Scopes: dash.read, dash.configure
+`hasPermission(needed)` returns true wenn:
 
-Role: "Billing Manager"  → billing.read, billing.write, billing.export
-Role: "Billing Viewer"   → billing.read
-Role: "Dashboard Admin"  → dash.read, dash.configure
+1. der User direkt diese Permission hat, oder
+2. der User `<resource>:admin` für die zugehörige Resource hat, oder
+3. der User `app:admin` hat
 
-Group: "Finance Team"
-  └── Grant: Role "Billing Manager" scoped to "Billing API"
-  └── Members: alice, bob
+Der globale `app:admin`-Bypass ist absichtlich schmal — die
+"System Admin"-Default-Rolle hat ihn, sonst niemand.
 
-User "charlie"
-  └── Direct Grant: Role "Billing Viewer" scoped to "Billing API"
-```
+### Default-Rollen pro Realm
 
-### Token Issuance — Filtered by Request
+| Rolle | Permissions |
+|---|---|
+| **System Admin** | `app:admin` |
+| **User Manager** | `user:read/write`, `permission-role:read`, `authorization-group:read/write` |
+| **Viewer** | Read-only auf User, Roles, Groups, OAuth-Clients, OAuth-Scopes |
 
-When an OAuth client requests a token, the response contains **only what was requested and what the user is allowed to access:**
+Beim First-Time-Setup wird der erste User der "System Admin"-Gruppe
+zugewiesen → bekommt `app:admin` → sieht alles.
 
-```
-Client requests:  scope=billing.read billing.write
+## Gruppen
 
-User "alice" has:
-  ├── "Billing Manager" on "Billing API"   → billing.read, billing.write, billing.export
-  └── "Dashboard Admin" on "Dashboard API" → dash.read, dash.configure
+`Group` ist der Träger von Permissions. Eine Gruppe hat:
 
-Token contains:
-{
-  "scope": "billing.read billing.write",
-  "realm_access": { "roles": [] },
-  "resource_access": {
-    "billing-api": { "roles": ["Billing Manager"] }
-  }
-}
-```
+- `Name`, `Description`
+- `MembershipMode`: `Manual` oder `Auto`
+- `MemberIds`: User oder andere Gruppen (nested)
+- Referenzen auf `PermissionRole`s
+- Optional: Membership-Script (bei Auto-Modus)
+- Optional: Access-Scripts pro Resource (für ABAC)
 
-- `billing.export` is not in the token — not requested by the client
-- Dashboard roles are not in the token — no dashboard scopes were requested
-- The consumer app sees only what it needs — no information leakage about other APIs
+### Manual vs Auto
 
-**Token filtering formula:** `requested scopes ∩ user's effective scopes = granted scopes`
+- **Manual**: Admin pflegt `MemberIds` direkt
+- **Auto**: Membership-Script-Predicate bestimmt die Mitglieder
+  dynamisch. Wird bei jedem User-Mutation-Event neu evaluiert.
 
-## Scaling Model
+Siehe [Auto-Membership](/authorization-slice/auto-membership).
 
-The model grows with your needs. All stages coexist — you can use all three simultaneously.
+### Nested Groups
 
-### Simple — realm roles, no groups
-
-For small applications with few users. No groups needed, no API scoping needed.
+Eine Gruppe kann andere Gruppen als Member haben:
 
 ```
-User "admin"  → Realm Role "Admin"
-User "viewer" → Realm Role "User"
+"All Staff" (Manual)
+  ├── "Engineering" (Auto: OU=engineering)
+  ├── "Sales" (Auto: OU=sales)
+  └── "Support" (Auto: OU=support)
 ```
 
-Token: `realm_access.roles: ["Admin"]`
-Consumer: `[Authorize(Roles = "Admin")]`
+Permission-BFS expandiert das ohne Sonderfall — `IPrincipalWithMembers`
+ist polymorph. Cycle-Detection via Visited-Set.
 
-### Medium — scoped roles per API
+## ABAC: Access Scripts
 
-When multiple APIs connect and need independent role namespaces.
+Roles sagen **was** ein User darf (`user:read`). Access Scripts sagen
+**welche Zeilen** er lesen darf. Pro Gruppe × Resource definiert der
+Admin ein TypeScript-Arrow-Function:
 
-```
-User "alice"
-  ├── Role "Editor" scoped to "Billing API"
-  └── Role "Viewer" scoped to "Dashboard API"
-```
-
-Token: `resource_access.billing-api.roles: ["Editor"]`
-
-### Large — groups with scoped roles
-
-When managing individual role assignments becomes impractical.
-
-```
-Group "Finance Team"
-  ├── Grant: "Billing Manager" on "Billing API"
-  ├── Grant: "Viewer" on "Dashboard API"
-  └── Members: alice, bob, charlie, ... (30 users)
-
-Group "Engineering"
-  ├── Backend Team
-  │     ├── Grant: "Editor" on "Code API"
-  │     └── Members: dave, eve
-  └── Frontend Team
-        ├── Grant: "Editor" on "Dashboard API"
-        └── Members: frank, grace
+```typescript
+// Auf der Gruppe "External Auditors" für Resource "user":
+(u) => u.OrganizationalUnit === user.organizationalUnit && u.IsActive
 ```
 
-New team member? Add to group — they get all the right scopes automatically.
+Wird zu (schematisch):
 
-At every stage, the token looks the same to the consumer — roles grouped by client, scopes filtered by request. The consumer never needs to know how a role was assigned.
-
-## Nested Groups
-
-Groups can contain other groups as children. Grants inherit downward — members of child groups inherit all grants from parent groups.
-
-```
-Engineering                          → Grant: "Viewer" on "Code API"
-  ├── Backend Team                   → Grant: "Editor" on "Code API"
-  │     └── User "alice"
-  └── Frontend Team                  → Grant: "Editor" on "Dashboard API"
-        └── User "bob"
+```sql
+WHERE data->>'OrganizationalUnit' = '<user-ou>'
+  AND data->>'IsActive' = 'true'
 ```
 
-- **alice** gets: Viewer + Editor on Code API (from Engineering + Backend Team)
-- **bob** gets: Viewer on Code API (from Engineering) + Editor on Dashboard API (from Frontend Team)
+**Keine Roundtrips, kein In-Memory-Filtering.** Cocoar.JsEval.Linq
+übersetzt JS → C# `Expression<Func<TView, bool>>` → SQL.
 
-Nesting is recursive — no depth limit. Cycles are prevented by validation.
+### Script-OR-Kombination
 
-## Groups in Tokens
+Ein User ist meist in mehreren Gruppen — jede kann ein Script auf
+dieselbe Resource haben. Die Scripts werden mit **OR** verbunden:
 
-Groups are **not included in tokens by default**. Consumer apps authorize based on roles and scopes, not group membership.
-
-If needed (e.g. "show all members of my team"), group claims can be enabled per client:
-
-```json
-{
-  "groups": ["/Engineering/Backend Team"]
-}
+```sql
+WHERE (data->>'OrganizationalUnit' = 'sales')   -- Gruppe "Sales"
+   OR (data->>'OrganizationalUnit' = 'support') -- Gruppe "Support"
+   OR (data->>'OwnerUserId' = '<user-id>')      -- Gruppe "Owners"
 ```
 
-## Roles with Scopes
+Wenn keine der Gruppen ein Script auf die Resource hat → "alle Zeilen
+sichtbar" (= klassisches RBAC).
 
-Roles bundle scopes and are admin-configurable. The admin creates roles from the scopes defined on API resources:
+Mehr siehe [Access Scripts](/authorization-slice/access-scripts).
+
+## Auflösung im Detail
 
 ```
-Available scopes (from API resources):
-  billing.read, billing.write, billing.export, dash.read, dash.configure
-
-Admin creates:
-  "Billing Manager"  = billing.read + billing.write + billing.export
-  "Dashboard Viewer"  = dash.read
-  "Full Access"       = billing.read + billing.write + billing.export + dash.read + dash.configure
+Request mit Cookie kommt rein
+  ↓
+PermissionEndpointFilter
+  ↓
+ClaimTypes.NameIdentifier → UserId
+  ↓
+IPermissionService.GetEffectivePermissionsAsync(userId)
+  ├── BFS durch alle Group-Membership (transitiv, mit Visited-Set)
+  ├── für jede Gruppe: load PermissionRole-Refs
+  ├── für jede Rolle: expand Permissions
+  └── Set<string> aller "<resource>:<action>"
+  ↓
+Bypass-Checks:
+  hat "app:admin"? → ✓
+  hat "<resource>:admin"? → ✓
+  hat exakt needed? → ✓
+  sonst → 403
 ```
 
-New scopes appear automatically when a developer adds them to an API resource. The admin can then include them in roles.
+## Sidebar-Mirror
 
-### Realm Roles vs Client Roles
+Das Frontend spiegelt diese Logik 1:1: in `views/admin/AdminView.vue`
+deklarieren Sidebar-Items welche Permissions sie sichtbar machen
+sollen. Backend und Frontend verwenden exakt dieselben Strings —
+"Single Source of Truth" sind die Permission-Konstanten.
 
-| | Realm Role | Client Role |
-|---|---|---|
-| **Scope** | Global — all APIs | Scoped to one OAuth client |
-| **In token** | `realm_access.roles` | `resource_access.{client}.roles` |
-| **Use case** | Platform-wide ("Admin") | Per-app ("Billing Manager") |
+```typescript
+{ section: 'authorization', label: 'nav.users', icon: 'users',
+  path: '/admin/users', requirePermissions: ['user:read'] }
+```
 
-## Event Sourcing
+Ein User mit nur `user:read` sieht nur "Users" in der Sidebar — keine
+OAuth, keine System.
 
-### Group Aggregate
+## Was diese Architektur NICHT ist
 
-**Lifecycle**
-- `GroupCreated` — name, description
-- `GroupRenamed` — name or description changed
-- `GroupArchived` — soft-deleted
-
-**Membership**
-- `MemberAdded` — user added
-- `MemberRemoved` — user removed
-
-**Nesting**
-- `ChildGroupAdded` — child group added
-- `ChildGroupRemoved` — child group removed
-
-**Role Grants**
-- `RealmRoleGranted` — realm role assigned to group
-- `RealmRoleRevoked` — realm role removed
-- `ClientRoleGranted` — client role assigned with API resource scope
-- `ClientRoleRevoked` — client role removed
-
-### Role Aggregate (existing)
-
-- `RoleCreated` — with optional ClientId (realm vs client role)
-- `RoleScopesChanged` — scopes added or removed from role
-- `RoleNameChanged`, `RoleDeleted`, etc.
-
-## Projections
-
-| Projection | Type | Purpose |
-|-----------|------|---------|
-| `GroupState` | Inline | Command validation: members, children, grants |
-| `GroupListReadModel` | Async | Admin grid: name, member count |
-| `GroupDetailReadModel` | Async | Admin detail: denormalized members, children, grants |
-| `UserEffectiveRoles` | Async | Pre-computed roles per user per client — used at token issuance |
-
-## Validation Rules
-
-- A user cannot be added to the same group twice
-- The same grant (same role + same scope) cannot exist twice on a group
-- An archived group does not accept new members or grants
-- Nested group cycles are not allowed
-- Role and API resource references must point to existing entities
-- Scopes assigned to a role must be valid scopes on the role's API resource
-
-## What This System Is NOT
-
-- **Not ABAC** — no attribute-based policies ("if time > 18:00"). Role-based with scoping.
-- **No deny grants** — only positive grants. Effective access is always the union. Simplicity over flexibility.
-- **No implicit permissions** — group membership does not automatically grant access. Roles must be explicitly assigned.
-- **The IDP does not enforce access** — it delivers roles and scopes in the token. The consumer app makes the authorization decision.
+- **Kein Deny-Grant** — nur positive Grants. Effective Access ist immer
+  Union. Simplicity over Flexibility.
+- **Keine implicit Permissions** — Group-Membership grants per se gar
+  nichts; Roles müssen explizit assigned werden.
+- **Keine User → Role direkt** — alles läuft über Gruppen.
+- **Keine zeitbasierten Conditions** im Script-Kern (z.B.
+  "if time > 18:00") — Scripts sind Set-Filter, keine
+  Decision-Engines.

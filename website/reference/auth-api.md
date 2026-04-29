@@ -1,134 +1,143 @@
-# Auth Endpoints
+# Auth-Endpoints
 
-All endpoints are relative to the realm's API base URL: `/{slug}/api/auth/...`
+Endpoints unter `/api/account/...`. Die aktuelle Realm wird über das
+**Host-Header** aufgelöst — keine Realm-Pfad-Prefixes.
 
-For example: `/system/api/auth/login`, `/acme/api/auth/login`.
+Vollständige Endpoint-Liste in
+`src/dotnet/Cocoar.Auth.Authentication/Api/Account/`.
 
 ## Public Authentication
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/auth/login` | Login with username/password |
-| `POST` | `/auth/logout` | Logout (requires auth) |
-| `POST` | `/auth/register` | Register new account |
-| `POST` | `/auth/forgot-password` | Request password reset link |
-| `POST` | `/auth/reset-password` | Reset password with token |
-| `GET` | `/auth/confirm-email` | Confirm email address |
-| `POST` | `/auth/resend-confirmation` | Resend confirmation email |
+| Method | Path | Beschreibung |
+|---|---|---|
+| `POST` | `/api/account/login` | Login mit Username + Passwort |
+| `POST` | `/api/account/logout` | Logout (cookie weg, Session invalidieren) |
+| `POST` | `/api/account/register` | Selbst-Registrierung |
+| `POST` | `/api/account/forgot-password` | Password-Reset-Link anfordern |
+| `POST` | `/api/account/reset-password` | Password mit Token zurücksetzen |
+| `GET` | `/api/account/confirm-email` | E-Mail bestätigen via Token-Link |
+| `POST` | `/api/account/resend-confirmation` | Bestätigungs-Mail erneut senden |
 
-## Current User
+## Current User & Profile
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/auth/me` | Get current user info (includes `realm` field) |
-| `GET` | `/auth/profile` | Get detailed profile |
-| `PUT` | `/auth/profile` | Update profile |
-| `POST` | `/auth/change-password` | Change password |
+| Method | Path | Beschreibung |
+|---|---|---|
+| `GET` | `/api/account/me` | Aktuelle User-Info (inkl. effective Permissions, Realm-Slug) |
+| `GET` | `/api/account/profile` | Detail-Profil |
+| `PUT` | `/api/account/profile` | Profil ändern (legt UserChangeRequest an) |
+| `POST` | `/api/account/change-password` | Passwort ändern |
+| `GET` | `/api/account/profile/links` | Verknüpfte OIDC-Identitäten |
+| `POST` | `/api/account/external-link/{idpConfigId}/start` | Account-Linking initiieren |
+| `DELETE` | `/api/account/external-link/{linkId}` | Verknüpfung aufheben |
 
 ## Two-Factor Authentication
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/auth/2fa/status` | Get 2FA status |
-| `POST` | `/auth/2fa/setup` | Generate authenticator key (TOTP) |
-| `POST` | `/auth/2fa/enable` | Enable 2FA with verification code |
-| `POST` | `/auth/2fa/disable` | Disable 2FA |
-| `POST` | `/auth/2fa/recovery-codes` | Generate new recovery codes |
-| `POST` | `/auth/2fa/login` | Complete login with TOTP code |
-| `POST` | `/auth/2fa/recovery-login` | Login with recovery code |
+### Status & TOTP
+
+| Method | Path | Beschreibung |
+|---|---|---|
+| `GET` | `/api/account/mfa/status` | 2FA-Status (enabled, methods, recoveryCodesRemaining) |
+| `POST` | `/api/account/mfa/setup` | TOTP-Authenticator-Key + QR-URI generieren |
+| `POST` | `/api/account/mfa/enable` | 2FA mit TOTP-Code aktivieren |
+| `POST` | `/api/account/mfa/disable` | 2FA deaktivieren |
+| `POST` | `/api/account/mfa/recovery-codes` | Recovery-Codes regenerieren |
+| `POST` | `/api/account/mfa/login` | Login Schritt 2 mit TOTP-Code |
+| `POST` | `/api/account/mfa/recovery-login` | Login mit Recovery-Code |
 
 ### Email OTP
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/auth/2fa/email-otp/status` | Get email OTP status |
-| `POST` | `/auth/2fa/email-otp/request` | Request OTP email (authenticated) |
-| `POST` | `/auth/2fa/email-otp/verify` | Verify OTP code |
-| `POST` | `/auth/2fa/email-otp/login/request` | Request OTP during login flow |
-| `POST` | `/auth/2fa/email-otp/login` | Complete login with email OTP |
+| Method | Path | Beschreibung |
+|---|---|---|
+| `GET` | `/api/account/email-otp/status` | Email-OTP-Status |
+| `POST` | `/api/account/email-otp/login/request` | Email-OTP für Login anfordern |
+| `POST` | `/api/account/email-otp/login` | Login mit Email-OTP |
 
-### WebAuthn / Passkeys
+### Passkey / FIDO2 / WebAuthn
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/auth/webauthn/register/options` | Get registration options |
-| `POST` | `/auth/webauthn/register/complete` | Complete credential registration |
-| `POST` | `/auth/webauthn/authenticate/options` | Get 2FA authentication options |
-| `POST` | `/auth/webauthn/authenticate/complete` | Complete 2FA authentication |
-| `POST` | `/auth/webauthn/login/options` | Get passwordless login options |
-| `POST` | `/auth/webauthn/login/complete` | Complete passwordless login |
-| `GET` | `/auth/webauthn/credentials` | List user's credentials |
-| `DELETE` | `/auth/webauthn/credentials/{id}` | Delete credential |
-| `PATCH` | `/auth/webauthn/credentials/{id}` | Rename credential |
+| Method | Path | Beschreibung |
+|---|---|---|
+| `POST` | `/api/account/passkey/register/options` | Registration-Options |
+| `POST` | `/api/account/passkey/register/complete` | Registration abschließen |
+| `POST` | `/api/account/passkey/login/options` | Login-Options (mit oder ohne userName für passwordless) |
+| `POST` | `/api/account/passkey/login/complete` | Login abschließen |
+| `GET` | `/api/account/passkey/credentials` | Eigene Passkeys auflisten |
+| `DELETE` | `/api/account/passkey/credentials/{id}` | Passkey löschen |
+| `PATCH` | `/api/account/passkey/credentials/{id}` | Passkey-Label ändern |
 
-## External Login
+### Magic Link
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/auth/external-providers` | List available OIDC providers (public, no secrets) |
-| `GET` | `/auth/external-login?provider=...&returnUrl=...` | Initiate OIDC login (redirects to provider) |
-| `GET` | `/auth/external-callback?code=...&state=...` | OIDC callback (processes code, redirects to frontend) |
-| `POST` | `/auth/external-link?provider=...&returnUrl=...` | Start account linking (requires auth) |
-| `DELETE` | `/auth/external-link/{provider}` | Unlink external login (requires auth) |
-| `GET` | `/auth/external-logins` | List linked external logins (requires auth) |
+| Method | Path | Beschreibung |
+|---|---|---|
+| `POST` | `/api/account/magic-link/request` | Magic-Link Self-Service anfordern (nur wenn enabled) |
+| `GET` | `/api/account/magic-link/login?token=...&user=...` | Magic-Link-Login |
 
-### External Login Flow
+## External Login (OIDC)
+
+| Method | Path | Beschreibung |
+|---|---|---|
+| `GET` | `/api/account/external-login/providers` | Liste aktiver IdpConfigs (kein Secret) |
+| `GET` | `/api/account/external-login/{idpConfigId}/start?returnUrl=/` | OIDC-Flow starten |
+| `GET` | `/api/account/external-login/callback` | OIDC-Callback (vom externen IdP) |
+
+### Login-Flow
 
 ```
-1. Frontend calls GET /auth/external-providers → shows provider buttons
-2. User clicks "Login with Google"
-3. Browser navigates to GET /auth/external-login?provider=google&returnUrl=/
-4. Backend builds OIDC auth URL (with PKCE, state, nonce) → 302 redirect to Google
-5. User authenticates at Google
-6. Google redirects to GET /auth/external-callback?code=xxx&state=yyy
-7. Backend: validates state, exchanges code for tokens, validates ID token
-8. Backend: finds or auto-creates user → signs in → redirects to returnUrl
+1. Frontend: GET /api/account/external-login/providers → zeigt Provider-Buttons
+2. User klickt "Login with Acme SSO" (= IdpConfig "acme-sso")
+3. Browser: GET /api/account/external-login/{id}/start?returnUrl=/
+4. Backend: ASP.NET Challenge mit dynamisch registriertem OIDC-Scheme
+5. Browser: 302 → externer IdP
+6. User authentifiziert sich beim IdP
+7. IdP: 302 → /api/account/external-login/callback
+8. Backend: ExternalLoginProcessor läuft (User suchen oder JIT-Create,
+   UserUpdateScript ausführen, Login-Cookie setzen)
+9. Backend: 302 → returnUrl
 ```
-
-If the user has 2FA enabled, the callback redirects with `?requires2fa=true` and the user completes 2FA via the existing `/auth/2fa/login` endpoint.
 
 ## Sessions
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/auth/sessions` | List active sessions |
-| `DELETE` | `/auth/sessions/{id}` | Revoke specific session |
-| `DELETE` | `/auth/sessions` | Revoke all sessions |
+| Method | Path | Beschreibung |
+|---|---|---|
+| `GET` | `/api/account/sessions` | Aktive Sessions |
+| `DELETE` | `/api/account/sessions/{id}` | Session revoken |
+| `DELETE` | `/api/account/sessions` | Alle Sessions revoken außer current ("logout everywhere") |
 
-## GDPR / Data Protection
+## GDPR / Privacy
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/auth/export-data` | Export all user data (Article 20) |
-| `POST` | `/auth/delete-account` | Request account deletion |
-| `POST` | `/auth/confirm-deletion` | Confirm deletion with token |
-| `POST` | `/auth/cancel-deletion` | Cancel pending deletion |
-| `GET` | `/auth/deletion-status` | Get deletion status |
+| Method | Path | Beschreibung |
+|---|---|---|
+| `GET` | `/api/account/gdpr/export` | Daten-Export (Article 20) — ZIP |
+| `GET` | `/api/account/gdpr/delete-status` | Status des Delete-Workflows |
+| `POST` | `/api/account/gdpr/delete-request` | Account-Löschung beantragen (Mail mit Token geht raus) |
+| `POST` | `/api/account/gdpr/delete-confirm` | Mit Token bestätigen → Stream archivieren + PII masken |
+| `POST` | `/api/account/gdpr/delete-cancel` | Pending Delete-Request canceln |
 
-## Device Code Flow (RFC 8628)
+## Setup (First-Time)
 
-For devices without a browser (Smart TVs, CLI tools, IoT).
+| Method | Path | Beschreibung |
+|---|---|---|
+| `GET` | `/api/setup/status` | `{ needsSetup: bool }` — true wenn noch kein Admin existiert |
+| `POST` | `/api/setup/create-admin` | First-Time-Admin anlegen, auto-login |
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/connect/device` | Request device + user codes |
-| `GET/POST` | `/connect/verify` | User verification endpoint (redirects to frontend) |
+Beim ersten Realm-Aufruf zeigt das Frontend `/setup`. Nach dem ersten
+Admin sind `/api/setup/*` 404.
 
-### Device Code Flow
+## Response-Format-Konventionen
 
-```
-1. Device: POST /connect/device → receives device_code, user_code, verification_uri
-2. Device displays user_code and verification_uri to user
-3. User opens verification_uri in browser, logs in, enters user_code
-4. User approves → device code is marked as authorized
-5. Device polls: POST /connect/token (grant_type=device_code) → receives tokens
-```
+- Alle Responses verwenden **PascalCase** JSON
+  (`PropertyNamingPolicy = null`)
+- `null`-Felder werden weggelassen (`JsonIgnoreCondition.WhenWritingNull`)
+- Enums werden als String serialisiert
+- Errors als `ProblemDetails` (`application/problem+json`)
 
-Polling responses before user approval: `{ "error": "authorization_pending" }`
+## Auth-Status-Codes
 
-## Setup
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/setup/status` | Check if initial setup is needed |
-| `POST` | `/setup/create-admin` | Create first admin account |
+| Status | Bedeutung |
+|---|---|
+| `200 { authenticated: true, ... }` | Erfolgreich (Cookie gesetzt) |
+| `200 { requiresTwoFactor: true, mfaMethods: [...] }` | Schritt-2-MFA nötig |
+| `200 { requiresSecureSetup: true, gracePeriod: true, secureSetupDueAt }` | User muss noch 2FA einrichten, hat Zeit |
+| `200 { requiresSecureSetup: true, gracePeriod: false }` | Grace-Period vorbei, blocking |
+| `401` | Nicht authentifiziert oder Credentials falsch |
+| `403` | Authentifiziert aber keine Permission, oder Passwordless-only-Realm |
+| `429` | Rate-Limit (Email-OTP, Magic-Link) |

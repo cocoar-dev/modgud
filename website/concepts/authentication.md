@@ -1,56 +1,144 @@
-# Authentication Model
+# Authentifizierung
 
-## OAuth / OpenID Connect
+cocoar.auth hat zwei orthogonale Authentifizierungs-Achsen:
 
-External applications authenticate users via **OAuth 2.0 / OpenID Connect**:
+1. **First-Party-Login** — User logged sich in cocoar.auth selbst ein
+   (Admin-UI, Profil, Setup). Cookie-basiert, kein Token im Browser.
+2. **OAuth/OIDC-Server** — externe Apps lassen User sich via cocoar.auth
+   einloggen. Authorization Code + PKCE, klassisch.
 
-1. App redirects user to Cocoar.Auth
-2. User logs in (+ 2FA if enabled)
-3. User consents to the requested permissions
-4. App receives an authorization code
-5. App exchanges the code for tokens
-6. App calls protected APIs with the access token
+Beide nutzen unter der Haube dieselben Login-Methoden.
 
-Always **Authorization Code + PKCE** — no implicit flow, no ROPC.
+## First-Party-Login
 
-Access tokens are **reference tokens** by default, configurable per client (see [Glossary > Access Token Types](/concepts/glossary#access-token-types)).
+Implementiert im **Authentication-Slice**
+(`Cocoar.Auth.Authentication`). Endpoint-Mounts unter `/api/account/...`.
 
-## Multi-Factor Authentication
+### Login-Wege
 
-Three independent 2FA methods, any combination per user:
+| Methode | Wann | Cookie-Lifetime |
+|---|---|---|
+| **Password** | Standard, mit AuthLevel 0/1 erlaubt | Session oder 30 Tage (RememberMe) |
+| **TOTP** | Zweiter Faktor nach Password | Erbt vom Password-Schritt |
+| **Email OTP** | Zweiter Faktor — oder als alternativer Login | Erbt vom Password-Schritt |
+| **Passkey (FIDO2)** | Zweiter Faktor — oder als alleiniger Login (Passwordless) | Immer 30 Tage (persistent) |
+| **Magic Link** | E-Mail mit Single-Use-Token; auch admin-versendbar | Immer 30 Tage |
+| **OIDC External** | Federated Login über Entra ID, Google, ... | 30 Tage |
 
-| Method | How it works |
-|--------|-------------|
-| **TOTP** | Authenticator app (Google Authenticator, Authy) generates time-based codes |
-| **Email OTP** | One-time code sent to verified email address |
-| **WebAuthn** | Hardware keys (YubiKey) or platform authenticators (Touch ID, Windows Hello) |
+Details siehe [Login-Flows](/authentication-slice/login-flows).
 
-Plus **recovery codes** as a last-resort backup.
+### Authentication-Level
 
-## External Login (OIDC Providers)
+Konfiguriert global via `IAuthSettings.AuthenticationMinimumLevel`:
 
-Users can authenticate via external OpenID Connect providers (Google, Microsoft, etc.):
+| Level | Effekt |
+|---|---|
+| 0 = None | Password-only erlaubt — kein Enforcement |
+| 1 = SecureLogin (Standard) | User muss 2FA oder Passwordless-Methode haben |
+| 2 = Passwordless | Password-Login deaktiviert — nur Magic Link + Passkey |
 
-1. Admin configures an OIDC provider in the Login Providers admin UI (Authority, Client ID, Client Secret)
-2. The login page shows "Login with {Provider}" buttons automatically
-3. Clicking a button redirects to the external provider via OIDC Authorization Code + PKCE
-4. On successful authentication, Cocoar.Auth either:
-   - **Signs in** the user (if already linked)
-   - **Auto-creates** a new user from the ID token claims (email, name)
-5. If the user has 2FA enabled, the standard 2FA flow is triggered after the external login
+Bei Level ≥ 1 läuft die `TwoFactorEnforcementMiddleware` und blockiert
+authentifizierte Requests von Usern ohne 2FA (mit Grace-Period).
 
-Users can also **link/unlink** external accounts on their profile page. Each realm has its own set of configured providers.
+### Cookies
 
-## Account Lifecycle
+| Cookie | Wofür | Lifetime |
+|---|---|---|
+| `Cocoar.Auth.Auth` | Hauptsitzung (HttpOnly, SameSite=Strict) | Session oder 30 Tage |
+| `Cocoar.Auth.2FA` | UserId zwischen Password-Step und 2FA-Step | 5 Min |
+| `Cocoar.Auth.External` | OIDC-Callback-Holder (SameSite=Lax!) | 10 Min |
+| `Cocoar.Auth.Session` | Nur für Passkey-Attestation-Options | 5 Min Idle |
 
-Users can enter the system in three ways:
+In Production sind alle Cookies `Secure`. In Dev `Secure=None` damit
+der Vite-Dev-Server (`http://localhost:4300`) sie schreiben darf.
 
-- **Self-registration** — user signs up via the registration form (if enabled for the realm)
-- **External login** — user authenticates via an OIDC provider (auto-creates account on first login)
-- **Admin-created** — a realm admin creates the user via the admin UI
+## OAuth 2.0 / OIDC Server
 
-From there:
+cocoar.auth ist gleichzeitig ein vollwertiger OpenID-Connect-Provider
+für externe Apps. Implementiert via **OpenIddict 7** mit eigenen
+Marten-basierten Stores (kein Entity Framework).
 
-- **Active** — normal state, can optionally set up 2FA
-- **Soft deleted** — anonymized but restorable (GDPR soft delete)
-- **Permanently erased** — all PII masked in events, stream archived (GDPR Article 17, irreversible)
+### Flows
+
+```mermaid
+sequenceDiagram
+    participant App as External App
+    participant Auth as cocoar.auth
+    participant User
+    App->>Auth: GET /connect/authorize?...&code_challenge=...
+    Auth->>User: Login-Seite (falls nötig)
+    User->>Auth: User loggt sich ein (Password + 2FA)
+    Auth->>Auth: Consent (implicit oder explicit)
+    Auth->>App: Redirect mit ?code=...
+    App->>Auth: POST /connect/token (code + verifier)
+    Auth->>App: access_token + id_token + refresh_token
+```
+
+Unterstützt: **Authorization Code + PKCE**, **Client Credentials**,
+**Refresh Token**.
+
+Nicht unterstützt: Implicit Flow, ROPC.
+
+Details siehe [OAuth & OIDC](/concepts/oauth) und
+[OAuth-Implementierung](/guide/oauth).
+
+### Per-Realm-Isolation
+
+Jeder Realm ist sein eigener OIDC-Provider mit eigenem Discovery-Dokument
+unter `https://<realm-domain>/.well-known/openid-configuration`. Tokens
+aus Realm A funktionieren in Realm B nicht — Issuer-Check blockiert.
+
+Das wird vom `RealmIssuerHandler` (OpenIddict-Pipeline-Hook)
+umgesetzt: zur Boot-Zeit gibt es einen statischen Issuer; der Handler
+überschreibt ihn pro Request mit `BaseUri` (= aktuelle Realm-Domain).
+
+## Multi-Faktor-Authentifizierung
+
+Drei unabhängige 2FA-Methoden, beliebig kombinierbar:
+
+| Methode | Wie es funktioniert |
+|---|---|
+| **TOTP** | Authenticator-App (Google Authenticator, Authy) — RFC 6238 |
+| **Email OTP** | One-Time-Code per E-Mail an verifizierte Adresse |
+| **WebAuthn/Passkey** | Hardware-Keys (YubiKey) oder Platform-Authenticators (TouchID, Windows Hello) |
+
+Plus **Recovery-Codes** als Last-Resort-Backup.
+
+## External Login (OIDC IdPs)
+
+User können sich über externe OIDC-Provider einloggen (Entra ID, Google,
+Auth0, …). Pro Realm konfigurierbar.
+
+1. Admin legt eine `IdpConfig` an: Authority, Client-ID, Client-Secret,
+   `UserUpdateScript`
+2. Login-Page zeigt automatisch Buttons für aktive IdpConfigs
+3. Klick → OIDC Authorization Code + PKCE → IdP-Login
+4. Auf Callback: `ExternalLoginProcessor` läuft
+   - Sucht `ExternalIdentityLink` (Issuer + Subject) → existierender User
+     oder JIT-Create
+   - `UserUpdateScript` (Jint) mappt Claims auf User-Felder
+5. Wenn User 2FA aktiv hat, läuft normaler 2FA-Flow danach
+6. Login-Cookie wird gesetzt (immer 30 Tage)
+
+Details siehe
+[Identity-Provider (OIDC)](/authentication-slice/identity-providers).
+
+## Account-Lifecycle
+
+| Wie kommt ein User ins System? | Mechanismus |
+|---|---|
+| Self-Registration | Registrierungs-Form (wenn für Realm enabled) |
+| External Login | OIDC-IdP → JIT-Create beim ersten Login |
+| Admin-created | Admin legt User per UI an |
+| Setup | First-Time-Setup — der erste User wird System-Admin |
+
+Lifecycle-States:
+
+- **Active** — normaler Zustand
+- **Locked** — durch Account-Lockout (5 Failed Logins → 1 Min)
+- **Soft-Deleted** — `IsDeleted = true`, alle Daten bleiben erhalten,
+  reaktivierbar
+- **GDPR-Erased** — Stream archived, PII gemasked, irreversibel
+  (Article 17)
+
+Siehe [GDPR & Sessions](/authentication-slice/gdpr-sessions).

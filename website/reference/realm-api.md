@@ -1,38 +1,52 @@
-# Realm Endpoints
+# Realm-Endpoints
 
-Realm management is only available from the **system realm**. The `[SystemRealmOnly]` filter returns 404 for requests from tenant realms.
+Realm-Verwaltung ist nur möglich aus Realms mit
+`CanManageTenants = true` (typischerweise nur der System-Realm).
+Sonst returnt der Endpoint **404** — nicht 403, weil die Existenz von
+Realm-CRUD nicht geleakt werden soll.
 
-## Endpoints
+Endpoints in
+`Cocoar.Auth.Api/Features/Admin/RealmsEndpoints.cs`.
 
-All realm management endpoints are under the **system realm** (`/system/api/...`):
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/admin/realms` | `realm:read` |
+| `GET` | `/api/admin/realms/{slug}` | `realm:read` |
+| `POST` | `/api/admin/realms` | `realm:write` |
+| `PATCH` | `/api/admin/realms/{slug}` | `realm:write` |
+| `DELETE` | `/api/admin/realms/{slug}` | `realm:delete` (Soft-Delete = Deactivate) |
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/system/api/admin/realms` | List all realms |
-| `GET` | `/system/api/admin/realms/{slug}` | Get realm by slug |
-| `POST` | `/system/api/admin/realms` | Create new realm |
-| `PATCH` | `/system/api/admin/realms/{slug}` | Update realm |
-| `DELETE` | `/system/api/admin/realms/{slug}` | Delete realm |
+## Realm anlegen
 
-## Create Realm
+```http
+POST /api/admin/realms
+Content-Type: application/json
 
-```json
-POST /system/api/admin/realms
 {
   "slug": "acme",
   "displayName": "Acme Corp",
-  "description": "Acme Corporation identity realm"
+  "description": "Acme Corporation Identity",
+  "domains": ["acme.example.com"],
+  "canManageTenants": false
 }
 ```
 
-### What Happens
+### Was passiert
 
-1. A new PostgreSQL database `cocoar_auth_acme` is created
-2. The tenant is registered in Marten's master table
-3. Marten schema (tables, indexes, functions) is applied
-4. Default OpenIddict scopes are seeded (`openid`, `email`, `profile`, `roles`, `offline_access`)
-5. Built-in login providers are seeded
-6. Realm metadata is stored in the system tenant
+1. **Slug-Validation**: Regex `^[a-z][a-z0-9-]{1,61}[a-z0-9]$`, kein
+   Reserved-Word (`system`, `health`, `swagger`, `api`, `connect`, ...)
+2. **PostgreSQL-DB anlegen** (raw SQL): `CREATE DATABASE cocoar_auth_next_acme`
+3. **In Marten-Tenancy registrieren**:
+   `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`
+4. **Marten-Schema applyen** (Tabellen, Indizes, Functions)
+5. **OAuthRealmSeeder.SeedAsync** seedet die neue DB:
+   - 5 Default-Scopes (`openid`, `email`, `profile`, `roles`,
+     `offline_access`)
+   - Internal-Login-Provider
+6. **AuthorizationSeeder** seedet 3 Default-Rollen (System Admin, User
+   Manager, Viewer)
+7. **Realm-Document in `IGlobalStore`** (Master-DB, Schema `global`)
+8. **RealmCache.Invalidate()** — nächster Request lädt neu
 
 ### Response
 
@@ -41,33 +55,87 @@ POST /system/api/admin/realms
   "id": "...",
   "slug": "acme",
   "displayName": "Acme Corp",
-  "description": "Acme Corporation identity realm",
+  "description": "Acme Corporation Identity",
+  "domains": ["acme.example.com"],
+  "canManageTenants": false,
   "isActive": true,
-  "isSystem": false,
-  "needsSetup": true,
-  "createdAt": "2026-03-16T15:00:00Z"
+  "createdAt": "2026-04-29T10:00:00Z"
 }
 ```
 
-## Update Realm
+## Realm bearbeiten
 
-```json
-PATCH /system/api/admin/realms/acme
+```http
+PATCH /api/admin/realms/{slug}
+Content-Type: application/json
+
 {
   "displayName": "Acme Corporation",
-  "isActive": false
+  "description": "Updated",
+  "domains": ["acme.example.com", "auth.acme.com"]
 }
 ```
 
-::: warning
-The system realm cannot be deactivated or deleted.
+`Slug` ist immutable. `CanManageTenants` ist nicht über PATCH
+änderbar — würde eine Authorization-Eskalation ermöglichen.
+
+## Realm deaktivieren
+
+```http
+PATCH /api/admin/realms/{slug}
+{ "isActive": false }
+```
+
+`RealmCache` filtert auf `IsActive = true` — alle Requests an die
+Realm-Domain landen bei `404`. Daten bleiben erhalten.
+
+::: danger System-Realm
+Der System-Realm darf nicht deaktiviert werden — der Endpoint blockt
+das.
 :::
 
-## Realm Setup Flow
+## Realm hard-löschen
 
-After creating a realm, the first visitor to `/{slug}/` triggers the setup flow:
+::: warning Nicht implementiert
+Aktueller Stand: nur Soft-Delete (Deaktivierung). Die Tenant-DB wird
+nicht gedroppt. Das ist ein offenes Roadmap-Item — Wolverine
+durability-Agent muss sauber heruntergefahren, Tenant aus
+`mt_tenant_databases` entfernt, alle Sessions invalidiert und am Ende
+die DB gedroppt werden.
+:::
 
-1. Frontend detects `needsSetup: true` from `GET /{slug}/api/setup/status`
-2. Redirects to `/{slug}/setup`
-3. User creates the realm's first admin account
-4. Auto-login completes the setup
+## Setup-Flow für neuen Realm
+
+Nach `POST /api/admin/realms`:
+
+1. Browser auf der neuen Realm-Domain öffnen (z.B. `https://acme.example.com/`)
+2. Frontend macht `GET /api/setup/status` → `{ needsSetup: true }`
+3. Frontend redirected zu `/setup`
+4. User legt First-Time-Admin an
+5. Auto-Login als System-Admin im neuen Realm
+
+Der erste User kommt automatisch in die "System-Admin"-Default-Gruppe,
+die `app:admin` hat.
+
+## Realm-Datenmodell
+
+Das `Realm`-Dokument
+(`src/dotnet/Cocoar.Auth.Domain/Realms/Realm.cs`):
+
+```csharp
+public class Realm
+{
+    public Guid Id { get; set; }
+    public string Slug { get; set; }              // = TenantId, immutable
+    public string DisplayName { get; set; }
+    public string? Description { get; set; }
+    public string[] Domains { get; set; }         // Host-Header-Matches
+    public bool CanManageTenants { get; set; }    // darf Realm-CRUD
+    public bool IsActive { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
+}
+```
+
+Lebt im `IGlobalStore` (Master-DB, Schema `global`) — nicht im
+Tenant-Store, sonst Henne-Ei-Problem.

@@ -1,102 +1,261 @@
 # Multi-Tenancy / Realms
 
-Cocoar.Auth uses a **realm** model for multi-tenancy. Each realm is a fully autonomous identity provider with its own database, users, roles, and OAuth configuration.
+cocoar.auth nutzt einen **Realm-Modell** für Multi-Tenancy. Jeder Realm
+ist ein vollständig autonomer Identity Provider mit eigener Datenbank,
+eigenen Usern, Rollen, OAuth-Configs und Login-Providern.
 
-::: info Realm vs Tenant in the codebase
-The user-facing term is **realm** (UI, API, URLs, documentation). The codebase uses **tenant** in the infrastructure layer (`TenantId`, `ITenantSessionFactory`, `MasterTableTenancy`) because that's what Marten and Wolverine call it. Same concept, two names: `TenantId` = realm slug.
+::: info "Realm" vs. "Tenant"
+User-facing heißt es überall **Realm** (UI, Doku). Der Code nutzt
+**Tenant** im Infrastructure-Layer (`TenantId`,
+`ITenantSessionFactory`, `MasterTableTenancy`), weil Marten/Wolverine
+das so nennen. `TenantId` = Realm-Slug.
 :::
 
-## How It Works
+## Domain-basiertes Routing
 
-### URL-Based Realm Detection
+Realms werden über das **Host-Header** identifiziert, nicht über
+URL-Pfade. Jeder Realm hat eine oder mehrere konfigurierte Domains:
 
-The realm is determined from the first path segment:
+| Hostname | Realm |
+|---|---|
+| `system.example.com` | System-Realm |
+| `acme.example.com` | Acme-Realm |
+| `auth.acme.example.com` | Acme-Realm (zweite Domain) |
+| `localhost` (dev, Single-Realm) | System-Realm (Single-Tenant-Fallback) |
 
-| URL Pattern | Realm | API Base |
-|------------|-------|----------|
-| `/system/api/...` | `system` | `/system/api` |
-| `/acme/api/...` | `acme` | `/acme/api` |
-| `/corp/api/...` | `corp` | `/corp/api` |
-
-`https://auth.example.com/` (root) redirects to `/system/`.
-
-### RealmMiddleware
-
-The `RealmMiddleware` runs before routing and:
-
-1. Extracts the slug from the first path segment `/{slug}/...`
-2. Validates the realm exists and is active (via `IRealmCache`)
-3. Sets `HttpContext.Items["TenantId"]` and `HttpContext.Items["RealmSlug"]`
-4. Rewrites `PathBase` so controllers see clean `/api/...` paths
-
-### Database-per-Tenant
-
-Marten's `MasterTableTenancy` maps each realm slug to its own PostgreSQL database:
-
-```
-cocoar_auth_master  → Tenant registry (slug → connection string)
-cocoar_auth_system  → System realm data
-cocoar_auth_acme    → Acme realm data
-cocoar_auth_corp    → Corp realm data
-```
-
-The `IDocumentSession` is resolved per-request with the correct tenant ID:
+`RealmMiddleware` (`src/dotnet/Cocoar.Auth.Api/Middleware/RealmMiddleware.cs`)
+läuft als allererste Middleware:
 
 ```csharp
-services.AddScoped<IDocumentSession>(sp =>
+public async Task InvokeAsync(HttpContext context)
 {
-    var store = sp.GetRequiredService<IDocumentStore>();
-    var tenantId = accessor.HttpContext?.Items["TenantId"] as string ?? "system";
-    return store.LightweightSession(tenantId);
-});
+    var path = context.Request.Path.Value;
+    if (SkipPaths.Any(p => path.StartsWith(p))) { await _next(context); return; }
+
+    var hostname = context.Request.Host.Host;
+    var tenantInfo = await _realmCache.ResolveDomainAsync(hostname);
+
+    if (tenantInfo is null)
+    {
+        context.Response.StatusCode = 404;
+        return;
+    }
+
+    context.Items[TenantConstants.HttpContextTenantIdKey] = tenantInfo.Slug;
+    context.Items[TenantConstants.HttpContextTenantInfoKey] = tenantInfo;
+
+    await _next(context);
+}
 ```
 
-### Cookie Scoping
+Skip-Pfade: `/health`, `/swagger`, `/openapi`, `/_framework`,
+`/signalr` — die laufen ohne Realm-Kontext.
 
-Auth cookies are scoped per realm to prevent cross-realm session leakage:
+### Single-Tenant-Fallback in Dev
 
-- System realm: cookie path = `/system`
-- Tenant realm: cookie path = `/{slug}`
+Wenn nur **ein** Realm aktiv ist UND der Host eine Localhost-Variante
+ist (`localhost`, `127.0.0.1`, `::1`, `0.0.0.0`), gibt der Cache
+diesen Realm zurück — auch wenn er die Localhost-Domain nicht in seiner
+Liste hat. Damit funktioniert ein Single-Realm-Dev-Boot ohne
+hosts-File-Eintrag.
 
-The `cocoar:realm` claim is added to the user's identity during sign-in.
+## RealmCache
 
-## Realm Lifecycle
+`RealmCache` (`Cocoar.Auth.Infrastructure/Realms/RealmCache.cs`) hält
+einen Snapshot der Domain → Realm-Mappings im Memory:
 
-### Creating a Realm
-
-1. System admin calls `POST /system/api/admin/realms` with `{ slug, displayName, description }`
-2. `RealmProvisioningService` creates a new PostgreSQL database
-3. Registers the tenant in Marten's master table
-4. Applies Marten schema (tables, indexes, functions)
-5. Seeds default OpenIddict scopes and login providers
-6. Stores realm metadata in the system tenant
-
-### Realm Setup
-
-New realms start with `needsSetup: true`. The first visitor to `/{slug}/` is redirected to the setup flow where they create the realm's first admin account.
-
-### The System Realm
-
-The system realm is special only in that it can manage other realms via the `[SystemRealmOnly]` filter on the `RealmsAdminController`. All other functionality (users, roles, OAuth, 2FA) is identical.
-
-## Frontend Realm Awareness
-
-The Vue SPA is realm-agnostic by design:
-
-```typescript
-// composables/useRealmContext.ts
-const match = window.location.pathname.match(/^\/([a-z][a-z0-9-]+)(\/|$)/);
-const slug = match?.[1] ?? 'system';
-
-export const realmContext = {
-  slug,
-  apiUrl: `/${slug}/api`,
-  baseHref: `/${slug}/`,
-  isSystem: slug === 'system',
-};
+```csharp
+private sealed record CacheSnapshot(
+    ConcurrentDictionary<string, TenantInfo> ByDomain,
+    TenantInfo? SingleActiveRealm);
 ```
 
-- **API calls**: `http.ts` uses `realmContext.apiUrl` as base URL
-- **Router**: `createWebHistory(realmContext.baseHref)` keeps URLs within the realm prefix
-- **Sidebar**: Shows "Realms" menu only for system realm admins
-- **Realm indicator**: Displays current realm slug in sidebar header
+Lädt beim Start aus dem `IGlobalStore` (siehe unten) alle aktiven
+Realms. Wird invalidiert bei Realm-CUD (Create/Update/Delete via
+Admin-API).
+
+## Database-per-Tenant via Marten
+
+cocoar.auth nutzt Martens `MasterTableTenancy`:
+
+```mermaid
+graph TD
+    subgraph Master["Master-DB (cocoar_auth_next)"]
+        Tenancy["Schema: realms<br/>realms.mt_tenant_databases"]
+        GlobalSchema["Schema: global<br/>(Realm-Documents)"]
+        SystemTenant["System-Tenant-Daten<br/>(physisch hier)"]
+    end
+
+    subgraph Acme["cocoar_auth_next_acme"]
+        AcmeData["Acme-Tenant-Daten"]
+    end
+
+    subgraph Finance["cocoar_auth_next_finance"]
+        FinanceData["Finance-Tenant-Daten"]
+    end
+
+    Tenancy -.->|Lookup| Acme
+    Tenancy -.->|Lookup| Finance
+```
+
+| Datenbank | Inhalt |
+|---|---|
+| `cocoar_auth_next` (Master) | `realms.mt_tenant_databases` (Tenant-Registry) + Schema `global` (Realm-Documents) + System-Tenant-Daten |
+| `cocoar_auth_next_<slug>` | Eigene physische DB pro weiterem Realm |
+
+Der **System-Tenant zeigt absichtlich auf die Master-DB**. So braucht
+eine Single-Realm-Installation nur eine einzige DB. Mehr-Realm-Setups
+fügen weitere Tenant-DBs hinzu, ohne dass der System-Tenant
+wegmigriert.
+
+## TenantedSessionFactory
+
+Marten `ISessionFactory`-Implementierung
+(`Cocoar.Auth.Infrastructure/Persistence/Tenancy/TenantedSessionFactory.cs`),
+die die `TenantId` aus `HttpContext.Items` liest:
+
+```csharp
+public IDocumentSession OpenSession()
+    => _store.LightweightSession(ResolveTenantId());
+
+public IQuerySession OpenQuerySession()
+    => _store.QuerySession(ResolveTenantId());
+
+private string ResolveTenantId()
+    => _httpContextAccessor.HttpContext?
+         .Items[TenantConstants.HttpContextTenantIdKey] as string
+       ?? TenantConstants.SystemTenantId;
+```
+
+Wired über:
+
+```csharp
+builder.Services.AddMarten(...)
+    .BuildSessionsWith<TenantedSessionFactory>();
+```
+
+Damit ist jede `IDocumentSession`/`IQuerySession`-Injection automatisch
+realm-scoped. Background-Services ohne `HttpContext` fallen auf den
+System-Tenant zurück.
+
+## IGlobalStore
+
+Das `Realm`-Document selbst kann nicht im Tenant-Store leben — Henne-Ei.
+Es lebt in einem separaten Marten-Store (`IGlobalStore`) gegen Schema
+`global` der Master-DB:
+
+```csharp
+public sealed record TenantInfo(string Slug, bool CanManageTenants, bool IsActive);
+
+public class Realm
+{
+    public Guid Id { get; set; }
+    public string Slug { get; set; }            // = TenantId, immutable
+    public string DisplayName { get; set; }
+    public string? Description { get; set; }
+    public string[] Domains { get; set; }       // ["acme.example.com", ...]
+    public bool CanManageTenants { get; set; }  // darf andere Realms managen
+    public bool IsActive { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
+}
+```
+
+`RealmCache` lädt die Realm-Liste aus `IGlobalStore`.
+
+## Bootstrap-Reihenfolge
+
+In `Program.cs` (vor `app.Run`):
+
+1. **Master-DB anlegen** (raw SQL)
+2. **Marten-Storage applyen** → `realms.mt_tenant_databases` entsteht
+3. **System-Tenant in der Tenancy-Tabelle eintragen**
+   (`tenancy.AddDatabaseRecordAsync("system", masterCs)`)
+4. **Marten-Storage nochmal applyen** → System-Tenant bekommt
+   per-Tenant-Tabellen
+5. **System-Realm-Document seeden** (`EnsureSystemRealmExistsAsync`)
+6. **OAuthRealmSeeder** seedet 5 Default-Scopes
+   (`openid`, `email`, `profile`, `roles`, `offline_access`) +
+   Internal-LoginProvider in den System-Tenant
+7. **RealmCache warmladen**
+8. **Recovery-CLI-Pfad checken** oder Kestrel starten
+
+## Realm-CRUD
+
+Endpoints unter `/api/admin/realms` — gegated durch
+`realm:read`/`realm:write` UND nur in Realms mit
+`CanManageTenants = true` (sonst 404).
+
+### Create
+
+```http
+POST /api/admin/realms
+{
+  "slug": "acme",
+  "displayName": "Acme Corp",
+  "domains": ["acme.example.com"],
+  "canManageTenants": false
+}
+```
+
+Backend:
+
+1. Validiert `slug` (Regex, Reserved-Words check)
+2. `CREATE DATABASE cocoar_auth_next_acme` (raw SQL)
+3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`
+4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`
+5. **OAuthRealmSeeder** seedet die neue Tenant-DB
+6. **AuthorizationSeeder** legt 3 Default-Rollen an (System Admin, User
+   Manager, Viewer)
+7. `Realm`-Document in `IGlobalStore`
+8. `RealmCache.Invalidate()`
+
+Der Realm ist sofort aufrufbar. Beim ersten Aufruf der Realm-Domain
+landet der Browser auf `/setup` — der erste Visitor wird System-Admin.
+
+### Update
+
+```http
+PATCH /api/admin/realms/{slug}
+{
+  "displayName": "Acme Corporation",
+  "domains": ["acme.example.com", "auth.acme.com"]
+}
+```
+
+`Slug` ist immutable.
+
+### Soft-Delete (Deactivate)
+
+```http
+PATCH /api/admin/realms/{slug}
+{ "isActive": false }
+```
+
+`RealmCache` filtert auf `IsActive = true` — alle Requests an die
+Realm-Domain landen bei `404`. Daten bleiben erhalten.
+
+::: danger System-Realm
+Der System-Realm darf nicht deaktiviert werden — der Endpoint blockt
+das.
+:::
+
+### Hard-Delete
+
+::: warning In Arbeit
+Aktuell nicht implementiert. Müsste die Tenant-DB sauber droppen,
+Wolverine durability-Agent für den Tenant runterfahren, Sessions
+invalidieren — siehe Roadmap.
+:::
+
+## Cookies und Sessions im Multi-Realm-Setup
+
+Da jeder Realm seine eigene Domain hat, sind Cookies automatisch
+realm-isoliert über die Browser-Cookie-Domain-Regel. Login in
+`acme.example.com` setzt einen Cookie für genau diese Domain — er wird
+bei `finance.example.com` nicht mitgeschickt. Keine Pfad-Akrobatik
+nötig.
+
+Sessions (`UserSession`-Documents) leben pro Realm im Tenant-Store.
+Ein User der in zwei Realms eingeloggt ist hat zwei separate Sessions,
+in zwei separaten DBs.

@@ -1,131 +1,188 @@
-# Glossary
+# Glossar
 
-This page defines the terminology used in Cocoar.Auth and how it maps to other identity systems.
+Begriffe in cocoar.auth und ihre Entsprechung in anderen Identity-Systemen.
 
-## Core Concepts
+## Kernbegriffe
 
 ### Realm
 
-An isolated identity boundary. Each realm has its own users, roles, OAuth clients, and database. This is the same concept as a **realm** in Keycloak or a **tenant** in Auth0/Azure AD.
+Eine isolierte Identity-Boundary. Jeder Realm hat **seine eigene
+PostgreSQL-Datenbank** (`cocoar_auth_next_<slug>`), eigene User, Rollen,
+OAuth-Clients und Login-Provider.
 
-The **system realm** is the first realm, created automatically. It can manage other realms.
+Mapping zu anderen Systemen:
+
+| cocoar.auth | Keycloak | Auth0 | Azure AD |
+|---|---|---|---|
+| Realm | Realm | Tenant | Tenant (Directory) |
+
+Der **System-Realm** ist der erste Realm, der beim First-Time-Setup
+automatisch entsteht. Er ist der einzige Realm der `CanManageTenants =
+true` hat — d.h. nur seine User dürfen weitere Realms anlegen.
+
+Die Realm-Boundary ist die **Domain** (Host-Header), nicht der URL-Pfad.
+Realm `acme` lebt unter `acme.example.com`, System-Realm unter
+`system.example.com` oder `localhost`.
 
 ### User
 
-A person or service account within a realm. Users belong to exactly one realm. Each user has credentials (password, 2FA), a profile, and assigned roles.
+Ein Mensch oder Service-Account innerhalb eines Realms. User gehören zu
+genau einem Realm. Identische Username in verschiedenen Realms sind
+verschiedene Accounts.
 
-### Role
+Im Code: `Cocoar.Auth.Authentication.Domain.ApplicationUser` (ASP.NET
+Core Identity-User).
 
-A named set of permissions within a realm. Roles are realm-scoped — an "Admin" role in realm A is independent from "Admin" in realm B.
+### Group
 
-The built-in `Admin` role grants access to the admin UI and all admin API endpoints within that realm.
+Eine organisatorische Einheit. Gruppen haben Mitglieder (User oder
+andere Gruppen) und tragen `PermissionRole`-Referenzen. Gruppen
+existieren in zwei Modi:
+
+- **Manual** — Admin pflegt Mitgliederliste
+- **Auto** — Membership-Script bestimmt Mitglieder dynamisch
+
+Siehe [Auto-Membership](/authorization-slice/auto-membership).
+
+### PermissionRole
+
+Eine benannte Bündelung von Permissions. Bindet eine Liste von Actions
+an einen Resource-Type:
+
+```
+Name:         "User Manager"
+ResourceType: "user"
+Permissions:  ["read", "write"]
+→ ergibt: user:read, user:write
+```
+
+### Permission
+
+Ein String `<resource>:<action>` — z.B. `user:read`, `oauth-client:write`,
+`app:admin`. Permissions fließen ausschließlich über Gruppen:
+
+```
+User → Group → Role → Permission
+```
+
+`<resource>:admin` ist Per-Resource-Bypass; `app:admin` ist globaler
+Bypass. Siehe [Permissions & Gating](/authorization-slice/permissions).
 
 ### Session
 
-A server-side record of an active login. Tracks IP, browser, device, and last activity. Users can view and revoke their own sessions. Admins can force-logout users.
+Ein server-seitiger Eintrag (`UserSession`-Marten-Document) eines aktiven
+Logins. Trackt IP, Browser, OS, Device-Type, `LastActiveAt`, `ExpiresAt`.
+User können eigene Sessions revoken; Admins können User force-logout
+machen. UAParser parst den User-Agent.
 
 ---
 
-## OAuth / OIDC Terminology
+## OAuth / OIDC Begriffe
 
-These terms come from the OAuth 2.0 and OpenID Connect standards. If you've used Keycloak, Auth0, or similar systems, most of these will be familiar.
+### Client (OAuth-Application)
 
-### Client
+Eine externe Application die User-Logins oder API-Zugriff anfordert.
+Pro Realm angelegt — derselbe `client_id` in Realm A und Realm B sind
+verschiedene Clients.
 
-An application registered to authenticate users or access APIs within a realm.
+Pro Client konfigurierbar:
 
-Examples: a web app, a mobile app, a backend service.
-
-Each client has:
-- **Client ID** — public identifier (e.g., `my-app`)
-- **Client Secret** — private key (only for confidential clients like backend services)
-- **Redirect URIs** — allowed callback URLs after login
-- **Grant Types** — which authentication flows are allowed
+- **Client ID** — öffentlicher Identifier (z.B. `my-app`)
+- **Client Secret** — privater Schlüssel (für Confidential Clients)
+- **Redirect URIs** — erlaubte Callback-URLs
+- **Grant Types** — welche Flows erlaubt sind
+- **Access Token Type** — Reference (default) oder JWT
 
 ### Scope
 
-A permission boundary that a client can request. Scopes control what information and access a token grants. Users see the requested scopes on the consent screen before granting access.
+Eine Permission-Boundary die ein Client requesten kann. Scopes
+erscheinen im Token; Resource-Server entscheiden anhand der Scopes ob
+der Request OK ist.
 
-**Built-in scopes:**
-- `openid` — Required for OIDC, returns user ID
-- `profile` — First name, last name
-- `email` — Email address
-- `roles` — User's role memberships
-- `offline_access` — Allows long-lived sessions (refresh tokens)
+Default-Scopes (per Realm gesetzt beim Realm-Provisioning):
 
-**Custom scopes** can be created per realm for application-specific permissions (e.g., `billing:read`).
+- `openid` — Required für OIDC, gibt User-ID zurück
+- `profile` — Vorname, Nachname
+- `email` — E-Mail-Adresse
+- `roles` — Rollen-Mitgliedschaften
+- `offline_access` — erlaubt Refresh-Tokens
 
-### API
+### API (Resource)
 
-A protected backend API that clients can request access to. If you've used Keycloak, this is similar to configuring a resource server. In Auth0, it's called an "API".
-
-An API:
-- Has a unique name (e.g., `billing-api`) that identifies it in tokens
-- Has its own secret for token validation
-- Is associated with one or more scopes
+Eine geschützte Backend-API. Hat einen Identifier (`audience`-Claim im
+Token) und eine Liste der Scopes die sie unterstützt. Im Code:
+`OAuthApiAggregate`.
 
 ### Grant Type
 
-The authentication flow used by a client to obtain tokens.
-
 | Grant Type | Use Case |
-|-----------|----------|
-| **Authorization Code** (+ PKCE) | Web apps, SPAs, mobile apps — anything where a user logs in |
-| **Client Credentials** | Machine-to-machine, background services — no user involved |
-| **Refresh Token** | Renew expired access tokens without re-login |
+|---|---|
+| **Authorization Code + PKCE** | Web-Apps, SPAs, Mobile-Apps |
+| **Client Credentials** | Machine-to-machine, Background-Services |
+| **Refresh Token** | Renew expired access tokens |
 
-::: warning No Implicit or ROPC
-Cocoar.Auth does **not** support the Implicit flow or Resource Owner Password Credentials (ROPC). These are considered insecure and deprecated by the OAuth 2.1 specification.
+::: warning Kein Implicit, kein ROPC
+cocoar.auth unterstützt weder Implicit Flow noch Resource Owner
+Password Credentials (ROPC). Beide gelten als unsicher und sind in
+OAuth 2.1 deprecated.
 :::
 
-### Token Types
+### Token-Typen
 
-| Type | What it is |
-|------|-----------|
-| **Access Token** | Grants access to APIs. Can be a **reference token** (opaque, validated via introspection) or a **JWT** (self-contained, validated locally). Configured per client — see below. |
-| **Identity Token** | Contains user information (name, email, roles). Used by the client app to know who logged in. |
-| **Refresh Token** | Allows obtaining new access tokens without asking the user to log in again. |
+| Typ | Was es ist |
+|---|---|
+| **Access Token** | Zugriff auf APIs. Reference (opak, via Introspection) oder JWT (selbsttragend) |
+| **Identity Token** | Wer hat sich eingeloggt — vom Client genutzt |
+| **Refresh Token** | Neuen Access-Token holen ohne neuen Login |
 
-### Access Token Types
+### Access-Token-Format
 
-Each client can be configured to use one of two access token formats:
+Pro Client konfigurierbar:
 
-| Format | How it works | Best for |
-|--------|-------------|----------|
-| **Reference Token** (default) | Opaque string. APIs validate by calling Cocoar.Auth's introspection endpoint. | SPAs, mobile apps, public clients — instant revocation, no secrets exposed. |
-| **JWT** | Self-contained signed token. APIs validate locally using the signing key. | Trusted backend services — no introspection roundtrip needed. |
+| Format | So funktioniert's | Best für |
+|---|---|---|
+| **Reference** (default) | Opaker String. APIs validieren via Introspection-Endpoint. | SPAs, Mobile, Public Clients — instant Revocation. |
+| **JWT** | Selbsttragender, signierter Token. APIs verifizieren lokal. | Trusted Backend-Services — kein Introspection-Roundtrip. |
 
-::: tip When to use which?
-**Reference tokens** are the safer default. When you revoke a reference token, it stops working immediately. JWTs can't be revoked — they remain valid until they expire. Use JWTs only for trusted services where the performance benefit of skipping introspection matters.
+::: tip Wann welchen?
+**Reference Tokens** sind der sichere Default. Wenn Du einen Reference-Token
+revokest, ist er sofort tot. JWTs können nicht revoked werden — sie sind
+gültig bis sie expiren. JWT nur für Trusted Services wo der
+Introspection-Roundtrip stört.
 :::
 
 ---
 
-## Comparison with Other Systems
+## Login-Provider
 
-| Concept | Cocoar.Auth | Keycloak | Auth0 | Azure AD |
-|---------|-------------|----------|-------|----------|
-| Isolation boundary | Realm | Realm | Tenant | Tenant (Directory) |
-| Application | Client | Client | Application | App Registration |
-| Permission set | Role | Role | Role | Role |
-| Protected APIs | API | Resource scope | API | App Role |
-| Token format | Reference or JWT (per client) | JWT (default) | JWT (default) | JWT (default) |
-| Discovery | Per-realm | Per-realm | Per-tenant | Per-tenant |
+Eine Authentifizierungs-Methode die User nutzen können. Pro Realm
+konfigurierbar.
+
+| Typ | Beschreibung |
+|---|---|
+| **Internal** | Built-in Username/Password. Immer da, nicht löschbar. |
+| **OIDC** (`IdpConfig`) | Externe IdPs (Entra ID, Google, Auth0, ...). Authority + Client-ID + Secret + UserUpdateScript. |
+
+Konfiguriert OIDC-Provider zeigen automatisch "Login with {Provider}"
+Buttons im Login-UI.
 
 ---
 
-## Login Provider
+## Begriffe im Code
 
-An authentication method that users can sign in with. Each realm can configure its own set of login providers independently.
+| Begriff im Code | Begriff in der Doku/UI | Wo |
+|---|---|---|
+| `TenantId` | Realm Slug | Marten/Wolverine, Infrastructure-Layer |
+| `Principal` | User oder Group oder Service-Account | Authorization-Slice (polymorph) |
+| `Person` | User-Read-Model im Authorization-Slice | Eine Sub-Class von Principal |
+| `Aggregate` | Event-sourced Entity | Domain-Layer |
+| `*State` | Inline-Projection für sync. Konsistenz | Infrastructure-Layer |
+| `*ListReadModel` / `*DetailsReadModel` | Async-Projection für Read-Optimization | Infrastructure-Layer |
+| `IdpConfig` | OIDC-Provider-Configuration | Authentication-Slice |
 
-| Type | Description |
-|------|-------------|
-| **Internal** | Built-in username/password authentication. Always present, cannot be deleted. |
-| **OpenID Connect** | External OIDC provider (Google, Microsoft, etc.). Configured with Authority, Client ID, and Client Secret. |
-
-When an OIDC provider is configured:
-- The login page shows a "Login with {Provider}" button
-- Users are redirected to the external provider for authentication (using Authorization Code + PKCE)
-- On first login, a local user account is auto-created from the ID token claims
-- Users can link/unlink external accounts on their profile page
-- If 2FA is enabled, it is enforced after external authentication
+::: info "Realm" vs. "Tenant"
+User-facing heißt es überall **Realm**. Der Code nutzt **Tenant** im
+Infrastructure-Layer (`TenantId`, `ITenantSessionFactory`,
+`MasterTableTenancy`), weil das Marten und Wolverine so heißen. Selbe
+Sache, zwei Namen.
+:::

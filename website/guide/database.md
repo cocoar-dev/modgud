@@ -1,210 +1,219 @@
-# Database & Migrations
+# Persistence (Marten)
 
-Cocoar.Auth uses [Marten](https://martendb.io/) as both a document database and event store over PostgreSQL. Marten manages its own schema automatically -- there are no manual migrations.
+cocoar.auth nutzt [Marten](https://martendb.io/) als Document-DB und
+Event-Store über PostgreSQL. Marten verwaltet sein Schema selbst — keine
+manuellen EF-Core-Migrations.
 
-## Multi-Tenant Architecture
+## Multi-Tenant-Setup
 
-Cocoar.Auth uses Marten's `MasterTableTenancy` for database-per-tenant multi-tenancy:
+Marten `MasterTableTenancy` mit Database-per-Tenant. Details:
+[Multi-Tenancy / Realms](/guide/realms).
 
-```mermaid
-graph TD
-    A[cocoar_auth_master] -->|tenant registry| B[cocoar_auth_system]
-    A -->|tenant registry| C[cocoar_auth_acme]
-    A -->|tenant registry| D[cocoar_auth_corp]
+## Schema-Management
 
-    B -->|contains| B1[Users, Roles, Events]
-    B -->|contains| B2[OAuth Clients, Scopes, APIs]
-    B -->|contains| B3[Realm metadata for all realms]
-
-    C -->|contains| C1[Users, Roles, Events]
-    C -->|contains| C2[OAuth Clients, Scopes, APIs]
-
-    D -->|contains| D1[Users, Roles, Events]
-    D -->|contains| D2[OAuth Clients, Scopes, APIs]
-```
-
-| Database | Purpose |
-|----------|---------|
-| `cocoar_auth_master` | Marten's `MasterTableTenancy` registry. Maps tenant slugs to connection strings in `realms.mt_tenant_databases`. |
-| `cocoar_auth_system` | System realm data. Also stores `Realm` documents for all realms (tenant metadata). |
-| `cocoar_auth_{slug}` | Per-realm databases. Each realm gets its own database with the full Marten schema. |
-
-### How Tenant Resolution Works
-
-1. `RealmMiddleware` extracts the realm slug from the URL path (`/{slug}/...`)
-2. Sets `HttpContext.Items["TenantId"] = slug`
-3. The scoped `IDocumentSession` and `IQuerySession` are registered to read the tenant ID:
-
-```csharp
-services.AddScoped<IDocumentSession>(sp =>
-{
-    var store = sp.GetRequiredService<IDocumentStore>();
-    var tenantId = accessor.HttpContext?.Items["TenantId"] as string ?? "system";
-    return store.LightweightSession(tenantId);
-});
-```
-
-Marten's `MasterTableTenancy` looks up the tenant ID in the master registry table and returns a session connected to the correct database. If no `HttpContext` is available (e.g., during startup seeding), it falls back to the system tenant.
-
-The `ITenantSessionFactory` provides the same resolution for services that need to open sessions explicitly (e.g., OpenIddict stores).
-
-## Schema Management
-
-Marten manages its own schema with `AutoCreate.CreateOrUpdate`. On startup:
+Marten läuft mit `AutoCreate.CreateOrUpdate`. Beim Boot:
 
 ```csharp
 await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
 ```
 
-This creates or updates all tables, indexes, functions, and projections. No manual migrations needed.
+Das erzeugt oder aktualisiert alle Tabellen, Indizes, Functions und
+Projection-Tables. Nach Code-Änderung an Documents/Aggregates: einfach
+restarten — Marten erkennt den Schema-Drift und applied.
 
-## Event Sourcing
+::: warning Development vs Production
+In Production sollte man `AutoCreate.None` setzen und Schema-Changes
+explizit per `await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync()`
+in einer kontrollierten Migration-Phase ausführen — sonst race-conditioniert
+ein Multi-Pod-Deployment beim Schema-Apply.
+:::
 
-### Aggregates
+## Drei Marten-Patterns
 
-Four aggregate types use event sourcing:
+### 1. Document-Storage
 
-| Aggregate | Stream ID | Events |
-|-----------|-----------|--------|
-| `UserAggregate` | User ID (GUID) | `UserCreated`, `UserNameChanged`, `UserEmailChanged`, `UserPasswordChanged`, `UserLoggedIn`, `UserLoginFailed`, etc. |
-| `RoleAggregate` | Role ID (GUID) | `RoleCreated`, `RoleNameChanged`, `RoleDescriptionChanged`, `RoleDeleted`, etc. |
-| `OAuthApplicationAggregate` | Application ID (GUID) | `OAuthApplicationCreated`, `OAuthApplicationDisplayNameChanged`, `OAuthApplicationPermissionsChanged`, etc. |
-| `OAuthScopeAggregate` | Scope ID (GUID) | `OAuthScopeCreated`, `OAuthScopeDisplayNameChanged`, `OAuthScopeResourcesChanged`, etc. |
+Klassischer Marten-Document-Store für ephemerere oder
+sicherheitssensitive Daten — kein Event-Sourcing.
 
-Additional aggregates: `OAuthApiAggregate` (API resources) and `LoginProviderAggregate` (external identity providers).
+| Document | Inhalt | Indices |
+|---|---|---|
+| `ApplicationUser` | ASP.NET Identity-User | `NormalizedUserName` (unique), `NormalizedEmail` |
+| `ApplicationRole` | Identity-Role | `NormalizedName` (unique) |
+| `UserSecurityData` | Password-Hash, TOTP-Key, Recovery-Codes, Passkey-Credentials | gleiche ID wie der User |
+| `UserSession` | Active Session-Tracking (UAParser) | `UserId`, `LastActiveAt` |
+| `EmailOtpChallenge` | 6-stelliger OTP-Hash + Expiry | `UserId` |
+| `MagicLinkChallenge` | Token-Hash + Expiry | `UserId` |
+| `WebAuthnChallenge` | Passkey-Ceremony-State | TTL ~5 Min |
+| `IdpConfig` | OIDC-IdP-Config (ohne Secret) | per Realm |
+| `IdpSecret` | OIDC-Client-Secret (separat) | per IdpConfig |
+| `OpenIddictAuthorizationDocument` | OAuth-Consent-Records | `ApplicationId`, `Subject` |
+| `OpenIddictTokenDocument` | Reference-Tokens, Refresh-Tokens | `ApplicationId`, `Subject`, `ReferenceId` |
+| `AuthLogDocument` | Auth-Events (Login, Logout, Failures) | TTL 7 Tage |
+| `UserDeletionState` | GDPR-Delete-Workflow-State | `UserId` |
+| `UserChangeRequest` | Profile-Self-Service-Pending-Changes | per `(UserId, Type)` |
+| `Principal` (polymorph) | Person + Group + ServiceAccount | `mt_doc_type` Diskriminator |
+| `PermissionRole` | RBAC-Role-Definitions | per Realm |
+| `Realm` (in `IGlobalStore`) | Tenant-Metadata in Master-DB | Schema `global` |
 
-### Event Storage
+### 2. Inline-Projections (`*State`)
 
-Events are stored in Marten's `mt_events` table with stream metadata in `mt_streams`. The events table stores the event type, data (JSON), timestamp, and stream ID. Over 60 event types are registered.
+Synchron innerhalb der `SaveChanges`-Transaktion. Garantieren dass der
+nächste Read nach einem Write den neuen Stand sieht. Für Validation und
+für die OpenIddict-Stores.
 
-## Projections
+| Projection | Aggregate | Genutzt von |
+|---|---|---|
+| `OAuthApplicationStateProjection` → `OAuthApplicationState` | `OAuthApplicationAggregate` | `MartenApplicationStore` (OpenIddict) |
+| `OAuthScopeStateProjection` → `OAuthScopeState` | `OAuthScopeAggregate` | `MartenScopeStore` (OpenIddict) |
+| `OAuthApiStateProjection` → `OAuthApiState` | `OAuthApiAggregate` | API-Resource-Management |
+| `LoginProviderStateProjection` → `LoginProviderState` | `LoginProviderAggregate` | Login-Provider-Resolution |
+| `PrincipalProjectionBase` → `Principal` (polymorph) | abstrakt — App-Erweiterung | Authorization-Slice |
+| `PermissionRoleProjection` | Permission-Role-Aggregate | Authorization-Slice |
+| `IdpConfigProjection` → `IdpConfig` | IdpConfig-Aggregate | OIDC-Login |
+| `ExternalIdentityLinkProjection` | (kein Aggregate, plain Doc-Apply) | OIDC-Login |
 
-### Inline Projections (Synchronous)
+### 3. Async Read-Models (`*ListReadModel`, `*DetailsReadModel`)
 
-Inline projections run within the same transaction as the event append. They provide immediate consistency and are used for validation and Identity store lookups.
+Async-Projections die in einem Background-Daemon
+(`DaemonMode.HotCold`) laufen, denormalisierte Views für API-Responses.
+In Tests laufen sie inline für deterministisches Verhalten.
 
-| Projection | Document | Purpose |
-|-----------|----------|---------|
-| `UserStateProjection` | `UserState` | Identity validation, uniqueness checks, authentication |
-| `RoleStateProjection` | `RoleState` | Role lookups, claim resolution |
-| `OAuthApplicationStateProjection` | `OAuthApplicationState` | OpenIddict client store operations |
-| `OAuthScopeStateProjection` | `OAuthScopeState` | OpenIddict scope store operations |
-| `OAuthApiStateProjection` | `OAuthApiState` | API resource management, introspection validation |
-| `LoginProviderStateProjection` | `LoginProviderState` | External login provider configuration |
+| Projection | Wofür |
+|---|---|
+| `UserListReadModel` | Admin-User-Grid |
+| `UserDetailsReadModel` | Admin-User-Details |
+| `GroupListReadModel`, `GroupDetailsReadModel` | Admin-Group-Views |
+| `RoleListReadModel` | Admin-Role-Grid |
 
-### Async Projections (Eventually Consistent)
+## Event-Stream-Beispiel
 
-Async projections run in a background daemon and are used for API response models. In production, they use `ProjectionLifecycle.Async` with Marten's async daemon (`DaemonMode.HotCold`). In development and tests, they run inline for simplicity.
+User-Lifecycle (geschrieben vom Authentication-Slice):
 
-| Projection | Document | Purpose |
-|-----------|----------|---------|
-| `UserDetailsProjection` | `UserDetailsReadModel` | Rich read model for admin API responses, includes denormalized role info |
+```
+Stream: <userId>
+  v1: UserCreated         { UserId, UserName, Email, ... }
+  v2: UserPasswordChanged { UserId }
+  v3: UserLoggedIn        { UserId, IpAddress, OccurredAt }
+  v4: UserNameChanged     { UserId, NewFirstName, NewLastName }
+  v5: UserTwoFactorEnabled { UserId }
+  v6: UserLoggedIn        { UserId, IpAddress, OccurredAt }
+  ...
+```
 
-### Naming Convention
+`PrincipalProjectionBase` (abstrakt) bekommt diese Events und schreibt
+sie in die `mt_doc_principal`-Tabelle als Sub-Class `Person`. Das ist die
+Brücke zum Authorization-Slice: der Slice braucht `Person`-Datensätze
+für Email-Routing und Membership-Predicates, die App füllt sie aus den
+Events.
 
-| Suffix | Type | Purpose |
-|--------|------|---------|
-| `*State` | Inline Projection | Validation, Identity stores (synchronous) |
-| `*ReadModel` | Async Projection | API responses (eventually consistent) |
-| `*Data` | Value Object | Embedded data in projections |
+## Security-Data-Trennung
 
-## Document Storage (Non-Event-Sourced)
+**Sicherheitssensitive Daten landen NICHT im Event-Stream.** Statt
+`UserPasswordChanged(UserId, NewPasswordHash)` gibt es
+`UserPasswordChanged(UserId)` und der Hash wird parallel in
+`UserSecurityData` (plain Document, gleiche ID) geschrieben.
 
-Some entities are stored as plain Marten documents because they are either ephemeral, security-sensitive, or not worth event-sourcing:
+Gleicher Ansatz für:
 
-### Identity Documents
+| Daten | Wo |
+|---|---|
+| Password-Hash | `UserSecurityData.PasswordHash` |
+| TOTP Authenticator-Key | `UserSecurityData.AuthenticatorKey` |
+| Recovery-Codes | `UserSecurityData.RecoveryCodes` |
+| Passkey-Credentials (Public-Key, SignCount) | `StoredPasskeyCredential` (separates Doc, per User) |
+| OIDC Client-Secret | `IdpSecret` (separates Doc, per IdpConfig) |
 
-| Document | Purpose | Indexes |
-|----------|---------|---------|
-| `ApplicationUser` | ASP.NET Core Identity user document | `NormalizedUserName` (unique), `NormalizedEmail` |
-| `ApplicationRole` | ASP.NET Core Identity role document | `NormalizedName` (unique) |
+Vorteil: GDPR-Erase und Stream-Replay sind sicher — kein Re-Apply von
+gemaskten Hashes.
 
-### Security Documents
+## Indices und Filtered Unique Constraints
 
-| Document | Purpose | Notes |
-|----------|---------|-------|
-| `UserSecurityData` | Password hashes, TOTP keys, recovery codes, WebAuthn credentials | Same ID as the UserAggregate for correlation. Deliberately NOT event-sourced to keep sensitive data out of the event history. |
-| `OAuthApplicationSecurityData` | OAuth client secrets, JSON Web Key Sets | Same ID as the OAuthApplicationAggregate. Same rationale. |
-| `OAuthApiSecurityData` | API resource secrets | Same pattern. |
+Soft-Delete ist überall — Username/Email müssen aber nach Soft-Delete
+neu vergeben werden können. Lösung: **filtered unique indexes** mit
+PostgreSQL Partial-Indexes:
 
-### Ephemeral Documents
+```csharp
+schema.For<ApplicationUser>()
+    .UniqueIndex(UniqueIndexType.DuplicatedField, "NormalizedUserName",
+        u => u.NormalizedUserName)
+    .Where(u => u.IsDeleted == false || u.IsDeleted == null);
+```
 
-| Document | Purpose | Lifetime |
-|----------|---------|----------|
-| `UserSession` | Active login session tracking (IP, browser, device) | Until logout or expiry |
-| `EmailOtpChallenge` | Email OTP verification state (hashed code, attempts) | 10 minutes |
-| `WebAuthnChallenge` | WebAuthn ceremony state (challenge bytes, options JSON) | 5 minutes |
-| `ExternalLoginState` | OIDC external login flow state (nonce, PKCE, return URL) | Until callback completes |
+In SQL:
 
-### OpenIddict Documents
+```sql
+CREATE UNIQUE INDEX ... ON mt_doc_applicationuser
+  ((data ->> 'NormalizedUserName'))
+  WHERE (data ->> 'IsDeleted')::boolean IS NOT TRUE;
+```
 
-| Document | Purpose | Indexes |
-|----------|---------|---------|
-| `OpenIddictAuthorizationDocument` | Consent records and authorization grants | `ApplicationId`, `Subject` |
-| `OpenIddictTokenDocument` | Reference tokens and refresh tokens | `ApplicationId`, `AuthorizationId`, `Subject`, `ReferenceId` |
+Damit können Username/Email nach Soft-Delete sofort wiederverwendet
+werden, ohne dass aktive User kollidieren.
 
-## GDPR Compliance
+## GDPR via Marten
 
-### Data Masking
-
-Marten's built-in GDPR support masks PII in archived event streams using `AddMaskingRuleForProtectedInformation`. When a user is permanently deleted, their events remain for audit purposes but PII fields are replaced:
+### Data-Masking
 
 ```csharp
 options.Events.AddMaskingRuleForProtectedInformation<UserCreated>(x =>
-    new UserCreated(x.UserId, "[DELETED]", "[DELETED]", null, null, null,
-        x.IsActive, x.LockoutEnabled, x.Roles));
+    new UserCreated(x.UserId, "[DELETED]", "[DELETED]", null, null, null));
+
+options.Events.AddMaskingRuleForProtectedInformation<UserLoggedIn>(x =>
+    new UserLoggedIn(x.UserId, "[DELETED-IP]", x.OccurredAt));
 ```
 
-Masking rules are configured for: `UserCreated`, `UserNameChanged`, `UserEmailChanged`, `UserPhoneNumberChanged`, `UserProfileNameChanged`, `UserLoggedIn`, `UserLoginFailed`.
+Wirkt erst beim **Archivieren** des Streams (`ArchiveStream`) — Live-Events
+werden nicht angefasst.
 
-### Stream Archiving
+### Stream-Archivierung
 
-`ArchiveStream` excludes deleted user data from normal queries while preserving the event history for compliance audits.
+Im GDPR-Confirm-Delete-Flow:
 
-## Serialization
+```csharp
+session.Events.ArchiveStream(userId);
+await session.SaveChangesAsync();
+// Archivierte Events sind in normalen Read-Model-Queries weg.
+// Compliance-Queries (Events.QueryAllRawEvents()) sehen sie noch — gemasked.
+```
 
-Marten is configured with `System.Text.Json`:
+## Serialisierung
+
+Marten ist mit `System.Text.Json` konfiguriert:
 
 ```csharp
 options.UseSystemTextJsonForSerialization(configure: o =>
 {
-    o.PropertyNamingPolicy = null;     // Exact property names (no camelCase)
+    o.PropertyNamingPolicy = null;     // Exakte Property-Namen — kein camelCase
     o.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
     o.Converters.Add(new JsonStringEnumConverter());
 });
 ```
 
-Enums are stored as strings for readability in the database.
+Enums werden als String gespeichert (lesbar im DB-Inspector).
 
-## Tenant Database Provisioning
+## Wichtige Tabellen pro Tenant-DB
 
-When a new realm is created via `POST /system/api/admin/realms`:
+| Tabelle | Inhalt |
+|---|---|
+| `mt_events` | Event-Store (alle Domain-Events, JSON-Daten) |
+| `mt_streams` | Stream-Metadaten (Aggregate-ID, Version, Type) |
+| `mt_doc_applicationuser` | Identity-User-Documents |
+| `mt_doc_usersecuritydata` | Password-Hashes, TOTP-Keys etc. |
+| `mt_doc_principal` | Polymorph: Person + Group + ServiceAccount |
+| `mt_doc_permissionrole` | RBAC-Roles |
+| `mt_doc_oauthapplicationstate` | OpenIddict-Application-Inline-Projection |
+| `mt_doc_oauthscopestate` | OpenIddict-Scope-Inline-Projection |
+| `mt_doc_oauthapistate` | API-Resource-Inline-Projection |
+| `mt_doc_loginproviderstate` | Login-Provider-Inline-Projection |
+| `mt_doc_openiddicttokendocument` | Reference-Tokens, Refresh-Tokens |
+| `mt_doc_openiddictauthorizationdocument` | OAuth-Authorizations (Consent-Records) |
+| `mt_doc_idpconfig` | OIDC-IdP-Konfigurationen |
+| `mt_doc_authlogdocument` | Auth-Events (7-Tage-Retention) |
+| `mt_doc_usersession` | Active-Sessions |
 
-1. **Validate slug**: Must match `^[a-z][a-z0-9-]{1,61}[a-z0-9]$` and not be a reserved word (`system`, `health`, `swagger`, `api`, `connect`, `realms`, `admin`, `static`, `assets`)
-2. **Create PostgreSQL database**: Raw SQL `CREATE DATABASE "cocoar_auth_{slug}"`
-3. **Register in Marten**: `tenancy.AddDatabaseRecordAsync(slug, connectionString)` adds the tenant to `realms.mt_tenant_databases`
-4. **Apply Marten schema**: `ApplyAllConfiguredChangesToDatabaseAsync()` creates all tables, indexes, and functions
-5. **Seed default data**: OpenIddict scopes (`openid`, `email`, `profile`, `roles`, `offline_access`) and the built-in "Internal" login provider
-6. **Store metadata**: `Realm` document saved in the system tenant database
-7. **Invalidate cache**: `RealmCache.Invalidate()` forces the next request to reload active realms
+In der Master-DB zusätzlich:
 
-## Key Tables
-
-| Table | Purpose |
-|-------|---------|
-| `mt_events` | Event store (all domain events, JSON data) |
-| `mt_streams` | Event stream metadata (aggregate ID, version, type) |
-| `mt_doc_applicationuser` | Identity user documents |
-| `mt_doc_applicationrole` | Identity role documents |
-| `mt_doc_usersecuritydata` | Password hashes, authenticator keys, WebAuthn credentials |
-| `mt_doc_userstate` | Inline projection for Identity validation |
-| `mt_doc_rolestate` | Inline projection for role lookups |
-| `mt_doc_userdetailsreadmodel` | Async projection for API responses |
-| `mt_doc_oauthapplicationstate` | Inline projection for OpenIddict clients |
-| `mt_doc_oauthscopestate` | Inline projection for OpenIddict scopes |
-| `mt_doc_oauthapistate` | Inline projection for API resources |
-| `mt_doc_loginproviderstate` | Inline projection for external login providers |
-| `mt_doc_usersession` | Active session records |
-| `mt_doc_openiddictauthorizationdocument` | OAuth authorization/consent records |
-| `mt_doc_openiddicttokendocument` | Reference tokens and refresh tokens |
-| `realms.mt_tenant_databases` | Master tenancy registry (in master DB only) |
+| Tabelle | Inhalt |
+|---|---|
+| `realms.mt_tenant_databases` | Marten Tenant-Registry |
+| `global.mt_doc_realm` | Realm-Documents |

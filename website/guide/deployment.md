@@ -1,288 +1,108 @@
 # Docker & Deployment
 
-## Prerequisites
+## Voraussetzungen
 
-| Dependency | Version | Purpose |
-|-----------|---------|---------|
-| .NET | 10.0+ | Backend runtime |
-| PostgreSQL | 16+ | Database (document store + event store) |
-| Node.js | 20+ | Frontend build |
-| Docker | 20+ | PostgreSQL container (development) |
+| Dependency | Version | Zweck |
+|---|---|---|
+| .NET | 10.0+ | Backend-Runtime |
+| PostgreSQL | 16+ | DB (Document + Event-Store + per-Tenant-DBs) |
+| Node.js | 20+ | Frontend-Build |
+| Docker | 20+ | Container-Runtime |
 
-## Configuration
+## Konfiguration
 
-Cocoar.Auth uses the `Cocoar.Configuration` library for layered configuration. Settings are loaded from multiple sources with increasing priority:
+cocoar.auth nutzt **Cocoar.Configuration v5** mit Layered-Binding.
+Settings werden aus mehreren Quellen geladen, jede überschreibt die
+vorige:
 
-1. Base JSON files (`configs/*.json`)
-2. Environment-specific overrides (`configs/*.<Environment>.json`)
-3. Environment variables (highest priority)
+1. `data/configuration.json` (Defaults, committed)
+2. `data/configuration.local.json` (gitignored, lokale Overrides)
+3. Environment-Variablen (höchste Priorität)
 
-### Settings Files
+### Settings-Klassen
 
-| File | Class | Environment Variable Prefix |
-|------|-------|-----------------------------|
-| `configs/database-settings.json` | `DatabaseSettings` | `DATABASE_` |
-| `configs/auth-settings.json` | `AuthSettings` | `AUTH_` |
-| `configs/cors-settings.json` | `CorsSettings` | `CORS_` |
-| `configs/smtp-settings.json` | `SmtpSettings` | `SMTP_` |
-| `configs/webauthn-settings.json` | `WebAuthnSettings` | `WEBAUTHN_` |
-| `configs/openiddict-settings.json` | `OpenIddictSettings` | `OPENIDDICT_` |
-| `configs/server-settings.json` | `ServerSettings` | `SERVER_` |
+| Klasse | JSON-Section / ENV-Prefix |
+|---|---|
+| `StartUpConfiguration` | Top-Level (kein Prefix) — `AppUrl`, `PublicUrl`, `DbSettings.ConnectionString`, `Logging`, `CertPath`, ... |
+| `EmailConfiguration` | `Email:` — `Provider` (Postmark/Smtp), `Postmark.*`, `Smtp.*` |
+| `MagicLinkConfiguration` | `MagicLink:` — `Enabled`, `ExpirationMinutes`, `RateLimitMinutes` |
+| `EmailOtpConfiguration` | `EmailOtp:` — `ExpirationMinutes`, `RateLimitMinutes` |
+| `AppSettings` | `AppSettings:` — `AuthenticationMinimumLevel`, `MagicLinkSelfService`, `TwoFactorGracePeriodDays` |
+| `OpenIddictSettings` | `OpenIddict:` — `Issuer`, `*LifetimeMinutes`, `DevelopmentMode`, `SigningCertificatePath` |
 
-### DatabaseSettings
-
-```json
-{
-  "ConnectionString": "Host=localhost;Port=5432;Database=cocoar_auth",
-  "Password": "postgres"
-}
-```
-
-The `ConnectionString` provides the base template. The `Database` field is a prefix -- Cocoar.Auth appends `_master`, `_system`, and `_{slug}` suffixes for each database.
-
-The `Password` field supports `Cocoar.Configuration.Secrets` for secure storage (certificates folder, environment variables).
-
-### AuthSettings
-
-```json
-{
-  "Cookie": {
-    "HttpOnly": true,
-    "SecurePolicy": "SameAsRequest",
-    "SameSite": "Lax"
-  },
-  "SessionExpirationDays": 14,
-  "SlidingExpiration": true
-}
-```
-
-| Field | Values | Notes |
-|-------|--------|-------|
-| `SecurePolicy` | `Always`, `SameAsRequest`, `None` | Use `Always` in production |
-| `SameSite` | `Strict`, `Lax`, `None` | `Lax` recommended for most deployments |
-
-### CorsSettings
-
-```json
-{
-  "AllowedOrigins": ["http://localhost:4200"],
-  "AllowCredentials": true,
-  "AllowedMethods": [],
-  "AllowedHeaders": []
-}
-```
-
-Empty arrays for `AllowedMethods` and `AllowedHeaders` mean "allow any".
-
-### OpenIddictSettings
-
-```json
-{
-  "Issuer": "http://localhost:5000",
-  "AccessTokenLifetimeMinutes": 60,
-  "RefreshTokenLifetimeDays": 14,
-  "AuthorizationCodeLifetimeMinutes": 5,
-  "DevelopmentMode": true,
-  "SigningCertificatePath": null
-}
-```
-
-| Field | Notes |
-|-------|-------|
-| `DevelopmentMode` | Uses ephemeral signing keys. Set to `false` in production. |
-| `SigningCertificatePath` | Path to an X.509 certificate (PFX file) for signing tokens. Required when `DevelopmentMode` is `false`. |
-| `Issuer` | Base URL of the identity provider. Each realm appends its slug. |
-
-### SmtpSettings
-
-```json
-{
-  "Host": "localhost",
-  "Port": 1025,
-  "UseSsl": false,
-  "Username": null,
-  "Password": null,
-  "FromAddress": "noreply@cocoar.local",
-  "FromName": "Cocoar Auth"
-}
-```
-
-In development, a `MockEmailSender` logs emails to the console. In production (when not in `Testing` environment), the `SmtpEmailSender` is registered with these settings.
-
-### WebAuthnSettings
-
-```json
-{
-  "RelyingPartyId": "localhost",
-  "RelyingPartyName": "Cocoar Auth",
-  "Origins": ["http://localhost:4200"],
-  "Timeout": 60000
-}
-```
-
-`RelyingPartyId` must match the domain users access the application from. `Origins` must list all allowed origins for WebAuthn operations.
-
-### ServerSettings
+### Beispiel `configuration.json`
 
 ```json
 {
   "AppUrl": "http://0.0.0.0:80",
-  "CertPath": null,
-  "CertPassword": null
+  "PublicUrl": "https://auth.example.com",
+  "DbSettings": {
+    "ConnectionString": "Host=postgres;Port=5432;Database=cocoar_auth_next;Username=postgres;Password=postgres"
+  },
+  "AppSettings": {
+    "AuthenticationMinimumLevel": 1,
+    "MagicLinkSelfService": false,
+    "TwoFactorGracePeriodDays": 30
+  },
+  "Email": {
+    "Provider": "Smtp",
+    "Smtp": {
+      "Host": "smtp.example.com",
+      "Port": 587,
+      "UseSsl": true,
+      "UserName": "noreply@example.com",
+      "Password": "...",
+      "FromAddress": "noreply@example.com",
+      "FromName": "Cocoar Auth"
+    }
+  },
+  "MagicLink": { "Enabled": true, "ExpirationMinutes": 15, "RateLimitMinutes": 2 },
+  "EmailOtp": { "ExpirationMinutes": 10, "RateLimitMinutes": 2 },
+  "OpenIddict": {
+    "Issuer": "https://auth.example.com",
+    "AccessTokenLifetimeMinutes": 60,
+    "RefreshTokenLifetimeDays": 14,
+    "AuthorizationCodeLifetimeMinutes": 5,
+    "DevelopmentMode": false,
+    "SigningCertificatePath": "/secrets/openiddict-signing.pfx"
+  }
 }
 ```
 
-| Field | Default | Notes |
-|-------|---------|-------|
-| `AppUrl` | `http://0.0.0.0:80` | Listen URL. Set to `https://0.0.0.0:443` for TLS. |
-| `CertPath` | _(auto)_ | Path to PFX certificate. When `AppUrl` is HTTPS and no path is set, defaults to `certs/cocoar-auth.pfx`. |
-| `CertPassword` | _(none)_ | Password for the PFX file. Optional — passwordless certificates are supported. |
-
-### TLS Behavior
-
-| AppUrl | CertPath | What happens |
-|--------|----------|--------------|
-| `http://...` | _(any)_ | HTTP only, no TLS |
-| `https://...` | not set | Self-signed certificate auto-generated at `certs/cocoar-auth.pfx` |
-| `https://...` | set, file exists | Uses the provided certificate |
-| `https://...` | set, file missing | Self-signed certificate auto-generated at the specified path |
-
-### HTTPS with Self-Signed Certificate (Zero Config)
-
-To enable HTTPS without providing a certificate, just set the URL. A self-signed certificate is generated automatically on first start:
-
-```yaml
-auth:
-  image: ghcr.io/cocoar/cocoar.auth:latest
-  ports:
-    - "443:443"
-  environment:
-    SERVER_APPURL: "https://0.0.0.0:443"
-    DATABASE_CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres"
-    DATABASE_PASSWORD: "postgres"
-    OPENIDDICT_ISSUER: "https://localhost"
-    OPENIDDICT_DEVELOPMENTMODE: "true"
-    AUTH_COOKIE__SECUREPOLICY: "SameAsRequest"
-  volumes:
-    - certs:/app/certs    # persist the auto-generated certificate across restarts
-
-volumes:
-  certs:
-```
-
-The certificate is saved at `certs/cocoar-auth.pfx` (passwordless). It is reused on subsequent starts if the volume is persisted.
-
-::: warning
-Browsers will show a security warning for self-signed certificates. This is expected and fine for local development or internal testing. For production, use a real certificate from a trusted CA.
+::: info Database-Naming
+`DbSettings.ConnectionString` zeigt auf die Master-DB (z.B.
+`cocoar_auth_next`). Beim Anlegen weiterer Realms hängt cocoar.auth
+`_<slug>` an den DB-Namen für die Tenant-DBs an
+(`cocoar_auth_next_acme`, `cocoar_auth_next_finance`).
 :::
 
-### HTTPS with Your Own Certificate
+## Docker-Image
 
-For production, mount a real PFX certificate:
-
-```yaml
-auth:
-  image: ghcr.io/cocoar/cocoar.auth:latest
-  ports:
-    - "443:443"
-  environment:
-    SERVER_APPURL: "https://0.0.0.0:443"
-    SERVER_CERTPATH: "/certs/auth.pfx"
-    SERVER_CERTPASSWORD: "your-password"   # omit if passwordless
-    DATABASE_CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres"
-    DATABASE_PASSWORD: "postgres"
-    OPENIDDICT_ISSUER: "https://auth.example.com"
-    AUTH_COOKIE__SECUREPOLICY: "Always"
-  volumes:
-    - ./certs:/certs:ro
-```
-
-## Docker Image
-
-The official Docker image contains the backend (.NET) and the built Vue SPA. It is published to GitHub Container Registry on every release.
+Das offizielle Docker-Image enthält Backend (.NET) + gebauten Vue-SPA
+(als statisches `wwwroot/`).
 
 ```
 ghcr.io/cocoar/cocoar.auth:latest        # Latest production release
-ghcr.io/cocoar/cocoar.auth:staging       # Latest staging build
 ghcr.io/cocoar/cocoar.auth:1.0.0         # Specific version
 ```
 
-The image supports **linux/amd64** and **linux/arm64**.
+Multi-Arch: **linux/amd64** + **linux/arm64**.
 
-### Quick Start
+### Quick-Start
 
 ```bash
 docker run -d \
   --name cocoar-auth \
-  -p 4200:80 \
-  -e DATABASE_CONNECTIONSTRING="Host=your-postgres;Database=cocoar_auth;Username=postgres" \
-  -e DATABASE_PASSWORD="your-password" \
-  -e OPENIDDICT_ISSUER="http://localhost:4200" \
-  -e OPENIDDICT_DEVELOPMENTMODE="true" \
+  -p 80:80 \
+  -e DBSETTINGS__CONNECTIONSTRING="Host=your-postgres;Database=cocoar_auth_next;Username=postgres;Password=..." \
+  -e OPENIDDICT__ISSUER="http://localhost" \
+  -e OPENIDDICT__DEVELOPMENTMODE="true" \
   ghcr.io/cocoar/cocoar.auth:latest
 ```
 
-Then open `http://localhost:4200/system/` and create the initial admin account.
+Browser auf `http://localhost/setup` öffnen → Initial-Admin anlegen.
 
-### Environment Variables
-
-All settings are configurable via environment variables with a prefix matching the settings class:
-
-#### Required
-
-| Variable | Example | Description |
-|----------|---------|-------------|
-| `DATABASE_CONNECTIONSTRING` | `Host=postgres;Database=cocoar_auth;Username=postgres` | PostgreSQL connection (without password) |
-| `DATABASE_PASSWORD` | `your-password` | Database password |
-| `OPENIDDICT_ISSUER` | `https://auth.example.com` | Public URL of the identity provider |
-| `SERVER_APPURL` | `http://0.0.0.0:80` | Listen URL. Set to `https://0.0.0.0:443` for auto-TLS. |
-
-#### Authentication
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AUTH_COOKIE__SECUREPOLICY` | `SameAsRequest` | `Always` for HTTPS, `None` for HTTP dev |
-| `AUTH_COOKIE__SAMESITE` | `Lax` | Cookie SameSite policy |
-| `AUTH_SESSIONEXPIRATIONDAYS` | `14` | Session lifetime in days |
-
-#### OpenIddict
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENIDDICT_DEVELOPMENTMODE` | `false` | `true` uses ephemeral signing keys |
-| `OPENIDDICT_SIGNINGCERTIFICATEPATH` | _(none)_ | Path to X.509 PFX (required when not in dev mode) |
-| `OPENIDDICT_ACCESSTOKENLIFETIMEMINUTES` | `60` | Access token lifetime |
-| `OPENIDDICT_REFRESHTOKENLIFETIMEDAYS` | `14` | Refresh token lifetime |
-| `OPENIDDICT_AUTHORIZATIONCODELIFETIMEMINUTES` | `5` | Auth code lifetime |
-
-#### CORS
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CORS_ALLOWEDORIGINS__0` | _(none)_ | First allowed origin (use `__1`, `__2` for more) |
-| `CORS_ALLOWCREDENTIALS` | `true` | Allow credentials in CORS requests |
-
-#### SMTP (Email)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SMTP_HOST` | `localhost` | SMTP server host |
-| `SMTP_PORT` | `25` | SMTP server port |
-| `SMTP_USESSL` | `false` | Use TLS |
-| `SMTP_USERNAME` | _(none)_ | SMTP username |
-| `SMTP_PASSWORD` | _(none)_ | SMTP password |
-| `SMTP_FROMADDRESS` | `noreply@localhost` | Sender email address |
-| `SMTP_FROMNAME` | `Cocoar Auth` | Sender display name |
-
-#### WebAuthn
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WEBAUTHN_RELYINGPARTYID` | `localhost` | Domain for WebAuthn (must match user-facing domain) |
-| `WEBAUTHN_RELYINGPARTYNAME` | `Cocoar Auth` | Display name shown in authenticator prompts |
-| `WEBAUTHN_ORIGINS__0` | _(none)_ | Allowed WebAuthn origin |
-
-### Docker Compose (Full Stack)
+### Docker-Compose (Full-Stack)
 
 ```yaml
 services:
@@ -295,101 +115,58 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
-      timeout: 3s
       retries: 10
 
   auth:
     image: ghcr.io/cocoar/cocoar.auth:latest
     ports:
-      - "4200:80"
+      - "80:80"
     environment:
-      DATABASE_CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres"
-      DATABASE_PASSWORD: "postgres"
-      AUTH_COOKIE__SECUREPOLICY: "None"
-      CORS_ALLOWEDORIGINS__0: "http://localhost:4200"
-      CORS_ALLOWCREDENTIALS: "true"
-      OPENIDDICT_ISSUER: "http://localhost:4200"
-      OPENIDDICT_DEVELOPMENTMODE: "true"
-      WEBAUTHN_RELYINGPARTYID: "localhost"
-      WEBAUTHN_RELYINGPARTYNAME: "Cocoar Auth"
-      WEBAUTHN_ORIGINS__0: "http://localhost:4200"
+      DBSETTINGS__CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth_next;Username=postgres;Password=postgres"
+      OPENIDDICT__ISSUER: "http://localhost"
+      OPENIDDICT__DEVELOPMENTMODE: "true"
+      EMAIL__PROVIDER: "Smtp"
+      EMAIL__SMTP__HOST: "mailhog"
+      EMAIL__SMTP__PORT: "1025"
     depends_on:
       postgres:
         condition: service_healthy
+
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "8025:8025"
 
 volumes:
   pgdata:
 ```
 
-```bash
-docker compose up -d
-# Open http://localhost:4200/system/ and create admin account
+## TLS
+
+cocoar.auth kann selbst TLS terminieren (Kestrel mit Cert) oder hinter
+einem Reverse-Proxy laufen (Nginx, Sophos XG, ...).
+
+### Eigene TLS-Termination
+
+```yaml
+auth:
+  image: ghcr.io/cocoar/cocoar.auth:latest
+  ports:
+    - "443:443"
+  environment:
+    APPURL: "https://0.0.0.0:443"
+    CERTPATH: "/secrets/auth.pfx"
+    CERTPASSWORD: "..."   # optional — passwordless PFX wird unterstützt
+    OPENIDDICT__ISSUER: "https://auth.example.com"
+  volumes:
+    - ./certs:/secrets:ro
 ```
 
-## Docker Compose (Development — Source Build)
+Wenn `APPURL` HTTPS ist und `CERTPATH` nicht gesetzt, generiert
+cocoar.auth ein self-signed Cert in `certs/cocoar-auth.pfx` (gut für
+Test-Setups, Browser warnen aber).
 
-For development without a published Docker image:
-
-```bash
-docker compose up -d postgres    # Start PostgreSQL only
-cd src/dotnet
-dotnet run --project Cocoar.Auth.Api  # Run backend from source
-```
-
-In a separate terminal:
-
-```bash
-cd src/frontend-vue
-pnpm dev                          # Start Vue dev server on :4200
-```
-
-## Database Auto-Provisioning
-
-On first start, the backend automatically creates the required databases:
-
-1. Connects to the `postgres` default database
-2. Creates `cocoar_auth_master` if it does not exist
-3. Creates `cocoar_auth_system` if it does not exist
-4. Applies the full Marten schema to both databases (tables, indexes, functions, projections)
-5. Seeds the system realm document (idempotent)
-6. Initializes the realm cache
-7. Seeds default OpenIddict scopes (`openid`, `email`, `profile`, `roles`, `offline_access`)
-8. Seeds the built-in "Internal" login provider
-
-Additional realm databases are created on demand when realms are provisioned through the admin API.
-
-## First-Time Setup
-
-After the server starts, the first user needs to create an admin account:
-
-1. **Check status**: `GET /{slug}/api/setup/status` returns `{ "needsSetup": true }` when no admin user exists in the realm
-2. **Create admin**: `POST /{slug}/api/setup/create-admin` with:
-
-```json
-{
-  "userName": "admin",
-  "password": "ABC12abc!",
-  "email": "admin@example.com",
-  "firstName": "Admin",
-  "lastName": "User"
-}
-```
-
-The endpoint creates the "Admin" role (if it does not exist), creates the user, assigns the Admin role, and auto-logs them in. Once an admin exists, the setup endpoints return 404.
-
-## Health Check
-
-The health check endpoint is available at `/health` (skipped by `RealmMiddleware`, no realm prefix needed):
-
-```bash
-curl http://localhost:5000/health
-```
-
-It checks PostgreSQL connectivity to the system realm database.
-
-## Optional: Nginx Reverse Proxy
-
-If you prefer to terminate TLS at a reverse proxy instead of Kestrel, Nginx can proxy everything to the container:
+### Reverse-Proxy (Nginx)
 
 ```nginx
 server {
@@ -399,69 +176,141 @@ server {
     ssl_certificate     /etc/ssl/certs/auth.example.com.crt;
     ssl_certificate_key /etc/ssl/private/auth.example.com.key;
 
-    # Security headers
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-    # Proxy everything to the Cocoar.Auth container
     location / {
         proxy_pass http://auth:80;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For  $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /signalr {
+        proxy_pass http://auth:80;
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
     }
 }
 ```
 
-The backend handles all routing internally:
-- **Static files** (JS, CSS, assets) are served from `wwwroot/`
-- **API, OAuth, discovery** requests are handled by controllers
-- **All other paths** fall back to `index.html` (SPA routing)
+Wichtig:
 
-### Key Nginx Considerations
+- **`X-Forwarded-Proto`** — sonst denkt Kestrel HTTP, OpenIddict
+  baut HTTP-URLs in das Discovery-Dokument
+- **`X-Forwarded-For`** — Backend nutzt das für Session-IP-Tracking
+  + AuthLog
+- **WebSocket-Upgrade** für `/signalr` — sonst kein
+  Live-Update-Stream
 
-- **`X-Forwarded-Proto`**: Required for the `Secure` cookie flag and OpenIddict's HTTPS issuer URL.
-- **`X-Forwarded-For`**: Used by the backend for session IP tracking and login audit.
+cocoar.auth respektiert die Forwarded-Headers via
+`UseForwardedHeaders` in `Program.cs`.
 
-## SSL / TLS
+## Multi-Realm-Deployment
 
-In production:
+Pro Realm braucht man eine eigene Domain die auf cocoar.auth zeigt:
 
-| Setting | Value | Notes |
-|---------|-------|-------|
-| `AuthSettings.Cookie.SecurePolicy` | `Always` | Cookies only sent over HTTPS |
-| `OpenIddictSettings.DevelopmentMode` | `false` | Requires X.509 signing certificate |
-| `OpenIddictSettings.Issuer` | `https://auth.example.com` | Must be HTTPS for OIDC compliance |
-| HSTS | Enabled via Nginx | `Strict-Transport-Security` header |
+```
+A-Record    auth.example.com         → cocoar.auth Container
+A-Record    acme.example.com         → cocoar.auth Container (gleiche IP)
+A-Record    finance.example.com      → cocoar.auth Container (gleiche IP)
+```
 
-The backend also sets security headers on every response:
+Die TLS-Termination muss alle Domains abdecken (Wildcard-Cert oder
+SAN-Cert). Im Reverse-Proxy:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name *.example.com;
+    # ... wie oben
+}
+```
+
+`RealmMiddleware` sieht den jeweiligen Host-Header und routed gegen die
+richtige Tenant-DB.
+
+## Database-Auto-Provisioning
+
+Beim ersten Start (oder nach jedem Image-Update):
+
+1. Master-DB wird erstellt wenn fehlend (`CREATE DATABASE`)
+2. Marten-Schema wird applied (idempotent)
+3. System-Tenant in `realms.mt_tenant_databases` registriert
+4. Marten-Schema nochmal applied (per-Tenant-Tabellen für System)
+5. System-Realm-Document seeded
+6. Default-Scopes + Internal-LoginProvider seeded
+7. RealmCache warmgeladen
+
+Weitere Realms entstehen erst durch
+`POST /api/admin/realms` zur Laufzeit.
+
+::: warning Multi-Pod-Deployments
+Beim parallelen Boot mehrerer cocoar.auth-Instanzen kann das
+Schema-Apply rennen. Aktuell ist das praktisch nicht ein Problem
+(Marten ist idempotent + Postgres-Locks helfen), aber für sehr große
+Setups ist eine separate Migration-Phase besser:
+`AutoCreate.None` in den Pods + ein `migrate`-Sidecar/Job der das
+Schema einmal vor dem Pod-Rollout applied.
+:::
+
+## Health-Check
+
+```bash
+curl http://localhost/health
+```
+
+Antwortet `200` wenn die Master-DB-Connection OK ist. Skip-Path —
+kein Realm-Routing nötig.
+
+## SignalR
+
+cocoar.auth pusht Live-Updates über `/signalr/ui` (typed RPC via
+SignalARRR). Reverse-Proxies brauchen Upgrade-Header (siehe oben). Die
+Connection ist auth-gated — der User muss eingeloggt sein bevor sie
+aufgebaut wird.
+
+## Security-Headers
+
+cocoar.auth setzt eigene Security-Headers nicht selbst — das ist Sache
+des Reverse-Proxys oder eines vorgeschalteten WAF. Empfehlungen:
 
 ```
 X-Content-Type-Options: nosniff
 X-Frame-Options: DENY
-X-XSS-Protection: 0
 Referrer-Policy: strict-origin-when-cross-origin
 Permissions-Policy: camera=(), microphone=(), geolocation=()
-Content-Security-Policy: default-src 'self'; frame-ancestors 'none'
+Strict-Transport-Security: max-age=31536000; includeSubDomains
 ```
 
-## Rate Limiting
+## Email-Provider
 
-The backend applies fixed-window rate limiting:
+cocoar.auth unterstützt zwei Provider:
 
-| Policy | Limit | Window | Applied To |
-|--------|-------|--------|-----------|
-| `auth-strict` | 10 requests | 1 minute | Login, registration, password reset |
-| `general` | 60 requests | 1 minute | Other endpoints |
+| Provider | Setting |
+|---|---|
+| **Postmark** | `Email.Provider = "Postmark"` + `Email.Postmark.*` |
+| **SMTP** | `Email.Provider = "Smtp"` + `Email.Smtp.*` |
 
-Exceeding the limit returns `429 Too Many Requests`.
+In Dev wird zusätzlich ein `InMemoryEmailService` registriert der
+Mails im Memory hält — der `/api/dev/emails`-Endpoint zeigt sie. Für
+E2E-Tests in Docker reicht das.
 
-## Environment-Specific Behavior
+In Production: Postmark oder ein echter SMTP-Server. Ohne
+Email-Konfiguration läuft cocoar.auth weiter (Magic-Link etc. tun
+einfach nichts), Logger warnt aber im Boot.
 
-| Feature | Development | Production |
-|---------|------------|------------|
-| OpenIddict signing | Ephemeral keys | X.509 certificate |
-| Email sending | `MockEmailSender` (console logging) | `SmtpEmailSender` |
-| Async projections | Inline (synchronous) | Async daemon (`HotCold`) |
-| Swagger | Enabled | Disabled |
-| Cookie `Secure` | `SameAsRequest` (allows HTTP) | `Always` |
+## Recovery-CLI im Container
+
+Bei Emergency (alle Admins ausgesperrt, Projection korrupt):
+
+```bash
+docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover list
+docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover reset-2fa admin
+docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover magic-link admin
+```
+
+Statt Kestrel hochzufahren läuft das Image im CLI-Modus, führt das
+Command aus und beendet sich.

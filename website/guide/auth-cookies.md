@@ -1,193 +1,147 @@
-# Cookie-Based Authentication
+# Cookies & Sessions
 
-Cocoar.Auth uses cookie-based authentication with ASP.NET Core Identity. No JWTs are stored in the browser -- all session state is server-side.
+cocoar.auth nutzt **Cookie-basierte Authentifizierung** mit ASP.NET
+Core Identity. Keine JWTs im Browser — alles Session-State ist
+server-seitig.
 
-## How It Works
+## Wie es funktioniert
 
-ASP.NET Core Identity issues an encrypted authentication cookie on login. The cookie contains the user's `ClaimsPrincipal` (user ID, roles, security stamp) encrypted with Data Protection. On each request, the cookie middleware decrypts the cookie and populates `HttpContext.User`.
+ASP.NET Core Identity gibt beim Login einen verschlüsselten
+Auth-Cookie aus. Der Cookie enthält den `ClaimsPrincipal` (User-ID,
+Rollen, Security-Stamp) verschlüsselt mit Data-Protection. Bei jedem
+Request decryptet die Cookie-Middleware den Cookie und füllt
+`HttpContext.User`.
 
-Cocoar.Auth configures this through the `CookieAuthenticationOptions` for the `IdentityConstants.ApplicationScheme`:
+## Cookie-Konfiguration
 
-```csharp
-builder.Services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme)
-    .Configure<AuthSettings>((options, authSettings) =>
-    {
-        options.Cookie.HttpOnly = authSettings.Cookie.HttpOnly;
-        options.Cookie.SecurePolicy = /* from config */;
-        options.Cookie.SameSite = /* from config */;
-        options.ExpireTimeSpan = TimeSpan.FromDays(authSettings.SessionExpirationDays);
-        options.SlidingExpiration = authSettings.SlidingExpiration;
-        // ...
-    });
-```
-
-## Cookie Configuration
-
-| Property | Value | Purpose |
-|----------|-------|---------|
-| HttpOnly | `true` | Not accessible via JavaScript -- mitigates XSS |
-| Secure | Configurable (`Always` / `SameAsRequest` / `None`) | Controls HTTPS-only transmission |
-| SameSite | `Lax` | CSRF protection while allowing top-level navigation |
-| Path | `/{slug}` (per realm) | Prevents cross-realm session leakage |
-| ExpireTimeSpan | 14 days (configurable) | Cookie lifetime |
-| SlidingExpiration | `true` | Refreshes expiry on active use |
-
-## Cookie Lifecycle
-
-### Sign-In
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant AuthController
-    participant SignInManager
-    participant CookieMiddleware
-    participant Browser
-
-    User->>AuthController: POST /api/auth/login
-    AuthController->>SignInManager: PasswordSignInAsync()
-    SignInManager->>CookieMiddleware: Issue auth cookie
-    Note over CookieMiddleware: OnSigningIn fires
-    CookieMiddleware->>CookieMiddleware: Add cocoar:realm claim
-    CookieMiddleware->>CookieMiddleware: Set cookie path to /{slug}
-    CookieMiddleware->>Browser: Set-Cookie (encrypted, path-scoped)
-    AuthController->>Browser: 200 OK + session cookie
-```
-
-During sign-in, the `OnSigningIn` event handler runs:
-
-1. Reads the realm slug from `HttpContext.Items["RealmSlug"]`
-2. Adds a `cocoar:realm` claim to the principal for auditing
-3. Sets the cookie path based on the realm:
-   - **System realm** gets path `/` -- this allows system admin cookies to reach all realm paths
-   - **Other realms** get path `/{slug}` -- cookie is only sent for that realm's requests
+Konfiguriert in `Program.cs`:
 
 ```csharp
-options.Events.OnSigningIn = context =>
+.AddCookie(IdentityConstants.ApplicationScheme, options =>
 {
-    var realmSlug = context.HttpContext.Items["RealmSlug"] as string ?? "system";
-    var identity = (ClaimsIdentity)context.Principal!.Identity!;
-    identity.AddClaim(new Claim("cocoar:realm", realmSlug));
-
-    if (realmSlug == "system")
-        context.CookieOptions.Path = "/";     // reaches all realms
-    else
-        context.CookieOptions.Path = $"/{realmSlug}";
-
-    return originalOnSigningIn?.Invoke(context) ?? Task.CompletedTask;
-};
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.Cookie.SecurePolicy = builder.Environment.IsProduction()
+        ? CookieSecurePolicy.Always
+        : CookieSecurePolicy.None;
+    options.Cookie.Name = "Cocoar.Auth.Auth";
+    options.ExpireTimeSpan = TimeSpan.FromDays(30);
+    options.SlidingExpiration = true;
+    options.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = 401; ... };
+    options.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = 403; ... };
+})
 ```
 
-### Sign-Out and the Path Fix
+| Property | Wert | Zweck |
+|---|---|---|
+| `HttpOnly` | `true` | XSS-Mitigation — JS kann den Cookie nicht lesen |
+| `SecurePolicy` | `Always` (Prod) / `None` (Dev) | HTTPS-only in Prod; in Dev HTTP-Vite-Proxy zugelassen |
+| `SameSite` | `Strict` | CSRF-Schutz |
+| `ExpireTimeSpan` | 30 Tage | Max. Lifetime persistenter Cookies |
+| `SlidingExpiration` | `true` | Refresh bei aktivem Use |
 
-When the browser receives a `Set-Cookie` with `Max-Age=0` to delete the auth cookie, the cookie path in the deletion response **must match** the path used when the cookie was set. Otherwise the browser silently ignores the deletion and the user remains logged in.
+## Vier Cookies im Detail
 
-The `OnSigningOut` handler ensures the path matches:
+| Cookie | Wofür | Lifetime |
+|---|---|---|
+| `Cocoar.Auth.Auth` | Hauptsitzung (App-Cookie) | 30 Tage (oder Session bei `RememberMe=false`) |
+| `Cocoar.Auth.2FA` | UserId-Holder zwischen Password-Step und 2FA-Step | 5 Min |
+| `Cocoar.Auth.External` | OIDC-Callback-Holder (`SameSite=Lax`!) | 10 Min |
+| `Cocoar.Auth.Session` | Nur Passkey-Attestation-Options (ASP.NET Session) | 5 Min Idle |
 
-```csharp
-options.Events.OnSigningOut = context =>
-{
-    var realmSlug = context.HttpContext.Items["RealmSlug"] as string ?? "system";
-    context.CookieOptions.Path = realmSlug == "system" ? "/" : $"/{realmSlug}";
-    return originalOnSigningOut?.Invoke(context) ?? Task.CompletedTask;
-};
-```
+`Cocoar.Auth.External` ist absichtlich `SameSite=Lax` — sonst geht
+der Cookie beim IdP-Redirect verloren und der OIDC-Callback findet
+seine eigene Challenge nicht mehr.
 
-### API Response Handling
+## API-Response-Handling
 
-For API calls, the cookie middleware is configured to return status codes instead of redirects:
+Für API-Calls returnen die Cookie-Events Status-Codes statt Redirects:
 
-- **Unauthenticated**: Returns `401` instead of redirecting to a login page
-- **Forbidden**: Returns `403` instead of redirecting to an access-denied page
-- **OAuth flows**: The `/connect/authorize` endpoint is an exception -- it allows redirects so the frontend can handle the login flow
+- **Unauthenticated** → `401` (kein Redirect auf Login-Page)
+- **Forbidden** → `403` (kein Redirect auf Access-Denied)
+- **OAuth-Flow `/connect/authorize`** ist die Ausnahme — der erlaubt
+  Redirects, damit das Frontend den Login-Flow handhaben kann
 
-## Multi-Realm Cookie Coexistence
+## Multi-Realm-Cookies
 
-Because cookies are scoped by path, multiple realm sessions can coexist in the same browser:
+In cocoar.auth ist die Realm-Boundary die **Domain** (Host-Header),
+nicht der URL-Pfad. Cookies sind nicht pfad-scoped — sie leben unter
+der Realm-Domain. Ein Login in `acme.example.com` setzt einen Cookie
+für genau diese Domain; bei `finance.example.com` wird er nicht
+mitgeschickt.
 
-```
-Cookie: .AspNetCore.Identity.Application  Path: /system  (system admin)
-Cookie: .AspNetCore.Identity.Application  Path: /acme    (acme realm user)
-Cookie: .AspNetCore.Identity.Application  Path: /corp    (corp realm user)
-```
+Damit sind Cross-Realm-Leaks **automatisch** ausgeschlossen — kein
+Path-Akrobatik, kein `Cookie.Path` setzen.
 
-- A request to `/acme/api/...` only receives the `/acme`-scoped cookie
-- A request to `/system/api/...` receives both the `/system` cookie AND the `/` cookie (system admin)
-- The system realm cookie (path `/`) is intentionally broad so system admins can access any realm's API endpoints
-
-::: warning
-The system admin cookie having path `/` means it is sent on every request to every realm. This is by design -- system admins need cross-realm access. Realm-specific cookies with path `/{slug}` provide the isolation.
+::: tip Single-Domain-Dev-Setup
+In Dev läuft alles unter `localhost:4300` (Vite-Proxy). Da gibt es nur
+einen System-Realm (Single-Tenant-Fallback im RealmCache). Wenn man in
+Dev Multi-Realm testen will, braucht man hosts-File-Einträge oder
+*.localtest.me-style Domains.
 :::
 
-## Session Tracking
+## Session-Tracking
 
-Separate from the auth cookie, Cocoar.Auth maintains a `UserSession` document in Marten for each active login. This provides session management features (view active sessions, revoke sessions) that the cookie alone cannot support.
+Parallel zum Auth-Cookie pflegt cocoar.auth ein
+`UserSession`-Marten-Document pro aktivem Login. Das ermöglicht
+Session-Management-Features (Sessions auflisten, einzeln revoken,
+Logout-Everywhere) die ein Cookie alleine nicht kann.
 
-### The Session Cookie
+### Session-Cookie
 
-The `AuthController` manages a second cookie named `cocoar.session_id` that correlates the browser with a `UserSession` document:
+Ein zweiter Cookie `cocoar.session_id` (HttpOnly, Secure in Prod)
+korreliert den Browser mit dem `UserSession`-Document. Bei Logout
+wird das Document gelöscht und der Cookie geleert.
 
-```csharp
-private const string SessionCookieName = "cocoar.session_id";
+### UserSession-Document
 
-private async Task CreateSessionCookieAsync(Guid userId, CancellationToken ct)
-{
-    var ip = GetClientIpAddress();
-    var ua = Request.Headers.UserAgent.ToString();
-    var result = await _sessionService.CreateSessionAsync(userId, ip, ua, ct);
-    if (!result.IsError)
-    {
-        Response.Cookies.Append(SessionCookieName, result.Value.Id.ToString(), new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = Request.IsHttps,
-            SameSite = SameSiteMode.Lax,
-            IsEssential = true
-        });
-    }
-}
+| Feld | Quelle | Zweck |
+|---|---|---|
+| `UserId` | Auth-System | Verknüpfung |
+| `SessionId` | Random GUID | Korrelation mit Cookie |
+| `IpAddress` | `HttpContext.Connection.RemoteIpAddress` (proxy-aware via `ForwardedHeaders`) | Audit |
+| `Browser`, `BrowserVersion` | UAParser | UI-Anzeige |
+| `OperatingSystem`, `OsVersion` | UAParser | UI-Anzeige |
+| `DeviceType` | UAParser | Desktop/Mobile/Tablet |
+| `CreatedAt`, `LastActiveAt`, `ExpiresAt` | UTC | TTL + UI |
+
+`SessionTracker` updated `LastActiveAt` bei jedem authentifizierten
+Request, throttled (z.B. nur einmal pro Minute pro Session).
+
+### Self-Service-Endpoints
+
+```http
+GET    /api/account/sessions
+DELETE /api/account/sessions/{id}
+DELETE /api/account/sessions          # alle außer current
 ```
 
-### UserSession Document
+### Admin-Variante
 
-Each login creates a `UserSession` Marten document (NOT event-sourced, since sessions are ephemeral state):
+```http
+GET    /api/admin/users/{id}/sessions
+DELETE /api/admin/users/{id}/sessions # Force logout
+```
 
-| Field | Source | Purpose |
-|-------|--------|---------|
-| `UserId` | Auth system | Links session to user |
-| `SessionId` | Random GUID | Correlates with the `cocoar.session_id` cookie |
-| `IpAddress` | `HttpContext.Connection.RemoteIpAddress` | Audit / display |
-| `Browser` | UAParser | e.g., "Chrome" |
-| `BrowserVersion` | UAParser | e.g., "120.0" |
-| `OperatingSystem` | UAParser | e.g., "Windows" |
-| `OsVersion` | UAParser | e.g., "10" |
-| `DeviceType` | UAParser | Desktop / Mobile / Tablet |
-| `CreatedAt` | UTC timestamp | When the session was created |
-| `LastActiveAt` | UTC timestamp | Updated on activity |
-| `ExpiresAt` | UTC timestamp | Based on `SessionExpirationDays` config |
+## Forced Logout via Security-Stamp
 
-The User-Agent string is parsed by the UAParser library to extract browser, OS, and device information for display in the session management UI.
+ASP.NET Core Identity hat einen `SecurityStamp`-Mechanismus: bei
+sicherheitsrelevanten Events (Password-Change, 2FA-Toggle) wird der
+Stamp invalidiert; bei der nächsten Cookie-Validation kommt der Cookie
+nicht mehr durch und der User wird ausgeloggt.
 
-### Session Management
+cocoar.auth nutzt das + zusätzlich die `UserSession`-Documents:
+"Logout everywhere" cleared alle `UserSession`s + invalidiert den
+Security-Stamp → alle Cookies des Users werden bei der nächsten
+Validation abgelehnt.
 
-Users can view and manage their sessions through the API:
-
-- `GET /api/auth/sessions` -- List all active sessions for the current user
-- `DELETE /api/auth/sessions/{id}` -- Revoke a specific session
-- `DELETE /api/auth/sessions` -- Revoke all sessions (logout everywhere)
-
-Admins can also manage user sessions:
-
-- `GET /api/admin/users/{id}/sessions` -- List a user's sessions
-- `DELETE /api/admin/users/{id}/sessions` -- Force logout a user
-
-## Security Summary
+## Security-Summary
 
 | Concern | Mitigation |
-|---------|-----------|
-| XSS token theft | `HttpOnly` -- JavaScript cannot read the cookie |
-| Man-in-the-middle | `Secure` flag -- cookie only sent over HTTPS |
-| CSRF | `SameSite=Lax` -- cookie not sent on cross-origin POST |
-| Cross-realm leakage | Path scoping -- each realm's cookie isolated by URL path |
-| Session persistence | Encrypted cookie + server-side `UserSession` document |
-| Forced logout | Delete `UserSession` document; security stamp invalidation |
+|---|---|
+| XSS-Token-Diebstahl | `HttpOnly` |
+| Man-in-the-Middle | `Secure` (Prod) |
+| CSRF | `SameSite=Strict` |
+| Cross-Realm-Leakage | Realm-Domain → eigene Cookie-Domain |
+| Forced-Logout | Security-Stamp + UserSession-Document löschen |
+| Account-Lockout | 5 Failed Logins → 1 Min Lockout (DoS-Limit) |

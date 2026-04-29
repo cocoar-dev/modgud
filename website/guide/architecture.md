@@ -1,277 +1,239 @@
-# Clean Architecture
+# Backend-Aufbau
 
-Cocoar.Auth follows a 4-layer Clean Architecture where dependencies point inward. The Domain layer has no dependencies on other layers, and the API layer depends on everything.
+cocoar.auth ist **nicht** klassisch geschichtet (Domain → Application →
+Infrastructure). Stattdessen sind die Kernfunktionen in Vertical-Slices
+organisiert, mit zusätzlichen IdP-spezifischen Layern darüber.
+
+## Projekt-Layout
+
+```
+src/dotnet/
+├── Cocoar.Auth.Authentication/   ← Slice (Login, 2FA, OIDC, GDPR, Sessions)
+├── Cocoar.Auth.Authorization/    ← Slice (Groups, Roles, Permissions, ABAC)
+├── Cocoar.Auth.Domain/           ← Realm, OAuth, LoginProvider Domain
+├── Cocoar.Auth.Application/      ← DTOs, Service-Interfaces
+├── Cocoar.Auth.Infrastructure/   ← OpenIddict-Stores, Tenancy, Realm-Cache, Wolverine-Handler
+├── Cocoar.Auth.Api/              ← Minimal-API-Endpoints, Middleware, Setup, SignalR-Hub
+├── Cocoar.Auth.Api.Tests/        ← Integration-Tests (Testcontainers + PostgreSQL)
+└── Common/                       ← Geteilte Utilities (PathHelper, Optional<T>, ...)
+```
+
+## Komponenten-Diagramm
 
 ```mermaid
 graph TB
-    subgraph Api ["API Layer"]
-        direction LR
-        A1[Controllers]
-        A2[Middleware]
-        A3[Filters]
-        A4[Configuration]
+    subgraph FrontEnd ["Frontend (Vue)"]
+        SPA["Vue SPA + Pinia + SignalARRR-Client"]
     end
 
-    subgraph App ["Application Layer"]
-        direction LR
-        B1[Commands / Queries]
-        B2[Services]
-        B3[DTOs]
-        B4[Interfaces]
+    subgraph Api ["Cocoar.Auth.Api"]
+        MW[RealmMiddleware]
+        Endpoints[Minimal-API-Endpoints<br/>per Feature in Features/]
+        Hub[UIHub - SignalR]
+        Setup[Bootstrap + Master-Tenancy + Seeding]
     end
 
-    subgraph Infra ["Infrastructure Layer"]
-        direction LR
-        C1[Marten Stores]
-        C2[Identity Stores]
-        C3[Projections]
-        C4[OpenIddict Stores]
+    subgraph Slices ["Slices (TimeToDo-Kopien)"]
+        Authn[Cocoar.Auth.Authentication<br/>Login, 2FA, OIDC, GDPR]
+        Authz[Cocoar.Auth.Authorization<br/>Groups, Roles, ABAC]
     end
 
-    subgraph Domain ["Domain Layer"]
-        direction LR
-        D1[Entities]
-        D2[Aggregates]
-        D3[Events]
-        D4[Value Objects]
+    subgraph Infra ["Cocoar.Auth.Infrastructure"]
+        Tenancy[TenantedSessionFactory<br/>+ MasterTableTenancy]
+        OpenIddictStores[Marten-OpenIddict-Stores<br/>Application/Scope/Auth/Token]
+        Realms[RealmCache + RealmProvisioning]
+        IGlobalStore[IGlobalStore - Realm-Documents]
     end
 
-    Api --> App
-    Api --> Infra
-    App --> Domain
-    Infra --> Domain
-    Infra --> App
+    subgraph DataLayer ["Marten + PostgreSQL"]
+        Master[(Master-DB<br/>+ realms.mt_tenant_databases<br/>+ global Schema)]
+        TenantA[(cocoar_auth_next_acme)]
+        TenantB[(cocoar_auth_next_finance)]
+    end
+
+    SPA <-->|Cookie + SignalR| MW
+    MW --> Endpoints
+    MW --> Hub
+    Endpoints --> Authn
+    Endpoints --> Authz
+    Endpoints --> OpenIddictStores
+    Authn --> Tenancy
+    Authz --> Tenancy
+    OpenIddictStores --> Tenancy
+    Realms --> IGlobalStore
+    Tenancy --> Master
+    Tenancy --> TenantA
+    Tenancy --> TenantB
+    IGlobalStore --> Master
+    Setup --> Master
+    Setup --> Realms
 ```
 
-## Projects
+## Request-Lifecycle
 
-| Project | Layer | Purpose |
-|---------|-------|---------|
-| `Cocoar.Auth.Domain` | Domain | Entities, Aggregates, 60+ Domain Events, Value Objects |
-| `Cocoar.Auth.Application` | Application | CQRS Commands/Queries via Wolverine, Services, DTOs, Interfaces |
-| `Cocoar.Auth.Infrastructure` | Infrastructure | Marten stores, Identity implementation, Projections, Repositories |
-| `Cocoar.Auth.Api` | API | REST Controllers, Middleware, Filters, Configuration |
-| `Cocoar.Auth.Tests` | Testing | 271 integration tests with Testcontainers |
+```
+Browser → ASP.NET Core
+  ↓ UseRouting
+  ↓ UseMiddleware<RealmMiddleware>          ← setzt HttpContext.Items["TenantId"]
+  ↓ UseSession
+  ↓ UseAuthentication                        ← Cookie-Auth
+  ↓ UseAuthorization
+  ↓ UseMiddleware<TwoFactorEnforcementMW>    ← blockiert User ohne 2FA bei Level ≥ 1
+  ↓ Endpoint-Routing
+  ↓ Endpoint mit RequiresPermission(...)     ← per-resource gating
+  ↓ Handler
+       ↓ IDocumentSession                    ← TenantedSessionFactory liest TenantId
+       ↓ Marten Query gegen Tenant-DB
+       ↓ Antwort
+```
 
-## Domain Layer
+`TenantedSessionFactory` ist als Marten `ISessionFactory` registriert
+(`AddMarten(...).BuildSessionsWith<TenantedSessionFactory>()`), so
+dass jede `IDocumentSession`/`IQuerySession`-Injection automatisch
+tenant-scoped ist.
 
-The innermost layer. No dependencies on frameworks or infrastructure.
+## Wolverine-CQRS
 
-### Entities
-
-| Entity | Purpose |
-|--------|---------|
-| `ApplicationUser` | ASP.NET Core Identity user with custom fields (FirstName, LastName, IsActive, ExpiresAt, Roles, Claims) |
-| `ApplicationRole` | Identity role with description and email fields |
-| `UserSecurityData` | Security-sensitive data stored separately from event stream (password hash, authenticator key, recovery codes, WebAuthn credentials) |
-| `Realm` | Tenant metadata (slug, display name, active status) |
-| `UserSession` | Ephemeral active session tracking (IP, browser, device info) |
-| `WebAuthnCredential` | FIDO2 credential (public key, sign count, device name) |
-| `WebAuthnChallenge` | Ephemeral WebAuthn ceremony state |
-| `EmailOtpChallenge` | Ephemeral email OTP verification state |
-| `ExternalLoginState` | Ephemeral OIDC external login flow state |
-| `OpenIddictAuthorizationDocument` | OAuth authorization/consent records |
-| `OpenIddictTokenDocument` | OAuth reference tokens and refresh tokens |
-| `OAuthApplicationSecurityData` | OAuth client secrets (stored separately from event stream) |
-
-### Aggregates
-
-Event-sourced aggregates that define the domain rules:
-
-| Aggregate | Events | Purpose |
-|-----------|--------|---------|
-| `UserAggregate` | 30+ events | User lifecycle: creation, profile changes, security events, login tracking, GDPR |
-| `RoleAggregate` | 8 events | Role management: creation, name/description/claim changes, deletion |
-| `OAuthApplicationAggregate` | 12 events | OAuth client lifecycle: creation, settings changes, deletion |
-| `OAuthScopeAggregate` | 13 events | Scope management with user claims and discovery settings |
-| `OAuthApiAggregate` | 8 events | API resource lifecycle with scopes and user claims |
-| `LoginProviderAggregate` | 6 events | External login provider configuration |
-
-### Domain Events
-
-Over 60 domain events organized by category:
-
-**Profile Events** (carry data for audit):
-`UserCreated`, `UserNameChanged`, `UserEmailChanged`, `UserPhoneNumberChanged`, `UserProfileNameChanged`, `UserExpirationChanged`, `UserActivated`, `UserDeactivated`, `UserDeleted`
-
-**Security Events** (metadata only, no sensitive data):
-`UserPasswordChanged`, `UserTwoFactorEnabled`, `UserTwoFactorDisabled`, `UserRecoveryCodesRegenerated`, `UserSessionsInvalidated`
-
-**Auth Events** (for monitoring/audit):
-`UserLoggedIn`, `UserLoginFailed`, `UserLockedOut`, `UserUnlocked`
-
-**GDPR Events**:
-`UserDeletionRequested`, `UserDeletionCancelled`, `UserDataMasked`, `UserDataExported`, `UserRestored`
-
-**WebAuthn Events**:
-`WebAuthnCredentialRegistered`, `WebAuthnCredentialDeleted`, `WebAuthnCredentialUsed`
-
-**External Login Events**:
-`UserExternalLoginLinked`, `UserExternalLoginRemoved`
-
-**OAuth/Role/Scope/API/LoginProvider Events**: Full CRUD event sets for each aggregate.
-
-## Application Layer
-
-Orchestrates use cases. Depends only on the Domain layer (and defines interfaces that Infrastructure implements).
-
-### CQRS with Wolverine
-
-Commands and queries are dispatched via Wolverine's `IMessageBus`. Handlers are static methods discovered automatically by convention:
+CQRS-Commands und Queries werden via Wolverines `IMessageBus`
+dispatched:
 
 ```csharp
-// Command dispatch (controller)
 var result = await _messageBus.InvokeAsync<ErrorOr<UserDto>>(
     new CreateUserCommand(...));
-
-// Handler (auto-discovered)
-public static async Task<ErrorOr<UserDto>> HandleAsync(
-    CreateUserCommand command,
-    IDocumentSession session,
-    CancellationToken ct)
-{
-    // ...
-}
 ```
 
-Wolverine runs with in-memory, local queues (`DurabilityMode.Solo`) -- no external message transport needed.
+Handler werden auto-discovered. Cocoar.Auth läuft mit
+`DurabilityMode.Solo` (in-memory, lokal) — kein externer Message-Broker
+nötig. Die Marten-Outbox ist trotzdem aktiv für event-side-effects:
+SignalR-Notifications werden nach `SaveChangesAsync` gefeuert über
+`ProjectionSideEffects`.
 
-### Services
+Der Codegen läuft mit `TypeLoadMode.Auto` — beim Build werden
+Wolverine-/Marten-Generierte Klassen vorgeneriert um Kaltstartzeit
+und Roslyn-Compilation zur Laufzeit zu sparen.
 
-| Service | Responsibility |
-|---------|---------------|
-| `AuthService` | Login, registration, password management, email confirmation |
-| `UserService` | User profile CRUD, admin operations |
-| `TwoFactorService` | TOTP setup/enable/disable, recovery codes |
-| `SessionService` | Session creation, listing, revocation |
-| `OAuthAdminService` | OAuth client/scope/API CRUD via admin UI |
-| `GdprService` | Data export, deletion request/confirm/cancel |
+## Marten-Verwendung
 
-### ErrorOr Pattern
+cocoar.auth nutzt drei Marten-Patterns:
 
-All service operations return `ErrorOr<T>` for functional error handling. Controllers use `FromErrorOr()` to map errors to HTTP responses:
+### 1. Document-Storage
 
-```csharp
-var result = await _authService.LoginAsync(dto, ipAddress, userAgent, ct);
-return FromErrorOr(result);
+Klassischer Marten-Document-Store für ephemerere oder
+sicherheitssensitive Daten — keine Event-Sourcing.
+
+| Document | Inhalt |
+|---|---|
+| `ApplicationUser` | ASP.NET Identity-User |
+| `UserSecurityData` | Password-Hash, TOTP-Key, Recovery-Codes, Passkey-Credentials |
+| `UserSession` | Active Login-Session |
+| `EmailOtpChallenge`, `MagicLinkChallenge`, `WebAuthnChallenge` | ephemerere Challenges |
+| `IdpConfig` | OIDC-IdP-Konfiguration |
+| `OpenIddictAuthorizationDocument`, `OpenIddictTokenDocument` | OAuth-Tokens + Authorizations |
+
+### 2. Inline-Projections (`*State`)
+
+Synchron innerhalb der `SaveChanges`-Transaktion. Garantieren dass der
+nächste Read nach einem Write den neuen Stand sieht. Genutzt für
+Validation und Identity-Stores.
+
+| Projection | Was sie hält |
+|---|---|
+| `OAuthApplicationState` | OpenIddict-Application-State |
+| `OAuthScopeState` | OpenIddict-Scope-State |
+| `OAuthApiState` | API-Resource-State |
+| `LoginProviderState` | Internal/External-Login-Provider-State |
+
+### 3. Event-Sourced Aggregates
+
+OAuth-Domain-Aggregate sind voll-event-sourced via Marten:
+
+| Aggregate | Events |
+|---|---|
+| `OAuthApplicationAggregate` | Created, Updated, Deleted, Renamed, ... |
+| `OAuthScopeAggregate` | Created, ResourcesChanged, ... |
+| `OAuthApiAggregate` | Created, Updated, Scopes-Changed, ... |
+| `LoginProviderAggregate` | Created, Updated, Disabled, ... |
+
+User-Events werden vom Authentication-Slice gefeuert (`UserCreated`,
+`UserUpdated`, `UserPasswordChanged`, `UserLoggedIn`, ...). Der Slice
+selbst speichert Identity über `ApplicationUser`-Document; die Events
+sind separat für Audit und für die `PrincipalProjection` (siehe
+Authorization-Slice).
+
+## OpenIddict-Stores
+
+cocoar.auth implementiert alle vier OpenIddict-Stores als
+Marten-backed Stores, im Ordner
+`Cocoar.Auth.Infrastructure/OpenIddict/`:
+
+| Store | Backing |
+|---|---|
+| `MartenApplicationStore` | `OAuthApplicationState`-Inline-Projection (event-sourced via Aggregate) |
+| `MartenScopeStore` | `OAuthScopeState`-Inline-Projection (event-sourced via Aggregate) |
+| `MartenAuthorizationStore` | `OpenIddictAuthorizationDocument` (direct storage) |
+| `MartenTokenStore` | `OpenIddictTokenDocument` (direct storage) |
+
+Plus zwei Pipeline-Hooks:
+
+- `RealmIssuerHandler` — überschreibt `context.Issuer` mit `BaseUri`
+  pro Request (= Realm-Domain). So hat jeder Realm sein eigenes
+  Discovery-Dokument.
+- `AccessTokenTypeHandler` — schaltet pro Client zwischen
+  Reference-Tokens und JWT um.
+
+## Setup-Bootstrap
+
+In `Program.cs` läuft beim Start ein expliziter Bootstrap-Pfad
+(VOR `app.Run()`):
+
+1. **Master-DB anlegen** (raw SQL, weil Marten das nicht kann während
+   Connection auf einer fehlenden DB hängt)
+2. **Marten-Schema applyen** (`Storage.ApplyAllConfiguredChangesToDatabaseAsync`)
+   → `realms.mt_tenant_databases` entsteht
+3. **System-Tenant registrieren** (`tenancy.AddDatabaseRecordAsync("system", masterCs)`)
+4. **Marten-Schema nochmal applyen** → per-Tenant-Tabellen für System
+5. **System-Realm-Document seeden** (`EnsureSystemRealmExistsAsync`)
+6. **Default-OAuth-Scopes + Internal-Login-Provider seeden**
+   (`OAuthRealmSeeder.SeedAsync`)
+7. **RealmCache warmladen**
+
+Erst danach beginnt Kestrel zuzuhören.
+
+## Recovery-CLI
+
+Der Authentication-Slice liefert eine Break-Glass-CLI. Statt Kestrel zu
+starten kann das Image im Container mit `recover`-Subcommand laufen:
+
+```bash
+dotnet Cocoar.Auth.Api.dll recover list
+dotnet Cocoar.Auth.Api.dll recover reset-2fa <username>
+dotnet Cocoar.Auth.Api.dll recover set-email <username> <email>
+dotnet Cocoar.Auth.Api.dll recover magic-link <username>
+dotnet Cocoar.Auth.Api.dll recover rebuild-projections
 ```
 
-### Mapperly
+Hilft beim Lockout: alle 2FA verloren, kein Admin mehr da, Projection
+korrupt — alles per Container-Exec lösbar.
 
-Source-generated DTO mapping using [Mapperly](https://mapperly.riok.app/). Zero reflection, compile-time safe. Mappers are generated as partial classes.
+## Frontend-Schnittstelle
 
-## Infrastructure Layer
+Der Vue-Frontend liegt unter `src/frontend-vue/` und wird im Container
+über `app.UseSpaUI()` als statisches `wwwroot/` ausgeliefert. SignalR-Hub
+unter `/signalr/ui` (`MapHARRRController<UIHub>`).
 
-Implements interfaces defined in the Application layer. Contains all framework and database dependencies.
-
-### Identity Implementation
-
-The `EventSourcedUserStore` implements 14 ASP.NET Core Identity interfaces:
-
-- `IUserStore`, `IUserPasswordStore`, `IUserEmailStore`, `IUserPhoneNumberStore`
-- `IUserSecurityStampStore`, `IUserLockoutStore`, `IUserTwoFactorStore`
-- `IUserClaimStore`, `IUserLoginStore`, `IUserAuthenticationTokenStore`
-- `IUserRoleStore`, `IQueryableUserStore`
-- `IUserAuthenticatorKeyStore`, `IUserTwoFactorRecoveryCodeStore`
-
-It appends domain events for auditable changes while storing security-sensitive data in the `UserSecurityData` document (not event-sourced).
-
-The `EventSourcedRoleStore` implements `IRoleStore`, `IRoleClaimStore`, and `IQueryableRoleStore`.
-
-### OpenIddict Stores
-
-Custom Marten implementations for all four OpenIddict store interfaces:
-
-| Store | Entity | Strategy |
-|-------|--------|----------|
-| `MartenApplicationStore` | `OAuthApplicationState` | Event-sourced (hybrid: secrets in separate document) |
-| `MartenAuthorizationStore` | `OpenIddictAuthorizationDocument` | Direct document storage |
-| `MartenScopeStore` | `OAuthScopeState` | Event-sourced |
-| `MartenTokenStore` | `OpenIddictTokenDocument` | Direct document storage |
-
-### RealmCache
-
-An in-memory `ConcurrentDictionary` of active realm slugs, loaded from the system database. The `RealmMiddleware` uses it for fast validation on every request. Invalidated when realms are created, updated, or deleted.
-
-### AspNetCoreAuthenticationService
-
-Wraps `SignInManager<ApplicationUser>` to expose authentication operations through an interface (`IAuthenticationService`). Includes `StoreTwoFactorUserAsync()` for the 2FA + external login flow.
-
-## API Layer
-
-The outermost layer. Handles HTTP concerns.
-
-### Controllers
-
-| Controller | Base Path | Purpose |
-|-----------|-----------|---------|
-| `AuthController` | `/api/auth` | Public authentication (login, register, 2FA, sessions, GDPR) |
-| `AuthorizationController` | `/connect` | OpenID Connect endpoints (authorize, token, userinfo, logout) |
-| `ConsentController` | `/api/consent` | OAuth consent flow |
-| `SetupController` | `/api/setup` | First-time admin account creation |
-| `UsersAdminController` | `/api/admin/users` | User CRUD (admin) |
-| `RolesAdminController` | `/api/admin/roles` | Role CRUD (admin) |
-| `OAuthAdminController` | `/api/admin/oauth` | OAuth client/scope/API management (admin) |
-| `LoginProvidersAdminController` | `/api/admin/login-providers` | External login provider management (admin) |
-| `RealmsAdminController` | `/api/admin/realms` | Realm management (system admin only) |
-
-### Middleware
-
-- **RealmMiddleware**: Runs before routing. Extracts realm slug from URL path, validates it against `RealmCache`, sets `PathBase` and `TenantId` on the `HttpContext`.
-
-### Filters
-
-- **SystemRealmOnlyAttribute**: Restricts endpoints (like realm management) to requests within the system realm.
-
-### Rate Limiting
-
-Fixed-window rate limiting with two policies:
-- `auth-strict`: 10 requests/minute for authentication endpoints
-- `general`: 60 requests/minute for other endpoints
-
-## Key Design Decisions
-
-### Event Sourcing for Audit Trail
-
-All user, role, and OAuth entity mutations are captured as domain events. This provides a complete audit trail without a separate audit log. The event stream answers "what happened and when" for any entity.
-
-### Security Data Separation
-
-Security-sensitive data (password hashes, TOTP keys, client secrets) is deliberately stored in plain Marten documents, NOT in event streams. This prevents sensitive data from being replayed, projected, or exposed through event queries.
-
-### Manual OIDC Flow for External Login
-
-External login providers (Google, GitHub, etc.) are configured per-realm as `LoginProvider` documents rather than using ASP.NET Core's dynamic authentication scheme registration. The `ExternalLoginService` handles the OIDC protocol flow manually (discovery, authorization redirect, token exchange, userinfo) using the `OidcProtocolService`. This avoids the complexity of registering and managing authentication schemes at runtime across multiple tenants.
+Mehr siehe [Vue-Frontend](/guide/frontend).
 
 ## Testing
 
-### Integration Tests
+Integration-Tests (`Cocoar.Auth.Api.Tests`) nutzen:
 
-271 integration tests across 32 test classes using:
-
-- **Testcontainers**: PostgreSQL in Docker, started automatically per test run
-- **WebApplicationFactory**: In-process API hosting with cookie-based authentication
-- **SharedPostgresFixture**: Shared PostgreSQL container across all tests in the collection
-- **WireMock**: Fake OIDC server (`FakeOidcServer`) for external login flow tests
-
-Test classes cover all features: authentication, 2FA, sessions, GDPR, OAuth flows, consent, reference tokens, token claims, admin CRUD, realm management, realm isolation, and more.
-
-### Playwright E2E Tests
-
-25 end-to-end tests across 5 spec files using Playwright:
-
-| Spec File | Tests |
-|-----------|-------|
-| `login.spec.ts` | Login flow, error handling |
-| `navigation.spec.ts` | Sidebar navigation, routing |
-| `profile.spec.ts` | Profile viewing and editing |
-| `auth-flows.spec.ts` | OAuth authorization flows |
-| `admin-login-providers.spec.ts` | Login provider management UI |
-
-### Projection Naming Convention
-
-| Suffix | Type | Purpose |
-|--------|------|---------|
-| `*State` | Inline Projection | Validation, Identity (synchronous) |
-| `*ReadModel` | Async Projection | API responses (eventually consistent) |
-| `*Data` | Value Object | Embedded data in projections |
+- **Testcontainers** — PostgreSQL in Docker, automatisch beim
+  Test-Run gestartet
+- **WebApplicationFactory** — In-Process Hosting der API mit
+  Cookie-Auth
+- **Per-Test-Class-DB-Isolation** — jede Test-Class hat ihre eigene DB
+- **Shared PostgreSQL container** — eine Container-Instanz für alle
+  Test-Collections, parallelisiert
+- **WireMock** — Fake OIDC-Server für External-Login-Tests
+- **Pre-generated Wolverine-/Marten-Code** (`TypeLoadMode.Auto`) —
+  eliminiert Roslyn-Compilation zur Laufzeit

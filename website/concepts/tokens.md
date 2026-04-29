@@ -1,63 +1,111 @@
-# Tokens & Sessions
+# Sessions & Tokens
 
-## Sessions
+## Sessions (First-Party-Login)
 
-When a user logs into Cocoar.Auth (via the admin UI or the OAuth login page), a **session** is created. Sessions track:
+Wenn ein User sich in cocoar.auth einloggt (Admin-UI, OAuth-Login-Page),
+entsteht eine **Session** als `UserSession`-Marten-Document. Sessions
+tracken:
 
-- IP address
-- Browser and version
-- Operating system
-- Device type
-- When the session was created and last used
+- IP-Adresse
+- Browser, Browser-Version
+- Operating-System, OS-Version
+- Device-Type (Desktop, Mobile, Tablet)
+- `CreatedAt`, `LastActiveAt`, `ExpiresAt`
 
-Sessions are scoped per realm — logging into one realm doesn't affect sessions in another. A user can be logged into multiple realms simultaneously.
+Der `User-Agent`-String wird mit **UAParser** gesplittet und gepflegt.
 
-### Managing Sessions
+Sessions sind realm-skopiert (eine Session pro Realm pro Browser).
+Login in Realm A betrifft Realm B nicht — ein User kann gleichzeitig in
+mehreren Realms angemeldet sein, jeweils mit eigener Session.
 
-Users can:
-- View all their active sessions (which devices are logged in)
-- Revoke individual sessions (log out a specific device)
-- Revoke all sessions except the current one (log out everywhere else)
+### Session-Self-Service
 
-Admins can:
-- View any user's sessions
-- Force-logout a user (revoke all their sessions)
+Eingeloggte User sehen unter `/profile/sessions`:
 
-## OAuth Tokens
+- Alle aktiven Sessions
+- Browser, OS, IP, "active now" oder "vor X Minuten"
+- Pro Session: "Diese Session abmelden"
+- Globaler Button: "Überall abmelden außer hier"
 
-When an external application authenticates via OAuth, it receives tokens. There are three types:
+Endpoints:
+
+```http
+GET    /api/account/sessions
+DELETE /api/account/sessions/{id}
+DELETE /api/account/sessions
+```
+
+### Admin-Variante
+
+```http
+GET    /api/admin/users/{id}/sessions
+DELETE /api/admin/users/{id}/sessions   # Force logout
+```
+
+Admin braucht `user:read` bzw. `user:write` (oder `:admin` Bypass).
+
+## OAuth-Tokens
+
+Wenn eine externe App via OAuth einen User authentifiziert, bekommt sie
+Tokens. Drei Sorten:
 
 ### Access Token
 
-The token your application sends to APIs to prove it has permission. Configured **per client** as one of two formats:
+Was die App an die API sendet um Zugriff zu beweisen. Pro Client als
+einer von zwei Formaten konfiguriert:
 
-| Format | What it looks like | How APIs validate it |
-|--------|-------------------|---------------------|
-| **Reference** (default) | Opaque string — cannot be decoded | API calls Cocoar.Auth's introspection endpoint |
-| **JWT** | Signed JSON token — can be decoded | API verifies the signature locally |
+| Format | Aussehen | API-Validierung |
+|---|---|---|
+| **Reference** (default) | Opaker String — nicht decodierbar | API ruft Introspection-Endpoint von cocoar.auth |
+| **JWT** | Signierter JSON-Token — decodierbar | API verifiziert Signatur lokal |
 
-- **Short-lived** — typically 1 hour (configurable per client)
-- **Reference tokens can be instantly revoked** — JWTs remain valid until they expire
-
-See [Glossary > Access Token Types](/concepts/glossary#access-token-types) for guidance on when to use which.
+- **Short-lived** — typisch 60 Min (per-Client konfigurierbar)
+- **Reference-Tokens sind sofort revokierbar** — JWTs nur via Expiry
 
 ### Identity Token
 
-A signed JWT that tells the client **who logged in**. Contains user information based on the granted scopes (name, email, roles). Used by the client application, not sent to APIs.
+Ein signierter JWT der dem Client sagt **wer eingeloggt ist**. Enthält
+User-Info gemäß den granted Scopes (Name, E-Mail, Rollen). Wird vom
+Client gelesen, nicht an APIs geschickt.
 
 ### Refresh Token
 
-Allows the application to obtain new access tokens without asking the user to log in again. Only issued when the `offline_access` scope is granted.
+Ermöglicht es der App, neue Access-Tokens zu holen ohne den User wieder
+anzumelden. Nur ausgegeben wenn `offline_access` granted ist.
 
-- Long-lived (days or weeks, configurable)
-- Single-use with rotation — each use issues a new refresh token and invalidates the old one
-- Can be revoked at any time
+- Long-lived (Tage bis Wochen, konfigurierbar)
+- **Single-use mit Rotation** — jeder Use gibt einen neuen
+  Refresh-Token zurück und invalidiert den alten
+- Jederzeit revokierbar
 
-## Token Revocation
+## Token-Revocation
 
-| Token Type | How to revoke | Effect |
-|-----------|--------------|--------|
-| **Reference access token** | Call the revocation endpoint | Immediately invalid |
-| **JWT access token** | Call the revocation endpoint | Invalid after expiry (cannot be revoked early) |
-| **Refresh token** | Call the revocation endpoint | Immediately invalid, no new access tokens can be obtained |
-| **Session** | Logout or revoke via session management | Cookie invalidated, user must log in again |
+| Token-Typ | Wie revoken | Effekt |
+|---|---|---|
+| **Reference Access-Token** | `POST /connect/revoke` | Sofort ungültig |
+| **JWT Access-Token** | `POST /connect/revoke` | Wirkt erst ab Expiry — JWT bleibt vorher valide |
+| **Refresh-Token** | `POST /connect/revoke` | Sofort ungültig, keine neuen Access-Tokens möglich |
+| **Session** (First-Party-Cookie) | Logout oder per Session-Management | Cookie ungültig, User muss sich neu anmelden |
+
+## Token-Storage
+
+Reference-Tokens und Refresh-Tokens werden als
+`OpenIddictTokenDocument` in Marten gespeichert (per Tenant-DB). Direct
+document storage — keine Event-Sourcing, weil Tokens kurzlebig und
+ephemer sind.
+
+Authorizations (Consent-Records, Permanent-Grants) sind
+`OpenIddictAuthorizationDocument` — auch direct storage.
+
+Tokens und Authorizations sind realm-isoliert per Tenant-DB.
+
+## SignalR und Sessions
+
+Der Vue-Admin-Frontend nutzt **SignalARRR** (typed bidirectional RPC
+über SignalR) für Live-Updates. Die SignalR-Connection wird **nach**
+dem Login aufgebaut, mit dem aktiven Auth-Cookie. Beim Logout macht
+das Frontend einen `window.location`-Reload statt nur Vue-Router-Navigation
+— sonst hängt eine alte Subscription am alten User.
+
+Die SignalR-Group ist realm-skopiert (jeder Realm hat seinen eigenen
+Hub-Channel). Cross-Realm-Notifications gibt es nicht.
