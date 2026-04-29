@@ -4,7 +4,8 @@ import { useGroupStore } from '@/stores/group.store'
 import { useRoleStore } from '@/stores/role.store'
 import { useUserStore } from '@/stores/user.store'
 import { usePrincipalStore } from '@/stores/principal.store'
-import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarRadioGroup, CoarRadioButton, CoarTabGroup, CoarTab, CoarPopover, CoarCodeBlock, CoarIcon, CoarListbox, CoarDualListbox } from '@cocoar/vue-ui'
+import { useApplicationsStore } from '@/stores/applications.store'
+import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarMultiSelect, CoarRadioGroup, CoarRadioButton, CoarTabGroup, CoarTab, CoarPopover, CoarCodeBlock, CoarIcon, CoarListbox, CoarDualListbox } from '@cocoar/vue-ui'
 import type { CoarListboxOption } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -30,6 +31,7 @@ const groupStore = useGroupStore()
 const roleStore = useRoleStore()
 const userStore = useUserStore()
 const principalStore = usePrincipalStore()
+const applicationsStore = useApplicationsStore()
 const isCreate = computed(() => props.id === 'create')
 const initialLoad = ref(false)
 const saving = ref(false)
@@ -65,21 +67,28 @@ const form = ref({
   MembershipLastError: null as string | null,
   Email: '' as string | undefined,
   EmailMode: 'Shared' as EmailMode,
-  // Newline-separated in the UI for easy editing; "*" wildcard = active in
-  // every app (typical for the realm-admin group).
-  BoundTo: '' as string,
+  // App slugs the group is active in. The synthetic "*" entry means
+  // "active in every app" (typical for the realm-admin group).
+  BoundTo: [] as string[],
 })
 
-const isAllAppsWildcard = computed(() =>
-  splitLines(form.value.BoundTo).some((s) => s === '*'),
-)
-const isDormantBoundTo = computed(() =>
-  splitLines(form.value.BoundTo).length === 0,
-)
+// "*" wildcard is a synthetic option — not a real app slug, but a valid
+// BoundTo value the backend recognises. Listed first so it's discoverable.
+const ALL_APPS_WILDCARD = '*'
 
-function splitLines(input: string): string[] {
-  return input.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean)
-}
+const boundToOptions = computed(() => {
+  const apps = applicationsStore.apps.map((a) => ({
+    value: a.Slug,
+    label: `${a.DisplayName} (${a.Slug})`,
+  }))
+  return [
+    { value: ALL_APPS_WILDCARD, label: t('admin.groupDetails.boundTo.wildcardOption', {}, '★ All apps (*) — realm-wide') },
+    ...apps,
+  ]
+})
+
+const isAllAppsWildcard = computed(() => form.value.BoundTo.includes(ALL_APPS_WILDCARD))
+const isDormantBoundTo = computed(() => form.value.BoundTo.length === 0)
 
 const modalTitle = computed(() => {
   const name = form.value.Name?.trim()
@@ -294,6 +303,8 @@ onMounted(async () => {
       roleStore.initialize(),
       userStore.loadLookup(),
       principalStore.loadLookup(),
+      // BoundTo MultiSelect needs the App list for its options.
+      applicationsStore.initialize(),
     ])
 
     if (!isCreate.value) {
@@ -311,7 +322,7 @@ onMounted(async () => {
           MembershipLastError: group.MembershipLastError ?? null,
           Email: group.Email || '',
           EmailMode: group.EmailMode || 'Shared',
-          BoundTo: (group.BoundTo ?? []).join('\n'),
+          BoundTo: [...(group.BoundTo ?? [])],
         }
       }
     }
@@ -337,7 +348,7 @@ async function save() {
       MembershipScript: isAutoMode.value ? form.value.MembershipScript : undefined,
       Email: form.value.Email?.trim() || undefined,
       EmailMode: form.value.EmailMode,
-      BoundTo: splitLines(form.value.BoundTo),
+      BoundTo: [...form.value.BoundTo],
     }
     const saved = isCreate.value
       ? await groupStore.createGroup(dto)
@@ -444,18 +455,22 @@ async function save() {
                   : t('admin.groupDetails.membership.manualHint', {}, 'Pick members directly in the Members tab.') }}
               </p>
             </CoarFormField>
-            <CoarFormField :label="t('admin.groupDetails.boundTo', {}, 'Bound to apps (one slug per line)')">
-              <textarea v-model="form.BoundTo" rows="3" class="boundto-textarea"
-                placeholder="cocoar-auth&#10;timetodo&#10;or * for all apps" />
+            <CoarFormField :label="t('admin.groupDetails.boundTo', {}, 'Bound to apps')">
+              <CoarMultiSelect
+                v-model="form.BoundTo"
+                :options="boundToOptions"
+                searchable
+                clearable
+                :placeholder="t('admin.groupDetails.boundTo.placeholder', {}, 'Select apps…')" />
               <p class="script-help">
                 <template v-if="isAllAppsWildcard">
-                  {{ t('admin.groupDetails.boundTo.wildcardHint', {}, 'Wildcard "*" — this group is active in every app in the realm. Typical for the realm-admin group.') }}
+                  {{ t('admin.groupDetails.boundTo.wildcardHint', {}, '★ "All apps" selected — this group is active in every app in the realm. Typical for the realm-admin group.') }}
                 </template>
                 <template v-else-if="isDormantBoundTo">
-                  {{ t('admin.groupDetails.boundTo.dormantHint', {}, 'Empty — the group is dormant for permission purposes (e.g. organisation-only / distribution list). It still receives mail and shows up in member views, but its roles do not grant anything.') }}
+                  {{ t('admin.groupDetails.boundTo.dormantHint', {}, 'No apps selected — the group is dormant for permission purposes (e.g. organisation-only / distribution list). It still receives mail and shows up in member views, but its roles do not grant anything.') }}
                 </template>
                 <template v-else>
-                  {{ t('admin.groupDetails.boundTo.scopedHint', {}, 'Only contributes to permission resolution when the requesting app is one of these slugs. Roles attached to this group only fire in the listed apps.') }}
+                  {{ t('admin.groupDetails.boundTo.scopedHint', {}, 'Only contributes to permission resolution when the requesting app is selected here. Roles attached to this group only fire in those apps.') }}
                 </template>
               </p>
             </CoarFormField>
@@ -676,16 +691,6 @@ async function save() {
   margin: 0 0 8px 0;
 }
 
-.boundto-textarea {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--coar-border-neutral-secondary, #d1d5db);
-  border-radius: var(--coar-radius-m, 4px);
-  background: var(--coar-background-neutral-primary, #fff);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8rem;
-  resize: vertical;
-}
 
 .script-block {
   display: flex;
