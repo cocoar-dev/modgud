@@ -14,6 +14,32 @@ Last updated: 2026-04-29 (post Applications Phase 1).
 
 ## ✅ Done
 
+### Applications Phase 2 — App admin API (2026-04-29)
+
+Builds on Phase 1 to let realm-admins register additional Cocoar SaaS
+apps in the IDP.
+
+- `cocoar-auth:app` resource extended with `read` + `write` actions
+  alongside the existing `admin`.
+- `AppSlugRules` validator (mirrors `RealmSlugRules`): 3-63 chars,
+  lowercase + digits + hyphens, reserved set `{realm, *, cocoar-auth}`.
+- `AppsEndpoints` — `GET /api/app/lookup` (any auth), `GET /api/app`,
+  `GET /api/app/{id}`, `POST /api/app`, `PUT /api/app/{id}`,
+  `DELETE /api/app/{id}` — all admin endpoints gated by
+  `cocoar-auth:app:read` / `cocoar-auth:app:write`. System app
+  (`cocoar-auth`) cannot be created, slug is reserved, and
+  `IsSystem=true` apps cannot be deleted.
+- 25 new unit tests pin slug rules; full unit suite at 806 green.
+  Integration tests still 89/96 green (same 7 ProfileSelfService reds
+  as before — unrelated).
+
+Open follow-ups (intentionally deferred):
+- Frontend Vue admin UI for app management — backend ready, UI work
+  not started.
+- OAuth Client × App linking (n:m).
+- External-app permission distribution API + token-content design —
+  done when first external app actually integrates.
+
 ### Applications Phase 1 — App-scoped permissions (2026-04-29)
 
 Plan: `docs/plan-applications.md`. Internal refactor that turns

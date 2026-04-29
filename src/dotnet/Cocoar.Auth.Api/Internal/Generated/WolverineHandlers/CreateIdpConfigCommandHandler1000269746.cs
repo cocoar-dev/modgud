@@ -10,15 +10,15 @@ namespace Internal.Generated.WolverineHandlers
     [global::System.CodeDom.Compiler.GeneratedCode("JasperFx", "1.0.0")]
     public sealed class CreateIdpConfigCommandHandler1000269746 : Wolverine.Runtime.Handlers.MessageHandler
     {
+        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
         private readonly System.TimeProvider _timeProvider;
         private readonly Cocoar.Auth.Authentication.Identity.ExternalAuth.FlavorRegistry _flavorRegistry;
-        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
 
-        public CreateIdpConfigCommandHandler1000269746(System.TimeProvider timeProvider, Cocoar.Auth.Authentication.Identity.ExternalAuth.FlavorRegistry flavorRegistry, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory)
+        public CreateIdpConfigCommandHandler1000269746(Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, System.TimeProvider timeProvider, Cocoar.Auth.Authentication.Identity.ExternalAuth.FlavorRegistry flavorRegistry)
         {
+            _outboxedSessionFactory = outboxedSessionFactory;
             _timeProvider = timeProvider;
             _flavorRegistry = flavorRegistry;
-            _outboxedSessionFactory = outboxedSessionFactory;
         }
 
 

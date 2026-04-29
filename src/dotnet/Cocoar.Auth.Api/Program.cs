@@ -573,6 +573,7 @@ try
     app.MapPrincipalEndpoints("api");
     app.MapRolesEndpoints("api");
     app.MapGroupEndpoints("api");
+    Cocoar.Auth.Api.Features.Admin.Apps.AppsEndpoints.MapAppsEndpoints(app, "api");
 
     // End-user VitePress documentation at /docs — auth-gated, redirect to /login on unauth.
     // MUST be BEFORE app.UseEndpoints — otherwise the SPA fallback endpoint (registered

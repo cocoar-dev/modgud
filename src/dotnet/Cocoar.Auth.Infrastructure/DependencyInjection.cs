@@ -131,7 +131,11 @@ public static class DependencyInjection
             //   - cocoar-auth:login-provider:admin — login-provider admin surface
             const string app = AppSlugs.CocoarAuth;
 
-            opt.RegisterResource(app, "app", "admin");
+            // Apps themselves — the realm-admin surface for registering and
+            // editing Application records (one per Cocoar SaaS app onboarded
+            // into this realm). The system app cocoar-auth is seeded
+            // automatically and cannot be deleted.
+            opt.RegisterResource(app, "app", "admin", "read", "write");
 
             // Identity / directory
             opt.RegisterResource(app, "user", "read", "write");
