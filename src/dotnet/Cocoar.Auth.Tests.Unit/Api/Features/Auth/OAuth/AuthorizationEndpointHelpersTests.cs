@@ -146,6 +146,47 @@ public class AuthorizationEndpointHelpersTests
         }
 
         [Fact]
+        public void GivenName_claim_only_lands_in_id_token_when_profile_scope_granted()
+        {
+            // OIDC standard: `given_name` is part of the `profile` scope. Without
+            // the explicit case the claim falls into the default and never
+            // reaches the id_token even with profile scope — RPs requesting
+            // profile would silently miss it.
+            var withProfile = ClaimWithScopes(Claims.GivenName, "Alice", Scopes.Profile);
+            var withoutProfile = ClaimWithScopes(Claims.GivenName, "Alice");
+
+            Assert.Contains(Destinations.IdentityToken,
+                AuthorizationEndpointHelpers.GetDestinations(withProfile));
+            Assert.DoesNotContain(Destinations.IdentityToken,
+                AuthorizationEndpointHelpers.GetDestinations(withoutProfile));
+        }
+
+        [Fact]
+        public void FamilyName_claim_only_lands_in_id_token_when_profile_scope_granted()
+        {
+            var withProfile = ClaimWithScopes(Claims.FamilyName, "Smith", Scopes.Profile);
+            var withoutProfile = ClaimWithScopes(Claims.FamilyName, "Smith");
+
+            Assert.Contains(Destinations.IdentityToken,
+                AuthorizationEndpointHelpers.GetDestinations(withProfile));
+            Assert.DoesNotContain(Destinations.IdentityToken,
+                AuthorizationEndpointHelpers.GetDestinations(withoutProfile));
+        }
+
+        [Fact]
+        public void EmailVerified_claim_only_lands_in_id_token_when_email_scope_granted()
+        {
+            // OIDC standard: `email_verified` is part of the `email` scope.
+            var withEmail = ClaimWithScopes(Claims.EmailVerified, "true", Scopes.Email);
+            var withoutEmail = ClaimWithScopes(Claims.EmailVerified, "true");
+
+            Assert.Contains(Destinations.IdentityToken,
+                AuthorizationEndpointHelpers.GetDestinations(withEmail));
+            Assert.DoesNotContain(Destinations.IdentityToken,
+                AuthorizationEndpointHelpers.GetDestinations(withoutEmail));
+        }
+
+        [Fact]
         public void Profile_scope_does_not_leak_email_into_id_token()
         {
             // Each scope must guard its own claim type. A profile scope must NOT

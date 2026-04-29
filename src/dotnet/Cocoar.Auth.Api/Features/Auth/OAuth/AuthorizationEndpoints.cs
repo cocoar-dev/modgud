@@ -373,21 +373,31 @@ internal static class AuthorizationEndpointHelpers
     /// unless the relying party actually asked for the matching scope.
     /// <c>SecurityStamp</c> is intentionally yielded into NEITHER token — it's
     /// internal to ASP.NET Identity and would be a leak.
+    /// <para>
+    /// All standard OIDC claims that the principal-builder actually sets
+    /// (<see cref="AuthorizationEndpoints.CreateClaimsPrincipalAsync"/>) must
+    /// have an explicit case here — otherwise they fall through to the
+    /// access-token-only default and never reach the id_token. The default is
+    /// the conservative choice for unknown custom app claims.
+    /// </para>
     /// </summary>
     public static IEnumerable<string> GetDestinations(Claim claim)
     {
         switch (claim.Type)
         {
-            case Claims.Name or Claims.PreferredUsername:
+            // OIDC `profile` scope claims
+            case Claims.Name or Claims.PreferredUsername or Claims.GivenName or Claims.FamilyName:
                 yield return Destinations.AccessToken;
                 if (claim.Subject?.HasScope(Scopes.Profile) == true) yield return Destinations.IdentityToken;
                 yield break;
 
-            case Claims.Email:
+            // OIDC `email` scope claims
+            case Claims.Email or Claims.EmailVerified:
                 yield return Destinations.AccessToken;
                 if (claim.Subject?.HasScope(Scopes.Email) == true) yield return Destinations.IdentityToken;
                 yield break;
 
+            // OIDC `roles` scope claim
             case Claims.Role:
                 yield return Destinations.AccessToken;
                 if (claim.Subject?.HasScope(Scopes.Roles) == true) yield return Destinations.IdentityToken;
