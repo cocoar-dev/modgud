@@ -89,8 +89,21 @@ public sealed class RequireCanManageTenantsFilter : IEndpointFilter
     public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var info = context.HttpContext.Items[TenantConstants.HttpContextTenantInfoKey] as TenantInfo;
-        if (info is null || !info.CanManageTenants)
+        if (info is null)
+        {
+            // RealmMiddleware did not populate tenant info — either no realm
+            // resolved for the host, or the request reached us before the
+            // middleware ran. Hide the endpoint with 404, but leave a trail
+            // so a misconfigured realm/middleware does not look like a missing
+            // route to whoever debugs it.
+            Serilog.Log.Debug("RequireCanManageTenantsFilter: 404 — no tenant info on HttpContext");
             return ValueTask.FromResult<object?>(Results.NotFound());
+        }
+        if (!info.CanManageTenants)
+        {
+            Serilog.Log.Debug("RequireCanManageTenantsFilter: 404 — realm '{Slug}' is not a management realm", info.Slug);
+            return ValueTask.FromResult<object?>(Results.NotFound());
+        }
 
         return next(context);
     }

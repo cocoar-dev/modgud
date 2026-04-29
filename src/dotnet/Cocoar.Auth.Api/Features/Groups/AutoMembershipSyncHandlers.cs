@@ -43,6 +43,12 @@ public class AutoMembershipOnUserUpdatedHandler(
     ILogger<AutoMembershipOnUserUpdatedHandler> logger)
     : ReferenceSyncHandler<UserUpdatedEvent>(logger)
 {
+    // Trigger on `Optional.HasValue`, not on "value actually changed". HasValue
+    // means the caller intentionally included the field in the patch — even
+    // when they wrote the same value back. The alternative (load the principal,
+    // compare against the new value, skip on equality) would cost an extra read
+    // per update. The recalculator is cheap enough that re-running on a no-op
+    // patch is preferred over the load-and-compare tax on every real change.
     protected override bool ShouldSync(UserUpdatedEvent @event)
         => @event.Firstname.HasValue || @event.Lastname.HasValue || @event.Acronym.HasValue || @event.Email.HasValue;
 
