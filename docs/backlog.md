@@ -36,7 +36,6 @@ page legitimately needs both values).
 **Larger deferred work:**
 - Replace `UAParser` with `Wangkanai.Detection` (also fixes
   Mac-Safari-as-Mobile finding)
-- Extract three more pure helpers from `OAuthAdminService`
 - Get the 7 red `ProfileSelfService` integration tests green
 - Wolverine production-side tenant routing (deeper than current
   middleware fix)
@@ -122,26 +121,6 @@ chose intentionally dumb aggregates; flip only if a real bug surfaces.
 ---
 
 ## Deferred features / refactors
-
-### Three more pure helpers in `OAuthAdminService` ripe for extraction
-
-**File:** `Cocoar.Auth.Application/Services/OAuthAdminService.cs`
-
-The first round of helpers (`BuildClient*`, `MapClient`, `GetBoolProp`, BCrypt
-wrappers, etc.) lives in `OAuthAdminMapping` now and is unit-tested. Three
-more would be valuable but each needs a small structural refactor first:
-
-- **`MapApiAsync`** — currently loads `OAuthApiSecurityData` via the session.
-  Split into pure `MapApiState(state, secrets)` plus a thin session-load
-  wrapper, then pin the pure mapping.
-- **Secret-creation paths** (`RegenerateClientSecretAsync`,
-  `CreateApiSecretAsync`) interleave secret generation, hashing, and a
-  concurrency-token update. Extract `BuildApiSecretEntry(type, secret,
-  description, expiration, now)` as a pure constructor and pin it.
-- **`UpdateClientAsync` merge logic** — settings/properties merge with `??`
-  defaults across the dto vs aggregate snapshot. Extract
-  `MergeClientUpdate(snapshot, dto)` as a pure function (~50 LoC); critical
-  for getting "partial PATCH semantics" right.
 
 ### Replace `UAParser` with `Wangkanai.Detection`
 
@@ -242,6 +221,25 @@ feature folder. Probably ~50 LoC if it's needed back.
 ---
 
 ## Closed / done
+
+OAuthAdminService deeper helper extraction + DTO audit on 2026-04-29 (wave 4):
+
+- **All three remaining pure helpers extracted** from
+  `OAuthAdminService` into `OAuthAdminMapping`. `MapApiAsync` is now a
+  one-line DB-load wrapper around the pure `MapApiState(state, secrets)`.
+  `BuildApiSecretEntry(secretId, type, hashedValue, description,
+  expiration, createdAt)` replaces the two object-initialiser duplicates
+  in `CreateApiAsync` + `CreateApiSecretAsync`. The settings/properties
+  merge in `UpdateClientAsync` is now `MergeClientSettings` +
+  `MergeClientProperties` — partial-PATCH semantics pinned by 16 tests
+  covering omit-preserve, value-overwrite, list-replace-not-merge,
+  legacy defaults, and no-mutation invariants. 28 new tests total;
+  no production behaviour change.
+- **DTO purity audit closed.** `AuthLogDocument`, `UserDeletionState`,
+  and `IdpConfig` are confirmed as pure data carriers (no methods, no
+  computed properties, no defaults beyond initialisers). All three are
+  added to the "What we deliberately do NOT unit-test" list in
+  `testing.md` so the question doesn't come up again.
 
 Real production bugs fixed during the Api/Features bug-fix pass on 2026-04-29 (wave 3):
 

@@ -1,17 +1,18 @@
 # Testing
 
-> **Status as of 2026-04-29 (post Api/Features-bug-fix wave):** 696 unit
-> tests, 89/96 integration tests green. Coverage swept across Domain,
-> Application, Authorization, Authentication, Infrastructure, Api (incl.
-> Features). **All test-found production bugs from both sweeps have been
-> fixed** — see "Production bugs found and fixed" below. The Api/Features
-> wave on 2026-04-29 added a real OIDC claim-destination fix
-> (`given_name`/`family_name`/`email_verified` were never reaching the
-> id_token despite the matching scope), narrowed an over-broad
-> exception-swallow in `ConsentUrlHelper`, and serialised the projection
-> rebuild endpoint behind a SemaphoreSlim. Next planned area: larger
-> backlog items (UAParser→Wangkanai swap, OAuthAdminService deeper helper
-> extraction, 7 ProfileSelfService integration tests). See
+> **Status as of 2026-04-29 (post OAuthAdminService-merge wave):** 724
+> unit tests, 89/96 integration tests green. Coverage swept across
+> Domain, Application, Authorization, Authentication, Infrastructure,
+> Api (incl. Features). **All test-found production bugs from every
+> sweep have been fixed** — see "Production bugs found and fixed"
+> below. The latest pass extracted the three remaining pure helpers
+> from `OAuthAdminService` (`MapApiState`, `BuildApiSecretEntry`,
+> `MergeClientSettings`+`MergeClientProperties`) and pinned the
+> partial-PATCH semantics — 28 new tests, no behaviour change. Three
+> Authentication-area DTOs (`AuthLogDocument`, `UserDeletionState`,
+> `IdpConfig`) were audited and confirmed as pure (no logic to test).
+> Next planned area: UAParser→Wangkanai.Detection swap, then the 7
+> `ProfileSelfService` integration tests. See
 > [Resume here](#resume-here) at the bottom for picking up cold.
 
 ## Two test projects
@@ -38,7 +39,7 @@ dotnet test
 
 ## Unit-test inventory
 
-696 tests. Every entry below is at least one file under
+724 tests. Every entry below is at least one file under
 `src/dotnet/Cocoar.Auth.Tests.Unit/`.
 
 ### Authorization slice
@@ -69,7 +70,7 @@ dotnet test
 | LoginProvider aggregate | `Identity/LoginProviderAggregateTests.cs` | 14 | Create / Setters / Delete / Replay (incl. Configuration defensive copy) |
 | StandardScopes constant set | `OAuth/StandardScopesTests.cs` | 7 | the seeded built-in scopes are stable |
 | OAuth wire-format constants | `OAuth/OAuthApplicationKeysTests.cs` (25), `OAuth/OAuthConstantsTests.cs` (32), `OAuth/ScopePropertyKeysTests.cs` (7) | 64 | every permission prefix (`scp:`/`gt:`/`rst:`/`ept:`), grant-type strings (incl. RFC-8628 device-code URN), client/consent types, `cocoar:` setting + property keys, distinctness across namespaces |
-| OAuthAdminMapping (extracted) | `Application/OAuthAdminMappingTests.cs` | 58 | `BuildClientPermissions`, grant-type round-trip, `BuildClient*` defaults + property survival, `MapClient`/`MapScope`, BCrypt hash+verify round-trip and malformed-hash safety |
+| OAuthAdminMapping (extracted) | `Application/OAuthAdminMappingTests.cs` | 86 | `BuildClientPermissions`, grant-type round-trip, `BuildClient*` defaults + property survival, `MapClient`/`MapScope`, `MapApiState` (id-stringification, secret-metadata-only, defensive list copies), `BuildApiSecretEntry` (caller-owned hash, null expiration round-trip), `MergeClientSettings`/`MergeClientProperties` partial-PATCH semantics (omit-preserve / value-overwrite / list-replace / no-mutation), BCrypt hash+verify round-trip and malformed-hash safety |
 | OAuth `*StateProjection` (3) + LoginProvider | `Infrastructure/Persistence/Marten/Projections/OAuth/*Tests.cs` + `LoginProviders/...Tests.cs` | 54 | Create + every Apply + replay (incl. AccessTokenType case-sensitive parse bug pinning) |
 
 ### ExternalAuth (OIDC IdP federation)
@@ -147,8 +148,15 @@ These are listed so we don't have the same "should we test this?" conversation a
 - **External libraries** — `Cocoar.Json.Mutable`'s `MutableJsonMerge`,
   `Cocoar.JsEval`, BCrypt, UAParser. They have their own tests; we test our
   *use* of them, not them.
+- **Pure DTOs / records audited 2026-04-29 (post-OAuthAdminService wave)** —
+  `AuthLogDocument` (6 properties, no methods), `UserDeletionState` (9
+  properties), `IdpConfig` (17 properties + JsonDocument blob; parsing
+  lives in the flavor classes which are tested separately). All three
+  are pure data carriers; the compiler is the test.
 - **Heavy services with DB / JsEval / HTTP / DI** — `OAuthAdminService` (after
-  helper extraction the rest is DB), `AccessPolicyEngine`, `MembershipEvaluator`,
+  full helper extraction in waves 2 + 4, the only remaining instance method
+  is `MapApiAsync` which is now a one-line DB-load wrapper around the pure
+  `MapApiState` helper), `AccessPolicyEngine`, `MembershipEvaluator`,
   `RealmProvisioningService`, `RealmCache` (lookup logic already extracted to
   `RealmCacheLookup` and tested), `SmtpEmailService`, `PostmarkEmailService`,
   `AdminNotifier`, `EventSourcedUserStore`, `EmailOtpService`, `AccessQueryWrapper`
@@ -207,7 +215,7 @@ These are pure-extractions made to enable unit-testing. None changed behaviour.
 | `Cocoar.Auth.Authorization/Services/PermissionService.cs` | bypass logic → `PermissionEvaluator.Evaluate(grants, permission)` (static class) | `Authorization/PermissionEvaluatorTests.cs` |
 | `Cocoar.Auth.Infrastructure/Realms/RealmProvisioningService.cs` | slug regex + reserved set → `Cocoar.Auth.Domain.Realms.RealmSlugRules` | `Realms/RealmSlugRulesTests.cs` |
 | `Cocoar.Auth.Infrastructure/Realms/RealmCache.cs` | host-matching + localhost-fallback → `Cocoar.Auth.Infrastructure.Realms.RealmCacheLookup` | `Realms/RealmCacheLookupTests.cs` |
-| `Cocoar.Auth.Application/Services/OAuthAdminService.cs` | 16 `private static` helpers (mapping, permission building, BCrypt wrappers) → `internal static OAuthAdminMapping`. Service shrunk by 262 LoC. | `Application/OAuthAdminMappingTests.cs` |
+| `Cocoar.Auth.Application/Services/OAuthAdminService.cs` | 16 `private static` helpers (mapping, permission building, BCrypt wrappers) → `internal static OAuthAdminMapping`. Service shrunk by 262 LoC. Wave 4 added three more pure extractions to the same class: `MapApiState(state, secrets)` (the body of `MapApiAsync` minus the session load), `BuildApiSecretEntry(...)` (the constructor for both initial-secret and ad-hoc-secret paths), and `MergeClientSettings`/`MergeClientProperties` (the partial-PATCH semantics in `UpdateClientAsync`). | `Application/OAuthAdminMappingTests.cs` |
 | `Cocoar.Auth.Authentication/Api/Account/TwoFactorEnforcementMiddleware.cs` | `IsWhitelisted`, `HasFederatedMfa`, `FederatedMfaAmrValues` lifted from `private static` to `internal static` | `Authentication/Account/TwoFactorEnforcementMiddlewareTests.cs` |
 | `Cocoar.Auth.Api/Features/Auth/OAuth/ConsentEndpoints.cs` | `ParseAuthorizationUrl`, `AppendErrorToUrl` → `internal static ConsentUrlHelper` | `Api/Features/Auth/OAuth/ConsentUrlHelperTests.cs` |
 | `Cocoar.Auth.Api/Features/Auth/OAuth/AuthorizationEndpoints.cs` | `GetDisplayName(user)`, `GetDestinations(claim)` → `internal static AuthorizationEndpointHelpers` | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` |
@@ -310,7 +318,7 @@ where we stopped and what's next.
 
 ### What's done (stop reading further if you only need today's status)
 
-- **Two test projects exist and run.** `Cocoar.Auth.Tests.Unit` (696 tests,
+- **Two test projects exist and run.** `Cocoar.Auth.Tests.Unit` (724 tests,
   ~1 s) and `Cocoar.Auth.Api.Tests` (96 tests, ~90 s, 89 green).
 - **Unit coverage swept across:** Domain (Realms, OAuth aggregates, OAuth
   wire-format constants), Application (OAuthAdminMapping after extraction),
@@ -345,25 +353,27 @@ where we stopped and what's next.
 
 In rough priority order:
 
-1. **Larger deferred work from `backlog.md`** — replacing UAParser with
-   Wangkanai.Detection (also fixes the Mac-Safari-as-Mobile pin), the
-   three more pure helpers in `OAuthAdminService`, and getting the 7
-   ProfileSelfService integration tests green. Each of these is
-   medium-sized and worth its own focused pass.
-2. **`UserChangeRequest` Optional-aware merge** — the merge logic for
+1. **UAParser → Wangkanai.Detection swap.** Largest piece in the
+   backlog and the only one that also closes a pinned-by-design item
+   (Mac-Safari-as-Mobile). Refactor the `DeviceInfoService`, replace
+   the UAParser-quirk pinning tests with Wangkanai-quirk equivalents.
+2. **Get the 7 red `ProfileSelfService` integration tests green.**
+   Needs `GetTenantedSession(scope)` + `GetTenantedStore(scope)`
+   helpers next to the existing `GetTenantedMessageBus(scope)` in
+   `IntegrationTestBase`, then migrate the 7 tests. Brings 96/96 green.
+   Worth doing as a separate wave because it's integration-only and
+   needs Docker.
+3. **`UserChangeRequest` Optional-aware merge** — the merge logic for
    profile-edit approval. Either inside `UserChangeRequest` itself or in the
    `ProfileEndpoints`/admin-change-request pipeline. Worth a careful look:
    `Cocoar.Json.Mutable.MutableJsonMerge` may already cover it; if so, our
    work is done. If not, an extraction is valuable.
-3. **`Cocoar.Auth.Domain/Identity/LoginProviders` + `Realms` leftovers** —
+4. **`Cocoar.Auth.Domain/Identity/LoginProviders` + `Realms` leftovers** —
    any helpers in the Domain folders for these areas that the previous
    waves missed. Probably small.
-4. **`TwoFactorHelper`** — both methods are currently DB-bound, but the
+5. **`TwoFactorHelper`** — both methods are currently DB-bound, but the
    recovery-code generation/check could plausibly be extracted as pure
    helpers. Light refactor needed.
-5. **`AuthLogDocument`, `UserDeletionState`, `IdpConfig`** — verify these
-   really are pure DTOs as currently classified, or confirm and add to the
-   "do NOT test" list.
 
 ### How to start the next pass
 
