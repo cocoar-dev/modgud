@@ -28,7 +28,12 @@ public class Group : Principal, IPrincipalWithMembers, IPrincipalEmailAddressabl
     // domain/projection wants a mutable list — auto-property generation on the
     // interface would conflict.
     public List<Guid> MemberIds { get; set; } = [];
-    IReadOnlyList<Guid> IPrincipalWithMembers.MemberIds => MemberIds;
+
+    // Defensive copy on the interface accessor: external readers (UI, scripts,
+    // other slices) get a snapshot, not a live reference into our backing list.
+    // Without this, a caller can downcast IReadOnlyList<Guid> back to List<Guid>
+    // and mutate group membership through the back door.
+    IReadOnlyList<Guid> IPrincipalWithMembers.MemberIds => MemberIds.ToArray();
 
     public List<Guid> RoleIds { get; set; } = [];
     public List<ResourceAccessScript> AccessScripts { get; set; } = [];

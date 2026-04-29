@@ -232,14 +232,34 @@ public class GroupTests
         }
 
         [Fact]
-        public void Member_ids_are_exposed_through_interface()
+        public void Member_ids_are_exposed_through_interface_as_a_snapshot()
         {
-            // The interface returns IReadOnlyList; the class keeps a mutable List
-            // for projection use. The two MUST point at the same backing storage
-            // so an admin's mutation is immediately visible through the interface.
+            // The interface accessor returns a defensive copy (snapshot of the
+            // backing list at the moment of access). Subsequent mutations of
+            // the backing list are NOT visible through a previously-obtained
+            // IReadOnlyList instance.
             var g = new Group();
             g.MemberIds.Add(Guid.NewGuid());
-            Assert.Equal(g.MemberIds.Count, ((IPrincipalWithMembers)g).MemberIds.Count);
+
+            var snapshot = ((IPrincipalWithMembers)g).MemberIds;
+            Assert.Single(snapshot);
+
+            g.MemberIds.Add(Guid.NewGuid());
+            Assert.Single(snapshot);                                       // snapshot unchanged
+            Assert.Equal(2, ((IPrincipalWithMembers)g).MemberIds.Count);   // fresh access reflects backing
+        }
+
+        [Fact]
+        public void Interface_accessor_cannot_be_downcast_to_mutate_backing_list()
+        {
+            // Pinning the defensive-copy invariant: nobody can fish a List<Guid>
+            // out of the IReadOnlyList<Guid> accessor and mutate group membership
+            // through the back door.
+            var g = new Group();
+            g.MemberIds.Add(Guid.NewGuid());
+
+            var viaInterface = ((IPrincipalWithMembers)g).MemberIds;
+            Assert.IsNotType<List<Guid>>(viaInterface);
         }
     }
 
