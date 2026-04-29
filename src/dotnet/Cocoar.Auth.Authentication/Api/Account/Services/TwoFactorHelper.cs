@@ -11,15 +11,26 @@ public static class TwoFactorHelper
 {
     public static async Task<List<string>> GetMethodsAsync(ApplicationUser user, IQuerySession session)
     {
-        var methods = new List<string>();
-        if (user.TwoFactorEnabled) methods.Add("totp");
-        if (user.EmailOtpEnabled && !string.IsNullOrEmpty(user.Email)) methods.Add("email");
-
         var passkeyCount = await session.Query<StoredPasskeyCredential>()
             .Where(c => c.UserId == user.Id)
             .CountAsync();
-        if (passkeyCount > 0) methods.Add("passkey");
+        return BuildMethodsList(user, passkeyCount);
+    }
 
+    /// <summary>
+    /// Pure list-builder: which 2FA methods does this user count as configured,
+    /// given the number of stored passkey credentials? Order matters — the SPA
+    /// renders methods in the order returned (TOTP first, then email, then
+    /// passkey). The email branch additionally requires a non-empty
+    /// <see cref="ApplicationUser.Email"/> because a flag without a destination
+    /// address is not a usable factor.
+    /// </summary>
+    internal static List<string> BuildMethodsList(ApplicationUser user, int passkeyCount)
+    {
+        var methods = new List<string>();
+        if (user.TwoFactorEnabled) methods.Add("totp");
+        if (user.EmailOtpEnabled && !string.IsNullOrEmpty(user.Email)) methods.Add("email");
+        if (passkeyCount > 0) methods.Add("passkey");
         return methods;
     }
 
@@ -38,9 +49,21 @@ public static class TwoFactorHelper
     {
         var security = await session.LoadAsync<UserSecurityData>(userId)
             ?? UserSecurityData.Create(userId);
-        if (security.TwoFactorExempt) return false;
-        security.SecureSetupDueAt = DateTime.UtcNow;
+        if (!TryExpireSetupGrace(security, DateTime.UtcNow)) return false;
         session.Store(security);
+        return true;
+    }
+
+    /// <summary>
+    /// Pure mutation: stamps <see cref="UserSecurityData.SecureSetupDueAt"/> to
+    /// <paramref name="now"/> unless the user is <see cref="UserSecurityData.TwoFactorExempt"/>.
+    /// Returns <c>true</c> when the record was changed (caller must persist),
+    /// <c>false</c> when the call was a deliberate no-op for exempt users.
+    /// </summary>
+    internal static bool TryExpireSetupGrace(UserSecurityData security, DateTime now)
+    {
+        if (security.TwoFactorExempt) return false;
+        security.SecureSetupDueAt = now;
         return true;
     }
 }
