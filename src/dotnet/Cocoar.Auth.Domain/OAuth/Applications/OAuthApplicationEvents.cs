@@ -14,6 +14,14 @@ public record OAuthApplicationCreated(
 
 public record OAuthApplicationDisplayNameChanged(Guid ApplicationId, string? DisplayName);
 
+/// <summary>
+/// Sets the link between this OAuth client and an Application. <c>null</c>
+/// detaches the client (it then has no app context — useful for legacy /
+/// realm-wide tools). Realm-admin endpoints validate that the AppId exists
+/// and is non-deleted at the time the event is appended.
+/// </summary>
+public record OAuthApplicationAppIdChanged(Guid ApplicationId, Guid? AppId);
+
 public record OAuthApplicationClientTypeChanged(Guid ApplicationId, string? ClientType);
 
 public record OAuthApplicationConsentTypeChanged(Guid ApplicationId, string? ConsentType);

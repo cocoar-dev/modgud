@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Cocoar.Auth.Domain\Cocoar.Auth.Domain.csproj" />
+    <ProjectReference Include="..\Cocoar.Auth.Authorization\Cocoar.Auth.Authorization.csproj" />
     <ProjectReference Include="..\Common\BuildingBlocks.EventDispatcher\BuildingBlocks.EventDispatcher.csproj" />
     <ProjectReference Include="..\Common\BuildingBlocks.Helper\BuildingBlocks.Helper.csproj" />
   </ItemGroup>

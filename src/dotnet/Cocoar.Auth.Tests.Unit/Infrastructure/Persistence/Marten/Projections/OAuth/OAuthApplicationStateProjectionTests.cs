@@ -156,6 +156,41 @@ public class OAuthApplicationStateProjectionTests
             p.Apply(new OAuthApplicationDeleted(s.Id), s);
             Assert.True(s.IsDeleted);
         }
+
+        [Fact]
+        public void AppIdChanged_assigns_app()
+        {
+            var p = new OAuthApplicationStateProjection();
+            var s = NewState();
+            var appId = Guid.NewGuid();
+
+            p.Apply(new OAuthApplicationAppIdChanged(s.Id, appId), s);
+
+            Assert.Equal(appId, s.AppId);
+        }
+
+        [Fact]
+        public void AppIdChanged_to_null_detaches_app()
+        {
+            var p = new OAuthApplicationStateProjection();
+            var s = NewState();
+            // Pre-assign so we can verify the detach actually clears the link.
+            p.Apply(new OAuthApplicationAppIdChanged(s.Id, Guid.NewGuid()), s);
+            Assert.NotNull(s.AppId);
+
+            p.Apply(new OAuthApplicationAppIdChanged(s.Id, null), s);
+
+            Assert.Null(s.AppId);
+        }
+
+        [Fact]
+        public void Created_event_initial_state_has_null_AppId()
+        {
+            // The Created event has no AppId field — clients are unattached
+            // by default and the link is set with a follow-up event.
+            var s = NewState();
+            Assert.Null(s.AppId);
+        }
     }
 
     public class SettingsChanged_AccessTokenTypeParsing

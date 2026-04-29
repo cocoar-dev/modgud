@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Cocoar.Auth.Application.DTOs.OAuth;
 using Cocoar.Auth.Application.Errors;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Domain.OAuth.Apis;
 using Cocoar.Auth.Domain.OAuth.Applications;
 using Cocoar.Auth.Domain.OAuth.Common;
@@ -73,6 +74,20 @@ public class OAuthAdminService
         if (existing is not null)
             return OAuthErrors.ClientIdAlreadyExists(dto.ClientId);
 
+        // Optional App-link validation. dto.AppId carries a Guid string; we
+        // verify it resolves to a non-deleted App in the same realm before
+        // wiring the link.
+        Guid? appId = null;
+        if (!string.IsNullOrEmpty(dto.AppId))
+        {
+            if (!Guid.TryParse(dto.AppId, out var parsedAppId))
+                return Error.Validation("OAuthClient.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid.");
+            var app = await _session.LoadAsync<App>(parsedAppId, ct);
+            if (app is null || app.IsDeleted)
+                return Error.Validation("OAuthClient.AppNotFound", $"App {dto.AppId} not found.");
+            appId = parsedAppId;
+        }
+
         // Confidential clients must have a secret (generated if not supplied).
         string? clientSecret = null;
         if (dto.ClientType == OAuthClientTypes.Confidential)
@@ -115,6 +130,14 @@ public class OAuthAdminService
         if (properties.Count > 0)
         {
             _session.Events.Append(id, aggregate.SetProperties(properties));
+        }
+
+        // App-link — only emit the event when a link was actually requested,
+        // so freshly-created realm-wide clients don't get an extra no-op
+        // event in their stream.
+        if (appId.HasValue)
+        {
+            _session.Events.Append(id, aggregate.SetAppId(appId));
         }
 
         // Persist the (hashed) secret separately from the event stream.
@@ -182,6 +205,28 @@ public class OAuthAdminService
         // may not match the canonical encoding of the same logical values).
         var newProps = MergeClientProperties(aggregate.Properties, dto);
         _session.Events.Append(guid, aggregate.SetProperties(newProps));
+
+        // App-link patch. Convention from the DTO comment:
+        //   null    → omitted, no change
+        //   ""      → explicit detach
+        //   "guid"  → assign / change
+        if (dto.AppId is not null)
+        {
+            Guid? newAppId = null;
+            if (dto.AppId.Length > 0)
+            {
+                if (!Guid.TryParse(dto.AppId, out var parsedAppId))
+                    return Error.Validation("OAuthClient.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid.");
+                var app = await _session.LoadAsync<App>(parsedAppId, ct);
+                if (app is null || app.IsDeleted)
+                    return Error.Validation("OAuthClient.AppNotFound", $"App {dto.AppId} not found.");
+                newAppId = parsedAppId;
+            }
+            if (newAppId != aggregate.AppId)
+            {
+                _session.Events.Append(guid, aggregate.SetAppId(newAppId));
+            }
+        }
 
         await _session.SaveChangesAsync(ct);
 

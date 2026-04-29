@@ -322,6 +322,7 @@ internal static class OAuthAdminMapping
             ClientClaimsPrefix = prefix,
             Claims = GetClaimsProp(props),
             Roles = GetStringListProp(props, OAuthApplicationPropertyKeys.Roles),
+            AppId = s.AppId?.ToString(),
         };
     }
 

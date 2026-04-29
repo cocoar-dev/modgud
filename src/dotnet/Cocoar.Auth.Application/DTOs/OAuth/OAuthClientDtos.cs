@@ -37,6 +37,13 @@ public record OAuthClientDto
     public List<OAuthClientClaimDto> Claims { get; init; } = [];
 
     public List<string> Roles { get; init; } = [];
+
+    /// <summary>
+    /// Optional FK to <c>App.Id</c> the client belongs to (Guid as string).
+    /// <c>null</c> means the client is realm-wide (no app context). The
+    /// frontend joins this against its apps store to resolve the slug.
+    /// </summary>
+    public string? AppId { get; init; }
 }
 
 public record OAuthClientClaimDto
@@ -80,6 +87,9 @@ public record CreateOAuthClientDto
     public List<OAuthClientClaimDto> Claims { get; init; } = [];
 
     public List<string> Roles { get; init; } = [];
+
+    /// <summary>App this client belongs to (Id, ShortGuid string). Null = unassigned.</summary>
+    public string? AppId { get; init; }
 }
 
 public record UpdateOAuthClientDto
@@ -114,6 +124,18 @@ public record UpdateOAuthClientDto
     public List<OAuthClientClaimDto>? Claims { get; init; }
 
     public List<string>? Roles { get; init; }
+
+    /// <summary>
+    /// App-link patch. Mirrors the rest of this PATCH-style DTO:
+    /// <list type="bullet">
+    ///   <item><c>null</c> — field omitted, no change to the stored AppId.</item>
+    ///   <item><c>""</c> (empty string) — explicit detach: AppId becomes <c>null</c>.</item>
+    ///   <item>any non-empty Guid string — assign or change to that App.</item>
+    /// </list>
+    /// The Vue admin dropdown serialises its "no app" choice as the empty
+    /// string and an actual selection as the App's Id (ShortGuid).
+    /// </summary>
+    public string? AppId { get; init; }
 }
 
 public record OAuthClientListDto

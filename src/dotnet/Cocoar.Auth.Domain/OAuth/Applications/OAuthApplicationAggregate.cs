@@ -20,6 +20,12 @@ public class OAuthApplicationAggregate
     public Dictionary<string, string> Settings { get; private set; } = new();
     public Dictionary<string, string> DisplayNames { get; private set; } = new();
     public Dictionary<string, object?> Properties { get; private set; } = new();
+    /// <summary>
+    /// Optional link to an Application (cocoar-auth, timetodo, …). <c>null</c>
+    /// = unassigned (client is realm-wide, no app context). Used by the
+    /// distribution API and scope-restriction logic to scope the client.
+    /// </summary>
+    public Guid? AppId { get; private set; }
     public bool IsDeleted { get; private set; }
 
     public OAuthApplicationAggregate() { }
@@ -114,6 +120,13 @@ public class OAuthApplicationAggregate
         return e;
     }
 
+    public OAuthApplicationAppIdChanged SetAppId(Guid? appId)
+    {
+        var e = new OAuthApplicationAppIdChanged(Id, appId);
+        Apply(e);
+        return e;
+    }
+
     public OAuthApplicationDeleted Delete()
     {
         var e = new OAuthApplicationDeleted(Id);
@@ -145,5 +158,6 @@ public class OAuthApplicationAggregate
     public void Apply(OAuthApplicationSettingsChanged @event) => Settings = new Dictionary<string, string>(@event.Settings);
     public void Apply(OAuthApplicationDisplayNamesChanged @event) => DisplayNames = new Dictionary<string, string>(@event.DisplayNames);
     public void Apply(OAuthApplicationPropertiesChanged @event) => Properties = new Dictionary<string, object?>(@event.Properties);
+    public void Apply(OAuthApplicationAppIdChanged @event) => AppId = @event.AppId;
     public void Apply(OAuthApplicationDeleted @event) => IsDeleted = true;
 }
