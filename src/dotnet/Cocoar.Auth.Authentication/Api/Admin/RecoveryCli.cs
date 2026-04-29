@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Cocoar.Auth.Authentication;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Projections;
 using Cocoar.Auth.Authorization.Services;
@@ -100,7 +101,12 @@ public static class RecoveryCli
                 .CountAsync();
 
             var mfa = user.TwoFactorEnabled ? "TOTP" : (user.EmailOtpEnabled ? "EMAIL" : "-");
-            var isAdmin = await permissions.HasPermissionAsync(user.Id, "app:admin", CancellationToken.None);
+            // "Admin" in the recovery CLI = realm-wide admin: the user holds
+            // realm:admin (typically via the System Admin role + Administratoren
+            // group seeded at /setup). The check is run against any app slug
+            // because realm:admin is universal — cocoar-auth picked here for
+            // legibility only.
+            var isAdmin = await permissions.HasPermissionAsync(user.Id, AppSlugs.CocoarAuth, PermissionEvaluator.RealmAdminPermission, CancellationToken.None);
 
             Console.WriteLine(
                 $"{user.UserName,-20} {user.Email ?? "",-40} {(user.IsActive ? "yes" : "no"),-8} " +

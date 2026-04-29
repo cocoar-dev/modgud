@@ -7,6 +7,7 @@ using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Roles;
+using Cocoar.Auth.Authorization.Services;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
 
@@ -86,8 +87,11 @@ public static class SetupEndpoints
                 Name = "System Admin",
                 Description = "Full system access — bypasses every permission check.",
                 AppSlug = AppSlugs.CocoarAuth,
-                ResourceType = "app",
-                Permissions = ["admin"]
+                // ResourceType is unused for this role — its single permission
+                // is fully-qualified ("realm:admin") and passes through the
+                // PermissionService expansion unchanged.
+                ResourceType = "",
+                Permissions = [PermissionEvaluator.RealmAdminPermission],
             };
             session.Store(adminRole);
             session.Events.StartStream(adminRole.Id,
@@ -142,8 +146,10 @@ public static class SetupEndpoints
                 Description = "Full system access",
                 MemberIds = [appUser.Id],
                 RoleIds = [adminRole.Id],
-                AccessScripts = [], // app:admin bypasses all access scripts
-                BoundTo = [AppSlugs.CocoarAuth],
+                AccessScripts = [], // realm:admin bypasses all access scripts
+                // "*" wildcard: active in every app. The system admin must be
+                // able to govern any app registered in this realm.
+                BoundTo = [PermissionService.AllAppsWildcard],
             };
             session.Store(adminGroup);
             session.Events.StartStream(adminGroup.Id,

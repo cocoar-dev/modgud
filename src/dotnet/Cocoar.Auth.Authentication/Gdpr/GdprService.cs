@@ -1,6 +1,7 @@
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Events;
 using Cocoar.Auth.Authentication.Sessions;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Services;
 using Cocoar.Auth.Infrastructure.Email;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
@@ -35,7 +36,10 @@ public class GdprService(
         var user = await userManager.FindByIdAsync(userId.ToString());
         if (user is null) return Error.NotFound("User.NotFound", $"User {userId} not found.");
 
-        var permissions = await permissionService.GetUserPermissionsAsync(userId, ct);
+        // GDPR exports the user's permissions in the IDP itself — the
+        // realm-wide admin surface they hold. External app permissions are
+        // not part of the IDP's data export today.
+        var permissions = await permissionService.GetUserPermissionsAsync(userId, AppSlugs.CocoarAuth, ct);
         var sessions = await session.Query<UserSession>()
             .Where(s => s.UserId == userId)
             .ToListAsync(ct);

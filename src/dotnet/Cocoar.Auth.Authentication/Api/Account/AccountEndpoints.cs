@@ -10,6 +10,7 @@ using Cocoar.Auth.Authentication.Domain.ExternalAuth;
 using BuildingBlocks.Helper;
 using Cocoar.Auth.Authentication.Identity;
 using Cocoar.Auth.Authentication.Sessions;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Services;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
@@ -205,7 +206,11 @@ public static class AccountEndpoints
             if (user is null)
                 return Results.Unauthorized();
 
-            var permissions = await permissionService.GetUserPermissionsAsync(user.Id);
+            // /me reports the current user's permissions in the IDP itself —
+            // the cocoar-auth admin surface (sidebar gating, etc.). External
+            // apps fetch their own scoped permissions via the Phase 2
+            // distribution API.
+            var permissions = await permissionService.GetUserPermissionsAsync(user.Id, AppSlugs.CocoarAuth);
             var twoFactorMethods = await TwoFactorHelper.GetMethodsAsync(user, session);
             var securityData = await session.LoadAsync<UserSecurityData>(user.Id);
 

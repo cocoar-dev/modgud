@@ -18,31 +18,46 @@ public class AccessPolicyEngine(
     ILogger<AccessPolicyEngine> logger) : IAccessPolicyEngine
 {
     public Task<Expression<Func<TView, bool>>?> BuildFilterAsync<TView>(
-        Guid userId, string resourceType,
+        Guid userId, string appSlug, string resourceType,
         CancellationToken ct = default)
-        => BuildFilterCoreAsync<TView>(userId, resourceType, actionPermission: null, ct);
+        => BuildFilterCoreAsync<TView>(userId, appSlug, resourceType, actionPermission: null, ct);
 
     public Task<Expression<Func<TView, bool>>?> BuildFilterForActionAsync<TView>(
-        Guid userId, string resourceType, string permission,
+        Guid userId, string appSlug, string resourceType, string permission,
         CancellationToken ct = default)
-        => BuildFilterCoreAsync<TView>(userId, resourceType, actionPermission: permission, ct);
+        => BuildFilterCoreAsync<TView>(userId, appSlug, resourceType, actionPermission: permission, ct);
 
     public string TranspileTypeScript(string typeScript)
         => tsTranspiler.Transpile(typeScript);
 
     private async Task<Expression<Func<TView, bool>>?> BuildFilterCoreAsync<TView>(
-        Guid userId, string resourceType, string? actionPermission,
+        Guid userId, string appSlug, string resourceType, string? actionPermission,
         CancellationToken ct)
     {
-        var permissions = await permissionService.GetUserPermissionsAsync(userId, ct);
+        var permissions = await permissionService.GetUserPermissionsAsync(userId, appSlug, ct);
 
-        if (permissions.Contains("app:admin"))
+        // Realm-wide bypass — the user is a system admin and unrestricted in
+        // any app. Returning null disables row filtering entirely.
+        if (permissions.Contains(PermissionEvaluator.RealmAdminPermission))
+            return null;
+
+        // App-wide bypass — full access within this app, regardless of
+        // resource. Same effect as realm-admin but scoped.
+        if (permissions.Contains($"{appSlug}:{PermissionEvaluator.AdminAction}"))
             return null;
 
         var groups = await permissionService.GetUserGroupsAsync(userId, ct);
 
+        // Limit to groups active in this app — same gate the permission
+        // resolution applies. Without it, scripts attached to dormant or
+        // other-app groups would leak into the filter.
+        groups = groups
+            .Where(g => g.BoundTo.Contains(PermissionService.AllAppsWildcard)
+                        || g.BoundTo.Contains(appSlug))
+            .ToList();
+
         if (actionPermission is not null)
-            groups = await FilterGroupsByPermissionAsync(groups, actionPermission, ct);
+            groups = await FilterGroupsByPermissionAsync(groups, appSlug, actionPermission, ct);
 
         var accessScripts = groups
             .SelectMany(g => g.AccessScripts)
@@ -114,7 +129,7 @@ public class AccessPolicyEngine(
     }
 
     private async Task<List<Group>> FilterGroupsByPermissionAsync(
-        List<Group> groups, string permission, CancellationToken ct)
+        List<Group> groups, string appSlug, string permission, CancellationToken ct)
     {
         var roleIds = groups.SelectMany(g => g.RoleIds).Distinct().ToArray();
         if (roleIds.Length == 0) return [];
@@ -126,15 +141,21 @@ public class AccessPolicyEngine(
 
         return groups
             .Where(g => g.RoleIds.Any(rid =>
-                rolesById.TryGetValue(rid, out var role) && RoleCarriesPermission(role, permission)))
+                rolesById.TryGetValue(rid, out var role) && RoleCarriesPermission(role, appSlug, permission)))
             .ToList();
     }
 
-    private static bool RoleCarriesPermission(PermissionRole role, string permission)
+    private static bool RoleCarriesPermission(PermissionRole role, string appSlug, string permission)
     {
         foreach (var action in role.Permissions)
         {
-            var full = action.Contains(':') ? action : $"{role.ResourceType}:{action}";
+            // Mirror PermissionService expansion: bare actions only contribute
+            // when the role belongs to the requested app; fully-qualified
+            // permissions pass through unchanged (cross-app grants like
+            // realm:admin work even if role.AppSlug differs).
+            var full = action.Contains(':')
+                ? action
+                : (role.AppSlug == appSlug ? $"{role.AppSlug}:{role.ResourceType}:{action}" : null);
             if (full == permission) return true;
         }
         return false;

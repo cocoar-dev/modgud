@@ -1,42 +1,51 @@
 namespace Cocoar.Auth.Authorization.Services;
 
 /// <summary>
-/// Pure permission-check logic, separated from <see cref="PermissionService"/> so it
-/// can be unit-tested without a Marten session.
+/// Pure permission-check logic, separated from <see cref="PermissionService"/> so
+/// it can be unit-tested without a Marten session.
+///
+/// Permission strings are fully qualified as <c>"appSlug:resource:action"</c>.
+/// Bypass shortcuts collapse common admin grants to fewer entries.
 ///
 /// Evaluation order:
 /// <list type="number">
-///   <item>Global bypass: <c>app:admin</c> in grants → always true.</item>
-///   <item>Exact match: requested permission appears verbatim in grants → true.</item>
-///   <item>Resource-scoped bypass: for a permission shaped <c>&lt;resource&gt;:&lt;action&gt;</c>,
-///         holding <c>&lt;resource&gt;:admin</c> → true. Lets one grant cover every
-///         action on a resource without enumerating each.</item>
+///   <item><b>Realm-wide bypass:</b> grant <c>realm:admin</c> → always true.</item>
+///   <item><b>Exact match:</b> the requested permission appears verbatim → true.</item>
+///   <item><b>App-wide bypass:</b> for permission <c>a:b:c</c>, grant <c>a:admin</c> → true.</item>
+///   <item><b>Resource-wide bypass:</b> for permission <c>a:b:c</c>, grant <c>a:b:admin</c> → true.</item>
 ///   <item>Otherwise → false.</item>
 /// </list>
 /// </summary>
 public static class PermissionEvaluator
 {
-    /// <summary>The global-bypass permission. Any principal that holds it passes every check.</summary>
-    public const string GlobalAdminPermission = "app:admin";
+    /// <summary>The realm-wide bypass permission. Holding it grants every check in the realm.</summary>
+    public const string RealmAdminPermission = "realm:admin";
 
-    /// <summary>The per-resource bypass action. Holding <c>X:admin</c> grants every action on resource X.</summary>
-    public const string ResourceAdminAction = "admin";
+    /// <summary>The conventional admin action used for app-wide and resource-wide bypasses.</summary>
+    public const string AdminAction = "admin";
 
     public static bool Evaluate(IReadOnlyCollection<string> grants, string permission)
     {
         ArgumentNullException.ThrowIfNull(grants);
         ArgumentException.ThrowIfNullOrEmpty(permission);
 
-        if (grants.Contains(GlobalAdminPermission))
+        if (grants.Contains(RealmAdminPermission))
             return true;
 
         if (grants.Contains(permission))
             return true;
 
-        var colon = permission.IndexOf(':');
-        if (colon > 0)
+        // Structural bypasses only kick in for the canonical 3-segment shape
+        // "<app>:<resource>:<action>". Permissions outside that shape only
+        // pass via realm-admin or exact match.
+        var parts = permission.Split(':');
+        if (parts.Length == 3)
         {
-            var resourceAdmin = string.Concat(permission.AsSpan(0, colon), $":{ResourceAdminAction}");
+            var appAdmin = $"{parts[0]}:{AdminAction}";
+            if (grants.Contains(appAdmin))
+                return true;
+
+            var resourceAdmin = $"{parts[0]}:{parts[1]}:{AdminAction}";
             if (grants.Contains(resourceAdmin))
                 return true;
         }

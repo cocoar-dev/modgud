@@ -6,7 +6,8 @@ namespace Cocoar.Auth.Authorization.Services;
 
 /// <summary>
 /// Default permission service. Resolves permissions via
-/// Principal → Group → Role → Permission, with transitive group traversal.
+/// Principal → Group → Role → Permission, with transitive group traversal,
+/// scoped to a single app.
 /// <para>
 /// BFS loads every non-deleted <see cref="Group"/> in one query and walks the
 /// member-of graph in memory. For typical tenant sizes (hundreds of groups)
@@ -15,21 +16,37 @@ namespace Cocoar.Auth.Authorization.Services;
 /// </summary>
 public class PermissionService(IQuerySession session) : IPermissionService
 {
-    public async Task<bool> HasPermissionAsync(Guid userId, string permission, CancellationToken ct = default)
+    /// <summary>
+    /// Wildcard slug on <see cref="Group.BoundTo"/> meaning "active in every
+    /// app" — used by the realm-admin group.
+    /// </summary>
+    public const string AllAppsWildcard = "*";
+
+    public async Task<bool> HasPermissionAsync(Guid userId, string appSlug, string permission, CancellationToken ct = default)
     {
-        var permissions = await GetUserPermissionsAsync(userId, ct);
+        var permissions = await GetUserPermissionsAsync(userId, appSlug, ct);
         return PermissionEvaluator.Evaluate(permissions, permission);
     }
 
-    public async Task<List<string>> GetUserPermissionsAsync(Guid userId, CancellationToken ct = default)
+    public async Task<List<string>> GetUserPermissionsAsync(Guid userId, string appSlug, CancellationToken ct = default)
     {
+        ArgumentException.ThrowIfNullOrEmpty(appSlug);
+
         // Permissions flow Principal → Group → Role → Permission. No direct
         // user→role or user→permission grants — membership-via-group is the
         // sole path.
         var groups = await GetUserGroupsAsync(userId, ct);
         if (groups.Count == 0) return [];
 
-        var roleIds = groups.SelectMany(g => g.RoleIds).Distinct().ToArray();
+        // BoundTo gates the group's contribution: "*" wildcard or the
+        // requested app must be present. Empty BoundTo = dormant for
+        // permission purposes (e.g. distribution-list groups).
+        var activeGroups = groups
+            .Where(g => g.BoundTo.Contains(AllAppsWildcard) || g.BoundTo.Contains(appSlug))
+            .ToList();
+        if (activeGroups.Count == 0) return [];
+
+        var roleIds = activeGroups.SelectMany(g => g.RoleIds).Distinct().ToArray();
         if (roleIds.Length == 0) return [];
 
         var roles = await session.Query<PermissionRole>()
@@ -41,9 +58,21 @@ public class PermissionService(IQuerySession session) : IPermissionService
         {
             foreach (var action in role.Permissions)
             {
-                // Permissions may already be in "resource:action" form (legacy) or bare action;
-                // the bare case gets prefixed with the role's resource type.
-                permissions.Add(action.Contains(':') ? action : $"{role.ResourceType}:{action}");
+                if (action.Contains(':'))
+                {
+                    // Fully-qualified permission — passes through unchanged.
+                    // This is the escape hatch for cross-app grants like
+                    // "realm:admin" carried by the system-admin role.
+                    permissions.Add(action);
+                }
+                else if (role.AppSlug == appSlug)
+                {
+                    // Bare action only contributes when the role belongs to
+                    // the requested app — its bare action is then expanded to
+                    // "{app}:{resource}:{action}".
+                    permissions.Add($"{role.AppSlug}:{role.ResourceType}:{action}");
+                }
+                // else: bare action in a role belonging to a different app — skipped.
             }
         }
         return permissions.ToList();
@@ -80,16 +109,23 @@ public class PermissionService(IQuerySession session) : IPermissionService
         return resolved.Values.ToList();
     }
 
-    public async Task<List<PermissionRole>> GetUserRolesAsync(Guid userId, CancellationToken ct = default)
+    public async Task<List<PermissionRole>> GetUserRolesAsync(Guid userId, string appSlug, CancellationToken ct = default)
     {
+        ArgumentException.ThrowIfNullOrEmpty(appSlug);
+
         var groups = await GetUserGroupsAsync(userId, ct);
-        var roleIds = groups.SelectMany(g => g.RoleIds).Distinct().ToList();
+        var activeGroups = groups
+            .Where(g => g.BoundTo.Contains(AllAppsWildcard) || g.BoundTo.Contains(appSlug))
+            .ToList();
+        var roleIds = activeGroups.SelectMany(g => g.RoleIds).Distinct().ToList();
 
         if (roleIds.Count == 0)
             return [];
 
         var roles = await session.Query<PermissionRole>()
-            .Where(r => r.Id.IsOneOf(roleIds.ToArray()) && !r.IsDeleted)
+            .Where(r => r.Id.IsOneOf(roleIds.ToArray())
+                        && r.AppSlug == appSlug
+                        && !r.IsDeleted)
             .ToListAsync(ct);
 
         return roles.ToList();
