@@ -26,16 +26,12 @@ now logs early-returns, ShouldSync trade-off documented, and the
 page legitimately needs both values).
 
 **Pinned-by-design (current behaviour is on purpose; tests guard it):**
-- `DeviceInfoService` Mac-Safari-as-Mobile — fix lives with the
-  UAParser→Wangkanai.Detection swap below
 - `TenantContextMiddleware` silently coerces non-string TenantId values
 - `ResourceRegistry` lookup is case-sensitive
 - `GenericOidcFlavor.DeriveEndpoints` does not normalise trailing slashes
 - Aggregates have no post-delete write guards
 
 **Larger deferred work:**
-- Replace `UAParser` with `Wangkanai.Detection` (also fixes
-  Mac-Safari-as-Mobile finding)
 - Get the 7 red `ProfileSelfService` integration tests green
 - Wolverine production-side tenant routing (deeper than current
   middleware fix)
@@ -55,21 +51,6 @@ page legitimately needs both values).
 The full description for each entry is below.
 
 ## Pinned findings (current behavior is documented in tests)
-
-### `DeviceInfoService` classifies Mac desktop browsers as "Mobile"
-
-**File:** `Cocoar.Auth.Authentication/Sessions/DeviceInfoService.cs`
-**Pinning test:** `Cocoar.Auth.Tests.Unit/Sessions/DeviceInfoServiceTests.cs`
-
-UAParser sets `Device.Family = "Mac"` for Macintosh user-agents. Our
-`DetermineDeviceType` uses an allow-by-exclusion fallback — anything that's
-not "Other" or "Spider" gets classified as "Mobile". So a Safari-on-Mac
-session is logged as a Mobile device.
-
-**Fix when we get there:** switch to allow-by-inclusion — explicit list of
-mobile device families ("iPhone", "iPad", "Android", named tablet/phone
-brands), and treat the unknown rest as Desktop. Keep the pinning test so the
-flip is intentional.
 
 ### `TenantContextMiddleware` silently coerces non-string `TenantId` items
 
@@ -121,22 +102,6 @@ chose intentionally dumb aggregates; flip only if a real bug surfaces.
 ---
 
 ## Deferred features / refactors
-
-### Replace `UAParser` with `Wangkanai.Detection`
-
-**Why now-not:** UAParser 3.1.47 is the latest version and it was published
-in May 2021 — `dotnetcore/uap-csharp` is dormant. New browser/OS strings
-since 2021 may be misidentified. The Mac-Safari issue above is *our* code,
-not UAParser's, but the package's staleness is its own risk.
-
-**What we'd do:** swap `Cocoar.Auth.Authentication.Sessions.DeviceInfoService`
-to use `Wangkanai.Detection`. The interface (`IDeviceInfoService`) stays;
-swap the implementation. Update or replace the pinning tests that depend on
-specific UAParser quirks.
-
-**Side benefit:** `Wangkanai.Detection` is ASP.NET-native and integrates with
-`HttpContext` directly. Could simplify the session-tracking call sites if we
-go beyond a thin wrapper.
 
 ### Remaining 7 ProfileSelfService integration tests are red
 
@@ -221,6 +186,39 @@ feature folder. Probably ~50 LoC if it's needed back.
 ---
 
 ## Closed / done
+
+UAParser → Wangkanai.Detection swap on 2026-04-29 (wave 6):
+
+- **DeviceInfoService now wraps Wangkanai.Detection's HttpContext-bound
+  `IDetectionService`** instead of the dormant UAParser package
+  (3.1.47, last release May 2021). The interface lost its
+  `Parse(string?)` argument — Wangkanai reads the active HttpContext
+  directly, so the parameter was a misleading no-op once the package
+  changed. `SessionService` keeps its own `userAgent` parameter for
+  storing the raw header on `UserSession.UserAgent`. Eight new tests
+  drive a hand-rolled `IDetectionService` covering: Chrome/Windows
+  desktop mapping, Safari/Mac → Desktop (the bug-fix this swap was
+  meant to deliver — automatic), iOS → Mobile, iPadOS → Tablet,
+  "Others" enum collapse to "Unknown", `Version 0.0` collapse to null,
+  and a defensive throw-swallow guarding login from a malformed UA.
+- **Mac-Safari-as-Mobile pin closed.** The legacy allow-by-exclusion
+  fallback is gone with the UAParser code path; Wangkanai's Device
+  service correctly returns Desktop. The pinning test is replaced by
+  one asserting the new (correct) behaviour.
+
+ProfileEndpoints partial-PATCH chain pinned + Domain audit on 2026-04-29 (wave 5):
+
+- **30 new tests** for the user-facing self-service profile-edit
+  pipeline: `NormalizeOptional`, `StringEq`, `DeserializeProfile`,
+  `MergeJson`, `CleanupProfilePayload`, `EnumerateProfileChanges`.
+  Four `private static` helpers were lifted to `internal static`
+  (test project already in IVT). No production behaviour change —
+  the chain previously had zero direct unit coverage despite
+  every self-service edit flowing through it.
+- **Domain/Realms + Domain/Identity/LoginProviders audit closed.**
+  No leftover untested helpers found; everything is either tested
+  (`LoginProviderAggregate`, `RealmSlugRules`, `RealmCacheLookup`)
+  or correctly classified as a pure DTO/record.
 
 OAuthAdminService deeper helper extraction + DTO audit on 2026-04-29 (wave 4):
 

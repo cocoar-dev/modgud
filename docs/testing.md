@@ -1,19 +1,22 @@
 # Testing
 
-> **Status as of 2026-04-29 (post OAuthAdminService-merge wave):** 724
-> unit tests, 89/96 integration tests green. Coverage swept across
+> **Status as of 2026-04-29 (post UAParser→Wangkanai swap, waves 5+6):**
+> 747 unit tests, 89/96 integration tests green. Coverage swept across
 > Domain, Application, Authorization, Authentication, Infrastructure,
 > Api (incl. Features). **All test-found production bugs from every
 > sweep have been fixed** — see "Production bugs found and fixed"
-> below. The latest pass extracted the three remaining pure helpers
-> from `OAuthAdminService` (`MapApiState`, `BuildApiSecretEntry`,
-> `MergeClientSettings`+`MergeClientProperties`) and pinned the
-> partial-PATCH semantics — 28 new tests, no behaviour change. Three
-> Authentication-area DTOs (`AuthLogDocument`, `UserDeletionState`,
-> `IdpConfig`) were audited and confirmed as pure (no logic to test).
-> Next planned area: UAParser→Wangkanai.Detection swap, then the 7
-> `ProfileSelfService` integration tests. See
-> [Resume here](#resume-here) at the bottom for picking up cold.
+> below. Wave 5 pinned the user-facing `ProfileEndpoints` partial-PATCH
+> chain (30 new tests) and confirmed the Domain/Realms +
+> Domain/Identity/LoginProviders folders had no leftover untested
+> helpers. Wave 6 swapped UAParser for Wangkanai.Detection — the
+> dormant 2021-vintage parser is gone, the Mac-Safari-as-Mobile
+> production bug fell out automatically (Wangkanai correctly returns
+> Desktop), and the 8 new tests drive a fake `IDetectionService` so
+> the wrapper's mapping (browser/platform/device → DeviceInfo, "Others"
+> collapse, version-zero collapse, defensive throw-swallow) stays
+> pinned without depending on Wangkanai's internal UA-quirk database.
+> Next planned area: the 7 `ProfileSelfService` integration tests.
+> See [Resume here](#resume-here) at the bottom for picking up cold.
 
 ## Two test projects
 
@@ -39,7 +42,7 @@ dotnet test
 
 ## Unit-test inventory
 
-724 tests. Every entry below is at least one file under
+747 tests. Every entry below is at least one file under
 `src/dotnet/Cocoar.Auth.Tests.Unit/`.
 
 ### Authorization slice
@@ -89,7 +92,7 @@ dotnet test
 | Extensions | `Authentication/ExtensionMethods/{HttpContextExtensions, HttpRequestExtensions, ErrorOrExtensions}Tests.cs` | 25 | tenant accessor on HttpContext, source-IP resolution incl. the X-Forwarded-For pinning bug, ErrorOr → ProblemDetails mapping |
 | TwoFactorEnforcementMiddleware | `Authentication/Account/TwoFactorEnforcementMiddlewareTests.cs` | 23 | whitelist paths, federated-MFA AMR detection, early-exit branches; DB branches unit-untested by design |
 | Sessions / SessionTracker | `Authentication/Sessions/SessionTrackerTests.cs` | 5 | best-effort tracking, swallows failures from `ISessionService` |
-| Device info parsing | `Sessions/DeviceInfoServiceTests.cs` | 13 | UAParser sample assertions, edge cases (empty/malformed), [includes the Mac-Safari-as-Mobile pinning test — see backlog] |
+| Device info parsing | `Sessions/DeviceInfoServiceTests.cs` | 8 | Wangkanai.Detection mapping pins driven by a fake `IDetectionService`: browser/platform/device → DeviceInfo, "Others" collapse to "Unknown", version-zero collapse to null, defensive throw-swallow. Mac-Safari-as-Mobile pin gone (fix landed with the swap). |
 | EmailOtpConfiguration | `Authentication/Identity/EmailOtpConfigurationTests.cs` | 2 | default values |
 
 ### Infrastructure + Api glue
@@ -300,8 +303,6 @@ Each of these has at least one test that documents the behaviour. The
 behaviour is intentional — these aren't bugs, they're invariants we want to
 guard against accidental change.
 
-- `DeviceInfoService` classifies Mac desktop as "Mobile" — fixes with the
-  UAParser swap (see [backlog.md](backlog.md))
 - `TenantContextMiddleware` silently coerces non-string TenantId values
   (defensive)
 - `ResourceRegistry` lookup is case-sensitive (deliberate)
@@ -318,7 +319,7 @@ where we stopped and what's next.
 
 ### What's done (stop reading further if you only need today's status)
 
-- **Two test projects exist and run.** `Cocoar.Auth.Tests.Unit` (724 tests,
+- **Two test projects exist and run.** `Cocoar.Auth.Tests.Unit` (747 tests,
   ~1 s) and `Cocoar.Auth.Api.Tests` (96 tests, ~90 s, 89 green).
 - **Unit coverage swept across:** Domain (Realms, OAuth aggregates, OAuth
   wire-format constants), Application (OAuthAdminMapping after extraction),
@@ -353,25 +354,13 @@ where we stopped and what's next.
 
 In rough priority order:
 
-1. **UAParser → Wangkanai.Detection swap.** Largest piece in the
-   backlog and the only one that also closes a pinned-by-design item
-   (Mac-Safari-as-Mobile). Refactor the `DeviceInfoService`, replace
-   the UAParser-quirk pinning tests with Wangkanai-quirk equivalents.
-2. **Get the 7 red `ProfileSelfService` integration tests green.**
+1. **Get the 7 red `ProfileSelfService` integration tests green.**
    Needs `GetTenantedSession(scope)` + `GetTenantedStore(scope)`
    helpers next to the existing `GetTenantedMessageBus(scope)` in
    `IntegrationTestBase`, then migrate the 7 tests. Brings 96/96 green.
    Worth doing as a separate wave because it's integration-only and
    needs Docker.
-3. **`UserChangeRequest` Optional-aware merge** — the merge logic for
-   profile-edit approval. Either inside `UserChangeRequest` itself or in the
-   `ProfileEndpoints`/admin-change-request pipeline. Worth a careful look:
-   `Cocoar.Json.Mutable.MutableJsonMerge` may already cover it; if so, our
-   work is done. If not, an extraction is valuable.
-4. **`Cocoar.Auth.Domain/Identity/LoginProviders` + `Realms` leftovers** —
-   any helpers in the Domain folders for these areas that the previous
-   waves missed. Probably small.
-5. **`TwoFactorHelper`** — both methods are currently DB-bound, but the
+2. **`TwoFactorHelper`** — both methods are currently DB-bound, but the
    recovery-code generation/check could plausibly be extracted as pure
    helpers. Light refactor needed.
 
