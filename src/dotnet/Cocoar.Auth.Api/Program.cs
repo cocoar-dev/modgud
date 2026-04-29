@@ -659,6 +659,14 @@ try
             TenantConstants.SystemTenantId,
             realmScope.ServiceProvider.GetRequiredService<ILogger<Program>>());
 
+        // Seed the system app `cocoar-auth` into the system tenant DB so
+        // app-scoped permissions can resolve before the first realm
+        // creation. Idempotent.
+        await Cocoar.Auth.Infrastructure.Authorization.AppRealmSeeder.SeedAsync(
+            realmScope.ServiceProvider,
+            TenantConstants.SystemTenantId,
+            realmScope.ServiceProvider.GetRequiredService<ILogger<Program>>());
+
         // Warm the realm cache (used by RealmMiddleware for fast Host → tenant resolution)
         var realmCache = realmScope.ServiceProvider.GetRequiredService<IRealmCache>();
         await realmCache.InitializeAsync();

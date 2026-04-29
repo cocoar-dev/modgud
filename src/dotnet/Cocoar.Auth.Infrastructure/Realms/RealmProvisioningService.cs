@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Cocoar.Auth.Application.DTOs.Realms;
 using Cocoar.Auth.Domain.Realms;
+using Cocoar.Auth.Infrastructure.Authorization;
 using Cocoar.Auth.Infrastructure.OAuth;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using ErrorOr;
@@ -146,6 +147,11 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         // "Internal" login provider land in the new tenant DB. Idempotent.
         // Default Admin role / per-realm Setup flow is still TODO.
         await OAuthRealmSeeder.SeedAsync(_serviceProvider, dto.Slug, _logger, ct);
+
+        // Per-realm App seeding — the system app `cocoar-auth` is registered
+        // in every realm so app-scoped permissions resolve from day one.
+        // Idempotent.
+        await AppRealmSeeder.SeedAsync(_serviceProvider, dto.Slug, _logger, ct);
 
         _realmCache.Invalidate();
         return realm;
