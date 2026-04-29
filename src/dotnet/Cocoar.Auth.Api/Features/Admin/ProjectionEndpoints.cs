@@ -12,6 +12,12 @@ namespace Cocoar.Auth.Api.Features.Admin;
 
 public static class ProjectionEndpoints
 {
+    // Serialises the rebuild endpoint. Concurrent rebuilds would race on the
+    // process-wide ProjectionSideEffects.Enabled flag — the second caller can
+    // capture the first's interim `false` and permanently disable side effects
+    // when the first call's `finally` restores it.
+    private static readonly SemaphoreSlim _rebuildGate = new(1, 1);
+
     public static WebApplication MapProjectionEndpoints(this WebApplication application, string path)
     {
         var group = application.MapGroup($"{path}/admin/projections")
@@ -24,6 +30,12 @@ public static class ProjectionEndpoints
             IProjectionCoordinator coordinator,
             CancellationToken ct) =>
         {
+            if (!await _rebuildGate.WaitAsync(0, ct))
+            {
+                Serilog.Log.Warning("Admin: Projection rebuild rejected — another rebuild is already running");
+                return Results.Conflict(new { Message = "A projection rebuild is already in progress" });
+            }
+
             Serilog.Log.Information("Admin: Starting full projection rebuild");
             try
             {
@@ -66,6 +78,10 @@ public static class ProjectionEndpoints
             {
                 Serilog.Log.Error(ex, "Admin: Projection rebuild failed");
                 return Results.Json(new { Message = ex.Message }, statusCode: 500);
+            }
+            finally
+            {
+                _rebuildGate.Release();
             }
         })
         .WithName("AdminProjections_Rebuild");
