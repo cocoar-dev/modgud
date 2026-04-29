@@ -1,6 +1,9 @@
 using System.Security.Claims;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authorization.Services;
+using Cocoar.Auth.Domain.OAuth.Applications;
+using Cocoar.Auth.Domain.OAuth.Scopes;
+using Marten;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -57,10 +60,19 @@ public static class AuthorizationEndpoints
         IOpenIddictApplicationManager applicationManager,
         IOpenIddictAuthorizationManager authorizationManager,
         IOpenIddictScopeManager scopeManager,
-        UserManager<ApplicationUser> userManager)
+        UserManager<ApplicationUser> userManager,
+        IDocumentSession session)
     {
         var request = httpContext.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("The OpenID Connect request cannot be retrieved.");
+
+        // Stufe-3 scope restriction: an app-scoped scope (Scope.AppId != null)
+        // can only be requested by a client linked to the same App. Standard
+        // OIDC scopes (openid/email/profile/roles/offline_access) are seeded
+        // with AppId=null and therefore always pass.
+        var scopeError = await ValidateScopeRestrictionAsync(
+            request.ClientId, request.GetScopes(), session);
+        if (scopeError is not null) return scopeError;
 
         var authResult = await httpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
         var needsLogin = !authResult.Succeeded;
@@ -157,10 +169,19 @@ public static class AuthorizationEndpoints
         IOpenIddictApplicationManager applicationManager,
         IOpenIddictScopeManager scopeManager,
         SignInManager<ApplicationUser> signInManager,
-        UserManager<ApplicationUser> userManager)
+        UserManager<ApplicationUser> userManager,
+        IDocumentSession session)
     {
         var request = httpContext.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("The OpenID Connect request cannot be retrieved.");
+
+        // Stufe-3 scope restriction. Code/refresh-grant scopes were already
+        // validated at /connect/authorize time, but defence in depth — and
+        // client_credentials skips the authorize step entirely so we MUST
+        // validate here too.
+        var scopeError = await ValidateScopeRestrictionAsync(
+            request.ClientId, request.GetScopes(), session);
+        if (scopeError is not null) return scopeError;
 
         if (request.IsAuthorizationCodeGrantType() || request.IsRefreshTokenGrantType() || request.IsDeviceCodeGrantType())
         {
@@ -363,6 +384,63 @@ public static class AuthorizationEndpoints
 
     private static IEnumerable<string> GetDestinations(Claim claim)
         => AuthorizationEndpointHelpers.GetDestinations(claim);
+
+    /// <summary>
+    /// Stufe-3 scope restriction. Returns <c>null</c> if every requested scope
+    /// is allowed for the calling client; otherwise returns a forbid result
+    /// carrying <c>invalid_scope</c>.
+    ///
+    /// <para>Rules:</para>
+    /// <list type="bullet">
+    ///   <item>Scope not registered in our DB → ignored here (let OpenIddict
+    ///         decide; e.g. built-in <c>openid</c> on a fresh tenant).</item>
+    ///   <item>Scope registered with <c>AppId == null</c> → always allowed
+    ///         (standard OIDC scopes, cross-app utility scopes).</item>
+    ///   <item>Scope registered with a non-null <c>AppId</c> → only allowed
+    ///         when the calling client's <c>AppId</c> matches.</item>
+    /// </list>
+    /// </summary>
+    private static async Task<IResult?> ValidateScopeRestrictionAsync(
+        string? clientId, IEnumerable<string> requestedScopes, IDocumentSession session)
+    {
+        var scopeNames = requestedScopes?.ToArray() ?? Array.Empty<string>();
+        if (scopeNames.Length == 0) return null;
+
+        // Load scope projections by name once — far fewer DB hits than per-scope.
+        var scopes = await session.Query<OAuthScopeState>()
+            .Where(s => scopeNames.Contains(s.Name) && !s.IsDeleted)
+            .ToListAsync();
+
+        // If no requested scope is app-scoped, there's nothing to restrict.
+        var appScoped = scopes.Where(s => s.AppId.HasValue).ToList();
+        if (appScoped.Count == 0) return null;
+
+        // App-scoped scopes are present — we must know the client's app.
+        Guid? clientAppId = null;
+        if (!string.IsNullOrEmpty(clientId))
+        {
+            var client = await session.Query<OAuthApplicationState>()
+                .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted);
+            clientAppId = client?.AppId;
+        }
+
+        var bad = appScoped.FirstOrDefault(s => s.AppId != clientAppId);
+        if (bad is not null)
+        {
+            var description = clientAppId is null
+                ? $"Scope '{bad.Name}' is restricted to a specific app, but the calling client is not linked to one."
+                : $"Scope '{bad.Name}' belongs to a different app than the calling client.";
+            return Results.Forbid(
+                new AuthenticationProperties(new Dictionary<string, string?>
+                {
+                    [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidScope,
+                    [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = description,
+                }),
+                new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+        }
+
+        return null;
+    }
 }
 
 /// <summary>

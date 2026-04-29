@@ -176,5 +176,41 @@ public class OAuthScopeStateProjectionTests
             p.Apply(new OAuthScopeDeleted(s.Id), s);
             Assert.True(s.IsDeleted);
         }
+
+        [Fact]
+        public void AppIdChanged_assigns_app()
+        {
+            // Stufe-3 scope restriction relies on AppId — silent regressions
+            // here would let app-scoped scopes leak across tenants.
+            var p = new OAuthScopeStateProjection();
+            var s = NewState();
+            var appId = Guid.NewGuid();
+
+            p.Apply(new OAuthScopeAppIdChanged(s.Id, appId), s);
+
+            Assert.Equal(appId, s.AppId);
+        }
+
+        [Fact]
+        public void AppIdChanged_to_null_makes_scope_global()
+        {
+            var p = new OAuthScopeStateProjection();
+            var s = NewState();
+            p.Apply(new OAuthScopeAppIdChanged(s.Id, Guid.NewGuid()), s);
+            Assert.NotNull(s.AppId);
+
+            p.Apply(new OAuthScopeAppIdChanged(s.Id, null), s);
+
+            Assert.Null(s.AppId);
+        }
+
+        [Fact]
+        public void Created_event_initial_state_has_null_AppId()
+        {
+            // Standard OIDC scopes (openid/email/profile/roles/offline_access)
+            // are created without an AppId and stay global by default.
+            var s = NewState();
+            Assert.Null(s.AppId);
+        }
     }
 }

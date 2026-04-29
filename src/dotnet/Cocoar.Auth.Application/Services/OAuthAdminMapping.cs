@@ -338,6 +338,7 @@ internal static class OAuthAdminMapping
         Emphasize = s.Emphasize,
         ShowInDiscoveryDocument = s.ShowInDiscoveryDocument,
         UserClaims = s.UserClaims.ToList(),
+        AppId = s.AppId?.ToString(),
     };
 
     /// <summary>

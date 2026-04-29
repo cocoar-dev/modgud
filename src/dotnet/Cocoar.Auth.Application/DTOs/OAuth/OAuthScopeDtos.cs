@@ -12,6 +12,8 @@ public record OAuthScopeDto
     public bool Emphasize { get; init; }
     public bool ShowInDiscoveryDocument { get; init; } = true;
     public List<string> UserClaims { get; init; } = [];
+    /// <summary>FK to <c>App.Id</c>. Null = global / standard OIDC scope.</summary>
+    public string? AppId { get; init; }
 }
 
 public record CreateOAuthScopeDto
@@ -25,6 +27,8 @@ public record CreateOAuthScopeDto
     public bool Emphasize { get; init; }
     public bool ShowInDiscoveryDocument { get; init; } = true;
     public List<string> UserClaims { get; init; } = [];
+    /// <summary>App.Id (Guid string). Null/missing = global scope.</summary>
+    public string? AppId { get; init; }
 }
 
 public record UpdateOAuthScopeDto
@@ -37,6 +41,11 @@ public record UpdateOAuthScopeDto
     public bool? Emphasize { get; init; }
     public bool? ShowInDiscoveryDocument { get; init; }
     public List<string>? UserClaims { get; init; }
+    /// <summary>
+    /// PATCH semantics: null/missing = no change, "" = make global,
+    /// "<guid>" = assign / change.
+    /// </summary>
+    public string? AppId { get; init; }
 }
 
 public record OAuthScopeListDto

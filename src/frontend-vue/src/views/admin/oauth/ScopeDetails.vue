@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarFormField, CoarCheckbox } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
+import { useApplicationsStore } from '@/stores/applications.store'
 import type { OAuthScopeDto } from '@/models/oauth'
 
 const { t } = useI18n()
@@ -14,7 +15,17 @@ const props = defineProps<{
 }>()
 
 const store = useOAuthScopeStore()
+const applicationsStore = useApplicationsStore()
 const isCreate = computed(() => props.id === 'create')
+
+// Empty value = "global" (cross-app, e.g. standard OIDC scopes).
+const appOptions = computed(() => [
+  { value: '', label: t('admin.oauthScopes.app.global', {}, '— Global (cross-app, OIDC standard)') },
+  ...applicationsStore.apps.map((a) => ({
+    value: a.Id,
+    label: `${a.DisplayName} (${a.Slug})`,
+  })),
+])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -28,6 +39,8 @@ interface FormState {
   Required: boolean
   Emphasize: boolean
   ShowInDiscoveryDocument: boolean
+  /** Empty string = "global", otherwise an App.Id. */
+  AppId: string
 }
 
 function emptyForm(): FormState {
@@ -41,6 +54,7 @@ function emptyForm(): FormState {
     Required: false,
     Emphasize: false,
     ShowInDiscoveryDocument: true,
+    AppId: '',
   }
 }
 
@@ -57,6 +71,7 @@ function fromDto(dto: OAuthScopeDto): FormState {
     Required: dto.Required,
     Emphasize: dto.Emphasize,
     ShowInDiscoveryDocument: dto.ShowInDiscoveryDocument,
+    AppId: dto.AppId ?? '',
   }
 }
 
@@ -80,6 +95,7 @@ const footerButton = computed(() => ({
 }))
 
 onMounted(async () => {
+  applicationsStore.initialize()
   if (isCreate.value) return
   loading.value = true
   try {
@@ -110,6 +126,7 @@ async function save() {
         Required: form.value.Required,
         Emphasize: form.value.Emphasize,
         ShowInDiscoveryDocument: form.value.ShowInDiscoveryDocument,
+        AppId: form.value.AppId || null,
       })
     } else {
       await store.update(props.id, {
@@ -121,6 +138,8 @@ async function save() {
         Required: form.value.Required,
         Emphasize: form.value.Emphasize,
         ShowInDiscoveryDocument: form.value.ShowInDiscoveryDocument,
+        // Always send — empty string = make global, guid = assign.
+        AppId: form.value.AppId,
       })
     }
     props.close()
@@ -149,6 +168,14 @@ async function save() {
       </div>
       <CoarFormField :label="t('admin.oauthScopes.description', {}, 'Beschreibung')">
         <CoarTextInput v-model="form.Description" clearable />
+      </CoarFormField>
+      <CoarFormField :label="t('admin.oauthScopes.app', {}, 'Application')">
+        <CoarSelect v-model="form.AppId" :options="appOptions" />
+        <p class="text-xs text-gray-500 mt-1">
+          {{ form.AppId
+            ? t('admin.oauthScopes.app.scopedHint', {}, 'Only OAuth clients linked to this App may request this scope.')
+            : t('admin.oauthScopes.app.globalHint', {}, 'Cross-app scope (e.g. standard OIDC scopes). Any client may request it.') }}
+        </p>
       </CoarFormField>
       <CoarFormField :label="t('admin.oauthScopes.resources', {}, 'Resources (eine pro Zeile, z.B. API-Audiences)')">
         <textarea v-model="form.Resources" rows="3" class="textarea" />

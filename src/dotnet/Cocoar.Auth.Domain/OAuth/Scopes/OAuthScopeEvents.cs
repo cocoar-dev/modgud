@@ -18,4 +18,12 @@ public record OAuthScopeRequiredChanged(Guid ScopeId, bool Required);
 public record OAuthScopeEmphasizeChanged(Guid ScopeId, bool Emphasize);
 public record OAuthScopeShowInDiscoveryDocumentChanged(Guid ScopeId, bool ShowInDiscoveryDocument);
 public record OAuthScopeUserClaimsChanged(Guid ScopeId, IReadOnlyList<string> UserClaims);
+
+/// <summary>
+/// Changes the scope's App-link. <c>null</c> = global scope (cross-app,
+/// e.g. the standard OIDC scopes). Realm-admin endpoints validate that the
+/// AppId references an existing non-deleted App at append time.
+/// </summary>
+public record OAuthScopeAppIdChanged(Guid ScopeId, Guid? AppId);
+
 public record OAuthScopeDeleted(Guid ScopeId);

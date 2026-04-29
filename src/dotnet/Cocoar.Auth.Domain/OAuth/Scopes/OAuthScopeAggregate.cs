@@ -19,6 +19,13 @@ public class OAuthScopeAggregate
     public bool Emphasize { get; private set; }
     public bool ShowInDiscoveryDocument { get; private set; } = true;
     public List<string> UserClaims { get; private set; } = new();
+    /// <summary>
+    /// Optional FK to <c>App.Id</c>. <c>null</c> = global scope (e.g. the
+    /// standard OIDC scopes openid/email/profile/roles/offline_access).
+    /// App-scoped scopes can only be requested by clients linked to the
+    /// same app — enforced at /connect/authorize and /connect/token.
+    /// </summary>
+    public Guid? AppId { get; private set; }
     public bool IsDeleted { get; private set; }
 
     public OAuthScopeAggregate() { }
@@ -43,6 +50,7 @@ public class OAuthScopeAggregate
     public OAuthScopeEmphasizeChanged SetEmphasize(bool v) { var e = new OAuthScopeEmphasizeChanged(Id, v); Apply(e); return e; }
     public OAuthScopeShowInDiscoveryDocumentChanged SetShowInDiscoveryDocument(bool v) { var e = new OAuthScopeShowInDiscoveryDocumentChanged(Id, v); Apply(e); return e; }
     public OAuthScopeUserClaimsChanged SetUserClaims(IReadOnlyList<string> v) { var e = new OAuthScopeUserClaimsChanged(Id, v); Apply(e); return e; }
+    public OAuthScopeAppIdChanged SetAppId(Guid? v) { var e = new OAuthScopeAppIdChanged(Id, v); Apply(e); return e; }
     public OAuthScopeDeleted Delete() { var e = new OAuthScopeDeleted(Id); Apply(e); return e; }
 
     public void Apply(OAuthScopeCreated e)
@@ -61,5 +69,6 @@ public class OAuthScopeAggregate
     public void Apply(OAuthScopeEmphasizeChanged e) => Emphasize = e.Emphasize;
     public void Apply(OAuthScopeShowInDiscoveryDocumentChanged e) => ShowInDiscoveryDocument = e.ShowInDiscoveryDocument;
     public void Apply(OAuthScopeUserClaimsChanged e) => UserClaims = e.UserClaims.ToList();
+    public void Apply(OAuthScopeAppIdChanged e) => AppId = e.AppId;
     public void Apply(OAuthScopeDeleted e) => IsDeleted = true;
 }

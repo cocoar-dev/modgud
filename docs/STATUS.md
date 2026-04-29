@@ -14,6 +14,35 @@ Last updated: 2026-04-29 (post Applications Phase 1).
 
 ## ✅ Done
 
+### Applications Phase 3 — IDP wired through (2026-04-29)
+
+Stufe 1 (App↔Client link) + 2a (UserInfo claims) + 2b (distribution
+API) + 3 (scope restriction) — the IDP now actually behaves as the
+multi-app system Phase 1+2 only modelled.
+
+- **Stufe 1** — `OAuthApplicationAggregate` gains `Guid? AppId` +
+  `OAuthApplicationAppIdChanged` event. UI dropdown in the OAuth
+  client modal (no app = realm-wide). Backend validates AppId against
+  the App aggregate on create + update.
+- **Stufe 2a** — UserInfo handler emits `role` (group names) and
+  `groups` (group ids) claims when the OIDC `roles` scope is granted.
+  ASP.NET Core's `GetClaimsFromUserInfoEndpoint = true` picks them up
+  automatically — `[Authorize(Roles="…")]` on a downstream resource
+  server "just works".
+- **Stufe 2b** — `GET /api/v1/me/permissions[?app=<slug>]`. Cookie or
+  bearer auth; bearer derives the app from the token's client →
+  AppId → App.Slug. Returns fully-qualified permissions, group
+  references, and role references. `Cache-Control: private, max-age=30`.
+- **Stufe 3** — `OAuthScopeAggregate` gains `Guid? AppId` (null =
+  global, e.g. standard OIDC scopes). `/connect/authorize` and
+  `/connect/token` reject app-scoped scopes whose AppId differs from
+  the calling client's AppId. UI dropdown in scope details with
+  contextual help text.
+
+Pinned by 6 new projection tests (3× OAuthApplicationStateProjection,
+3× OAuthScopeStateProjection — AppId set / null / created-default).
+Full unit suite 806 → 812.
+
 ### Applications Phase 2 (frontend) — Vue admin UI (2026-04-29)
 
 - `auth.store.ts` `hasPermission` now mirrors backend

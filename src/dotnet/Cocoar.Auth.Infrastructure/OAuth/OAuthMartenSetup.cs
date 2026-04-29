@@ -36,6 +36,7 @@ public static class OAuthMartenSetup
         options.Schema.For<OAuthScopeState>()
             .Identity(x => x.Id)
             .Index(x => x.Name)
+            .Index(x => x.AppId)
             .Index(x => x.IsDeleted);
 
         options.Schema.For<OAuthApiState>()
@@ -95,6 +96,7 @@ public static class OAuthMartenSetup
         options.Events.MapEventType<OAuthScopeEmphasizeChanged>("oauth_scope_emphasize_changed");
         options.Events.MapEventType<OAuthScopeShowInDiscoveryDocumentChanged>("oauth_scope_show_in_discovery_document_changed");
         options.Events.MapEventType<OAuthScopeUserClaimsChanged>("oauth_scope_user_claims_changed");
+        options.Events.MapEventType<OAuthScopeAppIdChanged>("oauth_scope_app_id_changed");
         options.Events.MapEventType<OAuthScopeDeleted>("oauth_scope_deleted");
 
         options.Events.MapEventType<OAuthApiCreated>("oauth_api_created");

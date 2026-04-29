@@ -25,5 +25,6 @@ public class OAuthScopeStateProjection : SingleStreamProjection<OAuthScopeState,
     public void Apply(OAuthScopeEmphasizeChanged e, OAuthScopeState s) => s.Emphasize = e.Emphasize;
     public void Apply(OAuthScopeShowInDiscoveryDocumentChanged e, OAuthScopeState s) => s.ShowInDiscoveryDocument = e.ShowInDiscoveryDocument;
     public void Apply(OAuthScopeUserClaimsChanged e, OAuthScopeState s) => s.UserClaims = e.UserClaims.ToList();
+    public void Apply(OAuthScopeAppIdChanged e, OAuthScopeState s) => s.AppId = e.AppId;
     public void Apply(OAuthScopeDeleted e, OAuthScopeState s) => s.IsDeleted = true;
 }

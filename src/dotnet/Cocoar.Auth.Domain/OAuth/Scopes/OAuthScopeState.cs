@@ -19,5 +19,7 @@ public class OAuthScopeState
     public bool Emphasize { get; set; }
     public bool ShowInDiscoveryDocument { get; set; } = true;
     public List<string> UserClaims { get; set; } = new();
+    /// <summary>FK to <c>App.Id</c>. Null = global / standard OIDC scope.</summary>
+    public Guid? AppId { get; set; }
     public bool IsDeleted { get; set; }
 }

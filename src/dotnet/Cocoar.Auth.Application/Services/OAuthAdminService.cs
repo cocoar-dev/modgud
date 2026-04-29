@@ -308,6 +308,20 @@ public class OAuthAdminService
         if (existing is not null)
             return OAuthErrors.ScopeNameAlreadyExists(dto.Name);
 
+        // Optional App-link validation. Standard OIDC scopes (openid, email,
+        // profile, …) stay global so existing /connect/authorize requests
+        // for them keep working regardless of the client's app.
+        Guid? appId = null;
+        if (!string.IsNullOrEmpty(dto.AppId))
+        {
+            if (!Guid.TryParse(dto.AppId, out var parsedAppId))
+                return Error.Validation("OAuthScope.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid.");
+            var app = await _session.LoadAsync<App>(parsedAppId, ct);
+            if (app is null || app.IsDeleted)
+                return Error.Validation("OAuthScope.AppNotFound", $"App {dto.AppId} not found.");
+            appId = parsedAppId;
+        }
+
         var id = Guid.NewGuid();
         var (aggregate, createdEvent) = OAuthScopeAggregate.Create(id, dto.Name, dto.DisplayName, dto.Description, dto.Resources);
         _session.Events.StartStream<OAuthScopeAggregate>(id, createdEvent);
@@ -322,6 +336,9 @@ public class OAuthAdminService
         // Mirror identity-resource flags onto Properties — the runtime will read them from there.
         _session.Events.Append(id, aggregate.SetProperties(BuildScopeProperties(
             dto.Enabled, dto.Required, dto.Emphasize, dto.ShowInDiscoveryDocument, dto.UserClaims)));
+
+        if (appId.HasValue)
+            _session.Events.Append(id, aggregate.SetAppId(appId));
 
         await _session.SaveChangesAsync(ct);
 
@@ -373,6 +390,23 @@ public class OAuthAdminService
             dto.Emphasize ?? aggregate.Emphasize,
             dto.ShowInDiscoveryDocument ?? aggregate.ShowInDiscoveryDocument,
             dto.UserClaims ?? aggregate.UserClaims)));
+
+        // App-link patch — null=no change, ""=make global, "guid"=assign.
+        if (dto.AppId is not null)
+        {
+            Guid? newAppId = null;
+            if (dto.AppId.Length > 0)
+            {
+                if (!Guid.TryParse(dto.AppId, out var parsedAppId))
+                    return Error.Validation("OAuthScope.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid.");
+                var app = await _session.LoadAsync<App>(parsedAppId, ct);
+                if (app is null || app.IsDeleted)
+                    return Error.Validation("OAuthScope.AppNotFound", $"App {dto.AppId} not found.");
+                newAppId = parsedAppId;
+            }
+            if (newAppId != aggregate.AppId)
+                _session.Events.Append(guid, aggregate.SetAppId(newAppId));
+        }
 
         await _session.SaveChangesAsync(ct);
 

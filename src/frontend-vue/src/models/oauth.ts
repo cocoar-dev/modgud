@@ -124,6 +124,13 @@ export interface OAuthScopeDto {
   Emphasize: boolean
   ShowInDiscoveryDocument: boolean
   UserClaims: string[]
+  /**
+   * Optional FK to an Application. `null` = global scope (cross-app, e.g.
+   * the standard OIDC scopes openid/email/profile/roles/offline_access).
+   * App-scoped scopes can only be requested by clients linked to the
+   * same App.
+   */
+  AppId?: string | null
 }
 
 export interface CreateOAuthScopeDto {
@@ -136,6 +143,8 @@ export interface CreateOAuthScopeDto {
   Emphasize?: boolean
   ShowInDiscoveryDocument?: boolean
   UserClaims?: string[]
+  /** App.Id (Guid string). Null/undefined = global scope. */
+  AppId?: string | null
 }
 
 export interface UpdateOAuthScopeDto {
@@ -147,6 +156,8 @@ export interface UpdateOAuthScopeDto {
   Emphasize?: boolean | null
   ShowInDiscoveryDocument?: boolean | null
   UserClaims?: string[] | null
+  /** PATCH semantics: undefined/missing = no change, "" = make global, "<guid>" = assign. */
+  AppId?: string | null
 }
 
 // ─── APIs / Resources ──────────────────────────────────────────────────────
