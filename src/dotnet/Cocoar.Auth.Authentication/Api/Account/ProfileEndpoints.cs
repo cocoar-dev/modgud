@@ -290,7 +290,13 @@ public static class ProfileEndpoints
 
     // ── helpers shared with Admin endpoints ──
 
-    private static string? NormalizeOptional(string? raw)
+    /// <summary>
+    /// Whitespace-only inputs collapse to null. Non-empty strings are trimmed.
+    /// Used at the request boundary to normalise raw form values before they
+    /// reach the merge — guards against "        " on an Optional&lt;string&gt;
+    /// field reaching the payload as a non-empty-but-blank value.
+    /// </summary>
+    internal static string? NormalizeOptional(string? raw)
         => string.IsNullOrWhiteSpace(raw) ? null : raw!.Trim();
 
     /// <summary>
@@ -300,7 +306,7 @@ public static class ProfileEndpoints
     /// Recursive for nested objects — a future payload like
     /// <c>Phone: { Country, Number }</c> only touches the sub-keys it was handed.
     /// </summary>
-    private static string MergeJson(string existingJson, object submission)
+    internal static string MergeJson(string existingJson, object submission)
     {
         var submittedBytes = JsonSerializer.SerializeToUtf8Bytes(submission, PayloadJsonOptions);
         var existing = (MutableJsonObject)MutableJsonDocument.Parse(Encoding.UTF8.GetBytes(existingJson));
@@ -332,7 +338,7 @@ public static class ProfileEndpoints
 
     /// <summary>Drops payload entries whose value matches the user's current profile —
     /// they would be no-op approvals and shouldn't clutter the pending request.</summary>
-    private static (string Json, bool HasAny) CleanupProfilePayload(string json, ApplicationUser user)
+    internal static (string Json, bool HasAny) CleanupProfilePayload(string json, ApplicationUser user)
     {
         var p = DeserializeProfile(json);
         if (p.Firstname.HasValue && StringEq(p.Firstname.Value, user.Firstname)) p.Firstname = Optional<string>.None;
@@ -344,7 +350,13 @@ public static class ProfileEndpoints
         return (JsonSerializer.Serialize(p, PayloadJsonOptions), hasAny);
     }
 
-    private static bool StringEq(string? a, string? b)
+    /// <summary>
+    /// Treats null and empty string as equivalent (case-sensitive otherwise).
+    /// Used to compare submitted profile fields against the user's current
+    /// values — Identity often hands back <c>""</c> for unset fields and the
+    /// SPA may send <c>null</c> on the same submission.
+    /// </summary>
+    internal static bool StringEq(string? a, string? b)
     {
         var na = string.IsNullOrEmpty(a) ? null : a;
         var nb = string.IsNullOrEmpty(b) ? null : b;
