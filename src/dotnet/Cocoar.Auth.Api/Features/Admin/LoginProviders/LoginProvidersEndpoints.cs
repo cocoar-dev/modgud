@@ -16,7 +16,7 @@ public static class LoginProvidersEndpoints
         group.MapGet("", async (LoginProviderService svc, CancellationToken ct) =>
             Results.Ok(await svc.GetAllAsync(ct)))
             .WithName("LoginProviders_List")
-            .RequiresPermission("login-provider:read");
+            .RequiresPermission("cocoar-auth:login-provider:read");
 
         group.MapGet("{id}", async (string id, LoginProviderService svc, CancellationToken ct) =>
         {
@@ -24,7 +24,7 @@ public static class LoginProvidersEndpoints
             return result.ToResult(provider => Results.Ok(provider));
         })
         .WithName("LoginProviders_Get")
-        .RequiresPermission("login-provider:read");
+        .RequiresPermission("cocoar-auth:login-provider:read");
 
         group.MapPost("", async (CreateLoginProviderDto dto, LoginProviderService svc, CancellationToken ct) =>
         {
@@ -32,7 +32,7 @@ public static class LoginProvidersEndpoints
             return result.ToResult(provider => Results.Created($"{path}/admin/login-providers/{provider.Id}", provider));
         })
         .WithName("LoginProviders_Create")
-        .RequiresPermission("login-provider:write");
+        .RequiresPermission("cocoar-auth:login-provider:write");
 
         group.MapPatch("{id}", async (string id, UpdateLoginProviderDto dto, LoginProviderService svc, CancellationToken ct) =>
         {
@@ -40,7 +40,7 @@ public static class LoginProvidersEndpoints
             return result.ToResult(provider => Results.Ok(provider));
         })
         .WithName("LoginProviders_Update")
-        .RequiresPermission("login-provider:write");
+        .RequiresPermission("cocoar-auth:login-provider:write");
 
         group.MapDelete("{id}", async (string id, LoginProviderService svc, CancellationToken ct) =>
         {
@@ -48,7 +48,7 @@ public static class LoginProvidersEndpoints
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
         .WithName("LoginProviders_Delete")
-        .RequiresPermission("login-provider:write");
+        .RequiresPermission("cocoar-auth:login-provider:write");
 
         return app;
     }

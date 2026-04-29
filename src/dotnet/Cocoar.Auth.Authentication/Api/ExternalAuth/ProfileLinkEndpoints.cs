@@ -72,7 +72,7 @@ public static class ProfileLinkEndpoints
             return Results.Ok(links.Select(l => ToDto(l, configByName)).ToArray());
         })
         .RequireAuthorization()
-        .RequiresPermission("user:read");
+        .RequiresPermission("cocoar-auth:user:read");
 
         // Disconnect a link. Soft-delete (IsUnlinked=true) so the same external
         // identity can be re-added to a different user later if needed.

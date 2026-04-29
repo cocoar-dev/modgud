@@ -183,16 +183,20 @@ public static class SetupEndpoints
     }
 
     /// <summary>
-    /// An admin exists iff some non-deleted group contains a role that effectively
-    /// grants app:admin and at least one member. Permissions are stored as bare
-    /// actions (e.g. "admin") paired with a ResourceType ("app"); PermissionService
-    /// prefixes them at resolution time. We mirror that here.
+    /// An admin exists iff some non-deleted group contains a role that
+    /// effectively grants realm:admin (or its legacy precursor) and at least
+    /// one member. Roles store the fully-qualified <c>realm:admin</c> verbatim
+    /// in <see cref="PermissionRole.Permissions"/>; we still match the legacy
+    /// shape (bare <c>"admin"</c> on a <c>ResourceType="app"</c> role,
+    /// or fully-qualified <c>"app:admin"</c>) so a setup-status check on a
+    /// freshly-restored legacy snapshot still reports correctly.
     /// </summary>
     private static async Task<bool> AdminExistsAsync(IDocumentSession session)
     {
         var adminRoles = await session.Query<PermissionRole>()
             .Where(r => !r.IsDeleted
-                     && ((r.ResourceType == "app" && r.Permissions.Contains("admin"))
+                     && (r.Permissions.Contains(PermissionEvaluator.RealmAdminPermission)
+                         || (r.ResourceType == "app" && r.Permissions.Contains("admin"))
                          || r.Permissions.Contains("app:admin")))
             .ToListAsync();
 

@@ -22,7 +22,7 @@ public static class UserUpdateScriptTestEndpoint
             .RequireAuthorization()
             // Read-only test/preview surface — gated on idp-config:read so an
             // operator can prototype a script without write access.
-            .RequiresPermission("idp-config:read");
+            .RequiresPermission("cocoar-auth:idp-config:read");
 
         // Test-run the script with arbitrary sample claims. Accepts either the
         // IdpConfig's stored script (by id) or a proposed script body (unsaved

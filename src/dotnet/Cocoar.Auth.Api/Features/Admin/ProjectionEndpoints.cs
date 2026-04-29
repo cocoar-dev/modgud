@@ -23,7 +23,7 @@ public static class ProjectionEndpoints
         var group = application.MapGroup($"{path}/admin/projections")
             .WithTags("Admin Projections")
             .RequireAuthorization()
-            .RequiresPermission("app:admin");
+            .RequiresPermission("realm:admin");
 
         group.MapPost("rebuild", async (
             IDocumentStore store,

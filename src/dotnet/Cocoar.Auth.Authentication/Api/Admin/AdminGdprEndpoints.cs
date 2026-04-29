@@ -38,7 +38,7 @@ public static class AdminGdprEndpoints
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
         .WithName("Admin_Gdpr_PermanentErase")
-        .RequiresPermission("gdpr:admin");
+        .RequiresPermission("cocoar-auth:gdpr:admin");
 
         return application;
     }

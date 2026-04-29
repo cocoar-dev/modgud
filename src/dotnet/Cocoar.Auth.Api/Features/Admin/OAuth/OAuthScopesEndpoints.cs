@@ -16,7 +16,7 @@ public static class OAuthScopesEndpoints
         group.MapGet("", async (OAuthAdminService svc, CancellationToken ct) =>
             Results.Ok(await svc.GetScopesAsync(ct)))
             .WithName("OAuth_Scopes_List")
-            .RequiresPermission("oauth-scope:read");
+            .RequiresPermission("cocoar-auth:oauth-scope:read");
 
         group.MapGet("{id}", async (string id, OAuthAdminService svc, CancellationToken ct) =>
         {
@@ -24,7 +24,7 @@ public static class OAuthScopesEndpoints
             return dto is null ? Results.NotFound() : Results.Ok(dto);
         })
         .WithName("OAuth_Scopes_Get")
-        .RequiresPermission("oauth-scope:read");
+        .RequiresPermission("cocoar-auth:oauth-scope:read");
 
         group.MapPost("", async (CreateOAuthScopeDto dto, OAuthAdminService svc, CancellationToken ct) =>
         {
@@ -32,7 +32,7 @@ public static class OAuthScopesEndpoints
             return result.ToResult(scope => Results.Created($"{path}/admin/oauth/scopes/{scope.Id}", scope));
         })
         .WithName("OAuth_Scopes_Create")
-        .RequiresPermission("oauth-scope:write");
+        .RequiresPermission("cocoar-auth:oauth-scope:write");
 
         group.MapPut("{id}", async (string id, UpdateOAuthScopeDto dto, OAuthAdminService svc, CancellationToken ct) =>
         {
@@ -40,7 +40,7 @@ public static class OAuthScopesEndpoints
             return result.ToResult(scope => Results.Ok(scope));
         })
         .WithName("OAuth_Scopes_Update")
-        .RequiresPermission("oauth-scope:write");
+        .RequiresPermission("cocoar-auth:oauth-scope:write");
 
         group.MapDelete("{id}", async (string id, OAuthAdminService svc, CancellationToken ct) =>
         {
@@ -48,7 +48,7 @@ public static class OAuthScopesEndpoints
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
         .WithName("OAuth_Scopes_Delete")
-        .RequiresPermission("oauth-scope:write");
+        .RequiresPermission("cocoar-auth:oauth-scope:write");
 
         return app;
     }

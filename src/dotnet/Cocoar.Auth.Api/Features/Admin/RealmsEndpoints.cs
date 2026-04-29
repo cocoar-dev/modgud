@@ -28,7 +28,7 @@ public static class RealmsEndpoints
             return Results.Ok(new RealmListDto { Items = items, TotalCount = items.Count });
         })
         .WithName("Realms_List")
-        .RequiresPermission("realm:read");
+        .RequiresPermission("cocoar-auth:realm:read");
 
         group.MapGet("{slug}", async (string slug, IRealmProvisioningService svc, CancellationToken ct) =>
         {
@@ -36,7 +36,7 @@ public static class RealmsEndpoints
             return realm is null ? Results.NotFound() : Results.Ok(MapToDto(realm));
         })
         .WithName("Realms_Get")
-        .RequiresPermission("realm:read");
+        .RequiresPermission("cocoar-auth:realm:read");
 
         group.MapPost("", async (CreateRealmDto dto, IRealmProvisioningService svc, CancellationToken ct) =>
         {
@@ -44,7 +44,7 @@ public static class RealmsEndpoints
             return result.ToResult(realm => Results.Created($"{path}/admin/realms/{realm.Slug}", MapToDto(realm)));
         })
         .WithName("Realms_Create")
-        .RequiresPermission("realm:write");
+        .RequiresPermission("cocoar-auth:realm:write");
 
         group.MapPatch("{slug}", async (string slug, UpdateRealmDto dto, IRealmProvisioningService svc, CancellationToken ct) =>
         {
@@ -52,7 +52,7 @@ public static class RealmsEndpoints
             return result.ToResult(realm => Results.Ok(MapToDto(realm)));
         })
         .WithName("Realms_Update")
-        .RequiresPermission("realm:write");
+        .RequiresPermission("cocoar-auth:realm:write");
 
         group.MapDelete("{slug}", async (string slug, IRealmProvisioningService svc, CancellationToken ct) =>
         {
@@ -60,7 +60,7 @@ public static class RealmsEndpoints
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
         .WithName("Realms_Delete")
-        .RequiresPermission("realm:write");
+        .RequiresPermission("cocoar-auth:realm:write");
 
         return application;
     }

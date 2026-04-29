@@ -8,7 +8,7 @@ namespace Cocoar.Auth.Authentication.Identity;
 /// <summary>
 /// Resolves the email recipients for admin-targeted notifications. The recipient set is
 /// the union of email addresses produced by <see cref="IPrincipalEmailResolver"/> over
-/// every <see cref="Group"/> whose roles effectively grant <c>app:admin</c>.
+/// every <see cref="Group"/> whose roles effectively grant <c>realm:admin</c>.
 /// A group with its own shared mailbox is addressed directly; a group without one is
 /// expanded to its members. The lookup matches <c>SetupEndpoints.AdminExistsAsync</c> so
 /// we stay consistent with the „an admin exists" definition the rest of the app uses.
@@ -22,10 +22,12 @@ public class AdminNotifier(IQuerySession session, IPrincipalEmailResolver resolv
 {
     public async Task<IReadOnlyList<string>> GetAdminRecipientsAsync(CancellationToken ct = default)
     {
-        // Roles that effectively grant "app:admin" — same matcher as SetupEndpoints.
+        // Roles that effectively grant realm:admin (or the legacy app:admin
+        // precursor) — same matcher as SetupEndpoints.AdminExistsAsync.
         var adminRoles = await session.Query<PermissionRole>()
             .Where(r => !r.IsDeleted
-                     && ((r.ResourceType == "app" && r.Permissions.Contains("admin"))
+                     && (r.Permissions.Contains(PermissionEvaluator.RealmAdminPermission)
+                         || (r.ResourceType == "app" && r.Permissions.Contains("admin"))
                          || r.Permissions.Contains("app:admin")))
             .ToListAsync(ct);
 
