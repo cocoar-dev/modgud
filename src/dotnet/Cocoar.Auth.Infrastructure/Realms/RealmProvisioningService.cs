@@ -26,7 +26,7 @@ public interface IRealmProvisioningService
     Task EnsureSystemRealmExistsAsync(CancellationToken ct = default);
 }
 
-public sealed partial class RealmProvisioningService : IRealmProvisioningService
+public sealed class RealmProvisioningService : IRealmProvisioningService
 {
     private readonly IGlobalStore _globalStore;
     private readonly IDocumentStore _tenantedStore;
@@ -34,16 +34,6 @@ public sealed partial class RealmProvisioningService : IRealmProvisioningService
     private readonly IRealmCache _realmCache;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<RealmProvisioningService> _logger;
-
-    private static readonly Regex SlugRegex = SlugRegexBuilder();
-
-    [GeneratedRegex(@"^[a-z][a-z0-9-]{1,61}[a-z0-9]$", RegexOptions.Compiled)]
-    private static partial Regex SlugRegexBuilder();
-
-    private static readonly HashSet<string> ReservedSlugs = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "system", "health", "swagger", "openapi", "_framework",
-    };
 
     public RealmProvisioningService(
         IGlobalStore globalStore,
@@ -79,13 +69,13 @@ public sealed partial class RealmProvisioningService : IRealmProvisioningService
 
     public async Task<ErrorOr<Realm>> CreateRealmAsync(CreateRealmDto dto, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(dto.Slug) || !SlugRegex.IsMatch(dto.Slug))
+        if (!RealmSlugRules.IsValidFormat(dto.Slug))
         {
             return Error.Validation("Realm.InvalidSlug",
                 "Slug must be 3-63 characters, start with a letter, end with a letter or digit, and contain only lowercase letters, digits, and hyphens.");
         }
 
-        if (ReservedSlugs.Contains(dto.Slug))
+        if (RealmSlugRules.IsReserved(dto.Slug))
         {
             return Error.Validation("Realm.ReservedSlug",
                 $"The slug '{dto.Slug}' is reserved and cannot be used.");
