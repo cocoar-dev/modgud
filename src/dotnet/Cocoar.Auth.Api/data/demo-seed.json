@@ -1,0 +1,165 @@
+{
+  "password": "Demo1234!",
+  "users": [
+    { "key": "demo.admin",         "userName": "demo.admin",         "firstname": "Demo",     "lastname": "Admin",       "acronym": "DA",  "email": "demo.admin@demo.local",         "isAdmin": true },
+    { "key": "demo.user-manager",  "userName": "demo.user-manager",  "firstname": "Doris",    "lastname": "Steiner",     "acronym": "DS",  "email": "doris.steiner@demo.local" },
+    { "key": "demo.oauth-admin",   "userName": "demo.oauth-admin",   "firstname": "Oliver",   "lastname": "Hofer",       "acronym": "OH",  "email": "oliver.hofer@demo.local" },
+    { "key": "demo.viewer",        "userName": "demo.viewer",        "firstname": "Vera",     "lastname": "Brunner",     "acronym": "VB",  "email": "vera.brunner@demo.local" },
+    { "key": "demo.user",          "userName": "demo.user",          "firstname": "Norbert",  "lastname": "Gruber",      "acronym": "NG",  "email": "norbert.gruber@demo.local" },
+
+    { "key": "anna.bauer",         "userName": "anna.bauer",         "firstname": "Anna",     "lastname": "Bauer",       "acronym": "AB",  "email": "anna.bauer@demo.local" },
+    { "key": "stefan.kurz",        "userName": "stefan.kurz",        "firstname": "Stefan",   "lastname": "Kurz",        "acronym": "SK",  "email": "stefan.kurz@partner-alpine.at" },
+    { "key": "julia.wagner",       "userName": "julia.wagner",       "firstname": "Julia",    "lastname": "Wagner",      "acronym": "JW",  "email": "julia.wagner@partner-alpine.at" },
+    { "key": "hans.berger",        "userName": "hans.berger",        "firstname": "Hans",     "lastname": "Berger",      "acronym": "HB",  "email": "hans.berger@contoso.example" },
+    { "key": "eva.richter",        "userName": "eva.richter",        "firstname": "Eva",      "lastname": "Richter",     "acronym": "ER",  "email": "eva.richter@contoso.example" }
+  ],
+
+  "roles": [
+    {
+      "key": "oauth-admin",
+      "name": "OAuth Admin",
+      "description": "Full management of OAuth clients, scopes, APIs and login providers.",
+      "resource": "app",
+      "permissions": [
+        "oauth-client:read",   "oauth-client:write",
+        "oauth-scope:read",    "oauth-scope:write",
+        "oauth-api:read",      "oauth-api:write",
+        "login-provider:read", "login-provider:write"
+      ]
+    },
+    {
+      "key": "group-admin",
+      "name": "Group Admin",
+      "description": "Manage authorization groups; read permission roles.",
+      "resource": "app",
+      "permissions": [
+        "authorization-group:read", "authorization-group:write",
+        "permission-role:read"
+      ]
+    },
+    {
+      "key": "help-desk",
+      "name": "Help Desk",
+      "description": "Read-only access to users, sessions and the auth log.",
+      "resource": "app",
+      "permissions": [
+        "user:read",
+        "session:read",
+        "auth-log:read"
+      ]
+    }
+  ],
+
+  "groups": [
+    {
+      "name": "Demo Administrators",
+      "description": "Demo administrators — joined into the existing System Admin group on top of this one.",
+      "members": ["demo.admin"],
+      "roles": ["@SystemAdmin"]
+    },
+    {
+      "name": "User Managers",
+      "description": "Manage day-to-day users, sessions and authorization grants.",
+      "members": ["demo.user-manager"],
+      "roles": ["@UserManager"]
+    },
+    {
+      "name": "OAuth Administrators",
+      "description": "Configure OAuth clients, scopes, APIs and login providers.",
+      "members": ["demo.oauth-admin"],
+      "roles": ["oauth-admin"]
+    },
+    {
+      "name": "Viewers",
+      "description": "Read-only access — perfect for auditors or new joiners.",
+      "members": ["demo.viewer"],
+      "roles": ["@Viewer"]
+    },
+    {
+      "name": "Internal Staff (auto)",
+      "description": "Auto-membership: every active person whose email ends with @demo.local.",
+      "members": [],
+      "roles": ["help-desk"],
+      "membershipMode": "Auto",
+      "membershipScript": "(p) => Type.Is(p, 'person') && p.IsActive && (p.Email != null) && p.Email.endsWith('@demo.local')"
+    },
+    {
+      "name": "External Partners (auto)",
+      "description": "Auto-membership: every active person whose email is NOT @demo.local.",
+      "members": [],
+      "roles": [],
+      "membershipMode": "Auto",
+      "membershipScript": "(p) => Type.Is(p, 'person') && p.IsActive && (p.Email != null) && !p.Email.endsWith('@demo.local')"
+    }
+  ],
+
+  "scopes": [
+    { "name": "demo.read",  "displayName": "Demo API — Read",  "description": "Read access to the Demo API." },
+    { "name": "demo.write", "displayName": "Demo API — Write", "description": "Read+write access to the Demo API." },
+    { "name": "demo.admin", "displayName": "Demo API — Admin", "description": "Administrative access to the Demo API." }
+  ],
+
+  "apis": [
+    {
+      "name": "demo-api",
+      "displayName": "Demo API",
+      "description": "Sample resource server consumed by the demo OAuth clients.",
+      "scopes": ["demo.read", "demo.write", "demo.admin"]
+    }
+  ],
+
+  "clients": [
+    {
+      "clientId": "demo-spa",
+      "displayName": "Demo SPA",
+      "clientType": "public",
+      "consentType": "implicit",
+      "redirectUris": ["http://localhost:3000/callback"],
+      "postLogoutRedirectUris": ["http://localhost:3000/"],
+      "allowedGrantTypes": ["authorization_code", "refresh_token"],
+      "scopes": ["openid", "email", "profile", "demo.read"],
+      "requireConsent": false,
+      "requireClientSecret": false
+    },
+    {
+      "clientId": "demo-backend",
+      "displayName": "Demo Backend Service",
+      "clientType": "confidential",
+      "clientSecret": "demo-backend-secret-please-rotate",
+      "consentType": "implicit",
+      "redirectUris": [],
+      "postLogoutRedirectUris": [],
+      "allowedGrantTypes": ["client_credentials"],
+      "scopes": ["demo.read", "demo.write"],
+      "requireConsent": false,
+      "requireClientSecret": true
+    },
+    {
+      "clientId": "demo-mobile",
+      "displayName": "Demo Mobile",
+      "clientType": "public",
+      "consentType": "explicit",
+      "redirectUris": ["cocoar-demo://callback", "http://localhost:3000/mobile-callback"],
+      "postLogoutRedirectUris": ["cocoar-demo://logged-out"],
+      "allowedGrantTypes": ["authorization_code", "refresh_token"],
+      "scopes": ["openid", "email", "profile", "demo.read", "demo.write"],
+      "requireConsent": true,
+      "requireClientSecret": false
+    }
+  ],
+
+  "loginProviders": [
+    {
+      "name": "DemoOidc",
+      "displayName": "Demo OIDC Provider",
+      "description": "Disabled-by-default template for an external OIDC provider — clone and configure with your IdP details.",
+      "type": "OpenIdConnect",
+      "configuration": {
+        "Authority":    "https://example.invalid/",
+        "ClientId":     "demo-oidc-client",
+        "ClientSecret": "change-me",
+        "Enabled":      "false"
+      }
+    }
+  ]
+}

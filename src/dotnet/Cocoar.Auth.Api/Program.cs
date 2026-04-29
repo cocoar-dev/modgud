@@ -324,12 +324,11 @@ try
     // + IAccessPolicyEngine + IAutoMembershipRecalculator are all registered by
     // AddCocoarAuthAuthorization inside AddInfrastructure. Only keep app-specific wiring here.
     builder.Services.AddScoped<IAdminNotifier, AdminNotifier>();
-    // IDemoSeedService is intentionally a no-op in the IdP-only baseline.
-    // ASP.NET Core's endpoint parameter inference treats nullable services as
-    // required, so we register a stub that satisfies the DI contract and
-    // returns a "not available" result if anyone tries to use it.
-    builder.Services.AddSingleton<IDemoSeedService, NoOpDemoSeedService>();
-    // Adopters that ship app-specific demo data register their own implementation.
+    // Demo seed importer — reads data/demo-seed.json on first-time setup when
+    // the operator opts in. The service is itself stateless; it scopes its
+    // own session per call so re-runs (e.g. setup-completed → admin re-runs
+    // with LoadDemoData=true) don't leak across invocations.
+    builder.Services.AddScoped<IDemoSeedService, DemoSeedService>();
 
     // External auth (Phase 1–2: flavor registry + dynamic OIDC scheme registration)
     builder.Services.AddSingleton<IIdentityProviderFlavor, EntraIdFlavor>();
