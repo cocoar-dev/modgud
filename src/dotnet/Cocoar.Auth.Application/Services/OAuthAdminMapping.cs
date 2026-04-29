@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using Cocoar.Auth.Application.DTOs.OAuth;
+using Cocoar.Auth.Domain.OAuth.Apis;
 using Cocoar.Auth.Domain.OAuth.Applications;
 using Cocoar.Auth.Domain.OAuth.Common;
 using Cocoar.Auth.Domain.OAuth.Scopes;
@@ -210,6 +211,65 @@ internal static class OAuthAdminMapping
         return true;
     }
 
+    // ───────────────────────────────────────────── PATCH merges ───────────────
+
+    /// <summary>
+    /// Merges an <see cref="UpdateOAuthClientDto"/> over an existing client's
+    /// <c>Settings</c> dictionary using partial-PATCH semantics:
+    /// <list type="bullet">
+    ///   <item>Field absent on the DTO (Optional&lt;T&gt; without value, or
+    ///     <c>null</c> for the <see cref="UpdateOAuthClientDto.ClientClaimsPrefix"/>
+    ///     reference type) → preserved from <paramref name="current"/>.</item>
+    ///   <item>Field present on the DTO → overwrites the corresponding setting
+    ///     key. Numeric and enum values stringify via the invariant
+    ///     <see cref="object.ToString"/>.</item>
+    /// </list>
+    /// Pure: returns a fresh dictionary; never mutates <paramref name="current"/>.
+    /// </summary>
+    internal static Dictionary<string, string> MergeClientSettings(
+        IReadOnlyDictionary<string, string> current, UpdateOAuthClientDto dto)
+    {
+        var settings = new Dictionary<string, string>(current);
+        if (dto.AccessTokenType.HasValue) settings[OAuthApplicationSettingKeys.AccessTokenType] = dto.AccessTokenType.Value.ToString();
+        if (dto.RefreshTokenUsage.HasValue) settings[OAuthApplicationSettingKeys.RefreshTokenUsage] = dto.RefreshTokenUsage.Value.ToString();
+        if (dto.IdentityTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.IdentityTokenLifetime] = dto.IdentityTokenLifetime.Value.ToString();
+        if (dto.AccessTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString();
+        if (dto.AuthorizationCodeLifetime.HasValue) settings[OAuthApplicationSettingKeys.AuthorizationCodeLifetime] = dto.AuthorizationCodeLifetime.Value.ToString();
+        if (dto.AbsoluteRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.AbsoluteRefreshTokenLifetime] = dto.AbsoluteRefreshTokenLifetime.Value.ToString();
+        if (dto.SlidingRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime] = dto.SlidingRefreshTokenLifetime.Value.ToString();
+        if (dto.ClientClaimsPrefix is not null) settings[OAuthApplicationSettingKeys.ClientClaimsPrefix] = dto.ClientClaimsPrefix;
+        return settings;
+    }
+
+    /// <summary>
+    /// Merges an <see cref="UpdateOAuthClientDto"/> over the client's
+    /// <c>Properties</c> dictionary. Each property field on the DTO is
+    /// nullable; <c>null</c> means "not in the patch — preserve current"
+    /// while a non-null value overwrites.
+    /// <para>
+    /// Defaults applied when a key is absent from <paramref name="current"/>
+    /// follow the legacy IdP semantics (<c>Enabled=true</c>,
+    /// <c>RequireClientSecret=true</c>, <c>EnableLocalLogin=true</c>,
+    /// <c>AllowRememberConsent=true</c>; the rest default to <c>false</c> /
+    /// empty list).
+    /// </para>
+    /// Pure: returns a fresh dictionary; never mutates <paramref name="current"/>.
+    /// </summary>
+    internal static Dictionary<string, object?> MergeClientProperties(
+        IDictionary<string, object?> current, UpdateOAuthClientDto dto)
+        => BuildClientProperties(
+            enabled: dto.Enabled ?? GetBoolProp(current, OAuthApplicationPropertyKeys.Enabled, true),
+            allowBrowser: dto.AllowAccessTokensViaBrowser ?? GetBoolProp(current, OAuthApplicationPropertyKeys.AllowAccessTokensViaBrowser, false),
+            requireSecret: dto.RequireClientSecret ?? GetBoolProp(current, OAuthApplicationPropertyKeys.RequireClientSecret, true),
+            enableLocal: dto.EnableLocalLogin ?? GetBoolProp(current, OAuthApplicationPropertyKeys.EnableLocalLogin, true),
+            requireConsent: dto.RequireConsent ?? GetBoolProp(current, OAuthApplicationPropertyKeys.RequireConsent, false),
+            allowRemember: dto.AllowRememberConsent ?? GetBoolProp(current, OAuthApplicationPropertyKeys.AllowRememberConsent, true),
+            corsOrigins: dto.AllowedCorsOrigins ?? GetStringListProp(current, OAuthApplicationPropertyKeys.AllowedCorsOrigins),
+            alwaysSend: dto.AlwaysSendClientClaims ?? GetBoolProp(current, OAuthApplicationPropertyKeys.AlwaysSendClientClaims, false),
+            updateClaims: dto.UpdateAccessTokenClaimsOnRefresh ?? GetBoolProp(current, OAuthApplicationPropertyKeys.UpdateAccessTokenClaimsOnRefresh, false),
+            claims: dto.Claims ?? GetClaimsProp(current),
+            roles: dto.Roles ?? GetStringListProp(current, OAuthApplicationPropertyKeys.Roles));
+
     // ───────────────────────────────────────────── State → DTO ────────────────
 
     internal static OAuthClientDto MapClient(OAuthApplicationState s)
@@ -279,6 +339,37 @@ internal static class OAuthAdminMapping
         UserClaims = s.UserClaims.ToList(),
     };
 
+    /// <summary>
+    /// Maps an <see cref="OAuthApiState"/> projection plus the secret entries
+    /// from the matching <see cref="OAuthApiSecurityData"/> document into the
+    /// API DTO. Secret hashes are intentionally never copied into the DTO —
+    /// only the metadata (id, type, description, dates) carries through, so
+    /// the response stays safe to serialise back to a UI / log.
+    /// </summary>
+    internal static OAuthApiDto MapApiState(OAuthApiState s, IEnumerable<ApiSecretEntry>? secrets)
+    {
+        var secretDtos = secrets?.Select(x => new ApiSecretEntryDto
+        {
+            SecretId = x.SecretId.ToString(),
+            Type = x.Type,
+            Description = x.Description,
+            Expiration = x.Expiration,
+            CreatedAt = x.CreatedAt,
+        }).ToList() ?? new List<ApiSecretEntryDto>();
+
+        return new OAuthApiDto
+        {
+            Id = s.Id.ToString(),
+            Name = s.Name,
+            DisplayName = s.DisplayName,
+            Description = s.Description,
+            Enabled = s.Enabled,
+            Scopes = s.Scopes.ToList(),
+            UserClaims = s.UserClaims.ToList(),
+            Secrets = secretDtos,
+        };
+    }
+
     // ───────────────────────────────────────────── Secrets ────────────────────
 
     internal static string GenerateSecret()
@@ -291,6 +382,31 @@ internal static class OAuthAdminMapping
 
     internal static string HashSecret(string secret) =>
         BCrypt.Net.BCrypt.HashPassword(secret, workFactor: 12);
+
+    /// <summary>
+    /// Pure constructor for an <see cref="ApiSecretEntry"/>. The non-pure work
+    /// (generating a fresh <paramref name="secretId"/>, capturing
+    /// <paramref name="createdAt"/>, hashing the plaintext into
+    /// <paramref name="hashedValue"/>) stays at the call site; this helper only
+    /// arranges the fields. Used by both initial-secret creation
+    /// (CreateApiAsync) and ad-hoc secret creation (CreateApiSecretAsync).
+    /// </summary>
+    internal static ApiSecretEntry BuildApiSecretEntry(
+        Guid secretId,
+        string type,
+        string hashedValue,
+        string? description,
+        DateTimeOffset? expiration,
+        DateTimeOffset createdAt)
+        => new()
+        {
+            SecretId = secretId,
+            Type = type,
+            HashedValue = hashedValue,
+            Description = description,
+            Expiration = expiration,
+            CreatedAt = createdAt,
+        };
 
     internal static bool VerifySecret(string secret, string hash)
     {

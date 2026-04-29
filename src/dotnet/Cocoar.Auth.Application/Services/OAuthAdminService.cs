@@ -171,36 +171,16 @@ public class OAuthAdminService
             _session.Events.Append(guid, aggregate.SetPermissions(permissions));
         }
 
-        // Settings — merge updates over current settings.
-        var newSettings = new Dictionary<string, string>(aggregate.Settings);
-        if (dto.AccessTokenType.HasValue) newSettings[OAuthApplicationSettingKeys.AccessTokenType] = dto.AccessTokenType.Value.ToString();
-        if (dto.RefreshTokenUsage.HasValue) newSettings[OAuthApplicationSettingKeys.RefreshTokenUsage] = dto.RefreshTokenUsage.Value.ToString();
-        if (dto.IdentityTokenLifetime.HasValue) newSettings[OAuthApplicationSettingKeys.IdentityTokenLifetime] = dto.IdentityTokenLifetime.Value.ToString();
-        if (dto.AccessTokenLifetime.HasValue) newSettings[OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString();
-        if (dto.AuthorizationCodeLifetime.HasValue) newSettings[OAuthApplicationSettingKeys.AuthorizationCodeLifetime] = dto.AuthorizationCodeLifetime.Value.ToString();
-        if (dto.AbsoluteRefreshTokenLifetime.HasValue) newSettings[OAuthApplicationSettingKeys.AbsoluteRefreshTokenLifetime] = dto.AbsoluteRefreshTokenLifetime.Value.ToString();
-        if (dto.SlidingRefreshTokenLifetime.HasValue) newSettings[OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime] = dto.SlidingRefreshTokenLifetime.Value.ToString();
-        if (dto.ClientClaimsPrefix is not null) newSettings[OAuthApplicationSettingKeys.ClientClaimsPrefix] = dto.ClientClaimsPrefix;
+        // Settings — partial-PATCH merge; only emit the event when the merge
+        // actually produced a different dictionary.
+        var newSettings = MergeClientSettings(aggregate.Settings, dto);
         if (!DictEquals(newSettings, aggregate.Settings))
             _session.Events.Append(guid, aggregate.SetSettings(newSettings));
 
-        // Properties — merge over current properties.
-        var current = aggregate.Properties;
-        var enabled = dto.Enabled ?? GetBoolProp(current, OAuthApplicationPropertyKeys.Enabled, true);
-        var allowBrowser = dto.AllowAccessTokensViaBrowser ?? GetBoolProp(current, OAuthApplicationPropertyKeys.AllowAccessTokensViaBrowser, false);
-        var requireSecret = dto.RequireClientSecret ?? GetBoolProp(current, OAuthApplicationPropertyKeys.RequireClientSecret, true);
-        var enableLocal = dto.EnableLocalLogin ?? GetBoolProp(current, OAuthApplicationPropertyKeys.EnableLocalLogin, true);
-        var requireConsent = dto.RequireConsent ?? GetBoolProp(current, OAuthApplicationPropertyKeys.RequireConsent, false);
-        var allowRemember = dto.AllowRememberConsent ?? GetBoolProp(current, OAuthApplicationPropertyKeys.AllowRememberConsent, true);
-        var corsOrigins = dto.AllowedCorsOrigins ?? GetStringListProp(current, OAuthApplicationPropertyKeys.AllowedCorsOrigins);
-        var alwaysSend = dto.AlwaysSendClientClaims ?? GetBoolProp(current, OAuthApplicationPropertyKeys.AlwaysSendClientClaims, false);
-        var updateClaims = dto.UpdateAccessTokenClaimsOnRefresh ?? GetBoolProp(current, OAuthApplicationPropertyKeys.UpdateAccessTokenClaimsOnRefresh, false);
-        var claims = dto.Claims ?? GetClaimsProp(current);
-        var roles = dto.Roles ?? GetStringListProp(current, OAuthApplicationPropertyKeys.Roles);
-
-        var newProps = BuildClientProperties(
-            enabled, allowBrowser, requireSecret, enableLocal, requireConsent, allowRemember,
-            corsOrigins, alwaysSend, updateClaims, claims, roles);
+        // Properties — partial-PATCH merge; always emit because every field is
+        // re-serialised through BuildClientProperties (the `current` snapshot
+        // may not match the canonical encoding of the same logical values).
+        var newProps = MergeClientProperties(aggregate.Properties, dto);
         _session.Events.Append(guid, aggregate.SetProperties(newProps));
 
         await _session.SaveChangesAsync(ct);
@@ -421,13 +401,13 @@ public class OAuthAdminService
         var apiSecret = GenerateSecret();
         var sec = OAuthApiSecurityData.Create(id);
         sec.ApiSecret = HashSecret(apiSecret);
-        sec.Secrets.Add(new ApiSecretEntry
-        {
-            Type = "SharedSecret",
-            HashedValue = sec.ApiSecret,
-            Description = "Initial secret",
-            CreatedAt = DateTimeOffset.UtcNow,
-        });
+        sec.Secrets.Add(BuildApiSecretEntry(
+            secretId: Guid.NewGuid(),
+            type: "SharedSecret",
+            hashedValue: sec.ApiSecret,
+            description: "Initial secret",
+            expiration: null,
+            createdAt: DateTimeOffset.UtcNow));
         _session.Store(sec);
 
         await _session.SaveChangesAsync(ct);
@@ -523,14 +503,13 @@ public class OAuthAdminService
 
         var newSecret = GenerateSecret();
         var hashed = HashSecret(newSecret);
-        var entry = new ApiSecretEntry
-        {
-            Type = dto.Type,
-            HashedValue = hashed,
-            Description = dto.Description,
-            Expiration = dto.Expiration,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
+        var entry = BuildApiSecretEntry(
+            secretId: Guid.NewGuid(),
+            type: dto.Type,
+            hashedValue: hashed,
+            description: dto.Description,
+            expiration: dto.Expiration,
+            createdAt: DateTimeOffset.UtcNow);
 
         sec.Secrets.Add(entry);
         // Sync legacy single-secret slot to the latest entry for back-compat.
@@ -601,25 +580,6 @@ public class OAuthAdminService
     private async Task<OAuthApiDto> MapApiAsync(OAuthApiState s, CancellationToken ct)
     {
         var sec = await _session.LoadAsync<OAuthApiSecurityData>(s.Id, ct);
-        var secrets = sec?.Secrets.Select(x => new ApiSecretEntryDto
-        {
-            SecretId = x.SecretId.ToString(),
-            Type = x.Type,
-            Description = x.Description,
-            Expiration = x.Expiration,
-            CreatedAt = x.CreatedAt,
-        }).ToList() ?? new List<ApiSecretEntryDto>();
-
-        return new OAuthApiDto
-        {
-            Id = s.Id.ToString(),
-            Name = s.Name,
-            DisplayName = s.DisplayName,
-            Description = s.Description,
-            Enabled = s.Enabled,
-            Scopes = s.Scopes.ToList(),
-            UserClaims = s.UserClaims.ToList(),
-            Secrets = secrets,
-        };
+        return MapApiState(s, sec?.Secrets);
     }
 }

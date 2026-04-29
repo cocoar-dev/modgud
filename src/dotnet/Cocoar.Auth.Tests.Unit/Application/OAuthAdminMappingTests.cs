@@ -760,4 +760,548 @@ public class OAuthAdminMappingTests
             Assert.False(OAuthAdminMapping.VerifySecret("anything", "not-a-bcrypt-hash"));
         }
     }
+
+    public class MergeClientSettings
+    {
+        // Partial-PATCH semantics: a setting absent from the DTO must be
+        // preserved from `current`; a setting present must overwrite. Critical
+        // because every UpdateClientAsync call routes through here — getting
+        // this wrong silently wipes lifetimes/token-types on every patch that
+        // doesn't re-include them.
+
+        [Fact]
+        public void Empty_dto_returns_a_copy_with_every_existing_setting_preserved()
+        {
+            var current = new Dictionary<string, string>
+            {
+                [OAuthApplicationSettingKeys.AccessTokenType] = "Reference",
+                [OAuthApplicationSettingKeys.AccessTokenLifetime] = "300",
+                [OAuthApplicationSettingKeys.ClientClaimsPrefix] = "client_",
+            };
+            var dto = new UpdateOAuthClientDto();
+
+            var merged = OAuthAdminMapping.MergeClientSettings(current, dto);
+
+            Assert.Equal(current.Count, merged.Count);
+            foreach (var kv in current)
+                Assert.Equal(kv.Value, merged[kv.Key]);
+        }
+
+        [Fact]
+        public void Returns_fresh_dictionary_so_caller_can_compare_with_DictEquals()
+        {
+            // Pin: never returns the same reference as `current`. The caller
+            // relies on this to compare new-vs-old and decide whether to emit
+            // a change event.
+            var current = new Dictionary<string, string>
+            {
+                [OAuthApplicationSettingKeys.AccessTokenType] = "Reference",
+            };
+            var merged = OAuthAdminMapping.MergeClientSettings(current, new UpdateOAuthClientDto());
+
+            Assert.NotSame(current, merged);
+        }
+
+        [Fact]
+        public void Does_not_mutate_the_current_dictionary()
+        {
+            var current = new Dictionary<string, string>
+            {
+                [OAuthApplicationSettingKeys.AccessTokenType] = "Reference",
+            };
+            var dto = new UpdateOAuthClientDto { AccessTokenType = AccessTokenType.Jwt };
+
+            _ = OAuthAdminMapping.MergeClientSettings(current, dto);
+
+            Assert.Equal("Reference", current[OAuthApplicationSettingKeys.AccessTokenType]);
+        }
+
+        [Fact]
+        public void DTO_AccessTokenType_overwrites_current()
+        {
+            var current = new Dictionary<string, string>
+            {
+                [OAuthApplicationSettingKeys.AccessTokenType] = "Reference",
+            };
+            var dto = new UpdateOAuthClientDto { AccessTokenType = AccessTokenType.Jwt };
+
+            var merged = OAuthAdminMapping.MergeClientSettings(current, dto);
+
+            Assert.Equal("Jwt", merged[OAuthApplicationSettingKeys.AccessTokenType]);
+        }
+
+        [Fact]
+        public void Numeric_lifetime_settings_stringify_through_default_ToString()
+        {
+            // Pinning: invariant decimal. If a future regression starts using a
+            // culture-aware ToString(), values written in de-DE could come out
+            // with thousand separators or non-ASCII digits and break the
+            // OpenIddict-runtime parser on the read side.
+            var dto = new UpdateOAuthClientDto
+            {
+                AccessTokenLifetime = 12345,
+                IdentityTokenLifetime = 600,
+            };
+
+            var merged = OAuthAdminMapping.MergeClientSettings(
+                new Dictionary<string, string>(), dto);
+
+            Assert.Equal("12345", merged[OAuthApplicationSettingKeys.AccessTokenLifetime]);
+            Assert.Equal("600", merged[OAuthApplicationSettingKeys.IdentityTokenLifetime]);
+        }
+
+        [Fact]
+        public void Setting_a_lifetime_only_writes_that_one_key()
+        {
+            var current = new Dictionary<string, string>
+            {
+                [OAuthApplicationSettingKeys.AccessTokenLifetime] = "300",
+                [OAuthApplicationSettingKeys.IdentityTokenLifetime] = "600",
+            };
+            var dto = new UpdateOAuthClientDto { AccessTokenLifetime = 900 };
+
+            var merged = OAuthAdminMapping.MergeClientSettings(current, dto);
+
+            Assert.Equal("900", merged[OAuthApplicationSettingKeys.AccessTokenLifetime]);
+            Assert.Equal("600", merged[OAuthApplicationSettingKeys.IdentityTokenLifetime]);
+        }
+
+        [Fact]
+        public void ClientClaimsPrefix_treats_null_as_omitted_and_string_as_overwrite()
+        {
+            // Note: the DTO uses `string?` for prefix, not Optional/HasValue.
+            // Currently there's no way to clear an existing prefix via PATCH;
+            // null means "absent". Pin this so an "intentional clear" feature
+            // request later goes through a deliberate behaviour change.
+            var current = new Dictionary<string, string>
+            {
+                [OAuthApplicationSettingKeys.ClientClaimsPrefix] = "old_",
+            };
+
+            var keepDto = new UpdateOAuthClientDto { ClientClaimsPrefix = null };
+            var keepMerged = OAuthAdminMapping.MergeClientSettings(current, keepDto);
+            Assert.Equal("old_", keepMerged[OAuthApplicationSettingKeys.ClientClaimsPrefix]);
+
+            var setDto = new UpdateOAuthClientDto { ClientClaimsPrefix = "new_" };
+            var setMerged = OAuthAdminMapping.MergeClientSettings(current, setDto);
+            Assert.Equal("new_", setMerged[OAuthApplicationSettingKeys.ClientClaimsPrefix]);
+        }
+
+        [Fact]
+        public void Result_round_trips_through_DictEquals_against_unchanged_input()
+        {
+            // No-op patch + DictEquals = false-positive risk if the helper
+            // ever introduces ordering or extra keys silently. Pin: an empty
+            // dto produces a dict that DictEquals reports as equal.
+            var current = new Dictionary<string, string>
+            {
+                [OAuthApplicationSettingKeys.AccessTokenType] = "Reference",
+                [OAuthApplicationSettingKeys.RefreshTokenUsage] = "OneTimeOnly",
+                [OAuthApplicationSettingKeys.AccessTokenLifetime] = "300",
+            };
+            var merged = OAuthAdminMapping.MergeClientSettings(current, new UpdateOAuthClientDto());
+
+            Assert.True(OAuthAdminMapping.DictEquals(current, merged));
+        }
+    }
+
+    public class MergeClientProperties
+    {
+        // The Properties bag is the most-edited part of a client and the place
+        // where partial-PATCH semantics matter most. Wrong merge → silent
+        // disable / silent re-enable / silent role removal. Tests pin: omitted
+        // = preserve, present = overwrite, defaults match the legacy IdP.
+
+        [Fact]
+        public void Empty_dto_against_empty_current_yields_legacy_default_values()
+        {
+            var merged = OAuthAdminMapping.MergeClientProperties(
+                new Dictionary<string, object?>(), new UpdateOAuthClientDto());
+
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.Enabled, false));
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.RequireClientSecret, false));
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.EnableLocalLogin, false));
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.AllowRememberConsent, false));
+
+            Assert.False(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.AllowAccessTokensViaBrowser, true));
+            Assert.False(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.RequireConsent, true));
+            Assert.False(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.AlwaysSendClientClaims, true));
+            Assert.False(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.UpdateAccessTokenClaimsOnRefresh, true));
+
+            Assert.Empty(OAuthAdminMapping.GetStringListProp(merged, OAuthApplicationPropertyKeys.AllowedCorsOrigins));
+            Assert.Empty(OAuthAdminMapping.GetStringListProp(merged, OAuthApplicationPropertyKeys.Roles));
+        }
+
+        [Fact]
+        public void Empty_dto_preserves_every_value_from_current_through_round_trip()
+        {
+            // Setup: a fully-populated current bag with NON-default values.
+            // After the empty-dto merge each must come back unchanged.
+            var current = OAuthAdminMapping.BuildClientProperties(
+                enabled: false,
+                allowBrowser: true,
+                requireSecret: false,
+                enableLocal: false,
+                requireConsent: true,
+                allowRemember: false,
+                corsOrigins: new[] { "https://app.example.com" },
+                alwaysSend: true,
+                updateClaims: true,
+                claims: Array.Empty<OAuthClientClaimDto>(),
+                roles: new[] { "admin", "user" });
+
+            var merged = OAuthAdminMapping.MergeClientProperties(current, new UpdateOAuthClientDto());
+
+            Assert.False(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.Enabled, true));
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.AllowAccessTokensViaBrowser, false));
+            Assert.False(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.RequireClientSecret, true));
+            Assert.False(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.EnableLocalLogin, true));
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.RequireConsent, false));
+            Assert.False(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.AllowRememberConsent, true));
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.AlwaysSendClientClaims, false));
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.UpdateAccessTokenClaimsOnRefresh, false));
+
+            Assert.Equal(new[] { "https://app.example.com" },
+                OAuthAdminMapping.GetStringListProp(merged, OAuthApplicationPropertyKeys.AllowedCorsOrigins));
+            Assert.Equal(new[] { "admin", "user" },
+                OAuthAdminMapping.GetStringListProp(merged, OAuthApplicationPropertyKeys.Roles));
+        }
+
+        [Fact]
+        public void Bool_dto_override_replaces_only_that_field_others_preserved()
+        {
+            var current = OAuthAdminMapping.BuildClientProperties(
+                enabled: true, allowBrowser: false, requireSecret: true, enableLocal: true,
+                requireConsent: false, allowRemember: true, corsOrigins: Array.Empty<string>(),
+                alwaysSend: false, updateClaims: false,
+                claims: Array.Empty<OAuthClientClaimDto>(), roles: Array.Empty<string>());
+
+            var dto = new UpdateOAuthClientDto { Enabled = false };
+
+            var merged = OAuthAdminMapping.MergeClientProperties(current, dto);
+
+            Assert.False(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.Enabled, true));
+            // Untouched fields keep their values:
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.RequireClientSecret, false));
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.EnableLocalLogin, false));
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.AllowRememberConsent, false));
+        }
+
+        [Fact]
+        public void Roles_list_overwrite_replaces_the_whole_list_does_not_concat()
+        {
+            // Pin the contract: lists are replace-not-merge. A user who wants
+            // to keep some roles must include them in the patch.
+            var current = OAuthAdminMapping.BuildClientProperties(
+                enabled: true, allowBrowser: false, requireSecret: true, enableLocal: true,
+                requireConsent: false, allowRemember: true, corsOrigins: Array.Empty<string>(),
+                alwaysSend: false, updateClaims: false,
+                claims: Array.Empty<OAuthClientClaimDto>(),
+                roles: new[] { "old-role" });
+
+            var dto = new UpdateOAuthClientDto { Roles = new() { "new-role" } };
+
+            var merged = OAuthAdminMapping.MergeClientProperties(current, dto);
+
+            Assert.Equal(new[] { "new-role" },
+                OAuthAdminMapping.GetStringListProp(merged, OAuthApplicationPropertyKeys.Roles));
+        }
+
+        [Fact]
+        public void Empty_list_in_dto_clears_existing_list()
+        {
+            // Distinguish "null = preserve" from "[] = clear". An admin
+            // explicitly sending [] is removing every value.
+            var current = OAuthAdminMapping.BuildClientProperties(
+                enabled: true, allowBrowser: false, requireSecret: true, enableLocal: true,
+                requireConsent: false, allowRemember: true,
+                corsOrigins: new[] { "https://old.example.com" },
+                alwaysSend: false, updateClaims: false,
+                claims: Array.Empty<OAuthClientClaimDto>(), roles: Array.Empty<string>());
+
+            var dto = new UpdateOAuthClientDto { AllowedCorsOrigins = new() };
+
+            var merged = OAuthAdminMapping.MergeClientProperties(current, dto);
+
+            Assert.Empty(OAuthAdminMapping.GetStringListProp(merged, OAuthApplicationPropertyKeys.AllowedCorsOrigins));
+        }
+
+        [Fact]
+        public void Claims_list_overwrite_replaces_the_whole_list()
+        {
+            var current = OAuthAdminMapping.BuildClientProperties(
+                enabled: true, allowBrowser: false, requireSecret: true, enableLocal: true,
+                requireConsent: false, allowRemember: true, corsOrigins: Array.Empty<string>(),
+                alwaysSend: false, updateClaims: false,
+                claims: new[] { new OAuthClientClaimDto { Type = "old", Value = "x" } },
+                roles: Array.Empty<string>());
+
+            var dto = new UpdateOAuthClientDto
+            {
+                Claims = new() { new OAuthClientClaimDto { Type = "new", Value = "y" } },
+            };
+
+            var merged = OAuthAdminMapping.MergeClientProperties(current, dto);
+
+            var claims = OAuthAdminMapping.GetClaimsProp(merged);
+            var c = Assert.Single(claims);
+            Assert.Equal("new", c.Type);
+            Assert.Equal("y", c.Value);
+        }
+
+        [Fact]
+        public void Returns_fresh_dictionary_so_caller_cannot_observe_aliasing()
+        {
+            var current = new Dictionary<string, object?>();
+            var merged = OAuthAdminMapping.MergeClientProperties(current, new UpdateOAuthClientDto());
+
+            Assert.NotSame(current, merged);
+        }
+
+        [Fact]
+        public void Does_not_mutate_the_current_dictionary()
+        {
+            var current = OAuthAdminMapping.BuildClientProperties(
+                enabled: true, allowBrowser: false, requireSecret: true, enableLocal: true,
+                requireConsent: false, allowRemember: true, corsOrigins: Array.Empty<string>(),
+                alwaysSend: false, updateClaims: false,
+                claims: Array.Empty<OAuthClientClaimDto>(), roles: Array.Empty<string>());
+            var snapshotKeys = current.Keys.ToHashSet();
+
+            _ = OAuthAdminMapping.MergeClientProperties(current,
+                new UpdateOAuthClientDto { Enabled = false, Roles = new() { "x" } });
+
+            Assert.True(OAuthAdminMapping.GetBoolProp(current, OAuthApplicationPropertyKeys.Enabled, false));
+            Assert.True(snapshotKeys.SetEquals(current.Keys));
+        }
+    }
+
+    public class BuildApiSecretEntry
+    {
+        [Fact]
+        public void Stores_provided_hash_verbatim_so_caller_owns_the_BCrypt_step()
+        {
+            // Pure constructor — never re-hashes. Caller hashed once before
+            // calling. A double-hash would silently break VerifySecret on the
+            // round-trip.
+            var hashed = "$2a$12$caller-already-hashed-this";
+            var entry = OAuthAdminMapping.BuildApiSecretEntry(
+                secretId: Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+                type: "SharedSecret",
+                hashedValue: hashed,
+                description: "ci-bot",
+                expiration: null,
+                createdAt: new DateTimeOffset(2026, 4, 29, 12, 0, 0, TimeSpan.Zero));
+
+            Assert.Equal(hashed, entry.HashedValue);
+        }
+
+        [Fact]
+        public void Maps_every_field_into_the_entry()
+        {
+            var id = Guid.Parse("11111111-2222-3333-4444-555555555555");
+            var created = new DateTimeOffset(2026, 4, 29, 12, 0, 0, TimeSpan.Zero);
+            var expires = new DateTimeOffset(2027, 4, 29, 12, 0, 0, TimeSpan.Zero);
+
+            var entry = OAuthAdminMapping.BuildApiSecretEntry(
+                secretId: id,
+                type: "X509",
+                hashedValue: "h",
+                description: "rotating cert",
+                expiration: expires,
+                createdAt: created);
+
+            Assert.Equal(id, entry.SecretId);
+            Assert.Equal("X509", entry.Type);
+            Assert.Equal("h", entry.HashedValue);
+            Assert.Equal("rotating cert", entry.Description);
+            Assert.Equal(expires, entry.Expiration);
+            Assert.Equal(created, entry.CreatedAt);
+        }
+
+        [Fact]
+        public void Null_expiration_passes_through_so_non_expiring_secrets_stay_non_expiring()
+        {
+            // The null vs. value distinction is the wire-format contract for
+            // "this secret never expires". A defensive default would silently
+            // break that.
+            var entry = OAuthAdminMapping.BuildApiSecretEntry(
+                secretId: Guid.NewGuid(),
+                type: "SharedSecret",
+                hashedValue: "h",
+                description: null,
+                expiration: null,
+                createdAt: DateTimeOffset.UnixEpoch);
+
+            Assert.Null(entry.Expiration);
+        }
+
+        [Fact]
+        public void Description_is_optional_and_passes_through_null()
+        {
+            var entry = OAuthAdminMapping.BuildApiSecretEntry(
+                secretId: Guid.NewGuid(),
+                type: "SharedSecret",
+                hashedValue: "h",
+                description: null,
+                expiration: null,
+                createdAt: DateTimeOffset.UnixEpoch);
+
+            Assert.Null(entry.Description);
+        }
+
+        [Fact]
+        public void Caller_supplies_secretId_so_two_calls_with_different_ids_dont_collide()
+        {
+            // The helper does not generate ids itself — that's the caller's
+            // (impure) responsibility. Pin: two calls with explicit different
+            // ids return entries with those exact ids.
+            var a = OAuthAdminMapping.BuildApiSecretEntry(
+                secretId: Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                type: "SharedSecret", hashedValue: "h",
+                description: null, expiration: null,
+                createdAt: DateTimeOffset.UnixEpoch);
+            var b = OAuthAdminMapping.BuildApiSecretEntry(
+                secretId: Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                type: "SharedSecret", hashedValue: "h",
+                description: null, expiration: null,
+                createdAt: DateTimeOffset.UnixEpoch);
+
+            Assert.NotEqual(a.SecretId, b.SecretId);
+        }
+    }
+
+    public class MapApiState
+    {
+        private static Cocoar.Auth.Domain.OAuth.Apis.OAuthApiState SampleState() => new()
+        {
+            Id = Guid.Parse("11111111-2222-3333-4444-555555555555"),
+            Name = "billing-api",
+            DisplayName = "Billing API",
+            Description = "Charges and invoices",
+            Enabled = true,
+            Scopes = new() { "billing:read", "billing:write" },
+            UserClaims = new() { "sub", "email" },
+        };
+
+        [Fact]
+        public void Maps_every_state_field_into_dto_with_id_stringified()
+        {
+            var dto = OAuthAdminMapping.MapApiState(SampleState(), secrets: null);
+
+            Assert.Equal("11111111-2222-3333-4444-555555555555", dto.Id);
+            Assert.Equal("billing-api", dto.Name);
+            Assert.Equal("Billing API", dto.DisplayName);
+            Assert.Equal("Charges and invoices", dto.Description);
+            Assert.True(dto.Enabled);
+            Assert.Equal(new[] { "billing:read", "billing:write" }, dto.Scopes);
+            Assert.Equal(new[] { "sub", "email" }, dto.UserClaims);
+        }
+
+        [Fact]
+        public void Returns_empty_secret_list_when_secrets_argument_is_null()
+        {
+            // The session-bound caller passes null when the security-data document
+            // doesn't exist yet (newly created API before SaveChanges, or hard-deleted
+            // secrets). Pin: dto.Secrets must be a non-null empty list.
+            var dto = OAuthAdminMapping.MapApiState(SampleState(), secrets: null);
+
+            Assert.NotNull(dto.Secrets);
+            Assert.Empty(dto.Secrets);
+        }
+
+        [Fact]
+        public void Maps_secret_metadata_but_never_copies_the_hash_into_the_dto()
+        {
+            // Critical contract: ApiSecretEntry.HashedValue is BCrypt cyphertext, not
+            // a secret in the OWASP sense, but it leaving the service boundary is
+            // never necessary and would be a regression. Verifies the hash is
+            // simply not part of the DTO surface.
+            var entry = new Cocoar.Auth.Domain.OAuth.Apis.ApiSecretEntry
+            {
+                SecretId = Guid.Parse("aaaaaaaa-1111-2222-3333-444444444444"),
+                Type = "SharedSecret",
+                HashedValue = "$2a$12$abcdefghijklmnopqrstuv.SECRET-HASH-MUST-NOT-LEAK",
+                Description = "ci",
+                Expiration = new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                CreatedAt = new DateTimeOffset(2026, 4, 29, 12, 0, 0, TimeSpan.Zero),
+            };
+
+            var dto = OAuthAdminMapping.MapApiState(SampleState(), new[] { entry });
+
+            var secret = Assert.Single(dto.Secrets);
+            Assert.Equal("aaaaaaaa-1111-2222-3333-444444444444", secret.SecretId);
+            Assert.Equal("SharedSecret", secret.Type);
+            Assert.Equal("ci", secret.Description);
+            Assert.Equal(entry.Expiration, secret.Expiration);
+            Assert.Equal(entry.CreatedAt, secret.CreatedAt);
+
+            // Property-shape assertion: ApiSecretEntryDto must not expose a
+            // HashedValue / Hash / Secret-style field.
+            var props = secret.GetType().GetProperties().Select(p => p.Name).ToArray();
+            Assert.DoesNotContain("HashedValue", props);
+            Assert.DoesNotContain("Hash", props);
+        }
+
+        [Fact]
+        public void Maps_multiple_secrets_preserving_order()
+        {
+            var first = new Cocoar.Auth.Domain.OAuth.Apis.ApiSecretEntry
+            {
+                SecretId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                Type = "SharedSecret",
+                HashedValue = "h1",
+                CreatedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            };
+            var second = new Cocoar.Auth.Domain.OAuth.Apis.ApiSecretEntry
+            {
+                SecretId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                Type = "X509",
+                HashedValue = "h2",
+                CreatedAt = new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero),
+            };
+
+            var dto = OAuthAdminMapping.MapApiState(SampleState(), new[] { first, second });
+
+            Assert.Equal(2, dto.Secrets.Count);
+            Assert.Equal("11111111-1111-1111-1111-111111111111", dto.Secrets[0].SecretId);
+            Assert.Equal("22222222-2222-2222-2222-222222222222", dto.Secrets[1].SecretId);
+        }
+
+        [Fact]
+        public void Empty_secrets_collection_yields_empty_dto_list_not_null()
+        {
+            var dto = OAuthAdminMapping.MapApiState(SampleState(), Array.Empty<Cocoar.Auth.Domain.OAuth.Apis.ApiSecretEntry>());
+
+            Assert.NotNull(dto.Secrets);
+            Assert.Empty(dto.Secrets);
+        }
+
+        [Fact]
+        public void Disabled_state_passes_through_to_dto()
+        {
+            var state = SampleState();
+            state.Enabled = false;
+
+            var dto = OAuthAdminMapping.MapApiState(state, secrets: null);
+
+            Assert.False(dto.Enabled);
+        }
+
+        [Fact]
+        public void Defensive_copies_state_collections_so_caller_mutations_dont_bleed()
+        {
+            // The DTO is the response — the upstream state document continues
+            // to live in the projection cache. A later mutation of the state's
+            // Scopes list must not retroactively change a previously-handed-out DTO.
+            var state = SampleState();
+            var dto = OAuthAdminMapping.MapApiState(state, secrets: null);
+
+            state.Scopes.Add("newly-added-scope");
+            state.UserClaims.Add("newly-added-claim");
+
+            Assert.DoesNotContain("newly-added-scope", dto.Scopes);
+            Assert.DoesNotContain("newly-added-claim", dto.UserClaims);
+        }
+    }
 }
