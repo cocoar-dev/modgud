@@ -177,11 +177,14 @@ public class OAuthApplicationStateProjectionTests
         [Theory]
         [InlineData("Reference", AccessTokenType.Reference)]
         [InlineData("Jwt", AccessTokenType.Jwt)]
-        public void Parses_exactly_cased_AccessTokenType_value(string raw, AccessTokenType expected)
+        [InlineData("reference", AccessTokenType.Reference)]
+        [InlineData("jwt", AccessTokenType.Jwt)]
+        [InlineData("JWT", AccessTokenType.Jwt)]
+        [InlineData("REFERENCE", AccessTokenType.Reference)]
+        public void Parses_AccessTokenType_value_case_insensitively(string raw, AccessTokenType expected)
         {
-            // The projection uses Enum.TryParse without ignoreCase=true, so only
-            // the canonical PascalCase enum names parse. See companion test below
-            // for the silent fallback when a lowercased value is written.
+            // The projection uses Enum.TryParse with ignoreCase: true so admin
+            // input is forgiving — "jwt", "Jwt", "JWT" all resolve to Jwt.
             var p = new OAuthApplicationStateProjection();
             var s = NewState();
 
@@ -191,25 +194,17 @@ public class OAuthApplicationStateProjectionTests
             Assert.Equal(expected, s.AccessTokenType);
         }
 
-        [Theory]
-        [InlineData("jwt")]
-        [InlineData("JWT")]
-        [InlineData("reference")]
-        public void FINDING_AccessTokenType_parse_is_case_sensitive_and_silently_ignores_mismatched_casing(string raw)
+        [Fact]
+        public void Unparseable_AccessTokenType_value_keeps_previous_state()
         {
-            // FINDING: Enum.TryParse<AccessTokenType>(v, out var parsed) is the
-            // case-sensitive overload. A consumer writing "jwt" instead of "Jwt"
-            // sees no parse success → AccessTokenType keeps its previous value,
-            // which (for a freshly-created application) means Reference. This is
-            // a silent footgun for the Admin API — pinning current behaviour;
-            // the fix would be Enum.TryParse(v, ignoreCase: true, ...).
+            // Garbage in settings → no change. Better than throwing in a
+            // projection callback (Marten would mark the projection unhealthy).
             var p = new OAuthApplicationStateProjection();
             var s = NewState();
-            // Pre-set to Jwt so we can prove "no change" regardless of intent.
             s.AccessTokenType = AccessTokenType.Jwt;
 
             p.Apply(new OAuthApplicationSettingsChanged(s.Id,
-                new Dictionary<string, string> { [OAuthApplicationSettingKeys.AccessTokenType] = raw }), s);
+                new Dictionary<string, string> { [OAuthApplicationSettingKeys.AccessTokenType] = "not-a-token-type" }), s);
 
             Assert.Equal(AccessTokenType.Jwt, s.AccessTokenType);
         }

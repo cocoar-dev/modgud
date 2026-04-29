@@ -32,8 +32,11 @@ public class OAuthApplicationStateProjection : SingleStreamProjection<OAuthAppli
     {
         s.Settings = new Dictionary<string, string>(e.Settings);
 
+        // Case-insensitive: admin UI / config files send "jwt" or "Jwt"; both
+        // must resolve to AccessTokenType.Jwt instead of silently keeping the
+        // previous value.
         if (s.Settings.TryGetValue(OAuthApplicationSettingKeys.AccessTokenType, out var v) &&
-            Enum.TryParse<AccessTokenType>(v, out var parsed))
+            Enum.TryParse<AccessTokenType>(v, ignoreCase: true, out var parsed))
         {
             s.AccessTokenType = parsed;
         }
