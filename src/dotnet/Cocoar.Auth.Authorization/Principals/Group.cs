@@ -55,10 +55,26 @@ public class Group : Principal, IPrincipalWithMembers, IPrincipalEmailAddressabl
     public string? Email { get; set; }
     public EmailMode EmailMode { get; set; } = EmailMode.Shared;
 
-    public async Task<IReadOnlyList<string>> GetEmailsAsync(
+    public Task<IReadOnlyList<string>> GetEmailsAsync(
         IEmailResolutionContext context,
+        CancellationToken ct = default) =>
+        GetEmailsAsync(context, new HashSet<Guid> { Id }, ct);
+
+    /// <summary>
+    /// Internal overload that threads a shared <paramref name="visited"/> set across
+    /// nested group expansions. Without this, a top-level call seeds a fresh visited
+    /// set on every nested <see cref="GetEmailsAsync"/> invocation and a cycle
+    /// A → B → A walks back and forth until the stack overflows.
+    /// </summary>
+    internal async Task<IReadOnlyList<string>> GetEmailsAsync(
+        IEmailResolutionContext context,
+        HashSet<Guid> visited,
         CancellationToken ct = default)
     {
+        // Make sure our own Id is in the visited set even when an outer caller
+        // forgot to seed it — defensive against cycles that re-enter via this group.
+        visited.Add(Id);
+
         // Shared with an address wins directly. Shared with an empty address falls
         // back to ExpandToMembers so an admin who forgot to configure a shared mailbox
         // still gets notifications routed somewhere instead of silently dropped.
@@ -66,9 +82,8 @@ public class Group : Principal, IPrincipalWithMembers, IPrincipalEmailAddressabl
             return [Email!];
 
         // ExpandToMembers (or Shared-without-Email fallback): recurse through members,
-        // collect each addressable email. Cycles in the group graph short-circuit via `visited`.
+        // collect each addressable email. Cycles short-circuit via the shared `visited`.
         var collected = new List<string>();
-        var visited = new HashSet<Guid> { Id };
         await ExpandAsync(MemberIds, context, visited, collected, ct);
         return collected;
     }
@@ -89,7 +104,8 @@ public class Group : Principal, IPrincipalWithMembers, IPrincipalEmailAddressabl
 
             if (member is Group nested)
             {
-                var nestedEmails = await nested.GetEmailsAsync(context, ct);
+                // Pass the shared visited set so cross-group cycles short-circuit.
+                var nestedEmails = await nested.GetEmailsAsync(context, visited, ct);
                 collected.AddRange(nestedEmails);
             }
             else if (member is IPrincipalEmailAddressable addressable)
