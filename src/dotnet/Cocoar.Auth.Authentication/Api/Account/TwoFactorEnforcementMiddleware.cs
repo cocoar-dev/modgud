@@ -159,7 +159,7 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
         });
     }
 
-    private static bool IsWhitelisted(string path)
+    internal static bool IsWhitelisted(string path)
     {
         foreach (var prefix in AllowedPathPrefixes)
         {
@@ -169,9 +169,9 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
         return false;
     }
 
-    private static readonly string[] FederatedMfaAmrValues = ["mfa", "otp", "fido", "hwk", "swk", "mca", "pop"];
+    internal static readonly string[] FederatedMfaAmrValues = ["mfa", "otp", "fido", "hwk", "swk", "mca", "pop"];
 
-    private static bool HasFederatedMfa(System.Security.Claims.ClaimsPrincipal? principal)
+    internal static bool HasFederatedMfa(System.Security.Claims.ClaimsPrincipal? principal)
     {
         if (principal is null) return false;
         foreach (var claim in principal.FindAll("timetodo.external.amr"))
