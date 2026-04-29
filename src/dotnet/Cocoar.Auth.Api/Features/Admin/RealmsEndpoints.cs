@@ -65,7 +65,7 @@ public static class RealmsEndpoints
         return application;
     }
 
-    private static RealmDto MapToDto(Realm realm) => new()
+    internal static RealmDto MapToDto(Realm realm) => new()
     {
         Id = realm.Id,
         Slug = realm.Slug,

@@ -336,6 +336,29 @@ public static class AuthorizationEndpoints
     }
 
     private static string GetDisplayName(ApplicationUser user)
+        => AuthorizationEndpointHelpers.GetDisplayName(user);
+
+    private static IEnumerable<string> GetDestinations(Claim claim)
+        => AuthorizationEndpointHelpers.GetDestinations(claim);
+}
+
+/// <summary>
+/// Pure helpers extracted from <see cref="AuthorizationEndpoints"/> so the
+/// id-token claim destinations (which scopes leak which claim into the
+/// id_token) and the userinfo display-name fallback can be unit-tested
+/// without a host. Both are subtle correctness contracts toward OpenIddict
+/// — drift here changes what gets baked into tokens.
+/// <para>Internal — only the endpoint and its tests should depend on it.</para>
+/// </summary>
+internal static class AuthorizationEndpointHelpers
+{
+    /// <summary>
+    /// Returns "Firstname Lastname" if either is present (trimmed for the
+    /// firstname-only / lastname-only edge cases), else the username.
+    /// Used both in the userinfo response and as the <c>name</c> claim source
+    /// when the <c>profile</c> scope is granted.
+    /// </summary>
+    public static string GetDisplayName(ApplicationUser user)
     {
         if (!string.IsNullOrEmpty(user.Firstname) || !string.IsNullOrEmpty(user.Lastname))
         {
@@ -344,7 +367,14 @@ public static class AuthorizationEndpoints
         return user.UserName;
     }
 
-    private static IEnumerable<string> GetDestinations(Claim claim)
+    /// <summary>
+    /// Maps each claim type to the token(s) it may be embedded in. The
+    /// per-scope guard ensures we never put profile data in the id_token
+    /// unless the relying party actually asked for the matching scope.
+    /// <c>SecurityStamp</c> is intentionally yielded into NEITHER token — it's
+    /// internal to ASP.NET Identity and would be a leak.
+    /// </summary>
+    public static IEnumerable<string> GetDestinations(Claim claim)
     {
         switch (claim.Type)
         {

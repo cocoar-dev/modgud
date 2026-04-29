@@ -123,6 +123,28 @@ public static class ConsentEndpoints
     }
 
     private static (string? clientId, List<string> scopes) ParseAuthorizationUrl(string url)
+        => ConsentUrlHelper.ParseAuthorizationUrl(url);
+
+    private static string AppendErrorToUrl(string url, string error, string description)
+        => ConsentUrlHelper.AppendErrorToUrl(url, error, description);
+}
+
+/// <summary>
+/// Pure URL helpers extracted from <see cref="ConsentEndpoints"/> so the parsing
+/// behaviour (relative vs. absolute, missing query params, malformed URLs) and
+/// the denied-redirect formatting can be unit-tested without a host.
+/// <para>Internal — only the endpoint and its tests should depend on it.</para>
+/// </summary>
+internal static class ConsentUrlHelper
+{
+    /// <summary>
+    /// Extracts <c>client_id</c> and the space-separated <c>scope</c> values from
+    /// the OpenIddict authorize-request URL the SPA passes through as
+    /// <c>returnUrl</c>. Accepts both relative paths (prepended with a fake host)
+    /// and absolute URLs. Any parse failure yields <c>(null, [])</c> — the caller
+    /// then short-circuits with a 400 instead of throwing.
+    /// </summary>
+    public static (string? clientId, List<string> scopes) ParseAuthorizationUrl(string url)
     {
         try
         {
@@ -151,7 +173,13 @@ public static class ConsentEndpoints
         }
     }
 
-    private static string AppendErrorToUrl(string url, string error, string description)
+    /// <summary>
+    /// Builds the consent-denied redirect target. The path is intentionally
+    /// hard-coded (<c>/consent/denied</c>) so the SPA route stays stable even
+    /// when a hostile <paramref name="url"/> is provided — only the OAuth error
+    /// payload is forwarded.
+    /// </summary>
+    public static string AppendErrorToUrl(string url, string error, string description)
         => $"/consent/denied?error={Uri.EscapeDataString(error)}&error_description={Uri.EscapeDataString(description)}";
 }
 

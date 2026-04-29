@@ -136,7 +136,7 @@ public static class ProjectionEndpoints
                 .ToList();
 
             // D. Nested-group cycles
-            var cycles = DetectCycles(groups);
+            var cycles = GroupCycleDetector.DetectCycles(groups);
 
             var ok = missingPersonPrincipals.Count == 0
                   && orphanPersonPrincipals.Count == 0
@@ -178,14 +178,34 @@ public static class ProjectionEndpoints
         return application;
     }
 
-    private record GroupRef(Guid Id, string Name);
-    private record CycleReport(List<GroupRef> Groups);
+}
 
+/// <summary>
+/// Identifier + display-name pair surfaced in the cycle-detection report so the
+/// admin UI can render "<c>Eng</c> → <c>Leads</c> → <c>Eng</c>" without a follow-up lookup.
+/// </summary>
+internal record GroupRef(Guid Id, string Name);
+
+/// <summary>
+/// One detected cycle in the nested-group graph, deduplicated across rotations
+/// (A→B→A and B→A→B report once).
+/// </summary>
+internal record CycleReport(List<GroupRef> Groups);
+
+/// <summary>
+/// Pure cycle detection over the group-membership graph. Extracted from
+/// <see cref="ProjectionEndpoints"/> so the DFS + dedup behaviour can be unit
+/// tested without spinning up Marten — historical data or out-of-band DB edits
+/// are the reason this defensive check exists at all.
+/// <para>Internal — only the consistency-check endpoint and its tests should use it.</para>
+/// </summary>
+internal static class GroupCycleDetector
+{
     /// <summary>
     /// Detects cycles in the group-member graph (A → B → A). For each cycle found,
     /// reports the involved group ids. Deduplicated — A→B→A vs B→A→B both report once.
     /// </summary>
-    private static List<CycleReport> DetectCycles(List<Group> groups)
+    public static List<CycleReport> DetectCycles(List<Group> groups)
     {
         var byId = groups.ToDictionary(g => g.Id);
         var groupIdSet = byId.Keys.ToHashSet();
