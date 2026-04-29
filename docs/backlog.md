@@ -13,21 +13,20 @@ once they're addressed.
 ## Triage at a glance
 
 **Real production bugs (fix sooner rather than later):**
-- `HttpRequestExtensions.FindSourceIp` crashes on standard
-  `X-Forwarded-For` comma-list (nginx/Cloudflare default)
-- `OAuthApplicationStateProjection` parses `AccessTokenType`
-  case-sensitively → silent fallback
-- `Group.MemberIds` mutability through interface (data leak risk)
-- `UserView.GetDisplayLabel` returns whitespace verbatim
+- _(none open right now — the four from the test sweep got fixed in
+  commits `a2a4a61`, `dab1883`, `f676947`, `bc5968f`. See "Closed / done".)_
 
 **Polish / consistency (next quiet hour):**
-- `UserSecurityData.RotateSecurityStamp()` rotates both stamps
-  despite name
-- `TwoFactorEnforcementMiddleware.HasFederatedMfa` doc comment is
-  incomplete
-- `ApplicationTypes` is not a constant
-- `UserContext.HasPermission` exact-match vs `PermissionEvaluator`
-  bypass — pick one, align
+- _(none open right now — four polish items closed in commits
+  `9253771`, `1b294e8`, `8c87272`. See "Closed / done".)_
+
+**Pinned-by-design (current behaviour is on purpose; tests guard it):**
+- `DeviceInfoService` Mac-Safari-as-Mobile — fix lives with the
+  UAParser→Wangkanai.Detection swap below
+- `TenantContextMiddleware` silently coerces non-string TenantId values
+- `ResourceRegistry` lookup is case-sensitive
+- `GenericOidcFlavor.DeriveEndpoints` does not normalise trailing slashes
+- Aggregates have no post-delete write guards
 
 **Larger deferred work:**
 - Replace `UAParser` with `Wangkanai.Detection` (also fixes
@@ -44,6 +43,8 @@ once they're addressed.
 - Cookie naming migration (no production data so non-event today)
 - `IdentityMigrationService` removed during the strip — re-add if
   needed
+- Sweep bare `"web"` / `"native"` literals to use new
+  `OAuthApplicationTypes` constants
 
 The full description for each entry is below.
 
@@ -102,117 +103,6 @@ end-match. URLs with trailing slashes or doubled separators don't match and
 authority falls back to the raw metadata URL. Functionally fine because the
 OIDC handler discovers from `MetadataUri` directly, but a normalisation
 later has to be deliberate.
-
-### `UserContext.HasPermission` is exact-match only — no resource-admin wildcard
-
-**File:** `Cocoar.Auth.Authorization/Access/UserContext.cs`
-**Pinning test:** `Cocoar.Auth.Tests.Unit/Authorization/Access/UserContextTests.cs`
-
-`PermissionService.HasPermissionAsync` (via `PermissionEvaluator.Evaluate`)
-treats `<resource>:admin` as a per-resource bypass. `UserContext.HasPermission`
-does not — it's strictly exact-match plus the global `app:admin`. This means
-JsEval access scripts that call `user.hasPermission("oauth-client:read")` see
-a different answer than a backend `RequiresPermission("oauth-client:read")`
-filter for the same principal.
-
-**Fix when we get there:** decide explicitly. Either route `UserContext.HasPermission`
-through `PermissionEvaluator.Evaluate` (consistent semantic, scripts can use
-admin grants), or document the cut as deliberate (scripts must enumerate every
-exact permission they check). Pick one and align.
-
-### `Group.MemberIds` is exposed read-only via interface but mutable underneath
-
-**File:** `Cocoar.Auth.Authorization/Principals/Group.cs`
-**Pinning test:** `Cocoar.Auth.Tests.Unit/Authorization/Principals/GroupTests.cs`
-
-`IPrincipalWithMembers.MemberIds` returns `IReadOnlyList<Guid>`, but the
-backing field on `Group` is a `List<Guid>` and the interface accessor returns
-the same instance. External callers can cast or mutate the underlying list
-and the change is immediately visible everywhere.
-
-**Fix when we get there:** either return `MemberIds.AsReadOnly()` or copy on
-get, or change the field to `ImmutableList<Guid>` and rebuild on each setter.
-Pin the chosen invariant with a test.
-
-### `ApplicationTypes` ("web" / "native") is not a constant
-
-**Files:** `Cocoar.Auth.Domain/OAuth/Common/OAuthConstants.cs` (missing),
-literal usage scattered across `OAuthApplicationAggregateTests.cs:21,36`
-and elsewhere.
-
-The OAuth wire format has `ApplicationType` values `"web"` and `"native"`
-which appear as bare string literals across the codebase. Other type-sets
-(`OAuthClientTypes`, `OAuthConsentTypes`) are properly centralised; this one
-isn't.
-
-**Fix when we get there:** add `OAuthApplicationTypes` (or `ApplicationTypes`)
-in `OAuthConstants.cs` with `Web` / `Native` constants, replace the bare
-literals, add a constant-pinning test alongside the others.
-
-### `HttpRequestExtensions.FindSourceIp` crashes on standard X-Forwarded-For format
-
-**File:** `Cocoar.Auth.Authentication/ExtensionMethods/HttpRequestExtensions.cs`
-**Pinning test:** `Cocoar.Auth.Tests.Unit/Authentication/ExtensionMethods/HttpRequestExtensionsTests.cs`
-(`Comma_separated_forwarded_for_in_a_single_header_is_NOT_split`)
-
-When the proxy puts the forwarding chain into a single header value
-(`X-Forwarded-For: 1.2.3.4, 5.6.7.8`), `IPAddress.Parse` throws
-`FormatException`. nginx default and Cloudflare both produce this format.
-Behind such a proxy every request that hits `FindSourceIp` (Magic-Link,
-Auth-Log, Sessions) crashes.
-
-**Fix when we get there:** split on `,`, trim each entry, take the first
-parseable IPAddress. Update or remove the pinning test.
-
-### `OAuthApplicationStateProjection` silently ignores wrong-case AccessTokenType
-
-**File:** `Cocoar.Auth.Infrastructure/Persistence/Marten/Projections/OAuth/OAuthApplicationStateProjection.cs`
-**Pinning test:** `Cocoar.Auth.Tests.Unit/Infrastructure/Persistence/Marten/Projections/OAuth/OAuthApplicationStateProjectionTests.cs`
-(`FINDING_AccessTokenType_parse_is_case_sensitive_and_silently_ignores_mismatched_casing`)
-
-`Enum.TryParse<AccessTokenType>(v, out var parsed)` is the case-sensitive
-overload. Operator writes `"jwt"` in admin settings → silently falls
-back to the previous value (`Reference` for a fresh app). No error
-surfaces.
-
-**Fix when we get there:** `Enum.TryParse<AccessTokenType>(v, ignoreCase: true, out var parsed)`.
-
-### `UserSecurityData.RotateSecurityStamp()` rotates BOTH stamps
-
-**File:** `Cocoar.Auth.Authentication/Domain/UserSecurityData.cs`
-**Pinning test:** `Cocoar.Auth.Tests.Unit/Authentication/Domain/UserSecurityDataTests.cs`
-
-The name suggests only `SecurityStamp` rotates, but the method also
-rotates `ConcurrencyStamp`. Asymmetric with `UpdateConcurrencyStamp()`
-which only touches `ConcurrencyStamp`. Behaviour is plausibly intended
-(rotate both on a security-relevant change), but the name lies.
-
-**Fix when we get there:** rename to `RotateAllStamps()`, or split into
-`RotateSecurityStamp()` + a callsite that does both explicitly.
-
-### `TwoFactorEnforcementMiddleware.HasFederatedMfa` doc comment is incomplete
-
-**File:** `Cocoar.Auth.Authentication/Api/Account/TwoFactorEnforcementMiddleware.cs`
-**Pinning test:** `Cocoar.Auth.Tests.Unit/Authentication/Account/TwoFactorEnforcementMiddlewareTests.cs`
-
-XML doc lists `mfa, otp, fido` as the recognised AMR values. Actual
-`FederatedMfaAmrValues` includes `hwk, swk, mca, pop` as well. The
-behaviour is correct (ISO 8176 AMR values); the comment lies.
-
-**Fix when we get there:** update the XML doc.
-
-### `UserView.GetDisplayLabel` returns whitespace-only UserName verbatim
-
-**File:** `Cocoar.Auth.Infrastructure/Persistence/Marten/Projections/Users/UserView.cs`
-**Pinning test:** `Cocoar.Auth.Tests.Unit/Infrastructure/Persistence/Marten/Projections/Users/UserViewTests.cs`
-(`Whitespace_username_is_returned_as_is_not_trimmed`)
-
-When acronym/firstname/lastname are all empty and `UserName` is
-`"   "` (whitespace), the method returns the whitespace verbatim. Admin
-grids render blank rows — looks broken.
-
-**Fix when we get there:** treat whitespace-only as empty in the
-fallback chain; fall through to the user Id or `"<no name>"`.
 
 ### Aggregates have no post-delete write guards
 
@@ -348,6 +238,47 @@ feature folder. Probably ~50 LoC if it's needed back.
 
 ## Closed / done
 
-- ~~Mac-Safari classified as Mobile (above)~~ — pinned not fixed; track here
-  until the UAParser swap.
-- (move entries here when they're addressed, then prune after a few months)
+Real production bugs fixed during the test-fixing pass on 2026-04-29:
+
+- **`HttpRequestExtensions.FindSourceIp` crashed on standard
+  X-Forwarded-For format** (commit `a2a4a61`). Fixed by splitting on
+  comma, trimming, and `IPAddress.TryParse` per part with silent skip
+  for unparseable entries. Pinning test flipped to assert the fixed
+  behaviour.
+- **`OAuthApplicationStateProjection` parsed `AccessTokenType`
+  case-sensitively** (commit `dab1883`). Fixed via
+  `Enum.TryParse(v, ignoreCase: true, ...)`. Tests now cover lower /
+  upper / mixed casing all resolving correctly + a separate test for
+  unparseable input keeping previous state.
+- **`Group.MemberIds` interface accessor returned the live backing
+  list** (commit `f676947`). Fixed via `.ToArray()` snapshot on the
+  interface accessor. New tests pin both the snapshot semantic and the
+  fact that the result can no longer be downcast to `List<Guid>`.
+- **`UserView.GetDisplayLabel` returned whitespace verbatim** (commit
+  `bc5968f`). Fixed: whitespace-only `UserName` falls through to a
+  visible `<no name>` placeholder. Pinning tests inverted to assert
+  the never-blank invariant.
+
+Polish closed in the same pass:
+
+- **`UserSecurityData.RotateSecurityStamp()` rotated both stamps
+  despite name** (commit `9253771`). Renamed to `RotateAllStamps()`,
+  both stamp-rotation methods got XML docs spelling out the intended
+  use case.
+- **`TwoFactorEnforcementMiddleware.HasFederatedMfa` XML doc was
+  incomplete** (commit `9253771`). Now lists all seven recognised AMR
+  values with what each one means.
+- **`ApplicationTypes` was not a constant** (commit `1b294e8`). Added
+  `OAuthApplicationTypes` static class with `Web` / `Native` constants
+  alongside the sister classes. Bare-literal sweep is its own backlog
+  item.
+- **`UserContext.HasPermission` semantic divergence from
+  `PermissionEvaluator`** (commit `8c87272`). `UserContext` now
+  delegates to `PermissionEvaluator.Evaluate` so JsEval scripts and
+  backend `RequiresPermission` filters return the same answer for the
+  same principal.
+
+Other long-standing closed items:
+
+- **Group.GetEmailsAsync cycle detection** (commit `b6b2dc3`, fixed
+  during the unit-test sweep that found it).

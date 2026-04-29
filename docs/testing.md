@@ -1,9 +1,11 @@
 # Testing
 
-> **Status as of 2026-04-29:** 611 unit tests, 89/96 integration tests
+> **Status as of 2026-04-29:** 620 unit tests, 89/96 integration tests
 > green. Coverage swept across Domain, Application, Authorization,
-> Authentication, Infrastructure, Api. Next planned area: `Cocoar.Auth.Api/Features/*`
-> endpoint helpers + leftover helpers in Authentication that need light refactor.
+> Authentication, Infrastructure, Api. **All test-found production bugs
+> from the sweep have been fixed** — see "Production bugs found and
+> fixed" below. Next planned area: `Cocoar.Auth.Api/Features/*` endpoint
+> helpers + leftover helpers in Authentication that need light refactor.
 > See [Resume here](#resume-here) at the bottom for picking up cold.
 
 ## Two test projects
@@ -193,37 +195,54 @@ These are pure-extractions made to enable unit-testing. None changed behaviour.
 
 ## Production bugs found and fixed during the test sweep
 
-- **`Cocoar.Auth.Authorization/Principals/Group.GetEmailsAsync`** — cycle
-  detection only worked within one call, not across recursive Group → Group
-  calls. Group A → B → A produced an infinite recursion → stack overflow.
-  Fixed in commit `b6b2dc3`. The test that found it
-  (`GroupTests.Cycle_between_two_groups_terminates`) stays green and guards
-  against regression.
+The pattern: a test exposes the bug, the fix lands in the same wave, the
+pinning test is flipped to assert the corrected behaviour.
 
-## Pinned bugs (not fixed yet)
+- **`Group.GetEmailsAsync` cycle detection across nested groups** (commit
+  `b6b2dc3`). Cycle A→B→A produced infinite recursion → stack overflow.
+  Visited-set now threads through nested calls.
+- **`HttpRequestExtensions.FindSourceIp` crashed on standard
+  `X-Forwarded-For` comma-list** (commit `a2a4a61`). Now splits on `,`,
+  trims, `TryParse`s; silently skips garbage entries.
+- **`OAuthApplicationStateProjection` parsed `AccessTokenType`
+  case-sensitively** (commit `dab1883`). Operator writing `"jwt"`
+  silently fell back to `Reference`. Now `ignoreCase: true`.
+- **`Group.MemberIds` interface accessor returned the live backing list**
+  (commit `f676947`). Defensive `.ToArray()` snapshot now; the result
+  cannot be downcast to mutate the backing list.
+- **`UserView.GetDisplayLabel` returned whitespace verbatim** (commit
+  `bc5968f`). Falls through to `<no name>` placeholder when nothing
+  visible is set.
+- **`UserContext.HasPermission` diverged from `PermissionEvaluator`**
+  (commit `8c87272`). Now delegates — script answers and backend
+  `RequiresPermission` answers agree for the same principal.
 
-Each of these has at least one test that documents the current — *broken* —
-behaviour. The fix is in [backlog.md](backlog.md). The pinning test name
-typically starts with `FINDING_` or contains a comment referencing the backlog.
+Polish from the same pass:
 
-- `DeviceInfoService` classifies Mac desktop as "Mobile"
+- **`UserSecurityData.RotateSecurityStamp()` renamed → `RotateAllStamps()`**
+  (commit `9253771`). The old name lied: it rotated both stamps. Both
+  stamp-rotation methods got proper XML docs.
+- **`TwoFactorEnforcementMiddleware.HasFederatedMfa` doc completed**
+  (commit `9253771`). Now lists all seven recognised AMR values, not three.
+- **`OAuthApplicationTypes` constants centralised** (commit `1b294e8`).
+  `"web"` / `"native"` now live alongside the sister classes
+  `OAuthClientTypes`, `OAuthConsentTypes`. Sweep of bare literals is its
+  own backlog item.
+
+## Pinned-by-design (current behaviour is on purpose)
+
+Each of these has at least one test that documents the behaviour. The
+behaviour is intentional — these aren't bugs, they're invariants we want to
+guard against accidental change.
+
+- `DeviceInfoService` classifies Mac desktop as "Mobile" — fixes with the
+  UAParser swap (see [backlog.md](backlog.md))
 - `TenantContextMiddleware` silently coerces non-string TenantId values
-- `ResourceRegistry` lookup is case-sensitive (deliberate-but-pinned)
+  (defensive)
+- `ResourceRegistry` lookup is case-sensitive (deliberate)
 - `GenericOidcFlavor.DeriveEndpoints` does not normalise trailing slashes
-  (deliberate-but-pinned)
-- Aggregates have no post-delete write guards (deliberate-but-pinned)
-- `UserContext.HasPermission` is exact-match only (semantics differ from
-  `PermissionEvaluator`)
-- `Group.MemberIds` is read-only via interface but the backing list is shared
-- `ApplicationTypes` ("web" / "native") is not a constant
-- `HttpRequestExtensions.FindSourceIp` crashes on standard `X-Forwarded-For`
-  comma-separated value (real production bug, untriggered locally)
-- `OAuthApplicationStateProjection` parses `AccessTokenType` case-sensitively
-  → wrong-case admin input silently falls back to previous value
-- `UserSecurityData.RotateSecurityStamp()` rotates BOTH stamps despite name
-- `TwoFactorEnforcementMiddleware.HasFederatedMfa` XML doc lists 3 of 7
-  recognised AMR values
-- `UserView.GetDisplayLabel` returns whitespace-only UserName verbatim
+- Aggregates have no post-delete write guards (validation lives in the
+  Application layer's `*State` inline projections per CLAUDE.md)
 
 ---
 
@@ -246,11 +265,14 @@ where we stopped and what's next.
   4 OAuth/LoginProvider state projections, TenantConstants,
   SignalRSideEffectMessages, ProjectionSideEffects), Api
   (TenantContextMiddleware).
-- **One real production bug fixed** along the way: `Group.GetEmailsAsync`
-  cycle detection (commit `b6b2dc3`).
-- **Twelve more findings pinned** with tests that document current behaviour —
-  see "Pinned bugs (not fixed yet)" above and [backlog.md](backlog.md) for
-  what each fix would entail.
+- **Six real production bugs found AND fixed** during the sweep (commits
+  `b6b2dc3`, `a2a4a61`, `dab1883`, `f676947`, `bc5968f`, `8c87272`) — see
+  the "Production bugs found and fixed" section above.
+- **Three polish items closed** alongside the bugs (commits `9253771`,
+  `1b294e8`).
+- **Five behaviours pinned-by-design** with tests that guard them against
+  accidental change — see "Pinned-by-design" above and
+  [backlog.md](backlog.md).
 - **`docs/` (this folder) is the source of truth for what's checked.** Every
   pass updates `testing.md` (this file) + `backlog.md`.
 
