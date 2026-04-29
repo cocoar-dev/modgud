@@ -3,9 +3,9 @@ using Cocoar.Auth.Authorization.Access;
 namespace Cocoar.Auth.Tests.Unit.Authorization.Access;
 
 /// <summary>
-/// Pins the security-critical bypass rule on <see cref="UserContext.HasPermission"/>.
-/// The string <c>"app:admin"</c> is THE global escape hatch in the policy engine —
-/// the test names should read as the rule statement.
+/// Pins the bypass rules on <see cref="UserContext.HasPermission"/>. Now
+/// delegates to <c>PermissionEvaluator</c> so script answers and backend
+/// <c>RequiresPermission</c> answers are identical for the same principal.
 /// </summary>
 public class UserContextTests
 {
@@ -54,14 +54,23 @@ public class UserContextTests
         }
 
         [Fact]
-        public void Resource_specific_admin_does_not_grant_other_resources()
+        public void Resource_admin_grants_every_action_on_that_resource()
         {
-            // UserContext.HasPermission is exact-match only — wildcard semantics
-            // (e.g. "user:admin" granting "user:write") are the PermissionEvaluator's
-            // job, NOT this class's. Regression here would silently widen access.
+            // Aligned with PermissionEvaluator: holding "user:admin" implicitly
+            // grants every "user:*" action. Scripts and backend
+            // RequiresPermission filters now agree.
             var ctx = new UserContext { Permissions = ["user:admin"] };
-            Assert.False(ctx.HasPermission("user:read"));
+            Assert.True(ctx.HasPermission("user:read"));
+            Assert.True(ctx.HasPermission("user:write"));
             Assert.True(ctx.HasPermission("user:admin"));
+        }
+
+        [Fact]
+        public void Resource_admin_does_not_leak_to_other_resources()
+        {
+            var ctx = new UserContext { Permissions = ["user:admin"] };
+            Assert.False(ctx.HasPermission("oauth-client:read"));
+            Assert.False(ctx.HasPermission("role:read"));
         }
 
         [Fact]

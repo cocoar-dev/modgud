@@ -1,3 +1,5 @@
+using Cocoar.Auth.Authorization.Services;
+
 namespace Cocoar.Auth.Authorization.Access;
 
 /// <summary>
@@ -22,10 +24,17 @@ public class UserContext
     public List<string> Groups { get; init; } = [];
     public List<Guid> GroupIds { get; init; } = [];
 
-    public bool HasPermission(string permission)
-    {
-        if (Permissions.Contains("app:admin"))
-            return true;
-        return Permissions.Contains(permission);
-    }
+    /// <summary>
+    /// Returns true iff the principal holds <paramref name="permission"/>. Uses
+    /// the same evaluation rules as the backend permission service:
+    /// <list type="bullet">
+    ///   <item><c>app:admin</c> in grants → true for any permission</item>
+    ///   <item>Exact match on <paramref name="permission"/></item>
+    ///   <item><c>&lt;resource&gt;:admin</c> grants every action on that resource
+    ///         (e.g. <c>oauth-client:admin</c> covers <c>oauth-client:read</c>)</item>
+    /// </list>
+    /// Scripts and backend filters now agree on the answer for the same principal.
+    /// </summary>
+    public bool HasPermission(string permission) =>
+        PermissionEvaluator.Evaluate(Permissions, permission);
 }
