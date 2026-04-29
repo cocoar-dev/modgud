@@ -10,17 +10,39 @@
 > - **What's actively pinned by tests?** → `testing.md` "Unit-test
 >   inventory" table.
 
-Last updated: 2026-04-29 (post wave 7).
+Last updated: 2026-04-29 (post Applications Phase 1).
 
 ## ✅ Done
 
+### Applications Phase 1 — App-scoped permissions (2026-04-29)
+
+Plan: `docs/plan-applications.md`. Internal refactor that turns
+Cocoar.Auth into a host for multiple Cocoar SaaS apps (next stop:
+TimeToDo SSO). Cocoar.Auth itself is the first registered app
+(`cocoar-auth`). Nine commits, ordered:
+
+1. New `App` aggregate (events, projection, Marten wiring)
+2. `cocoar-auth` seeded per realm (system + new realms)
+3. `AppSlug` added to `PermissionRole`
+4. `BoundTo: List<string>` added to `Group`
+5. `ResourceRegistry` rekeyed to `(appSlug, resource)`
+6. `PermissionService` + `PermissionEvaluator` rebuilt around the new
+   3-segment permission shape (`<app>:<resource>:<action>`); bypasses:
+   `realm:admin` (realm-wide), `<app>:admin`, `<app>:<resource>:admin`
+7. `PermissionEndpointFilter` threads `appSlug` (defaults to
+   `cocoar-auth` for the IDP itself)
+8. Bulk-rewrite of every `RequiresPermission(...)` literal across the
+   API surface; old `app:admin` → `realm:admin`
+9. Demo-seed JSON + System-Admin seed updated to the new shape
+
 ### Test sweep (waves 1–7) — pure-unit-friendly paths fully pinned
 
-- **757 unit tests green in ~1 s.** All pure helpers in Domain,
+- **781 unit tests green in ~1 s.** All pure helpers in Domain,
   Application, Authorization, Authentication, Infrastructure, and Api
-  layers are pinned by sub-second tests.
+  layers are pinned by sub-second tests. (757 pre-Applications + 11
+  App projection + 13 ResourceRegistry/Evaluator app-aware additions.)
 - **89/96 integration tests green.** The 7 reds are `ProfileSelfService`
-  — see Todo below.
+  — see Todo below. **Phase 1 added zero new integration-test failures.**
 - **9 real production bugs found and fixed during the sweep.** See
   `testing.md` "Production bugs found and fixed" for commit IDs and the
   failure pattern of each.

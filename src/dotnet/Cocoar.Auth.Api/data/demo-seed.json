@@ -19,33 +19,33 @@
       "key": "oauth-admin",
       "name": "OAuth Admin",
       "description": "Full management of OAuth clients, scopes, APIs and login providers.",
-      "resource": "app",
+      "resource": "",
       "permissions": [
-        "oauth-client:read",   "oauth-client:write",
-        "oauth-scope:read",    "oauth-scope:write",
-        "oauth-api:read",      "oauth-api:write",
-        "login-provider:read", "login-provider:write"
+        "cocoar-auth:oauth-client:read",   "cocoar-auth:oauth-client:write",
+        "cocoar-auth:oauth-scope:read",    "cocoar-auth:oauth-scope:write",
+        "cocoar-auth:oauth-api:read",      "cocoar-auth:oauth-api:write",
+        "cocoar-auth:login-provider:read", "cocoar-auth:login-provider:write"
       ]
     },
     {
       "key": "group-admin",
       "name": "Group Admin",
       "description": "Manage authorization groups; read permission roles.",
-      "resource": "app",
+      "resource": "",
       "permissions": [
-        "authorization-group:read", "authorization-group:write",
-        "permission-role:read"
+        "cocoar-auth:authorization-group:read", "cocoar-auth:authorization-group:write",
+        "cocoar-auth:permission-role:read"
       ]
     },
     {
       "key": "help-desk",
       "name": "Help Desk",
       "description": "Read-only access to users, sessions and the auth log.",
-      "resource": "app",
+      "resource": "",
       "permissions": [
-        "user:read",
-        "session:read",
-        "auth-log:read"
+        "cocoar-auth:user:read",
+        "cocoar-auth:session:read",
+        "cocoar-auth:auth-log:read"
       ]
     }
   ],

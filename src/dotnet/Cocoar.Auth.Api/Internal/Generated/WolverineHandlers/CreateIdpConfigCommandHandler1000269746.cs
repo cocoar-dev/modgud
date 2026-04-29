@@ -11,14 +11,14 @@ namespace Internal.Generated.WolverineHandlers
     public sealed class CreateIdpConfigCommandHandler1000269746 : Wolverine.Runtime.Handlers.MessageHandler
     {
         private readonly System.TimeProvider _timeProvider;
-        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
         private readonly Cocoar.Auth.Authentication.Identity.ExternalAuth.FlavorRegistry _flavorRegistry;
+        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
 
-        public CreateIdpConfigCommandHandler1000269746(System.TimeProvider timeProvider, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, Cocoar.Auth.Authentication.Identity.ExternalAuth.FlavorRegistry flavorRegistry)
+        public CreateIdpConfigCommandHandler1000269746(System.TimeProvider timeProvider, Cocoar.Auth.Authentication.Identity.ExternalAuth.FlavorRegistry flavorRegistry, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory)
         {
             _timeProvider = timeProvider;
-            _outboxedSessionFactory = outboxedSessionFactory;
             _flavorRegistry = flavorRegistry;
+            _outboxedSessionFactory = outboxedSessionFactory;
         }
 
 

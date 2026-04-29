@@ -101,20 +101,25 @@ public static class SetupEndpoints
             // can grant a granular role without first having to design one.
             // These roles are not assigned to anyone — admins drop them onto
             // groups via the Roles UI as needed.
+            // Multi-resource roles store fully-qualified permissions
+            // ("cocoar-auth:user:read") in their Permissions list because a
+            // single role can only have one ResourceType — bare-action
+            // expansion would lock the role to one resource.
+            const string a = AppSlugs.CocoarAuth;
             var userManagerRole = new PermissionRole
             {
                 Id = Guid.NewGuid(),
                 Name = "User Manager",
                 Description = "Read+write users, read roles+groups+permission-roles.",
-                AppSlug = AppSlugs.CocoarAuth,
-                ResourceType = "app",
+                AppSlug = a,
+                ResourceType = "",
                 Permissions =
                 [
-                    "user:read", "user:write",
-                    "session:read", "session:write",
-                    "authorization-group:read",
-                    "permission-role:read",
-                    "auth-log:read",
+                    $"{a}:user:read", $"{a}:user:write",
+                    $"{a}:session:read", $"{a}:session:write",
+                    $"{a}:authorization-group:read",
+                    $"{a}:permission-role:read",
+                    $"{a}:auth-log:read",
                 ],
             };
             session.Store(userManagerRole);
@@ -126,13 +131,13 @@ public static class SetupEndpoints
                 Id = Guid.NewGuid(),
                 Name = "Viewer",
                 Description = "Read-only access to users, groups, roles.",
-                AppSlug = AppSlugs.CocoarAuth,
-                ResourceType = "app",
+                AppSlug = a,
+                ResourceType = "",
                 Permissions =
                 [
-                    "user:read",
-                    "authorization-group:read",
-                    "permission-role:read",
+                    $"{a}:user:read",
+                    $"{a}:authorization-group:read",
+                    $"{a}:permission-role:read",
                 ],
             };
             session.Store(viewerRole);
