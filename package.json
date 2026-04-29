@@ -1,0 +1,11 @@
+{
+  "name": "cocoar-auth-root",
+  "private": true,
+  "description": "Root scripts for building the SPA + end-user docs directly into the backend's wwwroot.",
+  "scripts": {
+    "build:frontend": "cd src/frontend-vue && pnpm install --prefer-offline && pnpm exec vite build --outDir ../dotnet/Cocoar.Auth.Api/wwwroot --emptyOutDir",
+    "build:userdocs": "cd userdocs && pnpm install --prefer-offline && pnpm exec vitepress build --outDir ../src/dotnet/Cocoar.Auth.Api/wwwroot/docs",
+    "build:backend": "pnpm run build:frontend && pnpm run build:userdocs",
+    "watch:frontend": "cd src/frontend-vue && pnpm exec vite build --outDir ../dotnet/Cocoar.Auth.Api/wwwroot --emptyOutDir --watch"
+  }
+}

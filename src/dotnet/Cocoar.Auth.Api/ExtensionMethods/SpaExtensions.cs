@@ -4,13 +4,14 @@ using Cocoar.Auth.Api.Helper;
 
 namespace Cocoar.Auth.Api.ExtensionMethods;
 
+/// <summary>
+/// Serves the Vue SPA from wwwroot with MapFallbackToFile for client-side routing.
+/// In development, wwwroot is empty / missing — the Vite dev server (port 4300) handles
+/// the frontend and proxies /api, /signalr, /connect, /signin-oidc, /signout-callback-oidc
+/// back to the backend.
+/// </summary>
 public static class SpaExtensions
 {
-    /// <summary>
-    /// Serves the SPA from wwwroot with MapFallbackToFile for client-side routing.
-    /// In development, wwwroot may not exist — the Vite dev server handles the frontend
-    /// (proxy configured in vite.config.ts).
-    /// </summary>
     public static void UseSpaUI(this WebApplication app)
     {
         var wwwRootPath = PathHelper.GetFullPath("wwwroot");

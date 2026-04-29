@@ -405,4 +405,7 @@ website/.vitepress/dist/
 src/dotnet/Cocoar.Auth.Api/data/configuration.local.json
 src/dotnet/Cocoar.Auth.Api/data/keys/
 src/dotnet/Cocoar.Auth.Api/logs/
+
+# Cocoar.Auth wwwroot is build-output (vite + vitepress), produced by `pnpm run build:backend`
+src/dotnet/Cocoar.Auth.Api/wwwroot/
 .claude/
