@@ -326,31 +326,35 @@ where we stopped and what's next.
 - **Two test projects exist and run.** `Cocoar.Auth.Tests.Unit` (757 tests,
   ~1 s) and `Cocoar.Auth.Api.Tests` (96 tests, ~90 s, 89 green).
 - **Unit coverage swept across:** Domain (Realms, OAuth aggregates, OAuth
-  wire-format constants), Application (OAuthAdminMapping after extraction),
-  Authorization (PermissionEvaluator, ResourceRegistry, Person/Group/
-  ServiceAccount, UserContext), ExternalAuth (3 flavors), Authentication
-  (5 domain types, 3 extension classes, TwoFactorEnforcementMiddleware,
-  SessionTracker, EmailOtpConfiguration), Sessions (DeviceInfoService),
+  wire-format constants), Application (OAuthAdminMapping after extraction —
+  86 tests including the partial-PATCH merges, PaginationRequest), Authorization
+  (PermissionEvaluator, ResourceRegistry, Person/Group/ServiceAccount,
+  UserContext), ExternalAuth (3 flavors), Authentication (5 domain types,
+  3 extension classes, TwoFactorEnforcementMiddleware, SessionTracker,
+  EmailOtpConfiguration, ProfileEndpoints partial-PATCH chain,
+  TwoFactorHelper pure parts), Sessions (DeviceInfoService — Wangkanai-backed),
   Infrastructure (Email templates, UserView mapper + projection, ViewRef,
   4 OAuth/LoginProvider state projections, TenantConstants,
   SignalRSideEffectMessages, ProjectionSideEffects), Api
-  (TenantContextMiddleware).
-- **Nine real production bugs found AND fixed** across the three sweeps
-  (commits `b6b2dc3`, `a2a4a61`, `dab1883`, `f676947`, `bc5968f`,
-  `8c87272`, plus the Wave 3 OIDC-claim-destinations fix, the
-  rebuild-concurrency fix, and the catch-narrowing fix in this pass).
-  See the "Production bugs found and fixed" section above.
-- **Six polish items closed** alongside the bugs (commits `9253771`,
-  `1b294e8`, plus PaginationRequest.WithDefaults extraction, filter
-  logging, and ShouldSync trade-off documentation in this pass).
-- **Five behaviours pinned-by-design** with tests that guard them against
-  accidental change — see "Pinned-by-design" above and
+  (TenantContextMiddleware, RealmsEndpoints filter, OAuth helpers,
+  GroupCycleDetector, AutoMembershipSyncHandlers).
+- **Nine real production bugs found AND fixed** across the seven sweeps
+  (Wave 2: Group cycle, X-Forwarded-For, AccessTokenType case-parse,
+  Group.MemberIds backing-list leak, UserView whitespace, UserContext/
+  PermissionEvaluator divergence; Wave 3: OIDC claim destinations,
+  rebuild concurrency, catch-narrowing). See the "Production bugs found
+  and fixed" section above for commit IDs and details.
+- **Polish closed** across waves: stamp rotation rename, AMR doc,
+  ApplicationTypes constants, PaginationRequest.WithDefaults extraction,
+  filter logging, ShouldSync trade-off documentation, AppSettings
+  /app-info anonymous-exposure audit, DTO purity audit, Domain audit.
+- **Wave 6** swapped UAParser → Wangkanai.Detection — closed the
+  Mac-Safari-as-Mobile pinned-by-design entry automatically.
+- **Wave 7** extracted `BuildMethodsList` + `TryExpireSetupGrace` from
+  `TwoFactorHelper` — last pure-unit-friendly path in the repo.
+- **Four behaviours still pinned-by-design** with tests that guard them
+  against accidental change — see "Pinned-by-design" above and
   [backlog.md](backlog.md).
-- **Last sweep (Api/Features)** added 66 tests across five extracted helpers
-  (`ConsentUrlHelper`, `AuthorizationEndpointHelpers`, `GroupCycleDetector`,
-  `RealmsEndpoints.MapToDto` + `RequireCanManageTenantsFilter`,
-  `AutoMembershipSyncHandlers`) and surfaced eight new findings — all
-  observations, none silently fixed; tracked in backlog.md.
 - **`docs/` (this folder) is the source of truth for what's checked.** Every
   pass updates `testing.md` (this file) + `backlog.md`.
 
@@ -370,14 +374,24 @@ Remaining work in `backlog.md` is integration-test or feature work:
 
 ```bash
 cd src/dotnet
-dotnet test Cocoar.Auth.Tests.Unit          # confirm baseline still green
+dotnet test Cocoar.Auth.Tests.Unit          # confirm baseline still green (757 tests, ~1 s)
+dotnet test Cocoar.Auth.Api.Tests           # only if Docker is up; 89/96 green
 ```
 
-Then either spawn an agent at one of the unchecked areas above (cf. the
-pattern of recent commits: a brief that points to the source folder, the
-test-style references, the constraints, and a "skip with reason" expectation),
-or fix one of the pinned bugs and update both this file and `backlog.md` when
-the entry moves from "pinned" to "fixed".
+The pure-unit-test sweep itself is done as of wave 7. The next test-area
+work that's actually useful is the integration-test backlog (the 7 red
+`ProfileSelfService` tests in `Cocoar.Auth.Api.Tests`). Pattern that's
+worked on every wave so far:
+
+1. Read `docs/backlog.md` "Triage at a glance" + `docs/testing.md` status
+   banner. Pick the next entry; verify it still applies (memories rot fast).
+2. Make the smallest extraction the test needs. Keep the production wrapper
+   one-liner-thin so the wrapper itself is integration-only.
+3. Land tests + extraction in one commit; `docs/` updates in a separate
+   `docs(internal):` commit at the end of the wave.
+4. If a test reveals a real bug, fix the bug in the same wave and flip the
+   pinning test to assert the corrected behaviour. Move the backlog entry
+   from "Triage" / "Pinned findings" into "Closed/done".
 
 Always end a pass with **both** `docs/testing.md` and `docs/backlog.md`
 updated — these two files plus the commit log are the entire memory of what
