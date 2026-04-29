@@ -60,6 +60,52 @@ authority falls back to the raw metadata URL. Functionally fine because the
 OIDC handler discovers from `MetadataUri` directly, but a normalisation
 later has to be deliberate.
 
+### `UserContext.HasPermission` is exact-match only — no resource-admin wildcard
+
+**File:** `Cocoar.Auth.Authorization/Access/UserContext.cs`
+**Pinning test:** `Cocoar.Auth.Tests.Unit/Authorization/Access/UserContextTests.cs`
+
+`PermissionService.HasPermissionAsync` (via `PermissionEvaluator.Evaluate`)
+treats `<resource>:admin` as a per-resource bypass. `UserContext.HasPermission`
+does not — it's strictly exact-match plus the global `app:admin`. This means
+JsEval access scripts that call `user.hasPermission("oauth-client:read")` see
+a different answer than a backend `RequiresPermission("oauth-client:read")`
+filter for the same principal.
+
+**Fix when we get there:** decide explicitly. Either route `UserContext.HasPermission`
+through `PermissionEvaluator.Evaluate` (consistent semantic, scripts can use
+admin grants), or document the cut as deliberate (scripts must enumerate every
+exact permission they check). Pick one and align.
+
+### `Group.MemberIds` is exposed read-only via interface but mutable underneath
+
+**File:** `Cocoar.Auth.Authorization/Principals/Group.cs`
+**Pinning test:** `Cocoar.Auth.Tests.Unit/Authorization/Principals/GroupTests.cs`
+
+`IPrincipalWithMembers.MemberIds` returns `IReadOnlyList<Guid>`, but the
+backing field on `Group` is a `List<Guid>` and the interface accessor returns
+the same instance. External callers can cast or mutate the underlying list
+and the change is immediately visible everywhere.
+
+**Fix when we get there:** either return `MemberIds.AsReadOnly()` or copy on
+get, or change the field to `ImmutableList<Guid>` and rebuild on each setter.
+Pin the chosen invariant with a test.
+
+### `ApplicationTypes` ("web" / "native") is not a constant
+
+**Files:** `Cocoar.Auth.Domain/OAuth/Common/OAuthConstants.cs` (missing),
+literal usage scattered across `OAuthApplicationAggregateTests.cs:21,36`
+and elsewhere.
+
+The OAuth wire format has `ApplicationType` values `"web"` and `"native"`
+which appear as bare string literals across the codebase. Other type-sets
+(`OAuthClientTypes`, `OAuthConsentTypes`) are properly centralised; this one
+isn't.
+
+**Fix when we get there:** add `OAuthApplicationTypes` (or `ApplicationTypes`)
+in `OAuthConstants.cs` with `Web` / `Native` constants, replace the bare
+literals, add a constant-pinning test alongside the others.
+
 ### Aggregates have no post-delete write guards
 
 **Files:** `Cocoar.Auth.Domain/OAuth/**/Aggregate.cs`, `LoginProviderAggregate.cs`
@@ -73,6 +119,26 @@ chose intentionally dumb aggregates; flip only if a real bug surfaces.
 ---
 
 ## Deferred features / refactors
+
+### Three more pure helpers in `OAuthAdminService` ripe for extraction
+
+**File:** `Cocoar.Auth.Application/Services/OAuthAdminService.cs`
+
+The first round of helpers (`BuildClient*`, `MapClient`, `GetBoolProp`, BCrypt
+wrappers, etc.) lives in `OAuthAdminMapping` now and is unit-tested. Three
+more would be valuable but each needs a small structural refactor first:
+
+- **`MapApiAsync`** — currently loads `OAuthApiSecurityData` via the session.
+  Split into pure `MapApiState(state, secrets)` plus a thin session-load
+  wrapper, then pin the pure mapping.
+- **Secret-creation paths** (`RegenerateClientSecretAsync`,
+  `CreateApiSecretAsync`) interleave secret generation, hashing, and a
+  concurrency-token update. Extract `BuildApiSecretEntry(type, secret,
+  description, expiration, now)` as a pure constructor and pin it.
+- **`UpdateClientAsync` merge logic** — settings/properties merge with `??`
+  defaults across the dto vs aggregate snapshot. Extract
+  `MergeClientUpdate(snapshot, dto)` as a pure function (~50 LoC); critical
+  for getting "partial PATCH semantics" right.
 
 ### Replace `UAParser` with `Wangkanai.Detection`
 
