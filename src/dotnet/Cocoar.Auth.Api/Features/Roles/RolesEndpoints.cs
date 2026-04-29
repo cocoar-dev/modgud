@@ -1,12 +1,13 @@
 using BuildingBlocks.Helper;
 using Marten;
 using Cocoar.Auth.Authorization.AspNetCore;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Events;
 
 namespace Cocoar.Auth.Api.Features.Roles;
 
-public record CreateRoleDto(string Name, string? Description, string ResourceType, List<string> Permissions);
+public record CreateRoleDto(string Name, string? Description, string ResourceType, List<string> Permissions, string? AppSlug = null);
 
 public static class RolesEndpoints
 {
@@ -42,6 +43,7 @@ public static class RolesEndpoints
                     Id = new ShortGuid(r.Id).ToString(),
                     r.Name,
                     r.Description,
+                    r.AppSlug,
                     r.ResourceType,
                     r.Permissions
                 }));
@@ -53,7 +55,7 @@ public static class RolesEndpoints
             {
                 var role = await session.LoadAsync<PermissionRole>(id.Guid);
                 if (role is null || role.IsDeleted) return Results.NotFound();
-                return Results.Ok(new { Id = new ShortGuid(role.Id).ToString(), role.Name, role.Description, role.ResourceType, role.Permissions });
+                return Results.Ok(new { Id = new ShortGuid(role.Id).ToString(), role.Name, role.Description, role.AppSlug, role.ResourceType, role.Permissions });
             })
             .WithName("V2_Role_GetById")
             .RequiresPermission("permission-role:read");
@@ -65,14 +67,15 @@ public static class RolesEndpoints
                     Id = Guid.NewGuid(),
                     Name = dto.Name,
                     Description = dto.Description,
+                    AppSlug = string.IsNullOrEmpty(dto.AppSlug) ? AppSlugs.CocoarAuth : dto.AppSlug,
                     ResourceType = dto.ResourceType,
                     Permissions = dto.Permissions
                 };
                 session.Store(role);
                 session.Events.StartStream(role.Id,
-                    new PermissionRoleCreatedEvent(role.Id, role.Name, role.Description, role.ResourceType, role.Permissions));
+                    new PermissionRoleCreatedEvent(role.Id, role.Name, role.Description, role.AppSlug, role.ResourceType, role.Permissions));
                 await session.SaveChangesAsync();
-                return Results.Ok(new { Id = new ShortGuid(role.Id).ToString(), role.Name, role.Description, role.ResourceType, role.Permissions });
+                return Results.Ok(new { Id = new ShortGuid(role.Id).ToString(), role.Name, role.Description, role.AppSlug, role.ResourceType, role.Permissions });
             })
             .WithName("V2_Role_Create")
             .RequiresPermission("permission-role:write");
@@ -83,12 +86,13 @@ public static class RolesEndpoints
                 if (role is null || role.IsDeleted) return Results.NotFound();
                 role.Name = dto.Name;
                 role.Description = dto.Description;
+                role.AppSlug = string.IsNullOrEmpty(dto.AppSlug) ? AppSlugs.CocoarAuth : dto.AppSlug;
                 role.ResourceType = dto.ResourceType;
                 role.Permissions = dto.Permissions;
                 session.Store(role);
-                session.Events.Append(id.Guid, new PermissionRoleUpdatedEvent(id.Guid, dto.Name, dto.Description, dto.ResourceType, dto.Permissions));
+                session.Events.Append(id.Guid, new PermissionRoleUpdatedEvent(id.Guid, role.Name, role.Description, role.AppSlug, role.ResourceType, role.Permissions));
                 await session.SaveChangesAsync();
-                return Results.Ok(new { Id = new ShortGuid(role.Id).ToString(), role.Name, role.Description, role.ResourceType, role.Permissions });
+                return Results.Ok(new { Id = new ShortGuid(role.Id).ToString(), role.Name, role.Description, role.AppSlug, role.ResourceType, role.Permissions });
             })
             .WithName("V2_Role_Update")
             .RequiresPermission("permission-role:write");

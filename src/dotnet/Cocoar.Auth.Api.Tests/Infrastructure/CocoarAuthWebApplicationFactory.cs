@@ -21,6 +21,7 @@ using Cocoar.Auth.Authentication.Api.Account;
 using Cocoar.Auth.Infrastructure.Email;
 using Cocoar.Auth.Authentication.Identity;
 using Cocoar.Auth.Authorization.Access;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Roles;
@@ -191,12 +192,13 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
             {
                 Id = Guid.CreateVersion7(),
                 Name = $"TestRole_{userView.Id:N}",
+                AppSlug = AppSlugs.CocoarAuth,
                 ResourceType = "app",
                 Permissions = permissions.ToList(),
             };
             session.Store(role);
             session.Events.StartStream(role.Id,
-                new PermissionRoleCreatedEvent(role.Id, role.Name, null, role.ResourceType, role.Permissions));
+                new PermissionRoleCreatedEvent(role.Id, role.Name, null, role.AppSlug, role.ResourceType, role.Permissions));
 
             var group = new Group
             {
@@ -224,22 +226,25 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         string name,
         string resourceType,
         List<string> permissions,
-        string? description = null)
+        string? description = null,
+        string? appSlug = null)
     {
         using var scope = Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
+        var slug = appSlug ?? AppSlugs.CocoarAuth;
         var role = new PermissionRole
         {
             Id = Guid.CreateVersion7(),
             Name = name,
             Description = description,
+            AppSlug = slug,
             ResourceType = resourceType,
             Permissions = permissions
         };
         session.Store(role);
         session.Events.StartStream(role.Id,
-            new PermissionRoleCreatedEvent(role.Id, name, description, resourceType, permissions));
+            new PermissionRoleCreatedEvent(role.Id, name, description, slug, resourceType, permissions));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
         return role;
     }

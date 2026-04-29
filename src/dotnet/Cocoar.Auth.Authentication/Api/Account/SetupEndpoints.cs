@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Events;
 using Cocoar.Auth.Authentication.Sessions;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Roles;
@@ -84,12 +85,13 @@ public static class SetupEndpoints
                 Id = Guid.NewGuid(),
                 Name = "System Admin",
                 Description = "Full system access — bypasses every permission check.",
+                AppSlug = AppSlugs.CocoarAuth,
                 ResourceType = "app",
                 Permissions = ["admin"]
             };
             session.Store(adminRole);
             session.Events.StartStream(adminRole.Id,
-                new PermissionRoleCreatedEvent(adminRole.Id, adminRole.Name, adminRole.Description, adminRole.ResourceType, adminRole.Permissions));
+                new PermissionRoleCreatedEvent(adminRole.Id, adminRole.Name, adminRole.Description, adminRole.AppSlug, adminRole.ResourceType, adminRole.Permissions));
 
             // Seed two starter roles alongside the bypass role so an operator
             // can grant a granular role without first having to design one.
@@ -100,6 +102,7 @@ public static class SetupEndpoints
                 Id = Guid.NewGuid(),
                 Name = "User Manager",
                 Description = "Read+write users, read roles+groups+permission-roles.",
+                AppSlug = AppSlugs.CocoarAuth,
                 ResourceType = "app",
                 Permissions =
                 [
@@ -112,13 +115,14 @@ public static class SetupEndpoints
             };
             session.Store(userManagerRole);
             session.Events.StartStream(userManagerRole.Id,
-                new PermissionRoleCreatedEvent(userManagerRole.Id, userManagerRole.Name, userManagerRole.Description, userManagerRole.ResourceType, userManagerRole.Permissions));
+                new PermissionRoleCreatedEvent(userManagerRole.Id, userManagerRole.Name, userManagerRole.Description, userManagerRole.AppSlug, userManagerRole.ResourceType, userManagerRole.Permissions));
 
             var viewerRole = new PermissionRole
             {
                 Id = Guid.NewGuid(),
                 Name = "Viewer",
                 Description = "Read-only access to users, groups, roles.",
+                AppSlug = AppSlugs.CocoarAuth,
                 ResourceType = "app",
                 Permissions =
                 [
@@ -129,7 +133,7 @@ public static class SetupEndpoints
             };
             session.Store(viewerRole);
             session.Events.StartStream(viewerRole.Id,
-                new PermissionRoleCreatedEvent(viewerRole.Id, viewerRole.Name, viewerRole.Description, viewerRole.ResourceType, viewerRole.Permissions));
+                new PermissionRoleCreatedEvent(viewerRole.Id, viewerRole.Name, viewerRole.Description, viewerRole.AppSlug, viewerRole.ResourceType, viewerRole.Permissions));
 
             var adminGroup = new Group
             {

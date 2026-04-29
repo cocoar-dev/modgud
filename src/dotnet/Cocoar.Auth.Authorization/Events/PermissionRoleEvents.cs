@@ -4,6 +4,7 @@ public record PermissionRoleCreatedEvent(
     Guid Id,
     string Name,
     string? Description,
+    string AppSlug,
     string ResourceType,
     List<string> Permissions);
 
@@ -11,6 +12,7 @@ public record PermissionRoleUpdatedEvent(
     Guid Id,
     string Name,
     string? Description,
+    string AppSlug,
     string ResourceType,
     List<string> Permissions);
 

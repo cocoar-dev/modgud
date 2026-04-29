@@ -7,6 +7,7 @@ using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authorization.Access;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Membership;
 using Cocoar.Auth.Authorization.Principals;
@@ -80,12 +81,13 @@ public sealed class DemoSeedService : IDemoSeedService
                 Id = Guid.NewGuid(),
                 Name = r.Name,
                 Description = r.Description,
+                AppSlug = AppSlugs.CocoarAuth,
                 ResourceType = string.IsNullOrWhiteSpace(r.Resource) ? "app" : r.Resource,
                 Permissions = r.Permissions ?? new List<string>(),
             };
             session.Store(role);
             session.Events.StartStream(role.Id,
-                new PermissionRoleCreatedEvent(role.Id, role.Name, role.Description, role.ResourceType, role.Permissions));
+                new PermissionRoleCreatedEvent(role.Id, role.Name, role.Description, role.AppSlug, role.ResourceType, role.Permissions));
 
             _roleIds[role.Name] = role.Id;
             // Also expose via the JSON key so the groups section can reference
