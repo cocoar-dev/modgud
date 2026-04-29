@@ -13,12 +13,34 @@ once they're addressed.
 ## Triage at a glance
 
 **Real production bugs (fix sooner rather than later):**
-- _(none open right now — the four from the test sweep got fixed in
-  commits `a2a4a61`, `dab1883`, `f676947`, `bc5968f`. See "Closed / done".)_
+- `ProjectionEndpoints` "rebuild" toggles a static `ProjectionSideEffects.Enabled`
+  flag — concurrency hazard if two admins click simultaneously
+- `AuthorizationEndpoints.AuthorizeAsync` builds a `consentUrl` without
+  URL-encoding `returnUrl` on one branch — works today only because the
+  source happens to be URL-safe; a query string with a literal `&` would
+  split the param
+- `ConsentUrlHelper.ParseAuthorizationUrl` swallows ALL exceptions
+  (rather than `UriFormatException`) — masks programming errors
+- `AuthorizationEndpoints.GetDestinations` defaults unknown claim
+  types to `AccessToken` — OpenIddict's typical pattern, but worth
+  confirming app-level claims don't leak sensitive data through the
+  default
 
 **Polish / consistency (next quiet hour):**
-- _(none open right now — four polish items closed in commits
-  `9253771`, `1b294e8`, `8c87272`. See "Closed / done".)_
+- Pagination defaulting (`page <= 0 ? 1 : page`,
+  `pageSize <= 0 ? 20 : pageSize`) duplicated inline in
+  `OAuthClientsEndpoints` + `OAuthApisEndpoints` — extract a
+  `PaginationRequest.WithDefaults` helper
+- `AppSettingsEndpoints` exposes `MagicLinkSelfService` +
+  `TwoFactorGracePeriodDays` to anonymous callers via `/app-info` —
+  intentional but verify nothing strict-policy-sensitive leaks
+- `RequireCanManageTenantsFilter` returns 404 with no log line for
+  missing tenant info — a `Log.Debug` before the early-return aids
+  future debugging
+- `AutoMembershipOnUserUpdatedHandler.ShouldSync` triggers on every
+  `Optional.HasValue` (intentional — value-equality check would cost
+  more than the recalc), but worth a code comment explaining the
+  trade-off so a future cleanup doesn't regress it
 
 **Pinned-by-design (current behaviour is on purpose; tests guard it):**
 - `DeviceInfoService` Mac-Safari-as-Mobile — fix lives with the
@@ -47,6 +69,93 @@ once they're addressed.
   `OAuthApplicationTypes` constants
 
 The full description for each entry is below.
+
+## Findings from the Api/Features sweep (2026-04-29)
+
+These are observations from the test sweep that surfaced behaviours
+worth knowing about. None were silently fixed — the test that uncovered
+each is in the unit suite and pins the current behaviour.
+
+### `ProjectionEndpoints.MapPost("rebuild")` toggles a process-wide static flag
+
+`ProjectionSideEffects.Enabled` is a static mutable field. The rebuild
+endpoint snapshots `wasEnabled`, sets it to false, runs the rebuild,
+then restores. If two admins click "Rebuild" simultaneously, the second
+caller's snapshot can capture the FIRST caller's interim `false`,
+permanently disabling side effects when the first call finishes.
+
+**Fix when we get there:** lock around the toggle, or convert
+`ProjectionSideEffects` to a scoped service / `AsyncLocal` so the
+suspension is per-request.
+
+### `AuthorizationEndpoints.AuthorizeAsync` builds consent URL without URL-encoding
+
+On one branch `consentUrl = $"/consent?returnUrl={...}"` interpolates
+the source URL directly. Works today because the source is already
+URL-safe (PathBase + Path + QueryString, all RFC-3986-clean), but a
+query string containing a literal `&` would split the `returnUrl` param.
+The companion `ConsentUrlHelper.AppendErrorToUrl` correctly uses
+`Uri.EscapeDataString`.
+
+**Fix when we get there:** wrap the returnUrl in `Uri.EscapeDataString`
+on this branch too.
+
+### `ConsentUrlHelper.ParseAuthorizationUrl` swallows ALL exceptions
+
+The `catch` has no filter. Returns `(null, [])` for malformed URIs —
+correct — but the same fall-through happens for any `Exception` (OOM,
+NRE in a future change). Programming errors get silently turned into a
+"bad request" response.
+
+**Fix when we get there:** narrow to `catch (UriFormatException)` (and
+probably `ArgumentException` for query parsing).
+
+### `AuthorizationEndpoints.GetDestinations` defaults unknown claim types to AccessToken
+
+The switch on claim type ends with a default that puts unknown claims
+into the access_token. Standard OpenIddict pattern, but means any
+custom app claim added later silently flows into tokens unless
+explicitly handled.
+
+**Fix when we get there:** explicit allow-list, with a deny-default for
+unknown claim types — or at minimum, document the security
+implication.
+
+### Pagination defaulting duplicated inline
+
+`OAuthClientsEndpoints` and `OAuthApisEndpoints` both inline:
+`page <= 0 ? 1 : page` and `pageSize <= 0 ? 20 : pageSize`. Two copies,
+neither is tested.
+
+**Fix when we get there:** add `PaginationRequest.WithDefaults(page, pageSize)`
+or similar factory; replace the two inline copies; pin with a unit test.
+
+### `AppSettingsEndpoints.GET /app-info` exposes settings anonymously
+
+`MagicLinkSelfService` and `TwoFactorGracePeriodDays` come back without
+auth. The login page legitimately needs them, but worth confirming
+neither value is sensitive in a tightly-locked-down realm.
+
+### `RequireCanManageTenantsFilter` 404 has no log line
+
+Returns 404 silently for missing tenant info or for non-management
+realms. Both are correct hide-the-endpoint behaviour, but if the realm
+middleware ever fails to populate `HttpContextTenantInfoKey` for a
+legitimate management realm, the symptom is a confusing 404 with no
+trail.
+
+**Fix when we get there:** `Log.Debug` before each early-return, with
+the reason (no tenant info / not a management realm).
+
+### `AutoMembershipOnUserUpdatedHandler.ShouldSync` triggers on `Optional.HasValue`, not "value changed"
+
+Setting `Firstname` to its existing value triggers a re-sync. The
+trade-off (avoiding a load-and-compare on the principal) is
+intentional and noted in the test, but a future cleanup might
+"optimize" it without realising the cost flipped.
+
+**Fix when we get there:** add an explicit code comment explaining the
+trade-off so it's obvious; no behaviour change needed.
 
 ---
 

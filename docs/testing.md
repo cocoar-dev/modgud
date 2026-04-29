@@ -1,11 +1,12 @@
 # Testing
 
-> **Status as of 2026-04-29:** 620 unit tests, 89/96 integration tests
+> **Status as of 2026-04-29:** 686 unit tests, 89/96 integration tests
 > green. Coverage swept across Domain, Application, Authorization,
-> Authentication, Infrastructure, Api. **All test-found production bugs
-> from the sweep have been fixed** — see "Production bugs found and
-> fixed" below. Next planned area: `Cocoar.Auth.Api/Features/*` endpoint
-> helpers + leftover helpers in Authentication that need light refactor.
+> Authentication, Infrastructure, Api (incl. Features). **All test-found
+> production bugs from the sweep have been fixed** — see "Production bugs
+> found and fixed" below. Next planned area: production-bug fixes from
+> the new Features sweep findings, then larger backlog items
+> (UAParser→Wangkanai swap, OAuthAdminService deeper helper extraction).
 > See [Resume here](#resume-here) at the bottom for picking up cold.
 
 ## Two test projects
@@ -96,6 +97,16 @@ dotnet test
 | Tenant context middleware | `Api/TenantContextMiddlewareTests.cs` | 5 | sets `IMessageBus.TenantId` from `HttpContext.Items["TenantId"]`, falls back to `system`, ignores non-string values |
 | SignalR side-effect messages | `Infrastructure/Events/SignalRSideEffectMessagesTests.cs` | 6 | record shape + enum integer values (over-the-wire format) |
 | ProjectionSideEffects | `Infrastructure/Events/ProjectionSideEffectsTests.cs` | 1 | smoke |
+
+### Api/Features (extracted helpers)
+
+| Area | File(s) | Tests | What's pinned |
+|---|---|---:|---|
+| Consent-URL helper | `Api/Features/Auth/OAuth/ConsentUrlHelperTests.cs` | 12 | ParseAuthorizationUrl on /connect/authorize URLs (params, missing, malformed), AppendErrorToUrl with proper URL encoding |
+| Authorization-endpoint claim helpers | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` | 13 | GetDisplayName fallback chain (Firstname Lastname → UserName → Email), GetDestinations claim-type→token-target switch (incl. unknown-claim default-to-AccessToken pinning) |
+| Group-cycle detector | `Api/Features/Admin/GroupCycleDetectorTests.cs` | 10 | DetectCycles on linear / branching / no-cycle / self-loop / 2-node / 3-node cycles |
+| Realms endpoint MapToDto + filter | `Api/Features/Admin/RealmsEndpointsTests.cs` | 6 | RealmDto mapping, RequireCanManageTenantsFilter 404-on-missing |
+| Auto-membership sync paths + ShouldSync | `Api/Features/Groups/AutoMembershipSyncHandlersTests.cs` | 18 | PrincipalPaths constants pinning, ShouldSync per handler (UserCreated, UserUpdated, UserDeleted, UserActivated/Deactivated) |
 
 ## Integration-test inventory
 
@@ -192,6 +203,10 @@ These are pure-extractions made to enable unit-testing. None changed behaviour.
 | `Cocoar.Auth.Infrastructure/Realms/RealmCache.cs` | host-matching + localhost-fallback → `Cocoar.Auth.Infrastructure.Realms.RealmCacheLookup` | `Realms/RealmCacheLookupTests.cs` |
 | `Cocoar.Auth.Application/Services/OAuthAdminService.cs` | 16 `private static` helpers (mapping, permission building, BCrypt wrappers) → `internal static OAuthAdminMapping`. Service shrunk by 262 LoC. | `Application/OAuthAdminMappingTests.cs` |
 | `Cocoar.Auth.Authentication/Api/Account/TwoFactorEnforcementMiddleware.cs` | `IsWhitelisted`, `HasFederatedMfa`, `FederatedMfaAmrValues` lifted from `private static` to `internal static` | `Authentication/Account/TwoFactorEnforcementMiddlewareTests.cs` |
+| `Cocoar.Auth.Api/Features/Auth/OAuth/ConsentEndpoints.cs` | `ParseAuthorizationUrl`, `AppendErrorToUrl` → `internal static ConsentUrlHelper` | `Api/Features/Auth/OAuth/ConsentUrlHelperTests.cs` |
+| `Cocoar.Auth.Api/Features/Auth/OAuth/AuthorizationEndpoints.cs` | `GetDisplayName(user)`, `GetDestinations(claim)` → `internal static AuthorizationEndpointHelpers` | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` |
+| `Cocoar.Auth.Api/Features/Admin/ProjectionEndpoints.cs` | `DetectCycles`, `HasCycle`, `GroupRef`, `CycleReport` → `internal static GroupCycleDetector` | `Api/Features/Admin/GroupCycleDetectorTests.cs` |
+| `Cocoar.Auth.Api/Features/Admin/RealmsEndpoints.cs` | `MapToDto` private→internal | `Api/Features/Admin/RealmsEndpointsTests.cs` |
 
 ## Production bugs found and fixed during the test sweep
 
@@ -273,6 +288,11 @@ where we stopped and what's next.
 - **Five behaviours pinned-by-design** with tests that guard them against
   accidental change — see "Pinned-by-design" above and
   [backlog.md](backlog.md).
+- **Last sweep (Api/Features)** added 66 tests across five extracted helpers
+  (`ConsentUrlHelper`, `AuthorizationEndpointHelpers`, `GroupCycleDetector`,
+  `RealmsEndpoints.MapToDto` + `RequireCanManageTenantsFilter`,
+  `AutoMembershipSyncHandlers`) and surfaced eight new findings — all
+  observations, none silently fixed; tracked in backlog.md.
 - **`docs/` (this folder) is the source of truth for what's checked.** Every
   pass updates `testing.md` (this file) + `backlog.md`.
 
