@@ -4,7 +4,7 @@ layout: home
 hero:
   name: cocoar.auth
   text: Benutzerhandbuch
-  tagline: Dein Konto für alle Cocoar-Apps — Anmeldung, Sicherheit, Datenschutz.
+  tagline: Dein zentrales Konto — Anmeldung, Sicherheit, Datenschutz.
   actions:
     - theme: brand
       text: Erste Schritte

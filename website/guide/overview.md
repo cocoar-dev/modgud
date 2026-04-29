@@ -1,7 +1,8 @@
 # Überblick
 
-cocoar.auth ist der zentrale Identity Provider für die Cocoar
-SaaS-Plattform. ASP.NET Core 10, Marten 8, OpenIddict 7, Vue 3.
+cocoar.auth ist ein eigenständiger Multi-Tenant Identity Provider
+(vergleichbar mit Keycloak, Zitadel oder Authentik). ASP.NET Core 10,
+Marten 8, OpenIddict 7, Vue 3.
 
 ## Was es kann
 
@@ -71,8 +72,8 @@ performance-kritisch.
 Jeder Realm hat seine eigene PostgreSQL-Datenbank. Marten
 `MasterTableTenancy` löst pro Request die Connection auf — keine
 `tenant_id`-Spalten in Joins, keine geteilten Tabellen. Maximale
-Isolation. Der Preis ist mehr DBs zu pflegen — bei Cocoar-Maßstab (ein-
-bis zweistellig viele Realms pro Installation) absolut handhabbar.
+Isolation. Der Preis ist mehr DBs zu pflegen — bei typischem Maßstab
+(ein- bis zweistellig viele Realms pro Installation) absolut handhabbar.
 
 ### Domain-basiertes Realm-Routing
 

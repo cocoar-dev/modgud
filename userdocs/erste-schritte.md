@@ -6,7 +6,7 @@ Willkommen bei cocoar.auth. Diese Seite zeigt dir, wie du dich beim ersten Mal a
 
 ## Was ist cocoar.auth?
 
-cocoar.auth ist der zentrale **Identity Provider** für alle Cocoar-Apps. Statt für jede App ein eigenes Passwort zu verwalten, meldest du dich hier einmal an — und alle Apps, die mit cocoar.auth verbunden sind, kennen dich automatisch (Single Sign-On).
+cocoar.auth ist ein **Identity Provider**. Statt für jede angebundene App ein eigenes Passwort zu verwalten, meldest du dich hier einmal an — und alle Apps, die mit cocoar.auth verbunden sind, kennen dich automatisch (Single Sign-On).
 
 Hier verwaltest du:
 

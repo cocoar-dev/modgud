@@ -5,7 +5,7 @@ import llmstxt from 'vitepress-plugin-llms'
 export default withMermaid(
   defineConfig({
     title: 'Cocoar.Auth',
-    description: 'Identity Provider für die Cocoar SaaS-Plattform — Multi-Realm, OpenIddict, TimeToDo-Slices',
+    description: 'Multi-Tenant Identity Provider — Multi-Realm, OpenIddict, ABAC, GDPR-Self-Service',
     lang: 'de-DE',
 
     head: [
