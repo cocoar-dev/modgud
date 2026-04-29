@@ -12,35 +12,18 @@ once they're addressed.
 
 ## Triage at a glance
 
-**Real production bugs (fix sooner rather than later):**
-- `ProjectionEndpoints` "rebuild" toggles a static `ProjectionSideEffects.Enabled`
-  flag — concurrency hazard if two admins click simultaneously
-- `AuthorizationEndpoints.AuthorizeAsync` builds a `consentUrl` without
-  URL-encoding `returnUrl` on one branch — works today only because the
-  source happens to be URL-safe; a query string with a literal `&` would
-  split the param
-- `ConsentUrlHelper.ParseAuthorizationUrl` swallows ALL exceptions
-  (rather than `UriFormatException`) — masks programming errors
-- `AuthorizationEndpoints.GetDestinations` defaults unknown claim
-  types to `AccessToken` — OpenIddict's typical pattern, but worth
-  confirming app-level claims don't leak sensitive data through the
-  default
+**Real production bugs:** all four findings from the Api/Features
+sweep have been resolved in the 2026-04-29 bug-fix pass — see the
+"Closed/done" section. One was a real OIDC bug (claim destinations);
+two were genuine fixes (rebuild concurrency, narrowed catch); one
+turned out to be a false positive on review (consent URL encoding —
+the code was already correct from the first commit).
 
-**Polish / consistency (next quiet hour):**
-- Pagination defaulting (`page <= 0 ? 1 : page`,
-  `pageSize <= 0 ? 20 : pageSize`) duplicated inline in
-  `OAuthClientsEndpoints` + `OAuthApisEndpoints` — extract a
-  `PaginationRequest.WithDefaults` helper
-- `AppSettingsEndpoints` exposes `MagicLinkSelfService` +
-  `TwoFactorGracePeriodDays` to anonymous callers via `/app-info` —
-  intentional but verify nothing strict-policy-sensitive leaks
-- `RequireCanManageTenantsFilter` returns 404 with no log line for
-  missing tenant info — a `Log.Debug` before the early-return aids
-  future debugging
-- `AutoMembershipOnUserUpdatedHandler.ShouldSync` triggers on every
-  `Optional.HasValue` (intentional — value-equality check would cost
-  more than the recalc), but worth a code comment explaining the
-  trade-off so a future cleanup doesn't regress it
+**Polish / consistency:** all four polish items from the same sweep
+have also been closed — pagination helper extracted, RequireCanManageTenantsFilter
+now logs early-returns, ShouldSync trade-off documented, and the
+`AppSettings /app-info` audit confirmed no sensitive data leaks (login
+page legitimately needs both values).
 
 **Pinned-by-design (current behaviour is on purpose; tests guard it):**
 - `DeviceInfoService` Mac-Safari-as-Mobile — fix lives with the
@@ -60,7 +43,9 @@ once they're addressed.
 - Frontend `AuthorizationSimulator` endpoint missing
 - Frontend consent view
 - Background expired-session cleanup hosted service
-- Real auth-code-flow end-to-end test
+- Real auth-code-flow end-to-end test (would catch OIDC claim-routing
+  regressions like the `given_name`/`family_name`/`email_verified`
+  fix landed in 2026-04-29 wave 3, before they reach a real RP)
 - E2E Playwright Docker container/db rename
 - Cookie naming migration (no production data so non-event today)
 - `IdentityMigrationService` removed during the strip — re-add if
@@ -69,95 +54,6 @@ once they're addressed.
   `OAuthApplicationTypes` constants
 
 The full description for each entry is below.
-
-## Findings from the Api/Features sweep (2026-04-29)
-
-These are observations from the test sweep that surfaced behaviours
-worth knowing about. None were silently fixed — the test that uncovered
-each is in the unit suite and pins the current behaviour.
-
-### `ProjectionEndpoints.MapPost("rebuild")` toggles a process-wide static flag
-
-`ProjectionSideEffects.Enabled` is a static mutable field. The rebuild
-endpoint snapshots `wasEnabled`, sets it to false, runs the rebuild,
-then restores. If two admins click "Rebuild" simultaneously, the second
-caller's snapshot can capture the FIRST caller's interim `false`,
-permanently disabling side effects when the first call finishes.
-
-**Fix when we get there:** lock around the toggle, or convert
-`ProjectionSideEffects` to a scoped service / `AsyncLocal` so the
-suspension is per-request.
-
-### `AuthorizationEndpoints.AuthorizeAsync` builds consent URL without URL-encoding
-
-On one branch `consentUrl = $"/consent?returnUrl={...}"` interpolates
-the source URL directly. Works today because the source is already
-URL-safe (PathBase + Path + QueryString, all RFC-3986-clean), but a
-query string containing a literal `&` would split the `returnUrl` param.
-The companion `ConsentUrlHelper.AppendErrorToUrl` correctly uses
-`Uri.EscapeDataString`.
-
-**Fix when we get there:** wrap the returnUrl in `Uri.EscapeDataString`
-on this branch too.
-
-### `ConsentUrlHelper.ParseAuthorizationUrl` swallows ALL exceptions
-
-The `catch` has no filter. Returns `(null, [])` for malformed URIs —
-correct — but the same fall-through happens for any `Exception` (OOM,
-NRE in a future change). Programming errors get silently turned into a
-"bad request" response.
-
-**Fix when we get there:** narrow to `catch (UriFormatException)` (and
-probably `ArgumentException` for query parsing).
-
-### `AuthorizationEndpoints.GetDestinations` defaults unknown claim types to AccessToken
-
-The switch on claim type ends with a default that puts unknown claims
-into the access_token. Standard OpenIddict pattern, but means any
-custom app claim added later silently flows into tokens unless
-explicitly handled.
-
-**Fix when we get there:** explicit allow-list, with a deny-default for
-unknown claim types — or at minimum, document the security
-implication.
-
-### Pagination defaulting duplicated inline
-
-`OAuthClientsEndpoints` and `OAuthApisEndpoints` both inline:
-`page <= 0 ? 1 : page` and `pageSize <= 0 ? 20 : pageSize`. Two copies,
-neither is tested.
-
-**Fix when we get there:** add `PaginationRequest.WithDefaults(page, pageSize)`
-or similar factory; replace the two inline copies; pin with a unit test.
-
-### `AppSettingsEndpoints.GET /app-info` exposes settings anonymously
-
-`MagicLinkSelfService` and `TwoFactorGracePeriodDays` come back without
-auth. The login page legitimately needs them, but worth confirming
-neither value is sensitive in a tightly-locked-down realm.
-
-### `RequireCanManageTenantsFilter` 404 has no log line
-
-Returns 404 silently for missing tenant info or for non-management
-realms. Both are correct hide-the-endpoint behaviour, but if the realm
-middleware ever fails to populate `HttpContextTenantInfoKey` for a
-legitimate management realm, the symptom is a confusing 404 with no
-trail.
-
-**Fix when we get there:** `Log.Debug` before each early-return, with
-the reason (no tenant info / not a management realm).
-
-### `AutoMembershipOnUserUpdatedHandler.ShouldSync` triggers on `Optional.HasValue`, not "value changed"
-
-Setting `Firstname` to its existing value triggers a re-sync. The
-trade-off (avoiding a load-and-compare on the principal) is
-intentional and noted in the test, but a future cleanup might
-"optimize" it without realising the cost flipped.
-
-**Fix when we get there:** add an explicit code comment explaining the
-trade-off so it's obvious; no behaviour change needed.
-
----
 
 ## Pinned findings (current behavior is documented in tests)
 
@@ -347,7 +243,55 @@ feature folder. Probably ~50 LoC if it's needed back.
 
 ## Closed / done
 
-Real production bugs fixed during the test-fixing pass on 2026-04-29:
+Real production bugs fixed during the Api/Features bug-fix pass on 2026-04-29 (wave 3):
+
+- **`AuthorizationEndpoints.GetDestinations` did not route
+  `given_name`/`family_name`/`email_verified` into the id_token.** OIDC
+  contract for `profile`/`email` scopes was broken: those claims are
+  set on the principal but fell into the destination switch's default
+  branch (AccessToken only). Fix: explicit cases gated on
+  `Scopes.Profile` and `Scopes.Email`. Three new pinning tests
+  document the new claim-to-token contract.
+- **`ProjectionEndpoints` rebuild had a concurrency hazard.**
+  `ProjectionSideEffects.Enabled` is a process-wide mutable static.
+  Two concurrent rebuilds could capture each other's interim `false`
+  and leave the flag stuck at false after the first finishes. Fix:
+  `SemaphoreSlim(1,1)` guards entry; second caller gets 409 Conflict.
+- **`ConsentUrlHelper.ParseAuthorizationUrl` swallowed all
+  exceptions.** Bare `catch` masked programming errors as malformed-URI
+  responses. Fix: narrowed to `catch (UriFormatException)` with a
+  regression-guard test pinning that NRE on null bubbles up.
+
+False-positive triaged out of the backlog on the same pass:
+
+- **`AuthorizationEndpoints.AuthorizeAsync` consent URL encoding.** The
+  backlog claimed one branch built `consentUrl` without
+  `Uri.EscapeDataString`. On review the only consent-URL-building
+  branch (line 150) was already correctly escaped from the first
+  commit, and `ConsentEndpoints.AppendErrorToUrl` likewise. No code
+  change needed.
+
+Polish closed in the same pass:
+
+- **`PaginationRequest.WithDefaults(page, pageSize)` helper extracted.**
+  The `<= 0 ? default` clamp was duplicated inline in
+  `OAuthClientsEndpoints` + `OAuthApisEndpoints`. Now lives once on
+  the DTO; six new tests pin the clamp targets and ctor agreement.
+- **`RequireCanManageTenantsFilter` early-returns now log.**
+  `Log.Debug` before each 404 path describes the reason (no tenant
+  info / realm is not a management realm), so a future misconfigured
+  realm leaves a trail instead of a confusing missing-route symptom.
+- **`AutoMembershipOnUserUpdatedHandler.ShouldSync` trade-off
+  documented.** Code comment now explains why the handler triggers on
+  `Optional.HasValue` rather than "value actually changed" — so a
+  future cleanup that "optimises" with a load-and-compare doesn't
+  silently regress the cost trade-off.
+- **`AppSettings /app-info` anonymous exposure audited.**
+  `MagicLinkSelfService` + `TwoFactorGracePeriodDays` are returned
+  without auth on purpose — the login page needs them. Confirmed nothing
+  strict-policy-sensitive leaks. No code change.
+
+Real production bugs fixed during the test-fixing pass on 2026-04-29 (wave 2):
 
 - **`HttpRequestExtensions.FindSourceIp` crashed on standard
   X-Forwarded-For format** (commit `a2a4a61`). Fixed by splitting on

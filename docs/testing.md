@@ -1,13 +1,18 @@
 # Testing
 
-> **Status as of 2026-04-29:** 686 unit tests, 89/96 integration tests
-> green. Coverage swept across Domain, Application, Authorization,
-> Authentication, Infrastructure, Api (incl. Features). **All test-found
-> production bugs from the sweep have been fixed** — see "Production bugs
-> found and fixed" below. Next planned area: production-bug fixes from
-> the new Features sweep findings, then larger backlog items
-> (UAParser→Wangkanai swap, OAuthAdminService deeper helper extraction).
-> See [Resume here](#resume-here) at the bottom for picking up cold.
+> **Status as of 2026-04-29 (post Api/Features-bug-fix wave):** 696 unit
+> tests, 89/96 integration tests green. Coverage swept across Domain,
+> Application, Authorization, Authentication, Infrastructure, Api (incl.
+> Features). **All test-found production bugs from both sweeps have been
+> fixed** — see "Production bugs found and fixed" below. The Api/Features
+> wave on 2026-04-29 added a real OIDC claim-destination fix
+> (`given_name`/`family_name`/`email_verified` were never reaching the
+> id_token despite the matching scope), narrowed an over-broad
+> exception-swallow in `ConsentUrlHelper`, and serialised the projection
+> rebuild endpoint behind a SemaphoreSlim. Next planned area: larger
+> backlog items (UAParser→Wangkanai swap, OAuthAdminService deeper helper
+> extraction, 7 ProfileSelfService integration tests). See
+> [Resume here](#resume-here) at the bottom for picking up cold.
 
 ## Two test projects
 
@@ -33,7 +38,7 @@ dotnet test
 
 ## Unit-test inventory
 
-611 tests. Every entry below is at least one file under
+696 tests. Every entry below is at least one file under
 `src/dotnet/Cocoar.Auth.Tests.Unit/`.
 
 ### Authorization slice
@@ -102,8 +107,9 @@ dotnet test
 
 | Area | File(s) | Tests | What's pinned |
 |---|---|---:|---|
-| Consent-URL helper | `Api/Features/Auth/OAuth/ConsentUrlHelperTests.cs` | 12 | ParseAuthorizationUrl on /connect/authorize URLs (params, missing, malformed), AppendErrorToUrl with proper URL encoding |
-| Authorization-endpoint claim helpers | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` | 13 | GetDisplayName fallback chain (Firstname Lastname → UserName → Email), GetDestinations claim-type→token-target switch (incl. unknown-claim default-to-AccessToken pinning) |
+| Consent-URL helper | `Api/Features/Auth/OAuth/ConsentUrlHelperTests.cs` | 13 | ParseAuthorizationUrl on /connect/authorize URLs (params, missing, malformed-URI → null+[], NRE on null bubbles up to guard against catch-widening regressions), AppendErrorToUrl with proper URL encoding |
+| Authorization-endpoint claim helpers | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` | 16 | GetDisplayName fallback chain (Firstname Lastname → UserName → Email), GetDestinations claim-type→token-target switch — `name`/`preferred_username`/`given_name`/`family_name` (profile scope), `email`/`email_verified` (email scope), `role` (roles scope), `SecurityStamp` suppressed, unknown-claim default to AccessToken |
+| PaginationRequest.WithDefaults | `Application/PaginationRequestTests.cs` | 6 | non-positive raw page/pageSize clamped to 1/20, valid passthrough, parameterless-ctor and clamp targets agree |
 | Group-cycle detector | `Api/Features/Admin/GroupCycleDetectorTests.cs` | 10 | DetectCycles on linear / branching / no-cycle / self-loop / 2-node / 3-node cycles |
 | Realms endpoint MapToDto + filter | `Api/Features/Admin/RealmsEndpointsTests.cs` | 6 | RealmDto mapping, RequireCanManageTenantsFilter 404-on-missing |
 | Auto-membership sync paths + ShouldSync | `Api/Features/Groups/AutoMembershipSyncHandlersTests.cs` | 18 | PrincipalPaths constants pinning, ShouldSync per handler (UserCreated, UserUpdated, UserDeleted, UserActivated/Deactivated) |
@@ -213,9 +219,29 @@ These are pure-extractions made to enable unit-testing. None changed behaviour.
 The pattern: a test exposes the bug, the fix lands in the same wave, the
 pinning test is flipped to assert the corrected behaviour.
 
-- **`Group.GetEmailsAsync` cycle detection across nested groups** (commit
-  `b6b2dc3`). Cycle A→B→A produced infinite recursion → stack overflow.
-  Visited-set now threads through nested calls.
+Wave 3 (Api/Features bug-fix pass, 2026-04-29):
+
+- **`AuthorizationEndpoints.GetDestinations` did not route
+  `given_name`/`family_name`/`email_verified` into the id_token** (this
+  pass). The OIDC `profile` scope is supposed to deliver `given_name`
+  and `family_name` in the id_token; the `email` scope is supposed to
+  deliver `email_verified`. The principal-builder at lines 319/327-328
+  set those claims, but `GetDestinations` had no explicit cases for
+  them — they fell into the default branch (AccessToken only) and never
+  reached the id_token. Added explicit allow-listed cases for all three;
+  three new pinning tests cover the new behaviour.
+- **`ProjectionEndpoints.MapPost("rebuild")` race on a process-wide
+  static** (this pass). `ProjectionSideEffects.Enabled` is mutable
+  static; two concurrent rebuilds could capture each other's interim
+  `false` and permanently disable side effects. Now serialised behind a
+  `SemaphoreSlim(1,1)` — the second caller gets a 409 Conflict.
+- **`ConsentUrlHelper.ParseAuthorizationUrl` swallowed all exceptions**
+  (this pass). The bare `catch` masked programming errors (NRE, OOM,
+  …) by turning them into "bad request" responses. Narrowed to
+  `catch (UriFormatException)`. New regression-guard test asserts NRE
+  on null input bubbles up.
+
+Wave 2 (Authorization/Authentication/Infrastructure/Api sweep):
 - **`HttpRequestExtensions.FindSourceIp` crashed on standard
   `X-Forwarded-For` comma-list** (commit `a2a4a61`). Now splits on `,`,
   trims, `TryParse`s; silently skips garbage entries.
@@ -244,6 +270,22 @@ Polish from the same pass:
   `OAuthClientTypes`, `OAuthConsentTypes`. Sweep of bare literals is its
   own backlog item.
 
+Polish from Wave 3:
+
+- **`PaginationRequest.WithDefaults(page, pageSize)` factory extracted**
+  (this pass). `OAuthClientsEndpoints` and `OAuthApisEndpoints` were
+  inlining the same `<= 0 ? default` clamp logic. Helper now lives on
+  the DTO; both endpoints call it; six new tests pin the clamp + that
+  the parameterless ctor and the clamp targets agree.
+- **`RequireCanManageTenantsFilter` now logs each early-return**
+  (this pass). 404 used to be silent — a future misrouted realm would
+  look like a missing route. Now `Log.Debug` carries the reason
+  ("no tenant info" / "realm '{Slug}' is not a management realm").
+- **`AutoMembershipOnUserUpdatedHandler.ShouldSync` trade-off documented**
+  (this pass). The deliberate "trigger on `Optional.HasValue` even when
+  the value didn't change" is now a code comment so a future cleanup
+  doesn't optimise it back the wrong way.
+
 ## Pinned-by-design (current behaviour is on purpose)
 
 Each of these has at least one test that documents the behaviour. The
@@ -268,7 +310,7 @@ where we stopped and what's next.
 
 ### What's done (stop reading further if you only need today's status)
 
-- **Two test projects exist and run.** `Cocoar.Auth.Tests.Unit` (611 tests,
+- **Two test projects exist and run.** `Cocoar.Auth.Tests.Unit` (696 tests,
   ~1 s) and `Cocoar.Auth.Api.Tests` (96 tests, ~90 s, 89 green).
 - **Unit coverage swept across:** Domain (Realms, OAuth aggregates, OAuth
   wire-format constants), Application (OAuthAdminMapping after extraction),
@@ -280,11 +322,14 @@ where we stopped and what's next.
   4 OAuth/LoginProvider state projections, TenantConstants,
   SignalRSideEffectMessages, ProjectionSideEffects), Api
   (TenantContextMiddleware).
-- **Six real production bugs found AND fixed** during the sweep (commits
-  `b6b2dc3`, `a2a4a61`, `dab1883`, `f676947`, `bc5968f`, `8c87272`) — see
-  the "Production bugs found and fixed" section above.
-- **Three polish items closed** alongside the bugs (commits `9253771`,
-  `1b294e8`).
+- **Nine real production bugs found AND fixed** across the three sweeps
+  (commits `b6b2dc3`, `a2a4a61`, `dab1883`, `f676947`, `bc5968f`,
+  `8c87272`, plus the Wave 3 OIDC-claim-destinations fix, the
+  rebuild-concurrency fix, and the catch-narrowing fix in this pass).
+  See the "Production bugs found and fixed" section above.
+- **Six polish items closed** alongside the bugs (commits `9253771`,
+  `1b294e8`, plus PaginationRequest.WithDefaults extraction, filter
+  logging, and ShouldSync trade-off documentation in this pass).
 - **Five behaviours pinned-by-design** with tests that guard them against
   accidental change — see "Pinned-by-design" above and
   [backlog.md](backlog.md).
@@ -300,9 +345,11 @@ where we stopped and what's next.
 
 In rough priority order:
 
-1. **`Cocoar.Auth.Api/Features/*`** endpoint helpers — DTO builders,
-   validation helpers, anything pure that's currently buried inside Minimal
-   API endpoint files. Likely several small wins behind small extractions.
+1. **Larger deferred work from `backlog.md`** — replacing UAParser with
+   Wangkanai.Detection (also fixes the Mac-Safari-as-Mobile pin), the
+   three more pure helpers in `OAuthAdminService`, and getting the 7
+   ProfileSelfService integration tests green. Each of these is
+   medium-sized and worth its own focused pass.
 2. **`UserChangeRequest` Optional-aware merge** — the merge logic for
    profile-edit approval. Either inside `UserChangeRequest` itself or in the
    `ProfileEndpoints`/admin-change-request pipeline. Worth a careful look:
@@ -317,8 +364,6 @@ In rough priority order:
 5. **`AuthLogDocument`, `UserDeletionState`, `IdpConfig`** — verify these
    really are pure DTOs as currently classified, or confirm and add to the
    "do NOT test" list.
-6. **Production bug fixes** from "Pinned bugs" above — at least
-   `HttpRequestExtensions.FindSourceIp` is a real outage waiting to happen.
 
 ### How to start the next pass
 
