@@ -40,6 +40,12 @@ export interface OAuthClientDto {
   ClientClaimsPrefix?: string | null
   Claims: OAuthClientClaimDto[]
   Roles: string[]
+  /**
+   * Optional FK to an Application. `null` = client is realm-wide (no app
+   * context). The frontend joins this against `useApplicationsStore` to
+   * resolve the slug + display name.
+   */
+  AppId?: string | null
 }
 
 export interface CreateOAuthClientDto {
@@ -56,6 +62,8 @@ export interface CreateOAuthClientDto {
   RequireConsent?: boolean
   AllowedGrantTypes?: string[]
   AllowedCorsOrigins?: string[]
+  /** Application Id (Guid string). null/undefined → realm-wide client. */
+  AppId?: string | null
 }
 
 export interface UpdateOAuthClientDto {
@@ -79,6 +87,14 @@ export interface UpdateOAuthClientDto {
   SlidingRefreshTokenLifetime?: number | null
   Claims?: OAuthClientClaimDto[] | null
   Roles?: string[] | null
+  /**
+   * App-link patch. Mirrors the backend's PATCH semantics:
+   *   undefined/missing → no change (do NOT include the key in the JSON)
+   *   ""                → explicit detach: AppId becomes null
+   *   "<guid>"          → assign / change to that App
+   * The dropdown's "no app" choice serialises to "" (empty string).
+   */
+  AppId?: string | null
 }
 
 export interface OAuthClientListDto {

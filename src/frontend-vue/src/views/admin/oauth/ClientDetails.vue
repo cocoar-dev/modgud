@@ -13,6 +13,7 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useOAuthClientStore } from '@/stores/oauthClient.store'
+import { useApplicationsStore } from '@/stores/applications.store'
 import type { OAuthClientDto, CreateOAuthClientDto, UpdateOAuthClientDto } from '@/models/oauth'
 
 const { t } = useI18n()
@@ -23,6 +24,7 @@ const props = defineProps<{
 }>()
 
 const store = useOAuthClientStore()
+const applicationsStore = useApplicationsStore()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -42,6 +44,17 @@ const consentTypeOptions = [
   { value: 'external', label: 'External' },
   { value: 'systematic', label: 'Systematic' },
 ]
+
+// App-link dropdown — empty string = "no app" (realm-wide). Backend
+// PATCH semantics interpret "" as explicit detach, a Guid string as
+// assign. Uses the same applications store as the BoundTo MultiSelect.
+const appOptions = computed(() => [
+  { value: '', label: t('admin.oauthClients.app.none', {}, '— No app (realm-wide)') },
+  ...applicationsStore.apps.map((a) => ({
+    value: a.Id,
+    label: `${a.DisplayName} (${a.Slug})`,
+  })),
+])
 
 interface FormState {
   ClientId: string
@@ -64,6 +77,8 @@ interface FormState {
   AuthorizationCodeLifetime: string
   AbsoluteRefreshTokenLifetime: string
   SlidingRefreshTokenLifetime: string
+  /** Empty string = "no app" (will detach on save). Otherwise an App.Id. */
+  AppId: string
 }
 
 function emptyForm(): FormState {
@@ -88,6 +103,7 @@ function emptyForm(): FormState {
     AuthorizationCodeLifetime: '',
     AbsoluteRefreshTokenLifetime: '',
     SlidingRefreshTokenLifetime: '',
+    AppId: '',
   }
 }
 
@@ -116,6 +132,7 @@ function fromDto(dto: OAuthClientDto): FormState {
     AuthorizationCodeLifetime: dto.AuthorizationCodeLifetime?.toString() ?? '',
     AbsoluteRefreshTokenLifetime: dto.AbsoluteRefreshTokenLifetime?.toString() ?? '',
     SlidingRefreshTokenLifetime: dto.SlidingRefreshTokenLifetime?.toString() ?? '',
+    AppId: dto.AppId ?? '',
   }
 }
 
@@ -148,6 +165,8 @@ const footerButton = computed(() => ({
 }))
 
 onMounted(async () => {
+  // Apps for the App-link dropdown — needed for both create + edit.
+  applicationsStore.initialize()
   if (isCreate.value) return
   loading.value = true
   try {
@@ -205,6 +224,7 @@ function buildCreateDto(): CreateOAuthClientDto {
   }
   const secret = form.value.ClientSecret.trim()
   if (secret) dto.ClientSecret = secret
+  if (form.value.AppId) dto.AppId = form.value.AppId
   return dto
 }
 
@@ -227,6 +247,8 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     AuthorizationCodeLifetime: parseInt(form.value.AuthorizationCodeLifetime),
     AbsoluteRefreshTokenLifetime: parseInt(form.value.AbsoluteRefreshTokenLifetime),
     SlidingRefreshTokenLifetime: parseInt(form.value.SlidingRefreshTokenLifetime),
+    // Always send AppId on update — empty string detaches, guid assigns.
+    AppId: form.value.AppId,
   }
 }
 
@@ -290,6 +312,9 @@ async function copySecret() {
           </CoarFormField>
           <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent-Typ')">
             <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.oauthClients.app', {}, 'Application')">
+            <CoarSelect v-model="form.AppId" :options="appOptions" />
           </CoarFormField>
           <CoarFormField v-if="isCreate" :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (leer = generieren)')">
             <CoarTextInput v-model="form.ClientSecret" type="password" clearable />
