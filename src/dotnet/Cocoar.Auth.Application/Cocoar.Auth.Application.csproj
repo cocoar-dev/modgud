@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Cocoar.Auth.Tests.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="ErrorOr" />
     <PackageReference Include="Riok.Mapperly" />
     <PackageReference Include="WolverineFx.Marten" />
