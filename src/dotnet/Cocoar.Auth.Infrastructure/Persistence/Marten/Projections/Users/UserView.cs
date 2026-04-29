@@ -28,6 +28,13 @@ public record UserView
         var parts = new[] { Acronym, $"{Firstname ?? ""} {Lastname ?? ""}".Trim() }
             .Where(p => !string.IsNullOrWhiteSpace(p));
         var label = string.Join(" | ", parts);
-        return !string.IsNullOrWhiteSpace(label) ? label : UserName ?? "";
+        if (!string.IsNullOrWhiteSpace(label))
+            return label;
+
+        // UserName is the fallback only when it's actually present. A
+        // whitespace-only username would otherwise render as a blank row in
+        // admin grids — fall through to the explicit placeholder so something
+        // is always visible.
+        return string.IsNullOrWhiteSpace(UserName) ? "<no name>" : UserName;
     }
 }

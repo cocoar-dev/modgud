@@ -41,10 +41,12 @@ public class UserViewTests
         }
 
         [Fact]
-        public void Returns_empty_string_when_nothing_set()
+        public void Returns_placeholder_when_nothing_set()
         {
+            // Empty/missing user always yields something visible — admin grids
+            // never render a blank row from this method.
             var view = new UserView();
-            Assert.Equal("", view.GetDisplayLabel());
+            Assert.Equal("<no name>", view.GetDisplayLabel());
         }
 
         [Fact]
@@ -74,13 +76,12 @@ public class UserViewTests
         }
 
         [Fact]
-        public void Whitespace_username_is_returned_as_is_not_trimmed()
+        public void Whitespace_username_falls_through_to_placeholder()
         {
-            // FINDING: GetDisplayLabel does NOT trim or null-check the UserName
-            // fallback — a whitespace-only username surfaces in the UI verbatim.
-            // Pinned as-is; fix would be a behavioural change for the admin grid.
+            // A whitespace-only UserName must not surface as a blank admin row.
+            // Same fall-through as the all-empty case.
             var view = new UserView { UserName = "   " };
-            Assert.Equal("   ", view.GetDisplayLabel());
+            Assert.Equal("<no name>", view.GetDisplayLabel());
         }
     }
 }
