@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using JasperFx.Events.Projections;
 using Marten;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Projections;
@@ -45,8 +46,19 @@ public static class MartenStoreOptionsExtensions
         // PermissionRole — its own top-level document.
         martenOpts.Schema.For<PermissionRole>();
 
-        // Inline role projection — owned by the lib.
+        // App — logical scope inside a realm (the user-facing concept is
+        // "Application"; the class is `App` to avoid collision with the
+        // Cocoar.Auth.Application CQRS-layer namespace). Indexed by Slug for
+        // the common "find app by slug" lookup and by IsDeleted to keep admin
+        // queries fast.
+        martenOpts.Schema.For<App>()
+            .Index(x => x.Slug)
+            .Index(x => x.IsDeleted);
+
+        // Inline projections — admin reads + slug-uniqueness checks need
+        // synchronous consistency.
         martenOpts.Projections.Add<PermissionRoleProjection>(ProjectionLifecycle.Inline);
+        martenOpts.Projections.Add<AppProjection>(ProjectionLifecycle.Inline);
 
         // Stable event-type aliases. Marten resolves events through these, so the
         // .NET type FQN can change without breaking persisted streams.
@@ -59,6 +71,10 @@ public static class MartenStoreOptionsExtensions
         martenOpts.Events.MapEventType<PermissionRoleCreatedEvent>("permission_role_created");
         martenOpts.Events.MapEventType<PermissionRoleUpdatedEvent>("permission_role_updated");
         martenOpts.Events.MapEventType<PermissionRoleDeletedEvent>("permission_role_deleted");
+
+        martenOpts.Events.MapEventType<AppCreatedEvent>("authorization_app_created");
+        martenOpts.Events.MapEventType<AppUpdatedEvent>("authorization_app_updated");
+        martenOpts.Events.MapEventType<AppDeletedEvent>("authorization_app_deleted");
 
         return martenOpts;
     }
