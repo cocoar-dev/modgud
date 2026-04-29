@@ -1,9 +1,0 @@
-{
-  "RelyingPartyId": "localhost",
-  "RelyingPartyName": "Cocoar Auth",
-  "Origins": [
-    "http://localhost",
-    "http://localhost:4200"
-  ],
-  "Timeout": 60000
-}

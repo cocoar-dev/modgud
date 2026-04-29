@@ -5,18 +5,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BCrypt.Net-Next" />
     <PackageReference Include="ErrorOr" />
-    <PackageReference Include="Marten" />
-    <PackageReference Include="Microsoft.AspNetCore.WebUtilities" />
-    <PackageReference Include="Microsoft.Extensions.Identity.Core" />
-    <PackageReference Include="OpenIddict.Abstractions" />
     <PackageReference Include="Riok.Mapperly" />
-    <PackageReference Include="WolverineFx" />
+    <PackageReference Include="WolverineFx.Marten" />
+    <PackageReference Include="Marten" />
+    <PackageReference Include="BCrypt.Net-Next" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Cocoar.Auth.Domain\Cocoar.Auth.Domain.csproj" />
+    <ProjectReference Include="..\Common\BuildingBlocks.EventDispatcher\BuildingBlocks.EventDispatcher.csproj" />
+    <ProjectReference Include="..\Common\BuildingBlocks.Helper\BuildingBlocks.Helper.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,50 +1,65 @@
-using Cocoar.Auth.Infrastructure.Services;
+using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
+using Cocoar.Auth.Infrastructure.Realms;
 
 namespace Cocoar.Auth.Api.Middleware;
 
 /// <summary>
-/// Resolves the realm (tenant) from the HTTP Host header.
-/// Domain-based routing: each tenant has one or more domains configured.
-/// The middleware matches the Host header against the cached domain→tenant mapping.
+/// Resolves the realm (tenant) from the HTTP Host header. Domain-based routing:
+/// each realm has one or more domains configured (see <see cref="Domain.Realms.Realm.Domains"/>).
+/// The middleware matches the Host header against the cached domain → tenant
+/// mapping and stashes the resolved tenant id into <see cref="HttpContext.Items"/>
+/// so the <c>TenantedSessionFactory</c> can pick it up when opening Marten
+/// sessions inside the request scope.
+///
+/// <para>
+/// Skip-paths bypass realm resolution (used by health probes, OpenAPI, etc.).
+/// Anything else without a matching realm falls through to the system tenant
+/// when only one realm exists (single-tenant boot) or returns 404 when the host
+/// is genuinely unknown.
+/// </para>
 /// </summary>
-public class RealmMiddleware
+public sealed class RealmMiddleware
 {
-	private readonly RequestDelegate _next;
-	private readonly IRealmCache _realmCache;
+    private readonly RequestDelegate _next;
+    private readonly IRealmCache _realmCache;
 
-	private static readonly string[] SkipPaths = ["/health", "/swagger", "/_framework"];
+    private static readonly string[] SkipPaths =
+    [
+        "/health",
+        "/swagger",
+        "/openapi",
+        "/_framework",
+        "/signalr",
+    ];
 
-	public RealmMiddleware(RequestDelegate next, IRealmCache realmCache)
-	{
-		_next = next;
-		_realmCache = realmCache;
-	}
+    public RealmMiddleware(RequestDelegate next, IRealmCache realmCache)
+    {
+        _next = next;
+        _realmCache = realmCache;
+    }
 
-	public async Task InvokeAsync(HttpContext context)
-	{
-		var path = context.Request.Path.Value;
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var path = context.Request.Path.Value;
 
-		// Skip system paths that don't need tenant resolution
-		if (path is not null && SkipPaths.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
-		{
-			await _next(context);
-			return;
-		}
+        if (path is not null && SkipPaths.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+        {
+            await _next(context);
+            return;
+        }
 
-		// Resolve tenant from Host header
-		var hostname = context.Request.Host.Host;
-		var tenantInfo = await _realmCache.ResolveDomainAsync(hostname);
+        var hostname = context.Request.Host.Host;
+        var tenantInfo = await _realmCache.ResolveDomainAsync(hostname);
 
-		if (tenantInfo is null)
-		{
-			context.Response.StatusCode = 404;
-			return;
-		}
+        if (tenantInfo is null)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
 
-		context.Items["TenantId"] = tenantInfo.Slug;
-		context.Items["RealmSlug"] = tenantInfo.Slug;
-		context.Items["TenantInfo"] = tenantInfo;
+        context.Items[TenantConstants.HttpContextTenantIdKey] = tenantInfo.Slug;
+        context.Items[TenantConstants.HttpContextTenantInfoKey] = tenantInfo;
 
-		await _next(context);
-	}
+        await _next(context);
+    }
 }

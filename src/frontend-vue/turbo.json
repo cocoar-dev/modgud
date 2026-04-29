@@ -8,14 +8,9 @@
       "cache": false,
       "persistent": true
     },
-    "preview": {
-      "cache": false
-    },
-    "lint": {
-      "outputs": []
-    },
     "test": {
-      "outputs": []
-    }
+      "outputs": ["coverage/**"]
+    },
+    "type-check": {}
   }
 }

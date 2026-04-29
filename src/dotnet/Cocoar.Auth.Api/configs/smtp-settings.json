@@ -1,9 +1,0 @@
-{
-  "Host": "localhost",
-  "Port": 2525,
-  "UseSsl": false,
-  "Username": null,
-  "Password": null,
-  "FromAddress": "noreply@cocoar.local",
-  "FromName": "Cocoar Auth"
-}

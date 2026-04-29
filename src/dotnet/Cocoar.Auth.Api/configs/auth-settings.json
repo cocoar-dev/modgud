@@ -1,9 +1,0 @@
-{
-  "Cookie": {
-    "HttpOnly": true,
-    "SecurePolicy": "Always",
-    "SameSite": "Lax"
-  },
-  "SessionExpirationDays": 14,
-  "SlidingExpiration": true
-}

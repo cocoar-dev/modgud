@@ -1,7 +1,0 @@
-{
-  "Issuer": "https://auth.example.com",
-  "AccessTokenLifetimeMinutes": 60,
-  "RefreshTokenLifetimeDays": 14,
-  "AuthorizationCodeLifetimeMinutes": 5,
-  "DevelopmentMode": false
-}

@@ -1,23 +1,69 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <RootNamespace>Cocoar.Auth.Api</RootNamespace>
+    <UserSecretsId>affd5545-112b-4565-8201-1a534a20ce58</UserSecretsId>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <DockerfileContext>.</DockerfileContext>
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Cocoar.Auth.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Models\**" />
+    <Content Remove="Models\**" />
+    <EmbeddedResource Remove="Models\**" />
+    <None Remove="Models\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Cocoar.JsEval.TsDefinition" />
+    <PackageReference Include="Cocoar.Reflectensions" />
+    <PackageReference Include="Cocoar.SignalARRR.Server" />
     <PackageReference Include="Cocoar.Configuration" />
     <PackageReference Include="Cocoar.Configuration.AspNetCore" />
-    <PackageReference Include="Fido2" />
-    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
-    <PackageReference Include="Serilog.AspNetCore" />
-    <PackageReference Include="Swashbuckle.AspNetCore" />
-    <PackageReference Include="Cocoar.SignalARRR.Server" />
-    <PackageReference Include="Cocoar.SignalARRR.Contracts" />
     <PackageReference Include="WolverineFx.Marten" />
+    <PackageReference Include="ErrorOr" />
+    <PackageReference Include="OpenIddict.Abstractions" />
+    <PackageReference Include="OpenIddict.Server.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Cocoar.Auth.Infrastructure\Cocoar.Auth.Infrastructure.csproj" />
+    <ProjectReference Include="..\Cocoar.Auth.Authentication\Cocoar.Auth.Authentication.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="localhost.pfx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!--
+    The Web SDK auto-includes every *.json under the project as Content with
+    CopyToPublishDirectory=PreserveNewest. That means our dev-only "data/configuration.json"
+    (and the gitignored "configuration.local.json") would end up in published images
+    and silently override the secure class defaults of AppSettings. Exclude them from
+    publish; devs still use them at source, prod runs on class defaults + env vars.
+    demo-seed.json stays published — DemoSeedImportService reads it at runtime.
+  -->
+  <ItemGroup>
+    <Content Update="data\configuration.json">
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Update="data\configuration.local.json" Condition="Exists('data\configuration.local.json')">
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="wwwroot" />
   </ItemGroup>
 
 </Project>

@@ -1,528 +1,683 @@
-using System.Security.Claims;
-using System.Threading.RateLimiting;
-using JasperFx;
-using Cocoar.Auth.Api.Configuration;
-using Cocoar.Auth.Api.Extensions;
-using Cocoar.Auth.Api.Middleware;
-using Cocoar.Auth.Application;
-using Cocoar.Auth.Application.Interfaces;
-using Cocoar.Auth.Application.Services;
-using Cocoar.Auth.Infrastructure;
-using Cocoar.Auth.Infrastructure.Interfaces;
-using Cocoar.Auth.Infrastructure.OpenIddict;
-using Cocoar.Auth.Infrastructure.Repositories;
-using Cocoar.Auth.Infrastructure.Services;
+using System.Security.Cryptography.X509Certificates;
+using Cocoar.Auth.Api.Features;
+using System.Text.Json.Serialization;
 using Cocoar.Configuration.AspNetCore;
 using Cocoar.Configuration.DI;
 using Cocoar.Configuration.DI.Extensions;
-using Cocoar.Configuration.Fluent;
 using Cocoar.Configuration.Providers;
-using Cocoar.Configuration.Secrets;
-using Cocoar.Primitives;
-using Cocoar.Primitives.OptionalAware;
-using Fido2NetLib;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.RateLimiting;
-using Npgsql;
-using Serilog;
-using Cocoar.Auth.Api.Hubs;
-using Cocoar.Configuration.Reactive;
 using Cocoar.SignalARRR.Server.ExtensionMethods;
-using JasperFx.Events.Daemon;
-using Marten;
+using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.ResponseCompression;
+using Serilog;
+using Serilog.Sinks.SystemConsole.Themes;
+using BuildingBlocks.EventDispatcher;
+using Fido2NetLib;
+using Cocoar.Auth.Infrastructure.Email;
+using Cocoar.Auth.Api;
+using Cocoar.Auth.Api.ExtensionMethods;
+using Cocoar.Auth.Authentication;
+using Cocoar.Auth.Authentication.ExtensionMethods;
+using Cocoar.Auth.Authentication.Api.Account;
+using Cocoar.Auth.Authentication.Api.Account.Services;
+using Cocoar.Auth.Api.Features.Admin;
+using Cocoar.Auth.Api.Features.Admin.LoginProviders;
+using Cocoar.Auth.Api.Features.Admin.OAuth;
+using Cocoar.Auth.Authentication.AuthLog;
+using Cocoar.Auth.Authentication.Api.Admin;
+using Cocoar.Auth.Authentication.Api.Admin.IdentityProviders;
+using Cocoar.Auth.Authentication.Api.ExternalAuth;
+using Cocoar.Auth.Api.Features.Dev;
+using Cocoar.Auth.Api.Features.Groups;
+using Cocoar.Auth.Api.Features.Principals;
+using Cocoar.Auth.Api.Features.Roles;
+using Cocoar.Auth.Api.Features.Shared;
+using Cocoar.Auth.Api.Features.Users;
+using Cocoar.Auth.Api.Helper;
+using Cocoar.Auth.Domain.Common;
+using Cocoar.Auth.Authentication.Domain;
+using Cocoar.Auth.Infrastructure;
+using Cocoar.Auth.Infrastructure.OAuth;
+using Cocoar.Auth.Infrastructure.OpenIddict;
+using Cocoar.Auth.Api.Features.Auth.OAuth;
+using Cocoar.Auth.Authentication.Setup;
+using Cocoar.Auth.Authentication.Identity;
+using Cocoar.Auth.Authentication.Identity.ExternalAuth;
+using Cocoar.Auth.Authentication.Identity.ExternalAuth.Flavors;
+using Cocoar.Auth.Api.Middleware;
+using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
+using Cocoar.Auth.Infrastructure.Realms;
+using Marten.Storage;
+using Npgsql;
 using Wolverine;
-using Wolverine.Marten;
 
-var builder = WebApplication.CreateBuilder(args);
 
-// Configure Serilog via DI (NOT static bootstrap logger).
-// Using AddSerilog avoids ReloadableLogger.Freeze() which throws
-// "The logger is already frozen" when multiple WebApplicationFactory
-// instances start in parallel during test execution.
-builder.Services.AddSerilog(configuration =>
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateLogger();
+
+Log.Information("Starting up");
+
+try
 {
-    configuration
-        .ReadFrom.Configuration(builder.Configuration)
-        .Enrich.FromLogContext()
-        .WriteTo.Console();
+    var builder = WebApplication.CreateBuilder(args);
 
-    // Suppress verbose Marten/Wolverine logging in tests
-    if (builder.Environment.IsEnvironment("Testing"))
+    // Configure Cocoar.Configuration (v5 builder API)
+    builder.AddCocoarConfiguration(c => c
+        .UseConfiguration(rule =>
+        [
+            // Load from configuration files (local overrides base, gitignored)
+            rule.For<StartUpConfiguration>().FromFile("data/configuration.json"),
+            rule.For<StartUpConfiguration>().FromFile("data/configuration.local.json"),
+            rule.For<EmailConfiguration>().FromFile("data/configuration.json").Select("Email"),
+            rule.For<EmailConfiguration>().FromFile("data/configuration.local.json").Select("Email"),
+            rule.For<MagicLinkConfiguration>().FromFile("data/configuration.json").Select("MagicLink"),
+            rule.For<MagicLinkConfiguration>().FromFile("data/configuration.local.json").Select("MagicLink"),
+            rule.For<MagicLinkConfiguration>().FromEnvironment("MagicLink"),
+            rule.For<EmailOtpConfiguration>().FromFile("data/configuration.json").Select("EmailOtp"),
+            rule.For<EmailOtpConfiguration>().FromFile("data/configuration.local.json").Select("EmailOtp"),
+            rule.For<EmailOtpConfiguration>().FromEnvironment("EmailOtp"),
+
+            // Environment variable overrides (for CI/deployment)
+            rule.For<StartUpConfiguration>().FromEnvironment(),
+            rule.For<EmailConfiguration>().FromEnvironment("Email"),
+
+            // App settings (auth feature toggles — from config file, overridable via env)
+            rule.For<AppSettings>().FromFile("data/configuration.json").Select("AppSettings"),
+            rule.For<AppSettings>().FromFile("data/configuration.local.json").Select("AppSettings"),
+            rule.For<AppSettings>().FromEnvironment("AppSettings"),
+
+            // OpenIddict OAuth/OIDC server settings
+            rule.For<OpenIddictSettings>().FromFile("data/configuration.json").Select("OpenIddict"),
+            rule.For<OpenIddictSettings>().FromFile("data/configuration.local.json").Select("OpenIddict"),
+            rule.For<OpenIddictSettings>().FromEnvironment("OpenIddict"),
+        ], setup =>
+        [
+            setup.ConcreteType<StartUpConfiguration>().AsSingleton(),
+            setup.ConcreteType<EmailConfiguration>().AsSingleton(),
+            setup.ConcreteType<MagicLinkConfiguration>().AsSingleton(),
+            setup.ConcreteType<EmailOtpConfiguration>().AsSingleton(),
+            setup.ConcreteType<AppSettings>().AsSingleton(),
+            setup.ConcreteType<OpenIddictSettings>().AsSingleton(),
+        ]));
+
+    // Expose concrete config types as Authentication interfaces so Authentication
+    // can inject them without depending on the Api project.
+    builder.Services.AddSingleton<IAuthSettings>(sp => sp.GetRequiredService<AppSettings>());
+    builder.Services.AddSingleton<IServerConfiguration>(sp => sp.GetRequiredService<StartUpConfiguration>());
+    builder.Services.AddSingleton<IMagicLinkConfiguration>(sp => sp.GetRequiredService<MagicLinkConfiguration>());
+
+    var configManager = builder.GetCocoarConfigManager();
+    var conf = configManager.GetRequiredConfig<StartUpConfiguration>();
+
+    if (!string.IsNullOrWhiteSpace(conf.CertPath))
     {
-        configuration.MinimumLevel.Warning();
-    }
-});
-
-// Configure Cocoar.Configuration with layered sources
-var env = builder.Environment.EnvironmentName;
-builder.AddCocoarConfiguration(c => c.UseConfiguration(rule =>
-[
-    rule.For<DatabaseSettings>().Layered("database-settings", "DATABASE_", env).Required(),
-    rule.For<AuthSettings>().Layered("auth-settings", "AUTH_", env),
-    rule.For<CorsSettings>().Layered("cors-settings", "CORS_", env),
-    rule.For<SmtpSettings>().Layered("smtp-settings", "SMTP_", env),
-    rule.For<WebAuthnSettings>().Layered("webauthn-settings", "WEBAUTHN_", env),
-    rule.For<OpenIddictSettings>().Layered("openiddict-settings", "OPENIDDICT_", env),
-    rule.For<ServerSettings>().Layered("server-settings", "SERVER_", env),
-    rule.For<ProjectionSettings>().FromStatic(_ => new ProjectionSettings { UseAsyncProjections = builder.Environment.IsProduction() })
-], setup =>
-[
-    setup.ConcreteType<DatabaseSettings>().ExposeAs<IDatabaseSettings>(),
-    setup.ConcreteType<ProjectionSettings>().ExposeAs<IProjectionSettings>(),
-    setup.ConcreteType<SmtpSettings>().ExposeAs<ISmtpSettings>(),
-    setup.ConcreteType<WebAuthnSettings>().ExposeAs<IWebAuthnSettings>(),
-    setup.ConcreteType<OpenIddictSettings>().ExposeAs<IOpenIddictSettings>(),
-]).UseSecretsSetup(secrets => secrets.UseCertificatesFromFolder("configs/certificates").AllowPlaintext()));
-
-// Get configuration manager for bootstrap access
-var configManager = builder.GetCocoarConfigManager();
-var projectionSettings = configManager.GetConfig<ProjectionSettings>()!;
-var dbSettings = configManager.GetConfig<DatabaseSettings>()!;
-var serverSettings = configManager.GetConfig<ServerSettings>()!;
-
-// Configure Kestrel with TLS certificate if HTTPS is requested
-var needsSsl = serverSettings.AppUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
-var effectiveCertPath = serverSettings.CertPath;
-
-// If HTTPS but no CertPath configured, use a default path
-if (needsSsl && string.IsNullOrWhiteSpace(effectiveCertPath))
-{
-    effectiveCertPath = "certs/cocoar-auth.pfx";
-}
-
-if (!string.IsNullOrWhiteSpace(effectiveCertPath))
-{
-    var certPath = Path.GetFullPath(effectiveCertPath);
-    // Normalize empty password to null (passwordless PFX)
-    var certPassword = string.IsNullOrEmpty(serverSettings.CertPassword) ? null : serverSettings.CertPassword;
-
-    // Auto-generate self-signed certificate if the file doesn't exist
-    if (!File.Exists(certPath))
-    {
-        Log.Information("Certificate not found at {CertPath} — generating self-signed certificate", certPath);
-        using var rsa = System.Security.Cryptography.RSA.Create(2048);
-        var request = new System.Security.Cryptography.X509Certificates.CertificateRequest(
-            "CN=Cocoar Auth (Self-Signed)", rsa,
-            System.Security.Cryptography.HashAlgorithmName.SHA256,
-            System.Security.Cryptography.RSASignaturePadding.Pkcs1);
-        var selfSigned = request.CreateSelfSigned(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddYears(1));
-        var pfxBytes = selfSigned.Export(System.Security.Cryptography.X509Certificates.X509ContentType.Pfx, certPassword);
-        var certDir = Path.GetDirectoryName(certPath);
-        if (!string.IsNullOrEmpty(certDir)) Directory.CreateDirectory(certDir);
-        File.WriteAllBytes(certPath, pfxBytes);
-        Log.Information("Self-signed certificate saved to {CertPath}", certPath);
-    }
-
-    var cert = System.Security.Cryptography.X509Certificates.X509CertificateLoader
-        .LoadPkcs12FromFile(certPath, certPassword);
-    builder.WebHost.ConfigureKestrel(options =>
-    {
-        options.ConfigureHttpsDefaults(httpsOptions =>
+        var certPath = PathHelper.GetFullPath(conf.CertPath);
+        var cert = X509CertificateLoader.LoadPkcs12FromFile(certPath, conf.CertPassword,
+            X509KeyStorageFlags.DefaultKeySet, Pkcs12LoaderLimits.DangerousNoLimits);
+        builder.WebHost.ConfigureKestrel(options =>
         {
-            httpsOptions.ServerCertificate = cert;
-        });
-    });
-}
-
-// Build connection string with embedded password for Marten multi-tenancy.
-// Single DB serves as both tenant registry (master) AND system tenant data.
-// This enables IntegrateWithWolverine (needs a valid default DB for outbox tables).
-var csBuilder = new NpgsqlConnectionStringBuilder(dbSettings.ConnectionString);
-using (var pwd = dbSettings.Password.Open())
-{
-    csBuilder.Password = pwd.Value;
-}
-var mainCs = csBuilder.ConnectionString;
-var baseDbName = csBuilder.Database ?? "cocoar_auth";
-
-// Register main connection string for realm provisioning
-builder.Services.AddSingleton<IMasterConnectionString>(new MasterConnectionString(mainCs));
-
-// Add services to the container
-builder.Services.AddGlobalStore(mainCs);
-builder.Services.AddInfrastructure();
-builder.Services.AddIdentityWithMarten();
-builder.Services.AddApplication();
-
-// Register realm services
-builder.Services.AddSingleton<IRealmCache, RealmCache>();
-builder.Services.AddScoped<IRealmProvisioningService, RealmProvisioningService>();
-
-// Add OpenIddict with Marten for OAuth 2.0 / OpenID Connect
-var openIddictSettings = configManager.GetConfig<OpenIddictSettings>()!;
-builder.Services.AddOpenIddictWithMarten(openIddictSettings);
-builder.Services.ConfigureOpenIddictServerOptions<OpenIddictSettings>();
-
-// Register OAuth admin service
-builder.Services.AddScoped<OAuthAdminService>();
-
-// Register SMTP email sender (overrides mock from AddInfrastructure)
-// Skip in Testing environment to use MockEmailSender for tests
-if (!builder.Environment.IsEnvironment("Testing"))
-{
-    var smtpSettings = configManager.GetConfig<SmtpSettings>()!;
-    builder.Services.AddSingleton(new SmtpEmailSenderOptions
-    {
-        Host = smtpSettings.Host,
-        Port = smtpSettings.Port,
-        UseSsl = smtpSettings.UseSsl,
-        Username = smtpSettings.Username,
-        Password = smtpSettings.Password,
-        FromAddress = smtpSettings.FromAddress,
-        FromName = smtpSettings.FromName
-    });
-    builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
-}
-
-// Register Fido2 for WebAuthn
-var webAuthnSettings = configManager.GetConfig<WebAuthnSettings>()!;
-var fido2Config = new Fido2Configuration
-{
-    ServerDomain = webAuthnSettings.RelyingPartyId,
-    ServerName = webAuthnSettings.RelyingPartyName,
-    Origins = webAuthnSettings.Origins.ToHashSet(),
-    TimestampDriftTolerance = 300000 // 5 minutes
-};
-builder.Services.AddSingleton(fido2Config);
-builder.Services.AddSingleton<IFido2, Fido2>();
-
-// Tell JasperFx/Marten/Wolverine to prefer pre-generated artifacts when available.
-// Auto = try pre-built code, fall back to runtime Roslyn (safe in dev).
-// CI/prod should run `dotnet run -- codegen write` and can tighten Production
-// to TypeLoadMode.Static for guaranteed-fast boots.
-builder.Services.CritterStackDefaults(x =>
-{
-    x.ApplicationAssembly = typeof(Program).Assembly;
-    x.Development.GeneratedCodeMode = JasperFx.CodeGeneration.TypeLoadMode.Auto;
-    x.Development.SourceCodeWritingEnabled = false;
-    x.Production.GeneratedCodeMode = JasperFx.CodeGeneration.TypeLoadMode.Static;
-    x.Production.SourceCodeWritingEnabled = false;
-});
-
-// Configure Wolverine + Marten (integrated for transactional outbox support)
-builder.Host.UseWolverine(opts =>
-{
-    opts.Discovery.IncludeAssembly(typeof(Cocoar.Auth.Application.DependencyInjection).Assembly);
-    opts.Durability.Mode = DurabilityMode.Solo;
-
-    // Use pre-generated handler code when available (Auto = try pre-built, fallback to dynamic).
-    // Generate with: dotnet run -- codegen write
-    opts.CodeGeneration.TypeLoadMode = JasperFx.CodeGeneration.TypeLoadMode.Auto;
-
-    // Auto-register reference-sync subscriptions for every ReferenceSyncHandler<TEvent>
-    // discovered in this assembly. Each handler runs on the "reference-sync" local
-    // durable queue with at-least-once delivery semantics.
-    Cocoar.Auth.Api.Authorization.ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
-
-    // Marten — configured inside UseWolverine for IntegrateWithWolverine compatibility.
-    // No RegisterDatabase needed — tenants registered dynamically via AddDatabaseRecordAsync.
-    // Realm documents stored in IGlobalStore (non-tenanted), not here.
-    var martenBuilder = opts.Services.AddMarten(
-            Cocoar.Auth.Infrastructure.DependencyInjection.ConfigureMartenOptions(mainCs, projectionSettings.UseAsyncProjections))
-        .IntegrateWithWolverine(x =>
-        {
-            x.MainDatabaseConnectionString = mainCs;
-        })
-        .ApplyAllDatabaseChangesOnStartup();
-
-    if (projectionSettings.UseAsyncProjections)
-    {
-        martenBuilder.AddAsyncDaemon(DaemonMode.HotCold);
-    }
-
-    // Tenant-aware session registrations — MUST be AFTER AddMarten().IntegrateWithWolverine()
-    // so our registrations win over Marten/Wolverine defaults (last-wins DI).
-    // CRITICAL: Use DirtyTrackedSession, NOT LightweightSession — dirty tracking
-    // auto-detects mutations on loaded documents (no explicit Store() needed),
-    // enables the PendingEvents pattern on entities, and ensures inline projections
-    // work correctly with the identity map.
-    opts.Services.AddScoped<IDocumentSession>(sp =>
-    {
-        var store = sp.GetRequiredService<IDocumentStore>();
-        var accessor = sp.GetRequiredService<IHttpContextAccessor>();
-        var tenantId = accessor.HttpContext?.Items["TenantId"] as string ?? "system";
-        return store.DirtyTrackedSession(tenantId);
-    });
-
-    opts.Services.AddScoped<IQuerySession>(sp =>
-    {
-        var store = sp.GetRequiredService<IDocumentStore>();
-        var accessor = sp.GetRequiredService<IHttpContextAccessor>();
-        var tenantId = accessor.HttpContext?.Items["TenantId"] as string ?? "system";
-        return store.QuerySession(tenantId);
-    });
-});
-
-// Configure authentication cookies
-var authSettings = configManager.GetConfig<AuthSettings>()!;
-builder.Services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme)
-    .Configure(options =>
-    {
-        options.Cookie.HttpOnly = authSettings.Cookie.HttpOnly;
-        options.Cookie.SecurePolicy = authSettings.Cookie.SecurePolicy switch
-        {
-            "Always" => CookieSecurePolicy.Always,
-            "None" => CookieSecurePolicy.None,
-            _ => CookieSecurePolicy.SameAsRequest
-        };
-        options.Cookie.SameSite = authSettings.Cookie.SameSite switch
-        {
-            "Strict" => SameSiteMode.Strict,
-            "None" => SameSiteMode.None,
-            _ => SameSiteMode.Lax
-        };
-        options.ExpireTimeSpan = TimeSpan.FromDays(authSettings.SessionExpirationDays);
-        options.SlidingExpiration = authSettings.SlidingExpiration;
-        options.LoginPath = "/api/auth/login";
-        options.LogoutPath = "/api/auth/logout";
-        options.AccessDeniedPath = "/api/auth/access-denied";
-
-        // Return 401/403 for API instead of redirects, except for OAuth flows
-        options.Events.OnRedirectToLogin = context =>
-        {
-            // For OAuth authorization endpoint, redirect to login page
-            if (context.Request.Path.StartsWithSegments("/connect"))
+            options.ConfigureHttpsDefaults(httpsOptions =>
             {
-                // Let the default redirect behavior happen for OAuth flows
-                // The frontend login page will handle returning to the authorize endpoint
+                httpsOptions.ServerCertificate = cert;
+            });
+        });
+    }
+
+    // Trust reverse proxy headers (Sophos XG terminates HTTPS)
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+                                 | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+
+    builder.Services.AddProblemDetails();
+
+    builder.Services.AddExceptionHandler(options =>
+    {
+        options.ExceptionHandler = async context =>
+        {
+            var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+            var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
+
+            var problemDetails = new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "An error occurred!",
+                Detail = env.IsProduction() ? null : exception?.Message,
+                Instance = context.Request.Path
+            };
+
+            context.Response.StatusCode = problemDetails.Status.Value;
+            context.Response.ContentType = "application/problem+json";
+            await context.Response.WriteAsJsonAsync(problemDetails);
+        };
+    });
+
+    builder.Services.ConfigureHttpJsonOptions(options =>
+    {
+        options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+        options.SerializerOptions.PropertyNamingPolicy = null;
+        options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        options.SerializerOptions.Converters.Add(new OptionalJsonConverterFactory());
+        options.SerializerOptions.TypeInfoResolver = new OptionalAwareTypeInfoResolver();
+    });
+
+    builder.Services.AddAntiforgery(options => options.HeaderName = "X-XSRF-TOKEN");
+
+    // Session (needed for Passkey registration challenge storage)
+    builder.Services.AddDistributedMemoryCache();
+    builder.Services.AddSession(options =>
+    {
+        options.IdleTimeout = TimeSpan.FromMinutes(5);
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Strict;
+        options.Cookie.SecurePolicy = builder.Environment.IsProduction()
+            ? CookieSecurePolicy.Always
+            : CookieSecurePolicy.None;
+        options.Cookie.Name = "Cocoar.Auth.Session";
+    });
+
+    builder.Services.AddResponseCompression(options =>
+    {
+        options.ExcludedMimeTypes = new List<string>();
+        options.EnableForHttps = true;
+        options.Providers.Add<BrotliCompressionProvider>();
+        options.Providers.Add<GzipCompressionProvider>();
+        options.MimeTypes =
+            ResponseCompressionDefaults.MimeTypes.Concat(
+                ["application/x-javascript"]);
+
+    });
+
+    builder.Services.AddSignalR()
+        .AddJsonProtocol(options =>
+        {
+            options.PayloadSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+            options.PayloadSerializerOptions.PropertyNamingPolicy = null; // PascalCase
+            options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        });
+
+    builder.Services.AddSignalARRR(options =>
+    {
+        options.AddServerMethodsFrom(
+            typeof(Program).Assembly
+        );
+    });
+
+
+    builder.Services.AddSingleton<DataEventDispatcher>();
+
+    // OpenAPI
+    builder.Services.AddOpenApi();
+
+
+    // FIDO2 / Passkey — domain + origins derived from PublicUrl config
+    var publicUri = new Uri(conf.PublicUrl ?? conf.AppUrl ?? "https://localhost");
+    var fido2Origins = new HashSet<string> { $"{publicUri.Scheme}://{publicUri.Authority}" };
+    if (builder.Environment.IsDevelopment())
+    {
+        fido2Origins.Add("http://localhost:4300");  // Vue dev server
+        fido2Origins.Add("https://localhost");
+        fido2Origins.Add("https://localhost:443");
+    }
+    builder.Services.AddFido2(options =>
+    {
+        options.ServerDomain = publicUri.Host;
+        options.ServerName = "Cocoar.Auth";
+        options.Origins = fido2Origins;
+    });
+
+    // Identity + Cookie Authentication
+    builder.Services.AddIdentityCore<ApplicationUser>(options =>
+    {
+        options.Password.RequireDigit = true;
+        options.Password.RequireLowercase = true;
+        options.Password.RequireUppercase = true;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequiredLength = 8;
+        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(1); // Short lockout to limit DoS impact
+        options.Lockout.MaxFailedAccessAttempts = 5;
+        options.Lockout.AllowedForNewUsers = true;
+    })
+    .AddSignInManager<AppSignInManager>()
+    .AddDefaultTokenProviders()
+    .AddUserStore<EventSourcedUserStore>();
+
+    builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
+        .AddCookie(IdentityConstants.ApplicationScheme, options =>
+        {
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+            // Always in Production. None in Dev — Vite proxy connects via HTTPS but
+            // browser receives response on HTTP, so Secure cookies won't be set.
+            options.Cookie.SecurePolicy = builder.Environment.IsProduction()
+                ? CookieSecurePolicy.Always
+                : CookieSecurePolicy.None;
+            options.Cookie.Name = "Cocoar.Auth.Auth";
+            options.ExpireTimeSpan = TimeSpan.FromDays(30); // Max lifetime for persistent (RememberMe) cookies
+            options.SlidingExpiration = true;
+            options.Events.OnRedirectToLogin = ctx =>
+            {
+                ctx.Response.StatusCode = 401;
                 return Task.CompletedTask;
+            };
+            options.Events.OnRedirectToAccessDenied = ctx =>
+            {
+                ctx.Response.StatusCode = 403;
+                return Task.CompletedTask;
+            };
+        })
+        // Partial sign-in cookie for 2FA flow (stores user ID between password + TOTP steps)
+        .AddCookie(IdentityConstants.TwoFactorUserIdScheme, options =>
+        {
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+            options.Cookie.SecurePolicy = builder.Environment.IsProduction()
+                ? CookieSecurePolicy.Always
+                : CookieSecurePolicy.None;
+            options.Cookie.Name = "Cocoar.Auth.2FA";
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(5); // Short-lived — user must enter TOTP quickly
+        })
+        // External cookie: short-lived holder for OIDC tickets between the
+        // remote authentication callback and our app-level sign-in decision.
+        // SameSite=Lax so the browser keeps the cookie on the IdP→app redirect.
+        // Per-scheme options get applied at runtime by DynamicOidcSchemeManager.
+        .AddCookie(IdentityConstants.ExternalScheme, options =>
+        {
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.Cookie.SecurePolicy = builder.Environment.IsProduction()
+                ? CookieSecurePolicy.Always
+                : CookieSecurePolicy.None;
+            options.Cookie.Name = "Cocoar.Auth.External";
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(10);
+        })
+        // Placeholder OIDC registration — wires up the OpenIdConnectHandler
+        // type + options plumbing so DynamicOidcSchemeManager can add real
+        // per-tenant schemes at runtime without another AddOpenIdConnect call.
+        // Options for the placeholder are never consumed (no scheme traffic).
+        .AddOpenIdConnect(DynamicOidcSchemeManager.SchemeNamePrefix + "placeholder", options =>
+        {
+            options.ClientId = "placeholder";
+            options.Authority = "https://example.invalid";
+            options.CallbackPath = "/_placeholder/signin-oidc";
+            options.SignInScheme = IdentityConstants.ExternalScheme;
+            options.RequireHttpsMetadata = false;
+        });
+    builder.Services.AddAuthorization();
+
+    // NOTE: No application-level rate limiting. Defense layers:
+    //   - Account Lockout: 5 failed logins per user → 5 min lock (implemented in Identity)
+    //   - 2FA: planned — makes stolen passwords worthless
+    //   - Sophos XG / Reverse Proxy: DDoS protection at infrastructure level
+    // IP-based rate limiting is unreliable in corporate environments (NAT = shared IP).
+
+    // Needed by AccessPolicyEngine so session-only external claims from the
+    // active OIDC login are visible to access scripts as user.externalClaims.*
+    builder.Services.AddHttpContextAccessor();
+
+    // IPermissionService + IPrincipalEmailResolver + IPrincipalLookupService + IMembershipEvaluator
+    // + IAccessPolicyEngine + IAutoMembershipRecalculator are all registered by
+    // AddCocoarAuthAuthorization inside AddInfrastructure. Only keep app-specific wiring here.
+    builder.Services.AddScoped<IAdminNotifier, AdminNotifier>();
+    // IDemoSeedService is intentionally a no-op in the IdP-only baseline.
+    // ASP.NET Core's endpoint parameter inference treats nullable services as
+    // required, so we register a stub that satisfies the DI contract and
+    // returns a "not available" result if anyone tries to use it.
+    builder.Services.AddSingleton<IDemoSeedService, NoOpDemoSeedService>();
+    // Adopters that ship app-specific demo data register their own implementation.
+
+    // External auth (Phase 1–2: flavor registry + dynamic OIDC scheme registration)
+    builder.Services.AddSingleton<IIdentityProviderFlavor, EntraIdFlavor>();
+    builder.Services.AddSingleton<IIdentityProviderFlavor, GenericOidcFlavor>();
+    builder.Services.AddSingleton<FlavorRegistry>();
+    builder.Services.AddSingleton<IdpSecretStore>();
+    builder.Services.AddSingleton<UserUpdateScriptRunner>();
+    builder.Services.AddSingleton<DynamicOidcSchemeManager>();
+    builder.Services.AddScoped<ExternalLoginProcessor>();
+    builder.Services.AddHostedService<OidcSchemeBootstrap>();
+
+    // Email (reactive — options factory reads IReactiveConfig<EmailConfiguration> on each send)
+   
+        IEmailService emailService;
+        if (configManager.TryGetConfig<EmailConfiguration>(out var emailConf) && emailConf is not null)
+        {
+            emailService = emailConf.Provider switch
+            {
+                EmailProvider.Postmark => new PostmarkEmailService(() =>
+                {
+                    var c = configManager.GetRequiredConfig<EmailConfiguration>();
+                    return new PostmarkEmailServiceOptions
+                    {
+                        ServerToken = c.Postmark.ServerToken,
+                        FromAddress = c.Postmark.FromAddress,
+                        FromName = c.Postmark.FromName,
+                        MessageStream = c.Postmark.MessageStream,
+                    };
+                }),
+                _ => new SmtpEmailService(() =>
+                {
+                    var c = configManager.GetRequiredConfig<EmailConfiguration>();
+                    return new SmtpEmailServiceOptions
+                    {
+                        Host = c.Smtp.Host, Port = c.Smtp.Port, UseSsl = c.Smtp.UseSsl,
+                        UserName = c.Smtp.UserName, Password = c.Smtp.Password,
+                        FromAddress = c.Smtp.FromAddress, FromName = c.Smtp.FromName,
+                    };
+                }),
+            };
+        }
+        else
+        {
+            // No email config — use no-op SMTP (logs warning, doesn't send)
+            emailService = new SmtpEmailService(() => new SmtpEmailServiceOptions
+            {
+                Host = "localhost", Port = 25, FromAddress = "noreply@localhost",
+            });
+            Serilog.Log.Warning("No EmailConfiguration found — email sending disabled");
+        }
+
+        if (builder.Environment.IsDevelopment())
+        {
+            builder.Services.AddSingleton<InMemoryEmailService>(sp =>
+                new InMemoryEmailService(sp.GetRequiredService<ILogger<InMemoryEmailService>>(), emailService));
+            builder.Services.AddSingleton<IEmailService>(sp => sp.GetRequiredService<InMemoryEmailService>());
+        }
+        else
+        {
+            builder.Services.AddSingleton<IEmailService>(emailService);
+        }
+    
+    builder.Services.AddScoped<IEmailOtpService, EmailOtpService>();
+
+    // Per-user device-session tracking + GDPR self-service.
+    // DeviceInfoService is a pure UAParser wrapper — singleton.
+    // Session + GDPR services hold an IDocumentSession — scoped.
+    builder.Services.AddSingleton<Cocoar.Auth.Authentication.Sessions.IDeviceInfoService,
+        Cocoar.Auth.Authentication.Sessions.DeviceInfoService>();
+    builder.Services.AddScoped<Cocoar.Auth.Authentication.Sessions.ISessionService,
+        Cocoar.Auth.Authentication.Sessions.SessionService>();
+    builder.Services.AddScoped<Cocoar.Auth.Authentication.Gdpr.IGdprService,
+        Cocoar.Auth.Authentication.Gdpr.GdprService>();
+
+    // Infrastructure (Marten + repositories + query services + event dispatcher)
+    // Authentication Marten setup (documents + events + projections) is wired via
+    // UseCocoarAuthAuthentication() so Infrastructure stays unaware of Authentication.
+    // OAuth admin slice (clients/scopes/APIs/login providers) is wired here too —
+    // it has no separate slice project yet so the wiring lives directly in Infrastructure.
+    builder.Services.AddInfrastructure(conf.DbSettings.ConnectionString,
+        options =>
+        {
+            options.UseCocoarAuthAuthentication();
+            options.UseCocoarAuthOAuth();
+        });
+
+    // OpenIddict OAuth 2.0 / OIDC server — uses our custom Marten stores. Settings are
+    // captured at config time so signing certs / lifetimes can be pinned before the
+    // host is built. Per-realm issuer is applied at request time via RealmIssuerHandler.
+    var openIddictSettings = configManager.GetRequiredConfig<OpenIddictSettings>();
+    builder.Services.AddOpenIddictWithMarten(openIddictSettings);
+
+    // Migration services for legacy Cocoar.Auth data have been removed in the
+    // IdP-only baseline — no historical documents to upgrade to event streams.
+
+    // Wolverine CQRS + Marten projection side effects
+    builder.Host.UseWolverine(opts =>
+    {
+        opts.Discovery.IncludeAssembly(typeof(Program).Assembly);
+        opts.Discovery.IncludeAssembly(typeof(Cocoar.Auth.Authentication.Api.Admin.RecoveryCli).Assembly);
+        opts.Discovery.IncludeAssembly(typeof(Cocoar.Auth.Authorization.Commands.CreateGroupCommand).Assembly);
+        opts.Durability.Mode = DurabilityMode.Solo;
+        opts.CodeGeneration.TypeLoadMode = JasperFx.CodeGeneration.TypeLoadMode.Auto;
+
+        // Auto-register Event Forwarding subscriptions for all ReferenceSyncHandler<TEvent> implementations
+        ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
+    });
+
+    // Auth log: Serilog sink → Channel → BackgroundService → Marten (7-day retention)
+    var authLogSink = new AuthLogSink();
+    builder.Services.AddSingleton(authLogSink);
+    builder.Services.AddHostedService<AuthLogPersistenceService>();
+
+    builder.Services.AddSerilog(logConfig =>
+    {
+        // Global minimum: Information (so Auth: Info events are generated)
+        logConfig.MinimumLevel.Information();
+
+        // Apply namespace overrides from config
+        foreach (var (key, value) in conf.Logging.LogLevel)
+        {
+            var k = key;
+            if (value.HasValue && !k.Equals("default", StringComparison.OrdinalIgnoreCase)
+                               && !k.Equals("*", StringComparison.OrdinalIgnoreCase))
+            {
+                logConfig.MinimumLevel.Override(k, value.Value);
             }
+        }
 
-            // For API calls, return 401
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            return Task.CompletedTask;
-        };
-        options.Events.OnRedirectToAccessDenied = context =>
+        // Quiet noisy frameworks — only show warnings+
+        logConfig.MinimumLevel.Override("Marten", Serilog.Events.LogEventLevel.Warning);
+        logConfig.MinimumLevel.Override("Wolverine", Serilog.Events.LogEventLevel.Warning);
+        logConfig.MinimumLevel.Override("Weasel", Serilog.Events.LogEventLevel.Warning);
+        logConfig.MinimumLevel.Override("JasperFx", Serilog.Events.LogEventLevel.Warning);
+        logConfig.MinimumLevel.Override("Npgsql", Serilog.Events.LogEventLevel.Warning);
+        logConfig.MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning);
+        logConfig.MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning);
+        logConfig.MinimumLevel.Override("Microsoft.Hosting.Lifetime", Serilog.Events.LogEventLevel.Information);
+
+        // Auth log sink — captures ALL "Auth:" events (including Info)
+        logConfig.WriteTo.Sink(authLogSink);
+
+        // Console + File
+        logConfig.WriteTo.Console(theme: AnsiConsoleTheme.Code);
+
+        if (!string.IsNullOrWhiteSpace(conf.Logging.LogPath))
         {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            return Task.CompletedTask;
-        };
+            var path = PathHelper.GetFullPath(conf.Logging.LogPath);
+            path = Path.Combine(path, "log.log");
+            logConfig.WriteTo.File(path, rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: 31);
+        }
+    });
 
-        // Add realm claim for auditing (cookie isolation is automatic per domain)
-        var originalOnSigningIn = options.Events.OnSigningIn;
-        options.Events.OnSigningIn = context =>
+    var app = builder.Build();
+
+    //if (app.Environment.IsDevelopment())
+    //{
+    //    app.UseDeveloperExceptionPage();
+    //}
+
+    app.UseExceptionHandler();
+
+    app.UseResponseCompression();
+
+    app.UseForwardedHeaders();
+
+    // Enable OpenAPI endpoint (not in production)
+    if (!app.Environment.IsProduction())
+    {
+        app.MapOpenApi();
+    }
+
+    app.AddLogging();
+
+
+    app.UseRouting();
+
+    // Resolve tenant from the Host header BEFORE auth runs so the
+    // TenantedSessionFactory sees the correct tenant for every Marten session
+    // opened during authentication / authorization (e.g. Identity user lookup).
+    app.UseMiddleware<RealmMiddleware>();
+
+    app.UseSession();
+    app.UseAuthentication();
+    app.UseAuthorization();
+    app.UseMiddleware<Cocoar.Auth.Authentication.Api.Account.TwoFactorEnforcementMiddleware>();
+
+
+    // OpenIddict OAuth/OIDC endpoints (/connect/authorize, /token, /userinfo, /logout, /consent).
+    // OpenIddict's middleware is registered as part of UseOpenIddict... hooks called by
+    // ASP.NET Core during AddOpenIddict. The discovery + JWKS endpoints are auto-mapped
+    // by OpenIddict; only the passthrough endpoints (authorize/token/userinfo/...) need
+    // explicit minimal-API handlers.
+    app.MapAuthorizationEndpoints();
+    app.MapConsentEndpoints();
+
+    app.MapStatusEndpoints();
+    app.MapAuthLogEndpoints("api");
+    app.MapAppSettingsEndpoints("api");
+    app.MapProjectionEndpoints("api");
+    app.MapRealmsEndpoints("api");
+    app.MapOAuthClientsEndpoints("api");
+    app.MapOAuthScopesEndpoints("api");
+    app.MapOAuthApisEndpoints("api");
+    app.MapLoginProvidersEndpoints("api");
+    app.MapAdminMagicLinkEndpoints("api");
+    app.MapAdminGraceEndpoints("api");
+    app.MapAdminChangeRequestEndpoints("api");
+    app.MapAdminSessionEndpoints("api");
+    app.MapAdminGdprEndpoints("api");
+
+    // Account & Setup Endpoints (have additional strict "auth" rate limit)
+    app.MapAccountEndpoints("api");
+    app.MapProfileEndpoints("api");
+    app.MapMfaEndpoints("api");
+    app.MapEmailOtpEndpoints("api");
+    app.MapPasskeyEndpoints("api");
+    app.MapMagicLinkEndpoints("api");
+    app.MapPasswordResetEndpoints("api");
+    app.MapSetupEndpoints("api");
+    app.MapSessionEndpoints("api");
+    app.MapGdprEndpoints("api");
+    app.MapExternalAuthEndpoints("api");
+    app.MapProfileLinkEndpoints("api");
+    app.MapIdpConfigEndpoints("api");
+    app.MapUserUpdateScriptTestEndpoint("api");
+
+    // Dev-only endpoints (email inspection, MFA reset, etc.)
+    // Available in Development environment (needed for E2E tests in Docker)
+    if (app.Environment.IsDevelopment())
+    {
+        app.MapDevEndpoints("api");
+    }
+
+    // Marten Endpoints
+    app.MapUsersEndpoints("api");
+    app.MapPrincipalEndpoints("api");
+    app.MapRolesEndpoints("api");
+    app.MapGroupEndpoints("api");
+
+    // End-user VitePress documentation at /docs — auth-gated, redirect to /login on unauth.
+    // MUST be BEFORE app.UseEndpoints — otherwise the SPA fallback endpoint (registered
+    // inside UseSpaUI) terminates the pipeline here and swallows /docs/* requests.
+    app.UseDocs();
+
+    app.UseEndpoints(e => { });
+
+    app.MapHARRRController<UIHub>("/signalr/ui");
+
+    app.UseSpaUI();
+
+    // ResourceRegistry is now instance-based and configured via AddCocoarAuthAuthorization
+    // in AddInfrastructure — no static init required.
+
+    // Enable SignalR side effects only after Wolverine is ready
+    // (prevents WolverineHasNotStartedException during daemon catchup on startup)
+    app.Lifetime.ApplicationStarted.Register(() =>
+        Cocoar.Auth.Infrastructure.Events.ProjectionSideEffects.Enabled = true);
+
+    // ────────────────────────────────────────────────────────────────────────
+    //  Multi-tenant bootstrap (must run BEFORE app.Run() so the daemon and any
+    //  hosted services see a fully provisioned master + system tenant)
+    //
+    //  Order matters:
+    //   1. Make sure the master DB physically exists (raw SQL — Marten cannot
+    //      `CREATE DATABASE` on a connection that already targets it).
+    //   2. Apply Marten storage to the master DB so `realms.mt_tenant_databases`
+    //      is created — required before any tenant can be registered.
+    //   3. Register the "system" tenant pointing back at the master DB. This is
+    //      the default tenant used when no HttpContext is available (background
+    //      services, hosted services) and during single-realm dev boots.
+    //   4. Apply schema again so the system tenant gets all per-tenant tables.
+    //   5. Ensure the system Realm document exists in IGlobalStore.
+    //   6. Warm the realm cache so middleware never blocks on first request.
+    // ────────────────────────────────────────────────────────────────────────
+    var mainCs = conf.DbSettings.ConnectionString;
+    var bootstrapBuilder = new NpgsqlConnectionStringBuilder(mainCs);
+    var baseDbName = bootstrapBuilder.Database
+        ?? throw new InvalidOperationException("DbSettings.ConnectionString is missing 'Database='");
+    bootstrapBuilder.Database = "postgres";
+
+    await using (var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString))
+    {
+        await bootstrapConn.OpenAsync();
+        await using var checkCmd = new NpgsqlCommand(
+            "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
+        checkCmd.Parameters.AddWithValue("@dbName", baseDbName);
+        if (await checkCmd.ExecuteScalarAsync() is null)
         {
-            var realmSlug = context.HttpContext.Items["RealmSlug"] as string ?? "system";
-            var identity = (ClaimsIdentity)context.Principal!.Identity!;
-            identity.AddClaim(new Claim("cocoar:realm", realmSlug));
-            return originalOnSigningIn?.Invoke(context) ?? Task.CompletedTask;
-        };
-    });
-
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
-    {
-        // Preserve PascalCase on the wire — the frontend DTOs are authored to
-        // match the C# record/class property names exactly (CurrentUserDto.Permissions,
-        // LoginResult.Succeeded, etc.). Default camelCase would break every call site.
-        options.JsonSerializerOptions.PropertyNamingPolicy = null;
-        options.JsonSerializerOptions.DictionaryKeyPolicy = null;
-        options.JsonSerializerOptions.Converters.Add(new OptionalJsonConverterFactory());
-        options.JsonSerializerOptions.Converters.Add(new ShortGuidJsonConverter());
-        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
-        options.JsonSerializerOptions.TypeInfoResolver = new OptionalAwareTypeInfoResolver();
-    });
-
-// Anti-forgery (CSRF) — belt-and-suspenders protection alongside SameSite cookies
-builder.Services.AddAntiforgery(options => options.HeaderName = "X-XSRF-TOKEN");
-
-builder.Services.AddHealthChecks()
-    .AddNpgSql(mainCs, name: "postgresql");
-
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-// Add rate limiting
-builder.Services.AddRateLimiter(options =>
-{
-    options.AddFixedWindowLimiter("auth-strict", opt =>
-    {
-        opt.PermitLimit = 10;
-        opt.Window = TimeSpan.FromMinutes(1);
-        opt.QueueLimit = 0;
-    });
-
-    options.AddFixedWindowLimiter("2fa-strict", opt =>
-    {
-        opt.PermitLimit = 3;
-        opt.Window = TimeSpan.FromMinutes(5);
-        opt.QueueLimit = 0;
-    });
-
-    options.AddFixedWindowLimiter("password-reset", opt =>
-    {
-        opt.PermitLimit = 3;
-        opt.Window = TimeSpan.FromHours(1);
-        opt.QueueLimit = 0;
-    });
-
-    options.AddFixedWindowLimiter("general", opt =>
-    {
-        opt.PermitLimit = 60;
-        opt.Window = TimeSpan.FromMinutes(1);
-        opt.QueueLimit = 0;
-    });
-
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-});
-
-// Add SignalR + SignalARRR for real-time admin notifications
-builder.Services.AddSignalR();
-builder.Services.AddSignalARRR(options =>
-	options.AddServerMethodsFrom(typeof(AdminHub).Assembly));
-builder.Services.AddScoped<IAdminHubNotifier, AdminHubNotifier>();
-
-// Add CORS with deferred configuration
-builder.Services.AddCors();
-
-var app = builder.Build();
-
-// Security headers
-app.Use(async (context, next) =>
-{
-    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
-    context.Response.Headers["X-Frame-Options"] = "DENY";
-    context.Response.Headers["X-XSS-Protection"] = "0";
-    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-    context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
-    context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
-    context.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
-    await next();
-});
-
-// Configure CORS policy using resolved configuration
-var corsSettings = app.Services.GetRequiredService<IReactiveConfig<CorsSettings>>();
-app.UseCors(policy =>
-{
-    if (corsSettings.CurrentValue.AllowedOrigins.Length > 0)
-    {
-        policy.WithOrigins(corsSettings.CurrentValue.AllowedOrigins);
+            var quotedName = "\"" + baseDbName.Replace("\"", "\"\"") + "\"";
+            await using var createCmd = new NpgsqlCommand(
+                $"CREATE DATABASE {quotedName}", bootstrapConn);
+            await createCmd.ExecuteNonQueryAsync();
+            Log.Information("Created master database {DbName}", baseDbName);
+        }
     }
 
-    if (corsSettings.CurrentValue.AllowedMethods.Length > 0)
+    // Apply master-table tenancy schema (creates realms.mt_tenant_databases etc.)
+    var store = app.Services.GetRequiredService<Marten.IDocumentStore>();
+    var tenancy = (MasterTableTenancy)store.Options.Tenancy;
+    await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
+
+    // Register the "system" tenant pointing back at the master DB.
+    // MasterTableTenancy has no "default tenant" concept — every session needs
+    // a tenant id, so we explicitly point "system" at the master DB.
+    await tenancy.AddDatabaseRecordAsync(TenantConstants.SystemTenantId, mainCs);
+
+    // Apply schema again now that the system tenant is registered (no-op the
+    // second time around for objects that already exist; populates per-tenant
+    // documents/events/projections for the system DB).
+    await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
+
+    // Ensure the system Realm document exists in the global store
+    using (var realmScope = app.Services.CreateScope())
     {
-        policy.WithMethods(corsSettings.CurrentValue.AllowedMethods);
-    }
-    else
-    {
-        policy.AllowAnyMethod();
+        var realmService = realmScope.ServiceProvider.GetRequiredService<IRealmProvisioningService>();
+        await realmService.EnsureSystemRealmExistsAsync();
+
+        // Seed default OAuth scopes + Internal login provider into the system tenant DB.
+        // Idempotent — re-running on later boots is a no-op.
+        await Cocoar.Auth.Infrastructure.OAuth.OAuthRealmSeeder.SeedAsync(
+            realmScope.ServiceProvider,
+            TenantConstants.SystemTenantId,
+            realmScope.ServiceProvider.GetRequiredService<ILogger<Program>>());
+
+        // Warm the realm cache (used by RealmMiddleware for fast Host → tenant resolution)
+        var realmCache = realmScope.ServiceProvider.GetRequiredService<IRealmCache>();
+        await realmCache.InitializeAsync();
     }
 
-    if (corsSettings.CurrentValue.AllowedHeaders.Length > 0)
+    // Break-glass recovery CLI — run inside the container instead of starting Kestrel.
+    //   dotnet Cocoar.Auth.Api.dll recover <command> [args...]
+    if (args.Length > 0 && args[0].Equals("recover", StringComparison.OrdinalIgnoreCase))
     {
-        policy.WithHeaders(corsSettings.CurrentValue.AllowedHeaders);
-    }
-    else
-    {
-        policy.AllowAnyHeader();
+        return await Cocoar.Auth.Authentication.Api.Admin.RecoveryCli.RunAsync(
+            app.Services, args[1..], conf, app.Environment);
     }
 
-    if (corsSettings.CurrentValue.AllowCredentials)
-    {
-        policy.AllowCredentials();
-    }
-});
-
-// Configure the HTTP request pipeline
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.Run(conf.AppUrl);
+    return 0;
 }
-
-if (!app.Environment.IsDevelopment())
+catch (Exception ex)
 {
-    app.UseHsts();
-    app.UseHttpsRedirection();
+    Log.Fatal(ex, "Host terminated unexpectedly");
+    throw;
 }
-
-app.UseSerilogRequestLogging();
-
-app.UseRateLimiter();
-
-// Serve Vue SPA static files from wwwroot BEFORE realm middleware
-// so that /assets/*.js, /assets/*.css are served directly without realm resolution.
-app.UseStaticFiles();
-
-// Realm middleware: resolves tenant from Host header (domain-based routing).
-// Must run BEFORE UseRouting so tenant context is available for all downstream middleware.
-app.UseMiddleware<RealmMiddleware>();
-
-app.UseRouting();
-
-app.UseAuthentication();
-app.UseAuthorization();
-
-app.MapHealthChecks("/health");
-app.MapControllers();
-app.MapHARRRController<AdminHub>("/admin-hub");
-
-// SPA fallback: any unmatched route → index.html (Vue router handles it)
-app.MapFallbackToFile("index.html");
-
-// Ensure the main database exists (auto-created on first start)
-// Single DB serves as both tenant registry and system tenant data.
-var bootstrapBuilder = new NpgsqlConnectionStringBuilder(mainCs) { Database = "postgres" };
-await using (var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString))
+finally
 {
-    await bootstrapConn.OpenAsync();
-    await using var checkCmd = new NpgsqlCommand(
-        "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
-    checkCmd.Parameters.AddWithValue("@dbName", baseDbName);
-    var exists = await checkCmd.ExecuteScalarAsync();
-    if (exists is null)
-    {
-        var quotedName = "\"" + baseDbName.Replace("\"", "\"\"") + "\"";
-        await using var createCmd = new NpgsqlCommand(
-            $"CREATE DATABASE {quotedName}", bootstrapConn);
-        await createCmd.ExecuteNonQueryAsync();
-    }
-}
-
-// Apply Marten schema changes (creates realms.mt_tenant_databases table, document schemas, etc.)
-var store = app.Services.GetRequiredService<Marten.IDocumentStore>();
-await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
-
-// Register "system" tenant in Marten's tenancy at runtime (same DB as main connection).
-// This is required because MasterTableTenancy doesn't support a default tenant —
-// all tenants must be explicitly registered before sessions can be opened.
-var tenancy = (Marten.Storage.MasterTableTenancy)store.Options.Tenancy;
-await tenancy.AddDatabaseRecordAsync("system", mainCs);
-
-// Seed system realm document in IGlobalStore (idempotent)
-using (var realmScope = app.Services.CreateScope())
-{
-    var realmService = realmScope.ServiceProvider.GetRequiredService<IRealmProvisioningService>();
-    await realmService.EnsureSystemRealmExistsAsync();
-}
-
-// Initialize the realm cache
-var realmCache = app.Services.GetRequiredService<IRealmCache>();
-await realmCache.InitializeAsync();
-
-// Initialize ABAC resource registry
-Cocoar.Auth.Domain.Authorization.ResourceRegistry.Initialize();
-
-// Seed default OAuth scopes (openid, email, profile, roles, offline_access)
-await app.Services.SeedOpenIddictScopesAsync();
-
-// Seed built-in "Internal" login provider
-await app.Services.SeedLoginProvidersAsync();
-
-// Use RunJasperFxCommands to support Wolverine CLI commands (e.g., `dotnet run -- codegen write`
-// to pre-generate handler code and eliminate runtime Roslyn compilation).
-app.Urls.Add(serverSettings.AppUrl);
-await app.RunJasperFxCommands(args);
-
-// Make the implicit Program class public for integration tests
-public partial class Program { }
-
-/// <summary>
-/// Simple implementation of IMasterConnectionString for DI registration.
-/// </summary>
-internal sealed class MasterConnectionString : IMasterConnectionString
-{
-    public string Value { get; }
-    public MasterConnectionString(string value) => Value = value;
+    Log.CloseAndFlush();
 }

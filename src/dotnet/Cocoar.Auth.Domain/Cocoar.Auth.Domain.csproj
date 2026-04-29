@@ -5,7 +5,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Cocoar.Primitives\Cocoar.Primitives.csproj" />
+    <PackageReference Include="ErrorOr" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cocoar.Auth.Authorization\Cocoar.Auth.Authorization.csproj" />
   </ItemGroup>
 
 </Project>

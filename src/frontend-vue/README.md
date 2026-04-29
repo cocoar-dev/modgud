@@ -1,15 +1,59 @@
-# frontend-vue — LEGACY (read-only reference)
+# Cocoar.Auth — Frontend
 
-This is the **legacy** frontend of cocoar.auth. It is kept as a reference while `../frontend-next/` is being built.
+Vue 3 SPA for the Cocoar.Auth Identity Provider. Built on TimeToDo's
+frontend shell, extended with the IdP-specific admin views (OAuth,
+Login-Providers, Realms) and self-service (Sessions, Privacy/GDPR).
 
-## Do not modify
+## Layout
 
-- All new work happens in `../frontend-next/`.
-- This folder is a quarry: port specific views (OAuth admin, Realm admin, Setup/Register/Reset/Confirm) into `frontend-next/` as needed.
-- Bug fixes here are pointless — the bug only matters if it would re-appear in `frontend-next/`. If so, fix it in `frontend-next/`.
+Flat — no `apps/` wrapper.
 
-## When this folder will be deleted
+```
+src/frontend-vue/
+├── src/
+│   ├── views/
+│   │   ├── admin/{user, role, group, oauth, login-providers, realms,
+│   │   │           idp-config, ...}/
+│   │   ├── auth/                    # login, register, reset, confirm,
+│   │   │                              setup, magic link, passkey
+│   │   ├── profile/                 # profile, sessions, privacy
+│   │   └── dashboard/
+│   ├── stores/                      # Pinia (one per entity)
+│   ├── models/                      # TS types matching backend DTOs
+│   ├── composables/                 # useUI, useEntityService,
+│   │                                  useHttpClient, useModal, useSignalR
+│   ├── layouts/                     # MainLayout, ModalLayout
+│   └── router/
+├── public/i18n/{de,en}.json
+└── e2e/
+```
 
-Once `frontend-next/` is production-ready and the cutover is complete. At that point this folder is removed and `frontend-next/` is renamed back to `frontend-vue/`.
+## Build & run
 
-A pre-cutover snapshot will be tagged in git so the legacy code remains accessible via `git checkout <tag>`.
+```bash
+cd src/frontend-vue
+pnpm install
+pnpm dev               # vite dev server (default port 4300)
+pnpm build             # production build
+pnpm exec vue-tsc --noEmit   # type check
+```
+
+The dev server proxies `/api`, `/signalr`, `/.well-known/*`,
+`/connect/*`, `/signin-oidc`, `/signout-callback-oidc` to
+`http://localhost:9099` (the backend).
+
+## Patterns
+
+- `useUI()` — page header/footer/content context
+- `useEntityService()` — generic CRUD + Pinia integration; SignalR
+  auto-resubscribe on entities that publish change streams
+- `useHttpClient()` — immutable fluent HTTP builder
+- `useModal()` + `useRoutedModals()` — programmatic + URL-fragment modals
+- `CoarGridBuilder` — fluent AG-Grid wrapper from `@cocoar/vue-data-grid`
+- Per-resource sidebar gating in `views/admin/AdminView.vue` —
+  permissions mapped 1:1 to backend `RequiresPermission` strings
+
+## History
+
+This codebase replaced an earlier `apps/`-based monorepo frontend. The
+pre-cutover legacy is preserved at the `legacy-final` git tag.

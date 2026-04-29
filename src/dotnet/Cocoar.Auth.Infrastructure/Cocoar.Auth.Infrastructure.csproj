@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <RootNamespace>Cocoar.Auth.Infrastructure</RootNamespace>
@@ -9,25 +9,33 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Cocoar.Configuration.Abstractions" />
     <PackageReference Include="Cocoar.JsEval.Engine" />
     <PackageReference Include="Cocoar.JsEval.Linq" />
     <PackageReference Include="Cocoar.JsEval.TsDefinition" />
     <PackageReference Include="Cocoar.JsEval.TypeScript" />
-    <PackageReference Include="Cocoar.Reflectensions" />
+    <PackageReference Include="MailKit" />
+    <PackageReference Include="Postmark" />
+    <PackageReference Include="Microsoft.Extensions.Identity.Stores" />
     <PackageReference Include="Marten" />
-    <PackageReference Include="Weasel.Core" />
-    <PackageReference Include="UAParser" />
-    <PackageReference Include="Fido2" />
-    <!-- OpenIddict (using custom Marten stores, no EF Core) -->
-    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    <PackageReference Include="Marten.AspNetCore" />
+    <PackageReference Include="WolverineFx.Marten" />
+    <PackageReference Include="Riok.Mapperly" />
+    <PackageReference Include="System.Linq.Async.Queryable" />
+    <PackageReference Include="Cocoar.Reflectensions" />
+    <PackageReference Include="BCrypt.Net-Next" />
     <PackageReference Include="OpenIddict" />
+    <PackageReference Include="OpenIddict.Abstractions" />
     <PackageReference Include="OpenIddict.AspNetCore" />
+    <PackageReference Include="OpenIddict.Server" />
+    <PackageReference Include="OpenIddict.Validation" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Cocoar.Auth.Domain\Cocoar.Auth.Domain.csproj" />
     <ProjectReference Include="..\Cocoar.Auth.Application\Cocoar.Auth.Application.csproj" />
+    <ProjectReference Include="..\Common\BuildingBlocks.EventDispatcher\BuildingBlocks.EventDispatcher.csproj" />
+    <ProjectReference Include="..\Common\BuildingBlocks.Helper\BuildingBlocks.Helper.csproj" />
   </ItemGroup>
 
 </Project>

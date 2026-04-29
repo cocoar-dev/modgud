@@ -3,63 +3,60 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <!-- ASP.NET Core & Identity -->
-    <PackageVersion Include="JasperFx.Events" Version="1.28.1" />
-    <PackageVersion Include="Microsoft.AspNetCore.Identity" Version="2.3.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.Extensions.Identity.Stores" Version="10.0.0" />
-    <!-- Marten -->
-    <PackageVersion Include="Marten" Version="8.30.1" />
-    <!-- Mapping -->
-    <PackageVersion Include="Riok.Mapperly" Version="4.3.1" />
-    <!-- ErrorOr -->
-    <PackageVersion Include="ErrorOr" Version="2.1.0" />
-    <!-- Wolverine CQRS -->
-    <PackageVersion Include="WolverineFx" Version="5.31.1" />
-    <PackageVersion Include="WolverineFx.Marten" Version="5.31.1" />
-    <!-- Cocoar JsEval (ABAC scripting) -->
-    <PackageVersion Include="Cocoar.JsEval" Version="3.1.3" />
-    <PackageVersion Include="Cocoar.JsEval.Engine" Version="3.1.3" />
-    <PackageVersion Include="Cocoar.JsEval.Linq" Version="3.1.3" />
-    <PackageVersion Include="Cocoar.JsEval.TsDefinition" Version="3.1.3" />
-    <PackageVersion Include="Cocoar.JsEval.TypeScript" Version="3.1.3" />
+    <PackageVersion Include="Cocoar.Json.Mutable" Version="1.0.1" />
+    <PackageVersion Include="Cocoar.JsEval" Version="3.3.0" />
+    <PackageVersion Include="Cocoar.JsEval.Engine" Version="3.3.0" />
+    <PackageVersion Include="Cocoar.JsEval.Linq" Version="3.3.0" />
+    <PackageVersion Include="Cocoar.JsEval.TsDefinition" Version="3.3.0" />
+    <PackageVersion Include="Cocoar.JsEval.TypeScript" Version="3.3.0" />
     <PackageVersion Include="Cocoar.Reflectensions" Version="1.0.2" />
-    <!-- Health Checks -->
-    <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
-    <!-- Logging -->
+    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="4.2.3" />
+    <!-- Microsoft packages -->
+    <PackageVersion Include="Fido2.AspNet" Version="4.0.1" />
+    <PackageVersion Include="MailKit" Version="4.16.0" />
+    <PackageVersion Include="Postmark" Version="5.3.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.Extensions.Identity.Stores" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.23.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
+    <!-- Marten & Wolverine -->
+    <PackageVersion Include="Marten" Version="8.33.0" />
+    <PackageVersion Include="Marten.AspNetCore" Version="8.33.0" />
+    <PackageVersion Include="WolverineFx.Marten" Version="5.32.1" />
+    <!-- Other packages -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
-    <!-- Swagger -->
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.7" />
-    <!-- UserAgent Parsing -->
+    <PackageVersion Include="System.Reactive" Version="6.1.0" />
+    <PackageVersion Include="System.Reactive.Linq" Version="6.1.0" />
+    <PackageVersion Include="System.Linq.Async.Queryable" Version="7.0.1" />
+    <PackageVersion Include="Riok.Mapperly" Version="4.3.1" />
+    <PackageVersion Include="ErrorOr" Version="2.0.1" />
+    <!-- Device-info parsing for per-user session tracking -->
     <PackageVersion Include="UAParser" Version="3.1.47" />
-    <!-- WebAuthn / FIDO2 -->
-    <PackageVersion Include="Fido2" Version="4.0.1" />
-    <!-- OIDC / JWT -->
-    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.17.0" />
-    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.17.0" />
-    <!-- OpenIddict (using custom Marten stores, no EF Core) -->
+    <!-- BCrypt for OAuth client/api secret hashing -->
+    <PackageVersion Include="BCrypt.Net-Next" Version="4.1.0" />
+    <!-- OpenIddict (custom Marten stores, no EF Core) -->
     <PackageVersion Include="OpenIddict" Version="7.4.0" />
     <PackageVersion Include="OpenIddict.Abstractions" Version="7.4.0" />
     <PackageVersion Include="OpenIddict.AspNetCore" Version="7.4.0" />
-    <!-- BCrypt for client secret hashing (compatible with OpenIddict) -->
-    <PackageVersion Include="BCrypt.Net-Next" Version="4.1.0" />
-    <!-- SignalARRR (typed bidirectional RPC over SignalR) -->
-    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="4.2.3" />
-    <PackageVersion Include="Cocoar.SignalARRR.Contracts" Version="4.2.3" />
-    <!-- Cocoar Configuration (5.0: Secrets + Flags merged into core packages) -->
+    <PackageVersion Include="OpenIddict.Server" Version="7.4.0" />
+    <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.4.0" />
+    <PackageVersion Include="OpenIddict.Validation" Version="7.4.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.17.0" />
+    <!-- Testing -->
+    <PackageVersion Include="coverlet.collector" Version="10.0.0" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
+    <!-- Cocoar Configuration (v5 — Secrets merged into main package) -->
     <PackageVersion Include="Cocoar.Configuration" Version="5.0.0" />
     <PackageVersion Include="Cocoar.Configuration.AspNetCore" Version="5.0.0" />
     <PackageVersion Include="Cocoar.Configuration.Abstractions" Version="5.0.0" />
-    <!-- Testing -->
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.6" />
-    <PackageVersion Include="Otp.NET" Version="1.4.1" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
-    <PackageVersion Include="Weasel.Core" Version="8.13.0" />
-    <PackageVersion Include="xunit" Version="2.9.3" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageVersion Include="coverlet.collector" Version="10.0.0" />
-    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
-    <PackageVersion Include="WireMock.Net" Version="2.2.0" />
   </ItemGroup>
 </Project>
