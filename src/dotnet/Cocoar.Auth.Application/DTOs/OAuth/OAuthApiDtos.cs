@@ -82,4 +82,13 @@ public record PaginationRequest
 {
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 20;
+
+    /// <summary>
+    /// Builds a request from raw query-string ints, clamping non-positive values
+    /// to the same defaults as the parameterless constructor (1 and 20). Use
+    /// this from endpoints where <c>?page=</c> / <c>?pageSize=</c> are absent
+    /// (binding to 0) or negative — both should land on page 1 with 20 rows.
+    /// </summary>
+    public static PaginationRequest WithDefaults(int page, int pageSize)
+        => new() { Page = page <= 0 ? 1 : page, PageSize = pageSize <= 0 ? 20 : pageSize };
 }

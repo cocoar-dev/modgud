@@ -15,7 +15,7 @@ public static class OAuthApisEndpoints
 
         group.MapGet("", async (OAuthAdminService svc, int page, int pageSize, CancellationToken ct) =>
         {
-            var pagination = new PaginationRequest { Page = page <= 0 ? 1 : page, PageSize = pageSize <= 0 ? 20 : pageSize };
+            var pagination = PaginationRequest.WithDefaults(page, pageSize);
             return Results.Ok(await svc.GetApisAsync(pagination, ct));
         })
         .WithName("OAuth_Apis_List")
