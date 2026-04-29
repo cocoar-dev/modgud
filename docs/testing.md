@@ -1,5 +1,9 @@
 # Testing
 
+> See [STATUS.md](STATUS.md) for the one-glance done/in-progress/todo
+> punch list. This file is the test-zentrierte Sicht — what's pinned
+> and how.
+>
 > **Status as of 2026-04-29 (post TwoFactorHelper extraction, wave 7):**
 > 757 unit tests, 89/96 integration tests green. Coverage swept across
 > Domain, Application, Authorization, Authentication, Infrastructure,

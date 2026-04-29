@@ -4,6 +4,9 @@ Things we know about but consciously left for later. Each entry should say
 **what**, **why we left it**, and **what we'd do** when it's time. Kill entries
 once they're addressed.
 
+> See [STATUS.md](STATUS.md) for the one-glance done/in-progress/todo punch
+> list. This file is the per-item detail (what / why / how to address).
+>
 > Companion file: [testing.md](testing.md) — what's already pinned and how to
 > resume the test sweep. Pinned bugs in this backlog all have at least one
 > test in `Cocoar.Auth.Tests.Unit` that documents the broken behaviour.
