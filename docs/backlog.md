@@ -106,6 +106,71 @@ isn't.
 in `OAuthConstants.cs` with `Web` / `Native` constants, replace the bare
 literals, add a constant-pinning test alongside the others.
 
+### `HttpRequestExtensions.FindSourceIp` crashes on standard X-Forwarded-For format
+
+**File:** `Cocoar.Auth.Authentication/ExtensionMethods/HttpRequestExtensions.cs`
+**Pinning test:** `Cocoar.Auth.Tests.Unit/Authentication/ExtensionMethods/HttpRequestExtensionsTests.cs`
+(`Comma_separated_forwarded_for_in_a_single_header_is_NOT_split`)
+
+When the proxy puts the forwarding chain into a single header value
+(`X-Forwarded-For: 1.2.3.4, 5.6.7.8`), `IPAddress.Parse` throws
+`FormatException`. nginx default and Cloudflare both produce this format.
+Behind such a proxy every request that hits `FindSourceIp` (Magic-Link,
+Auth-Log, Sessions) crashes.
+
+**Fix when we get there:** split on `,`, trim each entry, take the first
+parseable IPAddress. Update or remove the pinning test.
+
+### `OAuthApplicationStateProjection` silently ignores wrong-case AccessTokenType
+
+**File:** `Cocoar.Auth.Infrastructure/Persistence/Marten/Projections/OAuth/OAuthApplicationStateProjection.cs`
+**Pinning test:** `Cocoar.Auth.Tests.Unit/Infrastructure/Persistence/Marten/Projections/OAuth/OAuthApplicationStateProjectionTests.cs`
+(`FINDING_AccessTokenType_parse_is_case_sensitive_and_silently_ignores_mismatched_casing`)
+
+`Enum.TryParse<AccessTokenType>(v, out var parsed)` is the case-sensitive
+overload. Operator writes `"jwt"` in admin settings → silently falls
+back to the previous value (`Reference` for a fresh app). No error
+surfaces.
+
+**Fix when we get there:** `Enum.TryParse<AccessTokenType>(v, ignoreCase: true, out var parsed)`.
+
+### `UserSecurityData.RotateSecurityStamp()` rotates BOTH stamps
+
+**File:** `Cocoar.Auth.Authentication/Domain/UserSecurityData.cs`
+**Pinning test:** `Cocoar.Auth.Tests.Unit/Authentication/Domain/UserSecurityDataTests.cs`
+
+The name suggests only `SecurityStamp` rotates, but the method also
+rotates `ConcurrencyStamp`. Asymmetric with `UpdateConcurrencyStamp()`
+which only touches `ConcurrencyStamp`. Behaviour is plausibly intended
+(rotate both on a security-relevant change), but the name lies.
+
+**Fix when we get there:** rename to `RotateAllStamps()`, or split into
+`RotateSecurityStamp()` + a callsite that does both explicitly.
+
+### `TwoFactorEnforcementMiddleware.HasFederatedMfa` doc comment is incomplete
+
+**File:** `Cocoar.Auth.Authentication/Api/Account/TwoFactorEnforcementMiddleware.cs`
+**Pinning test:** `Cocoar.Auth.Tests.Unit/Authentication/Account/TwoFactorEnforcementMiddlewareTests.cs`
+
+XML doc lists `mfa, otp, fido` as the recognised AMR values. Actual
+`FederatedMfaAmrValues` includes `hwk, swk, mca, pop` as well. The
+behaviour is correct (ISO 8176 AMR values); the comment lies.
+
+**Fix when we get there:** update the XML doc.
+
+### `UserView.GetDisplayLabel` returns whitespace-only UserName verbatim
+
+**File:** `Cocoar.Auth.Infrastructure/Persistence/Marten/Projections/Users/UserView.cs`
+**Pinning test:** `Cocoar.Auth.Tests.Unit/Infrastructure/Persistence/Marten/Projections/Users/UserViewTests.cs`
+(`Whitespace_username_is_returned_as_is_not_trimmed`)
+
+When acronym/firstname/lastname are all empty and `UserName` is
+`"   "` (whitespace), the method returns the whitespace verbatim. Admin
+grids render blank rows — looks broken.
+
+**Fix when we get there:** treat whitespace-only as empty in the
+fallback chain; fall through to the user Id or `"<no name>"`.
+
 ### Aggregates have no post-delete write guards
 
 **Files:** `Cocoar.Auth.Domain/OAuth/**/Aggregate.cs`, `LoginProviderAggregate.cs`
