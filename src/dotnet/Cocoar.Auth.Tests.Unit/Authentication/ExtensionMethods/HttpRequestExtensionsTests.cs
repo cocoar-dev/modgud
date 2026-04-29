@@ -82,15 +82,45 @@ public class HttpRequestExtensionsTests
     }
 
     [Fact]
-    public void Comma_separated_forwarded_for_in_a_single_header_is_NOT_split()
+    public void Comma_separated_forwarded_for_in_a_single_header_is_split()
     {
-        // Production-code behaviour pin: the helper does NOT split a single
-        // "1.2.3.4, 5.6.7.8" header value on commas — IPAddress.Parse will throw.
-        // This means upstream proxy chains that pack everything into one header
-        // value crash the request. Tracked as a production gap.
-        var ctx = WithRemote(null);
+        // nginx and Cloudflare default: pack the proxy chain into a single
+        // header value with comma+space separators. Each parseable IP
+        // becomes its own entry, in chain order.
+        var ctx = WithRemote(IPAddress.Parse("10.0.0.5"));
         ctx.Request.Headers["X-Forwarded-For"] = "1.2.3.4, 5.6.7.8";
 
-        Assert.Throws<FormatException>(() => ctx.Request.FindSourceIp());
+        var ips = ctx.Request.FindSourceIp();
+
+        Assert.Equal(3, ips.Count);
+        Assert.Equal(IPAddress.Parse("1.2.3.4"), ips[0]);
+        Assert.Equal(IPAddress.Parse("5.6.7.8"), ips[1]);
+        Assert.Equal(IPAddress.Parse("10.0.0.5"), ips[2]);
+    }
+
+    [Fact]
+    public void Unparseable_forwarded_for_entries_are_silently_skipped()
+    {
+        // Defensive: garbage from a misbehaving proxy must not crash the
+        // request. Skip what doesn't parse, keep the rest.
+        var ctx = WithRemote(null);
+        ctx.Request.Headers["X-Forwarded-For"] = "not-an-ip, 1.2.3.4, also-bad";
+
+        var ips = ctx.Request.FindSourceIp();
+
+        Assert.Single(ips);
+        Assert.Equal(IPAddress.Parse("1.2.3.4"), ips[0]);
+    }
+
+    [Fact]
+    public void Empty_or_whitespace_forwarded_for_entries_are_skipped()
+    {
+        var ctx = WithRemote(null);
+        ctx.Request.Headers["X-Forwarded-For"] = "  , 1.2.3.4 , ,";
+
+        var ips = ctx.Request.FindSourceIp();
+
+        Assert.Single(ips);
+        Assert.Equal(IPAddress.Parse("1.2.3.4"), ips[0]);
     }
 }
