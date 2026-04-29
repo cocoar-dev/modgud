@@ -19,4 +19,11 @@ export interface GroupDto {
   MembershipLastError?: string | null
   Email?: string
   EmailMode: EmailMode
+  /**
+   * App slugs in which this group is *active*. When permission resolution
+   * runs against a given app, only groups whose BoundTo contains that app
+   * (or the wildcard "*") contribute. Empty = dormant (organisation-only
+   * group, e.g. a distribution list).
+   */
+  BoundTo: string[]
 }

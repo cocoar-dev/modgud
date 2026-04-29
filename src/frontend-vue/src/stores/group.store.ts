@@ -30,6 +30,14 @@ interface GroupPayload {
   AccessScripts: AccessScriptDto[]
   MembershipMode: MembershipMode
   MembershipScript?: string
+  Email?: string
+  EmailMode?: 'Shared' | 'ExpandToMembers'
+  /**
+   * App slugs the group is active in. On create, omitting falls back to
+   * the backend default (currently [cocoar-auth]). On update, omitting
+   * keeps the stored value untouched.
+   */
+  BoundTo?: string[]
 }
 
 export const useGroupStore = defineStore('group', () => {

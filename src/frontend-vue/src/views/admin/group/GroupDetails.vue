@@ -65,7 +65,21 @@ const form = ref({
   MembershipLastError: null as string | null,
   Email: '' as string | undefined,
   EmailMode: 'Shared' as EmailMode,
+  // Newline-separated in the UI for easy editing; "*" wildcard = active in
+  // every app (typical for the realm-admin group).
+  BoundTo: '' as string,
 })
+
+const isAllAppsWildcard = computed(() =>
+  splitLines(form.value.BoundTo).some((s) => s === '*'),
+)
+const isDormantBoundTo = computed(() =>
+  splitLines(form.value.BoundTo).length === 0,
+)
+
+function splitLines(input: string): string[] {
+  return input.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean)
+}
 
 const modalTitle = computed(() => {
   const name = form.value.Name?.trim()
@@ -297,6 +311,7 @@ onMounted(async () => {
           MembershipLastError: group.MembershipLastError ?? null,
           Email: group.Email || '',
           EmailMode: group.EmailMode || 'Shared',
+          BoundTo: (group.BoundTo ?? []).join('\n'),
         }
       }
     }
@@ -322,6 +337,7 @@ async function save() {
       MembershipScript: isAutoMode.value ? form.value.MembershipScript : undefined,
       Email: form.value.Email?.trim() || undefined,
       EmailMode: form.value.EmailMode,
+      BoundTo: splitLines(form.value.BoundTo),
     }
     const saved = isCreate.value
       ? await groupStore.createGroup(dto)
@@ -426,6 +442,21 @@ async function save() {
                 {{ isAutoMode
                   ? t('admin.groupDetails.membership.autoHint', {}, 'Members are computed from the script in the Script tab.')
                   : t('admin.groupDetails.membership.manualHint', {}, 'Pick members directly in the Members tab.') }}
+              </p>
+            </CoarFormField>
+            <CoarFormField :label="t('admin.groupDetails.boundTo', {}, 'Bound to apps (one slug per line)')">
+              <textarea v-model="form.BoundTo" rows="3" class="boundto-textarea"
+                placeholder="cocoar-auth&#10;timetodo&#10;or * for all apps" />
+              <p class="script-help">
+                <template v-if="isAllAppsWildcard">
+                  {{ t('admin.groupDetails.boundTo.wildcardHint', {}, 'Wildcard "*" — this group is active in every app in the realm. Typical for the realm-admin group.') }}
+                </template>
+                <template v-else-if="isDormantBoundTo">
+                  {{ t('admin.groupDetails.boundTo.dormantHint', {}, 'Empty — the group is dormant for permission purposes (e.g. organisation-only / distribution list). It still receives mail and shows up in member views, but its roles do not grant anything.') }}
+                </template>
+                <template v-else>
+                  {{ t('admin.groupDetails.boundTo.scopedHint', {}, 'Only contributes to permission resolution when the requesting app is one of these slugs. Roles attached to this group only fire in the listed apps.') }}
+                </template>
               </p>
             </CoarFormField>
           </div>
@@ -643,6 +674,17 @@ async function save() {
   font-size: 0.75rem;
   color: #6b7280;
   margin: 0 0 8px 0;
+}
+
+.boundto-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--coar-border-neutral-secondary, #d1d5db);
+  border-radius: var(--coar-radius-m, 4px);
+  background: var(--coar-background-neutral-primary, #fff);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  resize: vertical;
 }
 
 .script-block {
