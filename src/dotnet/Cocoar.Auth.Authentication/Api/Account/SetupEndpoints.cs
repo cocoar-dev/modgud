@@ -142,12 +142,14 @@ public static class SetupEndpoints
                 Description = "Full system access",
                 MemberIds = [appUser.Id],
                 RoleIds = [adminRole.Id],
-                AccessScripts = [] // app:admin bypasses all access scripts
+                AccessScripts = [], // app:admin bypasses all access scripts
+                BoundTo = [AppSlugs.CocoarAuth],
             };
             session.Store(adminGroup);
             session.Events.StartStream(adminGroup.Id,
                 new GroupCreatedEvent(adminGroup.Id, adminGroup.Name, adminGroup.Description,
-                    adminGroup.MemberIds, adminGroup.RoleIds, adminGroup.AccessScripts));
+                    adminGroup.MemberIds, adminGroup.RoleIds, adminGroup.AccessScripts,
+                    BoundTo: adminGroup.BoundTo));
 
             await session.SaveChangesAsync();
 

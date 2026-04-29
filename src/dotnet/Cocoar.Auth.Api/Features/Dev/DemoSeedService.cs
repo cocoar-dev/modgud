@@ -195,6 +195,7 @@ public sealed class DemoSeedService : IDemoSeedService
                 MembershipScript = mode == MembershipMode.Auto ? g.MembershipScript : null,
                 CompiledMembershipScript = compiledScript,
                 MembershipScriptDependencies = scriptDeps,
+                BoundTo = [AppSlugs.CocoarAuth],
             };
             session.Store(group);
             session.Events.StartStream(group.Id,
@@ -203,7 +204,8 @@ public sealed class DemoSeedService : IDemoSeedService
                     group.MemberIds, group.RoleIds, group.AccessScripts,
                     group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
                     group.MembershipScriptDependencies,
-                    group.Email, group.EmailMode));
+                    group.Email, group.EmailMode,
+                    group.BoundTo));
             groupsByName[group.Name] = group;
             counts.Groups++;
 

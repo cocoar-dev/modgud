@@ -27,6 +27,7 @@ public abstract class PrincipalProjectionBase : SingleStreamProjection<Principal
         MembershipScriptDependencies = @event.MembershipScriptDependencies,
         Email = @event.Email,
         EmailMode = @event.EmailMode,
+        BoundTo = @event.BoundTo ?? [],
         IsActive = true,
         IsDeleted = false,
     };
@@ -45,6 +46,7 @@ public abstract class PrincipalProjectionBase : SingleStreamProjection<Principal
         group.MembershipScriptDependencies = @event.MembershipScriptDependencies;
         group.Email = @event.Email;
         group.EmailMode = @event.EmailMode;
+        group.BoundTo = @event.BoundTo ?? [];
         group.MembershipLastError = null;
         return group;
     }

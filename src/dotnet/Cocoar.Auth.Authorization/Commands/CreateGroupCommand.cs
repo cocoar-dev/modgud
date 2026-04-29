@@ -17,7 +17,8 @@ public record CreateGroupCommand(
     MembershipMode MembershipMode = MembershipMode.Manual,
     string? MembershipScript = null,
     string? Email = null,
-    EmailMode EmailMode = EmailMode.Shared);
+    EmailMode EmailMode = EmailMode.Shared,
+    List<string>? BoundTo = null);
 
 public class CreateGroupHandler(
     IDocumentSession session,
@@ -108,6 +109,7 @@ public class CreateGroupHandler(
             MembershipScriptDependencies = membershipDeps,
             Email = command.Email,
             EmailMode = command.EmailMode,
+            BoundTo = command.BoundTo?.ToList() ?? [],
         };
 
         session.Events.StartStream(group.Id,
@@ -115,7 +117,8 @@ public class CreateGroupHandler(
                 group.MemberIds, group.RoleIds, group.AccessScripts,
                 group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
                 group.MembershipScriptDependencies,
-                group.Email, group.EmailMode));
+                group.Email, group.EmailMode,
+                group.BoundTo));
 
         if (group.MembershipMode == MembershipMode.Auto)
             await recalculator.RecalculateForGroupAsync(group, session, ct);

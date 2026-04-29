@@ -38,6 +38,20 @@ public class Group : Principal, IPrincipalWithMembers, IPrincipalEmailAddressabl
     public List<Guid> RoleIds { get; set; } = [];
     public List<ResourceAccessScript> AccessScripts { get; set; } = [];
 
+    /// <summary>
+    /// App slugs in which this group is <i>active</i>. When a permission
+    /// check resolves <c>(User, App)</c>, only groups with the requested
+    /// app in <see cref="BoundTo"/> contribute to the user's effective
+    /// permissions in that app.
+    ///
+    /// <para>An empty list means the group is dormant for permission
+    /// purposes (organisation-only — e.g. a distribution list). Removing
+    /// an app from <see cref="BoundTo"/> deactivates the group in that app
+    /// without stripping its <see cref="RoleIds"/>; re-adding the app
+    /// restores its effect.</para>
+    /// </summary>
+    public List<string> BoundTo { get; set; } = [];
+
     public MembershipMode MembershipMode { get; set; } = MembershipMode.Manual;
     public string? MembershipScript { get; set; }
     public string? CompiledMembershipScript { get; set; }

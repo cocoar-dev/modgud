@@ -1,4 +1,5 @@
 using BuildingBlocks.Helper;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.AspNetCore;
 using Cocoar.Auth.Authorization.Commands;
 using Cocoar.Auth.Authorization.Events;
@@ -18,7 +19,8 @@ public record CreateGroupDto(
     MembershipMode MembershipMode = MembershipMode.Manual,
     string? MembershipScript = null,
     string? Email = null,
-    EmailMode EmailMode = EmailMode.Shared);
+    EmailMode EmailMode = EmailMode.Shared,
+    List<string>? BoundTo = null);
 
 public record AccessScriptDto(string ResourceType, string? Script);
 
@@ -142,13 +144,18 @@ public static class GroupEndpoints
 
         groupGroup.MapPost("", async (CreateGroupDto dto, IMessageBus bus) =>
             {
+                // BoundTo defaults to [cocoar-auth] on create — the only app
+                // that exists in Phase 1. UI will override once additional
+                // apps can be registered.
+                var boundTo = dto.BoundTo ?? [AppSlugs.CocoarAuth];
                 var command = new CreateGroupCommand(
                     dto.Name, dto.Description,
                     dto.MemberIds.Select(m => new ShortGuid(m).Guid).ToList(),
                     dto.RoleIds.Select(r => new ShortGuid(r).Guid).ToList(),
                     dto.AccessScripts.Select(s => new AccessScriptInput(s.ResourceType, s.Script)).ToList(),
                     dto.MembershipMode, dto.MembershipScript,
-                    dto.Email, dto.EmailMode);
+                    dto.Email, dto.EmailMode,
+                    boundTo);
                 var result = await bus.InvokeAsync<ErrorOr<Group>>(command);
                 return result.Match<IResult>(
                     group => Results.Ok(MapToResponse(group)),
@@ -159,13 +166,16 @@ public static class GroupEndpoints
 
         groupGroup.MapPut("{id}", async (ShortGuid id, CreateGroupDto dto, IMessageBus bus) =>
             {
+                // On update, null BoundTo means "keep what's stored" — the
+                // command handler reads the current value if not supplied.
                 var command = new UpdateGroupCommand(
                     id.Guid, dto.Name, dto.Description,
                     dto.MemberIds.Select(m => new ShortGuid(m).Guid).ToList(),
                     dto.RoleIds.Select(r => new ShortGuid(r).Guid).ToList(),
                     dto.AccessScripts.Select(s => new AccessScriptInput(s.ResourceType, s.Script)).ToList(),
                     dto.MembershipMode, dto.MembershipScript,
-                    dto.Email, dto.EmailMode);
+                    dto.Email, dto.EmailMode,
+                    dto.BoundTo);
                 var result = await bus.InvokeAsync<ErrorOr<Group>>(command);
                 return result.Match<IResult>(
                     group => Results.Ok(MapToResponse(group)),
@@ -204,5 +214,6 @@ public static class GroupEndpoints
         g.MembershipLastError,
         g.Email,
         EmailMode = g.EmailMode.ToString(),
+        g.BoundTo,
     };
 }

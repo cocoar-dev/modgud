@@ -206,11 +206,13 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
                 Name = $"TestGroup_{userView.Id:N}",
                 MemberIds = [userView.Id],
                 RoleIds = [role.Id],
+                BoundTo = [AppSlugs.CocoarAuth],
             };
             session.Store(group);
             session.Events.StartStream(group.Id,
                 new GroupCreatedEvent(group.Id, group.Name, group.Description,
-                    group.MemberIds, group.RoleIds, group.AccessScripts));
+                    group.MemberIds, group.RoleIds, group.AccessScripts,
+                    BoundTo: group.BoundTo));
 
             await session.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
@@ -257,11 +259,13 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         List<Guid> memberIds,
         List<Guid>? roleIds = null,
         List<ResourceAccessScript>? accessScripts = null,
-        string? description = null)
+        string? description = null,
+        List<string>? boundTo = null)
     {
         using var scope = Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
+        var bound = boundTo ?? [AppSlugs.CocoarAuth];
         var group = new Group
         {
             Id = Guid.CreateVersion7(),
@@ -269,12 +273,14 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
             Description = description,
             MemberIds = memberIds,
             RoleIds = roleIds ?? [],
-            AccessScripts = accessScripts ?? []
+            AccessScripts = accessScripts ?? [],
+            BoundTo = bound,
         };
         session.Store(group);
         session.Events.StartStream(group.Id,
             new GroupCreatedEvent(group.Id, name, description,
-                memberIds, roleIds ?? [], accessScripts ?? []));
+                memberIds, roleIds ?? [], accessScripts ?? [],
+                BoundTo: bound));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
         return group;
     }

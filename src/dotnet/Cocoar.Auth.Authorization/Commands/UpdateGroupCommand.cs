@@ -19,7 +19,8 @@ public record UpdateGroupCommand(
     MembershipMode MembershipMode = MembershipMode.Manual,
     string? MembershipScript = null,
     string? Email = null,
-    EmailMode EmailMode = EmailMode.Shared);
+    EmailMode EmailMode = EmailMode.Shared,
+    List<string>? BoundTo = null);
 
 public class UpdateGroupHandler(
     IDocumentSession session,
@@ -118,12 +119,15 @@ public class UpdateGroupHandler(
             ? group.MemberIds
             : command.MemberIds.ToList();
 
+        var boundTo = command.BoundTo?.ToList() ?? group.BoundTo.ToList();
+
         session.Events.Append(command.Id, new GroupUpdatedEvent(
             command.Id, command.Name, command.Description,
             memberIds, command.RoleIds.ToList(), accessScripts,
             command.MembershipMode, command.MembershipScript, compiledMembership,
             membershipDeps,
-            command.Email, command.EmailMode));
+            command.Email, command.EmailMode,
+            boundTo));
 
         if (command.MembershipMode == MembershipMode.Auto)
         {
@@ -141,6 +145,7 @@ public class UpdateGroupHandler(
                 CompiledMembershipScript = compiledMembership,
                 Email = command.Email,
                 EmailMode = command.EmailMode,
+                BoundTo = boundTo,
             };
             await recalculator.RecalculateForGroupAsync(updatedGroup, session, ct);
         }

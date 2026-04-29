@@ -15,7 +15,8 @@ public record GroupCreatedEvent(
     string? CompiledMembershipScript = null,
     List<string>? MembershipScriptDependencies = null,
     string? Email = null,
-    EmailMode EmailMode = EmailMode.Shared);
+    EmailMode EmailMode = EmailMode.Shared,
+    List<string>? BoundTo = null);
 
 public record GroupUpdatedEvent(
     Guid Id,
@@ -29,7 +30,8 @@ public record GroupUpdatedEvent(
     string? CompiledMembershipScript = null,
     List<string>? MembershipScriptDependencies = null,
     string? Email = null,
-    EmailMode EmailMode = EmailMode.Shared);
+    EmailMode EmailMode = EmailMode.Shared,
+    List<string>? BoundTo = null);
 
 public record GroupMembershipRecomputedEvent(
     Guid Id,

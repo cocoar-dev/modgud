@@ -313,7 +313,8 @@ public static class UsersEndpoints
                     newMemberIds, group.RoleIds, group.AccessScripts,
                     group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
                     group.MembershipScriptDependencies,
-                    group.Email, group.EmailMode));
+                    group.Email, group.EmailMode,
+                    BoundTo: group.BoundTo));
                 await session.SaveChangesAsync();
                 return Results.NoContent();
             })
@@ -344,7 +345,8 @@ public static class UsersEndpoints
                     newMemberIds, group.RoleIds, group.AccessScripts,
                     group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
                     group.MembershipScriptDependencies,
-                    group.Email, group.EmailMode));
+                    group.Email, group.EmailMode,
+                    BoundTo: group.BoundTo));
                 await session.SaveChangesAsync();
                 return Results.NoContent();
             })
