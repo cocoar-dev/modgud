@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Cocoar.Auth.Authentication.Domain;
+using Cocoar.Auth.Authorization.Services;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -227,7 +228,8 @@ public static class AuthorizationEndpoints
 
     private static async Task<IResult> UserinfoAsync(
         HttpContext httpContext,
-        UserManager<ApplicationUser> userManager)
+        UserManager<ApplicationUser> userManager,
+        IPermissionService permissionService)
     {
         var subject = httpContext.User.GetClaim(Claims.Subject);
         if (string.IsNullOrEmpty(subject))
@@ -273,7 +275,28 @@ public static class AuthorizationEndpoints
             if (!string.IsNullOrEmpty(user.Lastname)) claims[Claims.FamilyName] = user.Lastname;
         }
 
-        // TODO: Roles + custom claims via the new Cocoar.Auth.Authorization permission model.
+        // Roles + groups: when the OIDC `roles` scope was granted, expose the
+        // user's group memberships as claims. Group names land in `role` (the
+        // OIDC convention) so ASP.NET Core's
+        // GetClaimsFromUserInfoEndpoint=true picks them up automatically and
+        // [Authorize(Roles="…")] just works on the consuming resource server.
+        // Group ids land in a separate `groups` claim for code that wants to
+        // resolve groups stably across renames.
+        //
+        // Granular permissions are intentionally NOT in UserInfo — they're
+        // app-scoped and refreshed on every request via the distribution API
+        // (Stufe 2b: GET /api/v1/me/permissions?app=…). UserInfo only
+        // carries identity-shaped claims that change rarely.
+        if (httpContext.User.HasScope(Scopes.Roles))
+        {
+            var groups = await permissionService.GetUserGroupsAsync(user.Id);
+            if (groups.Count > 0)
+            {
+                claims[Claims.Role] = groups.Select(g => g.Name).ToArray();
+                claims["groups"] = groups.Select(g => g.Id.ToString()).ToArray();
+            }
+        }
+
         return Results.Ok(claims);
     }
 
