@@ -30,8 +30,10 @@
     <!-- Auth log sink -->
     <PackageReference Include="Serilog.AspNetCore" />
 
-    <!-- Per-user session device-info parsing (UA → browser/OS/device) -->
-    <PackageReference Include="UAParser" />
+    <!-- Per-user session device-info parsing (UA → browser/OS/device).
+         HttpContext-bound — DeviceInfoService injects IDetectionService and
+         only parses live during login (the single Parse call site). -->
+    <PackageReference Include="Wangkanai.Detection" />
 
     <!-- Command return-types -->
     <PackageReference Include="ErrorOr" />

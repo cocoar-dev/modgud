@@ -17,7 +17,7 @@ public class UserSession
     public string? IpAddress { get; set; }
     public string? UserAgent { get; set; }
 
-    // Parsed device info (from UAParser)
+    // Parsed device info (from Wangkanai.Detection)
     public string? Browser { get; set; }
     public string? BrowserVersion { get; set; }
     public string? OperatingSystem { get; set; }

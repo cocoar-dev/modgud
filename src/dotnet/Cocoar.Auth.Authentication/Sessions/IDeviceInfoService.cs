@@ -1,13 +1,15 @@
 namespace Cocoar.Auth.Authentication.Sessions;
 
 /// <summary>
-/// Parses the User-Agent header into a coarse device descriptor for
-/// per-user session tracking. Returns <see cref="DeviceInfo.Unknown"/>
-/// for null/blank/unparseable input — never throws.
+/// Resolves the current request's User-Agent into a coarse device descriptor
+/// for per-user session tracking. Reads the active HttpContext via Wangkanai's
+/// <c>IDetectionService</c> — there is no parameter because the parser binds
+/// to the request, not to a hand-supplied string. Always returns a non-null
+/// <see cref="DeviceInfo"/>; missing fields collapse to <c>"Unknown"</c>.
 /// </summary>
 public interface IDeviceInfoService
 {
-    DeviceInfo Parse(string? userAgent);
+    DeviceInfo Parse();
 }
 
 public sealed record DeviceInfo

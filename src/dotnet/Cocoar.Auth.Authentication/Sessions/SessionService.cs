@@ -41,7 +41,7 @@ public class SessionService(IDocumentSession session, IDeviceInfoService deviceI
 
     public async Task<ErrorOr<UserSession>> CreateSessionAsync(Guid userId, string? ipAddress, string? userAgent, CancellationToken ct = default)
     {
-        var device = deviceInfo.Parse(userAgent);
+        var device = deviceInfo.Parse();
         var entity = UserSession.Create(
             userId,
             sessionId: Guid.NewGuid().ToString(),
