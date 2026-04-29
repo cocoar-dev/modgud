@@ -141,11 +141,14 @@ internal static class ConsentUrlHelper
     /// Extracts <c>client_id</c> and the space-separated <c>scope</c> values from
     /// the OpenIddict authorize-request URL the SPA passes through as
     /// <c>returnUrl</c>. Accepts both relative paths (prepended with a fake host)
-    /// and absolute URLs. Any parse failure yields <c>(null, [])</c> — the caller
+    /// and absolute URLs. A malformed URI yields <c>(null, [])</c> — the caller
     /// then short-circuits with a 400 instead of throwing.
     /// </summary>
     public static (string? clientId, List<string> scopes) ParseAuthorizationUrl(string url)
     {
+        // Catch is intentionally narrow: only swallow malformed-URI errors. A
+        // bare `catch` would also swallow programming errors (NRE, OOM, ...) and
+        // turn them into a confusing 400 with no log trail.
         try
         {
             var uri = url.StartsWith("http", StringComparison.OrdinalIgnoreCase)
@@ -167,7 +170,7 @@ internal static class ConsentUrlHelper
 
             return (clientId, scopes);
         }
-        catch
+        catch (UriFormatException)
         {
             return (null, new List<string>());
         }

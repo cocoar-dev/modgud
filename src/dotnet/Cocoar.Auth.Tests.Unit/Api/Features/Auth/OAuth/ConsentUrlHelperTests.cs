@@ -81,14 +81,24 @@ public class ConsentUrlHelperTests
         }
 
         [Fact]
-        public void Returns_null_and_empty_for_unparseable_input()
+        public void Returns_null_and_empty_for_malformed_uri_input()
         {
-            // The catch-all in the parser is the only line preventing a hostile
-            // returnUrl from raising a 500 — pin it.
+            // The narrow catch (UriFormatException only) prevents a hostile
+            // returnUrl from raising a 500. Pin: malformed URI → null+[].
             var (clientId, scopes) = ConsentUrlHelper.ParseAuthorizationUrl("::not a url::");
 
             Assert.Null(clientId);
             Assert.Empty(scopes);
+        }
+
+        [Fact]
+        public void Throws_for_null_input_rather_than_swallowing_programming_error()
+        {
+            // Defense against silent-swallow regressions: if someone widens the
+            // catch back to catch-all, this test fails. NRE on null input is a
+            // programming error, not a malformed-URI case.
+            Assert.Throws<NullReferenceException>(
+                () => ConsentUrlHelper.ParseAuthorizationUrl(null!));
         }
 
         [Fact]
