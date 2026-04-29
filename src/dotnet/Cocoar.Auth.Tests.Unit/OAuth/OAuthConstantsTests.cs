@@ -241,4 +241,17 @@ public class OAuthConstantsTests
             Assert.Equal(consents.Length, consents.Distinct().Count());
         }
     }
+
+    public class ApplicationTypes
+    {
+        [Fact]
+        public void Web_value_is_pinned() => Assert.Equal("web", OAuthApplicationTypes.Web);
+
+        [Fact]
+        public void Native_value_is_pinned() => Assert.Equal("native", OAuthApplicationTypes.Native);
+
+        [Fact]
+        public void Values_are_distinct() =>
+            Assert.NotEqual(OAuthApplicationTypes.Web, OAuthApplicationTypes.Native);
+    }
 }

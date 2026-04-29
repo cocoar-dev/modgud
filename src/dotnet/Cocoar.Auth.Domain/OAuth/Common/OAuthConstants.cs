@@ -55,3 +55,14 @@ public static class OAuthConsentTypes
     public const string External = "external";
     public const string Systematic = "systematic";
 }
+
+/// <summary>
+/// Wire-format values for the OIDC <c>application_type</c> client metadata
+/// field. Per the OIDC Dynamic Client Registration spec — must be the literal
+/// strings, lowercase, exact.
+/// </summary>
+public static class OAuthApplicationTypes
+{
+    public const string Web = "web";
+    public const string Native = "native";
+}
