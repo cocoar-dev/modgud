@@ -575,6 +575,10 @@ try
     app.MapGroupEndpoints("api");
     Cocoar.Auth.Api.Features.Admin.Apps.AppsEndpoints.MapAppsEndpoints(app, "api");
 
+    // Distribution API for resource servers (TimeToDo etc.) — same scheme
+    // as the SPA admin (`api/`) so cookie-auth + bearer-auth both land here.
+    Cocoar.Auth.Api.Features.Auth.MeEndpoints.MapMeEndpoints(app, "api");
+
     // End-user VitePress documentation at /docs — auth-gated, redirect to /login on unauth.
     // MUST be BEFORE app.UseEndpoints — otherwise the SPA fallback endpoint (registered
     // inside UseSpaUI) terminates the pipeline here and swallows /docs/* requests.
