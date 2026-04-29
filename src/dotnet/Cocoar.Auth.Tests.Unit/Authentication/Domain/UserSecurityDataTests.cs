@@ -76,7 +76,7 @@ public class UserSecurityDataTests
         }
     }
 
-    public class RotateSecurityStamp
+    public class RotateAllStamps
     {
         [Fact]
         public void Replaces_security_stamp_with_a_new_value()
@@ -84,7 +84,7 @@ public class UserSecurityDataTests
             var data = UserSecurityData.Create(Guid.NewGuid());
             var original = data.SecurityStamp;
 
-            data.RotateSecurityStamp();
+            data.RotateAllStamps();
 
             Assert.NotEqual(original, data.SecurityStamp);
             Assert.False(string.IsNullOrWhiteSpace(data.SecurityStamp));
@@ -96,7 +96,7 @@ public class UserSecurityDataTests
             var data = UserSecurityData.Create(Guid.NewGuid());
             var originalConcurrency = data.ConcurrencyStamp;
 
-            data.RotateSecurityStamp();
+            data.RotateAllStamps();
 
             Assert.NotEqual(originalConcurrency, data.ConcurrencyStamp);
         }

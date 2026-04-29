@@ -85,7 +85,10 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
         // local 2FA for non-federated login paths (magic-link, password fallback).
         //
         // Accepted amr values per RFC 8176: "mfa" (generic multi-factor), "otp"
-        // (one-time password), "fido" (WebAuthn). Case-insensitive match.
+        // (one-time password), "fido" (WebAuthn / FIDO2), "hwk" (proof-of-
+        // possession of a hardware-secured key), "swk" (software-secured key),
+        // "mca" (multi-channel authentication), "pop" (proof-of-possession).
+        // Full list lives in FederatedMfaAmrValues. Case-insensitive match.
         if (HasFederatedMfa(context.User))
         {
             await next(context);

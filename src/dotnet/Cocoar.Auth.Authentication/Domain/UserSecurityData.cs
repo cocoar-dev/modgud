@@ -49,12 +49,24 @@ public class UserSecurityData
         };
     }
 
-    public void RotateSecurityStamp()
+    /// <summary>
+    /// Rotates BOTH the security stamp (invalidates issued auth cookies and
+    /// active sessions on the next ASP.NET Identity validation) AND the
+    /// concurrency stamp (causes optimistic-concurrency conflicts on stale
+    /// writes). Use whenever a security-relevant change happens, e.g. after
+    /// a password change.
+    /// </summary>
+    public void RotateAllStamps()
     {
         SecurityStamp = Guid.NewGuid().ToString();
         ConcurrencyStamp = Guid.NewGuid().ToString();
     }
 
+    /// <summary>
+    /// Rotates only the concurrency stamp — the right call after a non-security
+    /// profile edit (display name, etc.) where active sessions should remain
+    /// valid but stale writers must conflict.
+    /// </summary>
     public void UpdateConcurrencyStamp()
     {
         ConcurrencyStamp = Guid.NewGuid().ToString();
