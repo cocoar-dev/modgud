@@ -55,9 +55,25 @@ export const useAuthStore = defineStore('auth', () => {
     }, 'auth.store.UserActions.Subscribe')
   }
 
+  /**
+   * Mirrors the backend PermissionEvaluator. Permission strings are fully
+   * qualified as "<app>:<resource>:<action>" (e.g. "cocoar-auth:user:read").
+   * Bypasses recognised:
+   *   - realm:admin                  → realm-wide
+   *   - <app>:admin                  → app-wide
+   *   - <app>:<resource>:admin       → resource-wide within app
+   */
   function hasPermission(permission: string): boolean {
-    if (permissions.value.includes('app:admin')) return true
-    return permissions.value.includes(permission)
+    const grants = permissions.value
+    if (grants.includes('realm:admin')) return true
+    if (grants.includes(permission)) return true
+
+    const parts = permission.split(':')
+    if (parts.length === 3) {
+      if (grants.includes(`${parts[0]}:admin`)) return true
+      if (grants.includes(`${parts[0]}:${parts[1]}:admin`)) return true
+    }
+    return false
   }
 
   /**

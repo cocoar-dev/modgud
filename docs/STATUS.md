@@ -14,6 +14,21 @@ Last updated: 2026-04-29 (post Applications Phase 1).
 
 ## ✅ Done
 
+### Applications Phase 2 (frontend) — Vue admin UI (2026-04-29)
+
+- `auth.store.ts` `hasPermission` now mirrors backend
+  `PermissionEvaluator`: realm:admin / `<app>:admin` /
+  `<app>:<resource>:admin` bypasses, three-segment exact match.
+- All sidebar / route-guard permission strings rewritten to
+  3-segment form (`cocoar-auth:user:read`, etc.); the legacy
+  `app:admin` shortcut for the settings page now reads `realm:admin`.
+- New admin section: `/admin/apps` — list + details modal mirror the
+  realms admin pattern. Resource list edited as one entry per line.
+  System app is identified by `IsSystem` and disallowed from delete.
+- Sidebar gained the "Applications" entry under System, gated on
+  `cocoar-auth:app:read`.
+- Backend `pnpm build` succeeds; backend unit suite still 806 green.
+
 ### Applications Phase 2 — App admin API (2026-04-29)
 
 Builds on Phase 1 to let realm-admins register additional Cocoar SaaS

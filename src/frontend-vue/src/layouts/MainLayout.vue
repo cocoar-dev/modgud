@@ -86,19 +86,20 @@ const connectionColor = computed(() =>
 // Permissions that grant access to *any* admin area. Mirrors the resource list
 // in `AdminView.vue` so the top-level "Administration" entry hides cleanly when
 // the user has zero admin permissions. `hasPermission` already short-circuits
-// on `app:admin`, so we don't need to list it explicitly.
+// on `realm:admin` and `<app>:admin`, so we don't need to list those.
 const ADMIN_RESOURCE_PERMISSIONS = [
-    'user:read',
-    'permission-role:read',
-    'authorization-group:read',
-    'oauth-client:read',
-    'oauth-scope:read',
-    'oauth-api:read',
-    'login-provider:read',
-    'idp-config:read',
-    'realm:read',
-    'auth-log:read',
-    'session:read',
+    'cocoar-auth:user:read',
+    'cocoar-auth:permission-role:read',
+    'cocoar-auth:authorization-group:read',
+    'cocoar-auth:oauth-client:read',
+    'cocoar-auth:oauth-scope:read',
+    'cocoar-auth:oauth-api:read',
+    'cocoar-auth:login-provider:read',
+    'cocoar-auth:idp-config:read',
+    'cocoar-auth:realm:read',
+    'cocoar-auth:auth-log:read',
+    'cocoar-auth:session:read',
+    'cocoar-auth:app:read',
 ] as const
 
 const hasAnyAdminPermission = computed(() =>

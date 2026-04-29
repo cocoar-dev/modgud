@@ -215,6 +215,21 @@ const routes = [
               },
             },
             {
+              path: 'apps',
+              component: () => import('@/views/admin/apps/AppList.vue'),
+              meta: {
+                routedFragments: [
+                  {
+                    // The :id slot is the App's Id (or "create"). Slug is
+                    // immutable post-creation but stored on the dto.
+                    type: 'modal',
+                    path: ':id',
+                    component: () => import('@/views/admin/apps/AppDetails.vue'),
+                  },
+                ],
+              },
+            },
+            {
               path: 'settings',
               component: () => import('@/views/admin/AppSettingsView.vue'),
             },
@@ -263,13 +278,18 @@ router.beforeEach(async (to) => {
   // Admin routes require *any* admin-resource read permission. The per-resource
   // sidebar gating in AdminView further hides individual menu items the user
   // cannot see; this guard just keeps users with zero admin permissions out of
-  // the empty admin shell. `hasPermission` already short-circuits on `app:admin`.
+  // the empty admin shell. `hasPermission` already short-circuits on
+  // realm:admin / <app>:admin / <app>:<resource>:admin.
   if (to.path.startsWith('/admin')) {
     const ADMIN_PERMS = [
-      'user:read', 'permission-role:read', 'authorization-group:read',
-      'oauth-client:read', 'oauth-scope:read', 'oauth-api:read',
-      'login-provider:read', 'idp-config:read', 'realm:read',
-      'auth-log:read', 'session:read',
+      'cocoar-auth:user:read', 'cocoar-auth:permission-role:read',
+      'cocoar-auth:authorization-group:read',
+      'cocoar-auth:oauth-client:read', 'cocoar-auth:oauth-scope:read',
+      'cocoar-auth:oauth-api:read',
+      'cocoar-auth:login-provider:read', 'cocoar-auth:idp-config:read',
+      'cocoar-auth:realm:read',
+      'cocoar-auth:auth-log:read', 'cocoar-auth:session:read',
+      'cocoar-auth:app:read',
     ]
     if (!ADMIN_PERMS.some((p) => authStore.hasPermission(p))) {
       return '/dashboard'
