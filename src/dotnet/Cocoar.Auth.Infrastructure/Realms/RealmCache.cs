@@ -34,14 +34,6 @@ public sealed class RealmCache : IRealmCache
 {
     private readonly IGlobalStore _globalStore;
 
-    private static readonly HashSet<string> LocalhostHosts = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "localhost",
-        "127.0.0.1",
-        "0.0.0.0",
-        "::1",
-    };
-
     private volatile CacheSnapshot? _snapshot;
 
     private sealed record CacheSnapshot(
@@ -65,16 +57,10 @@ public sealed class RealmCache : IRealmCache
         if (snapshot is null)
             return null;
 
-        if (snapshot.ByDomain.TryGetValue(hostname, out var info))
-            return info;
-
         // Dev-friendly fallback: localhost-style host with exactly one active realm
         // → return that realm. Lets the existing single-tenant boot keep working
         // without requiring a hosts-file entry for system.localhost.
-        if (snapshot.SingleActiveRealm is not null && LocalhostHosts.Contains(hostname))
-            return snapshot.SingleActiveRealm;
-
-        return null;
+        return RealmCacheLookup.Resolve(hostname, snapshot.ByDomain, snapshot.SingleActiveRealm);
     }
 
     public void Invalidate()

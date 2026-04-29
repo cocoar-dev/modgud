@@ -6,6 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Cocoar.Auth.Tests.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Pulls in ASP.NET Core types (IEndpointFilter, RouteHandlerBuilder, etc.)
          from the shared framework without making this a Web-host project. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

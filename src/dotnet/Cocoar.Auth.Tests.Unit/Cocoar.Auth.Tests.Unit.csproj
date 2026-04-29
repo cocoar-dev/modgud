@@ -20,8 +20,9 @@
   </ItemGroup>
 
   <!--
-    Unit tests reference Domain + Application + Infrastructure ONLY.
-    No Api, no WebApplicationFactory, no Marten, no Testcontainers, no Docker.
+    Unit tests reference Domain + Application + Infrastructure + Api ONLY for the
+    types of tiny stateless classes (e.g. middleware, helpers). They never spin up
+    a WebApplicationFactory, Marten store, Testcontainer or Docker — pure logic only.
     `dotnet test src/dotnet/Cocoar.Auth.Tests.Unit` should finish in well under a second.
   -->
   <ItemGroup>
@@ -29,6 +30,7 @@
     <ProjectReference Include="..\Cocoar.Auth.Application\Cocoar.Auth.Application.csproj" />
     <ProjectReference Include="..\Cocoar.Auth.Authorization\Cocoar.Auth.Authorization.csproj" />
     <ProjectReference Include="..\Cocoar.Auth.Authentication\Cocoar.Auth.Authentication.csproj" />
+    <ProjectReference Include="..\Cocoar.Auth.Api\Cocoar.Auth.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
