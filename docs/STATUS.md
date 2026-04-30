@@ -10,9 +10,26 @@
 > - **What's actively pinned by tests?** → `testing.md` "Unit-test
 >   inventory" table.
 
-Last updated: 2026-04-30 (post Wave 8 — integration-test gap closure).
+Last updated: 2026-04-30 (post Wave 9 — OWASP Top 10 reintroduced).
 
 ## ✅ Done
+
+### Wave 9 — OWASP Top 10 reintroduced (2026-04-30)
+
+The legacy IDP shipped a 308-line `OwaspTop10Tests.cs` that the
+post-cutover wholesale strip removed and never restored. Wave 9
+brings it back, ported to the new test infrastructure and adapted
+to the post-Phase-6 endpoint shape and 3-segment permission model.
+
+- **`Cocoar.Auth.Api.Tests/Security/OwaspTop10Tests.cs`** — 12
+  tests across A01 (Broken Access Control), A02 (Cryptographic
+  Failures), A03 (Injection), A05 (Security Misconfiguration), A07
+  (Identification & Authentication Failures). Tagged with the xUnit
+  trait `OWASP=Top10` for focused runs.
+- A04, A06, A08, A09, A10 are addressed at the architecture /
+  dependency / event-sourcing level (no assertable HTTP contract);
+  the class-level comment documents which mechanism covers each.
+- Integration suite goes from **109 → 121 green**.
 
 ### Wave 8 — integration-test gap closure (2026-04-30)
 

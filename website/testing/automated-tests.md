@@ -117,17 +117,37 @@ removed).
 
 ## Integration-test inventory
 
-109 tests in `Cocoar.Auth.Api.Tests`, all green (~2 min, Docker
+121 tests in `Cocoar.Auth.Api.Tests`, all green (~2 min, Docker
 required for the Testcontainers Postgres fixture).
 
 | Folder | Files | What's covered |
 |---|---|---|
 | `Users/` | 1 | UserCRUD via `/api/user` (TimeToDo singular endpoint, not `/api/admin/users`) |
-| `Security/` | 5 | AuthEnforcement (grace period, whitelist), MFA (TOTP), EmailOtp, MagicLink, ProfileSelfService (UserChangeRequest) |
+| `Security/` | 6 | AuthEnforcement (grace period, whitelist), MFA (TOTP), EmailOtp, MagicLink, ProfileSelfService (UserChangeRequest), OWASP Top 10 (see below) |
 | `Authorization/` | 1 | PermissionResolutionTests — 10 end-to-end gate tests against `GET /api/user`: BoundTo on/off/wildcard/wrong-app, role-AppSlug filter, bypass cascade (resource-admin, app-admin, realm-admin), cross-app no-leak |
 | `Distribution/` | 1 | DistributionApiAuthFilterTests — auth-envelope: 401 without Bearer, 401 with cookie-only, 401 with cookie + RS-Auth headers (bearer policy wins over ambient cookie principal) |
 | `ExternalAuth/` | 6 | OIDC IdpConfig CRUD, ExternalLoginProcessor (JIT account creation + linking), DynamicOidcSchemeManager, FlavorRegistry, ExternalIdentityLink aggregate, UserUpdateScriptRunner (JsEval) |
 | `Principals/` | 1 | PrincipalEmailResolver (group expansion) |
+
+### OWASP Top 10 (2021)
+
+`Security/OwaspTop10Tests.cs`, 12 tests, tagged with the xUnit trait
+`OWASP=Top10`. Run a focused pass with
+`dotnet test --filter "OWASP=Top10"`.
+
+| Category | Tests | What's pinned |
+|---|---:|---|
+| **A01** Broken Access Control | 3 | All admin endpoints require auth (anon → 401), authentication alone is not enough (403 without permission), no horizontal escalation (regular user cannot read another user's sessions) |
+| **A02** Cryptographic Failures | 3 | Auth cookie is HttpOnly, no `PasswordHash` field in any user-detail response, login does not reveal user existence (identical 401 + body for unknown user vs. wrong password on existing user) |
+| **A03** Injection | 1 | SQL-injection payload in login username returns vanilla 401 — never crashes (Marten parameterises every query) |
+| **A05** Security Misconfiguration | 1 | Public-facing error responses do not leak .NET stack-trace markers or DB-driver internals |
+| **A07** Identification and Authentication Failures | 4 | Brute-force lockout after 5 failed attempts, weak passwords rejected by Identity, deactivated user cannot sign in (same 401 as unknown), forgot-password always returns 200 with byte-identical body for known and unknown users |
+
+A04 (Insecure Design), A06 (Vulnerable Components), A08 (Software and
+Data Integrity), A09 (Logging and Monitoring), A10 (SSRF) are
+addressed at the architecture / dependency / event-sourcing level
+rather than via assertable HTTP contracts; see the file's class-level
+comment for the rationale.
 
 ## What we deliberately do NOT unit-test
 

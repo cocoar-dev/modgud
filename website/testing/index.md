@@ -10,14 +10,18 @@ docs claim.
 | Surface | Where | Status | Run |
 |---|---|---|---|
 | **Unit tests** | `src/dotnet/Cocoar.Auth.Tests.Unit/` | **813 / 813 green** (~1 s) | `dotnet test Cocoar.Auth.Tests.Unit` |
-| **Integration tests** | `src/dotnet/Cocoar.Auth.Api.Tests/` | **109 / 109 green** (~2 min, Docker required) | `dotnet test Cocoar.Auth.Api.Tests` |
+| **Integration tests** | `src/dotnet/Cocoar.Auth.Api.Tests/` | **121 / 121 green** (~2 min, Docker required) | `dotnet test Cocoar.Auth.Api.Tests` |
+| **OWASP Top 10 (subset)** | `src/dotnet/Cocoar.Auth.Api.Tests/Security/OwaspTop10Tests.cs` | **12 / 12 green** (part of integration suite, runs in <30 s) | `dotnet test Cocoar.Auth.Api.Tests --filter "OWASP=Top10"` |
 | **Manual smoke checklist** | [`testing/manual-checklist`](./manual-checklist) | Operator-driven, ~1–2 h end-to-end | walk the page |
 | **E2E (Playwright)** | `src/frontend-vue/tests/e2e/` | Disabled — needs Docker container/db rename post-cutover | (see backlog) |
 
 Wave 8 (2026-04-30) closed the longstanding gaps: the previous
 89 / 96 ProfileSelfService blockers got fixed via a tenant-aware
 session helper, and ten new permission-resolution + three distribution
-auth-filter tests joined the suite.
+auth-filter tests joined the suite. Wave 9 (same day) brought back
+the OWASP Top 10 (2021) coverage that the post-cutover legacy strip
+had dropped — the IDP now ships explicit security tests under the
+`OWASP=Top10` xUnit trait.
 
 ## What's here
 
