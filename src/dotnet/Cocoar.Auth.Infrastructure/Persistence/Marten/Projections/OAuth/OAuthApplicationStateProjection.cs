@@ -44,6 +44,14 @@ public class OAuthApplicationStateProjection : SingleStreamProjection<OAuthAppli
 
     public void Apply(OAuthApplicationDisplayNamesChanged e, OAuthApplicationState s) => s.DisplayNames = new Dictionary<string, string>(e.DisplayNames);
     public void Apply(OAuthApplicationPropertiesChanged e, OAuthApplicationState s) => s.Properties = new Dictionary<string, object?>(e.Properties);
-    public void Apply(OAuthApplicationAppIdChanged e, OAuthApplicationState s) => s.AppId = e.AppId;
+
+    // Legacy single-app event — kept for stream replay so old commits still
+    // project into the new AppIds list. Never emitted by new writes.
+    public void Apply(OAuthApplicationAppIdChanged e, OAuthApplicationState s)
+        => s.AppIds = e.AppId is Guid id ? [id] : [];
+
+    public void Apply(OAuthApplicationAppIdsChanged e, OAuthApplicationState s)
+        => s.AppIds = [.. e.AppIds];
+
     public void Apply(OAuthApplicationDeleted e, OAuthApplicationState s) => s.IsDeleted = true;
 }

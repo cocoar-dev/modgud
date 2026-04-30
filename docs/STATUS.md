@@ -14,6 +14,40 @@ Last updated: 2026-04-29 (post Applications Phase 1).
 
 ## ✅ Done
 
+### Applications Phase 4 — Multi-app clients (Keycloak resource_access)
+
+`OAuthApplicationAggregate.AppId: Guid?` → `AppIds: List<Guid>` so a
+single OAuth client can target multiple resource servers (a frontend
+that bundles TimeToDo + Knowledge + AlertHub doesn't need three clients
+anymore). Token claims switch from a flat `role` array to Keycloak's
+nested `resource_access[<app-slug>].roles` shape.
+
+- New event `OAuthApplicationAppIdsChanged` (n:m). Legacy
+  `OAuthApplicationAppIdChanged` stays applied for stream replay
+  compat — it projects into the singleton list.
+- DTOs / service / projection / Marten alias all migrated to AppIds.
+- UserInfo emits `resource_access` keyed by App slug, plus a flat
+  `groups` array. Standard OIDC scopes (openid/email/profile/roles)
+  unchanged.
+- `MeEndpoints` distribution API: when the bearer client links to one
+  App we still derive the slug; when it links to many, the caller
+  MUST pass `?app=<slug>`.
+- Stufe-3 scope-restriction: a scope passes when its AppId ∈
+  `client.AppIds ∪ {null}`.
+- New library project `Cocoar.Auth.Client.AspNetCore` — drop-in
+  `IClaimsTransformation` that flattens `resource_access[appSlug].roles`
+  into `ClaimTypes.Role` so resource servers get the
+  `[Authorize(Roles="…")]` magic without writing it themselves. Same
+  shape as Keycloak's, so a future migration to / from Keycloak is
+  trivial.
+- Frontend OAuth-client-modal: single-select App dropdown → CoarMultiSelect.
+
+Pinned by 5 new projection tests (n:m set, detach-all, legacy single-id
+replay, legacy null replay, default-empty) + 12 ClaimsTransformation
+tests (per-app role flattening, cross-app isolation, malformed JSON,
+idempotence, anonymous short-circuit, AppSlug validation). Full unit
+suite 812 → 824.
+
 ### Applications Phase 3 — IDP wired through (2026-04-29)
 
 Stufe 1 (App↔Client link) + 2a (UserInfo claims) + 2b (distribution

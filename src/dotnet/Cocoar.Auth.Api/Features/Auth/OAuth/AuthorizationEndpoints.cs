@@ -298,39 +298,47 @@ public static class AuthorizationEndpoints
             if (!string.IsNullOrEmpty(user.Lastname)) claims[Claims.FamilyName] = user.Lastname;
         }
 
-        // Roles + groups: when the OIDC `roles` scope was granted, expose
-        // both as claims with their proper semantics:
+        // Roles + groups: when the OIDC `roles` scope was granted, expose:
         //
-        //   `role`   — names of PermissionRoles the user effectively holds
-        //              in the calling client's App. This is the
-        //              "what may you do" axis, which is what
-        //              [Authorize(Roles="…")] actually asks. ASP.NET Core
-        //              maps `role` → ClaimTypes.Role automatically when the
-        //              resource server has GetClaimsFromUserInfoEndpoint=true.
-        //   `groups` — names of Groups the user is a member of. This is the
-        //              organisational/distribution-list axis (e.g. "send
-        //              mail to all HR-Gruppe members"), not authorisation.
+        //   `resource_access` — Keycloak-style nested claim, keyed by App
+        //              slug, each entry carrying { "roles": [...] } for that
+        //              app. Resource servers read THEIR OWN slug's roles;
+        //              the Cocoar.Auth.Client.AspNetCore library flattens
+        //              that block into ClaimTypes.Role so
+        //              [Authorize(Roles="…")] works.
+        //   `groups` — flat array of Group names. Organisational signal
+        //              (mailing-list semantics, "send to all HR group
+        //              members"), NOT authorisation.
         //
-        // The role list is App-scoped: the App is derived from the access
-        // token's client_id → OAuthApplication.AppId → App.Slug (the
-        // Stufe-1 link). Falls back to cocoar-auth when the calling client
-        // is realm-wide / unassigned, so the IDP's own admin SPA still
-        // sees its own roles.
+        // Apps come from the calling client's AppIds list (Stufe 1's n:m
+        // link). For an unassigned/realm-wide client we fall back to a
+        // single resource_access entry under cocoar-auth so the IDP's own
+        // admin SPA still surfaces its own roles.
         //
-        // Granular permissions are intentionally NOT in UserInfo — they
+        // Granular permissions are deliberately NOT in UserInfo — they
         // refresh per-request via the distribution API
         // (GET /api/v1/me/permissions?app=…). UserInfo carries only
         // identity-shaped claims that change rarely.
         if (httpContext.User.HasScope(Scopes.Roles))
         {
-            var appSlug = await ResolveAppSlugFromClientAsync(httpContext.User, session)
-                          ?? AppSlugs.CocoarAuth;
+            var appSlugs = await ResolveAppSlugsForClientAsync(httpContext.User, session);
+            if (appSlugs.Count == 0)
+                appSlugs = [AppSlugs.CocoarAuth]; // realm-wide / unassigned client
 
-            var roles = await permissionService.GetUserRolesAsync(user.Id, appSlug);
+            var resourceAccess = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (var slug in appSlugs)
+            {
+                var rolesForApp = await permissionService.GetUserRolesAsync(user.Id, slug);
+                if (rolesForApp.Count == 0) continue;
+                resourceAccess[slug] = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["roles"] = rolesForApp.Select(r => r.Name).ToArray(),
+                };
+            }
+            if (resourceAccess.Count > 0)
+                claims["resource_access"] = resourceAccess;
+
             var groups = await permissionService.GetUserGroupsAsync(user.Id);
-
-            if (roles.Count > 0)
-                claims[Claims.Role] = roles.Select(r => r.Name).ToArray();
             if (groups.Count > 0)
                 claims["groups"] = groups.Select(g => g.Name).ToArray();
         }
@@ -403,25 +411,28 @@ public static class AuthorizationEndpoints
         => AuthorizationEndpointHelpers.GetDestinations(claim);
 
     /// <summary>
-    /// Resolves the app slug from the bearer token's <c>client_id</c> claim:
-    /// looks up the OAuth client, follows its <c>AppId</c> to <see cref="App"/>
-    /// and returns the slug. Returns <c>null</c> when no client_id is on the
-    /// principal (interactive cookie auth), the client is not found, the
-    /// client has no App link, or the App was deleted. Used by UserInfo to
-    /// scope roles to the calling App.
+    /// Resolves the app slugs the bearer token's calling client is linked
+    /// to: looks up the OAuth client by <c>client_id</c>, walks its
+    /// <c>AppIds</c> list, and returns the slugs of the (non-deleted) Apps.
+    /// Returns an empty list when no client_id is on the principal
+    /// (interactive cookie auth), the client is not found, or the client
+    /// has no App link. Used by UserInfo to populate
+    /// <c>resource_access</c> per Keycloak convention.
     /// </summary>
-    private static async Task<string?> ResolveAppSlugFromClientAsync(
+    private static async Task<List<string>> ResolveAppSlugsForClientAsync(
         ClaimsPrincipal user, IDocumentSession session)
     {
         var clientId = user.FindFirst(Claims.ClientId)?.Value;
-        if (string.IsNullOrEmpty(clientId)) return null;
+        if (string.IsNullOrEmpty(clientId)) return [];
 
         var client = await session.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted);
-        if (client?.AppId is not Guid appId) return null;
+        if (client is null || client.AppIds.Count == 0) return [];
 
-        var app = await session.LoadAsync<App>(appId);
-        return app?.IsDeleted == false ? app.Slug : null;
+        var apps = await session.Query<App>()
+            .Where(a => client.AppIds.Contains(a.Id) && !a.IsDeleted)
+            .ToListAsync();
+        return apps.Select(a => a.Slug).ToList();
     }
 
     /// <summary>
@@ -454,21 +465,25 @@ public static class AuthorizationEndpoints
         var appScoped = scopes.Where(s => s.AppId.HasValue).ToList();
         if (appScoped.Count == 0) return null;
 
-        // App-scoped scopes are present — we must know the client's app.
-        Guid? clientAppId = null;
+        // App-scoped scopes are present — we must know which Apps the
+        // calling client may target (the n:m link from Stufe 1).
+        var clientAppIds = new HashSet<Guid>();
         if (!string.IsNullOrEmpty(clientId))
         {
             var client = await session.Query<OAuthApplicationState>()
                 .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted);
-            clientAppId = client?.AppId;
+            if (client is not null)
+                foreach (var id in client.AppIds) clientAppIds.Add(id);
         }
 
-        var bad = appScoped.FirstOrDefault(s => s.AppId != clientAppId);
+        // A scope passes if its App is in the client's App set. (Global
+        // scopes — AppId == null — were filtered out above.)
+        var bad = appScoped.FirstOrDefault(s => !clientAppIds.Contains(s.AppId!.Value));
         if (bad is not null)
         {
-            var description = clientAppId is null
-                ? $"Scope '{bad.Name}' is restricted to a specific app, but the calling client is not linked to one."
-                : $"Scope '{bad.Name}' belongs to a different app than the calling client.";
+            var description = clientAppIds.Count == 0
+                ? $"Scope '{bad.Name}' is restricted to a specific app, but the calling client is not linked to any."
+                : $"Scope '{bad.Name}' is not in the calling client's app set.";
             return Results.Forbid(
                 new AuthenticationProperties(new Dictionary<string, string?>
                 {

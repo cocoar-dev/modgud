@@ -21,11 +21,12 @@ public class OAuthApplicationAggregate
     public Dictionary<string, string> DisplayNames { get; private set; } = new();
     public Dictionary<string, object?> Properties { get; private set; } = new();
     /// <summary>
-    /// Optional link to an Application (cocoar-auth, timetodo, …). <c>null</c>
-    /// = unassigned (client is realm-wide, no app context). Used by the
-    /// distribution API and scope-restriction logic to scope the client.
+    /// n:m link to Applications. Empty = realm-wide / unassigned. One id =
+    /// typical app-scoped SPA. Many ids = a frontend that bundles multiple
+    /// resource servers (Keycloak-style <c>resource_access</c> in the
+    /// issued tokens).
     /// </summary>
-    public Guid? AppId { get; private set; }
+    public List<Guid> AppIds { get; private set; } = [];
     public bool IsDeleted { get; private set; }
 
     public OAuthApplicationAggregate() { }
@@ -120,9 +121,9 @@ public class OAuthApplicationAggregate
         return e;
     }
 
-    public OAuthApplicationAppIdChanged SetAppId(Guid? appId)
+    public OAuthApplicationAppIdsChanged SetAppIds(IReadOnlyList<Guid> appIds)
     {
-        var e = new OAuthApplicationAppIdChanged(Id, appId);
+        var e = new OAuthApplicationAppIdsChanged(Id, appIds);
         Apply(e);
         return e;
     }
@@ -158,6 +159,16 @@ public class OAuthApplicationAggregate
     public void Apply(OAuthApplicationSettingsChanged @event) => Settings = new Dictionary<string, string>(@event.Settings);
     public void Apply(OAuthApplicationDisplayNamesChanged @event) => DisplayNames = new Dictionary<string, string>(@event.DisplayNames);
     public void Apply(OAuthApplicationPropertiesChanged @event) => Properties = new Dictionary<string, object?>(@event.Properties);
-    public void Apply(OAuthApplicationAppIdChanged @event) => AppId = @event.AppId;
+
+    /// <summary>
+    /// Legacy stream-replay hook. Maps the old single-app event to the n:m
+    /// state: <c>AppId == null</c> empties the list, otherwise it becomes
+    /// the singleton list. Never emitted by new writes.
+    /// </summary>
+    public void Apply(OAuthApplicationAppIdChanged @event)
+        => AppIds = @event.AppId is Guid id ? [id] : [];
+
+    public void Apply(OAuthApplicationAppIdsChanged @event) => AppIds = [.. @event.AppIds];
+
     public void Apply(OAuthApplicationDeleted @event) => IsDeleted = true;
 }

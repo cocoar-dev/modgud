@@ -39,11 +39,13 @@ public record OAuthClientDto
     public List<string> Roles { get; init; } = [];
 
     /// <summary>
-    /// Optional FK to <c>App.Id</c> the client belongs to (Guid as string).
-    /// <c>null</c> means the client is realm-wide (no app context). The
-    /// frontend joins this against its apps store to resolve the slug.
+    /// Apps this client is linked to (Guid strings). Empty = realm-wide /
+    /// unassigned. One id = typical SPA. Many = a frontend that bundles
+    /// multiple resource servers (Keycloak-style <c>resource_access</c> in
+    /// the issued token's UserInfo claims). The frontend joins these
+    /// against its apps store to resolve slugs.
     /// </summary>
-    public string? AppId { get; init; }
+    public List<string> AppIds { get; init; } = [];
 }
 
 public record OAuthClientClaimDto
@@ -88,8 +90,10 @@ public record CreateOAuthClientDto
 
     public List<string> Roles { get; init; } = [];
 
-    /// <summary>App this client belongs to (Id, ShortGuid string). Null = unassigned.</summary>
-    public string? AppId { get; init; }
+    /// <summary>
+    /// Apps this client belongs to (Guid strings). Empty/null = realm-wide.
+    /// </summary>
+    public List<string>? AppIds { get; init; }
 }
 
 public record UpdateOAuthClientDto
@@ -126,16 +130,13 @@ public record UpdateOAuthClientDto
     public List<string>? Roles { get; init; }
 
     /// <summary>
-    /// App-link patch. Mirrors the rest of this PATCH-style DTO:
-    /// <list type="bullet">
-    ///   <item><c>null</c> — field omitted, no change to the stored AppId.</item>
-    ///   <item><c>""</c> (empty string) — explicit detach: AppId becomes <c>null</c>.</item>
-    ///   <item>any non-empty Guid string — assign or change to that App.</item>
-    /// </list>
-    /// The Vue admin dropdown serialises its "no app" choice as the empty
-    /// string and an actual selection as the App's Id (ShortGuid).
+    /// App-link patch. <c>null</c> = field omitted, no change to the stored
+    /// list. An empty array <c>[]</c> = explicit detach-all (realm-wide).
+    /// Any non-empty array replaces the full list (set semantics, not
+    /// merge). The Vue admin always sends the dropdown's current selection
+    /// on save.
     /// </summary>
-    public string? AppId { get; init; }
+    public List<string>? AppIds { get; init; }
 }
 
 public record OAuthClientListDto

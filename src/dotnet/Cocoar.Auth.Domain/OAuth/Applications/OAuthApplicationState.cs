@@ -26,11 +26,11 @@ public class OAuthApplicationState
     public Dictionary<string, string> DisplayNames { get; set; } = new();
     public Dictionary<string, object?> Properties { get; set; } = new();
     /// <summary>
-    /// Optional FK to <c>App.Id</c>. <c>null</c> = unassigned (realm-wide
-    /// client). Read by the distribution API to derive the requested app
-    /// from a bearer token.
+    /// n:m FK to <c>App.Id</c>. Empty = realm-wide / unassigned. The token
+    /// pipeline (UserInfo + scope restriction) and the distribution API
+    /// derive the calling client's app context from this list.
     /// </summary>
-    public Guid? AppId { get; set; }
+    public List<Guid> AppIds { get; set; } = [];
     public AccessTokenType AccessTokenType { get; set; } = AccessTokenType.Reference;
     public bool IsDeleted { get; set; }
 

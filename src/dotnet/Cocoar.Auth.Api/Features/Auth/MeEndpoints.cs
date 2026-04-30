@@ -87,19 +87,25 @@ public static class MeEndpoints
     }
 
     /// <summary>
-    /// Resolves the app slug for the request: explicit query param wins;
-    /// otherwise we look up the bearer-token's client and follow its
-    /// AppId to <see cref="App.Slug"/>. Returns <c>null</c> if neither
-    /// channel yields an answer.
+    /// Resolves the app slug for the request:
+    /// <list type="bullet">
+    ///   <item>Explicit <c>?app=</c> query param wins (after we verify the
+    ///         slug resolves to a real, non-deleted App).</item>
+    ///   <item>Otherwise we look up the bearer-token's client. If the
+    ///         client is linked to <b>exactly one</b> App, we use that
+    ///         slug. If linked to several, we cannot disambiguate — the
+    ///         caller MUST pass <c>?app=</c>.</item>
+    /// </list>
+    /// Returns <c>null</c> when no app can be determined.
     /// </summary>
     private static async Task<string?> ResolveAppSlugAsync(
         string? appFromQuery, ClaimsPrincipal user, IDocumentSession session)
     {
         if (!string.IsNullOrWhiteSpace(appFromQuery))
         {
-            // Trust-but-verify: confirm the requested app exists in the
-            // realm. An unknown slug returns no permissions today (filter
-            // miss in PermissionService), but we'd rather 404 it explicitly.
+            // Trust-but-verify: confirm the requested app exists. An unknown
+            // slug returns no permissions (filter miss in PermissionService),
+            // but we'd rather treat that as the caller's mistake explicitly.
             var byQuery = await session.Query<App>()
                 .FirstOrDefaultAsync(a => a.Slug == appFromQuery && !a.IsDeleted);
             return byQuery?.Slug;
@@ -110,9 +116,13 @@ public static class MeEndpoints
 
         var client = await session.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted);
-        if (client?.AppId is not Guid appId) return null;
+        if (client is null || client.AppIds.Count == 0) return null;
 
-        var derived = await session.LoadAsync<App>(appId);
+        // Multi-app client without a query hint: ambiguous on purpose. The
+        // caller has to say which app it wants permissions for.
+        if (client.AppIds.Count > 1) return null;
+
+        var derived = await session.LoadAsync<App>(client.AppIds[0]);
         return derived?.IsDeleted == false ? derived.Slug : null;
     }
 }

@@ -31,6 +31,7 @@
     <ProjectReference Include="..\Cocoar.Auth.Authorization\Cocoar.Auth.Authorization.csproj" />
     <ProjectReference Include="..\Cocoar.Auth.Authentication\Cocoar.Auth.Authentication.csproj" />
     <ProjectReference Include="..\Cocoar.Auth.Api\Cocoar.Auth.Api.csproj" />
+    <ProjectReference Include="..\Cocoar.Auth.Client.AspNetCore\Cocoar.Auth.Client.AspNetCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>

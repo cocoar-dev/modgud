@@ -15,12 +15,22 @@ public record OAuthApplicationCreated(
 public record OAuthApplicationDisplayNameChanged(Guid ApplicationId, string? DisplayName);
 
 /// <summary>
-/// Sets the link between this OAuth client and an Application. <c>null</c>
-/// detaches the client (it then has no app context — useful for legacy /
-/// realm-wide tools). Realm-admin endpoints validate that the AppId exists
-/// and is non-deleted at the time the event is appended.
+/// Legacy single-app link event. Kept for stream replay compat — early
+/// Phase-3 commits emitted this; the projection still applies it as
+/// "set AppIds to the singleton (or empty)". New writes emit
+/// <see cref="OAuthApplicationAppIdsChanged"/> instead.
 /// </summary>
 public record OAuthApplicationAppIdChanged(Guid ApplicationId, Guid? AppId);
+
+/// <summary>
+/// Sets the n:m link between this OAuth client and Applications. The list
+/// can be empty (realm-wide / unassigned), have one entry (typical web
+/// SPA bound to a single app), or many (a frontend that bundles multiple
+/// resource servers — Keycloak-style <c>resource_access</c>). Realm-admin
+/// endpoints validate that every <see cref="AppIds"/> entry references a
+/// non-deleted <c>App</c> at append time.
+/// </summary>
+public record OAuthApplicationAppIdsChanged(Guid ApplicationId, IReadOnlyList<Guid> AppIds);
 
 public record OAuthApplicationClientTypeChanged(Guid ApplicationId, string? ClientType);
 

@@ -27,8 +27,11 @@ public static class OAuthMartenSetup
         options.Schema.For<OAuthApplicationState>()
             .Identity(x => x.Id)
             .Index(x => x.ClientId)
-            .Index(x => x.AppId)
             .Index(x => x.IsDeleted);
+        // AppIds is a List<Guid> — typical lookups iterate the (small)
+        // client list in memory, so a GIN index isn't load-bearing yet.
+        // Add one (Marten supports it via .Schema.For<>().GinIndexJsonData())
+        // when actual query-by-AppIds shows up in profiles.
 
         options.Schema.For<OAuthApplicationSecurityData>()
             .Identity(x => x.Id);
@@ -81,7 +84,9 @@ public static class OAuthMartenSetup
         options.Events.MapEventType<OAuthApplicationSettingsChanged>("oauth_application_settings_changed");
         options.Events.MapEventType<OAuthApplicationDisplayNamesChanged>("oauth_application_display_names_changed");
         options.Events.MapEventType<OAuthApplicationPropertiesChanged>("oauth_application_properties_changed");
+        // Legacy single-app event — kept registered for stream replay only.
         options.Events.MapEventType<OAuthApplicationAppIdChanged>("oauth_application_app_id_changed");
+        options.Events.MapEventType<OAuthApplicationAppIdsChanged>("oauth_application_app_ids_changed");
         options.Events.MapEventType<OAuthApplicationDeleted>("oauth_application_deleted");
 
         options.Events.MapEventType<OAuthScopeCreated>("oauth_scope_created");

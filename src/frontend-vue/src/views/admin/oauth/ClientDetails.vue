@@ -4,6 +4,7 @@ import {
   CoarTextInput,
   CoarFormField,
   CoarSelect,
+  CoarMultiSelect,
   CoarCheckbox,
   CoarButton,
   CoarTabGroup,
@@ -45,16 +46,15 @@ const consentTypeOptions = [
   { value: 'systematic', label: 'Systematic' },
 ]
 
-// App-link dropdown — empty string = "no app" (realm-wide). Backend
-// PATCH semantics interpret "" as explicit detach, a Guid string as
-// assign. Uses the same applications store as the BoundTo MultiSelect.
-const appOptions = computed(() => [
-  { value: '', label: t('admin.oauthClients.app.none', {}, '— No app (realm-wide)') },
-  ...applicationsStore.apps.map((a) => ({
+// App-link MultiSelect (n:m). Empty selection = realm-wide. Multiple
+// selections = Keycloak-style multi-app client (the issued token's
+// resource_access claim will carry one entry per selected app).
+const appOptions = computed(() =>
+  applicationsStore.apps.map((a) => ({
     value: a.Id,
     label: `${a.DisplayName} (${a.Slug})`,
   })),
-])
+)
 
 interface FormState {
   ClientId: string
@@ -77,8 +77,8 @@ interface FormState {
   AuthorizationCodeLifetime: string
   AbsoluteRefreshTokenLifetime: string
   SlidingRefreshTokenLifetime: string
-  /** Empty string = "no app" (will detach on save). Otherwise an App.Id. */
-  AppId: string
+  /** Selected App.Ids. Empty list = realm-wide. */
+  AppIds: string[]
 }
 
 function emptyForm(): FormState {
@@ -103,7 +103,7 @@ function emptyForm(): FormState {
     AuthorizationCodeLifetime: '',
     AbsoluteRefreshTokenLifetime: '',
     SlidingRefreshTokenLifetime: '',
-    AppId: '',
+    AppIds: [],
   }
 }
 
@@ -132,7 +132,7 @@ function fromDto(dto: OAuthClientDto): FormState {
     AuthorizationCodeLifetime: dto.AuthorizationCodeLifetime?.toString() ?? '',
     AbsoluteRefreshTokenLifetime: dto.AbsoluteRefreshTokenLifetime?.toString() ?? '',
     SlidingRefreshTokenLifetime: dto.SlidingRefreshTokenLifetime?.toString() ?? '',
-    AppId: dto.AppId ?? '',
+    AppIds: [...(dto.AppIds ?? [])],
   }
 }
 
@@ -224,7 +224,7 @@ function buildCreateDto(): CreateOAuthClientDto {
   }
   const secret = form.value.ClientSecret.trim()
   if (secret) dto.ClientSecret = secret
-  if (form.value.AppId) dto.AppId = form.value.AppId
+  if (form.value.AppIds.length > 0) dto.AppIds = [...form.value.AppIds]
   return dto
 }
 
@@ -247,8 +247,8 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     AuthorizationCodeLifetime: parseInt(form.value.AuthorizationCodeLifetime),
     AbsoluteRefreshTokenLifetime: parseInt(form.value.AbsoluteRefreshTokenLifetime),
     SlidingRefreshTokenLifetime: parseInt(form.value.SlidingRefreshTokenLifetime),
-    // Always send AppId on update — empty string detaches, guid assigns.
-    AppId: form.value.AppId,
+    // Always send AppIds on update — empty array = detach all, otherwise replace.
+    AppIds: [...form.value.AppIds],
   }
 }
 
@@ -313,8 +313,13 @@ async function copySecret() {
           <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent-Typ')">
             <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" />
           </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.app', {}, 'Application')">
-            <CoarSelect v-model="form.AppId" :options="appOptions" />
+          <CoarFormField :label="t('admin.oauthClients.apps', {}, 'Applications')">
+            <CoarMultiSelect
+              v-model="form.AppIds"
+              :options="appOptions"
+              searchable
+              clearable
+              :placeholder="t('admin.oauthClients.apps.placeholder', {}, 'Select apps (none = realm-wide)…')" />
           </CoarFormField>
           <CoarFormField v-if="isCreate" :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (leer = generieren)')">
             <CoarTextInput v-model="form.ClientSecret" type="password" clearable />

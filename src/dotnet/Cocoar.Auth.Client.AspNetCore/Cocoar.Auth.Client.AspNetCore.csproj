@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Cocoar.Auth.Client.AspNetCore</RootNamespace>
+    <Description>
+      ASP.NET Core integration for Cocoar.Auth resource servers. Reads
+      Keycloak-style `resource_access[appSlug].roles` claims from a JWT
+      issued by Cocoar.Auth and surfaces them as flat ClaimTypes.Role
+      claims so [Authorize(Roles="...")] works out of the box.
+      Also provides a typed client for the /api/v1/me/permissions
+      distribution API for granular permission checks.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

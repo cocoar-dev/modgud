@@ -158,38 +158,69 @@ public class OAuthApplicationStateProjectionTests
         }
 
         [Fact]
-        public void AppIdChanged_assigns_app()
+        public void AppIdsChanged_replaces_app_set()
         {
             var p = new OAuthApplicationStateProjection();
             var s = NewState();
-            var appId = Guid.NewGuid();
+            var a = Guid.NewGuid();
+            var b = Guid.NewGuid();
 
-            p.Apply(new OAuthApplicationAppIdChanged(s.Id, appId), s);
+            p.Apply(new OAuthApplicationAppIdsChanged(s.Id, new[] { a, b }), s);
 
-            Assert.Equal(appId, s.AppId);
+            Assert.Equal(new[] { a, b }, s.AppIds);
         }
 
         [Fact]
-        public void AppIdChanged_to_null_detaches_app()
+        public void AppIdsChanged_to_empty_detaches_all()
         {
             var p = new OAuthApplicationStateProjection();
             var s = NewState();
-            // Pre-assign so we can verify the detach actually clears the link.
-            p.Apply(new OAuthApplicationAppIdChanged(s.Id, Guid.NewGuid()), s);
-            Assert.NotNull(s.AppId);
+            p.Apply(new OAuthApplicationAppIdsChanged(s.Id, new[] { Guid.NewGuid(), Guid.NewGuid() }), s);
+            Assert.Equal(2, s.AppIds.Count);
+
+            p.Apply(new OAuthApplicationAppIdsChanged(s.Id, Array.Empty<Guid>()), s);
+
+            Assert.Empty(s.AppIds);
+        }
+
+        [Fact]
+        public void Legacy_AppIdChanged_with_value_replays_to_singleton_AppIds()
+        {
+            // Stream replay compat: events written before the n:m migration
+            // (single-app AppIdChanged) must still project into the new
+            // AppIds list. Without this hook, every realm that already had
+            // App-linked clients would lose those links on a projection
+            // rebuild.
+            var p = new OAuthApplicationStateProjection();
+            var s = NewState();
+            var legacy = Guid.NewGuid();
+
+            p.Apply(new OAuthApplicationAppIdChanged(s.Id, legacy), s);
+
+            Assert.Single(s.AppIds);
+            Assert.Equal(legacy, s.AppIds[0]);
+        }
+
+        [Fact]
+        public void Legacy_AppIdChanged_with_null_replays_to_empty_AppIds()
+        {
+            var p = new OAuthApplicationStateProjection();
+            var s = NewState();
+            // Pre-set so the null event has something to clear.
+            p.Apply(new OAuthApplicationAppIdsChanged(s.Id, new[] { Guid.NewGuid() }), s);
 
             p.Apply(new OAuthApplicationAppIdChanged(s.Id, null), s);
 
-            Assert.Null(s.AppId);
+            Assert.Empty(s.AppIds);
         }
 
         [Fact]
-        public void Created_event_initial_state_has_null_AppId()
+        public void Created_event_initial_state_has_empty_AppIds()
         {
-            // The Created event has no AppId field — clients are unattached
-            // by default and the link is set with a follow-up event.
+            // The Created event has no AppIds field — clients are
+            // unassigned by default and links are set with follow-up events.
             var s = NewState();
-            Assert.Null(s.AppId);
+            Assert.Empty(s.AppIds);
         }
     }
 

@@ -12,6 +12,7 @@
     <Project Path="Cocoar.Auth.Api/Cocoar.Auth.Api.csproj" />
     <Project Path="Cocoar.Auth.Api.Tests/Cocoar.Auth.Api.Tests.csproj" />
     <Project Path="Cocoar.Auth.Tests.Unit/Cocoar.Auth.Tests.Unit.csproj" />
+    <Project Path="Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj" />
   </Folder>
 <Folder Name="/_Solution Items/">
     <File Path="Directory.Build.props" />

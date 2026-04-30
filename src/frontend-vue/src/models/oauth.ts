@@ -41,11 +41,13 @@ export interface OAuthClientDto {
   Claims: OAuthClientClaimDto[]
   Roles: string[]
   /**
-   * Optional FK to an Application. `null` = client is realm-wide (no app
-   * context). The frontend joins this against `useApplicationsStore` to
-   * resolve the slug + display name.
+   * Apps this client is linked to (Guid strings). Empty = realm-wide / no
+   * app context. One id = typical SPA. Many = a frontend that bundles
+   * multiple resource servers (Keycloak-style `resource_access` in the
+   * issued tokens). Frontend joins these against `useApplicationsStore`
+   * to resolve slugs and display names.
    */
-  AppId?: string | null
+  AppIds: string[]
 }
 
 export interface CreateOAuthClientDto {
@@ -62,8 +64,11 @@ export interface CreateOAuthClientDto {
   RequireConsent?: boolean
   AllowedGrantTypes?: string[]
   AllowedCorsOrigins?: string[]
-  /** Application Id (Guid string). null/undefined → realm-wide client. */
-  AppId?: string | null
+  /**
+   * Apps this client links to. Empty/undefined = realm-wide. Multiple
+   * entries = Keycloak-style multi-app client.
+   */
+  AppIds?: string[]
 }
 
 export interface UpdateOAuthClientDto {
@@ -88,13 +93,13 @@ export interface UpdateOAuthClientDto {
   Claims?: OAuthClientClaimDto[] | null
   Roles?: string[] | null
   /**
-   * App-link patch. Mirrors the backend's PATCH semantics:
-   *   undefined/missing → no change (do NOT include the key in the JSON)
-   *   ""                → explicit detach: AppId becomes null
-   *   "<guid>"          → assign / change to that App
-   * The dropdown's "no app" choice serialises to "" (empty string).
+   * App-link patch (set semantics, mirrors the backend):
+   *   undefined/missing → no change
+   *   []                → explicit detach-all (realm-wide)
+   *   [a, b, …]         → replace the full list
+   * The MultiSelect's selected values are sent verbatim on save.
    */
-  AppId?: string | null
+  AppIds?: string[] | null
 }
 
 export interface OAuthClientListDto {
