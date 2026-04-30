@@ -2,27 +2,24 @@ using System.Security.Claims;
 using BuildingBlocks.Helper;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Services;
-using Cocoar.Auth.Domain.OAuth.Applications;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
-using OpenIddict.Validation.AspNetCore;
-using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace Cocoar.Auth.Api.Features.Auth;
 
 /// <summary>
-/// "/me" endpoints — caller-introspection used by the SPA admin UI (cookie
-/// auth) and by Cocoar SaaS resource servers like TimeToDo (OAuth bearer
-/// auth) to retrieve the authenticated user's app-scoped permissions,
-/// groups, and roles in one request.
+/// "/me" endpoints — caller-introspection for the Cocoar.Auth admin SPA
+/// (cookie-auth only). Returns the authenticated user's app-scoped
+/// permissions, groups, and roles in one shot for the active browser
+/// session.
 ///
-/// <para>This is the Phase-3 distribution API ("Stufe 2b" of the
-/// Applications plan). Permissions are resolved live from the IDP database
-/// — cached in the consumer for typically 30s — so revoking a role takes
-/// effect within that window without waiting for the access token to
-/// expire. The token itself stays slim (only identity-shaped claims +
-/// group names via UserInfo from Stufe 2a).</para>
+/// <para>This is deliberately a Cookie-only path. Resource servers
+/// (TimeToDo, Knowledge, …) querying with their bearer tokens use
+/// <c>/api/v1/distribution/me-permissions</c> instead — that endpoint
+/// also requires the calling RS to authenticate via X-Resource-Server-*
+/// headers, derives the App from the RS, and is the single home for all
+/// future server-to-server IAM lookups.</para>
 /// </summary>
 public static class MeEndpoints
 {
@@ -30,9 +27,11 @@ public static class MeEndpoints
     {
         var group = application.MapGroup($"{path}/v1/me")
             .WithTags("Me")
-            .RequireAuthorization(new AuthorizationPolicyBuilder(
-                    IdentityConstants.ApplicationScheme,
-                    OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)
+            // Cookie-only: this endpoint is for the browser session of the
+            // currently logged-in admin/user. Bearer-auth is rejected so
+            // the semantic stays clean — server-to-server traffic goes to
+            // /api/v1/distribution/*.
+            .RequireAuthorization(new AuthorizationPolicyBuilder(IdentityConstants.ApplicationScheme)
                 .RequireAuthenticatedUser()
                 .Build());
 
@@ -45,13 +44,20 @@ public static class MeEndpoints
                 var userId = ResolveUserId(httpContext.User);
                 if (userId is null) return Results.Unauthorized();
 
-                var appSlug = await ResolveAppSlugAsync(app, httpContext.User, session);
-                if (appSlug is null)
+                // Cookie-auth path: the admin SPA is interactive — passing
+                // ?app= is required for any app other than cocoar-auth so
+                // the operator is explicit about what they're looking at.
+                // Default to cocoar-auth (the IDP's own admin surface) when
+                // omitted, matching the SPA's default landing context.
+                var appSlug = string.IsNullOrWhiteSpace(app) ? AppSlugs.CocoarAuth : app;
+                var verified = await session.Query<App>()
+                    .FirstOrDefaultAsync(a => a.Slug == appSlug && !a.IsDeleted);
+                if (verified is null)
                 {
                     return Results.BadRequest(new
                     {
-                        Error = "Me.AppRequired",
-                        Message = "Could not determine app. Pass ?app=<slug>, or use a bearer token whose client is linked to an App.",
+                        Error = "Me.UnknownApp",
+                        Message = $"App '{appSlug}' not found in this realm.",
                     });
                 }
 
@@ -88,54 +94,12 @@ public static class MeEndpoints
     }
 
     /// <summary>
-    /// Reads the user id from cookie auth (NameIdentifier) or bearer auth
-    /// (sub). Both schemes write the user's Guid as the principal subject.
+    /// Reads the user id from the cookie-auth principal (NameIdentifier).
     /// </summary>
     private static Guid? ResolveUserId(ClaimsPrincipal user)
     {
-        var raw = user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                  ?? user.FindFirst(Claims.Subject)?.Value;
+        var raw = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         return Guid.TryParse(raw, out var id) ? id : null;
-    }
-
-    /// <summary>
-    /// Resolves the app slug for the request:
-    /// <list type="bullet">
-    ///   <item>Explicit <c>?app=</c> query param wins (after we verify the
-    ///         slug resolves to a real, non-deleted App).</item>
-    ///   <item>Otherwise we look up the bearer-token's client. If the
-    ///         client is linked to <b>exactly one</b> App, we use that
-    ///         slug. If linked to several, we cannot disambiguate — the
-    ///         caller MUST pass <c>?app=</c>.</item>
-    /// </list>
-    /// Returns <c>null</c> when no app can be determined.
-    /// </summary>
-    private static async Task<string?> ResolveAppSlugAsync(
-        string? appFromQuery, ClaimsPrincipal user, IDocumentSession session)
-    {
-        if (!string.IsNullOrWhiteSpace(appFromQuery))
-        {
-            // Trust-but-verify: confirm the requested app exists. An unknown
-            // slug returns no permissions (filter miss in PermissionService),
-            // but we'd rather treat that as the caller's mistake explicitly.
-            var byQuery = await session.Query<App>()
-                .FirstOrDefaultAsync(a => a.Slug == appFromQuery && !a.IsDeleted);
-            return byQuery?.Slug;
-        }
-
-        var clientId = user.FindFirst(Claims.ClientId)?.Value;
-        if (string.IsNullOrEmpty(clientId)) return null;
-
-        var client = await session.Query<OAuthApplicationState>()
-            .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted);
-        if (client is null || client.AppIds.Count == 0) return null;
-
-        // Multi-app client without a query hint: ambiguous on purpose. The
-        // caller has to say which app it wants permissions for.
-        if (client.AppIds.Count > 1) return null;
-
-        var derived = await session.LoadAsync<App>(client.AppIds[0]);
-        return derived?.IsDeleted == false ? derived.Slug : null;
     }
 }
 

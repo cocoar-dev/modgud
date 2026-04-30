@@ -14,6 +14,35 @@ Last updated: 2026-04-29 (post Applications Phase 1).
 
 ## ✅ Done
 
+### Applications Phase 5 — RS-Auth + IDP/IAM split (2026-04-30)
+
+Establishes resource-server identity as a first-class auth axis and
+splits the previously-overloaded `/me` endpoint into two distinct
+surfaces with proper auth shapes.
+
+- `OAuthApi.AppId` (1:1) — resource servers belong to exactly one App
+  (a Microservice-architected app can have multiple OAuthApis under the
+  same App). Validated on create + update.
+- New `ResourceServerAuthFilter` reads `X-Resource-Server-Id` /
+  `X-Resource-Server-Secret` headers, validates via the existing
+  `ValidateApiCredentialsAsync`, stamps the resolved RS context onto
+  HttpContext.Items.
+- `/api/v1/me/*` — Cookie-only now. Browser-session self-introspection.
+  The admin SPA passes `?app=<slug>` (default cocoar-auth) and stays
+  inside the admin-cookie's identity.
+- `/api/v1/distribution/*` (new) — Bearer + RS-Auth required. The
+  server-to-server surface for resource servers (TimeToDo, Knowledge,
+  …). App context comes from the authenticated RS, no `?app=`. Future
+  IAM-side endpoints (group lookups, mail recipients, etc.) live here.
+- App-detail Klick-Aktion: a button "Create default resource server"
+  provisions an OAuthApi linked to the App with one-time secret reveal.
+  Idempotent: pressing it again on an app that already has a RS
+  surfaces the existing one without rotating secrets.
+- Frontend: AppId dropdown in OAuthApi-Detail with contextual help text
+  about distribution-API eligibility.
+
+Backend stays at 824 unit tests green; frontend `pnpm build` clean.
+
 ### Applications Phase 4 — Multi-app clients (Keycloak resource_access)
 
 `OAuthApplicationAggregate.AppId: Guid?` → `AppIds: List<Guid>` so a

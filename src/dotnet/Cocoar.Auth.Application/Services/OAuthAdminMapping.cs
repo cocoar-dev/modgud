@@ -368,6 +368,7 @@ internal static class OAuthAdminMapping
             Enabled = s.Enabled,
             Scopes = s.Scopes.ToList(),
             UserClaims = s.UserClaims.ToList(),
+            AppId = s.AppId?.ToString(),
             Secrets = secretDtos,
         };
     }

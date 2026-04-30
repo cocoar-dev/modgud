@@ -18,6 +18,11 @@ public record OAuthApiDto
     public bool Enabled { get; init; }
     public required List<string> Scopes { get; init; }
     public required List<string> UserClaims { get; init; }
+    /// <summary>
+    /// FK to <c>App.Id</c> (Guid string). Null = unassigned (this RS exists
+    /// but cannot authenticate against the distribution API yet).
+    /// </summary>
+    public string? AppId { get; init; }
 
     public List<ApiSecretEntryDto> Secrets { get; init; } = new();
 }
@@ -30,6 +35,12 @@ public record CreateOAuthApiDto
     public bool Enabled { get; init; } = true;
     public List<string> Scopes { get; init; } = new();
     public List<string> UserClaims { get; init; } = new();
+    /// <summary>
+    /// App.Id (Guid string) the resource server belongs to. Null = leave
+    /// unassigned for now (must be set later before the RS can authenticate
+    /// against the distribution API).
+    /// </summary>
+    public string? AppId { get; init; }
 }
 
 public record UpdateOAuthApiDto
@@ -39,6 +50,11 @@ public record UpdateOAuthApiDto
     public bool? Enabled { get; init; }
     public List<string>? Scopes { get; init; }
     public List<string>? UserClaims { get; init; }
+    /// <summary>
+    /// PATCH semantics: null/missing = no change, "" = detach (mark
+    /// unassigned), "<guid>" = assign or change.
+    /// </summary>
+    public string? AppId { get; init; }
 }
 
 public record OAuthApiListDto

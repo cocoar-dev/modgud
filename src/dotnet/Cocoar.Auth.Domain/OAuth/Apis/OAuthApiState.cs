@@ -14,5 +14,7 @@ public class OAuthApiState
     public List<string> Scopes { get; set; } = new();
     public List<string> UserClaims { get; set; } = new();
     public Dictionary<string, object?> Properties { get; set; } = new();
+    /// <summary>FK to <c>App.Id</c>. Null = unassigned.</summary>
+    public Guid? AppId { get; set; }
     public bool IsDeleted { get; set; }
 }

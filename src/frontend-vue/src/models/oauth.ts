@@ -183,6 +183,11 @@ export interface OAuthApiDto {
   Enabled: boolean
   Scopes: string[]
   UserClaims: string[]
+  /**
+   * App.Id (Guid string) the resource server belongs to. Null = unassigned
+   * (RS exists but cannot authenticate against the distribution API yet).
+   */
+  AppId?: string | null
   Secrets: ApiSecretEntryDto[]
 }
 
@@ -193,6 +198,8 @@ export interface CreateOAuthApiDto {
   Enabled?: boolean
   Scopes?: string[]
   UserClaims?: string[]
+  /** App.Id (Guid string). Null/undefined = unassigned. */
+  AppId?: string | null
 }
 
 export interface UpdateOAuthApiDto {
@@ -201,6 +208,12 @@ export interface UpdateOAuthApiDto {
   Enabled?: boolean | null
   Scopes?: string[] | null
   UserClaims?: string[] | null
+  /**
+   * PATCH semantics: undefined/missing = no change, "" = detach,
+   * "<guid>" = assign / change. The dropdown's "unassigned" choice
+   * serialises to "" (empty string).
+   */
+  AppId?: string | null
 }
 
 export interface OAuthApiListDto {

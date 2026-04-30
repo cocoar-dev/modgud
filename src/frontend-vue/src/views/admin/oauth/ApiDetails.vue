@@ -4,6 +4,7 @@ import {
   CoarTextInput,
   CoarFormField,
   CoarCheckbox,
+  CoarSelect,
   CoarButton,
   CoarTabGroup,
   CoarTab,
@@ -13,6 +14,7 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useOAuthApiStore } from '@/stores/oauthApi.store'
+import { useApplicationsStore } from '@/stores/applications.store'
 import type { OAuthApiDto } from '@/models/oauth'
 
 const { t } = useI18n()
@@ -23,7 +25,18 @@ const props = defineProps<{
 }>()
 
 const store = useOAuthApiStore()
+const applicationsStore = useApplicationsStore()
 const isCreate = computed(() => props.id === 'create')
+
+// Empty value = "unassigned" — RS exists but cannot authenticate against
+// the distribution API until linked.
+const appOptions = computed(() => [
+  { value: '', label: t('admin.oauthApis.app.unassigned', {}, '— Unassigned (cannot use distribution API)') },
+  ...applicationsStore.apps.map((a) => ({
+    value: a.Id,
+    label: `${a.DisplayName} (${a.Slug})`,
+  })),
+])
 const loading = ref(false)
 const error = ref<string | null>(null)
 const activeTab = ref<'general' | 'secrets'>('general')
@@ -38,6 +51,8 @@ interface FormState {
   Scopes: string  // newline
   UserClaims: string  // newline
   Enabled: boolean
+  /** Empty = unassigned, otherwise an App.Id. */
+  AppId: string
 }
 
 function emptyForm(): FormState {
@@ -48,6 +63,7 @@ function emptyForm(): FormState {
     Scopes: '',
     UserClaims: '',
     Enabled: true,
+    AppId: '',
   }
 }
 
@@ -62,6 +78,7 @@ function fromDto(dto: OAuthApiDto): FormState {
     Scopes: (dto.Scopes ?? []).join('\n'),
     UserClaims: (dto.UserClaims ?? []).join('\n'),
     Enabled: dto.Enabled,
+    AppId: dto.AppId ?? '',
   }
 }
 
@@ -85,6 +102,7 @@ const footerButton = computed(() => ({
 }))
 
 onMounted(async () => {
+  applicationsStore.initialize()
   if (isCreate.value) return
   loading.value = true
   try {
@@ -113,6 +131,7 @@ async function save() {
         Scopes: splitLines(form.value.Scopes),
         UserClaims: splitLines(form.value.UserClaims),
         Enabled: form.value.Enabled,
+        AppId: form.value.AppId || null,
       })
       newSecret.value = { value: created.ApiSecret }
       // Switch to read-mode (id known) so the secret panel is visible.
@@ -129,6 +148,8 @@ async function save() {
         Scopes: splitLines(form.value.Scopes),
         UserClaims: splitLines(form.value.UserClaims),
         Enabled: form.value.Enabled,
+        // Always send — empty string detaches, guid assigns.
+        AppId: form.value.AppId,
       })
       dto.value = updated
       props.close()
@@ -221,6 +242,14 @@ async function copySecret() {
         </div>
         <CoarFormField :label="t('admin.oauthApis.description', {}, 'Beschreibung')">
           <CoarTextInput v-model="form.Description" clearable />
+        </CoarFormField>
+        <CoarFormField :label="t('admin.oauthApis.app', {}, 'Application')">
+          <CoarSelect v-model="form.AppId" :options="appOptions" />
+          <p class="text-xs text-gray-500 mt-1">
+            {{ form.AppId
+              ? t('admin.oauthApis.app.linkedHint', {}, 'This resource server can authenticate against /api/v1/distribution/* on behalf of users in the linked App.')
+              : t('admin.oauthApis.app.unassignedHint', {}, 'Without an App link, this resource server cannot authenticate against the distribution API. Use this only for legacy / standalone setups.') }}
+          </p>
         </CoarFormField>
         <CoarFormField :label="t('admin.oauthApis.scopes', {}, 'Scopes (eine pro Zeile)')">
           <textarea v-model="form.Scopes" rows="3" class="textarea" />

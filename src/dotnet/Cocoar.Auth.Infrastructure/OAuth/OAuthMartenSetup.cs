@@ -45,6 +45,7 @@ public static class OAuthMartenSetup
         options.Schema.For<OAuthApiState>()
             .Identity(x => x.Id)
             .Index(x => x.Name)
+            .Index(x => x.AppId)
             .Index(x => x.IsDeleted);
 
         options.Schema.For<OAuthApiSecurityData>()
@@ -112,6 +113,7 @@ public static class OAuthMartenSetup
         options.Events.MapEventType<OAuthApiScopesChanged>("oauth_api_scopes_changed");
         options.Events.MapEventType<OAuthApiUserClaimsChanged>("oauth_api_user_claims_changed");
         options.Events.MapEventType<OAuthApiPropertiesChanged>("oauth_api_properties_changed");
+        options.Events.MapEventType<OAuthApiAppIdChanged>("oauth_api_app_id_changed");
         options.Events.MapEventType<OAuthApiDeleted>("oauth_api_deleted");
 
         options.Events.MapEventType<LoginProviderCreated>("login_provider_created");

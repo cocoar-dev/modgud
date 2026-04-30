@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarFormField, CoarNote, CoarTag } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarFormField, CoarNote, CoarTag, CoarButton } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
@@ -19,6 +19,12 @@ const store = useApplicationsStore()
 const isCreate = computed(() => id.value === 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
+
+// Klick-Aktion state — feedback after the default resource-server is
+// provisioned, including the one-time secret to copy.
+const rsBusy = ref(false)
+const rsResult = ref<{ apiId: string; name: string; secret: string | null; alreadyExisted: boolean } | null>(null)
+const rsError = ref<string | null>(null)
 
 interface FormState {
   Slug: string
@@ -107,6 +113,24 @@ async function save() {
     loading.value = false
   }
 }
+
+async function provisionDefaultResourceServer() {
+  rsBusy.value = true
+  rsError.value = null
+  try {
+    const result = await store.createDefaultResourceServer(id.value)
+    rsResult.value = {
+      apiId: result.ApiId,
+      name: result.Name,
+      secret: result.ApiSecret,
+      alreadyExisted: result.AlreadyExisted,
+    }
+  } catch (e: any) {
+    rsError.value = e?.body?.Message ?? e?.message ?? String(e)
+  } finally {
+    rsBusy.value = false
+  }
+}
 </script>
 
 <template>
@@ -146,12 +170,78 @@ async function save() {
         <CoarTag v-if="isSystem" size="s" variant="warning">{{ t('admin.apps.systemTag', {}, 'System') }}</CoarTag>
       </div>
 
+      <!-- Klick-Aktion: provision default resource-server. Lives at the
+           bottom of the form because it's a one-time setup step admins
+           reach for after creating the App. -->
+      <div v-if="!isCreate && dto && !isSystem" class="rs-panel">
+        <div class="rs-panel-header">
+          {{ t('admin.apps.rs.title', {}, 'Resource Server') }}
+        </div>
+
+        <div v-if="!rsResult" class="text-xs text-gray-500">
+          {{ t('admin.apps.rs.help', {}, 'A resource server identity lets your backend authenticate against /api/v1/distribution/* on behalf of users. The default one matches this app\'s slug; you can add more later in the OAuth APIs admin.') }}
+        </div>
+
+        <CoarNote v-if="rsResult?.alreadyExisted" variant="info">
+          {{ t('admin.apps.rs.alreadyExists', { name: rsResult.name }, `Default resource server "${rsResult.name}" already exists. Manage its secrets in the OAuth APIs admin.`) }}
+        </CoarNote>
+
+        <CoarNote v-else-if="rsResult?.secret" variant="warning">
+          <div class="font-semibold mb-1">
+            {{ t('admin.apps.rs.created', { name: rsResult.name }, `Default resource server "${rsResult.name}" created.`) }}
+          </div>
+          <div class="text-xs mb-1">
+            {{ t('admin.apps.rs.secretWarning', {}, 'Copy this API secret now — it will never be shown again.') }}
+          </div>
+          <code class="rs-secret">{{ rsResult.secret }}</code>
+        </CoarNote>
+
+        <p v-if="rsError" class="text-sm text-red-600">{{ rsError }}</p>
+
+        <div v-if="!rsResult || rsResult.alreadyExisted" class="mt-2">
+          <CoarButton
+            size="s"
+            icon-start="server"
+            :loading="rsBusy"
+            :disabled="rsBusy || (rsResult?.alreadyExisted ?? false)"
+            @click="provisionDefaultResourceServer">
+            {{ t('admin.apps.rs.create', {}, 'Create default resource server') }}
+          </CoarButton>
+        </div>
+      </div>
+
       <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
     </div>
   </ModalLayout>
 </template>
 
 <style scoped>
+.rs-panel {
+  border-top: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
+  padding-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rs-panel-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #525e76;
+}
+
+.rs-secret {
+  display: block;
+  padding: 6px 8px;
+  background: var(--coar-background-neutral-tertiary, #f3f4f6);
+  border-radius: var(--coar-radius-s, 3px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  word-break: break-all;
+}
+
 .textarea {
   width: 100%;
   padding: 8px 10px;

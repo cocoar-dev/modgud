@@ -14,6 +14,13 @@ public class OAuthApiAggregate
     public List<string> Scopes { get; private set; } = new();
     public List<string> UserClaims { get; private set; } = new();
     public Dictionary<string, object?> Properties { get; private set; } = new();
+    /// <summary>
+    /// Optional FK to <c>App.Id</c>. <c>null</c> = unassigned. Resource
+    /// servers that authenticate against the distribution API need this
+    /// link so the IDP can derive the App context from the authenticated
+    /// RS without a query parameter.
+    /// </summary>
+    public Guid? AppId { get; private set; }
     public bool IsDeleted { get; private set; }
 
     public OAuthApiAggregate() { }
@@ -34,6 +41,7 @@ public class OAuthApiAggregate
     public OAuthApiScopesChanged SetScopes(IReadOnlyList<string> v) { var e = new OAuthApiScopesChanged(Id, v); Apply(e); return e; }
     public OAuthApiUserClaimsChanged SetUserClaims(IReadOnlyList<string> v) { var e = new OAuthApiUserClaimsChanged(Id, v); Apply(e); return e; }
     public OAuthApiPropertiesChanged SetProperties(IReadOnlyDictionary<string, object?> v) { var e = new OAuthApiPropertiesChanged(Id, v); Apply(e); return e; }
+    public OAuthApiAppIdChanged SetAppId(Guid? v) { var e = new OAuthApiAppIdChanged(Id, v); Apply(e); return e; }
     public OAuthApiDeleted Delete() { var e = new OAuthApiDeleted(Id); Apply(e); return e; }
 
     public void Apply(OAuthApiCreated e)
@@ -48,5 +56,6 @@ public class OAuthApiAggregate
     public void Apply(OAuthApiScopesChanged e) => Scopes = e.Scopes.ToList();
     public void Apply(OAuthApiUserClaimsChanged e) => UserClaims = e.UserClaims.ToList();
     public void Apply(OAuthApiPropertiesChanged e) => Properties = new Dictionary<string, object?>(e.Properties);
+    public void Apply(OAuthApiAppIdChanged e) => AppId = e.AppId;
     public void Apply(OAuthApiDeleted e) => IsDeleted = true;
 }

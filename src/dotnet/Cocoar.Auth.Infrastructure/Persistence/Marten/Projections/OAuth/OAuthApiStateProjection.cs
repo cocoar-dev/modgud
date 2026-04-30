@@ -22,5 +22,6 @@ public class OAuthApiStateProjection : SingleStreamProjection<OAuthApiState, Gui
     public void Apply(OAuthApiScopesChanged e, OAuthApiState s) => s.Scopes = e.Scopes.ToList();
     public void Apply(OAuthApiUserClaimsChanged e, OAuthApiState s) => s.UserClaims = e.UserClaims.ToList();
     public void Apply(OAuthApiPropertiesChanged e, OAuthApiState s) => s.Properties = new Dictionary<string, object?>(e.Properties);
+    public void Apply(OAuthApiAppIdChanged e, OAuthApiState s) => s.AppId = e.AppId;
     public void Apply(OAuthApiDeleted e, OAuthApiState s) => s.IsDeleted = true;
 }

@@ -575,9 +575,13 @@ try
     app.MapGroupEndpoints("api");
     Cocoar.Auth.Api.Features.Admin.Apps.AppsEndpoints.MapAppsEndpoints(app, "api");
 
-    // Distribution API for resource servers (TimeToDo etc.) — same scheme
-    // as the SPA admin (`api/`) so cookie-auth + bearer-auth both land here.
+    // /api/v1/me/* — Cookie-only, for the admin SPA's self-introspection.
     Cocoar.Auth.Api.Features.Auth.MeEndpoints.MapMeEndpoints(app, "api");
+
+    // /api/v1/distribution/* — Bearer + RS-Auth. Server-to-server surface
+    // for resource servers (TimeToDo, Knowledge, …) calling on behalf of
+    // an authenticated user.
+    Cocoar.Auth.Api.Features.Distribution.DistributionEndpoints.MapDistributionEndpoints(app, "api");
 
     // End-user VitePress documentation at /docs — auth-gated, redirect to /login on unauth.
     // MUST be BEFORE app.UseEndpoints — otherwise the SPA fallback endpoint (registered

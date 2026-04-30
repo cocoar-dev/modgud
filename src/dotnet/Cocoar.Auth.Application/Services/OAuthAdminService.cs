@@ -477,12 +477,29 @@ public class OAuthAdminService
         if (existing is not null)
             return OAuthErrors.ApiNameAlreadyExists(dto.Name);
 
+        // Optional App-link validation. dto.AppId is the App this RS will
+        // belong to; without it the RS cannot authenticate against the
+        // distribution API (no app context to derive).
+        Guid? appId = null;
+        if (!string.IsNullOrEmpty(dto.AppId))
+        {
+            if (!Guid.TryParse(dto.AppId, out var parsed))
+                return Error.Validation("OAuthApi.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid.");
+            var app = await _session.LoadAsync<App>(parsed, ct);
+            if (app is null || app.IsDeleted)
+                return Error.Validation("OAuthApi.AppNotFound", $"App {dto.AppId} not found.");
+            appId = parsed;
+        }
+
         var id = Guid.NewGuid();
         var (aggregate, createdEvent) = OAuthApiAggregate.Create(id, dto.Name, dto.DisplayName, dto.Description, dto.Enabled, dto.Scopes);
         _session.Events.StartStream<OAuthApiAggregate>(id, createdEvent);
 
         if (dto.UserClaims.Count > 0)
             _session.Events.Append(id, aggregate.SetUserClaims(dto.UserClaims));
+
+        if (appId.HasValue)
+            _session.Events.Append(id, aggregate.SetAppId(appId));
 
         // Initial API secret — stored in OAuthApiSecurityData (BCrypt-hashed).
         var apiSecret = GenerateSecret();
@@ -532,6 +549,23 @@ public class OAuthAdminService
             _session.Events.Append(guid, aggregate.SetScopes(dto.Scopes));
         if (dto.UserClaims is not null && !dto.UserClaims.SequenceEqual(aggregate.UserClaims))
             _session.Events.Append(guid, aggregate.SetUserClaims(dto.UserClaims));
+
+        // App-link patch — null=no change, ""=detach, "guid"=assign.
+        if (dto.AppId is not null)
+        {
+            Guid? newAppId = null;
+            if (dto.AppId.Length > 0)
+            {
+                if (!Guid.TryParse(dto.AppId, out var parsed))
+                    return Error.Validation("OAuthApi.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid.");
+                var app = await _session.LoadAsync<App>(parsed, ct);
+                if (app is null || app.IsDeleted)
+                    return Error.Validation("OAuthApi.AppNotFound", $"App {dto.AppId} not found.");
+                newAppId = parsed;
+            }
+            if (newAppId != aggregate.AppId)
+                _session.Events.Append(guid, aggregate.SetAppId(newAppId));
+        }
 
         await _session.SaveChangesAsync(ct);
 
