@@ -19,6 +19,49 @@ cross-cutting flows.
 > F8, F11) and the AuthLog template-rendering bug (F6) have been
 > fixed in this same branch. F9, F18 and the rest are open.**
 
+> **Automated coverage** (Playwright, runs against the prod-shipping
+> image with Mailpit catching outbound SMTP — see
+> `src/frontend-vue/e2e/`):
+>
+> - **§1 First-time setup** — `00-smoke.spec.ts` exhausts it.
+> - **§2 Login & sign-out** — `00-smoke.spec.ts` covers UI login,
+>   sign-out, magic-link round-trip via Mailpit, and the A02
+>   user-existence-leak guard. Lockout + cookie-restart-persistence
+>   stay manual (lockout wastes a 60-second wall-clock window we
+>   don't want in every CI run; cookie persistence needs a real
+>   browser-restart).
+> - **§6 Users (admin CRUD)** — `10-admin.spec.ts`: UI list
+>   renders + admin row visible, POST /api/user creates with
+>   `Status: Pending`, PUT updates name fields via `Optional<T>`.
+>   Lock/unlock + soft-delete + per-user grace-period stay manual.
+> - **§7 Roles** — `10-admin.spec.ts`: UI list renders + three
+>   default roles seeded with the post-Phase-1 shape, role create.
+> - **§8 Groups** — `10-admin.spec.ts`: UI list renders, group
+>   create accepts `BoundTo`, response has no `AccessScripts` field
+>   (Phase 6 wire-shape verified). Auto-membership scripts +
+>   modal-tab walk stay manual.
+> - **§9 Apps** — `10-admin.spec.ts`: system app is `IsSystem: true`,
+>   create non-system app, reserved-slug rejection (realm /
+>   cocoar-auth / *).
+> - **§10 OAuth Clients** + **§12 OAuth APIs** — `10-admin.spec.ts`:
+>   list endpoints return 200 + paginated shape even without
+>   `?page=` / `?pageSize=` (F16 fix). Create + AppIds MultiSelect
+>   round-trips stay manual.
+> - **§11 OAuth Scopes** — `10-admin.spec.ts`: five standard scopes
+>   seeded.
+> - **§21 Permission gating + bypass tiers** — `20-permission-gating.spec.ts`:
+>   builds three non-admin users (read-only, resource-admin,
+>   app-admin) plus the realm-admin and asserts the API gate AND
+>   the SPA sidebar visibility — both must agree. The integration
+>   test `PermissionResolutionTests` already exhausts the gate
+>   logic; this spec adds the SPA-sidebar mirror, where a mismatch
+>   between the front-end's `auth.store.ts` and the back-end's
+>   `PermissionEvaluator` would surface.
+>
+> **25 / 25 tests green**, ~30 s on a warm rig (~60 s on first run
+> because the cocoar-auth image gets built). Run via
+> `cd src/frontend-vue && pnpm test:e2e`.
+
 [[toc]]
 
 ## 0. Bring-up
