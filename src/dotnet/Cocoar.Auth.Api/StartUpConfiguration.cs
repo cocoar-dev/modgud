@@ -6,7 +6,15 @@ using Cocoar.Auth.Authentication.Identity;
 namespace Cocoar.Auth.Api;
 public class StartUpConfiguration : IServerConfiguration
 {
-    public string AppUrl { get; set; } = "https://0.0.0.0:443";
+    /// <summary>
+    /// URL Kestrel binds to via <c>app.Run(AppUrl)</c>. Defaults to plain
+    /// HTTP on port 80 — that's the prod-shipping shape (HTTPS terminates
+    /// at the reverse proxy in front of the container, and the container
+    /// itself ships no certificate). Operators who run Kestrel-direct
+    /// HTTPS override this with an HTTPS URL plus <see cref="CertPath"/>
+    /// + <see cref="CertPassword"/>.
+    /// </summary>
+    public string AppUrl { get; set; } = "http://0.0.0.0:80";
 
     /// <summary>
     /// Public-facing URL (used in email links, FIDO2 origins).

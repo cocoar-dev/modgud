@@ -13,9 +13,12 @@ public static class OAuthApisEndpoints
             .WithTags("OAuth APIs")
             .RequireAuthorization();
 
-        group.MapGet("", async (OAuthAdminService svc, int page, int pageSize, CancellationToken ct) =>
+        // page + pageSize are nullable so a vanilla `GET /api/admin/oauth/apis`
+        // (no query string) doesn't 400 on missing-required-params binding.
+        // `WithDefaults` clamps null → 0 → defaults (page 1, pageSize 20).
+        group.MapGet("", async (OAuthAdminService svc, int? page, int? pageSize, CancellationToken ct) =>
         {
-            var pagination = PaginationRequest.WithDefaults(page, pageSize);
+            var pagination = PaginationRequest.WithDefaults(page ?? 0, pageSize ?? 0);
             return Results.Ok(await svc.GetApisAsync(pagination, ct));
         })
         .WithName("OAuth_Apis_List")

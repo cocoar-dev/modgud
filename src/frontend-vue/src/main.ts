@@ -34,7 +34,10 @@ app.use(createPinia())
 app.use(router)
 const localization = createCoarLocalization({
   defaultLanguage: 'de',
-  i18nUrl: (lang) => `/i18n/${lang}.json`,
+  // Strip the country suffix before fetching: `de-AT` → `de`, `en-GB` → `en`.
+  // Otherwise every regional locale 404s on the bundle path before falling
+  // back, which is noisy in DevTools and a real-clock penalty per page load.
+  i18nUrl: (lang) => `/i18n/${lang.split('-')[0]}.json`,
 })
 app.use(localization)
 app.use(CoarOverlayPlugin)

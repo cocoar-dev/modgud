@@ -14,8 +14,10 @@ cross-cutting flows.
 > `dotnet publish -c Release -o output/Cocoar.Auth` →
 > `docker build -f src/dotnet/Dockerfile` → `docker run` on the
 > `cocoar-dev` network alongside the existing `cocoar-postgres`
-> container). 24 sections walked. **18 findings logged below; 4 are
-> shipping-blockers.**
+> container). 24 sections walked. **18 findings logged below; the
+> three shipping-blockers (F1, F2, F16) plus three quick wins (F5,
+> F8, F11) and the AuthLog template-rendering bug (F6) have been
+> fixed in this same branch. F9, F18 and the rest are open.**
 
 [[toc]]
 
@@ -24,7 +26,7 @@ cross-cutting flows.
 - ✅ Backend builds: `cd src/dotnet && dotnet build`
 - ✅ Postgres container running: `docker ps | grep cocoar-postgres`
 - ✅ Master DB exists: created on the fly (`docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE cocoar_auth"`)
-- ❌ Backend starts cleanly — **see [F1](#f1-docker-compose-yml-env-vars-bind-nowhere) and [F2](#f2-default-appurl-https-0-0-0-0-443-blocks-container-startup-without-cert)**: with the env vars from `docker-compose.yml` the container crashes at boot with `Marten.StoreOptions: Either ConnectionString or DataSource must be supplied`; once the env names are corrected, `app.Run(conf.AppUrl)` then fails on the missing dev cert because the default `AppUrl` is `https://0.0.0.0:443`. Workaround: pass the four corrected env vars listed in F1 + an explicit `APPURL=http://0.0.0.0:80`.
+- ✅ Backend starts cleanly with only the env vars from `docker-compose.yml` — **F1 + F2 fixed**: compose file rewritten to use the correct `<section>__<property>` names (`DBSETTINGS__CONNECTIONSTRING`, `OPENIDDICT__ISSUER` etc.), and the default `AppUrl` is now `http://0.0.0.0:80` so the cert-less prod image boots out of the box. Live-verified after the fix: `[INF] Now listening on: http://0.0.0.0:80`.
 - ✅ No errors on startup once the env-var override is applied — bootstrap path runs (master DB → schema → system tenant → realm seed → app seed → cache warm), seeded `5 scopes, Internal login provider: True` and `system app 'cocoar-auth'`.
 - ✅ Frontend served from `wwwroot/` after publish (Prod-shipping constellation, **not** `pnpm dev`).
 - ✅ `http://localhost:4200/` loads without console errors.
@@ -127,7 +129,7 @@ passkey.
 
 ## 10. OAuth Clients
 
-- ❌ **`GET /api/admin/oauth/clients` returns 400 Bad Request with empty body when called without `?page=` and `?pageSize=`.** See [F16](#f16-oauthclients-and-oauthapis-list-endpoints-require-page-pagesize-no-default). With explicit pagination it returns `{Items: [], TotalCount: 0}`. Same bug on `/api/admin/oauth/apis`. UI works because AG-Grid sends the params; SDK consumers / API browsers / curl don't.
+- ✅ `GET /api/admin/oauth/clients` and `/oauth/apis` return `{Items: [], TotalCount: 0}` with 200 even without `?page=` / `?pageSize=`. **F16 fixed** — both endpoints now declare the params as `int? = null` and clamp to defaults via `WithDefaults`.
 - ⏳ Create a confidential web client; assign apps via **AppIds** MultiSelect — **not yet verified**.
 - ⏳ Edit AppIds; on remove, scopes pinned to the removed app stop validating — **not yet verified**.
 - ⏳ Rotate secret (one-time reveal) — **not yet verified**.
@@ -142,7 +144,7 @@ passkey.
 
 ## 12. OAuth APIs (Resource Servers)
 
-- ❌ List endpoint suffers from the same pagination bug as /clients — see [F16](#f16-oauthclients-and-oauthapis-list-endpoints-require-page-pagesize-no-default).
+- ✅ List endpoint returns `{Items: [], TotalCount: 0}` even without pagination params. **F16 fixed** alongside `/oauth/clients`.
 - ⏳ Create RS, link to app `timetodo` — **not yet verified**.
 - ⏳ Add a parallel API secret + delete the old one — **not yet verified**.
 - ⏳ Move RS to a different app → distribution-API responses switch context — **not yet verified**.
@@ -173,7 +175,7 @@ passkey.
 ## 15. Auth log
 
 - ✅ Endpoint works: `GET /api/admin/auth-log?page=1&pageSize=5` returns events with `Level`, `Message`, `UserName`, `Ip`, `Timestamp`.
-- ❌ Persisted `Message` field carries the **raw Serilog template** — `User={UserName}`, `DueAt={DueAt}`, `Count={Count}` etc. — instead of the rendered string. Structured fields (`UserName`, `Ip`) are populated correctly. **See [F6](#f6-authlog-persists-raw-serilog-message-templates).**
+- ✅ Persisted `Message` field renders placeholders inline now — `Initial admin created. User="admin" IP="172.18.0.1" DemoData=False`. **F6 fixed** (was: raw `User={UserName}` template).
 - ⏳ Free-text search across actor / target / event type — **not yet verified**.
 - ⏳ Date-range filter — **not yet verified**.
 - ⏳ Failed-login burst is visible — events fired during this run but the column-level grouping wasn't validated.
@@ -319,6 +321,11 @@ docker-deployment guide page in the same commit. The guide page
 already shows the correct double-underscore form (`website/guide/deployment.md`),
 so the compose file is the only place that drifted.
 
+**Status:** ✅ **Fixed** in this branch — `docker-compose.yml`
+rewritten with the correct `<section>__<property>` env vars and an
+`APPURL` override; live-verified by re-deploying the published
+image.
+
 ### F2: Default `AppUrl=https://0.0.0.0:443` blocks container startup without cert
 
 **Severity:** Shipping-blocker. **Section:** §0.
@@ -349,6 +356,11 @@ listening state.
 - Or: switch from `app.Run(conf.AppUrl)` to a Kestrel config that
   honours `ASPNETCORE_URLS` so the standard ASP.NET Core override
   story works.
+
+**Status:** ✅ **Fixed** in this branch — `StartUpConfiguration.AppUrl`
+default changed to `http://0.0.0.0:80`. HTTPS-direct setups now
+require an explicit override + cert, which matches how the prod
+Dockerfile actually expects to be deployed (TLS at the reverse proxy).
 
 ### F3: `ProjectionCoordinator` BackgroundService keeps running after Hosting fails
 
@@ -395,6 +407,11 @@ renders the literal string `admin.apps.title` instead of a
 translation. Every other item is translated. The key is missing in
 both `de.json` and (presumably) the english bundle.
 
+**Status:** ✅ **Fixed** in this branch — added
+`admin.apps.title = "Anwendungen"` to `de.json`. The `en.json`
+bundle is `{}` (whole UI not yet translated) and is tracked
+separately as **F9**.
+
 ### F6: AuthLog persists raw Serilog message templates
 
 **Severity:** Medium. **Section:** §1, §15.
@@ -415,6 +432,12 @@ not. The audit-log message column is therefore unreadable. The
 either render the template before persisting, or the frontend grid
 needs to substitute the template tokens at render time using the
 structured fields.
+
+**Status:** ✅ **Fixed** in this branch — `AuthLogSink.Emit` switched
+from `logEvent.MessageTemplate.Text` to `logEvent.RenderMessage()`,
+removing the manual placeholder-stripping blacklist. Verified live:
+the message column now reads `Initial admin created. User="admin"
+IP="172.18.0.1" DemoData=False`.
 
 ### F7: Frontend AuthLog grid does not refresh after login
 
@@ -466,6 +489,14 @@ constellation. Either set up an InMemory-mode email capture for the
 prod image, run the smoke against an `ASPNETCORE_ENVIRONMENT=Development`
 container, or mark the dev-only steps explicitly in the checklist.
 
+### F8: AuthLog doc promised columns the UI does not render
+
+**Status:** ✅ **Fixed** in this branch — `website/admin/auth-log.md`
+rewritten to document the columns the grid actually renders
+(Timestamp / Level / Event / User / IP) and to note that the
+"Date range / Event type / Outcome" filters mentioned in the old
+doc aren't shipped yet (linked to this finding).
+
 ### F11: i18n loader fetches `/i18n/de-AT.json` and takes a 404
 
 **Severity:** Low. **Section:** §2.
@@ -476,6 +507,10 @@ that 404s before the loader falls back to `de.json`. The fallback
 works, but every Austrian admin sees a red 404 in DevTools on every
 page load. Either accept regional aliases server-side or strip the
 country suffix client-side before fetching.
+
+**Status:** ✅ **Fixed** in this branch — `main.ts` strips the country
+suffix before the i18n fetch (`de-AT` → `de`), so regional locales
+land on the base bundle on the first request.
 
 ### F12: Login form fields don't clear on fill via DevTools MCP
 
@@ -526,6 +561,14 @@ defaults) and is the working reference. Replicate that signature
 (probably `int? page = null, int? pageSize = null` plus a null-aware
 `WithDefaults` overload).
 
+**Status:** ✅ **Fixed** in this branch — both endpoints now declare
+`int? page = null, int? pageSize = null` and call
+`PaginationRequest.WithDefaults(page ?? 0, pageSize ?? 0)`. Existing
+unit tests in `OAuthAdminMappingTests` already cover the clamp
+behaviour. Live-verified: `GET /api/admin/oauth/clients` and
+`/api/admin/oauth/apis` both return `{Items: [], TotalCount: 0}` with
+200 even without query params.
+
 ### F17: (intentionally skipped — see F13)
 
 ### F18: Settings UI and API promised but not shipped
@@ -556,3 +599,21 @@ references to a non-existent surface.
 Status of the running container at the end of this run:
 `docker rm -f cocoar-auth-test` to remove. Postgres on `cocoar-postgres`
 left running (other repos depend on it).
+
+## Fixes landed in this branch (post-run)
+
+The following findings were addressed in the same branch as the
+manual run, so a re-run starts from a cleaner baseline:
+
+| # | Finding | Fix |
+|---|---|---|
+| **F1** | docker-compose env vars bind nowhere | `docker-compose.yml` rewritten with the correct `<section>__<property>` env vars. |
+| **F2** | Default `AppUrl=https://0.0.0.0:443` blocks cert-less startup | `StartUpConfiguration.AppUrl` default changed to `http://0.0.0.0:80`. |
+| **F5** | Sidebar shows raw `admin.apps.title` | Added `admin.apps.title = "Anwendungen"` to `de.json`. |
+| **F6** | AuthLog persists raw Serilog templates | `AuthLogSink.Emit` now uses `logEvent.RenderMessage()` and drops the manual placeholder-stripping blacklist. |
+| **F8** | AuthLog doc claimed columns the UI does not render | `website/admin/auth-log.md` rewritten to match what's shipped, with the missing filters explicitly tagged as future work. |
+| **F11** | Browser locale `de-AT` 404s on i18n bundle | `main.ts` strips the country suffix before the fetch (`de-AT` → `de`). |
+| **F16** | OAuth list endpoints required `page` + `pageSize` (400 without them) | Both `OAuthClientsEndpoints` and `OAuthApisEndpoints` now declare the params as `int? = null` and clamp to defaults via `WithDefaults`. |
+
+Still open (not addressed in this branch): F3, F4, F7, F9, F10,
+F12, F18.

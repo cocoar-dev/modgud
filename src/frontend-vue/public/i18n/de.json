@@ -658,6 +658,9 @@
       "noConfig": "Keine Konfiguration vorhanden.",
       "loadFailed": "Provider konnte nicht geladen werden."
     },
+    "apps": {
+      "title": "Anwendungen"
+    },
     "realms": {
       "title": "Realms",
       "createTitle": "Realm erstellen",

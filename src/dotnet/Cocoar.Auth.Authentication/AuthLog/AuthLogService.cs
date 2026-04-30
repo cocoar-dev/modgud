@@ -28,16 +28,18 @@ public class AuthLogSink : ILogEventSink
         if (logEvent.Properties.TryGetValue("IP", out var ipProp))
             ip = ipProp.ToString().Trim('"');
 
-        var rawMessage = logEvent.MessageTemplate.Text;
-        var message = rawMessage.StartsWith("Auth: ") ? rawMessage["Auth: ".Length..] : rawMessage;
-
-        message = message
-            .Replace(" UserName={UserName}", "")
-            .Replace(" IP={IP}", "")
-            .Replace(" Locked={Locked}", "")
-            .Replace(" UserId={UserId}", "")
-            .Replace(".", "")
-            .Trim();
+        // Render the message with placeholder values substituted in
+        // (`User={UserName}` → `User=admin`) instead of persisting the raw
+        // template — otherwise the audit-log message column reads as
+        // `Login successful User={UserName}` and an admin can't tell who
+        // logged in without joining columns mentally. UserName and IP are
+        // already extracted into their own columns above; we still leave
+        // them in the rendered message because the rest of the message
+        // can reference them by name (e.g. `Login failed for {UserName}
+        // from {IP} — wrong password`).
+        var rendered = logEvent.RenderMessage();
+        var message = rendered.StartsWith("Auth: ") ? rendered["Auth: ".Length..] : rendered;
+        message = message.TrimEnd('.').Trim();
 
         _channel.Writer.TryWrite(new AuthLogDocument
         {

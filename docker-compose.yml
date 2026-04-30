@@ -20,20 +20,36 @@ services:
     ports:
       - "4200:80"
     environment:
-      # Database (override Host for Docker networking)
-      DATABASE_CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres;Keepalive=30"
-      DATABASE_PASSWORD: "postgres"
-      # Auth
-      AUTH_COOKIESECUREPOLICY: "None"
-      # OpenIddict
-      OPENIDDICT_ISSUER: "http://localhost:4200"
-      OPENIDDICT_DEVELOPMENTMODE: "true"
-      # SMTP (mock — emails logged to console)
-      SMTP_HOST: "localhost"
-      SMTP_PORT: "25"
-      SMTP_USESSL: "false"
-      SMTP_FROMADDRESS: "noreply@localhost"
-      SMTP_FROMNAME: "Cocoar Auth"
+      # Cocoar.Configuration v5 binds env vars by `<section>__<property>`
+      # (double underscore = section boundary). The `<section>` part is
+      # the prefix the rule registers; for top-level StartUpConfiguration
+      # rules the section is the property name on that class.
+      #
+      # Marten connection string. Keepalive=30 keeps idle pooled
+      # connections healthy through the docker-network NAT.
+      DBSETTINGS__CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres;Password=postgres;Keepalive=30"
+      # Without an APPURL override Kestrel tries to bind the default
+      # `https://0.0.0.0:443`, which needs a dev cert that the
+      # production image deliberately doesn't ship. Override here so
+      # the container binds plain HTTP for the reverse proxy in front
+      # of it to terminate TLS.
+      APPURL: "http://0.0.0.0:80"
+      # OpenIddict issuer = the public URL clients see in
+      # /.well-known/openid-configuration. Per-realm overrides apply at
+      # request time via RealmIssuerHandler.
+      OPENIDDICT__ISSUER: "http://localhost:4200"
+      # Ephemeral signing keys; tokens get invalidated on every
+      # restart. Switch to false + a signing certificate for prod.
+      OPENIDDICT__DEVELOPMENTMODE: "true"
+      # SMTP — these defaults route nowhere (host = localhost in the
+      # container = the container itself, no MTA). Override to a real
+      # SMTP relay before going live, or operators won't get
+      # notifications.
+      EMAIL__SMTP__HOST: "localhost"
+      EMAIL__SMTP__PORT: "25"
+      EMAIL__SMTP__USESSL: "false"
+      EMAIL__SMTP__FROMADDRESS: "noreply@localhost"
+      EMAIL__SMTP__FROMNAME: "Cocoar Auth"
     depends_on:
       postgres:
         condition: service_healthy
