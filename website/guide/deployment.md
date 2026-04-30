@@ -18,6 +18,24 @@ Settings are loaded from multiple sources, each overriding the previous:
 2. `data/configuration.local.json` (gitignored, local overrides)
 3. Environment variables (highest priority)
 
+::: warning Production runs on env vars + class defaults, **not** on
+the committed `configuration.json`
+The published Docker image deliberately does **not** ship
+`data/configuration.json` (the csproj has
+`<CopyToPublishDirectory>Never</CopyToPublishDirectory>` on it).
+The committed file is for local dev only. In a deployed container
+the configuration comes entirely from env vars layered on top of
+the class defaults in `StartUpConfiguration` / `AppSettings` / etc.
+
+This means an operator who looks at `data/configuration.json` in
+the repo to "see the prod defaults" is looking at the wrong file —
+the prod defaults are the property initialisers in the C# settings
+classes, and the only thing the operator can override at deploy
+time is via env vars. Anything you'd expect to tweak (the SMTP
+settings, the OpenIddict issuer, the magic-link rate limit, the
+`AuthenticationMinimumLevel`) needs an explicit env var.
+:::
+
 ### Settings classes
 
 | Class | JSON section / ENV prefix |

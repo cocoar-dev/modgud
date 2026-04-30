@@ -43,7 +43,14 @@ async function clearLog() {
 
 onMounted(() => {
   loadEntries()
-  pollInterval = setInterval(loadEntries, 10_000)
+  // Poll the auth-log frequently. The persistence service drains its
+  // channel on a background task, so a "Login successful" entry fired
+  // milliseconds before the grid mounts hasn't reached Marten yet — the
+  // first manual page visit after auto-setup used to look as if the
+  // event was missing entirely until the next 10s tick. 2s is a tolerable
+  // network cost on what is already a low-traffic page, and a SignalR
+  // push remains a worthwhile follow-up.
+  pollInterval = setInterval(loadEntries, 2_000)
 })
 
 onUnmounted(() => {

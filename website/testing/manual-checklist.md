@@ -441,6 +441,12 @@ class defaults in prod). That's correct behaviour, just call it out
 in the deployment guide so an operator who looks at the dev defaults
 in the repo doesn't expect them to apply in the container.
 
+**Status:** ✅ **Fixed** in this branch — `website/guide/deployment.md`
+gets a `:::warning` box that explicitly says "production runs on env
+vars + class defaults, **not** on the committed `configuration.json`",
+with the actual implication: tweaks at deploy time go through env
+vars only.
+
 ### F5: Sidebar shows raw i18n key `admin.apps.title`
 
 **Severity:** Low. **Section:** §1.
@@ -492,6 +498,12 @@ just-fired `Login successful` event for the admin. The event is
 present in the DB (verified directly via the API). A page reload
 fetches the latest rows; the grid simply doesn't subscribe to a
 SignalR refresh on this view.
+
+**Status:** ⚠️ **Mitigated** in this branch — `AuthLogView.vue`'s
+poll cadence dropped from 10 s to 2 s, so the worst case wait
+between event-fires-and-grid-shows-it is now ~2 s. A proper
+SignalR push (the `UIHub` already has the plumbing) is the right
+long-term fix and stays open.
 
 ### F8: AuthLog doc promises columns the UI does not render
 
