@@ -372,6 +372,7 @@ dist/
 **/.mono/
 
 /output
+src/dotnet/output/
 .DS_Store
 
 /local
