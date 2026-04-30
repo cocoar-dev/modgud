@@ -74,6 +74,60 @@ public class DynamicOidcSchemeManagerTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task RegisterAsync_InternalType_DoesNotRegisterScheme()
+    {
+        // Phase 2: Type-discriminator gate. Internal-typed providers must
+        // never enter the OIDC scheme machinery, even if the (defensive)
+        // event handlers try to feed them in. No exception, no scheme.
+        var config = new LoginProvider
+        {
+            Id = Guid.NewGuid(),
+            Type = LoginProviderType.Internal,
+            Flavor = LoginProviderFlavor.Internal,
+            DisplayName = "Internal",
+            Enabled = true,
+            IsBuiltIn = true,
+        };
+
+        using var scope = Factory.Services.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<DynamicOidcSchemeManager>();
+        var schemeProvider = scope.ServiceProvider.GetRequiredService<IAuthenticationSchemeProvider>();
+
+        await manager.RegisterAsync(config); // must not throw
+
+        var name = DynamicOidcSchemeManager.SchemeNameFor(config.Id);
+        Assert.Null(await schemeProvider.GetSchemeAsync(name));
+    }
+
+    [Theory]
+    [InlineData(LoginProviderType.Saml)]
+    [InlineData(LoginProviderType.Ldap)]
+    [InlineData(LoginProviderType.Kerberos)]
+    public async Task RegisterAsync_NotYetSupportedTypes_AreSkipped(LoginProviderType type)
+    {
+        // Saml/Ldap/Kerberos types must skip silently — same posture as
+        // Internal until their flavor surfaces land.
+        var config = new LoginProvider
+        {
+            Id = Guid.NewGuid(),
+            Type = type,
+            Flavor = "doesnt-matter",
+            DisplayName = $"{type}-test",
+            Enabled = true,
+            ClientId = "x",
+        };
+
+        using var scope = Factory.Services.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<DynamicOidcSchemeManager>();
+        var schemeProvider = scope.ServiceProvider.GetRequiredService<IAuthenticationSchemeProvider>();
+
+        await manager.RegisterAsync(config);
+
+        var name = DynamicOidcSchemeManager.SchemeNameFor(config.Id);
+        Assert.Null(await schemeProvider.GetSchemeAsync(name));
+    }
+
+    [Fact]
     public async Task RegisterAsync_Twice_UpdatesOptions()
     {
         var config = await CreateEntraConfigAsync(enabled: true, withClientId: true);

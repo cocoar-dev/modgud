@@ -41,10 +41,9 @@ public class CreateLoginProviderHandler(
             return await CreateInternalAsync(command, ct);
 
         // Future-proof — block Saml/Ldap/Kerberos until a flavor surface lands.
+        // Same error code the runtime paths use (see LoginProviderErrors).
         if (command.Type is LoginProviderType.Saml or LoginProviderType.Ldap or LoginProviderType.Kerberos)
-            return Error.Validation(
-                "LoginProvider.TypeNotSupported",
-                $"Login provider type '{command.Type}' is not yet supported.");
+            return LoginProviderErrors.TypeNotSupported(command.Type);
 
         // Oidc-typed providers: full flavor validation.
         if (string.IsNullOrWhiteSpace(command.Flavor))
@@ -103,6 +102,15 @@ public class CreateLoginProviderHandler(
     private async Task<ErrorOr<LoginProvider>> CreateInternalAsync(
         CreateLoginProviderCommand command, CancellationToken ct)
     {
+        // At most one Internal provider per realm — the seeder writes it on
+        // realm creation. Admins should not be able to create another via the
+        // public command surface; the (already existing) seed is the only one.
+        var hasInternal = await session.Query<LoginProvider>()
+            .Where(c => !c.IsDeleted && c.Type == LoginProviderType.Internal)
+            .AnyAsync(ct);
+        if (hasInternal)
+            return LoginProviderErrors.InternalAlreadyExists();
+
         var nameTaken = await session.Query<LoginProvider>()
             .Where(c => !c.IsDeleted && c.DisplayName == command.DisplayName)
             .AnyAsync(ct);

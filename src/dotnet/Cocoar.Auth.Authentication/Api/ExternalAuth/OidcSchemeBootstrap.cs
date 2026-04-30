@@ -12,10 +12,10 @@ namespace Cocoar.Auth.Authentication.Api.ExternalAuth;
 /// <c>LoginProviderEventHandlers</c> — this service handles the cold-start only.
 /// </para>
 /// <para>
-/// Phase 1 note: Internal-typed providers do not have a flavor and are filtered
-/// out of <see cref="DynamicOidcSchemeManager.RegisterAsync"/> via the unknown-
-/// flavor early-return. Phase 2 will add an explicit
-/// <c>Type == LoginProviderType.Oidc</c> filter at the source.
+/// Pre-filters on <c>Type == LoginProviderType.Oidc</c> so non-Oidc providers
+/// (Internal, plus the not-yet-wired Saml/Ldap/Kerberos) never enter the
+/// scheme-registration path. <see cref="DynamicOidcSchemeManager.RegisterAsync"/>
+/// double-checks defensively; the bootstrap pre-filter just keeps logs clean.
 /// </para>
 /// </summary>
 public class OidcSchemeBootstrap(
@@ -29,7 +29,7 @@ public class OidcSchemeBootstrap(
         var manager = scope.ServiceProvider.GetRequiredService<DynamicOidcSchemeManager>();
 
         var enabled = await session.Query<LoginProvider>()
-            .Where(c => !c.IsDeleted && c.Enabled)
+            .Where(c => !c.IsDeleted && c.Enabled && c.Type == LoginProviderType.Oidc)
             .ToListAsync(cancellationToken);
 
         foreach (var config in enabled)

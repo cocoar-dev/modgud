@@ -6,15 +6,15 @@ using Wolverine.Marten.Publishing;
 
 namespace Internal.Generated.WolverineHandlers
 {
-    // START: CreateLoginProviderCommandHandler545859164
+    // START: UpdateLoginProviderCommandHandler441982213
     [global::System.CodeDom.Compiler.GeneratedCode("JasperFx", "1.0.0")]
-    public sealed class CreateLoginProviderCommandHandler545859164 : Wolverine.Runtime.Handlers.MessageHandler
+    public sealed class UpdateLoginProviderCommandHandler441982213 : Wolverine.Runtime.Handlers.MessageHandler
     {
         private readonly Cocoar.Auth.Authentication.Identity.LoginProviders.LoginProviderFlavorRegistry _loginProviderFlavorRegistry;
         private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
         private readonly System.TimeProvider _timeProvider;
 
-        public CreateLoginProviderCommandHandler545859164(Cocoar.Auth.Authentication.Identity.LoginProviders.LoginProviderFlavorRegistry loginProviderFlavorRegistry, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, System.TimeProvider timeProvider)
+        public UpdateLoginProviderCommandHandler441982213(Cocoar.Auth.Authentication.Identity.LoginProviders.LoginProviderFlavorRegistry loginProviderFlavorRegistry, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, System.TimeProvider timeProvider)
         {
             _loginProviderFlavorRegistry = loginProviderFlavorRegistry;
             _outboxedSessionFactory = outboxedSessionFactory;
@@ -28,14 +28,14 @@ namespace Internal.Generated.WolverineHandlers
             // Building the Marten session
             await using var documentSession = _outboxedSessionFactory.OpenSession(context);
             // The actual message body
-            var createLoginProviderCommand = (Cocoar.Auth.Authentication.Api.Admin.LoginProviders.Commands.CreateLoginProviderCommand)context.Envelope.Message;
+            var updateLoginProviderCommand = (Cocoar.Auth.Authentication.Api.Admin.LoginProviders.Commands.UpdateLoginProviderCommand)context.Envelope.Message;
 
-            System.Diagnostics.Activity.Current?.SetTag("message.handler", "Cocoar.Auth.Authentication.Api.Admin.LoginProviders.Commands.CreateLoginProviderHandler");
-            System.Diagnostics.Activity.Current?.SetTag("handler.type", "Cocoar.Auth.Authentication.Api.Admin.LoginProviders.Commands.CreateLoginProviderHandler");
-            var createLoginProviderHandler = new Cocoar.Auth.Authentication.Api.Admin.LoginProviders.Commands.CreateLoginProviderHandler(documentSession, _loginProviderFlavorRegistry, _timeProvider);
+            System.Diagnostics.Activity.Current?.SetTag("message.handler", "Cocoar.Auth.Authentication.Api.Admin.LoginProviders.Commands.UpdateLoginProviderHandler");
+            System.Diagnostics.Activity.Current?.SetTag("handler.type", "Cocoar.Auth.Authentication.Api.Admin.LoginProviders.Commands.UpdateLoginProviderHandler");
+            var updateLoginProviderHandler = new Cocoar.Auth.Authentication.Api.Admin.LoginProviders.Commands.UpdateLoginProviderHandler(documentSession, _loginProviderFlavorRegistry, _timeProvider);
             
             // The actual message execution
-            var outgoing1 = await createLoginProviderHandler.Handle(createLoginProviderCommand, cancellation).ConfigureAwait(false);
+            var outgoing1 = await updateLoginProviderHandler.Handle(updateLoginProviderCommand, cancellation).ConfigureAwait(false);
 
             
             // Outgoing, cascaded message
@@ -45,7 +45,7 @@ namespace Internal.Generated.WolverineHandlers
 
     }
 
-    // END: CreateLoginProviderCommandHandler545859164
+    // END: UpdateLoginProviderCommandHandler441982213
     
     
 }

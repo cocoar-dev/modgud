@@ -10,13 +10,14 @@ public static class ExternalAuthEndpoints
     public static void MapExternalAuthEndpoints(this IEndpointRouteBuilder endpoints, string path)
     {
         // Public — login page needs the list to render buttons. Only returns
-        // enabled, non-deleted external providers (Internal is rendered by the
-        // built-in form, not as a button on this list).
+        // enabled, non-deleted, Oidc-typed providers. Internal is rendered by
+        // the built-in form, not as a button on this list; Saml/Ldap/Kerberos
+        // are not yet wired and stay hidden until a future phase plugs them in.
         endpoints.MapGet($"{path}/account/external-logins",
             async ([FromServices] IQuerySession session, CancellationToken ct) =>
             {
                 var providers = await session.Query<LoginProvider>()
-                    .Where(c => !c.IsDeleted && c.Enabled && c.Type != LoginProviderType.Internal)
+                    .Where(c => !c.IsDeleted && c.Enabled && c.Type == LoginProviderType.Oidc)
                     .ToListAsync(ct);
 
                 return Results.Ok(providers.Select(c => new ExternalLoginDto(
@@ -38,9 +39,21 @@ public static class ExternalAuthEndpoints
                    CancellationToken ct) =>
             {
                 var config = await session.LoadAsync<LoginProvider>(loginProviderId, ct);
-                if (config is null || config.IsDeleted || !config.Enabled
-                    || config.Type == LoginProviderType.Internal)
+                if (config is null || config.IsDeleted || !config.Enabled)
                     return Results.NotFound();
+
+                // Internal is invisible to this surface (no silent enumeration);
+                // Saml/Ldap/Kerberos are intentionally surfaced as "not yet
+                // supported" so admins/CI can tell the difference between
+                // "wrong id" and "type not implemented".
+                if (config.Type == LoginProviderType.Internal)
+                    return Results.NotFound();
+                if (config.Type != LoginProviderType.Oidc)
+                    return Results.BadRequest(new
+                    {
+                        Code = LoginProviderErrors.TypeNotSupported(config.Type).Code,
+                        Message = LoginProviderErrors.TypeNotSupported(config.Type).Description,
+                    });
 
                 var schemeName = DynamicOidcSchemeManager.SchemeNameFor(loginProviderId);
                 // Return URL lives in Items so the finish endpoint honors it

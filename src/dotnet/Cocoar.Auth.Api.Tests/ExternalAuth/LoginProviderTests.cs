@@ -155,4 +155,130 @@ public class LoginProviderTests : IntegrationTestBase
         Assert.True(result.IsError);
         Assert.Equal("LoginProvider.TypeNotSupported", result.FirstError.Code);
     }
+
+    [Theory]
+    [InlineData(LoginProviderType.Ldap)]
+    [InlineData(LoginProviderType.Kerberos)]
+    public async Task Create_OtherUnsupportedTypes_ReturnSameErrorCode(LoginProviderType type)
+    {
+        // Phase 2: TypeNotSupported is a single centralized error — Saml/Ldap/
+        // Kerberos all share the same code so the frontend can render one message.
+        using var scope = Factory.Services.CreateScope();
+        var bus = GetTenantedMessageBus(scope);
+
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: "AnyFlavor",
+            DisplayName: $"Attempt-{type}-{Guid.NewGuid():N}"[..32],
+            FlavorData: null,
+            Type: type));
+
+        Assert.True(result.IsError);
+        Assert.Equal("LoginProvider.TypeNotSupported", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task Create_SecondInternal_Conflicts()
+    {
+        // Phase 2: at most one Internal provider per realm. The seeder writes
+        // it on realm creation; admin Create with Type=Internal must reject
+        // when one already exists. We seed a built-in Internal manually here
+        // (the integration-test reset clears every realm DB).
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            session.Events.StartStream<LoginProvider>(Guid.NewGuid(), new LoginProviderAddedEvent(
+                Id: Guid.NewGuid(),
+                Type: LoginProviderType.Internal,
+                Flavor: LoginProviderFlavor.Internal,
+                DisplayName: "Internal Authentication",
+                Description: null,
+                IsBuiltIn: true,
+                Enabled: true,
+                ClientId: string.Empty,
+                ClientSecretEncrypted: null,
+                Scopes: [],
+                UserUpdateScript: string.Empty,
+                StoreRawClaims: false,
+                RawClaimsRetentionDays: null,
+                AutoCreateUsers: false,
+                AllowLinking: false,
+                TrustForEmailLink: false,
+                AllowedEmailDomains: null,
+                IconName: null,
+                ButtonColorHex: null,
+                FlavorData: null,
+                CreatedAt: DateTimeOffset.UtcNow));
+            await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var scope2 = Factory.Services.CreateScope();
+        var bus = GetTenantedMessageBus(scope2);
+
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: string.Empty,
+            DisplayName: "Second Internal Attempt",
+            FlavorData: null,
+            Type: LoginProviderType.Internal));
+
+        Assert.True(result.IsError);
+        Assert.Equal("LoginProvider.InternalAlreadyExists", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task Update_BuiltInInternal_IsRejected()
+    {
+        // Phase 2: IsBuiltIn entries are immutable from the admin surface.
+        // Seed a built-in Internal stream and verify the update command bounces.
+        var id = Guid.NewGuid();
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            session.Events.StartStream<LoginProvider>(id, new LoginProviderAddedEvent(
+                Id: id,
+                Type: LoginProviderType.Internal,
+                Flavor: LoginProviderFlavor.Internal,
+                DisplayName: "Internal Authentication",
+                Description: null,
+                IsBuiltIn: true,
+                Enabled: true,
+                ClientId: string.Empty,
+                ClientSecretEncrypted: null,
+                Scopes: [],
+                UserUpdateScript: string.Empty,
+                StoreRawClaims: false,
+                RawClaimsRetentionDays: null,
+                AutoCreateUsers: false,
+                AllowLinking: false,
+                TrustForEmailLink: false,
+                AllowedEmailDomains: null,
+                IconName: null,
+                ButtonColorHex: null,
+                FlavorData: null,
+                CreatedAt: DateTimeOffset.UtcNow));
+            await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var scope2 = Factory.Services.CreateScope();
+        var bus = GetTenantedMessageBus(scope2);
+
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new UpdateLoginProviderCommand(
+            Id: id,
+            DisplayName: "Renamed",
+            Description: null,
+            ClientId: string.Empty,
+            Scopes: [],
+            UserUpdateScript: string.Empty,
+            StoreRawClaims: false,
+            RawClaimsRetentionDays: null,
+            AutoCreateUsers: false,
+            AllowLinking: false,
+            TrustForEmailLink: false,
+            AllowedEmailDomains: null,
+            IconName: null,
+            ButtonColorHex: null,
+            FlavorData: null));
+
+        Assert.True(result.IsError);
+        Assert.Equal("LoginProvider.InternalNotEditable", result.FirstError.Code);
+    }
 }

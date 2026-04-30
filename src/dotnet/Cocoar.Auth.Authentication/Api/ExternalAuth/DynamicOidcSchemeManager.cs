@@ -27,7 +27,9 @@ namespace Cocoar.Auth.Authentication.Api.ExternalAuth;
 /// by the auth-flow consumers. Phase 1 leaves a soft filter (we still receive
 /// them in <see cref="RegisterAsync"/> from event handlers, but the missing
 /// flavor key sends them down the early-return path with a benign warning).
-/// Phase 2 wires the explicit <c>Type == Oidc</c> guard in callers.
+/// Phase 2 wires the explicit <c>Type == Oidc</c> guard in callers, plus a
+/// defense-in-depth check in <see cref="RegisterAsync"/> itself; Saml/Ldap/
+/// Kerberos types are also rejected here until their flavor surfaces land.
 /// </para>
 /// </summary>
 public class DynamicOidcSchemeManager(
@@ -54,6 +56,19 @@ public class DynamicOidcSchemeManager(
         if (config.IsDeleted || !config.Enabled)
         {
             await UnregisterAsync(config.Id);
+            return;
+        }
+
+        // Type-discriminator gate. Only Oidc-typed providers run through the
+        // OIDC scheme machinery. Internal is short-circuited (built-in form
+        // path); Saml/Ldap/Kerberos are not yet wired and skip silently with
+        // an info log so the bootstrap loop and event-handler chain don't
+        // raise warnings on every realm-startup.
+        if (config.Type != LoginProviderType.Oidc)
+        {
+            logger.LogInformation(
+                "Auth: skipping non-Oidc LoginProvider {Id} of type {Type}",
+                config.Id, config.Type);
             return;
         }
 

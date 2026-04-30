@@ -8,10 +8,11 @@ namespace Cocoar.Auth.Authentication.Api.ExternalAuth;
 // `Handle` method). One class per event keeps discovery explicit and matches
 // the pattern used by AutoMembershipSync* in the Groups feature.
 //
-// Phase 1 note: handlers fire for all LoginProvider events including those of
-// Internal-typed providers. The DynamicOidcSchemeManager filters them out via
-// the unknown-flavor early-return; Phase 2 introduces an explicit
-// Type == Oidc guard up front.
+// Phase 2: handlers still fire for every LoginProvider event regardless of
+// type (the event stream itself is shared) but the LoginProviderReRegister
+// helper short-circuits non-Oidc providers before touching the scheme manager.
+// An Internal LoginProvider being added/updated/enabled must NOT cause OIDC
+// scheme work — the same is true for Saml/Ldap/Kerberos until those land.
 
 public class LoginProviderOnAddedHandler(
     IQuerySession session,
@@ -70,6 +71,15 @@ internal static class LoginProviderReRegister
             await manager.UnregisterAsync(id);
             return;
         }
+
+        // Type-discriminator gate. Internal/Saml/Ldap/Kerberos events skip the
+        // scheme-manager path — the manager defends itself too, but pre-
+        // filtering here keeps the warn logs out of the happy path. The
+        // unregister-on-missing branch above is unconditional on purpose: a
+        // deleted Oidc provider whose record vanished should still drop its
+        // scheme.
+        if (config.Type != LoginProviderType.Oidc) return;
+
         await manager.RegisterAsync(config);
     }
 }

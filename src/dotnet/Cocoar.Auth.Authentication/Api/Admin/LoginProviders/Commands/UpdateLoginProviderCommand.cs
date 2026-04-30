@@ -47,7 +47,16 @@ public class UpdateLoginProviderHandler(
         if (config is null || config.IsDeleted)
             return Error.NotFound("LoginProvider.NotFound", "Login provider not found.");
 
+        // Built-in (seeded) providers are immutable. Today this is only the
+        // Internal provider written by the realm seeder; the same gate applies
+        // to anything future seeders mark IsBuiltIn=true. Frontend hides the
+        // edit button for these; this is the backend defense.
+        if (config.IsBuiltIn)
+            return LoginProviderErrors.InternalNotEditable(config.DisplayName);
+
         // Internal-typed providers skip the OIDC-shaped validation entirely.
+        // (Reachable today only if a non-built-in Internal entry exists, which
+        // CreateInternalAsync no longer permits — but kept for future proofing.)
         if (config.Type != LoginProviderType.Internal)
         {
             if (!flavors.TryGet(config.Flavor, out var flavor))

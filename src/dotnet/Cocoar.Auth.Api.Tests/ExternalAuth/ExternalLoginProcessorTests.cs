@@ -184,6 +184,51 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task NonOidcProvider_Returns_TypeNotSupportedError()
+    {
+        // Phase 2: callback-flow type-discriminator gate. A LoginProvider whose
+        // Type is anything other than Oidc must surface the centralized
+        // "type not yet supported" error code — not an NPE on missing flavor.
+        var id = Guid.NewGuid();
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            session.Events.StartStream<LoginProvider>(id, new LoginProviderAddedEvent(
+                Id: id,
+                Type: LoginProviderType.Saml,
+                Flavor: "saml-future",
+                DisplayName: "Saml Future",
+                Description: null,
+                IsBuiltIn: false,
+                Enabled: true,
+                ClientId: string.Empty,
+                ClientSecretEncrypted: null,
+                Scopes: [],
+                UserUpdateScript: string.Empty,
+                StoreRawClaims: false,
+                RawClaimsRetentionDays: null,
+                AutoCreateUsers: false,
+                AllowLinking: false,
+                TrustForEmailLink: false,
+                AllowedEmailDomains: null,
+                IconName: null,
+                ButtonColorHex: null,
+                FlavorData: null,
+                CreatedAt: DateTimeOffset.UtcNow));
+            await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var scope2 = Factory.Services.CreateScope();
+        var processor = scope2.ServiceProvider.GetRequiredService<ExternalLoginProcessor>();
+
+        var external = BuildExternalPrincipal("sub-anything", "x@y.z", "Some One");
+        var result = await processor.ProcessAsync(external, id, default);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("LoginProvider.TypeNotSupported", result.ErrorCode);
+    }
+
+    [Fact]
     public async Task MissingSubject_Fails()
     {
         var config = await CreateEnabledEntraConfig();

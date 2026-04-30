@@ -49,6 +49,13 @@ public class DisableLoginProviderHandler(IDocumentSession session, TimeProvider 
         var config = await session.LoadAsync<LoginProvider>(command.Id, ct);
         if (config is null || config.IsDeleted)
             return Error.NotFound("LoginProvider.NotFound", "Login provider not found.");
+
+        // Built-in providers are not toggleable from the admin surface. The
+        // seeded Internal provider must remain enabled — disabling it would
+        // strip every realm of password/passkey login.
+        if (config.IsBuiltIn)
+            return LoginProviderErrors.InternalNotEditable(config.DisplayName);
+
         if (config.Enabled)
         {
             session.Events.Append(command.Id, new LoginProviderDisabledEvent(command.Id, clock.GetUtcNow()));

@@ -20,6 +20,15 @@ namespace Cocoar.Auth.Authentication.Api.ExternalAuth;
 /// signed in the finish endpoint routes the external ticket into
 /// <c>ExternalLoginProcessor.ProcessAsync(authenticatedUserId: ...)</c>
 /// which creates the link.
+/// <para>
+/// Type-discriminator posture: only <see cref="LoginProviderType.Oidc"/>
+/// providers can be linked. The gate lives in two places — <c>/start</c>
+/// rejects non-Oidc ids before the OIDC challenge is issued, and
+/// <c>ExternalLoginProcessor</c> rejects again on the callback. The list
+/// endpoints below intentionally surface every link the user has, including
+/// any that may have come from a provider whose type was later changed —
+/// disconnecting a stale link must remain possible.
+/// </para>
 /// </summary>
 public static class ProfileLinkEndpoints
 {

@@ -46,6 +46,20 @@ public class ExternalLoginProcessor(
         if (config is null || config.IsDeleted || !config.Enabled)
             return ExternalLoginResult.Failed("Idp.NotEnabled", "This identity provider is not available.");
 
+        // Type-discriminator gate. The callback flow is OIDC-shaped end-to-end —
+        // a non-Oidc provider id reaching this point is either a stale query
+        // string from before the provider was retyped, or a misconfigured
+        // /start with a manually-edited id. Surface the same error code the
+        // admin/runtime paths use so the frontend can render a single message.
+        if (config.Type != LoginProviderType.Oidc)
+        {
+            var err = LoginProviderErrors.TypeNotSupported(config.Type);
+            logger.LogWarning(
+                "Auth: External login rejected — LoginProvider {Id} has type {Type}, expected Oidc",
+                loginProviderId, config.Type);
+            return ExternalLoginResult.Failed(err.Code, err.Description);
+        }
+
         var issuer = externalPrincipal.FindFirst("iss")?.Value
             ?? externalPrincipal.Claims.FirstOrDefault()?.Issuer
             ?? string.Empty;
