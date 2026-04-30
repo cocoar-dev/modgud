@@ -58,7 +58,6 @@ dotnet test
 | Person principal | `Authorization/Principals/PersonTests.cs` | 12 | DisplayName fallback chain (Acronym → Name → AccountName → Id), whitespace-only-fields filter |
 | Group principal | `Authorization/Principals/GroupTests.cs` | 15 | GetEmailsAsync over Shared / ExpandToMembers / Shared-without-Email-fallback, inactive/deleted/dangling-member skips, nested recursion, **cycle detection (this test caught a real production bug — see commit `b6b2dc3`)** |
 | ServiceAccount principal | `Authorization/Principals/ServiceAccountTests.cs` | 4 | type discriminator, DisplayName, capability-interface set |
-| UserContext | `Authorization/Access/UserContextTests.cs` | 8 | `app:admin` global bypass with case-sensitivity, exact-match-only semantics (no resource-admin wildcard, intentional cut from `PermissionEvaluator`) |
 
 ### Realms
 
@@ -164,13 +163,13 @@ These are listed so we don't have the same "should we test this?" conversation a
 - **Heavy services with DB / JsEval / HTTP / DI** — `OAuthAdminService` (after
   full helper extraction in waves 2 + 4, the only remaining instance method
   is `MapApiAsync` which is now a one-line DB-load wrapper around the pure
-  `MapApiState` helper), `AccessPolicyEngine`, `MembershipEvaluator`,
+  `MapApiState` helper), `MembershipEvaluator` (Jint.Engine +
+  JsExpressionTranslator on the membership-script path),
   `RealmProvisioningService`, `RealmCache` (lookup logic already extracted to
   `RealmCacheLookup` and tested), `SmtpEmailService`, `PostmarkEmailService`,
-  `AdminNotifier`, `EventSourcedUserStore`, `EmailOtpService`, `AccessQueryWrapper`
-  (Jint.Engine + JsExpressionTranslator), `AuthLogPersistenceService`,
-  `RecoveryCli`. These belong in integration tests; they don't survive the
-  no-Docker contract.
+  `AdminNotifier`, `EventSourcedUserStore`, `EmailOtpService`,
+  `AuthLogPersistenceService`, `RecoveryCli`. These belong in integration
+  tests; they don't survive the no-Docker contract.
 - **OpenIddict pipeline handlers** — `AccessTokenTypeHandler`,
   `RealmIssuerHandler`. Need OpenIddict server pipeline-context types not
   constructible without server DI.
@@ -273,10 +272,6 @@ Wave 2 (Authorization/Authentication/Infrastructure/Api sweep):
 - **`UserView.GetDisplayLabel` returned whitespace verbatim** (commit
   `bc5968f`). Falls through to `<no name>` placeholder when nothing
   visible is set.
-- **`UserContext.HasPermission` diverged from `PermissionEvaluator`**
-  (commit `8c87272`). Now delegates — script answers and backend
-  `RequiresPermission` answers agree for the same principal.
-
 Polish from the same pass:
 
 - **`UserSecurityData.RotateSecurityStamp()` renamed → `RotateAllStamps()`**
@@ -332,8 +327,8 @@ where we stopped and what's next.
 - **Unit coverage swept across:** Domain (Realms, OAuth aggregates, OAuth
   wire-format constants), Application (OAuthAdminMapping after extraction —
   86 tests including the partial-PATCH merges, PaginationRequest), Authorization
-  (PermissionEvaluator, ResourceRegistry, Person/Group/ServiceAccount,
-  UserContext), ExternalAuth (3 flavors), Authentication (5 domain types,
+  (PermissionEvaluator, ResourceRegistry, Person/Group/ServiceAccount),
+  ExternalAuth (3 flavors), Authentication (5 domain types,
   3 extension classes, TwoFactorEnforcementMiddleware, SessionTracker,
   EmailOtpConfiguration, ProfileEndpoints partial-PATCH chain,
   TwoFactorHelper pure parts), Sessions (DeviceInfoService — Wangkanai-backed),
@@ -342,12 +337,12 @@ where we stopped and what's next.
   SignalRSideEffectMessages, ProjectionSideEffects), Api
   (TenantContextMiddleware, RealmsEndpoints filter, OAuth helpers,
   GroupCycleDetector, AutoMembershipSyncHandlers).
-- **Nine real production bugs found AND fixed** across the seven sweeps
+- **Eight real production bugs found AND fixed** across the seven sweeps
   (Wave 2: Group cycle, X-Forwarded-For, AccessTokenType case-parse,
-  Group.MemberIds backing-list leak, UserView whitespace, UserContext/
-  PermissionEvaluator divergence; Wave 3: OIDC claim destinations,
-  rebuild concurrency, catch-narrowing). See the "Production bugs found
-  and fixed" section above for commit IDs and details.
+  Group.MemberIds backing-list leak, UserView whitespace; Wave 3: OIDC
+  claim destinations, rebuild concurrency, catch-narrowing). See the
+  "Production bugs found and fixed" section above for commit IDs and
+  details.
 - **Polish closed** across waves: stamp rotation rename, AMR doc,
   ApplicationTypes constants, PaginationRequest.WithDefaults extraction,
   filter logging, ShouldSync trade-off documentation, AppSettings

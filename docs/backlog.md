@@ -38,7 +38,6 @@ page legitimately needs both values).
 - Get the 7 red `ProfileSelfService` integration tests green
 - Wolverine production-side tenant routing (deeper than current
   middleware fix)
-- Frontend `AuthorizationSimulator` endpoint missing
 - Frontend consent view
 - Background expired-session cleanup hosted service
 - Real auth-code-flow end-to-end test (would catch OIDC claim-routing
@@ -132,12 +131,6 @@ with a deeper Marten/Wolverine integration that lets the
 `OutboxedSessionFactory` ask the envelope for tenant. Alternatively: a
 custom `OutboxedSessionFactory` decorator that consults
 `IHttpContextAccessor` directly.
-
-### Frontend `AuthorizationSimulator` page calls a missing endpoint
-
-The sidebar entry `/admin/authorization/simulate` resolves to a 404 — the
-simulator endpoint was in the legacy backend but not ported. Either rebuild
-the endpoint or remove the sidebar item.
 
 ### Frontend consent view
 
@@ -338,12 +331,6 @@ Polish closed in the same pass:
   `OAuthApplicationTypes` static class with `Web` / `Native` constants
   alongside the sister classes. Bare-literal sweep is its own backlog
   item.
-- **`UserContext.HasPermission` semantic divergence from
-  `PermissionEvaluator`** (commit `8c87272`). `UserContext` now
-  delegates to `PermissionEvaluator.Evaluate` so JsEval scripts and
-  backend `RequiresPermission` filters return the same answer for the
-  same principal.
-
 Other long-standing closed items:
 
 - **Group.GetEmailsAsync cycle detection** (commit `b6b2dc3`, fixed

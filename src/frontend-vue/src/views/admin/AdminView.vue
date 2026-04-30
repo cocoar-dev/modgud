@@ -30,7 +30,6 @@ const allNavItems: NavItem[] = [
   { section: 'authorization', label: 'nav.users', icon: 'users', path: '/admin/users', requirePermissions: ['cocoar-auth:user:read'] },
   { section: 'authorization', label: 'nav.roles', icon: 'shield', path: '/admin/roles', requirePermissions: ['cocoar-auth:permission-role:read'] },
   { section: 'authorization', label: 'nav.groups', icon: 'users-round', path: '/admin/groups', requirePermissions: ['cocoar-auth:authorization-group:read'] },
-  { section: 'authorization', label: 'admin.simulator.title', icon: 'flask-conical', path: '/admin/simulator', requirePermissions: ['cocoar-auth:user:read'] },
   // OAuth & Federation
   { section: 'oauth', label: 'admin.oauthClients.title', icon: 'app-window', path: '/admin/oauth/clients', requirePermissions: ['cocoar-auth:oauth-client:read'] },
   { section: 'oauth', label: 'admin.oauthScopes.title', icon: 'tags', path: '/admin/oauth/scopes', requirePermissions: ['cocoar-auth:oauth-scope:read'] },

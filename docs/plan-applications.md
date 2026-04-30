@@ -43,8 +43,6 @@ under the new scheme, the foundation for a second app is solid.
 - External-app **permission distribution API** (the endpoint TimeToDo
   will eventually call)
 - SignalR-based permission invalidation
-- ABAC (`AccessPolicyEngine`) interaction with the app axis — kept
-  unchanged, scripts continue to operate within the calling app's scope
 - OAuth client ↔ Application linking (`n:m` was decided, but the link
   table can wait until a second app exists)
 

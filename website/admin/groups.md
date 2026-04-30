@@ -36,7 +36,7 @@ Tabs in the detail dialog:
 | **Effective Members** | The fully expanded member list |
 
 ::: info No row-level ABAC in IAM
-Cocoar.Auth groups intentionally do **not** carry per-resource access scripts (ABAC row filters). Row-level access lives in the consuming app where the data and its schema are. See [Concepts → ABAC](../concepts/abac).
+Cocoar.Auth groups deliberately carry no row-level access policies. Whether the user may see a particular row depends on app-specific data the IAM neither owns nor wants to know — that decision lives in the consuming app. See [Concepts → ABAC](../concepts/abac).
 :::
 
 ### General

@@ -111,10 +111,6 @@ const routes = [
               },
             },
             {
-              path: 'simulator',
-              component: () => import('@/views/admin/AuthorizationSimulatorView.vue'),
-            },
-            {
               path: 'auth-log',
               component: () => import('@/views/admin/AuthLogView.vue'),
             },

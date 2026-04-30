@@ -28,14 +28,16 @@ The pre-cutover legacy codebase is preserved at git tag `legacy-final`.
 **Stack:** .NET 10, Marten 8.x (multi-tenant, master-table strategy:
 each realm is a physical PostgreSQL database `cocoar_auth_next_<slug>`),
 Wolverine 5.x (CQRS + outbox), OpenIddict 7.x, ErrorOr, Mapperly,
-Cocoar.JsEval (script-based ABAC), Cocoar.SignalARRR.
+Cocoar.JsEval (TS → LINQ for membership scripts), Cocoar.SignalARRR.
 
 **Architecture:**
 - TimeToDo Authentication slice (`Cocoar.Auth.Authentication`) — login,
   register, 2FA, magic link, passkey, email OTP, OIDC external auth,
   change requests, sessions, GDPR, recovery CLI
-- TimeToDo Authorization slice (`Cocoar.Auth.Authorization`) — groups,
-  roles, permissions, ResourceRegistry, JsEval-based access scripts
+- TimeToDo Authorization slice (`Cocoar.Auth.Authorization`) — groups
+  (incl. JsEval-based auto-membership scripts), roles, permissions,
+  ResourceRegistry. Pure RBAC — row-level access (ABAC) stays in the
+  consuming app, see `website/concepts/abac.md`.
 - IdP-specific layers added on top: OAuth aggregates, OpenIddict
   Marten stores, Realm domain + provisioning + middleware, Sessions
   with UAParser, GDPR Marten masking + ArchiveStream
@@ -47,10 +49,13 @@ set by `RealmMiddleware`. Background services fall back to the `system`
 tenant. Adding a realm provisions a fresh DB and seeds default
 OAuth scopes + Internal login provider.
 
-**Permissions:** `resource:action` style (e.g. `user:read`,
-`oauth-client:write`). `app:admin` is the global bypass; `<resource>:admin`
-bypasses every action on that resource. Endpoints gate via
-`[RequiresPermission("...")]` (extension on `RouteHandlerBuilder`).
+**Permissions:** `<app>:<resource>:<action>` style (e.g.
+`cocoar-auth:user:read`, `cocoar-auth:oauth-client:write`,
+`timetodo:todo:write`). Three bypass tiers: `<app>:<resource>:admin`
+(resource-wide within an app), `<app>:admin` (app-wide),
+`realm:admin` (realm-wide emergency exit, the System Admin role).
+Endpoints gate via `.RequiresPermission("...")` (extension on
+`RouteHandlerBuilder`).
 
 ## Frontend essentials
 
@@ -59,7 +64,7 @@ Tailwind 4, `@cocoar/vue-ui` (CoarButton, CoarSidebar, CoarMenu, ...),
 `@cocoar/vue-data-grid` (CoarGridBuilder over AG Grid),
 `@cocoar/signalarrr`, `@cocoar/vue-localization`,
 `@cocoar/vue-fragment-parser` (URL-fragment routed modals),
-`@cocoar/vue-script-editor` (Monaco for ABAC scripts).
+`@cocoar/vue-script-editor` (Monaco for membership scripts).
 
 **Patterns:**
 - `useUI()` for header/footer/content context

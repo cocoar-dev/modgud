@@ -179,7 +179,7 @@ The four sections:
 
 | Section | Items |
 |---|---|
-| **Authorization** | Users, Roles, Groups, Policy Simulator |
+| **Authorization** | Users, Roles, Groups |
 | **OAuth & Federation** | Clients, Scopes, APIs |
 | **Identity Sources** | Login Providers, Identity Providers |
 | **System** | Realms, Auth Log, Change Requests, Settings |
@@ -230,7 +230,6 @@ the path). Routes:
 | `/admin/auth-log` | AuthLogView |
 | `/admin/change-requests` | ChangeRequestsView |
 | `/admin/settings` | AppSettingsView |
-| `/admin/simulator` | AuthorizationSimulatorView (policy debug) |
 
 ## Vite dev setup
 

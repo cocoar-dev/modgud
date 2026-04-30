@@ -45,6 +45,15 @@ the IAM stays schema-free per app.
   local groups). `website/admin/groups.md` Access-tab + ABAC link
   removed.
 
+Frontend follow-up in the same phase: the policy simulator
+(`AuthorizationSimulatorView.vue`, `/admin/simulator`) is gone — its
+data shape (`ScopeTrace`, `ScopeScriptTrace`, `RowInScope`) was
+ABAC-shaped through and through, and the backend endpoint it called
+never existed in the post-cutover codebase. Sidebar entry, route, and
+i18n strings removed with it; if a permission debug tool is needed
+later, it can be rebuilt around the live `(user, app, permission)`
+answer.
+
 Backend builds clean; **813 unit tests green** (down from 824 — the
 removed UserContextTests + the AccessScripts-only branches in
 AutoMembershipSync handlers, plus a couple of legacy ABAC asserts).
@@ -211,7 +220,7 @@ TimeToDo SSO). Cocoar.Auth itself is the first registered app
   App projection + 13 ResourceRegistry/Evaluator app-aware additions.)
 - **89/96 integration tests green.** The 7 reds are `ProfileSelfService`
   — see Todo below. **Phase 1 added zero new integration-test failures.**
-- **9 real production bugs found and fixed during the sweep.** See
+- **8 real production bugs found and fixed during the sweep.** See
   `testing.md` "Production bugs found and fixed" for commit IDs and the
   failure pattern of each.
 - **Polish landed alongside:** rotation method renamed to honest name,
@@ -263,9 +272,6 @@ Todo) but no wave is open.
   any future Wolverine handler that injects `IDocumentSession` directly
   outside the `IMessageBus.InvokeAsync` chain will hit the same
   `MasterTableTenancy.Default` problem. Plan in `backlog.md`.
-- **Frontend `AuthorizationSimulator` page** calls a missing endpoint
-  (`/admin/authorization/simulate` → 404). Either rebuild the endpoint
-  or remove the sidebar item.
 - **Frontend consent view.** Backend `/connect/consent` endpoint
   exists; SPA component does not — OAuth flows requiring consent fail
   silently in the browser.

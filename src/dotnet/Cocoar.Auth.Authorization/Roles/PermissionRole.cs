@@ -2,9 +2,9 @@ namespace Cocoar.Auth.Authorization.Roles;
 
 /// <summary>
 /// Named set of permissions bound to a specific resource type within an app.
-/// Roles define the <b>what</b> (allowed actions) — they don't decide
-/// <b>which rows</b> a principal can see. Row visibility is the access script's
-/// job on the <see cref="Principals.Group"/>.
+/// Roles define the <b>what</b> (allowed actions). Row-level visibility is
+/// not the IAM's concern — it stays in the consuming app where the row
+/// schema lives.
 /// </summary>
 public class PermissionRole
 {

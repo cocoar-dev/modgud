@@ -29,8 +29,7 @@ re-evaluated.
 
 ## Membership script
 
-Same shape as an access script — a TypeScript arrow function from a
-person record to `boolean`:
+A TypeScript arrow function from a principal record to `boolean`:
 
 ```typescript
 // Predicate form

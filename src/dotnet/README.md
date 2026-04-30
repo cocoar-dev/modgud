@@ -11,7 +11,7 @@ granular gating).
 |---|---|
 | `Cocoar.Auth.Api` | ASP.NET Core host, Minimal API endpoints, Wolverine + Marten wiring, OAuth/Realm/Sessions/GDPR endpoints |
 | `Cocoar.Auth.Authentication` | Login, register, 2FA, magic link, passkey, email OTP, external OIDC, change requests, sessions, GDPR, recovery CLI, IdP-config |
-| `Cocoar.Auth.Authorization` | Groups, roles, permissions, access scripts (JsEval), principals, ResourceRegistry, RequiresPermission filter |
+| `Cocoar.Auth.Authorization` | Groups (incl. JsEval-based auto-membership scripts), roles, permissions, principals, ResourceRegistry, RequiresPermission filter. Pure RBAC — no row-level ABAC, that stays in the consuming app. |
 | `Cocoar.Auth.Application` | DTOs, application services (OAuthAdminService, LoginProviderService, etc.) |
 | `Cocoar.Auth.Domain` | Aggregates (OAuth, LoginProviders, Realms), domain events, value objects |
 | `Cocoar.Auth.Infrastructure` | Marten setup (master-table multi-tenancy), TenantedSessionFactory, OpenIddict Marten stores, RealmCache + RealmProvisioningService |

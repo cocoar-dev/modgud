@@ -1,6 +1,6 @@
 /**
- * Fetches the Monaco <c>.d.ts</c> for script authoring from the backend.
- * The entire definition — domain types, UserContext, linq.* helpers, globals —
+ * Fetches the Monaco <c>.d.ts</c> for membership-script authoring from the
+ * backend. The entire definition — domain types, linq.* helpers, globals —
  * is generated server-side from C# reflection + registered JsEval modules.
  * Nothing here is handwritten.
  */

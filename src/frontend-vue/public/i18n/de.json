@@ -458,51 +458,6 @@
         "expandHelp": "Benachrichtigungen gehen an jedes Mitglied einzeln (rekursiv über verschachtelte Gruppen)."
       }
     },
-    "simulator": {
-      "title": "Policy Simulator",
-      "user": "Benutzer",
-      "userPlaceholder": "Benutzer wählen…",
-      "resource": "Ressource",
-      "action": "Aktion",
-      "resourceId": "Resource-ID (optional)",
-      "resourceIdHint": "Leer lassen für reine Permission-Prüfung",
-      "run": "Simulation starten",
-      "hint": "Zeigt an, ob ein Benutzer die Aktion ausführen dürfte und welche Gruppen Permission und Scope beisteuern.",
-      "outcome": {
-        "allowed": "Erlaubt",
-        "permissionDenied": "Keine Berechtigung",
-        "scopeDenied": "Außerhalb Scope",
-        "notFound": "Datensatz nicht gefunden"
-      },
-      "permission": "Berechtigung",
-      "scope": "Scope",
-      "required": "Erforderlich",
-      "granted": "Gewährt",
-      "adminBypass": "Admin-Bypass",
-      "rowExists": "Datensatz existiert",
-      "rowInScope": "Im Scope",
-      "group": "Gruppe",
-      "role": "Rolle",
-      "script": "Zugriffs-Script",
-      "noGrant": "Keine Gruppe des Benutzers enthält die geforderte Permission.",
-      "noContributingGroups": "Keine Gruppe trägt Scope für diese Aktion bei.",
-      "noScript": "(kein Script → uneingeschränkt)",
-      "claims": {
-        "title": "Simulieren als",
-        "mode": "Modus",
-        "none": "Ohne externe Claims",
-        "link": "Letzte Claims eines IdP-Logins",
-        "custom": "Eigene Claims (Hypothese)",
-        "pickLink": "Login wählen…",
-        "noLinks": "Für diesen Benutzer sind keine IdP-Logins gespeichert",
-        "email": "E-Mail",
-        "groups": "Gruppen (Komma oder Zeilenumbruch)",
-        "roles": "Rollen (Komma oder Zeilenumbruch)",
-        "hint": "Scripts, die user.ExternalClaims lesen (z.B. Entra-Gruppenmitgliedschaft), sehen diese Werte statt der aktuellen Session-Claims.",
-        "evaluatedAsLink": "Evaluiert als wäre der Benutzer angemeldet über",
-        "evaluatedAsOverride": "Evaluiert mit benutzerdefinierten Claims"
-      }
-    },
     "changeRequests": {
       "title": "Änderungsanfragen",
       "statusVerify": "Wartet auf E-Mail-Bestätigung",
