@@ -17,7 +17,7 @@ Before wiring code, finish the admin setup in Cocoar.Auth:
 3. Click **Create default resource server** in the app detail — copy the one-time API secret
 4. Set up at least one role + group with `BoundTo: ["timetodo"]` and assign your test user
 
-The end-to-end userdoc walkthrough is at `/userdocs/saas-anbindung` (German).
+The full admin walkthrough lives at [Admin → SaaS App Integration Walkthrough](../admin/saas-integration-walkthrough).
 
 ## ASP.NET Core integration
 

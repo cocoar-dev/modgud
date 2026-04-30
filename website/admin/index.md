@@ -1,0 +1,103 @@
+# Administration overview
+
+The administration area appears in the sidebar as soon as your account holds **at least one admin read permission** (see [Roles](./roles)). Realm administrators with `realm:admin` see everything; "granular" admins (e.g. a user manager) only see the areas they have rights for.
+
+::: tip First time setting this up?
+If you've just installed Cocoar.Auth and want to bind your first SaaS app, start with the [SaaS App Integration Walkthrough](./saas-integration-walkthrough) — it's the linear path.
+:::
+
+## Areas
+
+### Identity & Access
+
+- [Users](./users) — create, edit, lock, unlock, GDPR-erase accounts
+- [Roles](./roles) — permission bundles per app
+- [Groups](./groups) — who is a member of what role; static or scripted
+
+### Apps
+
+Cocoar.Auth is **multi-app capable**: every SaaS application in a realm is registered as its own App with its own resources, roles, and OAuth bindings.
+
+- [Applications](./applications) — register apps, manage resources, provision a default resource server
+
+### OAuth & OpenID Connect
+
+Cocoar.Auth is not just a login frontend — it's a full **OAuth 2.0 / OpenID Connect provider** built on OpenIddict. Third-party apps sign in via OIDC instead of maintaining their own user databases.
+
+- [OAuth Clients](./oauth-clients) — apps that sign in through the IdP (web, mobile, CLI)
+- [OAuth Scopes](./oauth-scopes) — which capabilities (scopes) are available?
+- [OAuth APIs (Resource Servers)](./oauth-apis) — register backends that validate tokens
+
+### Federation & Realms
+
+- [Login Providers](./login-providers) — local provider plus external (Google, Microsoft, Entra, any OIDC)
+- [External Identity Providers (SSO)](./identity-providers) — step-by-step external IdP setup
+- [Realms](./realms) — multi-tenant setup; each tenant gets its own database
+
+### Operations
+
+- [Auth Log](./auth-log) — audit trail of all login events
+- [Change Requests](./change-requests) — approve profile changes (when the approval flow is enabled)
+- [Recovery CLI](./recovery-cli) — when the UI no longer responds
+- [Settings](./settings) — 2FA enforcement, grace period, SMTP, …
+
+## Permissions: the three-segment model
+
+Cocoar.Auth manages permissions in the form **`app:resource:action`**. Examples:
+
+| Permission | Meaning |
+| --- | --- |
+| `cocoar-auth:user:read` | Read the user list in cocoar.auth |
+| `cocoar-auth:oauth-client:write` | Manage OAuth clients in cocoar.auth |
+| `timetodo:todo:write` | Write todos in the TimeToDo app |
+| `realm:admin` | **Realm-wide bypass** — everything in any app |
+| `cocoar-auth:admin` | App-wide bypass for cocoar.auth |
+| `cocoar-auth:user:admin` | Resource-wide bypass for "user" in cocoar.auth |
+
+Three bypass tiers keep permission lists short:
+
+- **`realm:admin`** — realm-wide. Whoever holds it may do anything in any app.
+- **`<app>:admin`** — app-wide.
+- **`<app>:<resource>:admin`** — resource-wide.
+
+::: info Who is a realm admin?
+On the very first `/setup` run, the person performing setup is automatically promoted to realm admin. They land in the `Administratoren` group whose `BoundTo: ["*"]` wildcard makes them effective in every app. Add more admins by putting users into that group (or any other group with equivalent rights).
+:::
+
+## Granular gating
+
+The sidebar automatically hides everything you can't read. Examples:
+
+- **Realm admin** (`realm:admin`) — sees and may do everything, in every app
+- **User manager** in cocoar.auth — `cocoar-auth:user:read` + `:write` + `cocoar-auth:session:read` + `cocoar-auth:auth-log:read` → only the user/session area
+- **OAuth manager** — `cocoar-auth:oauth-client:*` + `cocoar-auth:oauth-scope:*` + `cocoar-auth:oauth-api:*` → only the OAuth area
+- **TimeToDo editor** (in the TimeToDo app) — `timetodo:todo:write` + `timetodo:project:write` → not an admin in cocoar.auth, but very much in TimeToDo
+
+## Typical workflows
+
+### Bind a new SaaS app
+
+Full step-by-step walkthrough: [SaaS App Integration](./saas-integration-walkthrough) — realm admin → app → OAuth client → default resource server → group/role → backend code.
+
+### Onboard a new employee
+
+1. [Create the user](./users) (first name, last name, email)
+2. **Send the sign-in link** — the user sets their password and 2FA themselves
+3. Add them to the right [groups](./groups) — those already carry the right roles + BoundTo to the right apps
+4. Done — the user can log in and has the right permissions in every connected app
+
+### Wire up external SSO (Microsoft Entra)
+
+Full step-by-step walkthrough: [External Identity Providers (SSO)](./identity-providers).
+
+### Run multiple tenants
+
+Each tenant gets its own [realm](./realms) — own database, own users, own roles. Routing is per subdomain (`tenant1.auth.firma.at`, `tenant2.auth.firma.at`).
+
+### Admin locked out
+
+[Recovery CLI](./recovery-cli) — a shell tool inside the container that bypasses the UI and writes directly to the database.
+
+## Real-time updates
+
+All admin lists refresh themselves automatically when another admin (or you in a second tab) changes something. This happens via SignalR push — no manual reload needed.

@@ -2,11 +2,24 @@ import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
 import llmstxt from 'vitepress-plugin-llms'
 
+// Public docs build — the full documentation tree shipped on the
+// public docs site. Includes everything: marketing landing, getting
+// started, concepts, integration guides, reference, and the admin
+// operations surface (which is also bundled into the in-app build via
+// config.in-app.ts).
 export default withMermaid(
   defineConfig({
     title: 'Cocoar.Auth',
-    description: 'Multi-Tenant Identity Provider — Multi-Realm, OpenIddict, ABAC, GDPR-Self-Service',
-    lang: 'de-DE',
+    description: 'Multi-Tenant Identity Provider — OAuth 2.0 / OpenID Connect, multi-app permissions, granular RBAC, GDPR-ready.',
+    lang: 'en-US',
+
+    // Localhost / *.local references in the quickstart and troubleshooting
+    // sections are intentional examples, not broken links.
+    ignoreDeadLinks: [
+      /^https?:\/\/localhost/,
+      /^https?:\/\/127\.0\.0\.1/,
+      /^https?:\/\/[a-z0-9.-]+\.(?:dev|local|localhost|invalid)/,
+    ],
 
     head: [
       ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo_light.svg' }],
@@ -27,23 +40,36 @@ export default withMermaid(
         dark: '/logo_dark.svg',
       },
       nav: [
-        { text: 'Konzepte', link: '/concepts/glossary' },
-        { text: 'Architektur', link: '/guide/architecture' },
-        { text: 'Authentication-Slice', link: '/authentication-slice/' },
-        { text: 'Authorization-Slice', link: '/authorization-slice/' },
-        { text: 'API-Referenz', link: '/reference/auth-api' },
+        { text: 'Getting Started', link: '/getting-started/' },
+        { text: 'Concepts', link: '/concepts/apps-and-resource-access' },
+        { text: 'Guide', link: '/guide/integrating-resource-server' },
+        { text: 'Admin', link: '/admin/' },
+        { text: 'Reference', link: '/reference/distribution-api' },
         { text: 'LLM Docs', link: '/llms-full.txt', target: '_blank' },
       ],
 
       sidebar: {
+        '/getting-started/': [
+          {
+            text: 'Getting Started',
+            items: [
+              { text: 'Overview', link: '/getting-started/' },
+              { text: 'Quickstart (Docker)', link: '/getting-started/quickstart' },
+              { text: 'Requirements', link: '/getting-started/requirements' },
+              { text: 'Features', link: '/getting-started/features' },
+              { text: 'First-time setup', link: '/getting-started/first-time-setup' },
+            ],
+          },
+        ],
         '/concepts/': [
           {
-            text: 'Konzepte',
+            text: 'Concepts',
             items: [
-              { text: 'Glossar', link: '/concepts/glossary' },
+              { text: 'Glossary', link: '/concepts/glossary' },
+              { text: 'Apps & resource_access', link: '/concepts/apps-and-resource-access' },
               { text: 'Realms (Multi-Tenant)', link: '/concepts/realms' },
-              { text: 'Authentifizierung', link: '/concepts/authentication' },
-              { text: 'Autorisierung & ABAC', link: '/concepts/groups-and-authorization' },
+              { text: 'Authentication', link: '/concepts/authentication' },
+              { text: 'Authorization & ABAC', link: '/concepts/groups-and-authorization' },
               { text: 'OAuth & OIDC', link: '/concepts/oauth' },
               { text: 'Sessions & Tokens', link: '/concepts/tokens' },
             ],
@@ -51,16 +77,16 @@ export default withMermaid(
         ],
         '/guide/': [
           {
-            text: 'Einstieg',
+            text: 'Integration',
             items: [
-              { text: 'Überblick', link: '/guide/overview' },
-              { text: 'Getting Started (Dev)', link: '/guide/getting-started' },
+              { text: 'Integrating a Resource Server', link: '/guide/integrating-resource-server' },
             ],
           },
           {
-            text: 'Architektur',
+            text: 'Architecture',
             items: [
-              { text: 'Backend-Aufbau', link: '/guide/architecture' },
+              { text: 'Overview', link: '/guide/overview' },
+              { text: 'Backend Layout', link: '/guide/architecture' },
               { text: 'Multi-Tenancy / Realms', link: '/guide/realms' },
               { text: 'Persistence (Marten)', link: '/guide/database' },
               { text: 'OAuth / OpenIddict', link: '/guide/oauth' },
@@ -76,7 +102,7 @@ export default withMermaid(
           {
             text: 'Frontend',
             items: [
-              { text: 'Vue-Frontend', link: '/guide/frontend' },
+              { text: 'Vue Frontend', link: '/guide/frontend' },
             ],
           },
           {
@@ -86,14 +112,62 @@ export default withMermaid(
             ],
           },
         ],
+        '/admin/': [
+          {
+            text: 'Admin Operations',
+            items: [
+              { text: 'Overview', link: '/admin/' },
+              { text: 'SaaS App Integration Walkthrough', link: '/admin/saas-integration-walkthrough' },
+            ],
+          },
+          {
+            text: 'Identity & Access',
+            items: [
+              { text: 'Users', link: '/admin/users' },
+              { text: 'Roles', link: '/admin/roles' },
+              { text: 'Groups', link: '/admin/groups' },
+            ],
+          },
+          {
+            text: 'Apps',
+            items: [
+              { text: 'Applications', link: '/admin/applications' },
+            ],
+          },
+          {
+            text: 'OAuth & OIDC',
+            items: [
+              { text: 'OAuth Clients', link: '/admin/oauth-clients' },
+              { text: 'OAuth Scopes', link: '/admin/oauth-scopes' },
+              { text: 'OAuth APIs (Resource Servers)', link: '/admin/oauth-apis' },
+            ],
+          },
+          {
+            text: 'Federation & Realms',
+            items: [
+              { text: 'Login Providers', link: '/admin/login-providers' },
+              { text: 'External Identity Providers (SSO)', link: '/admin/identity-providers' },
+              { text: 'Realms', link: '/admin/realms' },
+            ],
+          },
+          {
+            text: 'Operations',
+            items: [
+              { text: 'Auth Log', link: '/admin/auth-log' },
+              { text: 'Change Requests', link: '/admin/change-requests' },
+              { text: 'Settings', link: '/admin/settings' },
+              { text: 'Recovery CLI', link: '/admin/recovery-cli' },
+            ],
+          },
+        ],
         '/authentication-slice/': [
           {
             text: 'Cocoar.Auth.Authentication',
             items: [
-              { text: 'Überblick', link: '/authentication-slice/' },
-              { text: 'Konzepte', link: '/authentication-slice/konzepte' },
-              { text: 'Login-Flows', link: '/authentication-slice/login-flows' },
-              { text: 'Identity-Provider (OIDC)', link: '/authentication-slice/identity-providers' },
+              { text: 'Overview', link: '/authentication-slice/' },
+              { text: 'Concepts', link: '/authentication-slice/konzepte' },
+              { text: 'Login Flows', link: '/authentication-slice/login-flows' },
+              { text: 'Identity Providers (OIDC)', link: '/authentication-slice/identity-providers' },
               { text: 'GDPR & Sessions', link: '/authentication-slice/gdpr-sessions' },
             ],
           },
@@ -102,8 +176,8 @@ export default withMermaid(
           {
             text: 'Cocoar.Auth.Authorization',
             items: [
-              { text: 'Überblick', link: '/authorization-slice/' },
-              { text: 'Konzepte', link: '/authorization-slice/konzepte' },
+              { text: 'Overview', link: '/authorization-slice/' },
+              { text: 'Concepts', link: '/authorization-slice/konzepte' },
               { text: 'Permissions & Gating', link: '/authorization-slice/permissions' },
               { text: 'Access Scripts (ABAC)', link: '/authorization-slice/access-scripts' },
               { text: 'Auto-Membership', link: '/authorization-slice/auto-membership' },
@@ -112,12 +186,13 @@ export default withMermaid(
         ],
         '/reference/': [
           {
-            text: 'API-Referenz',
+            text: 'API Reference',
             items: [
-              { text: 'Auth-Endpoints', link: '/reference/auth-api' },
-              { text: 'Admin-Endpoints', link: '/reference/admin-api' },
-              { text: 'OAuth-Endpoints', link: '/reference/oauth-api' },
-              { text: 'Realm-Endpoints', link: '/reference/realm-api' },
+              { text: 'Distribution API', link: '/reference/distribution-api' },
+              { text: 'Auth Endpoints', link: '/reference/auth-api' },
+              { text: 'Admin Endpoints', link: '/reference/admin-api' },
+              { text: 'OAuth Endpoints', link: '/reference/oauth-api' },
+              { text: 'Realm Endpoints', link: '/reference/realm-api' },
             ],
           },
         ],
@@ -132,7 +207,7 @@ export default withMermaid(
       },
 
       outline: {
-        label: 'Auf dieser Seite',
+        label: 'On this page',
       },
 
       footer: {

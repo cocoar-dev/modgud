@@ -4,11 +4,15 @@ This folder is for **us** (the people building cocoar.auth), not for end users
 or anyone reading the published docs. Plain markdown, kept in the repo, never
 shipped in `wwwroot/`.
 
-The two public doc trees live elsewhere:
+The published docs live elsewhere:
 
-- `website/` — VitePress technical docs (concepts, guide, reference, slice docs)
-- `userdocs/` — VitePress end-user documentation (German, du-form, served at
-  `/docs/` after login)
+- `website/` — single VitePress source tree, two builds:
+  - `pnpm build` (default config) → full public site (concepts, guide,
+    reference, admin sections — everything)
+  - `pnpm build:in-app` (config.in-app.ts) → reduced bundle of only
+    `admin/` + `end-user/` pages, served inside the running app at
+    `/docs/`. Same source, filtered via `srcExclude`, so admin docs stay
+    version-synchronised with the deployed binary.
 
 What lives here:
 
