@@ -64,8 +64,10 @@ Behind the scenes:
 - Your user is added to the group → realm-wide bypass active
 
 ::: tip Default dev credentials
-The same credentials are noted in the memory file (see `CLAUDE.md`):
-`admin` / `ABC12abc!`
+The first-time-setup screen suggests `admin` / `ABC12abc!` as the
+default dev credentials — works on a fresh DB, gets you straight
+into the admin sidebar with `realm:admin`. Production setups should
+pick something else; the form accepts any username + password.
 :::
 
 ## Run the tests

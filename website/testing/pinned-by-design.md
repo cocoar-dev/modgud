@@ -60,8 +60,13 @@ event after the delete, the projection happily applies it.
 **Why:** validation lives one layer up — in the `Application` layer's
 `*State` inline projections and command handlers, which check
 `IsDeleted` before issuing the next event. The aggregates themselves
-stay event-replay-safe and dumb. This is documented in `CLAUDE.md`
-under the architecture section.
+stay event-replay-safe and dumb: replay must succeed for any
+historical sequence of events the store ever wrote, regardless of
+whether that sequence is still legal under today's rules. Pushing the
+"may I write this?" decision into the aggregate would couple replay
+correctness to evolving business rules, which makes the event store
+brittle. Validation belongs at the boundary that *receives* commands,
+not at the one that *replays* the past.
 
 ## Wolverine `OutboxedSessionFactory` and tenant routing
 
@@ -73,8 +78,21 @@ The `TenantedSessionFactory` reads
 into a Wolverine handler that was invoked via `IMessageBus.InvokeAsync`
 (the bus copies the tenant onto the envelope). Wolverine handlers that
 inject `IDocumentSession` directly outside the `InvokeAsync` chain hit
-`MasterTableTenancy.Default` and crash. See `docs/backlog.md` for the
-plan.
+`MasterTableTenancy.Default` and crash.
+
+Today this is harmless because every Wolverine handler in the
+codebase is invoked via the bus. The day a future handler injects
+`IDocumentSession` and runs outside that chain (e.g. a scheduled
+background job that opens its own scope), it will need a different
+tenant-resolution path. Two viable shapes when that day comes:
+
+- Replace `BuildSessionsWith<TenantedSessionFactory>` with a deeper
+  Marten/Wolverine integration that lets the
+  `OutboxedSessionFactory` ask the envelope for the tenant.
+- Decorate the `OutboxedSessionFactory` to consult
+  `IHttpContextAccessor` directly when the envelope is empty.
+
+Either way, the test that pins the new behaviour goes here.
 
 ## Why this list is short
 
