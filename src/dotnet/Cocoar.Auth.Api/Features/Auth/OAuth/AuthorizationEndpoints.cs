@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Cocoar.Auth.Authentication.Domain;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Services;
 using Cocoar.Auth.Domain.OAuth.Applications;
 using Cocoar.Auth.Domain.OAuth.Scopes;
@@ -250,7 +251,8 @@ public static class AuthorizationEndpoints
     private static async Task<IResult> UserinfoAsync(
         HttpContext httpContext,
         UserManager<ApplicationUser> userManager,
-        IPermissionService permissionService)
+        IPermissionService permissionService,
+        IDocumentSession session)
     {
         var subject = httpContext.User.GetClaim(Claims.Subject);
         if (string.IsNullOrEmpty(subject))
@@ -296,26 +298,41 @@ public static class AuthorizationEndpoints
             if (!string.IsNullOrEmpty(user.Lastname)) claims[Claims.FamilyName] = user.Lastname;
         }
 
-        // Roles + groups: when the OIDC `roles` scope was granted, expose the
-        // user's group memberships as claims. Group names land in `role` (the
-        // OIDC convention) so ASP.NET Core's
-        // GetClaimsFromUserInfoEndpoint=true picks them up automatically and
-        // [Authorize(Roles="…")] just works on the consuming resource server.
-        // Group ids land in a separate `groups` claim for code that wants to
-        // resolve groups stably across renames.
+        // Roles + groups: when the OIDC `roles` scope was granted, expose
+        // both as claims with their proper semantics:
         //
-        // Granular permissions are intentionally NOT in UserInfo — they're
-        // app-scoped and refreshed on every request via the distribution API
-        // (Stufe 2b: GET /api/v1/me/permissions?app=…). UserInfo only
-        // carries identity-shaped claims that change rarely.
+        //   `role`   — names of PermissionRoles the user effectively holds
+        //              in the calling client's App. This is the
+        //              "what may you do" axis, which is what
+        //              [Authorize(Roles="…")] actually asks. ASP.NET Core
+        //              maps `role` → ClaimTypes.Role automatically when the
+        //              resource server has GetClaimsFromUserInfoEndpoint=true.
+        //   `groups` — names of Groups the user is a member of. This is the
+        //              organisational/distribution-list axis (e.g. "send
+        //              mail to all HR-Gruppe members"), not authorisation.
+        //
+        // The role list is App-scoped: the App is derived from the access
+        // token's client_id → OAuthApplication.AppId → App.Slug (the
+        // Stufe-1 link). Falls back to cocoar-auth when the calling client
+        // is realm-wide / unassigned, so the IDP's own admin SPA still
+        // sees its own roles.
+        //
+        // Granular permissions are intentionally NOT in UserInfo — they
+        // refresh per-request via the distribution API
+        // (GET /api/v1/me/permissions?app=…). UserInfo carries only
+        // identity-shaped claims that change rarely.
         if (httpContext.User.HasScope(Scopes.Roles))
         {
+            var appSlug = await ResolveAppSlugFromClientAsync(httpContext.User, session)
+                          ?? AppSlugs.CocoarAuth;
+
+            var roles = await permissionService.GetUserRolesAsync(user.Id, appSlug);
             var groups = await permissionService.GetUserGroupsAsync(user.Id);
+
+            if (roles.Count > 0)
+                claims[Claims.Role] = roles.Select(r => r.Name).ToArray();
             if (groups.Count > 0)
-            {
-                claims[Claims.Role] = groups.Select(g => g.Name).ToArray();
-                claims["groups"] = groups.Select(g => g.Id.ToString()).ToArray();
-            }
+                claims["groups"] = groups.Select(g => g.Name).ToArray();
         }
 
         return Results.Ok(claims);
@@ -384,6 +401,28 @@ public static class AuthorizationEndpoints
 
     private static IEnumerable<string> GetDestinations(Claim claim)
         => AuthorizationEndpointHelpers.GetDestinations(claim);
+
+    /// <summary>
+    /// Resolves the app slug from the bearer token's <c>client_id</c> claim:
+    /// looks up the OAuth client, follows its <c>AppId</c> to <see cref="App"/>
+    /// and returns the slug. Returns <c>null</c> when no client_id is on the
+    /// principal (interactive cookie auth), the client is not found, the
+    /// client has no App link, or the App was deleted. Used by UserInfo to
+    /// scope roles to the calling App.
+    /// </summary>
+    private static async Task<string?> ResolveAppSlugFromClientAsync(
+        ClaimsPrincipal user, IDocumentSession session)
+    {
+        var clientId = user.FindFirst(Claims.ClientId)?.Value;
+        if (string.IsNullOrEmpty(clientId)) return null;
+
+        var client = await session.Query<OAuthApplicationState>()
+            .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted);
+        if (client?.AppId is not Guid appId) return null;
+
+        var app = await session.LoadAsync<App>(appId);
+        return app?.IsDeleted == false ? app.Slug : null;
+    }
 
     /// <summary>
     /// Stufe-3 scope restriction. Returns <c>null</c> if every requested scope
