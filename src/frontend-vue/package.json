@@ -32,6 +32,7 @@
     "@testcontainers/postgresql": "^11.14.0",
     "@vitejs/plugin-vue": "^6.0.5",
     "@vue/test-utils": "^2.4.6",
+    "otplib": "^13.4.0",
     "tailwindcss": "^4.2.2",
     "testcontainers": "^11.14.0",
     "typescript": "~6.0.2",
