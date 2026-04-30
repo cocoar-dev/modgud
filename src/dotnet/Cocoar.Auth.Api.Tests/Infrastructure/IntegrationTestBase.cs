@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Cocoar.Configuration.Testing;
 using Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.Users;
+using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 
@@ -96,6 +97,33 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
         var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
         bus.TenantId = tenantId;
         return bus;
+    }
+
+    /// <summary>
+    /// Opens a tenant-scoped Marten <see cref="IQuerySession"/>. The master
+    /// <see cref="IDocumentStore"/> resolved from DI uses
+    /// <c>MasterTableTenancy</c>, which has no <c>Default</c> session — calling
+    /// <c>store.QuerySession()</c> throws "Default tenant does not supported".
+    /// Use this helper from any test that needs to read tenant data outside
+    /// the HTTP pipeline (the pipeline's <c>TenantContextMiddleware</c> sets
+    /// the tenant from <c>HttpContext.Items["TenantId"]</c> for in-flight
+    /// requests; this helper is the equivalent for arrange/assert blocks).
+    /// </summary>
+    protected IQuerySession GetTenantedSession(string tenantId = "system")
+    {
+        var store = Factory.Services.GetRequiredService<IDocumentStore>();
+        return store.QuerySession(tenantId);
+    }
+
+    /// <summary>
+    /// Same as <see cref="GetTenantedSession(string)"/> but returns a writeable
+    /// <see cref="IDocumentSession"/>. Useful when an arrange block needs to
+    /// seed test data outside the HTTP pipeline.
+    /// </summary>
+    protected IDocumentSession GetTenantedDocumentSession(string tenantId = "system")
+    {
+        var store = Factory.Services.GetRequiredService<IDocumentStore>();
+        return store.LightweightSession(tenantId);
     }
 
     public async ValueTask DisposeAsync()

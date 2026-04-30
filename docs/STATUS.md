@@ -10,9 +10,37 @@
 > - **What's actively pinned by tests?** → `testing.md` "Unit-test
 >   inventory" table.
 
-Last updated: 2026-04-30 (post Applications Phase 6 — ABAC excision).
+Last updated: 2026-04-30 (post Wave 8 — integration-test gap closure).
 
 ## ✅ Done
+
+### Wave 8 — integration-test gap closure (2026-04-30)
+
+Plugged the longstanding integration-test gaps left by the Phase 1-5
+build-out and the ProfileSelfService red blockers.
+
+- **`GetTenantedSession(tenantId)`** + sister
+  `GetTenantedDocumentSession(tenantId)` added to `IntegrationTestBase`.
+  The helpers open a Marten session against a named tenant — required
+  in tests that read/write outside the HTTP pipeline because the master
+  `IDocumentStore` uses `MasterTableTenancy` which has no `Default`
+  session.
+- **7 red `ProfileSelfService` tests** migrated to the new helper —
+  9/9 green.
+- **New `Authorization/PermissionResolutionTests`** — 10 end-to-end
+  tests against `GET /api/user`, pinning the BFS resolution + BoundTo
+  filter + role-AppSlug filter + bypass-cascade composition through
+  the real Marten store. Cases covered: no group, BoundTo cocoar-auth,
+  dormant BoundTo, wildcard BoundTo, wrong-app BoundTo, resource-admin
+  bypass within app, app-admin bypass, realm-admin bypass, cross-app
+  role no leak, cross-app app-admin no leak.
+- **New `Distribution/DistributionApiAuthFilterTests`** — 3 tests
+  pinning the auth envelope of the distribution API: 401 without
+  Bearer, 401 with cookie-only, 401 with cookie + RS-Auth headers (the
+  bearer guard wins over the ambient cookie principal). Bearer-success
+  path remains a manual-checklist concern for now.
+
+Integration suite goes from **89/96 → 109/109 green**, ~2 min total.
 
 ### Applications Phase 6 — ABAC excised from IAM (2026-04-30)
 
@@ -251,11 +279,13 @@ Todo) but no wave is open.
 ## 🔴 Todo
 
 ### Test backlog
-- **7 red `ProfileSelfService` integration tests.** Need
-  `GetTenantedSession(scope)` + `GetTenantedStore(scope)` helpers in
-  `IntegrationTestBase`, alongside the existing
-  `GetTenantedMessageBus(scope)`. Then migrate the 7 tests. Brings
-  96/96 green. Docker required.
+- **Distribution API success-path integration tests.** Currently the
+  envelope (no Bearer / cookie-only / RS-Auth-without-Bearer) is pinned
+  in `DistributionApiAuthFilterTests`, but the success path
+  (real Bearer + valid RS-Auth → 200 + `MePermissionsResponse`) is
+  unverified end-to-end because Bearer-token issuance via auth-code
+  flow needs a multi-step harness. Either build that harness or
+  exercise the path via the manual smoke checklist for now.
 
 ### Pinned-by-design (current behaviour is intentional; tests guard it)
 - `TenantContextMiddleware` silently coerces non-string `TenantId`

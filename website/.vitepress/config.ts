@@ -45,6 +45,7 @@ export default withMermaid(
         { text: 'Guide', link: '/guide/integrating-resource-server' },
         { text: 'Admin', link: '/admin/' },
         { text: 'Reference', link: '/reference/distribution-api' },
+        { text: 'Testing', link: '/testing/' },
         { text: 'LLM Docs', link: '/llms-full.txt', target: '_blank' },
       ],
 
@@ -193,6 +194,17 @@ export default withMermaid(
               { text: 'Admin Endpoints', link: '/reference/admin-api' },
               { text: 'OAuth Endpoints', link: '/reference/oauth-api' },
               { text: 'Realm Endpoints', link: '/reference/realm-api' },
+            ],
+          },
+        ],
+        '/testing/': [
+          {
+            text: 'Testing',
+            items: [
+              { text: 'Overview', link: '/testing/' },
+              { text: 'Automated tests', link: '/testing/automated-tests' },
+              { text: 'Pinned-by-design', link: '/testing/pinned-by-design' },
+              { text: 'Manual smoke checklist', link: '/testing/manual-checklist' },
             ],
           },
         ],

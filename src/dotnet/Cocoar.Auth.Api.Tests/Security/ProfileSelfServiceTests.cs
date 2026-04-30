@@ -59,7 +59,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
         Assert.Equal("A3", payload.Acronym.Value);
 
         // Only one request exists (merged, not parallel).
-        await using var qs = Factory.Services.GetRequiredService<IDocumentStore>().QuerySession();
+        await using var qs = GetTenantedSession();
         var openCount = await qs.Query<UserChangeRequest>()
             .Where(r => r.UserId == user.Id
                      && (r.Status == ChangeRequestStatus.EmailVerificationPending
@@ -168,7 +168,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
         Assert.Equal("Keep", me.GetProperty("Firstname").GetString());
         Assert.Equal("ko-old@test.com", me.GetProperty("Email").GetString());
 
-        await using var qs = Factory.Services.GetRequiredService<IDocumentStore>().QuerySession();
+        await using var qs = GetTenantedSession();
         var cr = await qs.LoadAsync<UserChangeRequest>(ShortGuid.Decode(requestId));
         Assert.Equal(ChangeRequestStatus.Rejected, cr!.Status);
         Assert.Equal("policy", cr.ReviewerNote);
@@ -186,7 +186,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
         var cancel = await client.DeleteAsync("/api/account/profile/request", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, cancel.StatusCode);
 
-        await using var qs = Factory.Services.GetRequiredService<IDocumentStore>().QuerySession();
+        await using var qs = GetTenantedSession();
         var open = await qs.Query<UserChangeRequest>()
             .Where(r => r.UserId == user.Id
                      && (r.Status == ChangeRequestStatus.EmailVerificationPending
@@ -235,7 +235,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
 
     private async Task<string> GetOpenRequestIdAsync(Guid userId)
     {
-        await using var qs = Factory.Services.GetRequiredService<IDocumentStore>().QuerySession();
+        await using var qs = GetTenantedSession();
         var open = (await qs.Query<UserChangeRequest>()
             .Where(r => r.UserId == userId
                      && (r.Status == ChangeRequestStatus.EmailVerificationPending
@@ -246,7 +246,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
 
     private async Task<ProfileUpdateDto> LoadPayloadAsync(Guid userId)
     {
-        await using var qs = Factory.Services.GetRequiredService<IDocumentStore>().QuerySession();
+        await using var qs = GetTenantedSession();
         var open = (await qs.Query<UserChangeRequest>()
             .Where(r => r.UserId == userId
                      && (r.Status == ChangeRequestStatus.EmailVerificationPending
