@@ -1,16 +1,24 @@
 # Administration — Überblick
 
-Der Administrationsbereich erscheint in der Sidebar, sobald dein Konto **mindestens eine Admin-Lese-Berechtigung** hat (siehe [Rollen & Berechtigungen](./rollen)). System-Administratoren mit `app:admin` sehen alles, „granulare" Admins (z.B. ein User-Manager) sehen nur die Bereiche für die sie Rechte haben.
+Der Administrationsbereich erscheint in der Sidebar, sobald dein Konto **mindestens eine Admin-Lese-Berechtigung** hat (siehe [Rollen & Berechtigungen](./rollen)). Realm-Administratoren mit `realm:admin` sehen alles, „granulare" Admins (z.B. ein User-Manager) sehen nur die Bereiche für die sie Rechte haben.
 
 ![Admin-Hauptansicht](/screenshots/admin-uebersicht.png)
+
+> **Neu hier?** Wenn du gerade frisch ein cocoar.auth aufgesetzt hast und eine externe SaaS-App anbinden willst, ist der [SaaS-Anbindung-Walkthrough](../saas-anbindung) der beste Startpunkt.
 
 ## Bereiche
 
 ### Benutzer & Zugriff
 
 - [Benutzer](./benutzer) — Konten anlegen, bearbeiten, sperren, entsperren, GDPR-Erasure
-- [Rollen & Berechtigungen](./rollen) — Permission-Sets pro Ressource
+- [Rollen & Berechtigungen](./rollen) — Permission-Sets pro App
 - [Authorization-Gruppen](./gruppen) — Wer gehört zu welcher Rolle? Statisch oder per Skript
+
+### Apps & Resources
+
+cocoar.auth ist **multi-app-fähig**: jede SaaS-Anwendung im Realm wird als eigene App registriert, mit eigenen Resources, eigenen Rollen und eigenen OAuth-Verknüpfungen.
+
+- [Applications](./applications) — Apps registrieren, Resources pflegen, Default-Resource-Server provisionieren
 
 ### OAuth & OpenID Connect
 
@@ -33,37 +41,50 @@ cocoar.auth ist nicht nur Login-Frontend, sondern vollwertiger **OAuth 2.0 / Ope
 - [Notfall-Recovery (CLI)](./notfall-recovery) — Wenn die UI nicht mehr greift
 - [App-Einstellungen](./einstellungen) — 2FA-Pflicht-Stufe, Grace-Period, SMTP, …
 
-## Granulares Gating
+## Permissions: das 3-Segment-Modell
 
-cocoar.auth nutzt **resource-basierte Permissions**. Jede Ressource (`user`, `permission-role`, `oauth-client`, `realm`, …) hat `read` und `write` Permissions. Beispiele:
+cocoar.auth verwaltet Permissions in der Form **`app:resource:action`**. Beispiele:
 
-- **System-Admin** (`app:admin`) — sieht und darf alles
-- **User-Manager** — `user:read` + `user:write` + `session:read` + `auth-log:read` → sieht nur Benutzer + Sessions + Auth-Log, kein OAuth/Realms
-- **OAuth-Manager** — `oauth-client:read` + `oauth-client:write` + `oauth-scope:read` + `oauth-scope:write` → nur OAuth-Bereich
+| Permission | Bedeutung |
+| --- | --- |
+| `cocoar-auth:user:read` | User-Liste in cocoar.auth lesen |
+| `cocoar-auth:oauth-client:write` | OAuth-Clients in cocoar.auth bearbeiten |
+| `timetodo:todo:write` | Todos in der TimeToDo-App schreiben |
+| `realm:admin` | **Realm-weiter Bypass** — alles in jeder App |
+| `cocoar-auth:admin` | App-weiter Bypass für cocoar.auth |
+| `cocoar-auth:user:admin` | Resource-weiter Bypass für „user" in cocoar.auth |
 
-Die Sidebar blendet automatisch alles aus, wofür du keine Lese-Berechtigung hast.
+Drei Bypass-Stufen helfen dabei, Permissions kompakt zu halten:
 
-::: info Wer ist System-Admin?
-Beim allerersten `/setup`-Lauf wird die Person, die ihn ausführt, automatisch zum System-Admin (`app:admin`). Weitere Admins legst du an, indem du Benutzer in eine Gruppe mit der `Admin`-Rolle aufnimmst.
+- **`realm:admin`** — Realm-weit. Wer das hat, darf alles in jeder App.
+- **`<app>:admin`** — App-weit. Wer das hat, darf alles in dieser App.
+- **`<app>:<resource>:admin`** — Resource-weit. Wer das hat, darf alle Aktionen auf einer Resource (z.B. `cocoar-auth:user:admin` = read + write + alle künftigen Aktionen).
+
+::: info Wer ist Realm-Admin?
+Beim allerersten `/setup`-Lauf wird die Person, die ihn ausführt, automatisch zum Realm-Admin. Sie landet in der `Administratoren`-Group, deren Wildcard-`BoundTo` `*` sie in allen Apps wirken lässt. Weitere Admins legst du an, indem du Benutzer in diese Gruppe (oder eine andere Group mit gleichwertigen Rechten) aufnimmst.
 :::
 
+## Granulares Gating
+
+Die Sidebar blendet automatisch alles aus, wofür du keine Lese-Berechtigung hast. Beispiele:
+
+- **Realm-Admin** (`realm:admin`) — sieht und darf alles, in jeder App
+- **User-Manager** in cocoar.auth — `cocoar-auth:user:read` + `cocoar-auth:user:write` + `cocoar-auth:session:read` + `cocoar-auth:auth-log:read` → nur User-/Session-Bereich
+- **OAuth-Manager** — `cocoar-auth:oauth-client:*` + `cocoar-auth:oauth-scope:*` + `cocoar-auth:oauth-api:*` → nur OAuth-Bereich
+- **TimeToDo-Editor** (in der TimeToDo-App) — `timetodo:todo:write` + `timetodo:project:write` → in cocoar.auth wäre er gar nicht admin, in TimeToDo aber sehr wohl
+
 ## Typische Workflows
+
+### Eine neue SaaS-App anbinden
+
+Komplette Schritt-für-Schritt-Anleitung: [SaaS-Anbindung](../saas-anbindung) — Realm-Admin → App → OAuth-Client → Default-Resource-Server → Group/Role → Backend-Code.
 
 ### Neuen Mitarbeiter einrichten
 
 1. [Benutzer](./benutzer) anlegen (Vorname, Nachname, Email)
 2. **Anmelde-Link senden** — der Mitarbeiter setzt Passwort selbst und richtet sein 2FA ein
-3. Passenden [Gruppen](./gruppen) zuweisen — die haben bereits die richtigen Rollen
+3. Passenden [Gruppen](./gruppen) zuweisen — die haben bereits die richtigen Rollen + BoundTo zu den richtigen Apps
 4. Fertig — der Mitarbeiter kann sich einloggen und hat die richtigen Rechte in allen verbundenen Apps
-
-### Neue App ans IdP anbinden
-
-1. [OAuth-Client](./oauth-clients) erstellen
-   - Client-ID + Client-Secret werden generiert
-   - Redirect-URIs eintragen
-   - Erlaubte Scopes zuordnen (z.B. `openid profile email`)
-2. Der App-Entwickler trägt Client-ID, Secret und cocoar.auth-Discovery-URL in seine App ein
-3. Test-Login durchführen — fertig
 
 ### Externes SSO anbinden (Microsoft Entra)
 

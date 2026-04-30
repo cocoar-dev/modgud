@@ -11,6 +11,17 @@ Beispiele:
 
 ![OAuth-Clients-Liste](/screenshots/admin-oauth-clients.png)
 
+## Verbindung zu Applications
+
+Jeder OAuth-Client kann **null, eine oder mehrere [Applications](./applications)** zugeordnet werden (n:m, MultiSelect-Dropdown im Detail-Modal). Diese Zuordnung steuert zwei Dinge:
+
+1. **Token-Inhalt** — beim `/connect/userinfo`-Aufruf bekommt der Token einen `resource_access`-Block pro zugeordneter App, mit den App-spezifischen Rollen des Users. Resource-Server lesen ihren App-eigenen Block (Keycloak-Konvention).
+2. **Scope-Restriction** — der Client darf nur Scopes anfordern, die zu einer seiner Apps gehören (oder global sind, wie die OIDC-Standard-Scopes `openid`/`email`/`profile`/`roles`/`offline_access`).
+
+Der Standardfall ist **ein Client → eine App** (`timetodo-web` gehört zu `timetodo`). Multi-App-Clients sind für Bündel-Frontends gedacht, die mehrere Resource-Server gleichzeitig ansprechen.
+
+> **Schnelleinstieg:** Wenn du das erste Mal eine SaaS-App anbindest, folg dem [SaaS-Anbindung-Walkthrough](../saas-anbindung).
+
 ## Client anlegen
 
 Administration → **OAuth → Clients** → **„Erstellen"**.

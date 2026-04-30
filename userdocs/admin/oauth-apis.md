@@ -15,9 +15,16 @@ Eine App kann beides sein (z.B. ein BFF-Pattern: User-Login als Client, eigene A
 
 In den meisten Fällen reicht es, im [Scope](./oauth-scopes) eine Resource-URI einzutragen — die API kann dann mit Standard-OIDC-Discovery alles prüfen. Eine **explizite OAuth-API-Registrierung** brauchst du wenn:
 
+- Dein Backend will die **Distribution-API** (`/api/v1/distribution/me-permissions`) aufrufen, um Permissions live zu lesen — dort ist die OAuth-API-Identität die zweite Auth-Achse neben dem User-Bearer
 - Die Resource-API will sich am OAuth-Server selbst **authentifizieren** (z.B. für Token-Introspection)
 - Du willst **Multi-Secrets** (mehrere parallel gültige Secrets, z.B. für nahtlose Rotation)
 - Die API braucht **eigene Scopes-Listen** für Discovery
+
+## Verbindung zu Applications
+
+Jede OAuth-API gehört zu **genau einer [Application](./applications)** (1:1 Pflicht-Bindung wenn du die Distribution-API nutzen willst). Eine Microservice-Architektur unter einem App-Dach (`timetodo-api`, `timetodo-search`, `timetodo-files`) entsteht durch mehrere OAuth-APIs, die auf dieselbe App zeigen — Permissions bleiben dabei app-zentriert (alle Microservices sehen identische Rollen).
+
+> **Default-Resource-Server schnell:** Im [Applications-Detail](./applications) gibt es einen Klick-Button „Create default resource server". Der legt automatisch eine OAuth-API mit Name = App-Slug und der App-Bindung an, plus initiales Secret. Ist der schnellste Weg um den ersten RS für eine neue App zu provisionieren.
 
 ## API anlegen
 

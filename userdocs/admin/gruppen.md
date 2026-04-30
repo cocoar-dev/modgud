@@ -33,6 +33,21 @@ Tabs im Detail-Dialog:
   - **Statisch** — Du pflegst die Mitglieder manuell auf dem Tab „Mitglieder"
   - **Automatisch (Skript)** — Mitgliedschaft wird per Skript berechnet
   - **Hybrid** — Statische Mitglieder + zusätzlich berechnete
+- **Bound to apps** — *(MultiSelect)* in welchen Apps wirkt die Gruppe? Mehr dazu unten.
+
+#### Bound to apps — der Aktivierungs-Schalter
+
+Eine Gruppe kann Mitglieder und Rollen haben, ohne dass sie für Permissions wirkt. Was darüber entscheidet ist die **Bound-to-apps-Liste**:
+
+| Auswahl | Wirkung |
+| --- | --- |
+| **★ All apps (\*)** | Wildcard — die Gruppe ist in **jeder** App aktiv. Typisch für die Realm-Admin-Gruppe. |
+| Eine oder mehrere konkrete Apps | Die Gruppe wirkt nur, wenn die anfragende App in der Liste steht. |
+| **leer** | Gruppe ist *dormant* für Permissions — sie zählt nirgends. Sinnvoll für rein organisatorische Gruppen wie Mailing-Verteiler ("HR-Team", "Wien-Office"). |
+
+**Praktisches Verhalten:** Du kannst eine App temporär aus der Liste herausnehmen (z.B. während einer Wartung), ohne die Rollenzuordnung zu verlieren. Beim erneuten Hinzufügen der App ist die Gruppe sofort wieder aktiv. Rollen werden bei BoundTo-Änderungen **nicht** kaskadiert entfernt.
+
+**Standard für neue Gruppen:** `[cocoar-auth]`. Wenn du eine Gruppe für eine andere App anlegst, vergiss nicht, die App-Auswahl entsprechend zu setzen.
 
 ## Statische Mitgliedschaft
 
