@@ -7,6 +7,7 @@ using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Api.Account.Services;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth;
+using Cocoar.Auth.Authentication.Domain.LoginProviders;
 using BuildingBlocks.Helper;
 using Cocoar.Auth.Authentication.Identity;
 using Cocoar.Auth.Authentication.Sessions;
@@ -176,9 +177,9 @@ public static class AccountEndpoints
             SignInManager<ApplicationUser> signInManager,
             LogoutRequest? request) =>
         {
-            // Capture the IdP the session came from BEFORE signing out —
+            // Capture the provider the session came from BEFORE signing out —
             // we'll use it to build the IdP-side logout URL for the client.
-            var externalIdpConfigId = context.User.FindFirst("timetodo.external.idpConfigId")?.Value;
+            var externalLoginProviderId = context.User.FindFirst("cocoar.external.loginProviderId")?.Value;
 
             await signInManager.SignOutAsync();
 
@@ -187,9 +188,9 @@ public static class AccountEndpoints
             // "end everything" behavior for backwards compatibility.
             var endIdpSession = request?.EndIdpSession ?? true;
             string? externalLogoutUrl = null;
-            if (endIdpSession && !string.IsNullOrWhiteSpace(externalIdpConfigId))
+            if (endIdpSession && !string.IsNullOrWhiteSpace(externalLoginProviderId))
             {
-                externalLogoutUrl = $"/api/account/external-logout/{externalIdpConfigId}";
+                externalLogoutUrl = $"/api/account/external-logout/{externalLoginProviderId}";
             }
 
             return Results.Ok(new { Message = "Logout successful", ExternalLogoutUrl = externalLogoutUrl });
@@ -223,13 +224,13 @@ public static class AccountEndpoints
                        || c.Value.Equals("mca", StringComparison.OrdinalIgnoreCase)
                        || c.Value.Equals("pop", StringComparison.OrdinalIgnoreCase));
 
-            var externalIdpConfigIdRaw = context.User.FindFirst("timetodo.external.idpConfigId")?.Value;
-            var isFederated = !string.IsNullOrWhiteSpace(externalIdpConfigIdRaw);
+            var externalLoginProviderIdRaw = context.User.FindFirst("cocoar.external.loginProviderId")?.Value;
+            var isFederated = !string.IsNullOrWhiteSpace(externalLoginProviderIdRaw);
             string? idpDisplayName = null;
-            if (isFederated && Guid.TryParse(externalIdpConfigIdRaw, out var idpConfigId))
+            if (isFederated && Guid.TryParse(externalLoginProviderIdRaw, out var loginProviderId))
             {
-                var idpConfig = await session.LoadAsync<IdpConfig>(idpConfigId);
-                idpDisplayName = idpConfig?.DisplayName;
+                var loginProvider = await session.LoadAsync<LoginProvider>(loginProviderId);
+                idpDisplayName = loginProvider?.DisplayName;
             }
 
             return Results.Ok(new MeResponse(

@@ -7,6 +7,7 @@ using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Events;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth.Events;
+using Cocoar.Auth.Authentication.Domain.LoginProviders;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Domain.Users.Events;
 using Cocoar.Auth.Authentication.Identity.ExternalAuth;
@@ -37,11 +38,11 @@ public class ExternalLoginProcessor(
 {
     public async Task<ExternalLoginResult> ProcessAsync(
         ClaimsPrincipal externalPrincipal,
-        Guid idpConfigId,
+        Guid loginProviderId,
         CancellationToken ct,
         Guid? authenticatedUserId = null)
     {
-        var config = await session.LoadAsync<IdpConfig>(idpConfigId, ct);
+        var config = await session.LoadAsync<LoginProvider>(loginProviderId, ct);
         if (config is null || config.IsDeleted || !config.Enabled)
             return ExternalLoginResult.Failed("Idp.NotEnabled", "This identity provider is not available.");
 
@@ -54,7 +55,7 @@ public class ExternalLoginProcessor(
 
         if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(subject))
         {
-            logger.LogWarning("Auth: External login missing iss/sub (config {Id})", idpConfigId);
+            logger.LogWarning("Auth: External login missing iss/sub (config {Id})", loginProviderId);
             return ExternalLoginResult.Failed("Idp.InvalidToken", "The identity provider did not return a subject.");
         }
 
@@ -63,8 +64,8 @@ public class ExternalLoginProcessor(
         if (!scriptResult.Succeeded)
         {
             logger.LogWarning(
-                "Auth: UserUpdateScript failed for IdpConfig {Id} subject {Sub} — {Error}; continuing without property updates",
-                idpConfigId, subject, scriptResult.Error);
+                "Auth: UserUpdateScript failed for LoginProvider {Id} subject {Sub} — {Error}; continuing without property updates",
+                loginProviderId, subject, scriptResult.Error);
         }
 
         var capturedAt = clock.GetUtcNow();
@@ -121,8 +122,8 @@ public class ExternalLoginProcessor(
                     return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
 
                 await RecordScriptRunAsync(link, config, scriptResult, rawClaims, capturedAt, ct);
-                logger.LogInformation("Auth: External login (returning) user {UserId} via IdP {IdpId}", user.Id, idpConfigId);
-                return Success(user, link, externalPrincipal, idpConfigId, issuer);
+                logger.LogInformation("Auth: External login (returning) user {UserId} via IdP {IdpId}", user.Id, loginProviderId);
+                return Success(user, link, externalPrincipal, loginProviderId, issuer);
             }
         }
 
@@ -140,12 +141,12 @@ public class ExternalLoginProcessor(
                 return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
 
             var addedLink = await CreateLinkAsync(
-                existing.Id, idpConfigId, issuer, subject, scriptResult, rawClaims,
+                existing.Id, loginProviderId, issuer, subject, scriptResult, rawClaims,
                 config.StoreRawClaims, capturedAt, ct);
             logger.LogInformation(
                 "Auth: External identity linked to existing user {UserId} via IdP {IdpId}",
-                existing.Id, idpConfigId);
-            return Success(existing, addedLink, externalPrincipal, idpConfigId, issuer);
+                existing.Id, loginProviderId);
+            return Success(existing, addedLink, externalPrincipal, loginProviderId, issuer);
         }
 
         // 2. No link — domain allowlist gate (use email from script output)
@@ -154,7 +155,7 @@ public class ExternalLoginProcessor(
         {
             logger.LogWarning(
                 "Auth: External login rejected — email '{Email}' not in allowlist for IdP {IdpId}",
-                email ?? "(none)", idpConfigId);
+                email ?? "(none)", loginProviderId);
             return ExternalLoginResult.Failed("Idp.EmailNotAllowed", "Your email domain is not allowed for this provider.");
         }
 
@@ -175,10 +176,10 @@ public class ExternalLoginProcessor(
                     if (applyResult is not null)
                         return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
 
-                    var newLink = await CreateLinkAsync(user.Id, idpConfigId, issuer, subject, scriptResult, rawClaims, config.StoreRawClaims, capturedAt, ct);
+                    var newLink = await CreateLinkAsync(user.Id, loginProviderId, issuer, subject, scriptResult, rawClaims, config.StoreRawClaims, capturedAt, ct);
                     logger.LogInformation(
-                        "Auth: External login (email-linked) user {UserId} via IdP {IdpId}", user.Id, idpConfigId);
-                    return Success(user, newLink, externalPrincipal, idpConfigId, issuer);
+                        "Auth: External login (email-linked) user {UserId} via IdP {IdpId}", user.Id, loginProviderId);
+                    return Success(user, newLink, externalPrincipal, loginProviderId, issuer);
                 }
             }
         }
@@ -187,7 +188,7 @@ public class ExternalLoginProcessor(
         if (!config.AutoCreateUsers)
         {
             logger.LogWarning(
-                "Auth: External login rejected — no existing link, AutoCreateUsers=false for IdP {IdpId}", idpConfigId);
+                "Auth: External login rejected — no existing link, AutoCreateUsers=false for IdP {IdpId}", loginProviderId);
             return ExternalLoginResult.Failed("Idp.NoUserAndAutoCreateOff",
                 "No user is linked to this identity and automatic creation is disabled.");
         }
@@ -205,7 +206,7 @@ public class ExternalLoginProcessor(
         {
             logger.LogWarning(
                 "Auth: JIT creation rejected — email '{Email}' is already taken by another user (IdP {IdpId})",
-                email, idpConfigId);
+                email, loginProviderId);
             return ExternalLoginResult.Failed("Idp.EmailConflict",
                 "A Cocoar.Auth account with this email already exists. Please contact your administrator.");
         }
@@ -214,9 +215,9 @@ public class ExternalLoginProcessor(
         if (created is null)
             return ExternalLoginResult.Failed("Idp.JitCreationFailed", "Could not create a new user account.");
 
-        var jitLink = await CreateLinkAsync(created.Id, idpConfigId, issuer, subject, scriptResult, rawClaims, config.StoreRawClaims, capturedAt, ct);
-        logger.LogInformation("Auth: External login (JIT-created) user {UserId} via IdP {IdpId}", created.Id, idpConfigId);
-        return Success(created, jitLink, externalPrincipal, idpConfigId, issuer);
+        var jitLink = await CreateLinkAsync(created.Id, loginProviderId, issuer, subject, scriptResult, rawClaims, config.StoreRawClaims, capturedAt, ct);
+        logger.LogInformation("Auth: External login (JIT-created) user {UserId} via IdP {IdpId}", created.Id, loginProviderId);
+        return Success(created, jitLink, externalPrincipal, loginProviderId, issuer);
     }
 
     /// <summary>
@@ -318,7 +319,7 @@ public class ExternalLoginProcessor(
         ApplicationUser user,
         ExternalIdentityLink link,
         ClaimsPrincipal external,
-        Guid idpConfigId,
+        Guid loginProviderId,
         string issuer)
     {
         // Build the sign-in ClaimsPrincipal. Post-refactor we carry only the
@@ -332,7 +333,7 @@ public class ExternalLoginProcessor(
             identity.AddClaim(new Claim(ClaimTypes.Name, user.UserName));
         identity.AddClaim(new Claim("timetodo.external.issuer", issuer));
         identity.AddClaim(new Claim("timetodo.external.linkId", link.Id.ToString()));
-        identity.AddClaim(new Claim("timetodo.external.idpConfigId", idpConfigId.ToString()));
+        identity.AddClaim(new Claim("cocoar.external.loginProviderId", loginProviderId.ToString()));
 
         // Preserve AMR from the external ticket for TwoFactorFederated detection.
         foreach (var amr in external.FindAll("amr"))
@@ -347,7 +348,7 @@ public class ExternalLoginProcessor(
             ErrorMessage: null);
     }
 
-    private static bool IsEmailAllowed(IdpConfig config, string? email)
+    private static bool IsEmailAllowed(LoginProvider config, string? email)
     {
         if (config.AllowedEmailDomains is null || config.AllowedEmailDomains.Count == 0)
             return true;
@@ -359,7 +360,7 @@ public class ExternalLoginProcessor(
 
     private async Task<ExternalIdentityLink> CreateLinkAsync(
         Guid userId,
-        Guid idpConfigId,
+        Guid loginProviderId,
         string issuer,
         string subject,
         UserUpdateResult script,
@@ -375,7 +376,7 @@ public class ExternalLoginProcessor(
         var linkedEvent = new ExternalIdentityLinkedEvent(
             Id: linkId,
             UserId: userId,
-            IdpConfigId: idpConfigId,
+            LoginProviderId: loginProviderId,
             Issuer: issuer,
             Subject: subject,
             Email: email,
@@ -399,7 +400,7 @@ public class ExternalLoginProcessor(
         session.Events.Append(userId, new UserExternalIdentityLinkedEvent(
             UserId: userId,
             LinkId: linkId,
-            IdpConfigId: idpConfigId,
+            LoginProviderId: loginProviderId,
             Issuer: issuer,
             LinkedAt: capturedAt));
 
@@ -413,7 +414,7 @@ public class ExternalLoginProcessor(
 
     private async Task RecordScriptRunAsync(
         ExternalIdentityLink link,
-        IdpConfig config,
+        LoginProvider config,
         UserUpdateResult script,
         IReadOnlyDictionary<string, object?> rawClaims,
         DateTimeOffset capturedAt,

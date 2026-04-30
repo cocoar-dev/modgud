@@ -18,8 +18,8 @@ public class ExternalIdentityLink
     /// <summary>The Cocoar.Auth user this link belongs to.</summary>
     public Guid UserId { get; set; }
 
-    /// <summary>Which admin-registered IdP config was used to establish this link.</summary>
-    public Guid IdpConfigId { get; set; }
+    /// <summary>Which admin-registered login provider was used to establish this link.</summary>
+    public Guid LoginProviderId { get; set; }
 
     /// <summary>OIDC <c>iss</c> claim — unique per IdP instance. Part of the natural key.</summary>
     public string Issuer { get; set; } = string.Empty;

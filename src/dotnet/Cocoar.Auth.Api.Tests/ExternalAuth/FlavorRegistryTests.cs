@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Cocoar.Auth.Api.Tests.Infrastructure;
-using Cocoar.Auth.Authentication.Domain.ExternalAuth;
-using Cocoar.Auth.Authentication.Identity.ExternalAuth;
+using Cocoar.Auth.Authentication.Domain.LoginProviders;
+using Cocoar.Auth.Authentication.Identity.LoginProviders;
 
 namespace Cocoar.Auth.Api.Tests.ExternalAuth;
 
@@ -15,19 +15,19 @@ public class FlavorRegistryTests : IntegrationTestBase
     public void Registry_ContainsEntraIdAndGenericOidcFlavors()
     {
         using var scope = Factory.Services.CreateScope();
-        var registry = scope.ServiceProvider.GetRequiredService<FlavorRegistry>();
+        var registry = scope.ServiceProvider.GetRequiredService<LoginProviderFlavorRegistry>();
 
         var keys = registry.All.Select(f => f.Key).ToList();
-        Assert.Contains(IdpFlavor.EntraId, keys);
-        Assert.Contains(IdpFlavor.GenericOidc, keys);
+        Assert.Contains(LoginProviderFlavor.EntraId, keys);
+        Assert.Contains(LoginProviderFlavor.GenericOidc, keys);
     }
 
     [Fact]
     public void EntraIdFlavor_HasEnterpriseDefaultsAndTenantIdSchema()
     {
         using var scope = Factory.Services.CreateScope();
-        var registry = scope.ServiceProvider.GetRequiredService<FlavorRegistry>();
-        var flavor = registry.Get(IdpFlavor.EntraId);
+        var registry = scope.ServiceProvider.GetRequiredService<LoginProviderFlavorRegistry>();
+        var flavor = registry.Get(LoginProviderFlavor.EntraId);
 
         Assert.True(flavor.DefaultStoreRawClaims, "Enterprise flavor should default to storing raw claims");
         Assert.Contains("openid", flavor.DefaultScopes);
@@ -41,8 +41,8 @@ public class FlavorRegistryTests : IntegrationTestBase
     public void EntraIdFlavor_DeriveEndpoints_BuildsAuthorityFromTenantId()
     {
         using var scope = Factory.Services.CreateScope();
-        var registry = scope.ServiceProvider.GetRequiredService<FlavorRegistry>();
-        var flavor = registry.Get(IdpFlavor.EntraId);
+        var registry = scope.ServiceProvider.GetRequiredService<LoginProviderFlavorRegistry>();
+        var flavor = registry.Get(LoginProviderFlavor.EntraId);
 
         var flavorData = JsonDocument.Parse("""{"TenantId": "00000000-aaaa-bbbb-cccc-000000000000"}""");
         var endpoints = flavor.DeriveEndpoints(flavorData);
@@ -58,8 +58,8 @@ public class FlavorRegistryTests : IntegrationTestBase
     public void EntraIdFlavor_DeriveEndpoints_MissingTenantId_Throws()
     {
         using var scope = Factory.Services.CreateScope();
-        var registry = scope.ServiceProvider.GetRequiredService<FlavorRegistry>();
-        var flavor = registry.Get(IdpFlavor.EntraId);
+        var registry = scope.ServiceProvider.GetRequiredService<LoginProviderFlavorRegistry>();
+        var flavor = registry.Get(LoginProviderFlavor.EntraId);
 
         Assert.Throws<ArgumentException>(() => flavor.DeriveEndpoints(null));
         Assert.Throws<ArgumentException>(() =>
@@ -70,8 +70,8 @@ public class FlavorRegistryTests : IntegrationTestBase
     public void GenericOidcFlavor_DeriveEndpoints_UsesMetadataUri()
     {
         using var scope = Factory.Services.CreateScope();
-        var registry = scope.ServiceProvider.GetRequiredService<FlavorRegistry>();
-        var flavor = registry.Get(IdpFlavor.GenericOidc);
+        var registry = scope.ServiceProvider.GetRequiredService<LoginProviderFlavorRegistry>();
+        var flavor = registry.Get(LoginProviderFlavor.GenericOidc);
 
         var flavorData = JsonDocument.Parse("""{"MetadataUri": "https://idp.test/.well-known/openid-configuration"}""");
         var endpoints = flavor.DeriveEndpoints(flavorData);
@@ -84,11 +84,11 @@ public class FlavorRegistryTests : IntegrationTestBase
     public void Registry_UnknownKey_ThrowsHelpfulError()
     {
         using var scope = Factory.Services.CreateScope();
-        var registry = scope.ServiceProvider.GetRequiredService<FlavorRegistry>();
+        var registry = scope.ServiceProvider.GetRequiredService<LoginProviderFlavorRegistry>();
 
         var ex = Assert.Throws<KeyNotFoundException>(() => registry.Get("DoesNotExist"));
         Assert.Contains("DoesNotExist", ex.Message);
         // Error lists known keys so admin can see what's available
-        Assert.Contains(IdpFlavor.EntraId, ex.Message);
+        Assert.Contains(LoginProviderFlavor.EntraId, ex.Message);
     }
 }

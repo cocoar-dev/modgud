@@ -1,9 +1,7 @@
-using Cocoar.Auth.Domain.Identity.LoginProviders;
 using Cocoar.Auth.Domain.OAuth.Apis;
 using Cocoar.Auth.Domain.OAuth.Applications;
 using Cocoar.Auth.Domain.OAuth.Scopes;
 using Cocoar.Auth.Domain.OAuth.Storage;
-using Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.LoginProviders;
 using Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.OAuth;
 using JasperFx.Events.Projections;
 using Marten;
@@ -11,13 +9,14 @@ using Marten;
 namespace Cocoar.Auth.Infrastructure.OAuth;
 
 /// <summary>
-/// Marten wiring for the OAuth admin slice (clients, scopes, APIs) plus the
-/// adjacent login-provider slice. Registers documents, inline state projections,
-/// and stable event-type aliases so renames + namespace moves don't break
-/// persisted streams.
+/// Marten wiring for the OAuth admin slice (clients, scopes, APIs). Registers
+/// documents, inline state projections, and stable event-type aliases so renames
+/// + namespace moves don't break persisted streams.
 ///
 /// <para>Called from the Authentication slice's <c>UseCocoarAuthAuthentication</c>
-/// callback (kept there for now since OAuth has no separate slice project yet).</para>
+/// callback (kept there for now since OAuth has no separate slice project yet).
+/// The LoginProvider slice has its own registration in
+/// <c>UseCocoarAuthAuthentication</c>.</para>
 /// </summary>
 public static class OAuthMartenSetup
 {
@@ -50,11 +49,6 @@ public static class OAuthMartenSetup
 
         options.Schema.For<OAuthApiSecurityData>()
             .Identity(x => x.Id);
-
-        options.Schema.For<LoginProviderState>()
-            .Identity(x => x.Id)
-            .Index(x => x.Name)
-            .Index(x => x.IsDeleted);
 
         // OpenIddict authorization + token documents — string-id (OpenIddict gives
         // us a Guid-as-string); not event-sourced, ephemeral.
@@ -116,18 +110,10 @@ public static class OAuthMartenSetup
         options.Events.MapEventType<OAuthApiAppIdChanged>("oauth_api_app_id_changed");
         options.Events.MapEventType<OAuthApiDeleted>("oauth_api_deleted");
 
-        options.Events.MapEventType<LoginProviderCreated>("login_provider_created");
-        options.Events.MapEventType<LoginProviderNameChanged>("login_provider_name_changed");
-        options.Events.MapEventType<LoginProviderDisplayNameChanged>("login_provider_display_name_changed");
-        options.Events.MapEventType<LoginProviderDescriptionChanged>("login_provider_description_changed");
-        options.Events.MapEventType<LoginProviderConfigurationChanged>("login_provider_configuration_changed");
-        options.Events.MapEventType<LoginProviderDeleted>("login_provider_deleted");
-
         // Inline projections — admin reads + uniqueness checks need synchronous consistency.
         options.Projections.Add<OAuthApplicationStateProjection>(ProjectionLifecycle.Inline);
         options.Projections.Add<OAuthScopeStateProjection>(ProjectionLifecycle.Inline);
         options.Projections.Add<OAuthApiStateProjection>(ProjectionLifecycle.Inline);
-        options.Projections.Add<LoginProviderStateProjection>(ProjectionLifecycle.Inline);
 
         return options;
     }

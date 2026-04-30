@@ -1,17 +1,19 @@
 using System.Text.Json;
+using ErrorOr;
 using Marten;
 using Microsoft.AspNetCore.Identity;
-using Cocoar.Auth.Application.DTOs.LoginProviders;
 using Cocoar.Auth.Application.DTOs.OAuth;
 using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Authentication;
+using Cocoar.Auth.Authentication.Api.Admin.LoginProviders.Commands;
 using Cocoar.Auth.Authentication.Domain;
+using Cocoar.Auth.Authentication.Domain.LoginProviders;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Membership;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Roles;
-using Cocoar.Auth.Domain.Identity.LoginProviders;
+using Wolverine;
 
 namespace Cocoar.Auth.Api.Features.Dev;
 
@@ -59,7 +61,7 @@ public sealed class DemoSeedService : IDemoSeedService
         var membershipEvaluator = sp.GetRequiredService<IMembershipEvaluator>();
         var autoMembershipRecalculator = sp.GetRequiredService<IAutoMembershipRecalculator>();
         var oauthAdmin = sp.GetRequiredService<OAuthAdminService>();
-        var loginProviderService = sp.GetRequiredService<LoginProviderService>();
+        var bus = sp.GetRequiredService<IMessageBus>();
 
         _logger.LogInformation("[DemoSeed] Starting demo data import from {Path}", jsonPath);
 
@@ -331,31 +333,38 @@ public sealed class DemoSeedService : IDemoSeedService
         }
 
         // ── Phase 7: Login Providers ────────────────────────────────────────
-        var existingProviders = await loginProviderService.GetAllAsync();
-        var existingProviderNames = existingProviders.Items.Select(p => p.Name)
+        // After the IdpConfig + LoginProvider merge there is one path: every
+        // entry goes through CreateLoginProviderCommand with an explicit Type.
+        // Internal entries (the seeded built-in) are NOT in the JSON — the
+        // realm seeder owns that one.
+        var existingProviders = await session.Query<LoginProvider>()
+            .Where(x => !x.IsDeleted)
+            .ToListAsync();
+        var existingProviderNames = existingProviders.Select(p => p.DisplayName)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var p in data.LoginProviders)
         {
-            if (existingProviderNames.Contains(p.Name))
+            if (existingProviderNames.Contains(p.DisplayName))
             {
-                _logger.LogInformation("[DemoSeed] Skipping existing login provider '{Name}'", p.Name);
+                _logger.LogInformation("[DemoSeed] Skipping existing login provider '{DisplayName}'", p.DisplayName);
                 continue;
             }
-            if (!Enum.TryParse<LoginProviderType>(p.Type, ignoreCase: true, out var type))
-                type = LoginProviderType.OpenIdConnect;
-            var dto = new CreateLoginProviderDto
-            {
-                Name = p.Name,
-                DisplayName = p.DisplayName,
-                Description = p.Description,
-                Type = type,
-                Configuration = p.Configuration ?? new Dictionary<string, string>(),
-            };
-            var result = await loginProviderService.CreateAsync(dto);
+
+            var type = MapLoginProviderType(p.Type);
+            JsonDocument? flavorData = ParseFlavorData(p.FlavorData);
+
+            var command = new CreateLoginProviderCommand(
+                Flavor: p.Flavor ?? string.Empty,
+                DisplayName: p.DisplayName,
+                FlavorData: flavorData,
+                Type: type,
+                Description: p.Description);
+
+            var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command);
             if (result.IsError)
             {
-                _logger.LogWarning("[DemoSeed] Could not create login provider '{Name}': {Error}",
-                    p.Name, result.FirstError.Description);
+                _logger.LogWarning("[DemoSeed] Could not create login provider '{DisplayName}': {Error}",
+                    p.DisplayName, result.FirstError.Description);
                 continue;
             }
             counts.LoginProviders++;
@@ -511,12 +520,36 @@ public sealed class DemoSeedService : IDemoSeedService
         public bool? RequireClientSecret { get; init; }
     }
 
+    /// <summary>
+    /// JSON shape per login-provider entry in <c>data/demo-seed.json</c>.
+    /// <c>Type</c> is one of <c>Internal</c> / <c>Oidc</c> (case-insensitive);
+    /// for OIDC entries <c>Flavor</c> is the registry key (e.g. <c>EntraId</c>,
+    /// <c>GenericOidc</c>) and <c>FlavorData</c> is the flavor-specific JSON
+    /// payload (e.g. <c>{"MetadataUri": "..."}</c> for Generic OIDC).
+    /// </summary>
     private sealed record DemoLoginProvider
     {
-        public string Name { get; init; } = "";
-        public string? DisplayName { get; init; }
+        public string DisplayName { get; init; } = "";
         public string? Description { get; init; }
-        public string Type { get; init; } = "OpenIdConnect";
-        public Dictionary<string, string>? Configuration { get; init; }
+        public string Type { get; init; } = "Oidc";
+        public string? Flavor { get; init; }
+        public JsonElement? FlavorData { get; init; }
+    }
+
+    private static LoginProviderType MapLoginProviderType(string raw)
+    {
+        // Tolerate the legacy "OpenIdConnect" alias from earlier demo-seed
+        // snapshots — easier than asking everyone to refresh their copy.
+        if (string.Equals(raw, "OpenIdConnect", StringComparison.OrdinalIgnoreCase))
+            return LoginProviderType.Oidc;
+        return Enum.TryParse<LoginProviderType>(raw, ignoreCase: true, out var t)
+            ? t
+            : LoginProviderType.Oidc;
+    }
+
+    private static JsonDocument? ParseFlavorData(JsonElement? raw)
+    {
+        if (raw is null) return null;
+        return JsonDocument.Parse(raw.Value.GetRawText());
     }
 }

@@ -86,7 +86,7 @@ public class CocoarAuthPrincipalProjection : PrincipalProjectionBase
     public Principal Apply(UserExternalIdentityLinkedEvent @event, Principal current)
     {
         if (current is not Person person) return current;
-        var newRef = new ExternalIdentityRef(@event.LinkId, @event.IdpConfigId, @event.Issuer);
+        var newRef = new ExternalIdentityRef(@event.LinkId, @event.LoginProviderId, @event.Issuer);
         person.ExternalIdentities = person.ExternalIdentities
             .Where(r => r.LinkId != @event.LinkId)
             .Append(newRef)

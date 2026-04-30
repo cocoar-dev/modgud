@@ -1,7 +1,7 @@
 using System.Text.Json;
-using Cocoar.Auth.Authentication.Domain.ExternalAuth;
-using Cocoar.Auth.Authentication.Identity.ExternalAuth;
-using Cocoar.Auth.Authentication.Identity.ExternalAuth.Flavors;
+using Cocoar.Auth.Authentication.Domain.LoginProviders;
+using Cocoar.Auth.Authentication.Identity.LoginProviders;
+using Cocoar.Auth.Authentication.Identity.LoginProviders.Flavors;
 
 namespace Cocoar.Auth.Tests.Unit.ExternalAuth;
 
@@ -20,7 +20,7 @@ public class GenericOidcFlavorTests
         public void Key_is_the_canonical_GenericOidc_constant()
         {
             var flavor = new GenericOidcFlavor();
-            Assert.Equal(IdpFlavor.GenericOidc, flavor.Key);
+            Assert.Equal(LoginProviderFlavor.GenericOidc, flavor.Key);
             Assert.Equal("GenericOidc", flavor.Key);
         }
 

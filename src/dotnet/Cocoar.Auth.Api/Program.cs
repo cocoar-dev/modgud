@@ -22,11 +22,10 @@ using Cocoar.Auth.Authentication.ExtensionMethods;
 using Cocoar.Auth.Authentication.Api.Account;
 using Cocoar.Auth.Authentication.Api.Account.Services;
 using Cocoar.Auth.Api.Features.Admin;
-using Cocoar.Auth.Api.Features.Admin.LoginProviders;
 using Cocoar.Auth.Api.Features.Admin.OAuth;
 using Cocoar.Auth.Authentication.AuthLog;
 using Cocoar.Auth.Authentication.Api.Admin;
-using Cocoar.Auth.Authentication.Api.Admin.IdentityProviders;
+using Cocoar.Auth.Authentication.Api.Admin.LoginProviders;
 using Cocoar.Auth.Authentication.Api.ExternalAuth;
 using Cocoar.Auth.Api.Features.Dev;
 using Cocoar.Auth.Api.Features.Groups;
@@ -44,7 +43,8 @@ using Cocoar.Auth.Api.Features.Auth.OAuth;
 using Cocoar.Auth.Authentication.Setup;
 using Cocoar.Auth.Authentication.Identity;
 using Cocoar.Auth.Authentication.Identity.ExternalAuth;
-using Cocoar.Auth.Authentication.Identity.ExternalAuth.Flavors;
+using Cocoar.Auth.Authentication.Identity.LoginProviders;
+using Cocoar.Auth.Authentication.Identity.LoginProviders.Flavors;
 using Cocoar.Auth.Api.Middleware;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Cocoar.Auth.Infrastructure.Realms;
@@ -329,10 +329,12 @@ try
     builder.Services.AddScoped<IDemoSeedService, DemoSeedService>();
 
     // External auth (Phase 1–2: flavor registry + dynamic OIDC scheme registration)
-    builder.Services.AddSingleton<IIdentityProviderFlavor, EntraIdFlavor>();
-    builder.Services.AddSingleton<IIdentityProviderFlavor, GenericOidcFlavor>();
-    builder.Services.AddSingleton<FlavorRegistry>();
-    builder.Services.AddSingleton<IdpSecretStore>();
+    builder.Services.AddSingleton<ILoginProviderFlavor, EntraIdFlavor>();
+    builder.Services.AddSingleton<ILoginProviderFlavor, GenericOidcFlavor>();
+    builder.Services.AddSingleton<LoginProviderFlavorRegistry>();
+    builder.Services.AddSingleton<LoginProviderSecretStore>();
+    builder.Services.AddScoped<Cocoar.Auth.Application.Services.ILoginProviderRealmSeeder,
+        Cocoar.Auth.Authentication.Setup.LoginProviderRealmSeeder>();
     builder.Services.AddSingleton<UserUpdateScriptRunner>();
     builder.Services.AddSingleton<DynamicOidcSchemeManager>();
     builder.Services.AddScoped<ExternalLoginProcessor>();
@@ -536,7 +538,9 @@ try
     app.MapOAuthClientsEndpoints("api");
     app.MapOAuthScopesEndpoints("api");
     app.MapOAuthApisEndpoints("api");
-    app.MapLoginProvidersEndpoints("api");
+    // Login providers (admin surface) — formerly two surfaces (the stub
+    // LoginProvidersEndpoints + IdpConfigEndpoints). Phase 1 merge consolidates
+    // both behind the LoginProviders endpoints living in the Authentication slice.
     app.MapAdminMagicLinkEndpoints("api");
     app.MapAdminGraceEndpoints("api");
     app.MapAdminChangeRequestEndpoints("api");
@@ -556,7 +560,7 @@ try
     app.MapGdprEndpoints("api");
     app.MapExternalAuthEndpoints("api");
     app.MapProfileLinkEndpoints("api");
-    app.MapIdpConfigEndpoints("api");
+    app.MapLoginProvidersEndpoints("api");
     app.MapUserUpdateScriptTestEndpoint("api");
 
     // Marten Endpoints
@@ -658,6 +662,11 @@ try
             realmScope.ServiceProvider,
             TenantConstants.SystemTenantId,
             realmScope.ServiceProvider.GetRequiredService<ILogger<Program>>());
+        await realmScope.ServiceProvider
+            .GetRequiredService<Cocoar.Auth.Application.Services.ILoginProviderRealmSeeder>()
+            .SeedAsync(
+                TenantConstants.SystemTenantId,
+                realmScope.ServiceProvider.GetRequiredService<ILogger<Program>>());
 
         // Seed the system app `cocoar-auth` into the system tenant DB so
         // app-scoped permissions can resolve before the first realm

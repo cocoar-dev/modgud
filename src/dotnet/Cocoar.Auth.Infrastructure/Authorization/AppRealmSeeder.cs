@@ -35,7 +35,6 @@ public static class AppRealmSeeder
         "auth-log",
         "gdpr",
         "realm",
-        "idp-config",
         "oauth",
         "oauth-client",
         "oauth-scope",

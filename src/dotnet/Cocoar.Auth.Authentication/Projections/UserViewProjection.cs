@@ -125,20 +125,22 @@ public class UserViewProjection : MultiStreamProjection<UserView, Guid>
 
     public UserView Apply(UserExternalIdentityLinkedEvent @event, UserView current)
     {
-        if (current.ExternalIdpConfigIds.Contains(@event.IdpConfigId)) return current;
+        // Field is still named ExternalIdpConfigIds because the FE consumes
+        // that JSON property. Phase 3 (frontend cleanup) will rename it.
+        if (current.ExternalIdpConfigIds.Contains(@event.LoginProviderId)) return current;
         return current with
         {
-            ExternalIdpConfigIds = [.. current.ExternalIdpConfigIds, @event.IdpConfigId],
+            ExternalIdpConfigIds = [.. current.ExternalIdpConfigIds, @event.LoginProviderId],
         };
     }
 
     public UserView Apply(UserExternalIdentityUnlinkedEvent @event, UserView current)
     {
-        if (!current.ExternalIdpConfigIds.Contains(@event.IdpConfigId)) return current;
+        if (!current.ExternalIdpConfigIds.Contains(@event.LoginProviderId)) return current;
         return current with
         {
             ExternalIdpConfigIds = current.ExternalIdpConfigIds
-                .Where(id => id != @event.IdpConfigId)
+                .Where(id => id != @event.LoginProviderId)
                 .ToList(),
         };
     }

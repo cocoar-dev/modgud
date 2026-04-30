@@ -4,11 +4,14 @@ using Cocoar.Auth.Authentication.AuthLog;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth.Events;
+using Cocoar.Auth.Authentication.Domain.LoginProviders;
+using Cocoar.Auth.Authentication.Domain.LoginProviders.Events;
 using Cocoar.Auth.Authentication.Events;
 using Cocoar.Auth.Authentication.Gdpr;
 using Cocoar.Auth.Domain.Common;
 using Cocoar.Auth.Domain.Users.Events;
 using Cocoar.Auth.Authentication.Identity.ExternalAuth;
+using Cocoar.Auth.Authentication.Identity.LoginProviders;
 using Cocoar.Auth.Authentication.Projections;
 
 namespace Cocoar.Auth.Authentication.Setup;
@@ -68,8 +71,9 @@ public static class MartenStoreOptionsExtensions
         options.Schema.For<UserDeletionState>()
             .Identity(x => x.Id);
 
-        options.Schema.For<IdpConfig>()
+        options.Schema.For<LoginProvider>()
             .Identity(x => x.Id)
+            .Index(x => x.Type)
             .Index(x => x.Flavor)
             .Index(x => x.Enabled)
             .Index(x => x.IsDeleted);
@@ -78,7 +82,7 @@ public static class MartenStoreOptionsExtensions
             .Identity(x => x.Id)
             .UniqueIndex(x => x.Issuer, x => x.Subject)
             .Index(x => x.UserId)
-            .Index(x => x.IdpConfigId)
+            .Index(x => x.LoginProviderId)
             .Index(x => x.IsUnlinked);
 
         options.Schema.For<AuthLogDocument>()
@@ -97,13 +101,16 @@ public static class MartenStoreOptionsExtensions
         options.Events.MapEventType<UserActivatedEvent>("user_activated");
         options.Events.MapEventType<UserDeactivatedEvent>("user_deactivated");
 
-        // IdP config events
-        options.Events.MapEventType<IdpConfigAddedEvent>("idp_config_added");
-        options.Events.MapEventType<IdpConfigUpdatedEvent>("idp_config_updated");
-        options.Events.MapEventType<IdpConfigSecretRotatedEvent>("idp_config_secret_rotated");
-        options.Events.MapEventType<IdpConfigEnabledEvent>("idp_config_enabled");
-        options.Events.MapEventType<IdpConfigDisabledEvent>("idp_config_disabled");
-        options.Events.MapEventType<IdpConfigDeletedEvent>("idp_config_deleted");
+        // Login provider events (event-aliases keep the legacy `idp_config_*`
+        // wire format because there is no migration concern — the names are an
+        // implementation detail of stored streams. New deployments only see
+        // these aliases via the event store; class names are LoginProvider*.)
+        options.Events.MapEventType<LoginProviderAddedEvent>("login_provider_added");
+        options.Events.MapEventType<LoginProviderUpdatedEvent>("login_provider_updated");
+        options.Events.MapEventType<LoginProviderSecretRotatedEvent>("login_provider_secret_rotated");
+        options.Events.MapEventType<LoginProviderEnabledEvent>("login_provider_enabled");
+        options.Events.MapEventType<LoginProviderDisabledEvent>("login_provider_disabled");
+        options.Events.MapEventType<LoginProviderDeletedEvent>("login_provider_deleted");
 
         // External identity link events
         options.Events.MapEventType<ExternalIdentityLinkedEvent>("external_identity_linked");
@@ -155,7 +162,7 @@ public static class MartenStoreOptionsExtensions
             new UserLoginFailedEvent(e.UserId, IpAddress: null));
 
         // External-auth projections — inline (login flow reads these synchronously)
-        options.Projections.Add<IdpConfigProjection>(ProjectionLifecycle.Inline);
+        options.Projections.Add<LoginProviderProjection>(ProjectionLifecycle.Inline);
         options.Projections.Add<ExternalIdentityLinkProjection>(ProjectionLifecycle.Inline);
 
         // Unified principal projection — Person+Group doc, inline for synchronously-consistent

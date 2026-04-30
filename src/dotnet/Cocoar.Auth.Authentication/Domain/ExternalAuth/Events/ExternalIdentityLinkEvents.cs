@@ -6,12 +6,12 @@ namespace Cocoar.Auth.Authentication.Domain.ExternalAuth.Events;
 
 /// <summary>
 /// A user is linked (first time) to an external identity. One event per link
-/// — same user + different IdP = separate link + separate stream.
+/// — same user + different provider = separate link + separate stream.
 /// </summary>
 public record ExternalIdentityLinkedEvent(
     Guid Id,
     Guid UserId,
-    Guid IdpConfigId,
+    Guid LoginProviderId,
     string Issuer,
     string Subject,
     string? Email,

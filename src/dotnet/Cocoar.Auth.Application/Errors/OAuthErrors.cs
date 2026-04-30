@@ -52,18 +52,3 @@ public static class OAuthErrors
         code: "OAuth.ApiSecretNotFound",
         description: $"API secret with ID '{secretId}' was not found.");
 }
-
-public static class LoginProviderErrors
-{
-    public static Error NotFound(string id) => Error.NotFound(
-        code: "LoginProvider.NotFound",
-        description: $"Login provider with ID '{id}' was not found.");
-
-    public static Error DuplicateName(string name) => Error.Conflict(
-        code: "LoginProvider.DuplicateName",
-        description: $"A login provider with name '{name}' already exists.");
-
-    public static Error CannotDeleteBuiltIn(string name) => Error.Validation(
-        code: "LoginProvider.CannotDeleteBuiltIn",
-        description: $"Cannot delete the built-in login provider '{name}'.");
-}

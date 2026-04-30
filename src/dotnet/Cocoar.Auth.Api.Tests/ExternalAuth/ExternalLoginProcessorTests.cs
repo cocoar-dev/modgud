@@ -4,12 +4,14 @@ using ErrorOr;
 using Marten;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
-using Cocoar.Auth.Authentication.Api.Admin.IdentityProviders.Commands;
+using Cocoar.Auth.Authentication.Api.Admin.LoginProviders.Commands;
 using Cocoar.Auth.Authentication.Api.ExternalAuth;
 using Cocoar.Auth.Api.Tests.Infrastructure;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth.Events;
+using Cocoar.Auth.Authentication.Domain.LoginProviders;
+using Cocoar.Auth.Authentication.Domain.LoginProviders.Events;
 using Cocoar.Auth.Authorization.Principals;
 
 using Wolverine;
@@ -200,7 +202,7 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
         Assert.Equal("Idp.InvalidToken", result.ErrorCode);
     }
 
-    private async Task<IdpConfig> CreateEnabledEntraConfig(
+    private async Task<LoginProvider> CreateEnabledEntraConfig(
         bool autoCreate = false,
         bool trustForEmailLink = false,
         string[]? allowedDomains = null)
@@ -210,16 +212,17 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
         var flavorData = JsonDocument.Parse("""{"TenantId": "test-tenant"}""");
-        var result = await bus.InvokeAsync<ErrorOr<IdpConfig>>(new CreateIdpConfigCommand(
-            Flavor: IdpFlavor.EntraId,
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: LoginProviderFlavor.EntraId,
             DisplayName: "Test Entra " + Guid.NewGuid().ToString("N")[..6],
             FlavorData: flavorData));
         Assert.False(result.IsError);
         var id = result.Value.Id;
 
-        session.Events.Append(id, new IdpConfigUpdatedEvent(
+        session.Events.Append(id, new LoginProviderUpdatedEvent(
             Id: id,
             DisplayName: result.Value.DisplayName,
+            Description: null,
             ClientId: "client-id-test",
             Scopes: ["openid", "profile", "email"],
             UserUpdateScript: """
@@ -240,13 +243,13 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
             ButtonColorHex: null,
             FlavorData: flavorData,
             UpdatedAt: DateTimeOffset.UtcNow));
-        session.Events.Append(id, new IdpConfigEnabledEvent(id, DateTimeOffset.UtcNow));
+        session.Events.Append(id, new LoginProviderEnabledEvent(id, DateTimeOffset.UtcNow));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        return (await session.LoadAsync<IdpConfig>(id, TestContext.Current.CancellationToken))!;
+        return (await session.LoadAsync<LoginProvider>(id, TestContext.Current.CancellationToken))!;
     }
 
-    private async Task<Guid> LinkUserAsync(Guid userId, Guid idpConfigId, string subject)
+    private async Task<Guid> LinkUserAsync(Guid userId, Guid loginProviderId, string subject)
     {
         var linkId = Guid.NewGuid();
         using var scope = Factory.Services.CreateScope();
@@ -255,14 +258,14 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
             new ExternalIdentityLinkedEvent(
                 Id: linkId,
                 UserId: userId,
-                IdpConfigId: idpConfigId,
+                LoginProviderId: loginProviderId,
                 Issuer: Issuer,
                 Subject: subject,
                 Email: null,
                 DisplayName: null,
                 LinkedAt: DateTimeOffset.UtcNow));
         session.Events.Append(userId, new UserExternalIdentityLinkedEvent(
-            userId, linkId, idpConfigId, Issuer, DateTimeOffset.UtcNow));
+            userId, linkId, loginProviderId, Issuer, DateTimeOffset.UtcNow));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
         return linkId;
     }

@@ -150,15 +150,12 @@
 
   "loginProviders": [
     {
-      "name": "DemoOidc",
       "displayName": "Demo OIDC Provider",
       "description": "Disabled-by-default template for an external OIDC provider — clone and configure with your IdP details.",
-      "type": "OpenIdConnect",
-      "configuration": {
-        "Authority":    "https://example.invalid/",
-        "ClientId":     "demo-oidc-client",
-        "ClientSecret": "change-me",
-        "Enabled":      "false"
+      "type": "Oidc",
+      "flavor": "GenericOidc",
+      "flavorData": {
+        "MetadataUri": "https://example.invalid/.well-known/openid-configuration"
       }
     }
   ]

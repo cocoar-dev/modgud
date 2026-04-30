@@ -56,7 +56,6 @@ public class OwaspTop10Tests : IntegrationTestBase
             "/api/admin/oauth/scopes",
             "/api/admin/oauth/apis",
             "/api/admin/login-providers",
-            "/api/admin/idp-config",
             "/api/admin/auth-log",
             "/api/admin/change-requests",
         };

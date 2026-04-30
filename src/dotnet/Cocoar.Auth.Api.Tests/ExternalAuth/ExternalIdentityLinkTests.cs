@@ -30,7 +30,7 @@ public class ExternalIdentityLinkTests : IntegrationTestBase
                 new ExternalIdentityLinkedEvent(
                     Id: linkId,
                     UserId: user.Id,
-                    IdpConfigId: idpConfigId,
+                    LoginProviderId: idpConfigId,
                     Issuer: "https://entra.example.com/tenant-1/v2.0",
                     Subject: "subject-abc-123",
                     Email: "alice@acme.com",
@@ -71,7 +71,7 @@ public class ExternalIdentityLinkTests : IntegrationTestBase
             var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
             session.Events.StartStream<ExternalIdentityLink>(Guid.NewGuid(),
                 new ExternalIdentityLinkedEvent(
-                    Id: Guid.NewGuid(), UserId: user1.Id, IdpConfigId: idp,
+                    Id: Guid.NewGuid(), UserId: user1.Id, LoginProviderId: idp,
                     Issuer: issuer, Subject: subject,
                     Email: null, DisplayName: null, LinkedAt: DateTimeOffset.UtcNow));
             await session.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -82,7 +82,7 @@ public class ExternalIdentityLinkTests : IntegrationTestBase
             var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
             session.Events.StartStream<ExternalIdentityLink>(Guid.NewGuid(),
                 new ExternalIdentityLinkedEvent(
-                    Id: Guid.NewGuid(), UserId: user2.Id, IdpConfigId: idp,
+                    Id: Guid.NewGuid(), UserId: user2.Id, LoginProviderId: idp,
                     Issuer: issuer, Subject: subject,
                     Email: null, DisplayName: null, LinkedAt: DateTimeOffset.UtcNow));
 
@@ -105,7 +105,7 @@ public class ExternalIdentityLinkTests : IntegrationTestBase
             var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
             session.Events.StartStream<ExternalIdentityLink>(linkId,
                 new ExternalIdentityLinkedEvent(
-                    Id: linkId, UserId: user.Id, IdpConfigId: idpConfigId,
+                    Id: linkId, UserId: user.Id, LoginProviderId: idpConfigId,
                     Issuer: "https://idp.test", Subject: "bob-subject",
                     Email: "bob@acme.com", DisplayName: "Bob", LinkedAt: DateTimeOffset.UtcNow));
             await session.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -170,7 +170,7 @@ public class ExternalIdentityLinkTests : IntegrationTestBase
                 new UserExternalIdentityLinkedEvent(
                     UserId: user.Id,
                     LinkId: linkId,
-                    IdpConfigId: idpConfigId,
+                    LoginProviderId: idpConfigId,
                     Issuer: "https://entra.example.com",
                     LinkedAt: DateTimeOffset.UtcNow));
             await session.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -186,7 +186,7 @@ public class ExternalIdentityLinkTests : IntegrationTestBase
             var refs = principal.ExternalIdentities;
             Assert.Single(refs);
             Assert.Equal(linkId, refs[0].LinkId);
-            Assert.Equal(idpConfigId, refs[0].IdpConfigId);
+            Assert.Equal(idpConfigId, refs[0].LoginProviderId);
             Assert.Equal("https://entra.example.com", refs[0].Issuer);
         }
     }

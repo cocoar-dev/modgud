@@ -153,9 +153,6 @@ public static class DependencyInjection
             // Realms (multi-tenant management — only meaningful in tenant-management realms)
             opt.RegisterResource(app, "realm", "read", "write");
 
-            // Identity-provider configs (external OIDC IdPs)
-            opt.RegisterResource(app, "idp-config", "read", "write");
-
             // OAuth admin surface — granular AND a kept-as-bypass `oauth:admin`.
             opt.RegisterResource(app, "oauth", "admin");
             opt.RegisterResource(app, "oauth-client", "read", "write");
@@ -169,7 +166,6 @@ public static class DependencyInjection
         // OAuth admin slice services — both consume the tenant-scoped IDocumentSession
         // injected by TenantedSessionFactory, so calls land in the correct realm DB.
         services.AddScoped<OAuthAdminService>();
-        services.AddScoped<LoginProviderService>();
 
         // Register JsEval (Linq-enabled + Principal discriminator mappings for Type.Is() in membership scripts)
         services.AddJsEval(b => b

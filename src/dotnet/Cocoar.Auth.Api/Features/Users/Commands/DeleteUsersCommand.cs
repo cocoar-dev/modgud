@@ -48,7 +48,7 @@ public class DeleteUsersHandler(IDocumentSession session, TimeProvider clock)
                 session.Delete<ExternalIdentityLink>(link.Id);
                 session.Events.ArchiveStream(link.Id);
                 session.Events.Append(id,
-                    new UserExternalIdentityUnlinkedEvent(id, link.Id, link.IdpConfigId, now));
+                    new UserExternalIdentityUnlinkedEvent(id, link.Id, link.LoginProviderId, now));
             }
         }
 

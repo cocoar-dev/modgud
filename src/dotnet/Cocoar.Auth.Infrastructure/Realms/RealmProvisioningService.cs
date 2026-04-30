@@ -1,11 +1,13 @@
 using System.Text.RegularExpressions;
 using Cocoar.Auth.Application.DTOs.Realms;
+using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Domain.Realms;
 using Cocoar.Auth.Infrastructure.Authorization;
 using Cocoar.Auth.Infrastructure.OAuth;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using ErrorOr;
 using Marten;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -143,10 +145,19 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         session.Store(realm);
         await session.SaveChangesAsync(ct);
 
-        // Per-realm OAuth seeding — standard OIDC scopes + the built-in
-        // "Internal" login provider land in the new tenant DB. Idempotent.
-        // Default Admin role / per-realm Setup flow is still TODO.
+        // Per-realm OAuth seeding — standard OIDC scopes land in the new tenant DB.
+        // Idempotent. Default Admin role / per-realm Setup flow is still TODO.
         await OAuthRealmSeeder.SeedAsync(_serviceProvider, dto.Slug, _logger, ct);
+
+        // Per-realm login-provider seeding — the built-in Internal provider.
+        // Lives behind an interface (impl in the Authentication slice) so we
+        // can call it without taking a project ref on Authentication.
+        using (var seederScope = _serviceProvider.CreateScope())
+        {
+            await seederScope.ServiceProvider
+                .GetRequiredService<ILoginProviderRealmSeeder>()
+                .SeedAsync(dto.Slug, _logger, ct);
+        }
 
         // Per-realm App seeding — the system app `cocoar-auth` is registered
         // in every realm so app-scoped permissions resolve from day one.

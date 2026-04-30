@@ -9,12 +9,12 @@ namespace Cocoar.Auth.Authentication.Domain.ExternalAuth.Events;
 public record UserExternalIdentityLinkedEvent(
     Guid UserId,
     Guid LinkId,
-    Guid IdpConfigId,
+    Guid LoginProviderId,
     string Issuer,
     DateTimeOffset LinkedAt);
 
 public record UserExternalIdentityUnlinkedEvent(
     Guid UserId,
     Guid LinkId,
-    Guid IdpConfigId,
+    Guid LoginProviderId,
     DateTimeOffset UnlinkedAt);

@@ -5,11 +5,11 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Cocoar.Auth.Authentication.Api.Admin.IdentityProviders.Commands;
+using Cocoar.Auth.Authentication.Api.Admin.LoginProviders.Commands;
 using Cocoar.Auth.Authentication.Api.ExternalAuth;
 using Cocoar.Auth.Api.Tests.Infrastructure;
-using Cocoar.Auth.Authentication.Domain.ExternalAuth;
-using Cocoar.Auth.Authentication.Domain.ExternalAuth.Events;
+using Cocoar.Auth.Authentication.Domain.LoginProviders;
+using Cocoar.Auth.Authentication.Domain.LoginProviders.Events;
 using Wolverine;
 
 namespace Cocoar.Auth.Api.Tests.ExternalAuth;
@@ -121,7 +121,7 @@ public class DynamicOidcSchemeManagerTests : IntegrationTestBase
         Assert.DoesNotContain(items, x => x.Id == disabled.Id);
     }
 
-    private async Task<IdpConfig> CreateEntraConfigAsync(
+    private async Task<LoginProvider> CreateEntraConfigAsync(
         bool enabled,
         bool withClientId,
         string? displayName = null)
@@ -134,21 +134,22 @@ public class DynamicOidcSchemeManagerTests : IntegrationTestBase
             """{"TenantId": "11111111-2222-3333-4444-555555555555"}""");
 
         var name = displayName ?? $"Test-{Guid.NewGuid():N}"[..16];
-        var result = await bus.InvokeAsync<ErrorOr<IdpConfig>>(new CreateIdpConfigCommand(
-            Flavor: IdpFlavor.EntraId,
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: LoginProviderFlavor.EntraId,
             DisplayName: name,
             FlavorData: flavorData));
         Assert.False(result.IsError, result.IsError ? result.FirstError.Description : "");
 
         var id = result.Value.Id;
 
-        // Patch the projection directly for test convenience — production uses
-        // UpdateIdpConfigCommand + IdpConfigEnabledEvent which we haven't added
-        // yet (Phase 6 brings the full CRUD handler).
+        // Patch the projection directly for test convenience — fastest way to
+        // get a fully-populated, enabled provider without wiring the secret-
+        // rotation flow.
         session.Events.Append(id,
-            new IdpConfigUpdatedEvent(
+            new LoginProviderUpdatedEvent(
                 Id: id,
                 DisplayName: name,
+                Description: null,
                 ClientId: withClientId ? "client-id-1" : string.Empty,
                 Scopes: ["openid", "profile", "email"],
                 UserUpdateScript: "(claims) => ({ email: claims.email })",
@@ -164,10 +165,10 @@ public class DynamicOidcSchemeManagerTests : IntegrationTestBase
                 UpdatedAt: DateTimeOffset.UtcNow));
         if (enabled)
         {
-            session.Events.Append(id, new IdpConfigEnabledEvent(id, DateTimeOffset.UtcNow));
+            session.Events.Append(id, new LoginProviderEnabledEvent(id, DateTimeOffset.UtcNow));
         }
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        return (await session.LoadAsync<IdpConfig>(id, TestContext.Current.CancellationToken))!;
+        return (await session.LoadAsync<LoginProvider>(id, TestContext.Current.CancellationToken))!;
     }
 }

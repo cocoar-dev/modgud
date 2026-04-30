@@ -1,4 +1,3 @@
-using Cocoar.Auth.Domain.Identity.LoginProviders;
 using Cocoar.Auth.Domain.OAuth.Scopes;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,10 +7,14 @@ using DomainScopes = Cocoar.Auth.Domain.OAuth.Scopes.StandardScopes;
 namespace Cocoar.Auth.Infrastructure.OAuth;
 
 /// <summary>
-/// Seeds the standard OpenID Connect scopes (<c>openid</c>, <c>email</c>, …) and
-/// the built-in <c>Internal</c> login provider into a tenant database. Called from
-/// <c>RealmProvisioningService</c> on new-realm creation and from app bootstrap
-/// for the system realm. Idempotent — re-running has no effect once seeded.
+/// Seeds the standard OpenID Connect scopes (<c>openid</c>, <c>email</c>, …)
+/// into a tenant database. Called from <c>RealmProvisioningService</c> on
+/// new-realm creation and from app bootstrap for the system realm.
+/// Idempotent — re-running has no effect once seeded.
+/// <para>
+/// The companion <c>LoginProviderRealmSeeder</c> in the Authentication slice
+/// owns the <c>Internal</c> login provider seed.
+/// </para>
 /// </summary>
 public static class OAuthRealmSeeder
 {
@@ -30,14 +33,13 @@ public static class OAuthRealmSeeder
         await using var session = store.LightweightSession(tenantId);
 
         var seededScopes = await SeedScopesAsync(session, ct);
-        var seededProvider = await SeedInternalLoginProviderAsync(session, ct);
 
-        if (seededScopes > 0 || seededProvider)
+        if (seededScopes > 0)
         {
             await session.SaveChangesAsync(ct);
             logger?.LogInformation(
-                "Seeded OAuth defaults for tenant '{TenantId}' — {ScopeCount} scope(s), Internal login provider: {SeededProvider}",
-                tenantId, seededScopes, seededProvider);
+                "Seeded OAuth defaults for tenant '{TenantId}' — {ScopeCount} scope(s)",
+                tenantId, seededScopes);
         }
     }
 
@@ -59,24 +61,5 @@ public static class OAuthRealmSeeder
             seeded++;
         }
         return seeded;
-    }
-
-    private static async Task<bool> SeedInternalLoginProviderAsync(IDocumentSession session, CancellationToken ct)
-    {
-        var existing = await session.Query<LoginProviderState>()
-            .FirstOrDefaultAsync(x => x.Name == "Internal" && !x.IsDeleted, ct);
-        if (existing is not null) return false;
-
-        var id = Guid.NewGuid();
-        var (_, created) = LoginProviderAggregate.Create(
-            id,
-            "Internal",
-            "Internal Authentication",
-            "Built-in password-based authentication",
-            LoginProviderType.Internal,
-            new Dictionary<string, string>(),
-            isBuiltIn: true);
-        session.Events.StartStream<LoginProviderAggregate>(id, created);
-        return true;
     }
 }

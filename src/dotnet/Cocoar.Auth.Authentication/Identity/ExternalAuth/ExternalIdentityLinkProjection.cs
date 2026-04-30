@@ -15,7 +15,7 @@ public class ExternalIdentityLinkProjection : SingleStreamProjection<ExternalIde
     {
         Id = @event.Id,
         UserId = @event.UserId,
-        IdpConfigId = @event.IdpConfigId,
+        LoginProviderId = @event.LoginProviderId,
         Issuer = @event.Issuer,
         Subject = @event.Subject,
         Email = @event.Email,

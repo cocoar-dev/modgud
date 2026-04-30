@@ -1,19 +1,20 @@
-using Cocoar.Auth.Authentication.Domain.ExternalAuth;
-using Cocoar.Auth.Authentication.Identity.ExternalAuth;
-using Cocoar.Auth.Authentication.Identity.ExternalAuth.Flavors;
+using Cocoar.Auth.Authentication.Domain.LoginProviders;
+using Cocoar.Auth.Authentication.Identity.LoginProviders;
+using Cocoar.Auth.Authentication.Identity.LoginProviders.Flavors;
 
 namespace Cocoar.Auth.Tests.Unit.ExternalAuth;
 
 /// <summary>
-/// Pure-construction tests for <see cref="FlavorRegistry"/> — no DI container,
-/// flavors are passed directly into the constructor. Sister integration tests
-/// in <c>Cocoar.Auth.Api.Tests</c> verify DI-registered wire-up.
+/// Pure-construction tests for <see cref="LoginProviderFlavorRegistry"/> — no DI
+/// container, flavors are passed directly into the constructor. Sister
+/// integration tests in <c>Cocoar.Auth.Api.Tests</c> verify DI-registered
+/// wire-up.
 /// </summary>
-public class FlavorRegistryTests
+public class LoginProviderFlavorRegistryTests
 {
-    private static FlavorRegistry NewRegistry(params IIdentityProviderFlavor[] flavors) => new(flavors);
+    private static LoginProviderFlavorRegistry NewRegistry(params ILoginProviderFlavor[] flavors) => new(flavors);
 
-    private static FlavorRegistry NewDefaultRegistry() =>
+    private static LoginProviderFlavorRegistry NewDefaultRegistry() =>
         NewRegistry(new EntraIdFlavor(), new GenericOidcFlavor());
 
     public class Resolution
@@ -25,8 +26,8 @@ public class FlavorRegistryTests
             var generic = new GenericOidcFlavor();
             var registry = NewRegistry(entra, generic);
 
-            Assert.Same(entra, registry.Get(IdpFlavor.EntraId));
-            Assert.Same(generic, registry.Get(IdpFlavor.GenericOidc));
+            Assert.Same(entra, registry.Get(LoginProviderFlavor.EntraId));
+            Assert.Same(generic, registry.Get(LoginProviderFlavor.GenericOidc));
         }
 
         [Fact]
@@ -46,8 +47,8 @@ public class FlavorRegistryTests
             var ex = Assert.Throws<KeyNotFoundException>(() => registry.Get("Okta"));
             Assert.Contains("Okta", ex.Message);
             // Error message lists known keys to help the operator.
-            Assert.Contains(IdpFlavor.EntraId, ex.Message);
-            Assert.Contains(IdpFlavor.GenericOidc, ex.Message);
+            Assert.Contains(LoginProviderFlavor.EntraId, ex.Message);
+            Assert.Contains(LoginProviderFlavor.GenericOidc, ex.Message);
         }
 
         [Fact]
@@ -55,7 +56,7 @@ public class FlavorRegistryTests
         {
             var registry = NewDefaultRegistry();
 
-            Assert.True(registry.TryGet(IdpFlavor.EntraId, out var flavor));
+            Assert.True(registry.TryGet(LoginProviderFlavor.EntraId, out var flavor));
             Assert.IsType<EntraIdFlavor>(flavor);
         }
 
@@ -87,8 +88,8 @@ public class FlavorRegistryTests
 
             var keys = registry.All.Select(f => f.Key).ToList();
 
-            Assert.Contains(IdpFlavor.EntraId, keys);
-            Assert.Contains(IdpFlavor.GenericOidc, keys);
+            Assert.Contains(LoginProviderFlavor.EntraId, keys);
+            Assert.Contains(LoginProviderFlavor.GenericOidc, keys);
             Assert.Equal(2, keys.Count);
         }
 
@@ -121,7 +122,7 @@ public class FlavorRegistryTests
                 NewRegistry(new EntraIdFlavor(), new StubFlavor("entraid")));
         }
 
-        private sealed class StubFlavor : IIdentityProviderFlavor
+        private sealed class StubFlavor : ILoginProviderFlavor
         {
             public StubFlavor(string key) => Key = key;
             public string Key { get; }

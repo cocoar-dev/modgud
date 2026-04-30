@@ -1,7 +1,7 @@
 using Marten;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
-using Cocoar.Auth.Authentication.Domain.ExternalAuth;
+using Cocoar.Auth.Authentication.Domain.LoginProviders;
 
 namespace Cocoar.Auth.Authentication.Api.ExternalAuth;
 
@@ -10,15 +10,16 @@ public static class ExternalAuthEndpoints
     public static void MapExternalAuthEndpoints(this IEndpointRouteBuilder endpoints, string path)
     {
         // Public — login page needs the list to render buttons. Only returns
-        // enabled, non-deleted configs.
+        // enabled, non-deleted external providers (Internal is rendered by the
+        // built-in form, not as a button on this list).
         endpoints.MapGet($"{path}/account/external-logins",
             async ([FromServices] IQuerySession session, CancellationToken ct) =>
             {
-                var configs = await session.Query<IdpConfig>()
-                    .Where(c => !c.IsDeleted && c.Enabled)
+                var providers = await session.Query<LoginProvider>()
+                    .Where(c => !c.IsDeleted && c.Enabled && c.Type != LoginProviderType.Internal)
                     .ToListAsync(ct);
 
-                return Results.Ok(configs.Select(c => new ExternalLoginDto(
+                return Results.Ok(providers.Select(c => new ExternalLoginDto(
                     Id: c.Id,
                     DisplayName: c.DisplayName,
                     Flavor: c.Flavor,
@@ -27,20 +28,21 @@ public static class ExternalAuthEndpoints
             }).AllowAnonymous();
 
         // Start login flow — issues OIDC challenge to the IdP. Redirects to
-        // the IdP's authorize endpoint. Returns 404 if the config is not
+        // the IdP's authorize endpoint. Returns 404 if the provider is not
         // enabled (no silent enumeration).
-        endpoints.MapGet($"{path}/account/external-login/{{idpConfigId:guid}}/start",
-            async (Guid idpConfigId,
+        endpoints.MapGet($"{path}/account/external-login/{{loginProviderId:guid}}/start",
+            async (Guid loginProviderId,
                    string? returnUrl,
                    HttpContext http,
                    [FromServices] IQuerySession session,
                    CancellationToken ct) =>
             {
-                var config = await session.LoadAsync<IdpConfig>(idpConfigId, ct);
-                if (config is null || config.IsDeleted || !config.Enabled)
+                var config = await session.LoadAsync<LoginProvider>(loginProviderId, ct);
+                if (config is null || config.IsDeleted || !config.Enabled
+                    || config.Type == LoginProviderType.Internal)
                     return Results.NotFound();
 
-                var schemeName = DynamicOidcSchemeManager.SchemeNameFor(idpConfigId);
+                var schemeName = DynamicOidcSchemeManager.SchemeNameFor(loginProviderId);
                 // Return URL lives in Items so the finish endpoint honors it
                 // AFTER processing; RedirectUri itself must point at finish
                 // because OIDC handler redirects there straight out of the
@@ -50,7 +52,7 @@ public static class ExternalAuthEndpoints
                     RedirectUri = "/api/account/external-login/finish",
                     Items =
                     {
-                        ["idpConfigId"] = idpConfigId.ToString("N"),
+                        ["loginProviderId"] = loginProviderId.ToString("N"),
                         ["returnUrl"] = string.IsNullOrWhiteSpace(returnUrl) ? "/" : returnUrl!,
                     },
                 };
@@ -61,10 +63,10 @@ public static class ExternalAuthEndpoints
         // (by /account/logout), this endpoint redirects the browser to the IdP's
         // end_session_endpoint. OIDC middleware builds the URL (includes
         // post_logout_redirect_uri + id_token_hint when available).
-        endpoints.MapGet($"{path}/account/external-logout/{{idpConfigId:guid}}",
-            async (Guid idpConfigId, HttpContext http) =>
+        endpoints.MapGet($"{path}/account/external-logout/{{loginProviderId:guid}}",
+            async (Guid loginProviderId, HttpContext http) =>
             {
-                var schemeName = DynamicOidcSchemeManager.SchemeNameFor(idpConfigId);
+                var schemeName = DynamicOidcSchemeManager.SchemeNameFor(loginProviderId);
                 var props = new AuthenticationProperties { RedirectUri = "/login" };
                 return Results.SignOut(props, [schemeName]);
             }).AllowAnonymous();
@@ -85,8 +87,8 @@ public static class ExternalAuthEndpoints
                 if (!auth.Succeeded || auth.Principal is null)
                     return Results.Redirect("/login?error=oidc-no-ticket");
 
-                if (!auth.Properties!.Items.TryGetValue("idpConfigId", out var idpConfigIdValue)
-                    || !Guid.TryParseExact(idpConfigIdValue, "N", out var idpConfigId))
+                if (!auth.Properties!.Items.TryGetValue("loginProviderId", out var loginProviderIdValue)
+                    || !Guid.TryParseExact(loginProviderIdValue, "N", out var loginProviderId))
                 {
                     return Results.Redirect("/login?error=oidc-no-idp");
                 }
@@ -104,7 +106,7 @@ public static class ExternalAuthEndpoints
                     if (Guid.TryParse(idClaim, out var parsed)) authenticatedUserId = parsed;
                 }
 
-                var result = await processor.ProcessAsync(auth.Principal, idpConfigId, ct, authenticatedUserId);
+                var result = await processor.ProcessAsync(auth.Principal, loginProviderId, ct, authenticatedUserId);
                 if (!result.Succeeded)
                 {
                     await http.SignOutAsync(Microsoft.AspNetCore.Identity.IdentityConstants.ExternalScheme);

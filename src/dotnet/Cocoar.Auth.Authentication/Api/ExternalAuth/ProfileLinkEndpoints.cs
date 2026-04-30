@@ -8,6 +8,7 @@ using Cocoar.Auth.Authentication.ExtensionMethods;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth.Events;
+using Cocoar.Auth.Authentication.Domain.LoginProviders;
 
 namespace Cocoar.Auth.Authentication.Api.ExternalAuth;
 
@@ -40,18 +41,18 @@ public static class ProfileLinkEndpoints
                 .OrderByDescending(l => l.LastLoginAt)
                 .ToListAsync(ct);
 
-            var configIds = links.Select(l => l.IdpConfigId).Distinct().ToArray();
-            var configs = await session.Query<IdpConfig>()
-                .Where(c => configIds.Contains(c.Id))
+            var providerIds = links.Select(l => l.LoginProviderId).Distinct().ToArray();
+            var providers = await session.Query<LoginProvider>()
+                .Where(c => providerIds.Contains(c.Id))
                 .ToListAsync(ct);
-            var configByName = configs.ToDictionary(c => c.Id, c => c.DisplayName);
+            var providerByName = providers.ToDictionary(c => c.Id, c => c.DisplayName);
 
-            return Results.Ok(links.Select(l => ToDto(l, configByName)).ToArray());
+            return Results.Ok(links.Select(l => ToDto(l, providerByName)).ToArray());
         });
 
         // Admin-side: list the external-identity links of any user, including
-        // the last known claim snapshot per IdP. Used by the User admin page
-        // so ops can see "what did Entra send last for this user".
+        // the last known claim snapshot per provider. Used by the User admin
+        // page so ops can see "what did Entra send last for this user".
         endpoints.MapGet($"{path}/admin/users/{{userId}}/external-links", async (
             ShortGuid userId,
             [FromServices] IQuerySession session,
@@ -63,13 +64,13 @@ public static class ProfileLinkEndpoints
                 .OrderByDescending(l => l.LastLoginAt)
                 .ToListAsync(ct);
 
-            var configIds = links.Select(l => l.IdpConfigId).Distinct().ToArray();
-            var configs = await session.Query<IdpConfig>()
-                .Where(c => configIds.Contains(c.Id))
+            var providerIds = links.Select(l => l.LoginProviderId).Distinct().ToArray();
+            var providers = await session.Query<LoginProvider>()
+                .Where(c => providerIds.Contains(c.Id))
                 .ToListAsync(ct);
-            var configByName = configs.ToDictionary(c => c.Id, c => c.DisplayName);
+            var providerByName = providers.ToDictionary(c => c.Id, c => c.DisplayName);
 
-            return Results.Ok(links.Select(l => ToDto(l, configByName)).ToArray());
+            return Results.Ok(links.Select(l => ToDto(l, providerByName)).ToArray());
         })
         .RequireAuthorization()
         .RequiresPermission("cocoar-auth:user:read");
@@ -116,14 +117,14 @@ public static class ProfileLinkEndpoints
             writeSession.Events.Append(link.Id,
                 new ExternalIdentityUnlinkedEvent(link.Id, now, userId));
             writeSession.Events.Append(link.UserId,
-                new UserExternalIdentityUnlinkedEvent(link.UserId, link.Id, link.IdpConfigId, now));
+                new UserExternalIdentityUnlinkedEvent(link.UserId, link.Id, link.LoginProviderId, now));
             await writeSession.SaveChangesAsync(ct);
 
             return Results.NoContent();
         });
     }
 
-    private static LinkDto ToDto(ExternalIdentityLink l, Dictionary<Guid, string> configByName)
+    private static LinkDto ToDto(ExternalIdentityLink l, Dictionary<Guid, string> providerByName)
     {
         System.Text.Json.JsonElement? scriptOutput = l.LastScriptOutput is null ? null
             : System.Text.Json.JsonDocument.Parse(l.LastScriptOutput.RootElement.GetRawText()).RootElement;
@@ -132,8 +133,8 @@ public static class ProfileLinkEndpoints
 
         return new LinkDto(
             Id: new ShortGuid(l.Id).ToString(),
-            IdpConfigId: new ShortGuid(l.IdpConfigId).ToString(),
-            IdpDisplayName: configByName.TryGetValue(l.IdpConfigId, out var n) ? n : l.Issuer,
+            LoginProviderId: new ShortGuid(l.LoginProviderId).ToString(),
+            ProviderDisplayName: providerByName.TryGetValue(l.LoginProviderId, out var n) ? n : l.Issuer,
             Issuer: l.Issuer,
             Email: l.Email,
             DisplayName: l.DisplayName,
@@ -155,8 +156,8 @@ public static class ProfileLinkEndpoints
     /// </summary>
     public record LinkDto(
         string Id,
-        string IdpConfigId,
-        string IdpDisplayName,
+        string LoginProviderId,
+        string ProviderDisplayName,
         string Issuer,
         string? Email,
         string? DisplayName,

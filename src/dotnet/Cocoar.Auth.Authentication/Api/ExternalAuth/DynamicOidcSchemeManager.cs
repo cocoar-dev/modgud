@@ -5,16 +5,16 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
-using Cocoar.Auth.Authentication.Domain.ExternalAuth;
-using Cocoar.Auth.Authentication.Identity.ExternalAuth;
+using Cocoar.Auth.Authentication.Domain.LoginProviders;
+using Cocoar.Auth.Authentication.Identity.LoginProviders;
 
 namespace Cocoar.Auth.Authentication.Api.ExternalAuth;
 
 /// <summary>
 /// Adds, updates, and removes OIDC authentication schemes at runtime — one per
-/// enabled <see cref="IdpConfig"/>. Scheme name is <c>Oidc_{IdpConfigId}</c>,
-/// callback path <c>/signin-oidc/{IdpConfigId}</c>. A scheme is reachable by
-/// the OIDC middleware as soon as <see cref="RegisterAsync"/> returns.
+/// enabled <see cref="LoginProvider"/>. Scheme name is <c>Oidc_{LoginProviderId}</c>,
+/// callback path <c>/signin-oidc/{LoginProviderId}</c>. A scheme is reachable
+/// by the OIDC middleware as soon as <see cref="RegisterAsync"/> returns.
 /// <para>
 /// Each scheme's <c>OpenIdConnectOptions</c> is materialized into
 /// <see cref="IOptionsMonitorCache{TOptions}"/> directly, bypassing the
@@ -22,27 +22,34 @@ namespace Cocoar.Auth.Authentication.Api.ExternalAuth;
 /// is needed in app-start ordering. The handler type is registered once
 /// globally via a placeholder scheme in <c>Program.cs</c>.
 /// </para>
+/// <para>
+/// Internal-typed providers are NOT handled here — they are short-circuited
+/// by the auth-flow consumers. Phase 1 leaves a soft filter (we still receive
+/// them in <see cref="RegisterAsync"/> from event handlers, but the missing
+/// flavor key sends them down the early-return path with a benign warning).
+/// Phase 2 wires the explicit <c>Type == Oidc</c> guard in callers.
+/// </para>
 /// </summary>
 public class DynamicOidcSchemeManager(
     IAuthenticationSchemeProvider schemeProvider,
     IOptionsMonitorCache<OpenIdConnectOptions> oidcOptionsCache,
     IEnumerable<IPostConfigureOptions<OpenIdConnectOptions>> oidcPostConfigures,
-    FlavorRegistry flavors,
-    IdpSecretStore secrets,
+    LoginProviderFlavorRegistry flavors,
+    LoginProviderSecretStore secrets,
     IHostEnvironment env,
     ILogger<DynamicOidcSchemeManager> logger)
 {
     public const string SchemeNamePrefix = "Oidc_";
 
-    public static string SchemeNameFor(Guid idpConfigId) => $"{SchemeNamePrefix}{idpConfigId:N}";
+    public static string SchemeNameFor(Guid loginProviderId) => $"{SchemeNamePrefix}{loginProviderId:N}";
 
     /// <summary>
-    /// Registers or updates the OIDC scheme for the given config. Safe to call
-    /// multiple times — existing scheme is removed and re-added, so option
+    /// Registers or updates the OIDC scheme for the given provider. Safe to
+    /// call multiple times — existing scheme is removed and re-added, so option
     /// changes (e.g. secret rotation) take effect on the next request without
     /// an app restart.
     /// </summary>
-    public async Task RegisterAsync(IdpConfig config)
+    public async Task RegisterAsync(LoginProvider config)
     {
         if (config.IsDeleted || !config.Enabled)
         {
@@ -52,7 +59,7 @@ public class DynamicOidcSchemeManager(
 
         if (!flavors.TryGet(config.Flavor, out var flavor))
         {
-            logger.LogWarning("Cannot register IdpConfig {Id}: unknown flavor {Flavor}", config.Id, config.Flavor);
+            logger.LogWarning("Cannot register LoginProvider {Id}: unknown flavor {Flavor}", config.Id, config.Flavor);
             return;
         }
 
@@ -60,13 +67,13 @@ public class DynamicOidcSchemeManager(
         try { endpoints = flavor.DeriveEndpoints(config.FlavorData); }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Cannot register IdpConfig {Id}: flavor endpoint derivation failed", config.Id);
+            logger.LogError(ex, "Cannot register LoginProvider {Id}: flavor endpoint derivation failed", config.Id);
             return;
         }
 
         if (string.IsNullOrWhiteSpace(config.ClientId))
         {
-            logger.LogWarning("Cannot register IdpConfig {Id}: ClientId is empty", config.Id);
+            logger.LogWarning("Cannot register LoginProvider {Id}: ClientId is empty", config.Id);
             return;
         }
 
@@ -187,13 +194,13 @@ public class DynamicOidcSchemeManager(
             handlerType: typeof(OpenIdConnectHandler));
         schemeProvider.AddScheme(scheme);
 
-        logger.LogInformation("Auth: Registered OIDC scheme {Scheme} (IdP {Display} / {Flavor})",
+        logger.LogInformation("Auth: Registered OIDC scheme {Scheme} (LoginProvider {Display} / {Flavor})",
             schemeName, config.DisplayName, config.Flavor);
     }
 
-    public async Task UnregisterAsync(Guid idpConfigId)
+    public async Task UnregisterAsync(Guid loginProviderId)
     {
-        var schemeName = SchemeNameFor(idpConfigId);
+        var schemeName = SchemeNameFor(loginProviderId);
         schemeProvider.RemoveScheme(schemeName);
         oidcOptionsCache.TryRemove(schemeName);
         logger.LogInformation("Auth: Unregistered OIDC scheme {Scheme}", schemeName);

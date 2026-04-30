@@ -53,5 +53,5 @@ public class Person : Principal, IPrincipalWithAccount, IPrincipalEmailAddressab
 /// </summary>
 public record ExternalIdentityRef(
     Guid LinkId,
-    Guid IdpConfigId,
+    Guid LoginProviderId,
     string Issuer);
