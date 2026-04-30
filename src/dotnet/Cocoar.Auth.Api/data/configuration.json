@@ -35,7 +35,7 @@
         "TwoFactorGracePeriodDays": 14
     },
     "DbSettings": {
-        "ConnectionString": "Host=localhost;Database=cocoar_auth_next;Username=postgres;Password=postgres"
+        "ConnectionString": "Host=localhost;Database=cocoar_auth;Username=postgres;Password=postgres"
     },
     "OpenIddict": {
         "Issuer": "http://localhost:9099",

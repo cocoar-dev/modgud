@@ -7,7 +7,7 @@ fundamental isolation boundary in cocoar.auth.
 
 Per realm:
 
-- its own **PostgreSQL database** (`cocoar_auth_next_<slug>`)
+- its own **PostgreSQL database** (`<master-db>_<slug>`)
 - its own **users and groups**
 - its own **roles and permissions**
 - its own **OAuth clients, scopes, APIs**
@@ -55,10 +55,10 @@ cocoar.auth uses Marten's `MasterTableTenancy`:
 
 ```mermaid
 graph TD
-    Master[(cocoar_auth_next<br/>= Master DB)]
-    Master -->|realms.mt_tenant_databases| System[(cocoar_auth_next_system)]
-    Master -->|realms.mt_tenant_databases| Acme[(cocoar_auth_next_acme)]
-    Master -->|realms.mt_tenant_databases| Finance[(cocoar_auth_next_finance)]
+    Master[(<master-db><br/>= Master DB)]
+    Master -->|realms.mt_tenant_databases| System[(<master-db>_system)]
+    Master -->|realms.mt_tenant_databases| Acme[(<master-db>_acme)]
+    Master -->|realms.mt_tenant_databases| Finance[(<master-db>_finance)]
 
     Master -->|global Schema| GlobalRealm["Realm-Documents<br/>(IGlobalStore)"]
     System -->|tenant data| SystemUsers[Users, Groups, OAuth, ...]
@@ -68,9 +68,9 @@ graph TD
 
 | Database | Contents |
 |---|---|
-| `cocoar_auth_next` (Master) | Schema `realms.mt_tenant_databases` (tenant registry) + schema `global` (Realm documents) |
-| `cocoar_auth_next_system` | System realm data (users, groups, ...) — physically the same DB as the master |
-| `cocoar_auth_next_<slug>` | A separate physical DB per additional realm |
+| `<master-db>` (Master) | Schema `realms.mt_tenant_databases` (tenant registry) + schema `global` (Realm documents) |
+| `<master-db>_system` | System realm data (users, groups, ...) — physically the same DB as the master |
+| `<master-db>_<slug>` | A separate physical DB per additional realm |
 
 ::: info System realm and master DB
 The system realm intentionally points at the master DB. That way a
@@ -140,7 +140,7 @@ POST /api/admin/realms
 Backend:
 
 1. Validates `slug` (regex, no reserved word)
-2. `CREATE DATABASE cocoar_auth_next_acme` (raw SQL)
+2. `CREATE DATABASE <master-db>_acme` (raw SQL)
 3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`
 4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`
 5. **OAuthRealmSeeder** → 5 default scopes + Internal login provider

@@ -36,7 +36,7 @@ Content-Type: application/json
    reserved word (`system`, `health`, `swagger`, `api`, `connect`,
    ...)
 2. **Create PostgreSQL DB** (raw SQL):
-   `CREATE DATABASE cocoar_auth_next_acme`
+   `CREATE DATABASE <master-db>_acme`
 3. **Register in Marten tenancy**:
    `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`
 4. **Apply Marten schema** (tables, indexes, functions)

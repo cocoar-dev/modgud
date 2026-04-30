@@ -47,8 +47,8 @@ graph TB
 
     subgraph DataLayer ["Marten + PostgreSQL"]
         Master[(Master DB<br/>+ realms.mt_tenant_databases<br/>+ global schema)]
-        TenantA[(cocoar_auth_next_acme)]
-        TenantB[(cocoar_auth_next_finance)]
+        TenantA[(<master-db>_acme)]
+        TenantB[(<master-db>_finance)]
     end
 
     SPA <-->|Cookie + SignalR| MW

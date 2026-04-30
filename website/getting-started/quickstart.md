@@ -85,11 +85,11 @@ You're now ready for the linear walkthrough that turns Cocoar.Auth into the IDP 
 ## Troubleshooting
 
 ::: details The setup page redirects me to the login page
-The wizard only runs once. If a previous attempt already created an admin, the setup endpoint reports "already done" and returns to login. To restart fresh, drop the master DB and the `cocoar_auth_next_system` tenant DB:
+The wizard only runs once. If a previous attempt already created an admin, the setup endpoint reports "already done" and returns to login. To restart fresh, drop the master DB and the `<master-db>_system` tenant DB:
 
 ```bash
-docker exec cocoar-postgres psql -U postgres -c "DROP DATABASE cocoar_auth_next;"
-docker exec cocoar-postgres psql -U postgres -c "DROP DATABASE cocoar_auth_next_system;"
+docker exec cocoar-postgres psql -U postgres -c "DROP DATABASE <master-db>;"
+docker exec cocoar-postgres psql -U postgres -c "DROP DATABASE <master-db>_system;"
 docker compose restart cocoar-auth
 ```
 :::

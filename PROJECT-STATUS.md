@@ -310,7 +310,7 @@ dotnet test
 // appsettings.json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Database=cocoar_auth;Username=postgres;Password=postgres"
+    "DefaultConnection": "Host=localhost;Database=<master-db>;Username=postgres;Password=postgres"
   }
 }
 ```

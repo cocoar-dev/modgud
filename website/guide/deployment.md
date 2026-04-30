@@ -54,7 +54,7 @@ settings, the OpenIddict issuer, the magic-link rate limit, the
   "AppUrl": "http://0.0.0.0:80",
   "PublicUrl": "https://auth.example.com",
   "DbSettings": {
-    "ConnectionString": "Host=postgres;Port=5432;Database=cocoar_auth_next;Username=postgres;Password=postgres"
+    "ConnectionString": "Host=postgres;Port=5432;Database=<master-db>;Username=postgres;Password=postgres"
   },
   "AppSettings": {
     "AuthenticationMinimumLevel": 1,
@@ -87,10 +87,10 @@ settings, the OpenIddict issuer, the magic-link rate limit, the
 ```
 
 ::: info Database naming
-`DbSettings.ConnectionString` points at the master DB (e.g.
-`cocoar_auth_next`). When additional realms are created, cocoar.auth
-appends `_<slug>` to the DB name for the tenant DBs
-(`cocoar_auth_next_acme`, `cocoar_auth_next_finance`).
+`DbSettings.ConnectionString` points at the master DB — pick any name
+you like. When additional realms are created, cocoar.auth appends
+`_<slug>` to that name for each tenant DB (e.g. for a master DB called
+`auth`: `auth_acme`, `auth_finance`).
 :::
 
 ## Docker image
@@ -111,7 +111,7 @@ Multi-arch: **linux/amd64** + **linux/arm64**.
 docker run -d \
   --name cocoar-auth \
   -p 80:80 \
-  -e DBSETTINGS__CONNECTIONSTRING="Host=your-postgres;Database=cocoar_auth_next;Username=postgres;Password=..." \
+  -e DBSETTINGS__CONNECTIONSTRING="Host=your-postgres;Database=<master-db>;Username=postgres;Password=..." \
   -e OPENIDDICT__ISSUER="http://localhost" \
   -e OPENIDDICT__DEVELOPMENTMODE="true" \
   ghcr.io/cocoar/cocoar.auth:latest
@@ -139,7 +139,7 @@ services:
     ports:
       - "80:80"
     environment:
-      DBSETTINGS__CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth_next;Username=postgres;Password=postgres"
+      DBSETTINGS__CONNECTIONSTRING: "Host=postgres;Database=<master-db>;Username=postgres;Password=postgres"
       OPENIDDICT__ISSUER: "http://localhost"
       OPENIDDICT__DEVELOPMENTMODE: "true"
       EMAIL__PROVIDER: "Smtp"

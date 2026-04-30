@@ -26,7 +26,7 @@ The pre-cutover legacy codebase is preserved at git tag `legacy-final`.
 ## Backend essentials
 
 **Stack:** .NET 10, Marten 8.x (multi-tenant, master-table strategy:
-each realm is a physical PostgreSQL database `cocoar_auth_next_<slug>`),
+each realm is a physical PostgreSQL database `<master-db>_<slug>`),
 Wolverine 5.x (CQRS + outbox), OpenIddict 7.x, ErrorOr, Mapperly,
 Cocoar.JsEval (TS → LINQ for membership scripts), Cocoar.SignalARRR.
 
@@ -82,7 +82,7 @@ Tailwind 4, `@cocoar/vue-ui` (CoarButton, CoarSidebar, CoarMenu, ...),
 # Backend (port 9099)
 cd src/dotnet
 dotnet build
-docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE cocoar_auth_next;"  # first time
+docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE <master-db>;"  # first time
 cd Cocoar.Auth.Api
 ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile
 

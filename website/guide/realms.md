@@ -78,17 +78,17 @@ cocoar.auth uses Marten's `MasterTableTenancy`:
 
 ```mermaid
 graph TD
-    subgraph Master["Master DB (cocoar_auth_next)"]
+    subgraph Master["Master DB (<master-db>)"]
         Tenancy["Schema: realms<br/>realms.mt_tenant_databases"]
         GlobalSchema["Schema: global<br/>(Realm documents)"]
         SystemTenant["System tenant data<br/>(physically here)"]
     end
 
-    subgraph Acme["cocoar_auth_next_acme"]
+    subgraph Acme["<master-db>_acme"]
         AcmeData["Acme tenant data"]
     end
 
-    subgraph Finance["cocoar_auth_next_finance"]
+    subgraph Finance["<master-db>_finance"]
         FinanceData["Finance tenant data"]
     end
 
@@ -98,8 +98,8 @@ graph TD
 
 | Database | Contents |
 |---|---|
-| `cocoar_auth_next` (master) | `realms.mt_tenant_databases` (tenant registry) + schema `global` (Realm documents) + system tenant data |
-| `cocoar_auth_next_<slug>` | A dedicated physical DB per additional realm |
+| `<master-db>` (master) | `realms.mt_tenant_databases` (tenant registry) + schema `global` (Realm documents) + system tenant data |
+| `<master-db>_<slug>` | A dedicated physical DB per additional realm |
 
 The **system tenant intentionally points at the master DB**. This way
 a single-realm installation only needs one DB. Multi-realm setups add
@@ -198,7 +198,7 @@ POST /api/admin/realms
 Backend:
 
 1. Validates `slug` (regex, reserved-words check)
-2. `CREATE DATABASE cocoar_auth_next_acme` (raw SQL)
+2. `CREATE DATABASE <master-db>_acme` (raw SQL)
 3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`
 4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`
 5. **OAuthRealmSeeder** seeds the new tenant DB

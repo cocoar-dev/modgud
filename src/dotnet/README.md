@@ -25,8 +25,8 @@ cd src/dotnet
 dotnet build
 
 # Reset dev DB
-docker exec cocoar-postgres psql -U postgres -c "DROP DATABASE IF EXISTS cocoar_auth_next;"
-docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE cocoar_auth_next;"
+docker exec cocoar-postgres psql -U postgres -c "DROP DATABASE IF EXISTS <master-db>;"
+docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE <master-db>;"
 
 # Run the API
 cd Cocoar.Auth.Api

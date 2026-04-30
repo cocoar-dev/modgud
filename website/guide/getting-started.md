@@ -13,7 +13,7 @@
 docker run --name cocoar-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres:17-alpine
 
 # Create master DB (one-off — the backend can do this on boot, but doing it here survives container restarts more cleanly)
-docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE cocoar_auth_next;"
+docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE <master-db>;"
 
 # Build the backend
 cd src/dotnet

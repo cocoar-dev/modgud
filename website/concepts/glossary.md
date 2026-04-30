@@ -7,7 +7,7 @@ Terms in cocoar.auth and their counterparts in other identity systems.
 ### Realm
 
 An isolated identity boundary. Each realm has **its own PostgreSQL
-database** (`cocoar_auth_next_<slug>`), its own users, roles,
+database** (`<master-db>_<slug>`), its own users, roles,
 OAuth clients, and login providers.
 
 Mapping to other systems:
