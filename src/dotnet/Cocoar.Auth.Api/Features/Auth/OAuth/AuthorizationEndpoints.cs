@@ -298,27 +298,29 @@ public static class AuthorizationEndpoints
             if (!string.IsNullOrEmpty(user.Lastname)) claims[Claims.FamilyName] = user.Lastname;
         }
 
-        // Roles + groups: when the OIDC `roles` scope was granted, expose:
+        // Roles per app (Keycloak-style resource_access). When the OIDC
+        // `roles` scope is granted, we emit a nested claim keyed by App
+        // slug; each entry carries { "roles": [...] } for that app. The
+        // Cocoar.Auth.Client.AspNetCore library flattens
+        // resource_access[<configured-slug>].roles into
+        // ClaimTypes.Role so [Authorize(Roles="…")] works on resource
+        // servers without per-endpoint plumbing.
         //
-        //   `resource_access` — Keycloak-style nested claim, keyed by App
-        //              slug, each entry carrying { "roles": [...] } for that
-        //              app. Resource servers read THEIR OWN slug's roles;
-        //              the Cocoar.Auth.Client.AspNetCore library flattens
-        //              that block into ClaimTypes.Role so
-        //              [Authorize(Roles="…")] works.
-        //   `groups` — flat array of Group names. Organisational signal
-        //              (mailing-list semantics, "send to all HR group
-        //              members"), NOT authorisation.
+        // The apps come from the calling client's AppIds list (Stufe 1's
+        // n:m link). Realm-wide / unassigned clients fall back to a single
+        // resource_access entry under cocoar-auth so the IDP's own admin
+        // SPA still surfaces its own roles.
         //
-        // Apps come from the calling client's AppIds list (Stufe 1's n:m
-        // link). For an unassigned/realm-wide client we fall back to a
-        // single resource_access entry under cocoar-auth so the IDP's own
-        // admin SPA still surfaces its own roles.
+        // Deliberately NOT in UserInfo:
+        //   - Group memberships (organisational / IAM-side data, not
+        //     identity. Also app-scoped via BoundTo, which UserInfo's
+        //     OIDC contract has no clean way to express).
+        //   - Granular permissions (live-resolved via the distribution
+        //     API at GET /api/v1/me/permissions to avoid stale grants).
         //
-        // Granular permissions are deliberately NOT in UserInfo — they
-        // refresh per-request via the distribution API
-        // (GET /api/v1/me/permissions?app=…). UserInfo carries only
-        // identity-shaped claims that change rarely.
+        // UserInfo stays the OIDC-style identity slice ("who you are +
+        // what you may do") while the IAM-side data (groups, granular
+        // perms) lives behind the distribution API.
         if (httpContext.User.HasScope(Scopes.Roles))
         {
             var appSlugs = await ResolveAppSlugsForClientAsync(httpContext.User, session);
@@ -337,10 +339,6 @@ public static class AuthorizationEndpoints
             }
             if (resourceAccess.Count > 0)
                 claims["resource_access"] = resourceAccess;
-
-            var groups = await permissionService.GetUserGroupsAsync(user.Id);
-            if (groups.Count > 0)
-                claims["groups"] = groups.Select(g => g.Name).ToArray();
         }
 
         return Results.Ok(claims);

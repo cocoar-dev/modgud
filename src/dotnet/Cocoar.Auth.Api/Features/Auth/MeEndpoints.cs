@@ -56,8 +56,20 @@ public static class MeEndpoints
                 }
 
                 var permissions = await permissionService.GetUserPermissionsAsync(userId.Value, appSlug);
-                var groups = await permissionService.GetUserGroupsAsync(userId.Value);
                 var roles = await permissionService.GetUserRolesAsync(userId.Value, appSlug);
+
+                // Groups are app-scoped via BoundTo. Mirror the same gate
+                // PermissionService applies to roles: a group only surfaces
+                // for the requesting app when its BoundTo contains the
+                // slug — or the wildcard "*". Keeps the response from
+                // leaking org-only groups (HR distribution lists, other
+                // apps' admin groups) into a resource server that has no
+                // business knowing about them.
+                var allGroups = await permissionService.GetUserGroupsAsync(userId.Value);
+                var groups = allGroups
+                    .Where(g => g.BoundTo.Contains(PermissionService.AllAppsWildcard)
+                                || g.BoundTo.Contains(appSlug))
+                    .ToList();
 
                 // Short cache so a chatty resource server doesn't hammer the
                 // IAM but a permission revoke still takes effect quickly.
