@@ -63,8 +63,17 @@ cross-cutting flows.
 >   link; user clicks (POST verify-email) → `AdminApprovalPending`;
 >   admin approves → `/me` reflects the new firstname AND email
 >   atomically.
+> - **§14 Realms** — `40-realms.spec.ts`: system realm exists with
+>   `CanManageTenants: true`, create a fresh realm provisions a new
+>   tenant DB + realm document, slug rejection (reserved `system`,
+>   length / casing / leading-hyphen invalids).
+> - **§3 Two-factor (TOTP)** — `50-2fa.spec.ts`: enable TOTP via
+>   `/api/account/mfa/setup` + `/verify`, sign out, sign in with
+>   password → `RequiresMfa: true`, complete with a fresh
+>   `otplib.generateSync({ secret })` code, `/me` confirms
+>   `Has2FA: true`. Wrong code on second-factor login → 401.
 >
-> **28 / 28 tests green**, ~30 s on a warm rig (~60 s on first run
+> **33 / 33 tests green**, ~33 s on a warm rig (~60 s on first run
 > because the cocoar-auth image gets built). Run via
 > `cd src/frontend-vue && pnpm test:e2e`.
 
