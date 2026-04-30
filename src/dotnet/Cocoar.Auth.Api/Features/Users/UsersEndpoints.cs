@@ -310,7 +310,7 @@ public static class UsersEndpoints
                 var newMemberIds = group.MemberIds.Append(id.Guid).ToList();
                 session.Events.Append(groupId, new GroupUpdatedEvent(
                     groupId, group.Name, group.Description,
-                    newMemberIds, group.RoleIds, group.AccessScripts,
+                    newMemberIds, group.RoleIds,
                     group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
                     group.MembershipScriptDependencies,
                     group.Email, group.EmailMode,
@@ -342,7 +342,7 @@ public static class UsersEndpoints
                 var newMemberIds = group.MemberIds.Where(m => m != id.Guid).ToList();
                 session.Events.Append(groupId.Guid, new GroupUpdatedEvent(
                     groupId.Guid, group.Name, group.Description,
-                    newMemberIds, group.RoleIds, group.AccessScripts,
+                    newMemberIds, group.RoleIds,
                     group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
                     group.MembershipScriptDependencies,
                     group.Email, group.EmailMode,

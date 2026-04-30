@@ -1,6 +1,5 @@
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
-using Cocoar.Auth.Authorization.Access;
 using Cocoar.Auth.Authorization.Membership;
 using Cocoar.Auth.Authorization.Resources;
 using Cocoar.Auth.Authorization.Services;
@@ -27,7 +26,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IResourceRegistry>(options.ResourceRegistry);
 
         services.AddScoped<IPermissionService, PermissionService>();
-        services.AddScoped<IAccessPolicyEngine, AccessPolicyEngine>();
         services.AddScoped<IMembershipEvaluator, MembershipEvaluator>();
         services.AddScoped<IPrincipalEmailResolver, PrincipalEmailResolver>();
         services.AddScoped<IPrincipalLookupService, PrincipalLookupService>();

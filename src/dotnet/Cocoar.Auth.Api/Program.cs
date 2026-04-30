@@ -316,13 +316,11 @@ try
     //   - Sophos XG / Reverse Proxy: DDoS protection at infrastructure level
     // IP-based rate limiting is unreliable in corporate environments (NAT = shared IP).
 
-    // Needed by AccessPolicyEngine so session-only external claims from the
-    // active OIDC login are visible to access scripts as user.externalClaims.*
     builder.Services.AddHttpContextAccessor();
 
     // IPermissionService + IPrincipalEmailResolver + IPrincipalLookupService + IMembershipEvaluator
-    // + IAccessPolicyEngine + IAutoMembershipRecalculator are all registered by
-    // AddCocoarAuthAuthorization inside AddInfrastructure. Only keep app-specific wiring here.
+    // + IAutoMembershipRecalculator are all registered by AddCocoarAuthAuthorization
+    // inside AddInfrastructure. Only keep app-specific wiring here.
     builder.Services.AddScoped<IAdminNotifier, AdminNotifier>();
     // Demo seed importer — reads data/demo-seed.json on first-time setup when
     // the operator opts in. The service is itself stateless; it scopes its

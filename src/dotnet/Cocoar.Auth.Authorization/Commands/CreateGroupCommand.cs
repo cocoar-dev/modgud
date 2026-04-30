@@ -1,4 +1,3 @@
-using Cocoar.Auth.Authorization.Access;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Membership;
 using Cocoar.Auth.Authorization.Principals;
@@ -13,7 +12,6 @@ public record CreateGroupCommand(
     string? Description,
     List<Guid> MemberIds,
     List<Guid> RoleIds,
-    List<AccessScriptInput> AccessScripts,
     MembershipMode MembershipMode = MembershipMode.Manual,
     string? MembershipScript = null,
     string? Email = null,
@@ -22,7 +20,6 @@ public record CreateGroupCommand(
 
 public class CreateGroupHandler(
     IDocumentSession session,
-    IAccessPolicyEngine accessPolicyEngine,
     IMembershipEvaluator membershipEvaluator,
     IAutoMembershipRecalculator recalculator)
 {
@@ -40,32 +37,6 @@ public class CreateGroupHandler(
         if (nameTaken)
             return Error.Conflict("Group.NameTaken",
                 $"A group with the name '{normalized}' already exists.");
-
-        var accessScripts = new List<ResourceAccessScript>();
-        foreach (var input in command.AccessScripts)
-        {
-            string? compiled = null;
-            if (!string.IsNullOrWhiteSpace(input.Script))
-            {
-                try { compiled = accessPolicyEngine.TranspileTypeScript(input.Script); }
-                catch (TsTranspileException ex)
-                {
-                    return Error.Validation("Group.AccessScriptTranspile",
-                        $"Access script ({input.ResourceType}): {FormatTranspileErrors(ex)}");
-                }
-                catch (Exception ex)
-                {
-                    return Error.Validation("Group.AccessScriptTranspile",
-                        $"Transpile failed for {input.ResourceType}: {ex.Message}");
-                }
-            }
-            accessScripts.Add(new ResourceAccessScript
-            {
-                ResourceType = input.ResourceType,
-                Script = input.Script,
-                CompiledScript = compiled,
-            });
-        }
 
         string? compiledMembership = null;
         List<string>? membershipDeps = null;
@@ -102,7 +73,6 @@ public class CreateGroupHandler(
             Description = command.Description,
             MemberIds = memberIds,
             RoleIds = command.RoleIds.ToList(),
-            AccessScripts = accessScripts,
             MembershipMode = command.MembershipMode,
             MembershipScript = command.MembershipScript,
             CompiledMembershipScript = compiledMembership,
@@ -114,7 +84,7 @@ public class CreateGroupHandler(
 
         session.Events.StartStream(group.Id,
             new GroupCreatedEvent(group.Id, group.Name, group.Description,
-                group.MemberIds, group.RoleIds, group.AccessScripts,
+                group.MemberIds, group.RoleIds,
                 group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
                 group.MembershipScriptDependencies,
                 group.Email, group.EmailMode,

@@ -10,32 +10,32 @@ namespace Internal.Generated.WolverineHandlers
     [global::System.CodeDom.Compiler.GeneratedCode("JasperFx", "1.0.0")]
     public sealed class IEventHandler2008265055 : Wolverine.Runtime.Handlers.MessageHandler
     {
-        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
         private readonly Microsoft.Extensions.DependencyInjection.IServiceScopeFactory _serviceScopeFactory;
         private readonly Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserUpdatedHandler> _loggerOfAutoMembershipOnUserUpdatedHandler;
+        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
 
-        public IEventHandler2008265055(Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, Microsoft.Extensions.DependencyInjection.IServiceScopeFactory serviceScopeFactory, Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserUpdatedHandler> loggerOfAutoMembershipOnUserUpdatedHandler)
+        public IEventHandler2008265055(Microsoft.Extensions.DependencyInjection.IServiceScopeFactory serviceScopeFactory, Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserUpdatedHandler> loggerOfAutoMembershipOnUserUpdatedHandler, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory)
         {
-            _outboxedSessionFactory = outboxedSessionFactory;
             _serviceScopeFactory = serviceScopeFactory;
             _loggerOfAutoMembershipOnUserUpdatedHandler = loggerOfAutoMembershipOnUserUpdatedHandler;
+            _outboxedSessionFactory = outboxedSessionFactory;
         }
 
 
 
         public override async System.Threading.Tasks.Task HandleAsync(Wolverine.Runtime.MessageContext context, System.Threading.CancellationToken cancellation)
         {
-            // Building the Marten session
-            await using var documentSession = _outboxedSessionFactory.OpenSession(context);
             await using var serviceScope = _serviceScopeFactory.CreateAsyncScope();
             
             /*
-            * Dependency: Descriptor: ServiceType: Cocoar.Auth.Authorization.Access.IMembershipEvaluator Lifetime: Scoped ImplementationType: Cocoar.Auth.Authorization.Access.MembershipEvaluator
+            * Dependency: Descriptor: ServiceType: Cocoar.Auth.Authorization.Membership.IMembershipEvaluator Lifetime: Scoped ImplementationType: Cocoar.Auth.Authorization.Membership.MembershipEvaluator
             * 
             * Dependency: Descriptor: ServiceType: Cocoar.JsEval.Engine.JsEngine Lifetime: Scoped ImplementationFactory: Cocoar.JsEval.Engine.ServiceCollectionExtensions+<>c.<AddJsEval>b__1_0
             * The service registration for Cocoar.JsEval.Engine.JsEngine is an 'opaque' lambda factory with the Scoped lifetime and requires service location
             */
             var autoMembershipRecalculator = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<Cocoar.Auth.Authorization.Membership.IAutoMembershipRecalculator>(serviceScope.ServiceProvider);
+            // Building the Marten session
+            await using var documentSession = _outboxedSessionFactory.OpenSession(context);
             // The actual message body
             var eventOfUserUpdatedEvent = (JasperFx.Events.IEvent<Cocoar.Auth.Domain.Users.Events.UserUpdatedEvent>)context.Envelope.Message;
 

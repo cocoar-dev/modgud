@@ -1,5 +1,3 @@
-using Cocoar.Auth.Authorization.Access;
-
 namespace Cocoar.Auth.Authorization.Principals;
 
 /// <summary>
@@ -7,7 +5,6 @@ namespace Cocoar.Auth.Authorization.Principals;
 /// <list type="bullet">
 ///   <item>Membership (direct, optionally driven by a predicate script)</item>
 ///   <item>Role grants (what actions members may perform)</item>
-///   <item>Per-resource access scripts (what rows members see)</item>
 ///   <item>Email routing (shared address or expand-to-members)</item>
 /// </list>
 /// <para>
@@ -36,7 +33,6 @@ public class Group : Principal, IPrincipalWithMembers, IPrincipalEmailAddressabl
     IReadOnlyList<Guid> IPrincipalWithMembers.MemberIds => MemberIds.ToArray();
 
     public List<Guid> RoleIds { get; set; } = [];
-    public List<ResourceAccessScript> AccessScripts { get; set; } = [];
 
     /// <summary>
     /// App slugs in which this group is <i>active</i>. When a permission

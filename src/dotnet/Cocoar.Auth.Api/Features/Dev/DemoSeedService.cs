@@ -6,7 +6,6 @@ using Cocoar.Auth.Application.DTOs.OAuth;
 using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Domain;
-using Cocoar.Auth.Authorization.Access;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Membership;
@@ -190,7 +189,6 @@ public sealed class DemoSeedService : IDemoSeedService
                 Description = g.Description,
                 MemberIds = memberIds,
                 RoleIds = roleIds,
-                AccessScripts = new List<ResourceAccessScript>(),
                 MembershipMode = mode,
                 MembershipScript = mode == MembershipMode.Auto ? g.MembershipScript : null,
                 CompiledMembershipScript = compiledScript,
@@ -201,7 +199,7 @@ public sealed class DemoSeedService : IDemoSeedService
             session.Events.StartStream(group.Id,
                 new GroupCreatedEvent(
                     group.Id, group.Name, group.Description,
-                    group.MemberIds, group.RoleIds, group.AccessScripts,
+                    group.MemberIds, group.RoleIds,
                     group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
                     group.MembershipScriptDependencies,
                     group.Email, group.EmailMode,

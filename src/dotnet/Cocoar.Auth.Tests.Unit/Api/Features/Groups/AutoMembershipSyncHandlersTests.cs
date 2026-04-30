@@ -1,6 +1,5 @@
 using Cocoar.Auth.Api.Features.Groups;
 using Cocoar.Auth.Authentication.Events;
-using Cocoar.Auth.Authorization.Access;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Membership;
 using Cocoar.Auth.Authorization.Principals;
@@ -216,7 +215,7 @@ public class AutoMembershipSyncHandlersTests
         public void GroupUpdated_always_syncs()
         {
             var ev = new GroupUpdatedEvent(Guid.NewGuid(), "G", null,
-                new List<Guid>(), new List<Guid>(), new List<ResourceAccessScript>());
+                new List<Guid>(), new List<Guid>());
             Assert.True(new TestableGroupUpdated().ShouldSync(ev));
         }
 
@@ -224,7 +223,7 @@ public class AutoMembershipSyncHandlersTests
         public void GroupCreated_always_syncs()
         {
             var ev = new GroupCreatedEvent(Guid.NewGuid(), "G", null,
-                new List<Guid>(), new List<Guid>(), new List<ResourceAccessScript>());
+                new List<Guid>(), new List<Guid>());
             Assert.True(new TestableGroupCreated().ShouldSync(ev));
         }
 

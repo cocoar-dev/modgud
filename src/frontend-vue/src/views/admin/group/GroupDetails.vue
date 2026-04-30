@@ -5,19 +5,18 @@ import { useRoleStore } from '@/stores/role.store'
 import { useUserStore } from '@/stores/user.store'
 import { usePrincipalStore } from '@/stores/principal.store'
 import { useApplicationsStore } from '@/stores/applications.store'
-import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarMultiSelect, CoarRadioGroup, CoarRadioButton, CoarTabGroup, CoarTab, CoarPopover, CoarCodeBlock, CoarIcon, CoarListbox, CoarDualListbox } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarMultiSelect, CoarTabGroup, CoarTab, CoarPopover, CoarCodeBlock, CoarIcon, CoarListbox, CoarDualListbox } from '@cocoar/vue-ui'
 import type { CoarListboxOption } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { CoarScriptEditor } from '@cocoar/vue-script-editor'
-import { getPreamble, getPlaceholder, getDefaultScript, getExamples, membershipExamples, membershipPreamble } from './accessScriptTypes'
+import { membershipExamples, membershipPreamble } from './membershipScriptTypes'
 import { useScriptTypes } from './useScriptTypes'
-import type { AccessScriptDto, MembershipMode, EmailMode } from '@/models/group'
-import { roleHasWritePermission, RESOURCE_LABELS } from '@/models/role'
+import type { MembershipMode, EmailMode } from '@/models/group'
 
 const { sharedTypeDefinitions } = useScriptTypes()
 const scriptExtraLibs = computed(() => [
-  { content: sharedTypeDefinitions.value, filePath: 'file:///types/access-policy.d.ts' },
+  { content: sharedTypeDefinitions.value, filePath: 'file:///types/membership.d.ts' },
 ])
 
 const { t } = useI18n()
@@ -36,7 +35,7 @@ const isCreate = computed(() => props.id === 'create')
 const initialLoad = ref(false)
 const saving = ref(false)
 const saveError = ref<string | null>(null)
-const activeTab = ref<'general' | 'members' | 'script' | 'roles' | 'access' | 'effective'>('general')
+const activeTab = ref<'general' | 'members' | 'script' | 'roles' | 'effective'>('general')
 const effectiveMembers = ref<import('@/stores/group.store').EffectiveMembersDto | null>(null)
 const effectiveLoading = ref(false)
 
@@ -61,7 +60,6 @@ const form = ref({
   Description: '',
   MemberIds: [] as string[],
   RoleIds: [] as string[],
-  AccessScripts: [] as AccessScriptDto[],
   MembershipMode: 'Manual' as MembershipMode,
   MembershipScript: '',
   MembershipLastError: null as string | null,
@@ -231,71 +229,6 @@ const roleOptions = computed<CoarListboxOption<string>[]>(() =>
   }))
 )
 
-const requiredResourceTypes = computed(() => {
-  const types = new Set<string>()
-  for (const roleId of form.value.RoleIds) {
-    const role = roleStore.roles.find(r => r.Id === roleId)
-    if (role && role.ResourceType !== 'app') {
-      types.add(role.ResourceType)
-    }
-  }
-  return [...types].sort()
-})
-
-/**
- * Resources where the group has a role that grants write/mutating permissions
- * but no access script (or an empty script). Script-less = "unrestricted scope"
- * in the coupled model → the members can touch every row of the resource.
- * Flag these so the admin can confirm that's intentional before saving.
- */
-const writeResourcesWithoutScope = computed<string[]>(() => {
-  const out: string[] = []
-  const assignedRoles = form.value.RoleIds
-    .map(id => roleStore.roles.find(r => r.Id === id))
-    .filter((r): r is NonNullable<typeof r> => !!r)
-
-  const writeResources = new Set<string>()
-  for (const role of assignedRoles) {
-    if (roleHasWritePermission(role)) writeResources.add(role.ResourceType)
-  }
-
-  for (const rt of writeResources) {
-    const script = form.value.AccessScripts.find(s => s.ResourceType === rt)
-    if (!script || !script.Script?.trim()) out.push(rt)
-  }
-  return out.sort()
-})
-
-const writeResourceLabels = computed(() =>
-  writeResourcesWithoutScope.value.map(rt => RESOURCE_LABELS[rt] || rt)
-)
-
-// Access tab disappears when no per-resource roles are assigned (app:admin
-// bypasses all access scripts, so the tab has nothing to configure).
-const hasAccessConfig = computed(() => requiredResourceTypes.value.length > 0)
-watch(hasAccessConfig, (has) => {
-  if (!has && activeTab.value === 'access') activeTab.value = 'general'
-})
-
-function syncAccessScripts() {
-  const existing = new Map(form.value.AccessScripts.map(s => [s.ResourceType, s]))
-  form.value.AccessScripts = requiredResourceTypes.value.map(rt =>
-    existing.get(rt) || { ResourceType: rt, Script: '' }
-  )
-}
-
-function getScript(resourceType: string): string {
-  const stored = form.value.AccessScripts.find(s => s.ResourceType === resourceType)?.Script?.trim()
-  return stored || getDefaultScript(resourceType)
-}
-
-function setScript(resourceType: string, value: string) {
-  const script = form.value.AccessScripts.find(s => s.ResourceType === resourceType)
-  if (script) {
-    script.Script = value
-  }
-}
-
 onMounted(async () => {
   initialLoad.value = true
   try {
@@ -316,7 +249,6 @@ onMounted(async () => {
           Description: group.Description || '',
           MemberIds: [...group.MemberIds],
           RoleIds: [...group.RoleIds],
-          AccessScripts: group.AccessScripts.map(s => ({ ...s })),
           MembershipMode: group.MembershipMode || 'Manual',
           MembershipScript: group.MembershipScript || '',
           MembershipLastError: group.MembershipLastError ?? null,
@@ -337,13 +269,11 @@ async function save() {
   saving.value = true
   saveError.value = null
   try {
-    syncAccessScripts()
     const dto = {
       Name: form.value.Name,
       Description: form.value.Description || undefined,
       MemberIds: isAutoMode.value ? [] : form.value.MemberIds,
       RoleIds: form.value.RoleIds,
-      AccessScripts: form.value.AccessScripts,
       MembershipMode: form.value.MembershipMode,
       MembershipScript: isAutoMode.value ? form.value.MembershipScript : undefined,
       Email: form.value.Email?.trim() || undefined,
@@ -394,7 +324,6 @@ async function save() {
         <CoarTab id="members">{{ t('admin.groupDetails.tabs.members', {}, 'Members') }}</CoarTab>
         <CoarTab v-if="isAutoMode" id="script">{{ t('admin.groupDetails.tabs.script', {}, 'Script') }}</CoarTab>
         <CoarTab id="roles">{{ t('admin.groupDetails.tabs.roles', {}, 'Roles') }}</CoarTab>
-        <CoarTab v-if="hasAccessConfig" id="access">{{ t('admin.groupDetails.tabs.access', {}, 'Access') }}</CoarTab>
         <CoarTab v-if="!isCreate" id="effective">{{ t('admin.groupDetails.tabs.effective', {}, 'Effective') }}</CoarTab>
       </CoarTabGroup>
 
@@ -402,20 +331,6 @@ async function save() {
         <div class="save-error-title">{{ t('admin.groupDetails.saveError', {}, 'Save failed') }}</div>
         <pre class="save-error-message">{{ saveError }}</pre>
         <button type="button" class="save-error-dismiss" @click="saveError = null" :aria-label="t('common.close', {}, 'Close')">×</button>
-      </div>
-
-      <!-- Warning: write-bearing role combined with no row-level scope script → unrestricted write -->
-      <div v-if="writeResourcesWithoutScope.length > 0" class="write-warning" role="alert">
-        <CoarIcon name="alert-triangle" size="s" class="write-warning-icon" />
-        <div class="write-warning-body">
-          <div class="write-warning-title">
-            {{ t('admin.groupDetails.writeWithoutScope.title', {}, 'Unrestricted write access') }}
-          </div>
-          <div class="write-warning-message">
-            {{ t('admin.groupDetails.writeWithoutScope.message', { resources: writeResourceLabels.join(', ') },
-              `Members of this group can create, update, and delete every row of: ${writeResourceLabels.join(', ')}. Add an access script in the Access tab to limit which rows they can touch, or confirm this is intentional.`) }}
-          </div>
-        </div>
       </div>
 
       <!-- Tab: General -->
@@ -556,8 +471,7 @@ async function save() {
         <section class="flex-section">
           <CoarDualListbox
             class="flex-1 min-h-0"
-            :model-value="form.RoleIds"
-            @update:model-value="(v: string[]) => { form.RoleIds = v; syncAccessScripts() }"
+            v-model="form.RoleIds"
             :options="roleOptions"
             drag-drop
             sort-options="asc"
@@ -617,54 +531,6 @@ async function save() {
         </section>
       </div>
 
-      <!-- Tab: Access (Scripts pro Resource-Typ) -->
-      <div v-show="activeTab === 'access'" class="tab-content">
-        <section v-if="requiredResourceTypes.length > 0">
-          <p class="access-policy-help">
-            {{ t('admin.groupDetails.accessScriptsHelp', {}, 'Define which data members of this group can see per resource type.') }}
-          </p>
-          <div class="flex flex-col gap-3">
-            <div v-for="rt in requiredResourceTypes" :key="rt" class="script-block">
-              <div class="script-label-row">
-                <span class="script-label">{{ rt }}</span>
-                <CoarPopover v-if="getExamples(rt).length > 0" mode="click">
-                  <button type="button" class="info-btn" :aria-label="t('admin.groupDetails.examples', {}, 'Examples')">
-                    <CoarIcon name="info" size="s" />
-                  </button>
-                  <template #content>
-                    <div class="examples-popover">
-                      <p class="examples-intro">
-                        {{ t('admin.groupDetails.examplesIntro', {}, 'Empty = no restriction. Examples:') }}
-                      </p>
-                      <div v-for="(ex, i) in getExamples(rt)" :key="i" class="example">
-                        <div class="example-desc">{{ ex.description }}</div>
-                        <CoarCodeBlock
-                          :code="ex.code"
-                          language="typescript"
-                          :collapsible="false"
-                          :show-copy="true"
-                        />
-                      </div>
-                    </div>
-                  </template>
-                </CoarPopover>
-              </div>
-              <CoarScriptEditor
-                :model-value="getScript(rt)"
-                @update:model-value="setScript(rt, $event)"
-                :placeholder="getPlaceholder(rt)"
-                :extra-libs="scriptExtraLibs"
-                :preamble="getPreamble(rt)"
-                variant="inline"
-                height="280px"
-              />
-            </div>
-          </div>
-        </section>
-        <div v-else class="empty-hint">
-          {{ t('admin.groupDetails.access.noRolesHint', {}, 'Select roles in the General tab to configure resource access.') }}
-        </div>
-      </div>
     </div>
     <div v-else class="flex flex-1 items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>

@@ -1,4 +1,3 @@
-using Cocoar.Auth.Authorization.Access;
 using Cocoar.Auth.Authorization.Principals;
 
 namespace Cocoar.Auth.Authorization.Events;
@@ -9,7 +8,6 @@ public record GroupCreatedEvent(
     string? Description,
     List<Guid> MemberIds,
     List<Guid> RoleIds,
-    List<ResourceAccessScript> AccessScripts,
     MembershipMode MembershipMode = MembershipMode.Manual,
     string? MembershipScript = null,
     string? CompiledMembershipScript = null,
@@ -24,7 +22,6 @@ public record GroupUpdatedEvent(
     string? Description,
     List<Guid> MemberIds,
     List<Guid> RoleIds,
-    List<ResourceAccessScript> AccessScripts,
     MembershipMode MembershipMode = MembershipMode.Manual,
     string? MembershipScript = null,
     string? CompiledMembershipScript = null,

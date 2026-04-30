@@ -4,7 +4,7 @@ using Cocoar.JsEval.Linq;
 using Cocoar.JsEval.Linq.Dependencies;
 using Cocoar.JsEval.TypeScript;
 
-namespace Cocoar.Auth.Authorization.Access;
+namespace Cocoar.Auth.Authorization.Membership;
 
 public class MembershipEvaluator(
     JsEngine jsEngine,

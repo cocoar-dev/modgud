@@ -20,7 +20,6 @@ using Cocoar.Auth.Api;
 using Cocoar.Auth.Authentication.Api.Account;
 using Cocoar.Auth.Infrastructure.Email;
 using Cocoar.Auth.Authentication.Identity;
-using Cocoar.Auth.Authorization.Access;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Principals;
@@ -211,7 +210,7 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
             session.Store(group);
             session.Events.StartStream(group.Id,
                 new GroupCreatedEvent(group.Id, group.Name, group.Description,
-                    group.MemberIds, group.RoleIds, group.AccessScripts,
+                    group.MemberIds, group.RoleIds,
                     BoundTo: group.BoundTo));
 
             await session.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -252,13 +251,12 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
     }
 
     /// <summary>
-    /// Creates a test authorization group with members, roles, and access scripts.
+    /// Creates a test authorization group with members and roles.
     /// </summary>
     public async Task<Group> CreateTestGroupAsync(
         string name,
         List<Guid> memberIds,
         List<Guid>? roleIds = null,
-        List<ResourceAccessScript>? accessScripts = null,
         string? description = null,
         List<string>? boundTo = null)
     {
@@ -273,29 +271,15 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
             Description = description,
             MemberIds = memberIds,
             RoleIds = roleIds ?? [],
-            AccessScripts = accessScripts ?? [],
             BoundTo = bound,
         };
         session.Store(group);
         session.Events.StartStream(group.Id,
             new GroupCreatedEvent(group.Id, name, description,
-                memberIds, roleIds ?? [], accessScripts ?? [],
+                memberIds, roleIds ?? [],
                 BoundTo: bound));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
         return group;
-    }
-
-    /// <summary>
-    /// Builds a ResourceAccessScript with compiled JavaScript (for tests, source = compiled).
-    /// </summary>
-    public static ResourceAccessScript BuildAccessScript(string resourceType, string compiledJavaScript)
-    {
-        return new ResourceAccessScript
-        {
-            ResourceType = resourceType,
-            Script = compiledJavaScript,
-            CompiledScript = compiledJavaScript
-        };
     }
 
     /// <summary>

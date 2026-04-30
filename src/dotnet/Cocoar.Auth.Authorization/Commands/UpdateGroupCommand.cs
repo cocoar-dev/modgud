@@ -1,4 +1,3 @@
-using Cocoar.Auth.Authorization.Access;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Membership;
 using Cocoar.Auth.Authorization.Principals;
@@ -15,7 +14,6 @@ public record UpdateGroupCommand(
     string? Description,
     List<Guid> MemberIds,
     List<Guid> RoleIds,
-    List<AccessScriptInput> AccessScripts,
     MembershipMode MembershipMode = MembershipMode.Manual,
     string? MembershipScript = null,
     string? Email = null,
@@ -24,7 +22,6 @@ public record UpdateGroupCommand(
 
 public class UpdateGroupHandler(
     IDocumentSession session,
-    IAccessPolicyEngine accessPolicyEngine,
     IMembershipEvaluator membershipEvaluator,
     IPermissionService permissionService,
     IAutoMembershipRecalculator recalculator)
@@ -67,32 +64,6 @@ public class UpdateGroupHandler(
                     $"Adding group {cycleMembers[0]} as a member would create a cycle.");
         }
 
-        var accessScripts = new List<ResourceAccessScript>();
-        foreach (var input in command.AccessScripts)
-        {
-            string? compiled = null;
-            if (!string.IsNullOrWhiteSpace(input.Script))
-            {
-                try { compiled = accessPolicyEngine.TranspileTypeScript(input.Script); }
-                catch (TsTranspileException ex)
-                {
-                    return Error.Validation("Group.AccessScriptTranspile",
-                        $"Access script ({input.ResourceType}): {FormatTranspileErrors(ex)}");
-                }
-                catch (Exception ex)
-                {
-                    return Error.Validation("Group.AccessScriptTranspile",
-                        $"Transpile failed for {input.ResourceType}: {ex.Message}");
-                }
-            }
-            accessScripts.Add(new ResourceAccessScript
-            {
-                ResourceType = input.ResourceType,
-                Script = input.Script,
-                CompiledScript = compiled,
-            });
-        }
-
         string? compiledMembership = null;
         List<string>? membershipDeps = null;
         if (command.MembershipMode == MembershipMode.Auto)
@@ -123,7 +94,7 @@ public class UpdateGroupHandler(
 
         session.Events.Append(command.Id, new GroupUpdatedEvent(
             command.Id, command.Name, command.Description,
-            memberIds, command.RoleIds.ToList(), accessScripts,
+            memberIds, command.RoleIds.ToList(),
             command.MembershipMode, command.MembershipScript, compiledMembership,
             membershipDeps,
             command.Email, command.EmailMode,
@@ -138,7 +109,6 @@ public class UpdateGroupHandler(
                 Description = command.Description,
                 MemberIds = memberIds,
                 RoleIds = command.RoleIds.ToList(),
-                AccessScripts = accessScripts,
                 MembershipMode = command.MembershipMode,
                 MembershipScript = command.MembershipScript,
                 MembershipScriptDependencies = membershipDeps,

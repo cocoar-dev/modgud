@@ -151,7 +151,6 @@ public static class SetupEndpoints
                 Description = "Full system access",
                 MemberIds = [appUser.Id],
                 RoleIds = [adminRole.Id],
-                AccessScripts = [], // realm:admin bypasses all access scripts
                 // "*" wildcard: active in every app. The system admin must be
                 // able to govern any app registered in this realm.
                 BoundTo = [PermissionService.AllAppsWildcard],
@@ -159,7 +158,7 @@ public static class SetupEndpoints
             session.Store(adminGroup);
             session.Events.StartStream(adminGroup.Id,
                 new GroupCreatedEvent(adminGroup.Id, adminGroup.Name, adminGroup.Description,
-                    adminGroup.MemberIds, adminGroup.RoleIds, adminGroup.AccessScripts,
+                    adminGroup.MemberIds, adminGroup.RoleIds,
                     BoundTo: adminGroup.BoundTo));
 
             await session.SaveChangesAsync();

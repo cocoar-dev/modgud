@@ -10,9 +10,44 @@
 > - **What's actively pinned by tests?** → `testing.md` "Unit-test
 >   inventory" table.
 
-Last updated: 2026-04-29 (post Applications Phase 1).
+Last updated: 2026-04-30 (post Applications Phase 6 — ABAC excision).
 
 ## ✅ Done
+
+### Applications Phase 6 — ABAC excised from IAM (2026-04-30)
+
+Cocoar.Auth is now a pure RBAC + grouping IAM. Row-level access
+policies (ABAC) move to the consuming app where the row schema lives;
+the IAM stays schema-free per app.
+
+- Domain: `Group.AccessScripts` removed; `ResourceAccessScript` +
+  `AccessScriptInput` deleted; `GroupCreated/UpdatedEvent` shed the
+  AccessScripts parameter; `PrincipalProjectionBase` no longer copies it.
+- Service layer: `IAccessPolicyEngine` + `AccessPolicyEngine` deleted,
+  `UserContext` + `AccessQueryWrapper` deleted (script-time-only
+  helpers, only `AccessPolicyEngine` consumed them). The DI registration
+  is gone; `IMembershipEvaluator` moved into `Authorization.Membership`
+  (its real home).
+- Commands: `Create/UpdateGroupCommand` no longer take AccessScripts;
+  the TS-transpile call was AccessPolicyEngine-only and is gone with it.
+- API + DTOs: `AccessScriptDto`, `AccessScripts` field on group
+  endpoints / DemoSeedService / SetupEndpoints / UsersEndpoints all
+  removed.
+- Frontend: "Access" tab + AccessScripts state + write-without-scope
+  warning removed from `GroupDetails.vue`. `accessScriptTypes.ts`
+  replaced by `membershipScriptTypes.ts` (membership-only). `GroupDto`
+  / store-payload AccessScripts gone. de.json strings cleaned.
+- **Membership scripts stay** — they only read IAM-owned fields
+  (display name, email, IsActive, …), so no schema drift, no boundary
+  violation.
+- Doc: new `website/concepts/abac.md` explaining the boundary and the
+  three profiles (IAM-only, code-static ABAC, admin-pluggable ABAC via
+  local groups). `website/admin/groups.md` Access-tab + ABAC link
+  removed.
+
+Backend builds clean; **813 unit tests green** (down from 824 — the
+removed UserContextTests + the AccessScripts-only branches in
+AutoMembershipSync handlers, plus a couple of legacy ABAC asserts).
 
 ### Applications Phase 5 — RS-Auth + IDP/IAM split (2026-04-30)
 

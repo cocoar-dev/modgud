@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
-import type { GroupDto, AccessScriptDto, MembershipMode } from '@/models/group'
+import type { GroupDto, MembershipMode } from '@/models/group'
 import type { PrincipalType } from '@/models/common'
 
 export interface EffectiveMemberDto {
@@ -27,7 +27,6 @@ interface GroupPayload {
   Description?: string
   MemberIds: string[]
   RoleIds: string[]
-  AccessScripts: AccessScriptDto[]
   MembershipMode: MembershipMode
   MembershipScript?: string
   Email?: string

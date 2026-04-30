@@ -1,6 +1,5 @@
 using Marten;
 using Microsoft.Extensions.Logging;
-using Cocoar.Auth.Authorization.Access;
 using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Principals;
 

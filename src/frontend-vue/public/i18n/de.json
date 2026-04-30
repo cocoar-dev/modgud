@@ -440,8 +440,6 @@
       "selectMembers": "Mitglieder auswählen...",
       "roles": "Rollen",
       "selectRoles": "Rollen auswählen...",
-      "accessScripts": "Zugriffsrichtlinien",
-      "accessScriptsHelp": "Definiert welche Daten Mitglieder dieser Gruppe pro Resource-Typ sehen können. Leer = keine Einschränkung (Rolle gilt für alle Einträge).",
       "examples": "Beispiele",
       "examplesIntro": "Leer = keine Einschränkung. Beispiele für Einschränkungen:",
       "membership": {
@@ -458,10 +456,6 @@
         "ownAddress": "Eigene Adresse",
         "sharedHelp": "Benachrichtigungen gehen an diese Adresse.",
         "expandHelp": "Benachrichtigungen gehen an jedes Mitglied einzeln (rekursiv über verschachtelte Gruppen)."
-      },
-      "writeWithoutScope": {
-        "title": "Uneingeschränkter Schreibzugriff",
-        "message": "Mitglieder dieser Gruppe können jeden Datensatz anlegen, ändern und löschen für: {resources}. Im Tab „Zugriff“ ein Script hinzufügen, um den Schreibzugriff einzuschränken — oder bestätigen, dass das beabsichtigt ist."
       }
     },
     "simulator": {

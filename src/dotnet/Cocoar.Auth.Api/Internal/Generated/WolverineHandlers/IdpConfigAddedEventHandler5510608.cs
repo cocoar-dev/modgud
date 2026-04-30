@@ -9,13 +9,13 @@ namespace Internal.Generated.WolverineHandlers
     [global::System.CodeDom.Compiler.GeneratedCode("JasperFx", "1.0.0")]
     public sealed class IdpConfigAddedEventHandler5510608 : Wolverine.Runtime.Handlers.MessageHandler
     {
-        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
         private readonly Cocoar.Auth.Authentication.Api.ExternalAuth.DynamicOidcSchemeManager _dynamicOidcSchemeManager;
+        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
 
-        public IdpConfigAddedEventHandler5510608(Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, Cocoar.Auth.Authentication.Api.ExternalAuth.DynamicOidcSchemeManager dynamicOidcSchemeManager)
+        public IdpConfigAddedEventHandler5510608(Cocoar.Auth.Authentication.Api.ExternalAuth.DynamicOidcSchemeManager dynamicOidcSchemeManager, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory)
         {
-            _outboxedSessionFactory = outboxedSessionFactory;
             _dynamicOidcSchemeManager = dynamicOidcSchemeManager;
+            _outboxedSessionFactory = outboxedSessionFactory;
         }
 
 

@@ -20,7 +20,6 @@ public abstract class PrincipalProjectionBase : SingleStreamProjection<Principal
         Description = @event.Description,
         MemberIds = @event.MemberIds,
         RoleIds = @event.RoleIds,
-        AccessScripts = @event.AccessScripts,
         MembershipMode = @event.MembershipMode,
         MembershipScript = @event.MembershipScript,
         CompiledMembershipScript = @event.CompiledMembershipScript,
@@ -39,7 +38,6 @@ public abstract class PrincipalProjectionBase : SingleStreamProjection<Principal
         group.Description = @event.Description;
         group.MemberIds = @event.MemberIds;
         group.RoleIds = @event.RoleIds;
-        group.AccessScripts = @event.AccessScripts;
         group.MembershipMode = @event.MembershipMode;
         group.MembershipScript = @event.MembershipScript;
         group.CompiledMembershipScript = @event.CompiledMembershipScript;

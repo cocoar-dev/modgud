@@ -114,7 +114,7 @@ public class PrincipalEmailResolverTests : IntegrationTestBase
         session.Store(group);
         session.Events.StartStream(group.Id,
             new GroupCreatedEvent(group.Id, group.Name, group.Description,
-                group.MemberIds, group.RoleIds, group.AccessScripts,
+                group.MemberIds, group.RoleIds,
                 group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
                 group.MembershipScriptDependencies, group.Email, group.EmailMode));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);

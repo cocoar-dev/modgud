@@ -112,7 +112,7 @@ public static class DependencyInjection
         // Register Event Dispatcher
         services.AddScoped<IEventDispatcher, SignalREventDispatcher>();
 
-        // Cocoar.Auth.Authorization — runtime services (IPermissionService, IAccessPolicyEngine,
+        // Cocoar.Auth.Authorization — runtime services (IPermissionService,
         // IMembershipEvaluator, IPrincipalEmailResolver, IPrincipalLookupService,
         // IAutoMembershipRecalculator) + the resource registry. Sub-class mapping +
         // STJ polymorphism + Marten event aliases happen via UseCocoarAuthAuthorization

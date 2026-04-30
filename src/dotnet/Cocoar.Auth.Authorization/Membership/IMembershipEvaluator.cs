@@ -1,6 +1,6 @@
 using System.Linq.Expressions;
 
-namespace Cocoar.Auth.Authorization.Access;
+namespace Cocoar.Auth.Authorization.Membership;
 
 /// <summary>
 /// Transpiles membership-predicate scripts (TypeScript → JavaScript) and builds

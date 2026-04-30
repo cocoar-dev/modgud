@@ -15,14 +15,11 @@ public record CreateGroupDto(
     string? Description,
     List<string> MemberIds,
     List<string> RoleIds,
-    List<AccessScriptDto> AccessScripts,
     MembershipMode MembershipMode = MembershipMode.Manual,
     string? MembershipScript = null,
     string? Email = null,
     EmailMode EmailMode = EmailMode.Shared,
     List<string>? BoundTo = null);
-
-public record AccessScriptDto(string ResourceType, string? Script);
 
 public static class GroupEndpoints
 {
@@ -152,7 +149,6 @@ public static class GroupEndpoints
                     dto.Name, dto.Description,
                     dto.MemberIds.Select(m => new ShortGuid(m).Guid).ToList(),
                     dto.RoleIds.Select(r => new ShortGuid(r).Guid).ToList(),
-                    dto.AccessScripts.Select(s => new AccessScriptInput(s.ResourceType, s.Script)).ToList(),
                     dto.MembershipMode, dto.MembershipScript,
                     dto.Email, dto.EmailMode,
                     boundTo);
@@ -172,7 +168,6 @@ public static class GroupEndpoints
                     id.Guid, dto.Name, dto.Description,
                     dto.MemberIds.Select(m => new ShortGuid(m).Guid).ToList(),
                     dto.RoleIds.Select(r => new ShortGuid(r).Guid).ToList(),
-                    dto.AccessScripts.Select(s => new AccessScriptInput(s.ResourceType, s.Script)).ToList(),
                     dto.MembershipMode, dto.MembershipScript,
                     dto.Email, dto.EmailMode,
                     dto.BoundTo);
@@ -208,7 +203,6 @@ public static class GroupEndpoints
         g.Description,
         MemberIds = g.MemberIds.Select(id => new ShortGuid(id).ToString()),
         RoleIds = g.RoleIds.Select(id => new ShortGuid(id).ToString()),
-        AccessScripts = g.AccessScripts.Select(s => new { s.ResourceType, s.Script }),
         MembershipMode = g.MembershipMode.ToString(),
         g.MembershipScript,
         g.MembershipLastError,

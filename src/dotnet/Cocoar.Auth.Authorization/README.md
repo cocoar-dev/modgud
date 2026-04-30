@@ -44,7 +44,6 @@ TimeToDo.Authorization.Services
    IPermissionService                                  // BFS Principal → Group → Role
    IPrincipalLookupService                             // by-id + lightweight lookup
    IPrincipalEmailResolver                             // shared / expand-to-members
-   IAccessPolicyEngine                                 // resource access scripts
    IMembershipEvaluator                                // auto-membership scripts
    IAutoMembershipRecalculator                         // recompute on principal change
 
@@ -93,7 +92,6 @@ TimeToDo.Authorization.Projections
         └───────────┘         └─────┬─────┘         └───────────────┘
                                     │
                               MemberIds, RoleIds,
-                              AccessScripts,
                               Membership (Manual/Auto + script),
                               Email (Shared/ExpandToMembers)
 
