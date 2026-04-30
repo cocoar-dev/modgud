@@ -373,6 +373,7 @@ dist/
 
 /output
 src/dotnet/output/
+**/.e2e-containers.json
 .DS_Store
 
 /local
@@ -410,3 +411,7 @@ src/dotnet/Cocoar.Auth.Api/logs/
 # Cocoar.Auth wwwroot is build-output (vite + vitepress), produced by `pnpm run build:backend`
 src/dotnet/Cocoar.Auth.Api/wwwroot/
 .claude/
+
+# Playwright test artifacts
+src/frontend-vue/test-results/
+src/frontend-vue/playwright-report/

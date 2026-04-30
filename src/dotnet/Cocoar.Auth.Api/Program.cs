@@ -378,16 +378,16 @@ try
             Serilog.Log.Warning("No EmailConfiguration found — email sending disabled");
         }
 
-        if (builder.Environment.IsDevelopment())
-        {
-            builder.Services.AddSingleton<InMemoryEmailService>(sp =>
-                new InMemoryEmailService(sp.GetRequiredService<ILogger<InMemoryEmailService>>(), emailService));
-            builder.Services.AddSingleton<IEmailService>(sp => sp.GetRequiredService<InMemoryEmailService>());
-        }
-        else
-        {
-            builder.Services.AddSingleton<IEmailService>(emailService);
-        }
+        // Always register the configured email service (Smtp or Postmark).
+        // The previous dev-only branch wrapped this in InMemoryEmailService and
+        // exposed it via /api/dev/emails — but that left a Development-mode
+        // surface (the dev-emails endpoint) hanging in the runtime image.
+        // Test rigs that need to inspect outbound mail point Smtp at a real
+        // capture server (Mailpit / smtp4dev / MailHog) instead — same SMTP
+        // path that prod takes, no extra HTTP surface in the auth container.
+        // InMemoryEmailService stays as a class for in-process integration
+        // tests (CocoarAuthWebApplicationFactory wires it via DI override).
+        builder.Services.AddSingleton<IEmailService>(emailService);
     
     builder.Services.AddScoped<IEmailOtpService, EmailOtpService>();
 
@@ -558,13 +558,6 @@ try
     app.MapProfileLinkEndpoints("api");
     app.MapIdpConfigEndpoints("api");
     app.MapUserUpdateScriptTestEndpoint("api");
-
-    // Dev-only endpoints (email inspection, MFA reset, etc.)
-    // Available in Development environment (needed for E2E tests in Docker)
-    if (app.Environment.IsDevelopment())
-    {
-        app.MapDevEndpoints("api");
-    }
 
     // Marten Endpoints
     app.MapUsersEndpoints("api");
