@@ -30,8 +30,7 @@ Cocoar.Auth is not just a login frontend — it's a full **OAuth 2.0 / OpenID Co
 
 ### Federation & Realms
 
-- [Login Providers](./login-providers) — local provider plus external (Google, Microsoft, Entra, any OIDC)
-- [External Identity Providers (SSO)](./identity-providers) — step-by-step external IdP setup
+- [Login Providers](./login-providers) — built-in Internal plus external OIDC (Google, Microsoft, Entra, any OIDC); step-by-step setup walkthroughs included
 - [Realms](./realms) — multi-tenant setup; each tenant gets its own database
 
 ### Operations
@@ -88,7 +87,7 @@ Full step-by-step walkthrough: [SaaS App Integration](./saas-integration-walkthr
 
 ### Wire up external SSO (Microsoft Entra)
 
-Full step-by-step walkthrough: [External Identity Providers (SSO)](./identity-providers).
+Full step-by-step walkthrough: [Login Providers](./login-providers).
 
 ### Run multiple tenants
 

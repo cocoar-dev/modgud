@@ -18,7 +18,7 @@ public static class UserViewMapper
             UserName = view.UserName,
             IsActive = view.IsActive,
             HasPassword = view.HasPassword,
-            ExternalIdpConfigIds = view.ExternalIdpConfigIds
+            ExternalLoginProviderIds = view.ExternalLoginProviderIds
                 .Select(id => new ShortGuid(id).ToString())
                 .ToList(),
         };

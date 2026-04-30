@@ -118,27 +118,26 @@ the member picker in the frontend.
 | `PATCH` | `/api/admin/oauth/apis/{id}` | `cocoar-auth:oauth-api:write` |
 | `DELETE` | `/api/admin/oauth/apis/{id}` | `cocoar-auth:oauth-api:delete` |
 
-## Login providers (internal + external)
+## Login providers
+
+The single endpoint group for both built-in (Internal) and external (Oidc /
+Saml / Ldap / Kerberos) login providers. The Internal entry is auto-seeded
+once per realm and rejects edits / deletes — clients identify it by
+`IsBuiltIn=true` on the DTO.
 
 | Method | Path | Permission |
 |---|---|---|
 | `GET` | `/api/admin/login-providers` | `cocoar-auth:login-provider:read` |
 | `GET` | `/api/admin/login-providers/{id}` | `cocoar-auth:login-provider:read` |
+| `GET` | `/api/admin/login-providers/flavors` | `cocoar-auth:login-provider:read` |
 | `POST` | `/api/admin/login-providers` | `cocoar-auth:login-provider:write` |
-| `PATCH` | `/api/admin/login-providers/{id}` | `cocoar-auth:login-provider:write` |
-| `DELETE` | `/api/admin/login-providers/{id}` | `cocoar-auth:login-provider:delete` |
-
-## IdP config (OIDC identity providers)
-
-| Method | Path | Permission |
-|---|---|---|
-| `GET` | `/api/admin/idp-config` | `cocoar-auth:idp-config:read` |
-| `GET` | `/api/admin/idp-config/{id}` | `cocoar-auth:idp-config:read` |
-| `POST` | `/api/admin/idp-config` | `cocoar-auth:idp-config:write` |
-| `PATCH` | `/api/admin/idp-config/{id}` | `cocoar-auth:idp-config:write` |
-| `DELETE` | `/api/admin/idp-config/{id}` | `cocoar-auth:idp-config:delete` |
-| `POST` | `/api/admin/idp-config/{id}/rotate-secret` | `cocoar-auth:idp-config:write` |
-| `POST` | `/api/admin/idp-config/{id}/test-script` | `cocoar-auth:idp-config:read` |
+| `PUT` | `/api/admin/login-providers/{id}` | `cocoar-auth:login-provider:write` |
+| `DELETE` | `/api/admin/login-providers/{id}` | `cocoar-auth:login-provider:write` |
+| `POST` | `/api/admin/login-providers/{id}/enable` | `cocoar-auth:login-provider:write` |
+| `POST` | `/api/admin/login-providers/{id}/disable` | `cocoar-auth:login-provider:write` |
+| `POST` | `/api/admin/login-providers/{id}/secret` | `cocoar-auth:login-provider:write` |
+| `POST` | `/api/admin/login-providers/{id}/test-user-update` | `cocoar-auth:login-provider:read` |
+| `GET` | `/api/admin/login-providers/{id}/last-raw-claims` | `cocoar-auth:login-provider:read` |
 
 ## Realms
 

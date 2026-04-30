@@ -13,10 +13,10 @@ public class UserDto
     public bool IsActive { get; set; } = true;
     public bool HasPassword { get; set; }
     /// <summary>
-    /// IdpConfig ids (ShortGuid strings) this user has an active external-identity
+    /// LoginProvider ids (ShortGuid strings) this user has an active external-identity
     /// link with. Empty = local-only. Frontend resolves ids → display names via
-    /// the IdpConfig store for the Admin-list IdP-connected indicator.
+    /// the LoginProvider store for the Admin-list IdP-connected indicator.
     /// </summary>
-    public List<string> ExternalIdpConfigIds { get; set; } = [];
+    public List<string> ExternalLoginProviderIds { get; set; } = [];
     public EntityStatus Status { get; set; } = EntityStatus.Active;
 }

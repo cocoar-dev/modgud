@@ -59,7 +59,7 @@ These are out of scope for `/setup`; you reach for them next:
 - **Configure SMTP.** Default is in-memory mail (logs to stdout). For real email flows: Settings → SMTP → fill in + test.
 - **Bind your first SaaS app.** See [SaaS Integration Walkthrough](../admin/saas-integration-walkthrough).
 - **Add additional realms.** From the admin SPA, Realms → Create. (Only available from a realm with `CanManageTenants = true`.)
-- **Configure external SSO.** [Identity Providers](../admin/identity-providers).
+- **Configure external SSO.** [Login Providers](../admin/login-providers).
 
 ## Lost the admin account?
 

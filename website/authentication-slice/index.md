@@ -112,5 +112,5 @@ in DI.
 
 - [Concepts](./konzepte) — mental model, auth levels, cookie model, AuthLog, profile service
 - [Login flows](./login-flows) — every login method in detail
-- [Identity providers (OIDC)](./identity-providers) — federated login, flavors, UserUpdateScript
+- [Login providers (OIDC)](./login-providers) — federated login, flavors, UserUpdateScript
 - [GDPR & sessions](./gdpr-sessions) — self-service, Marten masking, session tracking

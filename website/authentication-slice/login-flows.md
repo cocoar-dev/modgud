@@ -186,7 +186,7 @@ GET /api/account/external-login/callback
 4. Login cookie set (persistent, 30 days)
 
 Details on IdP setup and scripting: see
-[Identity Providers (OIDC)](./identity-providers).
+[Login Providers (OIDC)](./login-providers).
 
 ## OAuth authorize flow (external apps)
 

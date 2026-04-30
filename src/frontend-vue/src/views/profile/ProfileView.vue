@@ -227,10 +227,10 @@ async function loadAvailableIdps() {
   } catch { /* ignore */ }
 }
 
-function linkWith(idpConfigId: string) {
+function linkWith(loginProviderId: string) {
   // Same start-flow as login; the finish endpoint detects the active app
   // cookie and routes the external identity into "link to current user".
-  window.location.href = `/api/account/external-login/${idpConfigId}/start?returnUrl=/profile`
+  window.location.href = `/api/account/external-login/${loginProviderId}/start?returnUrl=/profile`
 }
 
 async function unlink(linkId: string, displayName: string) {
@@ -245,7 +245,7 @@ async function unlink(linkId: string, displayName: string) {
 
 // IdPs that are enabled but not yet linked — shown as "Link with X" buttons.
 const unlinkedIdps = computed(() => {
-  const linkedIds = new Set(externalLinks.value.map(l => l.IdpConfigId))
+  const linkedIds = new Set(externalLinks.value.map(l => l.LoginProviderId))
   return availableIdps.value.filter(idp => !linkedIds.has(idp.Id))
 })
 
@@ -838,14 +838,14 @@ function onMfaSetupClose(enabled: boolean) {
                             @click="toggleLinkExpand(link.Id)">
                       <CoarIcon :name="expandedLinks.has(link.Id) ? 'chevron-down' : 'chevron-right'" size="s" />
                       <div class="min-w-0 flex-1">
-                        <div class="text-sm font-medium">{{ link.IdpDisplayName }}</div>
+                        <div class="text-sm font-medium">{{ link.ProviderDisplayName }}</div>
                         <div class="text-xs text-surface-500 truncate">
                           {{ link.Email ?? link.Issuer }}
                           <span v-if="link.LastLoginAt"> · {{ t('profile.externalLinks.lastLogin', {}, 'Last login: ') }}{{ new Date(link.LastLoginAt).toLocaleDateString() }}</span>
                         </div>
                       </div>
                     </button>
-                    <button class="text-surface-400 hover:text-red-600 transition ml-2" @click="unlink(link.Id, link.IdpDisplayName)">
+                    <button class="text-surface-400 hover:text-red-600 transition ml-2" @click="unlink(link.Id, link.ProviderDisplayName)">
                       <CoarIcon name="trash-2" size="s" />
                     </button>
                   </div>

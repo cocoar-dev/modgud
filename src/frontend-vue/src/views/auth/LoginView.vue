@@ -67,9 +67,9 @@ async function loadExternalLogins() {
     if (res.ok) externalLogins.value = await res.json()
   } catch { /* ignore — login page works without external buttons */ }
 }
-function startExternalLogin(idpConfigId: string) {
+function startExternalLogin(loginProviderId: string) {
   const returnUrl = new URLSearchParams(window.location.search).get('returnUrl') ?? '/'
-  const target = `/api/account/external-login/${idpConfigId}/start?returnUrl=${encodeURIComponent(returnUrl)}`
+  const target = `/api/account/external-login/${loginProviderId}/start?returnUrl=${encodeURIComponent(returnUrl)}`
   window.location.href = target
 }
 loadExternalLogins()

@@ -9,8 +9,8 @@ export interface UserDto {
   UserName: string
   IsActive: boolean
   HasPassword: boolean
-  /** IdpConfig ShortGuids of active external-identity links. Empty = local-only. */
-  ExternalIdpConfigIds: string[]
+  /** LoginProvider ShortGuids of active external-identity links. Empty = local-only. */
+  ExternalLoginProviderIds: string[]
   Status: EntityStatus
 }
 

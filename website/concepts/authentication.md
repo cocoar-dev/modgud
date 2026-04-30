@@ -109,9 +109,9 @@ Plus **recovery codes** as a last-resort backup.
 Users can sign in via external OIDC providers (Entra ID, Google,
 Auth0, ...). Configurable per realm.
 
-1. Admin creates an `IdpConfig`: authority, client ID, client secret,
-   `UserUpdateScript`
-2. Login page automatically shows buttons for active IdpConfigs
+1. Admin creates a `LoginProvider` of `Type = Oidc`: authority, client ID,
+   client secret, `UserUpdateScript`
+2. Login page automatically shows buttons for enabled OIDC providers
 3. Click → OIDC Authorization Code + PKCE → IdP login
 4. On callback: `ExternalLoginProcessor` runs
    - Looks up `ExternalIdentityLink` (issuer + subject) → existing user
@@ -120,7 +120,7 @@ Auth0, ...). Configurable per realm.
 5. If the user has 2FA enabled, the normal 2FA flow runs afterwards
 6. Login cookie is set (always 30 days)
 
-See [Identity providers (OIDC)](/authentication-slice/identity-providers)
+See [Login providers (OIDC)](/authentication-slice/login-providers)
 for details.
 
 ## Account lifecycle

@@ -36,7 +36,6 @@ const allNavItems: NavItem[] = [
   { section: 'oauth', label: 'admin.oauthApis.title', icon: 'server', path: '/admin/oauth/apis', requirePermissions: ['cocoar-auth:oauth-api:read'] },
   // Identity sources
   { section: 'identity', label: 'admin.loginProviders.title', icon: 'log-in', path: '/admin/login-providers', requirePermissions: ['cocoar-auth:login-provider:read'] },
-  { section: 'identity', label: 'admin.idpConfig.title', icon: 'key-round', path: '/admin/idp-config', requirePermissions: ['cocoar-auth:idp-config:read'] },
   // System
   { section: 'system', label: 'admin.apps.title', icon: 'layout-grid', path: '/admin/apps', requirePermissions: ['cocoar-auth:app:read'] },
   { section: 'system', label: 'admin.realms.title', icon: 'globe', path: '/admin/realms', requirePermissions: ['cocoar-auth:realm:read'] },

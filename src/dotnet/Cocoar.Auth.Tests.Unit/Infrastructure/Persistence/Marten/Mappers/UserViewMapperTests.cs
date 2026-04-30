@@ -30,7 +30,7 @@ public class UserViewMapperTests
                 Email = "alice@example.com",
                 IsActive = true,
                 HasPassword = true,
-                ExternalIdpConfigIds = new List<Guid> { idp1, idp2 },
+                ExternalLoginProviderIds = new List<Guid> { idp1, idp2 },
             };
 
             var dto = view.ToDto();
@@ -43,9 +43,9 @@ public class UserViewMapperTests
             Assert.Equal("alice@example.com", dto.Email);
             Assert.True(dto.IsActive);
             Assert.True(dto.HasPassword);
-            Assert.Equal(2, dto.ExternalIdpConfigIds.Count);
-            Assert.Contains(new ShortGuid(idp1).ToString(), dto.ExternalIdpConfigIds);
-            Assert.Contains(new ShortGuid(idp2).ToString(), dto.ExternalIdpConfigIds);
+            Assert.Equal(2, dto.ExternalLoginProviderIds.Count);
+            Assert.Contains(new ShortGuid(idp1).ToString(), dto.ExternalLoginProviderIds);
+            Assert.Contains(new ShortGuid(idp2).ToString(), dto.ExternalLoginProviderIds);
         }
 
         [Fact]
@@ -88,12 +88,12 @@ public class UserViewMapperTests
         [Fact]
         public void Empty_idp_list_maps_to_empty_string_list()
         {
-            var view = new UserView { Id = Guid.NewGuid(), ExternalIdpConfigIds = new() };
+            var view = new UserView { Id = Guid.NewGuid(), ExternalLoginProviderIds = new() };
 
             var dto = view.ToDto();
 
-            Assert.NotNull(dto.ExternalIdpConfigIds);
-            Assert.Empty(dto.ExternalIdpConfigIds);
+            Assert.NotNull(dto.ExternalLoginProviderIds);
+            Assert.Empty(dto.ExternalLoginProviderIds);
         }
 
         [Fact]

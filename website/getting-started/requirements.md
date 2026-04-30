@@ -71,7 +71,7 @@ If you want to delegate auth to Microsoft Entra, Google, Okta, etc., you need:
 - A reachable HTTPS callback URL (the realm's domain)
 - Network egress to the provider's authorization + token endpoints
 
-Per-tenant configuration via [External Identity Providers](../admin/identity-providers).
+Per-tenant configuration via [Login Providers](../admin/login-providers).
 
 ## Capacity planning
 

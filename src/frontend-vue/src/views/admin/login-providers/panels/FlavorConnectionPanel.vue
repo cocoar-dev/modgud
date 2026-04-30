@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { CoarFormField, CoarTextInput, CoarCheckbox } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
-import type { FlavorConfigFieldDto } from '@/models/idpConfig'
+import type { FlavorConfigFieldDto } from '@/models/loginProvider'
 
 const { t } = useI18n()
 

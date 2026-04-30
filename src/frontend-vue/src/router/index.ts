@@ -119,22 +119,6 @@ const routes = [
               component: () => import('@/views/admin/ChangeRequestsView.vue'),
             },
             {
-              path: 'idp-config',
-              component: () => import('@/views/admin/idp-config/IdpConfigList.vue'),
-              meta: {
-                routedFragments: [
-                  {
-                    type: 'modal',
-                    path: ':id',
-                    component: () => import('@/views/admin/idp-config/IdpConfigDetails.vue'),
-                    overlayOptions: {
-                      size: { minHeight: '80vh', maxHeight: '90vh' },
-                    },
-                  },
-                ],
-              },
-            },
-            {
               path: 'oauth/clients',
               component: () => import('@/views/admin/oauth/ClientList.vue'),
               meta: {
@@ -282,7 +266,7 @@ router.beforeEach(async (to) => {
       'cocoar-auth:authorization-group:read',
       'cocoar-auth:oauth-client:read', 'cocoar-auth:oauth-scope:read',
       'cocoar-auth:oauth-api:read',
-      'cocoar-auth:login-provider:read', 'cocoar-auth:idp-config:read',
+      'cocoar-auth:login-provider:read',
       'cocoar-auth:realm:read',
       'cocoar-auth:auth-log:read', 'cocoar-auth:session:read',
       'cocoar-auth:app:read',

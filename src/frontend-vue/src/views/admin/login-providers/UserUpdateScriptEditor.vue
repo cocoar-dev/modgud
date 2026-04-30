@@ -3,15 +3,15 @@ import { ref, watch } from 'vue'
 import { CoarScriptEditor } from '@cocoar/vue-script-editor'
 import { CoarButton, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
-import { useIdpConfigStore } from '@/stores/idpConfig.store'
-import type { TestUserUpdateResponse } from '@/models/idpConfig'
+import { useLoginProviderStore } from '@/stores/loginProvider.store'
+import type { TestUserUpdateResponse } from '@/models/loginProvider'
 
 const { t } = useI18n()
-const store = useIdpConfigStore()
+const store = useLoginProviderStore()
 
 const props = defineProps<{
   modelValue: string
-  idpConfigId?: string
+  loginProviderId?: string
   isNew?: boolean
 }>()
 
@@ -63,11 +63,11 @@ declare const claims: RawClaims;
 }]
 
 async function loadLast() {
-  if (!props.idpConfigId || props.isNew) return
+  if (!props.loginProviderId || props.isNew) return
   try {
-    const raw = await store.getLastRawClaims(props.idpConfigId)
+    const raw = await store.getLastRawClaims(props.loginProviderId)
     if (raw) sampleClaims.value = JSON.stringify(raw, null, 2)
-    else testError.value = t('admin.idpConfig.noLastClaims', {}, 'No stored login sample available yet.')
+    else testError.value = t('admin.loginProviders.noLastClaims', {}, 'Noch kein gespeichertes Login-Sample verfügbar.')
   } catch (e: any) {
     testError.value = e?.message ?? String(e)
   }
@@ -79,17 +79,17 @@ async function runTest() {
   let parsed: Record<string, unknown>
   try { parsed = JSON.parse(sampleClaims.value) }
   catch (e: any) {
-    testError.value = t('admin.idpConfig.invalidJson', {}, 'Invalid JSON: ') + (e?.message ?? String(e))
+    testError.value = t('admin.loginProviders.invalidJson', {}, 'Ungültiges JSON: ') + (e?.message ?? String(e))
     return
   }
 
   testing.value = true
   try {
-    if (props.isNew || !props.idpConfigId) {
-      testError.value = t('admin.idpConfig.testAfterSave', {}, 'Save the config first to test the script.')
+    if (props.isNew || !props.loginProviderId) {
+      testError.value = t('admin.loginProviders.testAfterSave', {}, 'Speichere die Konfiguration zuerst, dann kannst du das Script testen.')
       return
     }
-    const res = await store.testUserUpdate(props.idpConfigId, {
+    const res = await store.testUserUpdate(props.loginProviderId, {
       Script: script.value,
       Claims: parsed,
     })
@@ -107,7 +107,7 @@ async function runTest() {
   <div class="editor-layout">
     <div class="editor-side">
       <div class="side-heading">
-        {{ t('admin.idpConfig.userUpdateScript', {}, 'User update script') }}
+        {{ t('admin.loginProviders.userUpdateScript', {}, 'User-Update-Script') }}
       </div>
       <CoarScriptEditor
         v-model="script"
@@ -121,20 +121,20 @@ async function runTest() {
 
     <div class="test-side">
       <div class="side-heading flex items-center justify-between">
-        <span>{{ t('admin.idpConfig.testPanel', {}, 'Test') }}</span>
+        <span>{{ t('admin.loginProviders.testPanel', {}, 'Test') }}</span>
         <div class="flex gap-1">
           <CoarButton size="xs" variant="subtle" icon-start="download" :disabled="isNew" @click="loadLast">
-            {{ t('admin.idpConfig.loadLastClaims', {}, 'Last login') }}
+            {{ t('admin.loginProviders.loadLastClaims', {}, 'Letzter Login') }}
           </CoarButton>
           <CoarButton size="xs" icon-start="play" :disabled="testing" @click="runTest">
-            {{ t('admin.idpConfig.runTest', {}, 'Run') }}
+            {{ t('admin.loginProviders.runTest', {}, 'Ausführen') }}
           </CoarButton>
         </div>
       </div>
 
       <CoarTabGroup v-model="activeTab" class="tabs-row">
-        <CoarTab id="input">{{ t('admin.idpConfig.sampleInput', {}, 'Sample input') }}</CoarTab>
-        <CoarTab id="output">{{ t('admin.idpConfig.output', {}, 'Output') }}</CoarTab>
+        <CoarTab id="input">{{ t('admin.loginProviders.sampleInput', {}, 'Beispiel-Input') }}</CoarTab>
+        <CoarTab id="output">{{ t('admin.loginProviders.output', {}, 'Ergebnis') }}</CoarTab>
       </CoarTabGroup>
 
       <div v-if="activeTab === 'input'" class="tab-body">
@@ -149,7 +149,7 @@ async function runTest() {
         <div v-if="testError" class="error-banner">{{ testError }}</div>
         <pre v-if="result" class="output-pre">{{ JSON.stringify(result, null, 2) }}</pre>
         <div v-else-if="!testError" class="text-sm text-gray-400 p-3">
-          {{ t('admin.idpConfig.noResult', {}, 'Click Run to see the computed patch.') }}
+          {{ t('admin.loginProviders.noResult', {}, 'Klick "Ausführen", um das berechnete Patch zu sehen.') }}
         </div>
       </div>
 

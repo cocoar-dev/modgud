@@ -156,15 +156,18 @@ introspection roundtrip gets in the way.
 
 ## Login providers
 
-An authentication method that users can use. Configurable per realm.
+An authentication method that users can use. A single `LoginProvider`
+aggregate per entry, with a `Type` discriminator. Configurable per realm.
 
-| Type | Description |
-|---|---|
-| **Internal** | Built-in username/password. Always present, not deletable. |
-| **OIDC** (`IdpConfig`) | External IdPs (Entra ID, Google, Auth0, ...). Authority + client ID + secret + UserUpdateScript. |
+| Type | Status | Description |
+|---|---|---|
+| **Internal** | Wired up | Built-in username/password. Auto-seeded once per realm, marked `IsBuiltIn=true`, not editable from the admin UI. |
+| **Oidc** | Wired up | External OIDC IdPs (Entra ID, Google, Auth0, ...). Authority + client ID + secret + UserUpdateScript. |
+| **Saml** / **Ldap** / **Kerberos** | Reserved | Enum values exist; create endpoint rejects with `LoginProvider.TypeNotSupported`. The shape ships now so the FE doesn't have to add a "not supported yet" UI per type later. |
 
-Configured OIDC providers automatically show "Login with {Provider}"
-buttons in the login UI.
+Configured Oidc providers automatically show "Login with {Provider}"
+buttons in the login UI. Internal never produces an SSO button — it
+backs the local username/password form.
 
 ---
 
@@ -178,7 +181,7 @@ buttons in the login UI.
 | `Aggregate` | Event-sourced entity | Domain layer |
 | `*State` | Inline projection for sync consistency | Infrastructure layer |
 | `*ListReadModel` / `*DetailsReadModel` | Async projection for read optimization | Infrastructure layer |
-| `IdpConfig` | OIDC provider configuration | Authentication slice |
+| `LoginProvider` | Login provider configuration (Internal / Oidc / ...) | Authentication slice |
 
 ::: info "Realm" vs. "Tenant"
 User-facing it is **Realm** everywhere. The code uses **Tenant** in

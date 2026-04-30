@@ -11,7 +11,7 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useUserStore } from '@/stores/user.store'
-import { useIdpConfigStore } from '@/stores/idpConfig.store'
+import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
 import type { UserDto } from '@/models/user'
@@ -21,7 +21,7 @@ const { t, language } = useI18n()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const userStore = useUserStore()
-const idpConfigStore = useIdpConfigStore()
+const loginProviderStore = useLoginProviderStore()
 const adminHttp = useHttpClient('/api/admin/users')
 
 const ui = useUI()
@@ -67,13 +67,13 @@ const builder = CoarGridBuilder.create<UserDto>()
   .columns([
     (col) => col.field('UserName').header('Username', 'admin.users.username').width(150),
     (col) => col.icon('HasPassword').header('').valueGetter((p: any) => p.data?.HasPassword ? 'key-round' : '').width(38).resizable(false),
-    (col) => col.icon('ExternalIdpConfigIds', { color: '#2563eb', size: 's' })
-      .option('valueGetter', (p: any) => (p.data?.ExternalIdpConfigIds?.length ?? 0) > 0 ? 'link-2' : '')
+    (col) => col.icon('ExternalLoginProviderIds', { color: '#2563eb', size: 's' })
+      .option('valueGetter', (p: any) => (p.data?.ExternalLoginProviderIds?.length ?? 0) > 0 ? 'link-2' : '')
       .option('tooltipValueGetter', (p: any) => {
-        const ids: string[] = p.data?.ExternalIdpConfigIds ?? []
+        const ids: string[] = p.data?.ExternalLoginProviderIds ?? []
         if (ids.length === 0) return ''
-        const names = ids.map(id => idpConfigStore.configs.find(c => c.Id === id)?.DisplayName ?? id)
-        return `${t('admin.users.linkedIdps', {}, 'Linked IdPs')}: ${names.join(', ')}`
+        const names = ids.map(id => loginProviderStore.providers.find(c => c.Id === id)?.DisplayName ?? id)
+        return `${t('admin.users.linkedIdps', {}, 'Verknüpfte Login-Provider')}: ${names.join(', ')}`
       })
       .header('IdP', 'admin.users.idp').width(60).resizable(false),
     (col) => col.field('Firstname').header('First Name', 'admin.users.firstname').flex(1),
@@ -112,8 +112,8 @@ async function sendMagicLink() {
 
 onMounted(() => {
   userStore.initialize()
-  // Pre-load IdP configs for the IdP-link column tooltip
-  idpConfigStore.initialize()
+  // Pre-load login providers for the IdP-link column tooltip
+  loginProviderStore.initialize()
 })
 </script>
 

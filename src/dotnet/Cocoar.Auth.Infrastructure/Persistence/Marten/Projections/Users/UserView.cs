@@ -16,12 +16,12 @@ public record UserView
     public bool HasPassword { get; init; }
 
     /// <summary>
-    /// IdP-config ids the user has an active external-identity link with.
-    /// Empty = local-only user. Multi-entry = linked to several IdPs.
+    /// LoginProvider ids the user has an active external-identity link with.
+    /// Empty = local-only user. Multi-entry = linked to several providers.
     /// Drives the admin user list's "IdP-connected" indicator; frontend
-    /// resolves ids to display names via the IdpConfig store.
+    /// resolves ids to display names via the LoginProvider store.
     /// </summary>
-    public List<Guid> ExternalIdpConfigIds { get; init; } = [];
+    public List<Guid> ExternalLoginProviderIds { get; init; } = [];
 
     public string GetDisplayLabel()
     {

@@ -3,26 +3,42 @@ import { ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import type {
   LoginProviderDto,
-  CreateLoginProviderDto,
-  UpdateLoginProviderDto,
-  LoginProviderListDto,
+  FlavorDto,
+  CreateLoginProviderRequest,
+  UpdateLoginProviderRequest,
+  TestUserUpdateRequest,
+  TestUserUpdateResponse,
 } from '@/models/loginProvider'
 
+/**
+ * Pinia store for login providers (admin-only). Deliberately does NOT use
+ * useEntityService because the secret-rotation, enable/disable, and
+ * test-user-update endpoints don't fit the generic CRUD shape.
+ *
+ * Replaces the legacy `idpConfig` store. Endpoint group:
+ * `/api/admin/login-providers/*`. The Internal seed surfaces as a regular
+ * entry with `IsBuiltIn = true` so the UI can lock it.
+ */
 export const useLoginProviderStore = defineStore('login-provider', () => {
   const http = useHttpClient('/api/admin/login-providers')
 
   const providers = ref<LoginProviderDto[]>([])
+  const flavors = ref<FlavorDto[]>([])
   const loaded = ref(false)
+  const flavorsLoaded = ref(false)
 
   async function loadAll(): Promise<LoginProviderDto[]> {
-    const res = await http.get<LoginProviderListDto>()
-    providers.value = res.Items
+    providers.value = await http.get<LoginProviderDto[]>()
     loaded.value = true
-    return res.Items
+    return providers.value
   }
 
   async function initialize() {
     if (!loaded.value) await loadAll()
+    if (!flavorsLoaded.value) {
+      flavors.value = await http.addPath('flavors').get<FlavorDto[]>()
+      flavorsLoaded.value = true
+    }
   }
 
   async function loadOne(id: string): Promise<LoginProviderDto | null> {
@@ -35,16 +51,33 @@ export const useLoginProviderStore = defineStore('login-provider', () => {
     }
   }
 
-  async function create(dto: CreateLoginProviderDto): Promise<LoginProviderDto> {
+  async function create(dto: CreateLoginProviderRequest): Promise<LoginProviderDto> {
     const created = await http.post<LoginProviderDto>(dto)
     providers.value = upsert(providers.value, created)
     return created
   }
 
-  async function update(id: string, dto: UpdateLoginProviderDto): Promise<LoginProviderDto> {
-    const updated = await http.addPath(id).patch<LoginProviderDto>(dto)
+  async function update(id: string, dto: UpdateLoginProviderRequest): Promise<LoginProviderDto> {
+    const updated = await http.addPath(id).put<LoginProviderDto>(dto)
     providers.value = upsert(providers.value, updated)
     return updated
+  }
+
+  async function enable(id: string): Promise<LoginProviderDto> {
+    const updated = await http.addPath(id).addPath('enable').post<LoginProviderDto>({})
+    providers.value = upsert(providers.value, updated)
+    return updated
+  }
+
+  async function disable(id: string): Promise<LoginProviderDto> {
+    const updated = await http.addPath(id).addPath('disable').post<LoginProviderDto>({})
+    providers.value = upsert(providers.value, updated)
+    return updated
+  }
+
+  async function rotateSecret(id: string, secret: string): Promise<void> {
+    await http.addPath(id).addPath('secret').post({ Secret: secret })
+    await loadOne(id)
   }
 
   async function remove(id: string): Promise<void> {
@@ -52,15 +85,41 @@ export const useLoginProviderStore = defineStore('login-provider', () => {
     providers.value = providers.value.filter((p) => p.Id !== id)
   }
 
+  async function testUserUpdate(id: string, request: TestUserUpdateRequest): Promise<TestUserUpdateResponse> {
+    return await http.addPath(id).addPath('test-user-update').post<TestUserUpdateResponse>(request)
+  }
+
+  async function getLastRawClaims(id: string): Promise<unknown | null> {
+    try {
+      const res = await http.addPath(id).addPath('last-raw-claims').get<{ Available: boolean; RawClaims?: unknown }>()
+      return res.Available ? res.RawClaims : null
+    } catch {
+      return null
+    }
+  }
+
+  /** True when the provider with the given id is the seeded built-in entry. */
+  function isBuiltIn(id: string): boolean {
+    return providers.value.find((p) => p.Id === id)?.IsBuiltIn === true
+  }
+
   return {
     providers,
+    flavors,
     loaded,
+    flavorsLoaded,
     initialize,
     loadAll,
     loadOne,
     create,
     update,
+    enable,
+    disable,
+    rotateSecret,
     remove,
+    testUserUpdate,
+    getLastRawClaims,
+    isBuiltIn,
   }
 })
 

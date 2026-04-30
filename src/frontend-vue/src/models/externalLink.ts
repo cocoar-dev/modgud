@@ -1,7 +1,9 @@
 export interface ExternalLinkDto {
   Id: string
-  IdpConfigId: string
-  IdpDisplayName: string
+  /** ShortGuid of the LoginProvider that minted this link. */
+  LoginProviderId: string
+  /** DisplayName of the LoginProvider — server-resolved at read time. */
+  ProviderDisplayName: string
   Issuer: string
   Email?: string | null
   DisplayName?: string | null
@@ -20,9 +22,9 @@ export interface ExternalLinkDto {
    */
   LastScriptOutput?: Record<string, unknown> | null
   /**
-   * Raw OIDC claims the IdP actually sent. Only present when the IdP config
-   * has StoreRawClaims=true. Shape is a JSON object keyed by claim-type,
-   * with scalar or array values — mirrors what flowed through the token.
+   * Raw OIDC claims the IdP actually sent. Only present when the LoginProvider
+   * has StoreRawClaims=true. Shape is a JSON object keyed by claim-type, with
+   * scalar or array values — mirrors what flowed through the token.
    */
   LastRawClaims?: Record<string, unknown> | null
 }

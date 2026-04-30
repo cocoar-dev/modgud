@@ -148,7 +148,6 @@ export default withMermaid(
             text: 'Federation & Realms',
             items: [
               { text: 'Login Providers', link: '/admin/login-providers' },
-              { text: 'External Identity Providers (SSO)', link: '/admin/identity-providers' },
               { text: 'Realms', link: '/admin/realms' },
             ],
           },
@@ -169,7 +168,7 @@ export default withMermaid(
               { text: 'Overview', link: '/authentication-slice/' },
               { text: 'Concepts', link: '/authentication-slice/konzepte' },
               { text: 'Login Flows', link: '/authentication-slice/login-flows' },
-              { text: 'Identity Providers (OIDC)', link: '/authentication-slice/identity-providers' },
+              { text: 'Login Providers (OIDC)', link: '/authentication-slice/login-providers' },
               { text: 'GDPR & Sessions', link: '/authentication-slice/gdpr-sessions' },
             ],
           },

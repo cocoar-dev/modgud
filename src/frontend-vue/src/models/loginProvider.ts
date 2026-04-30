@@ -1,35 +1,104 @@
 // Login-Provider admin models — mirror DTOs in
-// src/dotnet-next/Cocoar.Auth.Application/DTOs/LoginProviders/LoginProviderDtos.cs.
+// src/dotnet/Cocoar.Auth.Application/DTOs/LoginProviders/LoginProviderDto.cs.
 // LoginProviderType is serialized as a string (JsonStringEnumConverter).
+//
+// Today only "Internal" (seeded, non-editable) and "Oidc" (admin-creatable) are
+// wired up; Saml/Ldap/Kerberos exist as enum values so the create endpoint can
+// reject them with a single TypeNotSupported error and the UI can flip the
+// "creatable" flag on once support lands.
 
-export type LoginProviderType = 'Internal' | 'OpenIdConnect'
+export type LoginProviderType = 'Internal' | 'Oidc' | 'Saml' | 'Ldap' | 'Kerberos'
 
 export interface LoginProviderDto {
   Id: string
-  Name: string
-  DisplayName?: string | null
-  Description?: string | null
   Type: LoginProviderType
-  Configuration: Record<string, string>
+  Flavor: string
+  DisplayName: string
+  Description?: string | null
   IsBuiltIn: boolean
+  Enabled: boolean
+  ClientId: string
+  HasClientSecret: boolean
+  Scopes: string[]
+  UserUpdateScript: string
+  StoreRawClaims: boolean
+  RawClaimsRetentionDays?: number | null
+  AutoCreateUsers: boolean
+  AllowLinking: boolean
+  TrustForEmailLink: boolean
+  AllowedEmailDomains?: string[] | null
+  IconName?: string | null
+  ButtonColorHex?: string | null
+  FlavorData?: Record<string, unknown> | null
+  CreatedAt: string
+  UpdatedAt: string
+  /** Full redirect URI to copy into the IdP app registration. Empty for Internal-typed providers. */
+  RedirectUri: string
 }
 
-export interface CreateLoginProviderDto {
-  Name: string
-  DisplayName?: string | null
-  Description?: string | null
+export interface FlavorConfigFieldDto {
+  Key: string
+  Type: string
+  Label: string
+  Required: boolean
+  HelpText?: string | null
+  Placeholder?: string | null
+}
+
+export interface FlavorDto {
+  Key: string
+  DisplayName: string
+  DefaultIconName: string
+  DefaultScopes: string[]
+  DefaultUserUpdateScript: string
+  DefaultStoreRawClaims: boolean
+  ConfigSchema: FlavorConfigFieldDto[]
+}
+
+export interface CreateLoginProviderRequest {
+  Flavor: string
+  DisplayName: string
+  /** Optional — backend defaults to Oidc when omitted. */
   Type?: LoginProviderType
-  Configuration?: Record<string, string>
-}
-
-export interface UpdateLoginProviderDto {
-  Name?: string | null
-  DisplayName?: string | null
   Description?: string | null
-  Configuration?: Record<string, string> | null
+  FlavorData?: Record<string, unknown> | null
 }
 
-export interface LoginProviderListDto {
-  Items: LoginProviderDto[]
-  TotalCount: number
+export interface UpdateLoginProviderRequest {
+  DisplayName: string
+  Description?: string | null
+  ClientId: string
+  Scopes: string[]
+  UserUpdateScript: string
+  StoreRawClaims: boolean
+  RawClaimsRetentionDays?: number | null
+  AutoCreateUsers: boolean
+  AllowLinking: boolean
+  TrustForEmailLink: boolean
+  AllowedEmailDomains?: string[] | null
+  IconName?: string | null
+  ButtonColorHex?: string | null
+  FlavorData?: Record<string, unknown> | null
+}
+
+export interface TestUserUpdateRequest {
+  Script?: string | null
+  Claims?: Record<string, unknown> | null
+}
+
+export type FieldPresence = 'NotSet' | 'Null' | 'Value'
+
+export interface FieldPatchDto {
+  Presence: FieldPresence
+  Value?: string | null
+}
+
+export interface TestUserUpdateResponse {
+  Succeeded: boolean
+  Error?: string | null
+  Firstname: FieldPatchDto
+  Lastname: FieldPatchDto
+  Email: FieldPatchDto
+  Acronym: FieldPatchDto
+  ScriptOutput?: Record<string, unknown> | null
 }
