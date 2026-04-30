@@ -1,103 +1,141 @@
-# Permissions & Gating
+# Permissions & gating
 
-cocoar.auth nutzt **granulares Per-Resource-Gating**: jeder Endpoint
-und jeder Sidebar-Eintrag prüft einen einzelnen Permission-String, der
-exakt zwischen Backend und Frontend gespiegelt ist.
+cocoar.auth uses **granular per-resource gating**: every endpoint and
+every sidebar item checks a single permission string, mirrored
+exactly between backend and frontend.
 
-## Permission-Format
+## Permission format
 
-`<resource>:<action>` — z.B.:
+Three segments: `<app>:<resource>:<action>`. Cocoar.Auth's own admin
+surface lives under the system app `cocoar-auth`; consuming SaaS apps
+get their own app slug (`timetodo`, `knowledge`, …) and permissions
+under that slug.
 
-| Permission | Bedeutung |
+| Permission | Meaning |
 |---|---|
-| `user:read` | Liste/Detail von Usern lesen |
-| `user:write` | User erstellen/bearbeiten |
-| `user:delete` | User löschen (Soft + GDPR) |
-| `user:admin` | Per-Resource-Bypass für alle User-Actions |
-| `oauth-client:read` | OAuth-Clients lesen |
-| `oauth-client:write` | OAuth-Clients erstellen/bearbeiten |
-| `oauth-client:delete` | OAuth-Clients löschen |
-| `permission-role:read` | Rollen lesen |
-| `authorization-group:write` | Gruppen erstellen/bearbeiten |
-| `realm:write` | Realms erstellen/bearbeiten |
-| `app:admin` | **Globaler Bypass** (alle Resources, alle Actions) |
+| `cocoar-auth:user:read` | Read user list/detail |
+| `cocoar-auth:user:write` | Create/edit users |
+| `cocoar-auth:user:delete` | Delete users (soft + GDPR) |
+| `cocoar-auth:user:admin` | Resource-wide bypass for all user actions |
+| `cocoar-auth:oauth-client:read` | Read OAuth clients |
+| `cocoar-auth:oauth-client:write` | Create/edit OAuth clients |
+| `cocoar-auth:oauth-client:delete` | Delete OAuth clients |
+| `cocoar-auth:permission-role:read` | Read roles |
+| `cocoar-auth:authorization-group:write` | Create/edit groups |
+| `cocoar-auth:realm:write` | Create/edit realms |
+| `cocoar-auth:admin` | App-wide bypass for the IAM admin surface |
+| `realm:admin` | **Realm-wide bypass** (every app, every resource, every action) |
+
+The permission `app:admin` does not exist as a real grant — `app` is
+not a reserved app slug. The three bypass tiers are documented below.
+
+## Bypass tiers
+
+| Grant | Effect |
+|---|---|
+| `<app>:<resource>:admin` | All actions on that resource within that app |
+| `<app>:admin` | All resources within that app |
+| `realm:admin` | Everything in every app — the realm-wide emergency exit |
+
+`hasPermission(needed)` returns true when:
+
+1. the user holds `realm:admin`, **or**
+2. the user holds the requested permission directly, **or**
+3. the user holds `<app>:admin` for the requested permission's app, **or**
+4. the user holds `<app>:<resource>:admin` for the requested
+   permission's app + resource.
+
+The `realm:admin` bypass is intentionally narrow — only the System
+Admin default role carries it. Per-area owners typically get
+per-resource `<resource>:admin` (e.g. OAuth owners get
+`cocoar-auth:oauth-client:admin` + `cocoar-auth:oauth-scope:admin` +
+`cocoar-auth:oauth-api:admin`, but not `cocoar-auth:user:admin`).
 
 ## Resources in cocoar.auth
 
-| Resource | Wofür |
+| Resource | What for |
 |---|---|
-| `user` | User-Verwaltung (Cocoar.Auth.Authentication.ApplicationUser) |
-| `permission-role` | Rollen-Verwaltung |
-| `authorization-group` | Gruppen-Verwaltung |
-| `oauth-client` | OAuth-Client-Verwaltung |
-| `oauth-scope` | OAuth-Scope-Verwaltung |
-| `oauth-api` | OAuth-API-Resource-Verwaltung |
-| `login-provider` | Internal-/External-Login-Provider |
-| `idp-config` | OIDC-IdP-Konfigurationen |
-| `realm` | Realm-CRUD (nur in Realms mit `CanManageTenants = true`) |
-| `auth-log` | AuthLog lesen |
-| `app` | nur als globaler `app:admin`-Bypass relevant |
+| `user` | User management (Cocoar.Auth.Authentication.ApplicationUser) |
+| `permission-role` | Role management |
+| `authorization-group` | Group management |
+| `oauth-client` | OAuth client management |
+| `oauth-scope` | OAuth scope management |
+| `oauth-api` | OAuth API resource management |
+| `login-provider` | Internal/external login providers |
+| `idp-config` | OIDC IdP configurations |
+| `realm` | Realm CRUD (only in realms with `CanManageTenants = true`) |
+| `auth-log` | Read AuthLog |
+| `app` | App admin surface |
 
-Registriert beim Boot:
+Registered at boot, keyed by `(appSlug, resource)`:
 
 ```csharp
 // AddInfrastructure → AddCocoarAuthAuthorization(opts => { ... })
-opts.RegisterResource("user");
-opts.RegisterResource("permission-role");
-opts.RegisterResource("authorization-group");
+opts.RegisterResource("cocoar-auth", "user");
+opts.RegisterResource("cocoar-auth", "permission-role");
+opts.RegisterResource("cocoar-auth", "authorization-group");
 // ...
 ```
 
-## Backend-Gating: `RequiresPermission`
+## Backend gating: `RequiresPermission`
 
-Endpoints gaten via `EndpointFilter`-Extension:
+Endpoints gate via an `EndpointFilter` extension:
 
 ```csharp
 app.MapGet("/api/admin/users", async (...) => { ... })
-   .RequiresPermission("user:read");
+   .RequiresPermission("cocoar-auth:user:read");
 
 app.MapPost("/api/admin/users", async (...) => { ... })
-   .RequiresPermission("user:write");
+   .RequiresPermission("cocoar-auth:user:write");
 
 app.MapDelete("/api/admin/users/{id}", async (...) => { ... })
-   .RequiresPermission("user:delete");
+   .RequiresPermission("cocoar-auth:user:delete");
+
+app.MapDelete("/me", async (...) => { ... })
+   .RequiresPermission("realm:admin");
 ```
 
-Der Filter (`PermissionEndpointFilter`):
+The filter (`PermissionEndpointFilter`):
 
-1. Liest `ClaimTypes.NameIdentifier` aus `HttpContext.User`
-2. Lädt den User + alle Gruppen via `IPermissionService.GetEffectivePermissionsAsync`
-3. Prüft:
-   - `app:admin` vorhanden? → durch
-   - `<resource>:admin` für die geforderte Resource? → durch
-   - Exakt diese Permission? → durch
-   - Sonst → `403 Forbidden`
+1. Reads `ClaimTypes.NameIdentifier` from `HttpContext.User`
+2. Loads the user's effective permissions via
+   `IPermissionService.GetUserPermissionsAsync(userId, appSlug)`
+   (BFS through groups, BoundTo-filtered, role-filtered by AppSlug)
+3. Runs the bypass cascade above
 
-## Frontend-Gating: Sidebar + Buttons
+## Frontend gating: sidebar + buttons
 
-Der `auth.store.ts` (Pinia) lädt die effektiven Permissions des
-aktuellen Users beim Login mit:
+The `auth.store.ts` (Pinia) loads the effective permissions of the
+current user at login and mirrors the backend `PermissionEvaluator`:
 
 ```typescript
-// permissions: string[]  z.B. ["user:read", "user:write", "oauth-client:read"]
+// permissions: string[]  e.g. ["cocoar-auth:user:read", "cocoar-auth:user:write"]
 
-function hasPermission(needed: string): boolean {
-  if (this.permissions.includes('app:admin')) return true
-  const [resource] = needed.split(':')
-  if (this.permissions.includes(`${resource}:admin`)) return true
-  return this.permissions.includes(needed)
+function hasPermission(permission: string): boolean {
+  const grants = permissions.value
+  if (grants.includes('realm:admin')) return true
+  if (grants.includes(permission)) return true
+
+  const parts = permission.split(':')
+  if (parts.length === 3) {
+    if (grants.includes(`${parts[0]}:admin`)) return true
+    if (grants.includes(`${parts[0]}:${parts[1]}:admin`)) return true
+  }
+  return false
 }
 ```
 
-Sidebar-Items in `views/admin/AdminView.vue` deklarieren, welche
-Permissions sie sichtbar machen:
+Sidebar items in `views/admin/AdminView.vue` declare which permissions
+make them visible:
 
 ```typescript
 const allNavItems: NavItem[] = [
   { section: 'authorization', label: 'nav.users',  icon: 'users',
-    path: '/admin/users',  requirePermissions: ['user:read'] },
+    path: '/admin/users',  requirePermissions: ['cocoar-auth:user:read'] },
   { section: 'oauth', label: 'admin.oauthClients.title', icon: 'app-window',
-    path: '/admin/oauth/clients', requirePermissions: ['oauth-client:read'] },
+    path: '/admin/oauth/clients', requirePermissions: ['cocoar-auth:oauth-client:read'] },
+  { section: 'system', label: 'nav.settings', icon: 'settings',
+    path: '/admin/settings', requirePermissions: ['realm:admin'] },
   // ...
 ]
 
@@ -106,103 +144,108 @@ function canSee(item: NavItem): boolean {
 }
 ```
 
-Sektionen werden ausgeblendet wenn alle ihre Items gefiltert sind. Ein
-User mit nur `user:read` sieht nur die Authorization-Sektion mit
-"Users" — keine OAuth, keine System.
+Sections are hidden when all their items are filtered out. A user
+with only `cocoar-auth:user:read` sees just the Authorization section
+with "Users" — no OAuth, no System.
 
-## Per-Realm-Domain-Erweiterung
+## Per-realm domain extension
 
-Wenn ein Realm `CanManageTenants = true` hat (in cocoar.auth nur der
-System-Realm), bekommt seine User zusätzlich Zugriff auf den
-`realm`-Resource. Die User aller anderen Realms sehen die Realm-Liste
-gar nicht — `realm:read` ist in deren `permission-role`s nicht
-verfügbar.
+When a realm has `CanManageTenants = true` (in cocoar.auth, only the
+system realm), its users additionally get access to the `realm`
+resource. Users of every other realm can't see the realm list at all
+— `cocoar-auth:realm:read` is not available in their
+`permission-role`s.
 
-Das wird im Frontend durch Sichtbarkeit gehandhabt; im Backend ist es
-strikter: `RealmsEndpoints` prüfen sowohl `realm:read`/`realm:write`
-**als auch** dass der aktuelle Realm `CanManageTenants = true` ist.
-Sonst 404 (nicht 403, weil die Existenz von Realm-CRUD nicht geleakt
-werden soll).
+The frontend handles that via visibility; the backend is stricter:
+`RealmsEndpoints` checks both `cocoar-auth:realm:read` /
+`cocoar-auth:realm:write` **and** that the current realm has
+`CanManageTenants = true`. Otherwise 404 (not 403, because the
+existence of realm CRUD must not be leaked).
 
-## Default-Roles
+## Default roles
 
-Der First-Time-Setup erstellt drei Default-Roles (einmal pro neuem
-Realm — siehe `AuthorizationSeeder` im Setup-Code):
+First-time setup creates three default roles (once per new realm —
+see `AuthorizationSeeder` in the setup code):
 
 ### System Admin
 ```
-permissions: ["app:admin"]
+permissions: ["realm:admin"]
 ```
-Bekommt der erste User des Realms (System-Admin-Group). Globaler
-Bypass — sieht und kann alles.
+Granted to the first user of the realm (System-Admin group with
+`BoundTo: ["*"]`). Realm-wide bypass — sees and can do everything in
+every app.
 
 ### User Manager
 ```
 permissions: [
-  "user:read", "user:write",
-  "permission-role:read",
-  "authorization-group:read", "authorization-group:write"
+  "cocoar-auth:user:read", "cocoar-auth:user:write",
+  "cocoar-auth:permission-role:read",
+  "cocoar-auth:authorization-group:read", "cocoar-auth:authorization-group:write"
 ]
 ```
-Kann User + Gruppen pflegen, Rollen-Definitionen anschauen aber nicht
-ändern.
+Can maintain users + groups, view but not change role definitions.
 
 ### Viewer
 ```
 permissions: [
-  "user:read",
-  "permission-role:read",
-  "authorization-group:read",
-  "oauth-client:read", "oauth-scope:read"
+  "cocoar-auth:user:read",
+  "cocoar-auth:permission-role:read",
+  "cocoar-auth:authorization-group:read",
+  "cocoar-auth:oauth-client:read", "cocoar-auth:oauth-scope:read"
 ]
 ```
-Read-only-Auditor.
+Read-only auditor.
 
-Admin kann diese Rollen anpassen oder weitere erstellen — sie sind
-nicht eingebrannt.
+Admins can adjust these roles or create more — they aren't
+hard-coded.
 
-## Setup-Bootstrap
+## Setup bootstrap
 
-Beim First-Time-Setup eines Realms:
+On first-time setup of a realm:
 
-1. Drei Default-Rollen werden angelegt (System Admin, User Manager,
-   Viewer)
-2. Eine Default-Gruppe "System Admin" wird angelegt mit der
-   System-Admin-Rolle
-3. Der erste registrierte User wird in die System-Admin-Gruppe
-   aufgenommen
-4. Ergebnis: der erste User hat `app:admin` und sieht die volle Sidebar
+1. The `cocoar-auth` system app is registered (`AppRealmSeeder`)
+2. Three default roles are created (System Admin, User Manager,
+   Viewer) with `AppSlug = "cocoar-auth"`
+3. A default group "System Admin" is created with the System-Admin
+   role and `BoundTo = ["*"]`
+4. The first registered user is placed into the System-Admin group
+5. Result: the first user holds `realm:admin` and sees the full
+   sidebar in every app registered in this realm
 
-Code in `Cocoar.Auth.Authorization/Setup/` (Setup-Hook) und
-`Cocoar.Auth.Authentication.Setup` (User-Seeding).
+Code in `Cocoar.Auth.Authorization/Setup/` (setup hook) and
+`Cocoar.Auth.Authentication.Setup` (user seeding).
 
-## Permission-Auflösung im Detail
+## Permission resolution in detail
 
 ```
-Request mit JWT/Cookie kommt rein
+Request with cookie/bearer comes in
   ↓
 PermissionEndpointFilter
   ↓
 ClaimTypes.NameIdentifier → UserId
+needed permission → split into (appSlug, resource, action)
   ↓
-IPermissionService.GetEffectivePermissionsAsync(userId)
-  ├── BFS durch alle Group-Membership (transitiv, mit Visited-Set)
-  ├── für jede Gruppe: load PermissionRole-Refs
-  ├── für jede Rolle: expand Permissions
-  └── Set<string> aller "<resource>:<action>"
+IPermissionService.GetUserPermissionsAsync(userId, appSlug)
+  ├── BFS through all group memberships (transitive, with visited set)
+  ├── filter to groups whose BoundTo contains appSlug or "*"
+  ├── for each group: load PermissionRole refs
+  ├── filter to roles whose AppSlug == appSlug
+  ├── for each role: expand actions to "<app>:<resource>:<action>"
+  └── Set<string> of fully-qualified permissions
   ↓
 Checks:
-  hat "app:admin"? → ✓
-  hat "<resource>:admin"? → ✓
-  hat exakt needed? → ✓
-  sonst → 403
+  has "realm:admin"? → ✓
+  has needed permission directly? → ✓
+  has "<app>:admin"? → ✓
+  has "<app>:<resource>:admin"? → ✓
+  otherwise → 403
 ```
 
-Die Auflösung ist scoped pro Request, nicht gecached. Das ist
-absichtlich: Permissions ändern sich live (Admin kickt User aus
-Gruppe), und cocoar.auth ist nicht
-performance-kritisch (Admin-UI-Traffic, nicht Hot-Path).
+Resolution is scoped per request, not cached. That is intentional:
+permissions change live (an admin removes a user from a group), and
+cocoar.auth is not performance-critical (admin UI traffic, not a hot
+path).
 
-Wenn das mal anders wird: ein `IMemoryCache` mit Sliding-Expiration
-(z.B. 30 Sekunden) und Cache-Invalidation auf
-`GroupMembershipRecomputedEvent` würde reichen.
+If that ever changes: an `IMemoryCache` with sliding expiration (e.g.
+30 seconds) and cache invalidation on
+`GroupMembershipRecomputedEvent` would suffice.

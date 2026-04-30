@@ -1,31 +1,31 @@
-# OAuth / OpenIddict-Implementierung
+# OAuth / OpenIddict implementation
 
-cocoar.auth ist ein vollwertiger OAuth 2.0 + OIDC Server mit
-[OpenIddict 7](https://documentation.openiddict.com/). Alle vier
-OpenIddict-Stores sind als Marten-basierte Custom-Implementations
-gebaut — keine EF-Core-Dependency.
+cocoar.auth is a fully-featured OAuth 2.0 + OIDC server using
+[OpenIddict 7](https://documentation.openiddict.com/). All four
+OpenIddict stores are built as Marten-based custom implementations —
+no EF Core dependency.
 
-Konzeptionelle Übersicht: [OAuth & OIDC](/concepts/oauth).
+Conceptual overview: [OAuth & OIDC](/concepts/oauth).
 
-## Custom Marten-Stores
+## Custom Marten stores
 
-Im Ordner `Cocoar.Auth.Infrastructure/OpenIddict/`:
+In `Cocoar.Auth.Infrastructure/OpenIddict/`:
 
-| Store | Backing | Strategie |
+| Store | Backing | Strategy |
 |---|---|---|
-| `MartenApplicationStore` | `OAuthApplicationState` | Event-sourced (Aggregate); Secrets in separatem Doc |
-| `MartenAuthorizationStore` | `OpenIddictAuthorizationDocument` | Direct document storage (Consent-Records sind nicht event-würdig) |
-| `MartenScopeStore` | `OAuthScopeState` | Event-sourced (Aggregate) |
-| `MartenTokenStore` | `OpenIddictTokenDocument` | Direct document storage (Tokens sind ephemer + sensibel) |
+| `MartenApplicationStore` | `OAuthApplicationState` | Event-sourced (aggregate); secrets in a separate doc |
+| `MartenAuthorizationStore` | `OpenIddictAuthorizationDocument` | Direct document storage (consent records aren't event-worthy) |
+| `MartenScopeStore` | `OAuthScopeState` | Event-sourced (aggregate) |
+| `MartenTokenStore` | `OpenIddictTokenDocument` | Direct document storage (tokens are ephemeral + sensitive) |
 
-Alle Stores nutzen die `IDocumentSession` aus dem DI-Container — also
-automatisch tenant-scoped via `TenantedSessionFactory`. OpenIddict
-arbeitet damit per Realm.
+All stores use `IDocumentSession` from the DI container — so they're
+automatically tenant-scoped via `TenantedSessionFactory`. OpenIddict
+operates per realm as a result.
 
-## Application-Aggregate
+## Application aggregate
 
-OAuth-Clients sind event-sourced via `OAuthApplicationAggregate` mit
-Events wie:
+OAuth clients are event-sourced via `OAuthApplicationAggregate` with
+events such as:
 
 - `OAuthApplicationCreated`
 - `OAuthApplicationDisplayNameChanged`
@@ -34,47 +34,46 @@ Events wie:
 - `OAuthApplicationAccessTokenTypeChanged`
 - `OAuthApplicationDeleted`
 
-Die Inline-Projection `OAuthApplicationStateProjection` baut
-`OAuthApplicationState` zusammen, das `MartenApplicationStore` liest.
+The inline projection `OAuthApplicationStateProjection` builds
+`OAuthApplicationState`, which `MartenApplicationStore` reads from.
 
-### Client-Secret-Trennung
+### Client-secret separation
 
-Wie überall in cocoar.auth: sicherheitssensitive Daten landen NICHT im
-Event-Stream. Stattdessen:
+As everywhere in cocoar.auth: security-sensitive data does NOT land in
+the event stream. Instead:
 
 ```csharp
-// Beim Create:
+// On create:
 var securityData = OAuthApplicationSecurityData.Create(application.Id);
 securityData.ClientSecret = application.PendingClientSecret;
 session.Store(securityData);
 ```
 
-Das verhindert dass Client-Secrets in Audit-Logs oder
-Event-Stream-Replays auftauchen.
+This prevents client secrets from showing up in audit logs or
+event-stream replays.
 
-## Pipeline-Hooks
+## Pipeline hooks
 
-Zwei eigene Handler hängen sich in OpenIddicts Server-Pipeline ein:
+Two custom handlers hook into OpenIddict's server pipeline:
 
 ### RealmIssuerHandler
 
-Standard-OpenIddict nutzt einen statischen Issuer der beim Boot fixiert
-wird. Wir wollen aber pro Realm den passenden Issuer im
-Discovery-Dokument:
+Standard OpenIddict uses a static issuer that's fixed at boot. We want
+the issuer in the discovery document to match the current realm:
 
 ```csharp
 public ValueTask HandleAsync(HandleConfigurationRequestContext context)
 {
     if (context.BaseUri is not null)
     {
-        context.Issuer = context.BaseUri; // = aktuelle Realm-Domain
+        context.Issuer = context.BaseUri; // = current realm domain
     }
     return default;
 }
 ```
 
-Hängt sich nach `AttachIssuer` in den Discovery-Pipeline-Step ein. So
-sieht jede Realm-Domain ihr eigenes Discovery-Dokument:
+It hooks in after `AttachIssuer` in the discovery pipeline step. This
+way each realm domain sees its own discovery document:
 
 ```
 https://acme.example.com/.well-known/openid-configuration
@@ -84,13 +83,13 @@ https://finance.example.com/.well-known/openid-configuration
   → "issuer": "https://finance.example.com"
 ```
 
-Tokens werden mit dem realm-spezifischen Issuer signiert; Resource-Server
-können sie cross-realm nicht akzeptieren.
+Tokens are signed with the realm-specific issuer; resource servers
+can't accept them cross-realm.
 
 ### AccessTokenTypeHandler
 
-OpenIddict hat global `UseReferenceAccessTokens()`. Wir wollen aber
-**pro Client** zwischen Reference und JWT wählen können:
+OpenIddict has `UseReferenceAccessTokens()` globally. We want to choose
+between reference and JWT **per client**:
 
 ```csharp
 public async ValueTask HandleAsync(ProcessSignInContext context)
@@ -107,11 +106,11 @@ public async ValueTask HandleAsync(ProcessSignInContext context)
 }
 ```
 
-Defaultmäßig sind Tokens Reference (= server-side stored, opak,
-revokierbar). Pro Client kann auf JWT umgestellt werden, wenn das
-Roundtrip-Profil stört.
+Tokens default to reference (= server-side stored, opaque, revocable).
+Per client this can be switched to JWT when the round-trip profile is
+a problem.
 
-## Endpoint-Mapping
+## Endpoint mapping
 
 In `Program.cs`:
 
@@ -120,49 +119,49 @@ app.MapAuthorizationEndpoints();   // /connect/authorize
 app.MapConsentEndpoints();         // /consent
 ```
 
-OpenIddicts Discovery- und JWKS-Endpoints (`.well-known/...`) werden
-auto-mounted. Token-/UserInfo-/Introspection-/Revocation-Endpoints
-werden ebenfalls auto-mounted; die "Pass-through-Endpoints"
-(`/connect/authorize` etc.) brauchen explizite Minimal-API-Handler die
-das Cookie-Login mit OpenIddict-Tickets verheiraten.
+OpenIddict's discovery and JWKS endpoints (`.well-known/...`) are
+auto-mounted. Token/UserInfo/Introspection/Revocation endpoints are
+auto-mounted too; the "pass-through endpoints" (`/connect/authorize`
+etc.) need explicit Minimal API handlers that marry cookie login with
+OpenIddict tickets.
 
-## Authorize-Flow
+## Authorize flow
 
-Vereinfachter Pseudo-Code (vollständige Implementation in
+Simplified pseudo-code (full implementation in
 `Cocoar.Auth.Api/Features/Auth/OAuth/AuthorizationEndpoints.cs`):
 
 ```
-1. GET /connect/authorize kommt rein
-2. OpenIddict parst die Request, validiert ClientId, Scopes, Redirect-URI
-3. Falls User nicht eingeloggt → Challenge-Cookie + Redirect auf /login
-4. User loggt sich ein (Login-Flow inklusive 2FA)
-5. Zurück auf /connect/authorize
-6. Consent-Check:
-   - existing permanent authorization für (User, Client, Scopes)? → durch
-   - sonst:
-     - ConsentType=implicit → durch ohne Frage
-     - ConsentType=explicit → Redirect /consent?returnUrl=...
-7. ConsentController zeigt Scope-Liste, User klickt Approve
-8. Permanent Authorization wird gespeichert
-9. Authorization-Code wird an Redirect-URI returned
+1. GET /connect/authorize comes in
+2. OpenIddict parses the request, validates ClientId, Scopes, Redirect URI
+3. If user not signed in → challenge cookie + redirect to /login
+4. User signs in (login flow including 2FA)
+5. Back to /connect/authorize
+6. Consent check:
+   - existing permanent authorization for (User, Client, Scopes)? → through
+   - else:
+     - ConsentType=implicit → through without prompt
+     - ConsentType=explicit → redirect /consent?returnUrl=...
+7. ConsentController shows the scope list, user clicks Approve
+8. Permanent authorization is stored
+9. Authorization code is returned to the redirect URI
 ```
 
-## Token-Endpoint
+## Token endpoint
 
-Für Authorization-Code-Exchange:
+For authorization-code exchange:
 
 ```
-1. POST /connect/token mit grant_type=authorization_code + code + verifier
-2. OpenIddict validiert Code (existiert, nicht expired, nicht used)
-3. PKCE-Challenge wird verifiziert
-4. ProcessSignIn wird gefeuert → AccessTokenTypeHandler entscheidet
-   Reference vs. JWT
-5. Tokens werden ausgegeben:
-   - Reference: OpenIddictTokenDocument(s) angelegt, Reference-IDs returned
-   - JWT: signed JWTs returned, kein DB-Eintrag
+1. POST /connect/token with grant_type=authorization_code + code + verifier
+2. OpenIddict validates the code (exists, not expired, not used)
+3. PKCE challenge is verified
+4. ProcessSignIn fires → AccessTokenTypeHandler decides
+   reference vs. JWT
+5. Tokens are issued:
+   - Reference: OpenIddictTokenDocument(s) created, reference IDs returned
+   - JWT: signed JWTs returned, no DB entry
 ```
 
-## Introspection (für Reference-Tokens)
+## Introspection (for reference tokens)
 
 ```http
 POST /connect/introspect
@@ -171,9 +170,9 @@ Authorization: Basic <client_id:client_secret>
 token=<reference_token>
 ```
 
-Resource-Server muss sich mit eigenem ClientId+Secret authentifizieren
-und für die Token-Scopes als Resource registriert sein. Antwort enthält
-alle Claims aus dem `OpenIddictTokenDocument.Payload`.
+The resource server has to authenticate with its own ClientId+Secret
+and be registered as a resource for the token's scopes. The response
+contains all claims from `OpenIddictTokenDocument.Payload`.
 
 ## Revocation
 
@@ -184,51 +183,51 @@ token=<token>
 token_type_hint=access_token
 ```
 
-Für Reference-Tokens: löscht das `OpenIddictTokenDocument` → Token ist
-sofort tot (Introspection-Calls returnen `active=false`).
+For reference tokens: deletes the `OpenIddictTokenDocument` → the token
+is dead immediately (introspection calls return `active=false`).
 
-Für JWTs: kein Effekt — JWT ist gültig bis Expiry.
+For JWTs: no effect — the JWT is valid until expiry.
 
-## Per-Realm-OAuth-Konfiguration
+## Per-realm OAuth configuration
 
-Jeder Realm hat eigene:
+Each realm has its own:
 
-- OAuth-Applications (`OAuthApplicationState`)
-- OAuth-Scopes (`OAuthScopeState`)
-- OAuth-API-Resources (`OAuthApiState`)
-- Authorization-Records (`OpenIddictAuthorizationDocument`)
-- Token-Records (`OpenIddictTokenDocument`)
+- OAuth applications (`OAuthApplicationState`)
+- OAuth scopes (`OAuthScopeState`)
+- OAuth API resources (`OAuthApiState`)
+- Authorization records (`OpenIddictAuthorizationDocument`)
+- Token records (`OpenIddictTokenDocument`)
 
-Alles im jeweiligen Tenant-Store. Beim Realm-Provisioning werden
-5 Default-Scopes geseedet:
+Everything lives in the relevant tenant store. On realm provisioning,
+5 default scopes are seeded:
 
 ```csharp
 "openid", "email", "profile", "roles", "offline_access"
 ```
 
-Plus der Internal-LoginProvider als Default-Login-Methode.
+Plus the internal LoginProvider as the default login method.
 
-## OAuth-Admin-UI
+## OAuth admin UI
 
-Im Admin-Bereich (`/admin/oauth/...`) gibt es:
+In the admin area (`/admin/oauth/...`):
 
-- `/admin/oauth/clients` — Liste + Details
-- `/admin/oauth/scopes` — Liste + Details
-- `/admin/oauth/apis` — Liste + Details
+- `/admin/oauth/clients` — list + details
+- `/admin/oauth/scopes` — list + details
+- `/admin/oauth/apis` — list + details
 
 Endpoints in `Cocoar.Auth.Api/Features/Admin/OAuth/`. Gating:
 
-- `oauth-client:read/write/delete` (+ `:admin`)
-- `oauth-scope:read/write/delete` (+ `:admin`)
-- `oauth-api:read/write/delete` (+ `:admin`)
+- `cocoar-auth:oauth-client:read/write/delete` (+ `:admin`)
+- `cocoar-auth:oauth-scope:read/write/delete` (+ `:admin`)
+- `cocoar-auth:oauth-api:read/write/delete` (+ `:admin`)
 
-## Token-Lifetimes
+## Token lifetimes
 
-Konfiguriert in `OpenIddictSettings`:
+Configured in `OpenIddictSettings`:
 
 ```json
 {
-  "Issuer": "https://localhost",   // Fallback wenn BaseUri null
+  "Issuer": "https://localhost",   // Fallback when BaseUri is null
   "AccessTokenLifetimeMinutes": 60,
   "RefreshTokenLifetimeDays": 14,
   "AuthorizationCodeLifetimeMinutes": 5,
@@ -239,9 +238,9 @@ Konfiguriert in `OpenIddictSettings`:
 
 | Mode | Signing |
 |---|---|
-| `DevelopmentMode = true` | Ephemeral Signing/Encryption-Keys (gehen beim Restart verloren) |
-| `DevelopmentMode = false` | X.509-Cert aus `SigningCertificatePath` (Pflicht!) |
+| `DevelopmentMode = true` | Ephemeral signing/encryption keys (lost on restart) |
+| `DevelopmentMode = false` | X.509 cert from `SigningCertificatePath` (required!) |
 
-In Dev darf jeder OAuth-Client bei jedem Restart von cocoar.auth seine
-Token-Validation neu auflegen (JWKS ändert sich). In Prod bleibt das
-Cert stabil.
+In dev, every OAuth client may have to refresh its token validation
+on every cocoar.auth restart (JWKS changes). In prod the cert stays
+stable.

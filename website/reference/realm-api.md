@@ -1,22 +1,21 @@
-# Realm-Endpoints
+# Realm Endpoints
 
-Realm-Verwaltung ist nur möglich aus Realms mit
-`CanManageTenants = true` (typischerweise nur der System-Realm).
-Sonst returnt der Endpoint **404** — nicht 403, weil die Existenz von
-Realm-CRUD nicht geleakt werden soll.
+Realm management is only possible from realms with
+`CanManageTenants = true` (typically only the system realm).
+Otherwise the endpoint returns **404** — not 403, because the
+existence of realm CRUD must not be leaked.
 
-Endpoints in
-`Cocoar.Auth.Api/Features/Admin/RealmsEndpoints.cs`.
+Endpoints in `Cocoar.Auth.Api/Features/Admin/RealmsEndpoints.cs`.
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/realms` | `realm:read` |
-| `GET` | `/api/admin/realms/{slug}` | `realm:read` |
-| `POST` | `/api/admin/realms` | `realm:write` |
-| `PATCH` | `/api/admin/realms/{slug}` | `realm:write` |
-| `DELETE` | `/api/admin/realms/{slug}` | `realm:delete` (Soft-Delete = Deactivate) |
+| `GET` | `/api/admin/realms` | `cocoar-auth:realm:read` |
+| `GET` | `/api/admin/realms/{slug}` | `cocoar-auth:realm:read` |
+| `POST` | `/api/admin/realms` | `cocoar-auth:realm:write` |
+| `PATCH` | `/api/admin/realms/{slug}` | `cocoar-auth:realm:write` |
+| `DELETE` | `/api/admin/realms/{slug}` | `cocoar-auth:realm:delete` (soft-delete = deactivate) |
 
-## Realm anlegen
+## Create a realm
 
 ```http
 POST /api/admin/realms
@@ -31,22 +30,24 @@ Content-Type: application/json
 }
 ```
 
-### Was passiert
+### What happens
 
-1. **Slug-Validation**: Regex `^[a-z][a-z0-9-]{1,61}[a-z0-9]$`, kein
-   Reserved-Word (`system`, `health`, `swagger`, `api`, `connect`, ...)
-2. **PostgreSQL-DB anlegen** (raw SQL): `CREATE DATABASE cocoar_auth_next_acme`
-3. **In Marten-Tenancy registrieren**:
+1. **Slug validation**: regex `^[a-z][a-z0-9-]{1,61}[a-z0-9]$`, no
+   reserved word (`system`, `health`, `swagger`, `api`, `connect`,
+   ...)
+2. **Create PostgreSQL DB** (raw SQL):
+   `CREATE DATABASE cocoar_auth_next_acme`
+3. **Register in Marten tenancy**:
    `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`
-4. **Marten-Schema applyen** (Tabellen, Indizes, Functions)
-5. **OAuthRealmSeeder.SeedAsync** seedet die neue DB:
-   - 5 Default-Scopes (`openid`, `email`, `profile`, `roles`,
+4. **Apply Marten schema** (tables, indexes, functions)
+5. **OAuthRealmSeeder.SeedAsync** seeds the new DB:
+   - 5 default scopes (`openid`, `email`, `profile`, `roles`,
      `offline_access`)
-   - Internal-Login-Provider
-6. **AuthorizationSeeder** seedet 3 Default-Rollen (System Admin, User
+   - Internal login provider
+6. **AuthorizationSeeder** seeds 3 default roles (System Admin, User
    Manager, Viewer)
-7. **Realm-Document in `IGlobalStore`** (Master-DB, Schema `global`)
-8. **RealmCache.Invalidate()** — nächster Request lädt neu
+7. **Realm document in `IGlobalStore`** (master DB, schema `global`)
+8. **RealmCache.Invalidate()** — the next request loads it fresh
 
 ### Response
 
@@ -63,7 +64,7 @@ Content-Type: application/json
 }
 ```
 
-## Realm bearbeiten
+## Edit a realm
 
 ```http
 PATCH /api/admin/realms/{slug}
@@ -76,50 +77,51 @@ Content-Type: application/json
 }
 ```
 
-`Slug` ist immutable. `CanManageTenants` ist nicht über PATCH
-änderbar — würde eine Authorization-Eskalation ermöglichen.
+`Slug` is immutable. `CanManageTenants` cannot be changed via PATCH —
+that would enable an authorization escalation.
 
-## Realm deaktivieren
+## Deactivate a realm
 
 ```http
 PATCH /api/admin/realms/{slug}
 { "isActive": false }
 ```
 
-`RealmCache` filtert auf `IsActive = true` — alle Requests an die
-Realm-Domain landen bei `404`. Daten bleiben erhalten.
+`RealmCache` filters on `IsActive = true` — all requests to the realm
+domain land at `404`. Data is preserved.
 
-::: danger System-Realm
-Der System-Realm darf nicht deaktiviert werden — der Endpoint blockt
-das.
+::: danger System realm
+The system realm must not be deactivated — the endpoint blocks it.
 :::
 
-## Realm hard-löschen
+## Hard-delete a realm
 
-::: warning Nicht implementiert
-Aktueller Stand: nur Soft-Delete (Deaktivierung). Die Tenant-DB wird
-nicht gedroppt. Das ist ein offenes Roadmap-Item — Wolverine
-durability-Agent muss sauber heruntergefahren, Tenant aus
-`mt_tenant_databases` entfernt, alle Sessions invalidiert und am Ende
-die DB gedroppt werden.
+::: warning Not implemented
+Current state: only soft-delete (deactivation). The tenant DB is not
+dropped. This is an open roadmap item — the Wolverine durability
+agent has to be shut down cleanly, the tenant has to be removed from
+`mt_tenant_databases`, all sessions have to be invalidated, and
+finally the DB has to be dropped.
 :::
 
-## Setup-Flow für neuen Realm
+## Setup flow for a new realm
 
-Nach `POST /api/admin/realms`:
+After `POST /api/admin/realms`:
 
-1. Browser auf der neuen Realm-Domain öffnen (z.B. `https://acme.example.com/`)
-2. Frontend macht `GET /api/setup/status` → `{ needsSetup: true }`
-3. Frontend redirected zu `/setup`
-4. User legt First-Time-Admin an
-5. Auto-Login als System-Admin im neuen Realm
+1. Open the browser on the new realm domain (e.g.
+   `https://acme.example.com/`)
+2. The frontend calls `GET /api/setup/status` →
+   `{ needsSetup: true }`
+3. The frontend redirects to `/setup`
+4. The user creates the first-time admin
+5. Auto-login as system admin in the new realm
 
-Der erste User kommt automatisch in die "System-Admin"-Default-Gruppe,
-die `app:admin` hat.
+The first user is automatically placed into the "System Admin"
+default group with `BoundTo: ["*"]`; the role carries `realm:admin`.
 
-## Realm-Datenmodell
+## Realm data model
 
-Das `Realm`-Dokument
+The `Realm` document
 (`src/dotnet/Cocoar.Auth.Domain/Realms/Realm.cs`):
 
 ```csharp
@@ -129,13 +131,13 @@ public class Realm
     public string Slug { get; set; }              // = TenantId, immutable
     public string DisplayName { get; set; }
     public string? Description { get; set; }
-    public string[] Domains { get; set; }         // Host-Header-Matches
-    public bool CanManageTenants { get; set; }    // darf Realm-CRUD
+    public string[] Domains { get; set; }         // Host-header matches
+    public bool CanManageTenants { get; set; }    // may run realm CRUD
     public bool IsActive { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
 }
 ```
 
-Lebt im `IGlobalStore` (Master-DB, Schema `global`) — nicht im
-Tenant-Store, sonst Henne-Ei-Problem.
+Lives in `IGlobalStore` (master DB, schema `global`) — not in the
+tenant store, because that would create a chicken-and-egg problem.

@@ -1,52 +1,52 @@
-# Backend-Aufbau
+# Backend architecture
 
-cocoar.auth ist **nicht** klassisch geschichtet (Domain → Application →
-Infrastructure). Stattdessen sind die Kernfunktionen in Vertical-Slices
-organisiert, mit zusätzlichen IdP-spezifischen Layern darüber.
+cocoar.auth is **not** classically layered (Domain → Application →
+Infrastructure). Instead, the core features are organised as vertical
+slices, with additional IdP-specific layers on top.
 
-## Projekt-Layout
+## Project layout
 
 ```
 src/dotnet/
 ├── Cocoar.Auth.Authentication/   ← Slice (Login, 2FA, OIDC, GDPR, Sessions)
-├── Cocoar.Auth.Authorization/    ← Slice (Groups, Roles, Permissions, ABAC)
-├── Cocoar.Auth.Domain/           ← Realm, OAuth, LoginProvider Domain
-├── Cocoar.Auth.Application/      ← DTOs, Service-Interfaces
-├── Cocoar.Auth.Infrastructure/   ← OpenIddict-Stores, Tenancy, Realm-Cache, Wolverine-Handler
-├── Cocoar.Auth.Api/              ← Minimal-API-Endpoints, Middleware, Setup, SignalR-Hub
-├── Cocoar.Auth.Api.Tests/        ← Integration-Tests (Testcontainers + PostgreSQL)
-└── Common/                       ← Geteilte Utilities (PathHelper, Optional<T>, ...)
+├── Cocoar.Auth.Authorization/    ← Slice (Groups, Roles, Permissions)
+├── Cocoar.Auth.Domain/           ← Realm, OAuth, LoginProvider domain
+├── Cocoar.Auth.Application/      ← DTOs, service interfaces
+├── Cocoar.Auth.Infrastructure/   ← OpenIddict stores, tenancy, realm cache, Wolverine handlers
+├── Cocoar.Auth.Api/              ← Minimal API endpoints, middleware, setup, SignalR hub
+├── Cocoar.Auth.Api.Tests/        ← Integration tests (Testcontainers + PostgreSQL)
+└── Common/                       ← Shared utilities (PathHelper, Optional<T>, ...)
 ```
 
-## Komponenten-Diagramm
+## Component diagram
 
 ```mermaid
 graph TB
     subgraph FrontEnd ["Frontend (Vue)"]
-        SPA["Vue SPA + Pinia + SignalARRR-Client"]
+        SPA["Vue SPA + Pinia + SignalARRR client"]
     end
 
     subgraph Api ["Cocoar.Auth.Api"]
         MW[RealmMiddleware]
-        Endpoints[Minimal-API-Endpoints<br/>per Feature in Features/]
+        Endpoints[Minimal API endpoints<br/>per feature in Features/]
         Hub[UIHub - SignalR]
-        Setup[Bootstrap + Master-Tenancy + Seeding]
+        Setup[Bootstrap + master tenancy + seeding]
     end
 
-    subgraph Slices ["Slices (TimeToDo-Kopien)"]
+    subgraph Slices ["Slices (TimeToDo copies)"]
         Authn[Cocoar.Auth.Authentication<br/>Login, 2FA, OIDC, GDPR]
-        Authz[Cocoar.Auth.Authorization<br/>Groups, Roles, ABAC]
+        Authz[Cocoar.Auth.Authorization<br/>Groups, Roles, Permissions]
     end
 
     subgraph Infra ["Cocoar.Auth.Infrastructure"]
         Tenancy[TenantedSessionFactory<br/>+ MasterTableTenancy]
-        OpenIddictStores[Marten-OpenIddict-Stores<br/>Application/Scope/Auth/Token]
+        OpenIddictStores[Marten OpenIddict stores<br/>Application/Scope/Auth/Token]
         Realms[RealmCache + RealmProvisioning]
-        IGlobalStore[IGlobalStore - Realm-Documents]
+        IGlobalStore[IGlobalStore - Realm documents]
     end
 
     subgraph DataLayer ["Marten + PostgreSQL"]
-        Master[(Master-DB<br/>+ realms.mt_tenant_databases<br/>+ global Schema)]
+        Master[(Master DB<br/>+ realms.mt_tenant_databases<br/>+ global schema)]
         TenantA[(cocoar_auth_next_acme)]
         TenantB[(cocoar_auth_next_finance)]
     end
@@ -69,83 +69,82 @@ graph TB
     Setup --> Realms
 ```
 
-## Request-Lifecycle
+## Request lifecycle
 
 ```
 Browser → ASP.NET Core
   ↓ UseRouting
-  ↓ UseMiddleware<RealmMiddleware>          ← setzt HttpContext.Items["TenantId"]
+  ↓ UseMiddleware<RealmMiddleware>          ← sets HttpContext.Items["TenantId"]
   ↓ UseSession
-  ↓ UseAuthentication                        ← Cookie-Auth
+  ↓ UseAuthentication                        ← cookie auth
   ↓ UseAuthorization
-  ↓ UseMiddleware<TwoFactorEnforcementMW>    ← blockiert User ohne 2FA bei Level ≥ 1
-  ↓ Endpoint-Routing
-  ↓ Endpoint mit RequiresPermission(...)     ← per-resource gating
+  ↓ UseMiddleware<TwoFactorEnforcementMW>    ← blocks users without 2FA at level ≥ 1
+  ↓ Endpoint routing
+  ↓ Endpoint with RequiresPermission(...)    ← per-resource gating
   ↓ Handler
-       ↓ IDocumentSession                    ← TenantedSessionFactory liest TenantId
-       ↓ Marten Query gegen Tenant-DB
-       ↓ Antwort
+       ↓ IDocumentSession                    ← TenantedSessionFactory reads TenantId
+       ↓ Marten query against tenant DB
+       ↓ Response
 ```
 
-`TenantedSessionFactory` ist als Marten `ISessionFactory` registriert
+`TenantedSessionFactory` is registered as a Marten `ISessionFactory`
 (`AddMarten(...).BuildSessionsWith<TenantedSessionFactory>()`), so
-dass jede `IDocumentSession`/`IQuerySession`-Injection automatisch
-tenant-scoped ist.
+every `IDocumentSession`/`IQuerySession` injection is automatically
+tenant-scoped.
 
-## Wolverine-CQRS
+## Wolverine CQRS
 
-CQRS-Commands und Queries werden via Wolverines `IMessageBus`
-dispatched:
+CQRS commands and queries are dispatched via Wolverine's `IMessageBus`:
 
 ```csharp
 var result = await _messageBus.InvokeAsync<ErrorOr<UserDto>>(
     new CreateUserCommand(...));
 ```
 
-Handler werden auto-discovered. Cocoar.Auth läuft mit
-`DurabilityMode.Solo` (in-memory, lokal) — kein externer Message-Broker
-nötig. Die Marten-Outbox ist trotzdem aktiv für event-side-effects:
-SignalR-Notifications werden nach `SaveChangesAsync` gefeuert über
+Handlers are auto-discovered. cocoar.auth runs with
+`DurabilityMode.Solo` (in-memory, local) — no external message broker
+required. The Marten outbox is still active for event side-effects:
+SignalR notifications fire after `SaveChangesAsync` via
 `ProjectionSideEffects`.
 
-Der Codegen läuft mit `TypeLoadMode.Auto` — beim Build werden
-Wolverine-/Marten-Generierte Klassen vorgeneriert um Kaltstartzeit
-und Roslyn-Compilation zur Laufzeit zu sparen.
+Codegen runs with `TypeLoadMode.Auto` — Wolverine/Marten generated
+classes are pre-generated at build time to save cold-start time and
+avoid Roslyn compilation at runtime.
 
-## Marten-Verwendung
+## Marten usage
 
-cocoar.auth nutzt drei Marten-Patterns:
+cocoar.auth uses three Marten patterns:
 
-### 1. Document-Storage
+### 1. Document storage
 
-Klassischer Marten-Document-Store für ephemerere oder
-sicherheitssensitive Daten — keine Event-Sourcing.
+Classic Marten document store for ephemeral or security-sensitive
+data — no event sourcing.
 
-| Document | Inhalt |
+| Document | Contents |
 |---|---|
-| `ApplicationUser` | ASP.NET Identity-User |
-| `UserSecurityData` | Password-Hash, TOTP-Key, Recovery-Codes, Passkey-Credentials |
-| `UserSession` | Active Login-Session |
-| `EmailOtpChallenge`, `MagicLinkChallenge`, `WebAuthnChallenge` | ephemerere Challenges |
-| `IdpConfig` | OIDC-IdP-Konfiguration |
-| `OpenIddictAuthorizationDocument`, `OpenIddictTokenDocument` | OAuth-Tokens + Authorizations |
+| `ApplicationUser` | ASP.NET Identity user |
+| `UserSecurityData` | Password hash, TOTP key, recovery codes, passkey credentials |
+| `UserSession` | Active login session |
+| `EmailOtpChallenge`, `MagicLinkChallenge`, `WebAuthnChallenge` | Ephemeral challenges |
+| `IdpConfig` | OIDC IdP configuration |
+| `OpenIddictAuthorizationDocument`, `OpenIddictTokenDocument` | OAuth tokens + authorizations |
 
-### 2. Inline-Projections (`*State`)
+### 2. Inline projections (`*State`)
 
-Synchron innerhalb der `SaveChanges`-Transaktion. Garantieren dass der
-nächste Read nach einem Write den neuen Stand sieht. Genutzt für
-Validation und Identity-Stores.
+Synchronous within the `SaveChanges` transaction. Guarantee that the
+next read after a write sees the new state. Used for validation and
+identity stores.
 
-| Projection | Was sie hält |
+| Projection | What it holds |
 |---|---|
-| `OAuthApplicationState` | OpenIddict-Application-State |
-| `OAuthScopeState` | OpenIddict-Scope-State |
-| `OAuthApiState` | API-Resource-State |
-| `LoginProviderState` | Internal/External-Login-Provider-State |
+| `OAuthApplicationState` | OpenIddict application state |
+| `OAuthScopeState` | OpenIddict scope state |
+| `OAuthApiState` | API resource state |
+| `LoginProviderState` | Internal/external login provider state |
 
-### 3. Event-Sourced Aggregates
+### 3. Event-sourced aggregates
 
-OAuth-Domain-Aggregate sind voll-event-sourced via Marten:
+OAuth domain aggregates are fully event-sourced via Marten:
 
 | Aggregate | Events |
 |---|---|
@@ -154,55 +153,55 @@ OAuth-Domain-Aggregate sind voll-event-sourced via Marten:
 | `OAuthApiAggregate` | Created, Updated, Scopes-Changed, ... |
 | `LoginProviderAggregate` | Created, Updated, Disabled, ... |
 
-User-Events werden vom Authentication-Slice gefeuert (`UserCreated`,
-`UserUpdated`, `UserPasswordChanged`, `UserLoggedIn`, ...). Der Slice
-selbst speichert Identity über `ApplicationUser`-Document; die Events
-sind separat für Audit und für die `PrincipalProjection` (siehe
-Authorization-Slice).
+User events are emitted by the Authentication slice (`UserCreated`,
+`UserUpdated`, `UserPasswordChanged`, `UserLoggedIn`, ...). The slice
+itself stores identity through the `ApplicationUser` document; the
+events are kept separately for audit and for the `PrincipalProjection`
+(see Authorization slice).
 
-## OpenIddict-Stores
+## OpenIddict stores
 
-cocoar.auth implementiert alle vier OpenIddict-Stores als
-Marten-backed Stores, im Ordner
-`Cocoar.Auth.Infrastructure/OpenIddict/`:
+cocoar.auth implements all four OpenIddict stores as Marten-backed
+stores, in `Cocoar.Auth.Infrastructure/OpenIddict/`:
 
 | Store | Backing |
 |---|---|
-| `MartenApplicationStore` | `OAuthApplicationState`-Inline-Projection (event-sourced via Aggregate) |
-| `MartenScopeStore` | `OAuthScopeState`-Inline-Projection (event-sourced via Aggregate) |
+| `MartenApplicationStore` | `OAuthApplicationState` inline projection (event-sourced via aggregate) |
+| `MartenScopeStore` | `OAuthScopeState` inline projection (event-sourced via aggregate) |
 | `MartenAuthorizationStore` | `OpenIddictAuthorizationDocument` (direct storage) |
 | `MartenTokenStore` | `OpenIddictTokenDocument` (direct storage) |
 
-Plus zwei Pipeline-Hooks:
+Plus two pipeline hooks:
 
-- `RealmIssuerHandler` — überschreibt `context.Issuer` mit `BaseUri`
-  pro Request (= Realm-Domain). So hat jeder Realm sein eigenes
-  Discovery-Dokument.
-- `AccessTokenTypeHandler` — schaltet pro Client zwischen
-  Reference-Tokens und JWT um.
+- `RealmIssuerHandler` — overwrites `context.Issuer` with the per-request
+  `BaseUri` (= realm domain). This way every realm has its own
+  discovery document.
+- `AccessTokenTypeHandler` — switches between reference tokens and JWT
+  per client.
 
-## Setup-Bootstrap
+## Setup bootstrap
 
-In `Program.cs` läuft beim Start ein expliziter Bootstrap-Pfad
-(VOR `app.Run()`):
+`Program.cs` runs an explicit bootstrap path at startup
+(before `app.Run()`):
 
-1. **Master-DB anlegen** (raw SQL, weil Marten das nicht kann während
-   Connection auf einer fehlenden DB hängt)
-2. **Marten-Schema applyen** (`Storage.ApplyAllConfiguredChangesToDatabaseAsync`)
-   → `realms.mt_tenant_databases` entsteht
-3. **System-Tenant registrieren** (`tenancy.AddDatabaseRecordAsync("system", masterCs)`)
-4. **Marten-Schema nochmal applyen** → per-Tenant-Tabellen für System
-5. **System-Realm-Document seeden** (`EnsureSystemRealmExistsAsync`)
-6. **Default-OAuth-Scopes + Internal-Login-Provider seeden**
+1. **Create master DB** (raw SQL, because Marten can't do this while
+   the connection hangs on a missing DB)
+2. **Apply Marten schema** (`Storage.ApplyAllConfiguredChangesToDatabaseAsync`)
+   → `realms.mt_tenant_databases` is created
+3. **Register system tenant** (`tenancy.AddDatabaseRecordAsync("system", masterCs)`)
+4. **Apply Marten schema again** → per-tenant tables for the system tenant
+5. **Seed system realm document** (`EnsureSystemRealmExistsAsync`)
+6. **Seed default OAuth scopes + internal login provider**
    (`OAuthRealmSeeder.SeedAsync`)
-7. **RealmCache warmladen**
+7. **Warm up RealmCache**
 
-Erst danach beginnt Kestrel zuzuhören.
+Only after this does Kestrel start listening.
 
-## Recovery-CLI
+## Recovery CLI
 
-Der Authentication-Slice liefert eine Break-Glass-CLI. Statt Kestrel zu
-starten kann das Image im Container mit `recover`-Subcommand laufen:
+The Authentication slice ships a break-glass CLI. Instead of starting
+Kestrel, the image can run in the container with the `recover`
+subcommand:
 
 ```bash
 dotnet Cocoar.Auth.Api.dll recover list
@@ -212,28 +211,28 @@ dotnet Cocoar.Auth.Api.dll recover magic-link <username>
 dotnet Cocoar.Auth.Api.dll recover rebuild-projections
 ```
 
-Hilft beim Lockout: alle 2FA verloren, kein Admin mehr da, Projection
-korrupt — alles per Container-Exec lösbar.
+Helps with lockouts: all 2FA lost, no admin left, projection
+corrupted — all solvable via container exec.
 
-## Frontend-Schnittstelle
+## Frontend integration
 
-Der Vue-Frontend liegt unter `src/frontend-vue/` und wird im Container
-über `app.UseSpaUI()` als statisches `wwwroot/` ausgeliefert. SignalR-Hub
-unter `/signalr/ui` (`MapHARRRController<UIHub>`).
+The Vue frontend lives at `src/frontend-vue/` and is served from the
+container as static `wwwroot/` content via `app.UseSpaUI()`. The SignalR
+hub is mounted at `/signalr/ui` (`MapHARRRController<UIHub>`).
 
-Mehr siehe [Vue-Frontend](/guide/frontend).
+See [Vue frontend](/guide/frontend) for more.
 
 ## Testing
 
-Integration-Tests (`Cocoar.Auth.Api.Tests`) nutzen:
+Integration tests (`Cocoar.Auth.Api.Tests`) use:
 
-- **Testcontainers** — PostgreSQL in Docker, automatisch beim
-  Test-Run gestartet
-- **WebApplicationFactory** — In-Process Hosting der API mit
-  Cookie-Auth
-- **Per-Test-Class-DB-Isolation** — jede Test-Class hat ihre eigene DB
-- **Shared PostgreSQL container** — eine Container-Instanz für alle
-  Test-Collections, parallelisiert
-- **WireMock** — Fake OIDC-Server für External-Login-Tests
-- **Pre-generated Wolverine-/Marten-Code** (`TypeLoadMode.Auto`) —
-  eliminiert Roslyn-Compilation zur Laufzeit
+- **Testcontainers** — PostgreSQL in Docker, started automatically on
+  test runs
+- **WebApplicationFactory** — in-process hosting of the API with
+  cookie auth
+- **Per-test-class DB isolation** — each test class gets its own DB
+- **Shared PostgreSQL container** — one container instance for all
+  test collections, parallelised
+- **WireMock** — fake OIDC server for external login tests
+- **Pre-generated Wolverine/Marten code** (`TypeLoadMode.Auto`) —
+  eliminates Roslyn compilation at runtime

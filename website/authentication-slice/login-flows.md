@@ -1,38 +1,39 @@
-# Login-Flows
+# Login flows
 
-Alle Login-Wege im Detail. Endpoints sind unter `/api/account/...`
-gemountet (siehe `MapAccountEndpoints` in `Cocoar.Auth.Api/Program.cs`).
+Every login path in detail. Endpoints are mounted under
+`/api/account/...` (see `MapAccountEndpoints` in
+`Cocoar.Auth.Api/Program.cs`).
 
-## Login-Flow-Übersicht
+## Login flow overview
 
 ```mermaid
 flowchart TD
     A[POST /api/account/login] --> B{Level = 2?}
-    B -->|Ja| C[403 Passwort deaktiviert]
-    B -->|Nein| D{Credentials OK?}
-    D -->|Nein| E[401 Invalid credentials]
-    D -->|Ja| F{RequiresTwoFactor?}
-    F -->|Ja| G[200 RequiresMfa + MfaMethods]
-    F -->|Nein| H{Level >= 1 & kein 2FA?}
-    H -->|Ja| I{TwoFactorExempt?}
-    I -->|Ja| J[200 Login successful]
-    I -->|Nein| K{GracePeriod aktiv?}
-    K -->|Ja| L[200 RequiresSecureSetup + DueAt]
-    K -->|Nein| M[200 RequiresSecureSetup blocking]
-    H -->|Nein| J
+    B -->|Yes| C[403 Password disabled]
+    B -->|No| D{Credentials OK?}
+    D -->|No| E[401 Invalid credentials]
+    D -->|Yes| F{RequiresTwoFactor?}
+    F -->|Yes| G[200 RequiresMfa + MfaMethods]
+    F -->|No| H{Level >= 1 & no 2FA?}
+    H -->|Yes| I{TwoFactorExempt?}
+    I -->|Yes| J[200 Login successful]
+    I -->|No| K{Grace period active?}
+    K -->|Yes| L[200 RequiresSecureSetup + DueAt]
+    K -->|No| M[200 RequiresSecureSetup blocking]
+    H -->|No| J
 ```
 
-Nach `RequiresMfa` muss der Client einen zweiten Request senden:
+After `RequiresMfa` the client must send a second request:
 
 - TOTP: `POST /api/account/mfa/login`
 - Email OTP: `POST /api/account/email-otp/login`
 - Passkey: `POST /api/account/passkey/login/complete`
 
-Nach erfolgreichem zweiten Schritt ist die Session vollständig — das
-`Cocoar.Auth.Auth`-Cookie wird gesetzt, alle folgenden Requests laufen
-authentifiziert durch.
+After a successful second step the session is fully established — the
+`Cocoar.Auth.Auth` cookie is set, and all following requests run
+authenticated.
 
-## Password-Login
+## Password login
 
 ```http
 POST /api/account/login
@@ -45,18 +46,18 @@ Content-Type: application/json
 }
 ```
 
-Mögliche Responses:
+Possible responses:
 
-| Response | Bedeutung |
+| Response | Meaning |
 |---|---|
-| `200 { authenticated: true }` | Login fertig — Cookie gesetzt |
-| `200 { requiresTwoFactor: true, mfaMethods: [...] }` | Level ≥ 1, User hat 2FA — zweiter Schritt nötig |
-| `200 { requiresSecureSetup: true, gracePeriod: true, secureSetupDueAt }` | User muss noch 2FA einrichten, hat Zeit bis `DueAt` |
-| `200 { requiresSecureSetup: true, gracePeriod: false }` | Grace-Period vorbei, blocking |
-| `401 Invalid credentials` | Username/Passwort falsch oder User locked |
-| `403 Passwordless required` | Level = 2, Password-Login deaktiviert |
+| `200 { authenticated: true }` | Login complete — cookie set |
+| `200 { requiresTwoFactor: true, mfaMethods: [...] }` | Level ≥ 1, user has 2FA — second step needed |
+| `200 { requiresSecureSetup: true, gracePeriod: true, secureSetupDueAt }` | User still has to set up 2FA, time runs until `DueAt` |
+| `200 { requiresSecureSetup: true, gracePeriod: false }` | Grace period over, blocking |
+| `401 Invalid credentials` | Username/password wrong or user locked |
+| `403 Passwordless required` | Level = 2, password login disabled |
 
-## TOTP-Login
+## TOTP login
 
 ```http
 POST /api/account/mfa/login
@@ -68,12 +69,12 @@ Content-Type: application/json
 }
 ```
 
-Greift auf den `Cocoar.Auth.2FA`-Cookie zu, der von `/login` gesetzt
-wird und die UserId für 5 Minuten hält. Verifiziert den Code via
-`UserManager.VerifyTwoFactorTokenAsync`. Bei Erfolg wird die Session
-voll aufgebaut.
+Reads the `Cocoar.Auth.2FA` cookie set by `/login`, which holds the
+UserId for 5 minutes. Verifies the code via
+`UserManager.VerifyTwoFactorTokenAsync`. On success the session is
+fully established.
 
-## Email-OTP-Login
+## Email OTP login
 
 ```http
 POST /api/account/email-otp/login/request
@@ -82,7 +83,7 @@ Content-Type: application/json
 { "userName": "alice" }
 ```
 
-Sendet einen 6-stelligen Code per Mail. Rate-Limited via
+Sends a 6-digit code by email. Rate-limited via
 `EmailOtpConfiguration.RateLimitMinutes`. Verify:
 
 ```http
@@ -92,12 +93,12 @@ Content-Type: application/json
 { "userName": "alice", "code": "123456", "rememberMe": true }
 ```
 
-Maximal 3 Verify-Versuche pro Challenge, sonst muss ein neuer Code
-angefordert werden.
+A maximum of 3 verify attempts per challenge; otherwise a new code
+must be requested.
 
-## Passkey-Login (FIDO2 / WebAuthn)
+## Passkey login (FIDO2 / WebAuthn)
 
-Zwei-Schritt-Ceremony. Erst Optionen holen:
+Two-step ceremony. First fetch options:
 
 ```http
 POST /api/account/passkey/login/options
@@ -106,9 +107,10 @@ Content-Type: application/json
 { "userName": "alice" }
 ```
 
-Antwort enthält die `AssertionOptions` (Challenge, RpId, allowCredentials).
-Browser ruft `navigator.credentials.get(...)` auf, der User berührt
-seinen Passkey. Antwort an:
+The response contains the `AssertionOptions` (challenge, RpId,
+allowCredentials). The browser calls
+`navigator.credentials.get(...)`, the user touches their passkey. The
+response is sent to:
 
 ```http
 POST /api/account/passkey/login/complete
@@ -117,22 +119,22 @@ Content-Type: application/json
 { "assertion": { ... } }
 ```
 
-Server verifiziert die Assertion, prüft den Sign-Count gegen
-`StoredPasskeyCredential.SignCount` (Replay-Schutz) und setzt einen
-persistenten Cookie (30 Tage).
+The server verifies the assertion, checks the sign count against
+`StoredPasskeyCredential.SignCount` (replay protection) and sets a
+persistent cookie (30 days).
 
-## Passwordless via Passkey (ohne `userName`)
+## Passwordless via Passkey (without `userName`)
 
-Wenn `POST /api/account/passkey/login/options` ohne `userName` aufgerufen
-wird, generiert der Server `AssertionOptions` mit leerer
-`AllowedCredentials`-Liste. Der Browser nutzt **discoverable credentials**
-(resident keys) — der User wählt eine gespeicherte Identität aus dem
-Authenticator. Die UserId wird aus dem `UserHandle` der Assertion
-gelesen.
+When `POST /api/account/passkey/login/options` is called without
+`userName`, the server generates `AssertionOptions` with an empty
+`AllowedCredentials` list. The browser uses **discoverable
+credentials** (resident keys) — the user picks a stored identity from
+the authenticator. The UserId is read from the `UserHandle` of the
+assertion.
 
-## Magic-Link-Login
+## Magic Link login
 
-Self-Service-Request:
+Self-service request:
 
 ```http
 POST /api/account/magic-link/request
@@ -141,60 +143,59 @@ Content-Type: application/json
 { "email": "alice@example.com" }
 ```
 
-Sendet eine Mail mit einem `?token=...&user=...`-Link. Klick öffnet:
+Sends an email with a `?token=...&user=...` link. The click opens:
 
 ```http
 GET /api/account/magic-link/login?token=...&user=...
 ```
 
-Backend hashed das Token, vergleicht es mit `MagicLinkChallenge.TokenHash`,
-prüft Ablauf und setzt einen persistenten Cookie. Redirect auf das
-Frontend.
+The backend hashes the token, compares it with
+`MagicLinkChallenge.TokenHash`, checks expiry and sets a persistent
+cookie. Redirect to the frontend.
 
-::: tip Admin-Send statt Self-Service
-Admin kann ohne Feature-Toggle einen Link verschicken via
-`POST /api/admin/users/{id}/magic-link`. Wird für Notfallzugang
-und Onboarding genutzt.
+::: tip Admin-send instead of self-service
+Admins can send a link without any feature toggle via
+`POST /api/admin/users/{id}/magic-link`. Used for emergency access
+and onboarding.
 :::
 
-## OIDC External Login
+## OIDC external login
 
-Drei Endpoints:
+Three endpoints:
 
 ```http
 GET /api/account/external-login/{idpConfigId}/start?returnUrl=/
 ```
 
-→ ASP.NET Core `Challenge` mit dem dynamisch registrierten
-OIDC-Scheme (`DynamicOidcSchemeManager`). Browser landet beim externen
+→ ASP.NET Core `Challenge` with the dynamically registered OIDC
+scheme (`DynamicOidcSchemeManager`). Browser lands at the external
 IdP.
 
 ```http
 GET /api/account/external-login/callback
 ```
 
-→ `ExternalLoginProcessor` läuft:
+→ `ExternalLoginProcessor` runs:
 
-1. Sucht `ExternalIdentityLink` (Issuer + Subject) → existierender User
-   oder JIT-Create
-2. `UserUpdateScriptRunner` führt `IdpConfig.UserUpdateScript` (Jint) aus
-   → mappt Claims auf `{ firstname, lastname, email, acronym }`-Patch
-3. Email-Konflikt (Email gehört anderem User) → Hard Reject
+1. Looks up `ExternalIdentityLink` (Issuer + Subject) → existing user
+   or JIT create
+2. `UserUpdateScriptRunner` runs `IdpConfig.UserUpdateScript` (Jint)
+   → maps claims to a `{ firstname, lastname, email, acronym }` patch
+3. Email conflict (email belongs to a different user) → hard reject
    (`Idp.EmailConflict`)
-4. Login-Cookie gesetzt (persistent, 30 Tage)
+4. Login cookie set (persistent, 30 days)
 
-Details zu IdP-Setup und Scripting siehe
-[Identity-Provider (OIDC)](./identity-providers).
+Details on IdP setup and scripting: see
+[Identity Providers (OIDC)](./identity-providers).
 
-## OAuth-Authorize-Flow (externe Apps)
+## OAuth authorize flow (external apps)
 
-Ist ein anderes Thema — eine externe App startet via
-`/connect/authorize` einen OAuth-Flow gegen cocoar.auth. Wenn der User
-nicht eingeloggt ist, wird er auf das Login-UI redirected, durchläuft
-den klassischen Login-Flow oben, kommt zurück zu `/connect/authorize`
-und bekommt einen Authorization-Code. Siehe
-[OAuth & OIDC](/concepts/oauth) und
-[OpenIddict-Wiring](/guide/oauth).
+Different topic — an external app starts an OAuth flow against
+cocoar.auth via `/connect/authorize`. If the user is not logged in,
+they are redirected to the login UI, run through the regular login
+flow above, come back to `/connect/authorize` and receive an
+authorization code. See [OAuth & OIDC](/concepts/oauth) and
+[OpenIddict wiring](/guide/oauth).
 
 ## Logout
 
@@ -202,7 +203,8 @@ und bekommt einen Authorization-Code. Siehe
 POST /api/account/logout
 ```
 
-Löscht das Auth-Cookie + invalidiert die `UserSession` in Marten. Im
-Frontend macht das Logout-Composable einen `window.location`-Reload
-(nicht nur eine Vue-Router-Navigation), damit der SignalR-Connection
-sauber abreißt. Sonst hängt eine alte Subscription am alten User.
+Deletes the auth cookie + invalidates the `UserSession` in Marten. In
+the frontend the logout composable performs a `window.location`
+reload (not just a Vue Router navigation) so that the SignalR
+connection tears down cleanly. Otherwise an old subscription would
+hang on the previous user.

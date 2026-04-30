@@ -1,9 +1,9 @@
 # Auto-Membership
 
-Eine Gruppe ist entweder `Manual` (Admin pflegt `MemberIds` direkt)
-oder `Auto` (Membership-Script bestimmt Mitglieder dynamisch).
+A group is either `Manual` (admin maintains `MemberIds` directly) or
+`Auto` (a membership script determines the members dynamically).
 
-## Manual-Modus
+## Manual mode
 
 ```
 Group "Backend Team"
@@ -11,9 +11,10 @@ Group "Backend Team"
   MemberIds: [<user-1>, <user-2>, <user-3>]
 ```
 
-Admin fügt User per UI hinzu/raus. Nichts tut sich automatisch.
+Admins add and remove users via the UI. Nothing happens
+automatically.
 
-## Auto-Modus
+## Auto mode
 
 ```
 Group "Sales Department"
@@ -22,47 +23,47 @@ Group "Sales Department"
   MemberIds: [<computed-from-script>]
 ```
 
-`MemberIds` werden vom System gepflegt, nicht vom Admin. Bei jedem
-relevanten Event (User created/updated/deleted) wird das Script neu
-ausgewertet.
+`MemberIds` is maintained by the system, not the admin. On every
+relevant event (user created/updated/deleted) the script is
+re-evaluated.
 
-## Membership-Script
+## Membership script
 
-Genau wie ein Access-Script — TypeScript-Arrow-Function, auf einen
-Person-Datensatz mappend auf `boolean`:
+Same shape as an access script — a TypeScript arrow function from a
+person record to `boolean`:
 
 ```typescript
-// Predicate-Form
+// Predicate form
 (p) => p.OrganizationalUnit === "engineering"
     && p.AccountName !== "service-account-bot"
     && p.IsActive
 
-// Mit externalClaims (aus dem letzten OIDC-Login):
+// With externalClaims (from the most recent OIDC login):
 (p) => p.externalClaims.department === "Finance"
 ```
 
-Wird mit Cocoar.JsEval.Linq zu einem
-`Expression<Func<Person, bool>>` übersetzt → SQL gegen
-`mt_doc_principal WHERE mt_doc_type = 'person'`. Eine einzelne Query
-liefert die neuen `MemberIds`.
+Translated by Cocoar.JsEval.Linq into an
+`Expression<Func<Person, bool>>` → SQL against
+`mt_doc_principal WHERE mt_doc_type = 'person'`. A single query
+returns the new `MemberIds`.
 
-## Recompute-Trigger
+## Recompute triggers
 
-`AutoMembershipSyncHandlers` (Wolverine-Handler) horchen auf
-Person-Mutation-Events:
+`AutoMembershipSyncHandlers` (Wolverine handlers) listen for person
+mutation events:
 
-| Event | Aktion |
+| Event | Action |
 |---|---|
-| `UserCreated` | Auto-Gruppen mit passendem Script-Predicate prüfen → bei Match: User adden |
-| `UserUpdated` | Auto-Gruppen prüfen → User adden/removen je nach neuem Stand |
-| `UserDeleted` | User aus allen Auto-Gruppen entfernen |
-| `GroupMembershipScriptChanged` | Komplette Recompute-Pass für diese eine Gruppe |
+| `UserCreated` | Check auto-groups whose script predicate matches → on match: add user |
+| `UserUpdated` | Check auto-groups → add or remove user based on the new state |
+| `UserDeleted` | Remove user from all auto-groups |
+| `GroupMembershipScriptChanged` | Full recompute pass for that one group |
 
-## Dependency-Tracking (Selective Recompute)
+## Dependency tracking (selective recompute)
 
-Auto-Membership-Recompute ist teuer wenn man's bei jedem Heartbeat-Update
-des Users macht. Lösung: pro Script wird beim Save ein
-**Dependency-Set** der gelesenen Properties berechnet:
+Auto-membership recompute is expensive if you do it on every
+heartbeat update of the user. Solution: per script, when saving, a
+**dependency set** of the read properties is calculated:
 
 ```typescript
 // Script
@@ -72,33 +73,31 @@ des Users macht. Lösung: pro Script wird beim Save ein
 ["OrganizationalUnit", "IsActive"]
 ```
 
-Beim `UserUpdated`-Event wird gecheckt: hat sich eines der Felder aus
-dem Dependency-Set geändert? Wenn nein → Recompute skippen für diese
-Gruppe.
+On `UserUpdated`, we check whether any field in the dependency set
+changed. If not → skip the recompute for that group.
 
-Beispiel: User updated `LastLoginAt`. `IsActive` und
-`OrganizationalUnit` sind unverändert → Sales-Gruppe wird gar nicht
-geprüft, obwohl `UserUpdated`-Event gefeuert hat.
+Example: a user updates `LastLoginAt`. `IsActive` and
+`OrganizationalUnit` are unchanged → the Sales group isn't checked at
+all, even though the `UserUpdated` event fired.
 
-## Failure-Handling
+## Failure handling
 
-Wenn das Script wirft (Translator-Fehler oder Runtime-Fehler beim
-Compile), wird ein `GroupMembershipRecomputeFailedEvent` mit dem
-Fehler-Message gefeuert. Die Group-Projection setzt `MembershipLastError`
-+ behält die alten `MemberIds`. Admin sieht den Fehler im
-Group-Detail-View.
+If the script throws (translator error or runtime error during
+compile), a `GroupMembershipRecomputeFailedEvent` with the error
+message is fired. The Group projection sets `MembershipLastError` and
+keeps the previous `MemberIds`. The admin sees the error in the group
+detail view.
 
-Erfolgreicher Recompute → `GroupMembershipRecomputedEvent` mit den
-neuen `MemberIds`. `MembershipLastError` wird auf `null` gesetzt.
+A successful recompute → `GroupMembershipRecomputedEvent` with the
+new `MemberIds`. `MembershipLastError` is set to `null`.
 
-## Nested Auto-Gruppen
+## Nested auto-groups
 
-Eine Auto-Gruppe kann eine andere Gruppe (Manual oder Auto) als
-Mitglied haben:
+An auto-group can have another group (manual or auto) as a member:
 
 ```
 "All Staff" (Manual)
-  Members: ["Engineering", "Sales", "Support"]   ← drei Auto-Gruppen
+  Members: ["Engineering", "Sales", "Support"]   ← three auto-groups
 
 "Engineering" (Auto)
   Script: (p) => p.OrganizationalUnit === "engineering"
@@ -107,27 +106,28 @@ Mitglied haben:
   Script: (p) => p.OrganizationalUnit === "sales"
 ```
 
-Permission-BFS expandiert das ohne Sonderfall — `IPrincipalWithMembers`
-ist polymorph. Cycle-Detection via Visited-Set.
+The permission BFS expands this without special-casing —
+`IPrincipalWithMembers` is polymorphic. Cycle detection via a visited
+set.
 
-## Initial-Recompute
+## Initial recompute
 
-Wenn ein Admin eine Auto-Gruppe neu erstellt (oder das Script ändert),
-läuft ein initialer Voll-Pass:
+When an admin creates a new auto-group (or changes the script), an
+initial full pass runs:
 
 ```csharp
 // IAutoMembershipRecalculator
 await recalculator.RecomputeAllMembersAsync(group, ct);
 ```
 
-→ ein einzelner SQL-Query gegen alle Person-Dokumente, das Script als
-WHERE-Klausel. Resultat → `MemberIds` setzen + Event fire.
+→ a single SQL query against all person documents, with the script as
+a WHERE clause. Result → set `MemberIds` + fire event.
 
-Bei einer Million Persons könnte das langsam sein — aktuell ist
-cocoar.auth aber für eine Größenordnung weit drunter ausgelegt
-(Mid-Sized SaaS Org-Charts, ein paar Tausend User pro Realm).
+At a million persons this could be slow — but cocoar.auth is
+currently sized for an order of magnitude well below that
+(mid-sized SaaS org charts, a few thousand users per realm).
 
-## Beispiel-Setup
+## Example setup
 
 ```
 Group "OU Sales" (Auto)
@@ -141,14 +141,16 @@ Group "Active Engineers" (Auto)
   Roles: ["Code Repo Reader", "CI Trigger"]
 ```
 
-Wenn ein neuer Sales-User per OIDC-Login eingerichtet wird:
+When a new sales user is provisioned via OIDC login:
 
-1. `UserCreated` mit `OrganizationalUnit=sales` feuert
-2. `AutoMembershipSyncHandlers` evaluiert beide Auto-Scripts:
-   - "OU Sales" matched → User wird zur Membership added
-   - "Active Engineers" matched nicht → kein Effekt
-3. `GroupMembershipRecomputedEvent` fired für "OU Sales"
-4. SignalR-Notification an alle Admin-Browser → die Gruppen-Liste im
-   Frontend updated automatisch (über `useEntityService`-Subscriptions)
-5. User erbt automatisch alle Permissions die "OU Sales" hat → kann
-   sofort Customer-Daten sehen, ohne dass jemand was klickt
+1. `UserCreated` with `OrganizationalUnit=sales` fires
+2. `AutoMembershipSyncHandlers` evaluates both auto-scripts:
+   - "OU Sales" matches → user is added to membership
+   - "Active Engineers" doesn't match → no effect
+3. `GroupMembershipRecomputedEvent` fires for "OU Sales"
+4. SignalR notification to all admin browsers → the group list in the
+   frontend updates automatically (via `useEntityService`
+   subscriptions)
+5. The user automatically inherits all permissions of "OU Sales" →
+   can see customer data immediately, without anyone clicking
+   anything

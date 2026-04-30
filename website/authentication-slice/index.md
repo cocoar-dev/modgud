@@ -1,84 +1,85 @@
 # Cocoar.Auth.Authentication
 
-Vertical Slice für das Authentication-Kernsystem. Eigenes C#-Projekt
-(`src/dotnet/Cocoar.Auth.Authentication/`), als Kopie von TimeToDos
-gleichnamigem Slice in cocoar.auth eingezogen und für IdP-Bedürfnisse
-erweitert.
+Vertical slice for the authentication core. Standalone C# project
+(`src/dotnet/Cocoar.Auth.Authentication/`), copied from TimeToDo's
+slice of the same name into cocoar.auth and extended for IdP needs.
 
-## Was im Slice ist
+## What is in the slice
 
-- **ASP.NET Core Identity Integration** — `ApplicationUser`,
-  `EventSourcedUserStore` (mehrere Identity-Interfaces), `AppSignInManager`;
-  Passwortspeicherung, Account-Lockout (5 Versuche → 1 Minute Sperre)
-- **Alle Login-Wege** — Password, TOTP, Email OTP, Passkey (FIDO2/WebAuthn),
-  Magic Link (Self-Service + Admin-Send)
-- **OIDC / Federated Login** — Dynamische Scheme-Registration zur Laufzeit,
-  `UserUpdateScript` (Jint-Runtime, Claim-Mapping auf User-Felder),
-  JIT-User-Erstellung, `ExternalIdentityLink`-Tracking, Flavor-Registry
+- **ASP.NET Core Identity integration** — `ApplicationUser`,
+  `EventSourcedUserStore` (multiple Identity interfaces),
+  `AppSignInManager`; password storage, account lockout
+  (5 attempts → 1 minute lock)
+- **All login methods** — Password, TOTP, Email OTP, Passkey
+  (FIDO2/WebAuthn), Magic Link (self-service + admin-send)
+- **OIDC / Federated login** — dynamic scheme registration at runtime,
+  `UserUpdateScript` (Jint runtime, claim mapping onto user fields),
+  JIT user creation, `ExternalIdentityLink` tracking, flavor registry
   (Entra ID, Generic OIDC)
-- **2FA-Enforcement-Middleware** — `TwoFactorEnforcementMiddleware`
-  erzwingt das in `IAuthSettings.AuthenticationMinimumLevel` konfigurierte
-  Level mit konfigurierbarer Grace-Period und per-User-Override
-  (`TwoFactorExempt`)
-- **Profile Self-Service** — `UserChangeRequest` mit optionalem Email
-  Double-Opt-In und Admin-Approval. `Optional<T>`-Merge-Logik verhindert
-  Silent-Overwrites bei mehreren parallelen Edits
-- **Sessions mit Device-Tracking** — UAParser-basierte Session-Erfassung
-  (Browser, OS, Gerätetyp, IP), Self-Service Revoke einzelner Sessions,
-  "Logout überall" und Admin-Force-Logout
-- **GDPR-Self-Service** — Daten-Export (Article 20), Account-Löschung mit
-  Confirmation-Token + Cancel-Möglichkeit, Marten Data-Masking +
-  ArchiveStream für Compliance
-- **Recovery CLI** — Break-Glass-Subcommand
+- **2FA enforcement middleware** — `TwoFactorEnforcementMiddleware`
+  enforces the level configured in
+  `IAuthSettings.AuthenticationMinimumLevel` with a configurable grace
+  period and per-user override (`TwoFactorExempt`)
+- **Profile self-service** — `UserChangeRequest` with optional email
+  double opt-in and admin approval. `Optional<T>` merge logic prevents
+  silent overwrites when multiple parallel edits happen
+- **Sessions with device tracking** — UAParser-based session capture
+  (browser, OS, device type, IP), self-service revoke of individual
+  sessions, "log out everywhere", and admin force-logout
+- **GDPR self-service** — data export (Article 20), account deletion
+  with confirmation token + cancel option, Marten data masking +
+  ArchiveStream for compliance
+- **Recovery CLI** — break-glass subcommand
   (`recover list/reset-2fa/set-email/magic-link/rebuild-projections`)
-  für Lock-Out-Szenarien
-- **Admin-Endpoints** — Grace-Period-Verwaltung, Magic-Link-Versand,
-  Change-Request Approve/Reject, IdP-Konfiguration (CRUD + Secret-Rotation)
-- **AuthLog** — Serilog-Sink (`AuthLogSink`) → `Channel<T>` →
-  `AuthLogPersistenceService` → Marten; 7-Tage-Retention,
-  `Auth:`-Prefix-Filter
-- **Marten-Wiring** — `UseCocoarAuthAuthentication()` registriert alle
-  Identity-Documents, Event-Aliase, Inline-Projections (IdpConfig,
-  ExternalIdentityLink) und die abstrakte
-  `PrincipalProjectionBase`-Erweiterung
+  for lockout scenarios
+- **Admin endpoints** — grace-period management, magic-link sending,
+  change-request approve/reject, IdP configuration (CRUD + secret
+  rotation)
+- **AuthLog** — Serilog sink (`AuthLogSink`) → `Channel<T>` →
+  `AuthLogPersistenceService` → Marten; 7-day retention,
+  `Auth:`-prefix filter
+- **Marten wiring** — `UseCocoarAuthAuthentication()` registers all
+  identity documents, event aliases, inline projections (IdpConfig,
+  ExternalIdentityLink) and the abstract `PrincipalProjectionBase`
+  extension
 
-## Was der Slice bewusst nicht macht
+## What the slice deliberately does not do
 
-- **Kein Authorization** — Permissions, Gruppen, Rollen, Access Scripts
-  liegen im Authorization-Slice
-- **Kein Frontend** — Vue-Views (LoginView, ProfileView, SetupView,
-  MfaSetupModal etc.) leben in `src/frontend-vue/`
-- **Kein Realm-Routing** — der Authentication-Slice arbeitet stets gegen
-  die aktuelle Marten-Tenant-Session. Die Tenant-Auflösung passiert in
-  `RealmMiddleware` (Api-Layer) bevor Authentication-Code läuft
+- **No authorization** — permissions, groups, roles live in the
+  Authorization slice
+- **No frontend** — Vue views (LoginView, ProfileView, SetupView,
+  MfaSetupModal etc.) live in `src/frontend-vue/`
+- **No realm routing** — the Authentication slice always works against
+  the current Marten tenant session. Tenant resolution happens in
+  `RealmMiddleware` (Api layer) before authentication code runs
 
-## Grenzlinie zu cocoar.auth
+## Boundary against cocoar.auth
 
-| Verantwortung | Authentication-Slice | cocoar.auth Api |
+| Responsibility | Authentication slice | cocoar.auth Api |
 |---|---|---|
-| Wer ist dieser User? | ASP.NET Identity, Passkey, OIDC | — |
-| Wie heißt der User? | `ApplicationUser` (Firstname, Lastname, Email, ...) | — |
-| Welche Realm? | — | `RealmMiddleware` setzt `TenantId` vor Identity-Lookup |
-| Welche Permissions? | — | Authorization-Slice |
-| Realm-CRUD, OAuth-Aggregate, OpenIddict-Stores | — | Im Api/Infrastructure-Layer |
+| Who is this user? | ASP.NET Identity, Passkey, OIDC | — |
+| What is the user's name? | `ApplicationUser` (Firstname, Lastname, Email, ...) | — |
+| Which realm? | — | `RealmMiddleware` sets `TenantId` before identity lookup |
+| Which permissions? | — | Authorization slice |
+| Realm CRUD, OAuth aggregates, OpenIddict stores | — | In the Api/Infrastructure layer |
 
-`PrincipalProjectionBase` ist die natürliche Brücke: die App leitet eine
-konkrete Projection ab, die User-Events des Authentication-Slices in
-`Person`-Dokumente des Authorization-Slices schreibt.
+`PrincipalProjectionBase` is the natural bridge: the app derives a
+concrete projection that writes Authentication-slice user events into
+the Authorization-slice's `Person` documents.
 
-## Konfigurations-Interfaces
+## Configuration interfaces
 
-Der Slice hängt an drei Interfaces, die der Api-Layer registriert.
+The slice depends on three interfaces that the Api layer registers.
 
-| Interface | Felder | Implementiert durch |
+| Interface | Fields | Implemented by |
 |---|---|---|
 | `IAuthSettings` | `AuthenticationMinimumLevel`, `MagicLinkSelfService`, `TwoFactorGracePeriodDays` | `AppSettings` |
 | `IServerConfiguration` | `AppUrl`, `PublicUrl` | `StartUpConfiguration` |
 | `IMagicLinkConfiguration` | `Enabled`, `ExpirationMinutes`, `RateLimitMinutes` | `MagicLinkConfiguration` |
 
-In `Program.cs` werden die konkreten Settings als Singletons hinter den
-Interfaces registriert, damit der Slice unabhängig vom App-Settings-Typ
-bleibt:
+In `Program.cs` the concrete settings are registered as singletons
+behind the interfaces, so the slice stays decoupled from the
+app-settings type:
 
 ```csharp
 builder.Services.AddSingleton<IAuthSettings>(sp => sp.GetRequiredService<AppSettings>());
@@ -86,30 +87,30 @@ builder.Services.AddSingleton<IServerConfiguration>(sp => sp.GetRequiredService<
 builder.Services.AddSingleton<IMagicLinkConfiguration>(sp => sp.GetRequiredService<MagicLinkConfiguration>());
 ```
 
-## Abhängigkeiten
+## Dependencies
 
-| Hart | Begründung |
+| Hard | Reason |
 |---|---|
-| Marten 8+ | Document-Storage (Identity, Challenges, Change-Requests, AuthLog, IdpConfig) + Event-Store |
-| WolverineFx.Marten | Handler-Discovery (RecoveryCli, IdP-Event-Handler) |
-| ASP.NET Core Identity | `UserManager`, `SignInManager`, `IUserStore`-Interfaces |
-| Fido2NetLib | FIDO2/WebAuthn Attestation + Assertion |
-| OtpNet (via Identity DefaultTokenProviders) | TOTP-Code-Generierung + Verifikation |
-| Jint | JavaScript-Runtime für `UserUpdateScript` (OIDC Claim-Mapping) |
-| Serilog | `AuthLogSink` implementiert `ILogEventSink` |
-| Cocoar.Auth.Authorization | `PrincipalProjectionBase` für die App-spezifische Projection |
+| Marten 8+ | Document storage (Identity, challenges, change requests, AuthLog, IdpConfig) + event store |
+| WolverineFx.Marten | Handler discovery (RecoveryCli, IdP event handlers) |
+| ASP.NET Core Identity | `UserManager`, `SignInManager`, `IUserStore` interfaces |
+| Fido2NetLib | FIDO2/WebAuthn attestation + assertion |
+| OtpNet (via Identity DefaultTokenProviders) | TOTP code generation + verification |
+| Jint | JavaScript runtime for `UserUpdateScript` (OIDC claim mapping) |
+| Serilog | `AuthLogSink` implements `ILogEventSink` |
+| Cocoar.Auth.Authorization | `PrincipalProjectionBase` for the app-specific projection |
 
 ## Status
 
-Cocoar.Auth nutzt diesen Slice produktiv. Code unter
-`src/dotnet/Cocoar.Auth.Authentication/`, eingebunden per
-`ProjectReference`. Wired über `UseCocoarAuthAuthentication()` in der
-Marten-Konfiguration und `services.AddCocoarAuthAuthentication()` in der
-DI.
+Cocoar.Auth uses this slice in production. Code under
+`src/dotnet/Cocoar.Auth.Authentication/`, included via
+`ProjectReference`. Wired through `UseCocoarAuthAuthentication()` in
+the Marten configuration and `services.AddCocoarAuthAuthentication()`
+in DI.
 
-## Inhaltsverzeichnis
+## Table of contents
 
-- [Konzepte](./konzepte) — Mental-Model, Auth-Level, Cookie-Modell, AuthLog, Profile-Service
-- [Login-Flows](./login-flows) — Alle Login-Methoden im Detail
-- [Identity-Provider (OIDC)](./identity-providers) — Federated Login, Flavors, UserUpdateScript
-- [GDPR & Sessions](./gdpr-sessions) — Self-Service, Marten-Masking, Session-Tracking
+- [Concepts](./konzepte) — mental model, auth levels, cookie model, AuthLog, profile service
+- [Login flows](./login-flows) — every login method in detail
+- [Identity providers (OIDC)](./identity-providers) — federated login, flavors, UserUpdateScript
+- [GDPR & sessions](./gdpr-sessions) — self-service, Marten masking, session tracking

@@ -1,42 +1,42 @@
-# OAuth-/OIDC-Endpoints
+# OAuth / OIDC Endpoints
 
-cocoar.auth implementiert das volle OpenID-Connect-Protokoll via
-**OpenIddict 7**. Endpoints sind realm-skopiert über die Domain (jeder
-Realm hat seine eigenen).
+cocoar.auth implements the full OpenID Connect protocol via
+**OpenIddict 7**. Endpoints are realm-scoped via the domain (each
+realm has its own).
 
 ## Discovery
 
-| Endpoint | Beschreibung |
+| Endpoint | Description |
 |---|---|
-| `GET /.well-known/openid-configuration` | OIDC-Discovery-Dokument für die aktuelle Realm-Domain |
-| `GET /.well-known/jwks` | JSON Web Key Set (für JWT-Validation) |
+| `GET /.well-known/openid-configuration` | OIDC discovery document for the current realm domain |
+| `GET /.well-known/jwks` | JSON Web Key Set (for JWT validation) |
 
-Beispiel-Discovery für Realm `acme.example.com`:
+Example discovery for realm `acme.example.com`:
 
 ```
 https://acme.example.com/.well-known/openid-configuration
 ```
 
-→ Returnt `issuer: "https://acme.example.com"`, plus alle
-Endpoint-URLs in dieser Realm-Domain. Tokens aus diesem Discovery sind
-nur in dieser Domain valide.
+→ Returns `issuer: "https://acme.example.com"` plus all endpoint URLs
+in this realm domain. Tokens from this discovery are valid only in
+this domain.
 
-Implementiert über den `RealmIssuerHandler` (siehe
-[OAuth-Implementierung](/guide/oauth#realmissuerhandler)).
+Implemented through `RealmIssuerHandler` (see
+[OAuth implementation](/guide/oauth#realmissuerhandler)).
 
-## Standard-OAuth-Endpoints
+## Standard OAuth endpoints
 
-Alle unter `/connect/...`, alle realm-skopiert via Domain:
+All under `/connect/...`, all realm-scoped via the domain:
 
-| Endpoint | Beschreibung |
+| Endpoint | Description |
 |---|---|
-| `GET /connect/authorize` | Authorization-Endpoint (Code + PKCE) |
-| `POST /connect/token` | Token-Endpoint (Code-Exchange, Client-Credentials, Refresh) |
-| `GET /connect/userinfo` | UserInfo-Endpoint (claims für aktuellen Token) |
-| `POST /connect/introspect` | Token-Introspection (für Reference-Tokens) |
-| `POST /connect/revoke` | Token-Revocation |
-| `GET /connect/logout` | End-Session-Endpoint (RP-Initiated-Logout) |
-| `GET/POST /consent` | Consent-Page (App-spezifisch) |
+| `GET /connect/authorize` | Authorization endpoint (Code + PKCE) |
+| `POST /connect/token` | Token endpoint (code exchange, client credentials, refresh) |
+| `GET /connect/userinfo` | UserInfo endpoint (claims for the current token) |
+| `POST /connect/introspect` | Token introspection (for reference tokens) |
+| `POST /connect/revoke` | Token revocation |
+| `GET /connect/logout` | End-session endpoint (RP-initiated logout) |
+| `GET/POST /consent` | Consent page (app-specific) |
 
 ### Authorization Code + PKCE
 
@@ -51,8 +51,8 @@ GET /connect/authorize?
     code_challenge_method=S256
 ```
 
-→ Falls nicht eingeloggt: 302 zu Login. Sonst direkt 302 zur
-`redirect_uri` mit `?code=...&state=...`.
+→ If not logged in: 302 to login. Otherwise direct 302 to the
+`redirect_uri` with `?code=...&state=...`.
 
 ```http
 POST /connect/token
@@ -63,18 +63,18 @@ code=...
 redirect_uri=https://app.example.com/callback
 code_verifier=...
 client_id=my-app
-client_secret=...        # für Confidential Clients
+client_secret=...        # for confidential clients
 ```
 
-→ Returnt:
+→ Returns:
 
 ```json
 {
-  "access_token": "...",      // Reference-ID oder JWT
+  "access_token": "...",      // reference id or JWT
   "token_type": "Bearer",
   "expires_in": 3600,
-  "refresh_token": "...",     // wenn offline_access requested
-  "id_token": "..."           // wenn openid requested
+  "refresh_token": "...",     // if offline_access requested
+  "id_token": "..."           // if openid requested
 }
 ```
 
@@ -102,10 +102,10 @@ client_id=my-app
 client_secret=...
 ```
 
-Single-use mit Rotation: jeder Use gibt einen neuen Refresh-Token aus
-und invalidiert den alten.
+Single-use with rotation: every use issues a new refresh token and
+invalidates the old one.
 
-### Introspection (Reference-Tokens)
+### Introspection (reference tokens)
 
 ```http
 POST /connect/introspect
@@ -115,7 +115,7 @@ Content-Type: application/x-www-form-urlencoded
 token=<reference_token>
 ```
 
-→ Returnt `active: true/false` plus alle Claims des Tokens.
+→ Returns `active: true/false` plus all claims of the token.
 
 ### Revocation
 
@@ -125,15 +125,15 @@ Authorization: Basic <base64(client_id:client_secret)>
 Content-Type: application/x-www-form-urlencoded
 
 token=<token>
-token_type_hint=access_token   # oder refresh_token
+token_type_hint=access_token   # or refresh_token
 ```
 
-## OAuth-Admin-Endpoints
+## OAuth admin endpoints
 
-Für die Verwaltung der OAuth-Entitäten (Clients, Scopes, APIs) siehe
-[Admin-API → OAuth Clients/Scopes/APIs](/reference/admin-api#oauth-clients).
+For managing the OAuth entities (clients, scopes, APIs) see
+[Admin API → OAuth Clients/Scopes/APIs](/reference/admin-api#oauth-clients).
 
-Default-Scopes pro neuem Realm:
+Default scopes per new realm:
 
 - `openid`
 - `email`
@@ -141,30 +141,30 @@ Default-Scopes pro neuem Realm:
 - `roles`
 - `offline_access`
 
-## Per-Realm-Isolation
+## Per-realm isolation
 
-Jeder Realm hat:
+Each realm has:
 
-- Eigene OAuth-Clients (`OAuthApplicationState` im Tenant-Store)
-- Eigene Scopes (`OAuthScopeState`)
-- Eigene API-Resources (`OAuthApiState`)
-- Eigene Authorizations (`OpenIddictAuthorizationDocument`)
-- Eigene Tokens (`OpenIddictTokenDocument`)
-- Eigenen Issuer (Realm-Domain via `RealmIssuerHandler`)
-- Eigenes Discovery-Dokument
+- Its own OAuth clients (`OAuthApplicationState` in the tenant store)
+- Its own scopes (`OAuthScopeState`)
+- Its own API resources (`OAuthApiState`)
+- Its own authorizations (`OpenIddictAuthorizationDocument`)
+- Its own tokens (`OpenIddictTokenDocument`)
+- Its own issuer (realm domain via `RealmIssuerHandler`)
+- Its own discovery document
 
-Tokens aus Realm A sind in Realm B ungültig — Issuer-Mismatch reicht
-für Ablehnung. Identische `client_id`-Strings in zwei Realms sind
-verschiedene Clients.
+Tokens from realm A are invalid in realm B — issuer mismatch alone
+suffices for rejection. Identical `client_id` strings in two realms
+are different clients.
 
-## Per-Client-Token-Format
+## Per-client token format
 
-Pro Client kann zwischen **Reference Token** (default) und **JWT**
-gewählt werden:
+Per client you can choose between **Reference Token** (default) and
+**JWT**:
 
-| Format | Speicherung | Validierung | Revocation |
+| Format | Storage | Validation | Revocation |
 |---|---|---|---|
-| Reference | Server-side `OpenIddictTokenDocument` | API ruft `/connect/introspect` | Sofort |
-| JWT | Selbsttragend | API verifiziert lokal mit JWKS | Erst nach Expiry |
+| Reference | Server-side `OpenIddictTokenDocument` | API calls `/connect/introspect` | Immediate |
+| JWT | Self-contained | API verifies locally with JWKS | Only after expiry |
 
-Geschaltet über `AccessTokenTypeHandler` per Request.
+Switched per request via `AccessTokenTypeHandler`.

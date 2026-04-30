@@ -1,25 +1,25 @@
-# Vue-Frontend
+# Vue frontend
 
-Der Admin- und User-Frontend ist eine Vue-3-SPA unter
-`src/frontend-vue/`. Flat-Layout — kein `apps/`-Wrapper.
+The admin and user frontend is a Vue 3 SPA at `src/frontend-vue/`.
+Flat layout — no `apps/` wrapper.
 
-## Tech-Stack
+## Tech stack
 
-| Technologie | Zweck |
+| Technology | Purpose |
 |---|---|
-| **Vue 3** | UI-Framework, Composition API mit `<script setup>` |
-| **Vue Router 5** | Client-side Routing |
-| **Pinia 3** | State-Management (Auth-Store, Settings-Store) |
-| **Vite 8** | Dev-Server + Bundler |
-| **Tailwind 4** | Utility-CSS |
-| **@cocoar/vue-ui** | Design-System-Komponenten (CoarSidebar, CoarMenu, CoarButton, CoarCard, ...) |
-| **@cocoar/vue-data-grid** | AG-Grid-Wrapper inkl. CoarGridBuilder |
-| **@cocoar/signalarrr** | TypeScript-SignalARRR-Client (typed RPC) |
+| **Vue 3** | UI framework, Composition API with `<script setup>` |
+| **Vue Router 5** | Client-side routing |
+| **Pinia 3** | State management (auth store, settings store) |
+| **Vite 8** | Dev server + bundler |
+| **Tailwind 4** | Utility CSS |
+| **@cocoar/vue-ui** | Design-system components (CoarSidebar, CoarMenu, CoarButton, CoarCard, ...) |
+| **@cocoar/vue-data-grid** | AG Grid wrapper including CoarGridBuilder |
+| **@cocoar/signalarrr** | TypeScript SignalARRR client (typed RPC) |
 | **@cocoar/vue-localization** | i18n |
-| **@cocoar/vue-fragment-parser** | URL-Fragment-Routed Modals |
-| **@cocoar/vue-script-editor** | Monaco-basierter Editor für ABAC-Scripts |
+| **@cocoar/vue-fragment-parser** | URL-fragment-routed modals |
+| **@cocoar/vue-script-editor** | Monaco-based editor for membership scripts |
 
-## Projekt-Layout
+## Project layout
 
 ```
 src/frontend-vue/
@@ -39,10 +39,10 @@ src/frontend-vue/
 │   ├── router/
 │   ├── stores/
 │   └── views/
-│       ├── admin/         ← Admin-UI (User, Group, Role, OAuth, ...)
+│       ├── admin/         ← Admin UI (User, Group, Role, OAuth, ...)
 │       ├── auth/          ← Login, Register, Reset, Setup, MagicLink, Passkey
 │       ├── dashboard/
-│       └── profile/       ← Self-Service: Profile, Sessions, Privacy
+│       └── profile/       ← Self-service: Profile, Sessions, Privacy
 ├── index.html
 ├── vite.config.ts
 └── package.json
@@ -52,8 +52,8 @@ src/frontend-vue/
 
 ### `useUI()`
 
-Page-Layout-Steuerung. Setzt Header-Title, Footer-Buttons (Save/Delete),
-Content-Mode (Standard/Wide) deklarativ aus dem View.
+Page-layout control. Sets header title, footer buttons (Save/Delete),
+content mode (standard/wide) declaratively from the view.
 
 ```typescript
 const ui = useUI()
@@ -64,14 +64,14 @@ ui.setFooter({
 })
 ```
 
-Footer-Button2 ist konventionell der Delete-Button (Danger-Variant), nur
-sichtbar im Edit-Mode.
+By convention, footer button2 is the delete button (danger variant),
+visible only in edit mode.
 
 ### `useEntityService()`
 
-Generischer CRUD-Service inkl. Auto-Resubscribe auf SignalARRR-Streams.
-Ein View deklariert "ich pflege Resource X" und bekommt Liste, Refresh,
-Live-Updates frei Haus.
+Generic CRUD service including auto-resubscribe to SignalARRR streams.
+A view declares "I manage resource X" and gets a list, refresh, and
+live updates for free.
 
 ```typescript
 const usersService = useEntityService<UserDto>({
@@ -82,13 +82,13 @@ const usersService = useEntityService<UserDto>({
 await usersService.refresh()
 const items = computed(() => usersService.items.value)
 
-// Bei SignalR UserChangedEvent → automatische Liste-Refresh
+// On a SignalR UserChangedEvent → automatic list refresh
 ```
 
 ### `useHttpClient()`
 
-Immutable Fluent-Builder für HTTP-Calls. Unterscheidet zwischen
-gewöhnlichen API-Calls und Auth-Calls (für Token-Refresh-Hooks).
+Immutable fluent builder for HTTP calls. Distinguishes between regular
+API calls and auth calls (for token-refresh hooks).
 
 ```typescript
 const http = useHttpClient()
@@ -101,17 +101,17 @@ const user = await http
 
 ### `useModal()` + `useRoutedModals()`
 
-Programmatische Modals (`useModal`) und URL-Fragment-routed Modals
-(`useRoutedModals` über `@cocoar/vue-fragment-parser`):
+Programmatic modals (`useModal`) and URL-fragment-routed modals
+(`useRoutedModals` via `@cocoar/vue-fragment-parser`):
 
 ```
-/admin/oauth/clients#new        → Modal "New Client"
-/admin/oauth/clients/123#edit   → Modal "Edit Client"
+/admin/oauth/clients#new        → modal "New Client"
+/admin/oauth/clients/123#edit   → modal "Edit Client"
 ```
 
-Browser-Back schließt das Modal (Fragment weg).
+Browser back closes the modal (fragment cleared).
 
-## Auth-Store (Pinia)
+## Auth store (Pinia)
 
 `stores/auth.store.ts`:
 
@@ -121,24 +121,31 @@ export const useAuthStore = defineStore('auth', () => {
   const status = ref<'initial' | 'loading' | 'authenticated' | 'unauthenticated' | 'requires-2fa'>('initial')
   const permissions = ref<string[]>([])
 
-  function hasPermission(needed: string): boolean {
-    if (permissions.value.includes('app:admin')) return true
-    const [resource] = needed.split(':')
-    if (permissions.value.includes(`${resource}:admin`)) return true
-    return permissions.value.includes(needed)
+  // Mirrors the backend PermissionEvaluator. Permission strings are
+  // fully qualified as "<app>:<resource>:<action>".
+  // Bypasses: realm:admin > <app>:admin > <app>:<resource>:admin.
+  function hasPermission(permission: string): boolean {
+    if (permissions.value.includes('realm:admin')) return true
+    if (permissions.value.includes(permission)) return true
+    const parts = permission.split(':')
+    if (parts.length === 3) {
+      if (permissions.value.includes(`${parts[0]}:admin`)) return true
+      if (permissions.value.includes(`${parts[0]}:${parts[1]}:admin`)) return true
+    }
+    return false
   }
 
   // ... loadCurrentUser, login, logout
 })
 ```
 
-Initialisierung in `main.ts` **vor** `app.mount()` — verhindert Flash
-of Unauthenticated Content.
+Initialised in `main.ts` **before** `app.mount()` — prevents flash of
+unauthenticated content.
 
-## Per-Resource-Sidebar-Gating
+## Per-resource sidebar gating
 
-In `views/admin/AdminView.vue` deklariert jedes Sidebar-Item welche
-Permissions es sichtbar machen:
+In `views/admin/AdminView.vue` each sidebar item declares which
+permissions make it visible:
 
 ```typescript
 interface NavItem {
@@ -146,14 +153,16 @@ interface NavItem {
   label: string
   icon: string
   path: string
-  requirePermissions: string[]   // mirrored 1:1 mit Backend-Strings
+  requirePermissions: string[]   // mirrored 1:1 with backend strings
 }
 
 const allNavItems: NavItem[] = [
   { section: 'authorization', label: 'nav.users', icon: 'users',
-    path: '/admin/users', requirePermissions: ['user:read'] },
+    path: '/admin/users', requirePermissions: ['cocoar-auth:user:read'] },
   { section: 'oauth', label: 'admin.oauthClients.title', icon: 'app-window',
-    path: '/admin/oauth/clients', requirePermissions: ['oauth-client:read'] },
+    path: '/admin/oauth/clients', requirePermissions: ['cocoar-auth:oauth-client:read'] },
+  { section: 'system', label: 'nav.settings', icon: 'settings',
+    path: '/admin/settings', requirePermissions: ['realm:admin'] },
   // ...
 ]
 
@@ -162,47 +171,47 @@ function canSee(item: NavItem): boolean {
 }
 ```
 
-Sektionen werden ausgeblendet wenn alle Items gefiltert sind. Ein User
-mit nur `user:read` sieht nur "Authorization > Users" — keine OAuth,
-keine System.
+Sections are hidden when all of their items are filtered out. A user
+with only `cocoar-auth:user:read` sees only "Authorization > Users"
+— no OAuth, no System.
 
-Die vier Sektionen:
+The four sections:
 
-| Sektion | Items |
+| Section | Items |
 |---|---|
-| **Autorisierung** | Users, Roles, Groups, Policy Simulator |
+| **Authorization** | Users, Roles, Groups, Policy Simulator |
 | **OAuth & Federation** | Clients, Scopes, APIs |
-| **Identitätsquellen** | Login-Provider, Identity-Provider |
-| **System** | Realms, Auth Log, Änderungsanfragen, Einstellungen |
+| **Identity Sources** | Login Providers, Identity Providers |
+| **System** | Realms, Auth Log, Change Requests, Settings |
 
-## SignalR-Lifecycle (wichtig!)
+## SignalR lifecycle (important!)
 
-Der SignalR-Client startet **erst NACH dem Login** und reißt beim
-Logout sauber ab. Das passiert über einen Logout-`window.location`-Reload
-statt einer Vue-Router-Navigation:
+The SignalR client starts **only after login** and tears down cleanly
+on logout. Logout uses a `window.location` reload instead of a Vue
+Router navigation:
 
 ```typescript
 // composables/useAuth.ts
 async function logout() {
   await http.post('/api/account/logout').void()
-  window.location.href = '/login'   // Hard reload!
+  window.location.href = '/login'   // hard reload!
 }
 ```
 
-Sonst hängt eine alte SignalR-Subscription am alten User und das
-Backend versucht weiterhin Notifications dorthin zu schicken.
+Otherwise an old SignalR subscription stays bound to the old user and
+the backend keeps trying to push notifications there.
 
-## URL-Routing
+## URL routing
 
-Vue-Router läuft mit `createWebHistory('/')`. Es gibt **keinen
-Realm-Pfad-Prefix** mehr (cocoar.auth macht Realm-Routing über die
-Domain, nicht den Pfad). Routes:
+Vue Router runs with `createWebHistory('/')`. There is **no realm path
+prefix** anymore (cocoar.auth does realm routing via the domain, not
+the path). Routes:
 
 | Route | View |
 |---|---|
 | `/login` | LoginView |
 | `/register` | RegisterView |
-| `/setup` | SetupView (First-Time-Setup) |
+| `/setup` | SetupView (first-time setup) |
 | `/2fa` | MfaLoginView |
 | `/profile` | ProfileView |
 | `/profile/sessions` | SessionsView |
@@ -217,19 +226,19 @@ Domain, nicht den Pfad). Routes:
 | `/admin/oauth/apis` | OAuthApisListView |
 | `/admin/login-providers` | LoginProvidersListView |
 | `/admin/idp-config` | IdpConfigView |
-| `/admin/realms` | RealmsListView (nur in Manager-Realms) |
+| `/admin/realms` | RealmsListView (only in manager realms) |
 | `/admin/auth-log` | AuthLogView |
 | `/admin/change-requests` | ChangeRequestsView |
 | `/admin/settings` | AppSettingsView |
-| `/admin/simulator` | AuthorizationSimulatorView (Policy-Debug) |
+| `/admin/simulator` | AuthorizationSimulatorView (policy debug) |
 
-## Vite-Dev-Setup
+## Vite dev setup
 
-Der Vite-Dev-Server läuft auf `localhost:4300`, das Backend auf
-`localhost:9099`. Vite proxyed alle Backend-Pfade:
+The Vite dev server runs on `localhost:4300`, the backend on
+`localhost:9099`. Vite proxies all backend paths:
 
 ```typescript
-// vite.config.ts (vereinfacht)
+// vite.config.ts (simplified)
 proxy: {
   '/api':         { target: 'http://localhost:9099' },
   '/connect':     { target: 'http://localhost:9099' },
@@ -238,23 +247,22 @@ proxy: {
 }
 ```
 
-Production: Frontend wird in `dist/` gebaut und über
-`app.UseSpaUI()` als statische Assets aus `wwwroot/` ausgeliefert.
+In production: the frontend is built to `dist/` and served as static
+assets from `wwwroot/` via `app.UseSpaUI()`.
 
-## Komponenten-Konventionen
+## Component conventions
 
-- **Grids:** `CoarGridBuilder` (über `@cocoar/vue-data-grid`) für
-  alle Listen — declarative Column-Definition, AG-Grid darunter
-- **Context-Menüs:** `useContextMenu()` + `CoarContextMenu` für
-  Right-Click-Aktionen auf Grid-Rows
-- **Doppelklick:** auf Grid-Row → Edit-View
-- **Footer-Buttons:** Button1 = Save (primary), Button2 = Delete (danger)
-- **Error-State:** `undefined` (nicht `''`) für "kein Error" auf
-  Inputs
+- **Grids:** `CoarGridBuilder` (via `@cocoar/vue-data-grid`) for all
+  lists — declarative column definitions, AG Grid underneath
+- **Context menus:** `useContextMenu()` + `CoarContextMenu` for
+  right-click actions on grid rows
+- **Double-click:** on a grid row → edit view
+- **Footer buttons:** Button1 = Save (primary), Button2 = Delete (danger)
+- **Error state:** `undefined` (not `''`) for "no error" on inputs
 
-## Locale & Themes
+## Locale & themes
 
-- `useI18n()` aus `@cocoar/vue-localization` für Übersetzungen
-- Dark-Mode via `.dark-mode`-Klasse auf `<html>`, persistiert in
-  `localStorage` als `coar-theme`
-- Sidebar-Token-Defaults vom Design-System — nicht überschreiben
+- `useI18n()` from `@cocoar/vue-localization` for translations
+- Dark mode via `.dark-mode` class on `<html>`, persisted in
+  `localStorage` as `coar-theme`
+- Sidebar token defaults from the design system — do not override

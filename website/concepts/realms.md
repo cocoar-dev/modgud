@@ -1,58 +1,57 @@
 # Realms
 
-## Was ist ein Realm?
+## What is a realm?
 
-Ein Realm ist ein **vollständig autonomer Identity Provider**. Es ist
-die fundamentale Isolations-Boundary in cocoar.auth.
+A realm is a **fully autonomous identity provider**. It is the
+fundamental isolation boundary in cocoar.auth.
 
-Pro Realm:
+Per realm:
 
-- eine eigene **PostgreSQL-Datenbank** (`cocoar_auth_next_<slug>`)
-- eigene **User und Gruppen**
-- eigene **Rollen und Permissions**
-- eigene **OAuth-Clients, Scopes, APIs**
-- eigene **OIDC-Discovery-Endpoint**
-- eigene **Login-Provider** (Internal + OIDC-IdPs)
-- eigene **Cookie-Domain**
+- its own **PostgreSQL database** (`cocoar_auth_next_<slug>`)
+- its own **users and groups**
+- its own **roles and permissions**
+- its own **OAuth clients, scopes, APIs**
+- its own **OIDC discovery endpoint**
+- its own **login providers** (Internal + OIDC IdPs)
+- its own **cookie domain**
 
-Jeder Realm sieht aus wie eine eigenständige cocoar.auth-Installation —
-weil er es im wesentlichen auch ist.
+Each realm looks like a standalone cocoar.auth installation —
+because that is essentially what it is.
 
-## Domain-basiertes Routing
+## Domain-based routing
 
-cocoar.auth identifiziert den Realm über das **HTTP Host-Header** —
-nicht über URL-Pfade. Jeder Realm hat eine oder mehrere konfigurierte
-Domains.
+cocoar.auth identifies the realm via the **HTTP Host header** —
+not via URL paths. Each realm has one or more configured domains.
 
 ```
 acme.example.com         → Realm "acme"
-auth.acme.example.com    → Realm "acme"  (zweite Domain für selben Realm)
+auth.acme.example.com    → Realm "acme"  (second domain for the same realm)
 finance.example.com      → Realm "finance"
-system.example.com       → System-Realm
-localhost                → System-Realm  (Single-Tenant-Fallback in Dev)
+system.example.com       → System realm
+localhost                → System realm  (single-tenant fallback in dev)
 ```
 
-`RealmMiddleware` (in `Cocoar.Auth.Api.Middleware`) läuft vor allen
-anderen Middlewares und:
+`RealmMiddleware` (in `Cocoar.Auth.Api.Middleware`) runs before all
+other middlewares and:
 
-1. Liest `request.Host.Host`
-2. Schaut im `IRealmCache` nach einem Match
-3. Setzt `HttpContext.Items["TenantId"] = realm.Slug`
-4. Wenn kein Match → `404`
+1. Reads `request.Host.Host`
+2. Looks up a match in `IRealmCache`
+3. Sets `HttpContext.Items["TenantId"] = realm.Slug`
+4. If no match → `404`
 
-Der Cache wird beim Boot warmgeladen und bei Realm-CUD invalidiert.
+The cache is warmed at boot and invalidated on realm CUD.
 
-::: tip Single-Tenant-Fallback in Dev
-Wenn nur ein Realm aktiv ist UND der Host ist eine Localhost-Variante
-(`localhost`, `127.0.0.1`, `::1`, `0.0.0.0`), gibt der Cache diesen
-einen Realm zurück — auch wenn er die Localhost-Domain nicht in seiner
-Liste hat. Damit funktioniert ein Single-Realm-Dev-Boot ohne
-hosts-File-Eintrag.
+::: tip Single-tenant fallback in dev
+If only one realm is active AND the host is a localhost variant
+(`localhost`, `127.0.0.1`, `::1`, `0.0.0.0`), the cache returns that
+single realm — even if it does not have the localhost domain in its
+list. This makes a single-realm dev boot work without a hosts-file
+entry.
 :::
 
-## Database-per-Tenant via Marten
+## Database-per-tenant via Marten
 
-cocoar.auth nutzt Martens `MasterTableTenancy`:
+cocoar.auth uses Marten's `MasterTableTenancy`:
 
 ```mermaid
 graph TD
@@ -67,23 +66,23 @@ graph TD
     Finance -->|tenant data| FinanceUsers[Users, Groups, OAuth, ...]
 ```
 
-| Datenbank | Inhalt |
+| Database | Contents |
 |---|---|
-| `cocoar_auth_next` (Master) | Schema `realms.mt_tenant_databases` (Tenant-Registry) + Schema `global` (Realm-Documents) |
-| `cocoar_auth_next_system` | System-Realm-Daten (User, Gruppen, ...) — physisch dieselbe DB wie die Master |
-| `cocoar_auth_next_<slug>` | Eine eigene physische DB pro weiterem Realm |
+| `cocoar_auth_next` (Master) | Schema `realms.mt_tenant_databases` (tenant registry) + schema `global` (Realm documents) |
+| `cocoar_auth_next_system` | System realm data (users, groups, ...) — physically the same DB as the master |
+| `cocoar_auth_next_<slug>` | A separate physical DB per additional realm |
 
-::: info System-Realm und Master-DB
-Der System-Realm zeigt absichtlich auf die Master-DB. So braucht eine
-Single-Realm-Installation nur eine einzige DB. Mehr-Realm-Installationen
-fügen eigene Tenant-DBs für die anderen Realms hinzu, ohne dass der
-System-Realm sich von dort wegbewegen muss.
+::: info System realm and master DB
+The system realm intentionally points at the master DB. That way a
+single-realm installation needs only one DB. Multi-realm installations
+add separate tenant DBs for the other realms without the system realm
+needing to move away from the master.
 :::
 
-### Tenant-Auflösung im Code
+### Tenant resolution in code
 
-`TenantedSessionFactory` (Marten `ISessionFactory`) liest die `TenantId`
-aus `HttpContext.Items` und öffnet eine tenant-scoped Session:
+`TenantedSessionFactory` (Marten `ISessionFactory`) reads the `TenantId`
+from `HttpContext.Items` and opens a tenant-scoped session:
 
 ```csharp
 public IDocumentSession OpenSession()
@@ -94,38 +93,39 @@ private string ResolveTenantId()
        ?? TenantConstants.SystemTenantId;
 ```
 
-Jede `IDocumentSession`/`IQuerySession`-Injection ist also automatisch
-realm-scoped. Background-Services (ohne HttpContext) fallen auf den
-System-Tenant zurück.
+Every `IDocumentSession`/`IQuerySession` injection is therefore
+automatically realm-scoped. Background services (without HttpContext)
+fall back to the system tenant.
 
-### GlobalStore für Realm-Documents
+### GlobalStore for realm documents
 
-Das `Realm`-Dokument selbst kann nicht im Tenant-Store leben — sonst
-gäbe es ein Henne-Ei-Problem. Es lebt in einem separaten Marten-Store
-(`IGlobalStore`) der gegen Schema `global` der Master-DB schreibt.
+The `Realm` document itself cannot live in the tenant store —
+otherwise there would be a chicken-and-egg problem. It lives in a
+separate Marten store (`IGlobalStore`) that writes to schema `global`
+of the master DB.
 
-`RealmCache` lädt die Realm-Liste daraus.
+`RealmCache` loads the realm list from there.
 
-## Realm-Lifecycle
+## Realm lifecycle
 
-### 1. First-Time Bootstrap
+### 1. First-time bootstrap
 
-Beim ersten Start:
+On first start:
 
-1. **Master-DB erstellen** (raw SQL, weil Marten nicht
-   `CREATE DATABASE` auf einer aktiven Connection kann)
-2. **Marten-Schema applyen** → `realms.mt_tenant_databases` entsteht
-3. **System-Tenant registrieren** → `tenancy.AddDatabaseRecordAsync("system", masterCs)`
-4. **Marten-Schema nochmal applyen** → per-Tenant-Tabellen für System
-5. **System-Realm-Document seeden** (in `IGlobalStore`)
-6. **Default-OAuth-Scopes + Internal-LoginProvider seeden**
-7. **RealmCache warmladen**
-8. **Endpoint `/setup`** wartet auf den ersten Admin-Account
+1. **Create the master DB** (raw SQL, because Marten cannot
+   `CREATE DATABASE` on an active connection)
+2. **Apply the Marten schema** → `realms.mt_tenant_databases` is created
+3. **Register the system tenant** → `tenancy.AddDatabaseRecordAsync("system", masterCs)`
+4. **Apply the Marten schema again** → per-tenant tables for system
+5. **Seed the system realm document** (in `IGlobalStore`)
+6. **Seed default OAuth scopes + the Internal login provider**
+7. **Warm `RealmCache`**
+8. **Endpoint `/setup`** waits for the first admin account
 
-### 2. Weitere Realms anlegen
+### 2. Create additional realms
 
-Nur User mit `realm:write` im System-Realm (oder einem anderen Realm
-mit `CanManageTenants = true`) können das.
+Only users with `cocoar-auth:realm:write` in the system realm (or in another realm
+with `CanManageTenants = true`) can do this.
 
 ```http
 POST /api/admin/realms
@@ -139,48 +139,48 @@ POST /api/admin/realms
 
 Backend:
 
-1. Validiert `slug` (Regex, kein Reserved-Word)
+1. Validates `slug` (regex, no reserved word)
 2. `CREATE DATABASE cocoar_auth_next_acme` (raw SQL)
 3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`
 4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`
-5. **OAuthRealmSeeder** → 5 Default-Scopes + Internal-Login-Provider
-6. **AuthorizationSeeder** → 3 Default-Rollen (System Admin, User
+5. **OAuthRealmSeeder** → 5 default scopes + Internal login provider
+6. **AuthorizationSeeder** → 3 default roles (System Admin, User
    Manager, Viewer)
-7. `Realm`-Document in `IGlobalStore` speichern
-8. `RealmCache.Invalidate()` → nächster Request lädt frisch
+7. Save the `Realm` document in `IGlobalStore`
+8. `RealmCache.Invalidate()` → next request reloads fresh
 
-Der neue Realm braucht initialen Setup wie der System-Realm:
-`/setup`-Page erscheint beim ersten Aufruf der Realm-Domain, der
-allererste User wird zum System-Admin (mit `app:admin`).
+The new realm needs initial setup just like the system realm: the
+`/setup` page appears on first hit of the realm domain, and the very
+first user becomes the system admin (with `realm:admin`).
 
-### 3. Realm deaktivieren
+### 3. Deactivate a realm
 
 ```http
 PATCH /api/admin/realms/{slug}
 { "isActive": false }
 ```
 
-`RealmCache` filtert auf `IsActive = true` — inaktive Realms werden
-nicht mehr aufgelöst, alle Requests an die Domain landen bei `404`.
-Daten bleiben in der DB.
+`RealmCache` filters on `IsActive = true` — inactive realms are no
+longer resolved, all requests to the domain land at `404`. The data
+stays in the DB.
 
-::: danger System-Realm nicht deaktivieren
-Der System-Realm darf nicht deaktiviert werden — sonst hast Du keinen
-Eingang mehr ins System.
+::: danger Do not deactivate the system realm
+The system realm must not be deactivated — otherwise you have no way
+back into the system.
 :::
 
-### 4. Realm hard-löschen
+### 4. Hard-delete a realm
 
-::: warning In Arbeit
-Aktuell ist nur Soft-Delete (Deaktivierung) implementiert. Hard-Delete
-müsste die Tenant-DB sauber droppen, Wolverines durability-Agent
-herunterfahren, Sessions invalidieren — komplex. Roadmap-Item.
+::: warning Work in progress
+Currently only soft-delete (deactivation) is implemented. Hard-delete
+would have to drop the tenant DB cleanly, shut down Wolverine's
+durability agent, invalidate sessions — complex. Roadmap item.
 :::
 
-## OIDC-Endpoints pro Realm
+## OIDC endpoints per realm
 
-Da jeder Realm seine eigene Domain hat, hat er auch seine eigenen
-OIDC-Endpoints:
+Since each realm has its own domain, it also has its own OIDC
+endpoints:
 
 | Endpoint | Acme |
 |---|---|
@@ -192,17 +192,17 @@ OIDC-Endpoints:
 | Introspect | `https://acme.example.com/connect/introspect` |
 | Revoke | `https://acme.example.com/connect/revoke` |
 
-Der `RealmIssuerHandler` (OpenIddict-Pipeline-Hook) sorgt dafür, dass
-das Discovery-Dokument den richtigen Issuer ausgibt. Tokens aus Realm
-A sind in Realm B nicht gültig — der Issuer-Mismatch reicht zur
-Ablehnung.
+The `RealmIssuerHandler` (an OpenIddict pipeline hook) makes sure
+the discovery document emits the correct issuer. Tokens from realm
+A are not valid in realm B — the issuer mismatch is enough to reject
+them.
 
-## Cross-Realm-Garantien
+## Cross-realm guarantees
 
-| Garantie | Mechanismus |
+| Guarantee | Mechanism |
 |---|---|
-| Keine User-Daten leaken | Database-per-Tenant, physische DB-Boundary |
-| Keine Permission-Leaks | Per-Tenant Marten-Sessions, keine Cross-Tenant-Joins |
-| Keine Token-Leaks | Issuer-Claim-Check + per-Realm OpenIddict-Stores |
-| Keine Cookie-Leaks | Cookie-Domain pro Realm |
-| Keine SignalR-Leaks | Hub-Connection ist auth-gated, läuft im Realm-Context |
+| No user-data leaks | Database-per-tenant, physical DB boundary |
+| No permission leaks | Per-tenant Marten sessions, no cross-tenant joins |
+| No token leaks | Issuer-claim check + per-realm OpenIddict stores |
+| No cookie leaks | Cookie domain per realm |
+| No SignalR leaks | Hub connection is auth-gated, runs in the realm context |

@@ -1,36 +1,35 @@
-# Docker & Deployment
+# Docker & deployment
 
-## Voraussetzungen
+## Prerequisites
 
-| Dependency | Version | Zweck |
+| Dependency | Version | Purpose |
 |---|---|---|
-| .NET | 10.0+ | Backend-Runtime |
-| PostgreSQL | 16+ | DB (Document + Event-Store + per-Tenant-DBs) |
-| Node.js | 20+ | Frontend-Build |
-| Docker | 20+ | Container-Runtime |
+| .NET | 10.0+ | Backend runtime |
+| PostgreSQL | 16+ | DB (document + event store + per-tenant DBs) |
+| Node.js | 20+ | Frontend build |
+| Docker | 20+ | Container runtime |
 
-## Konfiguration
+## Configuration
 
-cocoar.auth nutzt **Cocoar.Configuration v5** mit Layered-Binding.
-Settings werden aus mehreren Quellen geladen, jede überschreibt die
-vorige:
+cocoar.auth uses **Cocoar.Configuration v5** with layered binding.
+Settings are loaded from multiple sources, each overriding the previous:
 
-1. `data/configuration.json` (Defaults, committed)
-2. `data/configuration.local.json` (gitignored, lokale Overrides)
-3. Environment-Variablen (höchste Priorität)
+1. `data/configuration.json` (defaults, committed)
+2. `data/configuration.local.json` (gitignored, local overrides)
+3. Environment variables (highest priority)
 
-### Settings-Klassen
+### Settings classes
 
-| Klasse | JSON-Section / ENV-Prefix |
+| Class | JSON section / ENV prefix |
 |---|---|
-| `StartUpConfiguration` | Top-Level (kein Prefix) — `AppUrl`, `PublicUrl`, `DbSettings.ConnectionString`, `Logging`, `CertPath`, ... |
+| `StartUpConfiguration` | Top-level (no prefix) — `AppUrl`, `PublicUrl`, `DbSettings.ConnectionString`, `Logging`, `CertPath`, ... |
 | `EmailConfiguration` | `Email:` — `Provider` (Postmark/Smtp), `Postmark.*`, `Smtp.*` |
 | `MagicLinkConfiguration` | `MagicLink:` — `Enabled`, `ExpirationMinutes`, `RateLimitMinutes` |
 | `EmailOtpConfiguration` | `EmailOtp:` — `ExpirationMinutes`, `RateLimitMinutes` |
 | `AppSettings` | `AppSettings:` — `AuthenticationMinimumLevel`, `MagicLinkSelfService`, `TwoFactorGracePeriodDays` |
 | `OpenIddictSettings` | `OpenIddict:` — `Issuer`, `*LifetimeMinutes`, `DevelopmentMode`, `SigningCertificatePath` |
 
-### Beispiel `configuration.json`
+### Example `configuration.json`
 
 ```json
 {
@@ -69,26 +68,26 @@ vorige:
 }
 ```
 
-::: info Database-Naming
-`DbSettings.ConnectionString` zeigt auf die Master-DB (z.B.
-`cocoar_auth_next`). Beim Anlegen weiterer Realms hängt cocoar.auth
-`_<slug>` an den DB-Namen für die Tenant-DBs an
+::: info Database naming
+`DbSettings.ConnectionString` points at the master DB (e.g.
+`cocoar_auth_next`). When additional realms are created, cocoar.auth
+appends `_<slug>` to the DB name for the tenant DBs
 (`cocoar_auth_next_acme`, `cocoar_auth_next_finance`).
 :::
 
-## Docker-Image
+## Docker image
 
-Das offizielle Docker-Image enthält Backend (.NET) + gebauten Vue-SPA
-(als statisches `wwwroot/`).
+The official Docker image bundles backend (.NET) + the built Vue SPA
+(as static `wwwroot/` content).
 
 ```
 ghcr.io/cocoar/cocoar.auth:latest        # Latest production release
 ghcr.io/cocoar/cocoar.auth:1.0.0         # Specific version
 ```
 
-Multi-Arch: **linux/amd64** + **linux/arm64**.
+Multi-arch: **linux/amd64** + **linux/arm64**.
 
-### Quick-Start
+### Quick start
 
 ```bash
 docker run -d \
@@ -100,9 +99,9 @@ docker run -d \
   ghcr.io/cocoar/cocoar.auth:latest
 ```
 
-Browser auf `http://localhost/setup` öffnen → Initial-Admin anlegen.
+Open `http://localhost/setup` in the browser → create initial admin.
 
-### Docker-Compose (Full-Stack)
+### Docker Compose (full stack)
 
 ```yaml
 services:
@@ -143,10 +142,10 @@ volumes:
 
 ## TLS
 
-cocoar.auth kann selbst TLS terminieren (Kestrel mit Cert) oder hinter
-einem Reverse-Proxy laufen (Nginx, Sophos XG, ...).
+cocoar.auth can terminate TLS itself (Kestrel with a cert) or run
+behind a reverse proxy (Nginx, Sophos XG, ...).
 
-### Eigene TLS-Termination
+### Own TLS termination
 
 ```yaml
 auth:
@@ -156,17 +155,17 @@ auth:
   environment:
     APPURL: "https://0.0.0.0:443"
     CERTPATH: "/secrets/auth.pfx"
-    CERTPASSWORD: "..."   # optional — passwordless PFX wird unterstützt
+    CERTPASSWORD: "..."   # optional — passwordless PFX is supported
     OPENIDDICT__ISSUER: "https://auth.example.com"
   volumes:
     - ./certs:/secrets:ro
 ```
 
-Wenn `APPURL` HTTPS ist und `CERTPATH` nicht gesetzt, generiert
-cocoar.auth ein self-signed Cert in `certs/cocoar-auth.pfx` (gut für
-Test-Setups, Browser warnen aber).
+If `APPURL` is HTTPS and `CERTPATH` is not set, cocoar.auth generates
+a self-signed cert at `certs/cocoar-auth.pfx` (fine for test setups,
+but browsers will warn).
 
-### Reverse-Proxy (Nginx)
+### Reverse proxy (Nginx)
 
 ```nginx
 server {
@@ -196,86 +195,85 @@ server {
 }
 ```
 
-Wichtig:
+Important:
 
-- **`X-Forwarded-Proto`** — sonst denkt Kestrel HTTP, OpenIddict
-  baut HTTP-URLs in das Discovery-Dokument
-- **`X-Forwarded-For`** — Backend nutzt das für Session-IP-Tracking
-  + AuthLog
-- **WebSocket-Upgrade** für `/signalr` — sonst kein
-  Live-Update-Stream
+- **`X-Forwarded-Proto`** — otherwise Kestrel thinks the request is
+  HTTP and OpenIddict builds HTTP URLs into the discovery document
+- **`X-Forwarded-For`** — the backend uses this for session IP
+  tracking + AuthLog
+- **WebSocket upgrade** for `/signalr` — otherwise no live-update
+  stream
 
-cocoar.auth respektiert die Forwarded-Headers via
-`UseForwardedHeaders` in `Program.cs`.
+cocoar.auth respects forwarded headers via `UseForwardedHeaders` in
+`Program.cs`.
 
-## Multi-Realm-Deployment
+## Multi-realm deployment
 
-Pro Realm braucht man eine eigene Domain die auf cocoar.auth zeigt:
+Each realm needs its own domain pointing at cocoar.auth:
 
 ```
-A-Record    auth.example.com         → cocoar.auth Container
-A-Record    acme.example.com         → cocoar.auth Container (gleiche IP)
-A-Record    finance.example.com      → cocoar.auth Container (gleiche IP)
+A record    auth.example.com         → cocoar.auth container
+A record    acme.example.com         → cocoar.auth container (same IP)
+A record    finance.example.com      → cocoar.auth container (same IP)
 ```
 
-Die TLS-Termination muss alle Domains abdecken (Wildcard-Cert oder
-SAN-Cert). Im Reverse-Proxy:
+TLS termination must cover all domains (wildcard cert or SAN cert).
+In the reverse proxy:
 
 ```nginx
 server {
     listen 443 ssl;
     server_name *.example.com;
-    # ... wie oben
+    # ... as above
 }
 ```
 
-`RealmMiddleware` sieht den jeweiligen Host-Header und routed gegen die
-richtige Tenant-DB.
+`RealmMiddleware` sees the relevant Host header and routes against the
+correct tenant DB.
 
-## Database-Auto-Provisioning
+## Database auto-provisioning
 
-Beim ersten Start (oder nach jedem Image-Update):
+On first start (or after every image update):
 
-1. Master-DB wird erstellt wenn fehlend (`CREATE DATABASE`)
-2. Marten-Schema wird applied (idempotent)
-3. System-Tenant in `realms.mt_tenant_databases` registriert
-4. Marten-Schema nochmal applied (per-Tenant-Tabellen für System)
-5. System-Realm-Document seeded
-6. Default-Scopes + Internal-LoginProvider seeded
-7. RealmCache warmgeladen
+1. Master DB is created if missing (`CREATE DATABASE`)
+2. Marten schema is applied (idempotent)
+3. System tenant is registered in `realms.mt_tenant_databases`
+4. Marten schema is applied again (per-tenant tables for the system tenant)
+5. System realm document is seeded
+6. Default scopes + internal LoginProvider are seeded
+7. RealmCache is warmed up
 
-Weitere Realms entstehen erst durch
-`POST /api/admin/realms` zur Laufzeit.
+Additional realms are only created at runtime via
+`POST /api/admin/realms`.
 
-::: warning Multi-Pod-Deployments
-Beim parallelen Boot mehrerer cocoar.auth-Instanzen kann das
-Schema-Apply rennen. Aktuell ist das praktisch nicht ein Problem
-(Marten ist idempotent + Postgres-Locks helfen), aber für sehr große
-Setups ist eine separate Migration-Phase besser:
-`AutoCreate.None` in den Pods + ein `migrate`-Sidecar/Job der das
-Schema einmal vor dem Pod-Rollout applied.
+::: warning Multi-pod deployments
+When several cocoar.auth instances boot in parallel, schema apply can
+race. In practice this is not an issue today (Marten is idempotent +
+Postgres locks help), but for very large setups a separate migration
+phase is preferable: `AutoCreate.None` in the pods + a `migrate`
+sidecar/job that applies the schema once before the pod rollout.
 :::
 
-## Health-Check
+## Health check
 
 ```bash
 curl http://localhost/health
 ```
 
-Antwortet `200` wenn die Master-DB-Connection OK ist. Skip-Path —
-kein Realm-Routing nötig.
+Returns `200` if the master DB connection is OK. Skip path — no realm
+routing required.
 
 ## SignalR
 
-cocoar.auth pusht Live-Updates über `/signalr/ui` (typed RPC via
-SignalARRR). Reverse-Proxies brauchen Upgrade-Header (siehe oben). Die
-Connection ist auth-gated — der User muss eingeloggt sein bevor sie
-aufgebaut wird.
+cocoar.auth pushes live updates over `/signalr/ui` (typed RPC via
+SignalARRR). Reverse proxies need upgrade headers (see above). The
+connection is auth-gated — the user must be logged in before it's
+established.
 
-## Security-Headers
+## Security headers
 
-cocoar.auth setzt eigene Security-Headers nicht selbst — das ist Sache
-des Reverse-Proxys oder eines vorgeschalteten WAF. Empfehlungen:
+cocoar.auth doesn't set its own security headers — that's the job of
+the reverse proxy or a fronting WAF. Recommendations:
 
 ```
 X-Content-Type-Options: nosniff
@@ -285,26 +283,26 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 Strict-Transport-Security: max-age=31536000; includeSubDomains
 ```
 
-## Email-Provider
+## Email provider
 
-cocoar.auth unterstützt zwei Provider:
+cocoar.auth supports two providers:
 
 | Provider | Setting |
 |---|---|
 | **Postmark** | `Email.Provider = "Postmark"` + `Email.Postmark.*` |
 | **SMTP** | `Email.Provider = "Smtp"` + `Email.Smtp.*` |
 
-In Dev wird zusätzlich ein `InMemoryEmailService` registriert der
-Mails im Memory hält — der `/api/dev/emails`-Endpoint zeigt sie. Für
-E2E-Tests in Docker reicht das.
+In dev, an `InMemoryEmailService` is registered in addition that keeps
+mails in memory — the `/api/dev/emails` endpoint shows them. For E2E
+tests in Docker that's enough.
 
-In Production: Postmark oder ein echter SMTP-Server. Ohne
-Email-Konfiguration läuft cocoar.auth weiter (Magic-Link etc. tun
-einfach nichts), Logger warnt aber im Boot.
+In production: Postmark or a real SMTP server. Without email
+configuration cocoar.auth keeps running (magic link etc. simply do
+nothing), but the logger warns at boot.
 
-## Recovery-CLI im Container
+## Recovery CLI in the container
 
-Bei Emergency (alle Admins ausgesperrt, Projection korrupt):
+In an emergency (all admins locked out, projection corrupted):
 
 ```bash
 docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover list
@@ -312,5 +310,5 @@ docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover reset-2fa admin
 docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover magic-link admin
 ```
 
-Statt Kestrel hochzufahren läuft das Image im CLI-Modus, führt das
-Command aus und beendet sich.
+Instead of starting Kestrel, the image runs in CLI mode, executes the
+command, and exits.

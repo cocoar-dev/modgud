@@ -1,141 +1,147 @@
-# Konzepte
+# Concepts
 
-## BFF-Pattern (Backend-for-Frontend)
+## BFF pattern (Backend-for-Frontend)
 
-Cocoar.Auth nutzt **Cookie-basierte Authentifizierung** ohne JWTs im
-Browser. Der Vue-SPA spricht ausschließlich mit dem eigenen Backend, das
-ein `HttpOnly`-Session-Cookie hält. Kein Token im LocalStorage, kein
-OAuth-Token-Handling im Frontend.
+Cocoar.Auth uses **cookie-based authentication** without JWTs in the
+browser. The Vue SPA talks exclusively to its own backend, which holds
+an `HttpOnly` session cookie. No token in localStorage, no OAuth token
+handling in the frontend.
 
-Warum:
+Why:
 
-- `HttpOnly` + `SameSite=Strict` schützt gegen XSS-Token-Diebstahl
-- Sliding Expiration über Cookie-Renewals, kein Refresh-Token-Tanz
-- Backend hat volle Kontrolle über Session-Invalidierung (SignOut →
-  Cookie weg, fertig)
+- `HttpOnly` + `SameSite=Strict` protects against XSS token theft
+- Sliding expiration via cookie renewals, no refresh-token dance
+- The backend has full control over session invalidation (SignOut →
+  cookie gone, done)
 
-Das Hauptcookie heißt `Cocoar.Auth.Auth` und ist `HttpOnly`,
-`SameSite=Strict`. In Production immer `Secure=Always`, in Dev
-`Secure=None`, weil der Vite-Proxy `http://localhost:4300` und das
-Backend `http://localhost:9099` ohne TLS spricht.
+The main cookie is named `Cocoar.Auth.Auth` and is `HttpOnly`,
+`SameSite=Strict`. In production always `Secure=Always`; in dev
+`Secure=None`, because the Vite proxy talks to
+`http://localhost:4300` and the backend `http://localhost:9099`
+without TLS.
 
-::: tip OAuth/OIDC Server ist davon getrennt
-Der Cookie ist nur für die First-Party-Frontend-Sitzung mit dem
-Admin-/User-UI von cocoar.auth. Der OAuth-/OIDC-Server (OpenIddict)
-gibt klassische Access- + Refresh-Tokens an externe Apps aus — das
-ist eine ganz andere Achse.
+::: tip The OAuth/OIDC server is separate
+The cookie is only for the first-party frontend session with the
+admin/user UI of cocoar.auth. The OAuth/OIDC server (OpenIddict)
+issues classical access + refresh tokens to external apps — that's a
+completely different axis.
 :::
 
-## Authentication Level
+## Authentication level
 
-Konfiguriert in `AppSettings.AuthenticationMinimumLevel`:
+Configured in `AppSettings.AuthenticationMinimumLevel`:
 
-| Level | Name | Verhalten |
+| Level | Name | Behaviour |
 |---|---|---|
-| 0 | None | Kein Enforcement — Password-only erlaubt |
-| 1 | SecureLogin (Standard) | Password-only blockiert — User muss 2FA oder Passwordless einrichten |
-| 2 | Passwordless | Password-Login komplett deaktiviert — nur Magic Link + Passkey |
+| 0 | None | No enforcement — password-only allowed |
+| 1 | SecureLogin (default) | Password-only blocked — user must set up 2FA or passwordless |
+| 2 | Passwordless | Password login fully disabled — only Magic Link + Passkey |
 
-Geprüft an zwei Stellen:
+Checked in two places:
 
-1. **Login-Endpoint** — bei Password-Login: Level 2 → sofort 403;
-   Level ≥ 1 → prüft ob User 2FA hat, sonst `RequiresSecureSetup`-Response
-2. **`TwoFactorEnforcementMiddleware`** — bei jedem API-Request nach
-   erfolgreicher Authentifizierung: prüft Grace-Period und blockiert
-   abgelaufene User mit `403 { RequiresSecureSetup: true, GracePeriod: false }`
+1. **Login endpoint** — on password login: Level 2 → immediate 403;
+   Level ≥ 1 → checks whether the user has 2FA, otherwise
+   `RequiresSecureSetup` response
+2. **`TwoFactorEnforcementMiddleware`** — on every API request after
+   successful authentication: checks the grace period and blocks
+   expired users with
+   `403 { RequiresSecureSetup: true, GracePeriod: false }`
 
-Whitelist der Middleware: `/api/account/me`, `/logout`, `/mfa/*`,
-`/email-otp/*`, `/passkey/*`, `/change-password` sind immer erreichbar,
-damit der User sich tatsächlich einrichten kann.
+Whitelisted by the middleware: `/api/account/me`, `/logout`, `/mfa/*`,
+`/email-otp/*`, `/passkey/*`, `/change-password` are always reachable
+so the user can actually set themselves up.
 
-## SecureSetup-Modal und Grace-Period
+## SecureSetup modal and grace period
 
-Bei Level ≥ 1 muss jeder User mindestens eine 2FA-Methode aktivieren.
-User ohne 2FA bekommen eine Grace-Period:
+At Level ≥ 1 every user must enable at least one 2FA method. Users
+without 2FA get a grace period:
 
-1. Erster Login nach Level-Aktivierung → `SecureSetupDueAt` wird gesetzt
-   (`now + TwoFactorGracePeriodDays` oder per-User-Override)
-2. Solange `SecureSetupDueAt > now` → Login gelingt, Response enthält
+1. First login after level activation → `SecureSetupDueAt` is set
+   (`now + TwoFactorGracePeriodDays` or per-user override)
+2. While `SecureSetupDueAt > now` → login succeeds, the response
+   contains
    `{ RequiresSecureSetup: true, GracePeriod: true, SecureSetupDueAt }` →
-   Frontend zeigt non-blocking Modal
-3. Nach Ablauf → Middleware blockiert mit
-   `403 { RequiresSecureSetup: true, GracePeriod: false }` → Frontend
-   zeigt blocking Modal
+   the frontend shows a non-blocking modal
+3. After expiry → middleware blocks with
+   `403 { RequiresSecureSetup: true, GracePeriod: false }` → the
+   frontend shows a blocking modal
 
-`TwoFactorExempt`-Flag (per User) bypassed Enforcement komplett. Wer das
-letzte 2FA-Verfahren bei Level ≥ 1 entfernt → `SecureSetupDueAt = now`
-(sofort blockierend, kein neues Grace-Fenster).
+The `TwoFactorExempt` flag (per user) bypasses enforcement entirely.
+If the last 2FA method is removed at Level ≥ 1 →
+`SecureSetupDueAt = now` (immediately blocking, no fresh grace
+window).
 
-## Cookie- und Session-Modell
+## Cookie and session model
 
 ```
 ┌────────────────────────────────────────────────────────┐
 │  Cocoar.Auth.Auth          ASP.NET Identity App-Cookie │
 │  HttpOnly, SameSite=Strict, Secure (Prod)              │
-│  ExpireTimeSpan = 30 Tage, SlidingExpiration = true    │
+│  ExpireTimeSpan = 30 days, SlidingExpiration = true    │
 │                                                        │
-│  Session cookie:    RememberMe=false → läuft bei       │
-│                     Browser-Schließen ab               │
-│  Persistent:        RememberMe=true → 30 Tage          │
-│  Passkey/MagicLink: immer persistent, 30 Tage          │
+│  Session cookie:    RememberMe=false → expires when    │
+│                     the browser closes                 │
+│  Persistent:        RememberMe=true → 30 days          │
+│  Passkey/MagicLink: always persistent, 30 days         │
 └────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────┐
-│  Cocoar.Auth.2FA           2FA-Partial-Cookie          │
-│  Gültig 5 Minuten — hält UserId zwischen               │
-│  Password-Step und TOTP/Email-OTP-Step                 │
+│  Cocoar.Auth.2FA           2FA partial cookie          │
+│  Valid 5 minutes — holds the UserId between            │
+│  the password step and the TOTP/Email-OTP step         │
 └────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────┐
-│  Cocoar.Auth.External      OIDC External Cookie        │
-│  SameSite=Lax (Browser hält Cookie über IdP-Redirect)  │
-│  Gültig 10 Minuten — Callback → App-Sign-In            │
+│  Cocoar.Auth.External      OIDC external cookie        │
+│  SameSite=Lax (browser keeps the cookie across the     │
+│  IdP redirect)                                         │
+│  Valid 10 minutes — Callback → app sign-in             │
 └────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────┐
 │  Cocoar.Auth.Session       ASP.NET Session             │
-│  HttpOnly, SameSite=Strict, 5 Min Idle                 │
-│  Nur für Passkey-Attestation-Options (Challenge-Store) │
+│  HttpOnly, SameSite=Strict, 5 min idle                 │
+│  Only for passkey attestation options (challenge       │
+│  store)                                                │
 └────────────────────────────────────────────────────────┘
 ```
 
-Im Multi-Realm-Setup ist die Realm-Boundary die **Domain** (Host-Header),
-nicht der URL-Pfad. Cookies sind nicht pfad-scoped — sie leben unter
-der Realm-Domain. Cross-Realm-Leakage entsteht nicht, weil jeder Realm
-seine eigene Domain hat (siehe [Realms](/concepts/realms)).
+In a multi-realm setup the realm boundary is the **domain** (Host
+header), not the URL path. Cookies are not path-scoped — they live
+under the realm domain. Cross-realm leakage doesn't happen because
+each realm has its own domain (see [Realms](/concepts/realms)).
 
-## 2FA-Methoden
+## 2FA methods
 
 ### TOTP (Time-based One-Time Password)
-Standard RFC-6238 6-stellige Codes. Setup via QR-Code-URI
-(`otpauth://totp/…`). Kein externer Service nötig — OTP-Berechnung läuft
-server-seitig via `AddDefaultTokenProviders()`. Immer verfügbar.
+Standard RFC-6238 6-digit codes. Setup via QR-code URI
+(`otpauth://totp/…`). No external service needed — OTP calculation
+runs server-side via `AddDefaultTokenProviders()`. Always available.
 
 ### Email OTP
-6-stelliger Code per E-Mail. Benötigt einen konfigurierten
-`IEmailService` (Postmark oder SMTP). Challenge-Dokument
-(`EmailOtpChallenge`) in Marten — enthält Hash des Codes und Ablaufzeit.
-Immer verfügbar (wie TOTP).
+6-digit code by email. Requires a configured `IEmailService` (Postmark
+or SMTP). Challenge document (`EmailOtpChallenge`) in Marten —
+contains the code hash and expiry. Always available (like TOTP).
 
 ### Passkey (FIDO2 / WebAuthn)
-Fido2NetLib verwaltet Attestation (Registration) und Assertion (Login).
-`StoredPasskeyCredential` in Marten. Passkey-Login setzt immer ein
-persistentes Cookie (30 Tage). Session-Storage (Marten
-`DistributedMemoryCache`) hält das Attestation-Options-Objekt zwischen
-Registration-Start und -Finish. `ServerDomain` + `Origins` werden aus
-`PublicUrl` abgeleitet.
+Fido2NetLib handles attestation (registration) and assertion (login).
+`StoredPasskeyCredential` in Marten. Passkey login always sets a
+persistent cookie (30 days). Session storage (Marten
+`DistributedMemoryCache`) holds the attestation options object
+between registration start and finish. `ServerDomain` + `Origins` are
+derived from `PublicUrl`.
 
 ### Magic Link
-Einmal-Token per E-Mail. `MagicLinkChallenge` in Marten (Hash des Tokens
-+ UserId + Ablaufzeit). Zwei Modi:
+One-time token by email. `MagicLinkChallenge` in Marten (token hash +
+UserId + expiry). Two modes:
 
-- **Admin-Send** (`POST /api/admin/users/{id}/magic-link`): immer
-  verfügbar, kein Feature-Toggle, Notfallzugang + Onboarding
-- **Self-Service** (`POST /api/account/magic-link/request`): nur wenn
-  `IMagicLinkConfiguration.Enabled` **und**
-  `IAuthSettings.MagicLinkSelfService` beide `true`
+- **Admin send** (`POST /api/admin/users/{id}/magic-link`): always
+  available, no feature toggle, emergency access + onboarding
+- **Self-service** (`POST /api/account/magic-link/request`): only
+  when both `IMagicLinkConfiguration.Enabled` **and**
+  `IAuthSettings.MagicLinkSelfService` are `true`
 
-Magic-Link-Login setzt immer ein persistentes Cookie (30 Tage).
+Magic Link login always sets a persistent cookie (30 days).
 
 ## AuthLog
 
@@ -151,38 +157,39 @@ Channel<AuthLogDocument> (unbounded)
        │
        ▼
 AuthLogPersistenceService (BackgroundService)
-  Batch: bis 100 Dokumente, alle 2 Sek. oder bei Channel-Drain
+  Batch: up to 100 documents, every 2 seconds or on channel drain
        │
        ▼
-Marten (per-Tenant: mt_doc_authlogdocument)
-  Cleanup: stündlich, 7-Tage-Retention
+Marten (per tenant: mt_doc_authlogdocument)
+  Cleanup: hourly, 7-day retention
 ```
 
-Der Log landet im Tenant-Store des aktiven Realms — jeder Realm hat
-seinen eigenen Audit-Log. Recovery-CLI-Einträge (`Auth: Recovery …`)
-werden vom Sink ebenfalls erfasst.
+The log lands in the tenant store of the active realm — every realm
+has its own audit log. Recovery-CLI entries (`Auth: Recovery …`) are
+captured by the sink as well.
 
-## Profile Self-Service (UserChangeRequest)
+## Profile self-service (UserChangeRequest)
 
 ```mermaid
 stateDiagram-v2
-    [*] --> EmailVerificationPending : Payload enthält neue Email
-    [*] --> AdminApprovalPending : Kein Email-Feld geändert
-    EmailVerificationPending --> AdminApprovalPending : Token verifiziert
-    EmailVerificationPending --> EmailVerificationPending : Weitere Edits (Merge)
-    AdminApprovalPending --> Approved : Admin approved
-    AdminApprovalPending --> Rejected : Admin rejected
-    AdminApprovalPending --> EmailVerificationPending : Neuer Edit mit Email
+    [*] --> EmailVerificationPending : Payload contains a new email
+    [*] --> AdminApprovalPending : No email field changed
+    EmailVerificationPending --> AdminApprovalPending : Token verified
+    EmailVerificationPending --> EmailVerificationPending : Further edits (merge)
+    AdminApprovalPending --> Approved : Admin approves
+    AdminApprovalPending --> Rejected : Admin rejects
+    AdminApprovalPending --> EmailVerificationPending : New edit with email
     Approved --> [*]
     Rejected --> [*]
 ```
 
-**Ein offener Request pro (UserId, Type)** — mehrere Edits mergen in
-denselben Request per `MutableJsonMerge.MergeDestructive`. Das Payload
-ist opakes JSON; `ProfileUpdateDto` hat `Optional<T>`-Felder. Cleanup
-beim Merge: wenn ein Feld identisch zum aktuellen User-Wert ist, wird
-es aus dem Payload entfernt (Revert = No-Op).
+**One open request per `(UserId, Type)`** — multiple edits merge into
+the same request via `MutableJsonMerge.MergeDestructive`. The payload
+is opaque JSON; `ProfileUpdateDto` has `Optional<T>` fields. Cleanup
+on merge: when a field equals the current user value, it is dropped
+from the payload (revert = no-op).
 
-Admin-Benachrichtigung bei `EmailVerificationPending → AdminApprovalPending`:
-`IPrincipalEmailResolver` löst alle Adressen von Gruppen mit
-`app:admin`-Rolle auf.
+Admin notification on
+`EmailVerificationPending → AdminApprovalPending`:
+`IPrincipalEmailResolver` resolves all addresses of groups that hold
+the `realm:admin` role.

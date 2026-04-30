@@ -1,43 +1,43 @@
-# Getting Started (Dev)
+# Getting started (dev)
 
-## Voraussetzungen
+## Prerequisites
 
 - **.NET 10 SDK**
-- **Node.js 20+** und **pnpm**
-- **Docker** (für PostgreSQL via Container)
+- **Node.js 20+** and **pnpm**
+- **Docker** (for PostgreSQL via container)
 
-## Backend hochziehen
+## Bring up the backend
 
 ```bash
-# PostgreSQL starten (einmalig)
+# Start PostgreSQL (one-off)
 docker run --name cocoar-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres:17-alpine
 
-# Master-DB anlegen (einmalig — Backend kann das beim Boot, aber das überlebt Container-Restarts schöner)
+# Create master DB (one-off — the backend can do this on boot, but doing it here survives container restarts more cleanly)
 docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE cocoar_auth_next;"
 
-# Backend bauen
+# Build the backend
 cd src/dotnet
 dotnet build
 
-# Backend starten (Port 9099 in Dev — siehe data/configuration.json)
+# Start the backend (port 9099 in dev — see data/configuration.json)
 cd Cocoar.Auth.Api
 ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile
 ```
 
-Beim ersten Start läuft der Bootstrap-Pfad:
+On first start the bootstrap path runs:
 
-1. Master-DB-Schema applyen (`realms.mt_tenant_databases` entsteht)
-2. System-Tenant in der Tenancy-Tabelle eintragen
-3. System-Tenant-Schema applyen
-4. System-Realm-Document seeden
-5. 5 Default-Scopes + Internal-LoginProvider ins System-Tenant-DB seeden
-6. RealmCache warmladen
+1. Apply master DB schema (`realms.mt_tenant_databases` is created)
+2. Register the system tenant in the tenancy table
+3. Apply the system tenant schema
+4. Seed the system realm document
+5. Seed 5 default scopes + internal LoginProvider into the system tenant DB
+6. Warm up RealmCache
 
-Dann hört Kestrel auf `http://localhost:9099`.
+Then Kestrel starts listening on `http://localhost:9099`.
 
-## Frontend hochziehen
+## Bring up the frontend
 
-In einem zweiten Terminal:
+In a second terminal:
 
 ```bash
 cd src/frontend-vue
@@ -45,91 +45,77 @@ pnpm install
 pnpm dev
 ```
 
-Vite-Dev-Server läuft auf `http://localhost:4300` und proxyed
-`/api/*`, `/connect/*`, `/.well-known/*`, `/signalr/*` an
+The Vite dev server runs on `http://localhost:4300` and proxies
+`/api/*`, `/connect/*`, `/.well-known/*`, `/signalr/*` to
 `http://localhost:9099`.
 
-## First-Time-Setup
+## First-time setup
 
-1. Browser öffnen: `http://localhost:4300/setup`
-2. Username + Passwort + (optional) E-Mail eintragen
-3. "Account erstellen" klicken
-4. Du bist auto-eingeloggt als System-Admin
+1. Open the browser at `http://localhost:4300/setup`
+2. Enter username + password + (optional) email
+3. Click "Create account"
+4. You're auto-logged-in as the system admin
 
-Hinter den Kulissen:
+Behind the scenes:
 
-- 3 Default-Rollen werden angelegt (System Admin, User Manager, Viewer)
-- Eine "System-Admin"-Gruppe wird angelegt mit der System-Admin-Rolle
-  (`app:admin`)
-- Dein User wird in die Gruppe aufgenommen → globaler Bypass aktiv
+- 3 default roles are created (System Admin, User Manager, Viewer)
+- A "System Admin" group is created with the System Admin role
+  (`realm:admin`) and `BoundTo: ["*"]` (active in every app)
+- Your user is added to the group → realm-wide bypass active
 
-::: tip Default-Dev-Credentials
-Dieselben Credentials sind in der Memory-Datei (siehe `CLAUDE.md`):
+::: tip Default dev credentials
+The same credentials are noted in the memory file (see `CLAUDE.md`):
 `admin` / `ABC12abc!`
 :::
 
-## Optional: ABAC-Demo-Seed
-
-Im Setup-Flow gibt es eine Checkbox "ABAC-Demo seeden". Wenn aktiviert:
-
-- Drei Demo-User mit verschiedenen `OrganizationalUnit`-Werten
-- Eine "OU Auditor"-Gruppe mit Access-Script
-  `(u) => u.OrganizationalUnit === user.organizationalUnit`
-- Eine "Self-Service"-Gruppe mit Script `(u) => u.Id === user.id`
-
-So sieht man sofort wie das Zusammenspiel von Roles + Scripts in einem
-konkreten Setup aussieht.
-
-## Tests laufen lassen
+## Run the tests
 
 ```bash
 cd src/dotnet
 
-# Alle Tests (braucht Docker für Testcontainers)
+# All tests (needs Docker for Testcontainers)
 dotnet test
 
-# Einen einzelnen Test
+# A single test
 dotnet test --filter "FullyQualifiedName~AuthenticationTests"
 ```
 
-Die Tests nutzen Testcontainers, holen sich also bei Bedarf einen
-PostgreSQL-Container. Per-Test-Class-DB-Isolation, vier parallele
-xUnit-Collections.
+The tests use Testcontainers and pull up a PostgreSQL container on
+demand. Per-test-class DB isolation, four parallel xUnit collections.
 
-## E2E-Tests (Playwright)
+## E2E tests (Playwright)
 
 ```bash
 cd src/frontend-vue
 pnpm test:e2e
 ```
 
-Setzt voraus dass Backend + Frontend laufen. ENV-Variablen für die
-Test-Credentials:
+Requires the backend + frontend to be running. ENV variables for the
+test credentials:
 
 ```
 E2E_ADMIN_USER=admin
 E2E_ADMIN_PASSWORD=ABC12abc!
 ```
 
-## Wolverine-Codegen
+## Wolverine codegen
 
-Wolverine generiert beim Boot Handler-Code. In der Default-Config
-(`TypeLoadMode.Auto`) wird der Code beim ersten Start in einen
-`Internal/Generated/`-Ordner geschrieben und beim nächsten Boot direkt
-geladen — keine Roslyn-Compilation zur Laufzeit.
+Wolverine generates handler code on boot. With the default config
+(`TypeLoadMode.Auto`), the code is written into an
+`Internal/Generated/` folder on first start and loaded directly on the
+next boot — no Roslyn compilation at runtime.
 
-Wenn Du Handler oder Aggregate änderst, lösch den Generated-Ordner und
-restart, oder lass Wolverine pre-generaten:
+If you change handlers or aggregates, delete the Generated folder and
+restart, or have Wolverine pre-generate:
 
 ```bash
 cd src/dotnet/Cocoar.Auth.Api
 dotnet run --no-launch-profile -- codegen write
 ```
 
-## Recovery-CLI
+## Recovery CLI
 
-Wenn alle Admin-Accounts ausgesperrt sind oder eine Projection korrupt
-ist:
+When all admin accounts are locked out or a projection is corrupted:
 
 ```bash
 cd src/dotnet/Cocoar.Auth.Api
@@ -140,23 +126,23 @@ dotnet run --no-launch-profile -- recover magic-link <username>
 dotnet run --no-launch-profile -- recover rebuild-projections
 ```
 
-Im Container: `docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover list`.
+In the container: `docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover list`.
 
-## Dev-Endpoints
+## Dev endpoints
 
-Im Development-Mode sind zusätzliche Endpoints unter `/api/dev/*` aktiv
-(siehe `Cocoar.Auth.Api.Features.Dev`):
+In development mode, additional endpoints are mounted under `/api/dev/*`
+(see `Cocoar.Auth.Api.Features.Dev`):
 
-- E-Mail-Inspector (zeigt verschickte Mails ohne SMTP)
-- MFA-Reset für Test-User
-- Generelle Test-Helpers für E2E
+- Email inspector (shows sent mails without SMTP)
+- MFA reset for test users
+- General test helpers for E2E
 
-In Production werden die nicht gemounted.
+In production they are not mounted.
 
-## Was als nächstes?
+## What's next?
 
-- [Backend-Aufbau](/guide/architecture)
-- [Multi-Tenancy / Realms](/guide/realms)
+- [Backend architecture](/guide/architecture)
+- [Multi-tenancy / Realms](/guide/realms)
 - [OAuth / OpenIddict](/guide/oauth)
-- [Authentication-Slice](/authentication-slice/)
-- [Authorization-Slice](/authorization-slice/)
+- [Authentication slice](/authentication-slice/)
+- [Authorization slice](/authorization-slice/)

@@ -1,98 +1,100 @@
-# Überblick
+# Overview
 
-cocoar.auth ist ein eigenständiger Multi-Tenant Identity Provider
-(vergleichbar mit Keycloak, Zitadel oder Authentik). ASP.NET Core 10,
+cocoar.auth is a self-contained multi-tenant Identity Provider
+(comparable to Keycloak, Zitadel, or Authentik). ASP.NET Core 10,
 Marten 8, OpenIddict 7, Vue 3.
 
-## Was es kann
+## What it does
 
-- **Authentifizierung** — Cookie-basierte Sessions mit Password, TOTP,
-  Email-OTP, Passkey/FIDO2, Magic Link, OIDC External Login
-- **OAuth 2.0 / OIDC Server** — kompletter Authorization Server via
+- **Authentication** — cookie-based sessions with password, TOTP,
+  email OTP, passkey/FIDO2, magic link, OIDC external login
+- **OAuth 2.0 / OIDC server** — full authorization server via
   OpenIddict (Authorization Code + PKCE, Client Credentials, Refresh
-  Token; Reference + JWT Tokens)
-- **Multi-Tenancy** — Database-per-Realm via Marten
-  `MasterTableTenancy`; Domain-basiertes Routing
-- **User & Group Management** — RBAC mit Per-Resource-Gating, plus
-  ABAC-Layer via JavaScript-Access-Scripts
-- **GDPR-Self-Service** — Daten-Export (Article 20), Account-Löschung
-  mit Confirmation-Token, Marten Data-Masking
-- **Sessions mit Device-Tracking** — UAParser-basiert, Self-Service
-  Revoke, Logout-Everywhere
+  Token; reference + JWT tokens)
+- **Multi-tenancy** — database-per-realm via Marten
+  `MasterTableTenancy`; domain-based routing
+- **User & group management** — RBAC with per-resource gating, app
+  scoping via Group.BoundTo. ABAC deliberately stays the consuming
+  app's responsibility (see [Concepts → ABAC](/concepts/abac))
+- **GDPR self-service** — data export (Article 20), account deletion
+  with confirmation token, Marten data masking
+- **Sessions with device tracking** — UAParser-based, self-service
+  revoke, log out everywhere
 
-## Aufbau
+## Structure
 
-cocoar.auth steht auf zwei Vertical-Slices, die als C#-Projekte
-eingezogen sind:
+cocoar.auth sits on two vertical slices, pulled in as C# projects:
 
-- [`Cocoar.Auth.Authentication`](/authentication-slice/) — Login,
-  2FA, OIDC, GDPR, Sessions
-- [`Cocoar.Auth.Authorization`](/authorization-slice/) — Groups,
-  Roles, Permissions, ABAC
+- [`Cocoar.Auth.Authentication`](/authentication-slice/) — login,
+  2FA, OIDC, GDPR, sessions
+- [`Cocoar.Auth.Authorization`](/authorization-slice/) — groups,
+  roles, permissions
 
-Darüber liegt der IdP-spezifische Code:
+On top of that lives the IdP-specific code:
 
-- **`Cocoar.Auth.Domain`** — Realm-, OAuth-, LoginProvider-Aggregate
-- **`Cocoar.Auth.Infrastructure`** — OpenIddict-Marten-Stores,
-  Tenancy-Plumbing, Realm-Cache + -Provisioning, Wolverine-Handler
-- **`Cocoar.Auth.Application`** — DTOs, Service-Interfaces
-- **`Cocoar.Auth.Api`** — Minimal-API-Endpoints, Middleware,
-  Setup-Bootstrap, SignalR-Hub
+- **`Cocoar.Auth.Domain`** — Realm, OAuth, LoginProvider aggregates
+- **`Cocoar.Auth.Infrastructure`** — OpenIddict Marten stores,
+  tenancy plumbing, realm cache + provisioning, Wolverine handlers
+- **`Cocoar.Auth.Application`** — DTOs, service interfaces
+- **`Cocoar.Auth.Api`** — Minimal API endpoints, middleware,
+  setup bootstrap, SignalR hub
 
-Plus das Frontend in `src/frontend-vue/`.
+Plus the frontend at `src/frontend-vue/`.
 
-## Tech-Stack
+## Tech stack
 
-| Layer | Technologie |
+| Layer | Technology |
 |---|---|
 | API | ASP.NET Core 10 (Minimal APIs) |
-| CQRS | Wolverine 5 (Mediator + Outbox) |
-| Persistence | Marten 8 (Document DB + Event Store über PostgreSQL) |
-| OAuth/OIDC | OpenIddict 7 mit Marten-Stores |
+| CQRS | Wolverine 5 (mediator + outbox) |
+| Persistence | Marten 8 (document DB + event store on PostgreSQL) |
+| OAuth/OIDC | OpenIddict 7 with Marten stores |
 | Identity | ASP.NET Core Identity + EventSourcedUserStore |
 | Realtime | SignalR + Cocoar.SignalARRR (typed RPC) |
-| ABAC | Cocoar.JsEval (TypeScript → LINQ → SQL) |
 | Frontend | Vue 3 + Pinia 3 + Vite 8 + Tailwind 4 |
 | Components | @cocoar/vue-ui, @cocoar/vue-data-grid, ... |
 | Testing | xUnit + Testcontainers (PostgreSQL in Docker), Playwright (E2E) |
 
-## Key Design Decisions
+## Key design decisions
 
-### Reference Tokens als Default
+### Reference tokens by default
 
-Alle Access-Tokens sind standardmäßig **Reference Tokens** — opake
-Strings, server-seitig in `OpenIddictTokenDocument` gespeichert. Das
-ist der primäre Grund einen eigenen IdP zu bauen statt bestehende
-Cloud-IdPs zu mieten: instant Revocation und keine langlebigen JWTs
-in Browsern. Pro Client kann auf JWT umgestellt werden, wenn
-performance-kritisch.
+All access tokens are **reference tokens** by default — opaque strings
+stored server-side in `OpenIddictTokenDocument`. This is the primary
+reason to build a custom IdP rather than rent an existing cloud IdP:
+instant revocation and no long-lived JWTs in browsers. Per client this
+can be switched to JWT when performance-critical.
 
-### Database-per-Realm
+### Database-per-realm
 
-Jeder Realm hat seine eigene PostgreSQL-Datenbank. Marten
-`MasterTableTenancy` löst pro Request die Connection auf — keine
-`tenant_id`-Spalten in Joins, keine geteilten Tabellen. Maximale
-Isolation. Der Preis ist mehr DBs zu pflegen — bei typischem Maßstab
-(ein- bis zweistellig viele Realms pro Installation) absolut handhabbar.
+Each realm has its own PostgreSQL database. Marten
+`MasterTableTenancy` resolves the connection per request — no
+`tenant_id` columns in joins, no shared tables. Maximum isolation. The
+price is having more DBs to operate — at typical scale (single- to
+double-digit number of realms per installation) this is entirely
+manageable.
 
-### Domain-basiertes Realm-Routing
+### Domain-based realm routing
 
-Realms werden via Host-Header aufgelöst, nicht via URL-Pfad. Jeder Realm
-hat seine eigene Domain (`acme.example.com`, `system.example.com`).
-Damit funktionieren OIDC-Issuer, Cookies und Frontend-Bauten ohne
-Pfad-Prefix-Akrobatik.
+Realms are resolved via the Host header, not via URL path. Each realm
+has its own domain (`acme.example.com`, `system.example.com`). That
+makes OIDC issuers, cookies, and frontend builds work without
+path-prefix acrobatics.
 
-### TimeToDo-Slices als Basis
+### TimeToDo slices as the basis
 
-Der Authentication- und Authorization-Slice sind als C#-Projekt-Kopien
-direkt aus TimeToDo eingezogen. Updates flowen nicht automatisch — wer
-in cocoar.auth was anpasst, anpasst seine Kopie. Das gibt Stabilität
-gegen Upstream-Breaking-Changes und erlaubt App-spezifische Erweiterungen
-(z.B. mehr Resources im Authorization-Slice).
+The Authentication and Authorization slices are pulled in as C#-project
+copies straight from TimeToDo. Updates don't flow automatically —
+whoever changes something in cocoar.auth changes their copy. This
+gives stability against upstream breaking changes and allows
+app-specific extensions (e.g. more resources in the Authorization
+slice).
 
-### Granular Per-Resource-Gating
+### Granular per-resource gating
 
-Permissions sind im `<resource>:<action>`-Format. Jeder Endpoint und
-jeder Sidebar-Eintrag prüft denselben String. Per-Resource-Admin-Bypass
-ist die Standard-Stufe; globaler `app:admin` ist die Eskalation. Das
-skaliert sauber wenn die App weitere Resource-Typen bekommt.
+Permissions follow the `<app>:<resource>:<action>` format
+(`cocoar-auth:user:read`, `timetodo:todo:write`, …). Every endpoint
+and every sidebar entry checks the same string. Three bypass tiers:
+`<app>:<resource>:admin` (resource-wide within an app), `<app>:admin`
+(app-wide), `realm:admin` (realm-wide emergency exit). This scales
+cleanly as Cocoar.Auth hosts additional consuming apps.

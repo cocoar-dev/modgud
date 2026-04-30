@@ -1,96 +1,97 @@
-# Identity-Provider (OIDC Federated Login)
+# Identity Providers (OIDC Federated Login)
 
-Der Slice unterstützt beliebig viele externe OIDC-Provider — Entra ID
-(Microsoft), Google, Auth0, Keycloak, jeder OIDC-konforme IdP. Die
-Konfiguration läuft pro Realm via `IdpConfig`-Dokument im Tenant-Store.
+The slice supports any number of external OIDC providers — Entra ID
+(Microsoft), Google, Auth0, Keycloak, any OIDC-compliant IdP.
+Configuration runs per realm via `IdpConfig` documents in the tenant
+store.
 
-## Mental-Model
+## Mental model
 
-- Jede `IdpConfig` ist ein OIDC-Client gegen einen externen IdP
-- Sie wird zur Laufzeit als ASP.NET Core Authentication-Scheme
-  registriert (`DynamicOidcSchemeManager`)
-- Beim Login wird der OIDC-Flow gegen diesen Scheme initiiert
-- `ExternalIdentityLink` (`Issuer + Subject → UserId`) ist der einzige
-  stabile Anker — niemand mappt User per E-Mail
-- `UserUpdateScript` (Jint-JavaScript) mapt Claims auf User-Felder
+- Each `IdpConfig` is an OIDC client against an external IdP
+- It is registered at runtime as an ASP.NET Core authentication scheme
+  (`DynamicOidcSchemeManager`)
+- On login the OIDC flow is initiated against that scheme
+- `ExternalIdentityLink` (`Issuer + Subject → UserId`) is the only
+  stable anchor — nobody maps users by email
+- `UserUpdateScript` (Jint JavaScript) maps claims onto user fields
 
 ## Flavors
 
-`FlavorRegistry` hält alle eingebauten IdP-Vorlagen. Aktuell:
+`FlavorRegistry` holds all built-in IdP templates. Currently:
 
-| Flavor | Datei | Besonderheit |
+| Flavor | File | Notes |
 |---|---|---|
-| `EntraIdFlavor` | `Identity/ExternalAuth/Flavors/EntraIdFlavor.cs` | Microsoft Entra ID — Tenant-spezifische Authority, `?prompt=select_account` Default |
-| `GenericOidcFlavor` | `Identity/ExternalAuth/Flavors/GenericOidcFlavor.cs` | Standard OIDC — Authority + Client-ID + Secret reichen |
+| `EntraIdFlavor` | `Identity/ExternalAuth/Flavors/EntraIdFlavor.cs` | Microsoft Entra ID — tenant-specific authority, `?prompt=select_account` default |
+| `GenericOidcFlavor` | `Identity/ExternalAuth/Flavors/GenericOidcFlavor.cs` | Standard OIDC — authority + client ID + secret are enough |
 
-Ein Flavor liefert:
+A flavor provides:
 
-- Default-Werte für `Authority`, `Scopes`, `ResponseType`
-- Erlaubte `FlavorConfigField`-Liste (Welche Inputs zeigt das Admin-UI?)
-- Optionalen Default für das `UserUpdateScript`
+- Default values for `Authority`, `Scopes`, `ResponseType`
+- Allowed `FlavorConfigField` list (which inputs the admin UI shows)
+- An optional default for the `UserUpdateScript`
 
-Neue Flavors fügt man in `Identity/ExternalAuth/Flavors/` hinzu und
-registriert sie in `Program.cs`:
+New flavors are added under `Identity/ExternalAuth/Flavors/` and
+registered in `Program.cs`:
 
 ```csharp
 builder.Services.AddSingleton<IIdentityProviderFlavor, MyCustomFlavor>();
 ```
 
-## IdpConfig-Dokument
+## IdpConfig document
 
-Marten-Document im Tenant-Store. Felder:
+Marten document in the tenant store. Fields:
 
-| Feld | Bedeutung |
+| Field | Meaning |
 |---|---|
-| `Id` | GUID, wird als Scheme-Name `oidc-{guid}` benutzt |
-| `Name` | Display-Name im Login-UI ("Login with Acme SSO") |
+| `Id` | GUID, used as the scheme name `oidc-{guid}` |
+| `Name` | Display name in the login UI ("Login with Acme SSO") |
 | `Flavor` | `entra-id` / `generic-oidc` / ... |
-| `Authority` | OIDC Issuer URL |
-| `ClientId` | OIDC Client-ID |
-| `Scopes` | Array (z.B. `["openid", "email", "profile"]`) |
-| `UserUpdateScript` | JavaScript-Snippet (Jint) |
-| `StoreRawClaims` | bool — wenn true, jede Login speichert die rohen Claims auf dem Link (Debug) |
-| `IsActive` | bool — inaktive Provider zeigen kein Login-Button |
-| `IsDeleted` | bool — Soft-Delete |
+| `Authority` | OIDC issuer URL |
+| `ClientId` | OIDC client ID |
+| `Scopes` | Array (e.g. `["openid", "email", "profile"]`) |
+| `UserUpdateScript` | JavaScript snippet (Jint) |
+| `StoreRawClaims` | bool — when true, every login stores the raw claims on the link (debug) |
+| `IsActive` | bool — inactive providers show no login button |
+| `IsDeleted` | bool — soft delete |
 
-Das **Client-Secret** liegt nicht im Document, sondern in einem
-separaten `IdpSecretStore` (Marten Document, getrennte Tabelle). So
-landet das Secret nicht in Event-Streams oder Audit-Logs.
+The **client secret** is not stored in the document but in a separate
+`IdpSecretStore` (Marten document, separate table). This keeps the
+secret out of event streams and audit logs.
 
-## Dynamische Scheme-Registration
+## Dynamic scheme registration
 
-ASP.NET Core's `AuthenticationOptions` ist normalerweise statisch — alle
-Schemes müssen beim Boot bekannt sein. Wir wollen aber Realm-eigene
-IdpConfigs zur Runtime hinzufügen können.
+ASP.NET Core's `AuthenticationOptions` is normally static — all schemes
+must be known at boot. We want to add realm-owned IdpConfigs at
+runtime.
 
-Lösung:
+Solution:
 
-1. Beim Boot wird ein **Placeholder-Scheme** registriert
-   (`DynamicOidcSchemeManager.SchemeNamePrefix + "placeholder"`), der
-   den `OpenIdConnectHandler`-Typ und die Options-Plumbing einhängt.
-   Das Placeholder-Scheme empfängt nie echten Traffic.
+1. At boot, a **placeholder scheme** is registered
+   (`DynamicOidcSchemeManager.SchemeNamePrefix + "placeholder"`) that
+   wires up the `OpenIdConnectHandler` type and the options plumbing.
+   The placeholder scheme never receives real traffic.
 
-2. `OidcSchemeBootstrap` (HostedService) lädt beim Start alle
-   `IdpConfig`-Dokumente jedes aktiven Realms und ruft
-   `DynamicOidcSchemeManager.Register(idpConfig)` für jeden auf.
+2. `OidcSchemeBootstrap` (HostedService) loads all `IdpConfig`
+   documents of every active realm at startup and calls
+   `DynamicOidcSchemeManager.Register(idpConfig)` for each.
 
-3. `IdpConfigEventHandlers` (Wolverine-Handler) reagieren auf
-   Create/Update/Delete-Events und rufen
+3. `IdpConfigEventHandlers` (Wolverine handlers) react to
+   create/update/delete events and call
    `DynamicOidcSchemeManager.Register/Reload/Unregister`.
 
-4. Der `DynamicOidcSchemeManager` registriert pro `IdpConfig` einen
-   eigenen OIDC-Scheme `oidc-{guid}` mit den Optionen aus dem Document.
+4. The `DynamicOidcSchemeManager` registers a dedicated OIDC scheme
+   `oidc-{guid}` per `IdpConfig` with the options from the document.
 
 ## UserUpdateScript
 
-Jeder IdP liefert andere Claim-Strukturen. Wir mappen sie via
-JavaScript-Snippet, ausgeführt in `Jint`.
+Every IdP delivers different claim structures. We map them via a
+JavaScript snippet, executed in `Jint`.
 
-Das Script bekommt zwei Argumente:
+The script gets two arguments:
 
 ```javascript
-// claims: Dictionary<string, string[]> — alles was im OIDC-Token kam
-// user: { firstname, lastname, email, acronym, accountName } — der aktuelle User-Snapshot
+// claims: Dictionary<string, string[]> — everything that came in the OIDC token
+// user: { firstname, lastname, email, acronym, accountName } — the current user snapshot
 
 return {
   firstname: claims['given_name']?.[0] ?? user.firstname,
@@ -101,81 +102,79 @@ return {
 };
 ```
 
-Der zurückgegebene Patch wird auf den User angewendet (nur die Felder
-die zurückkommen — `acronym` skippen ist OK). Felder die nicht gesetzt
-werden, bleiben unverändert.
+The returned patch is applied to the user (only the fields that come
+back — skipping `acronym` is fine). Fields that aren't set remain
+unchanged.
 
-Das Test-Endpoint (`/api/admin/idp-config/{id}/test-script`) lässt
-Admins das Script vor dem Deploy mit synthetischen Claims durchspielen.
+The test endpoint (`/api/admin/idp-config/{id}/test-script`) lets
+admins dry-run the script with synthetic claims before deployment.
 
-::: warning Script-Fehler blockieren Login NICHT
-Wenn das Script wirft, wird die Exception in `LastScriptError` auf dem
-`ExternalIdentityLink` gespeichert, aber der Login geht durch — die
-existierenden User-Felder bleiben einfach unverändert. Admin sieht den
-Fehler im IdP-Config-Detail. Das verhindert dass ein Bug im Script alle
-SSO-User aussperrt.
+::: warning Script errors do NOT block login
+If the script throws, the exception is stored in `LastScriptError` on
+the `ExternalIdentityLink`, but the login goes through — the existing
+user fields simply remain unchanged. The admin sees the error in the
+IdP config detail. This prevents a buggy script from locking out every
+SSO user.
 :::
 
 ## ExternalIdentityLink
 
-Marten-Document das `(Issuer, Subject) → UserId` mapt. Der einzige
-stabile Anker für SSO. Felder:
+Marten document that maps `(Issuer, Subject) → UserId`. The only stable
+anchor for SSO. Fields:
 
-| Feld | Bedeutung |
+| Field | Meaning |
 |---|---|
 | `Id` | hash(Issuer + Subject) |
-| `Issuer` | Aus `iss`-Claim |
-| `Subject` | Aus `sub`-Claim |
-| `UserId` | Verlinkter Cocoar.Auth-User |
-| `IdpConfigId` | Welche `IdpConfig` hat den Link erzeugt |
-| `LinkedAt` | Erste Verknüpfung |
-| `LastLoginAt` | Letzter Login über diesen Link |
-| `LastScriptOutput` | Patch den der letzte Script-Run ausgegeben hat |
-| `LastScriptError` | Exception-Message des letzten Script-Runs |
-| `LastRawClaims` | Raw-Claim-Dict des letzten Logins (nur wenn `StoreRawClaims` true) |
+| `Issuer` | From `iss` claim |
+| `Subject` | From `sub` claim |
+| `UserId` | Linked Cocoar.Auth user |
+| `IdpConfigId` | Which `IdpConfig` created the link |
+| `LinkedAt` | First link |
+| `LastLoginAt` | Most recent login through this link |
+| `LastScriptOutput` | Patch the last script run produced |
+| `LastScriptError` | Exception message of the last script run |
+| `LastRawClaims` | Raw claim dict of the last login (only when `StoreRawClaims` is true) |
 
-`LastScriptOutput`, `LastScriptError`, `LastRawClaims` sind
-**Debug-Artefakte** — werden bei jedem Login überschrieben, nicht
-historisiert.
+`LastScriptOutput`, `LastScriptError`, and `LastRawClaims` are **debug
+artefacts** — overwritten on every login, not historised.
 
-## Email-Konflikt-Handling
+## Email conflict handling
 
-Wenn ein OIDC-Login eine E-Mail mitbringt, die schon einem anderen User
-gehört (oder der gleichen UserId aber einer anderen Identity), wirft
-der Processor `Idp.EmailConflict` und der Login schlägt fehl. Auf keinen
-Fall implizit Accounts mergen — das ist ein Account-Takeover-Vector.
-Admin muss manuell die Verknüpfung lösen (Link am alten User entfernen
-oder den neuen IdP als zusätzlichen Login anhängen).
+If an OIDC login brings an email that already belongs to another user
+(or to the same UserId but a different identity), the processor throws
+`Idp.EmailConflict` and the login fails. Never merge accounts
+implicitly — that is an account-takeover vector. The admin must
+manually resolve the link (remove the link from the old user or attach
+the new IdP as an additional login).
 
-## JIT-User-Erstellung
+## JIT user creation
 
-Wenn ein OIDC-Login keine bestehende ExternalIdentityLink findet:
+If an OIDC login finds no existing ExternalIdentityLink:
 
-1. Aus den Claims wird ein `UserName` generiert (E-Mail oder
+1. A `UserName` is generated from the claims (email or
    `preferred_username`)
-2. Neuer User wird angelegt, ohne Passwort, ohne 2FA-Pflicht
-   (`TwoFactorExempt = false`, sondert sich ggf. später ein 2FA aus)
-3. `UserUpdateScript` wird ausgeführt um die Initial-Felder zu setzen
-4. `ExternalIdentityLink` wird angelegt
-5. Login-Cookie wird gesetzt
+2. A new user is created without password and without 2FA requirement
+   (`TwoFactorExempt = false`; 2FA may be configured later)
+3. `UserUpdateScript` runs to set the initial fields
+4. An `ExternalIdentityLink` is created
+5. The login cookie is set
 
-Der neue User landet in keiner Gruppe → bekommt keine
-Permissions außer den `app:admin`-Bypass nicht hat. Der Admin muss ihn
-manuell in Gruppen aufnehmen, damit er Berechtigung hat. Auto-Membership
-(siehe Authorization-Slice) kann das automatisieren.
+The new user lands in no group → receives no permissions and no
+bypass (no `realm:admin`, no `<app>:admin`). The admin must manually
+add them to groups so they get any authorisation. Auto-membership
+(see Authorization slice) can automate this.
 
-## Account-Linking (Self-Service)
+## Account linking (self-service)
 
-Eingeloggte User können einen weiteren OIDC-Provider mit ihrem Account
-verknüpfen:
+Logged-in users can link an additional OIDC provider to their account:
 
 ```http
 POST /api/account/external-link/{idpConfigId}/start?returnUrl=/profile
 ```
 
-Browser geht durch den OIDC-Flow, kommt zurück, der Processor erkennt
-den eingeloggten User und legt einen `ExternalIdentityLink` an statt
-einen neuen User zu erzeugen.
+The browser runs through the OIDC flow, comes back, the processor
+recognises the logged-in user and creates an `ExternalIdentityLink`
+instead of creating a new user.
 
 Unlink:
 

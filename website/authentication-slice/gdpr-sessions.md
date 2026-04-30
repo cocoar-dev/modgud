@@ -1,72 +1,72 @@
 # GDPR & Sessions
 
-## Session-Tracking mit UAParser
+## Session tracking with UAParser
 
-Jeder Login erzeugt ein `UserSession`-Marten-Document im Tenant-Store
-(NICHT event-sourced — Sessions sind ephemerer Zustand).
+Every login creates a `UserSession` Marten document in the tenant store
+(NOT event-sourced — sessions are ephemeral state).
 
-| Feld | Quelle |
+| Field | Source |
 |---|---|
-| `UserId` | Auth-System |
+| `UserId` | Auth system |
 | `SessionId` | Random GUID |
-| `IpAddress` | `HttpContext.Connection.RemoteIpAddress` (durch `ForwardedHeaders` proxy-aware) |
-| `Browser`, `BrowserVersion` | UAParser aus `User-Agent` |
+| `IpAddress` | `HttpContext.Connection.RemoteIpAddress` (proxy-aware via `ForwardedHeaders`) |
+| `Browser`, `BrowserVersion` | UAParser from `User-Agent` |
 | `OperatingSystem`, `OsVersion` | UAParser |
 | `DeviceType` | UAParser → Desktop / Mobile / Tablet |
-| `CreatedAt`, `LastActiveAt`, `ExpiresAt` | UTC-Timestamps |
+| `CreatedAt`, `LastActiveAt`, `ExpiresAt` | UTC timestamps |
 
-`SessionTracker` (HTTP-Middleware-ähnlich) updated `LastActiveAt` bei
-jedem authentifizierten Request — throttled (z.B. nur alle 60 Sekunden
-pro Session) damit der Schreibverkehr nicht eskaliert.
+`SessionTracker` (HTTP-middleware-like) updates `LastActiveAt` on every
+authenticated request — throttled (e.g. only every 60 seconds per
+session) so the write traffic doesn't escalate.
 
-`DeviceInfoService` ist ein reiner UAParser-Wrapper, Singleton.
-`SessionService` hält eine `IDocumentSession`, scoped.
+`DeviceInfoService` is a pure UAParser wrapper, singleton.
+`SessionService` holds an `IDocumentSession`, scoped.
 
-## Session-Self-Service
+## Session self-service
 
 ```http
 GET    /api/account/sessions
 DELETE /api/account/sessions/{id}
-DELETE /api/account/sessions          # Logout everywhere (außer current)
+DELETE /api/account/sessions          # Logout everywhere (except current)
 ```
 
-Das Frontend zeigt jede Session mit Browser, OS, IP, "active now" oder
-"x minutes ago". User kann einzelne revoken oder "alle abmelden außer
-mir hier".
+The frontend shows each session with browser, OS, IP, "active now" or
+"x minutes ago". The user can revoke individual sessions or "log out
+everywhere except here".
 
-Admin-Variante:
+Admin variant:
 
 ```http
 GET    /api/admin/users/{id}/sessions
 DELETE /api/admin/users/{id}/sessions  # Force logout
 ```
 
-## GDPR-Self-Service
+## GDPR self-service
 
-Der User kann seine Daten exportieren und sein Konto löschen — beides
-ohne Admin-Touch.
+The user can export their data and delete their account — both without
+admin involvement.
 
-### Daten-Export (Article 20)
+### Data export (Article 20)
 
 ```http
 GET /api/account/gdpr/export
 ```
 
-Liefert ein ZIP mit:
+Returns a ZIP containing:
 
-- `user.json` — alle User-Felder
-- `events.json` — alle User-Domain-Events aus dem Stream (gefiltert auf
-  diesen User)
-- `sessions.json` — Session-Historie
-- `external-logins.json` — verknüpfte OIDC-Identitäten
+- `user.json` — all user fields
+- `events.json` — all user domain events from the stream (filtered to
+  this user)
+- `sessions.json` — session history
+- `external-logins.json` — linked OIDC identities
 
-Kein Streaming nötig — User-Daten sind klein. Wenn das mal anders wird,
-würde der Endpoint einen Background-Job spawnen und das Ergebnis per
-Mail-Link zustellen.
+No streaming needed — user data is small. If that ever changes, the
+endpoint would spawn a background job and deliver the result via a
+mailed link.
 
-### Account-Löschung
+### Account deletion
 
-3-Schritt-Prozess mit Bedenkzeit:
+Three-step process with a cooling-off period:
 
 ```mermaid
 stateDiagram-v2
@@ -83,12 +83,12 @@ stateDiagram-v2
 POST /api/account/gdpr/delete-request
 ```
 
-→ `UserDeletionState.Status = ConfirmationPending`,
-`ConfirmationToken` (256-bit) wird generiert, Mail mit Link
-`/profile/confirm-deletion?token=...` geht raus. User bleibt
-voll-funktional eingeloggt.
+→ `UserDeletionState.Status = ConfirmationPending`, a
+`ConfirmationToken` (256-bit) is generated, and an email with a link to
+`/profile/confirm-deletion?token=...` goes out. The user stays fully
+functional and logged in.
 
-2. **Confirm** (User klickt Link in der Mail):
+2. **Confirm** (user clicks the link in the email):
 
 ```http
 POST /api/account/gdpr/delete-confirm
@@ -97,39 +97,39 @@ POST /api/account/gdpr/delete-confirm
 
 → Backend:
 
-- `ArchiveStream(userId)` — der User-Event-Stream wird archiviert (aus
-  Live-Queries draußen, Audit bleibt)
-- Marten **Data-Masking** läuft über die archivierten Events:
-  PII-Felder (`Email`, `FirstName`, `LastName`, `PhoneNumber`, `IpAddress`
-  in `UserLoggedIn`/`UserLoginFailed`) werden überschrieben
-- `ApplicationUser`-Document wird gelöscht
-- `UserSecurityData` (Hashes, TOTP-Key, Recovery-Codes,
-  Passkey-Credentials) wird gelöscht
-- Alle `UserSession`s werden gelöscht
-- Alle `ExternalIdentityLink`s werden gelöscht
-- User wird ausgeloggt
+- `ArchiveStream(userId)` — the user event stream is archived (out of
+  live queries, audit remains)
+- Marten **data masking** runs over the archived events: PII fields
+  (`Email`, `FirstName`, `LastName`, `PhoneNumber`, `IpAddress` in
+  `UserLoggedIn`/`UserLoginFailed`) are overwritten
+- The `ApplicationUser` document is deleted
+- `UserSecurityData` (hashes, TOTP key, recovery codes, passkey
+  credentials) is deleted
+- All `UserSession`s are deleted
+- All `ExternalIdentityLink`s are deleted
+- The user is logged out
 
-3. **Cancel** (alternativ vor Confirm):
+3. **Cancel** (alternatively, before confirm):
 
 ```http
 POST /api/account/gdpr/delete-cancel
 ```
 
-→ `UserDeletionState.Status = NotRequested`, Token entwertet.
+→ `UserDeletionState.Status = NotRequested`, token invalidated.
 
-### Status-Abfrage
+### Status query
 
 ```http
 GET /api/account/gdpr/delete-status
 ```
 
-Liefert `{ status: "NotRequested" | "ConfirmationPending", requestedAt }`.
-Frontend zeigt das passende UI (Request-Button oder
-"Cancel + erneut Mail anfordern").
+Returns `{ status: "NotRequested" | "ConfirmationPending", requestedAt }`.
+The frontend shows the appropriate UI (request button or "cancel +
+request a new email").
 
-## Marten Data-Masking
+## Marten data masking
 
-Konfiguriert beim Marten-Setup (`UseCocoarAuthAuthentication`):
+Configured during Marten setup (`UseCocoarAuthAuthentication`):
 
 ```csharp
 options.Events.AddMaskingRuleForProtectedInformation<UserCreated>(x =>
@@ -139,22 +139,23 @@ options.Events.AddMaskingRuleForProtectedInformation<UserLoggedIn>(x =>
     new UserLoggedIn(x.UserId, "[DELETED-IP]", x.OccurredAt));
 ```
 
-Masking-Regeln greifen erst beim **Archivieren** des Streams — Live-Events
-werden nicht angefasst. Das ist absichtlich: solange ein User aktiv ist,
-sind seine Events frisch und korrekt; sobald er gelöscht wird, werden
-sie unkenntlich gemacht aber nicht entfernt (Audit-Anforderung).
+Masking rules only apply when the stream is **archived** — live events
+are not touched. This is intentional: while a user is active, their
+events are fresh and correct; once they are deleted, the events are
+made unreadable but not removed (audit requirement).
 
-## Stream-Archivierung
+## Stream archival
 
-`ArchiveStream` markiert einen Stream als archiviert. Marten-Queries
-(`Query<TProjection>()`) zeigen archivierte Events nicht mehr in
-Read-Models — die Person ist aus dem System effektiv weg. Nur
-explizite Compliance-Queries (`OpenSession().Events.QueryAllRawEvents()`)
-sehen sie noch, mit gemaskten PII-Feldern.
+`ArchiveStream` marks a stream as archived. Marten queries
+(`Query<TProjection>()`) no longer surface archived events in
+read-models — the person is effectively gone from the system. Only
+explicit compliance queries
+(`OpenSession().Events.QueryAllRawEvents()`) still see them, with
+masked PII fields.
 
-## Admin-Variante
+## Admin variant
 
-Admin kann (mit `user:admin`-Permission) den GDPR-Flow anstoßen:
+An admin (with `cocoar-auth:user:admin` permission) can trigger the GDPR flow:
 
 ```http
 POST   /api/admin/users/{id}/gdpr/delete-request
@@ -162,13 +163,13 @@ POST   /api/admin/users/{id}/gdpr/delete-confirm
 DELETE /api/admin/users/{id}/gdpr/delete-cancel
 ```
 
-Konfirmations-Mail geht an die User-Email, der User muss klicken — auch
-wenn der Admin das angestoßen hat. Das verhindert dass ein
-kompromittierter Admin-Account User reihenweise löscht.
+The confirmation email goes to the user's email; the user has to click
+— even if the admin initiated it. This prevents a compromised admin
+account from deleting users en masse.
 
-::: tip Soft-Delete vs. GDPR-Erase
-Soft-Delete (`IsDeleted = true` ohne PII-Masking) ist für
-"User ist nicht mehr aktiv, aber wir behalten alles" gedacht.
-GDPR-Confirm-Delete ist endgültig: Stream archiviert + PII gemasked.
-Letzteres erst auf User-Wunsch oder Compliance-Trigger ausführen.
+::: tip Soft-delete vs. GDPR erase
+Soft-delete (`IsDeleted = true` without PII masking) is for "the user
+is no longer active, but we keep everything". GDPR confirm-delete is
+final: stream archived + PII masked. Only run the latter on user
+request or compliance trigger.
 :::

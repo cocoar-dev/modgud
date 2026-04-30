@@ -1,181 +1,121 @@
-# Autorisierung & ABAC
+# Authorization (RBAC)
 
-cocoar.auth nutzt eine kombinierte **RBAC + ABAC**-Architektur:
+Cocoar.Auth is a pure **RBAC + grouping** Identity & Access Management system. It answers `(user, app, permission)` — nothing more.
 
-- **RBAC** (Role-Based Access Control) entscheidet **was** ein User
-  darf (`user:write`, `oauth-client:read`)
-- **ABAC** (Attribute-Based Access Control) entscheidet **welche
-  Zeilen** er sehen oder bearbeiten darf — über JavaScript-basierte
-  Access-Scripts pro Gruppe × Resource
-
-Beide Achsen sind unabhängig und implementiert im
-**Authorization-Slice** (`Cocoar.Auth.Authorization`).
+Row-level access policies (ABAC) deliberately stay **outside** the IAM and live in the consuming app where the row schema is. See [ABAC and the IAM boundary](./abac) for the rationale and the three deployment profiles.
 
 ## RBAC: User → Group → Role → Permission
 
-Permissions fließen **ausschließlich** über Gruppen:
+Permissions flow exclusively through groups:
 
 ```
-User ──► Group ──► PermissionRole ──► "<resource>:<action>"
+User ──► Group ──► PermissionRole ──► "<app>:<resource>:<action>"
 ```
 
-Keine direkten User → Role-Zuweisungen, keine User → Permission-Overrides.
-Pfad: welche Gruppen ist der User in (transitiv, inkl. nested) → welche
-Rollen haben diese Gruppen → welche Permissions resultieren.
+There are no direct `User → Role` assignments and no `User → Permission` overrides. The resolution path:
 
-### Permission-Format
+1. Find every group the user is in (transitively, including nested groups).
+2. Filter to groups whose `BoundTo` includes the requested app (or the `*` wildcard).
+3. Collect the role ids on those groups.
+4. Filter to roles whose `AppSlug` matches the requested app.
+5. Expand each role's actions to fully-qualified `app:resource:action` permissions.
+6. Apply the bypass tiers below.
 
-`<resource>:<action>` — z.B.:
+## Permission format
 
-| Permission | Bedeutung |
-|---|---|
-| `user:read` | User lesen |
-| `user:write` | User erstellen/ändern |
-| `user:delete` | User löschen |
-| `oauth-client:write` | OAuth-Clients pflegen |
-| `realm:read` | Realm-Liste sehen (nur in Tenant-Manager-Realms) |
-| `<resource>:admin` | **Per-Resource-Bypass** für alle Actions dieser Resource |
-| `app:admin` | **Globaler Bypass** für alle Resources |
+Three segments, slash-free:
 
-Alle Resource-Strings in cocoar.auth siehe
-[Permissions & Gating](/authorization-slice/permissions).
+```
+<app>:<resource>:<action>
+```
 
-### Bypass-Hierarchie
+| Example | Meaning |
+| --- | --- |
+| `cocoar-auth:user:read` | Read users in the IAM admin app |
+| `cocoar-auth:oauth-client:write` | Manage OAuth clients in the IAM admin app |
+| `timetodo:todo:write` | Create/update todos in the TimeToDo app |
+| `realm:admin` | Realm-wide bypass — everything in every app |
+| `<app>:admin` | App-wide bypass for that app |
+| `<app>:<resource>:admin` | Resource-wide bypass for that app+resource |
 
-`hasPermission(needed)` returns true wenn:
+`hasPermission(needed)` returns true iff:
 
-1. der User direkt diese Permission hat, oder
-2. der User `<resource>:admin` für die zugehörige Resource hat, oder
-3. der User `app:admin` hat
+1. the user holds `needed` directly, **or**
+2. the user holds `<app>:<resource>:admin` for the same app+resource, **or**
+3. the user holds `<app>:admin` for the same app, **or**
+4. the user holds `realm:admin`.
 
-Der globale `app:admin`-Bypass ist absichtlich schmal — die
-"System Admin"-Default-Rolle hat ihn, sonst niemand.
+The `realm:admin` bypass is intentionally narrow — only the System Admin default role carries it.
 
-### Default-Rollen pro Realm
+## Apps and BoundTo
 
-| Rolle | Permissions |
-|---|---|
-| **System Admin** | `app:admin` |
-| **User Manager** | `user:read/write`, `permission-role:read`, `authorization-group:read/write` |
-| **Viewer** | Read-only auf User, Roles, Groups, OAuth-Clients, OAuth-Scopes |
+The IAM hosts an arbitrary number of consuming apps in one realm; each is identified by a slug (`cocoar-auth`, `timetodo`, `knowledge`, …). Permissions and roles are app-scoped.
 
-Beim First-Time-Setup wird der erste User der "System Admin"-Gruppe
-zugewiesen → bekommt `app:admin` → sieht alles.
+A group's `BoundTo` field is the **activation switch**: it lists the app slugs in which the group's roles take effect.
 
-## Gruppen
+| BoundTo | Effect |
+| --- | --- |
+| `["*"]` | Wildcard — active in every app. Typical for the realm-admin group. |
+| `["timetodo"]` | Roles only contribute when a `timetodo:*` permission is being resolved. |
+| `["timetodo", "knowledge"]` | Active in both apps; same role assignments contribute in either resolution. |
+| `[]` | Dormant — the group exists for organisational/mailing purposes only and contributes no permissions. |
 
-`Group` ist der Träger von Permissions. Eine Gruppe hat:
+Removing an app from a group's BoundTo is a non-destructive deactivation: role assignments stay; re-adding the app reactivates them immediately.
+
+## Default roles per realm
+
+| Role | Permissions |
+| --- | --- |
+| **System Admin** | `realm:admin` |
+| **User Manager** | `cocoar-auth:user:read/write`, `cocoar-auth:permission-role:read`, `cocoar-auth:authorization-group:read/write` |
+| **Viewer** | Read-only on Users, Roles, Groups, OAuth-Clients, OAuth-Scopes |
+
+The first-time-setup admin lands in the System Admin group with `BoundTo: ["*"]`, so they immediately see every app.
+
+## Groups
+
+`Group` is the carrier of permissions. A group has:
 
 - `Name`, `Description`
-- `MembershipMode`: `Manual` oder `Auto`
-- `MemberIds`: User oder andere Gruppen (nested)
-- Referenzen auf `PermissionRole`s
-- Optional: Membership-Script (bei Auto-Modus)
-- Optional: Access-Scripts pro Resource (für ABAC)
+- `MembershipMode` — `Manual` or `Auto`
+- `MemberIds` — users or other groups (nested)
+- `RoleIds` — references to `PermissionRole`s
+- `BoundTo` — app slugs in which the group is active (see above)
+- Optional: `MembershipScript` (when membership is Auto)
+- Optional: `Email` + `EmailMode` for distribution-list semantics
 
 ### Manual vs Auto
 
-- **Manual**: Admin pflegt `MemberIds` direkt
-- **Auto**: Membership-Script-Predicate bestimmt die Mitglieder
-  dynamisch. Wird bei jedem User-Mutation-Event neu evaluiert.
+- **Manual** — the admin maintains `MemberIds` directly.
+- **Auto** — a JsEval predicate (`MembershipScript`) decides which principals match. Re-evaluated on every relevant principal mutation; dependency-tracking skips re-runs when the changed property doesn't appear in the script.
 
-Siehe [Auto-Membership](/authorization-slice/auto-membership).
+The membership script only sees IAM-owned fields (`DisplayName`, `Email`, `IsActive`, `ExternalIdentities`, `AccountName`). It must not — and cannot — read app-specific schema; that would re-couple the IAM to every consumer's schema. See [ABAC and the IAM boundary](./abac).
 
-### Nested Groups
+### Nested groups
 
-Eine Gruppe kann andere Gruppen als Member haben:
+A group can contain other groups. The permission-resolution BFS treats them polymorphically (`IPrincipalWithMembers`), with cycle-detection via a visited set.
 
 ```
 "All Staff" (Manual)
-  ├── "Engineering" (Auto: OU=engineering)
-  ├── "Sales" (Auto: OU=sales)
-  └── "Support" (Auto: OU=support)
+  ├── "Engineering" (Auto: matches engineers)
+  ├── "Sales"       (Auto: matches sales)
+  └── "Support"     (Auto: matches support)
 ```
 
-Permission-BFS expandiert das ohne Sonderfall — `IPrincipalWithMembers`
-ist polymorph. Cycle-Detection via Visited-Set.
+## What this architecture is *not*
 
-## ABAC: Access Scripts
+- **No deny rules.** Only positive grants; effective access is the union over all the user's groups.
+- **No implicit grants.** Group membership grants nothing on its own; roles must be explicitly assigned.
+- **No direct user-to-role.** Everything routes through groups.
+- **No row-level rules.** ABAC stays in the app; the IAM keeps `(user, app, permission)` as its sole answer surface.
 
-Roles sagen **was** ein User darf (`user:read`). Access Scripts sagen
-**welche Zeilen** er lesen darf. Pro Gruppe × Resource definiert der
-Admin ein TypeScript-Arrow-Function:
+## Sidebar mirror
 
-```typescript
-// Auf der Gruppe "External Auditors" für Resource "user":
-(u) => u.OrganizationalUnit === user.organizationalUnit && u.IsActive
-```
+The Vue admin shell mirrors the same logic 1:1: each sidebar item declares the permission it requires, the backend evaluates the same string. The single source of truth is the permission constant — frontend gating cannot drift from backend gating because both consult the identical literal.
 
-Wird zu (schematisch):
-
-```sql
-WHERE data->>'OrganizationalUnit' = '<user-ou>'
-  AND data->>'IsActive' = 'true'
-```
-
-**Keine Roundtrips, kein In-Memory-Filtering.** Cocoar.JsEval.Linq
-übersetzt JS → C# `Expression<Func<TView, bool>>` → SQL.
-
-### Script-OR-Kombination
-
-Ein User ist meist in mehreren Gruppen — jede kann ein Script auf
-dieselbe Resource haben. Die Scripts werden mit **OR** verbunden:
-
-```sql
-WHERE (data->>'OrganizationalUnit' = 'sales')   -- Gruppe "Sales"
-   OR (data->>'OrganizationalUnit' = 'support') -- Gruppe "Support"
-   OR (data->>'OwnerUserId' = '<user-id>')      -- Gruppe "Owners"
-```
-
-Wenn keine der Gruppen ein Script auf die Resource hat → "alle Zeilen
-sichtbar" (= klassisches RBAC).
-
-Mehr siehe [Access Scripts](/authorization-slice/access-scripts).
-
-## Auflösung im Detail
-
-```
-Request mit Cookie kommt rein
-  ↓
-PermissionEndpointFilter
-  ↓
-ClaimTypes.NameIdentifier → UserId
-  ↓
-IPermissionService.GetEffectivePermissionsAsync(userId)
-  ├── BFS durch alle Group-Membership (transitiv, mit Visited-Set)
-  ├── für jede Gruppe: load PermissionRole-Refs
-  ├── für jede Rolle: expand Permissions
-  └── Set<string> aller "<resource>:<action>"
-  ↓
-Bypass-Checks:
-  hat "app:admin"? → ✓
-  hat "<resource>:admin"? → ✓
-  hat exakt needed? → ✓
-  sonst → 403
-```
-
-## Sidebar-Mirror
-
-Das Frontend spiegelt diese Logik 1:1: in `views/admin/AdminView.vue`
-deklarieren Sidebar-Items welche Permissions sie sichtbar machen
-sollen. Backend und Frontend verwenden exakt dieselben Strings —
-"Single Source of Truth" sind die Permission-Konstanten.
-
-```typescript
+```ts
 { section: 'authorization', label: 'nav.users', icon: 'users',
-  path: '/admin/users', requirePermissions: ['user:read'] }
+  path: '/admin/users', requirePermissions: ['cocoar-auth:user:read'] }
 ```
 
-Ein User mit nur `user:read` sieht nur "Users" in der Sidebar — keine
-OAuth, keine System.
-
-## Was diese Architektur NICHT ist
-
-- **Kein Deny-Grant** — nur positive Grants. Effective Access ist immer
-  Union. Simplicity over Flexibility.
-- **Keine implicit Permissions** — Group-Membership grants per se gar
-  nichts; Roles müssen explizit assigned werden.
-- **Keine User → Role direkt** — alles läuft über Gruppen.
-- **Keine zeitbasierten Conditions** im Script-Kern (z.B.
-  "if time > 18:00") — Scripts sind Set-Filter, keine
-  Decision-Engines.
+A user with only `cocoar-auth:user:read` sees just "Users" in the sidebar — no OAuth, no System.

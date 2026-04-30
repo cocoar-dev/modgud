@@ -1,199 +1,208 @@
-# Admin-Endpoints
+# Admin endpoints
 
-Endpoints unter `/api/admin/...` (oder `/api/...` für Resource-Reads
-ohne `admin/`-Prefix). Realm wird über das Host-Header aufgelöst.
+Endpoints under `/api/admin/...` (or `/api/...` for resource reads
+without the `admin/` prefix). The realm is resolved via the Host
+header.
 
-Jeder Endpoint ist gegated über
-`.RequiresPermission("<resource>:<action>")`. Strings sind exakt
-dieselben wie im Frontend-Sidebar.
+Every endpoint is gated through
+`.RequiresPermission("<resource>:<action>")`. The strings are exactly
+the same as in the frontend sidebar.
 
 ## Users
 
-Endpoint-Definitionen in
+Endpoint definitions in
 `Cocoar.Auth.Api/Features/Users/UsersEndpoints.cs`.
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/users` | `user:read` |
-| `GET` | `/api/users/{id}` | `user:read` |
-| `POST` | `/api/users` | `user:write` |
-| `PATCH` | `/api/users/{id}` | `user:write` |
-| `DELETE` | `/api/users/{id}` | `user:delete` |
-| `POST` | `/api/users/{id}/unlock` | `user:write` |
+| `GET` | `/api/users` | `cocoar-auth:user:read` |
+| `GET` | `/api/users/{id}` | `cocoar-auth:user:read` |
+| `POST` | `/api/users` | `cocoar-auth:user:write` |
+| `PATCH` | `/api/users/{id}` | `cocoar-auth:user:write` |
+| `DELETE` | `/api/users/{id}` | `cocoar-auth:user:delete` |
+| `POST` | `/api/users/{id}/unlock` | `cocoar-auth:user:write` |
 
 ### Admin GDPR
 
 | Method | Path | Permission |
 |---|---|---|
-| `POST` | `/api/admin/users/{id}/gdpr/delete-request` | `user:delete` |
-| `POST` | `/api/admin/users/{id}/gdpr/delete-confirm` | `user:delete` |
-| `DELETE` | `/api/admin/users/{id}/gdpr/delete-cancel` | `user:delete` |
+| `POST` | `/api/admin/users/{id}/gdpr/delete-request` | `cocoar-auth:user:delete` |
+| `POST` | `/api/admin/users/{id}/gdpr/delete-confirm` | `cocoar-auth:user:delete` |
+| `DELETE` | `/api/admin/users/{id}/gdpr/delete-cancel` | `cocoar-auth:user:delete` |
 
-### Admin Sessions
-
-| Method | Path | Permission |
-|---|---|---|
-| `GET` | `/api/admin/users/{id}/sessions` | `user:read` |
-| `DELETE` | `/api/admin/users/{id}/sessions` | `user:write` (Force Logout) |
-
-### Admin Magic-Link
+### Admin sessions
 
 | Method | Path | Permission |
 |---|---|---|
-| `POST` | `/api/admin/users/{id}/magic-link` | `user:write` |
+| `GET` | `/api/admin/users/{id}/sessions` | `cocoar-auth:user:read` |
+| `DELETE` | `/api/admin/users/{id}/sessions` | `cocoar-auth:user:write` (force logout) |
 
-### Admin 2FA-Grace-Period
-
-| Method | Path | Permission |
-|---|---|---|
-| `GET` | `/api/admin/users/{id}/grace` | `user:read` |
-| `PATCH` | `/api/admin/users/{id}/grace` | `user:write` |
-
-### Admin Profile-Change-Requests
+### Admin magic link
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/change-requests` | `user:read` |
-| `POST` | `/api/admin/change-requests/{id}/approve` | `user:write` |
-| `POST` | `/api/admin/change-requests/{id}/reject` | `user:write` |
+| `POST` | `/api/admin/users/{id}/magic-link` | `cocoar-auth:user:write` |
+
+### Admin 2FA grace period
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/admin/users/{id}/grace` | `cocoar-auth:user:read` |
+| `PATCH` | `/api/admin/users/{id}/grace` | `cocoar-auth:user:write` |
+
+### Admin profile change requests
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/admin/change-requests` | `cocoar-auth:user:read` |
+| `POST` | `/api/admin/change-requests/{id}/approve` | `cocoar-auth:user:write` |
+| `POST` | `/api/admin/change-requests/{id}/reject` | `cocoar-auth:user:write` |
 
 ## Roles
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/roles` | `permission-role:read` |
-| `GET` | `/api/roles/{id}` | `permission-role:read` |
-| `POST` | `/api/roles` | `permission-role:write` |
-| `PATCH` | `/api/roles/{id}` | `permission-role:write` |
-| `DELETE` | `/api/roles/{id}` | `permission-role:delete` |
+| `GET` | `/api/roles` | `cocoar-auth:permission-role:read` |
+| `GET` | `/api/roles/{id}` | `cocoar-auth:permission-role:read` |
+| `POST` | `/api/roles` | `cocoar-auth:permission-role:write` |
+| `PATCH` | `/api/roles/{id}` | `cocoar-auth:permission-role:write` |
+| `DELETE` | `/api/roles/{id}` | `cocoar-auth:permission-role:delete` |
 
 ## Groups
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/groups` | `authorization-group:read` |
-| `GET` | `/api/groups/{id}` | `authorization-group:read` |
-| `POST` | `/api/groups` | `authorization-group:write` |
-| `PATCH` | `/api/groups/{id}` | `authorization-group:write` |
-| `DELETE` | `/api/groups/{id}` | `authorization-group:delete` |
+| `GET` | `/api/groups` | `cocoar-auth:authorization-group:read` |
+| `GET` | `/api/groups/{id}` | `cocoar-auth:authorization-group:read` |
+| `POST` | `/api/groups` | `cocoar-auth:authorization-group:write` |
+| `PATCH` | `/api/groups/{id}` | `cocoar-auth:authorization-group:write` |
+| `DELETE` | `/api/groups/{id}` | `cocoar-auth:authorization-group:delete` |
 
-## Principals (Polymorphic Read-API)
+## Principals (polymorphic read API)
 
-Liefert User + Groups + ServiceAccounts gemixt — für Suche und
-Member-Picker im Frontend.
-
-| Method | Path | Permission |
-|---|---|---|
-| `GET` | `/api/principals?search=...` | `user:read` (für Persons) und/oder `authorization-group:read` |
-
-## OAuth Clients
+Returns users, groups, and service accounts mixed — used by search and
+the member picker in the frontend.
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/oauth/clients` | `oauth-client:read` |
-| `GET` | `/api/admin/oauth/clients/{id}` | `oauth-client:read` |
-| `POST` | `/api/admin/oauth/clients` | `oauth-client:write` |
-| `PATCH` | `/api/admin/oauth/clients/{id}` | `oauth-client:write` |
-| `DELETE` | `/api/admin/oauth/clients/{id}` | `oauth-client:delete` |
-| `POST` | `/api/admin/oauth/clients/{id}/rotate-secret` | `oauth-client:write` |
+| `GET` | `/api/principals?search=...` | `cocoar-auth:user:read` (for persons) and/or `cocoar-auth:authorization-group:read` |
 
-## OAuth Scopes
+## OAuth clients
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/oauth/scopes` | `oauth-scope:read` |
-| `GET` | `/api/admin/oauth/scopes/{id}` | `oauth-scope:read` |
-| `POST` | `/api/admin/oauth/scopes` | `oauth-scope:write` |
-| `PATCH` | `/api/admin/oauth/scopes/{id}` | `oauth-scope:write` |
-| `DELETE` | `/api/admin/oauth/scopes/{id}` | `oauth-scope:delete` |
+| `GET` | `/api/admin/oauth/clients` | `cocoar-auth:oauth-client:read` |
+| `GET` | `/api/admin/oauth/clients/{id}` | `cocoar-auth:oauth-client:read` |
+| `POST` | `/api/admin/oauth/clients` | `cocoar-auth:oauth-client:write` |
+| `PATCH` | `/api/admin/oauth/clients/{id}` | `cocoar-auth:oauth-client:write` |
+| `DELETE` | `/api/admin/oauth/clients/{id}` | `cocoar-auth:oauth-client:delete` |
+| `POST` | `/api/admin/oauth/clients/{id}/rotate-secret` | `cocoar-auth:oauth-client:write` |
+
+## OAuth scopes
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/admin/oauth/scopes` | `cocoar-auth:oauth-scope:read` |
+| `GET` | `/api/admin/oauth/scopes/{id}` | `cocoar-auth:oauth-scope:read` |
+| `POST` | `/api/admin/oauth/scopes` | `cocoar-auth:oauth-scope:write` |
+| `PATCH` | `/api/admin/oauth/scopes/{id}` | `cocoar-auth:oauth-scope:write` |
+| `DELETE` | `/api/admin/oauth/scopes/{id}` | `cocoar-auth:oauth-scope:delete` |
 
 ## OAuth APIs
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/oauth/apis` | `oauth-api:read` |
-| `GET` | `/api/admin/oauth/apis/{id}` | `oauth-api:read` |
-| `POST` | `/api/admin/oauth/apis` | `oauth-api:write` |
-| `PATCH` | `/api/admin/oauth/apis/{id}` | `oauth-api:write` |
-| `DELETE` | `/api/admin/oauth/apis/{id}` | `oauth-api:delete` |
+| `GET` | `/api/admin/oauth/apis` | `cocoar-auth:oauth-api:read` |
+| `GET` | `/api/admin/oauth/apis/{id}` | `cocoar-auth:oauth-api:read` |
+| `POST` | `/api/admin/oauth/apis` | `cocoar-auth:oauth-api:write` |
+| `PATCH` | `/api/admin/oauth/apis/{id}` | `cocoar-auth:oauth-api:write` |
+| `DELETE` | `/api/admin/oauth/apis/{id}` | `cocoar-auth:oauth-api:delete` |
 
-## Login-Provider (Internal + External)
-
-| Method | Path | Permission |
-|---|---|---|
-| `GET` | `/api/admin/login-providers` | `login-provider:read` |
-| `GET` | `/api/admin/login-providers/{id}` | `login-provider:read` |
-| `POST` | `/api/admin/login-providers` | `login-provider:write` |
-| `PATCH` | `/api/admin/login-providers/{id}` | `login-provider:write` |
-| `DELETE` | `/api/admin/login-providers/{id}` | `login-provider:delete` |
-
-## IdP-Config (OIDC Identity Providers)
+## Login providers (internal + external)
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/idp-config` | `idp-config:read` |
-| `GET` | `/api/admin/idp-config/{id}` | `idp-config:read` |
-| `POST` | `/api/admin/idp-config` | `idp-config:write` |
-| `PATCH` | `/api/admin/idp-config/{id}` | `idp-config:write` |
-| `DELETE` | `/api/admin/idp-config/{id}` | `idp-config:delete` |
-| `POST` | `/api/admin/idp-config/{id}/rotate-secret` | `idp-config:write` |
-| `POST` | `/api/admin/idp-config/{id}/test-script` | `idp-config:read` |
+| `GET` | `/api/admin/login-providers` | `cocoar-auth:login-provider:read` |
+| `GET` | `/api/admin/login-providers/{id}` | `cocoar-auth:login-provider:read` |
+| `POST` | `/api/admin/login-providers` | `cocoar-auth:login-provider:write` |
+| `PATCH` | `/api/admin/login-providers/{id}` | `cocoar-auth:login-provider:write` |
+| `DELETE` | `/api/admin/login-providers/{id}` | `cocoar-auth:login-provider:delete` |
+
+## IdP config (OIDC identity providers)
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/admin/idp-config` | `cocoar-auth:idp-config:read` |
+| `GET` | `/api/admin/idp-config/{id}` | `cocoar-auth:idp-config:read` |
+| `POST` | `/api/admin/idp-config` | `cocoar-auth:idp-config:write` |
+| `PATCH` | `/api/admin/idp-config/{id}` | `cocoar-auth:idp-config:write` |
+| `DELETE` | `/api/admin/idp-config/{id}` | `cocoar-auth:idp-config:delete` |
+| `POST` | `/api/admin/idp-config/{id}/rotate-secret` | `cocoar-auth:idp-config:write` |
+| `POST` | `/api/admin/idp-config/{id}/test-script` | `cocoar-auth:idp-config:read` |
 
 ## Realms
 
-Nur in Realms mit `CanManageTenants = true` (i.d.R. nur System-Realm).
-Sonst 404. Siehe [Realm-API](/reference/realm-api).
+Only available in realms with `CanManageTenants = true` (typically only
+the system realm). Otherwise 404. See [Realm API](/reference/realm-api).
 
-## Auth-Log
-
-| Method | Path | Permission |
-|---|---|---|
-| `GET` | `/api/admin/auth-log?from=...&to=...` | `auth-log:read` |
-
-## App-Settings
+## Auth log
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/app-settings` | `app:admin` |
-| `PATCH` | `/api/admin/app-settings` | `app:admin` |
+| `GET` | `/api/admin/auth-log?from=...&to=...` | `cocoar-auth:auth-log:read` |
 
-## Projection-Endpoints (Maintenance)
+## App settings
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/projections` | `app:admin` |
-| `POST` | `/api/admin/projections/{name}/rebuild` | `app:admin` |
+| `GET` | `/api/admin/app-settings` | `realm:admin` |
+| `PATCH` | `/api/admin/app-settings` | `realm:admin` |
 
-## Permission-Checks im Detail
+## Projection endpoints (maintenance)
 
-`PermissionEndpointFilter` läuft nach Authentication:
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/admin/projections` | `realm:admin` |
+| `POST` | `/api/admin/projections/{name}/rebuild` | `realm:admin` |
+
+## Permission checks in detail
+
+`PermissionEndpointFilter` runs after authentication. Permission
+strings are fully qualified as `<app>:<resource>:<action>`; the
+filter splits the requested permission and resolves it against the
+user's effective permissions for that app:
 
 ```
 1. ClaimTypes.NameIdentifier → UserId
-2. IPermissionService.GetEffectivePermissionsAsync(userId)
-3. Bypass-Check: app:admin? → ✓
-4. Bypass-Check: <resource>:admin? → ✓
-5. Exact-Check: needed permission? → ✓
-6. sonst → 403
+2. needed permission → split into (appSlug, resource, action)
+3. IPermissionService.GetUserPermissionsAsync(UserId, appSlug)
+   ├── BFS over the user's groups (transitive, with visited set)
+   ├── filter to groups whose BoundTo contains appSlug or "*"
+   └── filter their roles to AppSlug == appSlug
+4. Bypass check: realm:admin? → ✓
+5. Exact check: needed permission? → ✓
+6. Bypass check: <app>:admin? → ✓
+7. Bypass check: <app>:<resource>:admin? → ✓
+8. otherwise → 403
 ```
 
-Effektive Permissions kommen aus der BFS über alle Group-Memberships
-des Users (transitiv, inkl. Nested), expandiert über die assigned
-PermissionRoles.
+Effective permissions are computed per request from the BFS over all
+the user's group memberships (transitive, including nested),
+expanded through the assigned PermissionRoles.
 
 ## Pagination
 
-List-Endpoints unterstützen:
+List endpoints support:
 
-| Param | Typ | Bedeutung |
+| Param | Type | Meaning |
 |---|---|---|
-| `page` | int | 1-basiert |
-| `pageSize` | int | Items pro Seite |
-| `search` | string | Volltext-Suche |
-| `sortBy` | string | Sort-Field |
-| `sortDescending` | bool | Sort-Richtung |
+| `page` | int | 1-based |
+| `pageSize` | int | Items per page |
+| `search` | string | Full-text search |
+| `sortBy` | string | Sort field |
+| `sortDescending` | bool | Sort direction |
 
-Antwort:
+Response:
 
 ```json
 {
@@ -204,11 +213,10 @@ Antwort:
 }
 ```
 
-## Real-Time-Updates
+## Real-time updates
 
-Nach jeder Mutation feuert das Backend ein
-SignalR-Event über den `UIHub`. Das Frontend
-(`useEntityService`-Composable) hört darauf und refreshed automatisch
-die betroffenen Listen — kein manuelles Polling nötig.
+After every mutation the backend fires a SignalR event over the
+`UIHub`. The frontend (`useEntityService` composable) listens and
+automatically refreshes the affected lists — no manual polling needed.
 
-Hub-Endpoint: `/signalr/ui` (mit Auth-Cookie + WebSocket-Upgrade).
+Hub endpoint: `/signalr/ui` (with auth cookie + WebSocket upgrade).

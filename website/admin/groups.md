@@ -33,8 +33,11 @@ Tabs in the detail dialog:
 | **Members** | Manual user / sub-group assignment (when membership is Static) |
 | **Script** | JsEval membership script (when membership is Auto) |
 | **Roles** | Which roles does the group carry? |
-| **Access** | Per-resource access scripts (ABAC row filters) |
 | **Effective Members** | The fully expanded member list |
+
+::: info No row-level ABAC in IAM
+Cocoar.Auth groups intentionally do **not** carry per-resource access scripts (ABAC row filters). Row-level access lives in the consuming app where the data and its schema are. See [Concepts → ABAC](../concepts/abac).
+:::
 
 ### General
 
@@ -75,7 +78,7 @@ Switch the mode to **Auto** to enable the **Script** tab. There you write a JsEv
 return p.Type === "person" && p.Email && p.Email.endsWith("@cocoar.io");
 ```
 
-The script is recompiled and re-evaluated whenever a principal is created or changed. For the full reference see [Access Scripts (ABAC)](../authorization-slice/access-scripts).
+The script is recompiled and re-evaluated whenever a principal is created or changed. The membership script only sees the fields the IAM itself owns (display name, email, IsActive, external identities, …) — never any app-specific data, since that would couple the IAM to every app's schema. See [Concepts → ABAC](../concepts/abac) for why row-level ABAC stays out of the IAM.
 
 ## Assigning roles
 

@@ -1,32 +1,32 @@
 # OAuth 2.0 & OpenID Connect
 
-## Überblick
+## Overview
 
-cocoar.auth ist ein vollwertiger OAuth 2.0 Authorization Server und
-OpenID Connect Provider. Implementiert via **OpenIddict 7** mit eigenen
-Marten-basierten Stores (`MartenApplicationStore`, `MartenScopeStore`,
-`MartenAuthorizationStore`, `MartenTokenStore`) — kein Entity Framework.
+cocoar.auth is a full-fledged OAuth 2.0 authorization server and
+OpenID Connect provider. Implemented via **OpenIddict 7** with its
+own Marten-based stores (`MartenApplicationStore`, `MartenScopeStore`,
+`MartenAuthorizationStore`, `MartenTokenStore`) — no Entity Framework.
 
-Begriffe (Client, Scope, API, Grant Type, Token-Typen) im
-[Glossar](/concepts/glossary#oauth-oidc-begriffe).
+Terminology (Client, Scope, API, Grant Type, token types) in the
+[Glossary](/concepts/glossary#oauth-oidc-begriffe).
 
-## Die drei Akteure
+## The three actors
 
-| Akteur | Rolle | Beispiel |
+| Actor | Role | Example |
 |---|---|---|
-| **User** | Die Person die sich einloggt | Jemand der Deine App benutzt |
-| **Client** | Die Application die Zugriff requested | SPA, Mobile-App, Backend-Service |
-| **API** | Der protected Service | Eine Billing-API, Order-API |
+| **User** | The person signing in | Someone using your app |
+| **Client** | The application requesting access | SPA, mobile app, backend service |
+| **API** | The protected service | A billing API, an order API |
 
-cocoar.auth steht in der Mitte — authentifiziert den User, gibt Tokens
-an den Client aus, die API verifiziert die Tokens.
+cocoar.auth sits in the middle — it authenticates the user, issues
+tokens to the client, and the API verifies the tokens.
 
-## Unterstützte Flows
+## Supported flows
 
-### Authorization Code + PKCE (für User-Apps)
+### Authorization Code + PKCE (for user apps)
 
-Standard für Web-Apps, SPAs, Mobile. PKCE (Proof Key for Code
-Exchange) ist **erzwungen** (`RequireProofKeyForCodeExchange`).
+Standard for web apps, SPAs, mobile. PKCE (Proof Key for Code
+Exchange) is **enforced** (`RequireProofKeyForCodeExchange`).
 
 ```mermaid
 sequenceDiagram
@@ -34,18 +34,18 @@ sequenceDiagram
     participant Auth as cocoar.auth
     participant User
     App->>Auth: GET /connect/authorize<br/>(client_id, code_challenge, scopes)
-    Auth->>User: Login + 2FA (falls noch nicht)
-    User->>Auth: Anmeldung
-    Auth->>Auth: Consent (implicit oder explicit)
-    Auth->>App: Redirect mit ?code=...
+    Auth->>User: Login + 2FA (if not yet)
+    User->>Auth: Sign-in
+    Auth->>Auth: Consent (implicit or explicit)
+    Auth->>App: Redirect with ?code=...
     App->>Auth: POST /connect/token<br/>(code + code_verifier)
     Auth->>App: access_token + id_token + refresh_token
 ```
 
-### Client Credentials (für Services)
+### Client Credentials (for services)
 
-Machine-to-Machine. Service authentifiziert sich direkt mit Client-ID +
-Secret, kein User involved:
+Machine-to-machine. The service authenticates directly with client ID +
+secret, no user involved:
 
 ```http
 POST /connect/token
@@ -59,116 +59,116 @@ scope=billing.read
 
 ### Refresh Token
 
-Aktiviert bei Clients die `offline_access` requesten. Refresh-Tokens
-sind Reference-Tokens, server-seitig in
-`OpenIddictTokenDocument` gespeichert.
+Enabled for clients that request `offline_access`. Refresh tokens are
+reference tokens, stored server-side in `OpenIddictTokenDocument`.
 
-::: warning Kein Implicit, kein ROPC
-cocoar.auth lehnt Implicit Flow und Resource Owner Password
-Credentials ab. Beide gelten als unsicher — OAuth 2.1 deprecated sie.
+::: warning No Implicit, no ROPC
+cocoar.auth rejects Implicit Flow and Resource Owner Password
+Credentials. Both are considered insecure — OAuth 2.1 deprecates them.
 :::
 
-## Token-Validation
+## Token validation
 
-Wie eine API einen Access-Token validiert hängt vom konfigurierten
-Token-Format ab (per Client einstellbar):
+How an API validates an access token depends on the configured token
+format (settable per client):
 
-| Token-Typ | Wie die API validiert |
+| Token type | How the API validates |
 |---|---|
-| **Reference Token** (default) | Ruft den Introspection-Endpoint von cocoar.auth auf — bekommt User-Info, Scopes, Expiry zurück. Kann sofort revoked werden. |
-| **JWT** | Verifiziert die Signatur lokal mit dem Signing-Key aus dem JWKS-Endpoint. Kein Roundtrip nötig, aber Revocation funktioniert nur über Expiry. |
+| **Reference Token** (default) | Calls cocoar.auth's introspection endpoint — gets back user info, scopes, expiry. Can be revoked instantly. |
+| **JWT** | Verifies the signature locally with the signing key from the JWKS endpoint. No roundtrip needed, but revocation only works via expiry. |
 
-Welches wann? Siehe
-[Glossar > Access-Token-Format](/concepts/glossary#access-token-format).
+Which one when? See
+[Glossary > Access token format](/concepts/glossary#access-token-format).
 
-## Per-Realm-Isolation
+## Per-realm isolation
 
-Jeder Realm hat seine eigene OAuth-Konfiguration:
+Every realm has its own OAuth configuration:
 
-- Clients aus Realm A können nicht gegen Realm B authentifizieren
-- Tokens aus Realm A sind in Realm B ungültig (Issuer-Check)
-- Jeder Realm hat seinen eigenen Discovery-Endpoint
-- Issuer-Claim in Tokens enthält die Realm-Domain
+- Clients from realm A cannot authenticate against realm B
+- Tokens from realm A are invalid in realm B (issuer check)
+- Each realm has its own discovery endpoint
+- The issuer claim in tokens contains the realm domain
 
-Zwei Realms können beide einen Client mit `client_id=my-app` haben —
-das sind verschiedene Clients.
+Two realms can both have a client with `client_id=my-app` — those are
+different clients.
 
-Implementierung: `RealmIssuerHandler` (OpenIddict-Pipeline-Hook)
-überschreibt den statischen Issuer pro Request mit `BaseUri`
-(=Realm-Domain).
+Implementation: `RealmIssuerHandler` (an OpenIddict pipeline hook)
+overrides the static issuer per request with `BaseUri`
+(= the realm domain).
 
-## Consent-Flow
+## Consent flow
 
-Pro Client konfigurierbar:
+Configurable per client:
 
-| Consent Type | Verhalten |
+| Consent Type | Behaviour |
 |---|---|
-| `implicit` | User sieht nie eine Consent-Seite. Authorization läuft automatisch durch. |
-| `explicit` | User muss jeden Scope auf der Consent-Page bestätigen. Vorherige Zustimmungen werden gemerkt. |
+| `implicit` | The user never sees a consent page. Authorization runs through automatically. |
+| `explicit` | The user must confirm every scope on the consent page. Previous approvals are remembered. |
 
-Bei `explicit`:
+For `explicit`:
 
-1. `AuthorizationController` checkt nach existierenden permanenten
-   Authorizations
-2. Wenn keine → Redirect auf `/consent?returnUrl=...`
-3. `ConsentController` zeigt Scope-Details + verarbeitet die Entscheidung
-4. Approved Scopes werden als permanente Authorization gespeichert
-5. Bei `prompt=none` ohne existierende Consent → `consent_required` Error
+1. `AuthorizationController` checks for existing permanent
+   authorizations
+2. If none → redirect to `/consent?returnUrl=...`
+3. `ConsentController` shows scope details and processes the decision
+4. Approved scopes are stored as a permanent authorization
+5. With `prompt=none` and no existing consent → `consent_required` error
 
-## Scopes & API-Resources
+## Scopes & API resources
 
-Default-Scopes (per Realm beim Provisioning geseedet):
+Default scopes (seeded per realm at provisioning):
 
-| Scope | Zweck |
+| Scope | Purpose |
 |---|---|
-| `openid` | Required für OIDC, gibt User-ID zurück |
-| `profile` | Vorname, Nachname |
-| `email` | E-Mail-Adresse |
-| `roles` | Rollen-Mitgliedschaften |
-| `offline_access` | Aktiviert Refresh-Tokens |
+| `openid` | Required for OIDC, returns the user ID |
+| `profile` | First name, last name |
+| `email` | Email address |
+| `roles` | Role memberships |
+| `offline_access` | Enables refresh tokens |
 
-**Custom Scopes** kann der Admin pro Realm anlegen, z.B.
-`billing:read`, `repo:write`. Sie können `UserClaims` definieren — wenn
-ein Token diesen Scope enthält, werden die spezifizierten Claims in
-den Token gepackt.
+**Custom scopes** can be created per realm by an admin, e.g.
+`billing:read`, `repo:write`. They can define `UserClaims` — when a
+token includes such a scope, the specified claims are packed into the
+token.
 
-**API-Resources** repräsentieren geschützte APIs. Pro API:
+**API resources** represent protected APIs. Per API:
 
-- Identifier (`audience`-Claim)
-- Liste der unterstützten Scopes
-- `UserClaims` die für diese API in Tokens landen sollen
+- Identifier (`audience` claim)
+- List of supported scopes
+- `UserClaims` that should land in tokens for this API
 
-## Token-Lifetimes
+## Token lifetimes
 
-Konfiguriert in `OpenIddictSettings` (per-Client overridable):
+Configured in `OpenIddictSettings` (overridable per client):
 
-| Token | Default | Setting-Key |
+| Token | Default | Setting key |
 |---|---|---|
-| Access Token | 60 Min | `AccessTokenLifetimeMinutes` |
-| Refresh Token | 14 Tage | `RefreshTokenLifetimeDays` |
-| Authorization Code | 5 Min | `AuthorizationCodeLifetimeMinutes` |
+| Access Token | 60 min | `AccessTokenLifetimeMinutes` |
+| Refresh Token | 14 days | `RefreshTokenLifetimeDays` |
+| Authorization Code | 5 min | `AuthorizationCodeLifetimeMinutes` |
 
 ## Signing
 
-| Mode | Konfiguration |
+| Mode | Configuration |
 |---|---|
-| Development | Ephemeral Signing/Encryption-Keys (auto-generiert, gehen beim Restart verloren) |
-| Production | X.509-Zertifikat aus Datei (`SigningCertificatePath`) |
+| Development | Ephemeral signing/encryption keys (auto-generated, lost on restart) |
+| Production | X.509 certificate from file (`SigningCertificatePath`) |
 
-Im Dev-Mode kann jede Client-App nach jedem Restart von cocoar.auth ihre
-Token-Validation neu auflegen (JWKS ändert sich). In Prod ist das
-Zertifikat persistent — Restart ändert nichts.
+In dev mode every client app has to refresh its token validation after
+each cocoar.auth restart (JWKS changes). In production the certificate
+is persistent — a restart changes nothing.
 
-## Admin-UI
+## Admin UI
 
-Im Admin-Bereich (`/admin/oauth/...`) gibt es Listen + Detail-Views für:
+The admin area (`/admin/oauth/...`) has list and detail views for:
 
-- **Clients** — Application-Registrationen mit Secrets, Redirect-URIs,
-  Grant-Types, per-Client Token-Settings
-- **Scopes** — Permission-Definitionen (built-in + custom) mit
-  UserClaim-Mappings
-- **APIs** — Geschützte API-Resources mit Scopes und UserClaims
+- **Clients** — application registrations with secrets, redirect URIs,
+  grant types, per-client token settings
+- **Scopes** — permission definitions (built-in + custom) with
+  UserClaim mappings
+- **APIs** — protected API resources with scopes and UserClaims
 
-Gating: `oauth-client:read/write/delete`, `oauth-scope:read/write/delete`,
-`oauth-api:read/write/delete`. Per-Resource-Admin-Bypass via
-`oauth-client:admin` etc.
+Gating: `cocoar-auth:oauth-client:read/write/delete`,
+`cocoar-auth:oauth-scope:read/write/delete`,
+`cocoar-auth:oauth-api:read/write/delete`. Per-resource admin bypass
+via `cocoar-auth:oauth-client:admin` etc.

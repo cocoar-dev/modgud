@@ -1,29 +1,27 @@
-# Konzepte
+# Concepts
 
-## Principals & Capabilities
+## Principals & capabilities
 
-Ein `IPrincipal` ist alles, was per Id referenzierbar ist und
-Berechtigungen tragen kann — User, Gruppen, Service-Accounts. Der
-Minimalkontrakt:
+An `IPrincipal` is anything that is addressable by id and can carry
+permissions — users, groups, service accounts. The minimal contract:
 
 ```csharp
 public interface IPrincipal
 {
     Guid Id { get; }
-    string Type { get; }       // Subclass-Override: "person" / "group" / "service-account"
+    string Type { get; }       // Subclass override: "person" / "group" / "service-account"
     string DisplayName { get; }
     bool IsActive { get; }
     bool IsDeleted { get; }
 }
 ```
 
-`Type` ist im Slice ein abstract Getter auf `Principal`; jeder Subtyp
-überschreibt mit einem stabilen Alias. Wird ins JSON serialisiert (nicht
-JsonIgnore), damit Marten LINQ-Filter `p.Type == "person"` zu einem
-JSONB-Path-Query übersetzen kann.
+`Type` is an abstract getter on `Principal` in the slice; each subtype
+overrides it with a stable alias. It is serialised into JSON (not
+JsonIgnore) so that Marten LINQ filters `p.Type == "person"` translate
+into a JSONB path query.
 
-Spezifische Fähigkeiten (**Capabilities**) hängen an zusätzlichen
-Interfaces:
+Specific abilities (**capabilities**) hang off additional interfaces:
 
 ```csharp
 public interface IPrincipalWithMembers : IPrincipal
@@ -42,152 +40,138 @@ public interface IPrincipalEmailAddressable : IPrincipal
 }
 ```
 
-Typische Kompositionen:
+Typical compositions:
 
-| Principal | Members | Account | Email | Bemerkung |
+| Principal | Members | Account | Email | Note |
 |---|---|---|---|---|
-| `Person` | — | ✅ | ✅ | Konkret mit Firstname/Lastname/Acronym/Email/AccountName/ExternalIdentities |
-| `Group` | ✅ | — | ✅ | Shared-Mailbox oder `ExpandToMembers` |
-| `ServiceAccount` | — | ✅ | — | Nicht-menschlicher Principal, keine Notifications |
+| `Person` | — | ✅ | ✅ | Concrete with Firstname/Lastname/Acronym/Email/AccountName/ExternalIdentities |
+| `Group` | ✅ | — | ✅ | Shared mailbox or `ExpandToMembers` |
+| `ServiceAccount` | — | ✅ | — | Non-human principal, no notifications |
 
-Die Slice-Services berühren nur das Interface, das sie brauchen:
+The slice services touch only the interface they need:
 
-- `PermissionService.GetUserGroupsAsync` traversiert via
+- `PermissionService.GetUserGroupsAsync` traverses via
   `IPrincipalWithMembers.MemberIds`
-- `PrincipalEmailResolver.ResolveEmailsAsync` ruft
+- `PrincipalEmailResolver.ResolveEmailsAsync` calls
   `IPrincipalEmailAddressable.GetEmailsAsync`
-- `PermissionEndpointFilter` interessiert sich für `IPrincipal.Id` via
+- `PermissionEndpointFilter` cares about `IPrincipal.Id` via
   `ClaimTypes.NameIdentifier`
 
-## Roles & Permissions
+## Roles & permissions
 
-Eine Permission ist ein String `<resource>:<action>` — z.B.
-`user:read`, `oauth-client:write`, `app:admin`. Eine `PermissionRole`
-bindet eine Liste von Actions an einen Resource-Type:
+A permission is a fully-qualified string
+`<app>:<resource>:<action>` — e.g. `cocoar-auth:user:read`,
+`cocoar-auth:oauth-client:write`, `realm:admin`. A `PermissionRole`
+binds a list of actions to a resource type within an app:
 
 ```csharp
 public class PermissionRole
 {
     public string Name { get; set; }              // "User Manager"
+    public string AppSlug { get; set; }           // "cocoar-auth"
     public string ResourceType { get; set; }      // "user"
     public List<string> Permissions { get; set; } // ["read", "write"]
-    //  → user:read, user:write
+    //  → cocoar-auth:user:read, cocoar-auth:user:write
 }
 ```
 
-Permissions fließen **nur** über Gruppen:
+Permissions flow **only** through groups:
 
 ```
 User → Group → Role → Permission
 ```
 
-Keine direkten User → Role-Zuweisungen, keine User → Permission-Overrides.
-Pfad: welche Gruppen ist der User in (transitiv, inkl. nested) → welche
-Rollen haben diese Gruppen → welche Permissions resultieren.
+No direct user → role assignments, no user → permission overrides.
+Path: which groups is the user in (transitively, including nested) →
+which roles do those groups have → which permissions follow.
 
-### Bypass-Hierarchie
+### Bypass hierarchy
 
-| String | Wirkung |
+| String | Effect |
 |---|---|
-| `<resource>:admin` | Bypassed alle Action-Checks für diese Resource |
-| `app:admin` | Bypassed alle Action-Checks für alle Resources (globaler Notausgang) |
+| `<app>:<resource>:admin` | Bypasses all action checks for that resource within that app |
+| `<app>:admin` | Bypasses all action checks for all resources within that app |
+| `realm:admin` | Bypasses everything in every app (realm-wide emergency exit) |
 
-`hasPermission(needed)` returns true wenn:
+`hasPermission(needed)` returns true when:
 
-1. der User direkt diese Permission hat, oder
-2. der User `<resource>:admin` für die zugehörige Resource hat, oder
-3. der User `app:admin` hat
+1. the user holds `realm:admin`, or
+2. the user holds the requested permission directly, or
+3. the user holds `<app>:admin` for the requested permission's app, or
+4. the user holds `<app>:<resource>:admin` for the requested
+   permission's app + resource
 
-Der globale `app:admin`-Bypass ist absichtlich schmal — die
-"System Admin"-Default-Rolle hat ihn, sonst niemand. Üblicherweise gibt
-man pro Bereichs-Verantwortliche per-resource `<resource>:admin` (z.B.
-"OAuth-Verantwortliche" bekommen `oauth-client:admin` +
-`oauth-scope:admin` + `oauth-api:admin`, aber nicht `user:admin`).
+The realm-wide `realm:admin` bypass is intentionally narrow — only
+the "System Admin" default role carries it. Typically you give
+per-area owners resource-level admin within the IAM app (e.g. "OAuth
+owners" get `cocoar-auth:oauth-client:admin` +
+`cocoar-auth:oauth-scope:admin` + `cocoar-auth:oauth-api:admin`, but
+not `cocoar-auth:user:admin`).
 
-## Access Scripts (ABAC)
+## ABAC
 
-Roles sagen **was** ein User darf (`user:read`). Access Scripts sagen
-**welche Zeilen** er sehen darf. Das Script wird als
-TypeScript-Arrow-Function gespeichert, zum Save-Zeitpunkt nach
-JavaScript transpiliert, und am Query-Zeitpunkt in einen
-LINQ-Expression-Tree übersetzt den Marten direkt in SQL umwandelt.
+Row-level access is deliberately **not** an IAM concern. Cocoar.Auth
+delivers only RBAC answers (`(user, app, permission)`); the question
+"may the user see *this* row" depends on the app's own schema and
+belongs in the app. See [ABAC and the IAM boundary](/concepts/abac).
 
-```typescript
-// Skript auf einer Gruppe für ResourceType "user"
-(u) => u.OrganizationalUnit === user.organizationalUnit
-```
+## Membership modes
 
-Wird zu (schematisch):
+A group is either `Manual` or `Auto`:
 
-```sql
-WHERE data->>'OrganizationalUnit' = '<user-ou>'
-```
+- **Manual** — admin maintains `MemberIds` directly
+- **Auto** — a membership-script predicate determines the members
+  dynamically. On every relevant principal event (create, update,
+  delete) the membership is recomputed
 
-**Keine Roundtrips, kein In-Memory-Filtering.** Das ist der Punkt von
-`Cocoar.JsEval.Linq`: JS-Function → C# `Expression<Func<TView, bool>>`
-→ SQL. Wenn ein Script zu komplex ist (Loops, Closures, unübersetzbare
-Built-ins), wirft der Translator — die Fehlermeldung landet beim Admin
-der's gespeichert hat, nicht beim User.
+The membership script is translated by `Cocoar.JsEval.Linq` into an
+`Expression<Func<Principal, bool>>` — a single SQL query against the
+principal table returns the new `MemberIds`. For the event-triggered
+"did the user change in a way that affects us?" skip, a
+dependency collector exists that records which properties each script
+reads (`"Firstname"`, `"Email"`). Changes outside of this property
+set skip the recompute. Scripts may read only IAM-owned fields — no
+app-schema fields.
 
-Mehr Details siehe [Access Scripts](./access-scripts).
+Nested groups are allowed — an auto-group can have another (manual or
+auto) as a member; BFS traversal with a visited set guards against
+cycles.
 
-## Membership-Modi
+For more detail see [Auto-Membership](./auto-membership).
 
-Eine Gruppe ist entweder `Manual` oder `Auto`:
+## Events & projections
 
-- **Manual** — Admin pflegt `MemberIds` direkt
-- **Auto** — ein Membership-Script-Prädikat bestimmt die Mitglieder
-  dynamisch. Bei jedem relevanten Principal-Event (Create, Update,
-  Delete) wird neu berechnet
+All mutations flow as events into the Marten event store:
 
-Das Membership-Script bekommt die gleiche generische Translation wie
-Access-Scripts — eine einzelne SQL-Query gegen die Person-Table liefert
-die neuen `MemberIds`. Für das Event-getriggerte
-"hat sich der User geändert, betrifft das uns?"-Skip existiert ein
-Dependency-Collector, der pro Script dokumentiert welche Properties er
-liest (`"Firstname"`, `"Email"`). Änderungen außerhalb dieser
-Property-Menge skippen die Neuberechnung.
-
-Verschachtelte Gruppen sind erlaubt — eine Auto-Gruppe kann eine andere
-(Manual oder Auto) als Mitglied haben, BFS-Traversal mit Visited-Set
-gegen Zyklen.
-
-Mehr Details siehe [Auto-Membership](./auto-membership).
-
-## Events & Projections
-
-Alle Mutations fließen als Events in den Marten-Event-Store:
-
-| Event | Wann |
+| Event | When |
 |---|---|
 | `GroupCreatedEvent` | Create |
 | `GroupUpdatedEvent` | Update |
-| `GroupMembershipRecomputedEvent` | Auto-Membership neu berechnet, erfolgreich |
-| `GroupMembershipRecomputeFailedEvent` | Script-Error — `MembershipLastError` gesetzt |
+| `GroupMembershipRecomputedEvent` | Auto-membership recomputed successfully |
+| `GroupMembershipRecomputeFailedEvent` | Script error — `MembershipLastError` set |
 | `GroupDeletedEvent` | Delete |
-| `PermissionRoleCreated/Updated/Deleted` | Role-CRUD |
+| `PermissionRoleCreated/Updated/Deleted` | Role CRUD |
 
-Zwei Projektionen **inline** (synchron konsistent):
+Two projections **inline** (synchronously consistent):
 
-1. **`PrincipalProjectionBase`** — abstrakt, bearbeitet alle
-   Group-Events. Die App erbt
+1. **`PrincipalProjectionBase`** — abstract; processes all group
+   events. The app inherits
    (`Cocoar.Auth.Authentication.Projections.AuthPrincipalProjection`)
-   und ergänzt Apply-Methoden für ihre Person-Events
-   (`UserCreatedEvent`, `UserUpdatedEvent` etc.). Die resultierenden
-   Dokumente landen polymorph (via Marten `AddSubClass`) in der
-   `mt_doc_principal`-Tabelle.
+   and adds Apply methods for its person events (`UserCreatedEvent`,
+   `UserUpdatedEvent` etc.). The resulting documents land
+   polymorphically (via Marten `AddSubClass`) in the
+   `mt_doc_principal` table.
 
-2. **`PermissionRoleProjection`** — Rollen landen in einer eigenen
-   Tabelle.
+2. **`PermissionRoleProjection`** — roles land in their own table.
 
-Inline-Projektionen garantieren: *der nächste Query nach
-`SaveChangesAsync()` sieht den Zustand*. Für Admin-UIs (Gruppe speichern
-→ Dropdown aktualisieren) ist das Pflicht.
+Inline projections guarantee: *the next query after
+`SaveChangesAsync()` sees the state*. For admin UIs (save group →
+update dropdown) this is mandatory.
 
-## Polymorphie
+## Polymorphism
 
-Alle Principals landen in einer Tabelle (`mt_doc_principal`). Marten
-verwaltet den Discriminator (`mt_doc_type`) automatisch:
+All principals land in one table (`mt_doc_principal`). Marten manages
+the discriminator (`mt_doc_type`) automatically:
 
 ```csharp
 martenOpts.Schema.For<Principal>()
@@ -196,44 +180,47 @@ martenOpts.Schema.For<Principal>()
     .AddSubClass<ServiceAccount>("service-account");
 ```
 
-Alias `"person"` landet:
+The alias `"person"` ends up:
 
-- in `mt_doc_type` (Marten Sub-Class-Discriminator, SQL-Spalte)
-- im JSON unter `Type` (vom `Principal.Type`-Getter — Membership-Scripts
-  nutzen `Type.Is(p, 'person')` für polymorph-sichere Typ-Checks)
-- im STJ `$type` (für polymorphe Deserialisierung von `List<Principal>`)
+- in `mt_doc_type` (Marten sub-class discriminator, SQL column)
+- in JSON under `Type` (from the `Principal.Type` getter — membership
+  scripts use `Type.Is(p, 'person')` for polymorphism-safe type
+  checks)
+- in STJ `$type` (for polymorphic deserialisation of
+  `List<Principal>`)
 
-Die Aliase sind unabhängig vom C#-Klassennamen — ein Class-Rename bricht
-die Persistenz nicht.
+The aliases are independent of the C# class name — a class rename
+doesn't break persistence.
 
-## Query-Patterns
+## Query patterns
 
 ```csharp
-// Alle Gruppen — Martens SubClass-Filter sorgt dafür, dass nur Group-Rows kommen
+// All groups — Marten's SubClass filter ensures only Group rows come back
 var groups = await session.Query<Group>()
     .Where(g => !g.IsDeleted)
     .ToListAsync();
 
-// Gemischte Principals — die polymorphe Query liefert Person + Group + ServiceAccount
+// Mixed principals — the polymorphic query returns Person + Group + ServiceAccount
 var all = await session.Query<Principal>()
     .Where(p => !p.IsDeleted)
     .ToListAsync();
 
-// Typ-Filter in C#
+// Type filter in C#
 var onlyGroups = all.OfType<Group>();
 var onlyPersons = all.OfType<Person>();
 ```
 
-`session.Query<TConcrete>()` ist SQL-level-gefiltert
-(`WHERE mt_doc_type = 'group'`). `session.Query<Principal>()` scannt
-die ganze Tabelle, polymorphe Deserialisierung. Für BFS im
-`PermissionService` ist der polymorphe Scan OK weil alle Gruppen eh
-einmalig geladen werden.
+`session.Query<TConcrete>()` is filtered at the SQL level
+(`WHERE mt_doc_type = 'group'`). `session.Query<Principal>()` scans
+the whole table with polymorphic deserialisation. For the BFS in
+`PermissionService` the polymorphic scan is fine because all groups
+get loaded once anyway.
 
-## Realm-Skopierung
+## Realm scoping
 
-Da der Slice auf der aktuellen Marten-Tenant-Session arbeitet, sind alle
-Principals, Roles und Permissions **automatisch realm-isoliert**. In
-Realm `acme` siehst Du nur Acme-Gruppen, in Realm `system` nur
-System-Gruppen. Das ist die "Database-per-Tenant"-Konsequenz — der
-Slice braucht dafür gar nichts zu wissen.
+Because the slice operates on the current Marten tenant session, all
+principals, roles, and permissions are **automatically realm
+isolated**. In realm `acme` you only see Acme groups; in realm
+`system` only system groups. That is the consequence of
+"database-per-tenant" — the slice doesn't need to know anything about
+it.

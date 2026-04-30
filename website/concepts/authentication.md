@@ -1,62 +1,62 @@
-# Authentifizierung
+# Authentication
 
-cocoar.auth hat zwei orthogonale Authentifizierungs-Achsen:
+cocoar.auth has two orthogonal authentication axes:
 
-1. **First-Party-Login** — User logged sich in cocoar.auth selbst ein
-   (Admin-UI, Profil, Setup). Cookie-basiert, kein Token im Browser.
-2. **OAuth/OIDC-Server** — externe Apps lassen User sich via cocoar.auth
-   einloggen. Authorization Code + PKCE, klassisch.
+1. **First-party login** — the user signs in to cocoar.auth itself
+   (admin UI, profile, setup). Cookie-based, no token in the browser.
+2. **OAuth/OIDC server** — external apps let users sign in via
+   cocoar.auth. Authorization Code + PKCE, classic.
 
-Beide nutzen unter der Haube dieselben Login-Methoden.
+Both share the same login methods under the hood.
 
-## First-Party-Login
+## First-party login
 
-Implementiert im **Authentication-Slice**
-(`Cocoar.Auth.Authentication`). Endpoint-Mounts unter `/api/account/...`.
+Implemented in the **Authentication slice**
+(`Cocoar.Auth.Authentication`). Endpoints mounted under `/api/account/...`.
 
-### Login-Wege
+### Login methods
 
-| Methode | Wann | Cookie-Lifetime |
+| Method | When | Cookie lifetime |
 |---|---|---|
-| **Password** | Standard, mit AuthLevel 0/1 erlaubt | Session oder 30 Tage (RememberMe) |
-| **TOTP** | Zweiter Faktor nach Password | Erbt vom Password-Schritt |
-| **Email OTP** | Zweiter Faktor — oder als alternativer Login | Erbt vom Password-Schritt |
-| **Passkey (FIDO2)** | Zweiter Faktor — oder als alleiniger Login (Passwordless) | Immer 30 Tage (persistent) |
-| **Magic Link** | E-Mail mit Single-Use-Token; auch admin-versendbar | Immer 30 Tage |
-| **OIDC External** | Federated Login über Entra ID, Google, ... | 30 Tage |
+| **Password** | Default, allowed at AuthLevel 0/1 | Session or 30 days (RememberMe) |
+| **TOTP** | Second factor after password | Inherits from the password step |
+| **Email OTP** | Second factor — or as an alternative login | Inherits from the password step |
+| **Passkey (FIDO2)** | Second factor — or as a sole login (passwordless) | Always 30 days (persistent) |
+| **Magic Link** | Email with single-use token; can also be sent by an admin | Always 30 days |
+| **OIDC External** | Federated login via Entra ID, Google, ... | 30 days |
 
-Details siehe [Login-Flows](/authentication-slice/login-flows).
+See [Login flows](/authentication-slice/login-flows) for details.
 
-### Authentication-Level
+### Authentication level
 
-Konfiguriert global via `IAuthSettings.AuthenticationMinimumLevel`:
+Configured globally via `IAuthSettings.AuthenticationMinimumLevel`:
 
-| Level | Effekt |
+| Level | Effect |
 |---|---|
-| 0 = None | Password-only erlaubt — kein Enforcement |
-| 1 = SecureLogin (Standard) | User muss 2FA oder Passwordless-Methode haben |
-| 2 = Passwordless | Password-Login deaktiviert — nur Magic Link + Passkey |
+| 0 = None | Password-only allowed — no enforcement |
+| 1 = SecureLogin (default) | User must have 2FA or a passwordless method |
+| 2 = Passwordless | Password login disabled — only Magic Link + Passkey |
 
-Bei Level ≥ 1 läuft die `TwoFactorEnforcementMiddleware` und blockiert
-authentifizierte Requests von Usern ohne 2FA (mit Grace-Period).
+At level >= 1 the `TwoFactorEnforcementMiddleware` runs and blocks
+authenticated requests from users without 2FA (with a grace period).
 
 ### Cookies
 
-| Cookie | Wofür | Lifetime |
+| Cookie | Purpose | Lifetime |
 |---|---|---|
-| `Cocoar.Auth.Auth` | Hauptsitzung (HttpOnly, SameSite=Strict) | Session oder 30 Tage |
-| `Cocoar.Auth.2FA` | UserId zwischen Password-Step und 2FA-Step | 5 Min |
-| `Cocoar.Auth.External` | OIDC-Callback-Holder (SameSite=Lax!) | 10 Min |
-| `Cocoar.Auth.Session` | Nur für Passkey-Attestation-Options | 5 Min Idle |
+| `Cocoar.Auth.Auth` | Main session (HttpOnly, SameSite=Strict) | Session or 30 days |
+| `Cocoar.Auth.2FA` | UserId between password step and 2FA step | 5 min |
+| `Cocoar.Auth.External` | OIDC callback holder (SameSite=Lax!) | 10 min |
+| `Cocoar.Auth.Session` | Only for passkey attestation options | 5 min idle |
 
-In Production sind alle Cookies `Secure`. In Dev `Secure=None` damit
-der Vite-Dev-Server (`http://localhost:4300`) sie schreiben darf.
+In production all cookies are `Secure`. In dev `Secure=None` so the
+Vite dev server (`http://localhost:4300`) can write them.
 
-## OAuth 2.0 / OIDC Server
+## OAuth 2.0 / OIDC server
 
-cocoar.auth ist gleichzeitig ein vollwertiger OpenID-Connect-Provider
-für externe Apps. Implementiert via **OpenIddict 7** mit eigenen
-Marten-basierten Stores (kein Entity Framework).
+cocoar.auth is at the same time a full-fledged OpenID Connect provider
+for external apps. Implemented via **OpenIddict 7** with its own
+Marten-based stores (no Entity Framework).
 
 ### Flows
 
@@ -66,79 +66,79 @@ sequenceDiagram
     participant Auth as cocoar.auth
     participant User
     App->>Auth: GET /connect/authorize?...&code_challenge=...
-    Auth->>User: Login-Seite (falls nötig)
-    User->>Auth: User loggt sich ein (Password + 2FA)
-    Auth->>Auth: Consent (implicit oder explicit)
-    Auth->>App: Redirect mit ?code=...
+    Auth->>User: Login page (if needed)
+    User->>Auth: User signs in (password + 2FA)
+    Auth->>Auth: Consent (implicit or explicit)
+    Auth->>App: Redirect with ?code=...
     App->>Auth: POST /connect/token (code + verifier)
     Auth->>App: access_token + id_token + refresh_token
 ```
 
-Unterstützt: **Authorization Code + PKCE**, **Client Credentials**,
+Supported: **Authorization Code + PKCE**, **Client Credentials**,
 **Refresh Token**.
 
-Nicht unterstützt: Implicit Flow, ROPC.
+Not supported: Implicit Flow, ROPC.
 
-Details siehe [OAuth & OIDC](/concepts/oauth) und
-[OAuth-Implementierung](/guide/oauth).
+See [OAuth & OIDC](/concepts/oauth) and
+[OAuth implementation](/guide/oauth) for details.
 
-### Per-Realm-Isolation
+### Per-realm isolation
 
-Jeder Realm ist sein eigener OIDC-Provider mit eigenem Discovery-Dokument
-unter `https://<realm-domain>/.well-known/openid-configuration`. Tokens
-aus Realm A funktionieren in Realm B nicht — Issuer-Check blockiert.
+Each realm is its own OIDC provider with its own discovery document at
+`https://<realm-domain>/.well-known/openid-configuration`. Tokens from
+realm A do not work in realm B — the issuer check blocks them.
 
-Das wird vom `RealmIssuerHandler` (OpenIddict-Pipeline-Hook)
-umgesetzt: zur Boot-Zeit gibt es einen statischen Issuer; der Handler
-überschreibt ihn pro Request mit `BaseUri` (= aktuelle Realm-Domain).
+This is implemented by the `RealmIssuerHandler` (an OpenIddict pipeline
+hook): at boot there is a static issuer; the handler overrides it per
+request with `BaseUri` (the current realm domain).
 
-## Multi-Faktor-Authentifizierung
+## Multi-factor authentication
 
-Drei unabhängige 2FA-Methoden, beliebig kombinierbar:
+Three independent 2FA methods, freely combinable:
 
-| Methode | Wie es funktioniert |
+| Method | How it works |
 |---|---|
-| **TOTP** | Authenticator-App (Google Authenticator, Authy) — RFC 6238 |
-| **Email OTP** | One-Time-Code per E-Mail an verifizierte Adresse |
-| **WebAuthn/Passkey** | Hardware-Keys (YubiKey) oder Platform-Authenticators (TouchID, Windows Hello) |
+| **TOTP** | Authenticator app (Google Authenticator, Authy) — RFC 6238 |
+| **Email OTP** | One-time code by email to the verified address |
+| **WebAuthn/Passkey** | Hardware keys (YubiKey) or platform authenticators (TouchID, Windows Hello) |
 
-Plus **Recovery-Codes** als Last-Resort-Backup.
+Plus **recovery codes** as a last-resort backup.
 
-## External Login (OIDC IdPs)
+## External login (OIDC IdPs)
 
-User können sich über externe OIDC-Provider einloggen (Entra ID, Google,
-Auth0, …). Pro Realm konfigurierbar.
+Users can sign in via external OIDC providers (Entra ID, Google,
+Auth0, ...). Configurable per realm.
 
-1. Admin legt eine `IdpConfig` an: Authority, Client-ID, Client-Secret,
+1. Admin creates an `IdpConfig`: authority, client ID, client secret,
    `UserUpdateScript`
-2. Login-Page zeigt automatisch Buttons für aktive IdpConfigs
-3. Klick → OIDC Authorization Code + PKCE → IdP-Login
-4. Auf Callback: `ExternalLoginProcessor` läuft
-   - Sucht `ExternalIdentityLink` (Issuer + Subject) → existierender User
-     oder JIT-Create
-   - `UserUpdateScript` (Jint) mappt Claims auf User-Felder
-5. Wenn User 2FA aktiv hat, läuft normaler 2FA-Flow danach
-6. Login-Cookie wird gesetzt (immer 30 Tage)
+2. Login page automatically shows buttons for active IdpConfigs
+3. Click → OIDC Authorization Code + PKCE → IdP login
+4. On callback: `ExternalLoginProcessor` runs
+   - Looks up `ExternalIdentityLink` (issuer + subject) → existing user
+     or JIT-create
+   - `UserUpdateScript` (Jint) maps claims to user fields
+5. If the user has 2FA enabled, the normal 2FA flow runs afterwards
+6. Login cookie is set (always 30 days)
 
-Details siehe
-[Identity-Provider (OIDC)](/authentication-slice/identity-providers).
+See [Identity providers (OIDC)](/authentication-slice/identity-providers)
+for details.
 
-## Account-Lifecycle
+## Account lifecycle
 
-| Wie kommt ein User ins System? | Mechanismus |
+| How does a user enter the system? | Mechanism |
 |---|---|
-| Self-Registration | Registrierungs-Form (wenn für Realm enabled) |
-| External Login | OIDC-IdP → JIT-Create beim ersten Login |
-| Admin-created | Admin legt User per UI an |
-| Setup | First-Time-Setup — der erste User wird System-Admin |
+| Self-registration | Registration form (when enabled for the realm) |
+| External login | OIDC IdP → JIT-create on first login |
+| Admin-created | Admin creates the user via the UI |
+| Setup | First-time setup — the first user becomes system admin |
 
-Lifecycle-States:
+Lifecycle states:
 
-- **Active** — normaler Zustand
-- **Locked** — durch Account-Lockout (5 Failed Logins → 1 Min)
-- **Soft-Deleted** — `IsDeleted = true`, alle Daten bleiben erhalten,
-  reaktivierbar
-- **GDPR-Erased** — Stream archived, PII gemasked, irreversibel
+- **Active** — normal state
+- **Locked** — by account lockout (5 failed logins → 1 min)
+- **Soft-deleted** — `IsDeleted = true`, all data preserved,
+  reactivatable
+- **GDPR-erased** — stream archived, PII masked, irreversible
   (Article 17)
 
-Siehe [GDPR & Sessions](/authentication-slice/gdpr-sessions).
+See [GDPR & sessions](/authentication-slice/gdpr-sessions).

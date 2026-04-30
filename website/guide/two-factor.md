@@ -1,19 +1,18 @@
 # Two-Factor Authentication
 
-cocoar.auth unterstützt vier 2FA-Methoden, alle implementiert im
-Authentication-Slice. Pro User können beliebig viele Methoden aktiv
-sein.
+cocoar.auth supports four 2FA methods, all implemented in the
+Authentication slice. Any number of methods can be active per user.
 
-| Methode | Service | Storage |
+| Method | Service | Storage |
 |---|---|---|
 | TOTP | ASP.NET Core Identity DefaultTokenProviders | `UserSecurityData.AuthenticatorKey` |
 | Email OTP | `EmailOtpService` | `EmailOtpChallenge` (ephemeral) |
 | Passkey/FIDO2 | `Fido2NetLib` | `StoredPasskeyCredential` |
 | Magic Link | `MagicLinkService` | `MagicLinkChallenge` (ephemeral) |
 
-Plus **Recovery-Codes** als Last-Resort.
+Plus **recovery codes** as a last resort.
 
-## Login-Flow mit 2FA
+## Login flow with 2FA
 
 ```mermaid
 sequenceDiagram
@@ -26,39 +25,38 @@ sequenceDiagram
     Frontend->>Backend: POST /api/account/login
     Backend->>SignInManager: PasswordSignInAsync()
     SignInManager-->>Backend: RequiresTwoFactor = true
-    Backend->>Backend: SignIn TwoFactorUserIdScheme<br/>(Cocoar.Auth.2FA-Cookie)
+    Backend->>Backend: SignIn TwoFactorUserIdScheme<br/>(Cocoar.Auth.2FA cookie)
     Backend-->>Frontend: 200 { requiresTwoFactor, mfaMethods: [...] }
-    Frontend->>Frontend: Redirect zu MFA-Page
+    Frontend->>Frontend: Redirect to MFA page
 
     alt TOTP
-        User->>Frontend: 6-stelliger Code
+        User->>Frontend: 6-digit code
         Frontend->>Backend: POST /api/account/mfa/login
     else Email OTP
         Frontend->>Backend: POST /api/account/email-otp/login/request
-        User->>Frontend: Code aus Mail
+        User->>Frontend: Code from mail
         Frontend->>Backend: POST /api/account/email-otp/login
     else Passkey
         Frontend->>Backend: POST /api/account/passkey/login/options
-        User->>Frontend: Passkey berühren
+        User->>Frontend: Touch passkey
         Frontend->>Backend: POST /api/account/passkey/login/complete
     else Recovery Code
-        User->>Frontend: Recovery-Code
+        User->>Frontend: Recovery code
         Frontend->>Backend: POST /api/account/mfa/recovery-login
     end
 
-    Backend->>Backend: SignIn ApplicationScheme<br/>(Cocoar.Auth.Auth-Cookie)
+    Backend->>Backend: SignIn ApplicationScheme<br/>(Cocoar.Auth.Auth cookie)
     Backend-->>Frontend: 200 OK + Cookie
 ```
 
-Beim ersten Login-Schritt wird das `Cocoar.Auth.2FA`-Cookie gesetzt
-(Lifetime: 5 Min), das die UserId zwischen Schritt 1 und 2 hält. Erst
-der erfolgreiche zweite Schritt setzt den vollen
-`Cocoar.Auth.Auth`-Cookie.
+On the first login step the `Cocoar.Auth.2FA` cookie is set
+(lifetime: 5 min), holding the UserId between step 1 and step 2. Only
+a successful second step issues the full `Cocoar.Auth.Auth` cookie.
 
-## TOTP (Authenticator-Apps)
+## TOTP (authenticator apps)
 
-Standard RFC-6238, kompatibel mit Google Authenticator, Authy,
-Microsoft Authenticator etc.
+Standard RFC 6238, compatible with Google Authenticator, Authy,
+Microsoft Authenticator, etc.
 
 ### Setup
 
@@ -66,8 +64,8 @@ Microsoft Authenticator etc.
 POST /api/account/mfa/setup
 ```
 
-→ Generiert einen neuen Authenticator-Key (32 Byte Base32) via
-`UserManager.ResetAuthenticatorKeyAsync()`. Returnt:
+→ Generates a fresh authenticator key (32 bytes Base32) via
+`UserManager.ResetAuthenticatorKeyAsync()`. Returns:
 
 ```json
 {
@@ -76,132 +74,132 @@ POST /api/account/mfa/setup
 }
 ```
 
-`sharedKey` ist 4er-Gruppen-formatiert für manuelle Eingabe;
-`authenticatorUri` für QR-Code-Generierung.
+`sharedKey` is formatted in groups of four for manual entry;
+`authenticatorUri` is for QR-code generation.
 
-### Aktivieren
+### Activate
 
 ```http
 POST /api/account/mfa/enable
 { "code": "123456" }
 ```
 
-→ `UserManager.VerifyTwoFactorTokenAsync()` prüft den Code; bei Erfolg
-wird `TwoFactorEnabled = true` gesetzt + 10 Recovery-Codes generiert.
+→ `UserManager.VerifyTwoFactorTokenAsync()` checks the code; on
+success `TwoFactorEnabled = true` is set + 10 recovery codes are
+generated.
 
-### Deaktivieren
+### Deactivate
 
 ```http
 POST /api/account/mfa/disable
 { "code": "123456" }
 ```
 
-→ Verifiziert nochmal einen TOTP-Code. Reset Authenticator-Key.
+→ Verifies a TOTP code once more. Resets the authenticator key.
 
-::: warning Letztes 2FA bei Level ≥ 1
-Wenn ein User sein letztes 2FA-Verfahren bei `AuthenticationMinimumLevel
->= 1` entfernt, wird `SecureSetupDueAt = now` gesetzt → er ist sofort
-blockiert (kein neues Grace-Fenster).
+::: warning Last 2FA at level ≥ 1
+When a user removes their last 2FA method while
+`AuthenticationMinimumLevel >= 1`, `SecureSetupDueAt = now` is set →
+the user is blocked immediately (no new grace window).
 :::
 
 ## Email OTP
 
-6-stelliger Code per E-Mail an die verifizierte E-Mail-Adresse.
+6-digit code by email to the verified email address.
 
-### Funktionsweise
+### How it works
 
-1. **Request:** `POST /api/account/email-otp/login/request` generiert
-   einen 6-stelligen Code, hashed ihn mit SHA-256, speichert den Hash
-   in einem `EmailOtpChallenge`-Document
-2. **Send:** Code per `IEmailService.SendEmailOtpAsync()`
-3. **Verify:** `POST /api/account/email-otp/login` hashed den
-   eingegebenen Code und vergleicht ihn
+1. **Request:** `POST /api/account/email-otp/login/request` generates
+   a 6-digit code, hashes it with SHA-256, and stores the hash in an
+   `EmailOtpChallenge` document
+2. **Send:** code via `IEmailService.SendEmailOtpAsync()`
+3. **Verify:** `POST /api/account/email-otp/login` hashes the entered
+   code and compares it
 
-### Schutz-Mechanismen
+### Protection mechanisms
 
-| Schutz | Implementation |
+| Protection | Implementation |
 |---|---|
-| Rate-Limit | Mindestens 2 Min zwischen OTP-Requests |
-| Expiry | 10 Min |
-| Versuchs-Limit | Max. 3 Verify-Versuche pro Challenge |
-| Code nicht im Klartext | Nur SHA-256-Hash gespeichert |
+| Rate limit | At least 2 min between OTP requests |
+| Expiry | 10 min |
+| Attempt limit | At most 3 verify attempts per challenge |
+| Code never in plain text | Only SHA-256 hash stored |
 
-`EmailOtpChallenge` ist 1:1 per UserId — Request eines neuen Codes
-ersetzt jede existierende Challenge.
+`EmailOtpChallenge` is 1:1 per UserId — requesting a new code replaces
+any existing challenge.
 
 ## Passkey / FIDO2 / WebAuthn
 
-Hardware-Keys (YubiKey) oder Platform-Authenticators (TouchID, Windows
-Hello). Implementiert mit
+Hardware keys (YubiKey) or platform authenticators (TouchID, Windows
+Hello). Implemented with
 [Fido2NetLib](https://github.com/passwordless-lib/fido2-net-lib).
 
-### Registration-Ceremony
+### Registration ceremony
 
 ```http
 POST /api/account/passkey/register/options
 ```
 
-→ `CredentialCreateOptions` mit:
-- `ResidentKey = Preferred` (für Discoverable Credentials → passwordless)
+→ `CredentialCreateOptions` with:
+- `ResidentKey = Preferred` (for discoverable credentials → passwordless)
 - `UserVerification = Preferred`
-- `excludeCredentials` = bestehende Credentials des Users
+- `excludeCredentials` = the user's existing credentials
 
-Challenge-Bytes + Options-JSON in einem
-`Cocoar.Auth.Session`-ASP.NET-Session-Eintrag (Marten
-`DistributedMemoryCache` als Session-Store) gespeichert (5 Min Idle).
+Challenge bytes + options JSON are stored in a
+`Cocoar.Auth.Session` ASP.NET session entry (Marten
+`DistributedMemoryCache` as the session store), 5 min idle.
 
 ```http
 POST /api/account/passkey/register/complete
 { "attestation": {...} }
 ```
 
-→ `_fido2.MakeNewCredentialAsync()` verifiziert die Attestation gegen
-die gespeicherte Challenge. Bei Erfolg wird ein
-`StoredPasskeyCredential` angelegt.
+→ `_fido2.MakeNewCredentialAsync()` verifies the attestation against
+the stored challenge. On success a `StoredPasskeyCredential` is
+created.
 
-### Authentication-Ceremony
+### Authentication ceremony
 
 ```http
 POST /api/account/passkey/login/options
-{ "userName": "alice" }   // optional — leer = passwordless mode
+{ "userName": "alice" }   // optional — empty = passwordless mode
 ```
 
-→ `AssertionOptions` skopiert auf die existierenden Credentials des
-Users. Bei `userName=null` werden discoverable credentials erlaubt
-(passwordless).
+→ `AssertionOptions` scoped to the user's existing credentials. With
+`userName=null`, discoverable credentials are allowed (passwordless).
 
 ```http
 POST /api/account/passkey/login/complete
 { "assertion": {...} }
 ```
 
-→ Verifiziert die Assertion via `_fido2.MakeAssertionAsync()`, prüft
-SignCount gegen den gespeicherten Wert (Replay-Schutz),
-updated `LastUsedAt`.
+→ Verifies the assertion via `_fido2.MakeAssertionAsync()`, checks
+SignCount against the stored value (replay protection), updates
+`LastUsedAt`.
 
 ### Passwordless
 
-`POST /api/account/passkey/login/options` ohne `userName` erzeugt
-Options mit leerer `AllowedCredentials`-Liste → der Authenticator
-wählt eine discoverable Credential aus. Die UserId wird aus dem
-`UserHandle` der Assertion gelesen.
+`POST /api/account/passkey/login/options` without `userName` produces
+options with an empty `AllowedCredentials` list → the authenticator
+picks a discoverable credential. The UserId is read from the
+`UserHandle` of the assertion.
 
 ### StoredPasskeyCredential
 
-| Feld | Zweck |
+| Field | Purpose |
 |---|---|
-| `CredentialId` | Eindeutige ID (Base64-encoded) |
-| `PublicKey` | COSE-Format Public-Key |
-| `UserHandle` | UserId in Bytes (für Discoverable) |
-| `SignCount` | Replay-Schutz-Counter |
-| `DeviceName` | User-Label (z.B. "YubiKey 5") |
-| `Aaguid` | Authenticator-Modell-ID |
+| `CredentialId` | Unique id (Base64-encoded) |
+| `PublicKey` | COSE-format public key |
+| `UserHandle` | UserId in bytes (for discoverable) |
+| `SignCount` | Replay-protection counter |
+| `DeviceName` | User label (e.g. "YubiKey 5") |
+| `Aaguid` | Authenticator model id |
 | `Transports` | USB, NFC, BLE, internal |
 | `LastUsedAt` | Audit |
 
-### Konfiguration
+### Configuration
 
-In `Program.cs` aus `IServerConfiguration.PublicUrl` abgeleitet:
+Derived in `Program.cs` from `IServerConfiguration.PublicUrl`:
 
 ```csharp
 builder.Services.AddFido2(options =>
@@ -212,80 +210,80 @@ builder.Services.AddFido2(options =>
 });
 ```
 
-In Dev werden zusätzlich `localhost:4300` und `https://localhost`
-zugelassen.
+In dev, `localhost:4300` and `https://localhost` are additionally
+allowed.
 
 ## Magic Link
 
-Einmal-Token per E-Mail. Zwei Modi:
+Single-use token by email. Two modes:
 
-- **Self-Service** (`POST /api/account/magic-link/request`) — nur
-  wenn `IMagicLinkConfiguration.Enabled` AND
-  `IAuthSettings.MagicLinkSelfService` beide `true`
-- **Admin-Send** (`POST /api/admin/users/{id}/magic-link`) — immer
-  verfügbar, kein Toggle
+- **Self-service** (`POST /api/account/magic-link/request`) — only
+  when `IMagicLinkConfiguration.Enabled` AND
+  `IAuthSettings.MagicLinkSelfService` are both `true`
+- **Admin send** (`POST /api/admin/users/{id}/magic-link`) — always
+  available, no toggle
 
-Klick auf den Link:
+Clicking the link:
 
 ```http
 GET /api/account/magic-link/login?token=...&user=...
 ```
 
-Backend hashed das Token, vergleicht mit `MagicLinkChallenge.TokenHash`,
-prüft Ablauf, setzt einen persistenten Cookie (immer 30 Tage), redirected
-auf das Frontend.
+The backend hashes the token, compares it to
+`MagicLinkChallenge.TokenHash`, checks expiry, sets a persistent
+cookie (always 30 days), and redirects to the frontend.
 
-## Recovery-Codes
+## Recovery codes
 
-10 Single-Use-Backup-Codes, generiert wenn 2FA aktiviert wird.
+10 single-use backup codes, generated when 2FA is enabled.
 
-- Generiert via `UserManager.GenerateNewTwoFactorRecoveryCodesAsync()`
-- Stored in `UserSecurityData.RecoveryCodes` (NICHT im Event-Stream)
-- Each Code nur einmal nutzbar (`RedeemTwoFactorRecoveryCodeAsync()`)
-- Regenerierung invalidiert alle vorherigen Codes
-- Status-Abfrage: `GET /api/account/mfa/status` → `recoveryCodesRemaining`
+- Generated via `UserManager.GenerateNewTwoFactorRecoveryCodesAsync()`
+- Stored in `UserSecurityData.RecoveryCodes` (NOT in the event stream)
+- Each code usable only once (`RedeemTwoFactorRecoveryCodeAsync()`)
+- Regeneration invalidates all previous codes
+- Status query: `GET /api/account/mfa/status` → `recoveryCodesRemaining`
 
-## Security-Data-Trennung
+## Security data separation
 
-Alle 2FA-Secrets liegen in `UserSecurityData` oder separaten
-Documents — **nie** im Event-Stream.
+All 2FA secrets live in `UserSecurityData` or in separate documents —
+**never** in the event stream.
 
-| Daten | Storage | Begründung |
+| Data | Storage | Reason |
 |---|---|---|
-| Authenticator-Key | `UserSecurityData.AuthenticatorKey` | TOTP-Secret |
-| Recovery-Codes | `UserSecurityData.RecoveryCodes` | Single-Use-Secrets |
-| Passkey-Credentials | `StoredPasskeyCredential` (separates Doc) | Public-Key + Counter |
-| Password-Hash | `UserSecurityData.PasswordHash` | sensitive |
+| Authenticator key | `UserSecurityData.AuthenticatorKey` | TOTP secret |
+| Recovery codes | `UserSecurityData.RecoveryCodes` | Single-use secrets |
+| Passkey credentials | `StoredPasskeyCredential` (separate doc) | Public key + counter |
+| Password hash | `UserSecurityData.PasswordHash` | Sensitive |
 
-Security-Domain-Events speichern nur Metadaten:
+Security domain events store metadata only:
 
-- `UserTwoFactorEnabled(UserId)` — kein Key
-- `UserTwoFactorDisabled(UserId)` — kein Key
-- `UserRecoveryCodesRegenerated(UserId, CodeCount)` — kein Code
-- `PasskeyCredentialRegistered(UserId, CredentialId, DeviceName)` — kein PublicKey
+- `UserTwoFactorEnabled(UserId)` — no key
+- `UserTwoFactorDisabled(UserId)` — no key
+- `UserRecoveryCodesRegenerated(UserId, CodeCount)` — no code
+- `PasskeyCredentialRegistered(UserId, CredentialId, DeviceName)` — no PublicKey
 
-So sind GDPR-Stream-Replays sicher und Event-Streams können nicht für
-Credential-Extraction missbraucht werden.
+This way GDPR stream replays are safe and event streams can't be
+abused for credential extraction.
 
-## API-Endpoints
+## API endpoints
 
-| Endpoint | Method | Zweck |
+| Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/account/mfa/status` | GET | Status (enabled, methods, recovery-codes-remaining) |
-| `/api/account/mfa/setup` | POST | Authenticator-Key + QR-URI generieren |
-| `/api/account/mfa/enable` | POST | 2FA mit Code aktivieren |
-| `/api/account/mfa/disable` | POST | 2FA deaktivieren |
-| `/api/account/mfa/recovery-codes` | POST | Recovery-Codes regenerieren |
-| `/api/account/mfa/login` | POST | Login-Schritt 2 mit TOTP |
-| `/api/account/mfa/recovery-login` | POST | Login mit Recovery-Code |
-| `/api/account/email-otp/status` | GET | Email-OTP-Status |
-| `/api/account/email-otp/login/request` | POST | Email-OTP anfordern |
-| `/api/account/email-otp/login` | POST | Login mit Email-OTP |
-| `/api/account/passkey/register/options` | POST | Passkey-Register Options |
-| `/api/account/passkey/register/complete` | POST | Passkey-Registrierung abschließen |
-| `/api/account/passkey/login/options` | POST | Passkey-Login Options |
-| `/api/account/passkey/login/complete` | POST | Passkey-Login abschließen |
-| `/api/account/passkey/credentials` | GET | Eigene Passkeys auflisten |
-| `/api/account/passkey/credentials/{id}` | DELETE | Passkey löschen |
-| `/api/account/magic-link/request` | POST | Magic Link Self-Service anfordern |
-| `/api/account/magic-link/login` | GET | Magic Link Login |
+| `/api/account/mfa/setup` | POST | Generate authenticator key + QR URI |
+| `/api/account/mfa/enable` | POST | Enable 2FA with a code |
+| `/api/account/mfa/disable` | POST | Disable 2FA |
+| `/api/account/mfa/recovery-codes` | POST | Regenerate recovery codes |
+| `/api/account/mfa/login` | POST | Login step 2 with TOTP |
+| `/api/account/mfa/recovery-login` | POST | Login with recovery code |
+| `/api/account/email-otp/status` | GET | Email-OTP status |
+| `/api/account/email-otp/login/request` | POST | Request email OTP |
+| `/api/account/email-otp/login` | POST | Login with email OTP |
+| `/api/account/passkey/register/options` | POST | Passkey register options |
+| `/api/account/passkey/register/complete` | POST | Complete passkey registration |
+| `/api/account/passkey/login/options` | POST | Passkey login options |
+| `/api/account/passkey/login/complete` | POST | Complete passkey login |
+| `/api/account/passkey/credentials` | GET | List own passkeys |
+| `/api/account/passkey/credentials/{id}` | DELETE | Delete a passkey |
+| `/api/account/magic-link/request` | POST | Request a self-service magic link |
+| `/api/account/magic-link/login` | GET | Magic-link login |

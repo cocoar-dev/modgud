@@ -43,11 +43,9 @@ A point-by-point list of what Cocoar.Auth delivers out of the box.
 - **`Cocoar.Auth.Client.AspNetCore`** library ships an `IClaimsTransformation` that flattens `resource_access[<app>].roles` into `ClaimTypes.Role` so `[Authorize(Roles="...")]` works on resource servers without per-endpoint code
 - **Distribution API** for live, granular permission lookups when role-only checks aren't enough
 
-### ABAC row-level filters
-- **Access scripts** per group + resource, written in JsEval (TypeScript-flavoured)
-- Translates to LINQ `Expression<Func<T, bool>>` for use with Marten queries
-- Multiple groups' scripts compose via OR
-- Cycle-safe transitive group resolution
+### ABAC
+
+Cocoar.Auth is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in the consuming app where the row schema lives — see [Concepts → ABAC](../concepts/abac) for the boundary and the three deployment profiles (IAM-only, code-static ABAC, admin-pluggable via local groups).
 
 ### Auto membership
 - Groups can compute their members from a JsEval predicate over the principal directory
@@ -118,7 +116,7 @@ A point-by-point list of what Cocoar.Auth delivers out of the box.
 ### Admin UI
 - Real-time updates via SignalR — multiple admins editing simultaneously stay in sync
 - Granular sidebar gating based on permissions
-- Resource-level permissions (`user:read`, `oauth-client:write`, …) — granular admins see only what they manage
+- Resource-level permissions (`cocoar-auth:user:read`, `cocoar-auth:oauth-client:write`, …) — granular admins see only what they manage
 
 ### Recovery CLI
 - Inside-container tool for breaking out of "no admin can sign in" situations

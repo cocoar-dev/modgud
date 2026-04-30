@@ -1,30 +1,30 @@
-# Multi-Tenancy / Realms
+# Multi-tenancy / Realms
 
-cocoar.auth nutzt einen **Realm-Modell** für Multi-Tenancy. Jeder Realm
-ist ein vollständig autonomer Identity Provider mit eigener Datenbank,
-eigenen Usern, Rollen, OAuth-Configs und Login-Providern.
+cocoar.auth uses a **realm model** for multi-tenancy. Each realm is a
+fully autonomous Identity Provider with its own database, users,
+roles, OAuth configuration, and login providers.
 
-::: info "Realm" vs. "Tenant"
-User-facing heißt es überall **Realm** (UI, Doku). Der Code nutzt
-**Tenant** im Infrastructure-Layer (`TenantId`,
-`ITenantSessionFactory`, `MasterTableTenancy`), weil Marten/Wolverine
-das so nennen. `TenantId` = Realm-Slug.
+::: info "Realm" vs. "tenant"
+User-facing it's called **realm** everywhere (UI, docs). The code uses
+**tenant** in the infrastructure layer (`TenantId`,
+`ITenantSessionFactory`, `MasterTableTenancy`), because that's what
+Marten/Wolverine call it. `TenantId` = realm slug.
 :::
 
-## Domain-basiertes Routing
+## Domain-based routing
 
-Realms werden über das **Host-Header** identifiziert, nicht über
-URL-Pfade. Jeder Realm hat eine oder mehrere konfigurierte Domains:
+Realms are identified by the **Host header**, not by URL path. Each
+realm has one or more configured domains:
 
 | Hostname | Realm |
 |---|---|
-| `system.example.com` | System-Realm |
-| `acme.example.com` | Acme-Realm |
-| `auth.acme.example.com` | Acme-Realm (zweite Domain) |
-| `localhost` (dev, Single-Realm) | System-Realm (Single-Tenant-Fallback) |
+| `system.example.com` | System realm |
+| `acme.example.com` | Acme realm |
+| `auth.acme.example.com` | Acme realm (second domain) |
+| `localhost` (dev, single-realm) | System realm (single-tenant fallback) |
 
 `RealmMiddleware` (`src/dotnet/Cocoar.Auth.Api/Middleware/RealmMiddleware.cs`)
-läuft als allererste Middleware:
+runs as the very first middleware:
 
 ```csharp
 public async Task InvokeAsync(HttpContext context)
@@ -48,21 +48,20 @@ public async Task InvokeAsync(HttpContext context)
 }
 ```
 
-Skip-Pfade: `/health`, `/swagger`, `/openapi`, `/_framework`,
-`/signalr` — die laufen ohne Realm-Kontext.
+Skip paths: `/health`, `/swagger`, `/openapi`, `/_framework`,
+`/signalr` — these run without realm context.
 
-### Single-Tenant-Fallback in Dev
+### Single-tenant fallback in dev
 
-Wenn nur **ein** Realm aktiv ist UND der Host eine Localhost-Variante
-ist (`localhost`, `127.0.0.1`, `::1`, `0.0.0.0`), gibt der Cache
-diesen Realm zurück — auch wenn er die Localhost-Domain nicht in seiner
-Liste hat. Damit funktioniert ein Single-Realm-Dev-Boot ohne
-hosts-File-Eintrag.
+If only **one** realm is active AND the host is a localhost variant
+(`localhost`, `127.0.0.1`, `::1`, `0.0.0.0`), the cache returns that
+realm — even if it doesn't list the localhost domain. This way a
+single-realm dev boot works without a hosts-file entry.
 
 ## RealmCache
 
-`RealmCache` (`Cocoar.Auth.Infrastructure/Realms/RealmCache.cs`) hält
-einen Snapshot der Domain → Realm-Mappings im Memory:
+`RealmCache` (`Cocoar.Auth.Infrastructure/Realms/RealmCache.cs`) holds
+a snapshot of the domain → realm mappings in memory:
 
 ```csharp
 private sealed record CacheSnapshot(
@@ -70,49 +69,47 @@ private sealed record CacheSnapshot(
     TenantInfo? SingleActiveRealm);
 ```
 
-Lädt beim Start aus dem `IGlobalStore` (siehe unten) alle aktiven
-Realms. Wird invalidiert bei Realm-CUD (Create/Update/Delete via
-Admin-API).
+Loads all active realms from `IGlobalStore` (see below) at startup.
+Invalidated on realm CUD (Create/Update/Delete via the admin API).
 
-## Database-per-Tenant via Marten
+## Database-per-tenant via Marten
 
-cocoar.auth nutzt Martens `MasterTableTenancy`:
+cocoar.auth uses Marten's `MasterTableTenancy`:
 
 ```mermaid
 graph TD
-    subgraph Master["Master-DB (cocoar_auth_next)"]
+    subgraph Master["Master DB (cocoar_auth_next)"]
         Tenancy["Schema: realms<br/>realms.mt_tenant_databases"]
-        GlobalSchema["Schema: global<br/>(Realm-Documents)"]
-        SystemTenant["System-Tenant-Daten<br/>(physisch hier)"]
+        GlobalSchema["Schema: global<br/>(Realm documents)"]
+        SystemTenant["System tenant data<br/>(physically here)"]
     end
 
     subgraph Acme["cocoar_auth_next_acme"]
-        AcmeData["Acme-Tenant-Daten"]
+        AcmeData["Acme tenant data"]
     end
 
     subgraph Finance["cocoar_auth_next_finance"]
-        FinanceData["Finance-Tenant-Daten"]
+        FinanceData["Finance tenant data"]
     end
 
     Tenancy -.->|Lookup| Acme
     Tenancy -.->|Lookup| Finance
 ```
 
-| Datenbank | Inhalt |
+| Database | Contents |
 |---|---|
-| `cocoar_auth_next` (Master) | `realms.mt_tenant_databases` (Tenant-Registry) + Schema `global` (Realm-Documents) + System-Tenant-Daten |
-| `cocoar_auth_next_<slug>` | Eigene physische DB pro weiterem Realm |
+| `cocoar_auth_next` (master) | `realms.mt_tenant_databases` (tenant registry) + schema `global` (Realm documents) + system tenant data |
+| `cocoar_auth_next_<slug>` | A dedicated physical DB per additional realm |
 
-Der **System-Tenant zeigt absichtlich auf die Master-DB**. So braucht
-eine Single-Realm-Installation nur eine einzige DB. Mehr-Realm-Setups
-fügen weitere Tenant-DBs hinzu, ohne dass der System-Tenant
-wegmigriert.
+The **system tenant intentionally points at the master DB**. This way
+a single-realm installation only needs one DB. Multi-realm setups add
+more tenant DBs without migrating the system tenant.
 
 ## TenantedSessionFactory
 
-Marten `ISessionFactory`-Implementierung
-(`Cocoar.Auth.Infrastructure/Persistence/Tenancy/TenantedSessionFactory.cs`),
-die die `TenantId` aus `HttpContext.Items` liest:
+A Marten `ISessionFactory` implementation
+(`Cocoar.Auth.Infrastructure/Persistence/Tenancy/TenantedSessionFactory.cs`)
+that reads the `TenantId` from `HttpContext.Items`:
 
 ```csharp
 public IDocumentSession OpenSession()
@@ -127,22 +124,22 @@ private string ResolveTenantId()
        ?? TenantConstants.SystemTenantId;
 ```
 
-Wired über:
+Wired up via:
 
 ```csharp
 builder.Services.AddMarten(...)
     .BuildSessionsWith<TenantedSessionFactory>();
 ```
 
-Damit ist jede `IDocumentSession`/`IQuerySession`-Injection automatisch
-realm-scoped. Background-Services ohne `HttpContext` fallen auf den
-System-Tenant zurück.
+This way every `IDocumentSession`/`IQuerySession` injection is
+automatically realm-scoped. Background services without an
+`HttpContext` fall back to the system tenant.
 
 ## IGlobalStore
 
-Das `Realm`-Document selbst kann nicht im Tenant-Store leben — Henne-Ei.
-Es lebt in einem separaten Marten-Store (`IGlobalStore`) gegen Schema
-`global` der Master-DB:
+The `Realm` document itself can't live in the tenant store —
+chicken-and-egg. It lives in a separate Marten store (`IGlobalStore`)
+against schema `global` of the master DB:
 
 ```csharp
 public sealed record TenantInfo(string Slug, bool CanManageTenants, bool IsActive);
@@ -154,37 +151,37 @@ public class Realm
     public string DisplayName { get; set; }
     public string? Description { get; set; }
     public string[] Domains { get; set; }       // ["acme.example.com", ...]
-    public bool CanManageTenants { get; set; }  // darf andere Realms managen
+    public bool CanManageTenants { get; set; }  // may manage other realms
     public bool IsActive { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
 }
 ```
 
-`RealmCache` lädt die Realm-Liste aus `IGlobalStore`.
+`RealmCache` loads the realm list from `IGlobalStore`.
 
-## Bootstrap-Reihenfolge
+## Bootstrap order
 
-In `Program.cs` (vor `app.Run`):
+In `Program.cs` (before `app.Run`):
 
-1. **Master-DB anlegen** (raw SQL)
-2. **Marten-Storage applyen** → `realms.mt_tenant_databases` entsteht
-3. **System-Tenant in der Tenancy-Tabelle eintragen**
+1. **Create master DB** (raw SQL)
+2. **Apply Marten storage** → `realms.mt_tenant_databases` is created
+3. **Register the system tenant in the tenancy table**
    (`tenancy.AddDatabaseRecordAsync("system", masterCs)`)
-4. **Marten-Storage nochmal applyen** → System-Tenant bekommt
-   per-Tenant-Tabellen
-5. **System-Realm-Document seeden** (`EnsureSystemRealmExistsAsync`)
-6. **OAuthRealmSeeder** seedet 5 Default-Scopes
+4. **Apply Marten storage again** → the system tenant gets per-tenant
+   tables
+5. **Seed system realm document** (`EnsureSystemRealmExistsAsync`)
+6. **OAuthRealmSeeder** seeds 5 default scopes
    (`openid`, `email`, `profile`, `roles`, `offline_access`) +
-   Internal-LoginProvider in den System-Tenant
-7. **RealmCache warmladen**
-8. **Recovery-CLI-Pfad checken** oder Kestrel starten
+   internal LoginProvider into the system tenant
+7. **Warm up RealmCache**
+8. **Check the recovery-CLI path** or start Kestrel
 
-## Realm-CRUD
+## Realm CRUD
 
-Endpoints unter `/api/admin/realms` — gegated durch
-`realm:read`/`realm:write` UND nur in Realms mit
-`CanManageTenants = true` (sonst 404).
+Endpoints under `/api/admin/realms` — gated by
+`cocoar-auth:realm:read` / `cocoar-auth:realm:write` AND only
+available in realms with `CanManageTenants = true` (otherwise 404).
 
 ### Create
 
@@ -200,18 +197,19 @@ POST /api/admin/realms
 
 Backend:
 
-1. Validiert `slug` (Regex, Reserved-Words check)
+1. Validates `slug` (regex, reserved-words check)
 2. `CREATE DATABASE cocoar_auth_next_acme` (raw SQL)
 3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`
 4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`
-5. **OAuthRealmSeeder** seedet die neue Tenant-DB
-6. **AuthorizationSeeder** legt 3 Default-Rollen an (System Admin, User
+5. **OAuthRealmSeeder** seeds the new tenant DB
+6. **AuthorizationSeeder** creates 3 default roles (System Admin, User
    Manager, Viewer)
-7. `Realm`-Document in `IGlobalStore`
+7. `Realm` document in `IGlobalStore`
 8. `RealmCache.Invalidate()`
 
-Der Realm ist sofort aufrufbar. Beim ersten Aufruf der Realm-Domain
-landet der Browser auf `/setup` — der erste Visitor wird System-Admin.
+The realm is reachable immediately. On the first hit to the realm
+domain the browser lands at `/setup` — the first visitor becomes the
+system admin.
 
 ### Update
 
@@ -223,39 +221,37 @@ PATCH /api/admin/realms/{slug}
 }
 ```
 
-`Slug` ist immutable.
+`Slug` is immutable.
 
-### Soft-Delete (Deactivate)
+### Soft-delete (deactivate)
 
 ```http
 PATCH /api/admin/realms/{slug}
 { "isActive": false }
 ```
 
-`RealmCache` filtert auf `IsActive = true` — alle Requests an die
-Realm-Domain landen bei `404`. Daten bleiben erhalten.
+`RealmCache` filters on `IsActive = true` — all requests to the realm
+domain land on `404`. Data is preserved.
 
-::: danger System-Realm
-Der System-Realm darf nicht deaktiviert werden — der Endpoint blockt
-das.
+::: danger System realm
+The system realm cannot be deactivated — the endpoint blocks that.
 :::
 
-### Hard-Delete
+### Hard-delete
 
-::: warning In Arbeit
-Aktuell nicht implementiert. Müsste die Tenant-DB sauber droppen,
-Wolverine durability-Agent für den Tenant runterfahren, Sessions
-invalidieren — siehe Roadmap.
+::: warning In progress
+Not currently implemented. Would need to drop the tenant DB cleanly,
+shut down the Wolverine durability agent for the tenant, invalidate
+sessions — see roadmap.
 :::
 
-## Cookies und Sessions im Multi-Realm-Setup
+## Cookies and sessions in a multi-realm setup
 
-Da jeder Realm seine eigene Domain hat, sind Cookies automatisch
-realm-isoliert über die Browser-Cookie-Domain-Regel. Login in
-`acme.example.com` setzt einen Cookie für genau diese Domain — er wird
-bei `finance.example.com` nicht mitgeschickt. Keine Pfad-Akrobatik
-nötig.
+Since each realm has its own domain, cookies are automatically
+realm-isolated by the browser's cookie-domain rule. A login on
+`acme.example.com` sets a cookie for exactly that domain — it isn't
+sent on `finance.example.com`. No path acrobatics required.
 
-Sessions (`UserSession`-Documents) leben pro Realm im Tenant-Store.
-Ein User der in zwei Realms eingeloggt ist hat zwei separate Sessions,
-in zwei separaten DBs.
+Sessions (`UserSession` documents) live per realm in the tenant store.
+A user logged in to two realms has two separate sessions, in two
+separate DBs.
