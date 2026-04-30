@@ -57,8 +57,14 @@ cross-cutting flows.
 >   logic; this spec adds the SPA-sidebar mirror, where a mismatch
 >   between the front-end's `auth.store.ts` and the back-end's
 >   `PermissionEvaluator` would surface.
+> - **§4 Profile self-service** — `30-profile.spec.ts`: change a
+>   non-email field → `AdminApprovalPending`; change email →
+>   `EmailVerificationPending` + Mailpit captures the verification
+>   link; user clicks (POST verify-email) → `AdminApprovalPending`;
+>   admin approves → `/me` reflects the new firstname AND email
+>   atomically.
 >
-> **25 / 25 tests green**, ~30 s on a warm rig (~60 s on first run
+> **28 / 28 tests green**, ~30 s on a warm rig (~60 s on first run
 > because the cocoar-auth image gets built). Run via
 > `cd src/frontend-vue && pnpm test:e2e`.
 
