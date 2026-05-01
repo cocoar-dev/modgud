@@ -163,6 +163,12 @@ public class AutoMembershipSyncHandlersTests
         // class tests their ShouldSync via subclasses to guard against someone
         // accidentally adding an early-out that breaks the script invalidation.
 
+        private sealed class TestableCreated : AutoMembershipOnUserCreatedHandler
+        {
+            public TestableCreated() : base(new ThrowingRecalculator(), NullLogger<AutoMembershipOnUserCreatedHandler>.Instance) { }
+            public new bool ShouldSync(UserCreatedEvent @event) => base.ShouldSync(@event);
+        }
+
         private sealed class TestableActivated : AutoMembershipOnUserActivatedHandler
         {
             public TestableActivated() : base(new ThrowingRecalculator(), NullLogger<AutoMembershipOnUserActivatedHandler>.Instance) { }
@@ -198,6 +204,16 @@ public class AutoMembershipSyncHandlersTests
             public TestableGroupDeleted() : base(new ThrowingRecalculator(), NullLogger<AutoMembershipOnGroupDeletedHandler>.Instance) { }
             public new bool ShouldSync(GroupDeletedEvent @event) => base.ShouldSync(@event);
         }
+
+        [Fact]
+        public void UserCreated_always_syncs() =>
+            Assert.True(new TestableCreated().ShouldSync(
+                new UserCreatedEvent(
+                    Guid.NewGuid(),
+                    Firstname: "F",
+                    Lastname: "L",
+                    Acronym: "FL",
+                    Email: "f.l@test.com")));
 
         [Fact]
         public void UserActivated_always_syncs() =>

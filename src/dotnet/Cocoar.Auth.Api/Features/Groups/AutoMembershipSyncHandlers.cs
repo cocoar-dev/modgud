@@ -35,6 +35,26 @@ internal static class PrincipalPaths
 }
 
 /// <summary>
+/// Reacts to UserCreatedEvent — a freshly seeded principal has never been
+/// matched against any auto-group. Triggers a dependency-free recalc so the
+/// person lands in every auto-group whose script accepts them. Without this
+/// handler, runtime-created users (POST /api/user, SSO first-login) sit
+/// outside every Auto group's MemberIds until some other event fires.
+/// </summary>
+public class AutoMembershipOnUserCreatedHandler(
+    IAutoMembershipRecalculator recalculator,
+    ILogger<AutoMembershipOnUserCreatedHandler> logger)
+    : ReferenceSyncHandler<UserCreatedEvent>(logger)
+{
+    protected override bool ShouldSync(UserCreatedEvent @event) => true;
+
+    // changedPaths: null forces every auto-script to re-evaluate against the
+    // new principal — there's no prior state to diff against.
+    protected override Task SyncAsync(UserCreatedEvent @event, IDocumentSession session)
+        => recalculator.RecalculateForPrincipalAsync(@event.Id, session, changedPaths: null);
+}
+
+/// <summary>
 /// Reacts to UserUpdatedEvent (fired via UpdateUserCommand dispatched through IMessageBus)
 /// to re-evaluate auto-group membership for the affected user.
 /// </summary>
