@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { useUserStore, type UserGroupDto, type InheritedUserGroupDto } from '@/stores/user.store'
+import { useUserStore, type UserGroupDto, type InheritedUserGroupDto, type EffectiveGroupDto, type EffectiveGroupDiagnostic } from '@/stores/user.store'
 import { useGroupStore } from '@/stores/group.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
-import { CoarTextInput, CoarFormField, CoarIcon, CoarTabGroup, CoarTab, CoarListbox, CoarDualListbox, CoarButton, CoarCheckbox, CoarNote } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarFormField, CoarIcon, CoarTabGroup, CoarTab, CoarListbox, CoarDualListbox, CoarButton, CoarCheckbox, CoarNote, CoarTag } from '@cocoar/vue-ui'
 import type { CoarListboxOption } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -86,20 +86,47 @@ async function clearGrace() {
 // Group membership state (lazy loaded when entering the Groups tab).
 const directGroups = ref<UserGroupDto[]>([])
 const inheritedGroups = ref<InheritedUserGroupDto[]>([])
+const effectiveGroups = ref<EffectiveGroupDto[]>([])
+const effectiveDiagnostics = ref<EffectiveGroupDiagnostic[]>([])
 const groupsLoaded = ref(false)
 const groupsSaving = ref(false)
 
 async function loadGroups() {
   if (isCreate.value) return
-  const data = await userStore.getGroups(props.id)
+  // Both endpoints in parallel — independent reads, both per-tab one-shot.
+  const [data, eff] = await Promise.all([
+    userStore.getGroups(props.id),
+    userStore.getEffectiveGroups(props.id),
+  ])
   directGroups.value = data.Direct
   inheritedGroups.value = data.Inherited
+  effectiveGroups.value = eff.Groups
+  effectiveDiagnostics.value = eff.Diagnostics
   groupsLoaded.value = true
 }
 
 watch(activeTab, (tab) => {
   if (tab === 'groups' && !groupsLoaded.value) loadGroups()
 })
+
+function effectiveSourceLabel(g: EffectiveGroupDto): string {
+  if (g.Source === 'DirectManual') {
+    return t('admin.userDetails.effectiveGroups.sourceDirect', {}, 'Direkt')
+  }
+  if (g.Source === 'InheritedManual') {
+    // Show the entry direct group (first hop in the Via chain) so the admin
+    // sees how the inherited membership was reached.
+    const via = g.Via?.[0]?.Name ?? ''
+    return t('admin.userDetails.effectiveGroups.sourceInherited', { via }, `Vererbt über ${via}`)
+  }
+  return t('admin.userDetails.effectiveGroups.sourceAuto', {}, 'Auto-Skript')
+}
+
+function effectiveSourceVariant(g: EffectiveGroupDto): 'neutral' | 'success' | 'info' | 'warning' {
+  if (g.Source === 'DirectManual') return 'success'
+  if (g.Source === 'InheritedManual') return 'info'
+  return 'neutral'
+}
 
 // All assignable groups (non-Auto, non-deleted) as picker options.
 const allGroupsOptions = computed<CoarListboxOption<string>[]>(() =>
@@ -379,6 +406,46 @@ watch(() => form.value.UserName, () => {
 
       <!-- Tab: Groups -->
       <div v-show="!isCreate && activeTab === 'groups'" class="tab-content">
+        <!-- Read-only debug surface: live effective membership (Direct/Inherited
+             materialized + Auto-script matches), independent of MemberIds state.
+             "Drift" warnings flag Auto rows where the predicate matches but the
+             user is not in MemberIds — somebody never recomputed. -->
+        <section v-if="effectiveGroups.length > 0 || effectiveDiagnostics.length > 0" class="flex-section">
+          <div class="section-heading">
+            {{ t('admin.userDetails.effectiveGroups.heading', {}, 'Effektive Gruppen') }}
+          </div>
+          <div class="effective-list">
+            <div v-for="g in effectiveGroups" :key="g.Id" class="effective-row">
+              <CoarIcon name="users" size="s" class="effective-icon" />
+              <div class="effective-name">
+                <span>{{ g.Name }}</span>
+                <span v-if="g.Roles.length > 0" class="effective-roles">
+                  · {{ g.Roles.map(r => r.Name).join(', ') }}
+                </span>
+              </div>
+              <CoarTag :variant="effectiveSourceVariant(g)" size="s">
+                {{ effectiveSourceLabel(g) }}
+              </CoarTag>
+              <CoarTag v-if="g.Source === 'AutoMatched' && g.MaterializedMatches === false"
+                       variant="warning" size="s">
+                {{ t('admin.userDetails.effectiveGroups.driftBadge', {}, 'Drift — neu berechnen?') }}
+              </CoarTag>
+            </div>
+          </div>
+          <CoarNote v-if="effectiveDiagnostics.length > 0" variant="warning" class="mt-2">
+            <div class="text-xs font-semibold mb-1">
+              {{ t('admin.userDetails.effectiveGroups.diagnosticsHeading', {}, 'Skripte mit Fehlern') }}
+            </div>
+            <ul class="text-xs list-disc pl-4">
+              <li v-for="d in effectiveDiagnostics" :key="d.GroupId">
+                {{ t('admin.userDetails.effectiveGroups.diagnosticLine',
+                     { group: d.GroupName, error: d.Error },
+                     `Skript für Gruppe ${d.GroupName} konnte nicht ausgewertet werden: ${d.Error}`) }}
+              </li>
+            </ul>
+          </CoarNote>
+        </section>
+
         <section class="flex-section flex-1">
           <div class="section-heading">{{ t('admin.userDetails.directGroups', {}, 'Direct memberships') }}</div>
           <CoarDualListbox
@@ -498,5 +565,45 @@ watch(() => form.value.UserName, () => {
   flex-direction: column;
   min-height: 0;
   gap: 6px;
+}
+
+.effective-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
+  border-radius: 4px;
+  padding: 6px 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.effective-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  font-size: 0.85rem;
+}
+
+.effective-icon {
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.effective-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.effective-roles {
+  color: #6b7280;
+  font-size: 0.75rem;
 }
 </style>

@@ -370,7 +370,16 @@
       "availableGroups": "Verfügbar",
       "memberOf": "Mitglied von",
       "searchGroups": "Gruppen suchen…",
-      "inheritedVia": "über: {via}"
+      "inheritedVia": "über: {via}",
+      "effectiveGroups": {
+        "heading": "Effektive Gruppen",
+        "sourceDirect": "Direkt",
+        "sourceInherited": "Vererbt über {via}",
+        "sourceAuto": "Auto-Skript",
+        "driftBadge": "Drift — neu berechnen?",
+        "diagnosticsHeading": "Skripte mit Fehlern",
+        "diagnosticLine": "Skript für Gruppe {group} konnte nicht ausgewertet werden: {error}"
+      }
     },
     "setPassword": {
       "title": "Passwort setzen",

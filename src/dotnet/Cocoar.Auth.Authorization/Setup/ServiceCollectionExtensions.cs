@@ -26,6 +26,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IResourceRegistry>(options.ResourceRegistry);
 
         services.AddScoped<IPermissionService, PermissionService>();
+        services.AddScoped<IEffectiveGroupsResolver, EffectiveGroupsResolver>();
         services.AddScoped<IMembershipEvaluator, MembershipEvaluator>();
         services.AddScoped<IPrincipalEmailResolver, PrincipalEmailResolver>();
         services.AddScoped<IPrincipalLookupService, PrincipalLookupService>();

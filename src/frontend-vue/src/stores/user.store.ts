@@ -21,6 +21,44 @@ export interface UserGroupsDto {
   Inherited: InheritedUserGroupDto[]
 }
 
+export type EffectiveGroupSource = 'DirectManual' | 'InheritedManual' | 'AutoMatched'
+
+export interface EffectiveGroupRoleDto {
+  Id: string
+  Name: string
+}
+
+export interface EffectiveGroupViaStepDto {
+  Id: string
+  Name: string
+}
+
+export interface EffectiveGroupDto {
+  Id: string
+  Name: string
+  Description: string | null
+  Roles: EffectiveGroupRoleDto[]
+  Source: EffectiveGroupSource
+  Via?: EffectiveGroupViaStepDto[]
+  /** AutoMatched only: true when the principal is also currently in MemberIds.
+   *  False signals materialization drift — the script matches but the user is
+   *  not in MemberIds, so a recompute would change the materialized state. */
+  MaterializedMatches?: boolean
+}
+
+export interface EffectiveGroupDiagnostic {
+  GroupId: string
+  GroupName: string
+  Kind: 'EvalFailed' | 'CompileFailed'
+  Error: string
+}
+
+export interface EffectiveGroupsResponse {
+  PrincipalId: string
+  Groups: EffectiveGroupDto[]
+  Diagnostics: EffectiveGroupDiagnostic[]
+}
+
 export const useUserStore = defineStore('user', () => {
   // Full entity service (admin-only: GET /api/user requires app:admin)
   const service = useEntityService<UserDto, UserCreateDto>({
@@ -57,6 +95,16 @@ export const useUserStore = defineStore('user', () => {
 
   async function getGroups(userId: string): Promise<UserGroupsDto> {
     return await http.addPath(userId, 'groups').get<UserGroupsDto>()
+  }
+
+  /**
+   * Admin debug surface: returns the live effective group membership of a user
+   * — direct + inherited (manual) + auto-script matches — independent of
+   * whether MemberIds is materialized. Used by the "Effektive Gruppen"
+   * section in the Groups tab to surface materialization drift.
+   */
+  async function getEffectiveGroups(userId: string): Promise<EffectiveGroupsResponse> {
+    return await http.addPath(userId, 'effective-groups').get<EffectiveGroupsResponse>()
   }
 
   async function addGroup(userId: string, groupId: string): Promise<void> {
@@ -110,6 +158,7 @@ export const useUserStore = defineStore('user', () => {
     setPassword,
     setActive,
     getGroups,
+    getEffectiveGroups,
     addGroup,
     removeGroup,
     getSecurityInfo,

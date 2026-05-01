@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using BuildingBlocks.Helper;
 using Cocoar.Auth.Authorization.AspNetCore;
 using Cocoar.Auth.Authorization.Principals;
+using Cocoar.Auth.Authorization.Services;
 using Marten;
 using Cocoar.Auth.Authentication.ExtensionMethods;
 using Cocoar.Auth.Api.Features.Users.Commands;
@@ -286,6 +287,53 @@ public static class UsersEndpoints
                 });
             })
             .WithName("V2_User_GetGroups")
+            .RequiresPermission("cocoar-auth:user:read");
+
+        // Admin debug surface: returns the live effective group membership of a
+        // user — direct + inherited (manual) + auto-script matches — independent
+        // of whether MemberIds is materialized. The `MaterializedMatches=false`
+        // flag on AutoMatched rows is the gold debug signal: "the script would
+        // match but the user isn't in MemberIds — somebody never recomputed."
+        userGroup.MapGet("{id}/effective-groups", async (
+            ShortGuid id, IDocumentSession session, IEffectiveGroupsResolver resolver) =>
+            {
+                var person = await session.LoadAsync<Person>(id.Guid);
+                if (person is null || person.IsDeleted)
+                    return Results.NotFound(new { error = "User not found" });
+
+                var result = await resolver.ResolveAsync(id.Guid);
+
+                return Results.Ok(new
+                {
+                    PrincipalId = new ShortGuid(result.PrincipalId).ToString(),
+                    Groups = result.Groups.Select(g => new
+                    {
+                        Id = new ShortGuid(g.Id).ToString(),
+                        g.Name,
+                        g.Description,
+                        Roles = g.Roles.Select(r => new
+                        {
+                            Id = new ShortGuid(r.Id).ToString(),
+                            r.Name,
+                        }),
+                        Source = g.Source.ToString(),
+                        Via = g.Via?.Select(v => new
+                        {
+                            Id = new ShortGuid(v.Id).ToString(),
+                            v.Name,
+                        }),
+                        g.MaterializedMatches,
+                    }),
+                    Diagnostics = result.Diagnostics.Select(d => new
+                    {
+                        GroupId = new ShortGuid(d.GroupId).ToString(),
+                        d.GroupName,
+                        Kind = d.Kind.ToString(),
+                        d.Error,
+                    }),
+                });
+            })
+            .WithName("V2_User_GetEffectiveGroups")
             .RequiresPermission("cocoar-auth:user:read");
 
         // Add the user to a group. Auto-groups reject the add — membership is
