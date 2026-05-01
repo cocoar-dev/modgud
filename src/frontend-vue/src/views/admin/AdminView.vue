@@ -12,7 +12,7 @@ const authStore = useAuthStore()
 
 interface NavItem {
   /** Section heading the item belongs to. Used to hide empty sections. */
-  section: 'authorization' | 'oauth' | 'identity' | 'system'
+  section: 'authorization' | 'oauth' | 'system'
   label: string
   icon: string
   path: string
@@ -31,11 +31,10 @@ const allNavItems: NavItem[] = [
   { section: 'authorization', label: 'nav.roles', icon: 'shield', path: '/admin/roles', requirePermissions: ['cocoar-auth:permission-role:read'] },
   { section: 'authorization', label: 'nav.groups', icon: 'users-round', path: '/admin/groups', requirePermissions: ['cocoar-auth:authorization-group:read'] },
   // OAuth & Federation
+  { section: 'oauth', label: 'admin.loginProviders.title', icon: 'log-in', path: '/admin/login-providers', requirePermissions: ['cocoar-auth:login-provider:read'] },
   { section: 'oauth', label: 'admin.oauthClients.title', icon: 'app-window', path: '/admin/oauth/clients', requirePermissions: ['cocoar-auth:oauth-client:read'] },
   { section: 'oauth', label: 'admin.oauthScopes.title', icon: 'tags', path: '/admin/oauth/scopes', requirePermissions: ['cocoar-auth:oauth-scope:read'] },
   { section: 'oauth', label: 'admin.oauthApis.title', icon: 'server', path: '/admin/oauth/apis', requirePermissions: ['cocoar-auth:oauth-api:read'] },
-  // Identity sources
-  { section: 'identity', label: 'admin.loginProviders.title', icon: 'log-in', path: '/admin/login-providers', requirePermissions: ['cocoar-auth:login-provider:read'] },
   // System
   { section: 'system', label: 'admin.apps.title', icon: 'layout-grid', path: '/admin/apps', requirePermissions: ['cocoar-auth:app:read'] },
   { section: 'system', label: 'admin.realms.title', icon: 'globe', path: '/admin/realms', requirePermissions: ['cocoar-auth:realm:read'] },
@@ -62,7 +61,6 @@ const sections = computed<Section[]>(() => {
   const grouped: Record<NavItem['section'], NavItem[]> = {
     authorization: [],
     oauth: [],
-    identity: [],
     system: [],
   }
   for (const item of visibleItems.value) {
@@ -72,7 +70,6 @@ const sections = computed<Section[]>(() => {
   const all: Section[] = [
     { key: 'authorization', heading: t('admin.section.authorization', {}, 'Autorisierung'), items: grouped.authorization },
     { key: 'oauth', heading: t('admin.section.oauth', {}, 'OAuth & Federation'), items: grouped.oauth },
-    { key: 'identity', heading: t('admin.section.identity', {}, 'Identitätsquellen'), items: grouped.identity },
     { key: 'system', heading: t('admin.section.system', {}, 'System'), items: grouped.system },
   ]
   return all.filter((s) => s.items.length > 0)

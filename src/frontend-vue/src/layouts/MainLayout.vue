@@ -28,7 +28,8 @@ const { state: ui, reset: resetUI } = provideUI()
 const authStore = useAuthStore()
 
 const collapsed = ref(
-    localStorage.getItem('sidebar-collapsed') === 'true'
+    // Default collapsed for first-time users; persisted choice wins thereafter.
+    localStorage.getItem('sidebar-collapsed') !== 'false'
 )
 
 function toggleCollapsed() {
