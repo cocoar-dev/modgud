@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, watch, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarCard, CoarIcon, CoarSpinner, CoarNote, CoarTag } from '@cocoar/vue-ui'
 import { useUI } from '@/composables/useUI'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useAuthStore } from '@/stores/auth.store'
-import { useIsAdmin } from '@/composables/useIsAdmin'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import type { SessionDto, SessionListDto } from '@/models/session'
 import type { UserDto } from '@/models/user'
@@ -14,8 +13,17 @@ import type { UserDto } from '@/models/user'
 const { t, language } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
-const isAdmin = useIsAdmin()
 const loginProviderStore = useLoginProviderStore()
+
+// ─── Per-card permission gates ───────────────────────────────────────────
+// Each admin card/tile is gated on the *specific* permission that backs its
+// data fetch — mirrors how AdminView's sidebar items work and avoids the bug
+// where a help-desk user (who has user:read + auth-log:read but nothing else)
+// would see the full admin face just because she holds *some* admin perm.
+const canSeeUsers = computed(() => authStore.hasPermission('cocoar-auth:user:read'))
+const canSeeAuthLog = computed(() => authStore.hasPermission('cocoar-auth:auth-log:read'))
+const canSeeChangeRequests = computed(() => authStore.hasPermission('cocoar-auth:user:write'))
+const canSeeLoginProviders = computed(() => authStore.hasPermission('cocoar-auth:login-provider:read'))
 
 const ui = useUI()
 watch(language, () => ui.set((ctx) => {
@@ -48,10 +56,15 @@ interface SecurityItem {
   /** Stable key — used as Vue list key + i18n suffix. */
   key: 'email' | 'mfa' | 'passkey'
   ok: boolean
+  /** While the underlying data isn't loaded yet we don't want to flash a
+   *  red "missing" state — keep the row in a neutral pending state. */
+  pending?: boolean
   label: string
-  icon: 'circle-check' | 'shield-alert' | 'circle-off'
-  iconClass: string
-  hint: string | null
+  /** Pastel tag tone used in the list — green = OK, amber = missing,
+   *  rose = expired/error. We never use rose for the security checklist
+   *  today, but keeping the union open mirrors the task brief. */
+  tagVariant: 'success' | 'warning' | 'error' | 'neutral'
+  tagLabel: string
 }
 
 const securityItems = computed<SecurityItem[]>(() => {
@@ -62,9 +75,10 @@ const securityItems = computed<SecurityItem[]>(() => {
     key: 'email',
     ok: hasEmail,
     label: t('dashboard.security.emailLabel', {}, 'E-Mail hinterlegt'),
-    icon: hasEmail ? 'circle-check' : 'circle-off',
-    iconClass: hasEmail ? 'text-green-600' : 'text-surface-400',
-    hint: hasEmail ? null : t('dashboard.security.emailHint', {}, 'Jetzt einrichten'),
+    tagVariant: hasEmail ? 'success' : 'warning',
+    tagLabel: hasEmail
+      ? t('dashboard.security.statusOk', {}, 'OK')
+      : t('dashboard.security.statusMissing', {}, 'fehlt'),
   })
 
   const has2fa = authStore.user?.Has2FA === true
@@ -72,28 +86,38 @@ const securityItems = computed<SecurityItem[]>(() => {
     key: 'mfa',
     ok: has2fa,
     label: t('dashboard.security.mfaLabel', {}, 'Zwei-Faktor-Authentisierung'),
-    icon: has2fa ? 'circle-check' : 'shield-alert',
-    iconClass: has2fa ? 'text-green-600' : 'text-amber-600',
-    hint: has2fa ? null : t('dashboard.security.mfaHint', {}, 'Jetzt einrichten'),
+    tagVariant: has2fa ? 'success' : 'warning',
+    tagLabel: has2fa
+      ? t('dashboard.security.statusOk', {}, 'OK')
+      : t('dashboard.security.statusMissing', {}, 'fehlt'),
   })
 
+  const passkeyPending = passkeyCount.value === null && !passkeysError.value
   const hasPasskey = (passkeyCount.value ?? 0) > 0
   items.push({
     key: 'passkey',
     ok: hasPasskey,
-    // While the count is still unknown (null) we render the row neutrally —
-    // CoarSpinner replaces the icon (see template) so we don't briefly flash
-    // a red "missing" state on a perfectly fine account.
+    pending: passkeyPending,
     label: t('dashboard.security.passkeyLabel', {}, 'Passkey hinterlegt'),
-    icon: hasPasskey ? 'circle-check' : 'circle-off',
-    iconClass: hasPasskey ? 'text-green-600' : 'text-surface-400',
-    hint: hasPasskey ? null : t('dashboard.security.passkeyHint', {}, 'Jetzt einrichten'),
+    tagVariant: passkeyPending ? 'neutral' : (hasPasskey ? 'success' : 'warning'),
+    tagLabel: passkeyPending
+      ? '…'
+      : (hasPasskey
+        ? t('dashboard.security.statusOk', {}, 'OK')
+        : t('dashboard.security.statusMissing', {}, 'fehlt')),
   })
 
   return items
 })
 
-const securityNeedsAttention = computed(() => securityItems.value.some(i => !i.ok))
+const securityScoreReady = computed(() =>
+  passkeyCount.value !== null || passkeysError.value,
+)
+const securityScoreActive = computed(() => securityItems.value.filter(i => i.ok).length)
+const securityScoreTotal = computed(() => securityItems.value.length)
+const securityScoreAllGood = computed(() =>
+  securityScoreReady.value && securityScoreActive.value === securityScoreTotal.value,
+)
 
 function goToProfileSecurity() {
   router.push('/profile')
@@ -119,18 +143,12 @@ async function loadSessions() {
 const topSessions = computed(() => sessions.value.slice(0, 3))
 const extraSessionCount = computed(() => Math.max(0, sessions.value.length - 3))
 
-function deviceIcon(s: SessionDto): string {
-  const dt = (s.DeviceType ?? '').toLowerCase()
-  if (dt.includes('mobile') || dt.includes('phone')) return 'smartphone'
-  if (dt.includes('tablet')) return 'tablet'
-  return 'monitor'
-}
-
 function deviceLabel(s: SessionDto): string {
-  const browser = [s.Browser, s.BrowserVersion].filter(Boolean).join(' ')
-  const os = [s.OperatingSystem, s.OsVersion].filter(Boolean).join(' ')
-  return [browser, os].filter(Boolean).join(' · ') ||
-    (s.DeviceType ?? t('dashboard.sessions.unknownDevice', {}, 'Unbekanntes Gerät'))
+  // KPI-style "Browser auf Gerät" — the screenshot's row label uses
+  // "Chrome auf Windows" rather than the older "Browser · OS" form.
+  const browser = s.Browser || t('dashboard.sessions.unknownBrowser', {}, 'Browser')
+  const os = s.OperatingSystem || s.DeviceType || t('dashboard.sessions.unknownDevice', {}, 'Unbekanntes Gerät')
+  return t('dashboard.sessions.deviceLabel', { browser, os }, '{browser} auf {os}')
 }
 
 function relativeTime(iso: string): string {
@@ -150,9 +168,7 @@ function goToProfileSessions() {
   router.push('/profile')
 }
 
-// ─── Admin: Realm-Übersicht ──────────────────────────────────────────────
-// We grab the user list (admin-gated) for the count, and re-use the AuthLog
-// fetch (also admin-gated) below to derive failed-logins-last-24h.
+// ─── Admin: User count ──────────────────────────────────────────────────
 const usersHttp = useHttpClient('/api/user')
 const userCount = ref<number | null>(null)
 const userCountError = ref(false)
@@ -245,21 +261,6 @@ async function loadChangeRequests() {
   }
 }
 
-const topPendingRequests = computed(() => changeRequests.value.slice(0, 5))
-
-function changeRequestTypeLabel(type: string): string {
-  if (type === 'Profile') return t('dashboard.pendingChangeRequests.typeProfile', {}, 'Profiländerung')
-  return type
-}
-
-function changeRequestStatusLabel(status: ChangeRequestRow['Status']): string {
-  if (status === 'EmailVerificationPending')
-    return t('dashboard.pendingChangeRequests.statusVerify', {}, 'E-Mail-Bestätigung offen')
-  if (status === 'AdminApprovalPending')
-    return t('dashboard.pendingChangeRequests.statusAdmin', {}, 'Wartet auf Freigabe')
-  return status
-}
-
 function goToChangeRequests() {
   router.push('/admin/change-requests')
 }
@@ -280,6 +281,10 @@ async function loadLoginProviders() {
 
 const loginProviders = computed(() => loginProviderStore.providers)
 
+const activeOidcProviderCount = computed(() =>
+  loginProviders.value.filter(p => p.Type === 'Oidc' && p.Enabled).length,
+)
+
 function goToLoginProvider(id: string) {
   // Provider detail is a URL-fragment-routed modal mounted by LoginProviderList
   // (`useRoutedModals()` reads the hash). Navigate to the list with the id in
@@ -287,8 +292,148 @@ function goToLoginProvider(id: string) {
   router.push({ path: '/admin/login-providers', hash: `#${id}` })
 }
 
-function goToLoginProviders() {
-  router.push('/admin/login-providers')
+// ─── KPI tiles ────────────────────────────────────────────────────────────
+// We model tiles as a single declarative list — both the user tiles and the
+// admin tiles flow through the same flex-wrap row in the template, which
+// keeps the centered "2 tiles for users / fill 6 for admins" behavior the
+// brief asked for without branching the markup.
+type TileTone = 'rose' | 'amber' | 'emerald' | 'sky' | 'violet' | 'blue'
+interface KpiTile {
+  key: string
+  icon: string
+  tone: TileTone
+  /** Display value. `null` means loading; show an em-dash. Empty string
+   *  short-circuits the spinner+dash logic for fraction-style values that
+   *  format themselves. */
+  value: string | null
+  /** When true, the value renders in rose (e.g. failure counters > 0). */
+  bad?: boolean
+  /** When true, the value renders in amber (warn) without going full red. */
+  warn?: boolean
+  /** Pulled while the underlying data is still loading. */
+  loading: boolean
+  caption: string
+  onClick?: () => void
+}
+
+const kpiTiles = computed<KpiTile[]>(() => {
+  const tiles: KpiTile[] = []
+
+  // Personal tiles ---------------------------------------------------------
+  const sessionsValue = sessionsError.value
+    ? '–'
+    : (sessionsLoading.value ? null : String(sessions.value.length))
+  tiles.push({
+    key: 'activeSessions',
+    icon: 'monitor',
+    tone: 'sky',
+    value: sessionsValue,
+    loading: sessionsLoading.value && !sessionsError.value,
+    caption: t('dashboard.kpi.activeSessions', {}, 'Aktive Sitzungen'),
+    onClick: goToProfileSessions,
+  })
+
+  // Security score: render once we know the passkey count (or its error).
+  // Until then we leave value null so the tile shows the placeholder dash.
+  const scoreValue = securityScoreReady.value
+    ? `${securityScoreActive.value} / ${securityScoreTotal.value}`
+    : null
+  tiles.push({
+    key: 'securityScore',
+    icon: 'shield',
+    tone: securityScoreAllGood.value ? 'emerald' : 'amber',
+    value: scoreValue,
+    warn: securityScoreReady.value && !securityScoreAllGood.value,
+    loading: !securityScoreReady.value,
+    caption: t('dashboard.kpi.securityScore', {}, 'Sicherheits-Score'),
+    onClick: goToProfileSecurity,
+  })
+
+  // Admin tiles — each gated on its own permission.
+  if (canSeeUsers.value) {
+    const userCountValue = userCountError.value
+      ? '–'
+      : (userCount.value === null ? null : String(userCount.value))
+    tiles.push({
+      key: 'userCount',
+      icon: 'users',
+      tone: 'violet',
+      value: userCountValue,
+      loading: userCount.value === null && !userCountError.value,
+      caption: t('dashboard.kpi.userCount', {}, 'User im Realm'),
+      onClick: goToUsers,
+    })
+  }
+
+  if (canSeeAuthLog.value) {
+    const failed = failedLogins24h.value
+    const failedValue = authLogError.value
+      ? '–'
+      : (authLogLoading.value ? null : String(failed ?? 0))
+    tiles.push({
+      key: 'failedLast24h',
+      icon: 'shield-alert',
+      tone: 'rose',
+      value: failedValue,
+      bad: !authLogLoading.value && !authLogError.value && (failed ?? 0) > 0,
+      loading: authLogLoading.value && !authLogError.value,
+      caption: t('dashboard.kpi.failedLast24h', {}, 'Fehlversuche 24h'),
+      onClick: goToAuthLog,
+    })
+  }
+
+  if (canSeeChangeRequests.value) {
+    const pendingValue = changeRequestsError.value
+      ? '–'
+      : (changeRequestsLoading.value ? null : String(changeRequests.value.length))
+    const pendingCount = changeRequests.value.length
+    tiles.push({
+      key: 'pendingChangeRequests',
+      icon: 'inbox',
+      tone: 'amber',
+      value: pendingValue,
+      warn: !changeRequestsLoading.value && !changeRequestsError.value && pendingCount > 0,
+      loading: changeRequestsLoading.value && !changeRequestsError.value,
+      caption: t('dashboard.kpi.pendingChangeRequests', {}, 'Offene Anfragen'),
+      onClick: goToChangeRequests,
+    })
+  }
+
+  if (canSeeLoginProviders.value) {
+    const providersValue = providersError.value
+      ? '–'
+      : (providersLoading.value ? null : String(activeOidcProviderCount.value))
+    tiles.push({
+      key: 'activeLoginProviders',
+      icon: 'log-in',
+      tone: 'blue',
+      value: providersValue,
+      loading: providersLoading.value && !providersError.value,
+      caption: t('dashboard.kpi.activeLoginProviders', {}, 'Login-Provider aktiv'),
+      onClick: () => router.push('/admin/login-providers'),
+    })
+  }
+
+  return tiles
+})
+
+// Layout hint: ≥3 tiles → fan out to admin grid; otherwise center the user pair.
+const isWideKpiGrid = computed(() => kpiTiles.value.length > 2)
+
+// Show the second list-card row (System-Aktivität / Login-Provider) only if at
+// least one of those cards is visible to the viewer. Both are gated below too,
+// so the row container collapses cleanly when nothing's visible.
+const showAdminListRow = computed(() => canSeeAuthLog.value || canSeeLoginProviders.value)
+
+// Tile-icon tone → scoped CSS class. The actual rgba(...0.15) palette lives
+// in the <style scoped> block (mirrors TimeToDo's kpi-icon--<tone> pattern).
+const TONE_CLASS: Record<TileTone, string> = {
+  rose: 'kpi-icon--red',
+  amber: 'kpi-icon--orange',
+  emerald: 'kpi-icon--green',
+  sky: 'kpi-icon--blue',
+  violet: 'kpi-icon--purple',
+  blue: 'kpi-icon--blue',
 }
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────
@@ -297,112 +442,124 @@ onMounted(() => {
   loadPasskeys()
   loadSessions()
 
-  // Admin cards — only fire the (gated) endpoints if we already know the user
-  // has admin powers. Hitting them as a normal user would just earn 403s and
-  // surface "Daten konnten nicht geladen werden" cards on a perfectly fine
-  // dashboard.
-  if (isAdmin.value) {
-    loadUserCount()
-    loadAuthLog()
-    loadChangeRequests()
-    loadLoginProviders()
-  }
+  // Admin cards — fire each fetch only when the viewer actually holds the
+  // permission that backs it. Skipping these for non-eligible users avoids
+  // 403 noise and prevents the bug where a help-desk user (who only holds
+  // user:read + auth-log:read) would see the full admin face.
+  if (canSeeUsers.value) loadUserCount()
+  if (canSeeAuthLog.value) loadAuthLog()
+  if (canSeeChangeRequests.value) loadChangeRequests()
+  if (canSeeLoginProviders.value) loadLoginProviders()
 })
 </script>
 
 <template>
   <div class="w-full py-6 space-y-6">
-    <!-- Personal cards: 3-col on lg+, 2-col on md, 1-col mobile.
-         Keeps the security checklist + sessions side by side on a normal
-         desktop, falls back gracefully on narrower viewports. -->
-    <div class="dashboard-grid">
-      <!-- ─── Account-Sicherheit ─── -->
-      <CoarCard elevated>
-        <div class="p-6 space-y-4">
-          <div class="flex items-center gap-3">
-            <CoarIcon name="shield-check" size="m" class="text-surface-500" />
-            <h2 class="text-lg font-semibold">
-              {{ t('dashboard.security.title', {}, 'Account-Sicherheit') }}
-            </h2>
+    <!-- ─── KPI tile row ─── -->
+    <!-- Adapted from TimeToDo: small grid count for end-users, fills out
+         to lg:grid-cols-6 once the admin tiles join in. -->
+    <div class="kpi-grid" :class="isWideKpiGrid ? 'kpi-grid--admin' : 'kpi-grid--user'">
+      <CoarCard
+        v-for="tile in kpiTiles"
+        :key="tile.key"
+        elevated
+        variant="info"
+        class="kpi-card"
+        @click="tile.onClick && tile.onClick()"
+      >
+        <div class="kpi-content">
+          <div class="kpi-icon" :class="TONE_CLASS[tile.tone]">
+            <CoarIcon :name="tile.icon" size="m" />
           </div>
+          <div
+            class="kpi-value"
+            :class="{
+              'kpi-value--bad': tile.bad,
+              'kpi-value--warn': tile.warn,
+            }"
+          >
+            <CoarSpinner v-if="tile.loading" size="s" />
+            <template v-else>{{ tile.value ?? '–' }}</template>
+          </div>
+          <div class="kpi-label">{{ tile.caption }}</div>
+        </div>
+      </CoarCard>
+    </div>
 
-          <ul class="space-y-2">
-            <li v-for="item in securityItems" :key="item.key" class="flex items-center gap-3 text-sm">
-              <!-- Spinner placeholder while we're still resolving the passkey
-                   list — prevents a "Passkey fehlt" flash on accounts that
-                   actually have one. -->
-              <CoarSpinner v-if="item.key === 'passkey' && passkeyCount === null" size="s" />
-              <CoarIcon v-else :name="item.icon" size="s" :class="item.iconClass" />
-              <span class="flex-1">{{ item.label }}</span>
-              <button
-                v-if="item.hint"
-                type="button"
-                class="text-xs text-blue-600 hover:underline"
-                @click="goToProfileSecurity"
-              >
-                {{ item.hint }}
-              </button>
-            </li>
-          </ul>
-
-          <div v-if="securityNeedsAttention" class="pt-2">
+    <!-- ─── User list cards: Account-Sicherheit + Aktive Sessions ─── -->
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <!-- Account-Sicherheit -->
+      <CoarCard elevated>
+        <div class="p-4">
+          <h3 class="list-card__heading">
+            <CoarIcon name="shield-check" size="s" class="mr-1 inline-block align-text-bottom" />
+            {{ t('dashboard.security.title', {}, 'Account-Sicherheit') }}
+          </h3>
+          <div class="space-y-1">
             <button
+              v-for="item in securityItems"
+              :key="item.key"
               type="button"
-              class="text-sm text-blue-600 hover:underline"
+              class="list-row"
+              :class="{ 'list-row--strong': !item.ok && !item.pending }"
               @click="goToProfileSecurity"
             >
+              <span class="list-row__label">{{ item.label }}</span>
+              <span class="list-row__meta">
+                <CoarSpinner v-if="item.pending" size="s" />
+                <CoarTag v-else :variant="item.tagVariant" size="s">
+                  {{ item.tagLabel }}
+                </CoarTag>
+              </span>
+            </button>
+          </div>
+          <div class="list-card__footer">
+            <button type="button" class="list-card__cta" @click="goToProfileSecurity">
               {{ t('dashboard.security.cta', {}, 'Zum Profil →') }}
             </button>
           </div>
         </div>
       </CoarCard>
 
-      <!-- ─── Aktive Sessions ─── -->
+      <!-- Aktive Sessions -->
       <CoarCard elevated>
-        <div class="p-6 space-y-4">
-          <div class="flex items-center gap-3">
-            <CoarIcon name="monitor" size="m" class="text-surface-500" />
-            <h2 class="text-lg font-semibold">
-              {{ t('dashboard.sessions.title', {}, 'Aktive Sitzungen') }}
-            </h2>
-          </div>
-
-          <div v-if="sessionsLoading" class="flex justify-center py-4">
+        <div class="p-4">
+          <h3 class="list-card__heading">
+            <CoarIcon name="monitor" size="s" class="mr-1 inline-block align-text-bottom" />
+            {{ t('dashboard.sessions.title', {}, 'Aktive Sitzungen') }}
+          </h3>
+          <div v-if="sessionsLoading" class="list-card__loading">
             <CoarSpinner size="m" />
           </div>
           <CoarNote v-else-if="sessionsError" variant="error">
             {{ t('dashboard.errors.loadFailed', {}, 'Daten konnten nicht geladen werden.') }}
           </CoarNote>
-          <div v-else-if="sessions.length === 0" class="text-sm text-surface-400">
+          <div v-else-if="sessions.length === 0" class="list-card__empty">
             {{ t('dashboard.sessions.none', {}, 'Keine Sitzungen vorhanden.') }}
           </div>
-          <div v-else class="space-y-2">
-            <div
+          <div v-else class="space-y-1">
+            <button
               v-for="s in topSessions"
               :key="s.Id"
-              class="flex items-center gap-3 rounded border border-surface-200 bg-surface-50 px-3 py-2"
-              :class="{ 'session-current': s.IsCurrent }"
+              type="button"
+              class="list-row"
+              :class="{ 'list-row--strong': s.IsCurrent }"
+              @click="goToProfileSessions"
             >
-              <CoarIcon :name="deviceIcon(s)" size="s" class="text-surface-500" />
-              <div class="flex-1 min-w-0">
-                <div class="text-sm font-medium flex items-center gap-2 truncate">
-                  <span class="truncate">{{ deviceLabel(s) }}</span>
-                  <CoarTag v-if="s.IsCurrent" variant="success" size="s">
-                    {{ t('dashboard.sessions.thisDevice', {}, 'Dieses Gerät') }}
-                  </CoarTag>
-                </div>
-                <div class="text-xs text-surface-500">
-                  {{ relativeTime(s.LastActiveAt) }}
-                </div>
-              </div>
-            </div>
-            <div v-if="extraSessionCount > 0" class="text-xs text-surface-500 px-1">
+              <span class="list-row__label">{{ deviceLabel(s) }}</span>
+              <span class="list-row__meta">
+                <CoarTag v-if="s.IsCurrent" variant="success" size="s">
+                  {{ t('dashboard.sessions.thisDevice', {}, 'Dieses Gerät') }}
+                </CoarTag>
+                <CoarTag variant="neutral" size="s">{{ relativeTime(s.LastActiveAt) }}</CoarTag>
+              </span>
+            </button>
+            <div v-if="extraSessionCount > 0" class="list-row__more">
               {{ t('dashboard.sessions.more', { n: extraSessionCount }, '+{n} weitere') }}
             </div>
           </div>
-
-          <div class="pt-1">
-            <button type="button" class="text-sm text-blue-600 hover:underline" @click="goToProfileSessions">
+          <div class="list-card__footer">
+            <button type="button" class="list-card__cta" @click="goToProfileSessions">
               {{ t('dashboard.sessions.cta', {}, 'Sessions verwalten →') }}
             </button>
           </div>
@@ -410,201 +567,93 @@ onMounted(() => {
       </CoarCard>
     </div>
 
-    <!-- Admin cards — only rendered for users with at least one admin
-         permission. Stays out of the way for normal end users so the
-         personal section above doesn't look orphaned at the top. -->
-    <template v-if="isAdmin">
-      <div class="dashboard-grid">
-        <!-- ─── Realm-Übersicht ─── -->
-        <CoarCard elevated>
-          <div class="p-6 space-y-4">
-            <div class="flex items-center gap-3">
-              <CoarIcon name="building-2" size="m" class="text-surface-500" />
-              <h2 class="text-lg font-semibold">
-                {{ t('dashboard.realmOverview.title', {}, 'Realm-Übersicht') }}
-              </h2>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                class="dashboard-stat"
-                :disabled="userCount === null && !userCountError"
-                @click="goToUsers"
-              >
-                <div class="dashboard-stat__value">
-                  <CoarSpinner v-if="userCount === null && !userCountError" size="s" />
-                  <span v-else-if="userCountError">–</span>
-                  <span v-else>{{ userCount }}</span>
-                </div>
-                <div class="dashboard-stat__label">
-                  {{ t('dashboard.realmOverview.users', {}, 'Benutzer') }}
-                </div>
-              </button>
-
-              <button
-                type="button"
-                class="dashboard-stat"
-                :disabled="failedLogins24h === null && authLogLoading"
-                @click="goToAuthLog"
-              >
-                <div
-                  class="dashboard-stat__value"
-                  :class="{ 'text-amber-600': (failedLogins24h ?? 0) > 0 }"
-                >
-                  <CoarSpinner v-if="authLogLoading" size="s" />
-                  <span v-else-if="failedLogins24h === null">–</span>
-                  <span v-else>{{ failedLogins24h }}</span>
-                </div>
-                <div class="dashboard-stat__label">
-                  {{ t('dashboard.realmOverview.failedLogins24h', {}, 'Fehlversuche (24h)') }}
-                </div>
-              </button>
-            </div>
-          </div>
-        </CoarCard>
-
-        <!-- ─── Pending Change Requests ─── -->
-        <CoarCard elevated>
-          <div class="p-6 space-y-4">
-            <div class="flex items-center gap-3">
-              <CoarIcon name="inbox" size="m" class="text-surface-500" />
-              <h2 class="text-lg font-semibold">
-                {{ t('dashboard.pendingChangeRequests.title', {}, 'Offene Anfragen') }}
-              </h2>
-              <CoarTag
-                v-if="!changeRequestsLoading && !changeRequestsError"
-                :variant="changeRequests.length > 0 ? 'warning' : 'neutral'"
-                size="s"
-                class="ml-auto"
-              >
-                {{ changeRequests.length }}
-              </CoarTag>
-            </div>
-
-            <div v-if="changeRequestsLoading" class="flex justify-center py-4">
-              <CoarSpinner size="m" />
-            </div>
-            <CoarNote v-else-if="changeRequestsError" variant="error">
-              {{ t('dashboard.errors.loadFailed', {}, 'Daten konnten nicht geladen werden.') }}
-            </CoarNote>
-            <div v-else-if="changeRequests.length === 0" class="text-sm text-surface-400">
-              {{ t('dashboard.pendingChangeRequests.none', {}, 'Keine offenen Anfragen.') }}
-            </div>
-            <ul v-else class="space-y-1">
-              <li
-                v-for="r in topPendingRequests"
-                :key="r.Id"
-                class="flex items-center gap-2 text-sm rounded px-2 py-1 hover:bg-surface-50 cursor-pointer"
-                @click="goToChangeRequests"
-              >
-                <span class="font-medium truncate flex-1">{{ r.UserLabel }}</span>
-                <span class="text-xs text-surface-500">{{ changeRequestTypeLabel(r.Type) }}</span>
-                <CoarTag
-                  :variant="r.Status === 'AdminApprovalPending' ? 'warning' : 'neutral'"
-                  size="s"
-                >
-                  {{ changeRequestStatusLabel(r.Status) }}
-                </CoarTag>
-              </li>
-            </ul>
-
-            <div class="pt-1">
-              <button type="button" class="text-sm text-blue-600 hover:underline" @click="goToChangeRequests">
-                {{ t('dashboard.pendingChangeRequests.cta', {}, 'Alle anzeigen →') }}
-              </button>
-            </div>
-          </div>
-        </CoarCard>
-
-        <!-- ─── System-Aktivität ─── -->
-        <CoarCard elevated>
-          <div class="p-6 space-y-4">
-            <div class="flex items-center gap-3">
-              <CoarIcon name="scroll-text" size="m" class="text-surface-500" />
-              <h2 class="text-lg font-semibold">
-                {{ t('dashboard.systemActivity.title', {}, 'System-Aktivität') }}
-              </h2>
-            </div>
-
-            <div v-if="authLogLoading" class="flex justify-center py-4">
+    <!-- ─── Admin list cards row ─── -->
+    <template v-if="showAdminListRow">
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <!-- System-Aktivität (last 10 AuthLog rows) -->
+        <CoarCard v-if="canSeeAuthLog" elevated>
+          <div class="p-4">
+            <h3 class="list-card__heading">
+              <CoarIcon name="scroll-text" size="s" class="mr-1 inline-block align-text-bottom" />
+              {{ t('dashboard.systemActivity.title', {}, 'System-Aktivität') }}
+            </h3>
+            <div v-if="authLogLoading" class="list-card__loading">
               <CoarSpinner size="m" />
             </div>
             <CoarNote v-else-if="authLogError" variant="error">
               {{ t('dashboard.errors.loadFailed', {}, 'Daten konnten nicht geladen werden.') }}
             </CoarNote>
-            <div v-else-if="authLog.length === 0" class="text-sm text-surface-400">
+            <div v-else-if="authLog.length === 0" class="list-card__empty">
               {{ t('dashboard.systemActivity.none', {}, 'Noch keine Ereignisse.') }}
             </div>
-            <ul v-else class="space-y-1">
-              <li
+            <div v-else class="space-y-1">
+              <button
                 v-for="(e, idx) in recentSystemActivity"
                 :key="idx"
-                class="flex items-center gap-2 text-sm rounded px-2 py-1"
+                type="button"
+                class="list-row"
+                :class="{ 'list-row--strong': e.Level === 'Error' }"
+                @click="goToAuthLog"
               >
-                <CoarTag :variant="authLogLevelVariant(e.Level)" size="s">{{ e.Level }}</CoarTag>
-                <span class="flex-1 truncate">{{ e.Message }}</span>
-                <span v-if="e.UserName" class="text-xs text-surface-500 truncate max-w-[8rem]">
-                  {{ e.UserName }}
+                <span class="list-row__label">
+                  <span class="list-row__title">{{ e.Message }}</span>
+                  <span v-if="e.UserName" class="list-row__sub">{{ e.UserName }}</span>
                 </span>
-                <span class="text-xs text-surface-400 whitespace-nowrap">
-                  {{ relativeTime(e.Timestamp) }}
+                <span class="list-row__meta">
+                  <CoarTag :variant="authLogLevelVariant(e.Level)" size="s">
+                    {{ relativeTime(e.Timestamp) }}
+                  </CoarTag>
                 </span>
-              </li>
-            </ul>
-
-            <div class="pt-1">
-              <button type="button" class="text-sm text-blue-600 hover:underline" @click="goToAuthLog">
+              </button>
+            </div>
+            <div class="list-card__footer">
+              <button type="button" class="list-card__cta" @click="goToAuthLog">
                 {{ t('dashboard.systemActivity.cta', {}, 'Vollständig anzeigen →') }}
               </button>
             </div>
           </div>
         </CoarCard>
 
-        <!-- ─── Login-Provider-Status ─── -->
-        <CoarCard elevated>
-          <div class="p-6 space-y-4">
-            <div class="flex items-center gap-3">
-              <CoarIcon name="log-in" size="m" class="text-surface-500" />
-              <h2 class="text-lg font-semibold">
-                {{ t('dashboard.loginProviderStatus.title', {}, 'Login-Provider') }}
-              </h2>
-            </div>
-
-            <div v-if="providersLoading" class="flex justify-center py-4">
+        <!-- Login-Provider -->
+        <CoarCard v-if="canSeeLoginProviders" elevated>
+          <div class="p-4">
+            <h3 class="list-card__heading">
+              <CoarIcon name="log-in" size="s" class="mr-1 inline-block align-text-bottom" />
+              {{ t('dashboard.loginProviderStatus.title', {}, 'Login-Provider') }}
+            </h3>
+            <div v-if="providersLoading" class="list-card__loading">
               <CoarSpinner size="m" />
             </div>
             <CoarNote v-else-if="providersError" variant="error">
               {{ t('dashboard.errors.loadFailed', {}, 'Daten konnten nicht geladen werden.') }}
             </CoarNote>
-            <div v-else-if="loginProviders.length === 0" class="text-sm text-surface-400">
+            <div v-else-if="loginProviders.length === 0" class="list-card__empty">
               {{ t('dashboard.loginProviderStatus.none', {}, 'Keine Provider eingerichtet.') }}
             </div>
-            <ul v-else class="space-y-1">
-              <li
+            <div v-else class="space-y-1">
+              <button
                 v-for="p in loginProviders"
                 :key="p.Id"
-                class="flex items-center gap-2 text-sm rounded px-2 py-1 hover:bg-surface-50 cursor-pointer"
+                type="button"
+                class="list-row"
                 @click="goToLoginProvider(p.Id)"
               >
-                <span
-                  class="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                  :class="p.Enabled ? 'bg-green-500' : 'bg-surface-300'"
-                  :title="p.Enabled
-                    ? t('dashboard.loginProviderStatus.enabled', {}, 'Aktiviert')
-                    : t('dashboard.loginProviderStatus.disabled', {}, 'Deaktiviert')"
-                />
-                <span class="flex-1 truncate">{{ p.DisplayName }}</span>
-                <CoarTag v-if="p.Type === 'Internal'" variant="neutral" size="s">
-                  {{ t('dashboard.loginProviderStatus.system', {}, 'System') }}
-                </CoarTag>
-                <span v-else class="text-xs text-surface-400">{{ p.Flavor }}</span>
-              </li>
-            </ul>
-
-            <div class="pt-1">
-              <button type="button" class="text-sm text-blue-600 hover:underline" @click="goToLoginProviders">
-                {{ t('dashboard.loginProviderStatus.cta', {}, 'Verwalten →') }}
+                <span class="list-row__label">
+                  <span
+                    class="provider-dot"
+                    :class="p.Enabled ? 'provider-dot--on' : 'provider-dot--off'"
+                    :title="p.Enabled
+                      ? t('dashboard.loginProviderStatus.enabled', {}, 'Aktiviert')
+                      : t('dashboard.loginProviderStatus.disabled', {}, 'Deaktiviert')"
+                  />
+                  <span class="list-row__title">{{ p.DisplayName }}</span>
+                </span>
+                <span class="list-row__meta">
+                  <CoarTag v-if="p.Type === 'Internal'" variant="neutral" size="s">
+                    {{ t('dashboard.loginProviderStatus.system', {}, 'System') }}
+                  </CoarTag>
+                  <CoarTag v-else variant="info" size="s">{{ p.Flavor }}</CoarTag>
+                </span>
               </button>
             </div>
           </div>
@@ -615,65 +664,168 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Three-column on lg+, two-column on md, single column on mobile —
-   matches the existing profile-card-grid feel but with slightly looser
-   minimums so admin cards (auth-log, change-requests) don't squeeze to the
-   point of truncating every row. */
-.dashboard-grid {
+/* KPI grid: 2-column for end-users, fans out to 6-column on lg viewports
+   when admin tiles are present. Mirrors TimeToDo's "grid-cols-2 lg:grid-cols-5". */
+.kpi-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 1.5rem;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 1024px) {
+  .kpi-grid--user { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 32rem; margin: 0 auto; }
+  .kpi-grid--admin { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
-@media (min-width: 768px) {
-  .dashboard-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (min-width: 1280px) {
-  .dashboard-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-.session-current {
-  border-color: var(--coar-border-semantic-success, #86efac) !important;
-  background: var(--coar-background-semantic-success-subtle, #f0fdf4) !important;
-}
-
-/* Mini stat block — clickable, no button chrome, but lights up on hover so
-   the admin learns the numbers are drill-downs. Keeps the visual weight of
-   a CoarCard interior without nesting another card inside one. */
-.dashboard-stat {
-  text-align: left;
-  border: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
-  border-radius: 6px;
-  padding: 0.75rem 1rem;
-  background: var(--coar-background-neutral-primary, #fff);
+/* KPI cards: lifted-on-hover style — borrowed verbatim from TimeToDo. */
+.kpi-card {
   cursor: pointer;
-  transition: background-color 0.12s ease, border-color 0.12s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-.dashboard-stat:hover:not(:disabled) {
-  background: var(--coar-background-neutral-secondary, #f7f7f7);
-  border-color: var(--coar-border-neutral-tertiary, #d1d5db);
+.kpi-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
-.dashboard-stat:disabled {
-  cursor: default;
+
+.kpi-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem 0.5rem;
+  gap: 0.25rem;
 }
-.dashboard-stat__value {
-  font-size: 1.5rem;
-  font-weight: 600;
-  line-height: 1.2;
+
+.kpi-icon {
   display: flex;
   align-items: center;
-  min-height: 1.8rem;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  margin-bottom: 0.25rem;
 }
-.dashboard-stat__label {
+
+.kpi-icon--blue   { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.kpi-icon--red    { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }
+.kpi-icon--orange { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.kpi-icon--purple { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+.kpi-icon--green  { background: rgba(34, 197, 94, 0.15);  color: #22c55e; }
+
+.kpi-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+  min-height: 1.75rem;
+  display: flex;
+  align-items: center;
+}
+.kpi-value--bad  { color: #ef4444; }
+.kpi-value--warn { color: #f59e0b; }
+
+.kpi-label {
   font-size: 0.75rem;
   color: var(--coar-text-neutral-secondary, #6b7280);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-top: 0.125rem;
+  text-align: center;
 }
+
+/* List card heading: ALL-CAPS small text + leading icon — TimeToDo. */
+.list-card__heading {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  margin-bottom: 0.75rem;
+}
+
+/* List rows: button-based, hover-tinted — matches TimeToDo's todo-row. */
+.list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 0.5rem;
+  border-radius: 0.375rem;
+  text-align: left;
+  font-size: 0.875rem;
+  transition: background-color 0.1s;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+.list-row:hover {
+  background-color: var(--coar-background-neutral-tertiary, rgba(0, 0, 0, 0.04));
+}
+.list-row--strong .list-row__title,
+.list-row--strong > .list-row__label {
+  font-weight: 600;
+}
+
+.list-row__label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.list-row__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-row__sub {
+  font-size: 0.75rem;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  margin-left: 0.5rem;
+  flex-shrink: 0;
+}
+.list-row__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+}
+.list-row__more {
+  font-size: 0.75rem;
+  color: var(--coar-text-neutral-secondary, #9ca3af);
+  padding: 0.25rem 0.5rem;
+}
+
+.list-card__loading {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0;
+}
+.list-card__empty {
+  font-size: 0.875rem;
+  color: var(--coar-text-neutral-secondary, #9ca3af);
+  padding: 0.5rem 0.5rem;
+  text-align: center;
+}
+.list-card__footer {
+  margin-top: 0.5rem;
+  padding: 0 0.5rem;
+}
+.list-card__cta {
+  font-size: 0.8125rem;
+  color: var(--coar-text-link, #2563eb);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.list-card__cta:hover {
+  text-decoration: underline;
+}
+
+.provider-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+.provider-dot--on  { background: #22c55e; }
+.provider-dot--off { background: var(--coar-border-neutral-tertiary, #d1d5db); }
 </style>

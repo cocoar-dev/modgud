@@ -715,6 +715,14 @@
       "hoursAgo": "vor {n} Std.",
       "daysAgo": "vor {n} Tagen"
     },
+    "kpi": {
+      "activeSessions": "Aktive Sitzungen",
+      "securityScore": "Sicherheits-Score",
+      "userCount": "User im Realm",
+      "failedLast24h": "Fehlversuche 24h",
+      "pendingChangeRequests": "Offene Anfragen",
+      "activeLoginProviders": "Login-Provider aktiv"
+    },
     "security": {
       "title": "Account-Sicherheit",
       "emailLabel": "E-Mail hinterlegt",
@@ -723,6 +731,9 @@
       "mfaHint": "Jetzt einrichten",
       "passkeyLabel": "Passkey hinterlegt",
       "passkeyHint": "Jetzt einrichten",
+      "statusOk": "OK",
+      "statusMissing": "fehlt",
+      "statusExpired": "abgelaufen",
       "cta": "Zum Profil →"
     },
     "sessions": {
@@ -731,20 +742,9 @@
       "more": "+{n} weitere",
       "none": "Keine Sitzungen vorhanden.",
       "unknownDevice": "Unbekanntes Gerät",
+      "unknownBrowser": "Browser",
+      "deviceLabel": "{browser} auf {os}",
       "cta": "Sessions verwalten →"
-    },
-    "realmOverview": {
-      "title": "Realm-Übersicht",
-      "users": "Benutzer",
-      "failedLogins24h": "Fehlversuche (24h)"
-    },
-    "pendingChangeRequests": {
-      "title": "Offene Anfragen",
-      "none": "Keine offenen Anfragen.",
-      "typeProfile": "Profiländerung",
-      "statusVerify": "E-Mail-Bestätigung offen",
-      "statusAdmin": "Wartet auf Freigabe",
-      "cta": "Alle anzeigen →"
     },
     "systemActivity": {
       "title": "System-Aktivität",
