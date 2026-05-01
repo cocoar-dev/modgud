@@ -705,6 +705,59 @@
   "dashboard": {
     "title": "Dashboard",
     "welcomeTitle": "Willkommen bei Cocoar.Auth",
-    "welcomeBody": "Du bist angemeldet als"
+    "welcomeBody": "Du bist angemeldet als",
+    "errors": {
+      "loadFailed": "Daten konnten nicht geladen werden."
+    },
+    "time": {
+      "justNow": "gerade eben",
+      "minutesAgo": "vor {n} Min.",
+      "hoursAgo": "vor {n} Std.",
+      "daysAgo": "vor {n} Tagen"
+    },
+    "security": {
+      "title": "Account-Sicherheit",
+      "emailLabel": "E-Mail hinterlegt",
+      "emailHint": "Jetzt einrichten",
+      "mfaLabel": "Zwei-Faktor-Authentisierung",
+      "mfaHint": "Jetzt einrichten",
+      "passkeyLabel": "Passkey hinterlegt",
+      "passkeyHint": "Jetzt einrichten",
+      "cta": "Zum Profil →"
+    },
+    "sessions": {
+      "title": "Aktive Sitzungen",
+      "thisDevice": "Dieses Gerät",
+      "more": "+{n} weitere",
+      "none": "Keine Sitzungen vorhanden.",
+      "unknownDevice": "Unbekanntes Gerät",
+      "cta": "Sessions verwalten →"
+    },
+    "realmOverview": {
+      "title": "Realm-Übersicht",
+      "users": "Benutzer",
+      "failedLogins24h": "Fehlversuche (24h)"
+    },
+    "pendingChangeRequests": {
+      "title": "Offene Anfragen",
+      "none": "Keine offenen Anfragen.",
+      "typeProfile": "Profiländerung",
+      "statusVerify": "E-Mail-Bestätigung offen",
+      "statusAdmin": "Wartet auf Freigabe",
+      "cta": "Alle anzeigen →"
+    },
+    "systemActivity": {
+      "title": "System-Aktivität",
+      "none": "Noch keine Ereignisse.",
+      "cta": "Vollständig anzeigen →"
+    },
+    "loginProviderStatus": {
+      "title": "Login-Provider",
+      "none": "Keine Provider eingerichtet.",
+      "enabled": "Aktiviert",
+      "disabled": "Deaktiviert",
+      "system": "System",
+      "cta": "Verwalten →"
+    }
   }
 }
