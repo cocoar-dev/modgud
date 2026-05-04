@@ -86,6 +86,13 @@ public static class DependencyInjection
                 .Identity(x => x.Id)
                 .Index(x => x.Slug, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsActive')::boolean = true)"; });
 
+            // Per-realm RSA signing keys (C3b — multi-tenancy crypto isolation).
+            // Indexed by RealmSlug so the key store's per-realm lookups stay O(1)
+            // even with hundreds of retired keys lingering in the table.
+            opts.Schema.For<RealmSigningKey>()
+                .Identity(x => x.Id)
+                .Index(x => x.RealmSlug);
+
             opts.UseSystemTextJsonForSerialization(configure: o =>
             {
                 o.PropertyNamingPolicy = null;
@@ -105,6 +112,11 @@ public static class DependencyInjection
         // TenantedSessionFactory has been registered".
         services.AddSingleton<TenantedSessionFactory>();
         services.AddSingleton<ITenantSessionFactory>(sp => sp.GetRequiredService<TenantedSessionFactory>());
+
+        // Per-realm signing keys (C3b — multi-tenancy crypto isolation).
+        // Singleton so the in-memory cache survives across requests; reads of
+        // active credentials run on every token issuance.
+        services.AddSingleton<IRealmKeyStore, RealmKeyStore>();
         services.AddSingleton<IRealmCache, RealmCache>();
         services.AddScoped<IRealmProvisioningService, RealmProvisioningService>();
 

@@ -131,6 +131,9 @@ public static class OpenIddictExtensions
 
                 options.AddEventHandler(RealmIssuerHandler.Descriptor);
                 options.AddEventHandler(AccessTokenTypeHandler.Descriptor);
+                options.AddEventHandler(RealmSigningKeyHandler.Descriptor);
+                options.AddEventHandler(RealmJwksHandler.Descriptor);
+                options.AddEventHandler(RealmTokenValidationHandler.Descriptor);
             })
             .AddValidation(options =>
             {
