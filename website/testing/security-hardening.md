@@ -22,7 +22,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 |------:|---------|---------:|:------:|---------|
 | 1 | [C1 Demo-Seed Production-Sicherung](#c1-demo-seed-production-sicherung) | 2 | ✅ | `b31a20e` |
 | 1 | [C2 Production Fail-Closed Config](#c2-production-fail-closed-config) | 3 | ✅ | `793b55d` |
-| 1 | [C3 Multi-Tenancy-Isolation](#c3-multi-tenancy-isolation) | 6 | ✅ | `e4c86b0` `68b7440` `4be9d5a` _C3d-pending_ |
+| 1 | [C3 Multi-Tenancy-Isolation](#c3-multi-tenancy-isolation) | 6 | ✅ | `e4c86b0` `68b7440` `4be9d5a` `fd2fc5d` |
 | 1 | [C4 Consent-Flow neu](#c4-consent-flow-neu) | 3 | ☐ | — |
 | 1 | [C5 Logout-Hardening](#c5-logout-hardening) | 5 | ☐ | — |
 | 1 | [C6 CSRF-Posture](#c6-csrf-posture) | 4 | ☐ | — |
@@ -116,7 +116,7 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 ### C3 · Multi-Tenancy-Isolation
 
-**Status:** ✅ Done · **Aufwand:** ~6 h (in 4 Sub-Commits aufgeteilt) · **Commits:** `e4c86b0` (C3a), `68b7440` (C3b), `4be9d5a` (C3c), `_C3d-pending_`
+**Status:** ✅ Done · **Aufwand:** ~6 h (in 4 Sub-Commits aufgeteilt) · **Commits:** `e4c86b0` (C3a), `68b7440` (C3b), `4be9d5a` (C3c), `fd2fc5d` (C3d)
 
 > Architektur-Entscheidung getroffen: **Option B — Per-Realm RSA-Signing-Keys**.
 > Cryptographische Isolation, Rotation eines Realm-Keys hat null Blast-Radius
