@@ -50,7 +50,12 @@
     (and the gitignored "configuration.local.json") would end up in published images
     and silently override the secure class defaults of AppSettings. Exclude them from
     publish; devs still use them at source, prod runs on class defaults + env vars.
-    demo-seed.json stays published — DemoSeedImportService reads it at runtime.
+
+    data/demo-seed.json is dev-only fixture data (admin/Demo1234! plus hard-coded
+    OAuth client secrets). It MUST NOT ship in the production image — an operator
+    triggering /setup with LoadDemoData=true on a public deployment would otherwise
+    create takeover-ready accounts. Excluded from publish here; DemoSeedService is
+    only registered in non-Production environments (Program.cs).
   -->
   <ItemGroup>
     <Content Update="data\configuration.json">
@@ -58,6 +63,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Update="data\configuration.local.json" Condition="Exists('data\configuration.local.json')">
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Update="data\demo-seed.json">
       <CopyToPublishDirectory>Never</CopyToPublishDirectory>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

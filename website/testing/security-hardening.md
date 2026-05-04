@@ -20,7 +20,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 
 | Welle | Cluster | Findings | Status | Commits |
 |------:|---------|---------:|:------:|---------|
-| 1 | [C1 Demo-Seed Production-Sicherung](#c1-demo-seed-production-sicherung) | 2 | ☐ | — |
+| 1 | [C1 Demo-Seed Production-Sicherung](#c1-demo-seed-production-sicherung) | 2 | ✅ | _pending_ |
 | 1 | [C2 Production Fail-Closed Config](#c2-production-fail-closed-config) | 3 | ☐ | — |
 | 1 | [C3 Multi-Tenancy-Isolation](#c3-multi-tenancy-isolation) | 6 | ☐ | — |
 | 1 | [C4 Consent-Flow neu](#c4-consent-flow-neu) | 3 | ☐ | — |
@@ -45,22 +45,38 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 
 ### C1 · Demo-Seed Production-Sicherung
 
-**Status:** ☐ Open · **Aufwand:** ~30 min · **Commit:** —
-
-Dem-Seed-Datei darf nicht ins Production-Image, `IDemoSeedService` darf in
-Production nicht registriert werden, `LoadDemoData=true` muss in Production
-hart abgelehnt werden.
+**Status:** ✅ Done · **Aufwand:** ~30 min (effektiv 45 min) · **Commit:** _pending_
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| PROD-01 | 🔴 Critical | `Cocoar.Auth.Api.csproj:55-64` + `data/demo-seed.json` | demo-seed.json wird im publishten Image mitgeliefert; Operator kann Production via `/setup` mit `LoadDemoData=true` mit bekannten Credentials kompromittieren | ☐ |
-| OAUTH-06 | 🟠 High | `data/demo-seed.json:129,143` | Hartcodierte Confidential-Client-Secrets (`demo-backend-secret-please-rotate`, `demo-bff-secret-please-rotate`) | ☐ |
+| PROD-01 | 🔴 Critical | `Cocoar.Auth.Api.csproj:55-64` + `data/demo-seed.json` | demo-seed.json wird im publishten Image mitgeliefert; Operator kann Production via `/setup` mit `LoadDemoData=true` mit bekannten Credentials kompromittieren | ✅ |
+| OAUTH-06 | 🟠 High | `data/demo-seed.json:129,143` | Hartcodierte Confidential-Client-Secrets — bleiben in Dev/Test als Fixture, durch Publish-Exclude und Production-Gate aber wirkungslos außerhalb von Dev | ✅ (gemildert) |
 
-**Fix-Maßnahmen:**
-- `<Content Update="data\demo-seed.json"><CopyToPublishDirectory>Never</CopyToPublishDirectory></Content>` in csproj
-- `IDemoSeedService` nur in `!IsProduction()` registrieren
-- `SetupEndpoints` lehnt `LoadDemoData=true` in Production hart ab
-- Beim Seeden: zufällige Secrets generieren statt fixe Strings
+**Implementierte Fixes:**
+- `Cocoar.Auth.Api.csproj`: `<Content Update="data\demo-seed.json">` mit
+  `<CopyToPublishDirectory>Never</CopyToPublishDirectory>` ergänzt → Datei
+  ist nach `dotnet publish` nicht mehr im Output (verifiziert: `data/`
+  fehlt komplett im Publish-Verzeichnis)
+- `Program.cs`: `IDemoSeedService`-Registrierung nur in
+  `!builder.Environment.IsProduction()`
+- `SetupEndpoints.cs`: bei `request.LoadDemoData == true` und
+  `env.IsProduction()` wird hart mit 400 + Audit-Log abgelehnt, ohne dass
+  irgendeine Mutation passiert
+- Endpoint-Parameter `IDemoSeedService?` mit `[FromServices]` annotiert,
+  weil Production die Service-Registrierung absichtlich auslässt und der
+  minimal-API-Binder sonst beim Startup terminiert
+
+**Verifikation (manuell durchgespielt):**
+- ASPNETCORE_ENVIRONMENT=Production + `LoadDemoData=true` → 400, DB unverändert
+- ASPNETCORE_ENVIRONMENT=Production + `LoadDemoData=false` → 200, nur Admin, 0 OAuth-Clients
+- `dotnet publish -c Release` → `data/demo-seed.json` abwesend
+- ASPNETCORE_ENVIRONMENT=Development → Demo-Seed läuft weiter (4 OAuth-Clients geseeded)
+
+**Hinweis:** Die hartcodierten Secrets in `demo-seed.json` (OAUTH-06) bleiben
+im Source-Tree als Test-Fixture für `tests-e2e-testapps` und manuelles
+Smoke-Testing. Sie sind durch Publish-Exclude und Production-Gate
+wirkungslos außerhalb von Dev — Random-Generation verbleibt als optionaler
+Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 ---
 
@@ -349,7 +365,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | OAUTH-03 | 🔴 | C4 | Consent ohne CSRF |
 | OAUTH-04 | 🟠 | C5 | Logout ignoriert id_token_hint |
 | OAUTH-05 | 🟠 | C13 | Selbes Cert Signing+Encryption, kein Passwort |
-| OAUTH-06 | 🟠 | C1 | Demo-Seed mit hartcodierten Secrets |
+| OAUTH-06 | 🟠 | C1 | Demo-Seed mit hartcodierten Secrets ✅ (gemildert) |
 | OAUTH-07 | 🟠 | C7 | Refresh-Token ohne Security-Stamp-Check |
 | OAUTH-08 | 🟠 | C4 | `/consent?returnUrl=` reflektiert raw QueryString |
 | OAUTH-09 | 🟠 | C10 | `ValidateApiCredentialsAsync` BCrypt-Loop DoS |
@@ -364,7 +380,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | OAUTH-18 | 🟡 | C5 | Logout via GET (= OAUTH-04) |
 | OIDC-01 | 🟡 | — | `ResponseMode=Query` non-prod (akzeptiert) |
 | OIDC-02 | 🟡 | C11 | Placeholder-OIDC HTTPS=false (dead code) |
-| PROD-01 | 🔴 | C1 | Demo-Seed ships im Image |
+| PROD-01 | 🔴 | C1 | Demo-Seed ships im Image ✅ |
 | PROD-02 | 🔴 | C2 | `DevelopmentMode=true` Class-Default |
 | PROD-03 | 🟠 | C2 | `UseHttpsRedirection` fehlt + ForwardedHeaders |
 | RATE-01 | 🟠 | C10 | Kein App-Level-Rate-Limit |

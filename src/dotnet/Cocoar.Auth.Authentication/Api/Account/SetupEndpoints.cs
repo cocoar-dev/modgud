@@ -36,8 +36,14 @@ public static class SetupEndpoints
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             ISessionService sessionService,
+            IWebHostEnvironment env,
             HttpContext context,
-            IDemoSeedService? demoSeedService = null) =>
+            // [FromServices] is needed because Production deliberately does NOT
+            // register IDemoSeedService (PROD-01); without the attribute the
+            // minimal-API binder marks the parameter "UNKNOWN" and refuses to
+            // build the endpoint at startup. With the attribute it's resolved
+            // optionally — null when unregistered, the seeder when registered.
+            [Microsoft.AspNetCore.Mvc.FromServices] IDemoSeedService? demoSeedService = null) =>
         {
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
@@ -49,6 +55,20 @@ public static class SetupEndpoints
                     statusCode: StatusCodes.Status403Forbidden,
                     title: "Setup not available",
                     detail: "An administrator already exists.");
+            }
+
+            // PROD-01 belt-and-suspenders: refuse demo-data import in Production
+            // even if some misconfigured deployment shipped demo-seed.json AND
+            // managed to register IDemoSeedService. The demo seed creates known-
+            // password accounts (`Demo1234!`) and known-secret OAuth clients;
+            // letting it run on a public deployment is a complete takeover.
+            if (request.LoadDemoData && env.IsProduction())
+            {
+                Serilog.Log.Warning("Auth: Setup create-admin rejected LoadDemoData in Production. IP={IP} UserName={UserName}", ip, request.UserName);
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Demo data not available",
+                    detail: "Demo data import is disabled in Production deployments.");
             }
 
             if (string.IsNullOrWhiteSpace(request.UserName))

@@ -350,7 +350,16 @@ try
     // the operator opts in. The service is itself stateless; it scopes its
     // own session per call so re-runs (e.g. setup-completed → admin re-runs
     // with LoadDemoData=true) don't leak across invocations.
-    builder.Services.AddScoped<IDemoSeedService, DemoSeedService>();
+    // PROD-01: do NOT expose the demo seeder in Production. The seed file is
+    // also publish-excluded (see csproj), but the in-process service is the
+    // belt-and-suspenders gate — even if a build accidentally ships the JSON,
+    // there is nothing to call it. The DemoSeedService dependency on
+    // SetupEndpoints.create-admin is `IDemoSeedService? = null`, so the
+    // endpoint silently falls through when the service isn't registered.
+    if (!builder.Environment.IsProduction())
+    {
+        builder.Services.AddScoped<IDemoSeedService, DemoSeedService>();
+    }
 
     // External auth (Phase 1–2: flavor registry + dynamic OIDC scheme registration)
     builder.Services.AddSingleton<ILoginProviderFlavor, EntraIdFlavor>();
