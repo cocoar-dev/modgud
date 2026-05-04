@@ -20,7 +20,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 
 | Welle | Cluster | Findings | Status | Commits |
 |------:|---------|---------:|:------:|---------|
-| 1 | [C1 Demo-Seed Production-Sicherung](#c1-demo-seed-production-sicherung) | 2 | ✅ | _pending_ |
+| 1 | [C1 Demo-Seed Production-Sicherung](#c1-demo-seed-production-sicherung) | 2 | ✅ | `b31a20e` |
 | 1 | [C2 Production Fail-Closed Config](#c2-production-fail-closed-config) | 3 | ☐ | — |
 | 1 | [C3 Multi-Tenancy-Isolation](#c3-multi-tenancy-isolation) | 6 | ☐ | — |
 | 1 | [C4 Consent-Flow neu](#c4-consent-flow-neu) | 3 | ☐ | — |
@@ -45,7 +45,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 
 ### C1 · Demo-Seed Production-Sicherung
 
-**Status:** ✅ Done · **Aufwand:** ~30 min (effektiv 45 min) · **Commit:** _pending_
+**Status:** ✅ Done · **Aufwand:** ~30 min (effektiv 45 min) · **Commit:** `b31a20e`
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
