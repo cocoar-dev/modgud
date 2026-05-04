@@ -204,6 +204,7 @@ export default withMermaid(
               { text: 'Automated tests', link: '/testing/automated-tests' },
               { text: 'Pinned-by-design', link: '/testing/pinned-by-design' },
               { text: 'Manual smoke checklist', link: '/testing/manual-checklist' },
+              { text: 'Security Hardening Tracker', link: '/testing/security-hardening' },
             ],
           },
         ],
