@@ -78,6 +78,15 @@ public static class OpenIddictExtensions
                 options.AllowAuthorizationCodeFlow()
                     .RequireProofKeyForCodeExchange();
                 options.AllowRefreshTokenFlow();
+
+                // OAUTH-10 — make refresh-token reuse detection strict. With a
+                // non-zero leeway window, a refresh token's redeemed-then-
+                // presented event in that window doesn't reject. Zero means
+                // any second presentation after the first redemption fires
+                // invalid_grant — and DetectRefreshTokenReuseAsync (in
+                // AuthorizationEndpoints.ExchangeAsync) tears down the chain
+                // before that rejection happens.
+                options.SetRefreshTokenReuseLeeway(TimeSpan.Zero);
                 options.AllowClientCredentialsFlow();
                 options.AllowDeviceAuthorizationFlow();
 

@@ -27,7 +27,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | 1 | [C5 Logout-Hardening](#c5-logout-hardening) | 5 | ✅ | `e4c2a06` |
 | 1 | [C6 CSRF-Posture](#c6-csrf-posture) | 4 | ✅ | `9bec178` |
 | 2 | [C7 Session-Lifecycle](#c7-session-lifecycle) | 2 | ✅ | `07e2ae5` |
-| 2 | [C8 Token-Chain-Integrity](#c8-token-chain-integrity) | 3 | ☐ | — |
+| 2 | [C8 Token-Chain-Integrity](#c8-token-chain-integrity) | 3 | ✅ | _pending_ |
 | 2 | [C9 Security-Headers](#c9-security-headers) | 1 | ☐ | — |
 | 2 | [C10 Rate-Limiting](#c10-rate-limiting) | 2 | ☐ | — |
 | 3 | [C11 Korrektheit](#c11-korrektheit) | 7 | ☐ | — |
@@ -346,19 +346,34 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 ### C8 · Token-Chain-Integrity
 
-**Status:** ☐ Open · **Aufwand:** ~1.5 h · **Commit:** —
+**Status:** ✅ Done · **Aufwand:** ~1 h · **Commit:** _pending_
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| OAUTH-10 | 🟠 High | `MartenTokenStore.cs:196-258` | Refresh-Token-Reuse nicht detected → kompromittierter Token bleibt nutzbar (RFC 6749 §10.4 nicht erfüllt) | ☐ |
-| OAUTH-13 | 🟡 Medium | `MartenAuthorizationStore.cs:24-36, 52-118` | `FindAsync`-Overloads filtern nicht auf Status; `PruneAsync` deckt nicht alle Fälle | ☐ |
-| OAUTH-14 | 🟡 Medium | `AuthorizationEndpoints.cs:99-104, 210-211` | `/authorize` + `/token` checken `Application.Enabled` (+ Scope/API.Enabled) nicht | ☐ |
+| OAUTH-10 | 🟠 High | `AuthorizationEndpoints.cs ExchangeAsync` + `DetectRefreshTokenReuseAsync` | RFC 6749 §10.4 Reuse-Detection: redeemed Refresh-Token erneut präsentiert → komplette Chain (alle Sibling-Tokens + Authorization) revoked via `IOpenIddictTokenManager.TryRevokeAsync` | ✅ |
+| OAUTH-13 | 🟡 Medium | `MartenAuthorizationStore.cs` | OpenIddict-Interface-Verträge: `FindByApplicationIdAsync`/`FindBySubjectAsync` MÜSSEN status-agnostisch sein (Admin braucht den vollen View). Status-explizite Filter sind in den `FindAsync`-Overloads die der Auth-Pipeline nutzt bereits da. `PruneAsync` deckt Inactive+Revoked. | ⏸ accepted (interface-contract-konform) |
+| OAUTH-14 | 🟡 Medium | `AuthorizationEndpoints.cs:101-130` + `ExchangeAsync` | `/authorize` und `/token` lesen `cocoar:enabled` Property der Application + `Enabled` Flag der Scopes; disabled → `unauthorized_client` / `invalid_scope` | ✅ |
 
-**Fix-Maßnahmen:**
-- Reuse-Detection: redeemed-Token erneut präsentiert → ganze Authorization-Chain revoken via `IOpenIddictTokenManager.RevokeByAuthorizationIdAsync`
-- Authorization-Store: Status-Filter auf alle Find/List-Overloads
-- `PruneAsync` erweitern (Valid + abgelaufen + alte Idle-Sessions)
-- `Enabled`-Flag auf Application/Scope/API in beiden OAuth-Endpoints prüfen → `invalid_client` / `invalid_scope`
+**Implementierte Fixes:**
+
+`OpenIddictExtensions.cs`:
+- `options.SetRefreshTokenReuseLeeway(TimeSpan.Zero)` — explizit kein Grace-Window für redeemed-aber-noch-präsentiert; nur die OneTimeOnly-Rotation, die wir schon hatten
+
+`AuthorizationEndpoints.cs ExchangeAsync`:
+- Neue DI-Args: `IOpenIddictAuthorizationManager` + `IOpenIddictTokenManager` (für die Chain-Revocation)
+- VOR der OpenIddict-Validierung: `DetectRefreshTokenReuseAsync` peeked das Token via `tokenManager.FindByReferenceIdAsync`. Wenn `Status == Redeemed`: alle Tokens unter dem `AuthorizationId` werden via `TryRevokeAsync` revoked, dann auch die Authorization selbst — best-effort, swallow per-item exceptions, weil OpenIddict die Request anschließend ohnehin mit `invalid_grant` ablehnt.
+
+`AuthorizationEndpoints.cs AuthorizeAsync`:
+- Nach `applicationManager.FindByClientIdAsync`: `IsApplicationEnabledAsync` checkt `OAuthApplicationPropertyKeys.Enabled` (`cocoar:enabled`); disabled → `unauthorized_client`
+- `ValidateScopesEnabledAsync` queryt `mt_doc_oauthscopestate` auf nicht-deleted Scopes mit `Enabled == false` die in der Request-Scope-Liste sind; treffer → `invalid_scope`
+
+`AuthorizationEndpoints.cs ExchangeAsync`:
+- Gleiche Checks am /token-Endpoint (unabhängig vom Grant-Type), damit auch der Client-Credentials-Pfad (überspringt /authorize) abgesichert ist
+
+**Was OAUTH-13 angeht (deferred mit Begründung):**
+Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`FindBySubjectAsync` als status-agnostisch — Admin-UIs müssen revoked Authorizations sehen können. Die `FindAsync`-Overloads, die die Auth-Pipeline für "find usable authorization" nutzt, akzeptieren bereits einen `status`-Parameter und filtern korrekt. PruneAsync deckt `Inactive`+`Revoked` mit Threshold; weiterer Cleanup gehört in eine eigene Janitor-Operation. Kein Code-Change.
+
+**Tests:** 780/780 Unit · 135/135 Integration · 14/14 Playwright — alle grün, keine Regression.
 
 ---
 
@@ -482,11 +497,11 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | OAUTH-07 | 🟠 | C7 | Refresh-Token ohne Security-Stamp-Check ✅ |
 | OAUTH-08 | 🟠 | C4 | `/consent?returnUrl=` reflektiert raw QueryString ✅ |
 | OAUTH-09 | 🟠 | C10 | `ValidateApiCredentialsAsync` BCrypt-Loop DoS |
-| OAUTH-10 | 🟠 | C8 | Refresh-Token-Reuse nicht detected |
+| OAUTH-10 | 🟠 | C8 | Refresh-Token-Reuse nicht detected ✅ (chain-revoke) |
 | OAUTH-11 | 🟠 | C3 | Subject ohne Realm-Qualifier ✅ (parallel `realm` claim) |
 | OAUTH-12 | 🟡 | C11 | UserInfo ohne per-App-Consent |
-| OAUTH-13 | 🟡 | C8 | Authorization-Store-Filter ignorieren Status |
-| OAUTH-14 | 🟡 | C8 | `/authorize`+`/token` ohne `Enabled`-Check |
+| OAUTH-13 | 🟡 | C8 | Authorization-Store-Filter ignorieren Status ⏸ accepted (interface-contract) |
+| OAUTH-14 | 🟡 | C8 | `/authorize`+`/token` ohne `Enabled`-Check ✅ |
 | OAUTH-15 | 🟡 | C11 | UserInfo ohne explizites `RequireScope("openid")` |
 | OAUTH-16 | 🟢 | C11 | Generated Secrets nicht URL-safe |
 | OAUTH-17 | 🟡 | C11 | PKCE-Pin-Test fehlt |

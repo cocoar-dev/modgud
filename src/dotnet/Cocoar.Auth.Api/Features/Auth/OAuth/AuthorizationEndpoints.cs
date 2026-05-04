@@ -100,6 +100,27 @@ public static class AuthorizationEndpoints
         var application = await applicationManager.FindByClientIdAsync(request.ClientId!)
             ?? throw new InvalidOperationException("Details concerning the calling client application cannot be found.");
 
+        // OAUTH-14 — refuse to issue a code for a disabled client even if its
+        // record still exists. Otherwise an admin "disable" would be effectively
+        // ignored until the client was deleted entirely.
+        if (!await IsApplicationEnabledAsync(applicationManager, application))
+        {
+            return Results.Forbid(
+                new AuthenticationProperties(new Dictionary<string, string?>
+                {
+                    [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.UnauthorizedClient,
+                    [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The OAuth client is disabled.",
+                }),
+                new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+        }
+
+        // OAUTH-14 — also refuse if any of the requested scopes is itself
+        // marked Enabled=false at the realm level. Defence in depth:
+        // ValidateScopeRestrictionAsync already filters scope→app linkage
+        // but doesn't read the per-scope enabled flag.
+        var scopeError2 = await ValidateScopesEnabledAsync(request.GetScopes(), session);
+        if (scopeError2 is not null) return scopeError2;
+
         var user = await userManager.GetUserAsync(authResult.Principal!);
         if (user is null)
         {
@@ -192,6 +213,8 @@ public static class AuthorizationEndpoints
     private static async Task<IResult> ExchangeAsync(
         HttpContext httpContext,
         IOpenIddictApplicationManager applicationManager,
+        IOpenIddictAuthorizationManager authorizationManager,
+        IOpenIddictTokenManager tokenManager,
         IOpenIddictScopeManager scopeManager,
         SignInManager<ApplicationUser> signInManager,
         UserManager<ApplicationUser> userManager,
@@ -207,6 +230,34 @@ public static class AuthorizationEndpoints
         var scopeError = await ValidateScopeRestrictionAsync(
             request.ClientId, request.GetScopes(), session);
         if (scopeError is not null) return scopeError;
+
+        // OAUTH-14 — refuse to mint tokens for a disabled client / disabled
+        // scope even when the request would otherwise succeed. Reject early
+        // so we don't waste cycles on signature validation for a request
+        // that can't possibly produce a usable token.
+        if (!string.IsNullOrEmpty(request.ClientId))
+        {
+            var clientApp = await applicationManager.FindByClientIdAsync(request.ClientId);
+            if (clientApp is not null && !await IsApplicationEnabledAsync(applicationManager, clientApp))
+            {
+                return ForbidInvalidGrant("The OAuth client is disabled.");
+            }
+        }
+        var enabledScopeError = await ValidateScopesEnabledAsync(request.GetScopes(), session);
+        if (enabledScopeError is not null) return enabledScopeError;
+
+        // OAUTH-10 — RFC 6749 §10.4 / OAuth 2.1 §4.13.2 refresh-token reuse
+        // detection. When a refresh token presented to /token has already been
+        // redeemed, the spec mandates revoking the entire authorization chain
+        // — every sibling token plus the parent authorization — because reuse
+        // is the canonical "compromise" signal. OpenIddict's stock validator
+        // would just return invalid_grant; we additionally tear down the chain
+        // here BEFORE the validator runs, so a single misuse kills every
+        // refresh and access token derived from the same authorization.
+        if (request.IsRefreshTokenGrantType() && !string.IsNullOrEmpty(request.RefreshToken))
+        {
+            await DetectRefreshTokenReuseAsync(request.RefreshToken, tokenManager, authorizationManager);
+        }
 
         if (request.IsAuthorizationCodeGrantType() || request.IsRefreshTokenGrantType() || request.IsDeviceCodeGrantType())
         {
@@ -609,6 +660,113 @@ public static class AuthorizationEndpoints
 
     private static IEnumerable<string> GetDestinations(Claim claim)
         => AuthorizationEndpointHelpers.GetDestinations(claim);
+
+    /// <summary>
+    /// OAUTH-14 — read the <c>cocoar:enabled</c> property off the OAuth
+    /// application. Missing → treated as enabled (matches the legacy
+    /// default-true semantics from before the property was introduced).
+    /// </summary>
+    private static async Task<bool> IsApplicationEnabledAsync(
+        IOpenIddictApplicationManager applicationManager,
+        object application)
+    {
+        var properties = await applicationManager.GetPropertiesAsync(application);
+        if (properties.TryGetValue(
+                Cocoar.Auth.Domain.OAuth.Applications.OAuthApplicationPropertyKeys.Enabled,
+                out var element))
+        {
+            return element.ValueKind switch
+            {
+                System.Text.Json.JsonValueKind.False => false,
+                System.Text.Json.JsonValueKind.True => true,
+                _ => true, // Unknown shape — fail open to current behaviour
+            };
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// OAUTH-14 — refuse the request if any requested scope is marked
+    /// <c>Enabled=false</c> in the per-tenant <see cref="OAuthScopeState"/>
+    /// document. Standard OIDC scopes (openid/email/profile/...) are
+    /// seeded with Enabled=true and never get flipped, so this only
+    /// rejects when an admin explicitly disabled a custom scope.
+    /// </summary>
+    private static async Task<IResult?> ValidateScopesEnabledAsync(
+        IEnumerable<string> requestedScopes,
+        IDocumentSession session)
+    {
+        var requested = requestedScopes.Where(s => !string.IsNullOrEmpty(s)).ToHashSet(StringComparer.Ordinal);
+        if (requested.Count == 0) return null;
+
+        var disabled = await session.Query<OAuthScopeState>()
+            .Where(s => !s.IsDeleted && !s.Enabled && requested.Contains(s.Name))
+            .Select(s => s.Name)
+            .ToListAsync();
+
+        if (disabled.Count == 0) return null;
+
+        return Results.Forbid(
+            new AuthenticationProperties(new Dictionary<string, string?>
+            {
+                [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidScope,
+                [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] =
+                    $"The following scope(s) are disabled: {string.Join(", ", disabled)}.",
+            }),
+            new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+    }
+
+    /// <summary>
+    /// OAUTH-10 — refresh-token reuse detection per RFC 6749 §10.4. If the
+    /// presented reference refresh token is already marked redeemed in the
+    /// store, that's the textbook compromise indicator: the legitimate
+    /// holder MUST have moved on to the rotated successor token, so a
+    /// re-presentation means an attacker captured the original. Revoke
+    /// everything — every token in the chain plus the parent authorization
+    /// — so neither the attacker nor any previously-issued sibling can
+    /// continue to act on the user's behalf.
+    /// <para>
+    /// Idempotent: a token already revoked stays revoked. Best-effort: on
+    /// any storage error during the revoke walk we log-and-swallow rather
+    /// than escalate, because the OpenIddict pipeline that runs right
+    /// after this will still reject the request with invalid_grant — the
+    /// chain teardown is hardening, not a correctness gate.
+    /// </para>
+    /// </summary>
+    private static async Task DetectRefreshTokenReuseAsync(
+        string refreshTokenValue,
+        IOpenIddictTokenManager tokenManager,
+        IOpenIddictAuthorizationManager authorizationManager)
+    {
+        var token = await tokenManager.FindByReferenceIdAsync(refreshTokenValue);
+        if (token is null) return;
+
+        var status = await tokenManager.GetStatusAsync(token);
+        if (!string.Equals(status, Statuses.Redeemed, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var authorizationId = await tokenManager.GetAuthorizationIdAsync(token);
+        if (string.IsNullOrEmpty(authorizationId)) return;
+
+        // Revoke every token in the chain.
+        await foreach (var sibling in tokenManager.FindByAuthorizationIdAsync(authorizationId))
+        {
+            try { await tokenManager.TryRevokeAsync(sibling); }
+            catch { /* best-effort */ }
+        }
+
+        // Revoke the authorization itself so a fresh OAuth flow on the same
+        // client+subject pair must go through the consent + grant cycle
+        // again rather than reusing this compromised authorization.
+        var authorization = await authorizationManager.FindByIdAsync(authorizationId);
+        if (authorization is not null)
+        {
+            try { await authorizationManager.TryRevokeAsync(authorization); }
+            catch { /* best-effort */ }
+        }
+    }
 
     /// <summary>
     /// Resolves the app slugs the bearer token's calling client is linked
