@@ -19,14 +19,17 @@ using Microsoft.AspNetCore.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-const string Authority = "http://localhost:9099";
-const string Audience = "demo-api"; // OAuthApi name in demo-seed.json
+// Configurable via TESTAPPS__* env vars or appsettings.json so the
+// Playwright rig can point us at a dynamically allocated auth port.
+var authority = builder.Configuration["TESTAPPS:AUTHORITY"] ?? "http://localhost:9099";
+var audience = builder.Configuration["TESTAPPS:AUDIENCE"] ?? "demo-api";
+var appSlug = builder.Configuration["TESTAPPS:APPSLUG"] ?? "cocoar-auth";
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.Authority = Authority;
-        options.Audience = Audience;
+        options.Authority = authority;
+        options.Audience = audience;
         options.RequireHttpsMetadata = false; // dev only
         options.TokenValidationParameters.NameClaimType = "name";
         options.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
@@ -37,7 +40,7 @@ builder.Services.AddCocoarAuthClaimsTransformation(o =>
     // The flattening uses resource_access[<slug>].roles. For the demo we
     // run under cocoar-auth's own slug — switch this to the consuming
     // app's slug in real resource servers.
-    o.AppSlug = "cocoar-auth";
+    o.AppSlug = appSlug;
 });
 
 builder.Services.AddAuthorization(options =>

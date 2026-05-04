@@ -25,10 +25,12 @@ using Yarp.ReverseProxy.Transforms;
 
 var builder = WebApplication.CreateBuilder(args);
 
-const string Authority = "http://localhost:9099";
-const string ResourceApi = "http://localhost:7081";
-const string ClientId = "demo-bff";
-const string ClientSecret = "demo-bff-secret-please-rotate";
+// All knobs are env-configurable so the Playwright rig (or a real
+// deployment) can point them at dynamic hosts without recompiling.
+var authority = builder.Configuration["TESTAPPS:AUTHORITY"] ?? "http://localhost:9099";
+var resourceApi = builder.Configuration["TESTAPPS:RESOURCEAPI"] ?? "http://localhost:7081";
+var clientId = builder.Configuration["TESTAPPS:CLIENTID"] ?? "demo-bff";
+var clientSecret = builder.Configuration["TESTAPPS:CLIENTSECRET"] ?? "demo-bff-secret-please-rotate";
 
 // Don't translate JWT claim names ("sub" → ClaimTypes.NameIdentifier etc.).
 // Easier to debug and matches what the SPA wants to see.
@@ -51,9 +53,9 @@ builder.Services.AddAuthentication(options =>
     })
     .AddOpenIdConnect(options =>
     {
-        options.Authority = Authority;
-        options.ClientId = ClientId;
-        options.ClientSecret = ClientSecret;
+        options.Authority = authority;
+        options.ClientId = clientId;
+        options.ClientSecret = clientSecret;
         options.RequireHttpsMetadata = false; // dev only
         options.ResponseType = OpenIdConnectResponseType.Code;
         options.UsePkce = true;
@@ -99,7 +101,7 @@ builder.Services.AddReverseProxy()
                 ClusterId = "resource-api",
                 Destinations = new Dictionary<string, Yarp.ReverseProxy.Configuration.DestinationConfig>
                 {
-                    ["d1"] = new() { Address = ResourceApi },
+                    ["d1"] = new() { Address = resourceApi },
                 },
             },
         })

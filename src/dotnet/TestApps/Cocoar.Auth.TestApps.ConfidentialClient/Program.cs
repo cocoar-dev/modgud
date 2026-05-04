@@ -12,11 +12,11 @@ using System.Text.Json;
 // Designed to be runnable standalone (`dotnet run`) and trivially
 // portable into xUnit Testcontainers integration tests later.
 
-const string Authority = "http://localhost:9099";
-const string ResourceApi = "http://localhost:7081";
-const string ClientId = "demo-backend";
-const string ClientSecret = "demo-backend-secret-please-rotate";
-const string Scopes = "demo.read demo.write";
+var Authority = Environment.GetEnvironmentVariable("TESTAPPS_AUTHORITY") ?? "http://localhost:9099";
+var ResourceApi = Environment.GetEnvironmentVariable("TESTAPPS_RESOURCEAPI") ?? "http://localhost:7081";
+var ClientId = Environment.GetEnvironmentVariable("TESTAPPS_CLIENTID") ?? "demo-backend";
+var ClientSecret = Environment.GetEnvironmentVariable("TESTAPPS_CLIENTSECRET") ?? "demo-backend-secret-please-rotate";
+var Scopes = Environment.GetEnvironmentVariable("TESTAPPS_SCOPES") ?? "demo.read demo.write";
 
 using var http = new HttpClient();
 
