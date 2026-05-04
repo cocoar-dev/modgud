@@ -50,6 +50,8 @@ test.describe('ResourceApi (direct)', () => {
     expect(doc.token_endpoint).toMatch(/\/connect\/token$/)
     expect(doc.authorization_endpoint).toMatch(/\/connect\/authorize$/)
     expect(doc.userinfo_endpoint).toMatch(/\/connect\/userinfo$/)
-    expect(doc.issuer).toBe(AUTHORITY)
+    // OpenIddict appends a trailing slash to the issuer ("http://localhost:9099/")
+    // — match either form so a future configuration tweak doesn't flake the test.
+    expect(doc.issuer.replace(/\/$/, '')).toBe(AUTHORITY)
   })
 })

@@ -96,6 +96,14 @@ public static class DependencyInjection
 
         // Tenancy services
         services.AddSingleton<IMasterConnectionString>(new MasterConnectionString(connectionString));
+        // Marten's BuildSessionsWith<T> registers T only against ISessionFactory in
+        // 8.x — not as the concrete type itself. The OpenIddict Marten stores resolve
+        // the factory via ITenantSessionFactory, which forwards to the concrete class
+        // below; without an explicit concrete registration, /connect/token (and any
+        // other code path that touches the OpenIddict stores from a Wolverine
+        // handler / outside an HTTP request) crashes with "no service for type
+        // TenantedSessionFactory has been registered".
+        services.AddSingleton<TenantedSessionFactory>();
         services.AddSingleton<ITenantSessionFactory>(sp => sp.GetRequiredService<TenantedSessionFactory>());
         services.AddSingleton<IRealmCache, RealmCache>();
         services.AddScoped<IRealmProvisioningService, RealmProvisioningService>();

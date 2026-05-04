@@ -1,7 +1,13 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Cocoar.Auth.Client.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+
+// Disable the default JWT short→long claim translation so we see "sub", "name",
+// "scope" verbatim instead of the System.IdentityModel ClaimTypes.* aliases.
+// Resource servers built on top of Cocoar.Auth do the same in production.
+JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 
 // Cocoar.Auth.TestApps.ResourceApi — protected sample API.
 //
@@ -31,6 +37,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.Authority = authority;
         options.Audience = audience;
         options.RequireHttpsMetadata = false; // dev only
+        options.MapInboundClaims = false;
         options.TokenValidationParameters.NameClaimType = "name";
         options.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
     });

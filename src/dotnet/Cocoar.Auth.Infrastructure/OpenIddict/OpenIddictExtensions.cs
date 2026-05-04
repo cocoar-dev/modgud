@@ -43,6 +43,12 @@ public static class OpenIddictExtensions
         TSettings settings)
         where TSettings : class, IOpenIddictSettings
     {
+        // BCrypt-aware application manager — replaces the default one so client_secret
+        // validation/obfuscation matches the BCrypt format Cocoar.Auth uses everywhere
+        // else (admin REST, demo-seed, secret rotation). See CocoarOpenIddictApplicationManager
+        // for the rationale.
+        services.AddScoped<global::OpenIddict.Core.OpenIddictApplicationManager<OAuthApplicationState>, CocoarOpenIddictApplicationManager>();
+
         // Custom Marten stores (OpenIddict 7 pattern: register the store directly,
         // not the entity → store mapping)
         services.AddScoped<IOpenIddictApplicationStore<OAuthApplicationState>, MartenApplicationStore>();
@@ -78,6 +84,14 @@ public static class OpenIddictExtensions
                 // Reference tokens by default; per-client opt-in to JWT via AccessTokenTypeHandler.
                 options.UseReferenceAccessTokens()
                     .UseReferenceRefreshTokens();
+
+                // Don't encrypt access tokens — JWT clients (those with
+                // AccessTokenType.Jwt) need consumer-readable tokens that
+                // any standard JwtBearer + discovery JWKS can validate
+                // without sharing an encryption key. Reference-token clients
+                // are unaffected (the opaque token is only ever introspected
+                // through OpenIddict itself). Tokens remain signed.
+                options.DisableAccessTokenEncryption();
 
                 options.RegisterScopes(
                     Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles, Scopes.OfflineAccess);

@@ -318,6 +318,7 @@ public sealed class DemoSeedService : IDemoSeedService
                 Scopes = c.Scopes ?? new List<string>(),
                 RequireConsent = c.RequireConsent ?? false,
                 RequireClientSecret = c.RequireClientSecret ?? (c.ClientType == "confidential"),
+                AccessTokenType = ParseAccessTokenType(c.AccessTokenType),
                 Enabled = true,
             };
             var result = await oauthAdmin.CreateClientAsync(dto);
@@ -518,6 +519,9 @@ public sealed class DemoSeedService : IDemoSeedService
         public List<string>? Scopes { get; init; }
         public bool? RequireConsent { get; init; }
         public bool? RequireClientSecret { get; init; }
+        // "Reference" (default) or "Jwt". Reference tokens are validated via
+        // /connect/introspect; Jwt tokens via JwtBearer / discovery JWKS.
+        public string? AccessTokenType { get; init; }
     }
 
     /// <summary>
@@ -534,6 +538,15 @@ public sealed class DemoSeedService : IDemoSeedService
         public string Type { get; init; } = "Oidc";
         public string? Flavor { get; init; }
         public JsonElement? FlavorData { get; init; }
+    }
+
+    private static Cocoar.Auth.Domain.OAuth.Common.AccessTokenType ParseAccessTokenType(string? raw)
+    {
+        // Default mirrors the global OpenIddict server default (reference tokens).
+        if (string.IsNullOrWhiteSpace(raw)) return Cocoar.Auth.Domain.OAuth.Common.AccessTokenType.Reference;
+        return Enum.TryParse<Cocoar.Auth.Domain.OAuth.Common.AccessTokenType>(raw, ignoreCase: true, out var t)
+            ? t
+            : Cocoar.Auth.Domain.OAuth.Common.AccessTokenType.Reference;
     }
 
     private static LoginProviderType MapLoginProviderType(string raw)

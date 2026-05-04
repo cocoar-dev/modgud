@@ -262,14 +262,38 @@ try
             options.SlidingExpiration = true;
             options.Events.OnRedirectToLogin = ctx =>
             {
-                ctx.Response.StatusCode = 401;
+                // /api/* is the SPA's data plane — surface 401 so the
+                // SPA can decide where to navigate. Everything else
+                // (including /connect/authorize for inbound OAuth flows
+                // from third-party clients) needs a real 302 redirect
+                // so the browser actually lands on the login page.
+                if (ctx.Request.Path.StartsWithSegments("/api"))
+                {
+                    ctx.Response.StatusCode = 401;
+                    return Task.CompletedTask;
+                }
+                ctx.Response.Redirect(ctx.RedirectUri);
                 return Task.CompletedTask;
             };
             options.Events.OnRedirectToAccessDenied = ctx =>
             {
-                ctx.Response.StatusCode = 403;
+                if (ctx.Request.Path.StartsWithSegments("/api"))
+                {
+                    ctx.Response.StatusCode = 403;
+                    return Task.CompletedTask;
+                }
+                ctx.Response.Redirect(ctx.RedirectUri);
                 return Task.CompletedTask;
             };
+            // Login/access-denied paths — the SPA handles these client-side
+            // (Vue Router routes for /login + /access-denied), but they need
+            // to be valid URLs so the redirect emitted above resolves to the
+            // SPA shell.
+            options.LoginPath = "/login";
+            options.AccessDeniedPath = "/access-denied";
+            // SPA's LoginView reads route.query.redirect, so keep the
+            // parameter name aligned with the SPA convention.
+            options.ReturnUrlParameter = "redirect";
         })
         // Partial sign-in cookie for 2FA flow (stores user ID between password + TOTP steps)
         .AddCookie(IdentityConstants.TwoFactorUserIdScheme, options =>

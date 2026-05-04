@@ -119,7 +119,8 @@
       "allowedGrantTypes": ["authorization_code", "refresh_token"],
       "scopes": ["openid", "email", "profile", "demo.read"],
       "requireConsent": false,
-      "requireClientSecret": false
+      "requireClientSecret": false,
+      "accessTokenType": "Jwt"
     },
     {
       "clientId": "demo-backend",
@@ -132,7 +133,8 @@
       "allowedGrantTypes": ["client_credentials"],
       "scopes": ["demo.read", "demo.write"],
       "requireConsent": false,
-      "requireClientSecret": true
+      "requireClientSecret": true,
+      "accessTokenType": "Jwt"
     },
     {
       "clientId": "demo-bff",
@@ -145,7 +147,8 @@
       "allowedGrantTypes": ["authorization_code", "refresh_token"],
       "scopes": ["openid", "email", "profile", "offline_access", "demo.read", "demo.write"],
       "requireConsent": false,
-      "requireClientSecret": true
+      "requireClientSecret": true,
+      "accessTokenType": "Jwt"
     },
     {
       "clientId": "demo-mobile",

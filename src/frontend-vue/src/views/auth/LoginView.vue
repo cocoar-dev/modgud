@@ -38,7 +38,11 @@ const redirectTarget = computed(() => {
 
 // Paths outside the SPA (served directly by the backend) — Vue Router can't navigate
 // there, so we use a full-page load after successful login.
-const NON_SPA_PREFIXES = ['/docs/', '/docs']
+// `/connect/*` are the OpenIddict OAuth/OIDC endpoints; an inbound third-party
+// client kicks the flow off there, so completing login has to send the browser
+// back to /connect/authorize verbatim, not push the path through Vue Router
+// (which would silently drop it as an unknown route).
+const NON_SPA_PREFIXES = ['/docs/', '/docs', '/connect/', '/connect']
 
 function finishLogin() {
   const target = redirectTarget.value
