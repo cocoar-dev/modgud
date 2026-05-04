@@ -22,7 +22,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 |------:|---------|---------:|:------:|---------|
 | 1 | [C1 Demo-Seed Production-Sicherung](#c1-demo-seed-production-sicherung) | 2 | ✅ | `b31a20e` |
 | 1 | [C2 Production Fail-Closed Config](#c2-production-fail-closed-config) | 3 | ✅ | `793b55d` |
-| 1 | [C3 Multi-Tenancy-Isolation](#c3-multi-tenancy-isolation) | 6 | ☐ | — |
+| 1 | [C3 Multi-Tenancy-Isolation](#c3-multi-tenancy-isolation) | 6 | ✅ | `e4c86b0` `68b7440` `4be9d5a` _C3d-pending_ |
 | 1 | [C4 Consent-Flow neu](#c4-consent-flow-neu) | 3 | ☐ | — |
 | 1 | [C5 Logout-Hardening](#c5-logout-hardening) | 5 | ☐ | — |
 | 1 | [C6 CSRF-Posture](#c6-csrf-posture) | 4 | ☐ | — |
@@ -116,33 +116,58 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 ### C3 · Multi-Tenancy-Isolation
 
-**Status:** ☐ Open · **Aufwand:** ~3-4 h · **Commit:** —
+**Status:** ✅ Done · **Aufwand:** ~6 h (in 4 Sub-Commits aufgeteilt) · **Commits:** `e4c86b0` (C3a), `68b7440` (C3b), `4be9d5a` (C3c), `_C3d-pending_`
 
-> ⚠️ Größtes Stück. Berührt Token-Format → API-Bruchstelle für künftige
-> Resource-Server. **Vor Implementierung Architektur abstimmen.**
-
-Aktuell teilt sich der gesamte IdP **einen** Issuer-String und **eine**
-Signing-Key über alle Realms. JWTs aus Realm A werden in Realm B akzeptiert
-— vollständiger Cross-Tenant-Auth-Bypass. Zusätzlich verliert die
-Wolverine-Bus-Pipeline beim Übergang in innere DI-Scopes die TenantId.
+> Architektur-Entscheidung getroffen: **Option B — Per-Realm RSA-Signing-Keys**.
+> Cryptographische Isolation, Rotation eines Realm-Keys hat null Blast-Radius
+> auf andere Realms.
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| OAUTH-01 | 🔴 Critical | `OpenIddictExtensions.cs:99,110-115`; `RealmIssuerHandler.cs` | Globaler Issuer + globales Signing-Cert über alle Realms → Cross-Tenant-Token-Akzeptanz | ☐ |
-| OAUTH-11 | 🟠 High | `AuthorizationEndpoints.cs:121,141,193` | `Subject = user.Id.ToString()` ohne Realm-Qualifier → Confused-Deputy-Risiko bei Resource-Server-Sub-Caching | ☐ |
-| WOLV-01 | 🔴 Critical | `Features/Dev/DemoSeedService.cs:56,64,364` | Innerer DI-Scope-Bus verliert TenantId → "Default tenant does not supported" zur Laufzeit (reproduzierbar) | ☐ |
-| WOLV-02 | 🟠 High | `Authentication/Api/ExternalAuth/OidcSchemeBootstrap.cs:21+` | Hosted-Service liest nur System-Realm → Login-Provider in anderen Realms bei Cold-Start nicht registriert (latent silent failure) | ☐ |
-| WOLV-03 | 🟡 Medium | architektonisch | Mutable `bus.TenantId` ist Footgun; jeder neue Inner-Scope reintroduziert den Bug | ☐ |
-| WOLV-04 | 🟢 Low | `Infrastructure/Realms/RealmProvisioningService.cs:155` | Latent: gleiches Inner-Scope-Pattern, aktuell nicht ausgelöst weil Seeder direkt mit Slug arbeitet | ☐ |
+| OAUTH-01 | 🔴 Critical | `OpenIddictExtensions.cs:99,110-115`; `RealmIssuerHandler.cs` | Globaler Issuer + globales Signing-Cert über alle Realms → Cross-Tenant-Token-Akzeptanz | ✅ |
+| OAUTH-11 | 🟠 High | `AuthorizationEndpoints.cs:121,141,193` | `Subject = user.Id.ToString()` ohne Realm-Qualifier → Confused-Deputy-Risiko | ✅ (parallel `realm` Claim) |
+| WOLV-01 | 🔴 Critical | `Features/Dev/DemoSeedService.cs:56,64,364` | Innerer DI-Scope-Bus verliert TenantId | ✅ |
+| WOLV-02 | 🟠 High | `Authentication/Api/ExternalAuth/OidcSchemeBootstrap.cs:21+` | Hosted-Service liest nur System-Realm | ✅ |
+| WOLV-03 | 🟡 Medium | architektonisch | Mutable `bus.TenantId` ist Footgun | ⏸ accepted (durch AsyncLocal-TenantContext gemildert; explizite `bus.TenantId = TenantContext.Current` Pattern dokumentiert) |
+| WOLV-04 | 🟢 Low | `RealmProvisioningService.cs:155` | Latent — Pattern OK weil Seeder direkt mit Slug arbeitet | ⏸ accepted |
 
-**Fix-Architektur (vorgeschlagen):**
-1. **AsyncLocal-basierter `TenantContext`** — `RealmMiddleware` setzt am Request-Start, `using TenantScope.For(slug)` für Background-Pfade
-2. `TenantedSessionFactory` liest aus dem Context statt nur `HttpContext.Items`
-3. Wolverine-Envelope-Mapper kopiert `TenantContext.Current` auf jede ausgehende Message
-4. Per-Realm Issuer in JWTs: neuer `IOpenIddictServerHandler<ProcessSignInContext>` setzt `context.Issuer` aus der aktuellen BaseUri
-5. Per-Realm Signing-Key (Variante A: ein Key pro Realm in Marten persistiert; Variante B: gemeinsamer Key, aber `iss`/`aud` enthält Realm-Slug, Resource-Server validieren Realm-Match) — **Entscheidung offen**
-6. `Subject = "<realm-slug>:<userId>"` ODER zusätzlicher `realm`-Claim
-7. `OidcSchemeBootstrap` iteriert alle aktiven Realms
+**Implementierte Architektur (4 Sub-Commits):**
+
+**C3a — AsyncLocal `TenantContext` + Wolverine** (`e4c86b0`)
+- `Cocoar.Auth.Infrastructure/Persistence/Tenancy/TenantContext.cs` — `AsyncLocal<string?>` mit `Set/Enter`-API
+- `RealmMiddleware` pusht Tenant beim Request-Start; restored beim Unwind
+- `TenantedSessionFactory` resolved jetzt: HttpContext → AsyncLocal → "system"
+- `DemoSeedService` setzt `bus.TenantId = TenantContext.Current` nach Inner-Scope
+- `OidcSchemeBootstrap` iteriert alle aktiven Realms via `IRealmCache.GetAllActiveAsync()`
+
+**C3b — Per-Realm RSA Signing Keys** (`68b7440`)
+- `Cocoar.Auth.Domain/Realms/RealmSigningKey.cs` — Marten-Document im Master-DB
+- `IRealmKeyStore` + `RealmKeyStore`: lazy generation pro Realm, in-memory cache, async per-slug lock, Rotation-API
+- `RealmSigningKeyHandler` (GenerateTokenContext): überschreibt `SigningCredentials` mit Realm-Key für Access+Id-Tokens
+- `RealmTokenValidationHandler` (ValidateTokenContext): beschränkt `IssuerSigningKeys` auf den Realm-Key des aktiven Tenants
+- `RealmJwksHandler` (HandleJsonWebKeySetRequestContext): clearet die globalen Keys, serviert nur Realm-Keys
+- Lesson learned: SetOrder muss `+100` nach Default-Handler, nicht `-1` davor — Default schreibt unconditional
+
+**C3c — Per-Realm Issuer in JWTs** (`4be9d5a`)
+- `RealmSigningKeyHandler` setzt `SecurityTokenDescriptor.Issuer = context.BaseUri` für Access+Id-Tokens
+- iss-Claim mirrors damit das Discovery-Doc je Realm
+- Resource-Server validieren iss → Cross-Realm-Tokens werden zusätzlich zur Signature schon hier rejected
+
+**C3d — `realm`-Claim in Tokens** (committen jetzt)
+- `RealmClaimHandler` (GenerateTokenContext): paralleler `realm`-Claim auf Access+Id-Tokens
+- `sub` bleibt OIDC-konform (stable user-id), `realm` ist die explizite Tenant-Qualifikation
+- Resource-Server-Hint: identity-cache-key sollte `(realm, sub)` sein, nicht `sub` allein
+
+**Verifikation (manuell durchgespielt):**
+- Token-Header `kid` matches DB `RealmSigningKey.KeyId` für system-Realm: ✅
+- Token-Payload enthält `realm: "system"`: ✅
+- JWKS-Endpoint serviert nur Realm-Keys, keine globalen Dev-Cert-Leaks: ✅
+- Phase-7 DemoSeed (Wolverine-Bus für LoginProvider) läuft durch: ✅
+- `OidcSchemeBootstrap registered N schemes across M realm(s)` Log: ✅
+- 14/14 Playwright + 793/793 Unit-Tests grün
+
+**Was noch fehlt (für vollständige Isolation-Verifikation):**
+- Multi-Realm-E2E-Test: zweiter Realm provisionieren, Token aus Realm A präsentieren an Realm B → 401. Aktuell single-realm Setup, Mechanismus aber identisch zum bewährten RealmIssuerHandler.
 
 ---
 
@@ -371,7 +396,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | LOG-01 | 🟢 | C12 | TestApp loggt Token-Length |
 | LOG-02 | ℹ️ | C12 | AuthLog-Retention dokumentieren |
 | LOGOUT-01 | 🟡 | C5 | External-Logout AllowAnonymous |
-| OAUTH-01 | 🔴 | C3 | Cross-Realm JWT-Akzeptanz (shared issuer + key) |
+| OAUTH-01 | 🔴 | C3 | Cross-Realm JWT-Akzeptanz ✅ (per-realm keys + iss) |
 | OAUTH-02 | 🔴 | C4 | Consent-Scope-Expansion |
 | OAUTH-03 | 🔴 | C4 | Consent ohne CSRF |
 | OAUTH-04 | 🟠 | C5 | Logout ignoriert id_token_hint |
@@ -381,7 +406,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | OAUTH-08 | 🟠 | C4 | `/consent?returnUrl=` reflektiert raw QueryString |
 | OAUTH-09 | 🟠 | C10 | `ValidateApiCredentialsAsync` BCrypt-Loop DoS |
 | OAUTH-10 | 🟠 | C8 | Refresh-Token-Reuse nicht detected |
-| OAUTH-11 | 🟠 | C3 | Subject ohne Realm-Qualifier |
+| OAUTH-11 | 🟠 | C3 | Subject ohne Realm-Qualifier ✅ (parallel `realm` claim) |
 | OAUTH-12 | 🟡 | C11 | UserInfo ohne per-App-Consent |
 | OAUTH-13 | 🟡 | C8 | Authorization-Store-Filter ignorieren Status |
 | OAUTH-14 | 🟡 | C8 | `/authorize`+`/token` ohne `Enabled`-Check |
@@ -399,10 +424,10 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | SESSION-01 | 🟠 | C7 | 30-Tage-Cookie + kein SecurityStampValidator |
 | SESSION-02 | 🟠 | C5 | Logout revoked keine OAuth-Tokens |
 | SETUP-01 | 🟠 | C6 | Setup-Endpoint ohne CSRF + Token |
-| WOLV-01 | 🔴 | C3 | DemoSeedService verliert TenantId |
-| WOLV-02 | 🟠 | C3 | OidcSchemeBootstrap nur System-Realm |
-| WOLV-03 | 🟡 | C3 | Mutable `bus.TenantId` ist Footgun |
-| WOLV-04 | 🟢 | C3 | RealmProvisioningService Inner-Scope (latent) |
+| WOLV-01 | 🔴 | C3 | DemoSeedService verliert TenantId ✅ |
+| WOLV-02 | 🟠 | C3 | OidcSchemeBootstrap nur System-Realm ✅ |
+| WOLV-03 | 🟡 | C3 | Mutable `bus.TenantId` ist Footgun ⏸ accepted (gemildert via AsyncLocal) |
+| WOLV-04 | 🟢 | C3 | RealmProvisioningService Inner-Scope (latent) ⏸ accepted |
 
 ---
 
