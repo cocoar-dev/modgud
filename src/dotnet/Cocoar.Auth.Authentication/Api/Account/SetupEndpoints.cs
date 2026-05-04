@@ -43,9 +43,28 @@ public static class SetupEndpoints
             // minimal-API binder marks the parameter "UNKNOWN" and refuses to
             // build the endpoint at startup. With the attribute it's resolved
             // optionally — null when unregistered, the seeder when registered.
-            [Microsoft.AspNetCore.Mvc.FromServices] IDemoSeedService? demoSeedService = null) =>
+            [Microsoft.AspNetCore.Mvc.FromServices] IDemoSeedService? demoSeedService = null,
+            [Microsoft.AspNetCore.Mvc.FromServices] Configuration.ISetupTokenService? setupToken = null) =>
         {
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+            // SETUP-01 — first-run-token gate. In Production (or any non-Development
+            // environment) the request MUST present a matching X-Setup-Token header.
+            // Closes the race-window between the IdP coming up and the legitimate
+            // operator running setup: only someone with read-access to the host
+            // filesystem can grab the token. Token is consumed on success.
+            if (setupToken is { IsRequiredForCurrentEnvironment: true })
+            {
+                var presented = context.Request.Headers["X-Setup-Token"].ToString();
+                if (!setupToken.ValidatePresentedToken(presented))
+                {
+                    Serilog.Log.Warning("Auth: Setup create-admin rejected — missing or invalid X-Setup-Token. IP={IP} UserName={UserName}", ip, request.UserName);
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status401Unauthorized,
+                        title: "Setup token required",
+                        detail: $"Provide the X-Setup-Token header. The token is generated at startup and stored at {setupToken.TokenFilePath}.");
+                }
+            }
 
             // Guard: only allow when no admin exists
             if (await AdminExistsAsync(session))
@@ -197,6 +216,10 @@ public static class SetupEndpoints
             await signInManager.SignInAsync(appUser, isPersistent: false);
 
             await SessionTracker.RecordLoginAsync(sessionService, context, appUser.Id);
+
+            // SETUP-01 — consume the first-run token now that admin exists,
+            // so a stolen token file from this point on cannot replay setup.
+            setupToken?.ConsumeToken();
 
             Serilog.Log.Information("Auth: Initial admin created. User={UserName} IP={IP} DemoData={DemoData}", request.UserName, ip, request.LoadDemoData);
             return Results.Ok(new { Message = "Setup completed successfully", DemoData = demoResult });

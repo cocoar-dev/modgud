@@ -295,7 +295,14 @@ try
         .AddCookie(IdentityConstants.ApplicationScheme, options =>
         {
             options.Cookie.HttpOnly = true;
-            options.Cookie.SameSite = SameSiteMode.Strict;
+            // COOKIE-01: Lax (was Strict). Strict prevents the browser from sending
+            // the cookie on top-level navigations from third-party origins — which
+            // includes the legitimate OIDC redirect-back flow (RP redirects user to
+            // /connect/authorize). With Strict the user gets re-prompted for login
+            // every time an external RP starts a flow, breaking SSO. Lax still
+            // blocks cross-site POSTs (the actual CSRF surface) while allowing
+            // top-level GET/redirect navigations.
+            options.Cookie.SameSite = SameSiteMode.Lax;
             // Always in Production. None in Dev — Vite proxy connects via HTTPS but
             // browser receives response on HTTP, so Secure cookies won't be set.
             options.Cookie.SecurePolicy = builder.Environment.IsProduction()
@@ -416,6 +423,11 @@ try
     builder.Services.AddSingleton<DynamicOidcSchemeManager>();
     builder.Services.AddScoped<ExternalLoginProcessor>();
     builder.Services.AddHostedService<OidcSchemeBootstrap>();
+
+    // SETUP-01 — first-run setup token (Production / non-Development only).
+    builder.Services.AddSingleton<Cocoar.Auth.Authentication.Configuration.ISetupTokenService,
+                                   Cocoar.Auth.Api.Features.Setup.SetupTokenService>();
+    builder.Services.AddHostedService<Cocoar.Auth.Api.Features.Setup.SetupTokenBootstrap>();
 
     // Email (reactive — options factory reads IReactiveConfig<EmailConfiguration> on each send)
    
@@ -640,6 +652,13 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
     app.UseMiddleware<Cocoar.Auth.Authentication.Api.Account.TwoFactorEnforcementMiddleware>();
+
+    // CSRF defence (C6 — CSRF-02 / CSRF-03). Runs after authentication so the
+    // browser's cookie has already been resolved (we want auth to be the gate
+    // for who you are; CSRF middleware is the gate for "did the request come
+    // from this origin"). Targets only state-changing /api/* requests; OAuth
+    // endpoints (/connect/*) have their own protocol-level protections.
+    app.UseMiddleware<Cocoar.Auth.Api.Middleware.CsrfDefenseMiddleware>();
 
 
     // OpenIddict OAuth/OIDC endpoints (/connect/authorize, /token, /userinfo, /logout, /consent).

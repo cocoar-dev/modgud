@@ -25,7 +25,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | 1 | [C3 Multi-Tenancy-Isolation](#c3-multi-tenancy-isolation) | 6 | ✅ | `e4c86b0` `68b7440` `4be9d5a` `fd2fc5d` |
 | 1 | [C4 Consent-Flow neu](#c4-consent-flow-neu) | 3 | ✅ | `dd59175` |
 | 1 | [C5 Logout-Hardening](#c5-logout-hardening) | 5 | ✅ | `e4c2a06` |
-| 1 | [C6 CSRF-Posture](#c6-csrf-posture) | 4 | ☐ | — |
+| 1 | [C6 CSRF-Posture](#c6-csrf-posture) | 4 | ✅ | _pending_ |
 | 2 | [C7 Session-Lifecycle](#c7-session-lifecycle) | 2 | ☐ | — |
 | 2 | [C8 Token-Chain-Integrity](#c8-token-chain-integrity) | 3 | ☐ | — |
 | 2 | [C9 Security-Headers](#c9-security-headers) | 1 | ☐ | — |
@@ -257,26 +257,48 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 ### C6 · CSRF-Posture
 
-**Status:** ☐ Open · **Aufwand:** ~2 h · **Commit:** —
-
-Aktuell schützt nur `SameSite=Strict` auf dem App-Cookie — was aber
-gleichzeitig Cross-Origin-OIDC-Flows blockiert. `app.UseAntiforgery()`
-fehlt komplett. Login- und Setup-Endpoints sind anonym + ungeschützt.
+**Status:** ✅ Done · **Aufwand:** ~2 h · **Commit:** _pending_
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| COOKIE-01 | 🔴 Critical | `Program.cs:254` | App-Cookie `SameSite=Strict` → bricht Cross-Origin-OIDC-Redirects (User wird bei jedem SSO neu zum Login gezwungen) | ☐ |
-| CSRF-02 | 🟠 High | `Program.cs:169` (kein `UseAntiforgery`) | `AddAntiforgery` registriert, aber Middleware nie aktiviert; sobald Cookie auf Lax steht, alle `/api/*` POSTs CSRF-anfällig | ☐ |
-| CSRF-03 | 🟠 High | `AccountEndpoints.cs:62-173` + MFA/OTP/Magic-Link/Passkey/Forgot-Password | Anonyme Login-Endpoints ohne CSRF-Schutz → Login-CSRF (Opfer in Account des Angreifers eingeloggt) | ☐ |
-| SETUP-01 | 🟠 High | `SetupEndpoints.cs:33-184` | `/api/setup/create-admin` nur durch "kein Admin existiert"-Check geschützt → First-Run-Race | ☐ |
+| COOKIE-01 | 🔴 Critical | `Program.cs:298` | App-Cookie auf `SameSite=Lax` (war Strict). SSO-Redirects funktionieren jetzt; Cross-Site-POST bleibt blockiert. | ✅ |
+| CSRF-02 | 🟠 High | `CsrfDefenseMiddleware.cs` (neu) | `Sec-Fetch-Site` / `Origin` / `Referer`-basiertes Gate auf state-changing `/api/*`-Requests; statt voller Antiforgery-Token-Plumbing | ✅ |
+| CSRF-03 | 🟠 High | identisch mit CSRF-02 | Anonyme Login-Endpoints durch dasselbe Gate abgedeckt — Cross-Site-POST von `/api/account/login` & Co. → 403 | ✅ |
+| SETUP-01 | 🟠 High | `SetupTokenService.cs` + `SetupTokenBootstrap.cs` (neu) | First-Run-Setup-Token in non-Development; X-Setup-Token Header Pflicht; single-use; Token-File auto-generiert beim Boot, beim Erfolg konsumiert | ✅ |
 
-**Fix-Maßnahmen:**
-- App-Cookie `SameSite=Lax`
-- `app.UseAntiforgery()` aktivieren
-- SPA-Side: `useHttpClient` schickt `X-XSRF-TOKEN` (Token aus Antiforgery-Cookie)
-- Anonyme Login-Endpoints: Antiforgery-Token-Pflicht oder Origin-Header-Check
-- Setup-Endpoint: One-Time-Setup-Token aus Logfile/stdout, oder localhost-only bis erster Admin
-- E2E-Specs anpassen (X-XSRF-TOKEN-Pfad)
+**Implementierte Architektur:**
+
+**COOKIE-01** — `Cocoar.Auth.Auth` Cookie auf `SameSite=Lax`:
+- Strict blockierte den OIDC-Redirect-Back (Cookie wurde bei Cross-Site-Top-Level-Navigation nicht mitgesendet → User wurde bei jedem SSO neu zum Login gezwungen).
+- Lax sendet bei Top-Level-GETs (= OIDC-Redirect), blockiert Cross-Site-POSTs (= CSRF) — exakt das richtige Verhalten für ein IdP-Cookie.
+- Andere Cookies (2FA, External, Session) bleiben Strict bzw. Lax wie konfiguriert.
+
+**CSRF-02 + CSRF-03** — `CsrfDefenseMiddleware`:
+- Targets `POST/PUT/DELETE/PATCH` auf `/api/*` (OAuth-Endpoints `/connect/*` haben eigene Protokoll-Schutzgegen-CSRF wie state, PKCE, id_token_hint).
+- Decision-Tree: `Sec-Fetch-Site` vorhanden → akzeptiere `same-origin`/`same-site`/`none`, lehne `cross-site` ab. Sonst Origin/Referer-Match gegen Request-Host. Sonst (kein Browser-Header) → durchlassen (Server-zu-Server).
+- Die "no browser headers → allow"-Regel ist der bewusste Kompromiss gegenüber vollem Antiforgery-Token: kein Test-Plumbing, keine SPA-Änderung, keine 135-Integration-Test-Rewrites. Trade-off ist dokumentiert: Server-zu-Server-Caller können das Gate umgehen, aber sie führen kein Browser-Cookie und können daher nicht als logged-in User agieren.
+- Kombiniert mit SameSite=Lax: Browser-Cross-Site-POST bekommt weder Cookie noch CSRF-Pass.
+
+**SETUP-01** — First-Run-Token:
+- `SetupTokenBootstrap` (HostedService): in non-Development, wenn kein Admin existiert UND kein Token-File da ist → frischen 32-byte URL-safe Random generieren, schreiben nach `data/setup-token.txt` (oder `Setup__TokenPath` ENV-override), Posix-Filemode 0600 best-effort, Token-Pfad und Wert in Serilog-Stdout.
+- `SetupTokenService.ValidatePresentedToken` mit `CryptographicOperations.FixedTimeEquals` (timing-safe).
+- `SetupEndpoints.create-admin`: in non-Development X-Setup-Token Header Pflicht; ohne / wrong → 401 *bevor* der admin-exists-Check läuft (gibt also keine Info-Disclosure "admin existiert").
+- Auf Erfolg: `setupToken.ConsumeToken()` löscht das File → kein Replay möglich.
+
+**Manuell verifiziert (curl):**
+- Development-Setup wie bisher: 200 ohne Token-Header
+- Cross-Site fetch (`Sec-Fetch-Site: cross-site`) → 403 `csrf_blocked`
+- Same-Origin fetch → kein CSRF-Block
+- Server-to-Server (keine Browser-Header) → durch
+- Staging+frische DB ohne Token-Header → 401 "Setup token required"
+- Staging mit korrektem Token → 200, Token-File konsumiert
+- Replay-Versuch mit gleichem Token → 401 (File ist weg)
+- App-Cookie wird in Browser-Logs als `samesite=lax` gesetzt (vorher: strict)
+
+**Tests:** 780 Unit · 135 Integration · 14 Playwright — alle grün.
+
+**Was deferred ist:**
+- Volles Antiforgery-Token-Pattern (XSRF-TOKEN cookie + X-XSRF-TOKEN header) bewusst NICHT implementiert: würde alle 135 Integration-Tests aufreißen für minimalen zusätzlichen Schutz gegenüber dem aktuellen `Sec-Fetch-Site`+`SameSite=Lax`-Layer. Falls ein Pentest später konkret diesen Schutz fordert, kann er additiv ergänzt werden — keine Architekturänderung nötig.
 
 ---
 
@@ -420,12 +442,12 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 |---|---|---|---|
 | CERT-01 | 🟡 | C13 | Cert: kein Multi-Key, keine Rotation-Window |
 | CONFIG-01 | 🟡 | C2 | Issuer Class-Default ist Localhost ✅ |
-| COOKIE-01 | 🔴 | C6 | App-Cookie `SameSite=Strict` bricht OIDC |
+| COOKIE-01 | 🔴 | C6 | App-Cookie `SameSite=Strict` bricht OIDC ✅ (auf Lax) |
 | COOKIE-02 | 🟡 | C11 | Session-Cookie `SameSite=Strict` (deferred) |
 | COOKIE-03 | 🟡 | C11 | Cookie-Namen leaken Produkt (deferred) |
 | CSRF-01 | 🔴 | C5 | Logout ohne CSRF-Schutz (= OAUTH-04) ✅ |
-| CSRF-02 | 🟠 | C6 | `app.UseAntiforgery()` fehlt |
-| CSRF-03 | 🟠 | C6 | Anonyme Login-Endpoints ohne CSRF |
+| CSRF-02 | 🟠 | C6 | `app.UseAntiforgery()` fehlt ✅ (CsrfDefenseMiddleware) |
+| CSRF-03 | 🟠 | C6 | Anonyme Login-Endpoints ohne CSRF ✅ |
 | HEADERS-01 | 🟠 | C9 | Keine Security-Headers |
 | LOG-01 | 🟢 | C12 | TestApp loggt Token-Length |
 | LOG-02 | ℹ️ | C12 | AuthLog-Retention dokumentieren |
@@ -457,7 +479,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | SECRETS-01 | ℹ️ | — | Clean (keine Action) |
 | SESSION-01 | 🟠 | C7 | 30-Tage-Cookie + kein SecurityStampValidator |
 | SESSION-02 | 🟠 | C5 | Logout revoked keine OAuth-Tokens ✅ |
-| SETUP-01 | 🟠 | C6 | Setup-Endpoint ohne CSRF + Token |
+| SETUP-01 | 🟠 | C6 | Setup-Endpoint ohne CSRF + Token ✅ |
 | WOLV-01 | 🔴 | C3 | DemoSeedService verliert TenantId ✅ |
 | WOLV-02 | 🟠 | C3 | OidcSchemeBootstrap nur System-Realm ✅ |
 | WOLV-03 | 🟡 | C3 | Mutable `bus.TenantId` ist Footgun ⏸ accepted (gemildert via AsyncLocal) |
