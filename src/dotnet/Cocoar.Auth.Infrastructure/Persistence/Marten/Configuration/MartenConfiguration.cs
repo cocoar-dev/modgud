@@ -48,6 +48,16 @@ public static class MartenConfiguration
         // is extended (not replaced).
         options.UseCocoarAuthAuthorization();
 
+        // Per-tenant RealmSigningKey storage. Keys live IN the tenant DB (not
+        // the master DB) so a master-DB compromise — or a Realm registry leak
+        // — cannot expose another realm's private signing material. There's
+        // exactly one realm's keys per database, so the table stays small;
+        // no slug index needed (the database itself is the index).
+        // Stage 3 of the realm-key-isolation plan (encryption at rest with a
+        // process-level master key) lands as a follow-up.
+        options.Schema.For<Cocoar.Auth.Domain.Realms.RealmSigningKey>()
+            .Identity(x => x.Id);
+
         // Authentication-specific Marten setup (documents + events + projections)
         // is wired via UseCocoarAuthAuthentication(), called from AddInfrastructure's
         // additionalMartenConfig callback so Infrastructure stays unaware of Authentication.

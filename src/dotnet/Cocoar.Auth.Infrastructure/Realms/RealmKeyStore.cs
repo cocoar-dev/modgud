@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Cocoar.Auth.Domain.Realms;
-using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Marten;
 using Microsoft.IdentityModel.Tokens;
 
@@ -9,14 +8,26 @@ namespace Cocoar.Auth.Infrastructure.Realms;
 
 /// <summary>
 /// Marten-backed implementation of <see cref="IRealmKeyStore"/>. Keys live in
-/// the master / global DB so they're accessible from every per-tenant request
-/// without crossing tenant boundaries. Resolution is cached in-memory because
+/// each realm's OWN tenant DB — opening a session with the realm slug routes
+/// the read/write straight to the per-tenant Postgres database, so a master-DB
+/// or Realm-registry compromise cannot expose another realm's private signing
+/// material. Resolution is cached in-memory keyed by realm slug because
 /// signing keys are read on EVERY token issuance and validation, and a Marten
 /// round-trip per call would dominate token-endpoint latency.
+///
+/// <para>
+/// Each realm's tenant DB carries at most a handful of <see cref="RealmSigningKey"/>
+/// records (one active + a few retired in the rotation overlap window), so no
+/// secondary index is needed — the database itself is the partition. Sessions
+/// are opened with explicit slug arguments (<see cref="IDocumentStore.LightweightSession(string, IsolationLevel)"/>)
+/// rather than relying on the ambient <c>TenantContext</c>: bootstrap may be
+/// called from a different realm's request scope (e.g. an admin in the
+/// system realm provisioning a new tenant).
+/// </para>
 /// </summary>
 public sealed class RealmKeyStore : IRealmKeyStore
 {
-    private readonly IGlobalStore _globalStore;
+    private readonly IDocumentStore _store;
 
     // Cached signing credentials per realm — point to the same RSA instance
     // we hold in _verificationCache for that realm's active key.
@@ -30,9 +41,9 @@ public sealed class RealmKeyStore : IRealmKeyStore
     // realm don't both generate (and persist) different keys.
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _slugLocks = new();
 
-    public RealmKeyStore(IGlobalStore globalStore)
+    public RealmKeyStore(IDocumentStore store)
     {
-        _globalStore = globalStore;
+        _store = store;
     }
 
     public async Task<SigningCredentials> GetActiveSigningCredentialsAsync(
@@ -89,12 +100,12 @@ public sealed class RealmKeyStore : IRealmKeyStore
         await sem.WaitAsync(ct);
         try
         {
-            await using var session = _globalStore.LightweightSession();
+            await using var session = _store.LightweightSession(realmSlug);
 
             // Mark the previous active key retired (kept for the overlap window
             // so already-issued tokens can still be verified).
             var current = await session.Query<RealmSigningKey>()
-                .Where(k => k.RealmSlug == realmSlug && k.IsActive)
+                .Where(k => k.IsActive)
                 .FirstOrDefaultAsync(ct);
             if (current is not null)
             {
@@ -122,16 +133,16 @@ public sealed class RealmKeyStore : IRealmKeyStore
 
     private async Task<RealmSigningKey?> LoadActiveAsync(string realmSlug, CancellationToken ct)
     {
-        await using var session = _globalStore.QuerySession();
+        await using var session = _store.QuerySession(realmSlug);
         return await session.Query<RealmSigningKey>()
-            .Where(k => k.RealmSlug == realmSlug && k.IsActive)
+            .Where(k => k.IsActive)
             .FirstOrDefaultAsync(ct);
     }
 
     private async Task<RealmSigningKey> CreateAndPersistAsync(string realmSlug, CancellationToken ct)
     {
         var doc = CreateNewKeyDocument(realmSlug);
-        await using var session = _globalStore.LightweightSession();
+        await using var session = _store.LightweightSession(realmSlug);
         session.Store(doc);
         await session.SaveChangesAsync(ct);
         return doc;

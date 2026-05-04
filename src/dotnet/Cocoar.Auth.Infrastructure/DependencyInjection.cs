@@ -86,12 +86,11 @@ public static class DependencyInjection
                 .Identity(x => x.Id)
                 .Index(x => x.Slug, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsActive')::boolean = true)"; });
 
-            // Per-realm RSA signing keys (C3b — multi-tenancy crypto isolation).
-            // Indexed by RealmSlug so the key store's per-realm lookups stay O(1)
-            // even with hundreds of retired keys lingering in the table.
-            opts.Schema.For<RealmSigningKey>()
-                .Identity(x => x.Id)
-                .Index(x => x.RealmSlug);
+            // RealmSigningKey lives in the per-tenant store (configured below),
+            // not here. Defense-in-depth: a master-DB compromise must NOT leak
+            // every realm's private signing key — the key for realm A only sits
+            // in realm A's database. Stage 2 of the realm-key-isolation plan;
+            // stage 3 (encryption at rest) lands later.
 
             opts.UseSystemTextJsonForSerialization(configure: o =>
             {

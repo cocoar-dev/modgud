@@ -140,9 +140,9 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 - `DemoSeedService` setzt `bus.TenantId = TenantContext.Current` nach Inner-Scope
 - `OidcSchemeBootstrap` iteriert alle aktiven Realms via `IRealmCache.GetAllActiveAsync()`
 
-**C3b — Per-Realm RSA Signing Keys** (`68b7440`)
-- `Cocoar.Auth.Domain/Realms/RealmSigningKey.cs` — Marten-Document im Master-DB
-- `IRealmKeyStore` + `RealmKeyStore`: lazy generation pro Realm, in-memory cache, async per-slug lock, Rotation-API
+**C3b — Per-Realm RSA Signing Keys** (`68b7440`, Storage-Move `_pending_`)
+- `Cocoar.Auth.Domain/Realms/RealmSigningKey.cs` — Marten-Document, jetzt **pro Tenant-DB** (Storage-Move-Refactor: ein kompromittiertes Master-DB-Backup leakt nicht mehr alle Realms' Private-Keys; jeder Realm hat seinen Key in seiner eigenen physischen Postgres-DB)
+- `IRealmKeyStore` + `RealmKeyStore`: lazy generation pro Realm, in-memory cache, async per-slug lock, Rotation-API; injectet jetzt `IDocumentStore` direkt und öffnet Sessions mit explizitem Slug (`_store.LightweightSession(realmSlug)`)
 - `RealmSigningKeyHandler` (GenerateTokenContext): überschreibt `SigningCredentials` mit Realm-Key für Access+Id-Tokens
 - `RealmTokenValidationHandler` (ValidateTokenContext): beschränkt `IssuerSigningKeys` auf den Realm-Key des aktiven Tenants
 - `RealmJwksHandler` (HandleJsonWebKeySetRequestContext): clearet die globalen Keys, serviert nur Realm-Keys
@@ -168,6 +168,11 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 **Was noch fehlt (für vollständige Isolation-Verifikation):**
 - Multi-Realm-E2E-Test: zweiter Realm provisionieren, Token aus Realm A präsentieren an Realm B → 401. Aktuell single-realm Setup, Mechanismus aber identisch zum bewährten RealmIssuerHandler.
+
+**Stage 3 (Encryption-at-Rest) — verschoben:**
+- Realm-Signing-Keys sind aktuell PEM-Klartext in der jeweiligen Tenant-DB
+- Folge-Härtung: AES-GCM-Encryption mit Process-Master-Key (env var) bevor in DB persistiert
+- Eingeplant als eigenes Cluster-Element; nicht blocker für Public-Deploy nach C1-C6
 
 ---
 
