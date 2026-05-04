@@ -10,14 +10,14 @@ namespace Internal.Generated.WolverineHandlers
     [global::System.CodeDom.Compiler.GeneratedCode("JasperFx", "1.0.0")]
     public sealed class IEventHandler397603979 : Wolverine.Runtime.Handlers.MessageHandler
     {
-        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
         private readonly Microsoft.Extensions.DependencyInjection.IServiceScopeFactory _serviceScopeFactory;
+        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
         private readonly Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserDeletedHandler> _loggerOfAutoMembershipOnUserDeletedHandler;
 
-        public IEventHandler397603979(Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, Microsoft.Extensions.DependencyInjection.IServiceScopeFactory serviceScopeFactory, Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserDeletedHandler> loggerOfAutoMembershipOnUserDeletedHandler)
+        public IEventHandler397603979(Microsoft.Extensions.DependencyInjection.IServiceScopeFactory serviceScopeFactory, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserDeletedHandler> loggerOfAutoMembershipOnUserDeletedHandler)
         {
-            _outboxedSessionFactory = outboxedSessionFactory;
             _serviceScopeFactory = serviceScopeFactory;
+            _outboxedSessionFactory = outboxedSessionFactory;
             _loggerOfAutoMembershipOnUserDeletedHandler = loggerOfAutoMembershipOnUserDeletedHandler;
         }
 

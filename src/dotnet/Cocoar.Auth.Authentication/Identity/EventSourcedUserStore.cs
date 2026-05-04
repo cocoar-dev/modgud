@@ -19,8 +19,38 @@ public class EventSourcedUserStore(IDocumentSession session)
       IUserLockoutStore<ApplicationUser>,
       IUserTwoFactorStore<ApplicationUser>,
       IUserAuthenticatorKeyStore<ApplicationUser>,
-      IUserPhoneNumberStore<ApplicationUser>
+      IUserPhoneNumberStore<ApplicationUser>,
+      IUserSecurityStampStore<ApplicationUser>
 {
+    // IUserSecurityStampStore<ApplicationUser> — drives the SecurityStampValidator
+    // (SESSION-01) and the refresh-token security-stamp parity check (OAUTH-07).
+    // The stamp is rotated by ASP.NET Core Identity itself on
+    // password-change / role-change / external-login-removal, and the auth
+    // pipeline uses these stores to read it back. We persist the value on the
+    // ApplicationUser document directly (not as a separate event) — it's
+    // operational state, not a business fact worth replaying.
+
+    public Task SetSecurityStampAsync(ApplicationUser user, string stamp, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(user);
+        user.SecurityStamp = stamp;
+        // Persist immediately so a concurrent reader sees the new stamp.
+        // Identity's higher-level operations (UpdatePasswordHashAsync,
+        // UpdateSecurityStampAsync, etc.) call UpdateAsync afterwards which
+        // commits the rest of the user document; this Store is the lighter
+        // "set field, save" path used by the validator pipeline.
+        session.Store(user);
+        return Task.CompletedTask;
+    }
+
+    public Task<string?> GetSecurityStampAsync(ApplicationUser user, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(user);
+        return Task.FromResult(user.SecurityStamp);
+    }
+
     // IUserStore<ApplicationUser>
 
     public async Task<IdentityResult> CreateAsync(ApplicationUser user, CancellationToken cancellationToken)

@@ -133,7 +133,7 @@ public static class AuthorizationEndpoints
 
         if (consentType == ConsentTypes.Implicit || authorizations.Count != 0)
         {
-            var principal = await CreateClaimsPrincipalAsync(user, request, scopeManager);
+            var principal = await CreateClaimsPrincipalAsync(user, request, scopeManager, userManager: userManager);
 
             var authorization = authorizations.LastOrDefault();
             authorization ??= await authorizationManager.CreateAsync(
@@ -222,8 +222,25 @@ public static class AuthorizationEndpoints
                 return ForbidInvalidGrant("The user is no longer allowed to sign in.");
             }
 
+            // OAUTH-07 — security-stamp parity check. UserManager.UpdateSecurityStampAsync
+            // is called on user-disable, password-change, role-revocation, etc.
+            // (see SESSION-01 in Program.cs for the cookie side). Refresh-token
+            // grant must honor the same kill-switch: if the stamp embedded in
+            // the original token no longer matches the user's current stamp,
+            // refuse to issue a fresh access token. Without this check a
+            // stolen-or-compromised refresh token stays valid for the full
+            // RefreshTokenLifetimeDays (14d default) regardless of password
+            // resets and account deactivations in between.
+            var tokenStamp = result.Principal?.FindFirstValue("AspNet.Identity.SecurityStamp");
+            var currentStamp = await userManager.GetSecurityStampAsync(user);
+            if (!string.IsNullOrEmpty(tokenStamp) &&
+                !string.Equals(tokenStamp, currentStamp, StringComparison.Ordinal))
+            {
+                return ForbidInvalidGrant("The user's security profile has changed; please sign in again.");
+            }
+
             var originalScopes = result.Principal?.GetScopes();
-            var principal = await CreateClaimsPrincipalAsync(user, request, scopeManager, originalScopes);
+            var principal = await CreateClaimsPrincipalAsync(user, request, scopeManager, originalScopes, userManager);
             principal.SetAuthorizationId(result.Principal?.GetAuthorizationId());
 
             return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
@@ -528,7 +545,8 @@ public static class AuthorizationEndpoints
         ApplicationUser user,
         OpenIddictRequest request,
         IOpenIddictScopeManager scopeManager,
-        IEnumerable<string>? scopeOverrides = null)
+        IEnumerable<string>? scopeOverrides = null,
+        UserManager<ApplicationUser>? userManager = null)
     {
         // Identity must use the OpenIddict default authentication type so it processes
         // the claims correctly (Identity's ApplicationScheme identity is filtered out).
@@ -538,6 +556,20 @@ public static class AuthorizationEndpoints
             roleType: Claims.Role);
 
         identity.SetClaim(Claims.Subject, user.Id.ToString());
+
+        // OAUTH-07 — embed the user's current security stamp on the principal.
+        // Persisted with the refresh-token (server-side reference token store),
+        // NOT emitted into access/id tokens (see GetDestinations — yields
+        // nothing for AspNet.Identity.SecurityStamp). On refresh, the stamp
+        // is compared to the user's current value; mismatch → invalid_grant.
+        if (userManager is not null)
+        {
+            var stamp = await userManager.GetSecurityStampAsync(user);
+            if (!string.IsNullOrEmpty(stamp))
+            {
+                identity.SetClaim("AspNet.Identity.SecurityStamp", stamp);
+            }
+        }
 
         var principal = new ClaimsPrincipal(identity);
         var scopes = scopeOverrides ?? request.GetScopes();

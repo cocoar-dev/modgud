@@ -291,6 +291,25 @@ try
     .AddDefaultTokenProviders()
     .AddUserStore<EventSourcedUserStore>();
 
+    // SESSION-01 — SecurityStampValidator. Without this, an active cookie
+    // session stays valid for the cookie's full ExpireTimeSpan (30 days),
+    // ignoring user-state changes (deactivation, password reset, role
+    // revocation). With it, the cookie middleware re-fetches the user's
+    // current security-stamp every ValidationInterval (5 min) and refuses
+    // the cookie if the stamp has rolled. The standard ASP.NET Core
+    // Identity helpers (UserManager.UpdatePasswordHashAsync,
+    // UserManager.SetLockoutEnabledAsync, UserManager.RemoveFromRoleAsync,
+    // ...) all bump the stamp internally; on user-disable we bump it
+    // explicitly via UserManager.UpdateSecurityStampAsync.
+    builder.Services.AddScoped<ISecurityStampValidator,
+        SecurityStampValidator<ApplicationUser>>();
+    builder.Services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>,
+        UserClaimsPrincipalFactory<ApplicationUser>>();
+    builder.Services.Configure<SecurityStampValidatorOptions>(options =>
+    {
+        options.ValidationInterval = TimeSpan.FromMinutes(5);
+    });
+
     builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
         .AddCookie(IdentityConstants.ApplicationScheme, options =>
         {
@@ -311,6 +330,12 @@ try
             options.Cookie.Name = "Cocoar.Auth.Auth";
             options.ExpireTimeSpan = TimeSpan.FromDays(30); // Max lifetime for persistent (RememberMe) cookies
             options.SlidingExpiration = true;
+            // SESSION-01 — re-validate the user's security stamp on every
+            // request (with a small per-request cache configured via
+            // SecurityStampValidatorOptions.ValidationInterval). When the
+            // stamp on disk no longer matches the cookie's stamp, the
+            // cookie is rejected and the user must re-authenticate.
+            options.Events.OnValidatePrincipal = SecurityStampValidator.ValidatePrincipalAsync;
             options.Events.OnRedirectToLogin = ctx =>
             {
                 // /api/* is the SPA's data plane — surface 401 so the

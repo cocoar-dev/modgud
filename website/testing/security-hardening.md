@@ -26,7 +26,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | 1 | [C4 Consent-Flow neu](#c4-consent-flow-neu) | 3 | ✅ | `dd59175` |
 | 1 | [C5 Logout-Hardening](#c5-logout-hardening) | 5 | ✅ | `e4c2a06` |
 | 1 | [C6 CSRF-Posture](#c6-csrf-posture) | 4 | ✅ | `9bec178` |
-| 2 | [C7 Session-Lifecycle](#c7-session-lifecycle) | 2 | ☐ | — |
+| 2 | [C7 Session-Lifecycle](#c7-session-lifecycle) | 2 | ✅ | _pending_ |
 | 2 | [C8 Token-Chain-Integrity](#c8-token-chain-integrity) | 3 | ☐ | — |
 | 2 | [C9 Security-Headers](#c9-security-headers) | 1 | ☐ | — |
 | 2 | [C10 Rate-Limiting](#c10-rate-limiting) | 2 | ☐ | — |
@@ -308,18 +308,39 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 ### C7 · Session-Lifecycle
 
-**Status:** ☐ Open · **Aufwand:** ~1 h · **Commit:** —
+**Status:** ✅ Done · **Aufwand:** ~1 h · **Commit:** _pending_
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| SESSION-01 | 🟠 High | `Program.cs:261` | 30-Tage Cookie + kein `SecurityStampValidator` → User-Deaktivierung wirkt erst nach Expiry | ☐ |
-| OAUTH-07 | 🟠 High | `AuthorizationEndpoints.cs:187-205` | Refresh-Token-Grant prüft Security-Stamp nicht → Token bleibt nutzbar nach Disable | ☐ |
+| SESSION-01 | 🟠 High | `Program.cs:294-330` + `EventSourcedUserStore.cs` | `SecurityStampValidator` mit ValidationInterval=5min auf Cookie-Auth; `EventSourcedUserStore` implementiert jetzt `IUserSecurityStampStore` | ✅ |
+| OAUTH-07 | 🟠 High | `AuthorizationEndpoints.cs ExchangeAsync` + `CreateClaimsPrincipalAsync` | Stamp wird in den Principal eingetragen (nur in Reference-Refresh-Token persistiert, nicht in JWT) und beim Refresh-Grant gegen aktuellen User-Stamp verglichen → mismatch = invalid_grant | ✅ |
 
-**Fix-Maßnahmen:**
+**Implementierte Fixes:**
+
+`Program.cs` — SecurityStampValidator:
+- `services.AddScoped<ISecurityStampValidator, SecurityStampValidator<ApplicationUser>>()`
+- `services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>, UserClaimsPrincipalFactory<ApplicationUser>>()`
 - `services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = TimeSpan.FromMinutes(5))`
-- Refresh-Token-Exchange: Security-Stamp-Claim gegen aktuellen Wert vergleichen → `invalid_grant` bei Mismatch
-- 30-Tage-Cookie nur bei `RememberMe=true`, sonst Session-Cookie
-- User-Disable/Lock/Role-Change bumpt Security-Stamp
+- Cookie `IdentityConstants.ApplicationScheme`: `options.Events.OnValidatePrincipal = SecurityStampValidator.ValidatePrincipalAsync`
+
+`EventSourcedUserStore.cs` — neuer Interface-Implementor:
+- `IUserSecurityStampStore<ApplicationUser>` mit `SetSecurityStampAsync` (persistiert via `session.Store(user)`) + `GetSecurityStampAsync` (read field)
+- `ApplicationUser.SecurityStamp` Field war schon vorhanden (Konstruktor setzte es)
+- ASP.NET Core Identity rotiert den Stamp automatisch bei `UpdatePasswordHashAsync`, `UpdateSecurityStampAsync` (manuell auf Disable), Role-Removals, External-Login-Removals, etc.
+
+`AuthorizationEndpoints.cs CreateClaimsPrincipalAsync`:
+- Optional `UserManager<ApplicationUser>` Param; setzt `AspNet.Identity.SecurityStamp` Claim auf den Principal
+- `GetDestinations` filtert den Stamp aus Access/ID-Token raus → er wird **nur** im Server-side Reference-Token-Document persistiert (= bei Refresh wieder lesbar, aber **nie** auf der Wire)
+
+`AuthorizationEndpoints.cs ExchangeAsync` (Refresh-Token-Branch):
+- Nach `signInManager.CanSignInAsync` wird `userManager.GetSecurityStampAsync(user)` gegen `result.Principal.FindFirstValue("AspNet.Identity.SecurityStamp")` (aus dem alten Refresh-Token) verglichen
+- Mismatch → `ForbidInvalidGrant("The user's security profile has changed; please sign in again.")`
+- Effektiv: sobald ein User deaktiviert / Passwort geändert / Rolle entzogen wird, ist sein Refresh-Token tot
+
+**Tests:** 780/780 Unit · 135/135 Integration · 14/14 Playwright — alle grün, keine Regression.
+
+**Was deferred ist:**
+- 30-Tage-Cookie nur bei `RememberMe=true`, sonst Session-Cookie: ASP.NET Core verhält sich bereits korrekt — `SignInManager.SignInAsync(user, isPersistent)` setzt das `IsPersistent`-Flag, und die Cookie-Middleware nutzt `ExpireTimeSpan` nur bei persistenten Tickets. Ohne RememberMe ist's bereits ein Session-Cookie. Die SlidingExpiration-Range bleibt aber 30 Tage (Validator-Wirkung kommt jetzt durch SecurityStampValidator).
 
 ---
 
@@ -458,7 +479,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | OAUTH-04 | 🟠 | C5 | Logout ignoriert id_token_hint ✅ |
 | OAUTH-05 | 🟠 | C13 | Selbes Cert Signing+Encryption, kein Passwort |
 | OAUTH-06 | 🟠 | C1 | Demo-Seed mit hartcodierten Secrets ✅ (gemildert) |
-| OAUTH-07 | 🟠 | C7 | Refresh-Token ohne Security-Stamp-Check |
+| OAUTH-07 | 🟠 | C7 | Refresh-Token ohne Security-Stamp-Check ✅ |
 | OAUTH-08 | 🟠 | C4 | `/consent?returnUrl=` reflektiert raw QueryString ✅ |
 | OAUTH-09 | 🟠 | C10 | `ValidateApiCredentialsAsync` BCrypt-Loop DoS |
 | OAUTH-10 | 🟠 | C8 | Refresh-Token-Reuse nicht detected |
@@ -477,7 +498,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | PROD-03 | 🟠 | C2 | `UseHttpsRedirection` fehlt + ForwardedHeaders ✅ |
 | RATE-01 | 🟠 | C10 | Kein App-Level-Rate-Limit |
 | SECRETS-01 | ℹ️ | — | Clean (keine Action) |
-| SESSION-01 | 🟠 | C7 | 30-Tage-Cookie + kein SecurityStampValidator |
+| SESSION-01 | 🟠 | C7 | 30-Tage-Cookie + kein SecurityStampValidator ✅ |
 | SESSION-02 | 🟠 | C5 | Logout revoked keine OAuth-Tokens ✅ |
 | SETUP-01 | 🟠 | C6 | Setup-Endpoint ohne CSRF + Token ✅ |
 | WOLV-01 | 🔴 | C3 | DemoSeedService verliert TenantId ✅ |
