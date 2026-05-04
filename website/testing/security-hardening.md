@@ -21,7 +21,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | Welle | Cluster | Findings | Status | Commits |
 |------:|---------|---------:|:------:|---------|
 | 1 | [C1 Demo-Seed Production-Sicherung](#c1-demo-seed-production-sicherung) | 2 | ✅ | `b31a20e` |
-| 1 | [C2 Production Fail-Closed Config](#c2-production-fail-closed-config) | 3 | ✅ | _pending_ |
+| 1 | [C2 Production Fail-Closed Config](#c2-production-fail-closed-config) | 3 | ✅ | `793b55d` |
 | 1 | [C3 Multi-Tenancy-Isolation](#c3-multi-tenancy-isolation) | 6 | ☐ | — |
 | 1 | [C4 Consent-Flow neu](#c4-consent-flow-neu) | 3 | ☐ | — |
 | 1 | [C5 Logout-Hardening](#c5-logout-hardening) | 5 | ☐ | — |
@@ -82,7 +82,7 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 ### C2 · Production Fail-Closed Config
 
-**Status:** ✅ Done · **Aufwand:** ~45 min (effektiv 1 h) · **Commit:** _pending_
+**Status:** ✅ Done · **Aufwand:** ~45 min (effektiv 1 h) · **Commit:** `793b55d`
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
