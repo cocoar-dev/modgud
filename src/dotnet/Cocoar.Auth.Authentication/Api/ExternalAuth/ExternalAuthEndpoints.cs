@@ -76,9 +76,24 @@ public static class ExternalAuthEndpoints
         // (by /account/logout), this endpoint redirects the browser to the IdP's
         // end_session_endpoint. OIDC middleware builds the URL (includes
         // post_logout_redirect_uri + id_token_hint when available).
+        //
+        // LOGOUT-01: anonymous by design (the local cookie is gone by the
+        // time we reach here), but a same-site Origin / Referer check
+        // prevents a malicious third-party site from triggering an upstream
+        // OIDC logout for the victim. Internal nav from /login or /profile
+        // sends an Origin header matching the IdP's host; cross-origin
+        // forced loads do not.
         endpoints.MapGet($"{path}/account/external-logout/{{loginProviderId:guid}}",
             async (Guid loginProviderId, HttpContext http) =>
             {
+                if (!IsSameSiteRequest(http))
+                {
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status403Forbidden,
+                        title: "Cross-origin external-logout blocked",
+                        detail: "External logout must originate from the IdP's own UI.");
+                }
+
                 var schemeName = DynamicOidcSchemeManager.SchemeNameFor(loginProviderId);
                 var props = new AuthenticationProperties { RedirectUri = "/login" };
                 return Results.SignOut(props, [schemeName]);
@@ -156,4 +171,34 @@ public static class ExternalAuthEndpoints
         string Flavor,
         string? IconName,
         string? ButtonColorHex);
+
+    /// <summary>
+    /// Returns true when the request looks like a same-site navigation:
+    /// either the Origin or the Referer header matches the request host.
+    /// Used as a lightweight CSRF gate on anonymous endpoints that trigger
+    /// outbound OIDC redirects (LOGOUT-01) — a real logout from our /login
+    /// or /profile UI sends one of these headers; an attacker's
+    /// <c>&lt;img src=…&gt;</c> typically does not.
+    /// </summary>
+    private static bool IsSameSiteRequest(HttpContext ctx)
+    {
+        var host = ctx.Request.Host.ToString();
+        if (string.IsNullOrEmpty(host)) return false;
+
+        bool MatchesHost(string headerValue)
+        {
+            if (string.IsNullOrEmpty(headerValue)) return false;
+            if (!Uri.TryCreate(headerValue, UriKind.Absolute, out var uri)) return false;
+            var headerHost = uri.IsDefaultPort ? uri.Host : $"{uri.Host}:{uri.Port}";
+            return string.Equals(headerHost, host, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var origin = ctx.Request.Headers.Origin.ToString();
+        if (MatchesHost(origin)) return true;
+
+        var referer = ctx.Request.Headers.Referer.ToString();
+        if (MatchesHost(referer)) return true;
+
+        return false;
+    }
 }

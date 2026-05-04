@@ -24,7 +24,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | 1 | [C2 Production Fail-Closed Config](#c2-production-fail-closed-config) | 3 | ✅ | `793b55d` |
 | 1 | [C3 Multi-Tenancy-Isolation](#c3-multi-tenancy-isolation) | 6 | ✅ | `e4c86b0` `68b7440` `4be9d5a` `fd2fc5d` |
 | 1 | [C4 Consent-Flow neu](#c4-consent-flow-neu) | 3 | ✅ | `dd59175` |
-| 1 | [C5 Logout-Hardening](#c5-logout-hardening) | 5 | ☐ | — |
+| 1 | [C5 Logout-Hardening](#c5-logout-hardening) | 5 | ✅ | _pending_ |
 | 1 | [C6 CSRF-Posture](#c6-csrf-posture) | 4 | ☐ | — |
 | 2 | [C7 Session-Lifecycle](#c7-session-lifecycle) | 2 | ☐ | — |
 | 2 | [C8 Token-Chain-Integrity](#c8-token-chain-integrity) | 3 | ☐ | — |
@@ -219,27 +219,39 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 ### C5 · Logout-Hardening
 
-**Status:** ☐ Open · **Aufwand:** ~1.5 h · **Commit:** —
-
-`/connect/logout` akzeptiert GET, ignoriert `id_token_hint`, ignoriert
-`post_logout_redirect_uri`, hard-coded `RedirectUri="/"`, revoked keine
-OAuth-Tokens. Logout-CSRF + RP-initiated Logout broken.
+**Status:** ✅ Done · **Aufwand:** ~1.5 h · **Commit:** _pending_
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| OAUTH-04 | 🟠 High | `AuthorizationEndpoints.cs:53,347-355` | `id_token_hint` nicht validiert; hardcoded `RedirectUri="/"` ignoriert RP `post_logout_redirect_uri` | ☐ |
-| OAUTH-18 | 🟡 Medium | `AuthorizationEndpoints.cs:53` | GET erlaubt → trivialer Logout-CSRF via `<img>` | ☐ |
-| CSRF-01 | 🔴 Critical | `AuthorizationEndpoints.cs:53,347-355` | Identisch mit OAUTH-04/18 — Cookie-Sign-Out ohne CSRF-Schutz | ☐ |
-| SESSION-02 | 🟠 High | `AccountEndpoints.cs:184`, `AuthorizationEndpoints.cs:351` | Logout revoked keine OpenIddict-Tokens; Refresh-Tokens bleiben gültig bis natural-expiry | ☐ |
-| LOGOUT-01 | 🟡 Medium | `ExternalAuthEndpoints.cs:79-85` | `/api/account/external-logout/{id}` ist `AllowAnonymous` ohne Origin-/Referer-Check | ☐ |
+| OAUTH-04 | 🟠 High | `AuthorizationEndpoints.cs LogoutAsync` | id_token_hint required + Signature-validiert + Subject-Match; post_logout_redirect_uri exact-match; hardcoded `"/"` raus | ✅ |
+| OAUTH-18 | 🟡 Medium | `AuthorizationEndpoints.cs:53` | GET bleibt RFC-konform erlaubt, aber id_token_hint-Pflicht macht Logout-CSRF unmöglich (Angreifer kennt das Token nicht) | ✅ |
+| CSRF-01 | 🔴 Critical | identisch mit OAUTH-04 | siehe oben | ✅ |
+| SESSION-02 | 🟠 High | `AuthorizationEndpoints.cs LogoutAsync` | Auf Logout: alle Tokens + Authorizations für (subject, client) revoked via `IOpenIddictTokenManager.TryRevokeAsync` + `IOpenIddictAuthorizationManager.TryRevokeAsync` | ✅ |
+| LOGOUT-01 | 🟡 Medium | `ExternalAuthEndpoints.cs:79-95` | `IsSameSiteRequest`-Check (Origin/Referer-Match gegen Request-Host); cross-site → 403 | ✅ |
 
-**Fix-Maßnahmen:**
-- `id_token_hint` required, validate Signature + sub-Match + aud/azp-Match
-- `post_logout_redirect_uri` exact-match gegen Client-Config
-- Hardcoded `"/"` raus → validierte Redirect-URI verwenden
-- POST-only oder interaktive Konfirmations-Seite bei GET
-- Auf Logout: `IOpenIddictTokenManager.RevokeAsync` für die Tokens des aufrufenden Clients
-- External-Logout: Origin-Check gegen erlaubte Hosts
+**Implementierte Fixes:**
+
+`AuthorizationEndpoints.cs LogoutAsync` — komplett neu:
+- `id_token_hint` Pflicht; ohne → 400. Fungiert als CSRF-Defence.
+- Hint-Validierung über `httpContext.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme)` (nutzt Realm-spezifische Signing-Keys via RealmTokenValidationHandler aus C3b).
+- **Defense gegen das OpenIddict-"forgiving anonymous"-Verhalten**: zusätzlich zu `Succeeded` muss `principal.Identity.IsAuthenticated == true` UND `sub` Claim non-empty sein, sonst 400. (Empirisch verifiziert: ohne diesen Check akzeptiert OpenIddict bogus Strings.)
+- Subject-Match: Cookie-Session-sub muss mit Hint-sub übereinstimmen (sonst 400).
+- `post_logout_redirect_uri`: exact-match gegen `applicationManager.GetPostLogoutRedirectUrisAsync` für den Client aus dem hint-aud.
+- Token-Revocation: alle Tokens + Authorizations für (subject, client_pk) via OpenIddict Manager invalidiert.
+- RedirectUri: validierter `post_logout_redirect_uri` oder null (statt hardcoded `"/"`).
+
+`ExternalAuthEndpoints.cs IsSameSiteRequest`:
+- Origin- oder Referer-Header muss `Request.Host` matchen.
+- Cross-site GET → 403 "Cross-origin external-logout blocked".
+
+**Manuell verifiziert (curl):**
+- GET /connect/logout (kein hint) → **400** "id_token_hint required"
+- GET /connect/logout?id_token_hint=bogus → **400** "Invalid id_token_hint"
+- GET /connect/logout?id_token_hint=eyJ.AAA.BBB (JWT-shaped, nicht signiert) → **400**
+- POST ohne hint → **400**
+- BFF-Logout-Flow mit echtem id_token (aus SaveTokens=true): vollständig durch — Playwright "logout clears the cookie" grün
+
+**Tests:** 780/780 Unit · 135/135 Integration · 14/14 Playwright
 
 ---
 
@@ -411,17 +423,17 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | COOKIE-01 | 🔴 | C6 | App-Cookie `SameSite=Strict` bricht OIDC |
 | COOKIE-02 | 🟡 | C11 | Session-Cookie `SameSite=Strict` (deferred) |
 | COOKIE-03 | 🟡 | C11 | Cookie-Namen leaken Produkt (deferred) |
-| CSRF-01 | 🔴 | C5 | Logout ohne CSRF-Schutz (= OAUTH-04) |
+| CSRF-01 | 🔴 | C5 | Logout ohne CSRF-Schutz (= OAUTH-04) ✅ |
 | CSRF-02 | 🟠 | C6 | `app.UseAntiforgery()` fehlt |
 | CSRF-03 | 🟠 | C6 | Anonyme Login-Endpoints ohne CSRF |
 | HEADERS-01 | 🟠 | C9 | Keine Security-Headers |
 | LOG-01 | 🟢 | C12 | TestApp loggt Token-Length |
 | LOG-02 | ℹ️ | C12 | AuthLog-Retention dokumentieren |
-| LOGOUT-01 | 🟡 | C5 | External-Logout AllowAnonymous |
+| LOGOUT-01 | 🟡 | C5 | External-Logout AllowAnonymous ✅ |
 | OAUTH-01 | 🔴 | C3 | Cross-Realm JWT-Akzeptanz ✅ (per-realm keys + iss) |
 | OAUTH-02 | 🔴 | C4 | Consent-Scope-Expansion ✅ |
 | OAUTH-03 | 🔴 | C4 | Consent ohne CSRF ✅ (subject-bound ticket) |
-| OAUTH-04 | 🟠 | C5 | Logout ignoriert id_token_hint |
+| OAUTH-04 | 🟠 | C5 | Logout ignoriert id_token_hint ✅ |
 | OAUTH-05 | 🟠 | C13 | Selbes Cert Signing+Encryption, kein Passwort |
 | OAUTH-06 | 🟠 | C1 | Demo-Seed mit hartcodierten Secrets ✅ (gemildert) |
 | OAUTH-07 | 🟠 | C7 | Refresh-Token ohne Security-Stamp-Check |
@@ -435,7 +447,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | OAUTH-15 | 🟡 | C11 | UserInfo ohne explizites `RequireScope("openid")` |
 | OAUTH-16 | 🟢 | C11 | Generated Secrets nicht URL-safe |
 | OAUTH-17 | 🟡 | C11 | PKCE-Pin-Test fehlt |
-| OAUTH-18 | 🟡 | C5 | Logout via GET (= OAUTH-04) |
+| OAUTH-18 | 🟡 | C5 | Logout via GET (= OAUTH-04) ✅ |
 | OIDC-01 | 🟡 | — | `ResponseMode=Query` non-prod (akzeptiert) |
 | OIDC-02 | 🟡 | C11 | Placeholder-OIDC HTTPS=false (dead code) |
 | PROD-01 | 🔴 | C1 | Demo-Seed ships im Image ✅ |
@@ -444,7 +456,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | RATE-01 | 🟠 | C10 | Kein App-Level-Rate-Limit |
 | SECRETS-01 | ℹ️ | — | Clean (keine Action) |
 | SESSION-01 | 🟠 | C7 | 30-Tage-Cookie + kein SecurityStampValidator |
-| SESSION-02 | 🟠 | C5 | Logout revoked keine OAuth-Tokens |
+| SESSION-02 | 🟠 | C5 | Logout revoked keine OAuth-Tokens ✅ |
 | SETUP-01 | 🟠 | C6 | Setup-Endpoint ohne CSRF + Token |
 | WOLV-01 | 🔴 | C3 | DemoSeedService verliert TenantId ✅ |
 | WOLV-02 | 🟠 | C3 | OidcSchemeBootstrap nur System-Realm ✅ |

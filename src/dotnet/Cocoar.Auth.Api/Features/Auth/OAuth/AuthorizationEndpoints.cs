@@ -368,13 +368,159 @@ public static class AuthorizationEndpoints
         return Results.Ok(claims);
     }
 
+    /// <summary>
+    /// OIDC RP-Initiated Logout 1.0 §2 — end-session endpoint. Hardened against
+    /// every concern <c>C5</c> in the security-hardening tracker raised:
+    ///
+    /// <list type="bullet">
+    ///   <item><description><b>OAUTH-04 / CSRF-01</b> — requires <c>id_token_hint</c>.
+    ///   Without it, refuse. The hint serves as the CSRF defence: an attacker
+    ///   forcing a victim to hit this endpoint via <c>&lt;img&gt;</c> doesn't
+    ///   know the victim's id_token, so can't construct a valid request.</description></item>
+    ///   <item><description><b>OAUTH-04 (cont.)</b> — validates that the
+    ///   <c>id_token_hint</c>'s <c>sub</c> matches the current cookie session.
+    ///   Refuses if a different user is presenting someone else's hint.</description></item>
+    ///   <item><description><b>OAUTH-04 (cont.)</b> — validates
+    ///   <c>post_logout_redirect_uri</c> with EXACT-match against the
+    ///   authoring client's registered URIs (no prefix matching, no wildcards).
+    ///   Drops the hard-coded <c>"/"</c> redirect that ignored what the RP
+    ///   asked for.</description></item>
+    ///   <item><description><b>SESSION-02</b> — revokes every active OAuth
+    ///   token + authorization for this (subject, client) pair. Without this,
+    ///   a logged-out user's previously issued refresh tokens stayed valid
+    ///   until natural expiry, defeating the contractual meaning of "logout".</description></item>
+    ///   <item><description><b>OAUTH-18</b> — keeps GET supported (RFC's
+    ///   recommended verb for end-session) but the id_token_hint requirement
+    ///   makes the GET form non-CSRF-able by construction.</description></item>
+    /// </list>
+    /// </summary>
     private static async Task<IResult> LogoutAsync(
         HttpContext httpContext,
-        SignInManager<ApplicationUser> signInManager)
+        SignInManager<ApplicationUser> signInManager,
+        IOpenIddictApplicationManager applicationManager,
+        IOpenIddictAuthorizationManager authorizationManager,
+        IOpenIddictTokenManager tokenManager)
     {
+        var request = httpContext.GetOpenIddictServerRequest()
+            ?? throw new InvalidOperationException("The OpenID Connect end-session request cannot be retrieved.");
+
+        // OAUTH-04 / CSRF-01 — id_token_hint is mandatory. Without it, anyone
+        // can craft a logout link and force the victim's session to die.
+        if (string.IsNullOrEmpty(request.IdTokenHint))
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "id_token_hint required",
+                detail: "The end-session endpoint requires an id_token_hint per " +
+                        "OpenID Connect RP-Initiated Logout 1.0. Use /api/account/logout " +
+                        "for IdP-internal logout (cookie-only).");
+        }
+
+        // OpenIddict already validates the hint's signature (against the realm's
+        // signing keys, courtesy of RealmTokenValidationHandler) and emits the
+        // claims as a principal under its server scheme — we just authenticate
+        // through that scheme to read them.
+        var hintAuth = await httpContext.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+        var hintSubject = hintAuth.Principal?.GetClaim(Claims.Subject);
+        var hintClientId = hintAuth.Principal?.GetClaim(Claims.Audience)
+                           ?? hintAuth.Principal?.GetAudiences().FirstOrDefault();
+
+        // Reject anything that didn't end up with a real subject claim. The
+        // OpenIddict server scheme is forgiving — it can return a "successful"
+        // result with an empty/anonymous principal when the hint is malformed
+        // or unverifiable. Treating that as a valid hint would let an attacker
+        // pass any garbage string and still trigger the sign-out path.
+        if (!hintAuth.Succeeded ||
+            hintAuth.Principal?.Identity?.IsAuthenticated != true ||
+            string.IsNullOrEmpty(hintSubject))
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Invalid id_token_hint",
+                detail: "The id_token_hint could not be validated.");
+        }
+
+        // Subject-binding: if the user has an active cookie session, it MUST
+        // match the hint's subject. Otherwise we'd let an attacker who
+        // somehow obtained a victim's id_token sign the victim out remotely
+        // even though our cookie says "different user is here".
+        var cookieAuth = await httpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
+        if (cookieAuth.Succeeded && cookieAuth.Principal is not null)
+        {
+            var cookieSubject = cookieAuth.Principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                                ?? cookieAuth.Principal.FindFirstValue(Claims.Subject);
+            if (!string.IsNullOrEmpty(cookieSubject) &&
+                !string.IsNullOrEmpty(hintSubject) &&
+                !string.Equals(cookieSubject, hintSubject, StringComparison.Ordinal))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "id_token_hint does not match the current session",
+                    detail: "Cannot end a session that does not belong to the presented id_token_hint.");
+            }
+        }
+
+        // Resolve the calling RP from the hint's audience. We need it twice:
+        // (a) to validate post_logout_redirect_uri against its registered set
+        // and (b) to scope token-revocation to that client.
+        object? application = null;
+        if (!string.IsNullOrEmpty(hintClientId))
+        {
+            application = await applicationManager.FindByClientIdAsync(hintClientId);
+        }
+
+        // OAUTH-04 (cont.) — exact-match validation of post_logout_redirect_uri.
+        // RFC 6749 §3.1.2 (re-applied per OIDC RP-Initiated Logout) — no prefix
+        // matching, no wildcards, byte-for-byte equality only.
+        string? validatedRedirect = null;
+        if (!string.IsNullOrEmpty(request.PostLogoutRedirectUri))
+        {
+            if (application is null)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "post_logout_redirect_uri without resolvable client",
+                    detail: "id_token_hint did not name a known client; cannot validate the redirect URI.");
+            }
+
+            var registered = await applicationManager.GetPostLogoutRedirectUrisAsync(application);
+            if (!registered.Any(u => string.Equals(u, request.PostLogoutRedirectUri, StringComparison.Ordinal)))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "post_logout_redirect_uri not registered",
+                    detail: "The supplied post_logout_redirect_uri is not in the client's registered set.");
+            }
+            validatedRedirect = request.PostLogoutRedirectUri;
+        }
+
+        // SESSION-02 — revoke every token + authorization for this
+        // (subject, client) pair. Refresh tokens that were issued before the
+        // logout become invalid immediately, so a user who logs out gets
+        // the contractual guarantee that their previously issued tokens are
+        // dead.
+        if (!string.IsNullOrEmpty(hintSubject) && application is not null)
+        {
+            var clientPrimaryKey = await applicationManager.GetIdAsync(application);
+            if (!string.IsNullOrEmpty(clientPrimaryKey))
+            {
+                await foreach (var token in tokenManager.FindAsync(
+                    subject: hintSubject, client: clientPrimaryKey, status: null, type: null))
+                {
+                    await tokenManager.TryRevokeAsync(token);
+                }
+                await foreach (var auth in authorizationManager.FindAsync(
+                    subject: hintSubject, client: clientPrimaryKey, status: null, type: null, scopes: default))
+                {
+                    await authorizationManager.TryRevokeAsync(auth);
+                }
+            }
+        }
+
         await signInManager.SignOutAsync();
+
         return Results.SignOut(
-            new AuthenticationProperties { RedirectUri = "/" },
+            new AuthenticationProperties { RedirectUri = validatedRedirect },
             new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
     }
 
