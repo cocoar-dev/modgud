@@ -28,7 +28,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | 1 | [C6 CSRF-Posture](#c6-csrf-posture) | 4 | ✅ | `9bec178` |
 | 2 | [C7 Session-Lifecycle](#c7-session-lifecycle) | 2 | ✅ | `07e2ae5` |
 | 2 | [C8 Token-Chain-Integrity](#c8-token-chain-integrity) | 3 | ✅ | `4f565f3` |
-| 2 | [C9 Security-Headers](#c9-security-headers) | 1 | ✅ | _pending_ |
+| 2 | [C9 Security-Headers](#c9-security-headers) | 1 | ✅ | `85ef880` |
 | 2 | [C10 Rate-Limiting](#c10-rate-limiting) | 2 | ☐ | — |
 | 3 | [C11 Korrektheit](#c11-korrektheit) | 7 | ☐ | — |
 | 3 | [C12 Logging-Hygiene](#c12-logging-hygiene) | 2 | ☐ | — |
@@ -379,7 +379,7 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 ### C9 · Security-Headers
 
-**Status:** ✅ Done · **Aufwand:** ~45 min (effektiv 1 h wegen CSP-OAuth-Form-Post) · **Commit:** _pending_
+**Status:** ✅ Done · **Aufwand:** ~45 min (effektiv 1 h wegen CSP-OAuth-Form-Post) · **Commit:** `85ef880`
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
