@@ -25,6 +25,14 @@ public interface IRealmCache
     /// </summary>
     Task<TenantInfo?> ResolveDomainAsync(string hostname);
 
+    /// <summary>
+    /// Returns every active realm. Used by hosted services that need to enumerate
+    /// tenants at boot — e.g. <c>OidcSchemeBootstrap</c> which has to register
+    /// external login providers from every realm, not just the system realm
+    /// (WOLV-02).
+    /// </summary>
+    Task<IReadOnlyList<TenantInfo>> GetAllActiveAsync();
+
     void Invalidate();
 
     Task InitializeAsync(CancellationToken ct = default);
@@ -61,6 +69,27 @@ public sealed class RealmCache : IRealmCache
         // → return that realm. Lets the existing single-tenant boot keep working
         // without requiring a hosts-file entry for system.localhost.
         return RealmCacheLookup.Resolve(hostname, snapshot.ByDomain, snapshot.SingleActiveRealm);
+    }
+
+    public async Task<IReadOnlyList<TenantInfo>> GetAllActiveAsync()
+    {
+        var snapshot = _snapshot;
+        if (snapshot is null)
+        {
+            await LoadCacheAsync();
+            snapshot = _snapshot;
+        }
+
+        if (snapshot is null)
+            return Array.Empty<TenantInfo>();
+
+        // Distinct by Slug because the by-domain map can carry the same
+        // TenantInfo under multiple domain keys (e.g. "system.localhost",
+        // "localhost", "127.0.0.1" all resolve to the system realm).
+        return snapshot.ByDomain.Values
+            .GroupBy(t => t.Slug)
+            .Select(g => g.First())
+            .ToList();
     }
 
     public void Invalidate()

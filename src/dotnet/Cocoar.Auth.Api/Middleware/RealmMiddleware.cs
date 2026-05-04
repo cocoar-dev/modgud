@@ -60,6 +60,14 @@ public sealed class RealmMiddleware
         context.Items[TenantConstants.HttpContextTenantIdKey] = tenantInfo.Slug;
         context.Items[TenantConstants.HttpContextTenantInfoKey] = tenantInfo;
 
+        // Ambient AsyncLocal — survives DI-scope boundaries that
+        // HttpContextAccessor alone doesn't. TenantedSessionFactory and the
+        // OpenIddict per-realm signing handlers consult this when no
+        // HttpContext is reachable (background services, inner-scope buses,
+        // Wolverine handlers). Restored automatically when the request scope
+        // unwinds.
+        using var _ = TenantContext.Enter(tenantInfo.Slug);
+
         await _next(context);
     }
 }

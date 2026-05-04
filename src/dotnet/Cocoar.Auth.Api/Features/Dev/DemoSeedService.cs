@@ -63,6 +63,15 @@ public sealed class DemoSeedService : IDemoSeedService
         var oauthAdmin = sp.GetRequiredService<OAuthAdminService>();
         var bus = sp.GetRequiredService<IMessageBus>();
 
+        // WOLV-01: the inner DI scope above resolves a *fresh* IMessageBus —
+        // it has TenantId=null even though the calling HTTP request set the
+        // tenant on the request-scoped bus. Wolverine's OutboxedSessionFactory
+        // reads MessageContext.TenantId (which is built from bus.TenantId at
+        // dispatch time) and would crash inside Marten's MasterTableTenancy
+        // with "Default tenant does not supported". Copy the ambient tenant
+        // onto the inner-scope bus before any InvokeAsync below.
+        bus.TenantId = Cocoar.Auth.Infrastructure.Persistence.Tenancy.TenantContext.Current;
+
         _logger.LogInformation("[DemoSeed] Starting demo data import from {Path}", jsonPath);
 
         // ── Phase 1: PermissionRoles ────────────────────────────────────────

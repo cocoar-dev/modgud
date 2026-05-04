@@ -41,7 +41,15 @@ public sealed class TenantedSessionFactory : ISessionFactory, ITenantSessionFact
 
     private string ResolveTenantId()
     {
+        // Two-layer resolution: HttpContext first (fastest path for the common
+        // request-scoped case), then AsyncLocal TenantContext (covers inner DI
+        // scopes and background paths that explicitly entered a tenant scope),
+        // finally the system fallback. The AsyncLocal layer is what fixes
+        // WOLV-01: a Wolverine handler that opened its own session via the
+        // OutboxedSessionFactory used to land here without any tenant signal
+        // and crash with "Default tenant does not supported".
         return _httpContextAccessor.HttpContext?.Items[TenantConstants.HttpContextTenantIdKey] as string
+               ?? TenantContext.CurrentOrNull
                ?? TenantConstants.SystemTenantId;
     }
 }
