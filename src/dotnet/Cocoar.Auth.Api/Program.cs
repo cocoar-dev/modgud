@@ -125,13 +125,57 @@ try
         });
     }
 
-    // Trust reverse proxy headers (Sophos XG terminates HTTPS)
+    // Trust reverse proxy headers (Sophos XG terminates HTTPS).
+    //
+    // PROD-03: KnownIPNetworks/KnownProxies cleared in Production means
+    // X-Forwarded-Proto from anywhere is accepted, so anyone who can reach
+    // Kestrel directly can spoof "HTTPS" and bypass Request.IsHttps. The
+    // ProxyAllowedNetworks env var (CIDR list, comma-separated, e.g.
+    // "10.0.0.0/8,192.168.1.0/24") narrows trust to the actual reverse-proxy
+    // range. Empty == reject every X-Forwarded-* header in Production. In
+    // Development the default behaviour stays open for ease of local work.
     builder.Services.Configure<ForwardedHeadersOptions>(options =>
     {
         options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
-                                 | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+                                 | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+                                 | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedHost;
         options.KnownIPNetworks.Clear();
         options.KnownProxies.Clear();
+
+        if (builder.Environment.IsProduction())
+        {
+            var allowed = Environment.GetEnvironmentVariable("ProxyAllowedNetworks");
+            if (!string.IsNullOrWhiteSpace(allowed))
+            {
+                foreach (var entry in allowed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    if (Microsoft.AspNetCore.HttpOverrides.IPNetwork.TryParse(entry, out var network))
+                        options.KnownNetworks.Add(network);
+                }
+            }
+            // ForwardLimit caps the X-Forwarded-* depth — defence against a
+            // chain of attacker-controlled headers being treated as trusted.
+            options.ForwardLimit = 1;
+        }
+        else
+        {
+            // Dev convenience: trust loopback so localhost reverse-proxies
+            // (Vite, Docker port-forwards) work without ENV setup.
+            options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(System.Net.IPAddress.Parse("127.0.0.0"), 8));
+            options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(System.Net.IPAddress.IPv6Loopback, 128));
+        }
+    });
+
+    // PROD-03: HSTS defaults — 1 year max-age, includeSubDomains, preload-eligible.
+    // The IETF default (30 days) is too short for an IdP that holds session
+    // cookies. Operators who run on a still-warming-up domain can shorten
+    // via HSTS__MaxAgeDays env override; production-public deployments should
+    // keep the year so a one-time MITM doesn't downgrade the next visit.
+    builder.Services.AddHsts(options =>
+    {
+        options.Preload = true;
+        options.IncludeSubDomains = true;
+        options.MaxAge = TimeSpan.FromDays(365);
     });
 
     builder.Services.AddProblemDetails();
@@ -455,6 +499,38 @@ try
     // captured at config time so signing certs / lifetimes can be pinned before the
     // host is built. Per-realm issuer is applied at request time via RealmIssuerHandler.
     var openIddictSettings = configManager.GetRequiredConfig<OpenIddictSettings>();
+
+    // PROD-02 / CONFIG-01: fail closed when the runtime is Production but the
+    // configuration is still in dev shape. Every check here is the kind of
+    // mistake that would silently yield a public IdP in development mode (or
+    // an IdP advertising a localhost issuer to remote clients) — surface it
+    // at startup rather than at the first failed token validation in prod.
+    if (builder.Environment.IsProduction())
+    {
+        if (openIddictSettings.DevelopmentMode)
+            throw new InvalidOperationException(
+                "OpenIddict.DevelopmentMode must be false in Production. Ephemeral " +
+                "signing keys would invalidate every issued token on each restart " +
+                "and disable transport security on /connect/* endpoints. Set " +
+                "OpenIddict__DevelopmentMode=false and provide a real signing cert.");
+
+        if (string.IsNullOrWhiteSpace(openIddictSettings.SigningCertificatePath))
+            throw new InvalidOperationException(
+                "OpenIddict.SigningCertificatePath is required when DevelopmentMode=false. " +
+                "Provide the path to a PFX/PEM file holding the production signing key.");
+
+        if (string.IsNullOrWhiteSpace(openIddictSettings.Issuer) ||
+            openIddictSettings.Issuer.Contains("localhost", StringComparison.OrdinalIgnoreCase) ||
+            openIddictSettings.Issuer.Contains("127.0.0.1"))
+            throw new InvalidOperationException(
+                $"OpenIddict.Issuer ('{openIddictSettings.Issuer}') is invalid for Production. " +
+                "Set it to the public HTTPS URL of the IdP (e.g. https://auth.cocoar.dev).");
+
+        if (openIddictSettings.Issuer.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"OpenIddict.Issuer ('{openIddictSettings.Issuer}') must use HTTPS in Production.");
+    }
+
     builder.Services.AddOpenIddictWithMarten(openIddictSettings);
 
     // Migration services for legacy Cocoar.Auth data have been removed in the
@@ -531,6 +607,17 @@ try
     app.UseResponseCompression();
 
     app.UseForwardedHeaders();
+
+    // PROD-03: HSTS + HTTPS-redirect in non-Development. HSTS instructs
+    // browsers to refuse HTTP for 365 days (with subdomain inclusion); the
+    // redirect catches the first-ever HTTP hit before the header lands.
+    // Both run AFTER UseForwardedHeaders so Request.IsHttps reflects the
+    // edge protocol, not the in-cluster Kestrel-to-proxy hop.
+    if (!app.Environment.IsDevelopment())
+    {
+        app.UseHsts();
+        app.UseHttpsRedirection();
+    }
 
     // Enable OpenAPI endpoint (not in production)
     if (!app.Environment.IsProduction())

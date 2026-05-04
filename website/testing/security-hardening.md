@@ -21,7 +21,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | Welle | Cluster | Findings | Status | Commits |
 |------:|---------|---------:|:------:|---------|
 | 1 | [C1 Demo-Seed Production-Sicherung](#c1-demo-seed-production-sicherung) | 2 | ✅ | `b31a20e` |
-| 1 | [C2 Production Fail-Closed Config](#c2-production-fail-closed-config) | 3 | ☐ | — |
+| 1 | [C2 Production Fail-Closed Config](#c2-production-fail-closed-config) | 3 | ✅ | _pending_ |
 | 1 | [C3 Multi-Tenancy-Isolation](#c3-multi-tenancy-isolation) | 6 | ☐ | — |
 | 1 | [C4 Consent-Flow neu](#c4-consent-flow-neu) | 3 | ☐ | — |
 | 1 | [C5 Logout-Hardening](#c5-logout-hardening) | 5 | ☐ | — |
@@ -82,24 +82,35 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 ### C2 · Production Fail-Closed Config
 
-**Status:** ☐ Open · **Aufwand:** ~45 min · **Commit:** —
-
-Defaults dürfen in Production niemals ungesehen "noch laufen". Boot muss bei
-fehlerhafter Production-Config fail-closed terminieren.
+**Status:** ✅ Done · **Aufwand:** ~45 min (effektiv 1 h) · **Commit:** _pending_
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| PROD-02 | 🔴 Critical | `configuration.json:42`, `OpenIddictSettings.cs:23` | `OpenIddict.DevelopmentMode=true` ist Class-Default → ephemere Signing-Keys, Transport-Security disabled | ☐ |
-| PROD-03 | 🟠 High | `Program.cs:133-134, 524` | `UseHttpsRedirection` fehlt; `ForwardedHeaders.KnownProxies` leer → `X-Forwarded-Proto` von außen spoofbar | ☐ |
-| CONFIG-01 | 🟡 Medium | `StartUpConfiguration.cs:17`, `OpenIddictSettings.cs:16` | `Issuer` Class-Default `http://localhost:9099` → in Production stillschweigend kaputtes Discovery-Doc | ☐ |
+| PROD-02 | 🔴 Critical | `OpenIddictSettings.cs:23`, `Program.cs:457` | DevelopmentMode-Default jetzt `false`; Boot-Throw bei `IsProduction()+DevelopmentMode=true` | ✅ |
+| PROD-03 | 🟠 High | `Program.cs:128-160, 567-580` | `UseHsts()` + `UseHttpsRedirection()` in non-Development; `ForwardedHeaders.KnownNetworks` aus `ProxyAllowedNetworks` ENV in Production | ✅ |
+| CONFIG-01 | 🟡 Medium | `OpenIddictSettings.cs:16`, `Program.cs:464` | Issuer-Default leer; Boot-Throw wenn Production + (leer / localhost / 127.0.0.1 / http://) | ✅ |
 
-**Fix-Maßnahmen:**
-- `OpenIddictSettings.DevelopmentMode = false` als Class-Default
-- Boot-Throw wenn `IsProduction() && DevelopmentMode==true`
-- Boot-Throw wenn non-Dev und `SigningCertificatePath` leer
-- Boot-Throw wenn non-Dev und `Issuer` der Localhost-Default ist
-- `app.UseHttpsRedirection()` + `app.UseHsts()` (non-Dev)
-- `ForwardedHeaders.KnownNetworks` mit Reverse-Proxy-Range konfigurierbar
+**Implementierte Fixes:**
+- `OpenIddictSettings.DevelopmentMode` Class-Default `false`; Issuer Class-Default leer
+- Production-Boot-Validierung in `Program.cs` direkt vor `AddOpenIddictWithMarten`:
+  - `DevelopmentMode==true` → throw mit erklärender Message
+  - `SigningCertificatePath` leer → throw
+  - `Issuer` leer / enthält `localhost` / enthält `127.0.0.1` → throw
+  - `Issuer` startet mit `http://` → throw (HTTPS-Pflicht)
+- `ForwardedHeaders` zusätzlich `XForwardedHost`; Production liest CIDR-Liste aus
+  `ProxyAllowedNetworks` ENV und füllt `KnownNetworks`. `ForwardLimit=1` gegen
+  Header-Chains. Development behält Loopback-Trust für lokales Setup.
+- `app.UseHsts()` (1 Jahr, includeSubDomains, preload-eligible) und
+  `app.UseHttpsRedirection()` in `!IsDevelopment()`, beide nach
+  `UseForwardedHeaders` damit `Request.IsHttps` das Edge-Protokoll reflektiert.
+
+**Verifikation (manuell durchgespielt):**
+- Production + `OPENIDDICT__DEVELOPMENTMODE=true` → throw
+- Production + DevMode=false + kein Cert → throw
+- Production + DevMode=false + Cert + `Issuer=http://localhost:9099` → throw
+- Production + DevMode=false + Cert + `Issuer=http://auth.example.com` → throw (HTTPS missing)
+- Development → bootet weiter wie vorher (configuration.json setzt DevelopmentMode=true)
+- `tests-e2e-testapps` Playwright-Suite: 14/14 grün
 
 ---
 
@@ -349,7 +360,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | ID | Severity | Cluster | Title |
 |---|---|---|---|
 | CERT-01 | 🟡 | C13 | Cert: kein Multi-Key, keine Rotation-Window |
-| CONFIG-01 | 🟡 | C2 | Issuer Class-Default ist Localhost |
+| CONFIG-01 | 🟡 | C2 | Issuer Class-Default ist Localhost ✅ |
 | COOKIE-01 | 🔴 | C6 | App-Cookie `SameSite=Strict` bricht OIDC |
 | COOKIE-02 | 🟡 | C11 | Session-Cookie `SameSite=Strict` (deferred) |
 | COOKIE-03 | 🟡 | C11 | Cookie-Namen leaken Produkt (deferred) |
@@ -381,8 +392,8 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | OIDC-01 | 🟡 | — | `ResponseMode=Query` non-prod (akzeptiert) |
 | OIDC-02 | 🟡 | C11 | Placeholder-OIDC HTTPS=false (dead code) |
 | PROD-01 | 🔴 | C1 | Demo-Seed ships im Image ✅ |
-| PROD-02 | 🔴 | C2 | `DevelopmentMode=true` Class-Default |
-| PROD-03 | 🟠 | C2 | `UseHttpsRedirection` fehlt + ForwardedHeaders |
+| PROD-02 | 🔴 | C2 | `DevelopmentMode=true` Class-Default ✅ |
+| PROD-03 | 🟠 | C2 | `UseHttpsRedirection` fehlt + ForwardedHeaders ✅ |
 | RATE-01 | 🟠 | C10 | Kein App-Level-Rate-Limit |
 | SECRETS-01 | ℹ️ | — | Clean (keine Action) |
 | SESSION-01 | 🟠 | C7 | 30-Tage-Cookie + kein SecurityStampValidator |
