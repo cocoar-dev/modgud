@@ -71,7 +71,20 @@ public sealed class RealmSigningKeyHandler : IOpenIddictServerHandler<GenerateTo
         var creds = await _keyStore.GetActiveSigningCredentialsAsync(slug);
         context.SigningCredentials = creds;
 
-        _logger.LogDebug("Auth: signed {TokenType} for realm '{Slug}' with kid '{Kid}'",
-            context.TokenType, slug, creds.Key.KeyId);
+        // C3c — per-realm issuer in tokens (OAUTH-01). The discovery document
+        // already serves a realm-aware issuer (see RealmIssuerHandler); this
+        // mirrors the same behaviour in the iss claim of issued JWTs so
+        // resource servers fetching realm A's discovery + JWKS will only
+        // accept JWTs whose iss matches realm A's URL. The stock pipeline
+        // would otherwise stamp the global Options.Issuer onto every token,
+        // which would happily round-trip across realms.
+        if (context.SecurityTokenDescriptor is not null && context.BaseUri is not null)
+        {
+            context.SecurityTokenDescriptor.Issuer = context.BaseUri.OriginalString.TrimEnd('/');
+        }
+
+        _logger.LogDebug("Auth: signed {TokenType} for realm '{Slug}' with kid '{Kid}', issuer '{Issuer}'",
+            context.TokenType, slug, creds.Key.KeyId,
+            context.SecurityTokenDescriptor?.Issuer);
     }
 }
