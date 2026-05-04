@@ -26,7 +26,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | 1 | [C4 Consent-Flow neu](#c4-consent-flow-neu) | 3 | ✅ | `dd59175` |
 | 1 | [C5 Logout-Hardening](#c5-logout-hardening) | 5 | ✅ | `e4c2a06` |
 | 1 | [C6 CSRF-Posture](#c6-csrf-posture) | 4 | ✅ | `9bec178` |
-| 2 | [C7 Session-Lifecycle](#c7-session-lifecycle) | 2 | ✅ | _pending_ |
+| 2 | [C7 Session-Lifecycle](#c7-session-lifecycle) | 2 | ✅ | `07e2ae5` |
 | 2 | [C8 Token-Chain-Integrity](#c8-token-chain-integrity) | 3 | ☐ | — |
 | 2 | [C9 Security-Headers](#c9-security-headers) | 1 | ☐ | — |
 | 2 | [C10 Rate-Limiting](#c10-rate-limiting) | 2 | ☐ | — |
@@ -308,7 +308,7 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 ### C7 · Session-Lifecycle
 
-**Status:** ✅ Done · **Aufwand:** ~1 h · **Commit:** _pending_
+**Status:** ✅ Done · **Aufwand:** ~1 h · **Commit:** `07e2ae5`
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
