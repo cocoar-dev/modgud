@@ -58,6 +58,14 @@ public static class MartenConfiguration
         options.Schema.For<Cocoar.Auth.Domain.Realms.RealmSigningKey>()
             .Identity(x => x.Id);
 
+        // C4 — Server-side consent ticket. Per-tenant DB; tickets are bound
+        // to the calling user's subject so cross-tenant misuse is impossible
+        // by construction. Indexed on ExpiresAt for the future janitor that
+        // trims expired-and-consumed records.
+        options.Schema.For<Cocoar.Auth.Domain.OAuth.Consent.ConsentTicket>()
+            .Identity(x => x.Id)
+            .Index(x => x.ExpiresAt);
+
         // Authentication-specific Marten setup (documents + events + projections)
         // is wired via UseCocoarAuthAuthentication(), called from AddInfrastructure's
         // additionalMartenConfig callback so Infrastructure stays unaware of Authentication.

@@ -23,7 +23,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | 1 | [C1 Demo-Seed Production-Sicherung](#c1-demo-seed-production-sicherung) | 2 | ✅ | `b31a20e` |
 | 1 | [C2 Production Fail-Closed Config](#c2-production-fail-closed-config) | 3 | ✅ | `793b55d` |
 | 1 | [C3 Multi-Tenancy-Isolation](#c3-multi-tenancy-isolation) | 6 | ✅ | `e4c86b0` `68b7440` `4be9d5a` `fd2fc5d` |
-| 1 | [C4 Consent-Flow neu](#c4-consent-flow-neu) | 3 | ☐ | — |
+| 1 | [C4 Consent-Flow neu](#c4-consent-flow-neu) | 3 | ✅ | _pending_ |
 | 1 | [C5 Logout-Hardening](#c5-logout-hardening) | 5 | ☐ | — |
 | 1 | [C6 CSRF-Posture](#c6-csrf-posture) | 4 | ☐ | — |
 | 2 | [C7 Session-Lifecycle](#c7-session-lifecycle) | 2 | ☐ | — |
@@ -178,25 +178,42 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 ### C4 · Consent-Flow neu
 
-**Status:** ☐ Open · **Aufwand:** ~2 h · **Commit:** —
-
-Aktuelle Consent-Implementierung erlaubt Scope-Expansion + ist CSRF-anfällig
-+ reflektiert raw QueryString → komplette Kette für persistierte
-Authorization-Eskalation.
+**Status:** ✅ Done · **Aufwand:** ~1.5 h · **Commit:** _pending_
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| OAUTH-02 | 🔴 Critical | `ConsentEndpoints.cs:75-123` | `decision.ApprovedScopes` wird nicht gegen `requestedScopes` validiert → Scope-Expansion persistiert dauerhaft | ☐ |
-| OAUTH-03 | 🔴 Critical | `ConsentEndpoints.cs:21-29` | Kein CSRF-Schutz auf `/connect/consent` → Cross-Site-Fetch grant'et beliebige Authorizations | ☐ |
-| OAUTH-08 | 🟠 High | `AuthorizationEndpoints.cs:163-165` | `/consent?returnUrl=…` reflektiert raw QueryString → Open-Redirect-Vektor in Verbindung mit OAUTH-02/03 | ☐ |
+| OAUTH-02 | 🔴 Critical | `ConsentEndpoints.cs` (rewritten) | Scope-Expansion → `ApprovedScopes ∩ RequestedScopes` enforced server-side | ✅ |
+| OAUTH-03 | 🔴 Critical | `ConsentEndpoints.cs` (rewritten) | Subject-Binding statt CSRF-Token: Ticket wird auf `user.Id` gepinnt bei /authorize, POST verifiziert match | ✅ |
+| OAUTH-08 | 🟠 High | `AuthorizationEndpoints.cs:161-180` (rewritten) | Raw returnUrl-Reflection raus; URL wird aus `ConsentTicket.AuthorizeRequestQuery` server-side rekonstruiert | ✅ |
 
-**Fix-Maßnahmen:**
-- Server-Side `ConsentTicket`: bei `/authorize`-Redirect `{consent_id, user_id, client_id, requested_scopes, expires_at}` persistieren
-- SPA POSTet `{consent_id, approved_scopes}` zurück; raw URL nie wieder durch User-Hand
-- `ApprovedScopes ⊆ requestedScopes` enforced (intersection)
-- `ValidateScopeRestrictionAsync` auch im Consent-Submit aufrufen
-- Antiforgery-Token + Subject-Match-Check
-- Single-Use, expiry, server-side revocable
+**Implementierte Architektur:**
+
+`Cocoar.Auth.Domain/OAuth/Consent/ConsentTicket.cs` — Per-Tenant-DB-Document:
+- `Id` (Guid v7), `Subject` (user.Id), `ClientId`, `RequestedScopes[]`, `AuthorizeRequestQuery`, `CreatedAt`, `ExpiresAt` (5 min), `ConsumedAt?`
+
+`AuthorizationEndpoints.cs` — `/connect/authorize` (Explicit-Consent-Pfad):
+- Erstellt `ConsentTicket` gepinnt auf aktuellen User + Request-Query
+- Redirect zu `/consent?ticket=<id>` (KEINE returnUrl mehr)
+
+`ConsentEndpoints.cs` — komplett umgeschrieben:
+- `GET /connect/consent?ticket=<id>` — resolve ticket, return ClientInfo + RequestedScopes (aus DB, nicht aus QueryString-Parsing)
+- `POST /connect/consent` body `{Approved, ApprovedScopes[], Ticket}`:
+  - `ResolveTicketAsync` validiert: existiert / nicht expired / nicht consumed / Subject == aktueller User
+  - `ConsumedAt` wird VOR allen anderen Mutations gesetzt → atomar single-use
+  - `ApprovedScopes ∩ RequestedScopes` enforced
+  - Authorization persistiert mit gefilterten Scopes
+  - RedirectUrl rekonstruiert aus `record.AuthorizeRequestQuery` (Server-Side)
+
+`ConsentUrlHelper` + `ConsentUrlHelperTests` entfernt — die Raw-URL-Parsing-Helfer waren genau die OAUTH-08 Schwachstelle.
+
+**Manuell verifiziert (curl gegen lebende Auth + demo-mobile mit `consentType=explicit`):**
+- `/connect/authorize?...&client_id=demo-mobile` → 302 zu `/consent?ticket=019df2fd…`
+- `GET /consent?ticket=…` → 200 mit `RequestedScopes: [openid, demo.read]` aus DB
+- `POST /consent` mit `ApprovedScopes:[openid, demo.read, "demo.admin"]` → 200, RedirectUrl enthält **nur** `scope=openid+demo.read` (demo.admin gefiltert)
+- DB: `ConsumedAt` gesetzt nach erstem Submit
+- Zweiter POST mit gleichem Ticket → **409 "Consent ticket has already been used"**
+- GET mit bogus ticket-id → **404 "Consent ticket not found or expired"**
+- 780/780 Unit + 135/135 Integration + 14/14 Playwright grün
 
 ---
 
@@ -402,13 +419,13 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | LOG-02 | ℹ️ | C12 | AuthLog-Retention dokumentieren |
 | LOGOUT-01 | 🟡 | C5 | External-Logout AllowAnonymous |
 | OAUTH-01 | 🔴 | C3 | Cross-Realm JWT-Akzeptanz ✅ (per-realm keys + iss) |
-| OAUTH-02 | 🔴 | C4 | Consent-Scope-Expansion |
-| OAUTH-03 | 🔴 | C4 | Consent ohne CSRF |
+| OAUTH-02 | 🔴 | C4 | Consent-Scope-Expansion ✅ |
+| OAUTH-03 | 🔴 | C4 | Consent ohne CSRF ✅ (subject-bound ticket) |
 | OAUTH-04 | 🟠 | C5 | Logout ignoriert id_token_hint |
 | OAUTH-05 | 🟠 | C13 | Selbes Cert Signing+Encryption, kein Passwort |
 | OAUTH-06 | 🟠 | C1 | Demo-Seed mit hartcodierten Secrets ✅ (gemildert) |
 | OAUTH-07 | 🟠 | C7 | Refresh-Token ohne Security-Stamp-Check |
-| OAUTH-08 | 🟠 | C4 | `/consent?returnUrl=` reflektiert raw QueryString |
+| OAUTH-08 | 🟠 | C4 | `/consent?returnUrl=` reflektiert raw QueryString ✅ |
 | OAUTH-09 | 🟠 | C10 | `ValidateApiCredentialsAsync` BCrypt-Loop DoS |
 | OAUTH-10 | 🟠 | C8 | Refresh-Token-Reuse nicht detected |
 | OAUTH-11 | 🟠 | C3 | Subject ohne Realm-Qualifier ✅ (parallel `realm` claim) |

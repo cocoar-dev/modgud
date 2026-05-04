@@ -1,8 +1,9 @@
 using System.Collections.Immutable;
 using System.Security.Claims;
 using Cocoar.Auth.Authentication.Domain;
+using Cocoar.Auth.Domain.OAuth.Consent;
+using Marten;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -10,9 +11,30 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 namespace Cocoar.Auth.Api.Features.Auth.OAuth;
 
 /// <summary>
-/// Minimal-API endpoints for the consent UI flow. Matches the SPA contract from the
-/// legacy backend: GET returns the consent model, POST accepts the user decision and
-/// either creates a permanent authorization or denies.
+/// Consent UI flow — server-side-ticket variant.
+///
+/// <para>
+/// Replaces the legacy "round-trip the raw authorize URL through the SPA"
+/// design that combined three security issues — OAUTH-02 (scope expansion
+/// via decision payload), OAUTH-03 (no subject binding → consent-on-behalf
+/// CSRF), OAUTH-08 (open-redirect via reflected returnUrl). The new shape:
+/// </para>
+///
+/// <list type="number">
+///   <item><description><c>/connect/authorize</c> creates a
+///   <see cref="ConsentTicket"/> bound to the current user, with
+///   <c>ClientId</c> + <c>RequestedScopes</c> + the original authorize
+///   query locked in. Redirects to <c>/consent?ticket={id}</c>.</description></item>
+///   <item><description><c>GET /connect/consent?ticket=…</c> resolves the
+///   ticket, verifies subject + expiry + not-already-used, returns the
+///   info the SPA needs to render the prompt.</description></item>
+///   <item><description><c>POST /connect/consent</c> takes the ticket id
+///   plus the user's <c>ApprovedScopes</c>. The server intersects with the
+///   locked-in <c>RequestedScopes</c> (no expansion possible), creates
+///   the persistent authorization, marks the ticket consumed, and
+///   reconstructs the redirect URL from the locked-in query string —
+///   the SPA never sees the OAuth URL.</description></item>
+/// </list>
 /// </summary>
 public static class ConsentEndpoints
 {
@@ -29,22 +51,23 @@ public static class ConsentEndpoints
     }
 
     private static async Task<IResult> GetConsentInfoAsync(
-        string returnUrl,
+        Guid ticket,
+        IDocumentSession session,
         IOpenIddictApplicationManager applicationManager,
-        IOpenIddictScopeManager scopeManager)
+        IOpenIddictScopeManager scopeManager,
+        UserManager<ApplicationUser> userManager,
+        ClaimsPrincipal currentUserPrincipal)
     {
-        if (string.IsNullOrEmpty(returnUrl)) return Results.BadRequest(new { message = "The returnUrl parameter is required." });
+        var (record, error) = await ResolveTicketAsync(ticket, session, userManager, currentUserPrincipal);
+        if (error is not null) return error;
 
-        var (clientId, scopes) = ParseAuthorizationUrl(returnUrl);
-        if (string.IsNullOrEmpty(clientId)) return Results.BadRequest(new { message = "Invalid authorization request." });
-
-        var application = await applicationManager.FindByClientIdAsync(clientId);
+        var application = await applicationManager.FindByClientIdAsync(record!.ClientId);
         if (application is null) return Results.NotFound(new { message = "Application not found." });
 
-        var clientName = await applicationManager.GetDisplayNameAsync(application) ?? clientId;
+        var clientName = await applicationManager.GetDisplayNameAsync(application) ?? record.ClientId;
 
         var scopeInfos = new List<ConsentScopeInfo>();
-        foreach (var scopeName in scopes)
+        foreach (var scopeName in record.RequestedScopes)
         {
             var scope = await scopeManager.FindByNameAsync(scopeName);
             string? displayName = null;
@@ -65,39 +88,62 @@ public static class ConsentEndpoints
 
         return Results.Ok(new ConsentModel
         {
-            ClientId = clientId,
+            Ticket = record.Id.ToString("N"),
+            ClientId = record.ClientId,
             ClientName = clientName,
             RequestedScopes = scopeInfos,
-            ReturnUrl = returnUrl,
+            ExpiresAt = record.ExpiresAt,
         });
     }
 
     private static async Task<IResult> SubmitConsentAsync(
         ConsentDecision decision,
+        IDocumentSession session,
         IOpenIddictApplicationManager applicationManager,
         IOpenIddictAuthorizationManager authorizationManager,
         UserManager<ApplicationUser> userManager,
         ClaimsPrincipal currentUserPrincipal)
     {
-        if (string.IsNullOrEmpty(decision.ReturnUrl)) return Results.BadRequest(new { message = "The returnUrl is required." });
+        if (!Guid.TryParseExact(decision.Ticket, "N", out var ticketId) &&
+            !Guid.TryParse(decision.Ticket, out ticketId))
+        {
+            return Results.BadRequest(new { message = "Invalid consent ticket." });
+        }
 
-        var (clientId, requestedScopes) = ParseAuthorizationUrl(decision.ReturnUrl);
-        if (string.IsNullOrEmpty(clientId)) return Results.BadRequest(new { message = "Invalid authorization request." });
+        var (record, error) = await ResolveTicketAsync(ticketId, session, userManager, currentUserPrincipal);
+        if (error is not null) return error;
+
+        // Mark the ticket consumed BEFORE doing anything else so two parallel
+        // POSTs (e.g. user double-click) cannot both succeed. SaveChangesAsync
+        // below atomically commits this together with the authorization.
+        record!.ConsumedAt = DateTimeOffset.UtcNow;
 
         if (!decision.Approved)
         {
+            session.Store(record);
+            await session.SaveChangesAsync();
             return Results.Ok(new ConsentResult
             {
-                RedirectUrl = AppendErrorToUrl(decision.ReturnUrl, Errors.AccessDenied, "The user denied the authorization request."),
+                RedirectUrl = $"/consent/denied?error={Uri.EscapeDataString(Errors.AccessDenied)}" +
+                              $"&error_description={Uri.EscapeDataString("The user denied the authorization request.")}",
             });
         }
 
-        if (!decision.ApprovedScopes.Contains(Scopes.OpenId) && requestedScopes.Contains(Scopes.OpenId))
+        // OAUTH-02 fix: the user-submitted ApprovedScopes are filtered against
+        // the requested scopes that were locked in at /authorize time. Anything
+        // the user "added" beyond what the RP asked for is silently dropped;
+        // the standard "openid is implicit" semantic is preserved.
+        var requestedSet = record.RequestedScopes.ToHashSet(StringComparer.Ordinal);
+        var approvedSet = decision.ApprovedScopes
+            .Where(s => requestedSet.Contains(s))
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (requestedSet.Contains(Scopes.OpenId))
         {
-            decision.ApprovedScopes.Add(Scopes.OpenId);
+            approvedSet.Add(Scopes.OpenId);
         }
 
-        var application = await applicationManager.FindByClientIdAsync(clientId);
+        var application = await applicationManager.FindByClientIdAsync(record.ClientId);
         if (application is null) return Results.NotFound(new { message = "Application not found." });
 
         var user = await userManager.GetUserAsync(currentUserPrincipal);
@@ -110,88 +156,76 @@ public static class ConsentEndpoints
         identity.SetClaim(Claims.Subject, user.Id.ToString());
 
         var principal = new ClaimsPrincipal(identity);
-        principal.SetScopes(decision.ApprovedScopes);
+        principal.SetScopes(approvedSet);
 
         await authorizationManager.CreateAsync(
             principal: principal,
             subject: await userManager.GetUserIdAsync(user),
             client: await applicationManager.GetIdAsync(application) ?? string.Empty,
             type: AuthorizationTypes.Permanent,
-            scopes: decision.ApprovedScopes.ToImmutableArray());
+            scopes: approvedSet.ToImmutableArray());
 
-        return Results.Ok(new ConsentResult { RedirectUrl = decision.ReturnUrl });
+        session.Store(record);
+        await session.SaveChangesAsync();
+
+        // OAUTH-08 fix: reconstruct the redirect from the SERVER-SIDE locked
+        // query string. The SPA never sees the OAuth URL — there's no chance
+        // for it to get tampered with between consent display and submit.
+        return Results.Ok(new ConsentResult
+        {
+            RedirectUrl = "/connect/authorize" + record.AuthorizeRequestQuery,
+        });
     }
 
-    private static (string? clientId, List<string> scopes) ParseAuthorizationUrl(string url)
-        => ConsentUrlHelper.ParseAuthorizationUrl(url);
-
-    private static string AppendErrorToUrl(string url, string error, string description)
-        => ConsentUrlHelper.AppendErrorToUrl(url, error, description);
-}
-
-/// <summary>
-/// Pure URL helpers extracted from <see cref="ConsentEndpoints"/> so the parsing
-/// behaviour (relative vs. absolute, missing query params, malformed URLs) and
-/// the denied-redirect formatting can be unit-tested without a host.
-/// <para>Internal — only the endpoint and its tests should depend on it.</para>
-/// </summary>
-internal static class ConsentUrlHelper
-{
     /// <summary>
-    /// Extracts <c>client_id</c> and the space-separated <c>scope</c> values from
-    /// the OpenIddict authorize-request URL the SPA passes through as
-    /// <c>returnUrl</c>. Accepts both relative paths (prepended with a fake host)
-    /// and absolute URLs. A malformed URI yields <c>(null, [])</c> — the caller
-    /// then short-circuits with a 400 instead of throwing.
+    /// Loads a ticket and validates that it's safe to act on:
+    /// exists, not expired, not already consumed, and bound to the
+    /// authenticated principal. Returns either the record or an
+    /// <see cref="IResult"/> describing the failure.
     /// </summary>
-    public static (string? clientId, List<string> scopes) ParseAuthorizationUrl(string url)
+    private static async Task<(ConsentTicket? Record, IResult? Error)> ResolveTicketAsync(
+        Guid ticketId,
+        IDocumentSession session,
+        UserManager<ApplicationUser> userManager,
+        ClaimsPrincipal currentUserPrincipal)
     {
-        // Catch is intentionally narrow: only swallow malformed-URI errors. A
-        // bare `catch` would also swallow programming errors (NRE, OOM, ...) and
-        // turn them into a confusing 400 with no log trail.
-        try
+        var record = await session.LoadAsync<ConsentTicket>(ticketId);
+        if (record is null)
         {
-            var uri = url.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                ? new Uri(url)
-                : new Uri("http://localhost" + url);
-
-            var query = QueryHelpers.ParseQuery(uri.Query);
-
-            string? clientId = query.TryGetValue("client_id", out var clientIdValues) ? clientIdValues.FirstOrDefault() : null;
-            var scopes = new List<string>();
-            if (query.TryGetValue("scope", out var scopeValues))
-            {
-                var scopeString = scopeValues.FirstOrDefault();
-                if (!string.IsNullOrEmpty(scopeString))
-                {
-                    scopes = scopeString.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
-                }
-            }
-
-            return (clientId, scopes);
+            return (null, Results.NotFound(new { message = "Consent ticket not found or expired." }));
         }
-        catch (UriFormatException)
+
+        if (record.ConsumedAt is not null)
         {
-            return (null, new List<string>());
+            return (null, Results.Conflict(new { message = "Consent ticket has already been used." }));
         }
+
+        if (record.ExpiresAt < DateTimeOffset.UtcNow)
+        {
+            return (null, Results.BadRequest(new { message = "Consent ticket has expired." }));
+        }
+
+        // OAUTH-03 fix: subject binding. An attacker forcing a victim to POST
+        // a consent decision can only act on tickets the victim's own session
+        // created — and tickets are only created by /authorize, which is
+        // session-scoped. Cross-user tampering is impossible by construction.
+        var user = await userManager.GetUserAsync(currentUserPrincipal);
+        if (user is null || user.Id != record.Subject)
+        {
+            return (null, Results.Forbid());
+        }
+
+        return (record, null);
     }
-
-    /// <summary>
-    /// Builds the consent-denied redirect target. The path is intentionally
-    /// hard-coded (<c>/consent/denied</c>) so the SPA route stays stable even
-    /// when a hostile <paramref name="url"/> is provided — only the OAuth error
-    /// payload is forwarded.
-    /// </summary>
-    public static string AppendErrorToUrl(string url, string error, string description)
-        => $"/consent/denied?error={Uri.EscapeDataString(error)}&error_description={Uri.EscapeDataString(description)}";
 }
 
 public class ConsentModel
 {
+    public required string Ticket { get; init; }
     public required string ClientId { get; init; }
     public required string ClientName { get; init; }
     public required List<ConsentScopeInfo> RequestedScopes { get; init; }
-    public required string ReturnUrl { get; init; }
+    public required DateTimeOffset ExpiresAt { get; init; }
 }
 
 public class ConsentScopeInfo
@@ -206,7 +240,12 @@ public class ConsentDecision
 {
     public bool Approved { get; init; }
     public List<string> ApprovedScopes { get; init; } = new();
-    public required string ReturnUrl { get; init; }
+
+    /// <summary>
+    /// Server-side ticket id (32-char hex, accepts hyphenated form too).
+    /// Replaces the legacy <c>ReturnUrl</c> field.
+    /// </summary>
+    public required string Ticket { get; init; }
 }
 
 public class ConsentResult

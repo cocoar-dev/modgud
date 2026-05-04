@@ -3,6 +3,7 @@ using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Services;
 using Cocoar.Auth.Domain.OAuth.Applications;
+using Cocoar.Auth.Domain.OAuth.Consent;
 using Cocoar.Auth.Domain.OAuth.Scopes;
 using Marten;
 using Microsoft.AspNetCore;
@@ -158,11 +159,34 @@ public static class AuthorizationEndpoints
                 new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
         }
 
-        // Explicit consent flow — bounce to the SPA consent page; it will POST
-        // to /connect/consent and then re-issue the authorize request.
-        var authorizeUrl = httpContext.Request.PathBase + httpContext.Request.Path + httpContext.Request.QueryString;
-        var consentUrl = $"/consent?returnUrl={Uri.EscapeDataString(authorizeUrl)}";
-        return Results.Redirect(consentUrl);
+        // Explicit consent flow — bounce to the SPA consent page with a
+        // server-side ticket id rather than a reflected returnUrl.
+        //
+        // Earlier shape (OAUTH-08 + OAUTH-02 + OAUTH-03): redirect carried
+        // the raw authorize URL as ?returnUrl=…, the SPA round-tripped it,
+        // the consent endpoint parsed client_id + scopes back out and
+        // trusted whatever ApprovedScopes were submitted. Three things
+        // wrong with that — open-redirect surface, scope-expansion via
+        // form-payload tampering, and no subject binding so an attacker
+        // could cross-site-POST consent decisions on behalf of a victim.
+        //
+        // Now we persist the request shape to a ConsentTicket bound to
+        // the current user, hand the SPA only the ticket id, and let the
+        // consent endpoint reconstruct everything server-side.
+        var ticket = new ConsentTicket
+        {
+            Id = Guid.CreateVersion7(),
+            Subject = user.Id,
+            ClientId = request.ClientId!,
+            RequestedScopes = request.GetScopes().ToArray(),
+            AuthorizeRequestQuery = httpContext.Request.QueryString.Value ?? string.Empty,
+            CreatedAt = DateTimeOffset.UtcNow,
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
+        };
+        session.Store(ticket);
+        await session.SaveChangesAsync();
+
+        return Results.Redirect($"/consent?ticket={ticket.Id:N}");
     }
 
     private static async Task<IResult> ExchangeAsync(
