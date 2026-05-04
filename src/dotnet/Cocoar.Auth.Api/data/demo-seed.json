@@ -135,6 +135,19 @@
       "requireClientSecret": true
     },
     {
+      "clientId": "demo-bff",
+      "displayName": "Demo BFF",
+      "clientType": "confidential",
+      "clientSecret": "demo-bff-secret-please-rotate",
+      "consentType": "implicit",
+      "redirectUris": ["http://localhost:7080/signin-oidc"],
+      "postLogoutRedirectUris": ["http://localhost:7080/signout-callback-oidc"],
+      "allowedGrantTypes": ["authorization_code", "refresh_token"],
+      "scopes": ["openid", "email", "profile", "offline_access", "demo.read", "demo.write"],
+      "requireConsent": false,
+      "requireClientSecret": true
+    },
+    {
       "clientId": "demo-mobile",
       "displayName": "Demo Mobile",
       "clientType": "public",

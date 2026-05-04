@@ -14,6 +14,11 @@
     <Project Path="Cocoar.Auth.Tests.Unit/Cocoar.Auth.Tests.Unit.csproj" />
     <Project Path="Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj" />
   </Folder>
+  <Folder Name="/TestApps/">
+    <Project Path="TestApps/Cocoar.Auth.TestApps.ResourceApi/Cocoar.Auth.TestApps.ResourceApi.csproj" />
+    <Project Path="TestApps/Cocoar.Auth.TestApps.ConfidentialClient/Cocoar.Auth.TestApps.ConfidentialClient.csproj" />
+    <Project Path="TestApps/Cocoar.Auth.TestApps.Bff/Cocoar.Auth.TestApps.Bff.csproj" />
+  </Folder>
 <Folder Name="/_Solution Items/">
     <File Path="Directory.Build.props" />
     <File Path="Directory.Packages.props" />
