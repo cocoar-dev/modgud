@@ -140,7 +140,7 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 - `DemoSeedService` setzt `bus.TenantId = TenantContext.Current` nach Inner-Scope
 - `OidcSchemeBootstrap` iteriert alle aktiven Realms via `IRealmCache.GetAllActiveAsync()`
 
-**C3b — Per-Realm RSA Signing Keys** (`68b7440`, Storage-Move `_pending_`)
+**C3b — Per-Realm RSA Signing Keys** (`68b7440`, Storage-Move `6328ff1`)
 - `Cocoar.Auth.Domain/Realms/RealmSigningKey.cs` — Marten-Document, jetzt **pro Tenant-DB** (Storage-Move-Refactor: ein kompromittiertes Master-DB-Backup leakt nicht mehr alle Realms' Private-Keys; jeder Realm hat seinen Key in seiner eigenen physischen Postgres-DB)
 - `IRealmKeyStore` + `RealmKeyStore`: lazy generation pro Realm, in-memory cache, async per-slug lock, Rotation-API; injectet jetzt `IDocumentStore` direkt und öffnet Sessions mit explizitem Slug (`_store.LightweightSession(realmSlug)`)
 - `RealmSigningKeyHandler` (GenerateTokenContext): überschreibt `SigningCredentials` mit Realm-Key für Access+Id-Tokens
