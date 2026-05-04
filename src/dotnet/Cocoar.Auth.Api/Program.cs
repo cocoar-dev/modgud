@@ -656,6 +656,12 @@ try
         app.UseHttpsRedirection();
     }
 
+    // HEADERS-01 — defence-in-depth response headers (CSP, X-Frame-Options,
+    // X-Content-Type-Options, Referrer-Policy, Permissions-Policy, COOP).
+    // Runs early so the headers ship even when the pipeline short-circuits
+    // (auth challenge, exception handler, OpenAPI).
+    app.UseMiddleware<Cocoar.Auth.Api.Middleware.SecurityHeadersMiddleware>();
+
     // Enable OpenAPI endpoint (not in production)
     if (!app.Environment.IsProduction())
     {

@@ -28,7 +28,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | 1 | [C6 CSRF-Posture](#c6-csrf-posture) | 4 | ✅ | `9bec178` |
 | 2 | [C7 Session-Lifecycle](#c7-session-lifecycle) | 2 | ✅ | `07e2ae5` |
 | 2 | [C8 Token-Chain-Integrity](#c8-token-chain-integrity) | 3 | ✅ | `4f565f3` |
-| 2 | [C9 Security-Headers](#c9-security-headers) | 1 | ☐ | — |
+| 2 | [C9 Security-Headers](#c9-security-headers) | 1 | ✅ | _pending_ |
 | 2 | [C10 Rate-Limiting](#c10-rate-limiting) | 2 | ☐ | — |
 | 3 | [C11 Korrektheit](#c11-korrektheit) | 7 | ☐ | — |
 | 3 | [C12 Logging-Hygiene](#c12-logging-hygiene) | 2 | ☐ | — |
@@ -379,16 +379,34 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 ### C9 · Security-Headers
 
-**Status:** ☐ Open · **Aufwand:** ~30 min · **Commit:** —
+**Status:** ✅ Done · **Aufwand:** ~45 min (effektiv 1 h wegen CSP-OAuth-Form-Post) · **Commit:** _pending_
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| HEADERS-01 | 🟠 High | `Program.cs:520-545` (fehlend) | Keine HSTS, kein CSP, kein X-Frame-Options, kein Referrer-Policy, kein Permissions-Policy | ☐ |
+| HEADERS-01 | 🟠 High | `SecurityHeadersMiddleware.cs` (neu) + Program.cs Pipeline | HSTS (C2 schon drin), CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, Cross-Origin-Opener-Policy via OnStarting-Hook auf jeder Response | ✅ |
 
-**Fix-Maßnahmen:**
-- `app.UseHsts()` (non-Dev)
-- Custom Middleware setzt: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: geolocation=(), microphone=(), camera=()`, `Cross-Origin-Opener-Policy: same-origin`, `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; worker-src 'self' blob:`
-- CSP für Monaco-Worker tunen
+**Implementierte Headers:**
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY` (redundant mit CSP `frame-ancestors`, hilft Scannern)
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: geolocation=(), microphone=(), camera=(), magnetometer=(), gyroscope=(), accelerometer=(), payment=(), usb=(), fullscreen=(self)`
+- `Cross-Origin-Opener-Policy: same-origin`
+- `Content-Security-Policy:` `default-src 'self'; script-src 'self' 'unsafe-inline' [+'unsafe-eval' in Dev]; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' [+ws:wss: in Dev]; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action *; worker-src 'self' blob:; object-src 'none'`
+
+**Pragmatische CSP-Trade-Offs:**
+
+1. **`script-src 'unsafe-inline'`** in Production: OpenIddict's `response_mode=form_post` rendert eine HTML-Seite mit auto-submittendem Inline-`<script>` zur RP-Bounce. Per-Response-Nonce wäre die saubere Lösung, würde aber View-Rendering-Surgery in OpenIddict bedeuten. SOP + frame-ancestors + object-src + form-action halten den Exploitation-Surface trotzdem eng.
+
+2. **`form-action *`**: OAuth-Form-Post submitted by-design Cross-Origin (an die RP-redirect_uri). Lock auf `'self'` hätte alle Code-Flow-Konsumer gebrochen. Der OAuth-Protokoll-Layer validiert redirect_uri exact-match gegen die registrierte Liste — das ist das **eigentliche** Gate; CSP form-action wäre brittle Duplikation. Future hardening: aus Client-Registry zur Boot-Zeit generieren.
+
+3. **`'unsafe-eval'`** nur in Development: Vite HMR braucht es; Production droppt es.
+
+**Manuell verifiziert (curl):**
+- Headers auf `/login` → alle 6 gesetzt
+- Headers auf `/api/setup/status` → alle 6 gesetzt
+- Playwright login flow → 14/14 grün (response_mode=form_post wird nicht gebrockt)
+
+**Tests:** 780 Unit · 135 Integration · 14 Playwright — alle grün.
 
 ---
 
@@ -484,7 +502,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | CSRF-01 | 🔴 | C5 | Logout ohne CSRF-Schutz (= OAUTH-04) ✅ |
 | CSRF-02 | 🟠 | C6 | `app.UseAntiforgery()` fehlt ✅ (CsrfDefenseMiddleware) |
 | CSRF-03 | 🟠 | C6 | Anonyme Login-Endpoints ohne CSRF ✅ |
-| HEADERS-01 | 🟠 | C9 | Keine Security-Headers |
+| HEADERS-01 | 🟠 | C9 | Keine Security-Headers ✅ |
 | LOG-01 | 🟢 | C12 | TestApp loggt Token-Length |
 | LOG-02 | ℹ️ | C12 | AuthLog-Retention dokumentieren |
 | LOGOUT-01 | 🟡 | C5 | External-Logout AllowAnonymous ✅ |

@@ -11,14 +11,14 @@ namespace Internal.Generated.WolverineHandlers
     public sealed class IEventHandler2008265055 : Wolverine.Runtime.Handlers.MessageHandler
     {
         private readonly Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserUpdatedHandler> _loggerOfAutoMembershipOnUserUpdatedHandler;
-        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
         private readonly Microsoft.Extensions.DependencyInjection.IServiceScopeFactory _serviceScopeFactory;
+        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
 
-        public IEventHandler2008265055(Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserUpdatedHandler> loggerOfAutoMembershipOnUserUpdatedHandler, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, Microsoft.Extensions.DependencyInjection.IServiceScopeFactory serviceScopeFactory)
+        public IEventHandler2008265055(Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserUpdatedHandler> loggerOfAutoMembershipOnUserUpdatedHandler, Microsoft.Extensions.DependencyInjection.IServiceScopeFactory serviceScopeFactory, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory)
         {
             _loggerOfAutoMembershipOnUserUpdatedHandler = loggerOfAutoMembershipOnUserUpdatedHandler;
-            _outboxedSessionFactory = outboxedSessionFactory;
             _serviceScopeFactory = serviceScopeFactory;
+            _outboxedSessionFactory = outboxedSessionFactory;
         }
 
 
