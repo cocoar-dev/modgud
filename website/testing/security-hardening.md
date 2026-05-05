@@ -35,7 +35,7 @@ Alle 13 Cluster über alle 3 Wellen abgeschlossen (33 Findings: 31 ✅, 2 ⏸ ac
 | 2 | [C10 Rate-Limiting](#c10-rate-limiting) | 2 | ✅ | `8721fc6` |
 | 3 | [C11 Korrektheit](#c11-korrektheit) | 7 | ✅ | `be75284` |
 | 3 | [C12 Logging-Hygiene](#c12-logging-hygiene) | 2 | ✅ | `2be004d` |
-| 3 | [C13 Cert-Rotation](#c13-cert-rotation) | 2 | ✅ | _pending_ |
+| 3 | [C13 Cert-Rotation](#c13-cert-rotation) | 2 | ✅ | `9b72b52` |
 
 **Findings:** 33 (7 Critical · 13 High · 8 Medium · 5 Low/Info) — siehe
 [Findings-Index](#findings-index) am Ende der Seite.
@@ -484,7 +484,7 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 ### C13 · Cert-Rotation
 
-**Status:** ✅ Done · **Aufwand:** ~45 min · **Commit:** _pending_
+**Status:** ✅ Done · **Aufwand:** ~45 min · **Commit:** `9b72b52`
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
