@@ -236,7 +236,7 @@ const showOidcTabs = computed(() => !isInternal.value)
         <CoarButton
           v-if="!isBuiltIn"
           size="s"
-          :variant="provider.Enabled ? 'solid' : 'subtle'"
+          :variant="provider.Enabled ? 'primary' : 'ghost'"
           :icon-start="provider.Enabled ? 'circle-check' : 'circle-off'"
           :disabled="saving"
           @click="toggleEnabled"
@@ -267,7 +267,7 @@ const showOidcTabs = computed(() => !isInternal.value)
           <CoarFormField :label="t('admin.loginProviders.redirectUri', {}, 'Redirect URI (in die IdP-App-Registrierung eintragen)')">
             <div class="flex gap-2 items-center">
               <CoarTextInput :model-value="redirectUri" readonly class="flex-1" />
-              <CoarButton size="s" variant="subtle" icon-start="copy" @click="copyRedirect">
+              <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyRedirect">
                 {{ t('common.copy', {}, 'Kopieren') }}
               </CoarButton>
             </div>

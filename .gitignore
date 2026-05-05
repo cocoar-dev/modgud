@@ -415,3 +415,9 @@ src/dotnet/Cocoar.Auth.Api/wwwroot/
 # Playwright test artifacts
 src/frontend-vue/test-results/
 src/frontend-vue/playwright-report/
+
+# vue-tsc / TypeScript build artifacts. `pnpm type-check` (vue-tsc --build)
+# emits a *.vue.js sidecar next to every .vue file plus tsbuildinfo
+# files in incremental mode. None of this is source.
+src/frontend-vue/**/*.vue.js
+src/frontend-vue/**/*.tsbuildinfo

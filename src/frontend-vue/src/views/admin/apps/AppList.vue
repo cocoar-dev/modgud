@@ -3,7 +3,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import {
   CoarButton,
-  CoarTag,
   useContextMenu,
   CoarContextMenu,
   CoarMenuItem,

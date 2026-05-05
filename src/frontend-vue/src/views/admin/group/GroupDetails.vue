@@ -152,11 +152,6 @@ const memberOptions = computed<CoarListboxOption<string>[]>(() =>
     })
 )
 
-const memberLabels = computed(() => {
-  const map = new Map(memberOptions.value.map(o => [o.value, o.label]))
-  return form.value.MemberIds.map(id => map.get(id) ?? id)
-})
-
 // Read-only view of the current members as rich list options — same shape as
 // the picker items so the Script-tab listing looks identical.
 const computedMemberOptions = computed<CoarListboxOption<string>[]>(() => {

@@ -44,7 +44,8 @@ onMounted(async () => {
 
     const linksHttp = useHttpClient(`/api/admin/users/${props.id}/external-links`)
     links.value = await linksHttp.get<ExternalLinkDto[]>()
-    if (links.value.length > 0) selectedLinkId.value = links.value[0].Id
+    const first = links.value[0]
+    if (first) selectedLinkId.value = first.Id
   } catch (e) {
     console.error('Failed to load external links', e)
   } finally {
@@ -79,7 +80,7 @@ const modalTitle = computed(() => userName.value || t('admin.idpClaims.loadingUs
           :class="['link-badge', { 'link-badge-selected': l.Id === selectedLink?.Id }]"
           @click="selectedLinkId = l.Id"
         >
-          <span class="badge-name">{{ l.IdpDisplayName }}</span>
+          <span class="badge-name">{{ l.ProviderDisplayName }}</span>
           <span class="badge-meta">
             {{ t('admin.idpClaims.lastLogin', {}, 'Last login') }}: {{ new Date(l.LastLoginAt).toLocaleString() }}
             <template v-if="l.LastCapturedAt"> · {{ t('admin.idpClaims.captured', {}, 'captured') }} {{ new Date(l.LastCapturedAt).toLocaleString() }}</template>

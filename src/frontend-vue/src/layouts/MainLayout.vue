@@ -24,7 +24,7 @@ const { t } = useI18n()
 const signalR = useSignalR()
 const router = useRouter()
 const route = useRoute()
-const { state: ui, reset: resetUI } = provideUI()
+const { state: ui } = provideUI()
 const authStore = useAuthStore()
 
 const collapsed = ref(
@@ -40,7 +40,7 @@ function toggleCollapsed() {
 const userInitials = computed(() => {
     const u = authStore.user
     if (u?.Acronym) return u.Acronym.toUpperCase()
-    if (u?.Firstname && u?.Lastname) return (u.Firstname[0] + u.Lastname[0]).toUpperCase()
+    if (u?.Firstname && u?.Lastname) return ((u.Firstname[0] ?? '') + (u.Lastname[0] ?? '')).toUpperCase()
     return u?.UserName?.substring(0, 2).toUpperCase() ?? '??'
 })
 

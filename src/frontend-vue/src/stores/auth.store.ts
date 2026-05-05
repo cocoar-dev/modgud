@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useSignalR } from '@/composables/useSignalR'
 import { useAppConfigStore } from '@/stores/appconfig.store'
-import type { AuthUser, EmailOtpStatus, LoginResponse, MagicLinkRequest } from '@/models/auth'
+import type { AuthUser, EmailOtpStatus, LoginResponse } from '@/models/auth'
 
 // Shape of the DataEvent the UserHub broadcasts — same wire format as
 // useEntityService uses. We only need Action + Payload here; Payload items

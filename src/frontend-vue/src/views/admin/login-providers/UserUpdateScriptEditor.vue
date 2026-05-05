@@ -123,7 +123,7 @@ async function runTest() {
       <div class="side-heading flex items-center justify-between">
         <span>{{ t('admin.loginProviders.testPanel', {}, 'Test') }}</span>
         <div class="flex gap-1">
-          <CoarButton size="xs" variant="subtle" icon-start="download" :disabled="isNew" @click="loadLast">
+          <CoarButton size="xs" variant="ghost" icon-start="download" :disabled="isNew" @click="loadLast">
             {{ t('admin.loginProviders.loadLastClaims', {}, 'Letzter Login') }}
           </CoarButton>
           <CoarButton size="xs" icon-start="play" :disabled="testing" @click="runTest">

@@ -215,7 +215,7 @@ onMounted(() => store.initialize())
           </CoarFormField>
           <div v-if="addError" class="text-sm text-red-600">{{ addError }}</div>
           <div class="flex justify-end gap-2 mt-3">
-            <CoarButton variant="subtle" size="s" @click="addOpen = false">{{ t('common.cancel', {}, 'Abbrechen') }}</CoarButton>
+            <CoarButton variant="ghost" size="s" @click="addOpen = false">{{ t('common.cancel', {}, 'Abbrechen') }}</CoarButton>
             <CoarButton size="s" @click="confirmAdd">{{ t('common.create', {}, 'Erstellen') }}</CoarButton>
           </div>
         </div>

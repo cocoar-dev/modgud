@@ -73,6 +73,16 @@ function finishLogin() {
   }
 }
 
+// HttpClientError.body is `unknown` by design — narrow it here. Most
+// API errors are ProblemDetails-shaped, so we look for `.detail`.
+function errorDetail(e: HttpClientError): string | undefined {
+  const b = e.body
+  if (b && typeof b === 'object' && 'detail' in b && typeof b.detail === 'string') {
+    return b.detail
+  }
+  return undefined
+}
+
 // Form state
 const userName = ref('')
 const password = ref('')
@@ -196,7 +206,7 @@ async function sendEmailOtp() {
     emailOtpSent.value = true
   } catch (e) {
     if (e instanceof HttpClientError) {
-      error.value = e.body?.detail ?? t('auth.mfa.sendError', {}, 'Error sending code.')
+      error.value = errorDetail(e) ?? t('auth.mfa.sendError', {}, 'Error sending code.')
     } else {
       error.value = t('common.connectionError', {}, 'Connection to server failed.')
     }
@@ -232,7 +242,7 @@ async function handleEmailOtpLogin() {
     finishLogin()
   } catch (e) {
     if (e instanceof HttpClientError) {
-      error.value = e.body?.detail ?? t('auth.mfa.invalidCode', {}, 'Invalid code. Please try again.')
+      error.value = errorDetail(e) ?? t('auth.mfa.invalidCode', {}, 'Invalid code. Please try again.')
     } else {
       error.value = t('common.connectionError', {}, 'Connection to server failed.')
     }
@@ -329,7 +339,10 @@ async function handlePasskeyLogin() {
       },
     }
 
-    await passkeyHttp.addPath('login').post(assertion, { params: { rememberMe: rememberMe.value } })
+    await passkeyHttp
+      .addPath('login')
+      .setQueryParameter('rememberMe', String(rememberMe.value))
+      .post(assertion)
     await authStore.fetchMe()
     finishLogin()
   } catch (e: any) {

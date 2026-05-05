@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
+import { useHttpClient } from '@/composables/useHttpClient'
 import { useAuthStore } from '@/stores/auth.store'
 import { useI18n } from '@cocoar/vue-localization'
 import {

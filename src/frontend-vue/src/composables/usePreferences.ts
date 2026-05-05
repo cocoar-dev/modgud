@@ -20,7 +20,7 @@ export const localeOptions = [
 
 /** Extract base language from locale code (de-AT → de) */
 export function getBaseLanguage(locale: string): string {
-  return locale.split('-')[0]
+  return locale.split('-')[0] ?? locale
 }
 
 export function usePreferences() {

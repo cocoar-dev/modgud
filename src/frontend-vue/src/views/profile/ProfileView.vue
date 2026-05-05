@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
@@ -12,6 +13,7 @@ import MfaSetupModal from '../auth/MfaSetupModal.vue'
 import ChangePasswordModal from './ChangePasswordModal.vue'
 
 const { t, language } = useI18n()
+const router = useRouter()
 const authStore = useAuthStore()
 const appConfig = useAppConfigStore()
 const { darkMode, setDarkMode, setLocale } = usePreferences()
@@ -355,12 +357,6 @@ async function cancelRequest() {
   } catch { /* ignore */ }
 }
 
-const fieldLabels: Record<string, string> = {
-  Firstname: 'Vorname',
-  Lastname: 'Nachname',
-  Acronym: 'Kürzel',
-  Email: 'E-Mail',
-}
 
 /** Returns the pending change for a given profile field, or null. */
 function pendingFor(field: string): ChangeItem | null {
@@ -387,8 +383,8 @@ const localeSelectOptions: CoarSelectOption<string>[] = localeOptions.map(o => (
 const themeValue = ref(darkMode.value ? 'dark' : 'light')
 watch(themeValue, (val) => setDarkMode(val === 'dark'))
 
-function onLocaleChange(locale: string) {
-  setLocale(locale)
+function onLocaleChange(locale: string | null) {
+  if (locale) setLocale(locale)
 }
 
 onMounted(() => {

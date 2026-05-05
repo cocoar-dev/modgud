@@ -17,7 +17,12 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "baseUrl": "."
+    "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
+    // vue-tsc is used for type-checking only (via `pnpm type-check`).
+    // Vite handles the actual JS emit during dev/build, so suppress
+    // tsc's own output to keep the source tree clean of *.js sidecars.
+    "noEmit": true
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "env.d.ts"]
 }
