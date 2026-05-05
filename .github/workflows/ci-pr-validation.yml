@@ -35,6 +35,17 @@ jobs:
         run: dotnet restore Cocoar.Auth.slnx
         working-directory: ./src/dotnet
 
+      - name: Audit NuGet dependencies for known CVEs
+        run: |
+          set -o pipefail
+          out=$(dotnet list package --vulnerable --include-transitive 2>&1)
+          echo "$out"
+          if echo "$out" | grep -qE "has the following vulnerable packages"; then
+            echo "::error ::Vulnerable NuGet packages detected. See log above."
+            exit 1
+          fi
+        working-directory: ./src/dotnet
+
       - name: Build backend
         run: dotnet build Cocoar.Auth.slnx -c Release --no-restore -p:Version=${{ steps.gv.outputs.SemVer }}
         working-directory: ./src/dotnet
@@ -63,6 +74,10 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        working-directory: ./src/frontend-vue
+
+      - name: Audit npm dependencies for known CVEs
+        run: pnpm audit --prod --audit-level=moderate
         working-directory: ./src/frontend-vue
 
       - name: Build frontend
