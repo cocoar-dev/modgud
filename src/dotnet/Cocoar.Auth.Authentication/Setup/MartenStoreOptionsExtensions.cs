@@ -53,6 +53,14 @@ public static class MartenStoreOptionsExtensions
             .Identity(x => x.Id)
             .Index(x => x.UserId);
 
+        // C15 — bootstrap-invite for first-admin creation in a realm.
+        // Stored per-tenant (one realm = one tenant DB) and indexed by
+        // TokenHash for the hot lookup the bootstrap endpoint runs.
+        options.Schema.For<PendingAdminInvite>()
+            .Identity(x => x.Id)
+            .Index(x => x.TokenHash)
+            .Index(x => x.Email);
+
         options.Schema.For<UserChangeRequest>()
             .Identity(x => x.Id)
             .Index(x => x.UserId)

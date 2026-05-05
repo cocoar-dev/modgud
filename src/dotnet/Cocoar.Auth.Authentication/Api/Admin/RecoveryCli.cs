@@ -6,6 +6,7 @@ using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Projections;
 using Cocoar.Auth.Authorization.Services;
+using Cocoar.Auth.Domain.Realms;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Marten;
 using Microsoft.AspNetCore.Identity;
@@ -380,15 +381,10 @@ public static class RecoveryCli
 
         if (string.IsNullOrEmpty(password))
         {
-            // Invite mode lands in C15b (PendingAdminInvite + bootstrap
-            // endpoint + SPA form). For now the CLI directs the operator
-            // to use --password explicitly so we don't half-ship the
-            // feature.
-            Console.Error.WriteLine(
-                "error: invite-mode bootstrap is not yet wired up (lands in C15b — pending invite document + SPA bootstrap form).");
-            Console.Error.WriteLine(
-                "       For now run with --password '<pw>' to create the admin directly.");
-            return 1;
+            // Invite mode: write a PendingAdminInvite + send email + print
+            // the magic-link URL on stdout (also useful when SMTP isn't
+            // configured locally — operator can copy/paste).
+            return await BootstrapAdminInviteAsync(scopedServices, realmSlug, userName, email, firstname, lastname);
         }
 
         var bootstrapper = scopedServices.GetRequiredService<IRealmAdminBootstrapper>();
@@ -413,6 +409,47 @@ public static class RecoveryCli
         Console.WriteLine($"  Mode:     Direct (password set on creation)");
         Console.WriteLine();
         Console.WriteLine("Sign in via the realm's domain — the user is in the Administratoren group with realm:admin.");
+        return 0;
+    }
+
+    private static async Task<int> BootstrapAdminInviteAsync(
+        IServiceProvider scopedServices,
+        string realmSlug,
+        string userName,
+        string email,
+        string? firstname,
+        string? lastname)
+    {
+        // Look up the realm in the global store — the invite service needs
+        // the DisplayName + Domains[] for the email template + magic-link
+        // URL. The CLI's --realm flag carried us into the right tenant
+        // session via TenantContext, but the Realm document itself lives
+        // in IGlobalStore.
+        var globalStore = scopedServices.GetRequiredService<IGlobalStore>();
+        await using var globalSession = globalStore.QuerySession();
+        var realm = await globalSession.Query<Realm>()
+            .FirstOrDefaultAsync(r => r.Slug == realmSlug);
+        if (realm is null)
+            return Error($"Realm '{realmSlug}' not found.");
+
+        var inviteService = scopedServices.GetRequiredService<IPendingAdminInviteService>();
+        var invite = await inviteService.IssueAsync(
+            userName, email, firstname, lastname,
+            issuedBy: null, // CLI invocation — no authenticated CP-admin
+            realm);
+
+        Serilog.Log.Warning(
+            "Auth: Recovery bootstrap-admin issued invite. Realm={Realm} UserName={UserName} Email={Email} ExpiresAt={ExpiresAt}",
+            realmSlug, userName, email, invite.ExpiresAt);
+
+        Console.WriteLine($"✓ Bootstrap-invite issued for realm '{realmSlug}':");
+        Console.WriteLine($"  UserName:  {invite.UserName}");
+        Console.WriteLine($"  Email:     {invite.Email}");
+        Console.WriteLine($"  Expires:   {invite.ExpiresAt:yyyy-MM-dd HH:mm:ss zzz}");
+        Console.WriteLine();
+        Console.WriteLine($"  Link:      {invite.MagicLinkUrl}");
+        Console.WriteLine();
+        Console.WriteLine("Recipient opens the link, sets a password, signs in. The link is single-use.");
         return 0;
     }
 

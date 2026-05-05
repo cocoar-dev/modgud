@@ -9,4 +9,10 @@ public enum EmailTemplate
     AdminChangeRequestNotification,
     ChangeRequestApproved,
     ChangeRequestRejected,
+    /// <summary>
+    /// Bootstrap-invite for the first admin in a freshly provisioned realm
+    /// (C15). Recipient clicks the link, lands on /bootstrap?token=...,
+    /// sets a password, becomes the realm admin.
+    /// </summary>
+    RealmAdminBootstrap,
 }

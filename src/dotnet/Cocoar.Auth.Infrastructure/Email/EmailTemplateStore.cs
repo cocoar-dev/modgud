@@ -155,6 +155,37 @@ public partial class EmailTemplateStore
                 """
         ),
 
+        [EmailTemplate.RealmAdminBootstrap] = (
+            Subject: "{{AppName}} — Admin-Zugang einrichten ({{RealmDisplayName}})",
+            HtmlBody: """
+                <!DOCTYPE html>
+                <html><body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <h2 style="color: #333;">Admin-Zugang einrichten</h2>
+                    <p>Hallo {{DisplayName}},</p>
+                    <p>für den Realm <strong>{{RealmDisplayName}}</strong> wurde dein Admin-Zugang vorbereitet. Klick auf den folgenden Link, um dein Passwort zu setzen und dich anzumelden:</p>
+                    <table cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin: 30px 0;">
+                        <tr>
+                            <td align="center" bgcolor="#525e76" style="border-radius: 6px;">
+                                <a href="{{ActionUrl}}" style="display:inline-block;padding:12px 24px;color:#ffffff;text-decoration:none;font-weight:bold;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+                                    Passwort setzen &amp; anmelden
+                                </a>
+                            </td>
+                        </tr>
+                    </table>
+                    <table style="margin: 20px 0; border-collapse: collapse;">
+                        <tr><td style="padding: 6px 12px; color:#666;">Benutzername</td><td style="padding: 6px 12px; font-weight: bold;">{{UserName}}</td></tr>
+                        <tr><td style="padding: 6px 12px; color:#666;">E-Mail</td><td style="padding: 6px 12px;">{{Email}}</td></tr>
+                    </table>
+                    <p style="color: #666; font-size: 14px;">
+                        Dieser Link ist {{ExpirationDays}} Tage gültig und kann nur einmal verwendet werden.
+                    </p>
+                    <p style="color: #888; font-size: 0.85em;">
+                        Falls du diesen Realm nicht beantragt hast, ignoriere diese E-Mail. Solange der Link nicht eingelöst wird, bleibt der Realm leer.
+                    </p>
+                </body></html>
+                """
+        ),
+
         [EmailTemplate.ChangeRequestRejected] = (
             Subject: "{{AppName}} — Änderung abgelehnt: {{Field}}",
             HtmlBody: """

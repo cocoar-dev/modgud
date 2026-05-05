@@ -535,6 +535,12 @@ try
     // by RecoveryCli `bootstrap-admin` and the future invite-mode endpoint.
     builder.Services.AddScoped<Cocoar.Auth.Authentication.Setup.IRealmAdminBootstrapper,
         Cocoar.Auth.Authentication.Setup.RealmAdminBootstrapper>();
+
+    // C15b — One-shot Pending-Admin-Invite (issued by CLI without --password,
+    // by RealmProvisioning's InitialAdmin path, or by the resend endpoint;
+    // consumed by POST /api/account/bootstrap-admin).
+    builder.Services.AddScoped<Cocoar.Auth.Authentication.Setup.IPendingAdminInviteService,
+        Cocoar.Auth.Authentication.Setup.PendingAdminInviteService>();
     builder.Services.AddSingleton<UserUpdateScriptRunner>();
     builder.Services.AddSingleton<DynamicOidcSchemeManager>();
     builder.Services.AddScoped<ExternalLoginProcessor>();
@@ -830,6 +836,7 @@ try
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");
     app.MapSetupEndpoints("api");
+    app.MapBootstrapEndpoints("api");
     app.MapSessionEndpoints("api");
     app.MapGdprEndpoints("api");
     app.MapExternalAuthEndpoints("api");

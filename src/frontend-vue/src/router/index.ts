@@ -25,6 +25,13 @@ const routes = [
       meta: { public: true },
     },
     {
+      // C15b — first-admin bootstrap form. Recipient lands here from the
+      // magic-link in the bootstrap email; sets a password; auto-login.
+      path: '/bootstrap',
+      component: () => import('@/views/auth/BootstrapView.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/magic-login',
       component: () => import('@/views/auth/MagicLoginView.vue'),
       meta: { public: true },
