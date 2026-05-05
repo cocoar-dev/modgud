@@ -262,7 +262,24 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             .FirstOrDefaultAsync(r => r.Slug == TenantConstants.SystemTenantId, ct);
 
         if (existing is not null)
+        {
+            // The system realm MUST be the Control Plane — anything else
+            // would lock the deployment out of cross-realm administration
+            // (no /api/admin/realms surface, no /api/setup wizard). The
+            // flag could end up false on existing rows when an upgrade
+            // renames the property and STJ defaults it (this happened
+            // pre-release on the CanManageTenants → IsControlPlane rename).
+            // Repairing here is idempotent and survives subsequent boots.
+            if (!existing.IsControlPlane)
+            {
+                existing.IsControlPlane = true;
+                existing.UpdatedAt = DateTimeOffset.UtcNow;
+                session.Store(existing);
+                await session.SaveChangesAsync(ct);
+                _realmCache.Invalidate();
+            }
             return;
+        }
 
         var systemRealm = new Realm
         {
