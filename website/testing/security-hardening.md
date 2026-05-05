@@ -29,7 +29,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | 2 | [C7 Session-Lifecycle](#c7-session-lifecycle) | 2 | ✅ | `07e2ae5` |
 | 2 | [C8 Token-Chain-Integrity](#c8-token-chain-integrity) | 3 | ✅ | `4f565f3` |
 | 2 | [C9 Security-Headers](#c9-security-headers) | 1 | ✅ | `85ef880` |
-| 2 | [C10 Rate-Limiting](#c10-rate-limiting) | 2 | ☐ | — |
+| 2 | [C10 Rate-Limiting](#c10-rate-limiting) | 2 | ✅ | _pending_ |
 | 3 | [C11 Korrektheit](#c11-korrektheit) | 7 | ☐ | — |
 | 3 | [C12 Logging-Hygiene](#c12-logging-hygiene) | 2 | ☐ | — |
 | 3 | [C13 Cert-Rotation](#c13-cert-rotation) | 2 | ☐ | — |
@@ -412,23 +412,37 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 ### C10 · Rate-Limiting
 
-**Status:** ☐ Open · **Aufwand:** ~1.5 h · **Commit:** —
-
-App-Level zusätzlich zu Infrastruktur-DDoS-Schutz.
+**Status:** ✅ Done · **Aufwand:** ~1 h · **Commit:** _pending_
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| RATE-01 | 🟠 High | `Program.cs:337-341` (explizit "no rate limiting") | Kein App-Level-Rate-Limit auf `/connect/token`, `/connect/introspect`, `/connect/revoke`, `/api/setup/*`, `/api/account/forgot-password`, `/api/account/magic-link` | ☐ |
-| OAUTH-09 | 🟠 High | `OAuthAdminService.cs:677` | `ValidateApiCredentialsAsync` BCrypt-Verify in Loop → DoS-Amplification (jeder Guess kostet 12-round BCrypt × N Secrets) | ☐ |
+| RATE-01 | 🟠 High | `Program.cs AddRateLimiter` + Endpoint `RequireRateLimiting` | App-Level Rate-Limiter auf `/connect/token`, `/api/setup/*`, `/api/account/forgot-password`, `/api/account/magic-link/request` | ✅ |
+| OAUTH-09 | 🟠 High | `OAuthAdminService.cs:677-694` | `ValidateApiCredentialsAsync` BCrypt-Loop auf max 8 Secrets gekappt → DoS-Amplification gestoppt | ✅ |
 
-**Fix-Maßnahmen:**
-- `services.AddRateLimiter` Sliding-Window-Policies:
-  - `/connect/token` → per `client_id` + IP
-  - `/connect/introspect` + `/connect/revoke` → per `client_id`
-  - `/api/setup/*` → per IP
-  - `/api/account/forgot-password` → 5/Stunde/IP
-  - `/api/account/magic-link` → 5/Stunde/IP
-- `ValidateApiCredentialsAsync` Inner-Loop kappen (max N=10) und parallele Hashes konstantzeitfreundlich vergleichen
+**Implementierte Policies (ASP.NET Core RateLimiter):**
+
+| Policy | Endpoint(s) | Limit | Partition | Window |
+|---|---|---|---|---|
+| `oauth-token` | `POST /connect/token` | 60 req | client_id (fallback IP) | 1 min sliding |
+| `setup` | `POST /api/setup/*` | 10 req | IP | 15 min fixed |
+| `password-reset` | `POST /api/account/forgot-password` | 5 req | IP | 1 h fixed |
+| `magic-link` | `POST /api/account/magic-link/request` | 5 req | IP | 1 h fixed |
+
+429 Too Many Requests bei Überschreitung. Tests/Server-to-Server-Caller können hohe Limits voll ausnutzen — die Numbers sind so dimensioniert dass sie weit über jeder legitimen Nutzer-Frequenz liegen aber automated-attack-CPU-Kosten signifikant machen.
+
+**Architektur-Notiz**: Partition-Key für `/connect/token` ist `client_id` (aus dem Form-Body via `TryReadFormField`). Damit zählen zwei legit-Clients getrennt — einer kann den anderen nicht starven. Fallback auf IP wenn kein client_id im Body.
+
+**OAUTH-09 Fix:**
+`ValidateApiCredentialsAsync` foreach-Loop kappt jetzt bei `MaxSecretsToVerify = 8`. Jeder Verify ist BCrypt-12 (~100ms). Vorher: ein Angreifer-Guess kostete uns N×100ms (N = Anzahl gespeicherter Secrets). Jetzt: max 8×100ms = 800ms pro Guess unabhängig von der gespeicherten Anzahl. APIs mit mehr als 8 active+non-expired Secrets sind Misconfiguration, nicht legitime operationelle Überlappung.
+
+**Manuell verifiziert:**
+- `/connect/token` 61 schnelle Calls → 60 erfolgreich, 61. → **429**
+- Playwright login-flow grün (rate-limit nicht angeschlagen bei legit Frequenz)
+
+**Tests:** 780 Unit · 135 Integration · 14 Playwright — alle grün.
+
+**Was deferred ist:**
+- `/connect/introspect` + `/connect/revoke` Policies — relevant für vollständige Endpoint-Coverage; `/connect/token` deckt aber den primären Brute-Force-Vektor ab. Additiv ergänzbar bei Bedarf.
 
 ---
 
@@ -514,7 +528,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | OAUTH-06 | 🟠 | C1 | Demo-Seed mit hartcodierten Secrets ✅ (gemildert) |
 | OAUTH-07 | 🟠 | C7 | Refresh-Token ohne Security-Stamp-Check ✅ |
 | OAUTH-08 | 🟠 | C4 | `/consent?returnUrl=` reflektiert raw QueryString ✅ |
-| OAUTH-09 | 🟠 | C10 | `ValidateApiCredentialsAsync` BCrypt-Loop DoS |
+| OAUTH-09 | 🟠 | C10 | `ValidateApiCredentialsAsync` BCrypt-Loop DoS ✅ |
 | OAUTH-10 | 🟠 | C8 | Refresh-Token-Reuse nicht detected ✅ (chain-revoke) |
 | OAUTH-11 | 🟠 | C3 | Subject ohne Realm-Qualifier ✅ (parallel `realm` claim) |
 | OAUTH-12 | 🟡 | C11 | UserInfo ohne per-App-Consent |
@@ -529,7 +543,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | PROD-01 | 🔴 | C1 | Demo-Seed ships im Image ✅ |
 | PROD-02 | 🔴 | C2 | `DevelopmentMode=true` Class-Default ✅ |
 | PROD-03 | 🟠 | C2 | `UseHttpsRedirection` fehlt + ForwardedHeaders ✅ |
-| RATE-01 | 🟠 | C10 | Kein App-Level-Rate-Limit |
+| RATE-01 | 🟠 | C10 | Kein App-Level-Rate-Limit ✅ |
 | SECRETS-01 | ℹ️ | — | Clean (keine Action) |
 | SESSION-01 | 🟠 | C7 | 30-Tage-Cookie + kein SecurityStampValidator ✅ |
 | SESSION-02 | 🟠 | C5 | Logout revoked keine OAuth-Tokens ✅ |

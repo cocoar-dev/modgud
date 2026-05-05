@@ -684,9 +684,18 @@ public class OAuthAdminService
         var sec = await _session.LoadAsync<OAuthApiSecurityData>(api.Id, ct);
         if (sec is null) return false;
 
+        // OAUTH-09 — DoS-amplification cap on the BCrypt-Verify loop.
+        // Each VerifySecret runs BCrypt-12 (~100ms). Without a cap, an
+        // attacker who guesses against an API with N stored secrets pays
+        // 1× attempt for ~N×100ms of CPU. Bound the active-secret set to
+        // a sensible operational maximum (8) — APIs with more than that
+        // are misconfiguration, not legitimate operational overlap.
+        const int MaxSecretsToVerify = 8;
+        var checkedCount = 0;
         foreach (var entry in sec.Secrets)
         {
             if (entry.Expiration.HasValue && entry.Expiration.Value < DateTimeOffset.UtcNow) continue;
+            if (++checkedCount > MaxSecretsToVerify) break;
             if (VerifySecret(secret, entry.HashedValue)) return true;
         }
 

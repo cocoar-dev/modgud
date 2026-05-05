@@ -59,7 +59,11 @@ public static class PasswordResetEndpoints
             // Always return OK — never reveal if user/email exists
             return Results.Ok(new { Message = "Falls ein Konto mit diesem Benutzernamen existiert, wurde eine E-Mail gesendet." });
         })
-        .WithName("Account_ForgotPassword");
+        .WithName("Account_ForgotPassword")
+        // RATE-01 — 5 requests per hour per IP. Bounds the enum-via-email
+        // surface even though the response body is constant ("if your account
+        // exists, an email is on the way") and prevents SMTP-pipeline DoS.
+        .RequireRateLimiting("password-reset");
 
         // POST /api/account/reset-password — Reset password with token
         group.MapPost("reset-password", async (

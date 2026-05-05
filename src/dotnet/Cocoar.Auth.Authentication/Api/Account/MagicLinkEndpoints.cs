@@ -106,7 +106,11 @@ public static class MagicLinkEndpoints
 
             return Results.Ok(new { Message = "If your email is registered, you will receive a login link." });
         })
-        .WithName("MagicLink_Request");
+        .WithName("MagicLink_Request")
+        // RATE-01 — 5 requests per hour per IP. Per-user rate limit lives
+        // in the magic-link service itself; this is the upstream IP cap
+        // that prevents enum-spam against the SMTP path.
+        .RequireRateLimiting("magic-link");
 
         // POST /api/account/magic-link/login — Validate token and sign in
         group.MapPost("login", async (

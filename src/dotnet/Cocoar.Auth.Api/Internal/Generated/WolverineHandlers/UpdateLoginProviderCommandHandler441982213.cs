@@ -10,15 +10,15 @@ namespace Internal.Generated.WolverineHandlers
     [global::System.CodeDom.Compiler.GeneratedCode("JasperFx", "1.0.0")]
     public sealed class UpdateLoginProviderCommandHandler441982213 : Wolverine.Runtime.Handlers.MessageHandler
     {
-        private readonly System.TimeProvider _timeProvider;
-        private readonly Cocoar.Auth.Authentication.Identity.LoginProviders.LoginProviderFlavorRegistry _loginProviderFlavorRegistry;
         private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
+        private readonly Cocoar.Auth.Authentication.Identity.LoginProviders.LoginProviderFlavorRegistry _loginProviderFlavorRegistry;
+        private readonly System.TimeProvider _timeProvider;
 
-        public UpdateLoginProviderCommandHandler441982213(System.TimeProvider timeProvider, Cocoar.Auth.Authentication.Identity.LoginProviders.LoginProviderFlavorRegistry loginProviderFlavorRegistry, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory)
+        public UpdateLoginProviderCommandHandler441982213(Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, Cocoar.Auth.Authentication.Identity.LoginProviders.LoginProviderFlavorRegistry loginProviderFlavorRegistry, System.TimeProvider timeProvider)
         {
-            _timeProvider = timeProvider;
-            _loginProviderFlavorRegistry = loginProviderFlavorRegistry;
             _outboxedSessionFactory = outboxedSessionFactory;
+            _loginProviderFlavorRegistry = loginProviderFlavorRegistry;
+            _timeProvider = timeProvider;
         }
 
 

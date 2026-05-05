@@ -40,7 +40,9 @@ public static class AuthorizationEndpoints
         // Token endpoint — code/refresh/client_credentials/device exchange.
         group.MapPost("token", ExchangeAsync)
             .WithName("OAuth_Token")
-            .DisableAntiforgery();
+            .DisableAntiforgery()
+            // RATE-01 — partition by client_id (60 req/min sliding window).
+            .RequireRateLimiting("oauth-token");
 
         // UserInfo endpoint — claims for the authenticated subject.
         group.MapMethods("userinfo", new[] { "GET", "POST" }, UserinfoAsync)

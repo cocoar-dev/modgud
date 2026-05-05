@@ -20,7 +20,11 @@ public static class SetupEndpoints
     {
         var group = application.MapGroup($"{path}/setup")
             .WithTags("Setup")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            // RATE-01 — 10 attempts per 15 min per IP. Setup is one-shot per
+            // deployment; this is a brake on automated probing during the
+            // narrow window between IdP boot and operator-completes-setup.
+            .RequireRateLimiting("setup");
 
         group.MapGet("status", async (IDocumentSession session) =>
         {

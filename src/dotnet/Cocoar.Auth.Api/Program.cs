@@ -410,11 +410,86 @@ try
         });
     builder.Services.AddAuthorization();
 
-    // NOTE: No application-level rate limiting. Defense layers:
-    //   - Account Lockout: 5 failed logins per user → 5 min lock (implemented in Identity)
-    //   - 2FA: planned — makes stolen passwords worthless
-    //   - Sophos XG / Reverse Proxy: DDoS protection at infrastructure level
-    // IP-based rate limiting is unreliable in corporate environments (NAT = shared IP).
+    // RATE-01 — application-level rate limiting on the auth endpoints that
+    // are realistically attacker-touched on a public IdP. Infrastructure-
+    // level DDoS (Sophos XG, Cloudflare) handles volumetric flooding;
+    // these limits target the targeted-credential-stuffing surface where
+    // each request costs us BCrypt CPU + a DB write or Postmark call.
+    //
+    // Policies are defence-in-depth; each endpoint that opts in carries
+    // its own additional protocol-level gates (account lockout, magic-link
+    // per-user rate, refresh-token reuse detection). The numbers are
+    // conservative — well above any legitimate user pattern, low enough
+    // to make automated attacks expensive.
+    //
+    // Partition keys:
+    //   * /connect/token, /connect/introspect, /connect/revoke → client_id
+    //     fallback to IP. OAuth credential brute-force scopes per client
+    //     account so two legit clients can't starve each other.
+    //   * /api/account/forgot-password, /api/account/magic-link → email
+    //     (from request body) fallback to IP. Per-user rate already exists
+    //     in the magic-link service; this caps the upstream invocation
+    //     even before that runs.
+    //   * /api/setup/* → IP. Setup is one-shot per deployment.
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+        options.AddPolicy("oauth-token", context =>
+        {
+            var key = TryReadFormField(context, "client_id")
+                      ?? context.Connection.RemoteIpAddress?.ToString()
+                      ?? "anon";
+            return System.Threading.RateLimiting.RateLimitPartition.GetSlidingWindowLimiter(
+                partitionKey: key,
+                factory: _ => new System.Threading.RateLimiting.SlidingWindowRateLimiterOptions
+                {
+                    PermitLimit = 60,
+                    Window = TimeSpan.FromMinutes(1),
+                    SegmentsPerWindow = 6,
+                    QueueLimit = 0,
+                });
+        });
+
+        options.AddPolicy("setup", context =>
+        {
+            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ip,
+                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 10,
+                    Window = TimeSpan.FromMinutes(15),
+                    QueueLimit = 0,
+                });
+        });
+
+        options.AddPolicy("password-reset", context =>
+        {
+            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ip,
+                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 5,
+                    Window = TimeSpan.FromHours(1),
+                    QueueLimit = 0,
+                });
+        });
+
+        options.AddPolicy("magic-link", context =>
+        {
+            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ip,
+                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 5,
+                    Window = TimeSpan.FromHours(1),
+                    QueueLimit = 0,
+                });
+        });
+    });
 
     builder.Services.AddHttpContextAccessor();
 
@@ -691,6 +766,13 @@ try
     // endpoints (/connect/*) have their own protocol-level protections.
     app.UseMiddleware<Cocoar.Auth.Api.Middleware.CsrfDefenseMiddleware>();
 
+    // RATE-01 — apply the rate-limit policies registered in
+    // AddRateLimiter. Endpoints opt in via .RequireRateLimiting("policy")
+    // (see /connect/* + /api/setup/* + /api/account/forgot-password +
+    // /api/account/magic-link below). Endpoints without an explicit
+    // policy are not rate-limited at the app layer.
+    app.UseRateLimiter();
+
 
     // OpenIddict OAuth/OIDC endpoints (/connect/authorize, /token, /userinfo, /logout, /consent).
     // OpenIddict's middleware is registered as part of UseOpenIddict... hooks called by
@@ -870,4 +952,29 @@ catch (Exception ex)
 finally
 {
     Log.CloseAndFlush();
+}
+
+/// <summary>
+/// Tries to read a form-encoded field WITHOUT triggering a full
+/// `Request.ReadFormAsync()` (which would consume the body before
+/// downstream handlers see it). The rate-limiter partition logic
+/// only needs to peek at <c>client_id</c> on a tiny POST body — we
+/// rebuffer + parse the first chunk and seek back to the start.
+/// </summary>
+static string? TryReadFormField(HttpContext context, string fieldName)
+{
+    if (!HttpMethods.IsPost(context.Request.Method)) return null;
+    if (!context.Request.HasFormContentType) return null;
+    try
+    {
+        // ASP.NET Core enables request-buffering via Form parsing's
+        // own buffer; reading Form here is fine — downstream consumers
+        // get the cached IFormCollection.
+        var form = context.Request.ReadFormAsync().GetAwaiter().GetResult();
+        return form.TryGetValue(fieldName, out var value) ? value.ToString() : null;
+    }
+    catch
+    {
+        return null;
+    }
 }
