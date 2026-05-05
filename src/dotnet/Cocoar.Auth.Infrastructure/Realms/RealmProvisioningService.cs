@@ -93,6 +93,22 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 $"A realm with slug '{dto.Slug}' already exists.");
         }
 
+        // Exactly-one-Control-Plane invariant: a new realm flagged
+        // IsControlPlane=true is only allowed if no other active CP realm
+        // exists. Mirrors the dual guard in UpdateRealmAsync (which blocks
+        // un-flagging the LAST CP). The complementary path — promoting a
+        // tenant to CP via PATCH — is also gated below.
+        if (dto.IsControlPlane)
+        {
+            var existingCpCount = await session.Query<Realm>()
+                .CountAsync(r => r.IsControlPlane && r.IsActive, ct);
+            if (existingCpCount > 0)
+            {
+                return Error.Validation("Realm.ControlPlaneAlreadyExists",
+                    "Cannot create a Control-Plane realm — exactly one Control Plane per deployment is required, and another already exists. Demote the existing one first.");
+            }
+        }
+
         // Build the tenant database connection string
         var csBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value);
         var mainDbName = csBuilder.Database!;
@@ -205,6 +221,23 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             {
                 return Error.Validation("Realm.CannotRemoveControlPlaneFlag",
                     "Cannot un-flag the Control-Plane realm — exactly one Control Plane per deployment is required.");
+            }
+        }
+
+        // Symmetric guard: promoting a tenant realm to Control Plane is
+        // only allowed if no other active CP exists. The Control-Plane
+        // hand-off has to be a two-step (demote old → promote new); a
+        // single PATCH that creates two CPs simultaneously violates the
+        // exactly-one invariant the rest of C14 relies on (boot-validation,
+        // hostname routing, /api/app-info IsControlPlane signal).
+        if (!realm.IsControlPlane && dto.IsControlPlane == true)
+        {
+            var existingCpCount = await session.Query<Realm>()
+                .CountAsync(r => r.IsControlPlane && r.IsActive && r.Slug != slug, ct);
+            if (existingCpCount > 0)
+            {
+                return Error.Validation("Realm.ControlPlaneAlreadyExists",
+                    "Cannot promote this realm to Control Plane — exactly one Control Plane per deployment is required, and another already exists. Demote the existing one first.");
             }
         }
 

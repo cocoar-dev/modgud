@@ -20,13 +20,19 @@ export default defineConfig({
   server: {
     port: 4300,
     proxy: {
+      // changeOrigin: false — keep the browser's original Host header (e.g.
+      // `acme.localhost:4300`) when proxying. Required for multi-realm dev
+      // testing: RealmMiddleware on the backend resolves the tenant by
+      // Host. With changeOrigin:true, every dev request would resolve to
+      // the system realm regardless of which tenant subdomain the browser
+      // points at, defeating the whole point of C14.
       '/api': {
         target: 'http://localhost:9099',
-        changeOrigin: true,
+        changeOrigin: false,
       },
       '/signalr': {
         target: 'http://localhost:9099',
-        changeOrigin: true,
+        changeOrigin: false,
         ws: true,
       },
       // OIDC callbacks land outside /api (the path is what's registered with

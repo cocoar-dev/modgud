@@ -1,5 +1,7 @@
 using System.Net;
 using Cocoar.Auth.Api.Tests.Infrastructure;
+using Cocoar.Auth.Application.DTOs.Realms;
+using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Domain.Realms;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Cocoar.Auth.Infrastructure.Realms;
@@ -117,6 +119,65 @@ public class ControlPlaneSeparationTests : IntegrationTestBase
             TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateRealm_promoting_second_realm_to_ControlPlane_is_blocked()
+    {
+        // Exactly-one-CP invariant: with system already flagged
+        // IsControlPlane=true, promoting a tenant realm via PATCH must
+        // fail. UI-smoke-test surfaced this as a real bug — the original
+        // C14 only guarded the *demote-last-CP* direction; promoting a
+        // second CP slipped through and silently broke the deployment-
+        // global "exactly one" assumption (boot-validation, hostname
+        // routing, /api/app-info IsControlPlane signal all rely on it).
+        await SeedTenantRealmAsync("acme", TenantHost);
+
+        var svc = Factory.Services.GetRequiredService<IRealmProvisioningService>();
+        var result = await svc.UpdateRealmAsync("acme",
+            new UpdateRealmDto { IsControlPlane = true },
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsError);
+        Assert.Equal("Realm.ControlPlaneAlreadyExists", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task CreateRealm_with_IsControlPlane_when_one_exists_is_blocked()
+    {
+        // Same invariant via CreateRealmDto: declaring a brand-new realm
+        // as Control-Plane while an active CP already exists must 400.
+        // Goes via the service (not HTTP) so we don't pay the ~30s
+        // tenant-DB-provisioning cost — the validation runs before any
+        // raw-SQL CREATE DATABASE.
+        var svc = Factory.Services.GetRequiredService<IRealmProvisioningService>();
+        var result = await svc.CreateRealmAsync(
+            new CreateRealmDto
+            {
+                Slug = "fresh",
+                DisplayName = "Fresh CP",
+                Domains = ["fresh.localhost"],
+                IsControlPlane = true,
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsError);
+        Assert.Equal("Realm.ControlPlaneAlreadyExists", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task UpdateRealm_demoting_last_ControlPlane_is_blocked()
+    {
+        // Mirror of the promote-second guard: removing the flag from the
+        // last active CP-realm must also fail. Pin both sides so a
+        // future refactor can't quietly drop one.
+        var svc = Factory.Services.GetRequiredService<IRealmProvisioningService>();
+        var result = await svc.UpdateRealmAsync("system",
+            new UpdateRealmDto { IsControlPlane = false },
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsError);
+        Assert.Equal("Realm.CannotRemoveControlPlaneFlag", result.FirstError.Code);
     }
 
     [Fact]

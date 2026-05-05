@@ -11,14 +11,14 @@ namespace Internal.Generated.WolverineHandlers
     public sealed class CreateLoginProviderCommandHandler545859164 : Wolverine.Runtime.Handlers.MessageHandler
     {
         private readonly System.TimeProvider _timeProvider;
-        private readonly Cocoar.Auth.Authentication.Identity.LoginProviders.LoginProviderFlavorRegistry _loginProviderFlavorRegistry;
         private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
+        private readonly Cocoar.Auth.Authentication.Identity.LoginProviders.LoginProviderFlavorRegistry _loginProviderFlavorRegistry;
 
-        public CreateLoginProviderCommandHandler545859164(System.TimeProvider timeProvider, Cocoar.Auth.Authentication.Identity.LoginProviders.LoginProviderFlavorRegistry loginProviderFlavorRegistry, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory)
+        public CreateLoginProviderCommandHandler545859164(System.TimeProvider timeProvider, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, Cocoar.Auth.Authentication.Identity.LoginProviders.LoginProviderFlavorRegistry loginProviderFlavorRegistry)
         {
             _timeProvider = timeProvider;
-            _loginProviderFlavorRegistry = loginProviderFlavorRegistry;
             _outboxedSessionFactory = outboxedSessionFactory;
+            _loginProviderFlavorRegistry = loginProviderFlavorRegistry;
         }
 
 
