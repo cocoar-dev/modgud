@@ -30,7 +30,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | 2 | [C8 Token-Chain-Integrity](#c8-token-chain-integrity) | 3 | ✅ | `4f565f3` |
 | 2 | [C9 Security-Headers](#c9-security-headers) | 1 | ✅ | `85ef880` |
 | 2 | [C10 Rate-Limiting](#c10-rate-limiting) | 2 | ✅ | `8721fc6` |
-| 3 | [C11 Korrektheit](#c11-korrektheit) | 7 | ☐ | — |
+| 3 | [C11 Korrektheit](#c11-korrektheit) | 7 | ✅ | _pending_ |
 | 3 | [C12 Logging-Hygiene](#c12-logging-hygiene) | 2 | ☐ | — |
 | 3 | [C13 Cert-Rotation](#c13-cert-rotation) | 2 | ☐ | — |
 
@@ -452,25 +452,19 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 ### C11 · Korrektheit
 
-**Status:** ☐ Open · **Aufwand:** ~2 h · **Commit:** —
+**Status:** ✅ Done · **Aufwand:** ~1 h · **Commit:** _pending_
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| OAUTH-12 | 🟡 Medium | `AuthorizationEndpoints.cs:251-345` | UserInfo emittiert App-Roles ohne per-App-Consent-Check | ☐ |
-| OAUTH-15 | 🟡 Medium | `AuthorizationEndpoints.cs:45-50` | UserInfo ohne explizites `RequireScope("openid")` (Defense-in-Depth) | ☐ |
-| OAUTH-16 | 🟢 Low | `OAuthAdminMapping.cs:378-384` | Generated Secrets nutzen Base64 (`+`/`/`/`=`) statt Base64Url → URL-Encoding-Stolperstellen | ☐ |
-| OAUTH-17 | 🟡 Medium | `OAuthAdminMapping.cs:33-69` | Pin-Test fehlt: jeder Client hat `Requirements: ft:pkce` (schützt gegen Future-Override) | ☐ |
-| COOKIE-02 | 🟡 Medium | `Program.cs:177` | Session-Cookie `SameSite=Strict` (akzeptabel mit Notiz) | ⏸ accept |
-| COOKIE-03 | 🟡 Medium | `Program.cs:181, 260, 306, 320`; `PasskeyEndpoints.cs:223` | Cookie-Namen leaken Produkt-Identität (akzeptabel — IdP advertised sich ohnehin) | ⏸ accept |
-| OIDC-02 | 🟡 Medium | `Program.cs:333` | Placeholder-`AddOpenIdConnect` nutzt `RequireHttpsMetadata=false` (dead code, aber Copy-Paste-Hazard) | ☐ |
+| OAUTH-12 | 🟡 Medium | `AuthorizationEndpoints.cs UserinfoAsync` | UserInfo emittiert `resource_access` jetzt nur für explizit gelinkte AppIds; Fallback auf `cocoar-auth` entfernt → kein Implicit-Roles-Leak an "unassigned" Clients mehr | ✅ |
+| OAUTH-15 | 🟡 Medium | `AuthorizationEndpoints.cs UserinfoAsync` | Explizit `RequireScope(Scopes.OpenId)` Check als erstes; ohne openid-scope → 403 insufficient_scope | ✅ |
+| OAUTH-16 | 🟢 Low | `OAuthAdminMapping.cs GenerateSecret` | Base64Url statt Base64; Test angepasst → keine `+`/`/`/`=` mehr | ✅ |
+| OAUTH-17 | 🟡 Medium | `Cocoar.Auth.Tests.Unit/OAuth/PkceRequirementPinTests.cs` (neu) | Unit-Test pinnt: AddOpenIddictWithMarten konfiguriert `CodeChallengeMethods` mit S256 → PKCE-required-Toggle ist gepinnt | ✅ |
+| COOKIE-02 | 🟡 Medium | Session-Cookie `SameSite=Strict` | Akzeptabel — Session ist nur für Passkey-Registration-Challenges (same-origin SPA), keine Cross-Origin-Anforderung | ⏸ accepted |
+| COOKIE-03 | 🟡 Medium | Cookie-Namen `Cocoar.Auth.*` | Akzeptabel — IdP advertised seine Identität ohnehin via Discovery-Doc | ⏸ accepted |
+| OIDC-02 | 🟡 Medium | `Program.cs:409` Placeholder-OIDC | `RequireHttpsMetadata = !IsDevelopment()` (war hardcoded false) → kein Copy-Paste-Hazard mehr | ✅ |
 
-**Fix-Maßnahmen:**
-- UserInfo: App-Slug-Liste anhand consenter Scopes filtern + per-App `IncludedInRoleClaim`-Toggle
-- `RequireScope("openid")` auf UserInfo
-- `Convert.ToBase64Url` / `WebEncoders.Base64UrlEncode` für generierte Secrets
-- Unit-Test pinnt: jeder Client hat PKCE-Requirement
-- Placeholder-OIDC: `RequireHttpsMetadata=true`
-- COOKIE-02/03 als ⏸ Deferred dokumentieren
+**Tests:** 781 Unit (+1 PKCE-Pin) · 135 Integration · 14 Playwright — alle grün.
 
 ---
 
@@ -531,15 +525,15 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | OAUTH-09 | 🟠 | C10 | `ValidateApiCredentialsAsync` BCrypt-Loop DoS ✅ |
 | OAUTH-10 | 🟠 | C8 | Refresh-Token-Reuse nicht detected ✅ (chain-revoke) |
 | OAUTH-11 | 🟠 | C3 | Subject ohne Realm-Qualifier ✅ (parallel `realm` claim) |
-| OAUTH-12 | 🟡 | C11 | UserInfo ohne per-App-Consent |
+| OAUTH-12 | 🟡 | C11 | UserInfo ohne per-App-Consent ✅
 | OAUTH-13 | 🟡 | C8 | Authorization-Store-Filter ignorieren Status ⏸ accepted (interface-contract) |
 | OAUTH-14 | 🟡 | C8 | `/authorize`+`/token` ohne `Enabled`-Check ✅ |
-| OAUTH-15 | 🟡 | C11 | UserInfo ohne explizites `RequireScope("openid")` |
-| OAUTH-16 | 🟢 | C11 | Generated Secrets nicht URL-safe |
-| OAUTH-17 | 🟡 | C11 | PKCE-Pin-Test fehlt |
+| OAUTH-15 | 🟡 | C11 | UserInfo ohne explizites `RequireScope("openid")` ✅ |
+| OAUTH-16 | 🟢 | C11 | Generated Secrets nicht URL-safe ✅ |
+| OAUTH-17 | 🟡 | C11 | PKCE-Pin-Test fehlt ✅ |
 | OAUTH-18 | 🟡 | C5 | Logout via GET (= OAUTH-04) ✅ |
 | OIDC-01 | 🟡 | — | `ResponseMode=Query` non-prod (akzeptiert) |
-| OIDC-02 | 🟡 | C11 | Placeholder-OIDC HTTPS=false (dead code) |
+| OIDC-02 | 🟡 | C11 | Placeholder-OIDC HTTPS=false (dead code) ✅ |
 | PROD-01 | 🔴 | C1 | Demo-Seed ships im Image ✅ |
 | PROD-02 | 🔴 | C2 | `DevelopmentMode=true` Class-Default ✅ |
 | PROD-03 | 🟠 | C2 | `UseHttpsRedirection` fehlt + ForwardedHeaders ✅ |

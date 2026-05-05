@@ -406,7 +406,10 @@ try
             options.Authority = "https://example.invalid";
             options.CallbackPath = "/_placeholder/signin-oidc";
             options.SignInScheme = IdentityConstants.ExternalScheme;
-            options.RequireHttpsMetadata = false;
+            // OIDC-02 — true in non-Development. The placeholder scheme is
+            // never invoked, but keeping the safe default avoids copy-paste
+            // hazards and shows up correctly under any code-search audit.
+            options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
         });
     builder.Services.AddAuthorization();
 

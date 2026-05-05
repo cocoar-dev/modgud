@@ -380,7 +380,15 @@ internal static class OAuthAdminMapping
         var bytes = new byte[32];
         using var rng = RandomNumberGenerator.Create();
         rng.GetBytes(bytes);
-        return Convert.ToBase64String(bytes);
+        // OAUTH-16: URL-safe Base64. Standard Base64 emits +, /, = which need
+        // URL-encoding when sent as form fields (client_secret=…) or path
+        // segments — toolchains that forget to encode silently send a
+        // different secret, leading to confusing 401s. Base64Url avoids
+        // the class of bug.
+        return Convert.ToBase64String(bytes)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
     }
 
     internal static string HashSecret(string secret) =>

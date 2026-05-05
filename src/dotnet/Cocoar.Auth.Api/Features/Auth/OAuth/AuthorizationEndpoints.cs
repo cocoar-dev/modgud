@@ -348,6 +348,22 @@ public static class AuthorizationEndpoints
         IPermissionService permissionService,
         IDocumentSession session)
     {
+        // OAUTH-15 — defense in depth: explicitly require the openid scope on
+        // the access token before serving any user info. The OIDC spec scopes
+        // UserInfo to tokens issued under that scope; rejecting here keeps a
+        // future bug that lets non-openid tokens past the auth layer from
+        // leaking profile data.
+        if (!httpContext.User.HasScope(Scopes.OpenId))
+        {
+            return Results.Challenge(
+                new AuthenticationProperties(new Dictionary<string, string?>
+                {
+                    [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InsufficientScope,
+                    [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The 'openid' scope is required for the userinfo endpoint.",
+                }),
+                new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+        }
+
         var subject = httpContext.User.GetClaim(Claims.Subject);
         if (string.IsNullOrEmpty(subject))
         {
@@ -417,22 +433,30 @@ public static class AuthorizationEndpoints
         // perms) lives behind the distribution API.
         if (httpContext.User.HasScope(Scopes.Roles))
         {
+            // OAUTH-12 — emit roles ONLY for app slugs the calling client
+            // is explicitly linked to via OAuthApplication.AppIds. Previous
+            // behaviour fell back to [AppSlugs.CocoarAuth] when AppIds was
+            // empty, leaking the IdP's own roles to every "unassigned"
+            // client. The new policy: no AppIds → no resource_access
+            // emission. An admin-grade client must be explicitly linked
+            // to the cocoar-auth App, same as for any other tenant App.
             var appSlugs = await ResolveAppSlugsForClientAsync(httpContext.User, session);
-            if (appSlugs.Count == 0)
-                appSlugs = [AppSlugs.CocoarAuth]; // realm-wide / unassigned client
 
-            var resourceAccess = new Dictionary<string, object>(StringComparer.Ordinal);
-            foreach (var slug in appSlugs)
+            if (appSlugs.Count > 0)
             {
-                var rolesForApp = await permissionService.GetUserRolesAsync(user.Id, slug);
-                if (rolesForApp.Count == 0) continue;
-                resourceAccess[slug] = new Dictionary<string, object>(StringComparer.Ordinal)
+                var resourceAccess = new Dictionary<string, object>(StringComparer.Ordinal);
+                foreach (var slug in appSlugs)
                 {
-                    ["roles"] = rolesForApp.Select(r => r.Name).ToArray(),
-                };
+                    var rolesForApp = await permissionService.GetUserRolesAsync(user.Id, slug);
+                    if (rolesForApp.Count == 0) continue;
+                    resourceAccess[slug] = new Dictionary<string, object>(StringComparer.Ordinal)
+                    {
+                        ["roles"] = rolesForApp.Select(r => r.Name).ToArray(),
+                    };
+                }
+                if (resourceAccess.Count > 0)
+                    claims["resource_access"] = resourceAccess;
             }
-            if (resourceAccess.Count > 0)
-                claims["resource_access"] = resourceAccess;
         }
 
         return Results.Ok(claims);

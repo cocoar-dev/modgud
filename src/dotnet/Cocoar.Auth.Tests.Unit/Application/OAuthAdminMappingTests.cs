@@ -738,8 +738,21 @@ public class OAuthAdminMappingTests
         [Fact]
         public void GenerateSecret_returns_base64_encoding_of_32_bytes()
         {
+            // OAUTH-16: secrets are emitted in Base64Url form so they survive
+            // form-body / URL-segment usage without re-encoding pitfalls.
             var s = OAuthAdminMapping.GenerateSecret();
-            var bytes = Convert.FromBase64String(s);
+            Assert.DoesNotContain('+', s);
+            Assert.DoesNotContain('/', s);
+            Assert.DoesNotContain('=', s);
+
+            // Round-trip via Base64Url to confirm it decodes to 32 bytes.
+            var padded = s.Replace('-', '+').Replace('_', '/');
+            switch (padded.Length % 4)
+            {
+                case 2: padded += "=="; break;
+                case 3: padded += "="; break;
+            }
+            var bytes = Convert.FromBase64String(padded);
             Assert.Equal(32, bytes.Length);
         }
 
