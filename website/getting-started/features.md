@@ -62,7 +62,7 @@ Cocoar.Auth is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live
 
 ### Endpoints (per realm)
 - `/connect/authorize`, `/connect/token`, `/connect/userinfo`, `/connect/logout`, `/connect/introspect`
-- `/.well-known/openid-configuration`, `/.well-known/jwks.json`
+- `/.well-known/openid-configuration`, `/.well-known/jwks`
 - Realm-aware issuer URLs — every realm is its own OIDC provider
 
 ### Token formats

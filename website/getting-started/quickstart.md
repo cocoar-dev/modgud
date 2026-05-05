@@ -90,8 +90,12 @@ You should see `issuer`, `authorization_endpoint`, `token_endpoint`, `userinfo_e
 
 ```bash
 # JWKS (signing keys)
-curl http://localhost:9099/.well-known/jwks.json | jq '.keys[0].kid'
+curl http://localhost:9099/.well-known/jwks | jq '.keys[0].kid'
 ```
+
+::: tip JWKS path
+The discovery document advertises the JWKS endpoint at `jwks_uri`. Cocoar.Auth serves it at `/.well-known/jwks` (no `.json` suffix) — use the path from the discovery document if you want to be format-agnostic.
+:::
 
 You should get a key ID — that's the public key resource servers use to validate tokens.
 
