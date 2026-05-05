@@ -55,6 +55,7 @@ const dto = ref<RealmDto | null>(null)
 // when modal closes; the user has to copy the link before then if there
 // is no SMTP delivery (dev / air-gapped).
 const issuedInvite = ref<InitialAdminInviteDto | null>(null)
+const inviteSource = ref<'created' | 'resent' | null>(null)
 const linkCopied = ref(false)
 
 function fromDto(dto: RealmDto): FormState {
@@ -142,6 +143,7 @@ async function save() {
       // Show the bootstrap-invite reveal screen — the magic-link is
       // only available right after creation; closing the modal loses it.
       issuedInvite.value = result.InitialAdminInvite
+      inviteSource.value = 'created'
     } else {
       await store.update(slug.value, {
         DisplayName: form.value.DisplayName.trim(),
@@ -165,6 +167,7 @@ async function resendInvite() {
   try {
     const reissued = await store.resendBootstrapInvite(slug.value)
     issuedInvite.value = reissued
+    inviteSource.value = 'resent'
   } catch (e: any) {
     error.value = e?.body?.detail ?? e?.body?.Message ?? e?.message ?? String(e)
   } finally {
@@ -194,7 +197,9 @@ async function copyLink() {
     <!-- Invite-reveal screen — replaces the form after successful create/resend. -->
     <div v-else-if="issuedInvite" class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
       <CoarNote variant="success">
-        {{ t('admin.realms.inviteIssuedTitle', {}, 'Realm angelegt — Bootstrap-Invite ausgestellt.') }}
+        {{ inviteSource === 'resent'
+            ? t('admin.realms.inviteResentTitle', {}, 'Bootstrap-Invite neu ausgestellt — alter Token wurde widerrufen.')
+            : t('admin.realms.inviteIssuedTitle', {}, 'Realm angelegt — Bootstrap-Invite ausgestellt.') }}
       </CoarNote>
       <CoarNote variant="warning">
         {{ t('admin.realms.inviteIssuedHint', {}, 'Diese Magic-Link-URL wird genau einmal angezeigt. Falls die Email nicht zugestellt wird (z. B. lokale Entwicklung ohne SMTP), kopieren Sie sie jetzt — danach geht es nur noch über "Resend".') }}

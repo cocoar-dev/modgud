@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useSignalR } from '@/composables/useSignalR'
+import { useAppConfigStore } from '@/stores/appconfig.store'
 import type { AuthUser, EmailOtpStatus, LoginResponse, MagicLinkRequest } from '@/models/auth'
 
 // Shape of the DataEvent the UserHub broadcasts — same wire format as
@@ -58,13 +59,26 @@ export const useAuthStore = defineStore('auth', () => {
    * Mirrors the backend PermissionEvaluator. Permission strings are fully
    * qualified as "<app>:<resource>:<action>" (e.g. "cocoar-auth:user:read").
    * Bypasses recognised:
-   *   - realm:admin                  → realm-wide
+   *   - realm:admin                  → realm-wide (everything inside the realm)
    *   - <app>:admin                  → app-wide
    *   - <app>:<resource>:admin       → resource-wide within app
+   *
+   * Important nuance: `realm:admin` does NOT cover the `control-plane:*`
+   * permission namespace on a non-Control-Plane realm. The `control-plane`
+   * app is a cross-realm concept — it only exists inside the Control-Plane
+   * realm's tenant DB. A `realm:admin` on a tenant realm has no business
+   * with cross-realm operations; the routing layer would 404 anyway. The
+   * SPA hides those entries up front so users don't get a "the link
+   * worked but the page is 404" experience.
    */
   function hasPermission(permission: string): boolean {
     const grants = permissions.value
-    if (grants.includes('realm:admin')) return true
+    const isControlPlane = useAppConfigStore().config.IsControlPlane
+    const isControlPlanePermission = permission.startsWith('control-plane:')
+
+    if (grants.includes('realm:admin') && !(isControlPlanePermission && !isControlPlane)) {
+      return true
+    }
     if (grants.includes(permission)) return true
 
     const parts = permission.split(':')
