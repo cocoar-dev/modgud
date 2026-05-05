@@ -15,6 +15,12 @@ export default defineConfig({
   base: '/docs/',
   outDir: '.vitepress/dist-in-app',
 
+  // The srcExclude above intentionally drops marketing/concepts/guide/
+  // reference pages, but the included admin/end-user pages still link
+  // to some of them. The public build catches dead links; the in-app
+  // build is content-filtered by design and tolerates them.
+  ignoreDeadLinks: true,
+
   // Drop everything that isn't admin operations or end-user help.
   // The public landing page and marketing nav have no place in-app.
   srcExclude: [

@@ -15,18 +15,19 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm build
 
 # ── Stage 3: Build docs (VitePress) ────────────────────────────────
-# The website/ tree has a separate "in-app" config (config.in-app.ts)
-# but VitePress 1.6.x silently ignores `--config` on the build command,
-# so for now we ship the public build into the container's /docs/.
-# Trade-off: the in-container help has the public marketing nav. Tracked
-# as a P1 follow-up — fix the in-app config wiring once VitePress
-# upstream picks up the flag (or switch to a custom build script).
+# The website/ tree has a dedicated "in-app" config (config.in-app.ts)
+# that sets `base: '/docs/'` and points outDir at `.vitepress/dist-in-app`.
+# VitePress 1.6.x silently ignores `--config` on the build command, so
+# we route around the bug by overwriting config.ts with the in-app
+# variant before the build. The public marketing site is never built
+# in the image, only the in-app variant that knows it lives under /docs.
 FROM node:22-slim AS userdocs-build
 ENV CI=true
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /src
 COPY website/ ./
 RUN pnpm install --frozen-lockfile
+RUN cp .vitepress/config.in-app.ts .vitepress/config.ts
 RUN pnpm build
 
 # ── Stage 4: Runtime ───────────────────────────────────────────────
@@ -40,8 +41,9 @@ COPY --from=backend-build /app ./
 COPY --from=frontend-build /src/dist ./wwwroot/
 
 # VitePress build → wwwroot/docs/ (DocsExtensions middleware serves
-# this under /docs/ — see Cocoar.Auth.Api/ExtensionMethods/DocsExtensions.cs)
-COPY --from=userdocs-build /src/.vitepress/dist ./wwwroot/docs/
+# this under /docs/ — see Cocoar.Auth.Api/ExtensionMethods/DocsExtensions.cs).
+# Stage 3 swaps config.in-app.ts into place so outDir is dist-in-app.
+COPY --from=userdocs-build /src/.vitepress/dist-in-app ./wwwroot/docs/
 
 EXPOSE 8081
 
