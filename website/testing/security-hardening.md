@@ -31,7 +31,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | 2 | [C9 Security-Headers](#c9-security-headers) | 1 | ✅ | `85ef880` |
 | 2 | [C10 Rate-Limiting](#c10-rate-limiting) | 2 | ✅ | `8721fc6` |
 | 3 | [C11 Korrektheit](#c11-korrektheit) | 7 | ✅ | `be75284` |
-| 3 | [C12 Logging-Hygiene](#c12-logging-hygiene) | 2 | ✅ | _pending_ |
+| 3 | [C12 Logging-Hygiene](#c12-logging-hygiene) | 2 | ✅ | `2be004d` |
 | 3 | [C13 Cert-Rotation](#c13-cert-rotation) | 2 | ☐ | — |
 
 **Findings:** 33 (7 Critical · 13 High · 8 Medium · 5 Low/Info) — siehe
@@ -470,7 +470,7 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 ### C12 · Logging-Hygiene
 
-**Status:** ✅ Done · **Aufwand:** ~15 min · **Commit:** _pending_
+**Status:** ✅ Done · **Aufwand:** ~15 min · **Commit:** `2be004d`
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
