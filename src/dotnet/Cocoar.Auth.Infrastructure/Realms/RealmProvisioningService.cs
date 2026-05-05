@@ -143,8 +143,16 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             if (await checkDbCmd.ExecuteScalarAsync(ct) is null)
             {
                 var quotedName = "\"" + tenantDbName.Replace("\"", "\"\"") + "\"";
+                // CA2100: PostgreSQL DDL doesn't accept parameter binding for
+                // object names. dto.Slug was validated by RealmSlugRules
+                // (regex ^[a-z][a-z0-9-]{1,61}[a-z0-9]$ + reserved list)
+                // before this line, so tenantDbName is restricted to
+                // [a-z0-9_-] and cannot contain SQL meta-characters. The
+                // quoted-identifier escaping above is defense-in-depth.
+#pragma warning disable CA2100
                 await using var createDbCmd = new NpgsqlCommand(
                     $"CREATE DATABASE {quotedName}", bootstrapConn);
+#pragma warning restore CA2100
                 await createDbCmd.ExecuteNonQueryAsync(ct);
                 _logger.LogInformation("Created database {DbName} for realm {Slug}", tenantDbName, dto.Slug);
             }

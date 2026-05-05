@@ -23,3 +23,129 @@ indent_size = 2
 
 [*.md]
 trim_trailing_whitespace = false
+
+# ─────────────────────────────────────────────────────────────────────
+# Backend security analyzers (Roslyn / NetAnalyzers)
+# ─────────────────────────────────────────────────────────────────────
+# We elevate the security-relevant rule families to `error` so a
+# regression breaks the build. Style/perf/naming rules are intentionally
+# left at their defaults — see security-hardening.md for the campaign
+# that closed the existing security findings; this configuration is the
+# guardrail to keep new ones from landing silently.
+#
+# Coverage:
+#   CA21xx (general security: command/SQL injection, format-string)
+#   CA3xxx (data-flow taint analysis: XSS, XPath, LDAP, XML, ReDoS)
+#   CA53xx (cryptography & PKI: weak ciphers, weak hashes, weak random,
+#           cert validation, key length, padding)
+#
+# When a rule fires legitimately for a justified reason, suppress at
+# the call site with a `#pragma` + comment explaining why — never
+# globally relax the rule here.
+[*.cs]
+# Injection / format-string
+dotnet_diagnostic.CA2100.severity = error  # SQL queries built from user input
+dotnet_diagnostic.CA2109.severity = error  # event-handler exposed publicly
+dotnet_diagnostic.CA2153.severity = error  # corrupted-state exception handling
+dotnet_diagnostic.CA2300.severity = error  # BinaryFormatter without bind
+dotnet_diagnostic.CA2301.severity = error  # BinaryFormatter without bind
+dotnet_diagnostic.CA2302.severity = error  # BinaryFormatter without bind
+dotnet_diagnostic.CA2305.severity = error  # LosFormatter
+dotnet_diagnostic.CA2310.severity = error  # NetDataContractSerializer
+dotnet_diagnostic.CA2311.severity = error  # NetDataContractSerializer without bind
+dotnet_diagnostic.CA2312.severity = error  # NetDataContractSerializer without bind
+dotnet_diagnostic.CA2315.severity = error  # ObjectStateFormatter
+dotnet_diagnostic.CA2321.severity = error  # JavaScriptSerializer with SimpleTypeResolver
+dotnet_diagnostic.CA2322.severity = error  # JavaScriptSerializer ensure-not-Simple
+dotnet_diagnostic.CA2326.severity = error  # TypeNameHandling values other than None
+dotnet_diagnostic.CA2327.severity = error  # insecure JsonSerializerSettings
+dotnet_diagnostic.CA2328.severity = error  # insecure JsonSerializerSettings (taint)
+dotnet_diagnostic.CA2329.severity = error  # JsonSerializer w/ insecure settings
+dotnet_diagnostic.CA2330.severity = error  # JsonSerializer w/ insecure settings (taint)
+dotnet_diagnostic.CA2350.severity = error  # DataTable.ReadXml untrusted
+dotnet_diagnostic.CA2351.severity = error  # DataSet.ReadXml untrusted
+dotnet_diagnostic.CA2352.severity = error  # unsafe DataSet/Table in serialized type
+dotnet_diagnostic.CA2353.severity = error  # unsafe DataSet/Table in serializable type
+dotnet_diagnostic.CA2354.severity = error  # unsafe DataSet/Table in deserialized graph
+dotnet_diagnostic.CA2355.severity = error  # unsafe DataSet/Table in deserialized graph
+dotnet_diagnostic.CA2356.severity = error  # unsafe DataSet/Table in WCF type
+dotnet_diagnostic.CA2361.severity = error  # autogen class containing DataSet
+dotnet_diagnostic.CA2362.severity = error  # unsafe DataSet/Table in autogen class
+
+# Data-flow / taint analysis (CA3xxx)
+dotnet_diagnostic.CA3001.severity = error  # SQL injection
+dotnet_diagnostic.CA3002.severity = error  # XSS
+dotnet_diagnostic.CA3003.severity = error  # file-path injection
+dotnet_diagnostic.CA3004.severity = error  # information-exposure-through-exception
+dotnet_diagnostic.CA3005.severity = error  # LDAP injection
+dotnet_diagnostic.CA3006.severity = error  # process-command injection
+dotnet_diagnostic.CA3007.severity = error  # open-redirect
+dotnet_diagnostic.CA3008.severity = error  # XPath injection
+dotnet_diagnostic.CA3009.severity = error  # XML injection
+dotnet_diagnostic.CA3010.severity = error  # XAML injection
+dotnet_diagnostic.CA3011.severity = error  # DLL injection
+dotnet_diagnostic.CA3012.severity = error  # ReDoS (regex injection)
+dotnet_diagnostic.CA3061.severity = error  # XmlDocument insecure
+dotnet_diagnostic.CA3075.severity = error  # insecure DTD processing
+dotnet_diagnostic.CA3076.severity = error  # insecure XSLT script processing
+dotnet_diagnostic.CA3077.severity = error  # insecure XML processing in API
+dotnet_diagnostic.CA3147.severity = error  # missing ValidateAntiForgeryToken
+
+# Crypto / PKI (CA53xx)
+dotnet_diagnostic.CA5350.severity = error  # weak cryptographic algorithm
+dotnet_diagnostic.CA5351.severity = error  # broken cryptographic algorithm
+dotnet_diagnostic.CA5358.severity = error  # unsafe cipher mode
+dotnet_diagnostic.CA5359.severity = error  # certificate validation disabled
+dotnet_diagnostic.CA5360.severity = error  # dangerous deserialize call
+dotnet_diagnostic.CA5361.severity = error  # SChannel encryption disabled
+dotnet_diagnostic.CA5362.severity = error  # potential reference-cycle in deserialize
+dotnet_diagnostic.CA5363.severity = error  # request validation disabled
+dotnet_diagnostic.CA5364.severity = error  # deprecated security protocol
+dotnet_diagnostic.CA5365.severity = error  # disable HTTP-header checking
+dotnet_diagnostic.CA5366.severity = error  # use XmlReader for DataSet read
+dotnet_diagnostic.CA5367.severity = error  # mutable serializable types
+dotnet_diagnostic.CA5368.severity = error  # set ViewStateUserKey for AspNet
+dotnet_diagnostic.CA5369.severity = error  # use XmlReader for Deserialize
+dotnet_diagnostic.CA5370.severity = error  # use XmlReader for validating
+dotnet_diagnostic.CA5371.severity = error  # use XmlReader for schema-read
+dotnet_diagnostic.CA5372.severity = error  # use XmlReader for XPathDocument
+dotnet_diagnostic.CA5373.severity = error  # obsolete key derivation function
+dotnet_diagnostic.CA5374.severity = error  # XslTransform unsafe
+dotnet_diagnostic.CA5375.severity = error  # account SAS token
+dotnet_diagnostic.CA5376.severity = error  # SharedAccessProtocol HttpsOnly
+dotnet_diagnostic.CA5377.severity = error  # container-level access policy
+dotnet_diagnostic.CA5378.severity = error  # disable ServicePointManagerSecurityProtocols
+dotnet_diagnostic.CA5379.severity = error  # weak key-derivation algorithm
+dotnet_diagnostic.CA5380.severity = error  # do not add cert to root store
+dotnet_diagnostic.CA5381.severity = error  # ensure cert added to root store
+dotnet_diagnostic.CA5382.severity = error  # use secure cookies in ASP.NET Core
+dotnet_diagnostic.CA5383.severity = error  # ensure secure cookies in ASP.NET Core
+dotnet_diagnostic.CA5384.severity = error  # do not use DSA
+dotnet_diagnostic.CA5385.severity = error  # use RSA with sufficient key size
+dotnet_diagnostic.CA5386.severity = error  # avoid hardcoding SecurityProtocolType value
+dotnet_diagnostic.CA5387.severity = error  # weak iteration count for KDF
+dotnet_diagnostic.CA5388.severity = error  # ensure sufficient iteration count for KDF
+dotnet_diagnostic.CA5389.severity = error  # do not add archive item path to target
+dotnet_diagnostic.CA5390.severity = error  # do not hard-code encryption key
+dotnet_diagnostic.CA5391.severity = error  # use anti-forgery tokens in ASP.NET Core MVC
+dotnet_diagnostic.CA5392.severity = error  # use DefaultDllImportSearchPaths
+dotnet_diagnostic.CA5393.severity = error  # do not use unsafe DllImportSearchPath
+dotnet_diagnostic.CA5394.severity = error  # do not use insecure randomness
+dotnet_diagnostic.CA5395.severity = error  # missing HttpVerb attribute on action methods
+dotnet_diagnostic.CA5396.severity = error  # set HttpOnly to true for HttpCookie
+dotnet_diagnostic.CA5397.severity = error  # do not use deprecated SslProtocols values
+dotnet_diagnostic.CA5398.severity = error  # avoid hardcoded SslProtocols
+dotnet_diagnostic.CA5399.severity = error  # HttpClient with disabled cert revocation
+dotnet_diagnostic.CA5400.severity = error  # ensure cert revocation enabled on HttpClient
+dotnet_diagnostic.CA5401.severity = error  # SymmetricAlgorithm with non-default IV
+dotnet_diagnostic.CA5402.severity = error  # CreateEncryptor with non-default IV
+dotnet_diagnostic.CA5403.severity = error  # do not hard-code certificate
+
+# Test projects must reproduce protocol-defined cryptographic primitives
+# (TOTP via HMACSHA1 per RFC 6238, etc.) to exercise real auth flows.
+# These projects don't ship in the runtime image, so the security-rule
+# noise is more harmful than the rule itself. Production code paths are
+# still covered by the rules above.
+[{**/Cocoar.Auth.Api.Tests/**.cs,**/Cocoar.Auth.Tests.Unit/**.cs}]
+dotnet_diagnostic.CA5350.severity = suggestion
+dotnet_diagnostic.CA5351.severity = suggestion

@@ -903,8 +903,15 @@ try
         if (await checkCmd.ExecuteScalarAsync() is null)
         {
             var quotedName = "\"" + baseDbName.Replace("\"", "\"\"") + "\"";
+            // CA2100: PostgreSQL DDL doesn't accept parameter binding for
+            // object names. baseDbName originates from the operator-supplied
+            // connection string (DbSettings.ConnectionString), parsed by
+            // NpgsqlConnectionStringBuilder, not from any HTTP request path.
+            // The quoted-identifier escaping above is defense-in-depth.
+#pragma warning disable CA2100
             await using var createCmd = new NpgsqlCommand(
                 $"CREATE DATABASE {quotedName}", bootstrapConn);
+#pragma warning restore CA2100
             await createCmd.ExecuteNonQueryAsync();
             Log.Information("Created master database {DbName}", baseDbName);
         }

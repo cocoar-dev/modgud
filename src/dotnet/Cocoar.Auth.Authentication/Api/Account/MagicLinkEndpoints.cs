@@ -178,7 +178,15 @@ public static class MagicLinkEndpoints
     /// </summary>
     private static async Task AntiTimingDelayAsync()
     {
+        // CA5394: Random.Shared is correct here — this is a non-security
+        // jitter to obscure timing channels, not a token generator. Real
+        // security tokens in this slice (magic-link, email-verification,
+        // OTP, invite, recovery) all use RandomNumberGenerator.GetBytes().
+        // Crypto RNG would be needlessly expensive for sub-millisecond
+        // delay generation that has no secrecy requirement.
+#pragma warning disable CA5394
         var delayMs = Random.Shared.Next(100, 300);
+#pragma warning restore CA5394
         await Task.Delay(delayMs);
     }
 }

@@ -56,29 +56,43 @@ public class DocsMiddleware
             return;
         }
 
-        // Map URL path → file. Directories resolve to index.html.
+        // Map URL path → file. Resolve and run the path-traversal guard
+        // BEFORE any filesystem call so a `/docs/../../something` request
+        // never even probes anything outside the docs root.
         var relative = rest.Value?.TrimStart('/') ?? "";
-        var filePath = Path.Combine(_docsRoot, relative);
+        var resolvedPath = Path.GetFullPath(Path.Combine(_docsRoot, relative));
 
-        if (string.IsNullOrEmpty(relative) || Directory.Exists(filePath))
-        {
-            filePath = Path.Combine(filePath, "index.html");
-        }
-
-        filePath = Path.GetFullPath(filePath);
-
-        // Path-traversal guard — reject resolved paths outside the docs root.
-        if (!filePath.StartsWith(_docsRoot, StringComparison.OrdinalIgnoreCase))
+        // Path-traversal guard.
+        if (!resolvedPath.StartsWith(_docsRoot, StringComparison.OrdinalIgnoreCase))
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
             return;
         }
 
-        if (!File.Exists(filePath))
+        // After the guard the path is provably inside _docsRoot — directory
+        // probes for the index.html resolution can no longer touch foreign
+        // dirs, so the user-input → FS flow is mediated.
+#pragma warning disable CA3003
+        if (string.IsNullOrEmpty(relative) || Directory.Exists(resolvedPath))
+        {
+            resolvedPath = Path.GetFullPath(Path.Combine(resolvedPath, "index.html"));
+            // Re-check after the index.html append in case _docsRoot was a
+            // symlink or the combine produced an edge-case path.
+            if (!resolvedPath.StartsWith(_docsRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+        }
+
+        if (!File.Exists(resolvedPath))
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
         }
+#pragma warning restore CA3003
+
+        var filePath = resolvedPath;
 
         // Content type + cache headers. VitePress hashes asset filenames, so `.xxxxxx.js`
         // and `.xxxxxx.css` can be cached forever; everything else stays no-cache so users
