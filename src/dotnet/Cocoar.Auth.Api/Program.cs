@@ -530,6 +530,11 @@ try
     builder.Services.AddSingleton<LoginProviderSecretStore>();
     builder.Services.AddScoped<Cocoar.Auth.Application.Services.ILoginProviderRealmSeeder,
         Cocoar.Auth.Authentication.Setup.LoginProviderRealmSeeder>();
+
+    // C15 — Realm-Admin-Bootstrap (atomares User+Role+Group-Seeding). Used
+    // by RecoveryCli `bootstrap-admin` and the future invite-mode endpoint.
+    builder.Services.AddScoped<Cocoar.Auth.Authentication.Setup.IRealmAdminBootstrapper,
+        Cocoar.Auth.Authentication.Setup.RealmAdminBootstrapper>();
     builder.Services.AddSingleton<UserUpdateScriptRunner>();
     builder.Services.AddSingleton<DynamicOidcSchemeManager>();
     builder.Services.AddScoped<ExternalLoginProcessor>();

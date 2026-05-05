@@ -1,10 +1,12 @@
 using System.Security.Cryptography;
 using System.Text;
 using Cocoar.Auth.Authentication;
+using Cocoar.Auth.Authentication.Setup;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Projections;
 using Cocoar.Auth.Authorization.Services;
+using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Marten;
 using Microsoft.AspNetCore.Identity;
 using Cocoar.Auth.Authentication.Domain;
@@ -41,6 +43,12 @@ public static class RecoveryCli
 
         var command = args[0].ToLowerInvariant();
 
+        // bootstrap-admin runs against a chosen realm (default: system).
+        // The CLI's filesystem-trust boundary lets the operator name the
+        // tenant; everything else uses TenantContext fallback ("system").
+        var realmSlug = ParseFlag(args, "--realm") ?? TenantConstants.SystemTenantId;
+        using var _tenant = TenantContext.Enter(realmSlug);
+
         await using var scope = services.CreateAsyncScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
@@ -53,6 +61,7 @@ public static class RecoveryCli
             "set-email" => await SetEmailAsync(session, userManager, args),
             "magic-link" => await MagicLinkAsync(session, scope.ServiceProvider, args, conf, env),
             "rebuild-projections" => await RebuildProjectionsAsync(scope.ServiceProvider),
+            "bootstrap-admin" => await BootstrapAdminAsync(scope.ServiceProvider, args, realmSlug),
             _ => Error($"Unknown command: {command}. Try 'help'.")
         };
     }
@@ -64,7 +73,7 @@ public static class RecoveryCli
             ─────────────────────
 
             Usage:
-              dotnet Cocoar.Auth.Api.dll recover <command> [args...]
+              dotnet Cocoar.Auth.Api.dll recover <command> [args...] [--realm <slug>]
 
             Commands:
               list                           List all users (UserName · Email · Active · 2FA · Passkeys).
@@ -75,10 +84,25 @@ public static class RecoveryCli
               rebuild-projections            Rebuild all Marten projections (inline + async).
                                              Bootstrap path for the first migration after
                                              a schema change when no admin can authenticate yet.
+              bootstrap-admin                Create the first admin in a realm. Two modes:
+                  --email <email>            Email — required in both modes.
+                  [--username <username>]    Username — defaults to the local-part of the email.
+                  [--firstname <name>]       Optional.
+                  [--lastname  <name>]       Optional.
+                  [--password  <password>]   Direct mode: set the password now (validated against
+                                             the configured Identity password rules).
+                                             Without --password, an Invite-Mode magic link is
+                                             generated and printed (and emailed if SMTP is set).
               help                           Show this message.
 
-            All commands run against the configured database. No network access.
-            Every invocation is written to the auth log.
+            Global flag:
+              --realm <slug>                 Tenant slug to act in. Defaults to "system".
+                                             Applies to bootstrap-admin (and any future tenant-
+                                             scoped command). Other commands always run in the
+                                             tenant the configured connection points at.
+
+            All commands run against the configured database. No network access (except SMTP
+            for Invite-Mode bootstrap-admin). Every invocation is written to the auth log.
             """);
     }
 
@@ -312,6 +336,109 @@ public static class RecoveryCli
 
         Serilog.Log.Warning("Auth: Recovery rebuild-projections completed");
         return 0;
+    }
+
+    // ── bootstrap-admin ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// First-admin creation for a realm. Two modes selected by whether
+    /// <c>--password</c> is provided:
+    /// <list type="bullet">
+    ///   <item><description>Direct mode (<c>--password</c> set): atomic
+    ///   user + role + group seed via <see cref="IRealmAdminBootstrapper"/>.
+    ///   Identity-Password-Rules are enforced — a weak password is rejected
+    ///   the same way the SPA login form would reject it. The CLI's
+    ///   filesystem-trust does NOT bypass policy; the bypass would create
+    ///   a slow-burn liability where someone forgets a 4-char password
+    ///   on a Production deployment.</description></item>
+    ///   <item><description>Invite mode (no <c>--password</c>): a
+    ///   <c>PendingAdminInvite</c> document is written and a magic-link
+    ///   URL is printed (and emailed when SMTP is configured). The
+    ///   recipient sets their password via the SPA bootstrap form.
+    ///   Built in C15b — until then this branch errors with "not yet
+    ///   implemented".</description></item>
+    /// </list>
+    /// Tenant scoping: <c>--realm &lt;slug&gt;</c> is read in
+    /// <see cref="RunAsync"/> and propagated via <c>TenantContext</c>; the
+    /// <see cref="IDocumentSession"/> resolved here is already
+    /// realm-scoped.
+    /// </summary>
+    private static async Task<int> BootstrapAdminAsync(
+        IServiceProvider scopedServices,
+        string[] args,
+        string realmSlug)
+    {
+        var email = ParseFlag(args, "--email");
+        if (string.IsNullOrWhiteSpace(email))
+            return Error("Usage: recover bootstrap-admin --email <email> [--username <name>] [--firstname <name>] [--lastname <name>] [--password <pw>] [--realm <slug>]");
+
+        var userName = ParseFlag(args, "--username")?.Trim().ToLowerInvariant()
+            ?? email.Split('@', 2)[0].ToLowerInvariant();
+        var firstname = ParseFlag(args, "--firstname");
+        var lastname = ParseFlag(args, "--lastname");
+        var password = ParseFlag(args, "--password");
+
+        if (string.IsNullOrEmpty(password))
+        {
+            // Invite mode lands in C15b (PendingAdminInvite + bootstrap
+            // endpoint + SPA form). For now the CLI directs the operator
+            // to use --password explicitly so we don't half-ship the
+            // feature.
+            Console.Error.WriteLine(
+                "error: invite-mode bootstrap is not yet wired up (lands in C15b — pending invite document + SPA bootstrap form).");
+            Console.Error.WriteLine(
+                "       For now run with --password '<pw>' to create the admin directly.");
+            return 1;
+        }
+
+        var bootstrapper = scopedServices.GetRequiredService<IRealmAdminBootstrapper>();
+        var result = await bootstrapper.BootstrapDirectAsync(userName, password, email, firstname, lastname);
+
+        if (result.IsError)
+        {
+            Serilog.Log.Warning(
+                "Auth: Recovery bootstrap-admin failed. Realm={Realm} UserName={UserName} Code={Code} Detail={Detail}",
+                realmSlug, userName, result.FirstError.Code, result.FirstError.Description);
+            return Error($"{result.FirstError.Code}: {result.FirstError.Description}");
+        }
+
+        var admin = result.Value;
+        Serilog.Log.Warning(
+            "Auth: Recovery bootstrap-admin succeeded. Realm={Realm} UserName={UserName} Mode=Direct",
+            realmSlug, admin.UserName);
+
+        Console.WriteLine($"✓ Admin created in realm '{realmSlug}':");
+        Console.WriteLine($"  UserName: {admin.UserName}");
+        Console.WriteLine($"  Email:    {admin.Email}");
+        Console.WriteLine($"  Mode:     Direct (password set on creation)");
+        Console.WriteLine();
+        Console.WriteLine("Sign in via the realm's domain — the user is in the Administratoren group with realm:admin.");
+        return 0;
+    }
+
+    /// <summary>
+    /// Reads <c>--key value</c> pairs out of <paramref name="args"/>. Both
+    /// <c>--key value</c> and <c>--key=value</c> forms are accepted.
+    /// Returns null when the flag isn't set; returns the empty string
+    /// when the flag is set with an empty value (let the caller decide
+    /// how to react).
+    /// </summary>
+    private static string? ParseFlag(string[] args, string flag)
+    {
+        for (var i = 0; i < args.Length; i++)
+        {
+            var a = args[i];
+            if (a.Equals(flag, StringComparison.OrdinalIgnoreCase))
+            {
+                return i + 1 < args.Length ? args[i + 1] : "";
+            }
+            var prefix = flag + "=";
+            if (a.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return a[prefix.Length..];
+            }
+        }
+        return null;
     }
 
     private static int Error(string message)
