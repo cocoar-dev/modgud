@@ -112,7 +112,7 @@ removed).
 | Authorization-endpoint claim helpers | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` | 16 | GetDisplayName fallback chain (Firstname Lastname → UserName → Email), GetDestinations claim-type→token-target switch — `name`/`preferred_username`/`given_name`/`family_name` (profile scope), `email`/`email_verified` (email scope), `role` (roles scope), `SecurityStamp` suppressed, unknown-claim default to AccessToken |
 | PaginationRequest.WithDefaults | `Application/PaginationRequestTests.cs` | 6 | non-positive raw page/pageSize clamped to 1/20, valid passthrough, parameterless-ctor and clamp targets agree |
 | Group-cycle detector | `Api/Features/Admin/GroupCycleDetectorTests.cs` | 10 | DetectCycles on linear / branching / no-cycle / self-loop / 2-node / 3-node cycles |
-| Realms endpoint MapToDto + filter | `Api/Features/Admin/RealmsEndpointsTests.cs` | 6 | RealmDto mapping, RequireCanManageTenantsFilter 404-on-missing |
+| Realms endpoint MapToDto + filter | `Api/Features/Admin/RealmsEndpointsTests.cs` | 6 | RealmDto mapping, RequireControlPlaneFilter 404-on-missing |
 | Auto-membership sync paths + ShouldSync | `Api/Features/Groups/AutoMembershipSyncHandlersTests.cs` | 18 | PrincipalPaths constants pinning, ShouldSync per handler (UserCreated, UserUpdated, UserDeleted, UserActivated/Deactivated, GroupCreated/Updated/Deleted) |
 
 ## Integration-test inventory
@@ -268,7 +268,7 @@ the pinning test is flipped to assert the corrected behaviour.
   inlining the same `<= 0 ? default` clamp logic. Helper now lives on
   the DTO; both endpoints call it; six new tests pin the clamp + that
   the parameterless ctor and the clamp targets agree.
-- **`RequireCanManageTenantsFilter` now logs each early-return.** 404
+- **`RequireControlPlaneFilter` now logs each early-return.** 404
   used to be silent — a future misrouted realm would look like a
   missing route. Now `Log.Debug` carries the reason ("no tenant info"
   / "realm '{Slug}' is not a management realm").

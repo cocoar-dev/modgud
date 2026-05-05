@@ -4,6 +4,17 @@ title: Security Hardening Tracker
 
 # Security Hardening Tracker
 
+::: warning Internal engineering log
+This page is an internal change log of the security-hardening campaign
+that ran during the pre-public phase. It is preserved as audit history
+and references commit hashes, internal cluster codenames (C1…C16) and
+finding IDs (PROD-01, OAUTH-05, …) that are not part of the public
+product surface. Public consumers don't need this file — see [Concepts:
+Authentication](../concepts/authentication), [OAuth & OIDC](../concepts/oauth)
+and [Control Plane](../concepts/control-plane) for the user-facing
+descriptions of what these clusters produced.
+:::
+
 Living tracker für die Production-Hardening-Befunde aus dem 4-Track-Audit
 (2026-05-04). Pro Cluster: Status, Aufwand, betroffene Findings, Commit-Refs.
 

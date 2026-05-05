@@ -25,7 +25,7 @@ When you bind a new SaaS app you traverse **five stations**:
 You need:
 
 - A running Cocoar.Auth instance (see [Getting Started](../getting-started/quickstart))
-- An admin account (a member of the `Administratoren` group, seeded on first `/setup`)
+- An admin account (a member of the `Administratoren` group, created via the [first-time bootstrap](../getting-started/first-time-setup))
 - A URL for your target app (for redirect URIs), e.g. `https://timetodo.dev.local`
 
 ## Station 1: register the app

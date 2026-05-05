@@ -47,7 +47,7 @@ slice of the same name into cocoar.auth and extended for IdP needs.
 
 - **No authorization** — permissions, groups, roles live in the
   Authorization slice
-- **No frontend** — Vue views (LoginView, ProfileView, SetupView,
+- **No frontend** — Vue views (LoginView, ProfileView, BootstrapView,
   MfaSetupModal etc.) live in `src/frontend-vue/`
 - **No realm routing** — the Authentication slice always works against
   the current Marten tenant session. Tenant resolution happens in

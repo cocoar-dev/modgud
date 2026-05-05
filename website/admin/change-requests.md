@@ -22,10 +22,16 @@ Filters:
 
 ## Approving a request
 
-Open a pending request → review the proposed change → **Approve**. The change is applied atomically:
+Open a pending request → review the proposed change → **Approve**.
 
-- For email changes: a confirmation token is regenerated and a confirmation email is sent to the new address (Cocoar.Auth's double-opt-in still applies on top of the approval flow)
-- For other fields: the change takes effect immediately
+For most fields the change takes effect immediately on approval. **Email changes are a two-stage flow** because the new address is itself untrusted until the recipient proves they own it:
+
+1. **Admin approves** the request. The new email is recorded as *pending verification*; the user's effective email is still the old one. A confirmation token is sent to the **new** address.
+2. **Recipient confirms** by clicking the verification link. Only then does the new address become the user's effective email.
+
+So for email specifically there are **two consents in sequence**: the admin's approval (this UI), and the recipient's click on the verification email. If the user can't access the new mailbox the change never lands — which is the point. If the recipient never confirms, the request stays in *Approved – Awaiting Verification* state; the user can re-trigger the verification email from their profile or the admin can cancel the request.
+
+For other fields (name, phone, …) the change is applied immediately on admin approval — no second confirmation needed.
 
 ## Rejecting
 

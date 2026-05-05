@@ -64,7 +64,7 @@ cross-cutting flows.
 >   admin approves → `/me` reflects the new firstname AND email
 >   atomically.
 > - **§14 Realms** — `40-realms.spec.ts`: system realm exists with
->   `CanManageTenants: true`, create a fresh realm provisions a new
+>   `IsControlPlane: true`, create a fresh realm provisions a new
 >   tenant DB + realm document, slug rejection (reserved `system`,
 >   length / casing / leading-hyphen invalids).
 > - **§3 Two-factor (TOTP)** — `50-2fa.spec.ts`: enable TOTP via
@@ -223,9 +223,9 @@ already in `helpers.ts`).
 
 ## 14. Realms (system realm only)
 
-- ✅ System realm exists with `Slug=system`, `CanManageTenants=true`, `IsActive=true` — automated in `40-realms.spec.ts`.
-- ✅ Create realm provisions a tenant DB + realm document — `POST /api/admin/realms` returns the realm shape with `IsActive: true`. Automated. Slug rejection (reserved `system`, length / casing / leading-hyphen) automated too.
-- ⏳ Visit `acme.<host>/setup` → first-time-setup runs in the new realm — **not yet verified** (would need Host-header switch in the same browser context).
+- ✅ System realm exists with `Slug=system`, `IsControlPlane=true`, `IsActive=true` — automated in `40-realms.spec.ts`.
+- ✅ Create realm provisions a tenant DB + realm document + bootstrap-invite — `POST /api/admin/realms` with mandatory `InitialAdmin` returns `{Realm, InitialAdminInvite}`. Automated. Slug rejection (reserved `system`, length / casing / leading-hyphen) and missing-`InitialAdmin.Email` rejection automated too.
+- ⏳ Click the magic-link from a fresh realm's bootstrap email and complete `/bootstrap?token=…` → land in the new realm with `realm:admin` — **manual**, requires Host-header switch (browser at `acme.localhost:4300`, Vite proxy `changeOrigin: false`).
 - ⏳ Cross-realm data isolation walked manually — integration-tested at the Marten layer; an E2E port would require driving two Host headers.
 - ⏳ Outside the system realm `/admin/realms` → 404 (not 403) — covered by `RealmsEndpointsTests` integration test; not in the E2E suite.
 - ⏳ Edit realm domain list, immutable Slug — **not yet verified**.

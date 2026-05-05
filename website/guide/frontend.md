@@ -211,7 +211,7 @@ the path). Routes:
 |---|---|
 | `/login` | LoginView |
 | `/register` | RegisterView |
-| `/setup` | SetupView (first-time setup) |
+| `/bootstrap?token=…` | BootstrapView (consumes a first-admin invite — see [First-time setup](../getting-started/first-time-setup)) |
 | `/2fa` | MfaLoginView |
 | `/profile` | ProfileView |
 | `/profile/sessions` | SessionsView |

@@ -110,12 +110,11 @@ exposing realm CRUD on a tenant host.
 Development and Testing skip the check and trust the system realm's
 own `Domains` list, so a fresh checkout boots without ENV setup.
 
-## First-admin onboarding (C15)
+## First-admin onboarding
 
-A freshly provisioned realm has no users. There used to be a global
-`/setup` wizard that anyone could fill out — the
-"first-come-takes-the-instance" race window. That endpoint is gone
-(C15d). Three explicit-trust paths replace it:
+A freshly provisioned realm has no users. There is **no anonymous
+"first-run" wizard** — that would be a "first-come-takes-the-instance"
+race window. Three explicit-trust paths replace it:
 
 ### Path 1 — Recovery CLI, direct password (operator-local)
 

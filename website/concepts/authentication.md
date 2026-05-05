@@ -42,12 +42,18 @@ authenticated requests from users without 2FA (with a grace period).
 
 ### Cookies
 
-| Cookie | Purpose | Lifetime |
-|---|---|---|
-| `Cocoar.Auth.Auth` | Main session (HttpOnly, SameSite=Strict) | Session or 30 days |
-| `Cocoar.Auth.2FA` | UserId between password step and 2FA step | 5 min |
-| `Cocoar.Auth.External` | OIDC callback holder (SameSite=Lax!) | 10 min |
-| `Cocoar.Auth.Session` | Only for passkey attestation options | 5 min idle |
+| Cookie | Purpose | SameSite | Lifetime |
+|---|---|---|---|
+| `Cocoar.Auth.Auth` | Main session (HttpOnly) | Lax | Session or 30 days |
+| `Cocoar.Auth.2FA` | UserId between password step and 2FA step | Strict | 5 min |
+| `Cocoar.Auth.External` | OIDC callback holder | Lax | 10 min |
+| `Cocoar.Auth.Session` | Only for passkey attestation options | Strict | 5 min idle |
+
+`SameSite=Lax` on the main session cookie is required so that OIDC
+redirect-back navigations carry the cookie (top-level GET → cookie sent).
+Cross-site POSTs are still blocked by `SameSite=Lax`, plus the
+`CsrfDefenseMiddleware` rejects state-changing requests whose
+`Sec-Fetch-Site` indicates cross-origin.
 
 In production all cookies are `Secure`. In dev `Secure=None` so the
 Vite dev server (`http://localhost:4300`) can write them.

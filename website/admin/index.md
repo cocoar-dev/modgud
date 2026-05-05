@@ -60,7 +60,7 @@ Three bypass tiers keep permission lists short:
 - **`<app>:<resource>:admin`** — resource-wide.
 
 ::: info Who is a realm admin?
-On the very first `/setup` run, the person performing setup is automatically promoted to realm admin. They land in the `Administratoren` group whose `BoundTo: ["*"]` wildcard makes them effective in every app. Add more admins by putting users into that group (or any other group with equivalent rights).
+The first admin in every realm — created via the recovery CLI or the Control-Plane-issued bootstrap invite (see [First-time setup](../getting-started/first-time-setup)) — is automatically placed into the `Administratoren` group whose `BoundTo: ["*"]` wildcard makes them effective in every app. Add more admins by putting users into that group (or any other group with equivalent rights).
 :::
 
 ## Granular gating

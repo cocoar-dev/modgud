@@ -112,15 +112,26 @@ Full endpoint list in
 | `POST` | `/api/account/gdpr/delete-confirm` | Confirm with token → archive stream + mask PII |
 | `POST` | `/api/account/gdpr/delete-cancel` | Cancel a pending delete request |
 
-## Setup (first-time)
+## Bootstrap (first-time admin)
+
+There is no anonymous setup wizard. The first admin in any realm is created
+either through the recovery CLI (filesystem trust) or via a Control-Plane
+admin issuing an invite through the realm-create API. The single anonymous
+endpoint is the bootstrap-invite consumer:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/setup/status` | `{ needsSetup: bool }` — true while no admin exists |
-| `POST` | `/api/setup/create-admin` | Create the first-time admin, auto-login |
+| `POST` | `/api/account/bootstrap-admin` | Consume a single-use invite token + set password. Body: `{ "Token": "<plaintext>", "Password": "<new>" }`. On success: user is created, atomically added to the Administratoren group with `realm:admin`, and auto-signed-in via cookie. |
 
-On the first realm visit the frontend shows `/setup`. After the first
-admin exists, `/api/setup/*` returns 404.
+The token comes from one of:
+
+- `dotnet Cocoar.Auth.Api.dll recover bootstrap-admin --email <e>` (without `--password`) — see [Recovery CLI](../admin/recovery-cli)
+- `POST /api/admin/realms` with an `InitialAdmin` payload — see [Realm API](./realm-api)
+- `POST /api/admin/realms/{slug}/resend-bootstrap-invite` — re-issue a fresh token for the same recipient
+
+Token properties: SHA-256-hashed in the DB, 7-day TTL, single-use (reuse → 400
+`BootstrapInvite.TokenUsed`). Endpoint is rate-limited under the `bootstrap`
+policy (10 attempts per IP per 15 minutes).
 
 ## Response format conventions
 

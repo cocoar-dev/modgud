@@ -117,10 +117,11 @@ On first start:
 2. **Apply the Marten schema** → `realms.mt_tenant_databases` is created
 3. **Register the system tenant** → `tenancy.AddDatabaseRecordAsync("system", masterCs)`
 4. **Apply the Marten schema again** → per-tenant tables for system
-5. **Seed the system realm document** (in `IGlobalStore`)
+5. **Seed the system realm document** in `IGlobalStore`, flagged `IsControlPlane = true`
 6. **Seed default OAuth scopes + the Internal login provider**
-7. **Warm `RealmCache`**
-8. **Endpoint `/setup`** waits for the first admin account
+7. **Seed the `cocoar-auth` and `control-plane` apps** into the system tenant DB
+8. **Warm `RealmCache`**
+9. The instance is ready, but has zero users — the first admin is created via the [recovery CLI](../admin/recovery-cli) or, for additional realms, by an existing CP-admin via `POST /api/admin/realms`. See [First-time setup](../getting-started/first-time-setup).
 
 ### 2. Create additional realms
 
@@ -133,28 +134,30 @@ and the routing layer 404s the endpoint on tenant hosts.
 ```http
 POST /api/admin/realms
 {
-  "slug": "acme",
-  "displayName": "Acme Corp",
-  "domains": ["acme.example.com"],
-  "isControlPlane": false
+  "Slug": "acme",
+  "DisplayName": "Acme Corp",
+  "Domains": ["acme.example.com"],
+  "IsControlPlane": false,
+  "InitialAdmin": {
+    "UserName": "max",
+    "Email": "max@acme.com"
+  }
 }
 ```
 
 Backend:
 
-1. Validates `slug` (regex, no reserved word)
-2. `CREATE DATABASE <master-db>_acme` (raw SQL)
-3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`
-4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`
-5. **OAuthRealmSeeder** → 5 default scopes + Internal login provider
-6. **AuthorizationSeeder** → 3 default roles (System Admin, User
-   Manager, Viewer)
-7. Save the `Realm` document in `IGlobalStore`
-8. `RealmCache.Invalidate()` → next request reloads fresh
+1. Validates `slug` (regex, no reserved word) and the exactly-one-CP invariant.
+2. `CREATE DATABASE <master-db>_acme` (raw SQL).
+3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`.
+4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`.
+5. **`OAuthRealmSeeder`** → 5 default scopes + Internal login provider.
+6. **`AppRealmSeeder`** → registers the `cocoar-auth` app in the new tenant DB. The `control-plane` app is **not** seeded — it only exists in the Control-Plane realm.
+7. Save the `Realm` document in `IGlobalStore`.
+8. `RealmCache.Invalidate()`.
+9. **Bootstrap-invite** issued atomically: writes a `PendingAdminInvite` into the new tenant DB, sends a magic-link email to `InitialAdmin.Email`, returns the URL in the API response.
 
-The new realm needs initial setup just like the system realm: the
-`/setup` page appears on first hit of the realm domain, and the very
-first user becomes the system admin (with `realm:admin`).
+The recipient clicks the magic-link, lands at `/bootstrap?token=…`, sets a password, and is auto-signed-in with `realm:admin`. The first user creation runs through `RealmAdminBootstrapper`, which atomically seeds the three default roles and adds the user to the `Administratoren` group.
 
 ### 3. Deactivate a realm
 

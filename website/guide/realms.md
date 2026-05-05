@@ -142,7 +142,7 @@ chicken-and-egg. It lives in a separate Marten store (`IGlobalStore`)
 against schema `global` of the master DB:
 
 ```csharp
-public sealed record TenantInfo(string Slug, bool CanManageTenants, bool IsActive);
+public sealed record TenantInfo(string Slug, bool IsControlPlane, bool IsActive);
 
 public class Realm
 {
@@ -151,7 +151,7 @@ public class Realm
     public string DisplayName { get; set; }
     public string? Description { get; set; }
     public string[] Domains { get; set; }       // ["acme.example.com", ...]
-    public bool CanManageTenants { get; set; }  // may manage other realms
+    public bool IsControlPlane { get; set; }    // exactly one per deployment
     public bool IsActive { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
@@ -180,36 +180,55 @@ In `Program.cs` (before `app.Run`):
 ## Realm CRUD
 
 Endpoints under `/api/admin/realms` — gated by
-`cocoar-auth:realm:read` / `cocoar-auth:realm:write` AND only
-available in realms with `CanManageTenants = true` (otherwise 404).
+`control-plane:realm:read` / `control-plane:realm:write` and only
+reachable on the **Control-Plane realm** (the realm flagged
+`IsControlPlane = true`). On any other host: 404 (the existence of
+the surface is hidden from tenant realms — see [Concepts: Control
+Plane](../concepts/control-plane)).
 
 ### Create
+
+`POST` requires an `InitialAdmin` payload — a realm with no admin path
+would be unreachable.
 
 ```http
 POST /api/admin/realms
 {
-  "slug": "acme",
-  "displayName": "Acme Corp",
-  "domains": ["acme.example.com"],
-  "canManageTenants": false
+  "Slug": "acme",
+  "DisplayName": "Acme Corp",
+  "Domains": ["acme.example.com"],
+  "IsControlPlane": false,
+  "InitialAdmin": {
+    "UserName": "max",
+    "Email": "max@acme.com"
+  }
 }
 ```
 
 Backend:
 
-1. Validates `slug` (regex, reserved-words check)
-2. `CREATE DATABASE <master-db>_acme` (raw SQL)
-3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`
-4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`
-5. **OAuthRealmSeeder** seeds the new tenant DB
-6. **AuthorizationSeeder** creates 3 default roles (System Admin, User
-   Manager, Viewer)
-7. `Realm` document in `IGlobalStore`
-8. `RealmCache.Invalidate()`
+1. Validates `slug` (regex, reserved-words check) and the
+   exactly-one-Control-Plane invariant.
+2. `CREATE DATABASE <master-db>_acme` (raw SQL).
+3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`.
+4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`.
+5. **`OAuthRealmSeeder`** seeds 5 default scopes + the Internal login
+   provider into the new tenant DB.
+6. **`AppRealmSeeder`** seeds the `cocoar-auth` app. The
+   `control-plane` app is **only** seeded when the new realm is itself
+   the Control Plane.
+7. `Realm` document persisted in `IGlobalStore`.
+8. `RealmCache.Invalidate()`.
+9. **Bootstrap-invite** issued atomically: a `PendingAdminInvite` is
+   written into the new tenant DB, the magic-link email is sent, and
+   the URL is returned in the response (`InitialAdminInvite.MagicLinkUrl`).
 
-The realm is reachable immediately. On the first hit to the realm
-domain the browser lands at `/setup` — the first visitor becomes the
-system admin.
+The recipient consumes the invite at `POST /api/account/bootstrap-admin`
+on the new realm's host (anonymous, rate-limited under `bootstrap`),
+sets a password, gets auto-signed-in. Atomic with that consume,
+`RealmAdminBootstrapper` creates the user, seeds the three default
+`PermissionRole`s (System Admin / User Manager / Viewer) and adds the
+user to the `Administratoren` group with `realm:admin`.
 
 ### Update
 

@@ -87,10 +87,12 @@ Per resource the standard actions `read`, `write`, `delete`, `admin`
 are available. The admin UI shows this list in the role editor; the
 backend checks the strings on `RequiresPermission`.
 
-## Default roles in setup
+## Default roles on first bootstrap
 
-On first-time setup, cocoar.auth creates three default roles and
-places the first admin in the "System Admin" group:
+When the first admin in a realm is created (recovery CLI or HTTP
+bootstrap-invite — see [First-time setup](../getting-started/first-time-setup)),
+`RealmAdminBootstrapper` atomically seeds three default `PermissionRole`s
+and places the new admin into the **Administratoren** group:
 
 | Role | Permissions |
 |---|---|

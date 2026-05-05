@@ -43,7 +43,7 @@ Plus three bypass tiers:
 
 ## Standard roles (after setup)
 
-On the first `/setup` Cocoar.Auth seeds three roles — all under the system app `cocoar-auth`:
+When the first admin in a realm is created (recovery CLI or HTTP bootstrap-invite — see [First-time setup](../getting-started/first-time-setup)), Cocoar.Auth atomically seeds three roles — all under the system app `cocoar-auth`:
 
 | Role | App | Effect |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ On the first `/setup` Cocoar.Auth seeds three roles — all under the system app
 | **User Manager** | cocoar-auth | `cocoar-auth:user:read/write` + `:session:read/write` + `:authorization-group:read` + `:permission-role:read` + `:auth-log:read` |
 | **Viewer** | cocoar-auth | read-only on user, authorization-group, permission-role |
 
-Enable the demo seed at setup time and you'll get additional roles for realistic test setups (see `data/demo-seed.json`).
+Run `node scripts/seed-demo.mjs` after first login and you'll get additional roles for realistic test setups (see `data/demo-seed.json` for the manifest).
 
 ## Resources available per app
 

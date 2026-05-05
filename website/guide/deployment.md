@@ -117,7 +117,16 @@ docker run -d \
   ghcr.io/cocoar/cocoar.auth:latest
 ```
 
-Open `http://localhost/setup` in the browser → create initial admin.
+Once the container is up, create the first admin via the recovery CLI
+(see [Recovery CLI](../admin/recovery-cli) and [First-time setup](../getting-started/first-time-setup)):
+
+```bash
+docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll \
+    recover bootstrap-admin \
+    --email admin@example.com --username admin --password 'StrongPass1!'
+```
+
+Then open `http://localhost/` in the browser and sign in.
 
 ### Docker Compose (full stack)
 

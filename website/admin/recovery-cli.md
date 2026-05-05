@@ -68,9 +68,10 @@ Clears the lockout flag, e.g. after too many failed login attempts.
 
 ### `bootstrap-admin --email <email> [--username <name>] [--password <pw>] [--realm <slug>]`
 
-Creates the very first admin in a realm — replaces the legacy `/setup`
-wizard which was removed in C15d (it was an anonymous race-window
-endpoint).
+Creates the very first admin in a realm — the explicit-trust replacement
+for the anonymous setup wizard pattern. There is no anonymous endpoint
+that grants admin access; whoever can run this CLI inside the container
+already holds filesystem-level trust.
 
 Two modes, selected by the presence of `--password`:
 

@@ -16,9 +16,10 @@ Mapping to other systems:
 |---|---|---|---|
 | Realm | Realm | Tenant | Tenant (Directory) |
 
-The **system realm** is the first realm, created automatically during
-first-time setup. It is the only realm with `CanManageTenants = true`
-— meaning only its users may create further realms.
+The **system realm** is the first realm, created automatically on first
+boot. It starts as the **Control-Plane** realm — flagged
+`IsControlPlane = true` — meaning only its users may create further
+realms. Exactly one realm per deployment is the Control Plane.
 
 The realm boundary is the **domain** (Host header), not the URL path.
 Realm `acme` lives under `acme.example.com`, the system realm under

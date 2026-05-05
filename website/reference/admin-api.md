@@ -141,8 +141,12 @@ once per realm and rejects edits / deletes — clients identify it by
 
 ## Realms
 
-Only available in realms with `CanManageTenants = true` (typically only
-the system realm). Otherwise 404. See [Realm API](/reference/realm-api).
+Only available on the **Control-Plane realm** (the realm flagged
+`IsControlPlane = true`). Otherwise 404 — the existence of realm CRUD is
+hidden from tenant realms. Permissions live under the `control-plane`
+app slug (`control-plane:realm:read|write`), not under `cocoar-auth`. See
+[Realm API](/reference/realm-api) for the request/response shapes and the
+`InitialAdmin` requirement on `POST /api/admin/realms`.
 
 ## Auth log
 

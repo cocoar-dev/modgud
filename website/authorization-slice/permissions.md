@@ -7,27 +7,32 @@ exactly between backend and frontend.
 ## Permission format
 
 Three segments: `<app>:<resource>:<action>`. Cocoar.Auth's own admin
-surface lives under the system app `cocoar-auth`; consuming SaaS apps
-get their own app slug (`timetodo`, `knowledge`, …) and permissions
-under that slug.
+surface lives under two app slugs:
+
+- **`cocoar-auth`** — the realm-internal admin surface (users, groups,
+  roles, OAuth clients, login providers, etc.). Seeded into every realm.
+- **`control-plane`** — the cross-realm admin surface (realm CRUD).
+  Seeded **only** into the realm flagged `IsControlPlane = true`.
+
+Consuming SaaS apps get their own app slug (`timetodo`, `knowledge`, …)
+and permissions under that slug.
 
 | Permission | Meaning |
 |---|---|
 | `cocoar-auth:user:read` | Read user list/detail |
 | `cocoar-auth:user:write` | Create/edit users |
-| `cocoar-auth:user:delete` | Delete users (soft + GDPR) |
 | `cocoar-auth:user:admin` | Resource-wide bypass for all user actions |
 | `cocoar-auth:oauth-client:read` | Read OAuth clients |
 | `cocoar-auth:oauth-client:write` | Create/edit OAuth clients |
-| `cocoar-auth:oauth-client:delete` | Delete OAuth clients |
 | `cocoar-auth:permission-role:read` | Read roles |
 | `cocoar-auth:authorization-group:write` | Create/edit groups |
-| `cocoar-auth:realm:write` | Create/edit realms |
-| `cocoar-auth:admin` | App-wide bypass for the IAM admin surface |
+| `cocoar-auth:login-provider:read|write` | Login provider management |
+| `cocoar-auth:auth-log:read` | Read the auth log |
+| `cocoar-auth:gdpr:admin` | Permanent-erase GDPR operations |
+| `cocoar-auth:admin` | App-wide bypass for the realm-internal admin surface |
+| `control-plane:realm:read` | List realms (Control Plane only) |
+| `control-plane:realm:write` | Create/edit/deactivate realms (Control Plane only) |
 | `realm:admin` | **Realm-wide bypass** (every app, every resource, every action) |
-
-The permission `app:admin` does not exist as a real grant — `app` is
-not a reserved app slug. The three bypass tiers are documented below.
 
 ## Bypass tiers
 
@@ -51,31 +56,35 @@ per-resource `<resource>:admin` (e.g. OAuth owners get
 `cocoar-auth:oauth-client:admin` + `cocoar-auth:oauth-scope:admin` +
 `cocoar-auth:oauth-api:admin`, but not `cocoar-auth:user:admin`).
 
-## Resources in cocoar.auth
+## Resources
+
+### `cocoar-auth` (realm-internal — every realm)
 
 | Resource | What for |
 |---|---|
-| `user` | User management (Cocoar.Auth.Authentication.ApplicationUser) |
-| `permission-role` | Role management |
+| `app` | App registration management |
+| `user` | User management (`ApplicationUser`) |
+| `role` (`permission-role`) | Role management |
 | `authorization-group` | Group management |
+| `permission-role` | Role-to-permission management |
+| `session` | Per-user session management |
+| `auth-log` | Read AuthLog |
+| `gdpr` | Permanent-erase GDPR operations |
+| `oauth` | OAuth admin surface umbrella |
 | `oauth-client` | OAuth client management |
 | `oauth-scope` | OAuth scope management |
 | `oauth-api` | OAuth API resource management |
 | `login-provider` | Internal/external login providers |
-| `idp-config` | OIDC IdP configurations |
-| `realm` | Realm CRUD (only in realms with `CanManageTenants = true`) |
-| `auth-log` | Read AuthLog |
-| `app` | App admin surface |
 
-Registered at boot, keyed by `(appSlug, resource)`:
+### `control-plane` (Control Plane only)
 
-```csharp
-// AddInfrastructure → AddCocoarAuthAuthorization(opts => { ... })
-opts.RegisterResource("cocoar-auth", "user");
-opts.RegisterResource("cocoar-auth", "permission-role");
-opts.RegisterResource("cocoar-auth", "authorization-group");
-// ...
-```
+| Resource | What for |
+|---|---|
+| `realm` | Realm CRUD (`/api/admin/realms/*`) |
+
+The `control-plane` app slug is intentionally decoupled from the product
+name. If the IdP is ever rebranded, cross-realm permissions don't need a
+migration.
 
 ## Backend gating: `RequiresPermission`
 
@@ -88,11 +97,8 @@ app.MapGet("/api/admin/users", async (...) => { ... })
 app.MapPost("/api/admin/users", async (...) => { ... })
    .RequiresPermission("cocoar-auth:user:write");
 
-app.MapDelete("/api/admin/users/{id}", async (...) => { ... })
-   .RequiresPermission("cocoar-auth:user:delete");
-
-app.MapDelete("/me", async (...) => { ... })
-   .RequiresPermission("realm:admin");
+app.MapPost("/api/admin/realms", async (...) => { ... })
+   .RequiresPermission("control-plane:realm:write");
 ```
 
 The filter (`PermissionEndpointFilter`):
@@ -134,6 +140,8 @@ const allNavItems: NavItem[] = [
     path: '/admin/users',  requirePermissions: ['cocoar-auth:user:read'] },
   { section: 'oauth', label: 'admin.oauthClients.title', icon: 'app-window',
     path: '/admin/oauth/clients', requirePermissions: ['cocoar-auth:oauth-client:read'] },
+  { section: 'system', label: 'admin.realms.title', icon: 'globe',
+    path: '/admin/realms', requirePermissions: ['control-plane:realm:read'] },
   { section: 'system', label: 'nav.settings', icon: 'settings',
     path: '/admin/settings', requirePermissions: ['realm:admin'] },
   // ...
@@ -148,72 +156,62 @@ Sections are hidden when all their items are filtered out. A user
 with only `cocoar-auth:user:read` sees just the Authorization section
 with "Users" — no OAuth, no System.
 
-## Per-realm domain extension
+## Control-Plane separation
 
-When a realm has `CanManageTenants = true` (in cocoar.auth, only the
-system realm), its users additionally get access to the `realm`
-resource. Users of every other realm can't see the realm list at all
-— `cocoar-auth:realm:read` is not available in their
-`permission-role`s.
+Because the `control-plane` app slug is **only** seeded into the
+Control-Plane realm's tenant DB, a tenant realm physically cannot grant
+`control-plane:realm:*` permissions — the resource registry in that
+tenant DB doesn't list the `control-plane` app, so the backend
+permission validator rejects the grant.
 
-The frontend handles that via visibility; the backend is stricter:
-`RealmsEndpoints` checks both `cocoar-auth:realm:read` /
-`cocoar-auth:realm:write` **and** that the current realm has
-`CanManageTenants = true`. Otherwise 404 (not 403, because the
-existence of realm CRUD must not be leaked).
+That's the third of three layers protecting the cross-realm admin
+surface. The other two:
+
+1. **`ControlPlaneGateMiddleware`** — runs before authentication. Returns
+   404 on `/api/admin/realms/*` from non-CP hosts. The route is
+   discoverable only on the Control-Plane realm.
+2. **`RequireControlPlaneFilter`** — per-endpoint filter on the realm
+   admin route group. Same 404 behaviour, even if the routing layer were
+   misconfigured.
+
+See [Concepts: Control Plane / Data Plane](../concepts/control-plane) for
+the full defence-in-depth diagram.
 
 ## Default roles
 
-First-time setup creates three default roles (once per new realm —
-see `AuthorizationSeeder` in the setup code):
+The first admin in every realm is created via one of the [bootstrap paths](../getting-started/first-time-setup). Atomic with the user creation, three default `PermissionRole`s are seeded (idempotent — re-bootstrapping doesn't duplicate them):
 
 ### System Admin
 ```
 permissions: ["realm:admin"]
 ```
-Granted to the first user of the realm (System-Admin group with
-`BoundTo: ["*"]`). Realm-wide bypass — sees and can do everything in
-every app.
+The new admin is added to the **Administratoren** group with
+`BoundTo: ["*"]` (active in every app), and that group carries the System
+Admin role. Realm-wide bypass — sees and can do everything in every app.
 
 ### User Manager
 ```
 permissions: [
   "cocoar-auth:user:read", "cocoar-auth:user:write",
+  "cocoar-auth:session:read", "cocoar-auth:session:write",
+  "cocoar-auth:authorization-group:read",
   "cocoar-auth:permission-role:read",
-  "cocoar-auth:authorization-group:read", "cocoar-auth:authorization-group:write"
+  "cocoar-auth:auth-log:read"
 ]
 ```
-Can maintain users + groups, view but not change role definitions.
+Maintains users + groups + sessions, reads roles + auth log.
 
 ### Viewer
 ```
 permissions: [
   "cocoar-auth:user:read",
-  "cocoar-auth:permission-role:read",
   "cocoar-auth:authorization-group:read",
-  "cocoar-auth:oauth-client:read", "cocoar-auth:oauth-scope:read"
+  "cocoar-auth:permission-role:read"
 ]
 ```
 Read-only auditor.
 
-Admins can adjust these roles or create more — they aren't
-hard-coded.
-
-## Setup bootstrap
-
-On first-time setup of a realm:
-
-1. The `cocoar-auth` system app is registered (`AppRealmSeeder`)
-2. Three default roles are created (System Admin, User Manager,
-   Viewer) with `AppSlug = "cocoar-auth"`
-3. A default group "System Admin" is created with the System-Admin
-   role and `BoundTo = ["*"]`
-4. The first registered user is placed into the System-Admin group
-5. Result: the first user holds `realm:admin` and sees the full
-   sidebar in every app registered in this realm
-
-Code in `Cocoar.Auth.Authorization/Setup/` (setup hook) and
-`Cocoar.Auth.Authentication.Setup` (user seeding).
+Admins can adjust these roles or create more — they aren't hard-coded.
 
 ## Permission resolution in detail
 
