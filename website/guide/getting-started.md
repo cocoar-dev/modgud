@@ -52,11 +52,22 @@ The Vite dev server runs on `http://localhost:4300` and proxies
 
 ::: tip Multi-realm dev
 The Vite proxy uses `changeOrigin: false` so the original `Host` header
-reaches the backend. That means a tenant realm with `Domains: ["acme.localhost"]`
-is reachable at `http://acme.localhost:4300/` during development, no
-hosts-file edits required (modern OSes resolve `*.localhost` → 127.0.0.1
-automatically). The single-realm fallback in `RealmCache` ensures the
-default `localhost` URL still works on a fresh DB with only the system realm.
+reaches the backend. A tenant realm with `Domains: ["acme.localhost"]`
+is then reachable at `http://acme.localhost:4300/` during development.
+The single-realm fallback in `RealmCache` ensures the default `localhost`
+URL still works on a fresh DB with only the system realm.
+
+Most desktop OSes resolve `*.localhost` → `127.0.0.1` automatically
+(Windows since Vista, macOS, glibc-based Linux with `nss-myhostname`).
+On Linux distros that don't, add the entries you need to `/etc/hosts`:
+
+```
+127.0.0.1   acme.localhost  beta.localhost
+```
+
+This is purely a dev-loop concern. In a real deployment the tenant
+hostnames are real DNS names served by the Docker container behind
+your reverse proxy.
 :::
 
 ## Create the first admin
