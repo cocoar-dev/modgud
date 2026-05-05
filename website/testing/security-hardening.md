@@ -39,7 +39,7 @@ Alle 13 Cluster über alle 3 Wellen abgeschlossen (33 Findings: 31 ✅, 2 ⏸ ac
 | 3 | [C11 Korrektheit](#c11-korrektheit) | 7 | ✅ | `be75284` |
 | 3 | [C12 Logging-Hygiene](#c12-logging-hygiene) | 2 | ✅ | `2be004d` |
 | 3 | [C13 Cert-Rotation](#c13-cert-rotation) | 2 | ✅ | `9b72b52` |
-| Polish | [C14 Control-Plane-Separation](#c14-control-plane-separation) | – | ✅ | (in progress) |
+| Polish | [C14 Control-Plane-Separation](#c14-control-plane-separation) | – | ✅ | `5736377` + follow-ups |
 
 **Findings:** 33 (7 Critical · 13 High · 8 Medium · 5 Low/Info) — siehe
 [Findings-Index](#findings-index) am Ende der Seite.
@@ -579,13 +579,19 @@ einem Tenant-Host sieht ein User die Realm-Verwaltung gar nicht erst.
 
 **Tests:** ControlPlaneGateMiddleware (5 Cases) +
 RequireControlPlaneFilter (4 Cases) gepinnt; 798 Unit-Tests grün
-(zuvor 781; +17 neue + Renames).
+(zuvor 781; +17 neue + Renames). End-to-End: 4 neue Integration-Tests
+in `ControlPlaneSeparationTests` (tenant 404, CP 200, setup 404,
+app-info IsControlPlane) — 139 Integration-Tests gesamt grün.
 
-**Folgeschritte (offen):**
-- TestApps mit Tenant-Host gegen `/api/admin/realms` testen → 404 erwartet
-- Doku in `website/concepts/` mit Architecture-Diagram (Control vs Data Plane)
-- Setup-Wizard endpoint nur mounten, wenn CP — momentan vom Routing-Gate
-  abgedeckt, aber ein expliziter Mount-Skip in `Program.cs` wäre sauberer
+**Follow-ups (alle abgeschlossen):**
+- ✅ **C14a** — Cross-Host Integration-Test (`ControlPlaneSeparationTests`)
+- ✅ **C14b** — `RequireControlPlaneFilter` auf `/api/setup/*` als
+  Defence-in-Depth zusätzlich zum Routing-Gate. Filter nach
+  `Cocoar.Auth.Infrastructure/Realms/` verschoben, damit beide Slices
+  (Api + Authentication) ihn ohne Circular-Reference nutzen können.
+- ✅ **C14c** — Konzept-Doku [`website/concepts/control-plane.md`](../concepts/control-plane)
+  mit Mermaid-Diagram der drei Layer; Realm-Doku auf `IsControlPlane`-Naming
+  gezogen; VitePress-Sidebar erweitert.
 
 ---
 

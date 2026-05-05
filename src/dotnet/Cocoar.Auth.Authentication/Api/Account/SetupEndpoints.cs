@@ -8,6 +8,7 @@ using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Roles;
 using Cocoar.Auth.Authorization.Services;
+using Cocoar.Auth.Infrastructure.Realms;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
 
@@ -24,7 +25,16 @@ public static class SetupEndpoints
             // RATE-01 — 10 attempts per 15 min per IP. Setup is one-shot per
             // deployment; this is a brake on automated probing during the
             // narrow window between IdP boot and operator-completes-setup.
-            .RequireRateLimiting("setup");
+            .RequireRateLimiting("setup")
+            // C14b — Control-Plane gate at the endpoint layer. The first-run
+            // setup wizard is a deployment-global one-shot; exposing it on a
+            // tenant host would let a tenant create the first global admin
+            // before the Control-Plane operator gets there. ControlPlaneGate-
+            // Middleware also covers /api/setup/*, but pinning the filter here
+            // means a future routing-table change can't quietly leak the
+            // surface — defence-in-depth, both layers must drop for an
+            // accidental tenant-host exposure.
+            .AddEndpointFilter<RequireControlPlaneFilter>();
 
         group.MapGet("status", async (IDocumentSession session) =>
         {

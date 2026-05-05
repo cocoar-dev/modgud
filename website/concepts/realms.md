@@ -124,8 +124,11 @@ On first start:
 
 ### 2. Create additional realms
 
-Only users with `cocoar-auth:realm:write` in the system realm (or in another realm
-with `CanManageTenants = true`) can do this.
+Only users with `control-plane:realm:write` **on the Control-Plane realm**
+can do this. See [Control Plane](./control-plane.md) for the cross-realm
+admin model — in short: realm CRUD lives on a dedicated app slug
+(`control-plane`) that is only seeded into the Control-Plane realm's DB,
+and the routing layer 404s the endpoint on tenant hosts.
 
 ```http
 POST /api/admin/realms
@@ -133,7 +136,7 @@ POST /api/admin/realms
   "slug": "acme",
   "displayName": "Acme Corp",
   "domains": ["acme.example.com"],
-  "canManageTenants": false
+  "isControlPlane": false
 }
 ```
 

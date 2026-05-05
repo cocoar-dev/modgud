@@ -69,6 +69,7 @@ export default withMermaid(
               { text: 'Glossary', link: '/concepts/glossary' },
               { text: 'Apps & resource_access', link: '/concepts/apps-and-resource-access' },
               { text: 'Realms (Multi-Tenant)', link: '/concepts/realms' },
+              { text: 'Control Plane / Data Plane', link: '/concepts/control-plane' },
               { text: 'Authentication', link: '/concepts/authentication' },
               { text: 'Authorization (RBAC)', link: '/concepts/groups-and-authorization' },
               { text: 'ABAC and the IAM boundary', link: '/concepts/abac' },

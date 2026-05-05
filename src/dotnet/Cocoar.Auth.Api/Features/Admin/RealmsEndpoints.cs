@@ -83,39 +83,6 @@ public static class RealmsEndpoints
     };
 }
 
-/// <summary>
-/// Endpoint filter that returns 404 when the request's resolved realm is not
-/// the Control Plane (<see cref="Realm.IsControlPlane"/>). 404 (not 403) is
-/// deliberate: tenant realms shouldn't even know that a global admin
-/// surface exists at this hostname.
-///
-/// <para>This is the in-app belt-and-suspenders complement to
-/// <c>ControlPlaneGateMiddleware</c>, which short-circuits earlier in the
-/// pipeline based on the configured Control-Plane hostname list. Either
-/// alone would be sufficient; both together mean a misconfigured hostname
-/// list still can't expose realm-management to a tenant realm.</para>
-/// </summary>
-public sealed class RequireControlPlaneFilter : IEndpointFilter
-{
-    public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
-    {
-        var info = context.HttpContext.Items[TenantConstants.HttpContextTenantInfoKey] as TenantInfo;
-        if (info is null)
-        {
-            // RealmMiddleware did not populate tenant info — either no realm
-            // resolved for the host, or the request reached us before the
-            // middleware ran. Hide the endpoint with 404, but leave a trail
-            // so a misconfigured realm/middleware does not look like a missing
-            // route to whoever debugs it.
-            Serilog.Log.Debug("RequireControlPlaneFilter: 404 — no tenant info on HttpContext");
-            return ValueTask.FromResult<object?>(Results.NotFound());
-        }
-        if (!info.IsControlPlane)
-        {
-            Serilog.Log.Debug("RequireControlPlaneFilter: 404 — realm '{Slug}' is not the Control Plane", info.Slug);
-            return ValueTask.FromResult<object?>(Results.NotFound());
-        }
-
-        return next(context);
-    }
-}
+// RequireControlPlaneFilter lives in Cocoar.Auth.Infrastructure.Realms so
+// the Authentication slice's SetupEndpoints can apply the same filter
+// without an Api ↔ Auth circular reference (C14b).

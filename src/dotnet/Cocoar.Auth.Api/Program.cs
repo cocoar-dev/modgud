@@ -955,10 +955,10 @@ try
         // C14 boot-validation: every configured Control-Plane hostname must
         // resolve to a realm flagged IsControlPlane=true. A typo in
         // ControlPlane__Hostnames in Production would otherwise quietly
-        // expose realm CRUD on a tenant host. Dev skips the check and
-        // implicitly trusts the system realm's own Domains list, so a
-        // fresh checkout boots without ENV setup.
-        if (!app.Environment.IsDevelopment())
+        // expose realm CRUD on a tenant host. Dev/Testing skip the check
+        // and implicitly trust the system realm's own Domains list, so a
+        // fresh checkout / integration-test run boots without ENV setup.
+        if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
         {
             var cpSettings = realmScope.ServiceProvider.GetRequiredService<ControlPlaneSettings>();
             if (cpSettings.Hostnames.Length == 0)
