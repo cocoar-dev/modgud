@@ -62,6 +62,11 @@ public class PkceRequirementPinTests
         public string Issuer { get; set; } = "https://test.example.com";
         public bool DevelopmentMode { get; set; } = true;
         public string? SigningCertificatePath { get; set; }
+        public string? SigningCertificatePassword { get; set; }
+        public string[]? PreviousSigningCertificatePaths { get; set; }
+        public string? PreviousSigningCertificatePassword { get; set; }
+        public string? EncryptionCertificatePath { get; set; }
+        public string? EncryptionCertificatePassword { get; set; }
         public int AccessTokenLifetimeMinutes { get; set; } = 60;
         public int RefreshTokenLifetimeDays { get; set; } = 14;
         public int AuthorizationCodeLifetimeMinutes { get; set; } = 5;

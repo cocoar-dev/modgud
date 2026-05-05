@@ -14,7 +14,43 @@ namespace Cocoar.Auth.Infrastructure.OpenIddict;
 /// </summary>
 public interface IOpenIddictSettings
 {
+    /// <summary>
+    /// Path to the active production signing certificate (PFX). The first key
+    /// added to the OpenIddict server is the active signing key — every newly
+    /// issued JWT is signed with it.
+    /// </summary>
     string? SigningCertificatePath { get; }
+
+    /// <summary>
+    /// PFX-password for <see cref="SigningCertificatePath"/>. Empty/null when
+    /// the file is unencrypted PEM/PKCS#12. Stored separately so an operator
+    /// can rotate the cert without touching the password (it stays in
+    /// process-environment / secret-store).
+    /// </summary>
+    string? SigningCertificatePassword { get; }
+
+    /// <summary>
+    /// Optional list of additional signing certificates for rotation overlap
+    /// (CERT-01). Loaded as validation-only keys after the active one — a
+    /// resource server validating an in-flight token issued just before the
+    /// rotation still finds its kid in the JWKS document. Typical rotation
+    /// procedure: deploy with both old + new paths set, wait out the longest
+    /// access-token lifetime + JWKS cache TTL, then redeploy with only the
+    /// new path.
+    /// </summary>
+    string[]? PreviousSigningCertificatePaths { get; }
+    string? PreviousSigningCertificatePassword { get; }
+
+    /// <summary>
+    /// Optional path to a separate encryption certificate. When null,
+    /// <see cref="SigningCertificatePath"/> is reused for encryption
+    /// (legacy behaviour) — operators are expected to provide a separate
+    /// key for production-grade deployments so a key compromise on one
+    /// axis doesn't carry through to the other (OAUTH-05).
+    /// </summary>
+    string? EncryptionCertificatePath { get; }
+    string? EncryptionCertificatePassword { get; }
+
     string Issuer { get; }
     int AccessTokenLifetimeMinutes { get; }
     int RefreshTokenLifetimeDays { get; }
@@ -118,10 +154,43 @@ public static class OpenIddictExtensions
                 }
                 else if (!string.IsNullOrEmpty(settings.SigningCertificatePath))
                 {
-                    var certificate = System.Security.Cryptography.X509Certificates.X509CertificateLoader
-                        .LoadCertificateFromFile(settings.SigningCertificatePath);
-                    options.AddEncryptionCertificate(certificate)
-                        .AddSigningCertificate(certificate);
+                    // CERT-01 / OAUTH-05 — production cert loading with
+                    // password support, rotation-overlap, and separate
+                    // signing/encryption certs.
+                    //
+                    // The first AddSigningCertificate call sets the active
+                    // signing key (used for new tokens); subsequent
+                    // AddSigningCertificate calls add validation-only keys
+                    // for in-flight tokens issued by previous certs in the
+                    // rotation overlap window.
+                    var signingCert = LoadCertificate(
+                        settings.SigningCertificatePath,
+                        settings.SigningCertificatePassword);
+                    options.AddSigningCertificate(signingCert);
+
+                    if (settings.PreviousSigningCertificatePaths is { Length: > 0 } previous)
+                    {
+                        foreach (var previousPath in previous)
+                        {
+                            if (string.IsNullOrWhiteSpace(previousPath)) continue;
+                            var previousCert = LoadCertificate(
+                                previousPath,
+                                settings.PreviousSigningCertificatePassword);
+                            options.AddSigningCertificate(previousCert);
+                        }
+                    }
+
+                    // Separate encryption cert when configured; falls back
+                    // to the signing cert (legacy behaviour) otherwise. A
+                    // production-grade deployment SHOULD provide a distinct
+                    // path so a key compromise on one axis doesn't compromise
+                    // the other.
+                    var encryptionCert = !string.IsNullOrEmpty(settings.EncryptionCertificatePath)
+                        ? LoadCertificate(
+                            settings.EncryptionCertificatePath,
+                            settings.EncryptionCertificatePassword)
+                        : signingCert;
+                    options.AddEncryptionCertificate(encryptionCert);
                 }
 
                 var aspNetCore = options.UseAspNetCore()
@@ -152,5 +221,32 @@ public static class OpenIddictExtensions
             });
 
         return services;
+    }
+
+    /// <summary>
+    /// Loads an X509 certificate from disk. Uses
+    /// <see cref="System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12FromFile(string,System.ReadOnlySpan{char},System.Security.Cryptography.X509Certificates.X509KeyStorageFlags,System.Security.Cryptography.X509Certificates.Pkcs12LoaderLimits?)"/>
+    /// when a password is supplied (the standard production shape — PFX with
+    /// private key under password protection); otherwise falls back to
+    /// <see cref="System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadCertificateFromFile(string)"/>
+    /// for unencrypted PEM/DER files.
+    ///
+    /// <para>
+    /// Operators are expected to deliver passwords via env-var
+    /// (<c>OpenIddict__SigningCertificatePassword</c>) or a managed-secret
+    /// store, NOT via <c>configuration.local.json</c> in production.
+    /// </para>
+    /// </summary>
+    private static System.Security.Cryptography.X509Certificates.X509Certificate2 LoadCertificate(
+        string path, string? password)
+    {
+        if (!string.IsNullOrEmpty(password))
+        {
+            return System.Security.Cryptography.X509Certificates.X509CertificateLoader
+                .LoadPkcs12FromFile(path, password);
+        }
+
+        return System.Security.Cryptography.X509Certificates.X509CertificateLoader
+            .LoadCertificateFromFile(path);
     }
 }

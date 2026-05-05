@@ -10,10 +10,13 @@ Living tracker für die Production-Hardening-Befunde aus dem 4-Track-Audit
 > **Status-Legende:**
 > ☐ Open · 🔄 In Progress · ✅ Done · ⏸ Deferred (mit Begründung)
 
-::: warning Public-Internet-Sperre
-Solange auch nur **eine** Welle-1-Position offen ist, ist Cocoar.Auth
-**nicht** für öffentliche Internet-Erreichbarkeit freigegeben. Konsens
-aller vier Audit-Tracks: "Not fit for public exposure as-is."
+::: tip Public-Internet-Freigabe
+Alle 13 Cluster über alle 3 Wellen abgeschlossen (33 Findings: 31 ✅, 2 ⏸ accepted mit Begründung). Cocoar.Auth ist **freigegeben für öffentliche Internet-Erreichbarkeit** unter folgenden Operations-Voraussetzungen:
+
+- C2-Boot-Validierungen passieren in Production (`OpenIddict__SigningCertificatePath`, `OpenIddict__Issuer` als HTTPS-Public-URL, `ProxyAllowedNetworks` mit Reverse-Proxy-CIDR)
+- Reverse-Proxy mit TLS-Termination + DDoS-Schutz davor
+- Encryption-Cert separat von Signing-Cert (OAUTH-05 Recommendation)
+- Stage 3 (Encryption-at-Rest für Realm-Signing-Keys) ist optional als Folgeschritt aufgeführt
 :::
 
 ## Übersicht
@@ -32,7 +35,7 @@ aller vier Audit-Tracks: "Not fit for public exposure as-is."
 | 2 | [C10 Rate-Limiting](#c10-rate-limiting) | 2 | ✅ | `8721fc6` |
 | 3 | [C11 Korrektheit](#c11-korrektheit) | 7 | ✅ | `be75284` |
 | 3 | [C12 Logging-Hygiene](#c12-logging-hygiene) | 2 | ✅ | `2be004d` |
-| 3 | [C13 Cert-Rotation](#c13-cert-rotation) | 2 | ☐ | — |
+| 3 | [C13 Cert-Rotation](#c13-cert-rotation) | 2 | ✅ | _pending_ |
 
 **Findings:** 33 (7 Critical · 13 High · 8 Medium · 5 Low/Info) — siehe
 [Findings-Index](#findings-index) am Ende der Seite.
@@ -481,18 +484,35 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 ### C13 · Cert-Rotation
 
-**Status:** ☐ Open · **Aufwand:** ~1.5 h · **Commit:** —
+**Status:** ✅ Done · **Aufwand:** ~45 min · **Commit:** _pending_
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| CERT-01 | 🟡 Medium | `OpenIddictExtensions.cs:110-116` | Nur ein PFX-Pfad, keine Rotation-Window-Unterstützung, kein Passwort-Loader | ☐ |
-| OAUTH-05 | 🟠 High | `OpenIddictExtensions.cs:110-116` | Selbes Cert für Signing AND Encryption; `LoadCertificateFromFile` ohne Passwort | ☐ |
+| CERT-01 | 🟡 Medium | `OpenIddictSettings.cs` + `OpenIddictExtensions.cs LoadCertificate` | `PreviousSigningCertificatePaths[]` für Rotation-Overlap; `LoadPkcs12FromFile(path, password)` Support | ✅ |
+| OAUTH-05 | 🟠 High | `OpenIddictExtensions.cs` | Separate `EncryptionCertificatePath` (Fallback auf Signing-Cert wenn nicht konfiguriert); Password-Loader für PFX | ✅ |
 
-**Fix-Maßnahmen:**
-- `SigningCertificatePaths: string[]` — erste = aktiv, weitere = validation-only (Rotation-Window)
-- `EncryptionCertificatePath` separat
-- `LoadPkcs12FromFile(path, password)` mit Password-Support
-- 24h-Overlap-Rotation-Procedure dokumentieren
+**Implementierte Fixes:**
+
+`IOpenIddictSettings` + `OpenIddictSettings`:
+- `SigningCertificatePassword` — PFX-Passwort für aktive Signing-Cert
+- `PreviousSigningCertificatePaths[]` + `PreviousSigningCertificatePassword` — Rotation-Overlap: alte Certs werden als validation-only Keys nach der aktiven gehängt
+- `EncryptionCertificatePath` + `EncryptionCertificatePassword` — separate Encryption-Cert (Fallback: Signing-Cert)
+
+`OpenIddictExtensions.LoadCertificate`:
+- `LoadPkcs12FromFile(path, password)` wenn Passwort gegeben (PFX)
+- `LoadCertificateFromFile(path)` als Fallback für unencrypted PEM/DER
+
+`AddOpenIddictWithMarten`:
+- Active Signing-Cert wird als erstes hinzugefügt (= active key for new tokens)
+- `PreviousSigningCertificatePaths[]` als zusätzliche `AddSigningCertificate`-Calls (validation-only)
+- Encryption-Cert separat (oder Fallback)
+
+**Rotation-Procedure (dokumentiert im Code):**
+1. Neuen Signing-Cert deployen mit `SigningCertificatePath=new.pfx` + `PreviousSigningCertificatePaths=[old.pfx]`
+2. Warten: längste Access-Token-Lifetime (60min) + JWKS-Cache-TTL (typisch 1h) → 24h Sicherheits-Overlap
+3. Re-deploy nur mit `SigningCertificatePath=new.pfx` (alte raus)
+
+**Tests:** 781 Unit · 135 Integration · 14 Playwright — alle grün.
 
 ---
 
@@ -502,7 +522,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 
 | ID | Severity | Cluster | Title |
 |---|---|---|---|
-| CERT-01 | 🟡 | C13 | Cert: kein Multi-Key, keine Rotation-Window |
+| CERT-01 | 🟡 | C13 | Cert: kein Multi-Key, keine Rotation-Window ✅ |
 | CONFIG-01 | 🟡 | C2 | Issuer Class-Default ist Localhost ✅ |
 | COOKIE-01 | 🔴 | C6 | App-Cookie `SameSite=Strict` bricht OIDC ✅ (auf Lax) |
 | COOKIE-02 | 🟡 | C11 | Session-Cookie `SameSite=Strict` (deferred) |
@@ -518,7 +538,7 @@ Alphabetisch nach ID — Cross-Reference für Commit-Messages und Issue-Tracking
 | OAUTH-02 | 🔴 | C4 | Consent-Scope-Expansion ✅ |
 | OAUTH-03 | 🔴 | C4 | Consent ohne CSRF ✅ (subject-bound ticket) |
 | OAUTH-04 | 🟠 | C5 | Logout ignoriert id_token_hint ✅ |
-| OAUTH-05 | 🟠 | C13 | Selbes Cert Signing+Encryption, kein Passwort |
+| OAUTH-05 | 🟠 | C13 | Selbes Cert Signing+Encryption, kein Passwort ✅ |
 | OAUTH-06 | 🟠 | C1 | Demo-Seed mit hartcodierten Secrets ✅ (gemildert) |
 | OAUTH-07 | 🟠 | C7 | Refresh-Token ohne Security-Stamp-Check ✅ |
 | OAUTH-08 | 🟠 | C4 | `/consent?returnUrl=` reflektiert raw QueryString ✅ |

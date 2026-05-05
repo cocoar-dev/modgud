@@ -12,6 +12,26 @@ public class OpenIddictSettings : IOpenIddictSettings
     /// <summary>Path to a PFX file holding the production signing certificate. Ignored when <see cref="DevelopmentMode"/> is true.</summary>
     public string? SigningCertificatePath { get; set; }
 
+    /// <summary>Optional PFX password for <see cref="SigningCertificatePath"/>.</summary>
+    public string? SigningCertificatePassword { get; set; }
+
+    /// <summary>
+    /// Comma-separated list of paths to previously-active signing
+    /// certificates. Loaded as validation-only keys for the rotation-overlap
+    /// window (CERT-01). Cleared once the longest in-flight access token
+    /// has expired and JWKS caches have refreshed.
+    /// </summary>
+    public string[]? PreviousSigningCertificatePaths { get; set; }
+    public string? PreviousSigningCertificatePassword { get; set; }
+
+    /// <summary>
+    /// Optional path to a separate PFX for token encryption. Falls back to
+    /// the signing cert when null — separate keys are recommended for
+    /// production (OAUTH-05).
+    /// </summary>
+    public string? EncryptionCertificatePath { get; set; }
+    public string? EncryptionCertificatePassword { get; set; }
+
     /// <summary>
     /// Issuer URL advertised in /.well-known/openid-configuration. Per-realm
     /// overrides are applied at request time by <c>RealmIssuerHandler</c>.
