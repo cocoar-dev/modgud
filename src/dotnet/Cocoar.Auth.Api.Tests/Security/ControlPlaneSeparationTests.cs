@@ -158,6 +158,12 @@ public class ControlPlaneSeparationTests : IntegrationTestBase
                 DisplayName = "Fresh CP",
                 Domains = ["fresh.localhost"],
                 IsControlPlane = true,
+                // C15c — InitialAdmin pflicht. Test-Stub.
+                InitialAdmin = new InitialAdminDto
+                {
+                    UserName = "fresh-admin",
+                    Email = "fresh@example.com",
+                },
             },
             TestContext.Current.CancellationToken);
 

@@ -84,6 +84,22 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 $"The slug '{dto.Slug}' is reserved and cannot be used.");
         }
 
+        // C15c — InitialAdmin is mandatory: a realm without an admin path
+        // is unusable, and the only way to onboard the first admin
+        // post-creation is via Recovery-CLI (filesystem trust). Forcing
+        // an Email here prevents accidentally provisioning a tenant the
+        // recipient can't ever activate.
+        if (string.IsNullOrWhiteSpace(dto.InitialAdmin?.UserName))
+        {
+            return Error.Validation("Realm.InitialAdminUserNameRequired",
+                "InitialAdmin.UserName is required.");
+        }
+        if (string.IsNullOrWhiteSpace(dto.InitialAdmin.Email) || !dto.InitialAdmin.Email.Contains('@'))
+        {
+            return Error.Validation("Realm.InitialAdminEmailRequired",
+                "InitialAdmin.Email is required and must be a valid address.");
+        }
+
         await using var session = _globalStore.LightweightSession();
         var existing = await session.Query<Realm>()
             .FirstOrDefaultAsync(r => r.Slug == dto.Slug, ct);

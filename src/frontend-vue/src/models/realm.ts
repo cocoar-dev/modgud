@@ -13,12 +13,32 @@ export interface RealmDto {
   CreatedAt: string
 }
 
+export interface InitialAdminDto {
+  UserName: string
+  Email: string
+  Firstname?: string | null
+  Lastname?: string | null
+}
+
+export interface InitialAdminInviteDto {
+  UserName: string
+  Email: string
+  ExpiresAt: string
+  MagicLinkUrl: string
+}
+
 export interface CreateRealmDto {
   Slug: string
   DisplayName: string
   Description?: string | null
   Domains?: string[] | null
   IsControlPlane?: boolean
+  InitialAdmin: InitialAdminDto
+}
+
+export interface CreatedRealmDto {
+  Realm: RealmDto
+  InitialAdminInvite: InitialAdminInviteDto
 }
 
 export interface UpdateRealmDto {

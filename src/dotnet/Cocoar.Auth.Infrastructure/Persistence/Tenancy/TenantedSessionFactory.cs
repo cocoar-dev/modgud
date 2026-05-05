@@ -41,15 +41,26 @@ public sealed class TenantedSessionFactory : ISessionFactory, ITenantSessionFact
 
     private string ResolveTenantId()
     {
-        // Two-layer resolution: HttpContext first (fastest path for the common
-        // request-scoped case), then AsyncLocal TenantContext (covers inner DI
-        // scopes and background paths that explicitly entered a tenant scope),
-        // finally the system fallback. The AsyncLocal layer is what fixes
-        // WOLV-01: a Wolverine handler that opened its own session via the
-        // OutboxedSessionFactory used to land here without any tenant signal
-        // and crash with "Default tenant does not supported".
-        return _httpContextAccessor.HttpContext?.Items[TenantConstants.HttpContextTenantIdKey] as string
-               ?? TenantContext.CurrentOrNull
+        // Two-layer resolution: AsyncLocal TenantContext first, then
+        // HttpContext, then system fallback.
+        //
+        // Why AsyncLocal-first: RealmMiddleware sets BOTH the AsyncLocal
+        // and HttpContext.Items["TenantId"] to the same value at the
+        // request boundary, so the common request path is unaffected. The
+        // ordering matters for the cross-tenant-from-CP case (C15c
+        // realm provisioning + resend invite): the endpoint runs on the
+        // CP host (HttpContext = "system") but needs to write into the
+        // newly-provisioned tenant's DB. With HttpContext-first, an
+        // explicit `TenantContext.Enter(tenantSlug)` was silently
+        // ignored as long as HttpContext still had the system value —
+        // the invite document landed in the wrong DB and the magic-link
+        // resolver couldn't find it.
+        //
+        // For background paths (Wolverine handlers, hosted services,
+        // tests without a request scope) the AsyncLocal is the ONLY
+        // signal anyway, so this ordering is what fixes WOLV-01 there too.
+        return TenantContext.CurrentOrNull
+               ?? _httpContextAccessor.HttpContext?.Items[TenantConstants.HttpContextTenantIdKey] as string
                ?? TenantConstants.SystemTenantId;
     }
 }

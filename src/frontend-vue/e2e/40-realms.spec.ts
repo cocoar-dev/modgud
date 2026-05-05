@@ -37,7 +37,7 @@ test.describe('§14 Realms', () => {
     expect(sys!.IsActive).toBe(true)
   })
 
-  test('POST /api/admin/realms provisions a new realm', async ({ page }) => {
+  test('POST /api/admin/realms provisions a new realm with bootstrap-invite', async ({ page }) => {
     const slug = `acme-${SUFFIX}`
     const res = await page.request.post('/api/admin/realms', {
       data: {
@@ -46,17 +46,37 @@ test.describe('§14 Realms', () => {
         Description: 'phase-b realm provisioning test',
         Domains: [`${slug}.localhost`],
         IsControlPlane: false,
+        InitialAdmin: {
+          UserName: 'admin',
+          Email: `admin-${SUFFIX}@example.test`,
+        },
       },
     })
     if (!res.ok()) throw new Error(`create realm: ${res.status()} ${await res.text()}`)
     const body = await res.json()
-    expect(body.Slug).toBe(slug)
-    expect(body.IsActive).toBe(true)
-    // NeedsSetup is calculated against the realm's own DB (does it have an
-    // admin user yet?). The seed path provisions OAuth scopes + Internal
-    // login provider but no admin, so the actual value depends on how the
-    // RealmProvisioningService computes it; don't pin a specific bool here.
-    expect(typeof body.NeedsSetup).toBe('boolean')
+    // Response shape changed in C15c: {Realm: …, InitialAdminInvite: …}
+    expect(body.Realm.Slug).toBe(slug)
+    expect(body.Realm.IsActive).toBe(true)
+    expect(typeof body.Realm.NeedsSetup).toBe('boolean')
+
+    // Bootstrap-invite is included so the CP-admin can copy/share the
+    // magic-link in SMTP-less environments.
+    expect(body.InitialAdminInvite.UserName).toBe('admin')
+    expect(body.InitialAdminInvite.Email).toBe(`admin-${SUFFIX}@example.test`)
+    expect(body.InitialAdminInvite.MagicLinkUrl).toContain('/bootstrap?token=')
+  })
+
+  test('POST /api/admin/realms requires InitialAdmin email', async ({ page }) => {
+    const res = await page.request.post('/api/admin/realms', {
+      data: {
+        Slug: `noadmin-${SUFFIX}`,
+        DisplayName: 'No admin',
+        Domains: [`noadmin-${SUFFIX}.localhost`],
+        IsControlPlane: false,
+        InitialAdmin: { UserName: 'a', Email: '' },
+      },
+    })
+    expect(res.status()).toBe(400)
   })
 
   test('reserved + invalid realm slugs are rejected', async ({ page }) => {

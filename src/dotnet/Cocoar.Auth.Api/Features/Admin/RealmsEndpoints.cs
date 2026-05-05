@@ -1,9 +1,14 @@
+using System.Security.Claims;
 using Cocoar.Auth.Application.DTOs.Realms;
 using Cocoar.Auth.Authentication.ExtensionMethods;
+using Cocoar.Auth.Authentication.Domain;
+using Cocoar.Auth.Authentication.Setup;
 using Cocoar.Auth.Authorization.AspNetCore;
 using Cocoar.Auth.Domain.Realms;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Cocoar.Auth.Infrastructure.Realms;
+using Marten;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Cocoar.Auth.Api.Features.Admin;
 
@@ -42,12 +47,121 @@ public static class RealmsEndpoints
         .WithName("Realms_Get")
         .RequiresPermission("control-plane:realm:read");
 
-        group.MapPost("", async (CreateRealmDto dto, IRealmProvisioningService svc, CancellationToken ct) =>
+        group.MapPost("", async (
+            CreateRealmDto dto,
+            IRealmProvisioningService svc,
+            IServiceProvider sp,
+            HttpContext http,
+            CancellationToken ct) =>
         {
             var result = await svc.CreateRealmAsync(dto, ct);
-            return result.ToResult(realm => Results.Created($"{path}/admin/realms/{realm.Slug}", MapToDto(realm)));
+            if (result.IsError) return result.ToResult();
+
+            var realm = result.Value;
+            var issuedBy = http.User.Identity?.IsAuthenticated == true
+                ? (http.User.FindFirstValue(ClaimTypes.Name) ?? http.User.Identity.Name)
+                : null;
+
+            // Issue the bootstrap-invite atomically with the realm. We hop
+            // into the new tenant's context so the IPendingAdminInviteService
+            // resolves a session against the just-provisioned tenant DB.
+            // Living in the API layer (not Infrastructure) avoids the
+            // Authentication ↔ Infrastructure circular reference.
+            IssuedInvite issued;
+            using (var inviteScope = sp.CreateScope())
+            using (TenantContext.Enter(realm.Slug))
+            {
+                var inviteService = inviteScope.ServiceProvider.GetRequiredService<IPendingAdminInviteService>();
+                issued = await inviteService.IssueAsync(
+                    dto.InitialAdmin.UserName,
+                    dto.InitialAdmin.Email,
+                    dto.InitialAdmin.Firstname,
+                    dto.InitialAdmin.Lastname,
+                    issuedBy,
+                    realm,
+                    ct);
+            }
+
+            return Results.Created(
+                $"{path}/admin/realms/{realm.Slug}",
+                new CreatedRealmDto
+                {
+                    Realm = MapToDto(realm),
+                    InitialAdminInvite = new InitialAdminInviteDto
+                    {
+                        UserName = issued.UserName,
+                        Email = issued.Email,
+                        ExpiresAt = issued.ExpiresAt,
+                        MagicLinkUrl = issued.MagicLinkUrl,
+                    },
+                });
         })
         .WithName("Realms_Create")
+        .RequiresPermission("control-plane:realm:write");
+
+        // C15c — Resend bootstrap-invite. Re-uses the recipient identity
+        // from the most recent prior invite in the tenant DB (typically
+        // the one the realm was created with). The previous invite is
+        // revoked inside IssueAsync; the new token has a fresh 7-day
+        // expiry. Returns the magic-link URL just like Create does, for
+        // SMTP-less dev visibility.
+        group.MapPost("{slug}/resend-bootstrap-invite", async (
+            string slug,
+            IRealmProvisioningService svc,
+            IServiceProvider sp,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var realm = await svc.GetRealmBySlugAsync(slug, ct);
+            if (realm is null) return Results.NotFound();
+            if (!realm.IsActive)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Realm.Inactive",
+                    detail: $"Realm '{slug}' is inactive.");
+            }
+
+            var issuedBy = http.User.Identity?.IsAuthenticated == true
+                ? (http.User.FindFirstValue(ClaimTypes.Name) ?? http.User.Identity.Name)
+                : null;
+
+            IssuedInvite issued;
+            using (var inviteScope = sp.CreateScope())
+            using (TenantContext.Enter(slug))
+            {
+                var session = inviteScope.ServiceProvider.GetRequiredService<IDocumentSession>();
+                var lastInvite = await session.Query<PendingAdminInvite>()
+                    .OrderByDescending(i => i.CreatedAt)
+                    .FirstOrDefaultAsync(ct);
+                if (lastInvite is null)
+                {
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status404NotFound,
+                        title: "Realm.NoPriorInvite",
+                        detail: "No prior bootstrap-invite for this realm — resend re-uses the original recipient identity.");
+                }
+
+                var inviteService = inviteScope.ServiceProvider.GetRequiredService<IPendingAdminInviteService>();
+                issued = await inviteService.IssueAsync(
+                    lastInvite.UserName,
+                    lastInvite.Email,
+                    lastInvite.Firstname,
+                    lastInvite.Lastname,
+                    issuedBy,
+                    realm,
+                    ct);
+            }
+
+            return Results.Ok(new InitialAdminInviteDto
+            {
+                UserName = issued.UserName,
+                Email = issued.Email,
+                ExpiresAt = issued.ExpiresAt,
+                MagicLinkUrl = issued.MagicLinkUrl,
+            });
+        })
+        .WithName("Realms_ResendBootstrapInvite")
         .RequiresPermission("control-plane:realm:write");
 
         group.MapPatch("{slug}", async (string slug, UpdateRealmDto dto, IRealmProvisioningService svc, CancellationToken ct) =>

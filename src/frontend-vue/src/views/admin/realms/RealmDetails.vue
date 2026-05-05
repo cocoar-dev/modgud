@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarFormField, CoarCheckbox, CoarNote } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarFormField, CoarCheckbox, CoarNote, CoarButton } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useRealmStore } from '@/stores/realm.store'
-import type { RealmDto } from '@/models/realm'
+import type { RealmDto, InitialAdminInviteDto } from '@/models/realm'
 
 const { t } = useI18n()
 
@@ -27,6 +27,10 @@ interface FormState {
   Domains: string  // newline
   IsControlPlane: boolean
   IsActive: boolean
+  InitialAdminUserName: string
+  InitialAdminEmail: string
+  InitialAdminFirstname: string
+  InitialAdminLastname: string
 }
 
 function emptyForm(): FormState {
@@ -37,14 +41,25 @@ function emptyForm(): FormState {
     Domains: '',
     IsControlPlane: false,
     IsActive: true,
+    InitialAdminUserName: '',
+    InitialAdminEmail: '',
+    InitialAdminFirstname: '',
+    InitialAdminLastname: '',
   }
 }
 
 const form = ref<FormState>(emptyForm())
 const dto = ref<RealmDto | null>(null)
 
+// One-shot invite reveal after successful creation / resend. Cleared
+// when modal closes; the user has to copy the link before then if there
+// is no SMTP delivery (dev / air-gapped).
+const issuedInvite = ref<InitialAdminInviteDto | null>(null)
+const linkCopied = ref(false)
+
 function fromDto(dto: RealmDto): FormState {
   return {
+    ...emptyForm(),
     Slug: dto.Slug,
     DisplayName: dto.DisplayName,
     Description: dto.Description ?? '',
@@ -65,15 +80,30 @@ const modalTitle = computed(() =>
 )
 const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Slug)
 
-const footerButton = computed(() => ({
-  visible: true,
-  text: isCreate.value ? t('common.create', {}, 'Erstellen') : t('common.save', {}, 'Speichern'),
-  disabled: loading.value
-    || !form.value.DisplayName.trim()
-    || (isCreate.value && !form.value.Slug.trim()),
-  loading: loading.value,
-  onClick: save,
-}))
+const canSubmit = computed(() => {
+  if (loading.value) return false
+  if (!form.value.DisplayName.trim()) return false
+  if (isCreate.value) {
+    if (!form.value.Slug.trim()) return false
+    if (!form.value.InitialAdminUserName.trim()) return false
+    if (!form.value.InitialAdminEmail.trim() || !form.value.InitialAdminEmail.includes('@')) return false
+  }
+  return true
+})
+
+const footerButton = computed(() => issuedInvite.value
+  ? {
+      visible: true,
+      text: t('common.close', {}, 'Schließen'),
+      onClick: () => props.close(),
+    }
+  : {
+      visible: true,
+      text: isCreate.value ? t('common.create', {}, 'Erstellen') : t('common.save', {}, 'Speichern'),
+      disabled: !canSubmit.value,
+      loading: loading.value,
+      onClick: save,
+    })
 
 onMounted(async () => {
   if (isCreate.value) return
@@ -96,13 +126,22 @@ async function save() {
   error.value = null
   try {
     if (isCreate.value) {
-      await store.create({
+      const result = await store.create({
         Slug: form.value.Slug.trim(),
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
         Domains: splitLines(form.value.Domains),
         IsControlPlane: form.value.IsControlPlane,
+        InitialAdmin: {
+          UserName: form.value.InitialAdminUserName.trim(),
+          Email: form.value.InitialAdminEmail.trim(),
+          Firstname: form.value.InitialAdminFirstname.trim() || null,
+          Lastname: form.value.InitialAdminLastname.trim() || null,
+        },
       })
+      // Show the bootstrap-invite reveal screen — the magic-link is
+      // only available right after creation; closing the modal loses it.
+      issuedInvite.value = result.InitialAdminInvite
     } else {
       await store.update(slug.value, {
         DisplayName: form.value.DisplayName.trim(),
@@ -111,12 +150,36 @@ async function save() {
         IsControlPlane: form.value.IsControlPlane,
         IsActive: form.value.IsActive,
       })
+      props.close()
     }
-    props.close()
   } catch (e: any) {
-    error.value = e?.body?.Message ?? e?.message ?? String(e)
+    error.value = e?.body?.detail ?? e?.body?.Message ?? e?.message ?? String(e)
   } finally {
     loading.value = false
+  }
+}
+
+async function resendInvite() {
+  loading.value = true
+  error.value = null
+  try {
+    const reissued = await store.resendBootstrapInvite(slug.value)
+    issuedInvite.value = reissued
+  } catch (e: any) {
+    error.value = e?.body?.detail ?? e?.body?.Message ?? e?.message ?? String(e)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function copyLink() {
+  if (!issuedInvite.value) return
+  try {
+    await navigator.clipboard.writeText(issuedInvite.value.MagicLinkUrl)
+    linkCopied.value = true
+    setTimeout(() => { linkCopied.value = false }, 1800)
+  } catch {
+    /* ignore — fallback is the visible link below */
   }
 }
 </script>
@@ -127,6 +190,34 @@ async function save() {
     <div v-if="loading && !dto && !isCreate" class="flex flex-1 items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
     </div>
+
+    <!-- Invite-reveal screen — replaces the form after successful create/resend. -->
+    <div v-else-if="issuedInvite" class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
+      <CoarNote variant="success">
+        {{ t('admin.realms.inviteIssuedTitle', {}, 'Realm angelegt — Bootstrap-Invite ausgestellt.') }}
+      </CoarNote>
+      <CoarNote variant="warning">
+        {{ t('admin.realms.inviteIssuedHint', {}, 'Diese Magic-Link-URL wird genau einmal angezeigt. Falls die Email nicht zugestellt wird (z. B. lokale Entwicklung ohne SMTP), kopieren Sie sie jetzt — danach geht es nur noch über "Resend".') }}
+      </CoarNote>
+      <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+        <span class="text-gray-500">{{ t('admin.realms.inviteUserName', {}, 'Benutzername') }}</span>
+        <span class="font-medium">{{ issuedInvite.UserName }}</span>
+        <span class="text-gray-500">{{ t('admin.realms.inviteEmail', {}, 'E-Mail') }}</span>
+        <span>{{ issuedInvite.Email }}</span>
+        <span class="text-gray-500">{{ t('admin.realms.inviteExpiresAt', {}, 'Gültig bis') }}</span>
+        <span>{{ new Date(issuedInvite.ExpiresAt).toLocaleString() }}</span>
+      </div>
+      <CoarFormField :label="t('admin.realms.inviteLink', {}, 'Magic-Link')">
+        <div class="flex gap-2">
+          <input :value="issuedInvite.MagicLinkUrl" readonly class="textarea !font-mono !text-xs" />
+          <CoarButton @click="copyLink">
+            {{ linkCopied ? t('common.copied', {}, 'Kopiert!') : t('common.copy', {}, 'Kopieren') }}
+          </CoarButton>
+        </div>
+      </CoarFormField>
+    </div>
+
+    <!-- Edit/Create form -->
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
       <CoarNote v-if="isCreate" variant="info">
         {{ t('admin.realms.createHint', {}, 'Beim Anlegen wird automatisch eine eigene Datenbank provisioniert und mit Default-OAuth-Scopes geseedet.') }}
@@ -156,6 +247,40 @@ async function save() {
           :label="t('admin.realms.isControlPlane', {}, 'Control Plane (cross-realm Admin-Oberfläche)')" />
         <CoarCheckbox v-if="!isCreate" v-model="form.IsActive"
           :label="t('common.active', {}, 'Aktiv')" />
+      </div>
+
+      <!-- InitialAdmin (create-only) -->
+      <div v-if="isCreate" class="mt-2 border-t pt-3 flex flex-col gap-2">
+        <h4 class="text-sm font-medium text-gray-700">{{ t('admin.realms.initialAdminTitle', {}, 'Erster Admin') }}</h4>
+        <p class="text-xs text-gray-500">
+          {{ t('admin.realms.initialAdminHint', {}, 'Wird per Magic-Link zum Aktivieren eingeladen — der Empfänger setzt sein Passwort selbst. Pflichtfelder: Benutzername und E-Mail.') }}
+        </p>
+        <div class="grid grid-cols-2 gap-3">
+          <CoarFormField :label="t('admin.realms.initialAdminUserName', {}, 'Benutzername')">
+            <CoarTextInput v-model="form.InitialAdminUserName" clearable placeholder="admin" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.realms.initialAdminEmail', {}, 'E-Mail')">
+            <CoarTextInput v-model="form.InitialAdminEmail" clearable placeholder="admin@example.com" />
+          </CoarFormField>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <CoarFormField :label="t('admin.realms.initialAdminFirstname', {}, 'Vorname (optional)')">
+            <CoarTextInput v-model="form.InitialAdminFirstname" clearable />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.realms.initialAdminLastname', {}, 'Nachname (optional)')">
+            <CoarTextInput v-model="form.InitialAdminLastname" clearable />
+          </CoarFormField>
+        </div>
+      </div>
+
+      <!-- Resend (edit-only) -->
+      <div v-if="!isCreate" class="mt-2 border-t pt-3 flex items-center gap-3">
+        <span class="text-xs text-gray-500 flex-1">
+          {{ t('admin.realms.resendHint', {}, 'Bootstrap-Invite erneut ausstellen (z. B. wenn Token abgelaufen oder Email nie zugestellt).') }}
+        </span>
+        <CoarButton variant="secondary" :loading="loading" @click="resendInvite">
+          {{ t('admin.realms.resendInvite', {}, 'Invite erneut senden') }}
+        </CoarButton>
       </div>
 
       <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
