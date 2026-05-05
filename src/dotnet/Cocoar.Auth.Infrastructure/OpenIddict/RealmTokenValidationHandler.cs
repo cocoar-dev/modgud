@@ -58,9 +58,28 @@ public sealed class RealmTokenValidationHandler : IOpenIddictServerHandler<Valid
         var slug = TenantContext.Current;
         var keys = await _keyStore.GetVerificationKeysAsync(slug);
 
-        // Replace the trusted-keys list. ValidIssuer / ValidAudience are
-        // left to the stock handlers — those are realm-agnostic checks
-        // (the issuer URI per-realm story lands in C3c).
+        // Replace the trusted-keys list with realm-only keys.
         context.TokenValidationParameters.IssuerSigningKeys = keys;
+
+        // Mirror the per-realm issuer story from C3c on the validation
+        // side. Tokens issued through Cocoar.Auth carry iss = request
+        // BaseUri (e.g. https://realm-a.example.com); the stock validator
+        // would otherwise compare against the global Options.Issuer
+        // (https://auth.example.com) and reject with invalid_token. Set
+        // ValidIssuer to the active request's BaseUri so the validator
+        // accepts the realm-specific iss it just issued.
+        if (context.BaseUri is not null)
+        {
+            var realmIssuer = context.BaseUri.OriginalString.TrimEnd('/');
+            context.TokenValidationParameters.ValidIssuer = realmIssuer;
+            // Also keep the trailing-slash variant in the valid-issuers set
+            // because OpenIddict's signing path emits with the slash and
+            // some downstream handlers compare verbatim.
+            context.TokenValidationParameters.ValidIssuers = new[]
+            {
+                realmIssuer,
+                realmIssuer + "/",
+            };
+        }
     }
 }

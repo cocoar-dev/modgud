@@ -13,7 +13,10 @@ Living tracker für die Production-Hardening-Befunde aus dem 4-Track-Audit
 ::: tip Public-Internet-Freigabe
 Alle 13 Cluster über alle 3 Wellen abgeschlossen (33 Findings: 31 ✅, 2 ⏸ accepted mit Begründung). Cocoar.Auth ist **freigegeben für öffentliche Internet-Erreichbarkeit** unter folgenden Operations-Voraussetzungen:
 
-- C2-Boot-Validierungen passieren in Production (`OpenIddict__SigningCertificatePath`, `OpenIddict__Issuer` als HTTPS-Public-URL, `ProxyAllowedNetworks` mit Reverse-Proxy-CIDR)
+- C2-Boot-Validierungen passieren in Production:
+  - `OpenIddict__SigningCertificatePath` — Pfad zur PFX
+  - `OpenIddict__Issuer` — kanonische **System-Realm-URL** (HTTPS, kein localhost). Andere Realms bekommen ihren `iss`-Claim **automatisch** aus der Request-BaseUri (C3c) — der ENV-Wert ist Boot-Validierungs-Default + Startup-Anchor, nicht "der Issuer für alle Realms".
+  - `ProxyAllowedNetworks` mit Reverse-Proxy-CIDR
 - Reverse-Proxy mit TLS-Termination + DDoS-Schutz davor
 - Encryption-Cert separat von Signing-Cert (OAUTH-05 Recommendation)
 - Stage 3 (Encryption-at-Rest für Realm-Signing-Keys) ist optional als Folgeschritt aufgeführt
@@ -151,10 +154,11 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 - `RealmJwksHandler` (HandleJsonWebKeySetRequestContext): clearet die globalen Keys, serviert nur Realm-Keys
 - Lesson learned: SetOrder muss `+100` nach Default-Handler, nicht `-1` davor — Default schreibt unconditional
 
-**C3c — Per-Realm Issuer in JWTs** (`4be9d5a`)
+**C3c — Per-Realm Issuer in JWTs** (`4be9d5a` + Validation-Fix)
 - `RealmSigningKeyHandler` setzt `SecurityTokenDescriptor.Issuer = context.BaseUri` für Access+Id-Tokens
 - iss-Claim mirrors damit das Discovery-Doc je Realm
 - Resource-Server validieren iss → Cross-Realm-Tokens werden zusätzlich zur Signature schon hier rejected
+- **Follow-up: `RealmTokenValidationHandler` setzt jetzt auch `ValidIssuer = context.BaseUri`** (vorher nur SigningKeys per-Realm, aber Issuer-Check gegen globalen `Options.Issuer`). Single-Realm-Dev-Setup hat das maskiert; in Multi-Realm hätte der IdP-eigene Validator (z.B. /connect/userinfo) per-Realm-Tokens als invalid_token abgewiesen.
 
 **C3d — `realm`-Claim in Tokens** (committen jetzt)
 - `RealmClaimHandler` (GenerateTokenContext): paralleler `realm`-Claim auf Access+Id-Tokens
