@@ -36,8 +36,15 @@ public class DocsMiddleware
         // Auth gate.
         if (context.User?.Identity?.IsAuthenticated != true)
         {
+            // SCS0027: the redirect target is the literal string "/login"
+            // followed by an escaped query parameter. Same-origin by
+            // construction — no leading slash from request data, no host,
+            // no scheme. The downstream consumer (LoginView) validates
+            // the `redirect` param is a same-origin path before navigating.
             var redirectTarget = context.Request.Path + context.Request.QueryString;
+#pragma warning disable SCS0027
             context.Response.Redirect($"/login?redirect={Uri.EscapeDataString(redirectTarget)}");
+#pragma warning restore SCS0027
             return;
         }
 

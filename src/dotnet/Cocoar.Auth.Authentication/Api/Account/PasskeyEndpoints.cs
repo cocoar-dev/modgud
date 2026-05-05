@@ -218,15 +218,20 @@ public static class PasskeyEndpoints
                 UserVerification = UserVerificationRequirement.Preferred,
             });
 
-            // Store challenge in a secure cookie (anonymous users don't have sessions)
+            // Store challenge in a secure cookie (anonymous users don't have sessions).
+            // Secure=Request.IsHttps mirrors CookieSecurePolicy.SameAsRequest:
+            // the cookie carries Secure on HTTPS requests and not on plain HTTP
+            // (dev only). With ForwardedHeaders middleware behind the reverse
+            // proxy, IsHttps reflects the public scheme, so production deploys
+            // always get Secure even when Kestrel itself listens on HTTP behind
+            // the proxy.
             var optionsJson = options.ToJson();
             context.Response.Cookies.Append("Cocoar.Auth.Passkey.Challenge",
                 Convert.ToBase64String(Encoding.UTF8.GetBytes(optionsJson)),
                 new CookieOptions
                 {
                     HttpOnly = true,
-                    Secure = !context.RequestServices.GetRequiredService<IWebHostEnvironment>().IsProduction()
-                        ? false : true,
+                    Secure = context.Request.IsHttps,
                     SameSite = SameSiteMode.Strict,
                     MaxAge = TimeSpan.FromMinutes(5),
                     Path = "/api/account/passkey",

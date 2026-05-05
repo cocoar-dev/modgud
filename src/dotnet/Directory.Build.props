@@ -5,4 +5,17 @@
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
     </PropertyGroup>
+
+    <!-- SecurityCodeScan adds SAST coverage on top of the built-in
+         NetAnalyzers — covers cookie security, ASP.NET-specific
+         patterns, ReDoS variants, and other surfaces NetAnalyzers
+         doesn't track. PrivateAssets=All so it doesn't leak into
+         consumers of these projects as a transitive dep. Severities
+         are tuned via .editorconfig (SCSnnnn rule IDs). -->
+    <ItemGroup>
+        <PackageReference Include="SecurityCodeScan.VS2019">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
 </Project>

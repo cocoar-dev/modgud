@@ -30,11 +30,31 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
-// Redirect target after login (from query param set by router guard)
+// Redirect target after login (from query param set by router guard).
+// Open-redirect guard: the redirect param has to be a same-origin path,
+// i.e. a string starting with a single '/'. Anything starting with '//',
+// 'http:', 'https:', a scheme, or a backslash could send the user to an
+// attacker-controlled host after a successful login. Reject everything
+// outside that shape and fall back to the dashboard.
 const redirectTarget = computed(() => {
   const r = route.query.redirect as string | undefined
-  return r ? decodeURIComponent(r) : '/'
+  if (!r) return '/'
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(r)
+  } catch {
+    return '/'
+  }
+  if (!isSameOriginPath(decoded)) return '/'
+  return decoded
 })
+
+function isSameOriginPath(value: string): boolean {
+  if (!value.startsWith('/')) return false       // must be absolute path
+  if (value.startsWith('//')) return false       // protocol-relative URL
+  if (value.startsWith('/\\')) return false      // backslash-smuggling
+  return true
+}
 
 // Paths outside the SPA (served directly by the backend) — Vue Router can't navigate
 // there, so we use a full-page load after successful login.

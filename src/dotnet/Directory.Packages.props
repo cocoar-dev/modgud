@@ -4,6 +4,9 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="Cocoar.Json.Mutable" Version="1.0.1" />
+    <!-- SAST analyzer; injected by Directory.Build.props as
+         analyzer-only PackageReference (PrivateAssets=all). -->
+    <PackageVersion Include="SecurityCodeScan.VS2019" Version="5.6.7" />
     <PackageVersion Include="Cocoar.JsEval" Version="3.3.0" />
     <PackageVersion Include="Cocoar.JsEval.Engine" Version="3.3.0" />
     <PackageVersion Include="Cocoar.JsEval.Linq" Version="3.3.0" />
