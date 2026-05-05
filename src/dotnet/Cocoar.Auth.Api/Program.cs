@@ -47,6 +47,7 @@ using Cocoar.Auth.Authentication.Identity.LoginProviders.Flavors;
 using Cocoar.Auth.Api.Middleware;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Cocoar.Auth.Infrastructure.Realms;
+using Marten;
 using Marten.Storage;
 using Npgsql;
 using Wolverine;
@@ -957,23 +958,70 @@ try
         var realmCache = realmScope.ServiceProvider.GetRequiredService<IRealmCache>();
         await realmCache.InitializeAsync();
 
-        // Warm the IGlobalStore Marten LINQ pipeline for the realm-admin
-        // queries. Marten compiles each distinct LINQ shape lazily on first
-        // use; without warmup the very first GET /api/admin/realms after boot
-        // takes ~7.5s while the OrderBy(CreatedAt) query is compiled. Same
-        // for GetRealmBySlugAsync. Issuing both shapes here makes them warm
-        // before the first user request — folks clicking around the admin
-        // UI never see the cold-start cliff.
-        // Costs: ~1-2s once at boot, then nothing.
+        // Marten compiles each distinct LINQ shape lazily on first use.
+        // Without a warmup the very first request that triggers a given
+        // shape pays a 200-7500ms compile penalty (measured: realm
+        // OrderBy(CreatedAt) was 7.5s, oauth/apis 390ms, user 220ms,
+        // change-requests 140ms). The next request of the same shape
+        // is then under 15ms forever.
+        //
+        // We touch every shape the admin SPA hits during normal navigation
+        // here, against the system tenant. Marten caches LINQ→SQL per
+        // DocumentStore, not per tenant — so warming with one tenant is
+        // enough for all tenants. Costs: ~2-3s extra at boot, then no
+        // user-visible cliff for the rest of the host's lifetime.
         try
         {
+            // IGlobalStore — realm-admin queries
             await realmService.GetAllRealmsAsync();
             await realmService.GetRealmBySlugAsync(TenantConstants.SystemTenantId);
+
+            // Tenant-scoped queries — open one IDocumentSession against the
+            // system tenant and touch every read-shape the admin endpoints
+            // use. Tiny ToList() against the persisted documents — even on
+            // an empty tenant it's enough to compile the shape.
+            using (TenantContext.Enter(TenantConstants.SystemTenantId))
+            await using (var session = realmScope.ServiceProvider
+                .GetRequiredService<Marten.IDocumentStore>().QuerySession(TenantConstants.SystemTenantId))
+            {
+                await session.Query<Cocoar.Auth.Authentication.Domain.ApplicationUser>()
+                    .Where(u => !u.IsDeleted).Take(1).ToListAsync();
+                // UserView is the read model the /api/user list endpoint queries —
+                // distinct from ApplicationUser, separate Marten LINQ shape.
+                await session.Query<Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.Users.UserView>()
+                    .Where(u => !u.IsDeleted).OrderBy(u => u.UserName).Take(1).ToListAsync();
+                // Principal polymorphism — Person + Group share a discriminator.
+                // /api/account/me's permission BFS walks this projection.
+                await session.Query<Cocoar.Auth.Authorization.Principals.Principal>()
+                    .Where(p => !p.IsDeleted).Take(1).ToListAsync();
+                await session.Query<Cocoar.Auth.Authorization.Roles.PermissionRole>()
+                    .Where(r => !r.IsDeleted).Take(1).ToListAsync();
+                await session.Query<Cocoar.Auth.Authorization.Principals.Group>()
+                    .Where(g => !g.IsDeleted).Take(1).ToListAsync();
+                await session.Query<Cocoar.Auth.Authentication.Domain.LoginProviders.LoginProvider>()
+                    .Where(p => !p.IsDeleted).Take(1).ToListAsync();
+                await session.Query<Cocoar.Auth.Authentication.AuthLog.AuthLogDocument>()
+                    .OrderByDescending(l => l.Timestamp).Take(1).ToListAsync();
+                await session.Query<Cocoar.Auth.Authentication.Domain.UserChangeRequest>()
+                    .Take(1).ToListAsync();
+            }
+
+            // OAuthAdminService — separate read paths for clients/scopes/apis.
+            // Each goes through OpenIddict-Marten stores which have their own
+            // LINQ shapes; touching the service methods compiles them.
+            var oauthAdmin = realmScope.ServiceProvider.GetRequiredService<Cocoar.Auth.Application.Services.OAuthAdminService>();
+            using (TenantContext.Enter(TenantConstants.SystemTenantId))
+            {
+                await oauthAdmin.GetClientsAsync(new Cocoar.Auth.Application.DTOs.OAuth.PaginationRequest { PageSize = 1 });
+                await oauthAdmin.GetScopesAsync();
+                await oauthAdmin.GetApisAsync(new Cocoar.Auth.Application.DTOs.OAuth.PaginationRequest { PageSize = 1 });
+            }
         }
         catch (Exception ex)
         {
-            // Warmup is best-effort. A failure here doesn't prevent boot.
-            Log.Warning(ex, "Realm-query warmup failed (non-fatal — first user request will pay the cold-start cost).");
+            // Warmup is best-effort. A failure here doesn't prevent boot —
+            // the first user request would just pay the cold-start cost.
+            Log.Warning(ex, "Marten LINQ warmup failed (non-fatal).");
         }
 
         // C14 boot-validation: every configured Control-Plane hostname must
