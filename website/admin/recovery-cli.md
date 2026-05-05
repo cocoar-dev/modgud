@@ -66,6 +66,54 @@ Adds the user to the seeded `Administratoren` group with `BoundTo: ["*"]` — th
 
 Clears the lockout flag, e.g. after too many failed login attempts.
 
+### `bootstrap-admin --email <email> [--username <name>] [--password <pw>] [--realm <slug>]`
+
+Creates the very first admin in a realm — replaces the legacy `/setup`
+wizard which was removed in C15d (it was an anonymous race-window
+endpoint).
+
+Two modes, selected by the presence of `--password`:
+
+**Direct mode** (with `--password`): atomic seed of the user, the three
+default roles (System Admin / User Manager / Viewer) and the
+Administratoren group. The Identity password rules are enforced —
+weak passwords are rejected just like in the SPA. The user can sign
+in immediately on the realm's host.
+
+```bash
+dotnet Cocoar.Auth.Api.dll recover bootstrap-admin \
+    --email admin@example.com \
+    --username admin \
+    --password 'StrongPass1!' \
+    --realm system
+```
+
+**Invite mode** (without `--password`): writes a `PendingAdminInvite`
+into the tenant DB and prints the magic-link URL on stdout (also sent
+by email when SMTP is configured). The recipient clicks the link
+(`/bootstrap?token=...`), sets a password, and gets auto-signed-in.
+The link is single-use and expires in 7 days; running `bootstrap-admin`
+again revokes any open invites for the same email and issues a fresh
+one.
+
+```bash
+dotnet Cocoar.Auth.Api.dll recover bootstrap-admin \
+    --email max@acme.com \
+    --realm acme
+```
+
+If `--username` is omitted, the local part of the email is used.
+
+::: tip SaaS path
+For SaaS deployments where a tenant requester registers and pays before
+the realm is provisioned, prefer the HTTP path
+(`POST /api/admin/realms` with `InitialAdmin: { UserName, Email }`) —
+the CP-admin only enters the recipient's email, never sees the
+password, and the recipient owns the credentials end-to-end.
+The CLI invite path is the operator's escape hatch when SMTP is down
+or a token needs to be reissued out of band.
+:::
+
 ## Default realm
 
 If `--realm` is omitted, the CLI defaults to the `system` realm.

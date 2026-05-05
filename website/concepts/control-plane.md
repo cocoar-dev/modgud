@@ -110,6 +110,86 @@ exposing realm CRUD on a tenant host.
 Development and Testing skip the check and trust the system realm's
 own `Domains` list, so a fresh checkout boots without ENV setup.
 
+## First-admin onboarding (C15)
+
+A freshly provisioned realm has no users. There used to be a global
+`/setup` wizard that anyone could fill out — the
+"first-come-takes-the-instance" race window. That endpoint is gone
+(C15d). Three explicit-trust paths replace it:
+
+### Path 1 — Recovery CLI, direct password (operator-local)
+
+Filesystem trust. The operator runs:
+
+```bash
+docker exec <container> dotnet Cocoar.Auth.Api.dll recover bootstrap-admin \
+    --email admin@example.com \
+    --username admin \
+    --password 'StrongPass1!' \
+    --realm system
+```
+
+Atomic seed of `ApplicationUser` (Identity-Password-Rules enforced —
+the CLI does NOT bypass policy), the three default roles (System Admin
+/ User Manager / Viewer) and the Administratoren group. Idempotent:
+re-running for a second admin appends them to the existing group
+instead of duplicating.
+
+### Path 2 — Recovery CLI, invite mode (delegated trust)
+
+Same CLI without `--password`. The CLI writes a `PendingAdminInvite`
+into the tenant DB and prints the magic-link URL on stdout (also sent
+by email when SMTP is configured). The recipient clicks, sets a
+password via `/bootstrap?token=...`, gets auto-signed in.
+
+```bash
+dotnet Cocoar.Auth.Api.dll recover bootstrap-admin \
+    --email max@acme.com \
+    --realm acme
+```
+
+### Path 3 — HTTP, control-plane admin issues an invite
+
+`POST /api/admin/realms` is the only HTTP path that creates a realm.
+It is CP-only (gated by all three layers above) and now requires
+`InitialAdmin: { UserName, Email, Firstname?, Lastname? }`. The backend
+atomically:
+
+1. Creates the realm (DB, OAuth scopes, login providers, app seeding)
+2. Switches into the new tenant via `TenantContext.Enter(slug)`
+3. Issues a `PendingAdminInvite` and sends the email
+4. Returns `{Realm, InitialAdminInvite { UserName, Email, ExpiresAt, MagicLinkUrl }}`
+
+The SPA reveals the `MagicLinkUrl` once after creation — useful in
+SMTP-less dev and air-gapped scenarios where the email won't arrive.
+A `POST /api/admin/realms/{slug}/resend-bootstrap-invite` endpoint
+issues a fresh token (and revokes any open ones) for the same
+recipient identity if the original is lost.
+
+### Token lifecycle
+
+- 32-byte URL-safe random plaintext, SHA-256-hashed in the DB
+- 7-day TTL (`PendingAdminInvite.DefaultExpirationDays`)
+- Single-use: `UsedAt` is set on success; reuse → 400 `BootstrapInvite.TokenUsed`
+- Reissue revokes prior open invites for the same email — there is at
+  most one consumable invite per recipient per realm
+
+### Anti-race-window
+
+The "elimination" of SETUP-01 is not just an upgrade of the gate —
+the gate itself is gone. None of the three paths is anonymous and
+unauthenticated:
+
+- Path 1 + 2: filesystem trust (whoever can `docker exec` already
+  owns the host)
+- Path 3: authenticated CP-admin trust (already proved their identity
+  via the regular login)
+- The bootstrap endpoint that sets the password (`POST
+  /api/account/bootstrap-admin`) IS anonymous, but only consumes a
+  token that one of the trusted paths already issued. Without a valid
+  token the endpoint can't elevate anyone — same posture as a
+  password-reset link.
+
 ## What a tenant sees
 
 The SPA reads `IsControlPlane: bool` from the anonymous
@@ -124,9 +204,9 @@ The SPA reads `IsControlPlane: bool` from the anonymous
 
 | Layer | Tests | Where |
 |---|---|---|
-| Routing gate | `ControlPlaneGateMiddlewareTests` (5 cases) | `Cocoar.Auth.Tests.Unit/Api/Middleware/` |
-| Endpoint filter | `RealmsEndpointsTests.RequireControlPlaneFilterTests` (4 cases) | `Cocoar.Auth.Tests.Unit/Api/Features/Admin/` |
-| End-to-end | `ControlPlaneSeparationTests` (4 cases — tenant 404, CP 200, setup 404, app-info IsControlPlane) | `Cocoar.Auth.Api.Tests/Security/` |
+| Routing gate | `ControlPlaneGateMiddlewareTests` | `Cocoar.Auth.Tests.Unit/Api/Middleware/` |
+| Endpoint filter | `RealmsEndpointsTests.RequireControlPlaneFilterTests` | `Cocoar.Auth.Tests.Unit/Api/Features/Admin/` |
+| End-to-end | `ControlPlaneSeparationTests` (tenant→404, CP→OK, exactly-one-CP invariant on create + promote + demote, app-info IsControlPlane) | `Cocoar.Auth.Api.Tests/Security/` |
 | Realm-cache resolution | `RealmCacheLookupTests` | `Cocoar.Auth.Tests.Unit/Realms/` |
 
 A regression in any one layer is caught by the layer's tests; a

@@ -40,6 +40,7 @@ Alle 13 Cluster über alle 3 Wellen abgeschlossen (33 Findings: 31 ✅, 2 ⏸ ac
 | 3 | [C12 Logging-Hygiene](#c12-logging-hygiene) | 2 | ✅ | `2be004d` |
 | 3 | [C13 Cert-Rotation](#c13-cert-rotation) | 2 | ✅ | `9b72b52` |
 | Polish | [C14 Control-Plane-Separation](#c14-control-plane-separation) | – | ✅ | `5736377` + follow-ups |
+| Polish | [C15 Tenant-Bootstrap](#c15-tenant-bootstrap) | – | ✅ | `dcca287` `fc18a72` + cleanup |
 
 **Findings:** 33 (7 Critical · 13 High · 8 Medium · 5 Low/Info) — siehe
 [Findings-Index](#findings-index) am Ende der Seite.
@@ -272,7 +273,7 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 | COOKIE-01 | 🔴 Critical | `Program.cs:298` | App-Cookie auf `SameSite=Lax` (war Strict). SSO-Redirects funktionieren jetzt; Cross-Site-POST bleibt blockiert. | ✅ |
 | CSRF-02 | 🟠 High | `CsrfDefenseMiddleware.cs` (neu) | `Sec-Fetch-Site` / `Origin` / `Referer`-basiertes Gate auf state-changing `/api/*`-Requests; statt voller Antiforgery-Token-Plumbing | ✅ |
 | CSRF-03 | 🟠 High | identisch mit CSRF-02 | Anonyme Login-Endpoints durch dasselbe Gate abgedeckt — Cross-Site-POST von `/api/account/login` & Co. → 403 | ✅ |
-| SETUP-01 | 🟠 High | `SetupTokenService.cs` + `SetupTokenBootstrap.cs` (neu) | First-Run-Setup-Token in non-Development; X-Setup-Token Header Pflicht; single-use; Token-File auto-generiert beim Boot, beim Erfolg konsumiert | ✅ |
+| SETUP-01 | 🟠 High | ~~`SetupTokenService.cs` + `SetupTokenBootstrap.cs`~~ — Surface in C15d komplett entfernt | ~~First-Run-Setup-Token~~ — durch CP-issued Bootstrap-Invite + Recovery-CLI ersetzt, kein anonymer Setup-Endpoint mehr | ✅ (eliminated) |
 
 **Implementierte Architektur:**
 
@@ -287,11 +288,29 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 - Die "no browser headers → allow"-Regel ist der bewusste Kompromiss gegenüber vollem Antiforgery-Token: kein Test-Plumbing, keine SPA-Änderung, keine 135-Integration-Test-Rewrites. Trade-off ist dokumentiert: Server-zu-Server-Caller können das Gate umgehen, aber sie führen kein Browser-Cookie und können daher nicht als logged-in User agieren.
 - Kombiniert mit SameSite=Lax: Browser-Cross-Site-POST bekommt weder Cookie noch CSRF-Pass.
 
-**SETUP-01** — First-Run-Token:
-- `SetupTokenBootstrap` (HostedService): in non-Development, wenn kein Admin existiert UND kein Token-File da ist → frischen 32-byte URL-safe Random generieren, schreiben nach `data/setup-token.txt` (oder `Setup__TokenPath` ENV-override), Posix-Filemode 0600 best-effort, Token-Pfad und Wert in Serilog-Stdout.
-- `SetupTokenService.ValidatePresentedToken` mit `CryptographicOperations.FixedTimeEquals` (timing-safe).
-- `SetupEndpoints.create-admin`: in non-Development X-Setup-Token Header Pflicht; ohne / wrong → 401 *bevor* der admin-exists-Check läuft (gibt also keine Info-Disclosure "admin existiert").
-- Auf Erfolg: `setupToken.ConsumeToken()` löscht das File → kein Replay möglich.
+**SETUP-01** — First-Run-Token (historisch):
+Die ursprüngliche Lösung war ein gefilterter Setup-Endpoint mit File-basiertem
+One-Shot-Token. **In C15d komplett entfernt**: der anonyme `POST /api/setup/create-admin`
+war ein Race-Window — wer die Instanz vor dem legitimen Operator erreichte, konnte
+den ersten Admin "klauen" (oder zumindest ein Reset erzwingen). Stattdessen:
+
+- **CLI-Pfad** (Filesystem-Trust, lokal/Operator):
+  `dotnet Cocoar.Auth.Api.dll recover bootstrap-admin --email … [--password …]`.
+  Direct-Mode mit `--password` legt User direkt an (Identity-Password-Rules
+  validiert), Invite-Mode ohne `--password` schreibt einen
+  `PendingAdminInvite` und gibt den Magic-Link auf stdout aus + sendet ihn
+  per Email.
+- **HTTP-Pfad** (Email-Trust, SaaS): `POST /api/admin/realms` ist
+  CP-only und verlangt jetzt `InitialAdmin: { UserName, Email }`. Backend
+  schreibt atomar mit dem neuen Realm einen `PendingAdminInvite` in die
+  Tenant-DB, sendet Email mit Magic-Link, gibt URL einmal in der Response
+  zurück (für SMTP-lose Dev-Setups). `POST /api/admin/realms/{slug}/resend-bootstrap-invite`
+  rotiert das Token.
+- **Konsum** (anonym, RateLimit "bootstrap"): `POST /api/account/bootstrap-admin
+  {Token, Password}` auf dem Tenant-Host setzt das Passwort, atomar User+Role+Group
+  via `IRealmAdminBootstrapper`, Auto-Sign-In.
+- Token: 32-byte URL-safe Random, SHA-256-Hash in DB, 7 Tage TTL, single-use mit
+  Reuse-Detection (alte offene Invites werden bei Resend revoked).
 
 **Manuell verifiziert (curl):**
 - Development-Setup wie bisher: 200 ohne Token-Header
@@ -411,7 +430,7 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 **Manuell verifiziert (curl):**
 - Headers auf `/login` → alle 6 gesetzt
-- Headers auf `/api/setup/status` → alle 6 gesetzt
+- Headers auf `/api/app-info` (anonyme Bootstrap-Probe) → alle 6 gesetzt
 - Playwright login flow → 14/14 grün (response_mode=form_post wird nicht gebrockt)
 
 **Tests:** 780 Unit · 135 Integration · 14 Playwright — alle grün.
@@ -424,7 +443,7 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| RATE-01 | 🟠 High | `Program.cs AddRateLimiter` + Endpoint `RequireRateLimiting` | App-Level Rate-Limiter auf `/connect/token`, `/api/setup/*`, `/api/account/forgot-password`, `/api/account/magic-link/request` | ✅ |
+| RATE-01 | 🟠 High | `Program.cs AddRateLimiter` + Endpoint `RequireRateLimiting` | App-Level Rate-Limiter auf `/connect/token`, `/api/account/bootstrap-admin`, `/api/account/forgot-password`, `/api/account/magic-link/request` | ✅ |
 | OAUTH-09 | 🟠 High | `OAuthAdminService.cs:677-694` | `ValidateApiCredentialsAsync` BCrypt-Loop auf max 8 Secrets gekappt → DoS-Amplification gestoppt | ✅ |
 
 **Implementierte Policies (ASP.NET Core RateLimiter):**
@@ -432,7 +451,7 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 | Policy | Endpoint(s) | Limit | Partition | Window |
 |---|---|---|---|---|
 | `oauth-token` | `POST /connect/token` | 60 req | client_id (fallback IP) | 1 min sliding |
-| `setup` | `POST /api/setup/*` | 10 req | IP | 15 min fixed |
+| `bootstrap` | `POST /api/account/bootstrap-admin` | 10 req | IP | 15 min fixed |
 | `password-reset` | `POST /api/account/forgot-password` | 5 req | IP | 1 h fixed |
 | `magic-link` | `POST /api/account/magic-link/request` | 5 req | IP | 1 h fixed |
 
@@ -592,6 +611,82 @@ app-info IsControlPlane) — 139 Integration-Tests gesamt grün.
 - ✅ **C14c** — Konzept-Doku [`website/concepts/control-plane.md`](../concepts/control-plane)
   mit Mermaid-Diagram der drei Layer; Realm-Doku auf `IsControlPlane`-Naming
   gezogen; VitePress-Sidebar erweitert.
+
+---
+
+### C15 · Tenant-Bootstrap
+
+**Status:** ✅ Done · **Commits:** `dcca287` (CLI Direct), `fc18a72` (HTTP InitialAdmin + AsyncLocal-fix), C15b/C15d cleanup commits
+
+> Pre-public Hardening, kein klassisches Audit-Finding — eine Architektur-
+> Reform, die die Tenant-Bootstrap-Lücke aus dem C14-Smoke-Test endgültig
+> schließt UND als Beifang den anonymen Setup-Endpoint (SETUP-01-Surface)
+> komplett eliminiert. Der Race-Window-Angriff "wer zuerst auf /setup
+> klickt, bekommt die Instanz" ist mit C15 nicht mehr nur abgesichert,
+> sondern strukturell unmöglich gemacht.
+
+**Modell:** Initial-Admin wird zur Provisionierungs-Zeit angelegt, der
+*Setzer* hat zwingend Trust-Boundary auf den neuen Realm — entweder
+Filesystem (CLI) oder authentifizierter CP-Admin (HTTP). Keine
+anonymen Endpoints mehr für privilegierte First-Run-Operationen.
+
+**Drei Pfade:**
+
+1. **Recovery-CLI Direct-Mode** (lokal/Operator): `dotnet
+   Cocoar.Auth.Api.dll recover bootstrap-admin --email <e> --username <u>
+   --password <pw> [--realm <slug>]`. Atomar User+Role+Group via
+   `IRealmAdminBootstrapper`. Identity-Password-Rules werden geprüft (kein
+   CLI-Bypass — verhindert ein "vergiss-mein-4-char-Passwort"-Disaster
+   in Prod).
+2. **Recovery-CLI Invite-Mode** (lokal/SaaS-Operator): Selbe CLI ohne
+   `--password` → `PendingAdminInvite` in Tenant-DB, Magic-Link auf
+   stdout (+ Email wenn SMTP). Recipient klickt, setzt Passwort.
+3. **HTTP CP-Pfad** (SaaS-Self-Service): `POST /api/admin/realms` braucht
+   jetzt verpflichtend `InitialAdmin: { UserName, Email }`. Backend
+   schreibt atomar mit dem neuen Realm einen Invite, sendet Email,
+   antwortet mit `{Realm, InitialAdminInvite { …, MagicLinkUrl }}` —
+   die URL erscheint im SPA-Modal als One-Shot-Reveal für SMTP-lose
+   Dev-Setups. `POST .../{slug}/resend-bootstrap-invite` rotiert das
+   Token; alte offene Invites werden zur Selbstrevokation markiert.
+
+**Konsum:** `POST /api/account/bootstrap-admin {Token, Password}` auf dem
+**Tenant-Host** (deshalb explizit NICHT vom Control-Plane-Gate erfasst).
+Anonym, RateLimit "bootstrap" (10/15min/IP). Atomar User+Role+Group +
+Auto-Sign-In via SignInManager.
+
+**Token:** 32-byte URL-safe Random, SHA-256-Hash gespeichert, 7 Tage TTL,
+single-use, Reuse-Detection. Plaintext lebt nur in der Magic-Link-URL.
+
+**Beifang-Bug-Fix (im selben Commit):** `TenantedSessionFactory`
+priorisierte HttpContext über AsyncLocal-TenantContext. Beim
+CP→Tenant-Cross-Operation (Resend, post-Create-Invite) blieb HttpContext
+auf "system", deshalb landete das Invite im SYSTEM-DB statt im neuen
+Tenant. Folge: Magic-Link-Resolving fand Hash nicht. Reordering:
+AsyncLocal first. RealmMiddleware setzt im Normalfall beide auf
+denselben Wert, also kein Verhaltensunterschied. WOLV-01-Pfad profitiert.
+
+**Was eliminiert wurde (C15d):**
+- `Cocoar.Auth.Authentication/Api/Account/SetupEndpoints.cs`
+- `Cocoar.Auth.Api/Features/Setup/SetupTokenService.cs`
+- `Cocoar.Auth.Api/Features/Setup/SetupTokenBootstrap.cs`
+- `Cocoar.Auth.Authentication/Configuration/ISetupTokenService.cs`
+- `src/frontend-vue/src/views/auth/SetupView.vue` + `/setup`-Route +
+  `setupChecked`-Guard im Router + `fetchSetupStatus`/`createAdmin` im
+  Auth-Store + `SetupStatus`/`CreateAdminRequest`-Models
+- `/api/setup`-Pfad aus `ControlPlaneGateMiddleware` (existiert nicht
+  mehr) plus die zugehörigen Tests
+- Rate-Limit-Policy "setup" → "bootstrap" umbenannt
+
+**Tests:** 795 Unit + 141 Integration grün (vorher 798 + 142 — drei
+Setup-Path-Pins entfallen mit dem Path).
+
+**Bekannte offene Folgeschritte:**
+- Demo-Seed-Caller war `LoadDemoData=true` im alten Setup-Endpoint.
+  `IDemoSeedService`-Impl bleibt registriert (non-Production), aber
+  ohne Caller. Re-Aktivierung als `recover demo-seed --realm <slug>`
+  CLI-Subkommando ist als kleine Folgearbeit notiert.
+- Doku-Refresh: VitePress `concepts/control-plane.md` muss um den
+  Bootstrap-Workflow erweitert werden (TODO C15e).
 
 ---
 
