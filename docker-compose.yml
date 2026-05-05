@@ -25,33 +25,34 @@ services:
     ports:
       - "80:8081"
     environment:
-      # Cocoar.Configuration v5 binds env vars by `<section>__<property>`
-      # (double underscore = section boundary). The `<section>` part is
-      # the prefix the rule registers; for top-level StartUpConfiguration
-      # rules the section is the property name on that class.
+      # Cocoar.Configuration v5 binds env vars by `<Section>__<Property>`
+      # (double underscore = section boundary). The casing has to match
+      # the C# property names exactly — env var keys are serialized 1:1
+      # into the JSON map that gets deserialized into the config types,
+      # and the deserializer is case-sensitive on the property side.
       #
       # Marten connection string. Keepalive=30 keeps idle pooled
       # connections healthy through the docker-network NAT.
-      DBSETTINGS__CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres;Password=postgres;Keepalive=30"
+      DbSettings__ConnectionString: "Host=postgres;Database=cocoar_auth;Username=postgres;Password=postgres;Keepalive=30"
       # AppUrl tells Kestrel what to bind inside the container. Stays at
       # 8081 — the host port mapping above exposes it as :80.
-      APPURL: "http://0.0.0.0:8081"
+      AppUrl: "http://0.0.0.0:8081"
       # OpenIddict issuer = the public URL clients see in
       # /.well-known/openid-configuration. Per-realm overrides apply at
       # request time via RealmIssuerHandler.
-      OPENIDDICT__ISSUER: "http://localhost"
+      OpenIddict__Issuer: "http://localhost"
       # Ephemeral signing keys; tokens get invalidated on every
       # restart. Switch to false + a signing certificate for prod.
-      OPENIDDICT__DEVELOPMENTMODE: "true"
+      OpenIddict__DevelopmentMode: "true"
       # SMTP — these defaults route nowhere (host = localhost in the
       # container = the container itself, no MTA). Override to a real
       # SMTP relay before going live, or operators won't get
       # notifications.
-      EMAIL__SMTP__HOST: "localhost"
-      EMAIL__SMTP__PORT: "25"
-      EMAIL__SMTP__USESSL: "false"
-      EMAIL__SMTP__FROMADDRESS: "noreply@localhost"
-      EMAIL__SMTP__FROMNAME: "Cocoar Auth"
+      Email__Smtp__Host: "localhost"
+      Email__Smtp__Port: "25"
+      Email__Smtp__UseSsl: "false"
+      Email__Smtp__FromAddress: "noreply@localhost"
+      Email__Smtp__FromName: "Cocoar Auth"
     depends_on:
       postgres:
         condition: service_healthy
