@@ -7,7 +7,7 @@ export interface RealmDto {
   DisplayName: string
   Description?: string | null
   Domains: string[]
-  CanManageTenants: boolean
+  IsControlPlane: boolean
   IsActive: boolean
   NeedsSetup: boolean
   CreatedAt: string
@@ -18,14 +18,14 @@ export interface CreateRealmDto {
   DisplayName: string
   Description?: string | null
   Domains?: string[] | null
-  CanManageTenants?: boolean
+  IsControlPlane?: boolean
 }
 
 export interface UpdateRealmDto {
   DisplayName?: string | null
   Description?: string | null
   Domains?: string[] | null
-  CanManageTenants?: boolean | null
+  IsControlPlane?: boolean | null
   IsActive?: boolean | null
 }
 

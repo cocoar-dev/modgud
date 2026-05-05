@@ -29,11 +29,11 @@ test.describe('§14 Realms', () => {
     await apiLogin(page, ADMIN_USER, ADMIN_PASSWORD)
   })
 
-  test('system realm exists with CanManageTenants=true', async ({ page }) => {
-    const list = await (await page.request.get('/api/admin/realms')).json() as { Items: { Slug: string; CanManageTenants: boolean; IsActive: boolean }[] }
+  test('system realm exists with IsControlPlane=true', async ({ page }) => {
+    const list = await (await page.request.get('/api/admin/realms')).json() as { Items: { Slug: string; IsControlPlane: boolean; IsActive: boolean }[] }
     const sys = list.Items.find(r => r.Slug === 'system')
     expect(sys, 'system realm must exist').toBeDefined()
-    expect(sys!.CanManageTenants).toBe(true)
+    expect(sys!.IsControlPlane).toBe(true)
     expect(sys!.IsActive).toBe(true)
   })
 
@@ -45,7 +45,7 @@ test.describe('§14 Realms', () => {
         DisplayName: `Acme ${SUFFIX}`,
         Description: 'phase-b realm provisioning test',
         Domains: [`${slug}.localhost`],
-        CanManageTenants: false,
+        IsControlPlane: false,
       },
     })
     if (!res.ok()) throw new Error(`create realm: ${res.status()} ${await res.text()}`)

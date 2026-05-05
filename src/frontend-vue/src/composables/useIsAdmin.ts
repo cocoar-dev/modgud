@@ -20,7 +20,7 @@ export const ADMIN_PERMISSIONS: readonly string[] = [
   'cocoar-auth:oauth-scope:read',
   'cocoar-auth:oauth-api:read',
   'cocoar-auth:app:read',
-  'cocoar-auth:realm:read',
+  'control-plane:realm:read',
   'cocoar-auth:auth-log:read',
   'cocoar-auth:user:write',
   'realm:admin',

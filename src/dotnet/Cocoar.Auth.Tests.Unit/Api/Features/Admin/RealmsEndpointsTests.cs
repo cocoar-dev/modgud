@@ -10,9 +10,9 @@ namespace Cocoar.Auth.Tests.Unit.Api.Features.Admin;
 /// <summary>
 /// Pinning tests for the small pure pieces of <see cref="RealmsEndpoints"/>:
 /// the DTO mapping that gets sent to the admin UI, and the
-/// <see cref="RequireCanManageTenantsFilter"/> that blocks realm-management
-/// calls from non-management realms (security-relevant — without this, any
-/// tenant could create / delete other tenants).
+/// <see cref="RequireControlPlaneFilter"/> that blocks realm-management
+/// calls from non-Control-Plane realms (security-relevant — without this,
+/// any tenant could create / delete other tenants).
 /// </summary>
 public class RealmsEndpointsTests
 {
@@ -30,7 +30,7 @@ public class RealmsEndpointsTests
                 DisplayName = "Acme Inc",
                 Description = "Tenant A",
                 Domains = new[] { "acme.localhost", "auth.acme.com" },
-                CanManageTenants = true,
+                IsControlPlane = true,
                 IsActive = true,
                 CreatedAt = created,
             };
@@ -42,7 +42,7 @@ public class RealmsEndpointsTests
             Assert.Equal("Acme Inc", dto.DisplayName);
             Assert.Equal("Tenant A", dto.Description);
             Assert.Equal(new[] { "acme.localhost", "auth.acme.com" }, dto.Domains);
-            Assert.True(dto.CanManageTenants);
+            Assert.True(dto.IsControlPlane);
             Assert.True(dto.IsActive);
             Assert.Equal(created, dto.CreatedAt);
         }
@@ -58,7 +58,7 @@ public class RealmsEndpointsTests
         }
     }
 
-    public class RequireCanManageTenantsFilterTests
+    public class RequireControlPlaneFilterTests
     {
         private static EndpointFilterInvocationContext BuildContext(TenantInfo? tenantInfo)
         {
@@ -74,7 +74,7 @@ public class RealmsEndpointsTests
         [Fact]
         public async Task Returns_404_when_no_tenant_info_resolved()
         {
-            var filter = new RequireCanManageTenantsFilter();
+            var filter = new RequireControlPlaneFilter();
 
             var result = await filter.InvokeAsync(BuildContext(tenantInfo: null), NextReturning("would-have-run"));
 
@@ -82,14 +82,14 @@ public class RealmsEndpointsTests
         }
 
         [Fact]
-        public async Task Returns_404_when_tenant_cannot_manage_other_tenants()
+        public async Task Returns_404_when_tenant_is_not_control_plane()
         {
             // Realm management endpoints are mounted on every tenant (so the URL
-            // is uniform) but only callable from realms with CanManageTenants — the
+            // is uniform) but only callable from the Control-Plane realm — the
             // 404 (not 403) keeps the existence of the endpoint hidden from
             // unauthorized realms.
-            var filter = new RequireCanManageTenantsFilter();
-            var info = new TenantInfo("acme", CanManageTenants: false, IsActive: true);
+            var filter = new RequireControlPlaneFilter();
+            var info = new TenantInfo("acme", IsControlPlane: false, IsActive: true);
 
             var result = await filter.InvokeAsync(BuildContext(info), NextReturning("would-have-run"));
 
@@ -97,10 +97,10 @@ public class RealmsEndpointsTests
         }
 
         [Fact]
-        public async Task Calls_next_when_tenant_can_manage_other_tenants()
+        public async Task Calls_next_when_tenant_is_control_plane()
         {
-            var filter = new RequireCanManageTenantsFilter();
-            var info = new TenantInfo("system", CanManageTenants: true, IsActive: true);
+            var filter = new RequireControlPlaneFilter();
+            var info = new TenantInfo("system", IsControlPlane: true, IsActive: true);
             var sentinel = new object();
 
             var result = await filter.InvokeAsync(BuildContext(info), NextReturning(sentinel));
@@ -109,13 +109,13 @@ public class RealmsEndpointsTests
         }
 
         [Fact]
-        public async Task Inactive_management_realm_is_still_allowed_through()
+        public async Task Inactive_control_plane_realm_is_still_allowed_through()
         {
             // The active-realm gate lives elsewhere (RealmMiddleware itself);
-            // the filter cares only about CanManageTenants. Pinning so a future
+            // the filter cares only about IsControlPlane. Pinning so a future
             // change here is a deliberate decision, not a quiet drift.
-            var filter = new RequireCanManageTenantsFilter();
-            var info = new TenantInfo("system", CanManageTenants: true, IsActive: false);
+            var filter = new RequireControlPlaneFilter();
+            var info = new TenantInfo("system", IsControlPlane: true, IsActive: false);
             var sentinel = new object();
 
             var result = await filter.InvokeAsync(BuildContext(info), NextReturning(sentinel));

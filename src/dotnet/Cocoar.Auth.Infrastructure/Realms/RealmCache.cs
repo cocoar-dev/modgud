@@ -9,7 +9,7 @@ namespace Cocoar.Auth.Infrastructure.Realms;
 /// Resolved tenant information from the realm cache.
 /// Stored in <c>HttpContext.Items["TenantInfo"]</c> by <c>RealmMiddleware</c>.
 /// </summary>
-public sealed record TenantInfo(string Slug, bool CanManageTenants, bool IsActive);
+public sealed record TenantInfo(string Slug, bool IsControlPlane, bool IsActive);
 
 /// <summary>
 /// Cache of domain → realm mappings for fast middleware resolution.
@@ -113,7 +113,7 @@ public sealed class RealmCache : IRealmCache
 
         foreach (var realm in activeRealms)
         {
-            var info = new TenantInfo(realm.Slug, realm.CanManageTenants, realm.IsActive);
+            var info = new TenantInfo(realm.Slug, realm.IsControlPlane, realm.IsActive);
             foreach (var domain in realm.Domains)
             {
                 byDomain[domain] = info;
@@ -124,7 +124,7 @@ public sealed class RealmCache : IRealmCache
         if (activeRealms.Count == 1)
         {
             var only = activeRealms[0];
-            single = new TenantInfo(only.Slug, only.CanManageTenants, only.IsActive);
+            single = new TenantInfo(only.Slug, only.IsControlPlane, only.IsActive);
         }
 
         _snapshot = new CacheSnapshot(byDomain, single);

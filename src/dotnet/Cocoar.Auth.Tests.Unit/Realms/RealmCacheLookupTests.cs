@@ -10,8 +10,8 @@ namespace Cocoar.Auth.Tests.Unit.Realms;
 /// </summary>
 public class RealmCacheLookupTests
 {
-    private static readonly TenantInfo Acme = new("acme", CanManageTenants: false, IsActive: true);
-    private static readonly TenantInfo System = new("system", CanManageTenants: true, IsActive: true);
+    private static readonly TenantInfo Acme = new("acme", IsControlPlane: false, IsActive: true);
+    private static readonly TenantInfo System = new("system", IsControlPlane: true, IsActive: true);
 
     private static IReadOnlyDictionary<string, TenantInfo> Cache(params (string Host, TenantInfo Info)[] entries)
     {

@@ -10,8 +10,9 @@ import type {
 
 /**
  * Realm store. Realms are addressed by Slug (not Id) on the API side, so
- * the keyed lookups below use Slug. Only realms with `CanManageTenants`
- * can call this endpoint — the backend returns 404 otherwise.
+ * the keyed lookups below use Slug. Only the Control-Plane realm can call
+ * this endpoint — the backend returns 404 otherwise (see
+ * RequireControlPlaneFilter + ControlPlaneGateMiddleware).
  */
 export const useRealmStore = defineStore('realm', () => {
   const http = useHttpClient('/api/admin/realms')

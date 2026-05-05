@@ -37,7 +37,7 @@ const allNavItems: NavItem[] = [
   { section: 'oauth', label: 'admin.oauthApis.title', icon: 'server', path: '/admin/oauth/apis', requirePermissions: ['cocoar-auth:oauth-api:read'] },
   // System
   { section: 'system', label: 'admin.apps.title', icon: 'layout-grid', path: '/admin/apps', requirePermissions: ['cocoar-auth:app:read'] },
-  { section: 'system', label: 'admin.realms.title', icon: 'globe', path: '/admin/realms', requirePermissions: ['cocoar-auth:realm:read'] },
+  { section: 'system', label: 'admin.realms.title', icon: 'globe', path: '/admin/realms', requirePermissions: ['control-plane:realm:read'] },
   { section: 'system', label: 'admin.authLog.title', icon: 'scroll-text', path: '/admin/auth-log', requirePermissions: ['cocoar-auth:auth-log:read'] },
   { section: 'system', label: 'admin.changeRequests.title', icon: 'inbox', path: '/admin/change-requests', requirePermissions: ['cocoar-auth:user:write'] },
   { section: 'system', label: 'nav.settings', icon: 'settings', path: '/admin/settings', requirePermissions: ['realm:admin'] },

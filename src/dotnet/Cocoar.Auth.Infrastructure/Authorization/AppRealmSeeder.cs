@@ -19,10 +19,10 @@ namespace Cocoar.Auth.Infrastructure.Authorization;
 public static class AppRealmSeeder
 {
     /// <summary>
-    /// Resources owned by the system app. Mirrors the resources currently
-    /// registered globally in <c>ResourceRegistry</c> — kept in sync with
-    /// <c>Cocoar.Auth.Infrastructure.DependencyInjection</c> until step 5
-    /// of the plan moves the registry to be app-aware.
+    /// Resources owned by the system app. Realm-internal stuff only — the
+    /// cross-realm `realm:read|write` resource lives on the separate
+    /// <see cref="AppSlugs.ControlPlane"/> app, seeded only into the
+    /// Control-Plane realm's tenant DB.
     /// </summary>
     private static readonly string[] CocoarAuthResources =
     [
@@ -34,7 +34,6 @@ public static class AppRealmSeeder
         "session",
         "auth-log",
         "gdpr",
-        "realm",
         "oauth",
         "oauth-client",
         "oauth-scope",
@@ -42,30 +41,82 @@ public static class AppRealmSeeder
         "login-provider",
     ];
 
-    public static async Task SeedAsync(IServiceProvider services, string tenantId, ILogger? logger = null, CancellationToken ct = default)
+    /// <summary>
+    /// Resources owned by the Control-Plane app. ONLY seeded into the
+    /// Control-Plane realm's tenant DB (see <see cref="SeedAsync"/>'s
+    /// <paramref name="isControlPlane"/> arg). Tenant realms don't get
+    /// the App registration, so a permission like
+    /// <c>control-plane:realm:write</c> is unreachable from a tenant
+    /// even before the routing-gate fires.
+    /// </summary>
+    private static readonly string[] ControlPlaneResources =
+    [
+        "realm",
+    ];
+
+    public static async Task SeedAsync(
+        IServiceProvider services,
+        string tenantId,
+        bool isControlPlane,
+        ILogger? logger = null,
+        CancellationToken ct = default)
     {
         var store = services.GetRequiredService<IDocumentStore>();
         await using var session = store.LightweightSession(tenantId);
 
+        await SeedAppIfMissingAsync(
+            session,
+            slug: AppSlugs.CocoarAuth,
+            displayName: "Cocoar.Auth",
+            description: "Identity provider — the system app. Owns realm-internal resources (users, sessions, OAuth, …).",
+            resources: CocoarAuthResources,
+            logger: logger,
+            tenantId: tenantId,
+            ct: ct);
+
+        if (isControlPlane)
+        {
+            await SeedAppIfMissingAsync(
+                session,
+                slug: AppSlugs.ControlPlane,
+                displayName: "Control Plane",
+                description: "Cross-realm administration surface. Hosts realm-management resources; mounted only on the Control-Plane hostname.",
+                resources: ControlPlaneResources,
+                logger: logger,
+                tenantId: tenantId,
+                ct: ct);
+        }
+
+        await session.SaveChangesAsync(ct);
+    }
+
+    private static async Task SeedAppIfMissingAsync(
+        IDocumentSession session,
+        string slug,
+        string displayName,
+        string description,
+        string[] resources,
+        ILogger? logger,
+        string tenantId,
+        CancellationToken ct)
+    {
         var existing = await session.Query<App>()
-            .FirstOrDefaultAsync(a => a.Slug == AppSlugs.CocoarAuth && !a.IsDeleted, ct);
-        if (existing is not null)
-            return;
+            .FirstOrDefaultAsync(a => a.Slug == slug && !a.IsDeleted, ct);
+        if (existing is not null) return;
 
         var id = Guid.NewGuid();
         var created = new AppCreatedEvent(
             Id: id,
-            Slug: AppSlugs.CocoarAuth,
-            DisplayName: "Cocoar.Auth",
-            Description: "Identity provider — the system app. Owns realm-internal resources (users, sessions, OAuth, …).",
-            Resources: [.. CocoarAuthResources],
+            Slug: slug,
+            DisplayName: displayName,
+            Description: description,
+            Resources: [.. resources],
             IsSystem: true);
 
         session.Events.StartStream<App>(id, created);
-        await session.SaveChangesAsync(ct);
 
         logger?.LogInformation(
             "Seeded system app '{Slug}' for tenant '{TenantId}'",
-            AppSlugs.CocoarAuth, tenantId);
+            slug, tenantId);
     }
 }

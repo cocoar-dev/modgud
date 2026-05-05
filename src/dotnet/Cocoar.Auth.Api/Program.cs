@@ -92,6 +92,13 @@ try
             rule.For<OpenIddictSettings>().FromFile("data/configuration.json").Select("OpenIddict"),
             rule.For<OpenIddictSettings>().FromFile("data/configuration.local.json").Select("OpenIddict"),
             rule.For<OpenIddictSettings>().FromEnvironment("OpenIddict"),
+
+            // Control-Plane (C14) — hostname list for the cross-realm
+            // administration surface. Boot validation in this Program.cs
+            // checks that every hostname maps to the Control-Plane realm.
+            rule.For<ControlPlaneSettings>().FromFile("data/configuration.json").Select("ControlPlane"),
+            rule.For<ControlPlaneSettings>().FromFile("data/configuration.local.json").Select("ControlPlane"),
+            rule.For<ControlPlaneSettings>().FromEnvironment("ControlPlane"),
         ], setup =>
         [
             setup.ConcreteType<StartUpConfiguration>().AsSingleton(),
@@ -100,6 +107,7 @@ try
             setup.ConcreteType<EmailOtpConfiguration>().AsSingleton(),
             setup.ConcreteType<AppSettings>().AsSingleton(),
             setup.ConcreteType<OpenIddictSettings>().AsSingleton(),
+            setup.ConcreteType<ControlPlaneSettings>().AsSingleton(),
         ]));
 
     // Expose concrete config types as Authentication interfaces so Authentication
@@ -757,6 +765,12 @@ try
     app.UseMiddleware<RealmMiddleware>();
     app.UseMiddleware<TenantContextMiddleware>();
 
+    // C14 — Control-Plane / Data-Plane separation. Runs after RealmMiddleware
+    // (so TenantInfo is on HttpContext) and before authentication so that
+    // realm-management routes are 404-hidden from tenant hosts even before
+    // the cookie is inspected.
+    app.UseMiddleware<Cocoar.Auth.Api.Middleware.ControlPlaneGateMiddleware>();
+
     app.UseSession();
     app.UseAuthentication();
     app.UseAuthorization();
@@ -923,17 +937,61 @@ try
                 TenantConstants.SystemTenantId,
                 realmScope.ServiceProvider.GetRequiredService<ILogger<Program>>());
 
-        // Seed the system app `cocoar-auth` into the system tenant DB so
-        // app-scoped permissions can resolve before the first realm
-        // creation. Idempotent.
+        // Seed the system apps into the system tenant DB so app-scoped
+        // permissions can resolve before the first realm creation.
+        // The system realm is always the Control Plane (see
+        // EnsureSystemRealmExistsAsync), so the control-plane app is
+        // seeded here too. Idempotent.
         await Cocoar.Auth.Infrastructure.Authorization.AppRealmSeeder.SeedAsync(
             realmScope.ServiceProvider,
             TenantConstants.SystemTenantId,
+            isControlPlane: true,
             realmScope.ServiceProvider.GetRequiredService<ILogger<Program>>());
 
         // Warm the realm cache (used by RealmMiddleware for fast Host → tenant resolution)
         var realmCache = realmScope.ServiceProvider.GetRequiredService<IRealmCache>();
         await realmCache.InitializeAsync();
+
+        // C14 boot-validation: every configured Control-Plane hostname must
+        // resolve to a realm flagged IsControlPlane=true. A typo in
+        // ControlPlane__Hostnames in Production would otherwise quietly
+        // expose realm CRUD on a tenant host. Dev skips the check and
+        // implicitly trusts the system realm's own Domains list, so a
+        // fresh checkout boots without ENV setup.
+        if (!app.Environment.IsDevelopment())
+        {
+            var cpSettings = realmScope.ServiceProvider.GetRequiredService<ControlPlaneSettings>();
+            if (cpSettings.Hostnames.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    "ControlPlane__Hostnames must be set in non-Development environments — " +
+                    "the deployment needs to know which hostnames serve the cross-realm admin surface. " +
+                    "Set e.g. ControlPlane__Hostnames=auth.example.com");
+            }
+
+            foreach (var host in cpSettings.Hostnames)
+            {
+                var resolved = await realmCache.ResolveDomainAsync(host);
+                if (resolved is null)
+                {
+                    throw new InvalidOperationException(
+                        $"ControlPlane hostname '{host}' does not resolve to any active realm. " +
+                        $"Add '{host}' to the Domains of the Control-Plane realm or remove it from ControlPlane__Hostnames.");
+                }
+                if (!resolved.IsControlPlane)
+                {
+                    throw new InvalidOperationException(
+                        $"ControlPlane hostname '{host}' resolves to realm '{resolved.Slug}', " +
+                        $"which is NOT flagged IsControlPlane. Misconfigured hostname lists would " +
+                        $"otherwise expose cross-realm admin endpoints on a tenant host.");
+                }
+            }
+
+            Log.Information(
+                "Control-Plane gate validated: {Count} hostname(s) → realm '{Slug}' (IsControlPlane=true)",
+                cpSettings.Hostnames.Length,
+                (await realmCache.ResolveDomainAsync(cpSettings.Hostnames[0]))?.Slug);
+        }
     }
 
     // Break-glass recovery CLI — run inside the container instead of starting Kestrel.

@@ -267,7 +267,7 @@ router.beforeEach(async (to) => {
       'cocoar-auth:oauth-client:read', 'cocoar-auth:oauth-scope:read',
       'cocoar-auth:oauth-api:read',
       'cocoar-auth:login-provider:read',
-      'cocoar-auth:realm:read',
+      'control-plane:realm:read',
       'cocoar-auth:auth-log:read', 'cocoar-auth:session:read',
       'cocoar-auth:app:read',
     ]

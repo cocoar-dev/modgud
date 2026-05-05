@@ -7,7 +7,7 @@ public record RealmDto
     public string DisplayName { get; init; } = string.Empty;
     public string? Description { get; init; }
     public string[] Domains { get; init; } = [];
-    public bool CanManageTenants { get; init; }
+    public bool IsControlPlane { get; init; }
     public bool IsActive { get; init; }
     public bool NeedsSetup { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
@@ -19,7 +19,7 @@ public record CreateRealmDto
     public string DisplayName { get; init; } = string.Empty;
     public string? Description { get; init; }
     public string[]? Domains { get; init; }
-    public bool CanManageTenants { get; init; }
+    public bool IsControlPlane { get; init; }
 }
 
 public record UpdateRealmDto
@@ -27,7 +27,7 @@ public record UpdateRealmDto
     public string? DisplayName { get; init; }
     public string? Description { get; init; }
     public string[]? Domains { get; init; }
-    public bool? CanManageTenants { get; init; }
+    public bool? IsControlPlane { get; init; }
     public bool? IsActive { get; init; }
 }
 

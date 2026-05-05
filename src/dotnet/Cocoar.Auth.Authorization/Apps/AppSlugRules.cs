@@ -29,9 +29,10 @@ public static partial class AppSlugRules
     public static IReadOnlySet<string> ReservedSlugs { get; } =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "realm",     // permission-string prefix for cross-app bypasses (realm:admin)
-            "*",         // BoundTo wildcard
-            AppSlugs.CocoarAuth, // system app — seeded automatically, never created
+            "realm",                // permission-string prefix for cross-app bypasses (realm:admin)
+            "*",                    // BoundTo wildcard
+            AppSlugs.CocoarAuth,    // system app — seeded automatically, never created
+            AppSlugs.ControlPlane,  // control-plane app — seeded into the CP realm only
         };
 
     [GeneratedRegex(@"^[a-z][a-z0-9-]{1,61}[a-z0-9]$", RegexOptions.Compiled)]

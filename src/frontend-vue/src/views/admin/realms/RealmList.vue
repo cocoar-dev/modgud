@@ -60,8 +60,8 @@ const builder = CoarGridBuilder.create<RealmDto>()
       .option('valueGetter', (p: any) => p.data?.IsActive
         ? t('common.yes', {}, 'Ja')
         : t('common.no', {}, 'Nein')),
-    (col) => col.field('CanManageTenants').header('Tenants', 'admin.realms.canManageTenants').width(110)
-      .option('valueGetter', (p: any) => p.data?.CanManageTenants
+    (col) => col.field('IsControlPlane').header('Control Plane', 'admin.realms.isControlPlane').width(130)
+      .option('valueGetter', (p: any) => p.data?.IsControlPlane
         ? t('common.yes', {}, 'Ja')
         : t('common.no', {}, 'Nein')),
   ])

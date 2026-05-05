@@ -137,7 +137,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             DisplayName = dto.DisplayName,
             Description = dto.Description,
             Domains = domains,
-            CanManageTenants = dto.CanManageTenants,
+            IsControlPlane = dto.IsControlPlane,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
@@ -161,8 +161,16 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
 
         // Per-realm App seeding — the system app `cocoar-auth` is registered
         // in every realm so app-scoped permissions resolve from day one.
-        // Idempotent.
-        await AppRealmSeeder.SeedAsync(_serviceProvider, dto.Slug, _logger, ct);
+        // The Control-Plane app (cross-realm admin surface) is seeded ONLY
+        // when this realm is itself the Control Plane — tenant realms
+        // never see those permissions, even if their hostname were
+        // misconfigured. Idempotent.
+        await AppRealmSeeder.SeedAsync(
+            _serviceProvider,
+            dto.Slug,
+            isControlPlane: realm.IsControlPlane,
+            _logger,
+            ct);
 
         _realmCache.Invalidate();
         return realm;
@@ -178,32 +186,32 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         if (realm is null)
             return Error.NotFound("Realm.NotFound", $"Realm '{slug}' not found.");
 
-        if (realm.CanManageTenants && dto.IsActive == false)
+        if (realm.IsControlPlane && dto.IsActive == false)
         {
             var otherManagers = await session.Query<Realm>()
-                .CountAsync(r => r.CanManageTenants && r.IsActive && r.Slug != slug, ct);
+                .CountAsync(r => r.IsControlPlane && r.IsActive && r.Slug != slug, ct);
             if (otherManagers == 0)
             {
-                return Error.Validation("Realm.CannotDeactivateLastManager",
-                    "Cannot deactivate the last realm that can manage tenants.");
+                return Error.Validation("Realm.CannotDeactivateControlPlane",
+                    "Cannot deactivate the Control-Plane realm — the deployment would lose its global administration surface.");
             }
         }
 
-        if (realm.CanManageTenants && dto.CanManageTenants == false)
+        if (realm.IsControlPlane && dto.IsControlPlane == false)
         {
             var otherManagers = await session.Query<Realm>()
-                .CountAsync(r => r.CanManageTenants && r.IsActive && r.Slug != slug, ct);
+                .CountAsync(r => r.IsControlPlane && r.IsActive && r.Slug != slug, ct);
             if (otherManagers == 0)
             {
-                return Error.Validation("Realm.CannotRemoveLastManager",
-                    "Cannot remove tenant management capability from the last managing realm.");
+                return Error.Validation("Realm.CannotRemoveControlPlaneFlag",
+                    "Cannot un-flag the Control-Plane realm — exactly one Control Plane per deployment is required.");
             }
         }
 
         if (dto.DisplayName is not null) realm.DisplayName = dto.DisplayName;
         if (dto.Description is not null) realm.Description = dto.Description;
         if (dto.Domains is not null) realm.Domains = dto.Domains;
-        if (dto.CanManageTenants.HasValue) realm.CanManageTenants = dto.CanManageTenants.Value;
+        if (dto.IsControlPlane.HasValue) realm.IsControlPlane = dto.IsControlPlane.Value;
         if (dto.IsActive.HasValue) realm.IsActive = dto.IsActive.Value;
         realm.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -224,14 +232,14 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         if (realm is null)
             return Error.NotFound("Realm.NotFound", $"Realm '{slug}' not found.");
 
-        if (realm.CanManageTenants)
+        if (realm.IsControlPlane)
         {
             var otherManagers = await session.Query<Realm>()
-                .CountAsync(r => r.CanManageTenants && r.IsActive && r.Slug != slug, ct);
+                .CountAsync(r => r.IsControlPlane && r.IsActive && r.Slug != slug, ct);
             if (otherManagers == 0)
             {
-                return Error.Validation("Realm.CannotDeleteLastManager",
-                    "Cannot delete the last realm that can manage tenants.");
+                return Error.Validation("Realm.CannotDeleteControlPlane",
+                    "Cannot delete the Control-Plane realm — exactly one Control Plane per deployment is required.");
             }
         }
 
@@ -264,7 +272,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             Description = "System realm for global administration",
             // Include localhost variants so dev boots work without hosts-file entries.
             Domains = ["system.localhost", "localhost", "127.0.0.1"],
-            CanManageTenants = true,
+            IsControlPlane = true,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };

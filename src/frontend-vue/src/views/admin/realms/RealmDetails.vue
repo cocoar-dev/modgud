@@ -25,7 +25,7 @@ interface FormState {
   DisplayName: string
   Description: string
   Domains: string  // newline
-  CanManageTenants: boolean
+  IsControlPlane: boolean
   IsActive: boolean
 }
 
@@ -35,7 +35,7 @@ function emptyForm(): FormState {
     DisplayName: '',
     Description: '',
     Domains: '',
-    CanManageTenants: false,
+    IsControlPlane: false,
     IsActive: true,
   }
 }
@@ -49,7 +49,7 @@ function fromDto(dto: RealmDto): FormState {
     DisplayName: dto.DisplayName,
     Description: dto.Description ?? '',
     Domains: (dto.Domains ?? []).join('\n'),
-    CanManageTenants: dto.CanManageTenants,
+    IsControlPlane: dto.IsControlPlane,
     IsActive: dto.IsActive,
   }
 }
@@ -101,14 +101,14 @@ async function save() {
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
         Domains: splitLines(form.value.Domains),
-        CanManageTenants: form.value.CanManageTenants,
+        IsControlPlane: form.value.IsControlPlane,
       })
     } else {
       await store.update(slug.value, {
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
         Domains: splitLines(form.value.Domains),
-        CanManageTenants: form.value.CanManageTenants,
+        IsControlPlane: form.value.IsControlPlane,
         IsActive: form.value.IsActive,
       })
     }
@@ -152,8 +152,8 @@ async function save() {
       </CoarFormField>
 
       <div class="flex flex-wrap gap-x-6 gap-y-2 mt-1">
-        <CoarCheckbox v-model="form.CanManageTenants"
-          :label="t('admin.realms.canManageTenants', {}, 'Kann andere Realms verwalten (System-Realm)')" />
+        <CoarCheckbox v-model="form.IsControlPlane"
+          :label="t('admin.realms.isControlPlane', {}, 'Control Plane (cross-realm Admin-Oberfläche)')" />
         <CoarCheckbox v-if="!isCreate" v-model="form.IsActive"
           :label="t('common.active', {}, 'Aktiv')" />
       </div>

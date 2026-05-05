@@ -169,9 +169,6 @@ public static class DependencyInjection
             // GDPR (permanent-erase only — self-service is implicit on the caller)
             opt.RegisterResource(app, "gdpr", "admin");
 
-            // Realms (multi-tenant management — only meaningful in tenant-management realms)
-            opt.RegisterResource(app, "realm", "read", "write");
-
             // OAuth admin surface — granular AND a kept-as-bypass `oauth:admin`.
             opt.RegisterResource(app, "oauth", "admin");
             opt.RegisterResource(app, "oauth-client", "read", "write");
@@ -180,6 +177,15 @@ public static class DependencyInjection
 
             // Login providers (the configurable buttons on the login page)
             opt.RegisterResource(app, "login-provider", "admin", "read", "write");
+
+            // ── control-plane app — cross-realm administration surface ─────────
+            // Resources under this slug are ONLY mounted on the configured
+            // Control-Plane hostname (see ControlPlaneGateMiddleware in
+            // Cocoar.Auth.Api). Tenant realms get 404 on these routes and
+            // also can't grant the permissions because the app isn't seeded
+            // into their tenant DB (see AppRealmSeeder).
+            const string controlPlaneApp = AppSlugs.ControlPlane;
+            opt.RegisterResource(controlPlaneApp, "realm", "read", "write");
         });
 
         // OAuth admin slice services — both consume the tenant-scoped IDocumentSession

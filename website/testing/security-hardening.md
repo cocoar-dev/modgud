@@ -39,6 +39,7 @@ Alle 13 Cluster über alle 3 Wellen abgeschlossen (33 Findings: 31 ✅, 2 ⏸ ac
 | 3 | [C11 Korrektheit](#c11-korrektheit) | 7 | ✅ | `be75284` |
 | 3 | [C12 Logging-Hygiene](#c12-logging-hygiene) | 2 | ✅ | `2be004d` |
 | 3 | [C13 Cert-Rotation](#c13-cert-rotation) | 2 | ✅ | `9b72b52` |
+| Polish | [C14 Control-Plane-Separation](#c14-control-plane-separation) | – | ✅ | (in progress) |
 
 **Findings:** 33 (7 Critical · 13 High · 8 Medium · 5 Low/Info) — siehe
 [Findings-Index](#findings-index) am Ende der Seite.
@@ -517,6 +518,74 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 3. Re-deploy nur mit `SigningCertificatePath=new.pfx` (alte raus)
 
 **Tests:** 781 Unit · 135 Integration · 14 Playwright — alle grün.
+
+---
+
+### C14 · Control-Plane-Separation
+
+**Status:** 🟡 In Progress · **Aufwand:** ~3 h · **Commit:** _pending_
+
+> Pre-release Hardening, kein klassisches Audit-Finding — sondern eine
+> Architektur-Härtung, die der User vor Public-Launch eingezogen hat:
+> Control Plane (cross-realm Admin) vom Data Plane (Tenant-Self-Service)
+> sauber trennen, damit ein Tenant-Host nicht einmal die *Existenz* der
+> Realm-Verwaltung sehen kann.
+
+**Modell:**
+
+- Genau **eine** Control-Plane pro Deployment (`Realm.IsControlPlane`).
+  Backend-Validation: `IsControlPlane`-Flag kann nicht entfernt werden,
+  solange kein anderer aktiver CP-Realm existiert. Soft-Delete eines CP
+  ohne Nachfolger blockiert.
+- Eigener **App-Slug `control-plane`** für die Realm-Verwaltungs-Resource
+  (`control-plane:realm:read|write`). Bewusst losgelöst vom Produkt-Slug
+  `cocoar-auth`: würde der IdP rebrandet, müssten cross-realm-Permissions
+  nicht migriert werden.
+- **Per-Tenant-DB-Seeding:** der `control-plane`-App-Eintrag wird ausschließlich
+  in die CP-Realm-DB geseedet (`AppRealmSeeder.SeedAsync(isControlPlane: …)`).
+  Tenant-Realms haben die App-Registrierung gar nicht — eine Permission wie
+  `control-plane:realm:write` ist auf einem Tenant unerreichbar, selbst wenn
+  jemand sie via Admin-Surface „gewähren" wollte.
+
+**Defence-in-Depth (drei Layer, alle müssten brechen):**
+
+1. **Routing-Layer:** `ControlPlaneGateMiddleware` — läuft *vor*
+   Authentication, gibt 404 zurück, wenn `/api/admin/realms/*` oder
+   `/api/setup/*` von einem Realm aufgerufen werden, der nicht
+   `IsControlPlane` ist. 404 (nicht 403), damit Tenants die Existenz der
+   Endpoints nicht erkennen können.
+2. **Endpoint-Filter:** `RequireControlPlaneFilter` (vorher
+   `RequireCanManageTenantsFilter`) — pro-Endpoint-Gate auf der
+   `/admin/realms`-Group. Schließt die Lücke, wenn ein neuer
+   CP-Endpoint hinzugefügt wird ohne Routing-Prefix.
+3. **Permission-Layer:** `control-plane:realm:*` — App-Slug existiert in
+   Tenant-DBs nicht, also kann kein Group/Role auf einem Tenant die
+   Permission halten.
+
+**Boot-Validation (Production):** `ControlPlaneSettings.Hostnames[]` muss in
+non-Dev gesetzt sein; jeder Hostname muss zu einem Realm mit
+`IsControlPlane=true` auflösen, sonst Host-Start-Abbruch. Verhindert, dass
+ein Typo in `ControlPlane__Hostnames` cross-realm-Admin auf einem
+Tenant-Host exposiert.
+
+**SPA:** `/api/app-info` liefert `IsControlPlane: bool` (auch anonym);
+Sidebar/Router gaten Realm-Admin-Items über `control-plane:realm:read`. Auf
+einem Tenant-Host sieht ein User die Realm-Verwaltung gar nicht erst.
+
+**Domain/DTO-Rename:**
+- `Realm.CanManageTenants` → `Realm.IsControlPlane` (Domain + DTOs +
+  Marten-Documents — Pre-Release, kein Migrations-Pfad)
+- `RequireCanManageTenantsFilter` → `RequireControlPlaneFilter`
+
+**Tests:** ControlPlaneGateMiddleware (5 Cases) +
+RequireControlPlaneFilter (4 Cases) gepinnt; 798 Unit-Tests grün
+(zuvor 781; +17 neue + Renames).
+
+**Folgeschritte (offen):**
+- TestApps mit Tenant-Host gegen `/api/admin/realms` testen → 404 erwartet
+- Doku in `website/concepts/` mit Architecture-Diagram (Control vs Data Plane)
+- Setup-Wizard endpoint nur mounten, wenn CP — momentan vom Routing-Gate
+  abgedeckt, aber ein expliziter Mount-Skip in `Program.cs` wäre sauberer
 
 ---
 
