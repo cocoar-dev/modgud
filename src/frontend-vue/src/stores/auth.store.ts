@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useSignalR } from '@/composables/useSignalR'
-import type { AuthUser, CreateAdminRequest, EmailOtpStatus, LoginResponse, MagicLinkRequest, SetupStatus } from '@/models/auth'
+import type { AuthUser, EmailOtpStatus, LoginResponse, MagicLinkRequest } from '@/models/auth'
 
 // Shape of the DataEvent the UserHub broadcasts — same wire format as
 // useEntityService uses. We only need Action + Payload here; Payload items
@@ -16,7 +16,6 @@ interface UserHubEvent {
 
 export const useAuthStore = defineStore('auth', () => {
   const http = useHttpClient('/api/account')
-  const setupHttp = useHttpClient('/api/setup')
   const emailOtpHttp = useHttpClient('/api/account/email-otp')
   const magicLinkHttp = useHttpClient('/api/account/magic-link')
   const signalr = useSignalR()
@@ -180,15 +179,6 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function fetchSetupStatus(): Promise<SetupStatus> {
-    return await setupHttp.addPath('status').get<SetupStatus>()
-  }
-
-  async function createAdmin(data: CreateAdminRequest): Promise<void> {
-    await setupHttp.addPath('create-admin').post(data)
-    await fetchMe()
-  }
-
   return {
     user,
     isAuthenticated,
@@ -205,7 +195,5 @@ export const useAuthStore = defineStore('auth', () => {
     magicLinkLogin,
     logout,
     fetchMe,
-    fetchSetupStatus,
-    createAdmin,
   }
 })

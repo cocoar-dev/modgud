@@ -198,5 +198,5 @@ public static class RealmsEndpoints
 }
 
 // RequireControlPlaneFilter lives in Cocoar.Auth.Infrastructure.Realms so
-// the Authentication slice's SetupEndpoints can apply the same filter
+// auth-slice endpoints can apply the same filter without circular refs
 // without an Api ↔ Auth circular reference (C14b).

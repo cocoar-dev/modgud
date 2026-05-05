@@ -9,15 +9,12 @@ namespace Cocoar.Auth.Infrastructure.Realms;
 /// deliberate: tenant realms shouldn't even know that the global admin
 /// surface exists at this hostname.
 ///
-/// <para>Lives in Infrastructure (not Api) so the Authentication slice's
-/// <c>SetupEndpoints</c> can pull the same filter without an Api → Auth
-/// circular reference. Used by:</para>
-/// <list type="bullet">
-/// <item><description><c>RealmsEndpoints</c> in <c>Cocoar.Auth.Api</c> —
-/// the realm CRUD admin surface.</description></item>
-/// <item><description><c>SetupEndpoints</c> in
-/// <c>Cocoar.Auth.Authentication</c> — first-run admin bootstrap.</description></item>
-/// </list>
+/// <para>Lives in Infrastructure (not Api) so auth-slice endpoints can
+/// pull the same filter without an Api → Auth circular reference.
+/// Currently used by <c>RealmsEndpoints</c> in <c>Cocoar.Auth.Api</c> —
+/// the realm CRUD admin surface. (The C15d cleanup removed the previous
+/// SetupEndpoints user; the filter is kept available for future
+/// CP-only routes.)</para>
 ///
 /// <para>This is the in-app belt-and-suspenders complement to
 /// <c>ControlPlaneGateMiddleware</c>, which short-circuits earlier in the

@@ -31,11 +31,10 @@ public static class BootstrapEndpoints
         var group = app.MapGroup($"{path}/account/bootstrap-admin")
             .WithTags("Bootstrap")
             .AllowAnonymous()
-            // Same policy as the old /api/setup/* surface — 10 attempts
-            // per 15 min per IP. Bootstrap is at most one click per
-            // recipient; this is a brake on automated probing of leaked
-            // tokens.
-            .RequireRateLimiting("setup");
+            // 10 attempts per 15 min per IP. Bootstrap is at most one
+            // click per recipient; this is a brake on automated probing
+            // of leaked tokens.
+            .RequireRateLimiting("bootstrap");
 
         group.MapPost("", async (
             ConsumeInviteRequest request,

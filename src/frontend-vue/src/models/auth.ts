@@ -24,19 +24,9 @@ export interface LoginRequest {
   RememberMe?: boolean
 }
 
-export interface SetupStatus {
-  NeedsSetup: boolean
-  HasDemoSeed: boolean
-}
-
-export interface CreateAdminRequest {
-  UserName: string
-  Password: string
-  Firstname?: string
-  Lastname?: string
-  Email?: string
-  LoadDemoData?: boolean
-}
+// SetupStatus + CreateAdminRequest were removed in C15d. First-admin
+// onboarding now goes through CP-issued bootstrap-invites; see
+// CreatedRealmDto + InitialAdminInviteDto in @/models/realm.
 
 export interface LoginResponse {
   Message?: string

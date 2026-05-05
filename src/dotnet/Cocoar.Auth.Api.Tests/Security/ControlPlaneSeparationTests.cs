@@ -105,21 +105,10 @@ public class ControlPlaneSeparationTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
     }
 
-    [Fact]
-    public async Task POST_setup_from_tenant_host_returns_404()
-    {
-        // The first-run setup wizard is a deployment-global one-shot —
-        // exposing it on a tenant host would let a tenant create the first
-        // global admin if the deployment hadn't been bootstrapped. The
-        // gate covers /api/setup/* the same way it covers /api/admin/realms.
-        await SeedTenantRealmAsync("acme", TenantHost);
-
-        using var resp = await Client.SendAsync(
-            Request(HttpMethod.Post, "/api/setup/create-admin", TenantHost),
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
-    }
+    // POST_setup_from_tenant_host_returns_404 was removed in C15d alongside
+    // the /api/setup surface. First-admin bootstrap now goes through
+    // POST /api/account/bootstrap-admin on the tenant host (consume an
+    // invite issued from the CP-side or the recovery CLI).
 
     [Fact]
     public async Task UpdateRealm_promoting_second_realm_to_ControlPlane_is_blocked()

@@ -1,19 +1,17 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 
-let setupChecked = false
-
 const routes = [
     {
       path: '/login',
       component: () => import('@/views/auth/LoginView.vue'),
       meta: { public: true },
     },
-    {
-      path: '/setup',
-      component: () => import('@/views/auth/SetupView.vue'),
-      meta: { public: true },
-    },
+    // The /setup wizard surface was removed in C15d. First-admin onboarding
+    // now goes through a CP-issued bootstrap-invite (SPA: /bootstrap?token=…)
+    // or the recovery-CLI `bootstrap-admin` command — both grounded in
+    // explicit trust (CP-admin or filesystem) instead of a race-window
+    // anonymous endpoint.
     {
       path: '/forgot-password',
       component: () => import('@/views/auth/ForgotPasswordView.vue'),
@@ -243,18 +241,12 @@ router.beforeEach(async (to) => {
     await authStore.fetchMe()
   }
 
-  // Check setup status once (only if still not authenticated)
-  if (!authStore.isAuthenticated && !setupChecked) {
-    setupChecked = true
-    try {
-      const status = await authStore.fetchSetupStatus()
-      if (status.NeedsSetup) {
-        return '/setup'
-      }
-    } catch {
-      // Setup endpoint not available — continue to login
-    }
-  }
+  // Setup-status probe + /setup redirect were removed in C15d. The
+  // first-admin onboarding now goes through CP-issued bootstrap-invites
+  // (which land at /bootstrap?token=…); a fresh deployment with no admin
+  // simply shows the login screen — the operator runs
+  // `dotnet Cocoar.Auth.Api.dll recover bootstrap-admin --email …` once
+  // and onboards via the printed magic-link.
 
   // Redirect to login if not authenticated (preserve intended destination)
   if (!authStore.isAuthenticated) {

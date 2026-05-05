@@ -10,8 +10,10 @@ namespace Cocoar.Auth.Authentication.Identity;
 /// the union of email addresses produced by <see cref="IPrincipalEmailResolver"/> over
 /// every <see cref="Group"/> whose roles effectively grant <c>realm:admin</c>.
 /// A group with its own shared mailbox is addressed directly; a group without one is
-/// expanded to its members. The lookup matches <c>SetupEndpoints.AdminExistsAsync</c> so
-/// we stay consistent with the „an admin exists" definition the rest of the app uses.
+/// expanded to its members. The lookup matches the role+group shape
+/// produced by <c>RealmAdminBootstrapper</c> (System Admin role +
+/// Administratoren group); the legacy bare-<c>"admin"</c> on
+/// <c>ResourceType="app"</c> shape is also matched for older streams.
 /// </summary>
 public interface IAdminNotifier
 {
@@ -23,7 +25,8 @@ public class AdminNotifier(IQuerySession session, IPrincipalEmailResolver resolv
     public async Task<IReadOnlyList<string>> GetAdminRecipientsAsync(CancellationToken ct = default)
     {
         // Roles that effectively grant realm:admin (or the legacy app:admin
-        // precursor) — same matcher as SetupEndpoints.AdminExistsAsync.
+        // precursor) — same matcher as RealmAdminBootstrapper uses to
+        // detect a pre-existing admin role at re-bootstrap time.
         var adminRoles = await session.Query<PermissionRole>()
             .Where(r => !r.IsDeleted
                      && (r.Permissions.Contains(PermissionEvaluator.RealmAdminPermission)

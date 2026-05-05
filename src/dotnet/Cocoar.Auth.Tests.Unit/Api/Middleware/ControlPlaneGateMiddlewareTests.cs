@@ -21,8 +21,6 @@ public class ControlPlaneGateMiddlewareTests
         [InlineData("/api/admin/realms/")]
         [InlineData("/api/admin/realms/system")]
         [InlineData("/API/Admin/Realms/system")] // case-insensitive
-        [InlineData("/api/setup")]
-        [InlineData("/api/setup/create-admin")]
         public void Matches_protected_prefixes(string path)
         {
             Assert.True(ControlPlaneGateMiddleware.IsControlPlaneOnlyPath(path));
@@ -32,24 +30,11 @@ public class ControlPlaneGateMiddlewareTests
         [InlineData("/api/admin/users")]
         [InlineData("/api/admin/oauth-clients")]
         [InlineData("/api/app-info")]
+        [InlineData("/api/account/bootstrap-admin")] // C15d: bootstrap-invite consume runs on tenant host
         [InlineData("/connect/token")]
         [InlineData("/")]
-        [InlineData("/api/setupx")] // adjacent prefix that should NOT match — different name
         public void Does_not_match_unrelated_paths(string path)
         {
-            // Note: "/api/setupx" matches "/api/setup" with StartsWith, so this
-            // pins that we treat the prefix as a path-segment boundary in
-            // intent. If this test fails, harden the matcher with an explicit
-            // segment check.
-            // (Currently — bare StartsWith — "/api/setupx" DOES match. Update
-            //  if you tighten the rule.)
-            // For now we accept the StartsWith semantics; pinning the
-            // /api/admin/users non-match is the security-relevant case.
-            if (path == "/api/setupx")
-            {
-                Assert.True(ControlPlaneGateMiddleware.IsControlPlaneOnlyPath(path));
-                return;
-            }
             Assert.False(ControlPlaneGateMiddleware.IsControlPlaneOnlyPath(path));
         }
     }
@@ -136,21 +121,10 @@ public class ControlPlaneGateMiddlewareTests
             Assert.Equal(StatusCodes.Status404NotFound, ctx.Response.StatusCode);
         }
 
-        [Fact]
-        public async Task Setup_path_blocked_on_tenant_realm()
-        {
-            // The first-run setup wizard is a deployment-global one-shot —
-            // exposing it on a tenant host would let a tenant create the
-            // first global admin if the deployment hadn't been bootstrapped
-            // yet. Pin the gate.
-            var nextCalls = 0;
-            var mw = new ControlPlaneGateMiddleware(_ => { nextCalls++; return Task.CompletedTask; });
-            var ctx = Build("/api/setup/create-admin", new TenantInfo("acme", IsControlPlane: false, IsActive: true));
-
-            await mw.InvokeAsync(ctx);
-
-            Assert.Equal(0, nextCalls);
-            Assert.Equal(StatusCodes.Status404NotFound, ctx.Response.StatusCode);
-        }
+        // The "/api/setup blocked on tenant realm" test was removed in
+        // C15d alongside the setup-wizard endpoints. First-admin onboarding
+        // now uses POST /api/account/bootstrap-admin which runs on the
+        // tenant host on purpose (the recipient lands there from the
+        // magic-link).
     }
 }

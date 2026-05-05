@@ -37,7 +37,9 @@ public sealed class ControlPlaneGateMiddleware
     private static readonly string[] ControlPlaneOnlyPaths =
     [
         "/api/admin/realms",
-        "/api/setup",
+        // /api/setup was removed in C15d — there is no first-run wizard
+        // anymore. Bootstrap-invite consumption (POST /api/account/bootstrap-admin)
+        // runs on the tenant host on purpose, so it is NOT listed here.
     ];
 
     public ControlPlaneGateMiddleware(RequestDelegate next)

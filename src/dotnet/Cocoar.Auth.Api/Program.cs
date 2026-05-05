@@ -441,7 +441,9 @@ try
     //     (from request body) fallback to IP. Per-user rate already exists
     //     in the magic-link service; this caps the upstream invocation
     //     even before that runs.
-    //   * /api/setup/* → IP. Setup is one-shot per deployment.
+    //   * /api/account/bootstrap-admin → IP. Bootstrap-invite consume is
+    //     one-shot per token; the policy is a brake on automated probing
+    //     of leaked tokens.
     builder.Services.AddRateLimiter(options =>
     {
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -462,7 +464,7 @@ try
                 });
         });
 
-        options.AddPolicy("setup", context =>
+        options.AddPolicy("bootstrap", context =>
         {
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
@@ -508,16 +510,13 @@ try
     // + IAutoMembershipRecalculator are all registered by AddCocoarAuthAuthorization
     // inside AddInfrastructure. Only keep app-specific wiring here.
     builder.Services.AddScoped<IAdminNotifier, AdminNotifier>();
-    // Demo seed importer — reads data/demo-seed.json on first-time setup when
-    // the operator opts in. The service is itself stateless; it scopes its
-    // own session per call so re-runs (e.g. setup-completed → admin re-runs
-    // with LoadDemoData=true) don't leak across invocations.
-    // PROD-01: do NOT expose the demo seeder in Production. The seed file is
-    // also publish-excluded (see csproj), but the in-process service is the
-    // belt-and-suspenders gate — even if a build accidentally ships the JSON,
-    // there is nothing to call it. The DemoSeedService dependency on
-    // SetupEndpoints.create-admin is `IDemoSeedService? = null`, so the
-    // endpoint silently falls through when the service isn't registered.
+    // Demo seed importer — reads data/demo-seed.json. After C15d the only
+    // surface that calls it is the Recovery-CLI `recover demo-seed --realm
+    // <slug>` subcommand; the old `LoadDemoData=true` checkbox in the
+    // /setup wizard is gone. PROD-01 bracket: the JSON file is publish-
+    // excluded and the service registration itself is non-Production, so
+    // a Production deployment couldn't seed demo data even if someone
+    // shipped the JSON by accident.
     if (!builder.Environment.IsProduction())
     {
         builder.Services.AddScoped<IDemoSeedService, DemoSeedService>();
@@ -546,10 +545,11 @@ try
     builder.Services.AddScoped<ExternalLoginProcessor>();
     builder.Services.AddHostedService<OidcSchemeBootstrap>();
 
-    // SETUP-01 — first-run setup token (Production / non-Development only).
-    builder.Services.AddSingleton<Cocoar.Auth.Authentication.Configuration.ISetupTokenService,
-                                   Cocoar.Auth.Api.Features.Setup.SetupTokenService>();
-    builder.Services.AddHostedService<Cocoar.Auth.Api.Features.Setup.SetupTokenBootstrap>();
+    // SETUP-01 / Setup endpoint surface eliminated in C15d. First-admin
+    // onboarding goes through CP-issued bootstrap-invites (POST
+    // /api/account/bootstrap-admin) or the Recovery-CLI `bootstrap-admin`
+    // command. The race-window the old setup-token guarded against does
+    // not exist anymore — anonymous endpoints can't elevate to admin.
 
     // Email (reactive — options factory reads IReactiveConfig<EmailConfiguration> on each send)
    
@@ -796,7 +796,7 @@ try
 
     // RATE-01 — apply the rate-limit policies registered in
     // AddRateLimiter. Endpoints opt in via .RequireRateLimiting("policy")
-    // (see /connect/* + /api/setup/* + /api/account/forgot-password +
+    // (see /connect/* + /api/account/bootstrap-admin + /api/account/forgot-password +
     // /api/account/magic-link below). Endpoints without an explicit
     // policy are not rate-limited at the app layer.
     app.UseRateLimiter();
@@ -835,7 +835,6 @@ try
     app.MapPasskeyEndpoints("api");
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");
-    app.MapSetupEndpoints("api");
     app.MapBootstrapEndpoints("api");
     app.MapSessionEndpoints("api");
     app.MapGdprEndpoints("api");

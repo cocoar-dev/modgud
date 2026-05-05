@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
-using Cocoar.Auth.Authentication.Configuration;
+using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Domain.Realms;
 using Cocoar.Auth.Infrastructure.Email;
