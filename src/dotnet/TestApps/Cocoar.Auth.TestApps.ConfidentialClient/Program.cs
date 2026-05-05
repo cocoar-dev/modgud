@@ -41,7 +41,7 @@ if (!tokenResponse.IsSuccessStatusCode)
 using var tokenJson = JsonDocument.Parse(tokenBody);
 var accessToken = tokenJson.RootElement.GetProperty("access_token").GetString()!;
 var expiresIn = tokenJson.RootElement.GetProperty("expires_in").GetInt32();
-Console.WriteLine($"   ✓ access_token obtained (expires in {expiresIn}s, {accessToken.Length} chars)");
+Console.WriteLine($"   ✓ access_token obtained (expires in {expiresIn}s)");
 
 http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
