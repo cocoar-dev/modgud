@@ -957,6 +957,25 @@ try
         var realmCache = realmScope.ServiceProvider.GetRequiredService<IRealmCache>();
         await realmCache.InitializeAsync();
 
+        // Warm the IGlobalStore Marten LINQ pipeline for the realm-admin
+        // queries. Marten compiles each distinct LINQ shape lazily on first
+        // use; without warmup the very first GET /api/admin/realms after boot
+        // takes ~7.5s while the OrderBy(CreatedAt) query is compiled. Same
+        // for GetRealmBySlugAsync. Issuing both shapes here makes them warm
+        // before the first user request — folks clicking around the admin
+        // UI never see the cold-start cliff.
+        // Costs: ~1-2s once at boot, then nothing.
+        try
+        {
+            await realmService.GetAllRealmsAsync();
+            await realmService.GetRealmBySlugAsync(TenantConstants.SystemTenantId);
+        }
+        catch (Exception ex)
+        {
+            // Warmup is best-effort. A failure here doesn't prevent boot.
+            Log.Warning(ex, "Realm-query warmup failed (non-fatal — first user request will pay the cold-start cost).");
+        }
+
         // C14 boot-validation: every configured Control-Plane hostname must
         // resolve to a realm flagged IsControlPlane=true. A typo in
         // ControlPlane__Hostnames in Production would otherwise quietly
