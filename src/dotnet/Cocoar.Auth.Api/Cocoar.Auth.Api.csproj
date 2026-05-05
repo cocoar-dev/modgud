@@ -52,10 +52,10 @@
     publish; devs still use them at source, prod runs on class defaults + env vars.
 
     data/demo-seed.json is dev-only fixture data (admin/Demo1234! plus hard-coded
-    OAuth client secrets). It MUST NOT ship in the production image — an operator
-    triggering /setup with LoadDemoData=true on a public deployment would otherwise
-    create takeover-ready accounts. Excluded from publish here; DemoSeedService is
-    only registered in non-Production environments (Program.cs).
+    OAuth client secrets). After C16 the file is consumed by scripts/seed-demo.mjs
+    (running outside the API as an admin client), so the in-process risk is gone
+    — but we keep the file out of the publish output anyway so a leaked image
+    doesn't carry the well-known fixture-secret list.
   -->
   <ItemGroup>
     <Content Update="data\configuration.json">

@@ -6,19 +6,19 @@ using Wolverine.Marten.Publishing;
 
 namespace Internal.Generated.WolverineHandlers
 {
-    // START: IEventHandler2008265055
+    // START: IEventHandler1425719633
     [global::System.CodeDom.Compiler.GeneratedCode("JasperFx", "1.0.0")]
-    public sealed class IEventHandler2008265055 : Wolverine.Runtime.Handlers.MessageHandler
+    public sealed class IEventHandler1425719633 : Wolverine.Runtime.Handlers.MessageHandler
     {
-        private readonly Microsoft.Extensions.DependencyInjection.IServiceScopeFactory _serviceScopeFactory;
-        private readonly Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserUpdatedHandler> _loggerOfAutoMembershipOnUserUpdatedHandler;
         private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
+        private readonly Microsoft.Extensions.DependencyInjection.IServiceScopeFactory _serviceScopeFactory;
+        private readonly Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnGroupCreatedHandler> _loggerOfAutoMembershipOnGroupCreatedHandler;
 
-        public IEventHandler2008265055(Microsoft.Extensions.DependencyInjection.IServiceScopeFactory serviceScopeFactory, Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserUpdatedHandler> loggerOfAutoMembershipOnUserUpdatedHandler, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory)
+        public IEventHandler1425719633(Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, Microsoft.Extensions.DependencyInjection.IServiceScopeFactory serviceScopeFactory, Microsoft.Extensions.Logging.ILogger<Cocoar.Auth.Api.Features.Groups.AutoMembershipOnGroupCreatedHandler> loggerOfAutoMembershipOnGroupCreatedHandler)
         {
-            _serviceScopeFactory = serviceScopeFactory;
-            _loggerOfAutoMembershipOnUserUpdatedHandler = loggerOfAutoMembershipOnUserUpdatedHandler;
             _outboxedSessionFactory = outboxedSessionFactory;
+            _serviceScopeFactory = serviceScopeFactory;
+            _loggerOfAutoMembershipOnGroupCreatedHandler = loggerOfAutoMembershipOnGroupCreatedHandler;
         }
 
 
@@ -37,20 +37,20 @@ namespace Internal.Generated.WolverineHandlers
             */
             var autoMembershipRecalculator = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<Cocoar.Auth.Authorization.Membership.IAutoMembershipRecalculator>(serviceScope.ServiceProvider);
             // The actual message body
-            var eventOfUserUpdatedEvent = (JasperFx.Events.IEvent<Cocoar.Auth.Domain.Users.Events.UserUpdatedEvent>)context.Envelope.Message;
+            var eventOfGroupCreatedEvent = (JasperFx.Events.IEvent<Cocoar.Auth.Authorization.Events.GroupCreatedEvent>)context.Envelope.Message;
 
-            System.Diagnostics.Activity.Current?.SetTag("message.handler", "Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserUpdatedHandler");
-            System.Diagnostics.Activity.Current?.SetTag("handler.type", "Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserUpdatedHandler");
-            var autoMembershipOnUserUpdatedHandler = new Cocoar.Auth.Api.Features.Groups.AutoMembershipOnUserUpdatedHandler(autoMembershipRecalculator, _loggerOfAutoMembershipOnUserUpdatedHandler);
+            System.Diagnostics.Activity.Current?.SetTag("message.handler", "Cocoar.Auth.Api.Features.Groups.AutoMembershipOnGroupCreatedHandler");
+            System.Diagnostics.Activity.Current?.SetTag("handler.type", "Cocoar.Auth.Api.Features.Groups.AutoMembershipOnGroupCreatedHandler");
+            var autoMembershipOnGroupCreatedHandler = new Cocoar.Auth.Api.Features.Groups.AutoMembershipOnGroupCreatedHandler(autoMembershipRecalculator, _loggerOfAutoMembershipOnGroupCreatedHandler);
             
             // The actual message execution
-            await autoMembershipOnUserUpdatedHandler.Handle(eventOfUserUpdatedEvent, documentSession).ConfigureAwait(false);
+            await autoMembershipOnGroupCreatedHandler.Handle(eventOfGroupCreatedEvent, documentSession).ConfigureAwait(false);
 
         }
 
     }
 
-    // END: IEventHandler2008265055
+    // END: IEventHandler1425719633
     
     
 }

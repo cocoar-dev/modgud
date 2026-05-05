@@ -27,7 +27,6 @@ using Cocoar.Auth.Authentication.AuthLog;
 using Cocoar.Auth.Authentication.Api.Admin;
 using Cocoar.Auth.Authentication.Api.Admin.LoginProviders;
 using Cocoar.Auth.Authentication.Api.ExternalAuth;
-using Cocoar.Auth.Api.Features.Dev;
 using Cocoar.Auth.Api.Features.Groups;
 using Cocoar.Auth.Api.Features.Principals;
 using Cocoar.Auth.Api.Features.Roles;
@@ -510,17 +509,12 @@ try
     // + IAutoMembershipRecalculator are all registered by AddCocoarAuthAuthorization
     // inside AddInfrastructure. Only keep app-specific wiring here.
     builder.Services.AddScoped<IAdminNotifier, AdminNotifier>();
-    // Demo seed importer — reads data/demo-seed.json. After C15d the only
-    // surface that calls it is the Recovery-CLI `recover demo-seed --realm
-    // <slug>` subcommand; the old `LoadDemoData=true` checkbox in the
-    // /setup wizard is gone. PROD-01 bracket: the JSON file is publish-
-    // excluded and the service registration itself is non-Production, so
-    // a Production deployment couldn't seed demo data even if someone
-    // shipped the JSON by accident.
-    if (!builder.Environment.IsProduction())
-    {
-        builder.Services.AddScoped<IDemoSeedService, DemoSeedService>();
-    }
+    // C16: Demo-seed runs as an API client now — see scripts/seed-demo.mjs.
+    // No backend service, no DI registration, no PROD-01 bracket needed:
+    // the script logs in as a regular admin and POSTs through the same
+    // admin API the UI uses. data/demo-seed.json stays as the input
+    // contract; the JSON file is still publish-excluded (csproj) so it
+    // never leaves the dev tree.
 
     // External auth (Phase 1–2: flavor registry + dynamic OIDC scheme registration)
     builder.Services.AddSingleton<ILoginProviderFlavor, EntraIdFlavor>();

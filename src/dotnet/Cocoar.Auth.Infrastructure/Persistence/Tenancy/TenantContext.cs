@@ -5,8 +5,8 @@ namespace Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 /// boundaries that <c>HttpContextAccessor</c>-only chains do not — solves the
 /// class of bug where a scoped service spins up an inner DI scope to grab a
 /// fresh <c>IMessageBus</c>, which then has <c>TenantId == null</c> because
-/// the bus instance is brand new (see WOLV-01: DemoSeedService phase 7
-/// crashing in <c>Marten.MasterTableTenancy.get_Default()</c>).
+/// the bus instance is brand new (see WOLV-01: a Wolverine handler in
+/// an inner scope used to crash in <c>Marten.MasterTableTenancy.get_Default()</c>).
 ///
 /// <para>
 /// Population strategy:
