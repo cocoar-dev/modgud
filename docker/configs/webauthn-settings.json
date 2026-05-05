@@ -1,5 +1,0 @@
-{
-  "RelyingPartyId": "localhost",
-  "RelyingPartyName": "Cocoar Auth",
-  "Origins": ["http://localhost:4200"]
-}

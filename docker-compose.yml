@@ -15,10 +15,15 @@ services:
       retries: 10
 
   auth:
-    image: ghcr.io/cocoar-dev/cocoar.auth:0.1.0-beta.45
+    image: ghcr.io/cocoar-dev/cocoar.auth:staging
     container_name: cocoar-auth
+    # Container listens on 8081 (non-privileged — the .NET aspnet image runs
+    # as a non-root user and can't bind <1024 without USER root). The host
+    # mapping exposes that as :80 so users can hit http://localhost/ without
+    # a reverse proxy. For HTTPS, terminate TLS in your reverse proxy and
+    # forward to :80 here.
     ports:
-      - "4200:80"
+      - "80:8081"
     environment:
       # Cocoar.Configuration v5 binds env vars by `<section>__<property>`
       # (double underscore = section boundary). The `<section>` part is
@@ -28,16 +33,13 @@ services:
       # Marten connection string. Keepalive=30 keeps idle pooled
       # connections healthy through the docker-network NAT.
       DBSETTINGS__CONNECTIONSTRING: "Host=postgres;Database=cocoar_auth;Username=postgres;Password=postgres;Keepalive=30"
-      # Without an APPURL override Kestrel tries to bind the default
-      # `https://0.0.0.0:443`, which needs a dev cert that the
-      # production image deliberately doesn't ship. Override here so
-      # the container binds plain HTTP for the reverse proxy in front
-      # of it to terminate TLS.
-      APPURL: "http://0.0.0.0:80"
+      # AppUrl tells Kestrel what to bind inside the container. Stays at
+      # 8081 — the host port mapping above exposes it as :80.
+      APPURL: "http://0.0.0.0:8081"
       # OpenIddict issuer = the public URL clients see in
       # /.well-known/openid-configuration. Per-realm overrides apply at
       # request time via RealmIssuerHandler.
-      OPENIDDICT__ISSUER: "http://localhost:4200"
+      OPENIDDICT__ISSUER: "http://localhost"
       # Ephemeral signing keys; tokens get invalidated on every
       # restart. Switch to false + a signing certificate for prod.
       OPENIDDICT__DEVELOPMENTMODE: "true"

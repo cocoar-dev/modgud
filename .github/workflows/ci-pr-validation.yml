@@ -1,14 +1,13 @@
-name: CI - Pull Request
+name: CI - PR Validation
 
 on:
   pull_request:
-    branches: [develop]
+    branches: [ develop ]
 
 jobs:
-  build-and-test:
-    name: Build & Test
+  backend:
+    name: Backend Build & Test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     permissions:
       contents: read
 
@@ -23,31 +22,75 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v4
+        with:
+          versionSpec: '6.x'
+
+      - name: Calculate version
+        id: gv
+        uses: gittools/actions/gitversion/execute@v4
+
+      - name: Restore backend dependencies
+        run: dotnet restore Cocoar.Auth.slnx
+        working-directory: ./src/dotnet
+
+      - name: Build backend
+        run: dotnet build Cocoar.Auth.slnx -c Release --no-restore -p:Version=${{ steps.gv.outputs.SemVer }}
+        working-directory: ./src/dotnet
+
+      - name: Test backend
+        run: dotnet test Cocoar.Auth.slnx -c Release --no-build --verbosity normal
+        working-directory: ./src/dotnet
+
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
+      - name: Install pnpm
+        run: corepack enable && corepack prepare pnpm@latest --activate
 
-      - name: Build Vue Frontend
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
         working-directory: ./src/frontend-vue
-        run: pnpm install --frozen-lockfile && pnpm build
 
-      - name: Restore dependencies
-        run: dotnet restore
-        working-directory: ./src/dotnet
+      - name: Build frontend
+        run: pnpm build
+        working-directory: ./src/frontend-vue
 
-      - name: Build
-        run: dotnet build -c Release --no-restore
-        working-directory: ./src/dotnet
+  docs:
+    name: Docs Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
-      - name: Test (Category by Category)
-        working-directory: ./src/dotnet
-        run: |
-          echo "=== Smoke ===" && dotnet test -c Release --no-build --verbosity minimal --filter "Category=Smoke" && \
-          echo "=== Auth ===" && dotnet test -c Release --no-build --verbosity minimal --filter "Category=Auth" && \
-          echo "=== OAuth ===" && dotnet test -c Release --no-build --verbosity minimal --filter "Category=OAuth"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        run: corepack enable && corepack prepare pnpm@latest --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: ./website
+
+      - name: Build docs (public + in-app)
+        run: pnpm build:all
+        working-directory: ./website

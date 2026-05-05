@@ -1,4 +1,4 @@
-name: CD - Release
+name: CD - Deploy Production
 
 on:
   release:
@@ -16,29 +16,30 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
+      - name: Checkout tag
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
       - name: Extract and validate release version
         id: version
         run: |
           TAG="${{ github.event.release.tag_name }}"
-          echo "Release tag: $TAG"
-
           if [[ "$TAG" =~ ^v[0-9] ]]; then
             VERSION="${TAG#v}"
           else
-            echo "::error ::Tag must start with 'v' followed by version number (e.g., v1.0.0)"
+            echo "::error ::Tag must start with 'v' (e.g., v1.2.3)"
             exit 1
           fi
-
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
-            echo "::error ::Invalid release version format. Expected X.Y.Z or X.Y.Z-label (e.g., 1.2.3, 1.2.3-beta.1), got: $VERSION"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error ::Invalid version format. Expected X.Y.Z, got: $VERSION"
             exit 1
           fi
-
-          echo "Using release version: $VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-  build:
-    name: Build & Test
+  test:
+    name: Backend Tests
     needs: validate-version
     runs-on: ubuntu-latest
     permissions:
@@ -55,53 +56,16 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Build Vue Frontend
-        working-directory: ./src/frontend-vue
-        run: pnpm install --frozen-lockfile && pnpm build
-
-      - name: Restore dependencies
-        run: dotnet restore
-        working-directory: ./src/dotnet
-
-      - name: Build
-        run: dotnet build -c Release --no-restore -p:Version=${{ needs.validate-version.outputs.version }}
-        working-directory: ./src/dotnet
-
-      - name: Test (All Categories)
-        working-directory: ./src/dotnet
+      - name: Restore, build & test
         run: |
-          for cat in Smoke Auth TwoFactor OAuth Admin ExternalLogin MultiTenancy GDPR; do
-            echo "=== $cat ===" && dotnet test -c Release --no-build --verbosity minimal --filter "Category=$cat"
-          done
-
-      - name: Publish
-        run: dotnet publish Cocoar.Auth.Api/Cocoar.Auth.Api.csproj -c Release --no-build -o $GITHUB_WORKSPACE/publish
+          dotnet restore Cocoar.Auth.slnx
+          dotnet build Cocoar.Auth.slnx -c Release --no-restore -p:Version=${{ needs.validate-version.outputs.version }}
+          dotnet test Cocoar.Auth.slnx -c Release --no-build --verbosity normal
         working-directory: ./src/dotnet
-
-      - name: Copy frontend to publish wwwroot
-        run: |
-          mkdir -p $GITHUB_WORKSPACE/publish/wwwroot
-          cp -r src/frontend-vue/apps/frontend/dist/* $GITHUB_WORKSPACE/publish/wwwroot/
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: auth-app
-          path: ./publish
 
   deploy:
-    name: Deploy to Production
-    needs: [validate-version, build]
+    name: Build Image & Push
+    needs: [validate-version, test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -116,20 +80,8 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: auth-app
-          path: ./docker/app
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -137,7 +89,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -147,85 +99,19 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate-version.outputs.version }}
             type=semver,pattern={{major}},value=${{ needs.validate-version.outputs.version }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v7
+      - name: Build and push Docker image (multi-stage)
+        uses: docker/build-push-action@v5
         with:
-          context: ./docker
+          context: .
           file: ./docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Deployment summary
         run: |
-          echo "### Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "### Production Deployment Complete!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ needs.validate-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Release:** ${{ github.event.release.name }}" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
-
-  deploy-docs:
-    name: Deploy Documentation
-    needs: [validate-version, deploy]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout tag
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.release.tag_name }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install dependencies
-        working-directory: website
-        run: npm ci
-
-      - name: Build VitePress
-        working-directory: website
-        run: npx vitepress build
-
-      - name: Package
-        run: cd website/.vitepress/dist && zip -r $GITHUB_WORKSPACE/docs.zip .
-
-      - name: Extract docs version
-        id: docs-version
-        env:
-          VERSION: ${{ needs.validate-version.outputs.version }}
-        run: |
-          if [[ "$VERSION" == *-* ]]; then
-            # Pre-release: use full version (e.g. v1.0.0-beta.1)
-            echo "value=v${VERSION}" >> $GITHUB_OUTPUT
-          else
-            # Stable: use major.minor (e.g. v1.0)
-            MAJOR=$(echo "$VERSION" | cut -d. -f1)
-            MINOR=$(echo "$VERSION" | cut -d. -f2)
-            echo "value=v${MAJOR}.${MINOR}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Upload to Shelf
-        env:
-          KEY: ${{ secrets.SHELF_API_KEY }}
-          URL: ${{ secrets.SHELF_BASE_URL }}
-          VER: ${{ steps.docs-version.outputs.value }}
-        run: |
-          echo "Deploying docs $VER to $URL"
-          curl -f -X POST \
-            -H "Authorization: Bearer $KEY" \
-            -H "Content-Type: application/zip" \
-            --data-binary @$GITHUB_WORKSPACE/docs.zip \
-            "${URL}/_api/products/cocoar-auth/versions/${VER}"
-
-      - name: Docs deployment summary
-        run: |
-          echo "### Documentation Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Product:** cocoar-auth" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ steps.docs-version.outputs.value }}" >> $GITHUB_STEP_SUMMARY
-          echo "**URL:** ${{ secrets.SHELF_BASE_URL }}/cocoar-auth/" >> $GITHUB_STEP_SUMMARY
