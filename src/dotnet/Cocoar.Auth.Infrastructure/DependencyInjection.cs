@@ -192,13 +192,32 @@ public static class DependencyInjection
         // injected by TenantedSessionFactory, so calls land in the correct realm DB.
         services.AddScoped<OAuthAdminService>();
 
-        // Register JsEval (Linq-enabled + Principal discriminator mappings for Type.Is() in membership scripts)
+        // Register JsEval (Linq-enabled + Principal discriminator mappings for Type.Is() in membership scripts).
+        //
+        // Security: cocoar.js-eval wires `NewObject(typeName, args)` and
+        // `require(name)` as engine globals by default. NewObject's fallback
+        // path (Cocoar.Reflectensions.TypeHelper.FindType) walks every loaded
+        // assembly, so a script can construct ANY public CLR type with a
+        // public constructor — `NewObject('System.IO.FileInfo', [...])`,
+        // `NewObject('System.Net.Http.HttpClient')`,
+        // `NewObject('System.Diagnostics.Process')`, etc. Combined with Jint's
+        // top-level execution (Stage B1 in the threat model), this is a
+        // host-RCE primitive reachable by anyone holding `cocoar-auth:group:write`.
+        // Membership scripts are pure predicates — they don't need to
+        // construct anything — so we strip both globals after init via
+        // RegisterEngineConfigurator (runs AFTER JsEngine.Initialize()).
+        // See website/testing/jseval-threat-model.md (A2 NewObject finding).
         services.AddJsEval(b => b
             .AddLinq()
             .AddDiscriminatorMappings<Principal>("Type",
                 ("person", typeof(Person)),
                 ("group", typeof(Group)),
-                ("service-account", typeof(ServiceAccount))));
+                ("service-account", typeof(ServiceAccount)))
+            .RegisterEngineConfigurator(engine =>
+            {
+                engine.SetValue("NewObject", Jint.Native.JsValue.Undefined);
+                engine.SetValue("require", Jint.Native.JsValue.Undefined);
+            }));
         services.AddTsTranspiler();
         services.AddTsDefinition();
 

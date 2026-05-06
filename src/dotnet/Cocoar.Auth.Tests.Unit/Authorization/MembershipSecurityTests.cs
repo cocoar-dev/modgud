@@ -36,6 +36,11 @@ public sealed class MembershipSecurityTests : IDisposable
 
     public MembershipSecurityTests()
     {
+        // Mirror production wiring exactly — including the security override
+        // that strips NewObject/require from the engine globals (see
+        // Cocoar.Auth.Infrastructure/DependencyInjection.cs and the A2
+        // NewObject finding documented in the threat-model). The override
+        // is part of the security contract; tests must reflect it.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddJsEval(b => b
@@ -43,7 +48,12 @@ public sealed class MembershipSecurityTests : IDisposable
             .AddDiscriminatorMappings<Principal>("Type",
                 ("person", typeof(Person)),
                 ("group", typeof(Group)),
-                ("service-account", typeof(ServiceAccount))));
+                ("service-account", typeof(ServiceAccount)))
+            .RegisterEngineConfigurator(engine =>
+            {
+                engine.SetValue("NewObject", Jint.Native.JsValue.Undefined);
+                engine.SetValue("require", Jint.Native.JsValue.Undefined);
+            }));
         services.AddTsTranspiler();
         services.AddTsDefinition();
         services.AddScoped<IMembershipEvaluator, MembershipEvaluator>();
@@ -283,6 +293,76 @@ public sealed class MembershipSecurityTests : IDisposable
 
         Assert.NotNull(ex);
     }
+
+    // ─────── A2 — NewObject host-RCE primitive (consumer-side mitigation) ──
+    //
+    // cocoar.js-eval ships `NewObject(typeName, args)` and `require(name)` as
+    // engine globals by default. NewObject's fallback path walks every loaded
+    // assembly via Reflectensions.TypeHelper.FindType — so out of the box, a
+    // membership script can call e.g. `NewObject('System.IO.FileInfo',
+    // ['/etc/hosts'])` and get a real FileInfo. That's host-RCE-equivalent.
+    //
+    // The mitigation in Cocoar.Auth.Infrastructure/DependencyInjection.cs
+    // registers a post-init engine configurator that overwrites both globals
+    // with `JsValue.Undefined`. These tests pin that the mitigation holds —
+    // re-enabling the default behaviour fails them loud.
+
+    [Fact]
+    public void A2_NewObject_GlobalIsRemoved()
+    {
+        // Direct engine probe: the NewObject identifier must resolve to
+        // `undefined` after the security configurator runs.
+        var engine = _scope.ServiceProvider.GetRequiredService<JsEngine>();
+        var result = engine.EvaluateExpression("typeof NewObject");
+        Assert.Equal("undefined", result.ToString());
+    }
+
+    [Fact]
+    public void A2_NewObject_FileInfoConstruction_FailsCleanly()
+    {
+        // The end-to-end probe: try to construct a FileInfo at top level via
+        // the membership-script pipeline. Either NewObject is undefined and
+        // calling it throws a TypeError (acceptable — script rejected), or
+        // it's silently null (also acceptable — no CLR object reaches user
+        // code). The bad outcome is a real System.IO.FileInfo instance.
+        var engine = _scope.ServiceProvider.GetRequiredService<JsEngine>();
+
+        var threwOrReturnedNonObject = false;
+        try
+        {
+            var result = engine.EvaluateExpression(
+                "NewObject('System.IO.FileInfo', ['/etc/hosts'])");
+            // If it didn't throw, it must NOT be a FileInfo.
+            var clrValue = result?.ToObject();
+            threwOrReturnedNonObject = clrValue is not System.IO.FileInfo;
+        }
+        catch
+        {
+            threwOrReturnedNonObject = true;
+        }
+
+        Assert.True(threwOrReturnedNonObject,
+            "NewObject('System.IO.FileInfo', ...) returned a real FileInfo — " +
+            "the security configurator that strips NewObject is not in effect. " +
+            "See A2 NewObject finding in the threat model.");
+    }
+
+    [Fact]
+    public void A2_RequireGlobalIsRemoved()
+    {
+        // `require` is wired by JsEngine.Initialize alongside NewObject. The
+        // security configurator strips it too, since membership scripts have
+        // no module-loading need.
+        var engine = _scope.ServiceProvider.GetRequiredService<JsEngine>();
+        var result = engine.EvaluateExpression("typeof require");
+        Assert.Equal("undefined", result.ToString());
+    }
+
+    // (The TS transpiler also rewrites `new Foo(…)` into
+    // `NewObject('Foo', […])` for FindType-resolvable names. With NewObject
+    // undefined that path is closed too — covered indirectly by the three
+    // A2 NewObject* tests above; no separate test added because the TS
+    // rewrite's regex semantics are fiddly to assert on across CLR types.)
 
     // ─────────────────────────────────────────────────────────────────────
     // A3 — Type confusion

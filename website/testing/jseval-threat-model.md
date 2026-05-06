@@ -161,6 +161,50 @@ Checks the suite must run:
 - `import("file:///...")` / `import("System.IO.File")` — the translator rejects `ImportExpression` in the lambda body, but Stage B1 evaluates top-level — does it accept top-level `import()`?
 - Type-conversion gymnastics — `({valueOf: () => leak()})` passed to a property comparison — does the translator emit code that calls `valueOf` at host runtime?
 
+::: danger Finding A2-NewObject (critical) — closed in Cocoar.Auth, lib-side fix pending
+`Cocoar.JsEval.Engine.JsEngine.Initialize` registers two globals
+unconditionally:
+
+```csharp
+_engine.SetValue("NewObject", new Func<string, object[], object?>(ResolveAndCreate));
+_engine.SetValue("require",   new Func<string, JsValue>(Require));
+```
+
+`ResolveAndCreate` first consults the configured `TypeAliases`, then
+falls back to `Cocoar.Reflectensions.Helper.TypeHelper.FindType` —
+**which walks every loaded assembly via
+`AppDomain.CurrentDomain.GetAssemblies()` and returns the first matching
+type**. A membership script can therefore call e.g.
+`NewObject('System.IO.FileInfo', ['/etc/hosts'])` at the top level and
+get a real `FileInfo` instance, or `NewObject('System.Diagnostics.Process')`
+followed by `.Start(...)` for arbitrary process spawning — anything
+with a public constructor in any loaded assembly. This is host-RCE
+equivalent for anyone holding `cocoar-auth:group:write` and bypasses
+every Translator-side check (it executes during Stage B1 before Stage
+B2 even runs).
+
+The TS transpiler additionally rewrites `new Foo(...)` →
+`NewObject('Foo', [...])` whenever `FindConstructorReplaceType(Foo)`
+resolves, so a realistic attacker doesn't need to know the
+`NewObject` API name — `new System.Net.Http.HttpClient()` reaches the
+same vector.
+
+**Cocoar.Auth-side mitigation (commit `<below>`):** the
+`AddJsEval(...)` builder in `Cocoar.Auth.Infrastructure.DependencyInjection`
+now calls `RegisterEngineConfigurator(engine => { engine.SetValue("NewObject",
+JsValue.Undefined); engine.SetValue("require", JsValue.Undefined); })`.
+Configurators run after `JsEngine.Initialize`, so the unsafe defaults
+are overwritten with `undefined` before any user script sees the engine.
+Membership scripts are pure predicates — they have no need for either
+global. Pinned by three tests in `MembershipSecurityTests.A2_NewObject_*`.
+
+**Lib-side action pending:** file an upstream issue in `cocoar.js-eval`
+asking that `NewObject`'s assembly-walking fallback become opt-in
+(e.g. `b.AllowAnyClrType()` or only when `AllowClr` was called). The
+current default is unsafe-by-default for any consumer that doesn't
+explicitly know to override.
+:::
+
 ### A3 · Type confusion
 
 Smaller class. Edge cases that might bypass the translator's narrowing logic:
@@ -223,6 +267,16 @@ Deep ternary nesting can blow the stack at translation time.
 
 ::: warning Gap-4 (low) · No cancellation propagated to the engine
 `MembershipRecomputer` doesn't pass a `CancellationToken` to the engine for runaway scripts; cooperative cancellation isn't possible.
+:::
+
+::: danger Gap-5 (critical, mitigated consumer-side) · NewObject + require globals expose all CLR types
+See A2-NewObject finding above. `cocoar.js-eval` registers `NewObject`
+and `require` as engine globals unconditionally; `NewObject`'s
+fallback walks every loaded assembly, allowing arbitrary CLR-type
+construction including `Process`, `FileInfo`, `HttpClient`, etc.
+**Closed in Cocoar.Auth via post-init engine configurator** that
+overwrites both globals with `JsValue.Undefined`. Lib-side fix should
+make assembly-walking fallback opt-in.
 :::
 
 These gaps will be **closed in Phase 3** (after Phase 2 confirms the actual repro paths). They may or may not need lib-side fixes too — that's the lib-vs-consumer split decision after Phase 2.
