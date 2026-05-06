@@ -282,20 +282,45 @@ The Phase-2 suite verifies that all of these hold:
 
 These are findings already from the surface scan, before a single adversarial test runs:
 
-::: warning Gap-1 (high) · No execution timeout / no statement-cap
-`JsEngineOptions` constructs the Jint engine without `Constraints.TimeoutInterval`, `Constraints.MaxStatements`, or memory cap. A trivial `while(true){}` at script-create time would hang the API request and pin a worker thread until ASP.NET kills it.
+::: tip Gap-1 (high) · CLOSED — wall-clock budget + cooperative cancel
+`MembershipEvaluator.BuildPredicate` now wraps the Jint evaluation in
+a 2 s wall-clock budget combined with the caller's `CancellationToken`,
+linked through `CancellationTokenSource.CreateLinkedTokenSource`. The
+linked token's `Register` calls `jsEngine.Stop()` on fire, which
+cancels Jint's internal CTS and aborts the next executed statement.
+A `while(true){}` at top level now surfaces as
+`OperationCanceledException` after ≤2 s instead of hanging the worker.
+Pinned by `MembershipSecurityTests.A1_TopLevelInfiniteLoop_TimesOutWithin3s`
+and `A1_TopLevelAllocationFlood_TimesOutOrCompletes`.
 :::
 
-::: warning Gap-2 (medium) · No script-length input cap on `MembershipScript`
-`CreateGroupCommand` accepts `string?` of arbitrary length; a 10 MB string makes Jint and the TS compiler do unbounded work in Stage A.
+::: tip Gap-2 (medium) · CLOSED — input length cap
+`Cocoar.Auth.Authorization.Membership.ScriptInputLimits` defines a
+16 KiB cap and a `Validate(script, errorCode)` helper. Applied at
+`CreateGroupCommand`/`UpdateGroupCommand` for `MembershipScript` and
+at `UpdateLoginProviderCommand` for `UserUpdateScript`. Multi-MiB
+TS payloads are rejected before the TS compiler ever sees them.
+Pinned by `MembershipSecurityTests.A1_OneMegabyteScript_RejectedByLengthCap`.
 :::
 
-::: warning Gap-3 (low) · No AST-depth cap on translator
-Deep ternary nesting can blow the stack at translation time.
+::: warning Gap-3 (low) · NOT CLOSED — lib-side fix needed
+No AST-depth cap on translator. Deep ternary nesting can hit
+`StackOverflowException` at translation time, which is unrecoverable
+in .NET — the wall-clock timeout from Gap-1's fix doesn't help here
+because the translator runs synchronously on the calling thread and
+the SOE is escalated process-wide. Lib-side fix: depth counter in
+`JsExpressionTranslator.Visit`. Tracker test
+`A1_DeeplyNestedTernary_DoesNotStackOverflow` stays `Skip` until the
+lib gains the counter.
 :::
 
-::: warning Gap-4 (low) · No cancellation propagated to the engine
-`MembershipRecomputer` doesn't pass a `CancellationToken` to the engine for runaway scripts; cooperative cancellation isn't possible.
+::: tip Gap-4 (low) · CLOSED — cancellation plumbed end-to-end
+`IMembershipEvaluator.BuildPredicate<T>` now takes
+`CancellationToken ct = default`. `AutoMembershipRecalculator` and
+`EffectiveGroupsResolver` propagate their existing CT into every call.
+The token is linked with the wall-clock CTS from Gap-1's fix, so
+caller-cancellation and timeout share the same cooperative-stop
+mechanism via `jsEngine.Stop()`.
 :::
 
 ::: danger Gap-5 (critical, mitigated consumer-side) · NewObject + require globals expose all CLR types

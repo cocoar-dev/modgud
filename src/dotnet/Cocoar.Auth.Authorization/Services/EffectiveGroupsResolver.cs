@@ -112,7 +112,7 @@ public class EffectiveGroupsResolver(
             bool matches;
             try
             {
-                var compiled = evaluator.BuildPredicate<Principal>(group.CompiledMembershipScript).Compile();
+                var compiled = evaluator.BuildPredicate<Principal>(group.CompiledMembershipScript, ct).Compile();
                 try
                 {
                     matches = compiled(principal);

@@ -67,7 +67,7 @@ public class AutoMembershipRecalculator(
 
             var shouldBeMember = principal is not null
                 && !principal.IsDeleted
-                && EvaluateSafe(group.CompiledMembershipScript, principal);
+                && EvaluateSafe(group.CompiledMembershipScript, principal, ct);
             var isMember = group.MemberIds.Contains(principalId);
 
             if (shouldBeMember == isMember) continue;
@@ -97,7 +97,7 @@ public class AutoMembershipRecalculator(
 
         try
         {
-            var predicate = evaluator.BuildPredicate<Principal>(group.CompiledMembershipScript);
+            var predicate = evaluator.BuildPredicate<Principal>(group.CompiledMembershipScript, ct);
 
             // One SQL query against mt_doc_principal (all sub-classes).
             // Self-membership is excluded so a `(p) => true` script doesn't list the
@@ -161,11 +161,11 @@ public class AutoMembershipRecalculator(
         }
     }
 
-    private bool EvaluateSafe(string compiledScript, Principal principal)
+    private bool EvaluateSafe(string compiledScript, Principal principal, CancellationToken ct)
     {
         try
         {
-            var compiled = evaluator.BuildPredicate<Principal>(compiledScript).Compile();
+            var compiled = evaluator.BuildPredicate<Principal>(compiledScript, ct).Compile();
             return compiled(principal);
         }
         catch (Exception ex)
