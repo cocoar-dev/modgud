@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Domain;
+using Cocoar.Auth.Authentication.Identity;
 using Cocoar.Auth.Domain.Realms;
 using Cocoar.Auth.Infrastructure.Email;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
@@ -157,13 +158,13 @@ public sealed class PendingAdminInviteService(
         catch (Exception ex)
         {
             logger.LogWarning(ex,
-                "Auth: Bootstrap-invite issued but email delivery failed. Realm={Realm} Email={Email}. The plaintext URL is still on the issuer's side.",
-                realm.Slug, normalizedEmail);
+                "Auth: Bootstrap-invite issued but email delivery failed. Realm={Realm} Email={MaskedEmail}. The plaintext URL is still on the issuer's side.",
+                realm.Slug, LogPiiMasking.MaskEmail(normalizedEmail));
         }
 
         logger.LogInformation(
-            "Auth: Bootstrap-invite issued. Realm={Realm} UserName={UserName} Email={Email} ExpiresAt={ExpiresAt} IssuedBy={IssuedBy}",
-            realm.Slug, normalizedUserName, normalizedEmail, invite.ExpiresAt, issuedBy ?? "(self/CLI)");
+            "Auth: Bootstrap-invite issued. Realm={Realm} UserName={UserName} Email={MaskedEmail} ExpiresAt={ExpiresAt} IssuedBy={IssuedBy}",
+            realm.Slug, normalizedUserName, LogPiiMasking.MaskEmail(normalizedEmail), invite.ExpiresAt, issuedBy ?? "(self/CLI)");
 
         return new IssuedInvite(invite.Id, token, url, invite.ExpiresAt, normalizedEmail, normalizedUserName);
     }

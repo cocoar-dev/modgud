@@ -141,18 +141,19 @@ public class DynamicOidcSchemeManager(
         //     POST), so we switch response_mode to "query" — IdP redirects
         //     with the code in the query string instead of form-posting it.
         //     Slightly more code-in-URL exposure, but fine for local dev.
+        // SecurePolicy stays at the default (SameAsRequest) for both
+        // CorrelationCookie and NonceCookie — that matches the public scheme
+        // behind the reverse proxy in production (Secure over HTTPS) and
+        // permits the cookie at all in dev over plain HTTP (no Secure flag).
         if (env.IsProduction())
         {
             options.CorrelationCookie.SameSite = SameSiteMode.None;
             options.NonceCookie.SameSite = SameSiteMode.None;
-            // SecurePolicy defaults to SameAsRequest → Secure over HTTPS.
         }
         else
         {
             options.CorrelationCookie.SameSite = SameSiteMode.Lax;
             options.NonceCookie.SameSite = SameSiteMode.Lax;
-            options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.None;
-            options.NonceCookie.SecurePolicy = CookieSecurePolicy.None;
             options.ResponseMode = Microsoft.IdentityModel.Protocols.OpenIdConnect.OpenIdConnectResponseMode.Query;
         }
 

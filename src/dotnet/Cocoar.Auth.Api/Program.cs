@@ -227,9 +227,12 @@ try
         options.IdleTimeout = TimeSpan.FromMinutes(5);
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Strict;
-        options.Cookie.SecurePolicy = builder.Environment.IsProduction()
-            ? CookieSecurePolicy.Always
-            : CookieSecurePolicy.None;
+        // SameAsRequest: cookie carries Secure when the request itself
+        // came in over HTTPS, otherwise not. With ForwardedHeaders middleware
+        // configured for the reverse proxy, IsHttps reflects the public
+        // scheme — production deploys always get Secure, dev over plain
+        // HTTP doesn't (so the cookie is settable at all).
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.Cookie.Name = "Cocoar.Auth.Session";
     });
 
@@ -330,11 +333,12 @@ try
             // blocks cross-site POSTs (the actual CSRF surface) while allowing
             // top-level GET/redirect navigations.
             options.Cookie.SameSite = SameSiteMode.Lax;
-            // Always in Production. None in Dev — Vite proxy connects via HTTPS but
-            // browser receives response on HTTP, so Secure cookies won't be set.
-            options.Cookie.SecurePolicy = builder.Environment.IsProduction()
-                ? CookieSecurePolicy.Always
-                : CookieSecurePolicy.None;
+            // SameAsRequest: cookie carries Secure when the request came in
+            // over HTTPS, otherwise not (Vite dev proxy serves HTTP locally).
+            // ForwardedHeaders middleware ensures Request.IsHttps reflects the
+            // public scheme behind the reverse proxy, so production always
+            // gets Secure cookies even when Kestrel listens on plain HTTP.
+            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
             options.Cookie.Name = "Cocoar.Auth.Auth";
             options.ExpireTimeSpan = TimeSpan.FromDays(30); // Max lifetime for persistent (RememberMe) cookies
             options.SlidingExpiration = true;
@@ -384,9 +388,7 @@ try
         {
             options.Cookie.HttpOnly = true;
             options.Cookie.SameSite = SameSiteMode.Strict;
-            options.Cookie.SecurePolicy = builder.Environment.IsProduction()
-                ? CookieSecurePolicy.Always
-                : CookieSecurePolicy.None;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
             options.Cookie.Name = "Cocoar.Auth.2FA";
             options.ExpireTimeSpan = TimeSpan.FromMinutes(5); // Short-lived — user must enter TOTP quickly
         })
@@ -398,9 +400,7 @@ try
         {
             options.Cookie.HttpOnly = true;
             options.Cookie.SameSite = SameSiteMode.Lax;
-            options.Cookie.SecurePolicy = builder.Environment.IsProduction()
-                ? CookieSecurePolicy.Always
-                : CookieSecurePolicy.None;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
             options.Cookie.Name = "Cocoar.Auth.External";
             options.ExpireTimeSpan = TimeSpan.FromMinutes(10);
         })

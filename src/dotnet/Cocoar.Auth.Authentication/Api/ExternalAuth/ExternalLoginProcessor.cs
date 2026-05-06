@@ -3,6 +3,7 @@ using System.Text.Json;
 using Marten;
 using Microsoft.AspNetCore.Identity;
 using Cocoar.Auth.Domain.Common;
+using Cocoar.Auth.Authentication.Identity;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Events;
 using Cocoar.Auth.Authentication.Domain.ExternalAuth;
@@ -168,8 +169,8 @@ public class ExternalLoginProcessor(
         if (!IsEmailAllowed(config, email))
         {
             logger.LogWarning(
-                "Auth: External login rejected — email '{Email}' not in allowlist for IdP {IdpId}",
-                email ?? "(none)", loginProviderId);
+                "Auth: External login rejected — email '{MaskedEmail}' not in allowlist for IdP {IdpId}",
+                LogPiiMasking.MaskEmail(email), loginProviderId);
             return ExternalLoginResult.Failed("Idp.EmailNotAllowed", "Your email domain is not allowed for this provider.");
         }
 
@@ -219,8 +220,8 @@ public class ExternalLoginProcessor(
         if (emailTaken)
         {
             logger.LogWarning(
-                "Auth: JIT creation rejected — email '{Email}' is already taken by another user (IdP {IdpId})",
-                email, loginProviderId);
+                "Auth: JIT creation rejected — email '{MaskedEmail}' is already taken by another user (IdP {IdpId})",
+                LogPiiMasking.MaskEmail(email), loginProviderId);
             return ExternalLoginResult.Failed("Idp.EmailConflict",
                 "A Cocoar.Auth account with this email already exists. Please contact your administrator.");
         }
@@ -269,8 +270,8 @@ public class ExternalLoginProcessor(
                     if (clashingUserId != Guid.Empty)
                     {
                         logger.LogWarning(
-                            "Auth: UserUpdateScript email conflict — '{Email}' is already taken by user {OtherId}; login rejected for user {UserId}",
-                            newEmail, clashingUserId, user.Id);
+                            "Auth: UserUpdateScript email conflict — '{MaskedEmail}' is already taken by user {OtherId}; login rejected for user {UserId}",
+                            LogPiiMasking.MaskEmail(newEmail), clashingUserId, user.Id);
                         return new ApplyUpdatesError(
                             "Idp.EmailConflict",
                             "The identity provider reports an email that is already used by another Cocoar.Auth account.");
