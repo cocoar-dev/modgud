@@ -54,7 +54,23 @@ jobs:
         run: dotnet build Cocoar.Auth.slnx -c Release
         working-directory: ./src/dotnet
 
+      # `upload: never` runs the analysis and writes SARIF to `output/`
+      # without trying to push to GitHub Code Scanning — that endpoint
+      # requires either a public repo or GitHub Advanced Security on
+      # this private repo, neither of which we have. The SARIF then
+      # gets uploaded as a workflow artifact so we can pull it locally
+      # and view in VS Code (CodeQL or SARIF Viewer extension).
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
         with:
           category: /language:${{ matrix.language }}
+          upload: never
+          output: codeql-results
+
+      - name: Upload SARIF as workflow artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif-${{ matrix.language }}
+          path: codeql-results
+          retention-days: 30
