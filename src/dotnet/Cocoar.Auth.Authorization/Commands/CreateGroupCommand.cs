@@ -45,12 +45,13 @@ public class CreateGroupHandler(
             if (string.IsNullOrWhiteSpace(command.MembershipScript))
                 return Error.Validation("Group.MembershipScriptRequired",
                     "MembershipScript is required when MembershipMode is Auto");
-            // Cap script length BEFORE handing it to the TS compiler — closes
-            // Gap-2 from the JsEval threat model (unbounded compiler work on
-            // a multi-megabyte input).
-            var lengthError = ScriptInputLimits.Validate(
-                command.MembershipScript, "Group.MembershipScriptTooLong");
-            if (lengthError is not null) return lengthError.Value;
+            // Cap script length AND nesting depth BEFORE handing the input
+            // to the TS compiler. Closes Gap-2 (unbounded compiler work) and
+            // the consumer-side window of F6b (interpreted TS parser blows
+            // .NET stack on deeply-nested input). See JsEval threat model.
+            var inputError = ScriptInputLimits.Validate(
+                command.MembershipScript, "Group.MembershipScript");
+            if (inputError is not null) return inputError.Value;
             try { compiledMembership = membershipEvaluator.TranspileMembershipScript(command.MembershipScript); }
             catch (TsTranspileException ex)
             {

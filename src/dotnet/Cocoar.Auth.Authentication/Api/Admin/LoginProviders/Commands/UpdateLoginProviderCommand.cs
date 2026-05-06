@@ -44,13 +44,14 @@ public class UpdateLoginProviderHandler(
         if (string.IsNullOrWhiteSpace(command.DisplayName))
             return Error.Validation("LoginProvider.DisplayNameRequired", "Display name is required.");
 
-        // Closes Gap-2 from the JsEval threat model. UserUpdateScript runs
-        // through the same TS→JS pipeline (TsTranspiler) every external
-        // login attempt; an unbounded script makes the TS compiler do
-        // arbitrary-time work on every login request.
-        var scriptLengthError = ScriptInputLimits.Validate(
-            command.UserUpdateScript, "LoginProvider.UserUpdateScriptTooLong");
-        if (scriptLengthError is not null) return scriptLengthError.Value;
+        // Length + nesting-depth caps before TS-pipeline reaches Acornima.
+        // UserUpdateScript runs every external login attempt — an
+        // unbounded or deeply-nested script makes the TS compiler do
+        // arbitrary-time work on every request, and a 500-deep ternary
+        // would crash the host. See JsEval threat model.
+        var scriptInputError = ScriptInputLimits.Validate(
+            command.UserUpdateScript, "LoginProvider.UserUpdateScript");
+        if (scriptInputError is not null) return scriptInputError.Value;
 
         var config = await session.LoadAsync<LoginProvider>(command.Id, ct);
         if (config is null || config.IsDeleted)

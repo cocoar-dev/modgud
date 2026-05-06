@@ -303,7 +303,7 @@ TS payloads are rejected before the TS compiler ever sees them.
 Pinned by `MembershipSecurityTests.A1_OneMegabyteScript_RejectedByLengthCap`.
 :::
 
-::: tip Gap-3 (low) · PARTIALLY CLOSED — translator capped, parser still recursive
+::: tip Gap-3 (medium) · CLOSED CONSUMER-SIDE — depth-counter pre-parse scan
 Cocoar.JsEval 3.4 added a translator-depth cap (default 256) on
 `JsExpressionTranslator.Visit`, which closes the originally-described
 StackOverflow at Stage B2.
@@ -317,15 +317,30 @@ stack, depth=500 crashes — Jint dispatches parser work onto
 own 5000-cap is never reached. Lib follow-up tracked as F6b in the
 upstream feature-request.
 
-Cocoar.Auth's defense-in-depth posture: realistic membership scripts
-nest at most ~5-10 conditionals, and a 500-deep ternary at ~8 chars
-per level (`(X?1:2)`) is ~4 KiB — well inside the 16 KiB
-`ScriptInputLimits.MaxScriptCharacters` cap. So **someone with admin
-rights to author a script COULD craft an input that crashes the
-process**, but the exploit window is bounded to authenticated admins
-who are already trusted today. When tenant-admins ever author scripts,
-either (a) the lib must close F6b, or (b) the consumer cap drops to
-e.g. 4 KiB to mathematically prevent depth ≥ 500.
+**Trust model update (2026-05-06)**: Tenant-Admins WILL author
+membership scripts (via the Group editor in their tenant scope) in
+the upcoming product surface. F6b is therefore **not theoretical** —
+a single tenant-admin's 500-deep ternary script would crash the host
+on the first auto-recompute, taking down the IdP for *every* tenant.
+Cross-tenant DoS via untrusted-admin script authorship.
+
+**Consumer-side mitigation (now shipped)**:
+`ScriptInputLimits.MaxNestingDepth = 50` — a pre-parse scan in
+`ScriptInputLimits.Validate` walks the source counting unmatched
+parens/braces/brackets (skipping string literals and comments) and
+rejects inputs over depth 50 with a `*ScriptTooDeep` error. 50 is
+well above realistic predicates (typical depth < 10) but well below
+the ~300 threshold where the interpreted TS-parser starts consuming
+enough .NET stack to risk SOE. Pinned by
+`A1_DeeplyNestedTernary_RejectedByDepthCap` and
+`A1_DepthCounter_HandlesStringsAndComments` in
+`MembershipSecurityTests`. Applied at all three call sites:
+`CreateGroupCommand`, `UpdateGroupCommand`,
+`UpdateLoginProviderCommand`.
+
+The lib-side F6b fix is still desirable (other consumers that don't
+ship a depth-counter remain exposed), but Cocoar.Auth's window is
+now mathematically closed.
 :::
 
 ::: tip Gap-4 (low) · CLOSED — cancellation plumbed end-to-end

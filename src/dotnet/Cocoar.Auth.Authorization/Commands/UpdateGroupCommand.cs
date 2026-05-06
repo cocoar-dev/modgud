@@ -71,10 +71,10 @@ public class UpdateGroupHandler(
             if (string.IsNullOrWhiteSpace(command.MembershipScript))
                 return Error.Validation("Group.MembershipScriptRequired",
                     "MembershipScript is required when MembershipMode is Auto");
-            // Closes Gap-2 from the JsEval threat model — see CreateGroupCommand.
-            var lengthError = ScriptInputLimits.Validate(
-                command.MembershipScript, "Group.MembershipScriptTooLong");
-            if (lengthError is not null) return lengthError.Value;
+            // Length + nesting-depth caps — see CreateGroupCommand.
+            var inputError = ScriptInputLimits.Validate(
+                command.MembershipScript, "Group.MembershipScript");
+            if (inputError is not null) return inputError.Value;
             try { compiledMembership = membershipEvaluator.TranspileMembershipScript(command.MembershipScript); }
             catch (TsTranspileException ex)
             {

@@ -182,17 +182,55 @@ public sealed class MembershipSecurityTests : IDisposable
     [Fact]
     public void A1_OneMegabyteScript_RejectedByLengthCap()
     {
-        // Gap-2 closed: the consumer-side length cap (16 KiB) in
-        // CreateGroupCommand/UpdateGroupCommand keeps multi-megabyte
-        // scripts from ever reaching the TS compiler. This test pins
-        // the helper directly; the command-level pinning is in the
-        // integration tests.
+        // Gap-2 closed: the consumer-side length cap (16 KiB) keeps
+        // multi-megabyte scripts from ever reaching the TS compiler.
         var huge = new string('/', 1024 * 1024) + "\n(p: any) => true";
         var error = Cocoar.Auth.Authorization.Membership.ScriptInputLimits
-            .Validate(huge, "Test.TooLong");
+            .Validate(huge, "Test");
 
         Assert.NotNull(error);
-        Assert.Equal("Test.TooLong", error.Value.Code);
+        Assert.Equal("TestTooLong", error.Value.Code);
+    }
+
+    [Fact]
+    public void A1_DeeplyNestedTernary_RejectedByDepthCap()
+    {
+        // F6b consumer-side mitigation: a 500-deep ternary script would
+        // crash the host process during TS parsing (interpreted Acornima
+        // descent in Jint exhausts the .NET stack — confirmed empirically
+        // even with an 8 MB worker-thread stack). The pre-parse depth
+        // counter rejects it before the parser ever runs.
+        var body = "true";
+        for (var i = 0; i < 500; i++) body = $"({body} ? 1 : 2)";
+        var source = $"(p: any) => {body} === 1";
+        var error = Cocoar.Auth.Authorization.Membership.ScriptInputLimits
+            .Validate(source, "Test");
+
+        Assert.NotNull(error);
+        Assert.Equal("TestTooDeep", error.Value.Code);
+    }
+
+    [Fact]
+    public void A1_DepthCounter_HandlesStringsAndComments()
+    {
+        // The depth counter must skip brackets inside string literals
+        // and comments, so a plain-text script doesn't get flagged
+        // as "deeply nested" because of e.g. a regex or a JSON blob
+        // embedded in a string.
+        var legitimate =
+            """
+            // (((((((( comment with parens shouldn't count ))))))))
+            const url = 'https://example.com/(((((((((((((path)))))))))))))'
+            const data = {
+                pattern: "[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]",
+            }
+            const f = (p: any) => p.Email !== null
+            f
+            """;
+        var error = Cocoar.Auth.Authorization.Membership.ScriptInputLimits
+            .Validate(legitimate, "Test");
+
+        Assert.Null(error);
     }
 
     // ─────────────────────────────────────────────────────────────────────
