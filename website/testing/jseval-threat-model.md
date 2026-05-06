@@ -306,15 +306,26 @@ Pinned by `MembershipSecurityTests.A1_OneMegabyteScript_RejectedByLengthCap`.
 ::: tip Gap-3 (low) · PARTIALLY CLOSED — translator capped, parser still recursive
 Cocoar.JsEval 3.4 added a translator-depth cap (default 256) on
 `JsExpressionTranslator.Visit`, which closes the originally-described
-StackOverflow at Stage B2. **However**, a 500+-deep nested ternary
-*input string* still hits StackOverflow earlier in Stage A — during
-TS parsing (Acornima recursive-descent), before the translator runs.
-Tracked as F6-partial in the lib feature-request — needs either a
-depth-cap in the parser layer or an iterative parse rewrite.
+StackOverflow at Stage B2.
 
-Realistic exploit window today is closed by the 16 KiB script-length
-cap (`ScriptInputLimits.MaxScriptCharacters`): no input deep enough
-to overflow Acornima's parse stack fits inside 16 KiB.
+**However**, a 500-deep nested ternary input still hits StackOverflow
+in Stage A (TS parsing). Empirical: even with an 8 MB worker-thread
+stack, depth=500 crashes — Jint dispatches parser work onto
+`TaskScheduler.Default` threads that ignore the caller's
+`maxStackSize`, and the TS compiler runs as JS interpreted by Jint
+(~10× .NET-frame amplification per JS-recursion level), so Acornima's
+own 5000-cap is never reached. Lib follow-up tracked as F6b in the
+upstream feature-request.
+
+Cocoar.Auth's defense-in-depth posture: realistic membership scripts
+nest at most ~5-10 conditionals, and a 500-deep ternary at ~8 chars
+per level (`(X?1:2)`) is ~4 KiB — well inside the 16 KiB
+`ScriptInputLimits.MaxScriptCharacters` cap. So **someone with admin
+rights to author a script COULD craft an input that crashes the
+process**, but the exploit window is bounded to authenticated admins
+who are already trusted today. When tenant-admins ever author scripts,
+either (a) the lib must close F6b, or (b) the consumer cap drops to
+e.g. 4 KiB to mathematically prevent depth ≥ 500.
 :::
 
 ::: tip Gap-4 (low) · CLOSED — cancellation plumbed end-to-end
