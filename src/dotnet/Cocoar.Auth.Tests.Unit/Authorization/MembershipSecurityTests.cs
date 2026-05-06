@@ -637,18 +637,53 @@ public sealed class MembershipSecurityTests : IDisposable
         Assert.Equal("'; DROP TABLE users; --", rhs.Value);
     }
 
-    [Fact(Skip = "Requires the linq.guid translator-intercept to be exercised; " +
-                  "the helper rejects malformed inputs at translation time. " +
-                  "Validation deferred until a linq.guid call site lands here.")]
-    public void A5_LinqGuidMalformedInput_RejectsAtTranslation()
+    [Fact]
+    public void A5_LinqGuidValid_TranslatesToConstant()
     {
+        // Positive baseline: a well-formed Guid literal must translate to
+        // a Guid-typed LINQ ConstantExpression so Marten parameterises it
+        // correctly against Person.Id (which is Guid in C#).
         var compiled = _transpiler.Transpile(
-            "(p: any) => p.Id === linq.guid('not-a-guid')");
+            "(p: any) => p.Id === linq.guid('11111111-2222-3333-4444-555555555555')");
+
+        var predicate = _evaluator.BuildPredicate<Person>(compiled);
+
+        // Walk the LINQ tree: BinaryExpression Equal(p.Id, ConstantExpression(Guid))
+        var body = (BinaryExpression)((LambdaExpression)predicate).Body;
+        var rhs = Assert.IsType<ConstantExpression>(body.Right);
+        var rhsValue = Assert.IsType<Guid>(rhs.Value);
+        Assert.Equal(new Guid("11111111-2222-3333-4444-555555555555"), rhsValue);
+    }
+
+    [Theory]
+    [InlineData("not-a-guid",
+        "obviously-malformed text")]
+    [InlineData("",
+        "empty string")]
+    [InlineData("11111111-2222-3333-4444",
+        "truncated — only four of five Guid groups")]
+    [InlineData("11111111-2222-3333-4444-5555555555555",
+        "last group too long (13 hex chars instead of 12)")]
+    [InlineData("zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz",
+        "structurally Guid-shaped but with non-hex characters")]
+    [InlineData("'; DROP TABLE users; --",
+        "SQL-injection attempt — must not slip through as a Guid")]
+    public void A5_LinqGuidMalformedInput_RejectsAtTranslation(string badInput, string scenario)
+    {
+        // A malformed Guid literal must reject at translation time, not at
+        // SQL execution. If the translator passed the bad string through,
+        // Marten would either choke at parameter-bind or — worse — emit a
+        // string-vs-Guid comparison that silently never matches. Worst
+        // case is the SQL-injection-shaped input — that must not leave
+        // translation alive in any form.
+        var compiled = _transpiler.Transpile(
+            $"(p: any) => p.Id === linq.guid('{badInput.Replace("'", "\\'")}')");
 
         var ex = Record.Exception(
             () => _evaluator.BuildPredicate<Person>(compiled));
 
         Assert.NotNull(ex);
+        Assert.NotNull(scenario); // suppress unused-parameter
     }
 
     // ─────────────────────────────────────────────────────────────────────
