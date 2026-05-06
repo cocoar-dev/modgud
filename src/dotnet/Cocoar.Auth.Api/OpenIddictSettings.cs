@@ -9,28 +9,38 @@ namespace Cocoar.Auth.Api;
 /// </summary>
 public class OpenIddictSettings : IOpenIddictSettings
 {
-    /// <summary>Path to a PFX file holding the production signing certificate. Ignored when <see cref="DevelopmentMode"/> is true.</summary>
+    /// <summary>
+    /// Path to a passwordless PFX file holding the production signing
+    /// certificate. When unset, a default of <c>data/keys/signing.pfx</c>
+    /// is used. When the file at the resolved path is missing, the
+    /// bootstrap auto-generates a self-signed cert there at first start
+    /// (and persists it across restarts). Ignored when
+    /// <see cref="DevelopmentMode"/> is true.
+    ///
+    /// <para>Convention: passwordless PFX, file-system permissions
+    /// (<c>0600</c> on Linux) protect the private key. Mirrors the
+    /// <c>cocoar-secrets</c> CLI tool's recommendation. To convert a
+    /// password-protected PFX to passwordless, use
+    /// <c>cocoar-secrets convert-cert --ipass &lt;old&gt; -i in.pfx -o out.pfx</c>.</para>
+    /// </summary>
     public string? SigningCertificatePath { get; set; }
-
-    /// <summary>Optional PFX password for <see cref="SigningCertificatePath"/>.</summary>
-    public string? SigningCertificatePassword { get; set; }
 
     /// <summary>
     /// Comma-separated list of paths to previously-active signing
     /// certificates. Loaded as validation-only keys for the rotation-overlap
     /// window (CERT-01). Cleared once the longest in-flight access token
-    /// has expired and JWKS caches have refreshed.
+    /// has expired and JWKS caches have refreshed. Passwordless PFX, same
+    /// convention as <see cref="SigningCertificatePath"/>.
     /// </summary>
     public string[]? PreviousSigningCertificatePaths { get; set; }
-    public string? PreviousSigningCertificatePassword { get; set; }
 
     /// <summary>
-    /// Optional path to a separate PFX for token encryption. Falls back to
-    /// the signing cert when null — separate keys are recommended for
-    /// production (OAUTH-05).
+    /// Path to a passwordless PFX for token encryption. Falls back to a
+    /// default of <c>data/keys/encryption.pfx</c> when unset, then auto-
+    /// generates if the file is missing. Separate keys for signing vs
+    /// encryption are recommended for production (OAUTH-05).
     /// </summary>
     public string? EncryptionCertificatePath { get; set; }
-    public string? EncryptionCertificatePassword { get; set; }
 
     /// <summary>
     /// Issuer URL advertised in /.well-known/openid-configuration. Per-realm

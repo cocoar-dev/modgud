@@ -2,6 +2,7 @@ using System.Security.Cryptography.X509Certificates;
 using Cocoar.Auth.Api.Features;
 using System.Text.Json.Serialization;
 using Cocoar.Configuration.AspNetCore;
+using Cocoar.Configuration.X509Encryption;
 using Cocoar.Configuration.DI;
 using Cocoar.Configuration.DI.Extensions;
 using Cocoar.Configuration.Providers;
@@ -629,6 +630,20 @@ try
     // host is built. Per-realm issuer is applied at request time via RealmIssuerHandler.
     var openIddictSettings = configManager.GetRequiredConfig<OpenIddictSettings>();
 
+    // CERT-01 / OAUTH-05: ensure signing + encryption certs exist on disk
+    // before OpenIddict tries to load them. Convention: passwordless PFX
+    // protected by file-system permissions (0600 on Linux), per the
+    // cocoar-secrets CLI tool's recommendation. When the configured path
+    // (or the default) doesn't exist on disk, auto-generate a self-signed
+    // cert there — survives container restarts when the directory is
+    // mounted as a volume, so tokens stay valid. Skipped in DevelopmentMode
+    // since OpenIddict uses ephemeral keys then.
+    if (!openIddictSettings.DevelopmentMode)
+    {
+        EnsureSigningCertificateExists(openIddictSettings);
+        EnsureEncryptionCertificateExists(openIddictSettings);
+    }
+
     // PROD-02 / CONFIG-01: fail closed when the runtime is Production but the
     // configuration is still in dev shape. Every check here is the kind of
     // mistake that would silently yield a public IdP in development mode (or
@@ -641,12 +656,7 @@ try
                 "OpenIddict.DevelopmentMode must be false in Production. Ephemeral " +
                 "signing keys would invalidate every issued token on each restart " +
                 "and disable transport security on /connect/* endpoints. Set " +
-                "OpenIddict__DevelopmentMode=false and provide a real signing cert.");
-
-        if (string.IsNullOrWhiteSpace(openIddictSettings.SigningCertificatePath))
-            throw new InvalidOperationException(
-                "OpenIddict.SigningCertificatePath is required when DevelopmentMode=false. " +
-                "Provide the path to a PFX/PEM file holding the production signing key.");
+                "OpenIddict__DevelopmentMode=false.");
 
         if (string.IsNullOrWhiteSpace(openIddictSettings.Issuer) ||
             openIddictSettings.Issuer.Contains("localhost", StringComparison.OrdinalIgnoreCase) ||
@@ -1101,6 +1111,77 @@ finally
 /// only needs to peek at <c>client_id</c> on a tiny POST body — we
 /// rebuffer + parse the first chunk and seek back to the start.
 /// </summary>
+/// <summary>
+/// Resolve <c>SigningCertificatePath</c> (or its default
+/// <c>data/keys/signing.pfx</c>) and ensure the file exists. When the file
+/// is missing, generate a passwordless self-signed PFX in place — survives
+/// container restarts when the directory is mounted as a volume, so the
+/// signing key (and therefore every issued token) stays stable.
+/// </summary>
+static void EnsureSigningCertificateExists(OpenIddictSettings settings)
+    => EnsureCertificateExists(
+        () => settings.SigningCertificatePath,
+        path => settings.SigningCertificatePath = path,
+        defaultRelativePath: "data/keys/signing.pfx",
+        subject: "CN=Cocoar.Auth Signing",
+        purpose: "signing");
+
+/// <summary>
+/// Resolve <c>EncryptionCertificatePath</c> (or its default
+/// <c>data/keys/encryption.pfx</c>) and ensure the file exists. Same
+/// auto-generation behaviour as the signing cert. Falls back to the
+/// signing cert at use-site when the path stays unresolved (legacy
+/// behaviour) — kept so an operator who deliberately leaves
+/// EncryptionCertificatePath unset still gets a working server.
+/// </summary>
+static void EnsureEncryptionCertificateExists(OpenIddictSettings settings)
+    => EnsureCertificateExists(
+        () => settings.EncryptionCertificatePath,
+        path => settings.EncryptionCertificatePath = path,
+        defaultRelativePath: "data/keys/encryption.pfx",
+        subject: "CN=Cocoar.Auth Encryption",
+        purpose: "encryption");
+
+/// <summary>
+/// Shared certificate-bootstrap path. Path is resolved via
+/// <see cref="PathHelper.GetFullPath"/> so a relative
+/// <c>data/keys/...</c> default works in both Development (relative to
+/// the working directory) and the published Docker image (relative to
+/// <c>/app/</c>).
+/// </summary>
+static void EnsureCertificateExists(
+    Func<string?> getPath,
+    Action<string> setPath,
+    string defaultRelativePath,
+    string subject,
+    string purpose)
+{
+    var configured = getPath();
+    var path = string.IsNullOrWhiteSpace(configured)
+        ? Cocoar.Auth.Api.Helper.PathHelper.GetFullPath(defaultRelativePath)
+        : Cocoar.Auth.Api.Helper.PathHelper.GetFullPath(configured);
+    setPath(path);
+
+    if (File.Exists(path)) return;
+
+    var dir = Path.GetDirectoryName(path);
+    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+    X509CertificateGenerator.GenerateAndSavePfx(
+        outputPath: path,
+        password: null,
+        subject: subject,
+        validYears: 2,
+        keySize: 2048);
+
+    Log.Warning(
+        "Auth: auto-generated self-signed {Purpose} certificate at {Path}. " +
+        "This is fine for self-hosted Beta; replace with a managed cert " +
+        "(Key Vault / Secrets Manager / cocoar-secrets generate-cert) before " +
+        "going to public production.",
+        purpose, path);
+}
+
 static string? TryReadFormField(HttpContext context, string fieldName)
 {
     if (!HttpMethods.IsPost(context.Request.Method)) return null;

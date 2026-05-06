@@ -523,24 +523,33 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| CERT-01 | 🟡 Medium | `OpenIddictSettings.cs` + `OpenIddictExtensions.cs LoadCertificate` | `PreviousSigningCertificatePaths[]` für Rotation-Overlap; `LoadPkcs12FromFile(path, password)` Support | ✅ |
-| OAUTH-05 | 🟠 High | `OpenIddictExtensions.cs` | Separate `EncryptionCertificatePath` (Fallback auf Signing-Cert wenn nicht konfiguriert); Password-Loader für PFX | ✅ |
+| CERT-01 | 🟡 Medium | `OpenIddictSettings.cs` + `OpenIddictExtensions.cs LoadCertificate` | `PreviousSigningCertificatePaths[]` für Rotation-Overlap; passwordless PFX-Konvention | ✅ |
+| OAUTH-05 | 🟠 High | `OpenIddictExtensions.cs` | Separate `EncryptionCertificatePath` (Fallback auf Signing-Cert wenn nicht konfiguriert) | ✅ |
 
 **Implementierte Fixes:**
 
 `IOpenIddictSettings` + `OpenIddictSettings`:
-- `SigningCertificatePassword` — PFX-Passwort für aktive Signing-Cert
-- `PreviousSigningCertificatePaths[]` + `PreviousSigningCertificatePassword` — Rotation-Overlap: alte Certs werden als validation-only Keys nach der aktiven gehängt
-- `EncryptionCertificatePath` + `EncryptionCertificatePassword` — separate Encryption-Cert (Fallback: Signing-Cert)
+- `SigningCertificatePath` — passwordless PFX
+- `PreviousSigningCertificatePaths[]` — Rotation-Overlap: alte Certs werden als validation-only Keys nach der aktiven gehängt
+- `EncryptionCertificatePath` — separate Encryption-Cert (Fallback: Signing-Cert)
+- **Passwordless-Convention**: Cocoar.Auth folgt der Cocoar.Configuration-`cocoar-secrets`-Konvention. Die privaten Schlüssel werden durch Datei-Permissions (`0600` auf Linux) geschützt, nicht durch ein PFX-Password. `*Password`-Properties wurden in 2026-05-06 entfernt (siehe „Auto-Generated Self-signed Certs" Abschnitt unten). Bei Migration aus password-protected PFX: `cocoar-secrets convert-cert -i in.pfx --ipass <old> -o out.pfx`.
 
 `OpenIddictExtensions.LoadCertificate`:
-- `LoadPkcs12FromFile(path, password)` wenn Passwort gegeben (PFX)
-- `LoadCertificateFromFile(path)` als Fallback für unencrypted PEM/DER
+- `X509CertificateLoader.LoadPkcs12FromFile(path, password: ReadOnlySpan<char>.Empty)` — passwordless
 
 `AddOpenIddictWithMarten`:
 - Active Signing-Cert wird als erstes hinzugefügt (= active key for new tokens)
 - `PreviousSigningCertificatePaths[]` als zusätzliche `AddSigningCertificate`-Calls (validation-only)
 - Encryption-Cert separat (oder Fallback)
+
+**Auto-Generated Self-signed Certs (post-CERT-01 hardening 2026-05-06):**
+
+Im `Program.cs`-Bootstrap (vor C2-Validation) ruft Cocoar.Auth `EnsureCertificateExists` auf — wenn der konfigurierte (oder Default-) Pfad nicht existiert, wird ein passwordless self-signed PFX dort generiert via `Cocoar.Configuration.X509Encryption.X509CertificateGenerator.GenerateAndSavePfx`. Default-Pfade:
+
+- Signing: `data/keys/signing.pfx`
+- Encryption: `data/keys/encryption.pfx`
+
+Im Container als persistentes Volume mounten (`-v cocoar-auth-keys:/app/data/keys`), damit der erste Container-Start generiert und Folge-Restarts denselben Schlüssel laden — Tokens bleiben über Restarts hinweg gültig. `Log.Warning` beim Auto-Gen weist Operatoren auf den Self-signed-Status hin (für Cloud → Key Vault statt Auto-Gen).
 
 **Rotation-Procedure (dokumentiert im Code):**
 1. Neuen Signing-Cert deployen mit `SigningCertificatePath=new.pfx` + `PreviousSigningCertificatePaths=[old.pfx]`
