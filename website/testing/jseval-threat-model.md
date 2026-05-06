@@ -14,7 +14,7 @@ consumers don't need this file — see
 admin-facing documentation of auto-membership scripts.
 :::
 
-**Date:** 2026-05-06 · **Scope:** auto-membership scripts (`Group.MembershipScript`) and any future script-driven feature reusing the same pipeline. · **Status:** Phase 1 complete, Phase 2 (adversarial test suite) next.
+**Date:** 2026-05-06 · **Scope:** auto-membership scripts (`Group.MembershipScript`) and any future script-driven feature reusing the same pipeline. · **Status:** ✅ Phases 1-3 complete. All six findings (F1-F6) closed lib-side in Cocoar.JsEval 4.0; Cocoar.Auth runs both layers (lib defaults + consumer-side belt-and-braces). 41 pinning tests in `MembershipSecurityTests`, zero skip-trackers.
 
 ## Pipeline (the actual code path)
 
@@ -357,34 +357,50 @@ overwrites both globals with `JsValue.Undefined`. Lib-side fix should
 make assembly-walking fallback opt-in.
 :::
 
-These gaps will be **closed in Phase 3** (after Phase 2 confirms the actual repro paths). They may or may not need lib-side fixes too — that's the lib-vs-consumer split decision after Phase 2.
+All five gaps are closed (see banner cluster above). The mix of
+lib-side and consumer-side fixes:
 
-## Phase 2 plan (what to write)
+- Gap-1, Gap-3, Gap-5 (NewObject) — lib-side in Cocoar.JsEval 4.0
+  (engine globals safe-by-default, translator + parser depth-caps,
+  WithExecutionTimeout builder flag).
+- Gap-2 — consumer-side in `ScriptInputLimits.MaxScriptCharacters`.
+- Gap-4 — consumer-side: `IMembershipEvaluator.BuildPredicate` takes
+  `CancellationToken` propagated by `AutoMembershipRecalculator` and
+  `EffectiveGroupsResolver`.
 
-New test file: `Cocoar.Auth.Tests.Unit/Authorization/MembershipSecurityTests.cs`.
+## Phase 2 — adversarial test suite (shipped)
 
-Six categorised test groups, each pinning either *expected safe behaviour* or *currently-failing behaviour* (the latter as `[Fact(Skip="known gap, see Gap-N")]` until Phase 3 closes them).
+`Cocoar.Auth.Tests.Unit/Authorization/MembershipSecurityTests.cs`.
+Six categorised test groups; total **41 tests**, zero skips.
 
-| Group | Goal | ~Test count |
+| Group | Goal | Tests |
 |---|---|---|
-| A1 Resource exhaustion | Pin: Stage B1 must terminate in bounded time. Currently expected to hang → fail loud. | 4-5 |
-| A2 Native escape | Pin: Jint sandbox holds, no CLR / fetch / import / eval / process. | 6-8 |
-| A3 Type confusion | Pin: numeric edge cases either translate cleanly or reject cleanly. | 4-5 |
-| A4 Cross-tenant probe | Pin: unknown identifiers / properties reject; predicate has no DB-reference path. | 3-4 |
-| A5 SQL via LINQ | Pin: parameterised SQL only; malformed `linq.guid("…")` rejects at translation. | 2-3 |
-| A6 Info disclosure | Pin: error messages don't expose Acornima internals or stack traces upstream. | 2-3 |
+| A1 Resource exhaustion | Stage B1 terminates in bounded time; length-cap and depth-cap reject before parser runs | 5 |
+| A2 Native escape | Jint sandbox holds; no CLR / fetch / import / eval / process; `NewObject`+`require`+`exit`+timers+`console`+`__log_*` all `undefined` by lib default | 17 |
+| A3 Type confusion | Numeric edge cases (NaN, BigInt, overflow, -0) translate or reject cleanly | 4 |
+| A4 Cross-tenant probe | Unknown identifiers / properties reject; predicate has no DB-reference path | 3 |
+| A5 SQL via LINQ | Parameterised constants only; `linq.guid("…")` validates input across six malformed-input shapes including SQL-injection attempts | 8 |
+| A6 Info disclosure | Error messages don't expose Acornima internals or upstream stack traces | 2 |
 
-Total ≈ 22-28 tests. Worker-time budget: each test ≤ 1 s (with proper timeouts asserted). Tests that are *expected to fail today due to gaps* are tagged `Skip` with a `Gap-N` reference so Phase 3 picks them up.
+Each test runs in &lt; 1 s. Suite duration is dominated by setup, not scripts.
 
-## Phase 3 plan (after Phase 2 results)
+## Phase 3 — gap closure (shipped)
 
-For each Real Bug: classify lib (cocoar.js-eval) vs consumer (cocoar.auth) ownership.
+The lib-vs-consumer split landed roughly as the table above suggests:
 
-- **Lib-side** — file upstream issue with reproducer in `cocoar.js-eval/.local/`.
-- **Consumer-side** — fix in cocoar.auth — likely candidates:
-  - Add `Jint.Options.Constraint.TimeoutInterval(2s)` + `MaxStatements(100_000)` in `JsEngineOptions` defaults — but this is lib-side.
-  - Add `MembershipScript` length cap (e.g. 16 KB) in `CreateGroupCommand`/`UpdateGroupCommand` validation.
-  - Add AST-depth cap before invoking the translator.
-  - Wire `CancellationToken` from the recompute path through to the engine.
+- **Lib-side fixes** in Cocoar.JsEval 4.0 — engine globals
+  safe-by-default, `WithExecutionTimeout` / `WithMaxStatements`
+  builder flags, translator depth-cap (`MaxAstDepth`) and parser
+  depth-cap (`MaxParseDepth`).
+- **Consumer-side fixes** in Cocoar.Auth —
+  `Cocoar.Auth.Authorization.Membership.ScriptInputLimits` for
+  length/depth caps with domain-specific error codes,
+  `MembershipEvaluator.BuildPredicate` with a `CancellationToken`
+  parameter that registers `jsEngine.Stop()` on cancel, length+depth
+  validation at every consumer entry point
+  (`CreateGroupCommand`, `UpdateGroupCommand`,
+  `UpdateLoginProviderCommand`).
 
-Land a regression test for each fix.
+Each gap has at least one pinning test in
+`MembershipSecurityTests.A1_*` / `A2_*` so a regression in either
+layer surfaces fast.
