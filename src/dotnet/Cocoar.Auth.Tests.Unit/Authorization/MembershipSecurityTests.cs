@@ -36,7 +36,7 @@ public sealed class MembershipSecurityTests : IDisposable
 
     public MembershipSecurityTests()
     {
-        // Mirror production wiring exactly. Cocoar.JsEval 3.4 ships
+        // Mirror production wiring exactly. Cocoar.JsEval 4.0 ships
         // safe-by-default — the engine globals catalogue (NewObject,
         // require, exit, timers, console + __log_*) is `undefined` unless
         // explicitly enabled. Cocoar.Auth never enables them.
@@ -164,7 +164,7 @@ public sealed class MembershipSecurityTests : IDisposable
     [Fact]
     public void A1_TranspilerDepthCap_LibSideClosed()
     {
-        // F6b lib-side fix landed in Cocoar.JsEval 3.4.0-beta.4 — the
+        // F6b lib-side fix landed in Cocoar.JsEval 4.0 — the
         // TS-pipeline pre-parses for nesting depth (default
         // MaxParseDepth = 128) and throws a controlled
         // TsTranspileException at depth ≥ 128 instead of escalating to

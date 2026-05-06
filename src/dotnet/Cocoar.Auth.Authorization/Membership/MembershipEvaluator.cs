@@ -17,7 +17,7 @@ public class MembershipEvaluator(
         string compiledScript,
         CancellationToken ct = default)
     {
-        // Cocoar.JsEval 3.4 enforces the wall-clock budget at the engine
+        // Cocoar.JsEval 4.0 enforces the wall-clock budget at the engine
         // level via WithExecutionTimeout(...) in DependencyInjection — Stage B1
         // (Jint) is bounded there, Stage B2 (Translator) is bounded by the
         // depth-cap (default 256) in JsExpressionTranslator. We just have to

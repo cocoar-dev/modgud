@@ -303,8 +303,9 @@ TS payloads are rejected before the TS compiler ever sees them.
 Pinned by `MembershipSecurityTests.A1_OneMegabyteScript_RejectedByLengthCap`.
 :::
 
-::: tip Gap-3 (medium) · CLOSED LIB-SIDE in 3.4.0-beta.4 — plus consumer-side belt-and-braces
-**Lib-side fix shipped**: Cocoar.JsEval 3.4.0-beta.4 added a pre-parse
+::: tip Gap-3 (medium) · CLOSED LIB-SIDE in Cocoar.JsEval 4.0 — plus consumer-side belt-and-braces
+**Lib-side fix shipped**: Cocoar.JsEval 4.0 (final fix landed in
+3.4.0-beta.4 prerelease) added a pre-parse
 nesting-depth scan to `TsTranspiler.Transpile` (default
 `MaxParseDepth = 128`). A 500-deep ternary input now throws a
 controlled `TsTranspileException` instead of escalating to

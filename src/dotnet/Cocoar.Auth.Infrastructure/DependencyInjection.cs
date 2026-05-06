@@ -195,7 +195,7 @@ public static class DependencyInjection
         // Register JsEval (Linq-enabled + Principal discriminator mappings
         // for Type.Is() in membership scripts).
         //
-        // Cocoar.JsEval 3.4 made the engine surface safe-by-default:
+        // Cocoar.JsEval 4.0 made the engine surface safe-by-default:
         // NewObject, require, exit, setTimeout/Interval/clear*, console,
         // and the __log_* bridge are all OFF unless explicitly enabled
         // via the corresponding `Enable…()` builder flag. Membership
