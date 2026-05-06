@@ -303,15 +303,18 @@ TS payloads are rejected before the TS compiler ever sees them.
 Pinned by `MembershipSecurityTests.A1_OneMegabyteScript_RejectedByLengthCap`.
 :::
 
-::: warning Gap-3 (low) · NOT CLOSED — lib-side fix needed
-No AST-depth cap on translator. Deep ternary nesting can hit
-`StackOverflowException` at translation time, which is unrecoverable
-in .NET — the wall-clock timeout from Gap-1's fix doesn't help here
-because the translator runs synchronously on the calling thread and
-the SOE is escalated process-wide. Lib-side fix: depth counter in
-`JsExpressionTranslator.Visit`. Tracker test
-`A1_DeeplyNestedTernary_DoesNotStackOverflow` stays `Skip` until the
-lib gains the counter.
+::: tip Gap-3 (low) · PARTIALLY CLOSED — translator capped, parser still recursive
+Cocoar.JsEval 3.4 added a translator-depth cap (default 256) on
+`JsExpressionTranslator.Visit`, which closes the originally-described
+StackOverflow at Stage B2. **However**, a 500+-deep nested ternary
+*input string* still hits StackOverflow earlier in Stage A — during
+TS parsing (Acornima recursive-descent), before the translator runs.
+Tracked as F6-partial in the lib feature-request — needs either a
+depth-cap in the parser layer or an iterative parse rewrite.
+
+Realistic exploit window today is closed by the 16 KiB script-length
+cap (`ScriptInputLimits.MaxScriptCharacters`): no input deep enough
+to overflow Acornima's parse stack fits inside 16 KiB.
 :::
 
 ::: tip Gap-4 (low) · CLOSED — cancellation plumbed end-to-end

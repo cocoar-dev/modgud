@@ -195,70 +195,29 @@ public static class DependencyInjection
         // Register JsEval (Linq-enabled + Principal discriminator mappings
         // for Type.Is() in membership scripts).
         //
-        // ───── Security lockdown ─────
+        // Cocoar.JsEval 3.4 made the engine surface safe-by-default:
+        // NewObject, require, exit, setTimeout/Interval/clear*, console,
+        // and the __log_* bridge are all OFF unless explicitly enabled
+        // via the corresponding `Enable…()` builder flag. Membership
+        // scripts are pure predicates over Person/Group/ServiceAccount —
+        // none of those globals are needed, so we just don't enable them.
         //
-        // cocoar.js-eval wires a number of engine globals by default. For
-        // membership scripts we keep only what's needed and strip the rest
-        // via a post-init engine configurator (configurators run AFTER
-        // JsEngine.Initialize()). The full surface inventory + reasoning is
-        // in website/testing/jseval-threat-model.md (Engine-globals table).
+        // `WithExecutionTimeout(2s)` is a defense-in-depth backstop for
+        // runaway top-level scripts (`while(true){}` etc.). It pairs
+        // with the consumer-side wall-clock budget in
+        // MembershipEvaluator.BuildPredicate, which also bounds the
+        // synchronous translator phase that the engine timeout cannot
+        // reach.
         //
-        // KEPT (membership-script useful, low/no risk):
-        //   - Type     — discriminator narrowing (`Type.Is(p, 'person')`)
-        //   - linq     — typed-literal helpers (`linq.guid("…")`)
-        //   - btoa, atob, __perf_now, performance, __te_encode/decode,
-        //     TextEncoder/Decoder, structuredClone — pure conversions
-        //
-        // STRIPPED (every one closes a real or potential surface):
-        //   - NewObject, require        (host-RCE — arbitrary CLR-type
-        //                                construction via assembly walk;
-        //                                see Gap-5 / A2-NewObject)
-        //   - exit                      (engine-DoS — `exit()` cancels the
-        //                                engine's CancellationToken and
-        //                                future recomputes on the same
-        //                                Scoped engine fail)
-        //   - setTimeout, setInterval,
-        //     clearTimeout, clearInterval (schedules callbacks on the
-        //                                shared TaskScheduler — async
-        //                                pollution, unbounded background
-        //                                work outliving the recompute)
-        //   - __log_info/_warn/_error/_debug, console
-        //                               (log-spam — admin-authored scripts
-        //                                shouldn't be able to flood the
-        //                                ops log infrastructure; `console.log`
-        //                                in scripts becomes a no-op /
-        //                                ReferenceError after this)
-        //
-        // Pinned by tests in
-        // Cocoar.Auth.Tests.Unit/Authorization/MembershipSecurityTests.cs
-        // (A2 group). Removing or weakening any item below should turn a
-        // pinning test red.
+        // See website/testing/jseval-threat-model.md for the full
+        // engine-globals catalog and the rationale per global.
         services.AddJsEval(b => b
             .AddLinq()
             .AddDiscriminatorMappings<Principal>("Type",
                 ("person", typeof(Person)),
                 ("group", typeof(Group)),
                 ("service-account", typeof(ServiceAccount)))
-            .RegisterEngineConfigurator(engine =>
-            {
-                var undef = Jint.Native.JsValue.Undefined;
-                // Host-RCE primitives
-                engine.SetValue("NewObject", undef);
-                engine.SetValue("require", undef);
-                // Engine-DoS
-                engine.SetValue("exit", undef);
-                // Async / TaskScheduler pollution
-                engine.SetValue("setTimeout", undef);
-                engine.SetValue("setInterval", undef);
-                engine.SetValue("clearTimeout", undef);
-                engine.SetValue("clearInterval", undef);
-                // Log-spam vector
-                engine.SetValue("console", undef);
-                engine.SetValue("__log_info", undef);
-                engine.SetValue("__log_warn", undef);
-                engine.SetValue("__log_error", undef);
-                engine.SetValue("__log_debug", undef);
-            }));
+            .WithExecutionTimeout(TimeSpan.FromSeconds(2)));
         services.AddTsTranspiler();
         services.AddTsDefinition();
 
