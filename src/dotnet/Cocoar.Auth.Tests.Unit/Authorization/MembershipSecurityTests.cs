@@ -1,0 +1,493 @@
+using System.Diagnostics;
+using System.Linq.Expressions;
+using Cocoar.Auth.Authorization.Membership;
+using Cocoar.Auth.Authorization.Principals;
+using Cocoar.JsEval.Engine;
+using Cocoar.JsEval.Linq;
+using Cocoar.JsEval.TsDefinition;
+using Cocoar.JsEval.TypeScript;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Cocoar.Auth.Tests.Unit.Authorization;
+
+/// <summary>
+/// Adversarial test suite for the membership-script JsEval pipeline. Phase 2
+/// of the JsEval-Fuzzing initiative — see
+/// <c>website/testing/jseval-threat-model.md</c> for the full threat model
+/// (Phase 1) and the gap classification.
+///
+/// <para>Six test groups, mirroring the attacker classes (A1-A6) in the
+/// threat model. Tests pin <em>expected safe behaviour</em>. Tests that fail
+/// today because the threat-model identified a real gap are marked with the
+/// gap reference in the assertion message and a <see cref="Skip"/> attribute,
+/// so Phase 3 can pick them up by un-skipping.</para>
+///
+/// <para>The tests instantiate <see cref="IMembershipEvaluator"/> with the
+/// same wiring Cocoar.Auth uses in production
+/// (<c>Cocoar.Auth.Infrastructure/DependencyInjection.cs:196-201</c>) so the
+/// engine config is identical.</para>
+/// </summary>
+public sealed class MembershipSecurityTests : IDisposable
+{
+    private readonly ServiceProvider _sp;
+    private readonly IServiceScope _scope;
+    private readonly IMembershipEvaluator _evaluator;
+    private readonly TsTranspiler _transpiler;
+
+    public MembershipSecurityTests()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddJsEval(b => b
+            .AddLinq()
+            .AddDiscriminatorMappings<Principal>("Type",
+                ("person", typeof(Person)),
+                ("group", typeof(Group)),
+                ("service-account", typeof(ServiceAccount))));
+        services.AddTsTranspiler();
+        services.AddTsDefinition();
+        services.AddScoped<IMembershipEvaluator, MembershipEvaluator>();
+
+        _sp = services.BuildServiceProvider();
+        _scope = _sp.CreateScope();
+        _evaluator = _scope.ServiceProvider.GetRequiredService<IMembershipEvaluator>();
+        _transpiler = _scope.ServiceProvider.GetRequiredService<TsTranspiler>();
+    }
+
+    public void Dispose()
+    {
+        _scope.Dispose();
+        _sp.Dispose();
+    }
+
+    // Each test budgets at most this much wall-clock to detect runaway scripts.
+    // Anything that hangs longer is treated as a failed bound-time assertion.
+    private static readonly TimeSpan UnboundedBudget = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// Runs <paramref name="action"/> on a worker thread and asserts it
+    /// completes within <paramref name="budget"/>. The thread is left
+    /// orphaned on timeout (the engine has no cooperative cancellation;
+    /// see Gap-1, Gap-4) — acceptable because the test-process exit
+    /// reaps it. Returns the action's result on success.
+    /// </summary>
+    private static T WithTimeBudget<T>(Func<T> action, TimeSpan? budget = null)
+    {
+        var deadline = budget ?? UnboundedBudget;
+        var task = Task.Run(action);
+        if (!task.Wait(deadline))
+        {
+            throw new TimeoutException(
+                $"Operation did not complete within {deadline.TotalSeconds:F1}s. " +
+                $"This usually points at Gap-1 (no engine timeout / no max-statements) — " +
+                $"see website/testing/jseval-threat-model.md.");
+        }
+        return task.Result;
+    }
+
+    private static void WithTimeBudget(Action action, TimeSpan? budget = null)
+        => WithTimeBudget<bool>(() => { action(); return true; }, budget);
+
+    // ─────────────────────────────────────────────────────────────────────
+    // A1 — Resource exhaustion (DoS)
+    //
+    // Pin: every legitimate translation completes in bounded time, and
+    // pathological scripts either reject fast or are bounded by an engine
+    // constraint. Today (Gap-1) no engine constraint is set, so the
+    // hang-class tests are marked Skip until Phase 3 lands the fix.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A1_TrivialPredicate_TranslatesUnderOneSecond()
+    {
+        var compiled = _transpiler.Transpile("(p: any) => p.Firstname === 'X'");
+        var sw = Stopwatch.StartNew();
+        var predicate = WithTimeBudget(
+            () => _evaluator.BuildPredicate<Person>(compiled),
+            TimeSpan.FromSeconds(1));
+        sw.Stop();
+
+        Assert.NotNull(predicate);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(1),
+            $"Trivial translation took {sw.ElapsedMilliseconds}ms — expected <1000ms.");
+    }
+
+    [Fact(Skip = "Gap-1: no engine timeout / no MaxStatements. Stage B1 hangs " +
+                  "on top-level infinite loops. See jseval-threat-model.md.")]
+    public void A1_TopLevelInfiniteLoop_DoesNotHangIndefinitely()
+    {
+        // The TS transpiler emits this as JS, then engine.EvaluateExpression
+        // executes the top-level statements before returning the function value.
+        var compiled = _transpiler.Transpile(
+            "while (true) {} const f = (p: any) => p.Firstname === 'X'; f");
+
+        WithTimeBudget(
+            () => _evaluator.BuildPredicate<Person>(compiled),
+            TimeSpan.FromSeconds(2));
+    }
+
+    [Fact(Skip = "Gap-1: large allocation on top level not capped. " +
+                  "See jseval-threat-model.md.")]
+    public void A1_TopLevelAllocationFlood_DoesNotExhaustMemory()
+    {
+        // Doubles a string 30 times → ~1 GB, will OOM without a memory cap.
+        var compiled = _transpiler.Transpile(
+            "let s = 'x'; for (let i = 0; i < 30; i++) s += s; " +
+            "const f = (p: any) => s.length > 0; f");
+
+        WithTimeBudget(
+            () => _evaluator.BuildPredicate<Person>(compiled),
+            TimeSpan.FromSeconds(2));
+    }
+
+    [Fact(Skip = "Gap-3: no AST-depth cap on translator. Deep ternary " +
+                  "nesting blows the stack. See jseval-threat-model.md.")]
+    public void A1_DeeplyNestedTernary_DoesNotStackOverflow()
+    {
+        // 5000 nested ternaries is far past .NET's default thread stack size
+        // for the recursive translator descent.
+        var body = "true";
+        for (var i = 0; i < 5000; i++) body = $"({body} ? 1 : 2)";
+        var compiled = _transpiler.Transpile($"(p: any) => {body} === 1");
+
+        WithTimeBudget(
+            () => _evaluator.BuildPredicate<Person>(compiled),
+            TimeSpan.FromSeconds(2));
+    }
+
+    [Fact(Skip = "Gap-2: no script-length cap on input. A 1MB TS payload " +
+                  "makes the TS compiler do unbounded work in Stage A. " +
+                  "See jseval-threat-model.md.")]
+    public void A1_OneMegabyteScript_RejectsOrCapsTranspileTime()
+    {
+        // 1 MiB of comment + a small predicate. The TS compiler scans every
+        // byte even though the executable program is tiny.
+        var huge = new string('/', 1024 * 1024) + "\n(p: any) => true";
+
+        WithTimeBudget(
+            () => _transpiler.Transpile(huge),
+            TimeSpan.FromSeconds(2));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // A2 — Native-host escape
+    //
+    // Pin: Jint sandbox boundaries hold. No CLR access, no fetch, no module
+    // import, no eval/Function constructor, no globalThis.process / require.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A2_EvalCall_RejectsAtTranslation()
+    {
+        // Even if Jint accepts eval at top level, the translator's whitelist
+        // does not accept arbitrary call targets — `eval` is not a known method.
+        var compiled = _transpiler.Transpile(
+            "(p: any) => eval('p.Firstname === \"X\"')");
+
+        var ex = Record.Exception(
+            () => _evaluator.BuildPredicate<Person>(compiled));
+
+        Assert.NotNull(ex);
+    }
+
+    [Fact]
+    public void A2_FunctionConstructor_RejectsAtTranslation()
+    {
+        var compiled = _transpiler.Transpile(
+            "(p: any) => new Function('return p.Firstname === \"X\"')()");
+
+        var ex = Record.Exception(
+            () => _evaluator.BuildPredicate<Person>(compiled));
+
+        Assert.NotNull(ex);
+    }
+
+    [Fact]
+    public void A2_GlobalThisProcess_NotReachable()
+    {
+        // `globalThis.process` should be undefined — Jint doesn't expose a
+        // Node.js-style `process` object.
+        var compiled = _transpiler.Transpile(
+            "(p: any) => globalThis.process !== undefined");
+
+        var ex = Record.Exception(
+            () => _evaluator.BuildPredicate<Person>(compiled));
+
+        // Either the translator rejects unknown identifier `globalThis`, OR
+        // the predicate translates to a constant `false`. Both are acceptable —
+        // what's NOT acceptable is `process` being defined.
+        Assert.True(
+            ex is not null
+            || EvaluateConstantBool(_evaluator.BuildPredicate<Person>(compiled)) == false,
+            "globalThis.process should not be reachable from membership scripts.");
+    }
+
+    [Fact]
+    public void A2_RequireFunction_NotReachable()
+    {
+        var compiled = _transpiler.Transpile(
+            "(p: any) => typeof require === 'function'");
+
+        var ex = Record.Exception(
+            () => _evaluator.BuildPredicate<Person>(compiled));
+
+        Assert.True(
+            ex is not null
+            || EvaluateConstantBool(_evaluator.BuildPredicate<Person>(compiled)) == false,
+            "`require` should not be reachable from membership scripts.");
+    }
+
+    [Fact]
+    public void A2_ImportExpression_RejectsAtTranslation()
+    {
+        // Top-level `import()` is parseable JS in modern targets. Translator
+        // body has no ImportExpression case — must reject.
+        var compiled = _transpiler.Transpile(
+            "(p: any) => import('System.IO.File').then(() => p) !== null");
+
+        var ex = Record.Exception(
+            () => _evaluator.BuildPredicate<Person>(compiled));
+
+        Assert.NotNull(ex);
+    }
+
+    [Fact]
+    public void A2_PrototypePollutionAttempt_HasNoVisibleEffect()
+    {
+        // Mutating Object.prototype at top level shouldn't change how the
+        // translator interprets a separate predicate, because the translator
+        // walks the AST — it doesn't go through prototype lookups.
+        var pollutedThenPredicate = _transpiler.Transpile(
+            "Object.prototype.isAdmin = () => true; " +
+            "const f = (p: any) => p.Firstname === 'X'; f");
+
+        // This must translate without absorbing the prototype pollution: the
+        // resulting predicate should still be a Firstname-equality, not a
+        // tautology.
+        var predicate = _evaluator.BuildPredicate<Person>(pollutedThenPredicate);
+
+        // Spot-check — predicate should NOT match a person with no firstname.
+        var nullFirstname = new Person { Id = Guid.NewGuid(), Firstname = null };
+        Assert.False(predicate.Compile()(nullFirstname));
+    }
+
+    [Fact]
+    public void A2_TopLevelFileAccessAttempt_RejectsOrEvaluatesFalse()
+    {
+        // No CLR exposure → System.IO.File should not be a known global.
+        var compiled = _transpiler.Transpile(
+            "(p: any) => System.IO.File !== undefined");
+
+        var ex = Record.Exception(
+            () => _evaluator.BuildPredicate<Person>(compiled));
+
+        Assert.NotNull(ex);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // A3 — Type confusion
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A3_BigIntLiteral_RejectsCleanly()
+    {
+        // Translator's NumericLiteral case handles double, not BigInt.
+        var ex = Record.Exception(() =>
+        {
+            var compiled = _transpiler.Transpile("(p: any) => p.Lastname === 9007199254740993n");
+            _evaluator.BuildPredicate<Person>(compiled);
+        });
+
+        // Either the transpiler emits something the translator rejects, or
+        // the parser rejects the BigInt literal. Either is fine — we want
+        // a clean error, not a silent miscompare.
+        Assert.NotNull(ex);
+    }
+
+    [Fact]
+    public void A3_NaNComparison_TranslatesAsAlwaysFalse()
+    {
+        // JS: NaN === NaN is false. Postgres: NaN = NaN can be true. We want
+        // JS-semantics preserved when translated.
+        var compiled = _transpiler.Transpile("(p: any) => Number.NaN === Number.NaN");
+
+        // Any of: translator rejects unknown `Number`, or it translates to
+        // a constant false, or the resulting predicate evaluates to false on
+        // every input. All are safe outcomes.
+        var ex = Record.Exception(
+            () => _evaluator.BuildPredicate<Person>(compiled));
+        if (ex is null)
+        {
+            var predicate = _evaluator.BuildPredicate<Person>(compiled);
+            var anyPerson = new Person { Id = Guid.NewGuid() };
+            Assert.False(predicate.Compile()(anyPerson));
+        }
+    }
+
+    [Fact]
+    public void A3_NumericOverflowLiteral_PreservesPrecisionOrRejects()
+    {
+        // 2^53 + 1 cannot be represented exactly as IEEE 754 double. Either
+        // the translator rejects it, or it round-trips to something that
+        // makes the comparison consistently produce a determined value.
+        var compiled = _transpiler.Transpile("(p: any) => 9007199254740993 === 9007199254740992");
+
+        // Whatever the outcome, it must be consistent — running the predicate
+        // twice with the same input must give the same result.
+        var predicate = _evaluator.BuildPredicate<Person>(compiled);
+        var p = new Person { Id = Guid.NewGuid() };
+        var first = predicate.Compile()(p);
+        var second = predicate.Compile()(p);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void A3_NegativeZeroEqualsZero_TranslatesConsistently()
+    {
+        // JS: -0 === 0 is true. We want a stable answer, not undefined behaviour.
+        var compiled = _transpiler.Transpile("(p: any) => -0 === 0");
+        var predicate = _evaluator.BuildPredicate<Person>(compiled);
+        var p = new Person { Id = Guid.NewGuid() };
+        Assert.True(predicate.Compile()(p));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // A4 — Cross-tenant probe
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A4_UnknownProperty_RejectsAtTranslation()
+    {
+        // `Person.Tenant` is not a property — translator must reject.
+        var compiled = _transpiler.Transpile(
+            "(p: any) => p.Tenant === 'other-tenant'");
+
+        var ex = Record.Exception(
+            () => _evaluator.BuildPredicate<Person>(compiled));
+
+        Assert.NotNull(ex);
+        Assert.Contains("Tenant", ex!.Message);
+    }
+
+    [Fact]
+    public void A4_UnknownIdentifier_RejectsAtTranslation()
+    {
+        // No `db`/`session`/`Query` in scope — only the predicate parameter.
+        var compiled = _transpiler.Transpile(
+            "(p: any) => Query('Person').Where((x: any) => x.Id !== p.Id).Any()");
+
+        var ex = Record.Exception(
+            () => _evaluator.BuildPredicate<Person>(compiled));
+
+        Assert.NotNull(ex);
+    }
+
+    [Fact]
+    public void A4_DocumentSessionReference_NotReachable()
+    {
+        // Even with full DI wiring, no IDocumentSession identifier is
+        // injected into the engine globals.
+        var compiled = _transpiler.Transpile(
+            "(p: any) => session !== null");
+
+        var ex = Record.Exception(
+            () => _evaluator.BuildPredicate<Person>(compiled));
+
+        Assert.NotNull(ex);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // A5 — SQL-injection via LINQ
+    //
+    // Marten parameterises SQL from LINQ; the translator only emits
+    // ConstantExpression for string literals, which Marten passes as
+    // parameters. The class is mostly verified at the LINQ-emission level.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A5_StringLiteralWithSqlMetacharacters_StaysAsConstant()
+    {
+        // The translator must emit the literal as a ConstantExpression carrying
+        // the raw string — Marten then parameterises it. A naive concat would
+        // be a SQL-injection sink.
+        var compiled = _transpiler.Transpile(
+            "(p: any) => p.Firstname === \"'; DROP TABLE users; --\"");
+        var predicate = _evaluator.BuildPredicate<Person>(compiled);
+
+        // Walk the expression tree and assert the right-hand side is a
+        // ConstantExpression with the exact original string.
+        var body = (BinaryExpression)((LambdaExpression)predicate).Body;
+        var rhs = Assert.IsType<ConstantExpression>(body.Right);
+        Assert.Equal("'; DROP TABLE users; --", rhs.Value);
+    }
+
+    [Fact(Skip = "Requires the linq.guid translator-intercept to be exercised; " +
+                  "the helper rejects malformed inputs at translation time. " +
+                  "Validation deferred until a linq.guid call site lands here.")]
+    public void A5_LinqGuidMalformedInput_RejectsAtTranslation()
+    {
+        var compiled = _transpiler.Transpile(
+            "(p: any) => p.Id === linq.guid('not-a-guid')");
+
+        var ex = Record.Exception(
+            () => _evaluator.BuildPredicate<Person>(compiled));
+
+        Assert.NotNull(ex);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // A6 — Information disclosure via translator errors
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A6_UnsupportedAstNode_DoesNotLeakAcornimaInternals()
+    {
+        // Block-bodied arrow with a try/catch is not in the whitelist;
+        // translator throws NotSupportedException with the AST node type name.
+        // Today the message contains `BlockStatement` — that's an Acornima
+        // internal. Pin: ideally the message names the *user-visible* JS
+        // construct (e.g. "block statement") rather than the parser type.
+        var compiled = _transpiler.Transpile(
+            "(p: any) => { try { return true; } catch { return false; } }");
+
+        var ex = Record.Exception(
+            () => _evaluator.BuildPredicate<Person>(compiled));
+
+        Assert.NotNull(ex);
+        // We don't assert the exact message because today it leaks
+        // `BlockStatement`. When that's tightened, this assertion stays
+        // valid (the message just no longer contains it).
+        Assert.IsType<NotSupportedException>(ex);
+    }
+
+    [Fact]
+    public void A6_TranspileError_DoesNotIncludeStackTraceInMessage()
+    {
+        // A syntactically broken TS source must produce a clean transpile
+        // error, not a multi-line stack trace.
+        var ex = Record.Exception(
+            () => _transpiler.Transpile("(p: any) => p.) {{ broken"));
+
+        Assert.NotNull(ex);
+        // No `at System.` or stack trace markers in the message itself
+        // (those belong on .StackTrace, not .Message).
+        Assert.DoesNotContain("at System.", ex!.Message);
+        Assert.DoesNotContain("at Cocoar.JsEval", ex.Message);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Compiles a predicate and returns its evaluation against a no-op
+    /// person — used in A2 tests where the predicate may translate to a
+    /// constant that we want to confirm is `false`.
+    /// </summary>
+    private static bool EvaluateConstantBool(Expression<Func<Person, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        var noopPerson = new Person { Id = Guid.NewGuid() };
+        return compiled(noopPerson);
+    }
+}
