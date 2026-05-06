@@ -303,44 +303,38 @@ TS payloads are rejected before the TS compiler ever sees them.
 Pinned by `MembershipSecurityTests.A1_OneMegabyteScript_RejectedByLengthCap`.
 :::
 
-::: tip Gap-3 (medium) · CLOSED CONSUMER-SIDE — depth-counter pre-parse scan
-Cocoar.JsEval 3.4 added a translator-depth cap (default 256) on
-`JsExpressionTranslator.Visit`, which closes the originally-described
-StackOverflow at Stage B2.
+::: tip Gap-3 (medium) · CLOSED LIB-SIDE in 3.4.0-beta.4 — plus consumer-side belt-and-braces
+**Lib-side fix shipped**: Cocoar.JsEval 3.4.0-beta.4 added a pre-parse
+nesting-depth scan to `TsTranspiler.Transpile` (default
+`MaxParseDepth = 128`). A 500-deep ternary input now throws a
+controlled `TsTranspileException` instead of escalating to
+StackOverflowException. Verified: depths 50/100 succeed, depths
+300/500/1000 all surface as `TsTranspileException`. Pinned by
+`A1_TranspilerDepthCap_LibSideClosed`.
 
-**However**, a 500-deep nested ternary input still hits StackOverflow
-in Stage A (TS parsing). Empirical: even with an 8 MB worker-thread
-stack, depth=500 crashes — Jint dispatches parser work onto
-`TaskScheduler.Default` threads that ignore the caller's
-`maxStackSize`, and the TS compiler runs as JS interpreted by Jint
-(~10× .NET-frame amplification per JS-recursion level), so Acornima's
-own 5000-cap is never reached. Lib follow-up tracked as F6b in the
-upstream feature-request.
-
-**Trust model update (2026-05-06)**: Tenant-Admins WILL author
-membership scripts (via the Group editor in their tenant scope) in
-the upcoming product surface. F6b is therefore **not theoretical** —
-a single tenant-admin's 500-deep ternary script would crash the host
-on the first auto-recompute, taking down the IdP for *every* tenant.
-Cross-tenant DoS via untrusted-admin script authorship.
-
-**Consumer-side mitigation (now shipped)**:
+**Consumer-side belt-and-braces still in place**:
 `ScriptInputLimits.MaxNestingDepth = 50` — a pre-parse scan in
-`ScriptInputLimits.Validate` walks the source counting unmatched
-parens/braces/brackets (skipping string literals and comments) and
-rejects inputs over depth 50 with a `*ScriptTooDeep` error. 50 is
-well above realistic predicates (typical depth < 10) but well below
-the ~300 threshold where the interpreted TS-parser starts consuming
-enough .NET stack to risk SOE. Pinned by
-`A1_DeeplyNestedTernary_RejectedByDepthCap` and
-`A1_DepthCounter_HandlesStringsAndComments` in
-`MembershipSecurityTests`. Applied at all three call sites:
-`CreateGroupCommand`, `UpdateGroupCommand`,
+`ScriptInputLimits.Validate` (Authorization slice) walks the source
+counting unmatched parens/braces/brackets (skipping string literals
+and comments) and rejects inputs over depth 50 with a
+`*ScriptTooDeep` error. The consumer threshold (50) is tighter than
+the lib's (128), so it fires first; the lib's cap is the safety net
+when something bypasses our validator. Reasons to keep both:
+
+- Domain-specific error code (`Group.MembershipScriptTooDeep` vs
+  generic `TsTranspileException`).
+- Synchronous fast-fail before the TS pipeline boots Jint.
+- Decouples our threshold from the lib version.
+
+Pinned by `A1_DeeplyNestedTernary_RejectedByDepthCap` and
+`A1_DepthCounter_HandlesStringsAndComments`. Applied at all three
+consumer entry points: `CreateGroupCommand`, `UpdateGroupCommand`,
 `UpdateLoginProviderCommand`.
 
-The lib-side F6b fix is still desirable (other consumers that don't
-ship a depth-counter remain exposed), but Cocoar.Auth's window is
-now mathematically closed.
+**Trust-model context**: Tenant-Admins will author membership
+scripts in the upcoming product surface, so the cross-tenant-DoS
+path was a real concern (a single tenant-admin's 500-deep ternary
+crashing the IdP for every tenant). Now closed at both layers.
 :::
 
 ::: tip Gap-4 (low) · CLOSED — cancellation plumbed end-to-end

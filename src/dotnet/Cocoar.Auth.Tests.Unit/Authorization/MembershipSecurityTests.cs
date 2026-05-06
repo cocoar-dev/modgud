@@ -161,23 +161,30 @@ public sealed class MembershipSecurityTests : IDisposable
         }, TimeSpan.FromSeconds(5));
     }
 
-    // Removed: A1_DeeplyNestedTernary_DoesNotStackOverflow.
-    //
-    // Cocoar.JsEval 3.4 added a translator-depth cap that gates the
-    // synchronous descent in JsExpressionTranslator.Visit. That closes
-    // half of the original concern. The other half — StackOverflow during
-    // TS parsing (Stage A — Acornima recursive-descent on a 500-deep
-    // ternary string) — is NOT gated by the 3.4 cap. The crash is
-    // process-fatal in .NET, and every attempt to even probe it
-    // (including the previously-skipped tracker) tripped xUnit's
-    // discovery harness in 3.4-beta.3 builds.
-    //
-    // Lib-side follow-up tracked in
-    // cocoar.js-eval/.local/security-untrusted-script-hardening.md
-    // (F6 — extend the depth-cap to the parser layer or switch to
-    // iterative parse). Until that lands, the consumer-side script-length
-    // cap (16 KiB, ScriptInputLimits) bounds the depth of any input that
-    // can reach the parser, so the realistic exploit window is closed.
+    [Fact]
+    public void A1_TranspilerDepthCap_LibSideClosed()
+    {
+        // F6b lib-side fix landed in Cocoar.JsEval 3.4.0-beta.4 — the
+        // TS-pipeline pre-parses for nesting depth (default
+        // MaxParseDepth = 128) and throws a controlled
+        // TsTranspileException at depth ≥ 128 instead of escalating to
+        // StackOverflowException. This test bypasses our own
+        // ScriptInputLimits guard (which fires earlier at depth 50) and
+        // calls the transpiler directly with a 500-deep input to confirm
+        // the lib catches it.
+        var body = "true";
+        for (var i = 0; i < 500; i++) body = $"({body} ? 1 : 2)";
+        var source = $"(p: any) => {body} === 1";
+
+        var ex = Record.Exception(() => _transpiler.Transpile(source));
+
+        Assert.NotNull(ex);
+        // The lib emits a TsTranspileException; we don't assert the
+        // exact type to avoid coupling to the namespace, but we DO
+        // assert the message names the depth so a future lib-side
+        // refactor that loses the depth-cap surfaces here.
+        Assert.Contains("depth", ex!.Message, StringComparison.OrdinalIgnoreCase);
+    }
 
     [Fact]
     public void A1_OneMegabyteScript_RejectedByLengthCap()
