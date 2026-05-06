@@ -80,11 +80,36 @@ settings, the OpenIddict issuer, the magic-link rate limit, the
     "AccessTokenLifetimeMinutes": 60,
     "RefreshTokenLifetimeDays": 14,
     "AuthorizationCodeLifetimeMinutes": 5,
-    "DevelopmentMode": false,
-    "SigningCertificatePath": "/secrets/openiddict-signing.pfx"
+    "DevelopmentMode": false
   }
 }
 ```
+
+::: info OpenIddict signing + encryption certificates
+Both `OpenIddict.SigningCertificatePath` and
+`OpenIddict.EncryptionCertificatePath` are **optional**. When unset
+they default to `data/keys/signing.pfx` and `data/keys/encryption.pfx`
+respectively, resolved relative to the app's working directory
+(`/app/` in the Docker image).
+
+When the resolved file is missing on disk at startup, cocoar.auth
+auto-generates a passwordless self-signed PFX in place and logs a
+startup warning naming the path. The cert persists across container
+restarts as long as the directory is on a persistent volume — see
+the Docker Compose example below for the `cocoar-keys` volume.
+
+This means: for a self-hosted Beta deployment you don't need to
+provision certs ahead of time. The container generates them on first
+start. For Cloud / managed deployments, point the path at a
+Key-Vault-mounted directory with the production cert pre-placed —
+the auto-gen never fires when the file already exists.
+
+Convention: passwordless PFX, file-system permissions (0600 on Linux)
+protect the key. Mirrors the `cocoar-secrets` CLI tool's recommendation
+(see `Cocoar.Configuration.Secrets.Cli`). To convert a
+password-protected PFX from elsewhere:
+`cocoar-secrets convert-cert -i in.pfx --ipass <old> -o out.pfx`.
+:::
 
 ::: info Database naming
 `DbSettings.ConnectionString` points at the master DB — pick any name
@@ -111,11 +136,26 @@ Multi-arch: **linux/amd64** + **linux/arm64**.
 docker run -d \
   --name cocoar-auth \
   -p 80:80 \
-  -e DBSETTINGS__CONNECTIONSTRING="Host=your-postgres;Database=<master-db>;Username=postgres;Password=..." \
-  -e OPENIDDICT__ISSUER="http://localhost" \
-  -e OPENIDDICT__DEVELOPMENTMODE="true" \
+  -e DbSettings__ConnectionString="Host=your-postgres;Database=<master-db>;Username=postgres;Password=..." \
+  -e OpenIddict__Issuer="http://localhost" \
+  -e OpenIddict__DevelopmentMode="true" \
   ghcr.io/cocoar/cocoar.auth:latest
 ```
+
+::: warning ENV variable casing
+Cocoar.Configuration's environment-variable provider serializes ENV
+keys 1:1 into the JSON map that's deserialized into the config types,
+and the deserializer is **case-sensitive** on the property side. ENV
+keys must match the C# property casing exactly:
+
+- ✅ `DbSettings__ConnectionString`, `OpenIddict__Issuer`, `Email__Smtp__Host`
+- ❌ `DBSETTINGS__CONNECTIONSTRING` — silently fails to bind, the
+  property stays at its class default
+
+Two underscores (`__`) are the section separator. Single underscore is
+literal. The full list of bindable settings is in the Settings classes
+table above.
+:::
 
 Once the container is up, create the first admin via the recovery CLI
 (see [Recovery CLI](../admin/recovery-cli) and [First-time setup](../getting-started/first-time-setup)):
@@ -146,25 +186,34 @@ services:
   auth:
     image: ghcr.io/cocoar/cocoar.auth:latest
     ports:
-      - "80:80"
+      - "80:8081"
     environment:
-      DBSETTINGS__CONNECTIONSTRING: "Host=postgres;Database=<master-db>;Username=postgres;Password=postgres"
-      OPENIDDICT__ISSUER: "http://localhost"
-      OPENIDDICT__DEVELOPMENTMODE: "true"
-      EMAIL__PROVIDER: "Smtp"
-      EMAIL__SMTP__HOST: "mailhog"
-      EMAIL__SMTP__PORT: "1025"
+      ASPNETCORE_ENVIRONMENT: Production
+      AppUrl: "http://0.0.0.0:8081"
+      DbSettings__ConnectionString: "Host=postgres;Database=<master-db>;Username=postgres;Password=postgres"
+      OpenIddict__Issuer: "https://auth.example.com"
+      OpenIddict__DevelopmentMode: "false"
+      # SigningCertificatePath / EncryptionCertificatePath unset
+      # → defaults to /app/data/keys/{signing,encryption}.pfx
+      # → auto-generated on first start, persisted in volume below
+      ProxyAllowedNetworks: "10.0.0.0/24"   # adjust to your reverse proxy CIDR
+      Email__Provider: "Smtp"
+      Email__Smtp__Host: "mailpit"
+      Email__Smtp__Port: "1025"
+    volumes:
+      - cocoar-keys:/app/data/keys     # persists auto-generated certs
     depends_on:
       postgres:
         condition: service_healthy
 
-  mailhog:
-    image: mailhog/mailhog
+  mailpit:
+    image: axllent/mailpit:latest
     ports:
       - "8025:8025"
 
 volumes:
   pgdata:
+  cocoar-keys:
 ```
 
 ## TLS
@@ -180,17 +229,33 @@ auth:
   ports:
     - "443:443"
   environment:
-    APPURL: "https://0.0.0.0:443"
-    CERTPATH: "/secrets/auth.pfx"
-    CERTPASSWORD: "..."   # optional — passwordless PFX is supported
-    OPENIDDICT__ISSUER: "https://auth.example.com"
+    AppUrl: "https://0.0.0.0:443"
+    CertPath: "/secrets/auth.pfx"            # Kestrel TLS cert (separate from OpenIddict signing/encryption)
+    CertPassword: "..."                      # optional — passwordless PFX is supported
+    OpenIddict__Issuer: "https://auth.example.com"
   volumes:
     - ./certs:/secrets:ro
 ```
 
-If `APPURL` is HTTPS and `CERTPATH` is not set, cocoar.auth generates
+If `AppUrl` is HTTPS and `CertPath` is not set, cocoar.auth generates
 a self-signed cert at `certs/cocoar-auth.pfx` (fine for test setups,
 but browsers will warn).
+
+::: tip Three different certificate slots
+- **`CertPath` / `CertPassword`** — the TLS cert Kestrel uses when
+  it terminates HTTPS itself. Only relevant when not behind a
+  reverse proxy.
+- **`OpenIddict.SigningCertificatePath`** — the JWT signing key.
+  Auto-generated when missing (see "OpenIddict signing + encryption
+  certificates" tip earlier in this page).
+- **`OpenIddict.EncryptionCertificatePath`** — separate key for
+  token encryption (OAUTH-05 recommendation). Auto-generated too.
+
+The TLS cert and the OpenIddict signing cert are different files;
+don't reuse one for both. The OpenIddict ones are passwordless by
+convention; the Kestrel TLS cert can have a password (legacy
+support — Let's Encrypt typically delivers passwordless).
+:::
 
 ### Reverse proxy (Nginx)
 
