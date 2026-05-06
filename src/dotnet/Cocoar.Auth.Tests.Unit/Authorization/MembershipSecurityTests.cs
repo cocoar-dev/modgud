@@ -51,8 +51,19 @@ public sealed class MembershipSecurityTests : IDisposable
                 ("service-account", typeof(ServiceAccount)))
             .RegisterEngineConfigurator(engine =>
             {
-                engine.SetValue("NewObject", Jint.Native.JsValue.Undefined);
-                engine.SetValue("require", Jint.Native.JsValue.Undefined);
+                var undef = Jint.Native.JsValue.Undefined;
+                engine.SetValue("NewObject", undef);
+                engine.SetValue("require", undef);
+                engine.SetValue("exit", undef);
+                engine.SetValue("setTimeout", undef);
+                engine.SetValue("setInterval", undef);
+                engine.SetValue("clearTimeout", undef);
+                engine.SetValue("clearInterval", undef);
+                engine.SetValue("console", undef);
+                engine.SetValue("__log_info", undef);
+                engine.SetValue("__log_warn", undef);
+                engine.SetValue("__log_error", undef);
+                engine.SetValue("__log_debug", undef);
             }));
         services.AddTsTranspiler();
         services.AddTsDefinition();
@@ -356,6 +367,81 @@ public sealed class MembershipSecurityTests : IDisposable
         var engine = _scope.ServiceProvider.GetRequiredService<JsEngine>();
         var result = engine.EvaluateExpression("typeof require");
         Assert.Equal("undefined", result.ToString());
+    }
+
+    [Theory]
+    [InlineData("exit",
+        "engine-DoS — exit() cancels the engine's CancellationToken")]
+    [InlineData("setTimeout",
+        "schedules callback on shared TaskScheduler, outlives recompute")]
+    [InlineData("setInterval",
+        "repeating timer, unbounded background work")]
+    [InlineData("clearTimeout",
+        "paired with setTimeout, no separate need")]
+    [InlineData("clearInterval",
+        "paired with setInterval, no separate need")]
+    public void A2_BannedGlobal_IsUndefined(string globalName, string reason)
+    {
+        // Pin the strip list. If any of these become defined again, the
+        // membership-script surface gained a vector documented in the
+        // threat model.
+        var engine = _scope.ServiceProvider.GetRequiredService<JsEngine>();
+        var result = engine.EvaluateExpression($"typeof {globalName}");
+        Assert.Equal("undefined", result.ToString());
+        Assert.NotNull(reason); // suppress unused-parameter
+    }
+
+    [Theory]
+    [InlineData("console")]
+    [InlineData("__log_info")]
+    [InlineData("__log_warn")]
+    [InlineData("__log_error")]
+    [InlineData("__log_debug")]
+    public void A2_LogGlobal_IsUndefined(string globalName)
+    {
+        // Console + the underlying __log_* bridge are stripped: a
+        // membership script can't flood our log infrastructure with
+        // synthetic info/warn/error lines on every recompute.
+        var engine = _scope.ServiceProvider.GetRequiredService<JsEngine>();
+        var result = engine.EvaluateExpression($"typeof {globalName}");
+        Assert.Equal("undefined", result.ToString());
+    }
+
+    [Fact]
+    public void A2_KeptGlobals_AreStillReachable()
+    {
+        // The other side of the contract: globals we DO need stay defined.
+        // If the strip list grows accidentally onto one of these, real
+        // membership-script use-cases break.
+        var engine = _scope.ServiceProvider.GetRequiredService<JsEngine>();
+
+        // Type — discriminator narrowing
+        Assert.NotEqual("undefined",
+            engine.EvaluateExpression("typeof Type").ToString());
+        // linq — typed-literal helpers
+        Assert.NotEqual("undefined",
+            engine.EvaluateExpression("typeof linq").ToString());
+        // btoa/atob — base64 (harmless)
+        Assert.NotEqual("undefined",
+            engine.EvaluateExpression("typeof btoa").ToString());
+        Assert.NotEqual("undefined",
+            engine.EvaluateExpression("typeof atob").ToString());
+        // structuredClone — JSON deep-copy helper
+        Assert.NotEqual("undefined",
+            engine.EvaluateExpression("typeof structuredClone").ToString());
+    }
+
+    [Fact]
+    public void A2_FetchGlobal_NotPresent_FetchNeverEnabled()
+    {
+        // Cocoar.Auth never calls .EnableFetch(), so neither `fetch` nor
+        // `fetchOptions` should be reachable. Pin to catch a future
+        // refactor that accidentally enables it.
+        var engine = _scope.ServiceProvider.GetRequiredService<JsEngine>();
+        Assert.Equal("undefined",
+            engine.EvaluateExpression("typeof fetch").ToString());
+        Assert.Equal("undefined",
+            engine.EvaluateExpression("typeof fetchOptions").ToString());
     }
 
     // (The TS transpiler also rewrites `new Foo(…)` into

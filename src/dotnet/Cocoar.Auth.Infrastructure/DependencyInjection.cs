@@ -192,21 +192,47 @@ public static class DependencyInjection
         // injected by TenantedSessionFactory, so calls land in the correct realm DB.
         services.AddScoped<OAuthAdminService>();
 
-        // Register JsEval (Linq-enabled + Principal discriminator mappings for Type.Is() in membership scripts).
+        // Register JsEval (Linq-enabled + Principal discriminator mappings
+        // for Type.Is() in membership scripts).
         //
-        // Security: cocoar.js-eval wires `NewObject(typeName, args)` and
-        // `require(name)` as engine globals by default. NewObject's fallback
-        // path (Cocoar.Reflectensions.TypeHelper.FindType) walks every loaded
-        // assembly, so a script can construct ANY public CLR type with a
-        // public constructor — `NewObject('System.IO.FileInfo', [...])`,
-        // `NewObject('System.Net.Http.HttpClient')`,
-        // `NewObject('System.Diagnostics.Process')`, etc. Combined with Jint's
-        // top-level execution (Stage B1 in the threat model), this is a
-        // host-RCE primitive reachable by anyone holding `cocoar-auth:group:write`.
-        // Membership scripts are pure predicates — they don't need to
-        // construct anything — so we strip both globals after init via
-        // RegisterEngineConfigurator (runs AFTER JsEngine.Initialize()).
-        // See website/testing/jseval-threat-model.md (A2 NewObject finding).
+        // ───── Security lockdown ─────
+        //
+        // cocoar.js-eval wires a number of engine globals by default. For
+        // membership scripts we keep only what's needed and strip the rest
+        // via a post-init engine configurator (configurators run AFTER
+        // JsEngine.Initialize()). The full surface inventory + reasoning is
+        // in website/testing/jseval-threat-model.md (Engine-globals table).
+        //
+        // KEPT (membership-script useful, low/no risk):
+        //   - Type     — discriminator narrowing (`Type.Is(p, 'person')`)
+        //   - linq     — typed-literal helpers (`linq.guid("…")`)
+        //   - btoa, atob, __perf_now, performance, __te_encode/decode,
+        //     TextEncoder/Decoder, structuredClone — pure conversions
+        //
+        // STRIPPED (every one closes a real or potential surface):
+        //   - NewObject, require        (host-RCE — arbitrary CLR-type
+        //                                construction via assembly walk;
+        //                                see Gap-5 / A2-NewObject)
+        //   - exit                      (engine-DoS — `exit()` cancels the
+        //                                engine's CancellationToken and
+        //                                future recomputes on the same
+        //                                Scoped engine fail)
+        //   - setTimeout, setInterval,
+        //     clearTimeout, clearInterval (schedules callbacks on the
+        //                                shared TaskScheduler — async
+        //                                pollution, unbounded background
+        //                                work outliving the recompute)
+        //   - __log_info/_warn/_error/_debug, console
+        //                               (log-spam — admin-authored scripts
+        //                                shouldn't be able to flood the
+        //                                ops log infrastructure; `console.log`
+        //                                in scripts becomes a no-op /
+        //                                ReferenceError after this)
+        //
+        // Pinned by tests in
+        // Cocoar.Auth.Tests.Unit/Authorization/MembershipSecurityTests.cs
+        // (A2 group). Removing or weakening any item below should turn a
+        // pinning test red.
         services.AddJsEval(b => b
             .AddLinq()
             .AddDiscriminatorMappings<Principal>("Type",
@@ -215,8 +241,23 @@ public static class DependencyInjection
                 ("service-account", typeof(ServiceAccount)))
             .RegisterEngineConfigurator(engine =>
             {
-                engine.SetValue("NewObject", Jint.Native.JsValue.Undefined);
-                engine.SetValue("require", Jint.Native.JsValue.Undefined);
+                var undef = Jint.Native.JsValue.Undefined;
+                // Host-RCE primitives
+                engine.SetValue("NewObject", undef);
+                engine.SetValue("require", undef);
+                // Engine-DoS
+                engine.SetValue("exit", undef);
+                // Async / TaskScheduler pollution
+                engine.SetValue("setTimeout", undef);
+                engine.SetValue("setInterval", undef);
+                engine.SetValue("clearTimeout", undef);
+                engine.SetValue("clearInterval", undef);
+                // Log-spam vector
+                engine.SetValue("console", undef);
+                engine.SetValue("__log_info", undef);
+                engine.SetValue("__log_warn", undef);
+                engine.SetValue("__log_error", undef);
+                engine.SetValue("__log_debug", undef);
             }));
         services.AddTsTranspiler();
         services.AddTsDefinition();

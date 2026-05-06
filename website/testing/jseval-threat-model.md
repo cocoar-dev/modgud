@@ -83,6 +83,35 @@ What this gives us, what it doesn't:
 | **TimeoutInterval / Constraints** | **NOT set** | 🟠 **Real risk.** No automatic timeout, no max-statements, no recursion-depth limit, no memory cap. A `while(true){}` or `(()=>f(f))(()=>f(f))` script will hang the thread executing the recompute until ASP.NET Core kills the request (~100s default), wasting a worker. |
 | `CancellationToken` | wired but **never triggered automatically** | mitigates the above only if the caller cancels — which `MembershipRecomputer` does not. |
 
+## Engine globals — the full surface
+
+Every value `JsEngine.Initialize()` registers becomes reachable from
+the top-level Stage B1 execution of any membership script. The full
+inventory + the consumer-side strip decision:
+
+| Global | Source | Risk | Decision |
+|---|---|---|---|
+| `NewObject` | `JsEngine.cs:121` | 🚨 critical — assembly walk → arbitrary CLR construction | **stripped** |
+| `require` | `JsEngine.cs:122` | 🚨 critical — module loading | **stripped** |
+| `exit` | `JsEngine.cs:120` | engine-DoS — cancels engine CT, future calls fail | **stripped** |
+| `setTimeout` / `setInterval` / `clearTimeout` / `clearInterval` | `RegisterTimers` | async pollution, work outlives the recompute on shared TaskScheduler | **stripped** |
+| `__log_info` / `__log_warn` / `__log_error` / `__log_debug` + `console` | `RegisterConsole` + ConsoleScript shim | log-spam — any admin-authored script can flood the ops log infra | **stripped** |
+| `Type` (`JsTypeGlobal`) | `JsEngine.cs:134` (set when DiscriminatorMappings or TypeAliases non-empty) | needed for `Type.Is(p, 'person')` discriminator narrowing | **kept** |
+| `linq` (`LinqGlobal`) | `JsEval.Linq/LinqCasts.cs:56` | typed-literal helpers (`linq.guid("…")`) used by membership scripts | **kept** |
+| `btoa` / `atob` | `RegisterWebApis` | base64 encode/decode, pure string ops | kept (harmless) |
+| `__perf_now` + `performance` shim | `RegisterWebApis` + `PerformanceScript` | timing only, no privileged surface | kept (harmless) |
+| `__te_encode` / `__td_decode` + `TextEncoder`/`TextDecoder` shim | `RegisterWebApis` + `TextEncoderDecoderScript` | UTF-8 round-trip | kept (harmless) |
+| `structuredClone` | `StructuredCloneScript` (`JSON.parse(JSON.stringify(...))`) | pure data round-trip | kept (harmless) |
+| `fetch` / `fetchOptions` | `Fetch.FetchHandler.Register` — only when `EnableFetch()` is called | network egress, not enabled in Cocoar.Auth | confirmed absent (test pin) |
+| `CsDateTime` | `CsDateTimeGlobals.Register` — only when configurator wires it | ctor-style DateTime, not wired in Cocoar.Auth | n/a |
+
+The strip is implemented in
+`Cocoar.Auth.Infrastructure/DependencyInjection.cs` via
+`RegisterEngineConfigurator` and pinned by the
+`MembershipSecurityTests.A2_*Global*` tests. Anything that grows the
+surface needs an addition both to that configurator and to the
+pinning suite.
+
 ## Translator surface (what it accepts)
 
 `JsExpressionTranslator.Visit` (line 173 in `cocoar.js-eval`) is a **whitelist** dispatch:
