@@ -135,6 +135,11 @@ public static class MfaEndpoints
             HttpContext context) =>
         {
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+            // Empty body / missing field would NRE on request.Code below — reject at the boundary.
+            if (string.IsNullOrWhiteSpace(request?.Code))
+                return Results.Json(new { Message = "Code is required" }, statusCode: 400);
+
             var code = request.Code.Replace(" ", "").Replace("-", "");
 
             // Capture the user that's mid-2FA *before* we sign in — afterwards the

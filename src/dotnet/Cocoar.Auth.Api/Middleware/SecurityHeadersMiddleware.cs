@@ -8,14 +8,16 @@ namespace Cocoar.Auth.Api.Middleware;
 /// <para>The set:</para>
 /// <list type="bullet">
 ///   <item><description><b>Content-Security-Policy</b> — the heaviest header.
-///   Locks every resource source to <c>'self'</c>, allows Monaco's web-worker
-///   pattern (<c>worker-src 'self' blob:</c>), and forbids being framed by
-///   any origin (<c>frame-ancestors 'none'</c>) — a clickjacking-on-the-IdP
-///   defence stronger than X-Frame-Options because it covers the whole
-///   browser-fetch surface, not just the legacy iframe vector. Inline
-///   styles are accepted (<c>'unsafe-inline'</c>) — Vue + Tailwind ship
-///   inline style attributes that we'd have to wholesale-rewrite to drop.
-///   Inline scripts are NOT accepted.</description></item>
+///   <b>Path-aware</b>: SPA pages get strict <c>script-src 'self'</c> and
+///   <c>form-action 'self'</c>; only the <c>/connect/*</c> OIDC endpoints
+///   loosen those two directives because OpenIddict's
+///   <c>response_mode=form_post</c> renders an auto-submitting HTML form
+///   with an inline <c>&lt;script&gt;</c> targeting a cross-origin RP
+///   redirect_uri. Other directives are uniform: <c>frame-ancestors 'none'</c>
+///   (clickjacking defence stronger than X-Frame-Options), <c>object-src
+///   'none'</c>, Monaco web-worker via <c>worker-src 'self' blob:</c>,
+///   inline styles permitted (Vue + Tailwind ship inline style attributes
+///   we'd have to wholesale-rewrite to drop).</description></item>
 ///   <item><description><b>X-Content-Type-Options: nosniff</b> — older
 ///   browsers, but cheap and standard.</description></item>
 ///   <item><description><b>X-Frame-Options: DENY</b> — redundant with the
@@ -46,36 +48,43 @@ public sealed class SecurityHeadersMiddleware
         _isDevelopment = env.IsDevelopment();
     }
 
-    private static string BuildContentSecurityPolicy(bool isDevelopment)
+    // Paths under OpenIddict's OIDC server. response_mode=form_post renders
+    // an auto-submitting HTML form to the RP's redirect_uri — that requires
+    // both an inline <script> (script-src 'unsafe-inline') AND a cross-
+    // origin form action (form-action *). Anywhere else, neither is needed.
+    private static bool IsOidcServerPath(PathString path)
+        => path.StartsWithSegments("/connect");
+
+    private static string BuildContentSecurityPolicy(bool isDevelopment, PathString path)
     {
+        var isOidc = IsOidcServerPath(path);
+
         // Vite's dev server uses HMR over websockets and eval-style helpers
         // — relax script-src in Development with 'unsafe-eval'. Production
-        // drops 'unsafe-eval' but keeps 'unsafe-inline' because OpenIddict's
-        // `response_mode=form_post` renders an auto-submitting HTML form
-        // with an inline <script> that drives the bounce back to the RP.
-        // Switching to a nonce per-response would mean intercepting
-        // OpenIddict's view rendering — bigger surgery than the marginal
-        // XSS-defence improvement justifies; SOP + frame-ancestors+object-
-        // src+form-action together still keep the IdP's exploitation
-        // surface tight even with inline scripts permitted.
+        // SPA pages get strict 'self' (Vue 3 production builds emit module
+        // scripts only, no inline <script>). The /connect/* OIDC endpoints
+        // need 'unsafe-inline' for OpenIddict's form_post auto-submitter;
+        // they're the only paths that get the relaxation.
         var scriptSrc = isDevelopment
             ? "'self' 'unsafe-inline' 'unsafe-eval'"
-            : "'self' 'unsafe-inline'";
+            : isOidc ? "'self' 'unsafe-inline'" : "'self'";
+
         var connectSrc = isDevelopment
             ? "'self' ws: wss:"
             : "'self'";
-        // OAuth response_mode=form_post submits the IdP's auth response via
-        // an auto-submitting HTML form to the RP's redirect_uri — by design
-        // a cross-origin POST. Locking form-action to 'self' breaks every
-        // OIDC-Code-flow consumer. The OAuth-protocol layer validates
-        // redirect_uri exact-match against the registered set on every
-        // /authorize, which is the actually-meaningful gate; CSP form-action
-        // here would just duplicate that with extra brittleness (CSP can't
-        // enumerate the per-realm registered redirects without runtime
-        // generation). We accept the relaxation and rely on the OAuth
-        // validator. Future hardening: generate per-deployment from the
-        // client registry at startup.
-        var formAction = "*";
+
+        // OAuth response_mode=form_post submits to the RP's redirect_uri —
+        // by design a cross-origin POST. Locking form-action to 'self'
+        // breaks every OIDC-Code-flow consumer of /connect/authorize. The
+        // OAuth-protocol layer validates redirect_uri exact-match against
+        // the registered set on every /authorize, which is the actually-
+        // meaningful gate; CSP form-action there would just duplicate that
+        // with extra brittleness (CSP can't enumerate the per-realm
+        // registered redirects without runtime generation). For SPA pages
+        // (everything else) form-action 'self' is the right setting —
+        // an injected form on a /login or /admin page should never be
+        // allowed to submit cross-origin.
+        var formAction = isOidc ? "*" : "'self'";
 
         return string.Join("; ", new[]
         {
@@ -87,13 +96,6 @@ public sealed class SecurityHeadersMiddleware
             "font-src 'self' data:",
             "frame-ancestors 'none'",
             "base-uri 'self'",
-            // OAuth response_mode=form_post submits to the RP's redirect_uri
-            // — that's by definition a different origin. We can't lock
-            // form-action to 'self'. In Production a deploy-time configurable
-            // allowlist would be ideal; for now we leave it permissive on
-            // the form-action axis (other axes still locked) and accept
-            // that the form-action header is more advisory than enforcing
-            // for an IdP. Dev gets the test apps' origins explicitly.
             $"form-action {formAction}",
             // Monaco web-worker uses blob: URIs for its language services.
             "worker-src 'self' blob:",
@@ -146,7 +148,7 @@ public sealed class SecurityHeadersMiddleware
 
             headers["Content-Security-Policy"] = headers["Content-Security-Policy"].Count > 0
                 ? headers["Content-Security-Policy"]
-                : BuildContentSecurityPolicy(_isDevelopment);
+                : BuildContentSecurityPolicy(_isDevelopment, context.Request.Path);
 
             return Task.CompletedTask;
         });

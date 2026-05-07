@@ -130,6 +130,10 @@ public static class EmailOtpEndpoints
             ISessionService sessionService,
             CancellationToken ct) =>
         {
+            // Empty body / missing field — reject at the boundary instead of letting the service NRE.
+            if (string.IsNullOrWhiteSpace(request?.Code))
+                return Results.Json(new { Message = "Code is required" }, statusCode: 400);
+
             var user = await signInManager.GetTwoFactorAuthenticationUserAsync();
             if (user is null)
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);

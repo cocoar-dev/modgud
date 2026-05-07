@@ -71,6 +71,12 @@ public static class AccountEndpoints
         {
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
+            // Empty body / missing fields would otherwise fall through to
+            // UserManager.FindByNameAsync(null) and surface as 500. Reject
+            // at the boundary with 400 instead.
+            if (string.IsNullOrWhiteSpace(request?.UserName) || string.IsNullOrWhiteSpace(request?.Password))
+                return Results.Json(new { Message = "UserName and Password are required" }, statusCode: 400);
+
             // Level 2 (Passwordless): password login disabled entirely
             if (appSettings.AuthenticationMinimumLevel >= 2)
                 return Results.Json(new { Message = "Password login is disabled" }, statusCode: 403);
