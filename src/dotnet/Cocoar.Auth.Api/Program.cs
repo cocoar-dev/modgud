@@ -755,6 +755,14 @@ try
     // (auth challenge, exception handler, OpenAPI).
     app.UseMiddleware<Cocoar.Auth.Api.Middleware.SecurityHeadersMiddleware>();
 
+    // Short-circuit attack-probe paths (.git, .env, /server-status, /wp-*, …)
+    // with a clean 404 instead of falling through to the SPA fallback that
+    // would otherwise return index.html with 200 for any unmatched path.
+    // Closes scanner-noise findings ("/.git/config returns 200") without
+    // changing real exposure surface — the SPA fallback was never leaking
+    // data, but the 200 is misread by automated reports.
+    app.UseMiddleware<Cocoar.Auth.Api.Middleware.WellKnownAttackPathsMiddleware>();
+
     // Enable OpenAPI endpoint (not in production)
     if (!app.Environment.IsProduction())
     {
