@@ -27,6 +27,18 @@ blacklist. The NAT-safe alternative to a naive IP rate-limit
 
 **Status:** Idea captured 2026-05-07. Not started.
 
+### [DCR for MCP clients](./dcr-for-mcp-clients)
+
+Dynamic Client Registration (RFC 7591) so AI agents (Claude Code,
+Cursor, Continue, …) can self-register against the IdP and attach
+to cocoar-internal MCP servers without per-agent admin onboarding.
+First trigger is `cocoar-policy` wanting `auth.cocoar.dev` as its
+IdP. Distinct from user self-registration (which shares the word
+"register" but is a totally different concept).
+
+**Status:** Parked 2026-05-07. Not before Resource Indicators
+(RFC 8707) ships.
+
 ---
 
 ## Adding to this section

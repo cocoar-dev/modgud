@@ -105,6 +105,19 @@ public static class OpenIddictExtensions
                     .RequireProofKeyForCodeExchange();
                 options.AllowRefreshTokenFlow();
 
+                // OAuth-2.1 / MCP-spec compliance — the `plain` PKCE
+                // method is forbidden by OAuth 2.1 and the MCP
+                // authorization spec mandates S256. OpenIddict 7
+                // advertises both `plain` and `S256` in
+                // code_challenge_methods_supported by default; remove
+                // `plain` so the discovery doc is honest about what
+                // we actually want clients to use, and so a
+                // misconfigured client can't downgrade.
+                options.Configure(opts =>
+                {
+                    opts.CodeChallengeMethods.Remove(CodeChallengeMethods.Plain);
+                });
+
                 // OAUTH-10 — make refresh-token reuse detection strict. With a
                 // non-zero leeway window, a refresh token's redeemed-then-
                 // presented event in that window doesn't reject. Zero means
@@ -193,6 +206,7 @@ public static class OpenIddictExtensions
 
                 options.AddEventHandler(RealmIssuerHandler.Descriptor);
                 options.AddEventHandler(AccessTokenTypeHandler.Descriptor);
+                options.AddEventHandler(ResourceIndicatorHandler.Descriptor);
                 options.AddEventHandler(RealmSigningKeyHandler.Descriptor);
                 options.AddEventHandler(RealmJwksHandler.Descriptor);
                 options.AddEventHandler(RealmTokenValidationHandler.Descriptor);

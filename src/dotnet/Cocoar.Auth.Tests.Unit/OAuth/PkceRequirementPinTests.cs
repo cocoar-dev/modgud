@@ -45,6 +45,12 @@ public class PkceRequirementPinTests
 
         Assert.NotEmpty(options.CodeChallengeMethods);
         Assert.Contains(OpenIddictConstants.CodeChallengeMethods.Sha256, options.CodeChallengeMethods);
+
+        // OAuth-2.1 / MCP-spec compliance — `plain` is forbidden,
+        // `S256` is mandatory. Removing the override would silently
+        // re-advertise `plain` in the discovery doc; this assertion
+        // catches that regression.
+        Assert.DoesNotContain(OpenIddictConstants.CodeChallengeMethods.Plain, options.CodeChallengeMethods);
     }
 
     private sealed class TestEnvironment : Microsoft.AspNetCore.Hosting.IWebHostEnvironment
