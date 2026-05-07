@@ -59,6 +59,7 @@ export default withMermaid(
               { text: 'Requirements', link: '/getting-started/requirements' },
               { text: 'Features', link: '/getting-started/features' },
               { text: 'First-time setup', link: '/getting-started/first-time-setup' },
+              { text: 'Single-tenant mode', link: '/getting-started/single-tenant-mode' },
             ],
           },
         ],

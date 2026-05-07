@@ -19,6 +19,13 @@ There are three concrete paths. Pick by your scenario:
 | Operator delegates the first sign-in to someone else (e.g. handing the system to a customer admin) | **Recovery CLI — invite mode** |
 | Provisioning a new tenant realm in an already-running deployment (SaaS or multi-environment self-hosted) | **HTTP API — `POST /api/admin/realms`** |
 
+::: tip Running a single-tenant deployment?
+If your deployment hosts one app for one company (no SaaS, no
+per-customer isolation), you don't need to provision additional
+realms — the system realm is fully featured and works on its own.
+See [Single-tenant mode](single-tenant-mode) for the recipe.
+:::
+
 All three paths end up with the same shape inside the realm: an `ApplicationUser`, the three default roles (System Admin / User Manager / Viewer), and an `Administratoren` group containing the new user with `realm:admin` — exactly what every other admin in the system has.
 
 ## Path A — Recovery CLI, direct mode
