@@ -292,6 +292,7 @@ export default withMermaid(defineConfig({
             { text: 'White-label customization', link: '/dev-notes/future-features/white-label-customization' },
             { text: 'Login alerts + IP blacklist', link: '/dev-notes/future-features/login-alerts-ip-blacklist' },
             { text: 'DCR for MCP clients', link: '/dev-notes/future-features/dcr-for-mcp-clients' },
+            { text: 'App as permission catalog; RS gets subset', link: '/dev-notes/future-features/app-resources-as-permissions' },
           ],
         },
       ],

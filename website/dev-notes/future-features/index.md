@@ -27,6 +27,20 @@ blacklist. The NAT-safe alternative to a naive IP rate-limit
 
 **Status:** Idea captured 2026-05-07. Not started.
 
+### [Application as permission catalog; Resource Server gets a subset](./app-resources-as-permissions)
+
+The current `App.Resources` field stores resource **names**; the
+*actions* live in app startup code via `opt.RegisterResource()`.
+User refined the design while we walked through it: **App should
+know ALL permissions** (full catalog as `resource:action` strings);
+each **Resource Server gets a subset assigned** ("these are the
+permissions I actually serve"). Token issuance can then filter by
+RS-subset so a `aud=policy-api` token never carries `knowledge:*`
+claims. Single source of truth in IdP DB; opt.RegisterResource()
+becomes a cocoar-auth-only thing.
+
+**Status:** Idea captured 2026-05-07. Not started.
+
 ### [DCR for MCP clients](./dcr-for-mcp-clients)
 
 Dynamic Client Registration (RFC 7591) so AI agents (Claude Code,
