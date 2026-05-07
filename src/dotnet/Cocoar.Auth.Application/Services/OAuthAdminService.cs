@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using BuildingBlocks.Helper;
 using Cocoar.Auth.Application.DTOs.OAuth;
 using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Authorization.Apps;
@@ -82,8 +83,8 @@ public class OAuthAdminService
             var distinct = dto.AppIds.Where(s => !string.IsNullOrEmpty(s)).Distinct(StringComparer.Ordinal).ToList();
             foreach (var raw in distinct)
             {
-                if (!Guid.TryParse(raw, out var parsed))
-                    return Error.Validation("OAuthClient.InvalidAppId", $"AppId '{raw}' is not a valid Guid.");
+                if (!ShortGuid.TryParse(raw, out Guid parsed))
+                    return Error.Validation("OAuthClient.InvalidAppId", $"AppId '{raw}' is not a valid Guid or ShortGuid.");
                 var app = await _session.LoadAsync<App>(parsed, ct);
                 if (app is null || app.IsDeleted)
                     return Error.Validation("OAuthClient.AppNotFound", $"App {raw} not found.");
@@ -217,8 +218,8 @@ public class OAuthAdminService
             var parsed = new List<Guid>();
             foreach (var raw in distinct)
             {
-                if (!Guid.TryParse(raw, out var parsedId))
-                    return Error.Validation("OAuthClient.InvalidAppId", $"AppId '{raw}' is not a valid Guid.");
+                if (!ShortGuid.TryParse(raw, out Guid parsedId))
+                    return Error.Validation("OAuthClient.InvalidAppId", $"AppId '{raw}' is not a valid Guid or ShortGuid.");
                 var app = await _session.LoadAsync<App>(parsedId, ct);
                 if (app is null || app.IsDeleted)
                     return Error.Validation("OAuthClient.AppNotFound", $"App {raw} not found.");
@@ -322,8 +323,8 @@ public class OAuthAdminService
         Guid? appId = null;
         if (!string.IsNullOrEmpty(dto.AppId))
         {
-            if (!Guid.TryParse(dto.AppId, out var parsedAppId))
-                return Error.Validation("OAuthScope.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid.");
+            if (!ShortGuid.TryParse(dto.AppId, out Guid parsedAppId))
+                return Error.Validation("OAuthScope.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid or ShortGuid.");
             var app = await _session.LoadAsync<App>(parsedAppId, ct);
             if (app is null || app.IsDeleted)
                 return Error.Validation("OAuthScope.AppNotFound", $"App {dto.AppId} not found.");
@@ -405,8 +406,8 @@ public class OAuthAdminService
             Guid? newAppId = null;
             if (dto.AppId.Length > 0)
             {
-                if (!Guid.TryParse(dto.AppId, out var parsedAppId))
-                    return Error.Validation("OAuthScope.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid.");
+                if (!ShortGuid.TryParse(dto.AppId, out Guid parsedAppId))
+                    return Error.Validation("OAuthScope.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid or ShortGuid.");
                 var app = await _session.LoadAsync<App>(parsedAppId, ct);
                 if (app is null || app.IsDeleted)
                     return Error.Validation("OAuthScope.AppNotFound", $"App {dto.AppId} not found.");
@@ -483,8 +484,8 @@ public class OAuthAdminService
         Guid? appId = null;
         if (!string.IsNullOrEmpty(dto.AppId))
         {
-            if (!Guid.TryParse(dto.AppId, out var parsed))
-                return Error.Validation("OAuthApi.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid.");
+            if (!ShortGuid.TryParse(dto.AppId, out Guid parsed))
+                return Error.Validation("OAuthApi.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid or ShortGuid.");
             var app = await _session.LoadAsync<App>(parsed, ct);
             if (app is null || app.IsDeleted)
                 return Error.Validation("OAuthApi.AppNotFound", $"App {dto.AppId} not found.");
@@ -556,8 +557,8 @@ public class OAuthAdminService
             Guid? newAppId = null;
             if (dto.AppId.Length > 0)
             {
-                if (!Guid.TryParse(dto.AppId, out var parsed))
-                    return Error.Validation("OAuthApi.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid.");
+                if (!ShortGuid.TryParse(dto.AppId, out Guid parsed))
+                    return Error.Validation("OAuthApi.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid or ShortGuid.");
                 var app = await _session.LoadAsync<App>(parsed, ct);
                 if (app is null || app.IsDeleted)
                     return Error.Validation("OAuthApi.AppNotFound", $"App {dto.AppId} not found.");
