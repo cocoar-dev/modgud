@@ -424,20 +424,48 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 
 ## Email provider
 
-cocoar.auth supports two providers:
+cocoar.auth ships two outbound providers — pick whichever your
+infrastructure already gives you. Switch between them by flipping
+`Email__Provider`; the unused section is ignored.
 
-| Provider | Setting |
-|---|---|
-| **Postmark** | `Email.Provider = "Postmark"` + `Email.Postmark.*` |
-| **SMTP** | `Email.Provider = "Smtp"` + `Email.Smtp.*` |
+### SMTP
 
-In dev, an `InMemoryEmailService` is registered in addition that keeps
-mails in memory — the `/api/dev/emails` endpoint shows them. For E2E
-tests in Docker that's enough.
+```yaml
+environment:
+  Email__Provider: "Smtp"
+  Email__Smtp__Host: "smtp.example.com"
+  Email__Smtp__Port: "587"
+  Email__Smtp__UseSsl: "true"
+  Email__Smtp__UserName: "noreply@example.com"
+  Email__Smtp__Password: "${SMTP_PASSWORD}"
+  Email__Smtp__FromAddress: "noreply@example.com"
+  Email__Smtp__FromName: "Cocoar Auth"
+```
 
-In production: Postmark or a real SMTP server. Without email
-configuration cocoar.auth keeps running (magic link etc. simply do
-nothing), but the logger warns at boot.
+### Postmark
+
+```yaml
+environment:
+  Email__Provider: "Postmark"
+  Email__Postmark__ServerToken: "${POSTMARK_TOKEN}"
+  Email__Postmark__FromAddress: "noreply@example.com"
+  Email__Postmark__FromName: "Cocoar Auth"
+  Email__Postmark__MessageStream: "outbound"   # default; e.g. "broadcast" for bulk-streams
+```
+
+### Dev
+
+In Development env, an `InMemoryEmailService` is registered in
+addition that keeps mails in memory — the `/api/dev/emails` endpoint
+shows them. Useful for E2E tests in Docker without an SMTP relay.
+
+### No email configured
+
+The container keeps running (magic-link / forgot-password / invite
+simply fail to send), but the logger warns at boot. Email is
+**optional** in the sense of "the host won't crash without it" —
+but every user-facing recovery flow needs it, so configure something
+before you go live.
 
 ## Recovery CLI in the container
 
