@@ -32,6 +32,11 @@ namespace Cocoar.Auth.Api.Middleware;
 ///   <item><description><b>Cross-Origin-Opener-Policy: same-origin</b> —
 ///   process isolation against Spectre-class side channels. Same-origin
 ///   means popups can't share a renderer with attacker content.</description></item>
+///   <item><description><b>Cache-Control / Pragma / Expires on <c>/api/*</c></b>
+///   — auth-bearing JSON must never sit in browser/CDN caches. Closes the
+///   back-button-after-logout leak on shared machines. <c>/connect/*</c> is
+///   left to OpenIddict's own RFC-6749-compliant headers; static assets
+///   keep their existing static-file-middleware cache hints.</description></item>
 /// </list>
 ///
 /// <para>Headers are applied via the <c>OnStarting</c> callback so they're
@@ -149,6 +154,24 @@ public sealed class SecurityHeadersMiddleware
             headers["Content-Security-Policy"] = headers["Content-Security-Policy"].Count > 0
                 ? headers["Content-Security-Policy"]
                 : BuildContentSecurityPolicy(_isDevelopment, context.Request.Path);
+
+            // Cache-Control on /api/* — auth-bearing JSON should never sit
+            // in a browser back/forward cache, browser HTTP cache, or
+            // intermediary CDN/proxy. Without this, /api/account/me is a
+            // back-button leak risk on shared machines (logout doesn't
+            // invalidate cached response). Trio = no-store (modern), Pragma
+            // (HTTP/1.0 proxies), Expires:0 (legacy CDN). Static assets
+            // (/assets/*, /favicon.ico) and the SPA shell keep their
+            // existing static-file-middleware cache hints. /connect/* is
+            // skipped — OpenIddict already emits its own no-store/Pragma
+            // per RFC 6749 §5.1.
+            if (context.Request.Path.StartsWithSegments("/api")
+                && headers["Cache-Control"].Count == 0)
+            {
+                headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
+                headers["Pragma"] = "no-cache";
+                headers["Expires"] = "0";
+            }
 
             return Task.CompletedTask;
         });
