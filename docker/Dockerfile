@@ -8,7 +8,7 @@ RUN dotnet publish Cocoar.Auth.Api/Cocoar.Auth.Api.csproj -c Release -o /app --n
 # ── Stage 2: Build frontend (Vue admin SPA) ────────────────────────
 FROM node:22-slim AS frontend-build
 ENV CI=true
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.13.1 --activate
 WORKDIR /src
 COPY src/frontend-vue/ ./
 RUN pnpm install --frozen-lockfile
@@ -23,7 +23,7 @@ RUN pnpm build
 # in the image, only the in-app variant that knows it lives under /docs.
 FROM node:22-slim AS userdocs-build
 ENV CI=true
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.13.1 --activate
 WORKDIR /src
 COPY website/ ./
 RUN pnpm install --frozen-lockfile
