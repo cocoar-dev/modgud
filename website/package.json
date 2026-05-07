@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vitepress dev",
+    "dev": "vitepress dev --config .vitepress/config.internal.ts",
+    "dev:public": "vitepress dev",
     "build": "vitepress build",
     "preview": "vitepress preview",
     "dev:in-app": "vitepress dev --config .vitepress/config.in-app.ts",

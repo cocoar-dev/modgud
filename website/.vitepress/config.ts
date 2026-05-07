@@ -7,11 +7,20 @@ import llmstxt from 'vitepress-plugin-llms'
 // started, concepts, integration guides, reference, and the admin
 // operations surface (which is also bundled into the in-app build via
 // config.in-app.ts).
-export default withMermaid(
-  defineConfig({
+//
+// Note the `internal/**` exclusion below — see `internal/README.md`
+// for the convention. The internal/ tree is repo-only dev notes
+// (future features, design discussions, planning) that must never
+// leak into a published build. Both this config (public site) and
+// config.in-app.ts (in-app help) exclude it; only config.internal.ts
+// re-includes it for local-dev preview via `pnpm dev`.
+export const publicConfig = defineConfig({
     title: 'Cocoar.Auth',
     description: 'Multi-Tenant Identity Provider — OAuth 2.0 / OpenID Connect, multi-app permissions, granular RBAC, GDPR-ready.',
     lang: 'en-US',
+
+    // Repo-only dev notes never go to the public site.
+    srcExclude: ['internal/**'],
 
     // Localhost / *.local references in the quickstart and troubleshooting
     // sections are intentional examples, not broken links.
@@ -236,5 +245,6 @@ export default withMermaid(
     mermaidPlugin: {
       class: 'mermaid',
     },
-  }),
-)
+})
+
+export default withMermaid(publicConfig)
