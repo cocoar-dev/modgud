@@ -33,6 +33,72 @@ can split its surface — e.g. cocoar-policy might have a
 Resource Server only declares the permissions it actually
 enforces; the App is the umbrella catalog.
 
+## Resource-server code stays prefix-free
+
+A second design point landed during the same conversation: **the
+Resource Server's own code must NOT have to write the App slug.**
+
+The author of the Resource Server doesn't know the slug at code-
+time — that's a deployment decision. Two different deployments of
+the same RS code can land under different App slugs (white-label
+re-skinning, multi-tenant carve-outs, dev/staging/prod with
+different naming). Hardcoding `RequiresPermission("cocoar-policy:policy:write")`
+in the RS code couples it to a slug that doesn't belong there.
+
+The Resource Server should write:
+
+```csharp
+app.MapPost("/api/policy", ...).RequiresPermission("policy:write");
+```
+
+…and the middleware (in `Cocoar.Auth.Client.AspNetCore`) prefixes
+the configured AppSlug before checking against the user's grants.
+Same pattern Keycloak uses: `resource_access[<my-app>].roles`
+gets flattened into bare `[Authorize(Roles = "...")]` on the RS
+side, with the app context coming from configuration, not code.
+
+### What's there today vs missing
+
+| Concern | Today | Missing |
+|---|---|---|
+| Role flattening | ✅ `CocoarAuthClaimsTransformation` reads `resource_access[appSlug].roles` and surfaces flat `ClaimTypes.Role` | – |
+| Permission flattening | ❌ no permission claim is emitted into tokens (cf. the TODO in `AuthorizationEndpoints.CreateClaimsPrincipalAsync`) | a parallel `resource_access[appSlug].permissions` claim |
+| Client-side `RequiresPermission(bare)` | ❌ — the existing `RequiresPermission` extension lives in `Cocoar.Auth.Authorization` and is hardcoded to `AppSlugs.CocoarAuth` (= the IdP itself) | a Cocoar.Auth.Client.AspNetCore equivalent that prefixes with the configured `AppSlug` |
+| RS-side validation against the App's catalog | ❌ — the RS doesn't know what permissions exist for its app | distribution-API endpoint that returns `App.Permissions` filtered to the RS's subset, fetched at startup |
+
+### Implementation outline
+
+1. **Token issuance**: extend `CreateClaimsPrincipalAsync` in
+   `AuthorizationEndpoints` to populate
+   `resource_access[<app-slug>].permissions = [...]` from the
+   user's effective permission grants, filtered to the
+   audience-bound Resource Server's subset. The TODO at line
+   677-678 hints this is already on the roadmap.
+
+2. **Client-side extension**: ship
+   `Cocoar.Auth.Client.AspNetCore.PermissionEndpointFilter` that:
+   - Reads `CocoarAuthOptions.AppSlug` from DI
+   - Reads `resource_access[<AppSlug>].permissions` from the
+     `ClaimsPrincipal`
+   - Evaluates `<configured-AppSlug>:<bare-permission>` against
+     the user's grants using the same `PermissionEvaluator`
+     wildcard logic the IdP uses
+   - Returns 401/403 like the IdP-side filter
+
+3. **Distribution API**: new endpoint
+   `GET /api/v1/distribution/me-app-catalog` returning the
+   calling RS's full assigned permission subset. RS calls this at
+   startup (or on-demand) to populate its own validator and to
+   power the role-creation Dropdown for tenant admins.
+
+4. **Cross-deployment slug independence**: the RS's `Program.cs`
+   reads `AppSlug` from configuration, not from a constant:
+   ```csharp
+   services.AddCocoarAuthClaimsTransformation(o =>
+       o.AppSlug = builder.Configuration["Cocoar:AppSlug"] ?? "cocoar-policy");
+   ```
+   Same code, two deployments, two different slugs — works.
+
 ## The current split
 
 | Source | What it stores | Used for |
