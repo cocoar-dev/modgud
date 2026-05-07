@@ -19,7 +19,6 @@ public record CreateRealmDto
     public string DisplayName { get; init; } = string.Empty;
     public string? Description { get; init; }
     public string[]? Domains { get; init; }
-    public bool IsControlPlane { get; init; }
 
     /// <summary>
     /// First-admin invite issued atomically with the realm (C15c).
@@ -68,7 +67,6 @@ public record UpdateRealmDto
     public string? DisplayName { get; init; }
     public string? Description { get; init; }
     public string[]? Domains { get; init; }
-    public bool? IsControlPlane { get; init; }
     public bool? IsActive { get; init; }
 }
 

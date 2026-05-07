@@ -109,21 +109,13 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 $"A realm with slug '{dto.Slug}' already exists.");
         }
 
-        // Exactly-one-Control-Plane invariant: a new realm flagged
-        // IsControlPlane=true is only allowed if no other active CP realm
-        // exists. Mirrors the dual guard in UpdateRealmAsync (which blocks
-        // un-flagging the LAST CP). The complementary path — promoting a
-        // tenant to CP via PATCH — is also gated below.
-        if (dto.IsControlPlane)
-        {
-            var existingCpCount = await session.Query<Realm>()
-                .CountAsync(r => r.IsControlPlane && r.IsActive, ct);
-            if (existingCpCount > 0)
-            {
-                return Error.Validation("Realm.ControlPlaneAlreadyExists",
-                    "Cannot create a Control-Plane realm — exactly one Control Plane per deployment is required, and another already exists. Demote the existing one first.");
-            }
-        }
+        // No Control-Plane validation needed: IsControlPlane is computed
+        // from `Slug == RealmSlugRules.SystemSlug`, the slug "system" is
+        // reserved (no caller can claim it via CreateRealm), and the
+        // system realm is seeded once in EnsureSystemRealmExistsAsync.
+        // Therefore "exactly one Control Plane per deployment" is a
+        // consequence of the slug being immutable + reserved, not a
+        // separately-enforced invariant.
 
         // Build the tenant database connection string
         var csBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value);
@@ -177,7 +169,6 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             DisplayName = dto.DisplayName,
             Description = dto.Description,
             Domains = domains,
-            IsControlPlane = dto.IsControlPlane,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
@@ -226,49 +217,19 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         if (realm is null)
             return Error.NotFound("Realm.NotFound", $"Realm '{slug}' not found.");
 
+        // The Control-Plane realm (slug = "system") is the architectural
+        // anchor: no /api/admin/realms surface and no cross-realm admin
+        // exists without it. Deactivating it would lock the deployment
+        // out of its own administration. Block it.
         if (realm.IsControlPlane && dto.IsActive == false)
         {
-            var otherManagers = await session.Query<Realm>()
-                .CountAsync(r => r.IsControlPlane && r.IsActive && r.Slug != slug, ct);
-            if (otherManagers == 0)
-            {
-                return Error.Validation("Realm.CannotDeactivateControlPlane",
-                    "Cannot deactivate the Control-Plane realm — the deployment would lose its global administration surface.");
-            }
-        }
-
-        if (realm.IsControlPlane && dto.IsControlPlane == false)
-        {
-            var otherManagers = await session.Query<Realm>()
-                .CountAsync(r => r.IsControlPlane && r.IsActive && r.Slug != slug, ct);
-            if (otherManagers == 0)
-            {
-                return Error.Validation("Realm.CannotRemoveControlPlaneFlag",
-                    "Cannot un-flag the Control-Plane realm — exactly one Control Plane per deployment is required.");
-            }
-        }
-
-        // Symmetric guard: promoting a tenant realm to Control Plane is
-        // only allowed if no other active CP exists. The Control-Plane
-        // hand-off has to be a two-step (demote old → promote new); a
-        // single PATCH that creates two CPs simultaneously violates the
-        // exactly-one invariant the rest of C14 relies on (boot-validation,
-        // hostname routing, /api/app-info IsControlPlane signal).
-        if (!realm.IsControlPlane && dto.IsControlPlane == true)
-        {
-            var existingCpCount = await session.Query<Realm>()
-                .CountAsync(r => r.IsControlPlane && r.IsActive && r.Slug != slug, ct);
-            if (existingCpCount > 0)
-            {
-                return Error.Validation("Realm.ControlPlaneAlreadyExists",
-                    "Cannot promote this realm to Control Plane — exactly one Control Plane per deployment is required, and another already exists. Demote the existing one first.");
-            }
+            return Error.Validation("Realm.CannotDeactivateControlPlane",
+                "Cannot deactivate the Control-Plane realm — the deployment would lose its global administration surface.");
         }
 
         if (dto.DisplayName is not null) realm.DisplayName = dto.DisplayName;
         if (dto.Description is not null) realm.Description = dto.Description;
         if (dto.Domains is not null) realm.Domains = dto.Domains;
-        if (dto.IsControlPlane.HasValue) realm.IsControlPlane = dto.IsControlPlane.Value;
         if (dto.IsActive.HasValue) realm.IsActive = dto.IsActive.Value;
         realm.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -289,15 +250,13 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         if (realm is null)
             return Error.NotFound("Realm.NotFound", $"Realm '{slug}' not found.");
 
+        // Same reasoning as UpdateRealmAsync's deactivate guard: the
+        // Control-Plane realm is required for cross-realm administration
+        // and can't be deleted without locking the deployment out.
         if (realm.IsControlPlane)
         {
-            var otherManagers = await session.Query<Realm>()
-                .CountAsync(r => r.IsControlPlane && r.IsActive && r.Slug != slug, ct);
-            if (otherManagers == 0)
-            {
-                return Error.Validation("Realm.CannotDeleteControlPlane",
-                    "Cannot delete the Control-Plane realm — exactly one Control Plane per deployment is required.");
-            }
+            return Error.Validation("Realm.CannotDeleteControlPlane",
+                "Cannot delete the Control-Plane realm — the deployment would lose its global administration surface.");
         }
 
         // Soft-delete: deactivate
@@ -318,25 +277,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var existing = await session.Query<Realm>()
             .FirstOrDefaultAsync(r => r.Slug == TenantConstants.SystemTenantId, ct);
 
-        if (existing is not null)
-        {
-            // The system realm MUST be the Control Plane — anything else
-            // would lock the deployment out of cross-realm administration
-            // (no /api/admin/realms surface, no /api/setup wizard). The
-            // flag could end up false on existing rows when an upgrade
-            // renames the property and STJ defaults it (this happened
-            // pre-release on the CanManageTenants → IsControlPlane rename).
-            // Repairing here is idempotent and survives subsequent boots.
-            if (!existing.IsControlPlane)
-            {
-                existing.IsControlPlane = true;
-                existing.UpdatedAt = DateTimeOffset.UtcNow;
-                session.Store(existing);
-                await session.SaveChangesAsync(ct);
-                _realmCache.Invalidate();
-            }
-            return;
-        }
+        if (existing is not null) return;
 
         var systemRealm = new Realm
         {
@@ -345,8 +286,9 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             DisplayName = "System",
             Description = "System realm for global administration",
             // Include localhost variants so dev boots work without hosts-file entries.
+            // Production deploys must add their public hostname via the Recovery CLI:
+            //   recover realm-add-domain --slug system --domain auth.example.com
             Domains = ["system.localhost", "localhost", "127.0.0.1"],
-            IsControlPlane = true,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };

@@ -27,23 +27,19 @@ public class Realm
 
     /// <summary>
     /// True for the single Control-Plane realm of the deployment — the
-    /// architectural anchor for cross-realm administration. The Control
-    /// Plane:
-    /// <list type="bullet">
-    ///   <item><description>Hosts the <c>/api/admin/realms/*</c> endpoints
-    ///   (mounted only on its hostnames, see
-    ///   <c>ControlPlaneGateMiddleware</c>).</description></item>
-    ///   <item><description>Carries the <c>control-plane:realm:read|write</c>
-    ///   permissions in its tenant DB; tenant realms don't.</description></item>
-    ///   <item><description>Has its own users, OAuth clients, scopes —
-    ///   functions as a regular realm for everything else.</description></item>
-    /// </list>
-    /// Exactly ONE realm per deployment carries this flag; the boot
-    /// validation in <c>Program.cs</c> enforces that and that the
-    /// configured <c>ControlPlane__Hostnames</c> match this realm's
-    /// <see cref="Domains"/>.
+    /// architectural anchor for cross-realm administration. Computed from
+    /// <see cref="Slug"/>: the realm with slug <see cref="RealmSlugRules.SystemSlug"/>
+    /// (currently <c>"system"</c>) is the Control Plane, every other
+    /// realm is data-plane. The slug is reserved (no tenant can claim it)
+    /// and immutable — so this property is also immutable, and there's
+    /// nothing to enforce or persist alongside it.
+    ///
+    /// <para>The Control Plane hosts the <c>/api/admin/realms/*</c>
+    /// endpoints (gated by <c>ControlPlaneGateMiddleware</c>) and carries
+    /// the <c>control-plane:*</c> permission namespace; tenant realms
+    /// don't.</para>
     /// </summary>
-    public bool IsControlPlane { get; set; }
+    public bool IsControlPlane => Slug == RealmSlugRules.SystemSlug;
 
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; }

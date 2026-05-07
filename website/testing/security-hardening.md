@@ -572,10 +572,18 @@ Im Container als persistentes Volume mounten (`-v cocoar-auth-keys:/app/data/key
 
 **Modell:**
 
-- Genau **eine** Control-Plane pro Deployment (`Realm.IsControlPlane`).
-  Backend-Validation: `IsControlPlane`-Flag kann nicht entfernt werden,
-  solange kein anderer aktiver CP-Realm existiert. Soft-Delete eines CP
-  ohne Nachfolger blockiert.
+- Genau **eine** Control-Plane pro Deployment — **strukturell**, nicht
+  als gesondertes Flag. `Realm.IsControlPlane` ist ein computed
+  `=> Slug == RealmSlugRules.SystemSlug` (= `"system"`). Der Slug ist
+  in `RealmSlugRules.ReservedSlugs` und kann von keinem Tenant
+  beansprucht werden, das System-Realm wird einmalig per
+  `EnsureSystemRealmExistsAsync` geseedet, und der Slug ist nach Create
+  unveränderbar — also gibt es **keine zweite Control-Plane**, auch
+  ohne separaten Validation-Code. Vereinfachung 2026-05-07 (Cleanup
+  des C14-Designs).
+- Soft-Delete bzw. Deactivate des Control-Plane-Realms blockiert (siehe
+  `RealmProvisioningService.UpdateRealmAsync` / `DeleteRealmAsync`),
+  weil das die Deployment-Administration aus der Welt schaffen würde.
 - Eigener **App-Slug `control-plane`** für die Realm-Verwaltungs-Resource
   (`control-plane:realm:read|write`). Bewusst losgelöst vom Produkt-Slug
   `cocoar-auth`: würde der IdP rebrandet, müssten cross-realm-Permissions
@@ -601,11 +609,26 @@ Im Container als persistentes Volume mounten (`-v cocoar-auth-keys:/app/data/key
    Tenant-DBs nicht, also kann kein Group/Role auf einem Tenant die
    Permission halten.
 
-**Boot-Validation (Production):** `ControlPlaneSettings.Hostnames[]` muss in
-non-Dev gesetzt sein; jeder Hostname muss zu einem Realm mit
-`IsControlPlane=true` auflösen, sonst Host-Start-Abbruch. Verhindert, dass
-ein Typo in `ControlPlane__Hostnames` cross-realm-Admin auf einem
-Tenant-Host exposiert.
+**Boot-Validation:** keine — entfernt 2026-05-07 zusammen mit
+`ControlPlaneSettings`. War redundant zu den DB-Daten: `IsControlPlane`
+ist computed aus `Slug == "system"`, der Slug ist reserved und
+unveränderbar, das System-Realm wird einmalig geseedet. Die ENV-Var
+`ControlPlane__Hostnames` schützte gegen kein realistisches
+Angriffsszenario, das nicht schon durch die DB-Invarianten gedeckt
+wäre, schuf aber ein Chicken-Egg-Problem für First-Boot-Deployments.
+
+**Operator-Workflow für public Hostnames** (z.B. nach Hetzner-Deploy):
+das System-Realm wird mit Default-Domains
+`["system.localhost", "localhost", "127.0.0.1"]` geseedet. Den
+Production-Hostname fügt der Operator per Recovery-CLI hinzu:
+
+```bash
+docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll \
+  recover realm-add-domain --slug system --domain auth.example.com
+```
+
+Der `IRealmCache` wird sofort invalidiert — kein Container-Restart
+nötig.
 
 **SPA:** `/api/app-info` liefert `IsControlPlane: bool` (auch anonym);
 Sidebar/Router gaten Realm-Admin-Items über `control-plane:realm:read`. Auf

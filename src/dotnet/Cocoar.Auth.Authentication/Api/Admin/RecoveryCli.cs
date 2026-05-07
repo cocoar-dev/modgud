@@ -63,6 +63,9 @@ public static class RecoveryCli
             "magic-link" => await MagicLinkAsync(session, scope.ServiceProvider, args, conf, env),
             "rebuild-projections" => await RebuildProjectionsAsync(scope.ServiceProvider),
             "bootstrap-admin" => await BootstrapAdminAsync(scope.ServiceProvider, args, realmSlug),
+            "realm-add-domain" => await RealmAddDomainAsync(scope.ServiceProvider, args),
+            "realm-remove-domain" => await RealmRemoveDomainAsync(scope.ServiceProvider, args),
+            "realm-list" => await RealmListAsync(scope.ServiceProvider),
             _ => Error($"Unknown command: {command}. Try 'help'.")
         };
     }
@@ -94,6 +97,18 @@ public static class RecoveryCli
                                              the configured Identity password rules).
                                              Without --password, an Invite-Mode magic link is
                                              generated and printed (and emailed if SMTP is set).
+              realm-list                     List every active realm with its slug + domains.
+                                             Useful as a first probe after a fresh deploy to see
+                                             the system realm's seeded localhost domains.
+              realm-add-domain               Add a domain to an active realm's Domains list.
+                  --slug <slug>              Required. Typically "system" for the first
+                                             production-hostname add after deploy.
+                  --domain <hostname>        Required. The Host-header that should route to
+                                             this realm. Stored verbatim, case-insensitive
+                                             match at request time.
+              realm-remove-domain            Remove a domain from an active realm's Domains list.
+                  --slug <slug>              Required.
+                  --domain <hostname>        Required. No-op if not present.
               help                           Show this message.
 
             Global flag:
@@ -476,6 +491,100 @@ public static class RecoveryCli
             }
         }
         return null;
+    }
+
+    // ── realm-list / realm-add-domain / realm-remove-domain ────────────
+    //
+    // These three operate on the global store (Marten master DB) directly:
+    // realms are global metadata, not tenant-scoped. We don't go through
+    // the IRealmProvisioningService.UpdateRealmAsync path because (a) it
+    // requires building an UpdateRealmDto with the full new Domains list
+    // (CLI gets to be additive) and (b) the recovery CLI's job is to
+    // unstick a deployment, not to honour every endpoint guard.
+
+    private static async Task<int> RealmListAsync(IServiceProvider services)
+    {
+        var globalStore = services.GetRequiredService<Cocoar.Auth.Infrastructure.Persistence.Tenancy.IGlobalStore>();
+        await using var session = globalStore.LightweightSession();
+        var realms = await session.Query<Realm>()
+            .Where(r => r.IsActive)
+            .OrderBy(r => r.Slug)
+            .ToListAsync();
+
+        Console.WriteLine($"{"Slug",-20} {"DisplayName",-30} {"Domains"}");
+        Console.WriteLine(new string('─', 90));
+        foreach (var r in realms)
+        {
+            var cpMarker = r.IsControlPlane ? " [CP]" : "";
+            Console.WriteLine($"{r.Slug + cpMarker,-20} {r.DisplayName,-30} {string.Join(", ", r.Domains)}");
+        }
+        return 0;
+    }
+
+    private static async Task<int> RealmAddDomainAsync(IServiceProvider services, string[] args)
+    {
+        var slug = ParseFlag(args, "--slug");
+        var domain = ParseFlag(args, "--domain");
+        if (string.IsNullOrWhiteSpace(slug) || string.IsNullOrWhiteSpace(domain))
+            return Error("realm-add-domain requires --slug <slug> and --domain <hostname>.");
+
+        var globalStore = services.GetRequiredService<Cocoar.Auth.Infrastructure.Persistence.Tenancy.IGlobalStore>();
+        await using var session = globalStore.LightweightSession();
+        var realm = await session.Query<Realm>().FirstOrDefaultAsync(r => r.Slug == slug);
+        if (realm is null) return Error($"Realm '{slug}' not found.");
+        if (!realm.IsActive) return Error($"Realm '{slug}' is not active.");
+
+        if (realm.Domains.Any(d => string.Equals(d, domain, StringComparison.OrdinalIgnoreCase)))
+        {
+            Console.WriteLine($"Realm '{slug}' already has domain '{domain}'. No change.");
+            return 0;
+        }
+
+        realm.Domains = [.. realm.Domains, domain];
+        realm.UpdatedAt = DateTimeOffset.UtcNow;
+        session.Store(realm);
+        await session.SaveChangesAsync();
+
+        // Invalidate the in-process cache so a running container picks up
+        // the new domain on the next request without a restart.
+        services.GetRequiredService<Cocoar.Auth.Infrastructure.Realms.IRealmCache>().Invalidate();
+
+        Console.WriteLine($"✓ Added '{domain}' to realm '{slug}'. Now: [{string.Join(", ", realm.Domains)}]");
+        Serilog.Log.Warning("Auth: Recovery realm-add-domain — Realm={Slug} Domain={Domain}", slug, domain);
+        return 0;
+    }
+
+    private static async Task<int> RealmRemoveDomainAsync(IServiceProvider services, string[] args)
+    {
+        var slug = ParseFlag(args, "--slug");
+        var domain = ParseFlag(args, "--domain");
+        if (string.IsNullOrWhiteSpace(slug) || string.IsNullOrWhiteSpace(domain))
+            return Error("realm-remove-domain requires --slug <slug> and --domain <hostname>.");
+
+        var globalStore = services.GetRequiredService<Cocoar.Auth.Infrastructure.Persistence.Tenancy.IGlobalStore>();
+        await using var session = globalStore.LightweightSession();
+        var realm = await session.Query<Realm>().FirstOrDefaultAsync(r => r.Slug == slug);
+        if (realm is null) return Error($"Realm '{slug}' not found.");
+
+        var remaining = realm.Domains
+            .Where(d => !string.Equals(d, domain, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (remaining.Length == realm.Domains.Length)
+        {
+            Console.WriteLine($"Realm '{slug}' did not have domain '{domain}'. No change.");
+            return 0;
+        }
+
+        realm.Domains = remaining;
+        realm.UpdatedAt = DateTimeOffset.UtcNow;
+        session.Store(realm);
+        await session.SaveChangesAsync();
+
+        services.GetRequiredService<Cocoar.Auth.Infrastructure.Realms.IRealmCache>().Invalidate();
+
+        Console.WriteLine($"✓ Removed '{domain}' from realm '{slug}'. Now: [{string.Join(", ", remaining)}]");
+        Serilog.Log.Warning("Auth: Recovery realm-remove-domain — Realm={Slug} Domain={Domain}", slug, domain);
+        return 0;
     }
 
     private static int Error(string message)

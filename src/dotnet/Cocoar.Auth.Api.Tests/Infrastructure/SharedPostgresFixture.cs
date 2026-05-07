@@ -64,11 +64,6 @@ public class SharedPostgresFixture : IAsyncLifetime
                 RefreshTokenLifetimeDays = 14,
                 AuthorizationCodeLifetimeMinutes = 5,
             }),
-            // C14 — ControlPlaneSettings: in Testing-env the boot-validation
-            // is skipped, but Cocoar.Configuration still demands a rule per
-            // type so GetRequiredConfig resolves cleanly. Empty hostnames
-            // is fine: the gate trusts the system realm's Domains list.
-            rule.For<ControlPlaneSettings>().FromStatic(_ => new ControlPlaneSettings()),
         ]);
 
         // Apply config before creating factory (must be in same async context)

@@ -21,12 +21,33 @@ Neither belongs on a tenant. A tenant should not even be able to
 
 ## Model
 
-Exactly **one** realm per deployment is flagged
-`Realm.IsControlPlane = true`. The system realm is the default Control
-Plane (seeded with `IsControlPlane=true` at first boot). You can move
-the flag to a different realm later, but you cannot remove it without
-designating a successor — `RealmProvisioningService` validates that the
-last Control-Plane flag stays put.
+Exactly **one** realm per deployment is the Control Plane —
+**structurally**, not as a separately-stored flag.
+`Realm.IsControlPlane` is computed:
+
+```csharp
+public bool IsControlPlane => Slug == RealmSlugRules.SystemSlug;
+// SystemSlug = "system"
+```
+
+Three structural facts make this an "exactly one" guarantee without
+any runtime validation:
+
+1. The slug `"system"` is in `RealmSlugRules.ReservedSlugs` — no
+   `CreateRealm` call can claim it.
+2. The system realm is seeded once at first boot
+   (`EnsureSystemRealmExistsAsync`).
+3. `Slug` is immutable after creation — the realm document carries
+   the slug for life.
+
+So no `Update` can promote a tenant realm to Control Plane, no `Create`
+can spawn a second one, no flag can be flipped off. The Control Plane
+is wherever the slug is — and that's always exactly the system realm.
+
+`RealmProvisioningService` does still block deactivating or deleting
+the system realm — losing the Control Plane would lock the deployment
+out of cross-realm administration — but those are the only two
+remaining guards.
 
 ::: tip Naming
 The permission namespace is `control-plane:*`, deliberately decoupled
@@ -99,16 +120,26 @@ a tenant DB can't grant `control-plane:realm:write` because the
 `PermissionService` validates against the tenant's own resource
 registry — and that registry doesn't list the `control-plane` app.
 
-## Boot validation
+## Hostname routing — DB is source of truth
 
-In Production, `ControlPlaneSettings.Hostnames[]` (ENV
-`ControlPlane__Hostnames=auth.example.com,admin.example.com`) must be
-set; on host-start every entry is verified to resolve to a realm with
-`IsControlPlane=true`. A typo aborts the boot — better than quietly
-exposing realm CRUD on a tenant host.
+The system realm is seeded with the localhost-style domains
+`["system.localhost", "localhost", "127.0.0.1"]` so a fresh checkout
+boots without any ENV setup. For a deployed installation, the
+operator adds the public hostname via the Recovery CLI:
 
-Development and Testing skip the check and trust the system realm's
-own `Domains` list, so a fresh checkout boots without ENV setup.
+```bash
+docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll \
+  recover realm-add-domain --slug system --domain auth.example.com
+```
+
+The `IRealmCache` is invalidated immediately — no container restart
+needed. From the next request onwards, `Host: auth.example.com`
+resolves to the system realm and `ControlPlaneGateMiddleware` lets
+`/api/admin/realms/*` through.
+
+There's no separate ENV variable mirroring the hostname list. The
+realm's own `Domains` field is the single source of truth — kept in
+the DB next to the rest of the realm metadata.
 
 ## First-admin onboarding
 

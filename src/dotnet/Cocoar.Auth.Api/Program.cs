@@ -93,13 +93,6 @@ try
             rule.For<OpenIddictSettings>().FromFile("data/configuration.json").Select("OpenIddict"),
             rule.For<OpenIddictSettings>().FromFile("data/configuration.local.json").Select("OpenIddict"),
             rule.For<OpenIddictSettings>().FromEnvironment("OpenIddict"),
-
-            // Control-Plane (C14) — hostname list for the cross-realm
-            // administration surface. Boot validation in this Program.cs
-            // checks that every hostname maps to the Control-Plane realm.
-            rule.For<ControlPlaneSettings>().FromFile("data/configuration.json").Select("ControlPlane"),
-            rule.For<ControlPlaneSettings>().FromFile("data/configuration.local.json").Select("ControlPlane"),
-            rule.For<ControlPlaneSettings>().FromEnvironment("ControlPlane"),
         ], setup =>
         [
             setup.ConcreteType<StartUpConfiguration>().AsSingleton(),
@@ -108,7 +101,6 @@ try
             setup.ConcreteType<EmailOtpConfiguration>().AsSingleton(),
             setup.ConcreteType<AppSettings>().AsSingleton(),
             setup.ConcreteType<OpenIddictSettings>().AsSingleton(),
-            setup.ConcreteType<ControlPlaneSettings>().AsSingleton(),
         ]));
 
     // Expose concrete config types as Authentication interfaces so Authentication
@@ -1041,46 +1033,18 @@ try
             Log.Warning(ex, "Marten LINQ warmup failed (non-fatal).");
         }
 
-        // C14 boot-validation: every configured Control-Plane hostname must
-        // resolve to a realm flagged IsControlPlane=true. A typo in
-        // ControlPlane__Hostnames in Production would otherwise quietly
-        // expose realm CRUD on a tenant host. Dev/Testing skip the check
-        // and implicitly trust the system realm's own Domains list, so a
-        // fresh checkout / integration-test run boots without ENV setup.
-        if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
-        {
-            var cpSettings = realmScope.ServiceProvider.GetRequiredService<ControlPlaneSettings>();
-            if (cpSettings.Hostnames.Length == 0)
-            {
-                throw new InvalidOperationException(
-                    "ControlPlane__Hostnames must be set in non-Development environments — " +
-                    "the deployment needs to know which hostnames serve the cross-realm admin surface. " +
-                    "Set e.g. ControlPlane__Hostnames=auth.example.com");
-            }
-
-            foreach (var host in cpSettings.Hostnames)
-            {
-                var resolved = await realmCache.ResolveDomainAsync(host);
-                if (resolved is null)
-                {
-                    throw new InvalidOperationException(
-                        $"ControlPlane hostname '{host}' does not resolve to any active realm. " +
-                        $"Add '{host}' to the Domains of the Control-Plane realm or remove it from ControlPlane__Hostnames.");
-                }
-                if (!resolved.IsControlPlane)
-                {
-                    throw new InvalidOperationException(
-                        $"ControlPlane hostname '{host}' resolves to realm '{resolved.Slug}', " +
-                        $"which is NOT flagged IsControlPlane. Misconfigured hostname lists would " +
-                        $"otherwise expose cross-realm admin endpoints on a tenant host.");
-                }
-            }
-
-            Log.Information(
-                "Control-Plane gate validated: {Count} hostname(s) → realm '{Slug}' (IsControlPlane=true)",
-                cpSettings.Hostnames.Length,
-                (await realmCache.ResolveDomainAsync(cpSettings.Hostnames[0]))?.Slug);
-        }
+        // No Control-Plane hostname validation needed: IsControlPlane is
+        // computed from `Slug == RealmSlugRules.SystemSlug`, the system
+        // realm is seeded once with reserved slug "system", and the
+        // ControlPlaneGateMiddleware reads `tenant.IsControlPlane` (which
+        // resolves to the slug check) at request time. The DB data is
+        // the single source of truth — there's no ENV var to keep in
+        // sync, no chicken-and-egg between operator config and seeded
+        // realm Domains.
+        //
+        // Operators add their public hostname(s) to the system realm's
+        // Domains via the Recovery CLI:
+        //   recover realm-add-domain --slug system --domain auth.example.com
     }
 
     // Break-glass recovery CLI — run inside the container instead of starting Kestrel.

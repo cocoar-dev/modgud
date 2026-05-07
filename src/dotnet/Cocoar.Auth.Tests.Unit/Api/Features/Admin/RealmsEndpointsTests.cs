@@ -24,6 +24,7 @@ public class RealmsEndpointsTests
         {
             var id = Guid.NewGuid();
             var created = DateTimeOffset.UtcNow;
+            // Tenant slug "acme" → IsControlPlane=false (only "system" is CP).
             var realm = new Realm
             {
                 Id = id,
@@ -31,7 +32,6 @@ public class RealmsEndpointsTests
                 DisplayName = "Acme Inc",
                 Description = "Tenant A",
                 Domains = new[] { "acme.localhost", "auth.acme.com" },
-                IsControlPlane = true,
                 IsActive = true,
                 CreatedAt = created,
             };
@@ -43,7 +43,7 @@ public class RealmsEndpointsTests
             Assert.Equal("Acme Inc", dto.DisplayName);
             Assert.Equal("Tenant A", dto.Description);
             Assert.Equal(new[] { "acme.localhost", "auth.acme.com" }, dto.Domains);
-            Assert.True(dto.IsControlPlane);
+            Assert.False(dto.IsControlPlane);
             Assert.True(dto.IsActive);
             Assert.Equal(created, dto.CreatedAt);
         }

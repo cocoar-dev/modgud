@@ -21,10 +21,19 @@ namespace Cocoar.Auth.Domain.Realms;
 /// </summary>
 public static partial class RealmSlugRules
 {
+    /// <summary>
+    /// The slug of the deployment's single Control-Plane realm. Reserved
+    /// in <see cref="ReservedSlugs"/>, immutable, and the architectural
+    /// anchor for cross-realm administration: <c>/api/admin/realms/*</c>
+    /// endpoints, the <c>control-plane:*</c> permission namespace, and
+    /// the routing-gate that hides those surfaces from tenant realms.
+    /// </summary>
+    public const string SystemSlug = "system";
+
     public static IReadOnlySet<string> ReservedSlugs { get; } =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "system", "health", "swagger", "openapi", "_framework",
+            SystemSlug, "health", "swagger", "openapi", "_framework",
         };
 
     [GeneratedRegex(@"^[a-z][a-z0-9-]{1,61}[a-z0-9]$", RegexOptions.Compiled)]
