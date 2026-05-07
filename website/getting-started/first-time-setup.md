@@ -102,7 +102,6 @@ Cookie: Cocoar.Auth.Auth=…       # the CP-admin's session cookie
   "Slug": "acme",
   "DisplayName": "Acme Corp",
   "Domains": ["auth.acme.com"],
-  "IsControlPlane": false,
   "InitialAdmin": {
     "UserName": "max",
     "Email": "max@acme.com",
@@ -177,5 +176,5 @@ Without an email address you have no recovery channel — no magic link, no pass
 :::
 
 ::: tip One Control-Plane realm per deployment
-Exactly one realm in a deployment is flagged `IsControlPlane = true`. Realm CRUD and the boot validation rely on this invariant. The system realm starts as Control Plane; you can move the flag later, but the deployment will refuse to remove the flag from the last Control-Plane realm. See [Concepts: Control Plane / Data Plane](../concepts/control-plane).
+Exactly one realm in a deployment is the Control Plane: the realm with the reserved slug `system`. The slug is in `RealmSlugRules.ReservedSlugs` (no tenant can claim it) and immutable after creation, so the "exactly one" invariant is structural — there's no separately persisted flag to flip. You cannot transfer Control-Plane status to another realm; you can only deactivate or delete the system realm (both are blocked by service-level guards because they'd lock the deployment out of cross-realm administration). See [Concepts: Control Plane / Data Plane](../concepts/control-plane).
 :::

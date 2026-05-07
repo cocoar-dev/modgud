@@ -545,11 +545,8 @@ public static class RecoveryCli
         session.Store(realm);
         await session.SaveChangesAsync();
 
-        // Invalidate the in-process cache so a running container picks up
-        // the new domain on the next request without a restart.
-        services.GetRequiredService<Cocoar.Auth.Infrastructure.Realms.IRealmCache>().Invalidate();
-
         Console.WriteLine($"✓ Added '{domain}' to realm '{slug}'. Now: [{string.Join(", ", realm.Domains)}]");
+        PrintRestartHint();
         Serilog.Log.Warning("Auth: Recovery realm-add-domain — Realm={Slug} Domain={Domain}", slug, domain);
         return 0;
     }
@@ -580,11 +577,27 @@ public static class RecoveryCli
         session.Store(realm);
         await session.SaveChangesAsync();
 
-        services.GetRequiredService<Cocoar.Auth.Infrastructure.Realms.IRealmCache>().Invalidate();
-
         Console.WriteLine($"✓ Removed '{domain}' from realm '{slug}'. Now: [{string.Join(", ", remaining)}]");
+        PrintRestartHint();
         Serilog.Log.Warning("Auth: Recovery realm-remove-domain — Realm={Slug} Domain={Domain}", slug, domain);
         return 0;
+    }
+
+    /// <summary>
+    /// Print a helpful restart hint after CLI mutations that the running
+    /// server's in-process IRealmCache needs to pick up. The CLI runs in
+    /// its own process via <c>docker exec dotnet ...</c>, so invalidating
+    /// the CLI process's cache doesn't reach the server process. A
+    /// container restart re-loads the cache on the next request.
+    /// </summary>
+    private static void PrintRestartHint()
+    {
+        Console.WriteLine();
+        Console.WriteLine("⚠ Restart the running container so the in-process realm cache");
+        Console.WriteLine("  picks up the change (the CLI runs as a separate process):");
+        Console.WriteLine();
+        Console.WriteLine("    docker compose restart auth   # or your Compose service name");
+        Console.WriteLine();
     }
 
     private static int Error(string message)

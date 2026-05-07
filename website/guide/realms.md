@@ -147,11 +147,14 @@ public sealed record TenantInfo(string Slug, bool IsControlPlane, bool IsActive)
 public class Realm
 {
     public Guid Id { get; set; }
-    public string Slug { get; set; }            // = TenantId, immutable
+    public string Slug { get; set; }            // = TenantId, immutable, reserved if "system"
     public string DisplayName { get; set; }
     public string? Description { get; set; }
     public string[] Domains { get; set; }       // ["acme.example.com", ...]
-    public bool IsControlPlane { get; set; }    // exactly one per deployment
+    // Computed: the deployment's single Control Plane is the realm with
+    // slug "system". The slug is reserved + immutable, so the property
+    // is too — there's no separately persisted flag.
+    public bool IsControlPlane => Slug == RealmSlugRules.SystemSlug;
     public bool IsActive { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
@@ -181,10 +184,9 @@ In `Program.cs` (before `app.Run`):
 
 Endpoints under `/api/admin/realms` — gated by
 `control-plane:realm:read` / `control-plane:realm:write` and only
-reachable on the **Control-Plane realm** (the realm flagged
-`IsControlPlane = true`). On any other host: 404 (the existence of
-the surface is hidden from tenant realms — see [Concepts: Control
-Plane](../concepts/control-plane)).
+reachable on the **Control-Plane realm** (the realm with slug
+`system`). On any other host: 404 (the existence of the surface is
+hidden from tenant realms — see [Concepts: Control Plane](../concepts/control-plane)).
 
 ### Create
 

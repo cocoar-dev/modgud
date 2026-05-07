@@ -85,7 +85,7 @@ Cocoar.Auth is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live
 - Cross-realm leakage is impossible at the database level
 
 ### Realm management
-- Realm-management UI on the Control-Plane realm (`IsControlPlane = true`, default: system realm)
+- Realm-management UI on the Control-Plane realm (the realm with slug `system` — Control Plane is determined by the reserved slug, not by a separate persisted flag)
 - Per-realm bootstrap via Control-Plane-issued magic-link invite or recovery CLI
 - Exactly one Control Plane per deployment, enforced on create / promote / demote
 

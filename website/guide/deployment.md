@@ -132,15 +132,43 @@ Multi-arch: **linux/amd64** + **linux/arm64**.
 
 ### Quick start
 
+The minimum production-shape config is **three environment
+variables** plus a persistent volume for auto-generated certs:
+
 ```bash
 docker run -d \
   --name cocoar-auth \
-  -p 80:80 \
+  -p 80:8081 \
+  -v cocoar-keys:/app/data/keys \
   -e DbSettings__ConnectionString="Host=your-postgres;Database=<master-db>;Username=postgres;Password=..." \
-  -e OpenIddict__Issuer="http://localhost" \
-  -e OpenIddict__DevelopmentMode="true" \
+  -e OpenIddict__Issuer="https://auth.example.com" \
+  -e ProxyAllowedNetworks="10.0.0.0/24" \
   ghcr.io/cocoar/cocoar.auth:latest
 ```
+
+What each one does:
+
+- **`DbSettings__ConnectionString`** — Postgres master DB. Realms get
+  per-tenant DBs auto-provisioned with the slug appended.
+- **`OpenIddict__Issuer`** — public HTTPS URL of the IdP. C2 boot
+  validation rejects `http://` or `localhost` here in Production.
+- **`ProxyAllowedNetworks`** — comma-separated CIDR list of reverse-
+  proxy IPs. Required so `X-Forwarded-Proto` is honoured for
+  cookie-Secure decisions; everything else is rejected.
+
+Everything else has sensible defaults:
+
+- `ASPNETCORE_ENVIRONMENT` defaults to `Production` (set in the
+  image).
+- `AppUrl` defaults to `http://0.0.0.0:8081`.
+- `OpenIddict__SigningCertificatePath` and
+  `OpenIddict__EncryptionCertificatePath` default to
+  `data/keys/{signing,encryption}.pfx` and are **auto-generated** as
+  passwordless self-signed PFXes on first boot when missing. The
+  `cocoar-keys` volume mount above persists them across container
+  restarts so issued tokens stay valid.
+- `OpenIddict__DevelopmentMode` defaults to `false` (production
+  shape — real signing keys, transport-security required).
 
 ::: warning ENV variable casing
 Cocoar.Configuration's environment-variable provider serializes ENV
@@ -157,8 +185,25 @@ literal. The full list of bindable settings is in the Settings classes
 table above.
 :::
 
-Once the container is up, create the first admin via the recovery CLI
-(see [Recovery CLI](../admin/recovery-cli) and [First-time setup](../getting-started/first-time-setup)):
+### First-time bootstrap
+
+The system realm is seeded automatically with the localhost-style
+domains `["system.localhost", "localhost", "127.0.0.1"]`. To make
+the public hostname route to the system realm, add it via the
+Recovery CLI, then restart so the in-process realm cache picks
+up the change:
+
+```bash
+docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll \
+    recover realm-add-domain --slug system --domain auth.example.com
+
+# The CLI runs as a separate process; the running server's realm
+# cache doesn't see the change until restart:
+docker compose restart auth
+```
+
+Then create the first admin user (the `system` slug is the default,
+so `--realm system` is implicit):
 
 ```bash
 docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll \
@@ -166,7 +211,7 @@ docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll \
     --email admin@example.com --username admin --password 'StrongPass1!'
 ```
 
-Then open `http://localhost/` in the browser and sign in.
+Open `https://auth.example.com/` in the browser and sign in.
 
 ### Docker Compose (full stack)
 
@@ -186,17 +231,14 @@ services:
   auth:
     image: ghcr.io/cocoar/cocoar.auth:latest
     ports:
-      - "80:8081"
+      - "80:8081"   # Kestrel listens on 8081 in the image; map to 80
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      AppUrl: "http://0.0.0.0:8081"
       DbSettings__ConnectionString: "Host=postgres;Database=<master-db>;Username=postgres;Password=postgres"
       OpenIddict__Issuer: "https://auth.example.com"
-      OpenIddict__DevelopmentMode: "false"
-      # SigningCertificatePath / EncryptionCertificatePath unset
-      # → defaults to /app/data/keys/{signing,encryption}.pfx
-      # → auto-generated on first start, persisted in volume below
       ProxyAllowedNetworks: "10.0.0.0/24"   # adjust to your reverse proxy CIDR
+      # Email is optional but recommended — magic-link, forgot-password,
+      # invite, email-OTP all need a working SMTP relay. mailpit is fine
+      # for Beta; switch to a real relay before going live.
       Email__Provider: "Smtp"
       Email__Smtp__Host: "mailpit"
       Email__Smtp__Port: "1025"
@@ -215,6 +257,11 @@ volumes:
   pgdata:
   cocoar-keys:
 ```
+
+`ASPNETCORE_ENVIRONMENT` defaults to `Production` (set by the image's
+`ENV` directive), `AppUrl` defaults to `http://0.0.0.0:8081`, and
+`OpenIddict__DevelopmentMode` defaults to `false` — none of those need
+to appear in the Compose file unless you want to override them.
 
 ## TLS
 
@@ -394,13 +441,39 @@ nothing), but the logger warns at boot.
 
 ## Recovery CLI in the container
 
-In an emergency (all admins locked out, projection corrupted):
+The Recovery CLI runs the same binary in command mode instead of
+starting Kestrel — pass `recover <verb>` to `dotnet
+Cocoar.Auth.Api.dll`. The CLI is for two situations:
+
+1. **First-time bootstrap** — set up the system realm's public
+   domain and create the first admin (covered in [Quick start](#quick-start)
+   above).
+2. **Break-glass recovery** — all admins locked out, 2FA reset,
+   projection rebuild.
+
+Reference (`docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover help`
+prints the same):
+
+| Verb | Purpose |
+|---|---|
+| `list` | List all users (UserName · Email · Active · Admin · 2FA · Passkeys) |
+| `reset-2fa <username>` | Disable TOTP + Email-OTP + delete all Passkeys |
+| `set-email <username> <email>` | Update the user's email address |
+| `magic-link <username>` | Generate a one-time login URL and print it |
+| `bootstrap-admin --email --username [--password]` | Create the first admin in a realm. With `--password` direct mode; without, invite mode (prints magic-link URL). |
+| `realm-list` | Show every active realm with its slug and domains. |
+| `realm-add-domain --slug --domain` | Add a domain to a realm's `Domains` list. After running, restart the container so the in-process realm cache picks up the change. |
+| `realm-remove-domain --slug --domain` | Remove a domain. Same restart requirement. |
+| `rebuild-projections` | Rebuild all Marten projections. |
+
+Global flag `--realm <slug>` for the user-management verbs (defaults
+to `system`).
 
 ```bash
+# A few representative invocations:
 docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover list
+docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover realm-list
+docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover \
+    realm-add-domain --slug system --domain auth.example.com
 docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover reset-2fa admin
-docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover magic-link admin
 ```
-
-Instead of starting Kestrel, the image runs in CLI mode, executes the
-command, and exits.

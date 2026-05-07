@@ -2,7 +2,6 @@ using System.Security.Cryptography.X509Certificates;
 using Cocoar.Auth.Api.Features;
 using System.Text.Json.Serialization;
 using Cocoar.Configuration.AspNetCore;
-using Cocoar.Configuration.X509Encryption;
 using Cocoar.Configuration.DI;
 using Cocoar.Configuration.DI.Extensions;
 using Cocoar.Configuration.Providers;
@@ -1088,7 +1087,10 @@ static void EnsureSigningCertificateExists(OpenIddictSettings settings)
         path => settings.SigningCertificatePath = path,
         defaultRelativePath: "data/keys/signing.pfx",
         subject: "CN=Cocoar.Auth Signing",
-        purpose: "signing");
+        purpose: "signing",
+        // OpenIddict's AddSigningCertificate rejects certs that don't
+        // declare DigitalSignature in their X509KeyUsage extension.
+        keyUsage: X509KeyUsageFlags.DigitalSignature);
 
 /// <summary>
 /// Resolve <c>EncryptionCertificatePath</c> (or its default
@@ -1104,7 +1106,12 @@ static void EnsureEncryptionCertificateExists(OpenIddictSettings settings)
         path => settings.EncryptionCertificatePath = path,
         defaultRelativePath: "data/keys/encryption.pfx",
         subject: "CN=Cocoar.Auth Encryption",
-        purpose: "encryption");
+        purpose: "encryption",
+        // OpenIddict's AddEncryptionCertificate wants a cert that can
+        // wrap a content-encryption key — KeyEncipherment covers RSA-OAEP
+        // wrapping which is what OpenIddict uses when token encryption
+        // is enabled.
+        keyUsage: X509KeyUsageFlags.KeyEncipherment | X509KeyUsageFlags.DataEncipherment);
 
 /// <summary>
 /// Shared certificate-bootstrap path. Path is resolved via
@@ -1118,7 +1125,8 @@ static void EnsureCertificateExists(
     Action<string> setPath,
     string defaultRelativePath,
     string subject,
-    string purpose)
+    string purpose,
+    X509KeyUsageFlags keyUsage)
 {
     var configured = getPath();
     var path = string.IsNullOrWhiteSpace(configured)
@@ -1131,12 +1139,7 @@ static void EnsureCertificateExists(
     var dir = Path.GetDirectoryName(path);
     if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-    X509CertificateGenerator.GenerateAndSavePfx(
-        outputPath: path,
-        password: null,
-        subject: subject,
-        validYears: 2,
-        keySize: 2048);
+    GenerateSelfSignedPfx(path, subject, keyUsage, validYears: 2, keySize: 2048);
 
     Log.Warning(
         "Auth: auto-generated self-signed {Purpose} certificate at {Path}. " +
@@ -1144,6 +1147,60 @@ static void EnsureCertificateExists(
         "(Key Vault / Secrets Manager / cocoar-secrets generate-cert) before " +
         "going to public production.",
         purpose, path);
+}
+
+/// <summary>
+/// Inline self-signed-cert generator. We don't reuse
+/// <c>Cocoar.Configuration.X509Encryption.X509CertificateGenerator</c>
+/// because that helper is hardcoded for content-encryption use cases
+/// (KeyEncipherment + DataEncipherment) and OpenIddict's
+/// <c>AddSigningCertificate</c> rejects certs without
+/// <c>DigitalSignature</c> in their X509KeyUsage extension. Different
+/// purposes need different KeyUsage bits, so we generate ourselves and
+/// pass the flags in.
+///
+/// <para>Output: passwordless PFX, file-system permissions restricted
+/// to owner read+write on Linux. Mirrors the cocoar-secrets CLI
+/// convention.</para>
+/// </summary>
+static void GenerateSelfSignedPfx(
+    string outputPath,
+    string subject,
+    X509KeyUsageFlags keyUsage,
+    int validYears,
+    int keySize)
+{
+    using var rsa = System.Security.Cryptography.RSA.Create(keySize);
+    var request = new System.Security.Cryptography.X509Certificates.CertificateRequest(
+        subject,
+        rsa,
+        System.Security.Cryptography.HashAlgorithmName.SHA256,
+        System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+
+    request.CertificateExtensions.Add(
+        new System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension(
+            certificateAuthority: false,
+            hasPathLengthConstraint: false,
+            pathLengthConstraint: 0,
+            critical: false));
+
+    request.CertificateExtensions.Add(
+        new System.Security.Cryptography.X509Certificates.X509KeyUsageExtension(
+            keyUsage,
+            critical: false));
+
+    var notBefore = DateTimeOffset.UtcNow;
+    var notAfter = notBefore.AddYears(validYears);
+
+    using var cert = request.CreateSelfSigned(notBefore, notAfter);
+    var pfxBytes = cert.Export(System.Security.Cryptography.X509Certificates.X509ContentType.Pfx);
+    File.WriteAllBytes(outputPath, pfxBytes);
+
+    if (!OperatingSystem.IsWindows())
+    {
+        File.SetUnixFileMode(outputPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
 }
 
 static string? TryReadFormField(HttpContext context, string fieldName)
