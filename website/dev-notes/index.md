@@ -1,9 +1,9 @@
-# 🔒 Internal — Dev Notes
+# 🔒 Dev Notes
 
 > **Repo-only.** This section never ships in any deployed artifact —
 > not on the public docs site, not in the in-app help bundle.
 > Visible only when running VitePress locally via `pnpm dev`.
-> See [`internal/README.md`](https://github.com/cocoar-dev/Cocoar.Auth/tree/develop/website/internal/README.md)
+> See [`dev-notes/README.md`](https://github.com/cocoar-dev/Cocoar.Auth/tree/develop/website/dev-notes/README.md)
 > for the convention.
 
 Parking lot for things that need to live alongside the codebase but
@@ -30,6 +30,6 @@ Capabilities we know we'll need to build but haven't prioritised:
 ---
 
 When something here matures into a real plan, promote it: move the
-file out of `internal/` into the appropriate public section
+file out of `dev-notes/` into the appropriate public section
 (`/concepts/`, `/guide/`, `/admin/`, `/reference/`), update the
 sidebar registrations, and the next public build picks it up.

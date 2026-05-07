@@ -1,4 +1,4 @@
-# `internal/` — Repo-Only Dev Notes
+# `dev-notes/` — Repo-Only Dev Notes
 
 This tree is **never published**. It's a parking lot for things that
 need to live alongside the codebase but shouldn't appear on:
@@ -6,14 +6,19 @@ need to live alongside the codebase but shouldn't appear on:
 - the public docs site (`pnpm build`, `config.ts`),
 - the in-app help bundle (`pnpm build:in-app`, `config.in-app.ts`).
 
-Both of those configs `srcExclude: ['internal/**']`. The only way to
+Both of those configs `srcExclude: ['dev-notes/**']`. The only way to
 view this tree is locally:
 
 ```bash
 cd website
-pnpm dev          # uses config.internal.ts → internal/ visible
-pnpm dev:public   # uses config.ts          → internal/ excluded (public preview)
+pnpm dev          # uses config.dev-notes.ts → dev-notes/ visible
+pnpm dev:public   # uses config.ts          → dev-notes/ excluded (public preview)
 ```
+
+> **Why the name?** Originally we used `internal/` but VitePress
+> silently skipped that directory (likely some bundled-plugin's
+> hardcoded ignore list). Renamed to `dev-notes/` after the issue
+> surfaced; the semantic intent is identical.
 
 ## What goes here
 
@@ -39,9 +44,9 @@ pnpm dev:public   # uses config.ts          → internal/ excluded (public previ
 
 ## Adding a new page
 
-1. Drop the `.md` file under `internal/<section>/`.
-2. Register it in `website/.vitepress/config.internal.ts` under the
-   `'/internal/'` sidebar so it shows up in local nav.
+1. Drop the `.md` file under `dev-notes/<section>/`.
+2. Register it in `website/.vitepress/config.dev-notes.ts` under the
+   `'/dev-notes/'` sidebar so it shows up in local nav.
 3. Add a **Status** line at the top (`Status: Idea / Design /
    In progress / Done`).
 4. If it's a future feature, link to the corresponding GitHub issue

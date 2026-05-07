@@ -8,19 +8,37 @@ import llmstxt from 'vitepress-plugin-llms'
 // operations surface (which is also bundled into the in-app build via
 // config.in-app.ts).
 //
-// Note the `internal/**` exclusion below — see `internal/README.md`
-// for the convention. The internal/ tree is repo-only dev notes
-// (future features, design discussions, planning) that must never
-// leak into a published build. Both this config (public site) and
-// config.in-app.ts (in-app help) exclude it; only config.internal.ts
-// re-includes it for local-dev preview via `pnpm dev`.
-export const publicConfig = defineConfig({
+// THIS FILE IS THE DEFAULT VITEPRESS CONFIG ("config.ts" is what
+// `vitepress dev` and `vitepress build` look up by convention).
+//
+// Three configs sit in this directory:
+//   - config.ts          — DEV variant, dev-notes/** is VISIBLE.
+//                          Used by `pnpm dev` (no --config flag).
+//   - config.public.ts   — PUBLIC build, dev-notes/** is EXCLUDED.
+//                          Used by `pnpm build` (with explicit --config).
+//   - config.in-app.ts   — IN-APP help build, also excludes dev-notes/**.
+//                          Used by `pnpm build:in-app` and the Dockerfile.
+//
+// Why this inverted layout (dev = default, publish = explicit --config)?
+// Because we hit a VitePress quirk: `srcExclude` set in config.ts leaks
+// into builds that explicitly use --config to point at a different file.
+// Putting srcExclude in config.ts therefore made dev-notes/** invisible
+// even with the dedicated dev-notes config. The fix: keep config.ts
+// exclude-free, move the publish-time exclusion into a separate config
+// file that doesn't get auto-loaded.
+//
+// The downside is that someone who runs `vitepress build` directly
+// (bypassing `pnpm build`) would publish dev-notes/. Mitigated by the
+// pnpm scripts always using --config explicitly.
+//
+// (Historical note: dev-notes/ was originally at /internal/ but VitePress
+// silently skips that directory name — possibly via vitepress-plugin-llms
+// or another bundled plugin's hardcoded ignore. Renamed to dev-notes/
+// after the issue surfaced; the semantic intent is identical.)
+export const baseConfig = defineConfig({
     title: 'Cocoar.Auth',
     description: 'Multi-Tenant Identity Provider — OAuth 2.0 / OpenID Connect, multi-app permissions, granular RBAC, GDPR-ready.',
     lang: 'en-US',
-
-    // Repo-only dev notes never go to the public site.
-    srcExclude: ['internal/**'],
 
     // Localhost / *.local references in the quickstart and troubleshooting
     // sections are intentional examples, not broken links.
@@ -247,4 +265,35 @@ export const publicConfig = defineConfig({
     },
 })
 
-export default withMermaid(publicConfig)
+// Default export — config.ts is the DEV variant: includes the
+// dev-notes/** tree in nav + sidebar so `pnpm dev` shows it.
+// The PUBLIC build uses config.public.ts which excludes dev-notes.
+export default withMermaid(defineConfig({
+  ...baseConfig,
+  themeConfig: {
+    ...baseConfig.themeConfig,
+    nav: [
+      ...(baseConfig.themeConfig?.nav ?? []),
+      { text: '🔒 Dev Notes', link: '/dev-notes/' },
+    ],
+    sidebar: {
+      ...(baseConfig.themeConfig?.sidebar ?? {}),
+      '/dev-notes/': [
+        {
+          text: '🔒 Dev Notes',
+          items: [
+            { text: 'Overview', link: '/dev-notes/' },
+          ],
+        },
+        {
+          text: 'Future Features',
+          items: [
+            { text: 'Overview', link: '/dev-notes/future-features/' },
+            { text: 'White-label customization', link: '/dev-notes/future-features/white-label-customization' },
+            { text: 'Login alerts + IP blacklist', link: '/dev-notes/future-features/login-alerts-ip-blacklist' },
+          ],
+        },
+      ],
+    },
+  },
+}))

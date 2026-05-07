@@ -31,17 +31,17 @@ blacklist. The NAT-safe alternative to a naive IP rate-limit
 
 ## Adding to this section
 
-1. Create `internal/future-features/<feature-slug>.md`
+1. Create `dev-notes/future-features/<feature-slug>.md`
 2. Open with **Status** + **Why** lines (see existing pages for
    format)
 3. Capture the design space, not the final design — options with
    pros/cons, risks, what would block, what could phase
-4. Register in `.vitepress/config.internal.ts` so it shows up in
+4. Register in `.vitepress/config.dev-notes.ts` so it shows up in
    the local sidebar
 5. Link from this page
 
 When the feature ships, **promote** the page: move it into the
 appropriate public section (`/concepts/`, `/guide/`, `/admin/`,
 or `/reference/`), update the sidebar registrations, delete the
-internal entry. Don't leave stale "future" docs around once the
+dev-notes entry. Don't leave stale "future" docs around once the
 future has arrived.

@@ -23,7 +23,7 @@ export default defineConfig({
 
   // Drop everything that isn't admin operations or end-user help.
   // The public landing page and marketing nav have no place in-app.
-  // `internal/**` is also excluded here — those are repo-only dev
+  // `dev-notes/**` is also excluded here — those are repo-only dev
   // notes that must never ship in any deployed artifact.
   srcExclude: [
     'index.md',
@@ -35,7 +35,7 @@ export default defineConfig({
     'reference/**',
     'authentication-slice/**',
     'authorization-slice/**',
-    'internal/**',
+    'dev-notes/**',
   ],
 
   // The public landing has the marketing pitch; in-app, route the
