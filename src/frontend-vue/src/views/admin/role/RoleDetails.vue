@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoleStore } from '@/stores/role.store'
-import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect } from '@cocoar/vue-ui'
+import { useApplicationsStore } from '@/stores/applications.store'
+import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarNote } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
-import { PERMISSION_RESOURCES, RESOURCE_LABELS } from '@/models/role'
 
 const { t } = useI18n()
 
@@ -14,27 +14,47 @@ const props = defineProps<{
 }>()
 
 const roleStore = useRoleStore()
+const applicationsStore = useApplicationsStore()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
 
-const form = ref({
+interface FormState {
+  Name: string
+  Description: string
+  /** Empty = no App link (pure realm-admin role). */
+  AppId: string
+  IsRealmAdmin: boolean
+  /** Selected AppPermission.Ids in the linked App's catalog. */
+  PermissionIds: Set<string>
+}
+
+const form = ref<FormState>({
   Name: '',
   Description: '',
-  ResourceType: 'app',
+  AppId: '',
+  IsRealmAdmin: false,
+  PermissionIds: new Set<string>(),
 })
 
-const permissions = ref<Set<string>>(new Set())
+const appOptions = computed(() => [
+  { value: '', label: t('admin.roleDetails.app.none', {}, '— None (realm-admin role)') },
+  ...applicationsStore.apps.map((a) => ({
+    value: a.Id,
+    label: `${a.DisplayName} (${a.Slug})`,
+  })),
+])
 
-const resourceTypeOptions = computed(() =>
-  Object.keys(PERMISSION_RESOURCES).map(key => ({
-    value: key,
-    label: RESOURCE_LABELS[key] || key,
-  }))
-)
-
-const availableActions = computed(() =>
-  PERMISSION_RESOURCES[form.value.ResourceType] || []
-)
+/** Catalog of the currently linked App, sorted for stable display. */
+const linkedAppCatalog = computed(() => {
+  if (!form.value.AppId) return []
+  const app = applicationsStore.apps.find((a) => a.Id === form.value.AppId)
+  if (!app) return []
+  return [...(app.Permissions ?? [])].sort((a, b) => {
+    const lhs = `${a.Resource}:${a.Action}`
+    const rhs = `${b.Resource}:${b.Action}`
+    return lhs.localeCompare(rhs)
+  })
+})
 
 const modalTitle = computed(() => {
   const name = form.value.Name?.trim()
@@ -50,6 +70,7 @@ const footerButton = computed(() => ({
 }))
 
 onMounted(async () => {
+  applicationsStore.initialize()
   if (!isCreate.value) {
     loading.value = true
     try {
@@ -59,9 +80,10 @@ onMounted(async () => {
         form.value = {
           Name: role.Name,
           Description: role.Description || '',
-          ResourceType: role.ResourceType,
+          AppId: role.AppId ?? '',
+          IsRealmAdmin: role.IsRealmAdmin,
+          PermissionIds: new Set(role.PermissionIds ?? []),
         }
-        permissions.value = new Set(role.Permissions)
       }
     } finally {
       loading.value = false
@@ -69,20 +91,16 @@ onMounted(async () => {
   }
 })
 
-function togglePermission(action: string) {
-  if (permissions.value.has(action)) {
-    permissions.value.delete(action)
-  } else {
-    permissions.value.add(action)
-  }
+function togglePermissionId(id: string) {
+  const next = new Set(form.value.PermissionIds)
+  if (next.has(id)) next.delete(id); else next.add(id)
+  form.value.PermissionIds = next
 }
 
-function isChecked(action: string): boolean {
-  return permissions.value.has(action)
-}
-
-function onResourceTypeChange() {
-  permissions.value.clear()
+function onAppIdChange() {
+  // Detaching the App must clear the catalog subset — otherwise stale ids
+  // would land in the payload and the backend would reject them.
+  form.value.PermissionIds = new Set<string>()
 }
 
 async function save() {
@@ -91,9 +109,10 @@ async function save() {
   try {
     const dto = {
       Name: form.value.Name,
-      Description: form.value.Description || undefined,
-      ResourceType: form.value.ResourceType,
-      Permissions: [...permissions.value],
+      Description: form.value.Description || null,
+      AppId: form.value.AppId || null,
+      IsRealmAdmin: form.value.IsRealmAdmin,
+      PermissionIds: form.value.AppId ? Array.from(form.value.PermissionIds) : [],
     }
     if (isCreate.value) {
       await roleStore.createRole(dto)
@@ -122,28 +141,42 @@ async function save() {
           <CoarFormField :label="t('admin.roleDetails.description', {}, 'Description')">
             <CoarTextInput v-model="form.Description" clearable />
           </CoarFormField>
-          <CoarFormField :label="t('admin.roleDetails.resourceType', {}, 'Resource Type')">
+          <CoarFormField :label="t('admin.roleDetails.app', {}, 'Application')">
             <CoarSelect
-              v-model="form.ResourceType"
-              :options="resourceTypeOptions"
-              :disabled="!isCreate"
-              @update:model-value="onResourceTypeChange"
+              v-model="form.AppId"
+              :options="appOptions"
+              @update:model-value="onAppIdChange"
             />
+            <p class="text-xs text-gray-500 mt-1">
+              {{ form.AppId
+                ? t('admin.roleDetails.app.linkedHint', {}, 'Role grants the selected catalog entries within this App.')
+                : t('admin.roleDetails.app.noneHint', {}, 'No App link — only the realm-admin flag below grants anything. Reserved for the System Admin role.') }}
+            </p>
           </CoarFormField>
+          <CoarCheckbox
+            v-model="form.IsRealmAdmin"
+            :label="t('admin.roleDetails.isRealmAdmin', {}, 'Realm Admin (bypasses every permission check, every realm)')"
+          />
+          <CoarNote v-if="form.IsRealmAdmin" variant="warning">
+            {{ t('admin.roleDetails.isRealmAdmin.warning', {}, 'This flag grants realm:admin — the global bypass. Hand it out only to the System Admin role.') }}
+          </CoarNote>
         </div>
       </section>
 
-      <!-- Section: Berechtigungen -->
-      <section>
-        <div class="section-heading">{{ t('admin.roleDetails.permissions', {}, 'Permissions') }}</div>
-        <div class="flex flex-wrap gap-x-4 gap-y-1">
-          <CoarCheckbox
-            v-for="action in availableActions"
-            :key="action"
-            :model-value="isChecked(action)"
-            :label="action"
-            @update:model-value="togglePermission(action)"
-          />
+      <!-- Section: Catalog subset -->
+      <section v-if="form.AppId">
+        <div class="section-heading">{{ t('admin.roleDetails.permissions', {}, 'Permissions (App Catalog Subset)') }}</div>
+        <div v-if="linkedAppCatalog.length === 0" class="text-xs text-gray-400 italic">
+          {{ t('admin.roleDetails.permissions.empty', {}, 'The selected Application has no entries in its catalog. Add entries via the App admin first.') }}
+        </div>
+        <div v-else class="permission-checklist">
+          <label v-for="p in linkedAppCatalog" :key="p.Id" class="permission-row">
+            <input type="checkbox" :checked="form.PermissionIds.has(p.Id)" @change="togglePermissionId(p.Id)" />
+            <span class="permission-label">
+              <code>{{ p.Resource }}:{{ p.Action }}</code>
+              <span v-if="p.Description" class="permission-desc">— {{ p.Description }}</span>
+            </span>
+          </label>
         </div>
       </section>
     </div>
@@ -163,5 +196,36 @@ async function save() {
   border-bottom: 1px solid #d1d5db;
   padding-bottom: 4px;
   margin-bottom: 8px;
+}
+.permission-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
+  border-radius: var(--coar-radius-m, 4px);
+  background: var(--coar-background-neutral-primary, #fff);
+}
+.permission-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.permission-row:hover {
+  background: var(--coar-background-neutral-tertiary, #f3f4f6);
+}
+.permission-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.permission-desc {
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  font-size: 0.78rem;
 }
 </style>

@@ -35,7 +35,7 @@ public class EffectiveGroupsEndpointTests : IntegrationTestBase
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Manual", lastname: "Only", acronym: "mo",
             email: "mo@test.com", password: "TestPass1234",
-            permissions: ["realm:admin"]);
+            isRealmAdmin: true);
         var manualGroup = await Factory.CreateTestGroupAsync(
             name: $"ManualGroup_{Guid.NewGuid():N}",
             memberIds: [user.Id],
@@ -66,7 +66,7 @@ public class EffectiveGroupsEndpointTests : IntegrationTestBase
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Anna", lastname: "Bauer", acronym: "ab",
             email: "anna.bauer@demo.local", password: "TestPass1234",
-            permissions: ["realm:admin"]);
+            isRealmAdmin: true);
 
         // Compile the same script the demo seed uses.
         const string script = "(p) => Type.Is(p, 'person') && p.IsActive && (p.Email != null) && p.Email.endsWith('@demo.local')";
@@ -124,7 +124,7 @@ public class EffectiveGroupsEndpointTests : IntegrationTestBase
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Broke", lastname: "Script", acronym: "bs",
             email: "bs@test.com", password: "TestPass1234",
-            permissions: ["realm:admin"]);
+            isRealmAdmin: true);
 
         // The script reads a property of a property of an undefined field. Compiling
         // succeeds (the JsLinq translator accepts the shape), but evaluating it

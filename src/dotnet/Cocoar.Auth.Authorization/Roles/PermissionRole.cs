@@ -1,10 +1,26 @@
 namespace Cocoar.Auth.Authorization.Roles;
 
 /// <summary>
-/// Named set of permissions bound to a specific resource type within an app.
-/// Roles define the <b>what</b> (allowed actions). Row-level visibility is
-/// not the IAM's concern — it stays in the consuming app where the row
-/// schema lives.
+/// Named bundle of permission grants attached to one App. Roles define the
+/// <b>what</b> (allowed actions). Row-level visibility is not the IAM's
+/// concern — it stays in the consuming app where the row schema lives.
+///
+/// <para>A role grants permissions in two ways:</para>
+/// <list type="bullet">
+///   <item><see cref="PermissionIds"/> — FKs into <c>App.Permissions[].Id</c>
+///   of the role's <see cref="AppId"/>. Survive resource/action renames in
+///   the catalog. Roles can grant any subset of their App's catalog,
+///   including multiple resources within the same App.</item>
+///   <item><see cref="IsRealmAdmin"/> — when true, the role grants
+///   <c>realm:admin</c> regardless of <see cref="AppId"/>. Reserved for the
+///   System Admin role; bypasses every permission check across every realm.</item>
+/// </list>
+///
+/// <para><see cref="AppId"/> is nullable so that a pure-realm-admin role
+/// (<see cref="IsRealmAdmin"/> = true, no catalog grants) can be modelled
+/// without the operator having to pick an arbitrary App. When
+/// <see cref="AppId"/> is null, <see cref="PermissionIds"/> must be empty —
+/// nothing to FK into.</para>
 /// </summary>
 public class PermissionRole
 {
@@ -13,26 +29,25 @@ public class PermissionRole
     public string? Description { get; set; }
 
     /// <summary>
-    /// The app this role belongs to (e.g. <c>"cocoar-auth"</c>, <c>"timetodo"</c>).
-    /// A role's resources/actions are interpreted within this app's namespace,
-    /// and the role only contributes to permission resolution when the
-    /// requesting app matches.
+    /// FK to <c>App.Id</c>. Null only for pure-realm-admin roles. When set,
+    /// the role's grants are interpreted within that App's catalog.
     /// </summary>
-    public string AppSlug { get; set; } = "";
+    public Guid? AppId { get; set; }
 
     /// <summary>
-    /// The resource this role scopes its actions to — e.g. <c>"todo"</c>, <c>"customer"</c>,
-    /// <c>"user"</c>. Actions in <see cref="Permissions"/> are interpreted relative
-    /// to it: <c>["read", "update"]</c> against <c>AppSlug="timetodo"</c> +
-    /// <c>ResourceType="todo"</c> ⇒ <c>timetodo:todo:read</c>, <c>timetodo:todo:update</c>.
+    /// When true, the role grants <c>realm:admin</c> — the realm-wide bypass
+    /// recognised by <see cref="Services.PermissionEvaluator"/>. Lives outside
+    /// any App catalog (see permission-modell.md §3 "Sonderfall realm:admin").
     /// </summary>
-    public string ResourceType { get; set; } = "";
+    public bool IsRealmAdmin { get; set; }
 
     /// <summary>
-    /// Bare action names (e.g. <c>"read"</c>, <c>"update"</c>) — the
-    /// app-slug + resource-type prefix is applied at permission-check time.
+    /// Subset of the role's App catalog this role grants. Each entry is an
+    /// <c>AppPermission.Id</c> in <see cref="AppId"/>'s App. Empty when the
+    /// role grants nothing through the catalog (only valid alongside
+    /// <see cref="IsRealmAdmin"/>).
     /// </summary>
-    public List<string> Permissions { get; set; } = [];
+    public List<Guid> PermissionIds { get; set; } = new();
 
     public bool IsDeleted { get; set; }
 }

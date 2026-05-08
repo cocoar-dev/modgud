@@ -30,7 +30,7 @@ public static class AdminChangeRequestEndpoints
             // Approving/rejecting profile change requests is part of the
             // user-write surface — the same role that can edit users handles
             // these queue items.
-            .RequiresPermission("cocoar-auth:user:write");
+            .RequiresPermission("user:write");
 
         group.MapGet("", async (IQuerySession session, bool includeTerminal = false) =>
         {

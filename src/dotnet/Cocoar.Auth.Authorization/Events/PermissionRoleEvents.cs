@@ -4,16 +4,16 @@ public record PermissionRoleCreatedEvent(
     Guid Id,
     string Name,
     string? Description,
-    string AppSlug,
-    string ResourceType,
-    List<string> Permissions);
+    Guid? AppId,
+    bool IsRealmAdmin,
+    List<Guid> PermissionIds);
 
 public record PermissionRoleUpdatedEvent(
     Guid Id,
     string Name,
     string? Description,
-    string AppSlug,
-    string ResourceType,
-    List<string> Permissions);
+    Guid? AppId,
+    bool IsRealmAdmin,
+    List<Guid> PermissionIds);
 
 public record PermissionRoleDeletedEvent(Guid Id);

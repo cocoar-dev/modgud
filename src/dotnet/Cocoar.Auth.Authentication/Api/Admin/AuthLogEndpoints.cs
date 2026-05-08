@@ -22,7 +22,7 @@ public static class AuthLogEndpoints
             return Results.Ok(entries);
         })
         .WithName("AdminAuthLog_Get")
-        .RequiresPermission("cocoar-auth:auth-log:read");
+        .RequiresPermission("auth-log:read");
 
         // Clearing the auth log is destructive — gate behind the global app:admin
         // bypass. (We deliberately don't add an `auth-log:write` since the only

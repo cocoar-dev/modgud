@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
-import type { RoleDto } from '@/models/role'
+import type { RoleDto, RolePayload } from '@/models/role'
 
 export const useRoleStore = defineStore('role', () => {
   const http = useHttpClient('/api/role')
@@ -19,13 +19,13 @@ export const useRoleStore = defineStore('role', () => {
     }
   }
 
-  async function createRole(dto: { Name: string; Description?: string; ResourceType: string; Permissions: string[] }): Promise<RoleDto> {
+  async function createRole(dto: RolePayload): Promise<RoleDto> {
     const role = await http.post<RoleDto>(dto)
     roles.value = [...roles.value, role]
     return role
   }
 
-  async function updateRole(id: string, dto: { Name: string; Description?: string; ResourceType: string; Permissions: string[] }): Promise<RoleDto> {
+  async function updateRole(id: string, dto: RolePayload): Promise<RoleDto> {
     const role = await http.addPath(id).put<RoleDto>(dto)
     roles.value = roles.value.map(r => r.Id === id ? role : r)
     return role

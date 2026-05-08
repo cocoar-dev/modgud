@@ -110,10 +110,10 @@ public sealed class RealmAdminBootstrapper(
     private async Task SeedDefaultRolesAndAdminGroupAsync(Guid userId, CancellationToken ct)
     {
         // System Admin role — the realm:admin bypass. Idempotent: skip if
-        // a role with this Permission set already exists (a re-bootstrap
+        // a role with the IsRealmAdmin flag already exists (a re-bootstrap
         // shouldn't duplicate the row).
         var existingAdminRole = await session.Query<PermissionRole>()
-            .Where(r => !r.IsDeleted && r.Permissions.Contains(PermissionEvaluator.RealmAdminPermission))
+            .Where(r => !r.IsDeleted && r.IsRealmAdmin)
             .FirstOrDefaultAsync(ct);
 
         Guid adminRoleId;
@@ -124,58 +124,78 @@ public sealed class RealmAdminBootstrapper(
                 Id = Guid.NewGuid(),
                 Name = "System Admin",
                 Description = "Full system access — bypasses every permission check.",
-                AppSlug = AppSlugs.CocoarAuth,
-                ResourceType = "",
-                Permissions = [PermissionEvaluator.RealmAdminPermission],
+                AppId = null,
+                IsRealmAdmin = true,
+                PermissionIds = [],
             };
             session.Store(adminRole);
             session.Events.StartStream(adminRole.Id,
-                new PermissionRoleCreatedEvent(adminRole.Id, adminRole.Name, adminRole.Description, adminRole.AppSlug, adminRole.ResourceType, adminRole.Permissions));
+                new PermissionRoleCreatedEvent(
+                    adminRole.Id, adminRole.Name, adminRole.Description,
+                    adminRole.AppId, adminRole.IsRealmAdmin, adminRole.PermissionIds));
             adminRoleId = adminRole.Id;
 
-            // Two starter roles (User Manager + Viewer) seeded alongside.
-            // Multi-resource roles store fully-qualified permissions in
-            // their Permissions list because a single role can only have
-            // one ResourceType — bare-action expansion would lock the role
-            // to one resource.
-            const string a = AppSlugs.CocoarAuth;
+            // Two starter roles (User Manager + Viewer) — FK into the
+            // cocoar-auth App's seeded catalog. Look up the App (it must
+            // exist in this tenant; AppRealmSeeder runs at realm-provisioning
+            // time, before any admin bootstrap).
+            var cocoarAuthApp = await session.Query<App>()
+                .FirstOrDefaultAsync(a => a.Slug == AppSlugs.CocoarAuth && !a.IsDeleted, ct)
+                ?? throw new InvalidOperationException(
+                    "cocoar-auth App not found in this tenant — RealmAdminBootstrapper must run after AppRealmSeeder.");
+
+            Guid CatalogId(string resource, string action)
+            {
+                var entry = cocoarAuthApp.Permissions
+                    .FirstOrDefault(p => p.Resource == resource && p.Action == action)
+                    ?? throw new InvalidOperationException(
+                        $"cocoar-auth App catalog is missing permission {resource}:{action}.");
+                return entry.Id;
+            }
+
+            var userManagerPermissionIds = new List<Guid>
+            {
+                CatalogId("user", "read"), CatalogId("user", "write"),
+                CatalogId("session", "read"), CatalogId("session", "write"),
+                CatalogId("authorization-group", "read"),
+                CatalogId("permission-role", "read"),
+                CatalogId("auth-log", "read"),
+            };
             var userManagerRole = new PermissionRole
             {
                 Id = Guid.NewGuid(),
                 Name = "User Manager",
                 Description = "Read+write users, read roles+groups+permission-roles.",
-                AppSlug = a,
-                ResourceType = "",
-                Permissions =
-                [
-                    $"{a}:user:read", $"{a}:user:write",
-                    $"{a}:session:read", $"{a}:session:write",
-                    $"{a}:authorization-group:read",
-                    $"{a}:permission-role:read",
-                    $"{a}:auth-log:read",
-                ],
+                AppId = cocoarAuthApp.Id,
+                IsRealmAdmin = false,
+                PermissionIds = userManagerPermissionIds,
             };
             session.Store(userManagerRole);
             session.Events.StartStream(userManagerRole.Id,
-                new PermissionRoleCreatedEvent(userManagerRole.Id, userManagerRole.Name, userManagerRole.Description, userManagerRole.AppSlug, userManagerRole.ResourceType, userManagerRole.Permissions));
+                new PermissionRoleCreatedEvent(
+                    userManagerRole.Id, userManagerRole.Name, userManagerRole.Description,
+                    userManagerRole.AppId, userManagerRole.IsRealmAdmin, userManagerRole.PermissionIds));
 
+            var viewerPermissionIds = new List<Guid>
+            {
+                CatalogId("user", "read"),
+                CatalogId("authorization-group", "read"),
+                CatalogId("permission-role", "read"),
+            };
             var viewerRole = new PermissionRole
             {
                 Id = Guid.NewGuid(),
                 Name = "Viewer",
                 Description = "Read-only access to users, groups, roles.",
-                AppSlug = a,
-                ResourceType = "",
-                Permissions =
-                [
-                    $"{a}:user:read",
-                    $"{a}:authorization-group:read",
-                    $"{a}:permission-role:read",
-                ],
+                AppId = cocoarAuthApp.Id,
+                IsRealmAdmin = false,
+                PermissionIds = viewerPermissionIds,
             };
             session.Store(viewerRole);
             session.Events.StartStream(viewerRole.Id,
-                new PermissionRoleCreatedEvent(viewerRole.Id, viewerRole.Name, viewerRole.Description, viewerRole.AppSlug, viewerRole.ResourceType, viewerRole.Permissions));
+                new PermissionRoleCreatedEvent(
+                    viewerRole.Id, viewerRole.Name, viewerRole.Description,
+                    viewerRole.AppId, viewerRole.IsRealmAdmin, viewerRole.PermissionIds));
         }
         else
         {

@@ -53,7 +53,7 @@ public static class GroupEndpoints
                 return Results.Ok(groups.Select(MapToResponse));
             })
             .WithName("V2_Group_GetAll")
-            .RequiresPermission("cocoar-auth:authorization-group:read");
+            .RequiresPermission("authorization-group:read");
 
         groupGroup.MapGet("{id}", async (ShortGuid id, IDocumentSession session) =>
             {
@@ -62,7 +62,7 @@ public static class GroupEndpoints
                 return Results.Ok(MapToResponse(group));
             })
             .WithName("V2_Group_GetById")
-            .RequiresPermission("cocoar-auth:authorization-group:read");
+            .RequiresPermission("authorization-group:read");
 
         // Effective members — direct principals + nested (transitively resolved)
         // via sub-groups. Each nested entry carries the first direct member-group
@@ -137,7 +137,7 @@ public static class GroupEndpoints
                 return Results.Ok(new { Direct = direct, Nested = nested });
             })
             .WithName("V2_Group_EffectiveMembers")
-            .RequiresPermission("cocoar-auth:authorization-group:read");
+            .RequiresPermission("authorization-group:read");
 
         groupGroup.MapPost("", async (CreateGroupDto dto, IMessageBus bus) =>
             {
@@ -158,7 +158,7 @@ public static class GroupEndpoints
                     errors => Results.BadRequest(new { Errors = errors.Select(e => new { e.Code, e.Description }) }));
             })
             .WithName("V2_Group_Create")
-            .RequiresPermission("cocoar-auth:authorization-group:write");
+            .RequiresPermission("authorization-group:write");
 
         groupGroup.MapPut("{id}", async (ShortGuid id, CreateGroupDto dto, IMessageBus bus) =>
             {
@@ -179,7 +179,7 @@ public static class GroupEndpoints
                         : Results.BadRequest(new { Errors = errors.Select(e => new { e.Code, e.Description }) }));
             })
             .WithName("V2_Group_Update")
-            .RequiresPermission("cocoar-auth:authorization-group:write");
+            .RequiresPermission("authorization-group:write");
 
         groupGroup.MapDelete("{id}", async (ShortGuid id, IDocumentSession session) =>
             {
@@ -191,7 +191,7 @@ public static class GroupEndpoints
                 return Results.NoContent();
             })
             .WithName("V2_Group_Delete")
-            .RequiresPermission("cocoar-auth:authorization-group:write");
+            .RequiresPermission("authorization-group:write");
 
         return application;
     }

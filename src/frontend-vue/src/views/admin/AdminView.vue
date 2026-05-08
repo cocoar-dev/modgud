@@ -27,19 +27,19 @@ interface NavItem {
 // Order matters — drives both rendering order and the section-grouping below.
 const allNavItems: NavItem[] = [
   // Authorization
-  { section: 'authorization', label: 'nav.users', icon: 'users', path: '/admin/users', requirePermissions: ['cocoar-auth:user:read'] },
-  { section: 'authorization', label: 'nav.roles', icon: 'shield', path: '/admin/roles', requirePermissions: ['cocoar-auth:permission-role:read'] },
-  { section: 'authorization', label: 'nav.groups', icon: 'users-round', path: '/admin/groups', requirePermissions: ['cocoar-auth:authorization-group:read'] },
+  { section: 'authorization', label: 'nav.users', icon: 'users', path: '/admin/users', requirePermissions: ['user:read'] },
+  { section: 'authorization', label: 'nav.roles', icon: 'shield', path: '/admin/roles', requirePermissions: ['permission-role:read'] },
+  { section: 'authorization', label: 'nav.groups', icon: 'users-round', path: '/admin/groups', requirePermissions: ['authorization-group:read'] },
   // OAuth & Federation
-  { section: 'oauth', label: 'admin.loginProviders.title', icon: 'log-in', path: '/admin/login-providers', requirePermissions: ['cocoar-auth:login-provider:read'] },
-  { section: 'oauth', label: 'admin.oauthClients.title', icon: 'app-window', path: '/admin/oauth/clients', requirePermissions: ['cocoar-auth:oauth-client:read'] },
-  { section: 'oauth', label: 'admin.oauthScopes.title', icon: 'tags', path: '/admin/oauth/scopes', requirePermissions: ['cocoar-auth:oauth-scope:read'] },
-  { section: 'oauth', label: 'admin.oauthApis.title', icon: 'server', path: '/admin/oauth/apis', requirePermissions: ['cocoar-auth:oauth-api:read'] },
+  { section: 'oauth', label: 'admin.loginProviders.title', icon: 'log-in', path: '/admin/login-providers', requirePermissions: ['login-provider:read'] },
+  { section: 'oauth', label: 'admin.oauthClients.title', icon: 'app-window', path: '/admin/oauth/clients', requirePermissions: ['oauth-client:read'] },
+  { section: 'oauth', label: 'admin.oauthScopes.title', icon: 'tags', path: '/admin/oauth/scopes', requirePermissions: ['oauth-scope:read'] },
+  { section: 'oauth', label: 'admin.oauthApis.title', icon: 'server', path: '/admin/oauth/apis', requirePermissions: ['oauth-api:read'] },
   // System
-  { section: 'system', label: 'admin.apps.title', icon: 'layout-grid', path: '/admin/apps', requirePermissions: ['cocoar-auth:app:read'] },
-  { section: 'system', label: 'admin.realms.title', icon: 'globe', path: '/admin/realms', requirePermissions: ['control-plane:realm:read'] },
-  { section: 'system', label: 'admin.authLog.title', icon: 'scroll-text', path: '/admin/auth-log', requirePermissions: ['cocoar-auth:auth-log:read'] },
-  { section: 'system', label: 'admin.changeRequests.title', icon: 'inbox', path: '/admin/change-requests', requirePermissions: ['cocoar-auth:user:write'] },
+  { section: 'system', label: 'admin.apps.title', icon: 'layout-grid', path: '/admin/apps', requirePermissions: ['app:read'] },
+  { section: 'system', label: 'admin.realms.title', icon: 'globe', path: '/admin/realms', requirePermissions: ['realm:read'] },
+  { section: 'system', label: 'admin.authLog.title', icon: 'scroll-text', path: '/admin/auth-log', requirePermissions: ['auth-log:read'] },
+  { section: 'system', label: 'admin.changeRequests.title', icon: 'inbox', path: '/admin/change-requests', requirePermissions: ['user:write'] },
   { section: 'system', label: 'nav.settings', icon: 'settings', path: '/admin/settings', requirePermissions: ['realm:admin'] },
 ]
 

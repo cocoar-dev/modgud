@@ -3,6 +3,7 @@ using Cocoar.Auth.Application.DTOs.Realms;
 using Cocoar.Auth.Authentication.ExtensionMethods;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Setup;
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.AspNetCore;
 using Cocoar.Auth.Domain.Realms;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
@@ -37,7 +38,7 @@ public static class RealmsEndpoints
             return Results.Ok(new RealmListDto { Items = items, TotalCount = items.Count });
         })
         .WithName("Realms_List")
-        .RequiresPermission("control-plane:realm:read");
+        .RequiresPermission("realm:read", AppSlugs.ControlPlane);
 
         group.MapGet("{slug}", async (string slug, IRealmProvisioningService svc, CancellationToken ct) =>
         {
@@ -45,7 +46,7 @@ public static class RealmsEndpoints
             return realm is null ? Results.NotFound() : Results.Ok(MapToDto(realm));
         })
         .WithName("Realms_Get")
-        .RequiresPermission("control-plane:realm:read");
+        .RequiresPermission("realm:read", AppSlugs.ControlPlane);
 
         group.MapPost("", async (
             CreateRealmDto dto,
@@ -97,7 +98,7 @@ public static class RealmsEndpoints
                 });
         })
         .WithName("Realms_Create")
-        .RequiresPermission("control-plane:realm:write");
+        .RequiresPermission("realm:write", AppSlugs.ControlPlane);
 
         // C15c — Resend bootstrap-invite. Re-uses the recipient identity
         // from the most recent prior invite in the tenant DB (typically
@@ -162,7 +163,7 @@ public static class RealmsEndpoints
             });
         })
         .WithName("Realms_ResendBootstrapInvite")
-        .RequiresPermission("control-plane:realm:write");
+        .RequiresPermission("realm:write", AppSlugs.ControlPlane);
 
         group.MapPatch("{slug}", async (string slug, UpdateRealmDto dto, IRealmProvisioningService svc, CancellationToken ct) =>
         {
@@ -170,7 +171,7 @@ public static class RealmsEndpoints
             return result.ToResult(realm => Results.Ok(MapToDto(realm)));
         })
         .WithName("Realms_Update")
-        .RequiresPermission("control-plane:realm:write");
+        .RequiresPermission("realm:write", AppSlugs.ControlPlane);
 
         group.MapDelete("{slug}", async (string slug, IRealmProvisioningService svc, CancellationToken ct) =>
         {
@@ -178,7 +179,7 @@ public static class RealmsEndpoints
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
         .WithName("Realms_Delete")
-        .RequiresPermission("control-plane:realm:write");
+        .RequiresPermission("realm:write", AppSlugs.ControlPlane);
 
         return application;
     }

@@ -77,7 +77,7 @@ public class OwaspTop10Tests : IntegrationTestBase
         // explicit per endpoint via RequiresPermission.
         await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Reg", lastname: "Ular", acronym: "ru",
-            email: "ru@test.com", password: "TestPass1234", permissions: []);
+            email: "ru@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("ru", "TestPass1234");
 
         var response = await client.GetAsync("/api/user", TestContext.Current.CancellationToken);
@@ -92,10 +92,10 @@ public class OwaspTop10Tests : IntegrationTestBase
         // even when they know the other user's id.
         var other = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Other", lastname: "Person", acronym: "op",
-            email: "op@test.com", password: "TestPass1234", permissions: []);
+            email: "op@test.com", password: "TestPass1234");
         await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Plain", lastname: "User", acronym: "pu",
-            email: "pu@test.com", password: "TestPass1234", permissions: []);
+            email: "pu@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("pu", "TestPass1234");
 
         var response = await client.GetAsync(
@@ -119,7 +119,7 @@ public class OwaspTop10Tests : IntegrationTestBase
         // than the CookieContainer, which strips the flags.
         await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Cookie", lastname: "Test", acronym: "ct",
-            email: "ct@test.com", password: "TestPass1234", permissions: []);
+            email: "ct@test.com", password: "TestPass1234");
 
         var inspect = Factory.CreateClient();
         var response = await inspect.PostAsJsonAsync("/api/account/login",
@@ -145,7 +145,7 @@ public class OwaspTop10Tests : IntegrationTestBase
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Hash", lastname: "Hide", acronym: "hh",
             email: "hh@test.com", password: "TestPass1234",
-            permissions: ["realm:admin"]);
+            isRealmAdmin: true);
         var client = await CreateAuthenticatedClientAsync("hh", "TestPass1234");
 
         var response = await client.GetAsync(
@@ -174,7 +174,7 @@ public class OwaspTop10Tests : IntegrationTestBase
 
         await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Real", lastname: "User", acronym: "rl",
-            email: "rl@test.com", password: "TestPass1234", permissions: []);
+            email: "rl@test.com", password: "TestPass1234");
         var existingWrongPwd = await anon.PostAsJsonAsync("/api/account/login",
             new { UserName = "rl", Password = "Wrong123!@#", RememberMe = false },
             TestContext.Current.CancellationToken);
@@ -251,7 +251,7 @@ public class OwaspTop10Tests : IntegrationTestBase
         // `lockoutOnFailure: true` is wired through.
         await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Brute", lastname: "Force", acronym: "bf",
-            email: "bf@test.com", password: "TestPass1234", permissions: []);
+            email: "bf@test.com", password: "TestPass1234");
 
         var anon = Factory.CreateClient();
         for (var i = 0; i < 5; i++)
@@ -276,7 +276,7 @@ public class OwaspTop10Tests : IntegrationTestBase
         // no /register endpoint.
         await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Weak", lastname: "Pwd", acronym: "wp",
-            email: "wp@test.com", password: "TestPass1234", permissions: []);
+            email: "wp@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("wp", "TestPass1234");
 
         var response = await client.PostAsJsonAsync("/api/account/change-password",
@@ -295,7 +295,7 @@ public class OwaspTop10Tests : IntegrationTestBase
         // contract from A02.
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Inactive", lastname: "User", acronym: "iu",
-            email: "iu@test.com", password: "TestPass1234", permissions: []);
+            email: "iu@test.com", password: "TestPass1234");
 
         // Flip IsActive off via Identity directly — the integration
         // path that gets exercised is the same.
@@ -334,7 +334,7 @@ public class OwaspTop10Tests : IntegrationTestBase
         // Known user
         await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Forgot", lastname: "Me", acronym: "fm",
-            email: "fm@test.com", password: "TestPass1234", permissions: []);
+            email: "fm@test.com", password: "TestPass1234");
         var known = await anon.PostAsJsonAsync("/api/account/forgot-password",
             new { UserName = "fm" },
             TestContext.Current.CancellationToken);

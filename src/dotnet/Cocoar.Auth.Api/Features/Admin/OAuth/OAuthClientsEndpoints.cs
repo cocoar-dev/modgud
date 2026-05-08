@@ -26,7 +26,7 @@ public static class OAuthClientsEndpoints
             return Results.Ok(await svc.GetClientsAsync(pagination, ct));
         })
         .WithName("OAuth_Clients_List")
-        .RequiresPermission("cocoar-auth:oauth-client:read");
+        .RequiresPermission("oauth-client:read");
 
         group.MapGet("{id}", async (string id, OAuthAdminService svc, CancellationToken ct) =>
         {
@@ -34,7 +34,7 @@ public static class OAuthClientsEndpoints
             return dto is null ? Results.NotFound() : Results.Ok(dto);
         })
         .WithName("OAuth_Clients_Get")
-        .RequiresPermission("cocoar-auth:oauth-client:read");
+        .RequiresPermission("oauth-client:read");
 
         group.MapPost("", async (CreateOAuthClientDto dto, OAuthAdminService svc, CancellationToken ct) =>
         {
@@ -42,7 +42,7 @@ public static class OAuthClientsEndpoints
             return result.ToResult(created => Results.Created($"{path}/admin/oauth/clients/{created.Client.Id}", created));
         })
         .WithName("OAuth_Clients_Create")
-        .RequiresPermission("cocoar-auth:oauth-client:write");
+        .RequiresPermission("oauth-client:write");
 
         group.MapPut("{id}", async (string id, UpdateOAuthClientDto dto, OAuthAdminService svc, CancellationToken ct) =>
         {
@@ -50,7 +50,7 @@ public static class OAuthClientsEndpoints
             return result.ToResult(client => Results.Ok(client));
         })
         .WithName("OAuth_Clients_Update")
-        .RequiresPermission("cocoar-auth:oauth-client:write");
+        .RequiresPermission("oauth-client:write");
 
         group.MapDelete("{id}", async (string id, OAuthAdminService svc, CancellationToken ct) =>
         {
@@ -58,7 +58,7 @@ public static class OAuthClientsEndpoints
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
         .WithName("OAuth_Clients_Delete")
-        .RequiresPermission("cocoar-auth:oauth-client:write");
+        .RequiresPermission("oauth-client:write");
 
         group.MapPost("{id}/regenerate-secret", async (string id, OAuthAdminService svc, CancellationToken ct) =>
         {
@@ -66,7 +66,7 @@ public static class OAuthClientsEndpoints
             return result.ToResult(secret => Results.Ok(secret));
         })
         .WithName("OAuth_Clients_RegenerateSecret")
-        .RequiresPermission("cocoar-auth:oauth-client:write");
+        .RequiresPermission("oauth-client:write");
 
         return app;
     }

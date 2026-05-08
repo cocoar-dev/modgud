@@ -15,9 +15,9 @@ public class PermissionRoleProjection : SingleStreamProjection<PermissionRole, G
         Id = @event.Id,
         Name = @event.Name,
         Description = @event.Description,
-        AppSlug = @event.AppSlug,
-        ResourceType = @event.ResourceType,
-        Permissions = @event.Permissions,
+        AppId = @event.AppId,
+        IsRealmAdmin = @event.IsRealmAdmin,
+        PermissionIds = [.. @event.PermissionIds],
         IsDeleted = false,
     };
 
@@ -25,9 +25,9 @@ public class PermissionRoleProjection : SingleStreamProjection<PermissionRole, G
     {
         current.Name = @event.Name;
         current.Description = @event.Description;
-        current.AppSlug = @event.AppSlug;
-        current.ResourceType = @event.ResourceType;
-        current.Permissions = @event.Permissions;
+        current.AppId = @event.AppId;
+        current.IsRealmAdmin = @event.IsRealmAdmin;
+        current.PermissionIds = [.. @event.PermissionIds];
         return current;
     }
 

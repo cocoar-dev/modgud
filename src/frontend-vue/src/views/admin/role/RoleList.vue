@@ -55,10 +55,16 @@ const builder = CoarGridBuilder.create<RoleDto>()
   })
   .columns([
     (col) => col.field('Name').header('Name', 'admin.roles.name').flex(1),
-    (col) => col.field('ResourceType').header('Resource', 'admin.roles.resourceType').width(120),
+    (col) => col.field('IsRealmAdmin').header('Realm Admin', 'admin.roles.isRealmAdmin').width(120)
+      .option('valueGetter', (p: any) => p.data?.IsRealmAdmin ? '✓' : ''),
     (col) => col.field('Description').header('Description', 'admin.roles.description').flex(1),
-    (col) => col.field('Permissions').header('Permissions', 'admin.roles.permissions').flex(2)
-      .option('valueGetter', (p: any) => (p.data?.Permissions || []).join(', ')),
+    (col) => col.field('PermissionIds').header('Grants', 'admin.roles.permissions').flex(2)
+      .option('valueGetter', (p: any) => {
+        const r = p.data
+        if (!r) return ''
+        if (r.IsRealmAdmin) return 'realm:admin'
+        return `${(r.PermissionIds || []).length} permission(s)`
+      }),
   ])
 
 async function deleteSelected() {

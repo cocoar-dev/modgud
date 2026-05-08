@@ -23,7 +23,7 @@ public static class UserUpdateScriptTestEndpoint
             .RequireAuthorization()
             // Read-only test/preview surface — gated on login-provider:read so an
             // operator can prototype a script without write access.
-            .RequiresPermission("cocoar-auth:login-provider:read");
+            .RequiresPermission("login-provider:read");
 
         // Test-run the script with arbitrary sample claims. Accepts either the
         // LoginProvider's stored script (by id) or a proposed script body

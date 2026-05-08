@@ -1,6 +1,8 @@
 using System.Net;
 using Cocoar.Auth.Api.Tests.Infrastructure;
 using Cocoar.Auth.Authorization.Apps;
+using Marten;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Cocoar.Auth.Api.Tests.Authorization;
 
@@ -10,12 +12,12 @@ namespace Cocoar.Auth.Api.Tests.Authorization;
 /// <c>PermissionEndpointFilter</c> → <c>PermissionService</c>.
 ///
 /// <para>The gate exercised is <c>GET /api/user</c>, which requires
-/// <c>cocoar-auth:user:read</c>. The test users start from
-/// <c>permissions: []</c> (no group) and have a custom role+group built per
-/// case so we can vary <see cref="Group.BoundTo"/> and <see cref="PermissionRole.AppSlug"/>
-/// independently. This pins the BFS resolution + BoundTo filter +
-/// role-AppSlug filter + bypass cascade against the real Marten store —
-/// the unit tests cover individual pieces, this file proves they compose.</para>
+/// <c>user:read</c> within the <c>cocoar-auth</c> App. The test users start
+/// from no group and have a custom role+group built per case so we can
+/// vary <see cref="Group.BoundTo"/> and the role's App-link independently.
+/// This pins the BFS resolution + BoundTo filter + role-AppId filter +
+/// bypass cascade against the real Marten store — the unit tests cover
+/// individual pieces, this file proves they compose.</para>
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
 public class PermissionResolutionTests : IntegrationTestBase
@@ -27,8 +29,7 @@ public class PermissionResolutionTests : IntegrationTestBase
     {
         await Factory.CreateTestUserWithIdentityAsync(
             firstname: "No", lastname: "Group", acronym: "NG",
-            email: "ng@test.com", password: "TestPass1234",
-            permissions: []);
+            email: "ng@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("ng", "TestPass1234");
 
         var r = await client.GetAsync("/api/user", TestContext.Current.CancellationToken);
@@ -36,13 +37,14 @@ public class PermissionResolutionTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task User_With_BareReadAction_In_BoundToCocoarAuth_Group_Returns_200()
+    public async Task User_With_UserRead_In_BoundToCocoarAuth_Group_Returns_200()
     {
-        // Bare action "read" + role.AppSlug=cocoar-auth + group.BoundTo=[cocoar-auth]
-        // → expands to "cocoar-auth:user:read", group is active → match.
+        // Catalog grant "user:read" + role.AppId=cocoar-auth's id +
+        // group.BoundTo=[cocoar-auth] → group active for cocoar-auth and
+        // role contributes its catalog grant → match.
         var user = await CreateUserAsync("ok", "cocoar-auth-user-read");
         await GrantAsync(user.Id,
-            roleAppSlug: AppSlugs.CocoarAuth, resourceType: "user", actions: ["read"],
+            roleAppSlug: AppSlugs.CocoarAuth, permissions: [("user", "read")],
             groupBoundTo: [AppSlugs.CocoarAuth]);
         var client = await CreateAuthenticatedClientAsync("ok", "TestPass1234");
 
@@ -51,7 +53,7 @@ public class PermissionResolutionTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task User_With_BareReadAction_In_DormantGroup_Returns_403()
+    public async Task User_With_UserRead_In_DormantGroup_Returns_403()
     {
         // Same role assignment as the previous test, but group.BoundTo=[]
         // (dormant) — the group does not contribute to permission resolution
@@ -59,7 +61,7 @@ public class PermissionResolutionTests : IntegrationTestBase
         // hint.
         var user = await CreateUserAsync("dr", "dormant-group");
         await GrantAsync(user.Id,
-            roleAppSlug: AppSlugs.CocoarAuth, resourceType: "user", actions: ["read"],
+            roleAppSlug: AppSlugs.CocoarAuth, permissions: [("user", "read")],
             groupBoundTo: []);
         var client = await CreateAuthenticatedClientAsync("dr", "TestPass1234");
 
@@ -74,7 +76,7 @@ public class PermissionResolutionTests : IntegrationTestBase
         // permission resolution targets. Used by the realm-admin group.
         var user = await CreateUserAsync("ww", "wildcard");
         await GrantAsync(user.Id,
-            roleAppSlug: AppSlugs.CocoarAuth, resourceType: "user", actions: ["read"],
+            roleAppSlug: AppSlugs.CocoarAuth, permissions: [("user", "read")],
             groupBoundTo: ["*"]);
         var client = await CreateAuthenticatedClientAsync("ww", "TestPass1234");
 
@@ -85,12 +87,12 @@ public class PermissionResolutionTests : IntegrationTestBase
     [Fact]
     public async Task User_With_WrongAppBoundTo_Returns_403()
     {
-        // Role grants cocoar-auth:user:read, but the group is only active in
-        // "timetodo". Permission resolution for cocoar-auth ignores the
-        // group → no permission. Pins cross-app group isolation.
+        // Role grants user:read on cocoar-auth, but the group is only
+        // active in "timetodo". Permission resolution for cocoar-auth
+        // ignores the group → no permission. Pins cross-app group isolation.
         var user = await CreateUserAsync("wa", "wrong-app");
         await GrantAsync(user.Id,
-            roleAppSlug: AppSlugs.CocoarAuth, resourceType: "user", actions: ["read"],
+            roleAppSlug: AppSlugs.CocoarAuth, permissions: [("user", "read")],
             groupBoundTo: ["timetodo"]);
         var client = await CreateAuthenticatedClientAsync("wa", "TestPass1234");
 
@@ -101,12 +103,17 @@ public class PermissionResolutionTests : IntegrationTestBase
     [Fact]
     public async Task User_With_ResourceAdmin_In_SameApp_Returns_200()
     {
-        // cocoar-auth:user:admin bypass: grants every action on the user
-        // resource within cocoar-auth, including read. Pins
-        // PermissionEvaluator's resource-admin tier.
+        // user:admin bypass: grants every action on the user resource within
+        // cocoar-auth, including read. Pins PermissionEvaluator's
+        // resource-admin tier.
+        //
+        // The seeded cocoar-auth catalog has user:read/write but not
+        // user:admin (admin is in app/login-provider/oauth/gdpr but not on
+        // user). Add the entry first so the role-grant FK resolves.
+        await AddCatalogEntryAsync(AppSlugs.CocoarAuth, "user", "admin");
         var user = await CreateUserAsync("ra", "resource-admin");
         await GrantAsync(user.Id,
-            roleAppSlug: AppSlugs.CocoarAuth, resourceType: "user", actions: ["admin"],
+            roleAppSlug: AppSlugs.CocoarAuth, permissions: [("user", "admin")],
             groupBoundTo: [AppSlugs.CocoarAuth]);
         var client = await CreateAuthenticatedClientAsync("ra", "TestPass1234");
 
@@ -115,35 +122,14 @@ public class PermissionResolutionTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task User_With_AppAdmin_Returns_200()
-    {
-        // cocoar-auth:admin bypass: every resource within cocoar-auth.
-        // Stored as the fully-qualified "cocoar-auth:admin" so it survives
-        // the bare-action expansion path.
-        var user = await CreateUserAsync("aa", "app-admin");
-        await GrantAsync(user.Id,
-            roleAppSlug: AppSlugs.CocoarAuth, resourceType: "app",
-            actions: ["cocoar-auth:admin"],
-            groupBoundTo: [AppSlugs.CocoarAuth]);
-        var client = await CreateAuthenticatedClientAsync("aa", "TestPass1234");
-
-        var r = await client.GetAsync("/api/user", TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
-    }
-
-    [Fact]
     public async Task User_With_RealmAdmin_Returns_200_Even_With_TimetodoBoundTo()
     {
-        // realm:admin is the realm-wide bypass. It is fully-qualified so it
-        // survives the expansion path; combined with BoundTo=[*] it makes
-        // the System Admin user — but the bypass works even from a more
-        // restrictive group as long as the permission lands in the user's
-        // grant set for the requested app. Wildcard BoundTo here.
+        // realm:admin is the realm-wide bypass — flagged via the
+        // PermissionRole.IsRealmAdmin bit, NOT a catalog FK. Bypass works
+        // regardless of which app the gate is resolving for, as long as the
+        // user's group is active there (or wildcard).
         var user = await CreateUserAsync("re", "realm-admin");
-        await GrantAsync(user.Id,
-            roleAppSlug: AppSlugs.CocoarAuth, resourceType: "app",
-            actions: ["realm:admin"],
-            groupBoundTo: ["*"]);
+        await GrantRealmAdminAsync(user.Id, groupBoundTo: ["*"]);
         var client = await CreateAuthenticatedClientAsync("re", "TestPass1234");
 
         var r = await client.GetAsync("/api/user", TestContext.Current.CancellationToken);
@@ -153,33 +139,21 @@ public class PermissionResolutionTests : IntegrationTestBase
     [Fact]
     public async Task User_With_CrossAppRole_Does_Not_Leak_Returns_403()
     {
-        // Role with AppSlug=timetodo + bare action "read" on resource "user"
-        // expands to "timetodo:user:read", NOT "cocoar-auth:user:read".
-        // Even though the user's group is active in cocoar-auth (BoundTo
-        // contains "*"), the role itself belongs to a different app and
-        // cannot grant cocoar-auth permissions. Pins the role-AppSlug filter
-        // inside GetUserPermissionsAsync.
+        // Role with a different App's catalog grant cannot grant
+        // permissions in cocoar-auth even when the parent group is
+        // active in cocoar-auth (BoundTo=["*"]). Pins the role-AppId
+        // filter inside GetUserPermissionsAsync.
+        //
+        // Implementation note: the timetodo App must be seeded for
+        // CreateTestRoleAsync to FK against its catalog. The realm
+        // doesn't ship with a timetodo App by default, so the test
+        // creates one with a single user:read entry and grants from it.
         var user = await CreateUserAsync("xa", "cross-app");
+        await CreateMinimalAppAsync("timetodo", "TimeToDo", catalog: [("user", "read")]);
         await GrantAsync(user.Id,
-            roleAppSlug: "timetodo", resourceType: "user", actions: ["read"],
+            roleAppSlug: "timetodo", permissions: [("user", "read")],
             groupBoundTo: ["*"]);
         var client = await CreateAuthenticatedClientAsync("xa", "TestPass1234");
-
-        var r = await client.GetAsync("/api/user", TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.Forbidden, r.StatusCode);
-    }
-
-    [Fact]
-    public async Task User_With_AppAdmin_For_OtherApp_Does_Not_Leak_Returns_403()
-    {
-        // timetodo:admin grants every resource in timetodo — but cocoar-auth
-        // resolution must not see it as a cocoar-auth bypass.
-        var user = await CreateUserAsync("oa", "other-app-admin");
-        await GrantAsync(user.Id,
-            roleAppSlug: "timetodo", resourceType: "app",
-            actions: ["timetodo:admin"],
-            groupBoundTo: ["*"]);
-        var client = await CreateAuthenticatedClientAsync("oa", "TestPass1234");
 
         var r = await client.GetAsync("/api/user", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, r.StatusCode);
@@ -195,28 +169,92 @@ public class PermissionResolutionTests : IntegrationTestBase
         string acronym, string nameSuffix) =>
         Factory.CreateTestUserWithIdentityAsync(
             firstname: $"P_{nameSuffix}", lastname: $"L_{nameSuffix}", acronym: acronym,
-            email: $"{acronym}@test.com", password: "TestPass1234", permissions: []);
+            email: $"{acronym}@test.com", password: "TestPass1234");
 
-    /// <summary>
-    /// Attaches a fresh role + group to the user. The role belongs to
-    /// <paramref name="roleAppSlug"/>, scopes its actions to
-    /// <paramref name="resourceType"/>, and carries the strings in
-    /// <paramref name="actions"/>. The group lists <paramref name="groupBoundTo"/>
-    /// in BoundTo and the user as its only member.
-    /// </summary>
     private async Task GrantAsync(
-        Guid userId, string roleAppSlug, string resourceType,
-        IReadOnlyList<string> actions, IReadOnlyList<string> groupBoundTo)
+        Guid userId, string roleAppSlug,
+        IReadOnlyList<(string Resource, string Action)> permissions,
+        IReadOnlyList<string> groupBoundTo)
     {
         var role = await Factory.CreateTestRoleAsync(
             name: $"R_{Guid.NewGuid():N}",
-            resourceType: resourceType,
-            permissions: actions.ToList(),
+            permissions: permissions,
             appSlug: roleAppSlug);
         await Factory.CreateTestGroupAsync(
             name: $"G_{Guid.NewGuid():N}",
             memberIds: [userId],
             roleIds: [role.Id],
             boundTo: groupBoundTo.ToList());
+    }
+
+    private async Task GrantRealmAdminAsync(Guid userId, IReadOnlyList<string> groupBoundTo)
+    {
+        var role = await Factory.CreateTestRoleAsync(
+            name: $"RealmAdmin_{Guid.NewGuid():N}",
+            isRealmAdmin: true);
+        await Factory.CreateTestGroupAsync(
+            name: $"G_{Guid.NewGuid():N}",
+            memberIds: [userId],
+            roleIds: [role.Id],
+            boundTo: groupBoundTo.ToList());
+    }
+
+    /// <summary>
+    /// Adds a (resource, action) entry to an existing App's catalog so a
+    /// later <see cref="GrantAsync"/> can FK into it. Used by tests that
+    /// need a catalog entry not in the default seed (e.g. user:admin).
+    /// </summary>
+    private async Task AddCatalogEntryAsync(string appSlug, string resource, string action)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<Marten.IDocumentSession>();
+
+        var app = await session.Query<App>()
+            .FirstOrDefaultAsync(a => a.Slug == appSlug && !a.IsDeleted)
+            ?? throw new InvalidOperationException($"App '{appSlug}' not found.");
+
+        if (app.Permissions.Any(p => p.Resource == resource && p.Action == action))
+            return;
+
+        var newPerms = new List<AppPermission>(app.Permissions)
+        {
+            new(Guid.NewGuid(), resource, action, Description: null),
+        };
+
+        session.Events.Append(app.Id, new Cocoar.Auth.Authorization.Events.AppUpdatedEvent(
+            Id: app.Id,
+            DisplayName: app.DisplayName,
+            Description: app.Description,
+            Permissions: newPerms));
+        await session.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Seeds a non-system App with a minimal catalog so cross-app tests can
+    /// build roles against it.
+    /// </summary>
+    private async Task CreateMinimalAppAsync(
+        string slug, string displayName,
+        IReadOnlyList<(string Resource, string Action)> catalog)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<Marten.IDocumentSession>();
+
+        var existing = await session.Query<App>()
+            .FirstOrDefaultAsync(a => a.Slug == slug && !a.IsDeleted);
+        if (existing is not null) return;
+
+        var perms = catalog
+            .Select(c => new AppPermission(Guid.NewGuid(), c.Resource, c.Action, Description: null))
+            .ToList();
+        var id = Guid.NewGuid();
+        session.Events.StartStream<App>(id, new Cocoar.Auth.Authorization.Events.AppCreatedEvent(
+            Id: id,
+            Slug: slug,
+            DisplayName: displayName,
+            Description: null,
+            Permissions: perms,
+            IsSystem: false));
+        await session.SaveChangesAsync();
     }
 }

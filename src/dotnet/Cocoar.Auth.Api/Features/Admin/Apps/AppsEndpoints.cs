@@ -78,7 +78,7 @@ public static class AppsEndpoints
                 return Results.Ok(apps.Select(MapToResponse));
             })
             .WithName("V2_App_GetAll")
-            .RequiresPermission("cocoar-auth:app:read");
+            .RequiresPermission("app:read");
 
         appGroup.MapGet("{id}", async (ShortGuid id, IDocumentSession session) =>
             {
@@ -87,7 +87,7 @@ public static class AppsEndpoints
                 return Results.Ok(MapToResponse(app));
             })
             .WithName("V2_App_GetById")
-            .RequiresPermission("cocoar-auth:app:read");
+            .RequiresPermission("app:read");
 
         appGroup.MapPost("", async (CreateAppDto dto, IDocumentSession session) =>
             {
@@ -128,7 +128,7 @@ public static class AppsEndpoints
                 return Results.Ok(MapToResponse(loaded!));
             })
             .WithName("V2_App_Create")
-            .RequiresPermission("cocoar-auth:app:write");
+            .RequiresPermission("app:write");
 
         appGroup.MapPut("{id}", async (ShortGuid id, UpdateAppDto dto, IDocumentSession session) =>
             {
@@ -157,7 +157,7 @@ public static class AppsEndpoints
                 return Results.Ok(MapToResponse(loaded!));
             })
             .WithName("V2_App_Update")
-            .RequiresPermission("cocoar-auth:app:write");
+            .RequiresPermission("app:write");
 
         appGroup.MapDelete("{id}", async (ShortGuid id, IDocumentSession session) =>
             {
@@ -173,7 +173,7 @@ public static class AppsEndpoints
                 return Results.NoContent();
             })
             .WithName("V2_App_Delete")
-            .RequiresPermission("cocoar-auth:app:write");
+            .RequiresPermission("app:write");
 
         // Klick-Aktion: provision a default Resource-Server for an App.
         // Idempotent: if a non-deleted RS with the App's slug as Name
@@ -228,7 +228,7 @@ public static class AppsEndpoints
                 });
             })
             .WithName("V2_App_CreateDefaultResourceServer")
-            .RequiresPermission("cocoar-auth:app:write");
+            .RequiresPermission("app:write");
 
         return application;
     }

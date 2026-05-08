@@ -57,7 +57,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
             acronym: "TU",
             email: "test@test.com",
             password: DefaultPassword,
-            permissions: ["realm:admin"]);
+            isRealmAdmin: true);
 
         // Create authenticated client via cookie auth (same as production)
         Client = await CreateAuthenticatedClientAsync("tu", DefaultPassword);

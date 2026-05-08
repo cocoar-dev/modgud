@@ -4,25 +4,29 @@ import { useAuthStore } from '@/stores/auth.store'
 /**
  * Resource permissions that gate any admin-area sidebar item. Mirrors the list
  * in `views/admin/AdminView.vue`. If the user holds any of these (directly or
- * via the `realm:admin` / `<app>:admin` / `<app>:<resource>:admin` bypasses
- * implemented in `authStore.hasPermission`), they get the admin face of the
- * dashboard.
+ * via the `realm:admin` / `<resource>:admin` bypasses implemented in
+ * `authStore.hasPermission`), they get the admin face of the dashboard.
  *
  * Kept in one place so the dashboard and the sidebar can't drift apart: when
  * a new admin resource is added, both pick it up by editing this list.
+ *
+ * Strings are bare 2-segment `<resource>:<action>` form — the App context
+ * (cocoar-auth, with control-plane realm:read mixed in) is implicit.
+ * `authStore.hasPermission` evaluates against the cocoar-auth grant set
+ * by default and falls through to realm:admin for everything.
  */
 export const ADMIN_PERMISSIONS: readonly string[] = [
-  'cocoar-auth:user:read',
-  'cocoar-auth:permission-role:read',
-  'cocoar-auth:authorization-group:read',
-  'cocoar-auth:login-provider:read',
-  'cocoar-auth:oauth-client:read',
-  'cocoar-auth:oauth-scope:read',
-  'cocoar-auth:oauth-api:read',
-  'cocoar-auth:app:read',
-  'control-plane:realm:read',
-  'cocoar-auth:auth-log:read',
-  'cocoar-auth:user:write',
+  'user:read',
+  'permission-role:read',
+  'authorization-group:read',
+  'login-provider:read',
+  'oauth-client:read',
+  'oauth-scope:read',
+  'oauth-api:read',
+  'app:read',
+  'realm:read',
+  'auth-log:read',
+  'user:write',
   'realm:admin',
 ] as const
 

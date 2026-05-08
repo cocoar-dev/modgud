@@ -46,7 +46,7 @@ public static class LoginProvidersEndpoints
                 }).ToArray();
                 return Results.Ok(items);
             })
-            .RequiresPermission("cocoar-auth:login-provider:read");
+            .RequiresPermission("login-provider:read");
 
         // List all non-deleted providers for the admin grid.
         group.MapGet("",
@@ -61,7 +61,7 @@ public static class LoginProvidersEndpoints
                 var publicUrl = ResolvePublicUrl(conf);
                 return Results.Ok(items.Select(c => ToDto(c, publicUrl)).ToArray());
             })
-            .RequiresPermission("cocoar-auth:login-provider:read");
+            .RequiresPermission("login-provider:read");
 
         // Single provider.
         group.MapGet("{id}",
@@ -75,7 +75,7 @@ public static class LoginProvidersEndpoints
                     ? Results.NotFound()
                     : Results.Ok(ToDto(c, ResolvePublicUrl(conf)));
             })
-            .RequiresPermission("cocoar-auth:login-provider:read");
+            .RequiresPermission("login-provider:read");
 
         // Create via Wolverine command.
         group.MapPost("",
@@ -98,7 +98,7 @@ public static class LoginProvidersEndpoints
                     v => Results.Created($"/api/admin/login-providers/{v.Id:N}", ToDto(v, ResolvePublicUrl(conf))),
                     ErrorResponse);
             })
-            .RequiresPermission("cocoar-auth:login-provider:write");
+            .RequiresPermission("login-provider:write");
 
         // Save full edit form (everything except secret).
         group.MapPut("{id}",
@@ -132,7 +132,7 @@ public static class LoginProvidersEndpoints
                     v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
                     ErrorResponse);
             })
-            .RequiresPermission("cocoar-auth:login-provider:write");
+            .RequiresPermission("login-provider:write");
 
         // Enable / Disable / Delete.
         group.MapPost("{id}/enable",
@@ -146,7 +146,7 @@ public static class LoginProvidersEndpoints
                     v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
                     ErrorResponse);
             })
-            .RequiresPermission("cocoar-auth:login-provider:write");
+            .RequiresPermission("login-provider:write");
 
         group.MapPost("{id}/disable",
             async (ShortGuid id,
@@ -159,7 +159,7 @@ public static class LoginProvidersEndpoints
                     v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
                     ErrorResponse);
             })
-            .RequiresPermission("cocoar-auth:login-provider:write");
+            .RequiresPermission("login-provider:write");
 
         group.MapDelete("{id}",
             async (ShortGuid id,
@@ -169,7 +169,7 @@ public static class LoginProvidersEndpoints
                 var result = await bus.InvokeAsync<ErrorOr<Success>>(new DeleteLoginProviderCommand(id.Guid), ct);
                 return result.Match<IResult>(_ => Results.NoContent(), ErrorResponse);
             })
-            .RequiresPermission("cocoar-auth:login-provider:write");
+            .RequiresPermission("login-provider:write");
 
         // Secret rotation — the only endpoint that accepts a plaintext secret.
         group.MapPost("{id}/secret",
@@ -184,7 +184,7 @@ public static class LoginProvidersEndpoints
                     new RotateLoginProviderSecretCommand(id.Guid, request.Secret, userId), ct);
                 return result.Match<IResult>(_ => Results.NoContent(), ErrorResponse);
             })
-            .RequiresPermission("cocoar-auth:login-provider:write");
+            .RequiresPermission("login-provider:write");
     }
 
     private static string ResolvePublicUrl(IServerConfiguration conf)

@@ -214,14 +214,19 @@ const memberGroupSort = (a: string, b: string) => {
 }
 
 const roleOptions = computed<CoarListboxOption<string>[]>(() =>
-  roleStore.roles.map(r => ({
-    value: r.Id,
-    label: r.Name,
-    subtitle: r.Description || (r.ResourceType ? `Resource: ${r.ResourceType}` : undefined),
-    tooltip: r.Description || undefined,
-    icon: 'shield',
-    group: r.ResourceType || 'other',
-  }))
+  roleStore.roles.map(r => {
+    const subtitle = r.IsRealmAdmin
+      ? 'Realm Admin'
+      : (r.Description || (r.PermissionIds.length === 0 ? 'No grants' : `${r.PermissionIds.length} permission(s)`))
+    return {
+      value: r.Id,
+      label: r.Name,
+      subtitle,
+      tooltip: r.Description || undefined,
+      icon: 'shield',
+      group: r.IsRealmAdmin ? 'realm-admin' : 'app-scoped',
+    }
+  })
 )
 
 onMounted(async () => {

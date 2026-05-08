@@ -20,10 +20,10 @@ const loginProviderStore = useLoginProviderStore()
 // data fetch — mirrors how AdminView's sidebar items work and avoids the bug
 // where a help-desk user (who has user:read + auth-log:read but nothing else)
 // would see the full admin face just because she holds *some* admin perm.
-const canSeeUsers = computed(() => authStore.hasPermission('cocoar-auth:user:read'))
-const canSeeAuthLog = computed(() => authStore.hasPermission('cocoar-auth:auth-log:read'))
-const canSeeChangeRequests = computed(() => authStore.hasPermission('cocoar-auth:user:write'))
-const canSeeLoginProviders = computed(() => authStore.hasPermission('cocoar-auth:login-provider:read'))
+const canSeeUsers = computed(() => authStore.hasPermission('user:read'))
+const canSeeAuthLog = computed(() => authStore.hasPermission('auth-log:read'))
+const canSeeChangeRequests = computed(() => authStore.hasPermission('user:write'))
+const canSeeLoginProviders = computed(() => authStore.hasPermission('login-provider:read'))
 
 const ui = useUI()
 watch(language, () => ui.set((ctx) => {

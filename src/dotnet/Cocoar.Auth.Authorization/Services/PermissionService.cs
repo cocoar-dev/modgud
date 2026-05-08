@@ -1,3 +1,4 @@
+using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Roles;
 using Marten;
@@ -53,26 +54,40 @@ public class PermissionService(IQuerySession session) : IPermissionService
             .Where(r => r.Id.IsOneOf(roleIds) && !r.IsDeleted)
             .ToListAsync(ct);
 
+        // Resolve the requested App once. Roles whose AppId matches contribute
+        // their PermissionIds; everything else is filtered out (apart from
+        // pure-realm-admin roles which always contribute "realm:admin"
+        // regardless of their AppId).
+        var requestedApp = await session.Query<App>()
+            .FirstOrDefaultAsync(a => a.Slug == appSlug && !a.IsDeleted, ct);
+        var requestedAppId = requestedApp?.Id;
+        var requestedCatalog = requestedApp is null
+            ? new Dictionary<Guid, AppPermission>()
+            : requestedApp.Permissions.ToDictionary(p => p.Id);
+
         var permissions = new HashSet<string>();
         foreach (var role in roles)
         {
-            foreach (var action in role.Permissions)
+            if (role.IsRealmAdmin)
             {
-                if (action.Contains(':'))
+                permissions.Add(PermissionEvaluator.RealmAdminPermission);
+            }
+
+            // Catalog-FK grants only contribute when the role belongs to the
+            // requested App. A role bound to App X never leaks permissions
+            // into App Y, even when its parent group is bound to "*".
+            if (role.AppId.HasValue && role.AppId == requestedAppId)
+            {
+                foreach (var permissionId in role.PermissionIds)
                 {
-                    // Fully-qualified permission — passes through unchanged.
-                    // This is the escape hatch for cross-app grants like
-                    // "realm:admin" carried by the system-admin role.
-                    permissions.Add(action);
+                    if (requestedCatalog.TryGetValue(permissionId, out var catalogEntry))
+                    {
+                        permissions.Add(catalogEntry.ToPermissionString());
+                    }
+                    // else: stale FK pointing at a deleted/missing catalog
+                    // entry — silently dropped. The admin UI's catalog editor
+                    // is expected to flag this on edit.
                 }
-                else if (role.AppSlug == appSlug)
-                {
-                    // Bare action only contributes when the role belongs to
-                    // the requested app — its bare action is then expanded to
-                    // "{app}:{resource}:{action}".
-                    permissions.Add($"{role.AppSlug}:{role.ResourceType}:{action}");
-                }
-                // else: bare action in a role belonging to a different app — skipped.
             }
         }
         return permissions.ToList();
@@ -122,13 +137,20 @@ public class PermissionService(IQuerySession session) : IPermissionService
         if (roleIds.Count == 0)
             return [];
 
+        // Resolve target App once so we can filter roles by AppId.
+        var requestedApp = await session.Query<App>()
+            .FirstOrDefaultAsync(a => a.Slug == appSlug && !a.IsDeleted, ct);
+        var requestedAppId = requestedApp?.Id;
+
         var roles = await session.Query<PermissionRole>()
-            .Where(r => r.Id.IsOneOf(roleIds.ToArray())
-                        && r.AppSlug == appSlug
-                        && !r.IsDeleted)
+            .Where(r => r.Id.IsOneOf(roleIds.ToArray()) && !r.IsDeleted)
             .ToListAsync(ct);
 
-        return roles.ToList();
+        // Roles applicable to the requested app: same AppId, OR
+        // realm-admin roles (which travel everywhere).
+        return roles
+            .Where(r => r.IsRealmAdmin || (requestedAppId.HasValue && r.AppId == requestedAppId))
+            .ToList();
     }
 
     public async Task<HashSet<Guid>> GetDescendantGroupIdsAsync(Guid groupId, CancellationToken ct = default)

@@ -21,9 +21,11 @@ public interface IPermissionService
     Task<bool> HasPermissionAsync(Guid userId, string appSlug, string permission, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns every fully-qualified permission string the user holds in
-    /// <paramref name="appSlug"/>, plus any cross-app grants (e.g.
-    /// <c>"realm:admin"</c>) carried verbatim through their roles.
+    /// Returns every permission string the user holds in
+    /// <paramref name="appSlug"/>: bare 2-segment <c>"resource:action"</c>
+    /// strings expanded from the catalog FK references on each role's
+    /// <c>PermissionIds</c>, plus the synthetic <c>"realm:admin"</c> entry
+    /// when any reachable role carries <c>IsRealmAdmin=true</c>.
     /// </summary>
     Task<List<string>> GetUserPermissionsAsync(Guid userId, string appSlug, CancellationToken ct = default);
 
@@ -37,8 +39,9 @@ public interface IPermissionService
 
     /// <summary>
     /// Returns the user's roles applicable to <paramref name="appSlug"/> — only
-    /// roles whose <see cref="PermissionRole.AppSlug"/> matches and whose
-    /// owning group is active in that app.
+    /// roles whose <see cref="PermissionRole.AppId"/> resolves to the requested
+    /// App or whose <see cref="PermissionRole.IsRealmAdmin"/> flag is set, AND
+    /// whose owning group is active in that app.
     /// </summary>
     Task<List<PermissionRole>> GetUserRolesAsync(Guid userId, string appSlug, CancellationToken ct = default);
 

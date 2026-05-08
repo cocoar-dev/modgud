@@ -86,20 +86,22 @@ const connectionColor = computed(() =>
 
 // Permissions that grant access to *any* admin area. Mirrors the resource list
 // in `AdminView.vue` so the top-level "Administration" entry hides cleanly when
-// the user has zero admin permissions. `hasPermission` already short-circuits
-// on `realm:admin` and `<app>:admin`, so we don't need to list those.
+// the user has zero admin permissions. Bare 2-segment form (App context is
+// implicit; cocoar-auth's grants drive everything except `realm:read` which is
+// the control-plane realm-management resource). `hasPermission` short-circuits
+// on `realm:admin` and `<resource>:admin`, so we don't list those.
 const ADMIN_RESOURCE_PERMISSIONS = [
-    'cocoar-auth:user:read',
-    'cocoar-auth:permission-role:read',
-    'cocoar-auth:authorization-group:read',
-    'cocoar-auth:oauth-client:read',
-    'cocoar-auth:oauth-scope:read',
-    'cocoar-auth:oauth-api:read',
-    'cocoar-auth:login-provider:read',
-    'control-plane:realm:read',
-    'cocoar-auth:auth-log:read',
-    'cocoar-auth:session:read',
-    'cocoar-auth:app:read',
+    'user:read',
+    'permission-role:read',
+    'authorization-group:read',
+    'oauth-client:read',
+    'oauth-scope:read',
+    'oauth-api:read',
+    'login-provider:read',
+    'realm:read',
+    'auth-log:read',
+    'session:read',
+    'app:read',
 ] as const
 
 const hasAnyAdminPermission = computed(() =>

@@ -213,11 +213,16 @@ public static class AccountEndpoints
             if (user is null)
                 return Results.Unauthorized();
 
-            // /me reports the current user's permissions in the IDP itself —
-            // the cocoar-auth admin surface (sidebar gating, etc.). External
-            // apps fetch their own scoped permissions via the Phase 2
-            // distribution API.
-            var permissions = await permissionService.GetUserPermissionsAsync(user.Id, AppSlugs.CocoarAuth);
+            // /me reports the current user's permissions in the two Apps the
+            // SPA itself uses for gating: cocoar-auth (admin surface, the
+            // bulk of the UI) and control-plane (cross-realm management when
+            // the SPA is loaded on the Control-Plane host). Both are merged
+            // into a single bare-2-segment list — the SPA's hasPermission
+            // doesn't carry an App context. External apps fetch their own
+            // scoped permissions via the distribution API instead.
+            var cocoarAuthPerms = await permissionService.GetUserPermissionsAsync(user.Id, AppSlugs.CocoarAuth);
+            var controlPlanePerms = await permissionService.GetUserPermissionsAsync(user.Id, AppSlugs.ControlPlane);
+            var permissions = cocoarAuthPerms.Union(controlPlanePerms).ToList();
             var twoFactorMethods = await TwoFactorHelper.GetMethodsAsync(user, session);
             var securityData = await session.LoadAsync<UserSecurityData>(user.Id);
 

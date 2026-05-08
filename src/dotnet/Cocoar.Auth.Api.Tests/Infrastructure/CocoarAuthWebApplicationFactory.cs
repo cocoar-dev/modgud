@@ -143,6 +143,14 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
     /// <summary>
     /// Creates a test user with full Identity support (UserView + ApplicationUser + password).
     /// This user can log in via POST /api/account/login.
+    ///
+    /// <para>The legacy <c>permissions: ["realm:admin"]</c> pattern is replaced
+    /// by the explicit <paramref name="isRealmAdmin"/> flag — pass true to
+    /// attach the user to a System Admin role + Administratoren wildcard-
+    /// bound group so realm-wide permission checks pass. Bare-action grants
+    /// against a specific resource catalog must use
+    /// <see cref="CreateTestRoleAsync"/> + <see cref="CreateTestGroupAsync"/>
+    /// directly.</para>
     /// </summary>
     public async Task<UserView> CreateTestUserWithIdentityAsync(
         string firstname = "Test",
@@ -150,7 +158,7 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         string? acronym = "TU",
         string? email = null,
         string password = "TestPass1234",
-        List<string>? permissions = null)
+        bool isRealmAdmin = false)
     {
         // Step 1: Create UserView via event stream
         var userView = await CreateTestUserAsync(firstname, lastname, acronym, email);
@@ -183,29 +191,32 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
             throw new InvalidOperationException(
                 $"Failed to create test user identity: {string.Join(", ", result.Errors.Select(e => e.Description))}");
 
-        // Step 4: Grant permissions if specified — wrap in a throwaway role + group,
-        // since direct user→permission grants no longer exist in the system.
-        if (permissions is { Count: > 0 })
+        // Step 4: Realm-admin shortcut — wrap the user in a wildcard-bound
+        // group attached to a System Admin role (IsRealmAdmin=true). Direct
+        // user→permission grants don't exist in the model; everything flows
+        // via Group → Role → Permission.
+        if (isRealmAdmin)
         {
             var role = new PermissionRole
             {
                 Id = Guid.CreateVersion7(),
-                Name = $"TestRole_{userView.Id:N}",
-                AppSlug = AppSlugs.CocoarAuth,
-                ResourceType = "app",
-                Permissions = permissions.ToList(),
+                Name = $"TestSystemAdmin_{userView.Id:N}",
+                AppId = null,
+                IsRealmAdmin = true,
+                PermissionIds = [],
             };
             session.Store(role);
             session.Events.StartStream(role.Id,
-                new PermissionRoleCreatedEvent(role.Id, role.Name, null, role.AppSlug, role.ResourceType, role.Permissions));
+                new PermissionRoleCreatedEvent(role.Id, role.Name, null,
+                    role.AppId, role.IsRealmAdmin, role.PermissionIds));
 
             var group = new Group
             {
                 Id = Guid.CreateVersion7(),
-                Name = $"TestGroup_{userView.Id:N}",
+                Name = $"TestAdmins_{userView.Id:N}",
                 MemberIds = [userView.Id],
                 RoleIds = [role.Id],
-                BoundTo = [AppSlugs.CocoarAuth],
+                BoundTo = ["*"],
             };
             session.Store(group);
             session.Events.StartStream(group.Id,
@@ -221,31 +232,67 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
     }
 
     /// <summary>
-    /// Creates a test permission role and returns it.
+    /// Creates a test permission role bound to one App's catalog. Each
+    /// <paramref name="permissions"/> tuple is resolved to an
+    /// <c>AppPermission.Id</c> in the linked App's catalog at write time —
+    /// missing catalog entries throw immediately so test arranges fail fast
+    /// rather than producing a silently-empty role. Pass
+    /// <paramref name="isRealmAdmin"/> to mark the role as the
+    /// realm-admin bypass; in that case <paramref name="appSlug"/> may be
+    /// null and <paramref name="permissions"/> must be empty.
     /// </summary>
     public async Task<PermissionRole> CreateTestRoleAsync(
         string name,
-        string resourceType,
-        List<string> permissions,
+        IReadOnlyList<(string Resource, string Action)>? permissions = null,
         string? description = null,
-        string? appSlug = null)
+        string? appSlug = null,
+        bool isRealmAdmin = false)
     {
+        var perms = permissions ?? [];
+
         using var scope = Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
-        var slug = appSlug ?? AppSlugs.CocoarAuth;
+        Guid? appId = null;
+        var permissionIds = new List<Guid>();
+        if (perms.Count > 0)
+        {
+            var slug = appSlug ?? AppSlugs.CocoarAuth;
+            var app = await session.Query<App>()
+                .FirstOrDefaultAsync(a => a.Slug == slug && !a.IsDeleted, TestContext.Current.CancellationToken)
+                ?? throw new InvalidOperationException(
+                    $"CreateTestRoleAsync: App '{slug}' not found in tenant. Seed it first.");
+            appId = app.Id;
+
+            foreach (var (resource, action) in perms)
+            {
+                var entry = app.Permissions.FirstOrDefault(p => p.Resource == resource && p.Action == action)
+                    ?? throw new InvalidOperationException(
+                        $"CreateTestRoleAsync: '{resource}:{action}' not in App '{slug}' catalog. Add it via AppRealmSeeder or the admin endpoint first.");
+                permissionIds.Add(entry.Id);
+            }
+        }
+        else if (!string.IsNullOrEmpty(appSlug))
+        {
+            // Caller specified an App but no permissions — record the FK
+            // anyway so role queries that filter by AppId still find it.
+            var app = await session.Query<App>()
+                .FirstOrDefaultAsync(a => a.Slug == appSlug && !a.IsDeleted, TestContext.Current.CancellationToken);
+            appId = app?.Id;
+        }
+
         var role = new PermissionRole
         {
             Id = Guid.CreateVersion7(),
             Name = name,
             Description = description,
-            AppSlug = slug,
-            ResourceType = resourceType,
-            Permissions = permissions
+            AppId = appId,
+            IsRealmAdmin = isRealmAdmin,
+            PermissionIds = permissionIds,
         };
         session.Store(role);
         session.Events.StartStream(role.Id,
-            new PermissionRoleCreatedEvent(role.Id, name, description, slug, resourceType, permissions));
+            new PermissionRoleCreatedEvent(role.Id, name, description, role.AppId, role.IsRealmAdmin, role.PermissionIds));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
         return role;
     }
@@ -284,7 +331,10 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
 
     /// <summary>
     /// Resets all Marten data between tests by stopping the async daemon,
-    /// clearing data, and restarting the daemon.
+    /// clearing data, and restarting the daemon. After the wipe, the
+    /// system <see cref="App"/> catalog is re-seeded so tests that build
+    /// roles via <see cref="CreateTestRoleAsync"/> find the cocoar-auth
+    /// catalog they need to FK into.
     /// </summary>
     public async Task ResetMartenDataAsync()
     {
@@ -295,6 +345,15 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         }
 
         await _host.ResetAllMartenDataAsync();
+
+        // Re-seed the system App + Control-Plane App so per-test fresh state
+        // still has the catalog. The boot-time seed in Program.cs runs once
+        // and is wiped by ResetAllMartenDataAsync; running it again here is
+        // idempotent so this stays safe even if the boot seed survives.
+        await Cocoar.Auth.Infrastructure.Authorization.AppRealmSeeder.SeedAsync(
+            Services,
+            tenantId: "system",
+            isControlPlane: true);
     }
 
     /// <summary>

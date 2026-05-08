@@ -26,7 +26,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
     {
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Old", lastname: "Name", acronym: "ON",
-            email: "on@test.com", password: "TestPass1234", permissions: []);
+            email: "on@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("on", "TestPass1234");
 
         var r = await client.PutAsJsonAsync("/api/account/profile/request", new { Firstname = "New" }, TestContext.Current.CancellationToken);
@@ -46,7 +46,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
     {
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Multi", lastname: "Fields", acronym: "MF",
-            email: "mf@test.com", password: "TestPass1234", permissions: []);
+            email: "mf@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("mf", "TestPass1234");
 
         await client.PutAsJsonAsync("/api/account/profile/request", new { Firstname = "M1" }, TestContext.Current.CancellationToken);
@@ -73,7 +73,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
     {
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Email", lastname: "Submit", acronym: "ES",
-            email: "es-old@test.com", password: "TestPass1234", permissions: []);
+            email: "es-old@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("es", "TestPass1234");
 
         var r = await client.PutAsJsonAsync("/api/account/profile/request",
@@ -91,7 +91,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
     {
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Re", lastname: "Token", acronym: "RT",
-            email: "rt-old@test.com", password: "TestPass1234", permissions: []);
+            email: "rt-old@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("rt", "TestPass1234");
 
         await client.PutAsJsonAsync("/api/account/profile/request", new { Email = "first@test.com" }, TestContext.Current.CancellationToken);
@@ -115,7 +115,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
     {
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Apply", lastname: "All", acronym: "AA",
-            email: "aa-old@test.com", password: "TestPass1234", permissions: []);
+            email: "aa-old@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("aa", "TestPass1234");
 
         await client.PutAsJsonAsync("/api/account/profile/request", new
@@ -149,7 +149,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
     {
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Keep", lastname: "Old", acronym: "KO",
-            email: "ko-old@test.com", password: "TestPass1234", permissions: []);
+            email: "ko-old@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("ko", "TestPass1234");
 
         await client.PutAsJsonAsync("/api/account/profile/request",
@@ -179,7 +179,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
     {
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Cancel", lastname: "Me", acronym: "CM",
-            email: "cm@test.com", password: "TestPass1234", permissions: []);
+            email: "cm@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("cm", "TestPass1234");
 
         await client.PutAsJsonAsync("/api/account/profile/request", new { Firstname = "Whatever" }, TestContext.Current.CancellationToken);
@@ -205,7 +205,7 @@ public class ProfileSelfServiceTests : IntegrationTestBase
         // drop Country.
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Deep", lastname: "Merge", acronym: "DM",
-            email: "dm@test.com", password: "TestPass1234", permissions: []);
+            email: "dm@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("dm", "TestPass1234");
 
         await client.PutAsJsonAsync("/api/account/profile/request", new { Firstname = "F1", Lastname = "L1" }, TestContext.Current.CancellationToken);
@@ -221,10 +221,10 @@ public class ProfileSelfServiceTests : IntegrationTestBase
     {
         await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Owner", lastname: "First", acronym: "OF",
-            email: "taken@test.com", password: "TestPass1234", permissions: []);
+            email: "taken@test.com", password: "TestPass1234");
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Other", lastname: "User", acronym: "OU",
-            email: "other@test.com", password: "TestPass1234", permissions: []);
+            email: "other@test.com", password: "TestPass1234");
         var client = await CreateAuthenticatedClientAsync("ou", "TestPass1234");
 
         var r = await client.PutAsJsonAsync("/api/account/profile/request", new { Email = "taken@test.com" }, TestContext.Current.CancellationToken);

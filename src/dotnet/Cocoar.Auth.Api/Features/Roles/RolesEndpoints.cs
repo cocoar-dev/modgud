@@ -7,7 +7,21 @@ using Cocoar.Auth.Authentication.Events;
 
 namespace Cocoar.Auth.Api.Features.Roles;
 
-public record CreateRoleDto(string Name, string? Description, string ResourceType, List<string> Permissions, string? AppSlug = null);
+/// <summary>
+/// Create/Update payload for a <see cref="PermissionRole"/>. <see cref="AppId"/>
+/// is the (ShortGuid) FK into the role's App; null = the role is a pure
+/// realm-admin role and must therefore set <see cref="IsRealmAdmin"/> to
+/// true and leave <see cref="PermissionIds"/> empty. Each
+/// <see cref="PermissionIds"/> entry is an <c>AppPermission.Id</c>
+/// (ShortGuid) FK into <c>App.Permissions</c> of the linked App; the
+/// admin endpoint validates them at write-time.
+/// </summary>
+public record RolePayload(
+    string Name,
+    string? Description,
+    string? AppId,
+    bool IsRealmAdmin,
+    List<string> PermissionIds);
 
 public static class RolesEndpoints
 {
@@ -25,7 +39,7 @@ public static class RolesEndpoints
                     .OrderBy(r => r.Name)
                     .ToListAsync();
 
-                return Results.Ok(roles.Select(r => new { Id = new ShortGuid(r.Id).ToString(), r.Name, r.ResourceType }));
+                return Results.Ok(roles.Select(r => new { Id = new ShortGuid(r.Id).ToString(), r.Name }));
             })
             .WithName("V2_Role_Lookup");
 
@@ -38,64 +52,60 @@ public static class RolesEndpoints
                     .OrderBy(r => r.Name)
                     .ToListAsync();
 
-                return Results.Ok(roles.Select(r => new
-                {
-                    Id = new ShortGuid(r.Id).ToString(),
-                    r.Name,
-                    r.Description,
-                    r.AppSlug,
-                    r.ResourceType,
-                    r.Permissions
-                }));
+                return Results.Ok(roles.Select(MapToResponse));
             })
             .WithName("V2_Role_GetAll")
-            .RequiresPermission("cocoar-auth:permission-role:read");
+            .RequiresPermission("permission-role:read");
 
         roleGroup.MapGet("{id}", async (ShortGuid id, IDocumentSession session) =>
             {
                 var role = await session.LoadAsync<PermissionRole>(id.Guid);
                 if (role is null || role.IsDeleted) return Results.NotFound();
-                return Results.Ok(new { Id = new ShortGuid(role.Id).ToString(), role.Name, role.Description, role.AppSlug, role.ResourceType, role.Permissions });
+                return Results.Ok(MapToResponse(role));
             })
             .WithName("V2_Role_GetById")
-            .RequiresPermission("cocoar-auth:permission-role:read");
+            .RequiresPermission("permission-role:read");
 
-        roleGroup.MapPost("", async (CreateRoleDto dto, IDocumentSession session) =>
+        roleGroup.MapPost("", async (RolePayload dto, IDocumentSession session) =>
             {
-                var role = new PermissionRole
-                {
-                    Id = Guid.NewGuid(),
-                    Name = dto.Name,
-                    Description = dto.Description,
-                    AppSlug = string.IsNullOrEmpty(dto.AppSlug) ? AppSlugs.CocoarAuth : dto.AppSlug,
-                    ResourceType = dto.ResourceType,
-                    Permissions = dto.Permissions
-                };
+                var built = await BuildRoleAsync(dto, session);
+                if (built.Error is not null) return built.Error;
+
+                var role = built.Role;
                 session.Store(role);
                 session.Events.StartStream(role.Id,
-                    new PermissionRoleCreatedEvent(role.Id, role.Name, role.Description, role.AppSlug, role.ResourceType, role.Permissions));
+                    new PermissionRoleCreatedEvent(
+                        role.Id, role.Name, role.Description,
+                        role.AppId, role.IsRealmAdmin, role.PermissionIds));
                 await session.SaveChangesAsync();
-                return Results.Ok(new { Id = new ShortGuid(role.Id).ToString(), role.Name, role.Description, role.AppSlug, role.ResourceType, role.Permissions });
+                return Results.Ok(MapToResponse(role));
             })
             .WithName("V2_Role_Create")
-            .RequiresPermission("cocoar-auth:permission-role:write");
+            .RequiresPermission("permission-role:write");
 
-        roleGroup.MapPut("{id}", async (ShortGuid id, CreateRoleDto dto, IDocumentSession session) =>
+        roleGroup.MapPut("{id}", async (ShortGuid id, RolePayload dto, IDocumentSession session) =>
             {
-                var role = await session.LoadAsync<PermissionRole>(id.Guid);
-                if (role is null || role.IsDeleted) return Results.NotFound();
-                role.Name = dto.Name;
-                role.Description = dto.Description;
-                role.AppSlug = string.IsNullOrEmpty(dto.AppSlug) ? AppSlugs.CocoarAuth : dto.AppSlug;
-                role.ResourceType = dto.ResourceType;
-                role.Permissions = dto.Permissions;
-                session.Store(role);
-                session.Events.Append(id.Guid, new PermissionRoleUpdatedEvent(id.Guid, role.Name, role.Description, role.AppSlug, role.ResourceType, role.Permissions));
+                var existing = await session.LoadAsync<PermissionRole>(id.Guid);
+                if (existing is null || existing.IsDeleted) return Results.NotFound();
+
+                var built = await BuildRoleAsync(dto, session);
+                if (built.Error is not null) return built.Error;
+
+                existing.Name = built.Role.Name;
+                existing.Description = built.Role.Description;
+                existing.AppId = built.Role.AppId;
+                existing.IsRealmAdmin = built.Role.IsRealmAdmin;
+                existing.PermissionIds = built.Role.PermissionIds;
+                session.Store(existing);
+                session.Events.Append(id.Guid,
+                    new PermissionRoleUpdatedEvent(
+                        id.Guid, existing.Name, existing.Description,
+                        existing.AppId, existing.IsRealmAdmin, existing.PermissionIds));
                 await session.SaveChangesAsync();
-                return Results.Ok(new { Id = new ShortGuid(role.Id).ToString(), role.Name, role.Description, role.AppSlug, role.ResourceType, role.Permissions });
+                return Results.Ok(MapToResponse(existing));
             })
             .WithName("V2_Role_Update")
-            .RequiresPermission("cocoar-auth:permission-role:write");
+            .RequiresPermission("permission-role:write");
 
         roleGroup.MapDelete("{id}", async (ShortGuid id, IDocumentSession session) =>
             {
@@ -108,8 +118,117 @@ public static class RolesEndpoints
                 return Results.NoContent();
             })
             .WithName("V2_Role_Delete")
-            .RequiresPermission("cocoar-auth:permission-role:write");
+            .RequiresPermission("permission-role:write");
 
         return application;
+    }
+
+    private static object MapToResponse(PermissionRole r) => new
+    {
+        Id = new ShortGuid(r.Id).ToString(),
+        r.Name,
+        r.Description,
+        AppId = r.AppId is null ? null : new ShortGuid(r.AppId.Value).ToString(),
+        r.IsRealmAdmin,
+        PermissionIds = r.PermissionIds.Select(id => new ShortGuid(id).ToString()).ToList(),
+    };
+
+    /// <summary>
+    /// Validates a payload and produces a <see cref="PermissionRole"/> ready
+    /// to persist (without the Id, which is filled in by the caller). On
+    /// failure returns a 400 result describing the first conflict found.
+    /// </summary>
+    private static async Task<(PermissionRole Role, IResult? Error)> BuildRoleAsync(
+        RolePayload dto, IDocumentSession session)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Name))
+        {
+            return (new PermissionRole(), Results.BadRequest(new
+            {
+                Error = "Role.NameRequired",
+                Message = "Name is required.",
+            }));
+        }
+
+        // Resolve AppId (ShortGuid → Guid). Null payload = pure realm-admin role.
+        Guid? appId = null;
+        App? linkedApp = null;
+        if (!string.IsNullOrEmpty(dto.AppId))
+        {
+            if (!ShortGuid.TryParse(dto.AppId, out Guid parsed))
+            {
+                return (new PermissionRole(), Results.BadRequest(new
+                {
+                    Error = "Role.InvalidAppId",
+                    Message = $"AppId '{dto.AppId}' is not a valid Guid or ShortGuid.",
+                }));
+            }
+            linkedApp = await session.LoadAsync<App>(parsed);
+            if (linkedApp is null || linkedApp.IsDeleted)
+            {
+                return (new PermissionRole(), Results.BadRequest(new
+                {
+                    Error = "Role.AppNotFound",
+                    Message = $"App {dto.AppId} not found.",
+                }));
+            }
+            appId = parsed;
+        }
+
+        // PermissionIds without an App = invalid.
+        if (appId is null && dto.PermissionIds.Count > 0)
+        {
+            return (new PermissionRole(), Results.BadRequest(new
+            {
+                Error = "Role.PermissionIdsRequireAppLink",
+                Message = "PermissionIds cannot be set on a role without an AppId.",
+            }));
+        }
+
+        // Validate each permission id resolves to an entry in the linked App's catalog.
+        var catalogIds = linkedApp?.Permissions.Select(p => p.Id).ToHashSet() ?? new HashSet<Guid>();
+        var permissionIds = new List<Guid>(dto.PermissionIds.Count);
+        var seen = new HashSet<Guid>();
+        foreach (var raw in dto.PermissionIds)
+        {
+            if (!ShortGuid.TryParse(raw, out Guid permId))
+            {
+                return (new PermissionRole(), Results.BadRequest(new
+                {
+                    Error = "Role.InvalidPermissionId",
+                    Message = $"PermissionId '{raw}' is not a valid Guid or ShortGuid.",
+                }));
+            }
+            if (!catalogIds.Contains(permId))
+            {
+                return (new PermissionRole(), Results.BadRequest(new
+                {
+                    Error = "Role.PermissionIdNotInAppCatalog",
+                    Message = $"PermissionId '{raw}' does not exist in App '{linkedApp!.Slug}'s catalog.",
+                }));
+            }
+            if (seen.Add(permId)) permissionIds.Add(permId);
+        }
+
+        // A role with no AppId and no IsRealmAdmin grants nothing. Reject — admins
+        // who type that almost certainly meant something else.
+        if (appId is null && !dto.IsRealmAdmin)
+        {
+            return (new PermissionRole(), Results.BadRequest(new
+            {
+                Error = "Role.GrantsNothing",
+                Message = "Role must either link to an App (AppId + PermissionIds) or set IsRealmAdmin=true.",
+            }));
+        }
+
+        return (new PermissionRole
+        {
+            Id = Guid.NewGuid(),
+            Name = dto.Name,
+            Description = dto.Description,
+            AppId = appId,
+            IsRealmAdmin = dto.IsRealmAdmin,
+            PermissionIds = permissionIds,
+        }, null);
     }
 }

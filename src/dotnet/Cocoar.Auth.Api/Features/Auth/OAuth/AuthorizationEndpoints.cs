@@ -418,10 +418,12 @@ public static class AuthorizationEndpoints
         //   1. Read aud[] from the validated access token.
         //   2. For each audience, resolve OAuthApi → AppId → App.Slug.
         //   3. Compute roles, permissions, and groups for that App.
-        //   4. Strip the "<slug>:" prefix from permissions to make them
-        //      bare 2-segment "<resource>:<action>" strings — the slug is
-        //      already the block's key.
-        //   5. Emit resource_access[<audience>] = { permissions, roles, groups }.
+        //   4. Emit resource_access[<audience>] = { permissions, roles, groups }.
+        //
+        // Permission strings come from PermissionService already in their
+        // bare 2-segment "<resource>:<action>" form (post-Step-4 catalog
+        // refactor) plus the synthetic "realm:admin" entry when the user's
+        // System Admin role applies. No slug-stripping needed.
         //
         // Audience entries that don't map to a registered OAuthApi (e.g.
         // the client_id fallback when no resource= was sent) are silently
@@ -430,11 +432,10 @@ public static class AuthorizationEndpoints
         // resource server.
         //
         // Bypass-tier pre-expansion (e.g. emitting all <resource>:<action>
-        // when the user holds <resource>:admin) is a follow-up — it needs
-        // the App.Permissions catalog refactor to know which actions
-        // exist. Today the strings are emitted as-is, including the
-        // "policy:admin" / "realm:admin" bypass markers; consumers
-        // currently still need an evaluator to apply them.
+        // when the user holds <resource>:admin) is a follow-up. Today the
+        // strings are emitted as-is, including the "<resource>:admin" /
+        // "realm:admin" bypass markers; consumers still need an evaluator
+        // to apply them.
         //
         // Gated on the OIDC `roles` scope: clients that don't ask for it
         // get a pure-identity UserInfo response.
@@ -463,19 +464,9 @@ public static class AuthorizationEndpoints
                                     || g.BoundTo.Contains(appSlug))
                         .ToList();
 
-                    // Strip "<slug>:" prefix from permissions; pass through
-                    // anything else (cross-app / bypass strings like
-                    // "realm:admin").
-                    var prefix = $"{appSlug}:";
-                    var barePermissions = permissionsForApp
-                        .Select(p => p.StartsWith(prefix, StringComparison.Ordinal)
-                            ? p.Substring(prefix.Length)
-                            : p)
-                        .ToArray();
-
                     resourceAccess[audience] = new Dictionary<string, object>(StringComparer.Ordinal)
                     {
-                        ["permissions"] = barePermissions,
+                        ["permissions"] = permissionsForApp.ToArray(),
                         ["roles"] = rolesForApp.Select(r => r.Name).ToArray(),
                         ["groups"] = groupsForApp
                             .Select(g => new Dictionary<string, object>(StringComparer.Ordinal)
@@ -706,9 +697,6 @@ public static class AuthorizationEndpoints
             if (!string.IsNullOrEmpty(user.Firstname)) identity.SetClaim(Claims.GivenName, user.Firstname);
             if (!string.IsNullOrEmpty(user.Lastname)) identity.SetClaim(Claims.FamilyName, user.Lastname);
         }
-
-        // TODO: Inject role/permission claims via the Cocoar.Auth.Authorization
-        // principal directory once the bridge to OpenIddict is implemented.
 
         principal.SetDestinations(GetDestinations);
         return principal;

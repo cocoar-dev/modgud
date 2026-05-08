@@ -317,10 +317,10 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         Guid userId, string roleAppSlug, string resourceType,
         IReadOnlyList<string> actions, IReadOnlyList<string> groupBoundTo)
     {
+        var permissions = actions.Select(a => (resourceType, a)).ToList();
         var role = await Factory.CreateTestRoleAsync(
             name: $"R_{Guid.NewGuid():N}",
-            resourceType: resourceType,
-            permissions: actions.ToList(),
+            permissions: permissions,
             appSlug: roleAppSlug);
         await Factory.CreateTestGroupAsync(
             name: $"G_{Guid.NewGuid():N}",

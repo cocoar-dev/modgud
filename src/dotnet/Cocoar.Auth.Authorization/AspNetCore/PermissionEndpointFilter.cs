@@ -12,13 +12,15 @@ namespace Cocoar.Auth.Authorization.AspNetCore;
 /// Minimal-API endpoint filter that gates execution on the authenticated user
 /// having the specified permission within an app. Usage:
 /// <code>
-/// app.MapGet("/admin/users", ...).RequiresPermission("cocoar-auth:user:read");
+/// app.MapGet("/admin/users", ...).RequiresPermission("user:read");
+/// app.MapPost("/admin/realms", ...).RequiresPermission("realm:write", AppSlugs.ControlPlane);
 /// app.MapDelete("/me", ...).RequiresPermission("realm:admin");
 /// </code>
-/// The <paramref name="permission"/> is fully qualified
-/// (<c>app:resource:action</c>); <see cref="PermissionEvaluator"/> recognises
-/// the standard bypasses (<c>realm:admin</c>, <c>app:admin</c>,
-/// <c>app:resource:admin</c>).
+/// <para>The <paramref name="permission"/> is the bare 2-segment
+/// <c>"&lt;resource&gt;:&lt;action&gt;"</c> form except for the synthetic
+/// <c>"realm:admin"</c> bypass which is recognised regardless of app context.
+/// <see cref="PermissionEvaluator"/> handles both plus the resource-wide
+/// admin bypass (<c>"&lt;resource&gt;:admin"</c>).</para>
 ///
 /// <para>Returns <c>401</c> when the request is anonymous and <c>403</c> when
 /// the caller is authenticated but lacks the permission.</para>
@@ -48,21 +50,23 @@ public class PermissionEndpointFilter(string permission, string appSlug) : IEndp
 public static class PermissionEndpointExtensions
 {
     /// <summary>
-    /// Gates every endpoint in the route group on the given permission. The
-    /// permission is evaluated within <see cref="AppSlugs.CocoarAuth"/> — the
-    /// IDP itself. External apps will use a different code path (Phase 2
-    /// distribution API) that carries their own slug.
+    /// Gates every endpoint in the route group on the given permission within
+    /// <see cref="AppSlugs.CocoarAuth"/> by default. Pass
+    /// <paramref name="appSlug"/> to gate against a different App's grants
+    /// (e.g. <see cref="AppSlugs.ControlPlane"/> for cross-realm endpoints).
+    /// External apps that authenticate via the distribution API run their
+    /// own evaluation client-side — this filter is only for in-process gates.
     /// </summary>
-    public static RouteGroupBuilder RequiresPermission(this RouteGroupBuilder builder, string permission)
+    public static RouteGroupBuilder RequiresPermission(this RouteGroupBuilder builder, string permission, string? appSlug = null)
     {
-        builder.AddEndpointFilter(new PermissionEndpointFilter(permission, AppSlugs.CocoarAuth));
+        builder.AddEndpointFilter(new PermissionEndpointFilter(permission, appSlug ?? AppSlugs.CocoarAuth));
         return builder;
     }
 
-    /// <summary>Per-endpoint variant of <see cref="RequiresPermission(RouteGroupBuilder,string)"/>.</summary>
-    public static RouteHandlerBuilder RequiresPermission(this RouteHandlerBuilder builder, string permission)
+    /// <summary>Per-endpoint variant of <see cref="RequiresPermission(RouteGroupBuilder,string,string?)"/>.</summary>
+    public static RouteHandlerBuilder RequiresPermission(this RouteHandlerBuilder builder, string permission, string? appSlug = null)
     {
-        builder.AddEndpointFilter(new PermissionEndpointFilter(permission, AppSlugs.CocoarAuth));
+        builder.AddEndpointFilter(new PermissionEndpointFilter(permission, appSlug ?? AppSlugs.CocoarAuth));
         return builder;
     }
 }

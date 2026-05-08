@@ -30,7 +30,7 @@ public static class AdminSessionEndpoints
             return result.ToResult();
         })
         .WithName("Admin_Sessions_List")
-        .RequiresPermission("cocoar-auth:session:read");
+        .RequiresPermission("session:read");
 
         // DELETE /api/admin/users/{id}/sessions — force-logout a target user
         group.MapDelete("{id}/sessions", async (
@@ -43,7 +43,7 @@ public static class AdminSessionEndpoints
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
         .WithName("Admin_Sessions_RevokeAll")
-        .RequiresPermission("cocoar-auth:session:write");
+        .RequiresPermission("session:write");
 
         return application;
     }

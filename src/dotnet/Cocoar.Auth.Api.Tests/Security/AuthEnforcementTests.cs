@@ -28,7 +28,7 @@ public class AuthEnforcementTests : IntegrationTestBase
         // Create user without any 2FA
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "No2FA", lastname: "User", acronym: "N2",
-            email: "no2fa@test.com", password: "TestPass1234", permissions: []);
+            email: "no2fa@test.com", password: "TestPass1234");
 
         // Override config to Level 1 for this request
         var response = await CreateUnauthenticatedClient()
@@ -155,7 +155,7 @@ public class AuthEnforcementTests : IntegrationTestBase
     {
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "ML", lastname: "User", acronym: "ML",
-            email: "ml@test.com", password: "TestPass1234", permissions: []);
+            email: "ml@test.com", password: "TestPass1234");
 
         var shortId = new ShortGuid(user.Id).ToString();
         var response = await Client.PostAsync($"/api/admin/users/{shortId}/magic-link", null, TestContext.Current.CancellationToken);
@@ -169,7 +169,7 @@ public class AuthEnforcementTests : IntegrationTestBase
     {
         var nonAdminUser = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Non", lastname: "Admin", acronym: "NA",
-            email: "na@test.com", password: "TestPass1234", permissions: []);
+            email: "na@test.com", password: "TestPass1234");
 
         var nonAdminClient = await CreateAuthenticatedClientAsync("na", "TestPass1234");
         var shortId = new ShortGuid(nonAdminUser.Id).ToString();
