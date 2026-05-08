@@ -78,9 +78,21 @@ public sealed class RealmSigningKeyHandler : IOpenIddictServerHandler<GenerateTo
         // accept JWTs whose iss matches realm A's URL. The stock pipeline
         // would otherwise stamp the global Options.Issuer onto every token,
         // which would happily round-trip across realms.
-        if (context.SecurityTokenDescriptor is not null && context.BaseUri is not null)
+        //
+        // Updating the principal's Claims.Private.Issuer claim is the
+        // load-bearing step: OpenIddict's AttachTokenMetadata handler runs
+        // after this one and copies that claim onto SecurityTokenDescriptor.Issuer
+        // (overwriting anything we set there directly). We update the
+        // descriptor too as a belt-and-braces guard against future ordering
+        // changes.
+        if (context.BaseUri is not null)
         {
-            context.SecurityTokenDescriptor.Issuer = context.BaseUri.OriginalString.TrimEnd('/');
+            var realmIssuer = context.BaseUri.OriginalString.TrimEnd('/');
+            context.Principal?.SetClaim(OpenIddictConstants.Claims.Private.Issuer, realmIssuer);
+            if (context.SecurityTokenDescriptor is not null)
+            {
+                context.SecurityTokenDescriptor.Issuer = realmIssuer;
+            }
         }
 
         _logger.LogDebug("Auth: signed {TokenType} for realm '{Slug}' with kid '{Kid}', issuer '{Issuer}'",

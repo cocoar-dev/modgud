@@ -18,21 +18,24 @@ namespace Cocoar.Auth.Api.Tests.Authorization;
 
 /// <summary>
 /// End-to-end verification of the per-Audience UserInfo emission introduced
-/// in commit 8d85720. Sets up multiple Apps + OAuthApis + a password-grant
-/// OAuth client, asks for a multi-aud token via RFC 8707 resource= params,
-/// hits /connect/userinfo, and asserts the resource_access shape.
-///
-/// <para>Why password grant? Authorization-code-flow programmatic replay is
-/// possible but heavyweight (browser-redirect simulation). Password grant
-/// goes straight from credentials to token with the same RFC-8707 narrowing
-/// path — that's enough to exercise the UserInfo emission we want to test.</para>
+/// in commit 8d85720. Sets up an App + OAuthApi + an OAuthScope bound to the
+/// API's audience + an authorization-code-flow OAuth client, drives
+/// cookie-login → /connect/authorize → /connect/token with PKCE and an
+/// RFC 8707 <c>resource=</c> indicator, hits /connect/userinfo with the
+/// resulting JWT, and asserts the resource_access shape:
+/// <list type="bullet">
+///   <item>keyed by audience (<c>OAuthApi.Name</c>), not App slug;</item>
+///   <item>permissions are bare 2-segment <c>&lt;resource&gt;:&lt;action&gt;</c>
+///         strings (the App-slug prefix is stripped);</item>
+///   <item>roles + groups for the App are included.</item>
+/// </list>
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
 public class UserInfoPerAudienceTests : IntegrationTestBase
 {
     public UserInfoPerAudienceTests(SharedPostgresFixture fixture) : base(fixture) { }
 
-    [Fact(Skip = "WIP — Setup für RFC-8707-OAuth-Code-Flow benötigt zusätzlich OAuthScope-Provisionierung mit Resource-Bindung. Siehe TODO am Ende der Datei. Test-Skelett (Apps, OAuthApis, OAuth-Client, User-Permissions, Auth-Code-Flow + PKCE) ist gebaut und kompiliert; was noch fehlt ist die OAuthScope→Resource-Binding-Verkabelung. Nächste Iteration: OAuthScope mit Resources=[alphaAudience] anlegen und an Client binden, damit ResourceIndicatorHandler den `resource=`-Parameter akzeptiert.")]
+    [Fact]
     public async Task UserInfo_SingleAud_Emits_PerAudience_ResourceAccess_Block()
     {
         // ── Arrange ──────────────────────────────────────────────────────
@@ -40,8 +43,17 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         // Audience must be a valid absolute URI per RFC 8707 / OpenIddict
         // server validation. Using a https://-style identifier — same shape
         // any real-world RS would advertise in its discovery.
-        const string alphaAudience = "https://alpha-api.local";
+        const string alphaAudience = "https://alpha-api.example.com";
         var alphaApi = await CreateOAuthApiAsync(alphaAudience, appAlpha.Id);
+
+        // OAuthScope bound to alpha-api as a resource. The ResourceIndicatorHandler
+        // only accepts resource= values that are already in principal.GetResources(),
+        // and that set comes from scopeManager.ListResourcesAsync(scopes). Without
+        // a scope advertising alphaAudience, the resource= parameter is rejected
+        // with invalid_target.
+        const string alphaScopeName = "alpha-api";
+        await CreateScopeAsync(name: alphaScopeName, resources: [alphaAudience], appId: appAlpha.Id);
+
         var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
         var clientId = "test-spa-" + Guid.NewGuid().ToString("N");
         const string redirectUri = "http://localhost/test-callback";
@@ -49,7 +61,8 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             clientId: clientId,
             clientSecret: clientSecret,
             redirectUri: redirectUri,
-            appIds: [appAlpha.Id]);
+            appIds: [appAlpha.Id],
+            scopes: ["openid", "roles", alphaScopeName]);
 
         var testUser = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Multi",
@@ -72,7 +85,7 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             username: "ma", password: "TestPass1234",
             clientId: clientId, clientSecret: clientSecret,
             redirectUri: redirectUri,
-            scope: "openid roles",
+            scope: $"openid roles {alphaScopeName}",
             resources: [alphaAudience]);
 
         // ── Act: call /connect/userinfo with the bearer ─────────────────
@@ -208,32 +221,6 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             .Replace('+', '-')
             .Replace('/', '_');
 
-    // ─── TODO für nächste Iteration ──────────────────────────────────────
-    //
-    // Test-Skelett ist gebaut + kompiliert, aber [Skip] gesetzt weil noch
-    // ein Setup-Stück fehlt:
-    //
-    // OAuthScope-Provisionierung mit Resource-Bindung:
-    //   - ResourceIndicatorHandler liest principal.GetResources() und
-    //     verwirft `resource=`-Parameter die nicht drin sind.
-    //   - Resources werden aus Scope→Resource-Mappings befüllt
-    //     (scopeManager.ListResourcesAsync via principal.GetScopes()).
-    //   - Test muss eine OAuthScope anlegen mit Resources = [alphaAudience]
-    //     und sie dem Client zuweisen, plus scope=`<neuer-scope-name>` im
-    //     /authorize-Request mitsenden.
-    //
-    // Lessons learned dieser Session:
-    //   - Password-Grant ist server-seitig deaktiviert (OAuth-2.1-Compliance);
-    //     Auth-Code + PKCE ist der einzige user-bound Pfad.
-    //   - resource= Werte müssen valid absolute URIs sein (RFC-8707-konform).
-    //   - OAuthApi.Name (= aud-Claim) sollte URI-Form haben
-    //     (z.B. "https://alpha-api.local"), nicht bare "alpha-api".
-    //   - Auth-Code-Flow programmatisch funktioniert via:
-    //     cookie-login → /authorize → code aus redirect → /token mit
-    //     code+verifier+resource=.
-    //   - Confidential client + AccessTokenType.Jwt liefert JWT-bearer der
-    //     UserInfo-Endpoint validation passieren sollte.
-
     // ─── Helpers ──────────────────────────────────────────────────────────
 
     private async Task<App> CreateAppAsync(string slug, string displayName, List<string> resources)
@@ -273,7 +260,8 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
     }
 
     private async Task CreateOAuthClientAsync(
-        string clientId, string clientSecret, string redirectUri, List<Guid> appIds)
+        string clientId, string clientSecret, string redirectUri, List<Guid> appIds,
+        List<string> scopes)
     {
         using var scope = Factory.Services.CreateScope();
         var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
@@ -287,7 +275,7 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             DisplayName = clientId,
             RedirectUris = [redirectUri],
             PostLogoutRedirectUris = [],
-            Scopes = ["openid", "roles"],
+            Scopes = scopes,
             AllowedGrantTypes = ["authorization_code", "refresh_token"],
             RequireConsent = false,
             AccessTokenType = AccessTokenType.Jwt,
@@ -298,6 +286,25 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         if (result.IsError)
             throw new InvalidOperationException(
                 $"CreateClientAsync failed: {string.Join(", ", result.Errors.Select(e => $"{e.Code}: {e.Description}"))}");
+    }
+
+    private async Task CreateScopeAsync(string name, List<string> resources, Guid? appId)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
+
+        var dto = new CreateOAuthScopeDto
+        {
+            Name = name,
+            DisplayName = name,
+            Resources = resources,
+            AppId = appId is null ? null : new BuildingBlocks.Helper.ShortGuid(appId.Value).ToString(),
+        };
+
+        var result = await oauthAdmin.CreateScopeAsync(dto, TestContext.Current.CancellationToken);
+        if (result.IsError)
+            throw new InvalidOperationException(
+                $"CreateScopeAsync failed: {string.Join(", ", result.Errors.Select(e => $"{e.Code}: {e.Description}"))}");
     }
 
     private async Task GrantAsync(

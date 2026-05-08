@@ -144,6 +144,24 @@ public static class OpenIddictExtensions
                 options.RegisterScopes(
                     Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles, Scopes.OfflineAccess);
 
+                // Multi-tenant IdP: audiences (OAuthApi names) live in tenant
+                // databases, so the built-in resource validators would reject
+                // every per-tenant audience.
+                //  - DisableResourceValidation: turns off the global check
+                //    against the static options.Resources list set at startup.
+                //  - IgnoreResourcePermissions: turns off the per-application
+                //    resource-permission check (oi_rsrc_… permission entries),
+                //    which we don't model — clients are linked to Apps, and the
+                //    audience set is determined by the OAuthScopes a client may
+                //    request, not by a flat per-client allow-list.
+                // Our custom ResourceIndicatorHandler runs at sign-in time and
+                // validates each requested resource against principal.GetResources()
+                // (populated from the active tenant's OAuthScope.Resources via
+                // scopeManager.ListResourcesAsync), preserving the per-tenant
+                // gating.
+                options.DisableResourceValidation();
+                options.IgnoreResourcePermissions();
+
                 options.SetIssuer(new Uri(settings.Issuer));
                 options.SetAccessTokenLifetime(TimeSpan.FromMinutes(settings.AccessTokenLifetimeMinutes));
                 options.SetRefreshTokenLifetime(TimeSpan.FromDays(settings.RefreshTokenLifetimeDays));

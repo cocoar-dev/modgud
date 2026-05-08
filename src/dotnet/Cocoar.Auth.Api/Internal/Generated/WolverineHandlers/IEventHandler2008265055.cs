@@ -25,8 +25,6 @@ namespace Internal.Generated.WolverineHandlers
 
         public override async System.Threading.Tasks.Task HandleAsync(Wolverine.Runtime.MessageContext context, System.Threading.CancellationToken cancellation)
         {
-            // Building the Marten session
-            await using var documentSession = _outboxedSessionFactory.OpenSession(context);
             await using var serviceScope = _serviceScopeFactory.CreateAsyncScope();
             
             /*
@@ -36,6 +34,8 @@ namespace Internal.Generated.WolverineHandlers
             * The service registration for Cocoar.JsEval.Engine.JsEngine is an 'opaque' lambda factory with the Scoped lifetime and requires service location
             */
             var autoMembershipRecalculator = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<Cocoar.Auth.Authorization.Membership.IAutoMembershipRecalculator>(serviceScope.ServiceProvider);
+            // Building the Marten session
+            await using var documentSession = _outboxedSessionFactory.OpenSession(context);
             // The actual message body
             var eventOfUserUpdatedEvent = (JasperFx.Events.IEvent<Cocoar.Auth.Domain.Users.Events.UserUpdatedEvent>)context.Envelope.Message;
 
