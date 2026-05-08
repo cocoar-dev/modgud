@@ -19,39 +19,54 @@ namespace Cocoar.Auth.Infrastructure.Authorization;
 public static class AppRealmSeeder
 {
     /// <summary>
-    /// Resources owned by the system app. Realm-internal stuff only — the
-    /// cross-realm `realm:read|write` resource lives on the separate
-    /// <see cref="AppSlugs.ControlPlane"/> app, seeded only into the
-    /// Control-Plane realm's tenant DB.
+    /// Permission catalog for the system app. Each tuple is
+    /// (<c>resource</c>, <c>action[]</c>) and expands to one
+    /// <see cref="AppPermission"/> per action. These are the permissions the
+    /// IAM admin surface gates on (see <c>RequiresPermission(...)</c> calls
+    /// in the admin endpoints) — adding a new gate without a matching catalog
+    /// entry means the permission is unreachable through the role-grant UI.
     /// </summary>
-    private static readonly string[] CocoarAuthResources =
+    private static readonly (string Resource, string[] Actions)[] CocoarAuthCatalog =
     [
-        "app",
-        "user",
-        "role",
-        "authorization-group",
-        "permission-role",
-        "session",
-        "auth-log",
-        "gdpr",
-        "oauth",
-        "oauth-client",
-        "oauth-scope",
-        "oauth-api",
-        "login-provider",
+        // Apps themselves — the realm-admin surface for registering and
+        // editing Application records (one per Cocoar SaaS app onboarded
+        // into this realm). The system app cocoar-auth is seeded
+        // automatically and cannot be deleted.
+        ("app", ["admin", "read", "write"]),
+
+        // Identity / directory
+        ("user", ["read", "write"]),
+        ("role", ["read", "write"]),
+        ("authorization-group", ["read", "write"]),
+        ("permission-role", ["read", "write"]),
+
+        // Sessions + audit
+        ("session", ["read", "write"]),
+        ("auth-log", ["read"]),
+
+        // GDPR (permanent-erase only — self-service is implicit on the caller)
+        ("gdpr", ["admin"]),
+
+        // OAuth admin surface
+        ("oauth", ["admin"]),
+        ("oauth-client", ["read", "write"]),
+        ("oauth-scope", ["read", "write"]),
+        ("oauth-api", ["read", "write"]),
+
+        // Login providers (the configurable buttons on the login page)
+        ("login-provider", ["admin", "read", "write"]),
     ];
 
     /// <summary>
-    /// Resources owned by the Control-Plane app. ONLY seeded into the
+    /// Permission catalog for the Control-Plane app. ONLY seeded into the
     /// Control-Plane realm's tenant DB (see <see cref="SeedAsync"/>'s
-    /// <paramref name="isControlPlane"/> arg). Tenant realms don't get
-    /// the App registration, so a permission like
-    /// <c>control-plane:realm:write</c> is unreachable from a tenant
-    /// even before the routing-gate fires.
+    /// <paramref name="isControlPlane"/> arg). Tenant realms don't get the
+    /// App registration, so a permission like <c>realm:write</c> is
+    /// unreachable from a tenant even before the routing-gate fires.
     /// </summary>
-    private static readonly string[] ControlPlaneResources =
+    private static readonly (string Resource, string[] Actions)[] ControlPlaneCatalog =
     [
-        "realm",
+        ("realm", ["read", "write"]),
     ];
 
     public static async Task SeedAsync(
@@ -69,7 +84,7 @@ public static class AppRealmSeeder
             slug: AppSlugs.CocoarAuth,
             displayName: "Cocoar.Auth",
             description: "Identity provider — the system app. Owns realm-internal resources (users, sessions, OAuth, …).",
-            resources: CocoarAuthResources,
+            catalog: CocoarAuthCatalog,
             logger: logger,
             tenantId: tenantId,
             ct: ct);
@@ -81,7 +96,7 @@ public static class AppRealmSeeder
                 slug: AppSlugs.ControlPlane,
                 displayName: "Control Plane",
                 description: "Cross-realm administration surface. Hosts realm-management resources; mounted only on the Control-Plane hostname.",
-                resources: ControlPlaneResources,
+                catalog: ControlPlaneCatalog,
                 logger: logger,
                 tenantId: tenantId,
                 ct: ct);
@@ -95,7 +110,7 @@ public static class AppRealmSeeder
         string slug,
         string displayName,
         string description,
-        string[] resources,
+        (string Resource, string[] Actions)[] catalog,
         ILogger? logger,
         string tenantId,
         CancellationToken ct)
@@ -104,19 +119,24 @@ public static class AppRealmSeeder
             .FirstOrDefaultAsync(a => a.Slug == slug && !a.IsDeleted, ct);
         if (existing is not null) return;
 
+        var permissions = catalog
+            .SelectMany(entry => entry.Actions.Select(action =>
+                new AppPermission(Guid.NewGuid(), entry.Resource, action, Description: null)))
+            .ToList();
+
         var id = Guid.NewGuid();
         var created = new AppCreatedEvent(
             Id: id,
             Slug: slug,
             DisplayName: displayName,
             Description: description,
-            Resources: [.. resources],
+            Permissions: permissions,
             IsSystem: true);
 
         session.Events.StartStream<App>(id, created);
 
         logger?.LogInformation(
-            "Seeded system app '{Slug}' for tenant '{TenantId}'",
-            slug, tenantId);
+            "Seeded system app '{Slug}' for tenant '{TenantId}' with {PermissionCount} permission(s)",
+            slug, tenantId, permissions.Count);
     }
 }

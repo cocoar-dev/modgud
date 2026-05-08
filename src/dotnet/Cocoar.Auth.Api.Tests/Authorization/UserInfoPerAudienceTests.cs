@@ -39,7 +39,8 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
     public async Task UserInfo_SingleAud_Emits_PerAudience_ResourceAccess_Block()
     {
         // ── Arrange ──────────────────────────────────────────────────────
-        var appAlpha = await CreateAppAsync("app-alpha", "App Alpha", resources: ["policy"]);
+        var appAlpha = await CreateAppAsync("app-alpha", "App Alpha",
+            permissions: [("policy", "read"), ("policy", "write"), ("policy", "admin")]);
         // Audience must be a valid absolute URI per RFC 8707 / OpenIddict
         // server validation. Using a https://-style identifier — same shape
         // any real-world RS would advertise in its discovery.
@@ -223,18 +224,23 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
 
     // ─── Helpers ──────────────────────────────────────────────────────────
 
-    private async Task<App> CreateAppAsync(string slug, string displayName, List<string> resources)
+    private async Task<App> CreateAppAsync(
+        string slug, string displayName,
+        IReadOnlyList<(string Resource, string Action)> permissions)
     {
         using var scope = Factory.Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
         var id = Guid.NewGuid();
+        var perms = permissions
+            .Select(p => new AppPermission(Guid.NewGuid(), p.Resource, p.Action, Description: null))
+            .ToList();
         session.Events.StartStream<App>(id, new AppCreatedEvent(
             Id: id,
             Slug: slug,
             DisplayName: displayName,
             Description: null,
-            Resources: resources,
+            Permissions: perms,
             IsSystem: false));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 

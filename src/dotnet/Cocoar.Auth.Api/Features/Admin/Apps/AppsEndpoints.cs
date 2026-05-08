@@ -9,25 +9,37 @@ using Marten;
 
 namespace Cocoar.Auth.Api.Features.Admin.Apps;
 
+/// <summary>
+/// Permission entry on the create / update payload. The id is optional on
+/// create (server generates one when omitted) and required on update for
+/// entries that should keep their stable identity. New entries on update
+/// (id == null) get a fresh id; entries present in the projected catalog
+/// but missing from the payload are removed.
+/// </summary>
+public record AppPermissionDto(
+    string? Id,
+    string Resource,
+    string Action,
+    string? Description);
+
 public record CreateAppDto(
     string Slug,
     string DisplayName,
     string? Description,
-    List<string> Resources);
+    List<AppPermissionDto> Permissions);
 
 public record UpdateAppDto(
     string DisplayName,
     string? Description,
-    List<string> Resources);
+    List<AppPermissionDto> Permissions);
 
 /// <summary>
 /// Admin surface for managing <see cref="App"/> records — the per-realm list
 /// of registered Cocoar SaaS apps. The system app
 /// (<see cref="AppSlugs.CocoarAuth"/>) is seeded automatically by
 /// <c>AppRealmSeeder</c>, cannot be created through this API and cannot be
-/// deleted; it can only have its display name / description / resources
-/// edited (resources still map to <c>ResourceRegistry</c> registrations
-/// hardcoded in <c>DependencyInjection</c>, so add new resources cautiously).
+/// deleted; it can have its display name / description / permission catalog
+/// edited.
 /// </summary>
 public static class AppsEndpoints
 {
@@ -98,10 +110,8 @@ public static class AppsEndpoints
                     return Results.Conflict(new { Error = "App.DuplicateSlug",
                         Message = $"An app with slug '{dto.Slug}' already exists." });
 
-                var resources = (dto.Resources ?? [])
-                    .Where(r => !string.IsNullOrWhiteSpace(r))
-                    .Distinct(StringComparer.Ordinal)
-                    .ToList();
+                var permissionsResult = NormalizePermissions(dto.Permissions, existingByKey: null);
+                if (permissionsResult.Error is not null) return permissionsResult.Error;
 
                 var id = Guid.NewGuid();
                 var created = new AppCreatedEvent(
@@ -109,7 +119,7 @@ public static class AppsEndpoints
                     Slug: dto.Slug,
                     DisplayName: dto.DisplayName,
                     Description: dto.Description,
-                    Resources: resources,
+                    Permissions: permissionsResult.Permissions,
                     IsSystem: false);
                 session.Events.StartStream<App>(id, created);
                 await session.SaveChangesAsync();
@@ -129,16 +139,18 @@ public static class AppsEndpoints
                     return Results.BadRequest(new { Error = "App.DisplayNameRequired",
                         Message = "DisplayName is required." });
 
-                var resources = (dto.Resources ?? [])
-                    .Where(r => !string.IsNullOrWhiteSpace(r))
-                    .Distinct(StringComparer.Ordinal)
-                    .ToList();
+                // Existing-permission lookup by id keeps stable identities
+                // across updates: an entry already present in the payload by
+                // id retains it, an entry without an id gets a fresh one.
+                var existingByKey = app.Permissions.ToDictionary(p => p.Id, p => p);
+                var permissionsResult = NormalizePermissions(dto.Permissions, existingByKey);
+                if (permissionsResult.Error is not null) return permissionsResult.Error;
 
                 session.Events.Append(id.Guid, new AppUpdatedEvent(
                     id.Guid,
                     dto.DisplayName,
                     dto.Description,
-                    resources));
+                    permissionsResult.Permissions));
                 await session.SaveChangesAsync();
 
                 var loaded = await session.LoadAsync<App>(id.Guid);
@@ -227,7 +239,84 @@ public static class AppsEndpoints
         a.Slug,
         a.DisplayName,
         a.Description,
-        a.Resources,
+        Permissions = a.Permissions
+            .Select(p => new
+            {
+                Id = new ShortGuid(p.Id).ToString(),
+                p.Resource,
+                p.Action,
+                p.Description,
+            })
+            .ToList(),
         a.IsSystem,
     };
+
+    /// <summary>
+    /// Validates and normalises the permission list off a create / update
+    /// payload: parses incoming ids (ShortGuid → Guid, generating a fresh
+    /// one when absent or unknown), dedupes by (Resource, Action), enforces
+    /// the segment grammar, and returns either a clean list ready to embed
+    /// in an event or an HTTP 400 with the first offending entry.
+    /// </summary>
+    private static (List<AppPermission> Permissions, IResult? Error) NormalizePermissions(
+        List<AppPermissionDto>? payload,
+        IReadOnlyDictionary<Guid, AppPermission>? existingByKey)
+    {
+        var input = payload ?? [];
+        var normalised = new List<AppPermission>(input.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var entry in input)
+        {
+            var resource = entry.Resource?.Trim() ?? string.Empty;
+            var action = entry.Action?.Trim() ?? string.Empty;
+
+            if (!AppPermissionRules.IsValidSegment(resource) ||
+                !AppPermissionRules.IsValidSegment(action))
+            {
+                return (normalised, Results.BadRequest(new
+                {
+                    Error = "App.InvalidPermissionSegment",
+                    Message = $"Permission '{resource}:{action}' is invalid — both segments must match ^[a-z0-9-]+$.",
+                }));
+            }
+
+            var key = $"{resource}:{action}";
+            if (!seen.Add(key))
+            {
+                // Silently drop exact duplicates — admin UIs may submit a
+                // fresh row alongside the existing one when toggling.
+                continue;
+            }
+
+            // Resolve identity: explicit id wins (when it parses + matches an
+            // entry in existingByKey, that's the rename path); otherwise mint
+            // a new one.
+            Guid id = Guid.NewGuid();
+            if (!string.IsNullOrEmpty(entry.Id) && ShortGuid.TryParse(entry.Id, out Guid parsed))
+            {
+                if (existingByKey is not null && existingByKey.ContainsKey(parsed))
+                {
+                    id = parsed;
+                }
+                else
+                {
+                    // Caller submitted an id we don't recognise. Keep their
+                    // value rather than minting a new one — this lets a
+                    // detached client hold on to a generated id and replay
+                    // the payload without the server treating it as a fresh
+                    // entity.
+                    id = parsed;
+                }
+            }
+
+            var description = string.IsNullOrWhiteSpace(entry.Description)
+                ? null
+                : entry.Description.Trim();
+
+            normalised.Add(new AppPermission(id, resource, action, description));
+        }
+
+        return (normalised, null);
+    }
 }

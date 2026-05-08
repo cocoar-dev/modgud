@@ -4,7 +4,11 @@ import { CoarTextInput, CoarFormField, CoarNote, CoarTag, CoarButton } from '@co
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
-import type { ApplicationDto } from '@/models/application'
+import type {
+  ApplicationDto,
+  ApplicationPermissionDto,
+  ApplicationPermissionInputDto,
+} from '@/models/application'
 
 const { t } = useI18n()
 
@@ -30,11 +34,17 @@ interface FormState {
   Slug: string
   DisplayName: string
   Description: string
-  Resources: string  // newline-separated in the textarea
+  /**
+   * Permission catalog as text. One line per entry:
+   *   resource:action            optional description follows after a #
+   *   user:read   # read users
+   * Format must match `^[a-z0-9-]+:[a-z0-9-]+$` — validated server-side.
+   */
+  PermissionsText: string
 }
 
 function emptyForm(): FormState {
-  return { Slug: '', DisplayName: '', Description: '', Resources: '' }
+  return { Slug: '', DisplayName: '', Description: '', PermissionsText: '' }
 }
 
 const form = ref<FormState>(emptyForm())
@@ -45,12 +55,52 @@ function fromDto(d: ApplicationDto): FormState {
     Slug: d.Slug,
     DisplayName: d.DisplayName,
     Description: d.Description ?? '',
-    Resources: (d.Resources ?? []).join('\n'),
+    PermissionsText: (d.Permissions ?? [])
+      .map((p) => p.Description ? `${p.Resource}:${p.Action}  # ${p.Description}` : `${p.Resource}:${p.Action}`)
+      .join('\n'),
   }
 }
 
-function splitLines(input: string): string[] {
-  return input.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean)
+interface ParsedPermission {
+  resource: string
+  action: string
+  description: string | null
+}
+
+function parsePermissionsText(input: string): ParsedPermission[] {
+  const result: ParsedPermission[] = []
+  for (const raw of input.split(/[\r\n]+/)) {
+    const line = raw.trim()
+    if (!line) continue
+    const hashIndex = line.indexOf('#')
+    const head = (hashIndex >= 0 ? line.slice(0, hashIndex) : line).trim()
+    const description = hashIndex >= 0 ? line.slice(hashIndex + 1).trim() : ''
+    const colonIndex = head.indexOf(':')
+    if (colonIndex < 0) continue
+    const resource = head.slice(0, colonIndex).trim()
+    const action = head.slice(colonIndex + 1).trim()
+    if (!resource || !action) continue
+    result.push({ resource, action, description: description || null })
+  }
+  return result
+}
+
+/**
+ * Build the payload for create/update — preserves existing ids when a
+ * resource:action pair already exists in the loaded DTO so role-grants
+ * and OAuthApi subsets keep their FK targets.
+ */
+function buildPermissionsPayload(text: string, existing: ApplicationPermissionDto[] | null): ApplicationPermissionInputDto[] {
+  const idLookup = new Map<string, string>()
+  for (const p of existing ?? []) {
+    idLookup.set(`${p.Resource}:${p.Action}`, p.Id)
+  }
+  return parsePermissionsText(text).map((p) => ({
+    Id: idLookup.get(`${p.resource}:${p.action}`) ?? null,
+    Resource: p.resource,
+    Action: p.action,
+    Description: p.description,
+  }))
 }
 
 const isSystem = computed(() => dto.value?.IsSystem === true)
@@ -97,13 +147,13 @@ async function save() {
         Slug: form.value.Slug.trim(),
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
-        Resources: splitLines(form.value.Resources),
+        Permissions: buildPermissionsPayload(form.value.PermissionsText, null),
       })
     } else {
       await store.update(id.value, {
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
-        Resources: splitLines(form.value.Resources),
+        Permissions: buildPermissionsPayload(form.value.PermissionsText, dto.value?.Permissions ?? null),
       })
     }
     props.close()
@@ -144,7 +194,7 @@ async function provisionDefaultResourceServer() {
         {{ t('admin.apps.createHint', {}, 'Eine neue App registriert sich für Permission-Resolution. Slug ist nach dem Erstellen unveränderbar — er prefixiert alle Permission-Strings dieser App.') }}
       </CoarNote>
       <CoarNote v-else-if="isSystem" variant="warning">
-        {{ t('admin.apps.systemHint', {}, 'Dies ist die System-App (cocoar-auth). Sie kann nicht gelöscht oder umbenannt werden; Resources nur mit Bedacht ändern — die hier registrierten Resources müssen mit ResourceRegistry im Backend konsistent bleiben.') }}
+        {{ t('admin.apps.systemHint', {}, 'Dies ist die System-App (cocoar-auth). Sie kann nicht gelöscht oder umbenannt werden; den Permission-Catalog nur mit Bedacht ändern — die Einträge müssen mit den RequiresPermission-Aufrufen im Backend konsistent bleiben, sonst werden Endpunkte unerreichbar oder Rollen verlieren ihre Grants.') }}
       </CoarNote>
 
       <div class="grid grid-cols-2 gap-3">
@@ -161,9 +211,9 @@ async function provisionDefaultResourceServer() {
         <CoarTextInput v-model="form.Description" clearable />
       </CoarFormField>
 
-      <CoarFormField :label="t('admin.apps.resources', {}, 'Resources (eine pro Zeile)')">
-        <textarea v-model="form.Resources" rows="6" class="textarea"
-          placeholder="todo&#10;project&#10;tag" />
+      <CoarFormField :label="t('admin.apps.permissions', {}, 'Permission-Catalog (eine pro Zeile, Format resource:action, optional # Beschreibung)')">
+        <textarea v-model="form.PermissionsText" rows="8" class="textarea"
+          placeholder="todo:read&#10;todo:write   # Edit own todos&#10;todo:admin   # Resource-wide bypass&#10;project:read" />
       </CoarFormField>
 
       <div v-if="!isCreate && dto" class="flex items-center gap-2 text-sm text-gray-500">

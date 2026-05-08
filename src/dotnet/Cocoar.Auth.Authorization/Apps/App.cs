@@ -1,9 +1,9 @@
 namespace Cocoar.Auth.Authorization.Apps;
 
 /// <summary>
-/// Logical scope inside a realm. Each <see cref="App"/> owns a set of resources
-/// and is the namespace for permission strings shaped as
-/// <c>{AppSlug}:{Resource}:{Action}</c>.
+/// Logical scope inside a realm. Each <see cref="App"/> owns a permission
+/// catalog (<see cref="Permissions"/>) and is the namespace for permission
+/// strings shaped as <c>{Resource}:{Action}</c>.
 ///
 /// <para>This is a <b>discriminator within the realm</b>, not an isolation
 /// boundary — the realm/tenant split already provides hard isolation via the
@@ -25,7 +25,8 @@ public class App
 
     /// <summary>
     /// Stable, URL-safe identifier (e.g. <c>"cocoar-auth"</c>, <c>"timetodo"</c>).
-    /// Permission strings reference this slug as their first segment.
+    /// Used to disambiguate apps within a realm; never appears as a prefix in
+    /// stored permission strings.
     /// </summary>
     public string Slug { get; set; } = "";
 
@@ -33,11 +34,13 @@ public class App
     public string? Description { get; set; }
 
     /// <summary>
-    /// Resources this app defines (e.g. <c>["todo", "project"]</c>). Permissions
-    /// are validated against the (slug, resource) pair in the
-    /// <c>ResourceRegistry</c>.
+    /// The app's permission catalog — the single source of truth for what
+    /// permissions exist within this app. What is not in the list does not
+    /// exist. Each entry has a stable <see cref="AppPermission.Id"/> so
+    /// downstream references (Role grants, OAuthApi subsets) survive
+    /// resource / action renames.
     /// </summary>
-    public List<string> Resources { get; set; } = [];
+    public List<AppPermission> Permissions { get; set; } = [];
 
     /// <summary>
     /// System apps (currently only <c>cocoar-auth</c>) cannot be deleted. The

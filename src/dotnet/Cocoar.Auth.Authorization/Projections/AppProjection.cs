@@ -17,7 +17,7 @@ public class AppProjection : SingleStreamProjection<App, Guid>
         Slug = @event.Slug,
         DisplayName = @event.DisplayName,
         Description = @event.Description,
-        Resources = [.. @event.Resources],
+        Permissions = [.. @event.Permissions],
         IsSystem = @event.IsSystem,
         IsDeleted = false,
     };
@@ -26,7 +26,7 @@ public class AppProjection : SingleStreamProjection<App, Guid>
     {
         current.DisplayName = @event.DisplayName;
         current.Description = @event.Description;
-        current.Resources = [.. @event.Resources];
+        current.Permissions = [.. @event.Permissions];
         return current;
     }
 

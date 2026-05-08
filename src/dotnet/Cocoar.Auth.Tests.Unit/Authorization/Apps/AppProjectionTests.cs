@@ -12,6 +12,9 @@ namespace Cocoar.Auth.Tests.Unit.Authorization.Apps;
 /// </summary>
 public class AppProjectionTests
 {
+    private static AppPermission Perm(string resource, string action) =>
+        new(Guid.NewGuid(), resource, action, Description: null);
+
     private static App NewState(
         string slug = "cocoar-auth",
         bool isSystem = true) =>
@@ -20,7 +23,7 @@ public class AppProjectionTests
             Slug: slug,
             DisplayName: "Cocoar.Auth",
             Description: "Identity provider",
-            Resources: ["user", "session"],
+            Permissions: [Perm("user", "read"), Perm("session", "read")],
             IsSystem: isSystem));
 
     public class Create
@@ -29,36 +32,40 @@ public class AppProjectionTests
         public void Initialises_all_fields_from_event()
         {
             var id = Guid.NewGuid();
+            var todoRead = Perm("todo", "read");
+            var projectRead = Perm("project", "read");
             var state = new AppProjection().Create(new AppCreatedEvent(
                 Id: id,
                 Slug: "timetodo",
                 DisplayName: "TimeToDo",
                 Description: "Task tracker",
-                Resources: ["todo", "project"],
+                Permissions: [todoRead, projectRead],
                 IsSystem: false));
 
             Assert.Equal(id, state.Id);
             Assert.Equal("timetodo", state.Slug);
             Assert.Equal("TimeToDo", state.DisplayName);
             Assert.Equal("Task tracker", state.Description);
-            Assert.Equal(new[] { "todo", "project" }, state.Resources);
+            Assert.Equal(new[] { todoRead, projectRead }, state.Permissions);
             Assert.False(state.IsSystem);
             Assert.False(state.IsDeleted);
         }
 
         [Fact]
-        public void Stores_resources_in_a_mutable_list_copy()
+        public void Stores_permissions_in_a_mutable_list_copy()
         {
-            // Apply* later replaces Resources via [.. event.Resources]; the initial
-            // list MUST also be a copy so mutating the source doesn't poison
-            // cached projection state.
-            var sourceResources = new List<string> { "a", "b" };
+            // Apply* later replaces Permissions via [.. event.Permissions]; the
+            // initial list MUST also be a copy so mutating the source doesn't
+            // poison cached projection state.
+            var a = Perm("a", "read");
+            var b = Perm("b", "read");
+            var sourcePermissions = new List<AppPermission> { a, b };
             var state = new AppProjection().Create(new AppCreatedEvent(
-                Guid.NewGuid(), "app", "App", null, sourceResources, IsSystem: false));
+                Guid.NewGuid(), "app", "App", null, sourcePermissions, IsSystem: false));
 
-            sourceResources[0] = "MUTATED";
+            sourcePermissions[0] = Perm("MUTATED", "read");
 
-            Assert.Equal("a", state.Resources[0]);
+            Assert.Equal(a, state.Permissions[0]);
         }
 
         [Fact]
@@ -83,20 +90,24 @@ public class AppProjectionTests
     public class Apply
     {
         [Fact]
-        public void Updated_event_replaces_displayname_description_and_resources()
+        public void Updated_event_replaces_displayname_description_and_permissions()
         {
             var p = new AppProjection();
             var s = NewState();
+            var newPerms = new List<AppPermission>
+            {
+                Perm("x", "read"), Perm("y", "read"), Perm("z", "read"),
+            };
 
             p.Apply(new AppUpdatedEvent(
                 s.Id,
                 DisplayName: "New Display",
                 Description: "New desc",
-                Resources: ["x", "y", "z"]), s);
+                Permissions: newPerms), s);
 
             Assert.Equal("New Display", s.DisplayName);
             Assert.Equal("New desc", s.Description);
-            Assert.Equal(new[] { "x", "y", "z" }, s.Resources);
+            Assert.Equal(newPerms, s.Permissions);
         }
 
         [Fact]
@@ -120,22 +131,23 @@ public class AppProjectionTests
             var p = new AppProjection();
             var s = NewState();
 
-            p.Apply(new AppUpdatedEvent(s.Id, s.DisplayName, null, s.Resources), s);
+            p.Apply(new AppUpdatedEvent(s.Id, s.DisplayName, null, s.Permissions), s);
 
             Assert.Null(s.Description);
         }
 
         [Fact]
-        public void Updated_event_makes_a_mutable_copy_of_resources()
+        public void Updated_event_makes_a_mutable_copy_of_permissions()
         {
             var p = new AppProjection();
             var s = NewState();
-            var sourceResources = new List<string> { "a", "b" };
+            var a = Perm("a", "read");
+            var sourcePermissions = new List<AppPermission> { a, Perm("b", "read") };
 
-            p.Apply(new AppUpdatedEvent(s.Id, s.DisplayName, s.Description, sourceResources), s);
-            sourceResources[0] = "MUTATED";
+            p.Apply(new AppUpdatedEvent(s.Id, s.DisplayName, s.Description, sourcePermissions), s);
+            sourcePermissions[0] = Perm("MUTATED", "read");
 
-            Assert.Equal("a", s.Resources[0]);
+            Assert.Equal(a, s.Permissions[0]);
         }
 
         [Fact]
@@ -159,14 +171,16 @@ public class AppProjectionTests
             var p = new AppProjection();
 
             var s = p.Create(new AppCreatedEvent(
-                id, "timetodo", "TimeToDo", "old desc", ["todo"], IsSystem: false));
-            p.Apply(new AppUpdatedEvent(id, "TimeToDo (renamed)", "new desc", ["todo", "project"]), s);
+                id, "timetodo", "TimeToDo", "old desc",
+                [Perm("todo", "read")], IsSystem: false));
+            p.Apply(new AppUpdatedEvent(id, "TimeToDo (renamed)", "new desc",
+                [Perm("todo", "read"), Perm("project", "read")]), s);
 
             Assert.Equal(id, s.Id);
             Assert.Equal("timetodo", s.Slug);
             Assert.Equal("TimeToDo (renamed)", s.DisplayName);
             Assert.Equal("new desc", s.Description);
-            Assert.Equal(2, s.Resources.Count);
+            Assert.Equal(2, s.Permissions.Count);
             Assert.False(s.IsSystem);
             Assert.False(s.IsDeleted);
         }
@@ -178,14 +192,16 @@ public class AppProjectionTests
             var p = new AppProjection();
 
             var s = p.Create(new AppCreatedEvent(
-                id, "timetodo", "TimeToDo", null, ["todo"], IsSystem: false));
-            p.Apply(new AppUpdatedEvent(id, "TimeToDo!", null, ["todo", "project"]), s);
+                id, "timetodo", "TimeToDo", null,
+                [Perm("todo", "read")], IsSystem: false));
+            p.Apply(new AppUpdatedEvent(id, "TimeToDo!", null,
+                [Perm("todo", "read"), Perm("project", "read")]), s);
             p.Apply(new AppDeletedEvent(id), s);
 
             Assert.True(s.IsDeleted);
             // Updates before delete are still visible — soft-delete preserves history.
             Assert.Equal("TimeToDo!", s.DisplayName);
-            Assert.Equal(2, s.Resources.Count);
+            Assert.Equal(2, s.Permissions.Count);
         }
     }
 }

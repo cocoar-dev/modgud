@@ -1,3 +1,5 @@
+using Cocoar.Auth.Authorization.Apps;
+
 namespace Cocoar.Auth.Authorization.Events;
 
 public record AppCreatedEvent(
@@ -5,13 +7,13 @@ public record AppCreatedEvent(
     string Slug,
     string DisplayName,
     string? Description,
-    List<string> Resources,
+    List<AppPermission> Permissions,
     bool IsSystem);
 
 public record AppUpdatedEvent(
     Guid Id,
     string DisplayName,
     string? Description,
-    List<string> Resources);
+    List<AppPermission> Permissions);
 
 public record AppDeletedEvent(Guid Id);

@@ -57,8 +57,10 @@ const builder = CoarGridBuilder.create<ApplicationDto>()
     (col) => col.field('Slug').header('Slug', 'admin.apps.slug').width(180),
     (col) => col.field('DisplayName').header('Display Name', 'admin.apps.displayName').flex(1).minWidth(180),
     (col) => col.field('Description').header('Description', 'common.description').flex(2),
-    (col) => col.field('Resources').header('Resources', 'admin.apps.resources').flex(2)
-      .option('valueGetter', (p: any) => (p.data?.Resources ?? []).join(', ')),
+    (col) => col.field('Permissions').header('Permissions', 'admin.apps.permissions').flex(2)
+      .option('valueGetter', (p: any) => (p.data?.Permissions ?? [])
+        .map((perm: any) => `${perm.Resource}:${perm.Action}`)
+        .join(', ')),
     (col) => col.field('IsSystem').header('System', 'admin.apps.isSystem').width(100)
       .option('valueGetter', (p: any) => p.data?.IsSystem
         ? t('common.yes', {}, 'Ja')
