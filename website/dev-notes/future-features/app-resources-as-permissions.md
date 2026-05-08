@@ -1,6 +1,52 @@
 # Application as the permission catalog; Resource Server gets a subset
 
-> **Status:** Idea — captured 2026-05-07. Not started.
+> ⚠️ **TEILWEISE SUPERSEDED durch
+> [Permission-Modell (finaler Stand)](./permission-modell)** —
+> 2026-05-08.
+>
+> Diese Note ist die ursprüngliche Design-Exploration. Folgende
+> Entscheidungen sind seitdem **revidiert** (Details in der
+> konsolidierten Note):
+>
+> - ❌ **Permission-Claim im Token** (`resource_access[<slug>].permissions`):
+>   verworfen. Permissions kommen ausschließlich über die
+>   Distribution-API, nie im JWT/UserInfo. Implementation-Outline
+>   Schritt 1+2 unten ist obsolet.
+> - ❌ **3 Bypass-Tiers** (`realm:admin` + `<app>:admin` +
+>   `<app>:<resource>:admin`): reduziert auf **2 Tiers**
+>   (`realm:admin` + `<resource>:admin`). App-wide Bypass
+>   gestrichen.
+> - ❌ **Slug-tagged Permission-Format** (`<app>:<resource>:<action>`):
+>   reduziert auf **2-Segment bare** (`<resource>:<action>`).
+>   Slug ist implicit aus der RS-Konfiguration.
+> - ❌ **Roles in UserInfo** (`resource_access[<slug>].roles`):
+>   verworfen. UserInfo trägt nur Identity (sub/email/name).
+>   Roles+Groups+Permissions kommen alle über Distribution-API.
+> - ❌ **„Workaround until then"-Abschnitt** unten: obsolet, weil
+>   das neue Modell `App.Permissions` als strukturierten Catalog
+>   führt — kein freier-Text-Input mehr.
+>
+> **Was aus dieser Note weiter gilt:**
+>
+> - ✅ **App-as-Catalog**-Grundidee (Abschnitt „The refined model")
+> - ✅ **RS-prefix-free**-Rationale (Abschnitt „Resource-server code
+>   stays prefix-free")
+> - ✅ **ID-anchored Entities**-Begründung (Abschnitt „App.Permissions
+>   as first-class entities")
+> - ✅ **Lifecycle-Regeln** für Rename/Delete/Role-Grants (Abschnitt
+>   „Lifecycle — what referential integrity buys us")
+> - ✅ **Effort-Schätzung** als grobe Hausnummer (~7 Tage)
+>
+> Stale Inhalte unten sind nicht surgisch entfernt — sie bleiben
+> als Designgeschichte stehen, aber Leser sollten **`permission-modell.md`
+> als Single-Source-of-Truth** behandeln.
+>
+> ---
+>
+> **Status der ursprünglichen Note:** Idea — captured 2026-05-07,
+> refined 2026-05-08 with ID-anchored design (string-keyed
+> `List<string>` rejected because RS-subsets and role-grants would
+> drift on rename/delete). Not started.
 > **Why:** While walking a user through OAuth-API setup we hit a
 > conceptual cliff: the IdP's `App.Resources` field stores only the
 > middle segment of a permission (`policy`, `knowledge`, `mcp`),
@@ -136,44 +182,86 @@ the app's own startup code.
 
 ## Proposed redesign
 
-### Rename + reshape the App field
+### App.Permissions as first-class entities
 
 `App.Resources` (today: `List<string>` of bare resource names) is
-renamed and reshaped to `App.Permissions` — `List<string>` of
-full permission strings:
+replaced by `App.Permissions` — a list of **entities with stable
+identity**, not strings:
 
-```
-policy:read
-policy:write
-policy:approve
-knowledge:read
-knowledge:write
-mcp:read
-mcp:write
+```csharp
+public sealed record AppPermission(
+    ShortGuid Id,           // stable, generated at create
+    string Resource,        // "policy"
+    string Action,          // "write"
+    string? Description);
 ```
 
-Or as a structured representation: `List<AppPermission>` where each
-entry is `(Resource: "policy", Action: "read", Description?: "...")`.
-Storage shape is an implementation detail — the user-facing form is
-the explicit permission strings.
+The string form `policy:write` is *derived* from `Resource + Action`
+at token-issue time. It is not stored as a key. The **Id** is the
+anchor for every reference to this permission anywhere in the
+system (RS subsets, role grants, audit log entries, …).
 
 This is **the Application's complete catalog**. Every permission the
-app's gating logic might check goes here. Adding a new gate in code
-is a two-step change: write the gate, add the permission to the
-App's catalog.
+app's gating logic might check exists here as a record. Adding a
+new gate in code is a two-step change: write the gate, add the
+record to the App's catalog.
+
+Why entities, not `List<string>`: with strings, an RS-subset and
+role-grants are frozen copies. Rename `policy:write` →
+`policies:write` on the App and the RS-subset still says
+`policy:write`. With IDs as foreign keys, references survive
+renames automatically.
 
 ### Resource Server picks a subset
 
-Each `OAuthApi` (Resource Server) gains a `Permissions: List<string>`
-field containing a subset of its parent App's `Permissions`.
+Each `OAuthApi` (Resource Server) gains a
+`PermissionIds: List<ShortGuid>` field — foreign keys into its
+parent App's `Permissions`.
 
 - "this Resource Server is responsible for serving these
-  permissions" — declarative.
+  permissions" — declarative, by reference.
 - The admin UI shows the App's catalog as a checklist; the operator
-  ticks the ones this RS handles.
+  ticks the ones this RS handles. Storage is the IDs, not the
+  strings.
 - Two Resource Servers under the same App can have overlapping or
   disjoint subsets — both is valid (overlap = redundant gating
   layer; disjoint = clean surface split).
+- When the App's permission is renamed (`Resource` or `Action`
+  edited), every RS that referenced it follows automatically — the
+  FK is stable, only the displayed string changes.
+
+### Lifecycle — what referential integrity buys us
+
+Three lifecycle rules fall out of the ID-anchored model:
+
+**Role grants reference Permission IDs too.** Today a Role stores
+the permission as a string (e.g. `cocoar-policy:policy:write`). In
+the new model, `RolePermission` is `(AppId, PermissionId)`. A
+rename of the underlying string doesn't strand existing role
+grants. (This is the bigger half of the migration — every existing
+grant string has to resolve to a catalog ID.)
+
+**Delete is blocked when referenced.** Deleting an `AppPermission`
+that any Resource Server or Role still references is rejected with
+a "show usages" panel listing every consumer (which RSes, which
+roles, in which realms). The admin removes the references first,
+then deletes. Cascade-delete was considered and rejected — too
+easy to wipe wide grants with a single misclick.
+
+**Rename is allowed with a warning.** Changing `Resource` or
+`Action` on an existing permission keeps the Id stable, so all
+internal references survive cleanly. But the RS's own code may
+have `RequiresPermission("policy:write")` hardcoded — that string
+is a contract between IdP and RS code. The rename UI surfaces this
+explicitly:
+
+> Renaming `policy:write` → `policies:write` will change the
+> permission string emitted into tokens. Any Resource Server code
+> still referencing the old string will start receiving 403 until
+> redeployed with the new string. Confirm?
+
+Description-only edits (no string segments touched) carry no
+warning — they're free.
 
 ### Where validation kicks in
 
@@ -181,11 +269,14 @@ field containing a subset of its parent App's `Permissions`.
   (filtered by the realm admin's reach — if granting against
   `cocoar-policy`, only that app's permissions show).
 - **Token issuance**: when issuing an access token bound to a
-  specific Resource Server (RFC 8707 audience), only permissions in
-  that RS's assigned subset are eligible to land in the token. A
-  user with `cocoar-policy:knowledge:write` requesting a token for
-  `policy-api` doesn't get that claim through — `policy-api` doesn't
-  serve knowledge writes.
+  specific Resource Server (RFC 8707 audience), the user's granted
+  PermissionIds are intersected with the RS's assigned PermissionId
+  subset; the resulting permissions are rendered to their *current*
+  `<resource>:<action>` strings and emitted into
+  `resource_access[<app-slug>].permissions`. A user with a grant on
+  the knowledge-write permission requesting a token for `policy-api`
+  doesn't get that claim through — the ID isn't in `policy-api`'s
+  subset.
 - **Runtime gate (in the RS itself)**: stays a pure string match
   with bypass shortcuts. The constraints above mean only legitimate
   permissions reach the gate, but the gate doesn't care — it's just
@@ -217,40 +308,37 @@ field containing a subset of its parent App's `Permissions`.
    `knowledge:*`. RFC 8707 stops being just an `aud` label and
    starts gating the actual claim payload.
 
-## Breaking changes
+## Schema shape
 
-- **Schema migration**: existing `App.Resources: List<string>`
-  entries (containing bare names like `app, user, role`) need to
-  expand into full permission strings. Could be done by running a
-  one-time migration that reads the in-process ResourceRegistry
-  for `cocoar-auth` + `control-plane` and rewrites their stored
-  resources accordingly. External apps with bare names get a manual
-  intervention prompt in the admin UI.
-- **`opt.RegisterResource()` API**: stays for `cocoar-auth` itself,
-  marked obsolete for external apps with a hint pointing at the
-  admin UI.
-- **Distribution API extension**: new endpoint
-  `/api/v1/distribution/permissions` that returns the calling RS's
-  declared permission list. cocoar-policy fetches this at startup
-  to populate its own gate-validator (or just hardcodes them in
-  code with a note "must match IdP's App.Resources").
+No data migration: the only running instance is the user's empty
+test deployment. We design the schema fresh.
+
+- **`App.Permissions: List<AppPermission>`** — the catalog, ID-keyed.
+- **`OAuthApi.PermissionIds: List<ShortGuid>`** — FKs into the
+  parent App's catalog.
+- **`RolePermission: (AppId, PermissionId)`** — role grants
+  reference IDs, never strings.
+- **`opt.RegisterResource()` API** stays for `cocoar-auth` itself
+  (it's the IdP — code-time registration is fine), marked obsolete
+  for external apps with a hint pointing at the admin UI.
+- **Distribution API**: new endpoint
+  `/api/v1/distribution/permissions` returning the calling RS's
+  declared permission list (current strings + their stable IDs).
 
 ## Effort estimate
 
-- DB schema + migration: **1 day**
-- Admin UI form changes (Apps + Roles + Permission picker): **2 days**
+- Domain + schema (`AppPermission`, `OAuthApi.PermissionIds`,
+  `RolePermission` keyed to ID — fresh, no migration): **1 day**
+- Admin UI: App catalog editor + Role permission picker (ID-keyed)
+  + RS-subset checklist + delete-block "show usages" view + rename-
+  warning dialog: **3 days**
 - Distribution-API extension: **0.5 day**
 - Update cocoar-auth's own seed to use the new shape: **0.5 day**
 - Cross-app docs + walkthrough updates: **0.5 day**
-- Tests (existing ones probably break, plus new coverage): **1 day**
+- Tests (rename-survives-grant, delete-blocks-on-usage,
+  role-grant-by-id, token-intersection): **1.5 days**
 
-**Total: ~1 week**.
-
-Backwards-compat with bare-name `App.Resources` entries: support
-both formats during transition (entries without `:` are treated as
-"name only, actions implied via registry"; entries with `:` are
-explicit). After the transition, remove the bare-name fallback in
-the next release.
+**Total: ~7 working days**.
 
 ## What this enables that's currently missing
 

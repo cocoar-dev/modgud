@@ -27,19 +27,53 @@ blacklist. The NAT-safe alternative to a naive IP rate-limit
 
 **Status:** Idea captured 2026-05-07. Not started.
 
+### [Permission-Modell (finaler Stand)](./permission-modell)
+
+Konsolidierte deutsche Zusammenfassung aller Designgespräche zum
+zukünftigen Permission-Modell: App-Catalog mit `<resource>:<action>`
+Format, RS-Subset, 2-Tier-Bypass-Modell, UserInfo nur Identity,
+Distribution-API als einziger Authz-Kanal, Lib-Aufgaben + RS-Code-
+Konvention. *Diese Seite ist die autoritative Kurzfassung; die
+beiden folgenden Notes sind das Detailmaterial dahinter.*
+
+**Status:** Designkonsolidierung 2026-05-08. Nicht implementiert.
+
+### [Permission-Modell — Adversarial Review](./permission-modell-adversarial-review)
+
+⚠️ **Pflichtlektüre vor Implementation des Permission-Modells.**
+Vier parallele Reviewer haben das Design gegen Single-Aud-, Multi-
+Aud-, Lib-less- und Edge-Case-Szenarien geprüft und mehrere
+kritische Sicherheits- und Spec-Lücken gefunden — drei davon
+unabhängig von 2-3 Reviewern bestätigt. Findings, Fixes und
+Empfehlungen in dieser Note. Die Hauptnote
+[permission-modell.md](./permission-modell) ist dadurch noch nicht
+implementations-reif.
+
+**Status:** Review 2026-05-08. 3 kritische Findings + 12 wichtige
+Findings + 8 vorgeschlagene empirische Tests.
+
+### [UserInfo Hybrid-Emission für Single-Aud-Fall](./userinfo-hybrid-flat-emission)
+
+Optionale additive Erweiterung des Permission-Modells: bei
+Single-Audience-Tokens UserInfo zusätzlich flach emittieren,
+damit RSes ohne Cocoar-Helper-Lib Roles via Standard-ASP.NET-
+Konfiguration konsumieren können. Geparkt — kein heute
+existierender Konsument, aber jederzeit additiv nachrüstbar.
+
+**Status:** Geparkt 2026-05-08. Nicht blockierend.
+
 ### [Application as permission catalog; Resource Server gets a subset](./app-resources-as-permissions)
 
-The current `App.Resources` field stores resource **names**; the
-*actions* live in app startup code via `opt.RegisterResource()`.
-User refined the design while we walked through it: **App should
-know ALL permissions** (full catalog as `resource:action` strings);
-each **Resource Server gets a subset assigned** ("these are the
-permissions I actually serve"). Token issuance can then filter by
-RS-subset so a `aud=policy-api` token never carries `knowledge:*`
-claims. Single source of truth in IdP DB; opt.RegisterResource()
-becomes a cocoar-auth-only thing.
+⚠️ **Teilweise superseded durch das oben verlinkte
+[Permission-Modell](./permission-modell).** Die App-as-Catalog-
+Grundidee + RS-prefix-free-Rationale + ID-anchored-Entities-
+Begründung gelten weiter. Was revidiert wurde: Token-Claim-
+Emission verworfen (Distribution-API stattdessen), Bypass-Tiers
+auf 2 reduziert, Slug-tagged-Format auf bare reduziert, Roles
+aus UserInfo entfernt. Diese Note bleibt als Designexploration —
+Detail-Banner oben in der Note.
 
-**Status:** Idea captured 2026-05-07. Not started.
+**Status:** Note 2026-05-07, teilweise revidiert 2026-05-08.
 
 ### [DCR for MCP clients](./dcr-for-mcp-clients)
 
