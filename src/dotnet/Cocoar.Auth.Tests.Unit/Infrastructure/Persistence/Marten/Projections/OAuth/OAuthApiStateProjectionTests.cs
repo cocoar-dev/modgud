@@ -138,6 +138,54 @@ public class OAuthApiStateProjectionTests
 
             Assert.True(s.IsDeleted);
         }
+
+        [Fact]
+        public void AppId_change_updates_field()
+        {
+            var p = new OAuthApiStateProjection();
+            var s = NewState();
+            var appId = Guid.NewGuid();
+
+            p.Apply(new OAuthApiAppIdChanged(s.Id, appId), s);
+
+            Assert.Equal(appId, s.AppId);
+        }
+
+        [Fact]
+        public void AppId_null_detaches_link()
+        {
+            var p = new OAuthApiStateProjection();
+            var s = NewState();
+            s.AppId = Guid.NewGuid();
+
+            p.Apply(new OAuthApiAppIdChanged(s.Id, null), s);
+
+            Assert.Null(s.AppId);
+        }
+
+        [Fact]
+        public void PermissionIds_change_replaces_subset()
+        {
+            var p = new OAuthApiStateProjection();
+            var s = NewState();
+            var ids = new[] { Guid.NewGuid(), Guid.NewGuid() };
+
+            p.Apply(new OAuthApiPermissionIdsChanged(s.Id, ids), s);
+
+            Assert.Equal(ids, s.PermissionIds);
+        }
+
+        [Fact]
+        public void PermissionIds_empty_list_clears_subset()
+        {
+            var p = new OAuthApiStateProjection();
+            var s = NewState();
+            s.PermissionIds = [Guid.NewGuid(), Guid.NewGuid()];
+
+            p.Apply(new OAuthApiPermissionIdsChanged(s.Id, Array.Empty<Guid>()), s);
+
+            Assert.Empty(s.PermissionIds);
+        }
     }
 
     public class EventReplay

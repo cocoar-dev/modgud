@@ -21,6 +21,14 @@ public class OAuthApiAggregate
     /// RS without a query parameter.
     /// </summary>
     public Guid? AppId { get; private set; }
+
+    /// <summary>
+    /// Subset of the linked App's permission catalog this RS gates on.
+    /// FKs into <c>App.Permissions[].Id</c>. Empty when the RS hasn't been
+    /// configured with a subset yet, or when no App is linked.
+    /// </summary>
+    public List<Guid> PermissionIds { get; private set; } = new();
+
     public bool IsDeleted { get; private set; }
 
     public OAuthApiAggregate() { }
@@ -42,6 +50,7 @@ public class OAuthApiAggregate
     public OAuthApiUserClaimsChanged SetUserClaims(IReadOnlyList<string> v) { var e = new OAuthApiUserClaimsChanged(Id, v); Apply(e); return e; }
     public OAuthApiPropertiesChanged SetProperties(IReadOnlyDictionary<string, object?> v) { var e = new OAuthApiPropertiesChanged(Id, v); Apply(e); return e; }
     public OAuthApiAppIdChanged SetAppId(Guid? v) { var e = new OAuthApiAppIdChanged(Id, v); Apply(e); return e; }
+    public OAuthApiPermissionIdsChanged SetPermissionIds(IReadOnlyList<Guid> v) { var e = new OAuthApiPermissionIdsChanged(Id, v); Apply(e); return e; }
     public OAuthApiDeleted Delete() { var e = new OAuthApiDeleted(Id); Apply(e); return e; }
 
     public void Apply(OAuthApiCreated e)
@@ -57,5 +66,6 @@ public class OAuthApiAggregate
     public void Apply(OAuthApiUserClaimsChanged e) => UserClaims = e.UserClaims.ToList();
     public void Apply(OAuthApiPropertiesChanged e) => Properties = new Dictionary<string, object?>(e.Properties);
     public void Apply(OAuthApiAppIdChanged e) => AppId = e.AppId;
+    public void Apply(OAuthApiPermissionIdsChanged e) => PermissionIds = e.PermissionIds.ToList();
     public void Apply(OAuthApiDeleted e) => IsDeleted = true;
 }

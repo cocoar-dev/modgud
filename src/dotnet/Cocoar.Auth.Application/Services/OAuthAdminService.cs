@@ -482,6 +482,7 @@ public class OAuthAdminService
         // belong to; without it the RS cannot authenticate against the
         // distribution API (no app context to derive).
         Guid? appId = null;
+        App? linkedApp = null;
         if (!string.IsNullOrEmpty(dto.AppId))
         {
             if (!ShortGuid.TryParse(dto.AppId, out Guid parsed))
@@ -490,7 +491,14 @@ public class OAuthAdminService
             if (app is null || app.IsDeleted)
                 return Error.Validation("OAuthApi.AppNotFound", $"App {dto.AppId} not found.");
             appId = parsed;
+            linkedApp = app;
         }
+
+        // PermissionIds must be a subset of the linked App's catalog.
+        // Without an AppId there's nothing to be a subset of, so a non-
+        // empty list is rejected.
+        var permissionIdsResult = ValidatePermissionIds(dto.PermissionIds, linkedApp);
+        if (permissionIdsResult.IsError) return permissionIdsResult.FirstError;
 
         var id = Guid.NewGuid();
         var (aggregate, createdEvent) = OAuthApiAggregate.Create(id, dto.Name, dto.DisplayName, dto.Description, dto.Enabled, dto.Scopes);
@@ -501,6 +509,9 @@ public class OAuthAdminService
 
         if (appId.HasValue)
             _session.Events.Append(id, aggregate.SetAppId(appId));
+
+        if (permissionIdsResult.Value.Count > 0)
+            _session.Events.Append(id, aggregate.SetPermissionIds(permissionIdsResult.Value));
 
         // Initial API secret — stored in OAuthApiSecurityData (BCrypt-hashed).
         var apiSecret = GenerateSecret();
@@ -552,20 +563,56 @@ public class OAuthAdminService
             _session.Events.Append(guid, aggregate.SetUserClaims(dto.UserClaims));
 
         // App-link patch — null=no change, ""=detach, "guid"=assign.
+        // Track the App we ended up linked to (post-patch) so PermissionIds
+        // validation in this same call sees the new context — otherwise
+        // detaching + setting a new subset in one round-trip would
+        // contradict each other.
+        var resolvedAppId = aggregate.AppId;
+        App? resolvedApp = resolvedAppId.HasValue
+            ? await _session.LoadAsync<App>(resolvedAppId.Value, ct)
+            : null;
+
         if (dto.AppId is not null)
         {
             Guid? newAppId = null;
+            App? newApp = null;
             if (dto.AppId.Length > 0)
             {
                 if (!ShortGuid.TryParse(dto.AppId, out Guid parsed))
                     return Error.Validation("OAuthApi.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid or ShortGuid.");
-                var app = await _session.LoadAsync<App>(parsed, ct);
-                if (app is null || app.IsDeleted)
+                newApp = await _session.LoadAsync<App>(parsed, ct);
+                if (newApp is null || newApp.IsDeleted)
                     return Error.Validation("OAuthApi.AppNotFound", $"App {dto.AppId} not found.");
                 newAppId = parsed;
             }
             if (newAppId != aggregate.AppId)
                 _session.Events.Append(guid, aggregate.SetAppId(newAppId));
+
+            resolvedAppId = newAppId;
+            resolvedApp = newApp;
+        }
+
+        // PermissionIds patch — null=no change, [] = clear, [...]=replace.
+        // Validated against resolvedApp so a payload that detaches the App
+        // AND sets PermissionIds in one go is rejected unless the new list
+        // is empty.
+        if (dto.PermissionIds is not null)
+        {
+            // Detaching to no app while keeping non-empty subset is invalid
+            // — the subset would point at a catalog that's no longer
+            // referenced. Forbid it explicitly with a clear message.
+            if (resolvedAppId is null && dto.PermissionIds.Count > 0)
+            {
+                return Error.Validation(
+                    "OAuthApi.PermissionIdsRequireAppLink",
+                    "PermissionIds cannot be set on an RS without an AppId — link the RS to an App first or send an empty list.");
+            }
+
+            var permissionIdsResult = ValidatePermissionIds(dto.PermissionIds, resolvedApp);
+            if (permissionIdsResult.IsError) return permissionIdsResult.FirstError;
+
+            if (!permissionIdsResult.Value.SequenceEqual(aggregate.PermissionIds))
+                _session.Events.Append(guid, aggregate.SetPermissionIds(permissionIdsResult.Value));
         }
 
         await _session.SaveChangesAsync(ct);
@@ -712,5 +759,54 @@ public class OAuthAdminService
     {
         var sec = await _session.LoadAsync<OAuthApiSecurityData>(s.Id, ct);
         return MapApiState(s, sec?.Secrets);
+    }
+
+    /// <summary>
+    /// Validates that every supplied PermissionId parses and resolves to an
+    /// entry in the linked App's catalog. A null/empty input list is
+    /// always valid. Returns the parsed Guid list on success.
+    ///
+    /// <para>When <paramref name="linkedApp"/> is null and the input list
+    /// is non-empty, the result is an error — there's no catalog to be a
+    /// subset of.</para>
+    /// </summary>
+    private static ErrorOr<List<Guid>> ValidatePermissionIds(
+        IReadOnlyList<string>? raw, App? linkedApp)
+    {
+        if (raw is null || raw.Count == 0) return new List<Guid>();
+
+        if (linkedApp is null)
+        {
+            return Error.Validation(
+                "OAuthApi.PermissionIdsRequireAppLink",
+                "PermissionIds cannot be set on an RS without an AppId.");
+        }
+
+        var catalogIds = linkedApp.Permissions.Select(p => p.Id).ToHashSet();
+        var parsed = new List<Guid>(raw.Count);
+        var seen = new HashSet<Guid>();
+
+        foreach (var entry in raw)
+        {
+            if (!ShortGuid.TryParse(entry, out Guid id))
+            {
+                return Error.Validation(
+                    "OAuthApi.InvalidPermissionId",
+                    $"PermissionId '{entry}' is not a valid Guid or ShortGuid.");
+            }
+
+            if (!catalogIds.Contains(id))
+            {
+                return Error.Validation(
+                    "OAuthApi.PermissionIdNotInAppCatalog",
+                    $"PermissionId '{entry}' does not exist in App '{linkedApp.Slug}'s catalog.");
+            }
+
+            // Silent dedup on exact-id repeats — admin UIs may submit a
+            // ticked-then-unticked-then-ticked entry as a duplicate.
+            if (seen.Add(id)) parsed.Add(id);
+        }
+
+        return parsed;
     }
 }

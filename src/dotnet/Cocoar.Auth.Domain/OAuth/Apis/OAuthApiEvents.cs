@@ -24,4 +24,12 @@ public record OAuthApiPropertiesChanged(Guid ApiId, IReadOnlyDictionary<string, 
 /// </summary>
 public record OAuthApiAppIdChanged(Guid ApiId, Guid? AppId);
 
+/// <summary>
+/// Replaces the RS's catalog subset (the set of permissions it gates on)
+/// with the given <c>AppPermission.Id</c>s. Admin endpoints validate
+/// that every id resolves to an entry in the linked App's catalog before
+/// appending — a stale id never lands in the stream.
+/// </summary>
+public record OAuthApiPermissionIdsChanged(Guid ApiId, IReadOnlyList<Guid> PermissionIds);
+
 public record OAuthApiDeleted(Guid ApiId);

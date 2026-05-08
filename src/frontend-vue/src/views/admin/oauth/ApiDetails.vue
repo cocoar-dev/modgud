@@ -53,6 +53,8 @@ interface FormState {
   Enabled: boolean
   /** Empty = unassigned, otherwise an App.Id. */
   AppId: string
+  /** Subset of the linked App's catalog (AppPermission.Id values). */
+  PermissionIds: Set<string>
 }
 
 function emptyForm(): FormState {
@@ -64,6 +66,7 @@ function emptyForm(): FormState {
     UserClaims: '',
     Enabled: true,
     AppId: '',
+    PermissionIds: new Set<string>(),
   }
 }
 
@@ -79,11 +82,34 @@ function fromDto(dto: OAuthApiDto): FormState {
     UserClaims: (dto.UserClaims ?? []).join('\n'),
     Enabled: dto.Enabled,
     AppId: dto.AppId ?? '',
+    PermissionIds: new Set(dto.PermissionIds ?? []),
   }
 }
 
 function splitLines(input: string): string[] {
   return input.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean)
+}
+
+/**
+ * Catalog of the currently selected App, ordered for display. Empty when
+ * no App is linked or the App can't be found in the loaded list.
+ */
+const linkedAppCatalog = computed(() => {
+  if (!form.value.AppId) return []
+  const app = applicationsStore.apps.find((a) => a.Id === form.value.AppId)
+  if (!app) return []
+  return [...(app.Permissions ?? [])].sort((a, b) => {
+    const lhs = `${a.Resource}:${a.Action}`
+    const rhs = `${b.Resource}:${b.Action}`
+    return lhs.localeCompare(rhs)
+  })
+})
+
+function togglePermissionId(id: string) {
+  // Mutate via fresh Set so Vue reactivity picks up the change.
+  const next = new Set(form.value.PermissionIds)
+  if (next.has(id)) next.delete(id); else next.add(id)
+  form.value.PermissionIds = next
 }
 
 const modalTitle = computed(() =>
@@ -132,6 +158,7 @@ async function save() {
         UserClaims: splitLines(form.value.UserClaims),
         Enabled: form.value.Enabled,
         AppId: form.value.AppId || null,
+        PermissionIds: form.value.AppId ? Array.from(form.value.PermissionIds) : [],
       })
       newSecret.value = { value: created.ApiSecret }
       // Switch to read-mode (id known) so the secret panel is visible.
@@ -150,6 +177,9 @@ async function save() {
         Enabled: form.value.Enabled,
         // Always send — empty string detaches, guid assigns.
         AppId: form.value.AppId,
+        // Detaching the App must clear the subset; the backend rejects
+        // non-empty PermissionIds without an AppId.
+        PermissionIds: form.value.AppId ? Array.from(form.value.PermissionIds) : [],
       })
       dto.value = updated
       props.close()
@@ -251,6 +281,25 @@ async function copySecret() {
               : t('admin.oauthApis.app.unassignedHint', {}, 'Without an App link, this resource server cannot authenticate against the distribution API. Use this only for legacy / standalone setups.') }}
           </p>
         </CoarFormField>
+
+        <CoarFormField v-if="form.AppId"
+          :label="t('admin.oauthApis.permissions', {}, 'Permission-Subset (Catalog der Application)')">
+          <p class="text-xs text-gray-500 mb-2">
+            {{ t('admin.oauthApis.permissionsHint', {}, 'Welche Permissions des App-Catalogs gated dieser Resource Server. Die Distribution-API liefert pro User nur den Schnitt aus diesem Subset und den User-Grants.') }}
+          </p>
+          <div v-if="linkedAppCatalog.length === 0" class="text-xs text-gray-400 italic">
+            {{ t('admin.oauthApis.permissions.empty', {}, 'Die Application hat noch keine Permissions im Catalog. Erst dort Einträge anlegen, dann hier auswählen.') }}
+          </div>
+          <div v-else class="permission-checklist">
+            <label v-for="p in linkedAppCatalog" :key="p.Id" class="permission-row">
+              <input type="checkbox" :checked="form.PermissionIds.has(p.Id)" @change="togglePermissionId(p.Id)" />
+              <span class="permission-label">
+                <code>{{ p.Resource }}:{{ p.Action }}</code>
+                <span v-if="p.Description" class="permission-desc">— {{ p.Description }}</span>
+              </span>
+            </label>
+          </div>
+        </CoarFormField>
         <CoarFormField :label="t('admin.oauthApis.scopes', {}, 'Scopes (eine pro Zeile)')">
           <textarea v-model="form.Scopes" rows="3" class="textarea" />
         </CoarFormField>
@@ -341,5 +390,36 @@ async function copySecret() {
   border: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
   border-radius: 6px;
   background: var(--coar-background-neutral-primary, #fff);
+}
+.permission-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
+  border-radius: var(--coar-radius-m, 4px);
+  background: var(--coar-background-neutral-primary, #fff);
+}
+.permission-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.permission-row:hover {
+  background: var(--coar-background-neutral-tertiary, #f3f4f6);
+}
+.permission-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.permission-desc {
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  font-size: 0.78rem;
 }
 </style>

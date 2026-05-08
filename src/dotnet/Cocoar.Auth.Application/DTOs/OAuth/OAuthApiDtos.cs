@@ -24,6 +24,14 @@ public record OAuthApiDto
     /// </summary>
     public string? AppId { get; init; }
 
+    /// <summary>
+    /// Subset of the linked App's permission catalog this RS gates on.
+    /// Each entry is an <c>AppPermission.Id</c> (Guid string) FK into
+    /// <c>App.Permissions</c>. Empty list means the RS doesn't gate on
+    /// anything yet.
+    /// </summary>
+    public List<string> PermissionIds { get; init; } = new();
+
     public List<ApiSecretEntryDto> Secrets { get; init; } = new();
 }
 
@@ -41,6 +49,15 @@ public record CreateOAuthApiDto
     /// against the distribution API).
     /// </summary>
     public string? AppId { get; init; }
+
+    /// <summary>
+    /// Optional initial subset of the linked App's catalog. Each entry is
+    /// an <c>AppPermission.Id</c> (Guid string). Validated against the
+    /// linked App's catalog at create time. Ignored when <see cref="AppId"/>
+    /// is null (rejected as a validation error if non-empty without an
+    /// AppId).
+    /// </summary>
+    public List<string> PermissionIds { get; init; } = new();
 }
 
 public record UpdateOAuthApiDto
@@ -55,6 +72,14 @@ public record UpdateOAuthApiDto
     /// unassigned), "<guid>" = assign or change.
     /// </summary>
     public string? AppId { get; init; }
+
+    /// <summary>
+    /// PATCH semantics: null/missing = no change, empty list = clear.
+    /// Each entry is an <c>AppPermission.Id</c> (Guid string), validated
+    /// against the linked App's catalog. Detaching the App (AppId = "")
+    /// in the same payload requires PermissionIds to be empty or absent.
+    /// </summary>
+    public List<string>? PermissionIds { get; init; }
 }
 
 public record OAuthApiListDto

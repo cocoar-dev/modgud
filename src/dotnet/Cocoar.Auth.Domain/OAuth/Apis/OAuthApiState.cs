@@ -16,5 +16,16 @@ public class OAuthApiState
     public Dictionary<string, object?> Properties { get; set; } = new();
     /// <summary>FK to <c>App.Id</c>. Null = unassigned.</summary>
     public Guid? AppId { get; set; }
+
+    /// <summary>
+    /// Subset of the linked <c>App.Permissions</c> catalog this resource
+    /// server gates on. Each entry is the <c>AppPermission.Id</c> of an
+    /// entry in the linked App's catalog. Stable across resource/action
+    /// renames. Empty list means the RS doesn't gate on anything (only
+    /// authentication, no per-permission authz) — typical for a fresh RS
+    /// before the operator has picked a subset.
+    /// </summary>
+    public List<Guid> PermissionIds { get; set; } = new();
+
     public bool IsDeleted { get; set; }
 }

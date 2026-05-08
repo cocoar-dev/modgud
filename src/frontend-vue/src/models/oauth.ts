@@ -188,6 +188,12 @@ export interface OAuthApiDto {
    * (RS exists but cannot authenticate against the distribution API yet).
    */
   AppId?: string | null
+  /**
+   * Subset of the linked App's permission catalog this RS gates on. Each
+   * entry is an `AppPermission.Id` (Guid string) FK into `App.Permissions`.
+   * Empty when the RS doesn't gate on anything yet.
+   */
+  PermissionIds: string[]
   Secrets: ApiSecretEntryDto[]
 }
 
@@ -200,6 +206,12 @@ export interface CreateOAuthApiDto {
   UserClaims?: string[]
   /** App.Id (Guid string). Null/undefined = unassigned. */
   AppId?: string | null
+  /**
+   * Optional initial subset of the linked App's catalog. Each entry is an
+   * `AppPermission.Id` (Guid string). Validated against the linked App's
+   * catalog at create time. Must be empty/absent when AppId is null.
+   */
+  PermissionIds?: string[]
 }
 
 export interface UpdateOAuthApiDto {
@@ -214,6 +226,11 @@ export interface UpdateOAuthApiDto {
    * serialises to "" (empty string).
    */
   AppId?: string | null
+  /**
+   * PATCH semantics: undefined/missing = no change, [] = clear,
+   * [...] = replace. Validated against the linked App's catalog.
+   */
+  PermissionIds?: string[] | null
 }
 
 export interface OAuthApiListDto {

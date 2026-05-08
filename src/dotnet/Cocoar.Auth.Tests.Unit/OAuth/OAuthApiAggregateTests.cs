@@ -125,6 +125,68 @@ public class OAuthApiAggregateTests
             dict["k"] = 99;
             Assert.Equal(1, agg.Properties["k"]);
         }
+
+        [Fact]
+        public void SetAppId_emits_event_carrying_aggregate_id_and_mutates_state()
+        {
+            var (agg, _) = MakeDefault();
+            var newAppId = Guid.NewGuid();
+
+            var evt = agg.SetAppId(newAppId);
+
+            Assert.Equal(agg.Id, evt.ApiId);
+            Assert.Equal(newAppId, evt.AppId);
+            Assert.Equal(newAppId, agg.AppId);
+        }
+
+        [Fact]
+        public void SetAppId_null_detaches_app_link()
+        {
+            var (agg, _) = MakeDefault();
+            agg.SetAppId(Guid.NewGuid());
+
+            agg.SetAppId(null);
+
+            Assert.Null(agg.AppId);
+        }
+
+        [Fact]
+        public void SetPermissionIds_emits_event_carrying_aggregate_id_and_mutates_state()
+        {
+            var (agg, _) = MakeDefault();
+            var ids = new[] { Guid.NewGuid(), Guid.NewGuid() };
+
+            var evt = agg.SetPermissionIds(ids);
+
+            Assert.Equal(agg.Id, evt.ApiId);
+            Assert.Equal(ids, evt.PermissionIds);
+            Assert.Equal(ids, agg.PermissionIds);
+        }
+
+        [Fact]
+        public void SetPermissionIds_takes_a_defensive_copy()
+        {
+            var (agg, _) = MakeDefault();
+            var first = Guid.NewGuid();
+            var list = new List<Guid> { first };
+
+            agg.SetPermissionIds(list);
+            list.Add(Guid.NewGuid());
+
+            Assert.Single(agg.PermissionIds);
+            Assert.Equal(first, agg.PermissionIds[0]);
+        }
+
+        [Fact]
+        public void SetPermissionIds_empty_list_clears_subset()
+        {
+            var (agg, _) = MakeDefault();
+            agg.SetPermissionIds([Guid.NewGuid(), Guid.NewGuid()]);
+
+            agg.SetPermissionIds([]);
+
+            Assert.Empty(agg.PermissionIds);
+        }
     }
 
     public class Delete
