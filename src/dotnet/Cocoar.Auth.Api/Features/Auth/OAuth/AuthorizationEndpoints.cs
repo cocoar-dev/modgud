@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Services;
+using Cocoar.Auth.Domain.OAuth.Apis;
 using Cocoar.Auth.Domain.OAuth.Applications;
 using Cocoar.Auth.Domain.OAuth.Consent;
 using Cocoar.Auth.Domain.OAuth.Scopes;
@@ -408,52 +409,84 @@ public static class AuthorizationEndpoints
             if (!string.IsNullOrEmpty(user.Lastname)) claims[Claims.FamilyName] = user.Lastname;
         }
 
-        // Roles per app (Keycloak-style resource_access). When the OIDC
-        // `roles` scope is granted, we emit a nested claim keyed by App
-        // slug; each entry carries { "roles": [...] } for that app. The
-        // Cocoar.Auth.Client.AspNetCore library flattens
-        // resource_access[<configured-slug>].roles into
-        // ClaimTypes.Role so [Authorize(Roles="…")] works on resource
-        // servers without per-endpoint plumbing.
+        // Per-Audience resource_access emission (Keycloak-shape, but keyed
+        // by the OAuthApi audience name rather than App slug — so the RS
+        // can read its own block via the same identifier it already uses
+        // for JWT-bearer validation).
         //
-        // The apps come from the calling client's AppIds list (Stufe 1's
-        // n:m link). Realm-wide / unassigned clients fall back to a single
-        // resource_access entry under cocoar-auth so the IDP's own admin
-        // SPA still surfaces its own roles.
+        // Algorithm:
+        //   1. Read aud[] from the validated access token.
+        //   2. For each audience, resolve OAuthApi → AppId → App.Slug.
+        //   3. Compute roles, permissions, and groups for that App.
+        //   4. Strip the "<slug>:" prefix from permissions to make them
+        //      bare 2-segment "<resource>:<action>" strings — the slug is
+        //      already the block's key.
+        //   5. Emit resource_access[<audience>] = { permissions, roles, groups }.
         //
-        // Deliberately NOT in UserInfo:
-        //   - Group memberships (organisational / IAM-side data, not
-        //     identity. Also app-scoped via BoundTo, which UserInfo's
-        //     OIDC contract has no clean way to express).
-        //   - Granular permissions (live-resolved via the distribution
-        //     API at GET /api/v1/me/permissions to avoid stale grants).
+        // Audience entries that don't map to a registered OAuthApi (e.g.
+        // the client_id fallback when no resource= was sent) are silently
+        // skipped — no block emitted for them. This is intentional:
+        // authz info is meaningful only in the context of an actual
+        // resource server.
         //
-        // UserInfo stays the OIDC-style identity slice ("who you are +
-        // what you may do") while the IAM-side data (groups, granular
-        // perms) lives behind the distribution API.
+        // Bypass-tier pre-expansion (e.g. emitting all <resource>:<action>
+        // when the user holds <resource>:admin) is a follow-up — it needs
+        // the App.Permissions catalog refactor to know which actions
+        // exist. Today the strings are emitted as-is, including the
+        // "policy:admin" / "realm:admin" bypass markers; consumers
+        // currently still need an evaluator to apply them.
+        //
+        // Gated on the OIDC `roles` scope: clients that don't ask for it
+        // get a pure-identity UserInfo response.
         if (httpContext.User.HasScope(Scopes.Roles))
         {
-            // OAUTH-12 — emit roles ONLY for app slugs the calling client
-            // is explicitly linked to via OAuthApplication.AppIds. Previous
-            // behaviour fell back to [AppSlugs.CocoarAuth] when AppIds was
-            // empty, leaking the IdP's own roles to every "unassigned"
-            // client. The new policy: no AppIds → no resource_access
-            // emission. An admin-grade client must be explicitly linked
-            // to the cocoar-auth App, same as for any other tenant App.
-            var appSlugs = await ResolveAppSlugsForClientAsync(httpContext.User, session);
-
-            if (appSlugs.Count > 0)
+            var audiences = httpContext.User.GetAudiences().ToList();
+            if (audiences.Count > 0)
             {
                 var resourceAccess = new Dictionary<string, object>(StringComparer.Ordinal);
-                foreach (var slug in appSlugs)
+
+                foreach (var audience in audiences)
                 {
-                    var rolesForApp = await permissionService.GetUserRolesAsync(user.Id, slug);
-                    if (rolesForApp.Count == 0) continue;
-                    resourceAccess[slug] = new Dictionary<string, object>(StringComparer.Ordinal)
+                    var api = await session.Query<OAuthApiState>()
+                        .FirstOrDefaultAsync(a => a.Name == audience && !a.IsDeleted);
+                    if (api?.AppId is not Guid appId) continue;
+
+                    var app = await session.LoadAsync<App>(appId);
+                    if (app is null || app.IsDeleted) continue;
+
+                    var appSlug = app.Slug;
+                    var rolesForApp = await permissionService.GetUserRolesAsync(user.Id, appSlug);
+                    var permissionsForApp = await permissionService.GetUserPermissionsAsync(user.Id, appSlug);
+                    var allGroups = await permissionService.GetUserGroupsAsync(user.Id);
+                    var groupsForApp = allGroups
+                        .Where(g => g.BoundTo.Contains(PermissionService.AllAppsWildcard)
+                                    || g.BoundTo.Contains(appSlug))
+                        .ToList();
+
+                    // Strip "<slug>:" prefix from permissions; pass through
+                    // anything else (cross-app / bypass strings like
+                    // "realm:admin").
+                    var prefix = $"{appSlug}:";
+                    var barePermissions = permissionsForApp
+                        .Select(p => p.StartsWith(prefix, StringComparison.Ordinal)
+                            ? p.Substring(prefix.Length)
+                            : p)
+                        .ToArray();
+
+                    resourceAccess[audience] = new Dictionary<string, object>(StringComparer.Ordinal)
                     {
+                        ["permissions"] = barePermissions,
                         ["roles"] = rolesForApp.Select(r => r.Name).ToArray(),
+                        ["groups"] = groupsForApp
+                            .Select(g => new Dictionary<string, object>(StringComparer.Ordinal)
+                            {
+                                ["id"] = g.Id.ToString(),
+                                ["name"] = g.Name,
+                            })
+                            .ToArray(),
                     };
                 }
+
                 if (resourceAccess.Count > 0)
                     claims["resource_access"] = resourceAccess;
             }
