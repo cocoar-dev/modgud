@@ -152,6 +152,11 @@ export interface CreateOAuthScopeDto {
   AppId?: string | null
 }
 
+export interface OAuthScopeListDto {
+  Items: OAuthScopeDto[]
+  TotalCount: number
+}
+
 export interface UpdateOAuthScopeDto {
   DisplayName?: string | null
   Description?: string | null

@@ -3,23 +3,31 @@ import { ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import type {
   OAuthScopeDto,
+  OAuthScopeListDto,
   CreateOAuthScopeDto,
   UpdateOAuthScopeDto,
 } from '@/models/oauth'
 
 /**
- * OAuth scope store. The list endpoint returns a flat array (no pagination).
+ * OAuth scope store. The list endpoint is paginated and returns
+ * <c>{ Items, TotalCount }</c>; we unwrap <c>Items</c> for the grid.
  */
 export const useOAuthScopeStore = defineStore('oauth-scope', () => {
   const http = useHttpClient('/api/admin/oauth/scopes')
 
   const scopes = ref<OAuthScopeDto[]>([])
   const loaded = ref(false)
+  const totalCount = ref(0)
 
   async function loadAll(): Promise<OAuthScopeDto[]> {
-    scopes.value = await http.get<OAuthScopeDto[]>()
+    const res = await http
+      .setQueryParameter('page', '1')
+      .setQueryParameter('pageSize', '500')
+      .get<OAuthScopeListDto>()
+    scopes.value = res.Items
+    totalCount.value = res.TotalCount
     loaded.value = true
-    return scopes.value
+    return res.Items
   }
 
   async function initialize() {
