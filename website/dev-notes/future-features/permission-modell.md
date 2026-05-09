@@ -160,6 +160,13 @@ mit Permissions (Authz-Gating) und Role-Names (Display):
 - **Top-Level-Key** ist der `OAuthApi.Name` (= das was im Token's
   `aud`-Claim landet, das was der RS in seiner JwtBearer-Config
   ohnehin als `Audience` konfiguriert hat).
+- **`OAuthApi.Name`-Format**: per **RFC 7519 §2** `StringOrURI` —
+  also entweder ein bare-String ohne Doppelpunkt
+  (z.B. `alpha-blog-api`) oder eine absolute URI per RFC 3986
+  (z.B. `https://api.example.com`, `urn:example:my-api`). Sobald
+  ein Doppelpunkt vorkommt, MUSS es eine gültige Absolute-URI sein.
+  Empfohlen für RFC-8707-Kompatibilität (Clients dürfen
+  `resource=…` nutzen): URI-Form. Validierung in `AudienceUri`.
 - **Innerhalb jedes Blocks** sind die Listen flach:
   `permissions: string[]`, `roles: string[]`.
 - **Permission-Strings** sind 2-Segment, slug-frei.

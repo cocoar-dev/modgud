@@ -340,17 +340,18 @@
 
     { "// smoke-test scopes": "One scope per OAuthApi audience — keeps the wiring obvious." },
 
-    { "name": "alpha-blog.use",     "displayName": "Alpha Blog — use",       "description": "Token grants access to the alpha-blog API.",     "appKey": "alpha-blog", "resources": ["alpha-blog-api"] },
-    { "name": "beta-orders.use",    "displayName": "Beta Shop — orders",     "description": "Token grants access to the beta-orders API.",    "appKey": "beta-shop",  "resources": ["beta-orders-api"] },
-    { "name": "beta-products.use",  "displayName": "Beta Shop — products",   "description": "Token grants access to the beta-products API.",  "appKey": "beta-shop",  "resources": ["beta-products-api"] },
-    { "name": "beta-shipping.use",  "displayName": "Beta Shop — shipping",   "description": "Token grants access to the beta-shipping API.",  "appKey": "beta-shop",  "resources": ["beta-shipping-api"] },
-    { "name": "beta-admin.use",     "displayName": "Beta Shop — admin",      "description": "Token grants access to the beta-admin API.",     "appKey": "beta-shop",  "resources": ["beta-admin-api"] },
-    { "name": "gamma-crm.use",      "displayName": "Gamma CRM — use",        "description": "Token grants access to the gamma-crm API.",      "appKey": "gamma-crm",  "resources": ["gamma-crm-api"] }
+    { "name": "alpha-blog.use",     "displayName": "Alpha Blog — use",       "description": "Token grants access to the alpha-blog API.",     "appKey": "alpha-blog", "resources": ["https://alpha-blog-api.cocoar.local"] },
+    { "name": "beta-orders.use",    "displayName": "Beta Shop — orders",     "description": "Token grants access to the beta-orders API.",    "appKey": "beta-shop",  "resources": ["https://beta-orders-api.cocoar.local"] },
+    { "name": "beta-products.use",  "displayName": "Beta Shop — products",   "description": "Token grants access to the beta-products API.",  "appKey": "beta-shop",  "resources": ["https://beta-products-api.cocoar.local"] },
+    { "name": "beta-shipping.use",  "displayName": "Beta Shop — shipping",   "description": "Token grants access to the beta-shipping API.",  "appKey": "beta-shop",  "resources": ["https://beta-shipping-api.cocoar.local"] },
+    { "name": "beta-admin.use",     "displayName": "Beta Shop — admin",      "description": "Token grants access to the beta-admin API.",     "appKey": "beta-shop",  "resources": ["https://beta-admin-api.cocoar.local"] },
+    { "name": "gamma-crm.use",      "displayName": "Gamma CRM — use",        "description": "Token grants access to the gamma-crm API.",      "appKey": "gamma-crm",  "resources": ["https://gamma-crm-api.cocoar.local"] }
   ],
 
   "// apis": "OAuthApi.AppId + OAuthApi.PermissionIds bind a resource server to its App's catalog. The RS authenticates against the distribution-API with name + initial secret to fetch the union of (its catalog subset) ∩ (user's grants).",
   "apis": [
     {
+      "// demo-api note": "Bare-string aud — legal per RFC 7519 §2 (no colon, no URI required). Demonstrates the bare-identifier form alongside the URI form used by the smoke-test apis below.",
       "name": "demo-api",
       "displayName": "Demo API",
       "description": "Sample resource server consumed by the demo OAuth clients and the TestApps.ResourceApi.",
@@ -366,7 +367,7 @@
     { "// smoke-test apis": "alpha-blog: one RS for the whole catalog. beta-shop: 4 RSes, each with its own catalog subset. gamma-crm: one RS." },
 
     {
-      "name": "alpha-blog-api",
+      "name": "https://alpha-blog-api.cocoar.local",
       "displayName": "Alpha Blog API",
       "description": "Single resource server for the alpha-blog app. Subset = full catalog.",
       "appKey": "alpha-blog",
@@ -382,7 +383,7 @@
       ]
     },
     {
-      "name": "beta-orders-api",
+      "name": "https://beta-orders-api.cocoar.local",
       "displayName": "Beta Shop — Orders API",
       "description": "Microservice handling orders. Catalog subset is just the order:* entries.",
       "appKey": "beta-shop",
@@ -395,7 +396,7 @@
       ]
     },
     {
-      "name": "beta-products-api",
+      "name": "https://beta-products-api.cocoar.local",
       "displayName": "Beta Shop — Products API",
       "description": "Microservice handling products. Catalog subset = product:*.",
       "appKey": "beta-shop",
@@ -407,7 +408,7 @@
       ]
     },
     {
-      "name": "beta-shipping-api",
+      "name": "https://beta-shipping-api.cocoar.local",
       "displayName": "Beta Shop — Shipping API",
       "description": "Microservice handling shipments. Catalog subset = shipment:*.",
       "appKey": "beta-shop",
@@ -420,7 +421,7 @@
       ]
     },
     {
-      "name": "beta-admin-api",
+      "name": "https://beta-admin-api.cocoar.local",
       "displayName": "Beta Shop — Admin API",
       "description": "Cross-cutting admin microservice. Subset = the entire beta-shop catalog.",
       "appKey": "beta-shop",
@@ -440,7 +441,7 @@
       ]
     },
     {
-      "name": "gamma-crm-api",
+      "name": "https://gamma-crm-api.cocoar.local",
       "displayName": "Gamma CRM API",
       "description": "Single mini-service CRM API. Subset = full catalog.",
       "appKey": "gamma-crm",

@@ -312,6 +312,14 @@ public class OAuthAdminService
     public async Task<ErrorOr<OAuthScopeDto>> CreateScopeAsync(
         CreateOAuthScopeDto dto, CancellationToken ct = default)
     {
+        // RFC 8707 §2: each entry in Resources lands as `aud` once a
+        // client requests this scope, so each must be an absolute URI.
+        foreach (var resource in dto.Resources)
+        {
+            if (!AudienceUri.TryValidate(resource, out var resourceError))
+                return Error.Validation("OAuthScope.InvalidResource", resourceError!);
+        }
+
         var existing = await _session.Query<OAuthScopeState>()
             .FirstOrDefaultAsync(x => x.Name == dto.Name && !x.IsDeleted, ct);
         if (existing is not null)
@@ -375,7 +383,14 @@ public class OAuthAdminService
             _session.Events.Append(guid, aggregate.SetDescription(dto.Description));
 
         if (dto.Resources is not null && !dto.Resources.SequenceEqual(aggregate.Resources))
+        {
+            foreach (var resource in dto.Resources)
+            {
+                if (!AudienceUri.TryValidate(resource, out var resourceError))
+                    return Error.Validation("OAuthScope.InvalidResource", resourceError!);
+            }
             _session.Events.Append(guid, aggregate.SetResources(dto.Resources));
+        }
 
         if (dto.Enabled.HasValue && dto.Enabled.Value != aggregate.Enabled)
             _session.Events.Append(guid, aggregate.SetEnabled(dto.Enabled.Value));
@@ -473,6 +488,12 @@ public class OAuthAdminService
     public async Task<ErrorOr<OAuthApiCreatedDto>> CreateApiAsync(
         CreateOAuthApiDto dto, CancellationToken ct = default)
     {
+        // RFC 8707 §2: an OAuthApi.Name doubles as the JWT `aud` claim
+        // and as the value clients pass in `resource=`. Both MUST be
+        // absolute URIs without fragment.
+        if (!AudienceUri.TryValidate(dto.Name, out var audienceError))
+            return Error.Validation("OAuthApi.InvalidName", audienceError!);
+
         var existing = await _session.Query<OAuthApiState>()
             .FirstOrDefaultAsync(x => x.Name == dto.Name && !x.IsDeleted, ct);
         if (existing is not null)
