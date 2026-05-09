@@ -3,6 +3,9 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+# Wolverine/JasperFx runtime-generated handlers (TypeLoadMode.Auto re-creates these on first run)
+src/dotnet/**/Internal/Generated/
+
 # User-specific files
 *.rsuser
 *.suo

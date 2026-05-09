@@ -70,12 +70,17 @@ public sealed class OAuthApi
 }
 ```
 
-Das Subset ist **Optimization, nicht Sicherheit**: ein RS gated
-ohnehin nur auf die Strings die in seinem Code vorkommen. Das Subset
-hilft dem Admin den Überblick zu behalten („dieser RS gated auf
-X/Y/Z") und ist nicht-restriktiver Filter — UserInfo emittiert pro
-Audience aktuell **alle** App-Permissions die der User hat,
-ungefiltert vom Subset.
+Das Subset ist gleichzeitig **Filter** beim UserInfo-Emit: pro
+Audience-Block wird auf genau die Strings narrow-gefiltert, die der
+RS als sein Gating-Surface deklariert hat. Beispiel: User hat
+`order:read` und `shipment:read`; im Block für `beta-shipping-api`
+(Subset = nur shipment-Strings) erscheint **nur** `shipment:read`,
+nicht `order:read`. So bekommt jeder RS exakt das was er sehen darf
+— kein Cross-Audience-Leak.
+
+Sicherheits-Invariante bleibt aber: ein RS gated ohnehin nur auf die
+Strings die in seinem Code vorkommen. Das Subset ist „Defense in
+Depth"-Filter, nicht ersatzloser Schutz.
 
 ## 3. Format-Constraints
 
@@ -128,7 +133,7 @@ UserInfo-Emit schon expandiert, exact-match reicht.
 ## 5. UserInfo — wo Authz tatsächlich rauskommt
 
 `/connect/userinfo` emittiert **pro Audience im Token einen Block**
-mit Roles, Permissions und Groups:
+mit Permissions (Authz-Gating) und Role-Names (Display):
 
 ```json
 {
@@ -140,13 +145,11 @@ mit Roles, Permissions und Groups:
   "resource_access": {
     "https://policy-api.cocoar.dev": {
       "permissions": ["policy:read", "policy:write"],
-      "roles":       ["Editor"],
-      "groups":      [{ "id": "...", "name": "PolicyEditors" }]
+      "roles":       ["Editor"]
     },
     "https://knowledge-api.cocoar.dev": {
       "permissions": ["knowledge:read"],
-      "roles":       ["Member"],
-      "groups":      []
+      "roles":       ["Member"]
     }
   }
 }
@@ -158,10 +161,16 @@ mit Roles, Permissions und Groups:
   `aud`-Claim landet, das was der RS in seiner JwtBearer-Config
   ohnehin als `Audience` konfiguriert hat).
 - **Innerhalb jedes Blocks** sind die Listen flach:
-  `permissions: string[]`, `roles: string[]`, `groups: {id,name}[]`.
+  `permissions: string[]`, `roles: string[]`.
 - **Permission-Strings** sind 2-Segment, slug-frei.
 - **Bypass-Tiers schon vom IdP expandiert** — siehe Algorithmus
   unten.
+- **Per-RS-Subset gefiltert**: `permissions` enthält nur Strings, die
+  in `OAuthApi.PermissionIds` (dem Catalog-Subset des RS) liegen.
+- **App und Group sind pure IdP-internal** — sie tauchen im Block
+  niemals auf. Wenn das Frontend Group-Listings oder „send mail to
+  group" braucht, ist das eine eigene Directory-API mit eigener
+  Authz, kein Token-Claim.
 
 ### Algorithmus
 
@@ -175,9 +184,10 @@ Für jeden `aud` im validierten Access-Token:
    - Wenn `realm:admin` im Set → durch alle `App.Permissions[].ToPermissionString()` ersetzen.
    - Sonst für jedes `<r>:admin` im Set → alle `App.Permissions` mit
      `Resource == r` zusätzlich aufnehmen.
-5. `roles = PermissionService.GetUserRolesAsync(user.Id, app.Slug)` → Namen.
-6. `groups = User-Groups gefiltert auf BoundTo.Contains(*) || BoundTo.Contains(slug)` → `{id, name}`.
-7. Emit `resource_access[<aud>] = { permissions, roles, groups }`.
+5. **Per-RS-Subset-Narrowing:** auf die Strings filtern, die in
+   `OAuthApi.PermissionIds` (dem Catalog-Subset des RS) liegen.
+6. `roles = PermissionService.GetUserRolesAsync(user.Id, app.Slug)` → Namen.
+7. Emit `resource_access[<aud>] = { permissions, roles }`.
 
 `aud`-Werte ohne resolvende `OAuthApi` (z.B. der client_id-Fallback
 ohne RFC-8707 `resource=`) werden **stillschweigend übersprungen** —
@@ -186,10 +196,22 @@ sinnvoll.
 
 ### Was UserInfo *nicht* trägt
 
-- Kein `groups`-Top-Level-Array — nur per-audience.
+- **Kein `groups`** — weder per-audience noch top-level. Group ist
+  IdP-internes Vehikel um Roles/Membership zu bündeln; nach außen
+  zählt nur das Resultat (Permissions, Role-Names).
+- **Kein App-Slug, keine App-ID, kein Realm-Slug.** Der RS kennt nur
+  seine eigene `aud`. Die App-Hierarchie ist Implementations-Detail
+  des IdP.
 - Keine globale `permissions`/`roles`-Liste.
 - Keine Bypass-Marker (`realm:admin`, `<r>:admin` im rohen Sinn) —
   alles ist in konkrete Catalog-Strings expandiert.
+
+> **Public Contract:** Was hier rauskommt ist das einzige was
+> Konsumenten je zu Gesicht bekommen. App und Group sind pure
+> IdP-internal und bleiben es. Wenn jemand später Group-Listings,
+> Mail-an-Group oder Org-Strukturen braucht, kommt eine **eigene
+> Directory-/Org-API** dazu — mit eigener Authz und eigenen DTOs,
+> nicht via Token-Claim.
 
 ## 6. Konsumenten-Sicht
 

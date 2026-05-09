@@ -19,10 +19,12 @@ namespace Cocoar.Auth.Api.Tests.Authorization;
 /// <summary>
 /// End-to-end verification of the <c>/connect/userinfo</c> per-Audience
 /// emission per permission-modell §5: pro <c>aud</c> im Token wird ein
-/// <c>resource_access[<aud>] = { permissions, roles, groups }</c>-Block
+/// <c>resource_access[<aud>] = { permissions, roles }</c>-Block
 /// gerendert; Bypass-Tiers (<c>realm:admin</c>, <c>&lt;r&gt;:admin</c>)
 /// werden vom IdP zu konkreten Catalog-Strings vor-expandiert, sodass
 /// Konsumenten stumpfes <c>permissions.includes(...)</c> machen können.
+/// App und Group sind pure IdP-internal — sie tauchen im Block niemals
+/// auf.
 ///
 /// <para>Drives the full auth-code+PKCE flow with an RFC-8707 <c>resource=</c>
 /// indicator so the assertion is meaningful end-to-end.</para>
@@ -68,13 +70,16 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         Assert.DoesNotContain("policy:read", permissions);
         Assert.DoesNotContain("policy:admin", permissions);
 
-        // Roles + groups: at least non-null arrays. The role we created has
-        // a stable Id but its Name is generated; we just check that it's
-        // present (the role assignment IS the only path to having a grant).
+        // Roles: non-empty array. The role we created has a stable Id but
+        // its Name is generated; we just check that it's present (the role
+        // assignment IS the only path to having a grant).
         Assert.True(alphaBlock.TryGetProperty("roles", out var roles));
         Assert.NotEmpty(roles.EnumerateArray());
-        Assert.True(alphaBlock.TryGetProperty("groups", out var groups));
-        Assert.NotEmpty(groups.EnumerateArray());
+        // App and Group are IdP-internal — they MUST NOT leak into the block.
+        Assert.False(alphaBlock.TryGetProperty("groups", out _),
+            "groups must not appear in the public RS-block.");
+        Assert.False(alphaBlock.TryGetProperty("app", out _),
+            "app must not appear in the public RS-block.");
     }
 
     [Fact]
@@ -322,12 +327,17 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         using var scope = Factory.Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
+        var app = await session.LoadAsync<App>(appId, TestContext.Current.CancellationToken)
+            ?? throw new InvalidOperationException($"App {appId} not found — create it before the API.");
+        var allCatalogPermissionIds = app.Permissions.Select(p => p.Id).ToList();
+
         var id = Guid.NewGuid();
         var (aggregate, created) = OAuthApiAggregate.Create(
             id, name, displayName: name, description: null, enabled: true,
             scopes: Array.Empty<string>());
         session.Events.StartStream<OAuthApiAggregate>(id, created);
         session.Events.Append(id, aggregate.SetAppId(appId));
+        session.Events.Append(id, aggregate.SetPermissionIds(allCatalogPermissionIds));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var loaded = await session.LoadAsync<OAuthApiState>(id, TestContext.Current.CancellationToken);

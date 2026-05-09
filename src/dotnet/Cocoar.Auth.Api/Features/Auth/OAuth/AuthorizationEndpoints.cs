@@ -414,7 +414,8 @@ public static class AuthorizationEndpoints
         // Per-Audience resource_access emission per permission-modell §5.
         // For each aud in the validated access token: resolve the OAuthApi
         // by Name, find the linked App, build a block with the user's
-        // bypass-pre-expanded permissions + roles + groups for that App.
+        // bypass-pre-expanded permissions ∩ OAuthApi.PermissionIds, plus
+        // roles + groups for that App.
         //
         // Bypass-pre-expansion means: if the user holds realm:admin we
         // emit every concrete catalog string of every reachable App (the
@@ -424,6 +425,14 @@ public static class AuthorizationEndpoints
         // (`permissions.includes("policy:write")`) and pick up the bypass
         // semantics for free — no PermissionEvaluator port needed on the
         // client side.
+        //
+        // Per-RS-subset filtering: each audience block is then narrowed to
+        // OAuthApi.PermissionIds — the catalog subset the resource server
+        // declared as its gating surface. Anything outside that subset is
+        // not "this RS's business" and is excluded from the block. This
+        // prevents permission strings from one microservice leaking into a
+        // sibling's UserInfo block when both belong to the same App but
+        // declare disjoint subsets.
         //
         // Audience entries that don't resolve to a registered OAuthApi
         // (e.g. the client_id fallback when no resource= was sent) are
@@ -440,11 +449,6 @@ public static class AuthorizationEndpoints
             {
                 var resourceAccess = new Dictionary<string, object>(StringComparer.Ordinal);
 
-                // Per-app cache for the BFS-driven group lookup so multi-aud
-                // tokens don't re-query Marten for groups once per audience.
-                var allGroupsLazy = new Lazy<Task<List<Group>>>(
-                    () => permissionService.GetUserGroupsAsync(user.Id));
-
                 foreach (var audience in audiences)
                 {
                     var api = await session.Query<OAuthApiState>()
@@ -456,25 +460,18 @@ public static class AuthorizationEndpoints
 
                     var rolesForApp = await permissionService.GetUserRolesAsync(user.Id, app.Slug);
                     var rawPermissions = await permissionService.GetUserPermissionsAsync(user.Id, app.Slug);
-                    var allGroups = await allGroupsLazy.Value;
-                    var groupsForApp = allGroups
-                        .Where(g => g.BoundTo.Contains(PermissionService.AllAppsWildcard)
-                                    || g.BoundTo.Contains(app.Slug))
-                        .ToList();
 
                     var expandedPermissions = ExpandBypassTiers(rawPermissions, app);
+                    var apiPermissions = NarrowToApiSubset(expandedPermissions, api, app);
 
+                    // Public RS-block contract: permissions (gating) + role
+                    // names (display). App and Group are pure IdP-internal
+                    // vehicles — never leaked. Org/directory operations live
+                    // on a separate API, not here.
                     resourceAccess[audience] = new Dictionary<string, object>(StringComparer.Ordinal)
                     {
-                        ["permissions"] = expandedPermissions,
+                        ["permissions"] = apiPermissions,
                         ["roles"] = rolesForApp.Select(r => r.Name).ToArray(),
-                        ["groups"] = groupsForApp
-                            .Select(g => new Dictionary<string, object>(StringComparer.Ordinal)
-                            {
-                                ["id"] = g.Id.ToString(),
-                                ["name"] = g.Name,
-                            })
-                            .ToArray(),
                     };
                 }
 
@@ -538,6 +535,33 @@ public static class AuthorizationEndpoints
         }
 
         return [.. emit];
+    }
+
+    /// <summary>
+    /// Narrows the bypass-expanded permission set to the resource-server's
+    /// declared subset (<see cref="OAuthApiState.PermissionIds"/>).
+    /// Anything outside the subset is excluded — that's the whole point of
+    /// the per-RS PermissionIds field: the RS opts in to the slice of the
+    /// App catalog it actually gates on, and UserInfo emits exactly that
+    /// slice intersected with the user's grants.
+    ///
+    /// <para>Empty subset = empty emission. A freshly-created
+    /// <see cref="OAuthApiState"/> with no PermissionIds set hasn't opted in
+    /// to any catalog entries yet, so it gets nothing — the admin must
+    /// explicitly tick the catalog entries this RS gates on.</para>
+    /// </summary>
+    private static string[] NarrowToApiSubset(string[] expandedPermissions, OAuthApiState api, App app)
+    {
+        if (api.PermissionIds.Count == 0) return Array.Empty<string>();
+
+        var apiSubsetStrings = app.Permissions
+            .Where(p => api.PermissionIds.Contains(p.Id))
+            .Select(p => p.ToPermissionString())
+            .ToHashSet(StringComparer.Ordinal);
+
+        return expandedPermissions
+            .Where(s => apiSubsetStrings.Contains(s))
+            .ToArray();
     }
 
     /// <summary>
