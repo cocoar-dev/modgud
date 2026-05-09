@@ -345,9 +345,7 @@ public static class AuthorizationEndpoints
 
     private static async Task<IResult> UserinfoAsync(
         HttpContext httpContext,
-        UserManager<ApplicationUser> userManager,
-        IPermissionService permissionService,
-        IDocumentSession session)
+        UserManager<ApplicationUser> userManager)
     {
         // OAUTH-15 — defense in depth: explicitly require the openid scope on
         // the access token before serving any user info. The OIDC spec scopes
@@ -409,79 +407,14 @@ public static class AuthorizationEndpoints
             if (!string.IsNullOrEmpty(user.Lastname)) claims[Claims.FamilyName] = user.Lastname;
         }
 
-        // Per-Audience resource_access emission (Keycloak-shape, but keyed
-        // by the OAuthApi audience name rather than App slug — so the RS
-        // can read its own block via the same identifier it already uses
-        // for JWT-bearer validation).
-        //
-        // Algorithm:
-        //   1. Read aud[] from the validated access token.
-        //   2. For each audience, resolve OAuthApi → AppId → App.Slug.
-        //   3. Compute roles, permissions, and groups for that App.
-        //   4. Emit resource_access[<audience>] = { permissions, roles, groups }.
-        //
-        // Permission strings come from PermissionService already in their
-        // bare 2-segment "<resource>:<action>" form (post-Step-4 catalog
-        // refactor) plus the synthetic "realm:admin" entry when the user's
-        // System Admin role applies. No slug-stripping needed.
-        //
-        // Audience entries that don't map to a registered OAuthApi (e.g.
-        // the client_id fallback when no resource= was sent) are silently
-        // skipped — no block emitted for them. This is intentional:
-        // authz info is meaningful only in the context of an actual
-        // resource server.
-        //
-        // Bypass-tier pre-expansion (e.g. emitting all <resource>:<action>
-        // when the user holds <resource>:admin) is a follow-up. Today the
-        // strings are emitted as-is, including the "<resource>:admin" /
-        // "realm:admin" bypass markers; consumers still need an evaluator
-        // to apply them.
-        //
-        // Gated on the OIDC `roles` scope: clients that don't ask for it
-        // get a pure-identity UserInfo response.
-        if (httpContext.User.HasScope(Scopes.Roles))
-        {
-            var audiences = httpContext.User.GetAudiences().ToList();
-            if (audiences.Count > 0)
-            {
-                var resourceAccess = new Dictionary<string, object>(StringComparer.Ordinal);
-
-                foreach (var audience in audiences)
-                {
-                    var api = await session.Query<OAuthApiState>()
-                        .FirstOrDefaultAsync(a => a.Name == audience && !a.IsDeleted);
-                    if (api?.AppId is not Guid appId) continue;
-
-                    var app = await session.LoadAsync<App>(appId);
-                    if (app is null || app.IsDeleted) continue;
-
-                    var appSlug = app.Slug;
-                    var rolesForApp = await permissionService.GetUserRolesAsync(user.Id, appSlug);
-                    var permissionsForApp = await permissionService.GetUserPermissionsAsync(user.Id, appSlug);
-                    var allGroups = await permissionService.GetUserGroupsAsync(user.Id);
-                    var groupsForApp = allGroups
-                        .Where(g => g.BoundTo.Contains(PermissionService.AllAppsWildcard)
-                                    || g.BoundTo.Contains(appSlug))
-                        .ToList();
-
-                    resourceAccess[audience] = new Dictionary<string, object>(StringComparer.Ordinal)
-                    {
-                        ["permissions"] = permissionsForApp.ToArray(),
-                        ["roles"] = rolesForApp.Select(r => r.Name).ToArray(),
-                        ["groups"] = groupsForApp
-                            .Select(g => new Dictionary<string, object>(StringComparer.Ordinal)
-                            {
-                                ["id"] = g.Id.ToString(),
-                                ["name"] = g.Name,
-                            })
-                            .ToArray(),
-                    };
-                }
-
-                if (resourceAccess.Count > 0)
-                    claims["resource_access"] = resourceAccess;
-            }
-        }
+        // UserInfo is pure identity per permission-modell §5: no roles,
+        // no groups, no permissions, no resource_access blocks. The IdP
+        // can't filter authz info RS-specifically here because UserInfo
+        // is authenticated only by the user-bearer-token — it doesn't
+        // know which RS is asking. Resource servers fetch their own
+        // scoped grants via the distribution API instead (see
+        // /api/v1/distribution/me-permissions and the Cocoar.Auth.Client.AspNetCore
+        // helper lib).
 
         return Results.Ok(claims);
     }

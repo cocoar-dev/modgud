@@ -17,18 +17,17 @@ using OpenIddict.Abstractions;
 namespace Cocoar.Auth.Api.Tests.Authorization;
 
 /// <summary>
-/// End-to-end verification of the per-Audience UserInfo emission introduced
-/// in commit 8d85720. Sets up an App + OAuthApi + an OAuthScope bound to the
-/// API's audience + an authorization-code-flow OAuth client, drives
-/// cookie-login → /connect/authorize → /connect/token with PKCE and an
-/// RFC 8707 <c>resource=</c> indicator, hits /connect/userinfo with the
-/// resulting JWT, and asserts the resource_access shape:
-/// <list type="bullet">
-///   <item>keyed by audience (<c>OAuthApi.Name</c>), not App slug;</item>
-///   <item>permissions are bare 2-segment <c>&lt;resource&gt;:&lt;action&gt;</c>
-///         strings (the App-slug prefix is stripped);</item>
-///   <item>roles + groups for the App are included.</item>
-/// </list>
+/// End-to-end verification that <c>/connect/userinfo</c> is a <b>pure identity
+/// slice</b> per permission-modell §5: even when the token has audiences, the
+/// user has app-scoped permissions, and the <c>roles</c> scope is requested,
+/// UserInfo MUST NOT emit <c>resource_access</c>, <c>roles</c>, <c>permissions</c>
+/// or <c>groups</c>. Authz info lives behind the distribution API (consumed by
+/// the Cocoar.Auth.Client.AspNetCore helper lib), which UserInfo can't substitute
+/// for because it has no way to identify the calling RS.
+///
+/// <para>Drives the full auth-code+PKCE flow with an RFC-8707 <c>resource=</c>
+/// indicator so the assertion is meaningful — anything UserInfo would have
+/// emitted in the old (commit 8d85720) shape is provably absent now.</para>
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
 public class UserInfoPerAudienceTests : IntegrationTestBase
@@ -36,7 +35,7 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
     public UserInfoPerAudienceTests(SharedPostgresFixture fixture) : base(fixture) { }
 
     [Fact]
-    public async Task UserInfo_SingleAud_Emits_PerAudience_ResourceAccess_Block()
+    public async Task UserInfo_Is_Pure_Identity_Even_With_Roles_Scope_And_App_Audience()
     {
         // ── Arrange ──────────────────────────────────────────────────────
         var appAlpha = await CreateAppAsync("app-alpha", "App Alpha",
@@ -101,32 +100,26 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         Assert.True(userinfoResponse.IsSuccessStatusCode,
             $"/connect/userinfo failed ({(int)userinfoResponse.StatusCode}): {userinfoBody}");
 
-        // ── Assert: resource_access keyed by audience (NOT app slug) ────
+        // ── Assert: identity claims present, authz claims absent ────────
         using var userinfoJson = JsonDocument.Parse(userinfoBody);
-
-        // For diagnostic output if the test fails: dump full response.
         var fullPretty = JsonSerializer.Serialize(userinfoJson, new JsonSerializerOptions { WriteIndented = true });
+        var root = userinfoJson.RootElement;
 
-        Assert.True(userinfoJson.RootElement.TryGetProperty("resource_access", out var resourceAccess),
-            $"resource_access missing from UserInfo response.\nFull body:\n{fullPretty}");
+        // Identity slice: sub is mandatory; profile claims arrive when the
+        // profile scope is granted (we asked for openid + roles + the app
+        // scope, no profile, so only sub is guaranteed here).
+        Assert.True(root.TryGetProperty("sub", out _),
+            $"sub missing from UserInfo response.\nFull body:\n{fullPretty}");
 
-        Assert.True(resourceAccess.TryGetProperty(alphaAudience, out var alphaBlock),
-            $"resource_access['{alphaAudience}'] missing. resource_access keys: {string.Join(",", resourceAccess.EnumerateObject().Select(p => p.Name))}\nFull body:\n{fullPretty}");
-
-        // permissions: bare 2-segment, slug-stripped
-        Assert.True(alphaBlock.TryGetProperty("permissions", out var permissions),
-            $"permissions field missing in alpha-api block. Block:\n{alphaBlock}");
-        var permList = permissions.EnumerateArray().Select(p => p.GetString()).ToList();
-        Assert.Contains("policy:write", permList);
-        Assert.DoesNotContain("app-alpha:policy:write", permList);  // slug must be stripped
-
-        // roles: present
-        Assert.True(alphaBlock.TryGetProperty("roles", out var roles));
-        Assert.NotEmpty(roles.EnumerateArray());
-
-        // groups: present
-        Assert.True(alphaBlock.TryGetProperty("groups", out var groups));
-        Assert.NotEmpty(groups.EnumerateArray());
+        // Authz slice: must be absent. Even though the token has the roles
+        // scope and a real per-app audience, UserInfo doesn't emit any of
+        // these — the RS gets them via the distribution API instead.
+        var forbiddenKeys = new[] { "resource_access", "roles", "permissions", "groups" };
+        foreach (var key in forbiddenKeys)
+        {
+            Assert.False(root.TryGetProperty(key, out _),
+                $"UserInfo must not emit '{key}' (permission-modell §5 — UserInfo is pure identity).\nFull body:\n{fullPretty}");
+        }
     }
 
     // ─── Authorization Code + PKCE flow helper ───────────────────────────
