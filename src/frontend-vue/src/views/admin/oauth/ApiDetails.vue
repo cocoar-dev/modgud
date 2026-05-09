@@ -28,10 +28,10 @@ const store = useOAuthApiStore()
 const applicationsStore = useApplicationsStore()
 const isCreate = computed(() => props.id === 'create')
 
-// Empty value = "unassigned" — RS exists but cannot authenticate against
-// the distribution API until linked.
+// Empty value = "unassigned" — RS exists but the IdP can't resolve a
+// catalog for it, so UserInfo will not emit a resource_access block.
 const appOptions = computed(() => [
-  { value: '', label: t('admin.oauthApis.app.unassigned', {}, '— Unassigned (cannot use distribution API)') },
+  { value: '', label: t('admin.oauthApis.app.unassigned', {}, '— Unassigned (no UserInfo emission)') },
   ...applicationsStore.apps.map((a) => ({
     value: a.Id,
     label: `${a.DisplayName} (${a.Slug})`,
@@ -277,15 +277,15 @@ async function copySecret() {
           <CoarSelect v-model="form.AppId" :options="appOptions" />
           <p class="text-xs text-gray-500 mt-1">
             {{ form.AppId
-              ? t('admin.oauthApis.app.linkedHint', {}, 'This resource server can authenticate against /api/v1/distribution/* on behalf of users in the linked App.')
-              : t('admin.oauthApis.app.unassignedHint', {}, 'Without an App link, this resource server cannot authenticate against the distribution API. Use this only for legacy / standalone setups.') }}
+              ? t('admin.oauthApis.app.linkedHint', {}, 'When the IdP issues a token whose aud matches this RS, /connect/userinfo emits a resource_access block resolving the user\'s permissions through the linked App\'s catalog.')
+              : t('admin.oauthApis.app.unassignedHint', {}, 'Without an App link the IdP has no catalog to resolve against, so /connect/userinfo will not emit a resource_access block for this audience. Use this only for legacy / standalone setups.') }}
           </p>
         </CoarFormField>
 
         <CoarFormField v-if="form.AppId"
           :label="t('admin.oauthApis.permissions', {}, 'Permission-Subset (Catalog der Application)')">
           <p class="text-xs text-gray-500 mb-2">
-            {{ t('admin.oauthApis.permissionsHint', {}, 'Welche Permissions des App-Catalogs gated dieser Resource Server. Die Distribution-API liefert pro User nur den Schnitt aus diesem Subset und den User-Grants.') }}
+            {{ t('admin.oauthApis.permissionsHint', {}, 'Welche Permissions des App-Catalogs dieser Resource Server gated. UserInfo narrowed den per-Audience-Block auf den Schnitt aus diesem Subset und den User-Grants (Bypass-Tiers schon vor-expandiert).') }}
           </p>
           <div v-if="linkedAppCatalog.length === 0" class="text-xs text-gray-400 italic">
             {{ t('admin.oauthApis.permissions.empty', {}, 'Die Application hat noch keine Permissions im Catalog. Erst dort Einträge anlegen, dann hier auswählen.') }}

@@ -59,6 +59,8 @@ export interface CreateOAuthClientDto {
   RedirectUris?: string[]
   PostLogoutRedirectUris?: string[]
   Scopes?: string[]
+  AccessTokenType?: AccessTokenType
+  RefreshTokenUsage?: RefreshTokenUsage
   Enabled?: boolean
   RequireClientSecret?: boolean
   RequireConsent?: boolean
@@ -77,6 +79,8 @@ export interface UpdateOAuthClientDto {
   RedirectUris?: string[] | null
   PostLogoutRedirectUris?: string[] | null
   Scopes?: string[] | null
+  AccessTokenType?: AccessTokenType | null
+  RefreshTokenUsage?: RefreshTokenUsage | null
   Enabled?: boolean | null
   AllowAccessTokensViaBrowser?: boolean | null
   RequireClientSecret?: boolean | null

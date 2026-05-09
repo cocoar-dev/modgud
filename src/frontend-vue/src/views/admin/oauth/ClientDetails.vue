@@ -14,8 +14,9 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useOAuthClientStore } from '@/stores/oauthClient.store'
+import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
-import type { OAuthClientDto, CreateOAuthClientDto, UpdateOAuthClientDto } from '@/models/oauth'
+import type { OAuthClientDto, CreateOAuthClientDto, UpdateOAuthClientDto, AccessTokenType } from '@/models/oauth'
 
 const { t } = useI18n()
 
@@ -25,6 +26,7 @@ const props = defineProps<{
 }>()
 
 const store = useOAuthClientStore()
+const scopeStore = useOAuthScopeStore()
 const applicationsStore = useApplicationsStore()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
@@ -46,6 +48,18 @@ const consentTypeOptions = [
   { value: 'systematic', label: 'Systematic' },
 ]
 
+const accessTokenTypeOptions: { value: AccessTokenType; label: string }[] = [
+  { value: 'Jwt', label: 'JWT (self-contained)' },
+  { value: 'Reference', label: 'Reference (introspection)' },
+]
+
+const scopeOptions = computed(() =>
+  scopeStore.scopes.map((s) => ({
+    value: s.Name,
+    label: s.DisplayName ? `${s.Name} — ${s.DisplayName}` : s.Name,
+  })),
+)
+
 // App-link MultiSelect (n:m). Empty selection = realm-wide. Multiple
 // selections = Keycloak-style multi-app client (the issued token's
 // resource_access claim will carry one entry per selected app).
@@ -63,6 +77,10 @@ interface FormState {
   ConsentType: string
   ClientSecret: string
   Enabled: boolean
+  /** Bare scope names (no `scp:` prefix). Drives `Scopes` on Create/Update. */
+  Scopes: string[]
+  /** JWT (self-contained, parsed by JwtBearer) vs Reference (needs introspection). */
+  AccessTokenType: AccessTokenType
   RedirectUris: string  // newline-separated in form
   PostLogoutRedirectUris: string
   AllowedGrantTypes: string  // comma-separated
@@ -81,6 +99,18 @@ interface FormState {
   AppIds: string[]
 }
 
+const SCOPE_PERMISSION_PREFIX = 'scp:'
+
+/**
+ * The backend stores scopes inside OpenIddict's prefixed `Permissions`
+ * array (e.g. `"scp:openid"`). Extract the bare names for the form.
+ */
+function extractScopeNames(permissions: string[] | null | undefined): string[] {
+  return (permissions ?? [])
+    .filter((p) => p.startsWith(SCOPE_PERMISSION_PREFIX))
+    .map((p) => p.slice(SCOPE_PERMISSION_PREFIX.length))
+}
+
 function emptyForm(): FormState {
   return {
     ClientId: '',
@@ -89,6 +119,12 @@ function emptyForm(): FormState {
     ConsentType: 'implicit',
     ClientSecret: '',
     Enabled: true,
+    Scopes: [],
+    // JWT default: most resource servers use AddJwtBearer which expects
+    // a self-contained token. Reference is fine but requires the RS to
+    // call /connect/introspect on every request, which most setups don't
+    // wire up. JWT is the safer pick-by-default for the smoke flow.
+    AccessTokenType: 'Jwt',
     RedirectUris: '',
     PostLogoutRedirectUris: '',
     AllowedGrantTypes: '',
@@ -118,6 +154,8 @@ function fromDto(dto: OAuthClientDto): FormState {
     ConsentType: dto.ConsentType,
     ClientSecret: '',
     Enabled: dto.Enabled,
+    Scopes: extractScopeNames(dto.Permissions),
+    AccessTokenType: (dto.AccessTokenType as AccessTokenType) ?? 'Jwt',
     RedirectUris: (dto.RedirectUris ?? []).join('\n'),
     PostLogoutRedirectUris: (dto.PostLogoutRedirectUris ?? []).join('\n'),
     AllowedGrantTypes: (dto.AllowedGrantTypes ?? []).join(', '),
@@ -165,8 +203,10 @@ const footerButton = computed(() => ({
 }))
 
 onMounted(async () => {
-  // Apps for the App-link dropdown — needed for both create + edit.
+  // Apps for the App-link dropdown + scopes for the Allowed-Scopes
+  // multiselect — needed for both create + edit.
   applicationsStore.initialize()
+  scopeStore.initialize()
   if (isCreate.value) return
   loading.value = true
   try {
@@ -215,6 +255,8 @@ function buildCreateDto(): CreateOAuthClientDto {
     DisplayName: form.value.DisplayName.trim() || null,
     ConsentType: form.value.ConsentType,
     Enabled: form.value.Enabled,
+    Scopes: [...form.value.Scopes],
+    AccessTokenType: form.value.AccessTokenType,
     RequireClientSecret: form.value.RequireClientSecret,
     RequireConsent: form.value.RequireConsent,
     RedirectUris: splitLines(form.value.RedirectUris),
@@ -233,6 +275,8 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     DisplayName: form.value.DisplayName.trim() || null,
     ConsentType: form.value.ConsentType,
     Enabled: form.value.Enabled,
+    Scopes: [...form.value.Scopes],
+    AccessTokenType: form.value.AccessTokenType,
     RedirectUris: splitLines(form.value.RedirectUris),
     PostLogoutRedirectUris: splitLines(form.value.PostLogoutRedirectUris),
     AllowedGrantTypes: splitCsv(form.value.AllowedGrantTypes),
@@ -325,6 +369,17 @@ async function copySecret() {
             <CoarTextInput v-model="form.ClientSecret" type="password" clearable />
           </CoarFormField>
         </div>
+        <CoarFormField :label="t('admin.oauthClients.scopes', {}, 'Allowed Scopes')">
+          <CoarMultiSelect
+            v-model="form.Scopes"
+            :options="scopeOptions"
+            searchable
+            clearable
+            :placeholder="t('admin.oauthClients.scopes.placeholder', {}, 'Choose which scopes this client may request…')" />
+          <p class="text-xs text-gray-500 mt-1">
+            {{ t('admin.oauthClients.scopes.hint', {}, 'OpenIddict rejects /connect/authorize and /connect/token requests for any scope not listed here. Add at minimum openid + roles for OIDC clients.') }}
+          </p>
+        </CoarFormField>
         <div class="mt-3 flex flex-wrap gap-x-6 gap-y-2">
           <CoarCheckbox v-model="form.Enabled" :label="t('admin.oauthClients.enabled', {}, 'Aktiv')" />
           <CoarCheckbox v-model="form.RequireClientSecret" :label="t('admin.oauthClients.requireSecret', {}, 'Secret erforderlich')" />
@@ -350,6 +405,12 @@ async function copySecret() {
         </CoarFormField>
         <CoarFormField :label="t('admin.oauthClients.grantTypes', {}, 'Allowed Grant Types (kommagetrennt)')">
           <CoarTextInput v-model="form.AllowedGrantTypes" placeholder="authorization_code, refresh_token, client_credentials" clearable />
+        </CoarFormField>
+        <CoarFormField :label="t('admin.oauthClients.accessTokenType', {}, 'Access-Token-Typ')">
+          <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" />
+          <p class="text-xs text-gray-500 mt-1">
+            {{ t('admin.oauthClients.accessTokenType.hint', {}, 'JWT: token is self-contained, the resource server validates it locally via signature. Reference: token is opaque, the RS must call /connect/introspect on every request. JWT is the right pick for AddJwtBearer-based RSes.') }}
+          </p>
         </CoarFormField>
         <CoarFormField :label="t('admin.oauthClients.corsOrigins', {}, 'CORS Origins (eine pro Zeile)')">
           <textarea v-model="form.AllowedCorsOrigins" rows="3" class="textarea" />
