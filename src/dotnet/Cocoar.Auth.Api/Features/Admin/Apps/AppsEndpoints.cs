@@ -4,6 +4,7 @@ using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.AspNetCore;
 using Cocoar.Auth.Authorization.Events;
+using Cocoar.Auth.Authorization.Roles;
 using Cocoar.Auth.Domain.OAuth.Apis;
 using Marten;
 
@@ -146,6 +147,35 @@ public static class AppsEndpoints
                 var permissionsResult = NormalizePermissions(dto.Permissions, existingByKey);
                 if (permissionsResult.Error is not null) return permissionsResult.Error;
 
+                // Detect catalog deletions that would orphan FKs in
+                // PermissionRole.PermissionIds or OAuthApiState.PermissionIds.
+                // Removing an entry that's still referenced by a role or RS is
+                // a silent permission revocation in disguise — refuse with 409
+                // and surface what's blocking so the admin can clean up.
+                var newIds = permissionsResult.Permissions.Select(p => p.Id).ToHashSet();
+                var removedIds = app.Permissions
+                    .Where(p => !newIds.Contains(p.Id))
+                    .ToList();
+                if (removedIds.Count > 0)
+                {
+                    var blockers = await FindReferencesAsync(removedIds.Select(p => p.Id).ToList(), session);
+                    if (blockers.Count > 0)
+                    {
+                        return Results.Conflict(new
+                        {
+                            Error = "App.CatalogEntriesReferenced",
+                            Message = "Cannot remove catalog entries that are still referenced by roles or resource servers. Detach them first.",
+                            Blockers = blockers.Select(b => new
+                            {
+                                PermissionId = new ShortGuid(b.PermissionId).ToString(),
+                                Permission = removedIds.First(p => p.Id == b.PermissionId).ToPermissionString(),
+                                ReferencedByRoles = b.RoleNames,
+                                ReferencedByResourceServers = b.OAuthApiNames,
+                            }),
+                        });
+                    }
+                }
+
                 session.Events.Append(id.Guid, new AppUpdatedEvent(
                     id.Guid,
                     dto.DisplayName,
@@ -167,6 +197,42 @@ public static class AppsEndpoints
                 if (app.IsSystem)
                     return Results.BadRequest(new { Error = "App.CannotDeleteSystemApp",
                         Message = $"The system app '{app.Slug}' cannot be deleted." });
+
+                // App-level delete-block: if any role or resource-server FKs
+                // into this App's catalog (or directly into the App via
+                // PermissionRole.AppId / OAuthApiState.AppId), refuse. Same
+                // rationale as the per-entry block: deleting an App with live
+                // grants is a silent revoke.
+                var allCatalogIds = app.Permissions.Select(p => p.Id).ToList();
+                var blockingByPermissionId = allCatalogIds.Count > 0
+                    ? await FindReferencesAsync(allCatalogIds, session)
+                    : [];
+                var rolesByApp = await session.Query<PermissionRole>()
+                    .Where(r => !r.IsDeleted && r.AppId == app.Id)
+                    .Select(r => r.Name)
+                    .ToListAsync();
+                var apisByApp = await session.Query<OAuthApiState>()
+                    .Where(a => !a.IsDeleted && a.AppId == app.Id)
+                    .Select(a => a.Name)
+                    .ToListAsync();
+
+                if (blockingByPermissionId.Count > 0 || rolesByApp.Count > 0 || apisByApp.Count > 0)
+                {
+                    return Results.Conflict(new
+                    {
+                        Error = "App.HasReferences",
+                        Message = "Cannot delete an App that's still referenced. Detach roles and resource servers first.",
+                        ReferencedByRoles = rolesByApp,
+                        ReferencedByResourceServers = apisByApp,
+                        CatalogEntryReferences = blockingByPermissionId.Select(b => new
+                        {
+                            PermissionId = new ShortGuid(b.PermissionId).ToString(),
+                            Permission = app.Permissions.First(p => p.Id == b.PermissionId).ToPermissionString(),
+                            ReferencedByRoles = b.RoleNames,
+                            ReferencedByResourceServers = b.OAuthApiNames,
+                        }),
+                    });
+                }
 
                 session.Events.Append(id.Guid, new AppDeletedEvent(id.Guid));
                 await session.SaveChangesAsync();
@@ -250,6 +316,52 @@ public static class AppsEndpoints
             .ToList(),
         a.IsSystem,
     };
+
+    /// <summary>
+    /// Per-permission-id reference summary used by the catalog editor's
+    /// delete-block panel. Only entries with at least one referencing role
+    /// or RS are returned.
+    /// </summary>
+    private record PermissionReference(Guid PermissionId, List<string> RoleNames, List<string> OAuthApiNames);
+
+    /// <summary>
+    /// Finds every <see cref="PermissionRole"/> and <see cref="OAuthApiState"/>
+    /// that references any of the supplied permission ids in their respective
+    /// <c>PermissionIds</c> FK list. Returns one entry per permission-id that
+    /// has at least one referencing row — empty list = safe to delete.
+    /// </summary>
+    private static async Task<List<PermissionReference>> FindReferencesAsync(
+        List<Guid> permissionIds, IDocumentSession session)
+    {
+        if (permissionIds.Count == 0) return [];
+
+        // Marten's LINQ provider supports IsOneOf for membership; for a
+        // small list of ids in our case (handful of catalog entries) it's
+        // acceptable to load every role/api with any non-empty PermissionIds
+        // and filter in memory. Tenant DBs aren't huge here.
+        var roles = await session.Query<PermissionRole>()
+            .Where(r => !r.IsDeleted && r.PermissionIds.Any())
+            .ToListAsync();
+        var apis = await session.Query<OAuthApiState>()
+            .Where(a => !a.IsDeleted && a.PermissionIds.Any())
+            .ToListAsync();
+
+        var result = new List<PermissionReference>();
+        foreach (var pid in permissionIds)
+        {
+            var roleNames = roles
+                .Where(r => r.PermissionIds.Contains(pid))
+                .Select(r => r.Name)
+                .ToList();
+            var apiNames = apis
+                .Where(a => a.PermissionIds.Contains(pid))
+                .Select(a => a.Name)
+                .ToList();
+            if (roleNames.Count > 0 || apiNames.Count > 0)
+                result.Add(new PermissionReference(pid, roleNames, apiNames));
+        }
+        return result;
+    }
 
     /// <summary>
     /// Validates and normalises the permission list off a create / update

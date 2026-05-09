@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarFormField, CoarNote, CoarTag, CoarButton } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarFormField, CoarNote, CoarTag, CoarButton, CoarIcon } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
 import type {
   ApplicationDto,
-  ApplicationPermissionDto,
   ApplicationPermissionInputDto,
 } from '@/models/application'
 
@@ -30,78 +29,118 @@ const rsBusy = ref(false)
 const rsResult = ref<{ apiId: string; name: string; secret: string | null; alreadyExisted: boolean } | null>(null)
 const rsError = ref<string | null>(null)
 
+/** Per-permission reference info from a 409 conflict response. */
+interface CatalogBlocker {
+  PermissionId: string
+  Permission: string
+  ReferencedByRoles: string[]
+  ReferencedByResourceServers: string[]
+}
+
+const catalogBlockers = ref<CatalogBlocker[]>([])
+
+/**
+ * One row in the catalog editor. Existing entries keep their server-issued
+ * Id so role-grants and RS-subsets keep their FK targets stable across
+ * resource/action renames; new rows use a transient `null` Id until first
+ * save. The optional `originalKey` records the resource:action shape the
+ * row started life with, so the rename-warning surfaces when the admin
+ * edits an existing row's key.
+ */
+interface CatalogRow {
+  id: string | null
+  resource: string
+  action: string
+  description: string
+  originalKey: string | null
+}
+
+const catalog = ref<CatalogRow[]>([])
+
+const SEGMENT_REGEX = /^[a-z0-9-]+$/
+
 interface FormState {
   Slug: string
   DisplayName: string
   Description: string
-  /**
-   * Permission catalog as text. One line per entry:
-   *   resource:action            optional description follows after a #
-   *   user:read   # read users
-   * Format must match `^[a-z0-9-]+:[a-z0-9-]+$` — validated server-side.
-   */
-  PermissionsText: string
 }
 
-function emptyForm(): FormState {
-  return { Slug: '', DisplayName: '', Description: '', PermissionsText: '' }
-}
-
-const form = ref<FormState>(emptyForm())
+const form = ref<FormState>({ Slug: '', DisplayName: '', Description: '' })
 const dto = ref<ApplicationDto | null>(null)
 
-function fromDto(d: ApplicationDto): FormState {
+function fromDto(d: ApplicationDto): { form: FormState; catalog: CatalogRow[] } {
   return {
-    Slug: d.Slug,
-    DisplayName: d.DisplayName,
-    Description: d.Description ?? '',
-    PermissionsText: (d.Permissions ?? [])
-      .map((p) => p.Description ? `${p.Resource}:${p.Action}  # ${p.Description}` : `${p.Resource}:${p.Action}`)
-      .join('\n'),
+    form: {
+      Slug: d.Slug,
+      DisplayName: d.DisplayName,
+      Description: d.Description ?? '',
+    },
+    catalog: (d.Permissions ?? []).map((p) => ({
+      id: p.Id,
+      resource: p.Resource,
+      action: p.Action,
+      description: p.Description ?? '',
+      originalKey: `${p.Resource}:${p.Action}`,
+    })),
   }
 }
 
-interface ParsedPermission {
-  resource: string
-  action: string
-  description: string | null
+function buildPermissionsPayload(): ApplicationPermissionInputDto[] {
+  return catalog.value
+    .filter((r) => r.resource.trim() && r.action.trim())
+    .map((r) => ({
+      Id: r.id ?? null,
+      Resource: r.resource.trim(),
+      Action: r.action.trim(),
+      Description: r.description.trim() || null,
+    }))
 }
 
-function parsePermissionsText(input: string): ParsedPermission[] {
-  const result: ParsedPermission[] = []
-  for (const raw of input.split(/[\r\n]+/)) {
-    const line = raw.trim()
-    if (!line) continue
-    const hashIndex = line.indexOf('#')
-    const head = (hashIndex >= 0 ? line.slice(0, hashIndex) : line).trim()
-    const description = hashIndex >= 0 ? line.slice(hashIndex + 1).trim() : ''
-    const colonIndex = head.indexOf(':')
-    if (colonIndex < 0) continue
-    const resource = head.slice(0, colonIndex).trim()
-    const action = head.slice(colonIndex + 1).trim()
-    if (!resource || !action) continue
-    result.push({ resource, action, description: description || null })
-  }
-  return result
+function addRow() {
+  catalog.value = [...catalog.value, {
+    id: null, resource: '', action: '', description: '', originalKey: null,
+  }]
 }
 
-/**
- * Build the payload for create/update — preserves existing ids when a
- * resource:action pair already exists in the loaded DTO so role-grants
- * and OAuthApi subsets keep their FK targets.
- */
-function buildPermissionsPayload(text: string, existing: ApplicationPermissionDto[] | null): ApplicationPermissionInputDto[] {
-  const idLookup = new Map<string, string>()
-  for (const p of existing ?? []) {
-    idLookup.set(`${p.Resource}:${p.Action}`, p.Id)
-  }
-  return parsePermissionsText(text).map((p) => ({
-    Id: idLookup.get(`${p.resource}:${p.action}`) ?? null,
-    Resource: p.resource,
-    Action: p.action,
-    Description: p.description,
-  }))
+function removeRow(index: number) {
+  catalog.value = catalog.value.filter((_, i) => i !== index)
 }
+
+function isSegmentValid(value: string): boolean {
+  return value === '' || SEGMENT_REGEX.test(value)
+}
+
+/** True when the row's resource OR action diverges from the original. */
+function rowRenamed(row: CatalogRow): boolean {
+  if (!row.originalKey || !row.id) return false
+  const currentKey = `${row.resource.trim()}:${row.action.trim()}`
+  return currentKey !== row.originalKey
+}
+
+const renamedCount = computed(() => catalog.value.filter(rowRenamed).length)
+
+/** Duplicate-key detection — sister rows that match resource:action. */
+const duplicateKeys = computed(() => {
+  const counts = new Map<string, number>()
+  for (const r of catalog.value) {
+    const key = `${r.resource.trim()}:${r.action.trim()}`
+    if (key === ':') continue
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return new Set([...counts.entries()].filter(([, c]) => c > 1).map(([k]) => k))
+})
+
+const hasInvalidSegments = computed(() => catalog.value.some((r) =>
+  (r.resource && !isSegmentValid(r.resource)) ||
+  (r.action && !isSegmentValid(r.action))
+))
+
+const hasIncompleteRows = computed(() => catalog.value.some((r) =>
+  // A row with one segment filled and the other blank is incomplete; both
+  // blank we silently drop on save (treated as an empty placeholder).
+  (r.resource.trim() === '' && r.action.trim() !== '') ||
+  (r.resource.trim() !== '' && r.action.trim() === '')
+))
 
 const isSystem = computed(() => dto.value?.IsSystem === true)
 
@@ -117,13 +156,20 @@ const footerButton = computed(() => ({
   text: isCreate.value ? t('common.create', {}, 'Erstellen') : t('common.save', {}, 'Speichern'),
   disabled: loading.value
     || !form.value.DisplayName.trim()
-    || (isCreate.value && !form.value.Slug.trim()),
+    || (isCreate.value && !form.value.Slug.trim())
+    || hasInvalidSegments.value
+    || hasIncompleteRows.value
+    || duplicateKeys.value.size > 0,
   loading: loading.value,
   onClick: save,
 }))
 
 onMounted(async () => {
-  if (isCreate.value) return
+  if (isCreate.value) {
+    // Start with one empty row so a new App has somewhere to type into.
+    addRow()
+    return
+  }
   loading.value = true
   try {
     const loaded = await store.loadOne(id.value)
@@ -132,7 +178,9 @@ onMounted(async () => {
       return
     }
     dto.value = loaded
-    form.value = fromDto(loaded)
+    const parsed = fromDto(loaded)
+    form.value = parsed.form
+    catalog.value = parsed.catalog
   } finally {
     loading.value = false
   }
@@ -141,24 +189,33 @@ onMounted(async () => {
 async function save() {
   loading.value = true
   error.value = null
+  catalogBlockers.value = []
   try {
     if (isCreate.value) {
       await store.create({
         Slug: form.value.Slug.trim(),
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
-        Permissions: buildPermissionsPayload(form.value.PermissionsText, null),
+        Permissions: buildPermissionsPayload(),
       })
     } else {
       await store.update(id.value, {
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
-        Permissions: buildPermissionsPayload(form.value.PermissionsText, dto.value?.Permissions ?? null),
+        Permissions: buildPermissionsPayload(),
       })
     }
     props.close()
   } catch (e: any) {
-    error.value = e?.body?.Message ?? e?.message ?? String(e)
+    // 409 catalog-block: surface the blocking references so the admin can
+    // detach them before retrying.
+    const body = e?.body
+    if (body?.Error === 'App.CatalogEntriesReferenced' && Array.isArray(body.Blockers)) {
+      catalogBlockers.value = body.Blockers as CatalogBlocker[]
+      error.value = body.Message ?? t('admin.apps.catalogBlocked', {}, 'Some catalog entries are still in use.')
+    } else {
+      error.value = body?.Message ?? e?.message ?? String(e)
+    }
   } finally {
     loading.value = false
   }
@@ -185,16 +242,16 @@ async function provisionDefaultResourceServer() {
 
 <template>
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="layout-grid"
-    :footer-button="footerButton" width="42rem">
+    :footer-button="footerButton" width="48rem">
     <div v-if="loading && !dto && !isCreate" class="flex flex-1 items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
     </div>
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
       <CoarNote v-if="isCreate" variant="info">
-        {{ t('admin.apps.createHint', {}, 'Eine neue App registriert sich für Permission-Resolution. Slug ist nach dem Erstellen unveränderbar — er prefixiert alle Permission-Strings dieser App.') }}
+        {{ t('admin.apps.createHint', {}, 'Eine neue App registriert sich für Permission-Resolution. Slug ist nach dem Erstellen unveränderbar.') }}
       </CoarNote>
       <CoarNote v-else-if="isSystem" variant="warning">
-        {{ t('admin.apps.systemHint', {}, 'Dies ist die System-App (cocoar-auth). Sie kann nicht gelöscht oder umbenannt werden; den Permission-Catalog nur mit Bedacht ändern — die Einträge müssen mit den RequiresPermission-Aufrufen im Backend konsistent bleiben, sonst werden Endpunkte unerreichbar oder Rollen verlieren ihre Grants.') }}
+        {{ t('admin.apps.systemHint', {}, 'Dies ist die System-App (cocoar-auth). Sie kann nicht gelöscht oder umbenannt werden; den Permission-Catalog nur mit Bedacht ändern — die Einträge müssen mit den RequiresPermission-Aufrufen im Backend konsistent bleiben.') }}
       </CoarNote>
 
       <div class="grid grid-cols-2 gap-3">
@@ -211,18 +268,97 @@ async function provisionDefaultResourceServer() {
         <CoarTextInput v-model="form.Description" clearable />
       </CoarFormField>
 
-      <CoarFormField :label="t('admin.apps.permissions', {}, 'Permission-Catalog (eine pro Zeile, Format resource:action, optional # Beschreibung)')">
-        <textarea v-model="form.PermissionsText" rows="8" class="textarea"
-          placeholder="todo:read&#10;todo:write   # Edit own todos&#10;todo:admin   # Resource-wide bypass&#10;project:read" />
-      </CoarFormField>
+      <!-- Catalog editor — structured table. -->
+      <div class="catalog-section">
+        <div class="catalog-header">
+          <span class="catalog-title">{{ t('admin.apps.permissions', {}, 'Permission-Catalog') }}</span>
+          <span class="catalog-subtitle">
+            {{ t('admin.apps.permissionsHint', {}, 'Resource und Action je 1+ lowercase-Buchstaben/Ziffern/Bindestriche. Ids bleiben über Renames stabil — Role-Grants und RS-Subsets folgen automatisch.') }}
+          </span>
+        </div>
+
+        <CoarNote v-if="renamedCount > 0" variant="warning">
+          {{ t('admin.apps.renamedWarning', { count: renamedCount }, `${renamedCount} Eintrag/Einträge wurden umbenannt. Die String-Form ändert sich (z.B. in Distribution-API-Responses und UserInfo), aber Role-Grants und RS-Subsets folgen automatisch über die stabile Id.`) }}
+        </CoarNote>
+
+        <table class="catalog-table">
+          <thead>
+            <tr>
+              <th class="col-resource">{{ t('admin.apps.cat.resource', {}, 'Resource') }}</th>
+              <th class="col-action">{{ t('admin.apps.cat.action', {}, 'Action') }}</th>
+              <th class="col-description">{{ t('admin.apps.cat.description', {}, 'Beschreibung') }}</th>
+              <th class="col-actions"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, index) in catalog" :key="index">
+              <td>
+                <input v-model="row.resource"
+                  :class="{ 'invalid': row.resource && !isSegmentValid(row.resource), 'duplicate': duplicateKeys.has(`${row.resource.trim()}:${row.action.trim()}`) }"
+                  class="catalog-input" placeholder="user" />
+              </td>
+              <td>
+                <input v-model="row.action"
+                  :class="{ 'invalid': row.action && !isSegmentValid(row.action), 'duplicate': duplicateKeys.has(`${row.resource.trim()}:${row.action.trim()}`) }"
+                  class="catalog-input" placeholder="read" />
+              </td>
+              <td>
+                <input v-model="row.description" class="catalog-input"
+                  :placeholder="t('admin.apps.cat.descriptionPlaceholder', {}, 'optional')" />
+              </td>
+              <td class="col-actions-cell">
+                <CoarTag v-if="rowRenamed(row)" size="s" variant="warning"
+                  :title="t('admin.apps.cat.renamedTitle', {}, 'Umbenannt — Id bleibt stabil')">
+                  ✎
+                </CoarTag>
+                <button type="button" class="row-delete"
+                  :title="t('admin.apps.cat.removeTitle', {}, 'Eintrag entfernen')"
+                  @click="removeRow(index)">
+                  <CoarIcon name="trash-2" size="s" />
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="catalog-footer">
+          <CoarButton size="s" variant="secondary" icon-start="plus" @click="addRow">
+            {{ t('admin.apps.cat.add', {}, 'Eintrag hinzufügen') }}
+          </CoarButton>
+          <span v-if="hasInvalidSegments" class="hint-error">
+            {{ t('admin.apps.cat.invalidSegment', {}, 'Format: ^[a-z0-9-]+$ je Segment.') }}
+          </span>
+          <span v-else-if="hasIncompleteRows" class="hint-error">
+            {{ t('admin.apps.cat.incomplete', {}, 'Resource und Action sind beide erforderlich.') }}
+          </span>
+          <span v-else-if="duplicateKeys.size > 0" class="hint-error">
+            {{ t('admin.apps.cat.duplicate', {}, 'Doppelte Einträge: ') + [...duplicateKeys].join(', ') }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Delete-block panel — surfaced after a 409 from the server. -->
+      <CoarNote v-if="catalogBlockers.length > 0" variant="error">
+        <div class="font-semibold mb-1">
+          {{ t('admin.apps.cat.blockedTitle', {}, 'Diese Einträge sind noch in Verwendung:') }}
+        </div>
+        <ul class="blocker-list">
+          <li v-for="b in catalogBlockers" :key="b.PermissionId">
+            <code>{{ b.Permission }}</code>
+            <span v-if="b.ReferencedByRoles.length > 0">
+              · {{ t('admin.apps.cat.refRoles', {}, 'Rollen:') }} {{ b.ReferencedByRoles.join(', ') }}
+            </span>
+            <span v-if="b.ReferencedByResourceServers.length > 0">
+              · {{ t('admin.apps.cat.refRSes', {}, 'Resource Server:') }} {{ b.ReferencedByResourceServers.join(', ') }}
+            </span>
+          </li>
+        </ul>
+      </CoarNote>
 
       <div v-if="!isCreate && dto" class="flex items-center gap-2 text-sm text-gray-500">
         <CoarTag v-if="isSystem" size="s" variant="warning">{{ t('admin.apps.systemTag', {}, 'System') }}</CoarTag>
       </div>
 
-      <!-- Klick-Aktion: provision default resource-server. Lives at the
-           bottom of the form because it's a one-time setup step admins
-           reach for after creating the App. -->
+      <!-- Klick-Aktion: provision default resource-server. -->
       <div v-if="!isCreate && dto && !isSystem" class="rs-panel">
         <div class="rs-panel-header">
           {{ t('admin.apps.rs.title', {}, 'Resource Server') }}
@@ -292,14 +428,121 @@ async function provisionDefaultResourceServer() {
   word-break: break-all;
 }
 
-.textarea {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--coar-border-neutral-secondary, #d1d5db);
+.catalog-section {
+  border: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
   border-radius: var(--coar-radius-m, 4px);
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.catalog-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.catalog-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.catalog-subtitle {
+  font-size: 0.74rem;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+}
+
+.catalog-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.catalog-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
+}
+
+.catalog-table td {
+  padding: 3px 4px;
+  vertical-align: middle;
+}
+
+.col-resource { width: 26%; }
+.col-action { width: 22%; }
+.col-description {  }
+.col-actions { width: 4.5rem; }
+
+.col-actions-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.catalog-input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--coar-border-neutral-secondary, #d1d5db);
+  border-radius: var(--coar-radius-s, 3px);
   background: var(--coar-background-neutral-primary, #fff);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8rem;
-  resize: vertical;
+  font-size: 0.78rem;
+}
+
+.catalog-input.invalid {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+
+.catalog-input.duplicate {
+  border-color: #b45309;
+  background: #fffbeb;
+}
+
+.row-delete {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  border-radius: 3px;
+}
+
+.row-delete:hover {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.catalog-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.hint-error {
+  font-size: 0.74rem;
+  color: #dc2626;
+}
+
+.blocker-list {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.blocker-list li {
+  margin-top: 2px;
+}
+
+.blocker-list code {
+  font-weight: 600;
 }
 </style>
