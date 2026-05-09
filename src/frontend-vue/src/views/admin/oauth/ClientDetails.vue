@@ -53,6 +53,15 @@ const accessTokenTypeOptions: { value: AccessTokenType; label: string }[] = [
   { value: 'Reference', label: 'Reference (introspection)' },
 ]
 
+const grantTypeOptions = [
+  { value: 'authorization_code', label: 'authorization_code (interactive user-flow + PKCE)' },
+  { value: 'refresh_token', label: 'refresh_token (long-lived sessions)' },
+  { value: 'client_credentials', label: 'client_credentials (M2M, no user)' },
+  { value: 'urn:ietf:params:oauth:grant-type:device_code', label: 'device_code (TVs, CLIs)' },
+  { value: 'implicit', label: 'implicit — DEPRECATED, do not use' },
+  { value: 'password', label: 'password — DEPRECATED, do not use' },
+]
+
 const scopeOptions = computed(() =>
   scopeStore.scopes.map((s) => ({
     value: s.Name,
@@ -83,7 +92,8 @@ interface FormState {
   AccessTokenType: AccessTokenType
   RedirectUris: string  // newline-separated in form
   PostLogoutRedirectUris: string
-  AllowedGrantTypes: string  // comma-separated
+  /** Pre-bound to a multi-select; sent as-is to the backend. */
+  AllowedGrantTypes: string[]
   AllowedCorsOrigins: string
   RequireClientSecret: boolean
   RequireConsent: boolean
@@ -127,7 +137,7 @@ function emptyForm(): FormState {
     AccessTokenType: 'Jwt',
     RedirectUris: '',
     PostLogoutRedirectUris: '',
-    AllowedGrantTypes: '',
+    AllowedGrantTypes: [],
     AllowedCorsOrigins: '',
     RequireClientSecret: true,
     RequireConsent: false,
@@ -158,7 +168,7 @@ function fromDto(dto: OAuthClientDto): FormState {
     AccessTokenType: (dto.AccessTokenType as AccessTokenType) ?? 'Jwt',
     RedirectUris: (dto.RedirectUris ?? []).join('\n'),
     PostLogoutRedirectUris: (dto.PostLogoutRedirectUris ?? []).join('\n'),
-    AllowedGrantTypes: (dto.AllowedGrantTypes ?? []).join(', '),
+    AllowedGrantTypes: [...(dto.AllowedGrantTypes ?? [])],
     AllowedCorsOrigins: (dto.AllowedCorsOrigins ?? []).join('\n'),
     RequireClientSecret: dto.RequireClientSecret,
     RequireConsent: dto.RequireConsent,
@@ -176,9 +186,6 @@ function fromDto(dto: OAuthClientDto): FormState {
 
 function splitLines(input: string): string[] {
   return input.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean)
-}
-function splitCsv(input: string): string[] {
-  return input.split(',').map((s) => s.trim()).filter(Boolean)
 }
 function parseInt(input: string): number | null {
   const trimmed = input.trim()
@@ -261,7 +268,7 @@ function buildCreateDto(): CreateOAuthClientDto {
     RequireConsent: form.value.RequireConsent,
     RedirectUris: splitLines(form.value.RedirectUris),
     PostLogoutRedirectUris: splitLines(form.value.PostLogoutRedirectUris),
-    AllowedGrantTypes: splitCsv(form.value.AllowedGrantTypes),
+    AllowedGrantTypes: [...form.value.AllowedGrantTypes],
     AllowedCorsOrigins: splitLines(form.value.AllowedCorsOrigins),
   }
   const secret = form.value.ClientSecret.trim()
@@ -279,7 +286,7 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     AccessTokenType: form.value.AccessTokenType,
     RedirectUris: splitLines(form.value.RedirectUris),
     PostLogoutRedirectUris: splitLines(form.value.PostLogoutRedirectUris),
-    AllowedGrantTypes: splitCsv(form.value.AllowedGrantTypes),
+    AllowedGrantTypes: [...form.value.AllowedGrantTypes],
     AllowedCorsOrigins: splitLines(form.value.AllowedCorsOrigins),
     RequireClientSecret: form.value.RequireClientSecret,
     RequireConsent: form.value.RequireConsent,
@@ -380,6 +387,17 @@ async function copySecret() {
             {{ t('admin.oauthClients.scopes.hint', {}, 'OpenIddict rejects /connect/authorize and /connect/token requests for any scope not listed here. Add at minimum openid + roles for OIDC clients.') }}
           </p>
         </CoarFormField>
+        <CoarFormField :label="t('admin.oauthClients.grantTypes', {}, 'Allowed Grant Types')">
+          <CoarMultiSelect
+            v-model="form.AllowedGrantTypes"
+            :options="grantTypeOptions"
+            searchable
+            clearable
+            :placeholder="t('admin.oauthClients.grantTypes.placeholder', {}, 'Pick the OAuth flows this client may use…')" />
+          <p class="text-xs text-gray-500 mt-1">
+            {{ t('admin.oauthClients.grantTypes.hint', {}, 'No silent defaults: leaving this empty produces a client that cannot mint tokens. SPAs / mobile apps: authorization_code + refresh_token. Server-to-server: client_credentials. Pick what the client actually needs.') }}
+          </p>
+        </CoarFormField>
         <div class="mt-3 flex flex-wrap gap-x-6 gap-y-2">
           <CoarCheckbox v-model="form.Enabled" :label="t('admin.oauthClients.enabled', {}, 'Aktiv')" />
           <CoarCheckbox v-model="form.RequireClientSecret" :label="t('admin.oauthClients.requireSecret', {}, 'Secret erforderlich')" />
@@ -402,9 +420,6 @@ async function copySecret() {
         </CoarFormField>
         <CoarFormField :label="t('admin.oauthClients.postLogoutRedirectUris', {}, 'Post-Logout Redirect-URIs (eine pro Zeile)')">
           <textarea v-model="form.PostLogoutRedirectUris" rows="3" class="textarea" />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.oauthClients.grantTypes', {}, 'Allowed Grant Types (kommagetrennt)')">
-          <CoarTextInput v-model="form.AllowedGrantTypes" placeholder="authorization_code, refresh_token, client_credentials" clearable />
         </CoarFormField>
         <CoarFormField :label="t('admin.oauthClients.accessTokenType', {}, 'Access-Token-Typ')">
           <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" />

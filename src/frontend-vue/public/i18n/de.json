@@ -544,7 +544,7 @@
       "grantCount": "Grants",
       "redirectUris": "Redirect-URIs (eine pro Zeile)",
       "postLogoutRedirectUris": "Post-Logout Redirect-URIs (eine pro Zeile)",
-      "grantTypes": "Allowed Grant Types (kommagetrennt)",
+      "grantTypes": "Allowed Grant Types",
       "corsOrigins": "CORS Origins (eine pro Zeile)",
       "requireSecret": "Secret erforderlich",
       "requireConsent": "Zustimmung erforderlich",

@@ -43,24 +43,25 @@ internal static class OAuthAdminMapping
             OAuthPermissions.Endpoints.DeviceAuthorization,
         };
 
-        if (grantTypes.Count > 0)
+        // Empty input stays empty: a client created without explicit
+        // grant types ends up with no token-flow permissions and won't
+        // be able to mint tokens. This is intentional — silently
+        // granting "authorization_code + refresh_token (+ client_credentials
+        // for confidential)" as a fallback was over-privileging clients
+        // whose admin simply hadn't typed anything yet. Force every
+        // create / update to be explicit. The UI exposes a multi-select
+        // so the user has to pick.
+        foreach (var g in grantTypes)
         {
-            foreach (var g in grantTypes)
-            {
-                var p = MapGrantTypeToPermission(g);
-                if (p is not null) permissions.Add(p);
-            }
-            if (grantTypes.Contains("authorization_code"))
-                permissions.Add(OAuthPermissions.ResponseTypes.Code);
+            var p = MapGrantTypeToPermission(g);
+            if (p is not null) permissions.Add(p);
         }
-        else
-        {
-            permissions.Add(OAuthPermissions.GrantTypes.AuthorizationCode);
-            permissions.Add(OAuthPermissions.GrantTypes.RefreshToken);
+        if (grantTypes.Contains("authorization_code"))
             permissions.Add(OAuthPermissions.ResponseTypes.Code);
-            if (clientType == OAuthClientTypes.Confidential)
-                permissions.Add(OAuthPermissions.GrantTypes.ClientCredentials);
-        }
+        // <c>clientType</c> is intentionally unused now — the only place
+        // it had effect was the removed Confidential→ClientCredentials
+        // fallback above. Kept on the signature for callsite compatibility.
+        _ = clientType;
 
         foreach (var scope in scopes)
             permissions.Add(OAuthPermissions.Prefixes.Scope + scope);

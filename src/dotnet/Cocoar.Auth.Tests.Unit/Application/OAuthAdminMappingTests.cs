@@ -32,27 +32,37 @@ public class OAuthAdminMappingTests
         }
 
         [Fact]
-        public void Empty_grant_types_yields_default_authcode_plus_refresh()
+        public void Empty_grant_types_for_public_yields_no_grant_permissions()
         {
+            // Pin the post-fallback-removal behaviour: an admin who creates
+            // a Public client without picking grant types ends up with a
+            // client that holds NO token-flow permissions and cannot mint
+            // tokens. Better than silently granting authcode+refresh to
+            // every freshly-created client.
             var perms = OAuthAdminMapping.BuildClientPermissions(
                 Array.Empty<string>(), Array.Empty<string>(), OAuthClientTypes.Public);
 
-            Assert.Contains(OAuthPermissions.GrantTypes.AuthorizationCode, perms);
-            Assert.Contains(OAuthPermissions.GrantTypes.RefreshToken, perms);
-            Assert.Contains(OAuthPermissions.ResponseTypes.Code, perms);
+            Assert.DoesNotContain(OAuthPermissions.GrantTypes.AuthorizationCode, perms);
+            Assert.DoesNotContain(OAuthPermissions.GrantTypes.RefreshToken, perms);
             Assert.DoesNotContain(OAuthPermissions.GrantTypes.ClientCredentials, perms);
+            Assert.DoesNotContain(OAuthPermissions.ResponseTypes.Code, perms);
         }
 
         [Fact]
-        public void Empty_grant_types_for_confidential_also_adds_client_credentials()
+        public void Empty_grant_types_for_confidential_does_NOT_silently_add_client_credentials()
         {
+            // Same invariant for Confidential clients: the previous code
+            // helpfully added ClientCredentials whenever a confidential
+            // client was created with an empty grant list, which silently
+            // over-privileged confidential web apps that only ever needed
+            // authorization_code. No more — admins pick explicitly.
             var perms = OAuthAdminMapping.BuildClientPermissions(
                 Array.Empty<string>(), Array.Empty<string>(), OAuthClientTypes.Confidential);
 
-            Assert.Contains(OAuthPermissions.GrantTypes.AuthorizationCode, perms);
-            Assert.Contains(OAuthPermissions.GrantTypes.RefreshToken, perms);
-            Assert.Contains(OAuthPermissions.GrantTypes.ClientCredentials, perms);
-            Assert.Contains(OAuthPermissions.ResponseTypes.Code, perms);
+            Assert.DoesNotContain(OAuthPermissions.GrantTypes.AuthorizationCode, perms);
+            Assert.DoesNotContain(OAuthPermissions.GrantTypes.RefreshToken, perms);
+            Assert.DoesNotContain(OAuthPermissions.GrantTypes.ClientCredentials, perms);
+            Assert.DoesNotContain(OAuthPermissions.ResponseTypes.Code, perms);
         }
 
         [Fact]
