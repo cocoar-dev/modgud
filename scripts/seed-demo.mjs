@@ -159,6 +159,7 @@ async function seedApps(spec) {
 
   let created = 0
   for (const a of spec) {
+    if (!a.slug) continue                                    // skip comment entries
     const live = bySlug.get(a.slug)
     if (live) {
       console.log(`  — App '${a.slug}' exists — using as-is`)
@@ -238,6 +239,7 @@ async function seedRoles(spec) {
 
   let created = 0
   for (const r of spec) {
+    if (!r.name) continue                                    // skip comment entries
     if (idsByKey.roles.has(r.name)) {
       console.log(`  — Role '${r.name}' exists — skipping`)
       continue
@@ -282,6 +284,7 @@ async function seedUsers(spec, password) {
 
   let created = 0
   for (const u of spec) {
+    if (!u.userName && !u.key) continue                      // skip comment entries
     const userName = (u.userName ?? u.key ?? '').toLowerCase()
     if (idsByKey.users.has(userName)) {
       console.log(`  — User '${userName}' exists — skipping`)
@@ -335,6 +338,7 @@ async function seedGroups(spec) {
 
   let created = 0
   for (const g of spec) {
+    if (!g.name) continue                                  // skip comment entries
     if (existingNames.has(g.name?.toLowerCase())) {
       console.log(`  — Group '${g.name}' exists — skipping`)
       continue
@@ -347,7 +351,11 @@ async function seedGroups(spec) {
       RoleIds:   resolveRoles(g.roles),
       MembershipMode: isAuto ? 'Auto' : 'Manual',
       MembershipScript: isAuto ? g.membershipScript : null,
-      BoundTo: ['cocoar-auth'],
+      // Per-group `boundTo` from the seed honoured. Defaults to
+      // ["cocoar-auth"] for legacy demo entries that don't specify —
+      // smoke-test groups use ["*"] so the role applies for any app
+      // the role's AppId points at.
+      BoundTo: g.boundTo ?? ['cocoar-auth'],
     })
     if (!res.ok) { fail(`group '${g.name}'`, res); continue }
     created++
@@ -364,21 +372,36 @@ async function seedScopes(spec) {
 
   let created = 0
   for (const s of spec) {
+    if (!s.name) continue                                   // skip comment entries
     if (existingNames.has(s.name.toLowerCase())) {
       console.log(`  — Scope '${s.name}' exists — skipping`)
       continue
     }
+
+    // Optional appKey → resolves to AppId. App-scoped scopes can only be
+    // requested by clients linked to the same App (Stufe-3-Restriction
+    // in AuthorizationEndpoints). Without an appKey: global scope.
+    let appId = null
+    if (s.appKey) {
+      const resolved = resolveApp(s.appKey, `scope '${s.name}'`)
+      appId = resolved.appId
+    }
+
     const res = await post('/api/admin/oauth/scopes', {
       Name: s.name,
       DisplayName: s.displayName,
       Description: s.description,
-      Resources: s.resources?.length ? s.resources : ['demo-api'],
+      // Resources binds the audience: a token issued for this scope
+      // lands with aud[] containing every entry here. The smoke-test
+      // setup binds one Audience per scope — keeps wiring obvious.
+      Resources: s.resources ?? [],
       Enabled: true,
       ShowInDiscoveryDocument: true,
+      AppId: appId,
     })
     if (!res.ok) { fail(`scope '${s.name}'`, res); continue }
     created++
-    console.log(`  ✓ Scope '${s.name}'`)
+    console.log(`  ✓ Scope '${s.name}'${s.resources?.length ? ` (aud=${s.resources.join(',')})` : ''}`)
   }
   return created
 }
@@ -392,6 +415,7 @@ async function seedApis(spec) {
   const secrets = {}
   let created = 0
   for (const a of spec) {
+    if (!a.name) continue                                    // skip comment entries
     if (existingNames.has(a.name.toLowerCase())) {
       console.log(`  — API '${a.name}' exists — skipping`)
       continue
@@ -432,10 +456,23 @@ async function seedClients(spec) {
   const secrets = {}
   let created = 0
   for (const c of spec) {
+    if (!c.clientId) continue                                // skip comment entries
     if (existingClientIds.has(c.clientId.toLowerCase())) {
       console.log(`  — Client '${c.clientId}' exists — skipping`)
       continue
     }
+    // Optional appKeys[] → resolves to OAuthClient.AppIds (n:m link).
+    // Required when the client wants to request app-scoped scopes (those
+    // with AppId set) — Stufe-3 scope restriction in AuthorizationEndpoints
+    // refuses otherwise. Backwards compatible: clients without appKeys can
+    // still request global scopes.
+    const appIds = []
+    for (const key of c.appKeys ?? []) {
+      const id = idsByKey.apps.get(key)
+      if (id) appIds.push(id)
+      else console.warn(`  ! client '${c.clientId}': unknown appKey '${key}'`)
+    }
+
     const res = await post('/api/admin/oauth/clients', {
       ClientId: c.clientId,
       DisplayName: c.displayName,
@@ -450,6 +487,7 @@ async function seedClients(spec) {
       RequireClientSecret: c.requireClientSecret ?? (c.clientType === 'confidential'),
       AccessTokenType: c.accessTokenType ?? 'Reference',
       Enabled: true,
+      AppIds: appIds,
     })
     if (!res.ok) { fail(`client '${c.clientId}'`, res); continue }
     if (res.body.ClientSecret) secrets[c.clientId] = res.body.ClientSecret
