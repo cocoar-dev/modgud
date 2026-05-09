@@ -9,13 +9,13 @@ namespace Internal.Generated.WolverineHandlers
     [global::System.CodeDom.Compiler.GeneratedCode("JasperFx", "1.0.0")]
     public sealed class DeleteUsersCommandHandler189187132 : Wolverine.Runtime.Handlers.MessageHandler
     {
-        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
         private readonly System.TimeProvider _timeProvider;
+        private readonly Wolverine.Marten.Publishing.OutboxedSessionFactory _outboxedSessionFactory;
 
-        public DeleteUsersCommandHandler189187132(Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory, System.TimeProvider timeProvider)
+        public DeleteUsersCommandHandler189187132(System.TimeProvider timeProvider, Wolverine.Marten.Publishing.OutboxedSessionFactory outboxedSessionFactory)
         {
-            _outboxedSessionFactory = outboxedSessionFactory;
             _timeProvider = timeProvider;
+            _outboxedSessionFactory = outboxedSessionFactory;
         }
 
 
