@@ -131,6 +131,99 @@ function fail(msg, res) {
 const idsByKey = {
   users: new Map(),  // demo-seed key  → ShortGuid string
   roles: new Map(),  // demo-seed key OR @PascalKey → ShortGuid
+  apps:  new Map(),  // demo-seed key (e.g. 'demo-app') OR @cocoar-auth → ShortGuid
+  // catalogs: appKey → Map<"resource:action", AppPermission.Id>. Built up
+  // during seedApps so role/api seeding can resolve (resource, action) tuples
+  // to FK ids.
+  catalogs: new Map(),
+}
+
+/**
+ * Provisions the catalog of each app declared in the seed and indexes the
+ * resulting AppPermission ids by (appKey, resource, action). The cocoar-auth
+ * app is special: it's seeded automatically by AppRealmSeeder, so we just
+ * look it up by slug rather than POSTing it. Apps already present (by slug)
+ * are merged: existing catalog entries are kept, new entries are added.
+ */
+async function seedApps(spec) {
+  // Always look up cocoar-auth so '@cocoar-auth' references work in roles.
+  const existing = await get('/api/app')
+  if (!existing.ok) throw new Error('GET /api/app failed: ' + existing.status)
+  const bySlug = new Map((existing.body ?? []).map(a => [a.Slug, a]))
+
+  const cocoarAuth = bySlug.get('cocoar-auth')
+  if (cocoarAuth) {
+    idsByKey.apps.set('@cocoar-auth', cocoarAuth.Id)
+    idsByKey.catalogs.set('@cocoar-auth', buildCatalogIndex(cocoarAuth.Permissions ?? []))
+  }
+
+  let created = 0
+  for (const a of spec) {
+    const live = bySlug.get(a.slug)
+    if (live) {
+      console.log(`  — App '${a.slug}' exists — using as-is`)
+      idsByKey.apps.set(a.key, live.Id)
+      idsByKey.catalogs.set(a.key, buildCatalogIndex(live.Permissions ?? []))
+      continue
+    }
+
+    const res = await post('/api/app', {
+      Slug: a.slug,
+      DisplayName: a.displayName,
+      Description: a.description ?? null,
+      Permissions: (a.catalog ?? []).map(p => ({
+        Resource: p.resource,
+        Action: p.action,
+        Description: p.description ?? null,
+      })),
+    })
+    if (!res.ok) { fail(`app '${a.slug}'`, res); continue }
+
+    idsByKey.apps.set(a.key, res.body.Id)
+    idsByKey.catalogs.set(a.key, buildCatalogIndex(res.body.Permissions ?? []))
+    created++
+    console.log(`  ✓ App '${a.slug}' (${(a.catalog ?? []).length} catalog entries)`)
+  }
+  return created
+}
+
+function buildCatalogIndex(permissions) {
+  const map = new Map()
+  for (const p of permissions) {
+    map.set(`${p.Resource}:${p.Action}`, p.Id)
+  }
+  return map
+}
+
+/**
+ * Resolves an app reference (either '@cocoar-auth' for the system app or
+ * a key from the seed's `apps` array) to (AppId, catalogIndex). Throws
+ * with a clear message when the app or any referenced (resource, action)
+ * is missing — the seed JSON is the single source of truth and a typo
+ * deserves to fail loudly.
+ */
+function resolveApp(appKey, contextLabel) {
+  const appId = idsByKey.apps.get(appKey)
+  if (!appId) {
+    throw new Error(`${contextLabel}: appKey '${appKey}' not found. ` +
+      `Add it to the seed's "apps" array (or use '@cocoar-auth' for the system app).`)
+  }
+  const catalog = idsByKey.catalogs.get(appKey) ?? new Map()
+  return { appId, catalog }
+}
+
+function resolvePermissionIds(appKey, perms, contextLabel) {
+  if (!perms || perms.length === 0) return []
+  const { catalog } = resolveApp(appKey, contextLabel)
+  return perms.map(p => {
+    const key = `${p.resource}:${p.action}`
+    const id = catalog.get(key)
+    if (!id) {
+      throw new Error(`${contextLabel}: permission '${key}' not found in catalog of app '${appKey}'. ` +
+        `Add it to the app's catalog or fix the typo.`)
+    }
+    return id
+  })
 }
 
 async function seedRoles(spec) {
@@ -149,19 +242,28 @@ async function seedRoles(spec) {
       console.log(`  — Role '${r.name}' exists — skipping`)
       continue
     }
+
+    let appId = null
+    let permissionIds = []
+    if (r.appKey) {
+      const resolved = resolveApp(r.appKey, `role '${r.name}'`)
+      appId = resolved.appId
+      permissionIds = resolvePermissionIds(r.appKey, r.permissions ?? [], `role '${r.name}'`)
+    }
+
     const res = await post('/api/role', {
       Name: r.name,
       Description: r.description ?? null,
-      ResourceType: r.resource && r.resource.length > 0 ? r.resource : 'app',
-      Permissions: r.permissions ?? [],
-      AppSlug: 'cocoar-auth',
+      AppId: appId,
+      IsRealmAdmin: r.isRealmAdmin === true,
+      PermissionIds: permissionIds,
     })
     if (!res.ok) { fail(`role '${r.name}'`, res); continue }
     const id = res.body.Id ?? res.body.id
     idsByKey.roles.set(r.name, id)
     idsByKey.roles.set(r.key, id)
     created++
-    console.log(`  ✓ Role '${r.name}'`)
+    console.log(`  ✓ Role '${r.name}' (${permissionIds.length} permission(s))`)
   }
   return created
 }
@@ -294,6 +396,15 @@ async function seedApis(spec) {
       console.log(`  — API '${a.name}' exists — skipping`)
       continue
     }
+
+    let appId = null
+    let permissionIds = []
+    if (a.appKey) {
+      const resolved = resolveApp(a.appKey, `api '${a.name}'`)
+      appId = resolved.appId
+      permissionIds = resolvePermissionIds(a.appKey, a.permissions ?? [], `api '${a.name}'`)
+    }
+
     const res = await post('/api/admin/oauth/apis', {
       Name: a.name,
       DisplayName: a.displayName,
@@ -301,11 +412,13 @@ async function seedApis(spec) {
       Enabled: true,
       Scopes: a.scopes ?? [],
       UserClaims: a.userClaims ?? [],
+      AppId: appId,
+      PermissionIds: permissionIds,
     })
     if (!res.ok) { fail(`api '${a.name}'`, res); continue }
     if (res.body.ApiSecret) secrets[a.name] = res.body.ApiSecret
     created++
-    console.log(`  ✓ API '${a.name}'`)
+    console.log(`  ✓ API '${a.name}' (${permissionIds.length} permission subset)`)
   }
   return { created, secrets }
 }
@@ -384,29 +497,35 @@ async function main() {
 
   await login()
 
-  console.log('\n[1/7] Roles')
+  // Apps come first — Roles + APIs FK into App.Permissions[].Id, so the
+  // catalog must be in place before either references it.
+  console.log('\n[1/8] Apps + Catalogs')
+  const appsCreated = await seedApps(data.apps ?? [])
+
+  console.log('\n[2/8] Roles')
   const rolesCreated = await seedRoles(data.roles ?? [])
 
-  console.log('\n[2/7] Users')
+  console.log('\n[3/8] Users')
   const usersCreated = await seedUsers(data.users ?? [], data.password)
 
-  console.log('\n[3/7] Groups')
+  console.log('\n[4/8] Groups')
   const groupsCreated = await seedGroups(data.groups ?? [])
 
-  console.log('\n[4/7] OAuth Scopes')
+  console.log('\n[5/8] OAuth Scopes')
   const scopesCreated = await seedScopes(data.scopes ?? [])
 
-  console.log('\n[5/7] OAuth APIs')
+  console.log('\n[6/8] OAuth APIs')
   const { created: apisCreated, secrets: apiSecrets } = await seedApis(data.apis ?? [])
 
-  console.log('\n[6/7] OAuth Clients')
+  console.log('\n[7/8] OAuth Clients')
   const { created: clientsCreated, secrets: clientSecrets } = await seedClients(data.clients ?? [])
 
-  console.log('\n[7/7] Login Providers')
+  console.log('\n[8/8] Login Providers')
   const providersCreated = await seedLoginProviders(data.loginProviders ?? [])
 
   console.log('\n──────────────────────────────────────────')
   console.log('Done.')
+  console.log(`  Apps:            ${appsCreated}`)
   console.log(`  Roles:           ${rolesCreated}`)
   console.log(`  Users:           ${usersCreated}  (password: ${data.password})`)
   console.log(`  Groups:          ${groupsCreated}`)

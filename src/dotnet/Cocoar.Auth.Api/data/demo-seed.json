@@ -1,5 +1,6 @@
 {
   "password": "Demo1234!",
+
   "users": [
     { "key": "demo.admin",         "userName": "demo.admin",         "firstname": "Demo",     "lastname": "Admin",       "acronym": "DA",  "email": "demo.admin@demo.local",         "isAdmin": true },
     { "key": "demo.user-manager",  "userName": "demo.user-manager",  "firstname": "Doris",    "lastname": "Steiner",     "acronym": "DS",  "email": "doris.steiner@demo.local" },
@@ -14,38 +15,78 @@
     { "key": "eva.richter",        "userName": "eva.richter",        "firstname": "Eva",      "lastname": "Richter",     "acronym": "ER",  "email": "eva.richter@contoso.example" }
   ],
 
+  "// apps": "Each app has its own permission catalog. Roles FK into App.Permissions[].Id by (resource, action). The cocoar-auth app is seeded automatically — referenced here as @cocoar-auth via key (the seeder looks it up by slug rather than creating it).",
+  "apps": [
+    {
+      "key": "demo-app",
+      "slug": "demo-app",
+      "displayName": "Demo App",
+      "description": "Sample SaaS app demonstrating the Cocoar.Auth permission model end-to-end.",
+      "catalog": [
+        { "resource": "demo", "action": "read",  "description": "Read demo resources" },
+        { "resource": "demo", "action": "write", "description": "Modify demo resources" },
+        { "resource": "demo", "action": "admin", "description": "Resource-wide admin bypass — covers read+write" }
+      ]
+    }
+  ],
+
+  "// roles": "Each role names its app via appKey. permissions[] resolves to App.Permissions[].Id by (resource, action). isRealmAdmin: true is reserved for cross-realm bypass roles (the seeded System Admin handles that today).",
   "roles": [
     {
       "key": "oauth-admin",
       "name": "OAuth Admin",
       "description": "Full management of OAuth clients, scopes, APIs and login providers.",
-      "resource": "",
+      "appKey": "@cocoar-auth",
       "permissions": [
-        "cocoar-auth:oauth-client:read",   "cocoar-auth:oauth-client:write",
-        "cocoar-auth:oauth-scope:read",    "cocoar-auth:oauth-scope:write",
-        "cocoar-auth:oauth-api:read",      "cocoar-auth:oauth-api:write",
-        "cocoar-auth:login-provider:read", "cocoar-auth:login-provider:write"
+        { "resource": "oauth-client",    "action": "read"  },
+        { "resource": "oauth-client",    "action": "write" },
+        { "resource": "oauth-scope",     "action": "read"  },
+        { "resource": "oauth-scope",     "action": "write" },
+        { "resource": "oauth-api",       "action": "read"  },
+        { "resource": "oauth-api",       "action": "write" },
+        { "resource": "login-provider",  "action": "read"  },
+        { "resource": "login-provider",  "action": "write" }
       ]
     },
     {
       "key": "group-admin",
       "name": "Group Admin",
       "description": "Manage authorization groups; read permission roles.",
-      "resource": "",
+      "appKey": "@cocoar-auth",
       "permissions": [
-        "cocoar-auth:authorization-group:read", "cocoar-auth:authorization-group:write",
-        "cocoar-auth:permission-role:read"
+        { "resource": "authorization-group", "action": "read"  },
+        { "resource": "authorization-group", "action": "write" },
+        { "resource": "permission-role",     "action": "read"  }
       ]
     },
     {
       "key": "help-desk",
       "name": "Help Desk",
       "description": "Read-only access to users, sessions and the auth log.",
-      "resource": "",
+      "appKey": "@cocoar-auth",
       "permissions": [
-        "cocoar-auth:user:read",
-        "cocoar-auth:session:read",
-        "cocoar-auth:auth-log:read"
+        { "resource": "user",     "action": "read" },
+        { "resource": "session",  "action": "read" },
+        { "resource": "auth-log", "action": "read" }
+      ]
+    },
+    {
+      "key": "demo-reader",
+      "name": "Demo Reader",
+      "description": "Read access to the Demo App.",
+      "appKey": "demo-app",
+      "permissions": [
+        { "resource": "demo", "action": "read" }
+      ]
+    },
+    {
+      "key": "demo-writer",
+      "name": "Demo Writer",
+      "description": "Read + write access to the Demo App.",
+      "appKey": "demo-app",
+      "permissions": [
+        { "resource": "demo", "action": "read"  },
+        { "resource": "demo", "action": "write" }
       ]
     }
   ],
@@ -76,6 +117,18 @@
       "roles": ["@Viewer"]
     },
     {
+      "name": "Demo Readers",
+      "description": "Read access to the Demo App via the Cocoar.Auth.TestApps.ResourceApi.",
+      "members": ["demo.user", "anna.bauer"],
+      "roles": ["demo-reader"]
+    },
+    {
+      "name": "Demo Writers",
+      "description": "Read + write access to the Demo App.",
+      "members": ["demo.admin"],
+      "roles": ["demo-writer"]
+    },
+    {
       "name": "Internal Staff (auto)",
       "description": "Auto-membership: every active person whose email ends with @demo.local.",
       "members": [],
@@ -99,12 +152,19 @@
     { "name": "demo.admin", "displayName": "Demo API — Admin", "description": "Administrative access to the Demo API." }
   ],
 
+  "// apis": "OAuthApi.AppId + OAuthApi.PermissionIds bind a resource server to its App's catalog. The RS authenticates against the distribution-API with name + initial secret to fetch the union of (its catalog subset) ∩ (user's grants).",
   "apis": [
     {
       "name": "demo-api",
       "displayName": "Demo API",
-      "description": "Sample resource server consumed by the demo OAuth clients.",
-      "scopes": ["demo.read", "demo.write", "demo.admin"]
+      "description": "Sample resource server consumed by the demo OAuth clients and the TestApps.ResourceApi.",
+      "appKey": "demo-app",
+      "scopes": ["demo.read", "demo.write", "demo.admin"],
+      "permissions": [
+        { "resource": "demo", "action": "read"  },
+        { "resource": "demo", "action": "write" },
+        { "resource": "demo", "action": "admin" }
+      ]
     }
   ],
 
@@ -158,21 +218,10 @@
       "redirectUris": ["cocoar-demo://callback", "http://localhost:3000/mobile-callback"],
       "postLogoutRedirectUris": ["cocoar-demo://logged-out"],
       "allowedGrantTypes": ["authorization_code", "refresh_token"],
-      "scopes": ["openid", "email", "profile", "demo.read", "demo.write"],
+      "scopes": ["openid", "email", "profile", "offline_access", "demo.read"],
       "requireConsent": true,
-      "requireClientSecret": false
-    }
-  ],
-
-  "loginProviders": [
-    {
-      "displayName": "Demo OIDC Provider",
-      "description": "Disabled-by-default template for an external OIDC provider — clone and configure with your IdP details.",
-      "type": "Oidc",
-      "flavor": "GenericOidc",
-      "flavorData": {
-        "MetadataUri": "https://example.invalid/.well-known/openid-configuration"
-      }
+      "requireClientSecret": false,
+      "accessTokenType": "Jwt"
     }
   ]
 }
