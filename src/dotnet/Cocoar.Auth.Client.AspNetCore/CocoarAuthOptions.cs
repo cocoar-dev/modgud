@@ -3,66 +3,51 @@ namespace Cocoar.Auth.Client.AspNetCore;
 /// <summary>
 /// Configuration for the Cocoar.Auth resource-server integration.
 ///
-/// <para>The lib calls the IdP's distribution API
-/// (<c>GET {IdpBaseUrl}/api/v1/distribution/me-permissions</c>) on each
-/// request once, with both the user's bearer token (forwarded from the
-/// incoming request) and the resource-server credentials configured here.
-/// The response is cached per (user, token, app) for 30 seconds so the
-/// IdP isn't hammered. The result is materialised onto the principal as
-/// flat <c>ClaimTypes.Role</c>, <c>"permission"</c> and <c>"group"</c>
-/// claims so endpoint filters + <c>[Authorize(Roles=...)]</c> work
-/// natively.</para>
+/// <para>The lib does two things on top of vanilla
+/// <c>AddJwtBearer</c>:</para>
+/// <list type="bullet">
+///   <item>Wires a <c>JwtBearerEvents.OnTokenValidated</c> handler that
+///   fetches <c>{Authority}/connect/userinfo</c> with the user's token
+///   and adds the <c>resource_access</c> claim to the principal — pure
+///   <c>AddJwtBearer</c> doesn't do this natively (UserInfo-fetching is
+///   an <c>AddOpenIdConnect</c> feature).</item>
+///   <item>Registers a <c>ClaimsTransformation</c> that reads
+///   <c>resource_access[<see cref="Audience"/>]</c> off the principal
+///   and projects roles / permissions / groups onto flat
+///   <c>ClaimTypes.Role</c> / <c>"permission"</c> / <c>"group"</c> claims
+///   so endpoint filters + <c>[Authorize(Roles=...)]</c> work natively.</item>
+/// </list>
+///
+/// <para>UserInfo emits permissions in their bypass-pre-expanded form
+/// (the IdP already resolves <c>realm:admin</c> and <c>&lt;r&gt;:admin</c>
+/// to concrete catalog strings), so the lib doesn't need to evaluate
+/// bypass tiers itself — exact-match is sufficient.</para>
 /// </summary>
 public sealed class CocoarAuthOptions
 {
     /// <summary>
-    /// The slug of the App this resource server represents (e.g.
-    /// <c>"cocoar-policy"</c>). Distribution-API responses are cached per
-    /// app, and the lib doesn't need this value past cache-keying — the
-    /// IdP derives the actual app context from the authenticated RS, so
-    /// the slug here is informational + cache-discriminator. Setting it
-    /// from configuration (rather than hardcoding) keeps the same RS code
-    /// deployable in dev/staging/prod or in white-label setups under
-    /// different slugs.
+    /// The audience this resource server identifies as — same value the
+    /// JWT-bearer middleware compares the token's <c>aud</c> claim against
+    /// (<c>options.Audience</c> on <c>AddJwtBearer</c>). Used as the lookup
+    /// key into <c>resource_access[…]</c> on the principal's claims.
     ///
     /// <para>Required.</para>
     /// </summary>
-    public string AppSlug { get; set; } = string.Empty;
+    public string Audience { get; set; } = string.Empty;
 
     /// <summary>
-    /// Base URL of the Cocoar.Auth IdP (e.g. <c>"https://auth.cocoar.dev"</c>).
-    /// The lib appends <c>/api/v1/distribution/me-permissions</c>. Trailing
-    /// slashes are tolerated.
+    /// IdP base URL used to construct the UserInfo URL
+    /// (<c>{Authority}/connect/userinfo</c>). Same value as
+    /// <c>JwtBearerOptions.Authority</c>. Trailing slashes are tolerated.
     ///
     /// <para>Required.</para>
     /// </summary>
-    public string IdpBaseUrl { get; set; } = string.Empty;
+    public string Authority { get; set; } = string.Empty;
 
     /// <summary>
-    /// The resource server's id (= the OAuthApi.Name registered in the
-    /// IdP, e.g. <c>"policy-api"</c>). Sent as the
-    /// <c>X-Resource-Server-Id</c> header on every distribution call.
-    ///
-    /// <para>Required.</para>
+    /// Authentication scheme to attach the UserInfo-fetching handler to.
+    /// Defaults to <c>"Bearer"</c>; override if your host uses a custom
+    /// scheme name on <c>AddJwtBearer(scheme, …)</c>.
     /// </summary>
-    public string ResourceServerId { get; set; } = string.Empty;
-
-    /// <summary>
-    /// The resource server's secret (cleartext, paired with
-    /// <see cref="ResourceServerId"/> in the IdP's secret store). Sent as
-    /// the <c>X-Resource-Server-Secret</c> header on every distribution
-    /// call. Treat as a credential — load from your secrets store, never
-    /// commit it.
-    ///
-    /// <para>Required.</para>
-    /// </summary>
-    public string ResourceServerSecret { get; set; } = string.Empty;
-
-    /// <summary>
-    /// How long to cache distribution-API responses per (user, token, app).
-    /// Default 30s — matches the server's <c>Cache-Control</c> hint and the
-    /// permission-modell spec. A revoke takes at most this long to take
-    /// effect on the RS side.
-    /// </summary>
-    public TimeSpan CacheDuration { get; set; } = TimeSpan.FromSeconds(30);
+    public string JwtBearerScheme { get; set; } = "Bearer";
 }

@@ -17,17 +17,15 @@ using OpenIddict.Abstractions;
 namespace Cocoar.Auth.Api.Tests.Authorization;
 
 /// <summary>
-/// End-to-end verification that <c>/connect/userinfo</c> is a <b>pure identity
-/// slice</b> per permission-modell §5: even when the token has audiences, the
-/// user has app-scoped permissions, and the <c>roles</c> scope is requested,
-/// UserInfo MUST NOT emit <c>resource_access</c>, <c>roles</c>, <c>permissions</c>
-/// or <c>groups</c>. Authz info lives behind the distribution API (consumed by
-/// the Cocoar.Auth.Client.AspNetCore helper lib), which UserInfo can't substitute
-/// for because it has no way to identify the calling RS.
+/// End-to-end verification of the <c>/connect/userinfo</c> per-Audience
+/// emission per permission-modell §5: pro <c>aud</c> im Token wird ein
+/// <c>resource_access[<aud>] = { permissions, roles, groups }</c>-Block
+/// gerendert; Bypass-Tiers (<c>realm:admin</c>, <c>&lt;r&gt;:admin</c>)
+/// werden vom IdP zu konkreten Catalog-Strings vor-expandiert, sodass
+/// Konsumenten stumpfes <c>permissions.includes(...)</c> machen können.
 ///
 /// <para>Drives the full auth-code+PKCE flow with an RFC-8707 <c>resource=</c>
-/// indicator so the assertion is meaningful — anything UserInfo would have
-/// emitted in the old (commit 8d85720) shape is provably absent now.</para>
+/// indicator so the assertion is meaningful end-to-end.</para>
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
 public class UserInfoPerAudienceTests : IntegrationTestBase
@@ -35,22 +33,14 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
     public UserInfoPerAudienceTests(SharedPostgresFixture fixture) : base(fixture) { }
 
     [Fact]
-    public async Task UserInfo_Is_Pure_Identity_Even_With_Roles_Scope_And_App_Audience()
+    public async Task UserInfo_SingleAud_DirectGrant_Emits_Concrete_Permission()
     {
         // ── Arrange ──────────────────────────────────────────────────────
         var appAlpha = await CreateAppAsync("app-alpha", "App Alpha",
             permissions: [("policy", "read"), ("policy", "write"), ("policy", "admin")]);
-        // Audience must be a valid absolute URI per RFC 8707 / OpenIddict
-        // server validation. Using a https://-style identifier — same shape
-        // any real-world RS would advertise in its discovery.
         const string alphaAudience = "https://alpha-api.example.com";
-        var alphaApi = await CreateOAuthApiAsync(alphaAudience, appAlpha.Id);
+        await CreateOAuthApiAsync(alphaAudience, appAlpha.Id);
 
-        // OAuthScope bound to alpha-api as a resource. The ResourceIndicatorHandler
-        // only accepts resource= values that are already in principal.GetResources(),
-        // and that set comes from scopeManager.ListResourcesAsync(scopes). Without
-        // a scope advertising alphaAudience, the resource= parameter is rejected
-        // with invalid_target.
         const string alphaScopeName = "alpha-api";
         await CreateScopeAsync(name: alphaScopeName, resources: [alphaAudience], appId: appAlpha.Id);
 
@@ -58,68 +48,154 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         var clientId = "test-spa-" + Guid.NewGuid().ToString("N");
         const string redirectUri = "http://localhost/test-callback";
         await CreateOAuthClientAsync(
-            clientId: clientId,
-            clientSecret: clientSecret,
-            redirectUri: redirectUri,
-            appIds: [appAlpha.Id],
-            scopes: ["openid", "roles", alphaScopeName]);
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [appAlpha.Id], scopes: ["openid", "roles", alphaScopeName]);
 
         var testUser = await Factory.CreateTestUserWithIdentityAsync(
-            firstname: "Multi",
-            lastname: "Aud",
-            acronym: "ma",
-            email: "ma@test.com",
-            password: "TestPass1234");
+            firstname: "Direct", lastname: "Grant", acronym: "dg",
+            email: "dg@test.com", password: "TestPass1234");
 
-        // Grant the user a permission scoped to app-alpha: bare action "write"
-        // on resource "policy" → expands to "app-alpha:policy:write".
-        await GrantAsync(
-            testUser.Id,
-            roleAppSlug: "app-alpha",
-            resourceType: "policy",
-            actions: ["write"],
-            groupBoundTo: ["app-alpha"]);
+        await GrantAsync(testUser.Id, roleAppSlug: "app-alpha", resourceType: "policy",
+            actions: ["write"], groupBoundTo: ["app-alpha"]);
 
-        // ── Act: full Authorization Code + PKCE flow ────────────────────
+        // ── Act ──────────────────────────────────────────────────────────
+        var alphaBlock = await DriveFlowAndReadAlphaBlockAsync(
+            "dg", clientId, clientSecret, redirectUri, alphaScopeName, alphaAudience);
+
+        // ── Assert ───────────────────────────────────────────────────────
+        var permissions = ReadStringArray(alphaBlock, "permissions");
+        Assert.Contains("policy:write", permissions);
+        Assert.DoesNotContain("policy:read", permissions);
+        Assert.DoesNotContain("policy:admin", permissions);
+
+        // Roles + groups: at least non-null arrays. The role we created has
+        // a stable Id but its Name is generated; we just check that it's
+        // present (the role assignment IS the only path to having a grant).
+        Assert.True(alphaBlock.TryGetProperty("roles", out var roles));
+        Assert.NotEmpty(roles.EnumerateArray());
+        Assert.True(alphaBlock.TryGetProperty("groups", out var groups));
+        Assert.NotEmpty(groups.EnumerateArray());
+    }
+
+    [Fact]
+    public async Task UserInfo_ResourceAdmin_Expands_To_All_Resource_Actions()
+    {
+        // policy:admin grants every action on the policy resource within
+        // app-alpha. UserInfo emits all three (policy:read/write/admin)
+        // even though the user only has the policy:admin grant.
+        var appAlpha = await CreateAppAsync("app-alpha", "App Alpha",
+            permissions: [("policy", "read"), ("policy", "write"), ("policy", "admin"),
+                          ("knowledge", "read")]);
+        const string alphaAudience = "https://alpha-api.example.com";
+        await CreateOAuthApiAsync(alphaAudience, appAlpha.Id);
+        const string alphaScopeName = "alpha-api";
+        await CreateScopeAsync(name: alphaScopeName, resources: [alphaAudience], appId: appAlpha.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-spa-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [appAlpha.Id], scopes: ["openid", "roles", alphaScopeName]);
+
+        var testUser = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Resource", lastname: "Admin", acronym: "ra",
+            email: "ra@test.com", password: "TestPass1234");
+
+        await GrantAsync(testUser.Id, roleAppSlug: "app-alpha", resourceType: "policy",
+            actions: ["admin"], groupBoundTo: ["app-alpha"]);
+
+        var alphaBlock = await DriveFlowAndReadAlphaBlockAsync(
+            "ra", clientId, clientSecret, redirectUri, alphaScopeName, alphaAudience);
+
+        var permissions = ReadStringArray(alphaBlock, "permissions");
+        // Pre-expansion: <r>:admin pulls in every <r>:<a> in the catalog.
+        Assert.Contains("policy:read",  permissions);
+        Assert.Contains("policy:write", permissions);
+        Assert.Contains("policy:admin", permissions);
+        // Other resources are NOT pulled in — admin scope is per-resource.
+        Assert.DoesNotContain("knowledge:read", permissions);
+    }
+
+    [Fact]
+    public async Task UserInfo_RealmAdmin_Expands_To_Entire_Catalog()
+    {
+        // realm:admin trumps everything — every Catalog-Eintrag every reachable
+        // App lands in the block. The synthetic "realm:admin" marker itself
+        // doesn't appear (consumers see only concrete strings).
+        var appAlpha = await CreateAppAsync("app-alpha", "App Alpha",
+            permissions: [("policy", "read"), ("policy", "write"), ("knowledge", "read")]);
+        const string alphaAudience = "https://alpha-api.example.com";
+        await CreateOAuthApiAsync(alphaAudience, appAlpha.Id);
+        const string alphaScopeName = "alpha-api";
+        await CreateScopeAsync(name: alphaScopeName, resources: [alphaAudience], appId: appAlpha.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-spa-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [appAlpha.Id], scopes: ["openid", "roles", alphaScopeName]);
+
+        // isRealmAdmin: true attaches the user to a System Admin role + a
+        // wildcard-bound group, so the BoundTo filter pickets up app-alpha.
+        await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Realm", lastname: "Admin", acronym: "rl",
+            email: "rl@test.com", password: "TestPass1234",
+            isRealmAdmin: true);
+
+        var alphaBlock = await DriveFlowAndReadAlphaBlockAsync(
+            "rl", clientId, clientSecret, redirectUri, alphaScopeName, alphaAudience);
+
+        var permissions = ReadStringArray(alphaBlock, "permissions");
+        Assert.Contains("policy:read",    permissions);
+        Assert.Contains("policy:write",   permissions);
+        Assert.Contains("knowledge:read", permissions);
+        // realm:admin marker itself must NOT appear — the doc says
+        // "Konsumenten machen stumpfes exact-match", so concrete strings only.
+        Assert.DoesNotContain("realm:admin", permissions);
+    }
+
+    // ─── shared flow helper ──────────────────────────────────────────────
+
+    private async Task<JsonElement> DriveFlowAndReadAlphaBlockAsync(
+        string username, string clientId, string clientSecret, string redirectUri,
+        string scopeName, string audience)
+    {
         var accessToken = await DriveAuthCodeFlowAsync(
-            username: "ma", password: "TestPass1234",
+            username: username, password: "TestPass1234",
             clientId: clientId, clientSecret: clientSecret,
             redirectUri: redirectUri,
-            scope: $"openid roles {alphaScopeName}",
-            resources: [alphaAudience]);
+            scope: $"openid roles {scopeName}",
+            resources: [audience]);
 
-        // ── Act: call /connect/userinfo with the bearer ─────────────────
         var userinfoClient = Factory.CreateClient();
         userinfoClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
-
-        var userinfoResponse = await userinfoClient.GetAsync("/connect/userinfo",
+        var response = await userinfoClient.GetAsync("/connect/userinfo",
             TestContext.Current.CancellationToken);
-        var userinfoBody = await userinfoResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(response.IsSuccessStatusCode,
+            $"/connect/userinfo failed ({(int)response.StatusCode}): {body}");
 
-        Assert.True(userinfoResponse.IsSuccessStatusCode,
-            $"/connect/userinfo failed ({(int)userinfoResponse.StatusCode}): {userinfoBody}");
+        var doc = JsonDocument.Parse(body);
+        var pretty = JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
+        var root = doc.RootElement;
 
-        // ── Assert: identity claims present, authz claims absent ────────
-        using var userinfoJson = JsonDocument.Parse(userinfoBody);
-        var fullPretty = JsonSerializer.Serialize(userinfoJson, new JsonSerializerOptions { WriteIndented = true });
-        var root = userinfoJson.RootElement;
+        Assert.True(root.TryGetProperty("resource_access", out var resourceAccess),
+            $"resource_access missing.\nBody:\n{pretty}");
+        Assert.True(resourceAccess.TryGetProperty(audience, out var block),
+            $"resource_access['{audience}'] missing. keys: {string.Join(",", resourceAccess.EnumerateObject().Select(p => p.Name))}\nBody:\n{pretty}");
 
-        // Identity slice: sub is mandatory; profile claims arrive when the
-        // profile scope is granted (we asked for openid + roles + the app
-        // scope, no profile, so only sub is guaranteed here).
-        Assert.True(root.TryGetProperty("sub", out _),
-            $"sub missing from UserInfo response.\nFull body:\n{fullPretty}");
+        // Clone so the caller can use it after `doc` is disposed.
+        return block.Clone();
+    }
 
-        // Authz slice: must be absent. Even though the token has the roles
-        // scope and a real per-app audience, UserInfo doesn't emit any of
-        // these — the RS gets them via the distribution API instead.
-        var forbiddenKeys = new[] { "resource_access", "roles", "permissions", "groups" };
-        foreach (var key in forbiddenKeys)
-        {
-            Assert.False(root.TryGetProperty(key, out _),
-                $"UserInfo must not emit '{key}' (permission-modell §5 — UserInfo is pure identity).\nFull body:\n{fullPretty}");
-        }
+    private static List<string> ReadStringArray(JsonElement obj, string property)
+    {
+        Assert.True(obj.TryGetProperty(property, out var arr),
+            $"property '{property}' missing on block:\n{obj}");
+        return arr.EnumerateArray().Select(e => e.GetString()!).ToList();
     }
 
     // ─── Authorization Code + PKCE flow helper ───────────────────────────

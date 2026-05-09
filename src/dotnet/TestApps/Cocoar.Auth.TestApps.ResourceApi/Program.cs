@@ -15,25 +15,23 @@ JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 // at progressively stronger gates so we can see each authorization layer
 // end-to-end:
 //
-//   GET /me            — any authenticated principal (echoes the claims +
-//                        whatever the lib stamped onto it from the
-//                        distribution-API call)
-//   GET /scoped        — token-scope based gate (legacy: "demo.read")
-//   GET /admin         — token-scope based gate (legacy: "demo.admin")
+//   GET /me            — any authenticated principal (echoes claims +
+//                        the resource_access[<audience>]-flattened
+//                        roles/permissions/groups)
+//   GET /scoped        — token-scope based gate ("demo.read")
+//   GET /admin         — token-scope based gate ("demo.admin")
 //   GET /policy/read   — RequiresCocoarPermission("demo:read")
-//                        — distribution-API + 2-tier-eval
+//                        — exact-match against pre-expanded permissions
 //   POST /policy/write — RequiresCocoarPermission("demo:write")
-//                        — same path, different action; "demo:admin" or
-//                        "realm:admin" cover this via the bypass tiers
 //
-// What the new path proves: the IdP knows nothing about the granular
-// "demo:read"/"demo:write" permissions until the AppPermission catalog
-// of the linked App is populated and a role grants the matching ids.
-// The lib pulls that information per request from
-// /api/v1/distribution/me-permissions, projects it onto the principal,
-// and the endpoint filter checks it against the same evaluator the IdP
-// uses internally — so resource:admin and realm:admin bypass behave
-// identically on the RS side.
+// What the path proves: the IdP issues a JWT with aud=<this-rs>, the
+// JwtBearer middleware fetches /connect/userinfo (because we set
+// GetClaimsFromUserInfoEndpoint=true), UserInfo emits
+// resource_access[<aud>] = { permissions, roles, groups } with bypass
+// tiers (realm:admin, <r>:admin) already pre-expanded to concrete
+// strings, and the lib's claims-transformation flattens that block onto
+// the principal. RequiresCocoarPermission then does straight membership
+// match — no HTTP, no cache, no evaluator on the RS side.
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,10 +40,6 @@ var builder = WebApplication.CreateBuilder(args);
 // dynamically allocated authority without recompiling.
 var authority = builder.Configuration["TESTAPPS:AUTHORITY"] ?? "http://localhost:9099";
 var audience = builder.Configuration["TESTAPPS:AUDIENCE"] ?? "demo-api";
-var appSlug = builder.Configuration["TESTAPPS:APPSLUG"] ?? "cocoar-auth";
-var rsId = builder.Configuration["TESTAPPS:RSID"] ?? "demo-api";
-var rsSecret = builder.Configuration["TESTAPPS:RSSECRET"]
-    ?? "demo-api-secret-please-rotate";
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -58,17 +52,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
     });
 
-// Wire the Cocoar.Auth helper lib: typed distribution-API client + 30s
-// permission cache + per-request claims-transformation + the
-// RequiresCocoarPermission endpoint filter. The lib forwards the user's
-// bearer token from the incoming request and uses the configured
-// RSId/RSSecret as RS-credentials when calling the distribution API.
+// Lib hooks JwtBearer.OnTokenValidated to fetch /connect/userinfo and
+// merge resource_access onto the principal, then a ClaimsTransformation
+// flattens the matching audience block to ClaimTypes.Role / "permission"
+// / "group" claims. Plus the RequiresCocoarPermission endpoint filter.
 builder.Services.AddCocoarAuthClient(o =>
 {
-    o.AppSlug = appSlug;
-    o.IdpBaseUrl = authority;
-    o.ResourceServerId = rsId;
-    o.ResourceServerSecret = rsSecret;
+    o.Authority = authority;
+    o.Audience  = audience;  // must match JwtBearerOptions.Audience above
 });
 
 builder.Services.AddAuthorization(options =>
@@ -101,11 +92,10 @@ app.MapGet("/me", (ClaimsPrincipal user) => Results.Ok(new
     scopes = user.FindAll("scope").Select(c => c.Value)
                   .Concat(user.FindAll("scp").Select(c => c.Value))
                   .ToArray(),
-    // Roles + permissions + groups are stamped by CocoarAuthClaimsTransformation
-    // from the distribution-API response. They will be empty if the IdP
-    // hasn't been configured with a catalog + role for this user yet
-    // (and that's the whole point of the catalog UI — to make this
-    // first-class).
+    // Roles + permissions + groups come from the lib's claims-transformation,
+    // which read resource_access[<audience>] off the principal. They will
+    // be empty if the IdP hasn't emitted a block for this audience (e.g.
+    // because the user has no grants in the linked App).
     roles = user.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
     permissions = user.FindAll(CocoarAuthClaimsTransformation.PermissionClaimType)
                        .Select(c => c.Value).ToArray(),
@@ -124,13 +114,9 @@ app.MapGet("/scoped", () => Results.Ok(new { message = "You called the read-scop
 app.MapGet("/admin", () => Results.Ok(new { message = "You called the admin endpoint." }))
    .RequireAuthorization("demo.admin");
 
-// Distribution-API / RequiresCocoarPermission gated endpoints — the
-// post-Step-8 path. These exercise: incoming bearer → claims-
-// transformation calls /api/v1/distribution/me-permissions with RS
-// credentials → response cached for 30s and projected onto the
-// principal → the filter reads the "permission" claims and runs them
-// through Cocoar.Auth.Permissions.PermissionEvaluator (same evaluator
-// the IdP uses).
+// Permission-gated endpoints — the post-Step-7-fix path. These exercise:
+// incoming bearer → JwtBearer fetches UserInfo → resource_access block
+// projected onto principal → filter does exact-match.
 app.MapGet("/policy/read", () => Results.Ok(new { message = "You called demo:read." }))
    .RequireAuthorization()
    .RequiresCocoarPermission("demo:read");

@@ -10,27 +10,30 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 namespace Cocoar.Auth.Api.Features.Distribution;
 
 /// <summary>
-/// Server-to-server distribution API — the home for resource servers
-/// (TimeToDo, Knowledge, …) calling Cocoar.Auth on behalf of an
-/// authenticated user. Every endpoint under <c>/api/v1/distribution/*</c>
-/// requires <b>both</b> a user-bearer access token AND
-/// resource-server credentials in the
-/// <c>X-Resource-Server-Id</c> / <c>X-Resource-Server-Secret</c> headers.
+/// Server-to-server distribution API — historically the home for resource
+/// servers calling Cocoar.Auth on behalf of an authenticated user.
 ///
-/// <para>The App context is derived from the authenticated RS, so callers
-/// don't pass <c>?app=</c> — the calling RS's <see cref="Domain.OAuth.Apis.OAuthApiState.AppId"/>
-/// IS the request's app.</para>
+/// <para><b>Deprecated.</b> Per the finalised permission model
+/// (<c>website/dev-notes/future-features/permission-modell.md</c> §7),
+/// <c>/connect/userinfo</c> emits the same per-Audience
+/// <c>resource_access</c> blocks (with bypass tiers pre-expanded), so
+/// this endpoint has no remaining use case. Standard OIDC tooling reads
+/// UserInfo directly; the Cocoar helper lib's claims-transformation
+/// flattens the matching audience block onto the principal.</para>
 ///
-/// <para>Browser / cookie-auth callers use <c>/api/v1/me/*</c> instead —
-/// that path is intentionally Cookie-only and meant for the admin SPA's
-/// self-introspection.</para>
+/// <para>The endpoint stays operational so any external caller pinned to
+/// the old shape continues to work — but every successful response
+/// carries a <c>Deprecation: true</c> header per RFC 8594, plus a
+/// <c>Sunset</c>-style note in the body, and the surface will be
+/// removed in a follow-up commit once we're confident no one's still
+/// pointing at it.</para>
 /// </summary>
 public static class DistributionEndpoints
 {
     public static WebApplication MapDistributionEndpoints(this WebApplication application, string path)
     {
         var group = application.MapGroup($"{path}/v1/distribution")
-            .WithTags("Distribution")
+            .WithTags("Distribution (deprecated)")
             // Bearer-only: this surface is server-to-server. A cookie
             // session has no place here (the SPA goes through /me).
             .RequireAuthorization(new AuthorizationPolicyBuilder(
@@ -83,6 +86,13 @@ public static class DistributionEndpoints
                 // Short cache so a chatty resource server doesn't hammer the
                 // IAM but a permission revoke still takes effect quickly.
                 httpContext.Response.Headers.CacheControl = "private, max-age=30";
+
+                // RFC 8594 deprecation signal — the response is still valid
+                // and useful, but every consumer should migrate to /connect/userinfo
+                // (which emits the same per-audience resource_access shape now).
+                httpContext.Response.Headers["Deprecation"] = "true";
+                httpContext.Response.Headers.Link =
+                    "</connect/userinfo>; rel=\"successor-version\"; type=\"application/json\"";
 
                 return Results.Ok(new MePermissionsResponse(
                     UserId: new ShortGuid(userId).ToString(),

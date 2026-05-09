@@ -3,11 +3,12 @@
   <PropertyGroup>
     <RootNamespace>Cocoar.Auth.Client.AspNetCore</RootNamespace>
     <Description>
-      ASP.NET Core integration for Cocoar.Auth resource servers. Calls the
-      IdP's distribution API (`/api/v1/distribution/me-permissions`) once
-      per request, caches per (user, token, app) for 30s, and surfaces
-      Roles/Permissions/Groups as flat claims so [Authorize(Roles="...")]
-      and .RequiresCocoarPermission("...") work natively.
+      ASP.NET Core integration for Cocoar.Auth resource servers. Reads
+      Cocoar.Auth's resource_access[audience] claim from the JWT/UserInfo
+      and surfaces roles/permissions/groups as flat claims so
+      [Authorize(Roles="...")] and .RequiresCocoarPermission("...") work
+      natively. Bypass tiers are pre-expanded by the IdP, so the lib does
+      pure exact-match — no evaluator logic, no HTTP client, no caching.
     </Description>
   </PropertyGroup>
 
@@ -16,16 +17,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Pure permission-evaluator (realm:admin / resource:admin / exact-match
-         tiers). Shared with the IdP server-side so both sides apply identical
-         semantics. -->
-    <ProjectReference Include="..\Cocoar.Auth.Permissions.Abstractions\Cocoar.Auth.Permissions.Abstractions.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- OpenIddict.Abstractions for the well-known JWT claim names
-         (Claims.Subject, Claims.JwtId). Tiny, no transitive runtime deps. -->
-    <PackageReference Include="OpenIddict.Abstractions" />
+    <!-- JwtBearer is not in the AspNetCore.App shared framework — needs
+         its own package. The lib hooks JwtBearer.Events.OnTokenValidated
+         to fetch UserInfo and merge resource_access onto the principal. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
   </ItemGroup>
 
   <ItemGroup>

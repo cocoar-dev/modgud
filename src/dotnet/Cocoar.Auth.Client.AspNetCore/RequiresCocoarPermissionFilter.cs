@@ -1,4 +1,3 @@
-using Cocoar.Auth.Permissions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -8,18 +7,18 @@ namespace Cocoar.Auth.Client.AspNetCore;
 /// <summary>
 /// Endpoint filter that gates a Minimal-API endpoint on a Cocoar.Auth
 /// permission. Reads the <c>"permission"</c> claims that
-/// <see cref="CocoarAuthClaimsTransformation"/> populated from the
-/// distribution API and runs them through the same
-/// <see cref="PermissionEvaluator"/> the IdP uses — so the resource-wide
-/// <c>&lt;resource&gt;:admin</c> bypass and the <c>realm:admin</c> bypass
-/// are honoured automatically.
+/// <see cref="CocoarAuthClaimsTransformation"/> stamped on the principal
+/// (flattened from <c>resource_access[<see cref="CocoarAuthOptions.Audience"/>].permissions</c>)
+/// and does a pure <c>contains</c>-check against the requested string.
 ///
-/// <para>Synchronous (no I/O): the distribution call already happened
-/// once per request inside the claims-transformation, this filter just
-/// reads the resulting claims.</para>
+/// <para>The IdP already pre-expanded bypass tiers (<c>realm:admin</c> →
+/// every catalog string of every reachable App; <c>&lt;r&gt;:admin</c> →
+/// every <c>&lt;r&gt;:&lt;a&gt;</c> in the App's catalog) before emission, so
+/// no <c>PermissionEvaluator</c> dance is needed here — the filter is a
+/// straight membership test.</para>
 ///
-/// <para>Returns <c>401</c> when anonymous, <c>403</c> when authenticated
-/// but lacking the permission.</para>
+/// <para>Synchronous (no I/O). Returns <c>401</c> when anonymous,
+/// <c>403</c> when authenticated but lacking the permission.</para>
 /// </summary>
 public sealed class RequiresCocoarPermissionFilter : IEndpointFilter
 {
@@ -37,11 +36,11 @@ public sealed class RequiresCocoarPermissionFilter : IEndpointFilter
         if (user.Identity?.IsAuthenticated != true)
             return ValueTask.FromResult<object?>(Results.Unauthorized());
 
-        var grants = user.FindAll(CocoarAuthClaimsTransformation.PermissionClaimType)
-            .Select(c => c.Value)
-            .ToArray();
+        var hasPermission = user
+            .FindAll(CocoarAuthClaimsTransformation.PermissionClaimType)
+            .Any(c => string.Equals(c.Value, _permission, StringComparison.Ordinal));
 
-        if (!PermissionEvaluator.Evaluate(grants, _permission))
+        if (!hasPermission)
             return ValueTask.FromResult<object?>(Results.Forbid());
 
         return next(context);
@@ -54,8 +53,8 @@ public static class RequiresCocoarPermissionExtensions
     /// Gates the route group on the given permission. Equivalent to wiring
     /// <see cref="RequiresCocoarPermissionFilter"/> as an endpoint filter.
     /// The permission is bare 2-segment (<c>"&lt;resource&gt;:&lt;action&gt;"</c>) —
-    /// the App context is implicit (the RS authenticates against the
-    /// distribution API with its own credentials).
+    /// the App context is implicit from the audience the lib was configured
+    /// with.
     /// </summary>
     public static RouteGroupBuilder RequiresCocoarPermission(this RouteGroupBuilder builder, string permission)
     {

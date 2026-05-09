@@ -1,8 +1,10 @@
 using System.Security.Claims;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authorization.Apps;
+using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Services;
 using Cocoar.Auth.Domain.OAuth.Apis;
+using Cocoar.Auth.Permissions;
 using Cocoar.Auth.Domain.OAuth.Applications;
 using Cocoar.Auth.Domain.OAuth.Consent;
 using Cocoar.Auth.Domain.OAuth.Scopes;
@@ -345,7 +347,9 @@ public static class AuthorizationEndpoints
 
     private static async Task<IResult> UserinfoAsync(
         HttpContext httpContext,
-        UserManager<ApplicationUser> userManager)
+        UserManager<ApplicationUser> userManager,
+        IPermissionService permissionService,
+        IDocumentSession session)
     {
         // OAUTH-15 — defense in depth: explicitly require the openid scope on
         // the access token before serving any user info. The OIDC spec scopes
@@ -407,16 +411,133 @@ public static class AuthorizationEndpoints
             if (!string.IsNullOrEmpty(user.Lastname)) claims[Claims.FamilyName] = user.Lastname;
         }
 
-        // UserInfo is pure identity per permission-modell §5: no roles,
-        // no groups, no permissions, no resource_access blocks. The IdP
-        // can't filter authz info RS-specifically here because UserInfo
-        // is authenticated only by the user-bearer-token — it doesn't
-        // know which RS is asking. Resource servers fetch their own
-        // scoped grants via the distribution API instead (see
-        // /api/v1/distribution/me-permissions and the Cocoar.Auth.Client.AspNetCore
-        // helper lib).
+        // Per-Audience resource_access emission per permission-modell §5.
+        // For each aud in the validated access token: resolve the OAuthApi
+        // by Name, find the linked App, build a block with the user's
+        // bypass-pre-expanded permissions + roles + groups for that App.
+        //
+        // Bypass-pre-expansion means: if the user holds realm:admin we
+        // emit every concrete catalog string of every reachable App (the
+        // realm:admin marker itself doesn't appear); if the user holds a
+        // <r>:admin permission we additionally emit every <r>:<a> string
+        // present in the App's catalog. Consumers do straight exact-match
+        // (`permissions.includes("policy:write")`) and pick up the bypass
+        // semantics for free — no PermissionEvaluator port needed on the
+        // client side.
+        //
+        // Audience entries that don't resolve to a registered OAuthApi
+        // (e.g. the client_id fallback when no resource= was sent) are
+        // silently skipped — authz info is meaningful only in the
+        // context of an actual resource server.
+        //
+        // Gated on the OIDC `roles` scope: clients that don't ask for it
+        // get a pure-identity UserInfo response. (The roles scope is the
+        // OIDC convention for "I want authz claims".)
+        if (httpContext.User.HasScope(Scopes.Roles))
+        {
+            var audiences = httpContext.User.GetAudiences().ToList();
+            if (audiences.Count > 0)
+            {
+                var resourceAccess = new Dictionary<string, object>(StringComparer.Ordinal);
+
+                // Per-app cache for the BFS-driven group lookup so multi-aud
+                // tokens don't re-query Marten for groups once per audience.
+                var allGroupsLazy = new Lazy<Task<List<Group>>>(
+                    () => permissionService.GetUserGroupsAsync(user.Id));
+
+                foreach (var audience in audiences)
+                {
+                    var api = await session.Query<OAuthApiState>()
+                        .FirstOrDefaultAsync(a => a.Name == audience && !a.IsDeleted);
+                    if (api?.AppId is not Guid appId) continue;
+
+                    var app = await session.LoadAsync<App>(appId);
+                    if (app is null || app.IsDeleted) continue;
+
+                    var rolesForApp = await permissionService.GetUserRolesAsync(user.Id, app.Slug);
+                    var rawPermissions = await permissionService.GetUserPermissionsAsync(user.Id, app.Slug);
+                    var allGroups = await allGroupsLazy.Value;
+                    var groupsForApp = allGroups
+                        .Where(g => g.BoundTo.Contains(PermissionService.AllAppsWildcard)
+                                    || g.BoundTo.Contains(app.Slug))
+                        .ToList();
+
+                    var expandedPermissions = ExpandBypassTiers(rawPermissions, app);
+
+                    resourceAccess[audience] = new Dictionary<string, object>(StringComparer.Ordinal)
+                    {
+                        ["permissions"] = expandedPermissions,
+                        ["roles"] = rolesForApp.Select(r => r.Name).ToArray(),
+                        ["groups"] = groupsForApp
+                            .Select(g => new Dictionary<string, object>(StringComparer.Ordinal)
+                            {
+                                ["id"] = g.Id.ToString(),
+                                ["name"] = g.Name,
+                            })
+                            .ToArray(),
+                    };
+                }
+
+                if (resourceAccess.Count > 0)
+                    claims["resource_access"] = resourceAccess;
+            }
+        }
 
         return Results.Ok(claims);
+    }
+
+    /// <summary>
+    /// Bypass-pre-expansion: take the raw permission set returned by
+    /// <see cref="IPermissionService.GetUserPermissionsAsync"/> and emit
+    /// only concrete catalog strings, with bypass tiers expanded:
+    /// <list type="bullet">
+    ///   <item><c>realm:admin</c> → every <c>App.Permissions[i].ToPermissionString()</c>
+    ///   in the App's catalog. The synthetic <c>realm:admin</c> marker
+    ///   itself drops out — consumers don't need it.</item>
+    ///   <item><c>&lt;r&gt;:admin</c> (which IS a catalog entry) →
+    ///   stays in the output, plus every <c>App.Permissions</c> with
+    ///   <c>Resource == r</c> is added.</item>
+    ///   <item>Any other grant → kept verbatim if it's in the App's
+    ///   catalog, dropped otherwise (defensive: stale FKs from a
+    ///   removed catalog entry don't leak as orphaned strings).</item>
+    /// </list>
+    /// Result: a deduped string array of concrete <c>&lt;resource&gt;:&lt;action&gt;</c>
+    /// permissions. Consumers do <c>permissions.includes("policy:write")</c>
+    /// and get correct bypass semantics for free.
+    /// </summary>
+    private static string[] ExpandBypassTiers(IReadOnlyList<string> rawPermissions, App app)
+    {
+        var catalogStrings = app.Permissions
+            .Select(p => p.ToPermissionString())
+            .ToHashSet(StringComparer.Ordinal);
+
+        var emit = new HashSet<string>(StringComparer.Ordinal);
+
+        // realm:admin trumps everything — emit the whole catalog and stop.
+        if (rawPermissions.Contains(PermissionEvaluator.RealmAdminPermission))
+        {
+            foreach (var s in catalogStrings) emit.Add(s);
+            return [.. emit];
+        }
+
+        // Non-realm-admin: walk the user's grants. For every <r>:admin we
+        // see, also pull in every <r>:<a> in the catalog. Direct grants
+        // are kept iff they're in the catalog — orphaned strings (e.g.
+        // from a stale projection) drop out.
+        foreach (var grant in rawPermissions)
+        {
+            if (catalogStrings.Contains(grant)) emit.Add(grant);
+
+            var parts = grant.Split(':');
+            if (parts.Length == 2 && parts[1] == PermissionEvaluator.AdminAction)
+            {
+                var resource = parts[0];
+                foreach (var entry in app.Permissions.Where(p => p.Resource == resource))
+                    emit.Add(entry.ToPermissionString());
+            }
+        }
+
+        return [.. emit];
     }
 
     /// <summary>
