@@ -1,4 +1,4 @@
-using Cocoar.Auth.Authorization.Services;
+using Cocoar.Auth.Permissions;
 
 namespace Cocoar.Auth.Tests.Unit.Authorization;
 

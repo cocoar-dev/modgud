@@ -4,6 +4,7 @@
     <Project Path="Common/BuildingBlocks.Helper/BuildingBlocks.Helper.csproj" />
   </Folder>
   <Folder Name="/Cocoar.Auth/">
+    <Project Path="Cocoar.Auth.Permissions.Abstractions/Cocoar.Auth.Permissions.Abstractions.csproj" />
     <Project Path="Cocoar.Auth.Authorization/Cocoar.Auth.Authorization.csproj" />
     <Project Path="Cocoar.Auth.Authentication/Cocoar.Auth.Authentication.csproj" />
     <Project Path="Cocoar.Auth.Domain/Cocoar.Auth.Domain.csproj" />

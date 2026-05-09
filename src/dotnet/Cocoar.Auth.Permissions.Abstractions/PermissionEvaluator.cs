@@ -1,12 +1,15 @@
-namespace Cocoar.Auth.Authorization.Services;
+namespace Cocoar.Auth.Permissions;
 
 /// <summary>
-/// Pure permission-check logic, separated from <see cref="PermissionService"/> so
-/// it can be unit-tested without a Marten session.
+/// Pure permission-check logic with no I/O dependencies — the same evaluator
+/// is used IdP-side (by <c>PermissionService</c> in the Authorization slice)
+/// and RS-side (by the <c>Cocoar.Auth.Client.AspNetCore</c> helper lib).
+/// Lives in <c>Cocoar.Auth.Permissions.Abstractions</c> so external resource
+/// servers can reuse it without pulling in Marten/Wolverine/JsEval.
 ///
 /// <para>Permission strings within an App are 2-segment
 /// <c>"&lt;resource&gt;:&lt;action&gt;"</c>. The App context is implicit from the
-/// caller (the IDP itself for in-process gates, the authenticated RS for
+/// caller (the IdP itself for in-process gates, the authenticated RS for
 /// distribution-API calls). The bypass tiers collapse common admin grants
 /// to fewer entries.</para>
 ///

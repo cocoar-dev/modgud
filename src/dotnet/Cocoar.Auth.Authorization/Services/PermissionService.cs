@@ -1,6 +1,7 @@
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Roles;
+using Cocoar.Auth.Permissions;
 using Marten;
 
 namespace Cocoar.Auth.Authorization.Services;

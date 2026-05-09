@@ -16,6 +16,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Pure evaluator + permission-string primitives. Kept in a separate
+         assembly so external RS libs (Cocoar.Auth.Client.AspNetCore and
+         downstream service consumers) can reuse the same logic without
+         pulling Marten/Wolverine/JsEval transitively. -->
+    <ProjectReference Include="..\Cocoar.Auth.Permissions.Abstractions\Cocoar.Auth.Permissions.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Persistence + messaging — fix gesetzt für alle Konsumenten. -->
     <PackageReference Include="Marten" />
     <PackageReference Include="WolverineFx.Marten" />

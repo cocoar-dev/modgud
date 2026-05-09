@@ -36,8 +36,9 @@ public class PermissionRole
 
     /// <summary>
     /// When true, the role grants <c>realm:admin</c> — the realm-wide bypass
-    /// recognised by <see cref="Services.PermissionEvaluator"/>. Lives outside
-    /// any App catalog (see permission-modell.md §3 "Sonderfall realm:admin").
+    /// recognised by <c>Cocoar.Auth.Permissions.PermissionEvaluator</c>. Lives
+    /// outside any App catalog (see permission-modell.md §3 "Sonderfall
+    /// realm:admin").
     /// </summary>
     public bool IsRealmAdmin { get; set; }
 

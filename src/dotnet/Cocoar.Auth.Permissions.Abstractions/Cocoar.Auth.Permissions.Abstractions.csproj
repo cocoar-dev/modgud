@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Cocoar.Auth.Permissions</RootNamespace>
+    <AssemblyName>Cocoar.Auth.Permissions.Abstractions</AssemblyName>
+    <Description>Pure permission-evaluation primitives shared by the IdP server-side and external resource-server libs. No persistence / web / DI deps — reuse without transitive bloat.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cocoar.Auth.Tests.Unit" />
+  </ItemGroup>
+
+</Project>

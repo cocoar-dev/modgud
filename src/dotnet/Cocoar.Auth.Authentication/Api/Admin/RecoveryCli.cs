@@ -7,6 +7,7 @@ using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Projections;
 using Cocoar.Auth.Authorization.Services;
 using Cocoar.Auth.Domain.Realms;
+using Cocoar.Auth.Permissions;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Marten;
 using Microsoft.AspNetCore.Identity;
