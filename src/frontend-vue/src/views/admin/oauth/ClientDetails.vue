@@ -54,28 +54,54 @@ const accessTokenTypeOptions: { value: AccessTokenType; label: string }[] = [
 ]
 
 const grantTypeOptions = [
-  { value: 'authorization_code', label: 'authorization_code (interactive user-flow + PKCE)' },
-  { value: 'refresh_token', label: 'refresh_token (long-lived sessions)' },
-  { value: 'client_credentials', label: 'client_credentials (M2M, no user)' },
-  { value: 'urn:ietf:params:oauth:grant-type:device_code', label: 'device_code (TVs, CLIs)' },
-  { value: 'implicit', label: 'implicit — DEPRECATED, do not use' },
-  { value: 'password', label: 'password — DEPRECATED, do not use' },
+  { value: 'authorization_code', label: 'authorization_code',
+    subtitle: 'Interactive user-flow with PKCE',
+    icon: 'log-in', group: 'Standard flows' },
+  { value: 'refresh_token', label: 'refresh_token',
+    subtitle: 'Long-lived sessions, exchange refresh for new access token',
+    icon: 'rotate-ccw', group: 'Standard flows' },
+  { value: 'client_credentials', label: 'client_credentials',
+    subtitle: 'Machine-to-machine, no user',
+    icon: 'cpu', group: 'Standard flows' },
+  { value: 'urn:ietf:params:oauth:grant-type:device_code', label: 'device_code',
+    subtitle: 'TVs, CLIs, anything without a browser',
+    icon: 'monitor', group: 'Standard flows' },
+  { value: 'implicit', label: 'implicit',
+    subtitle: 'DEPRECATED — superseded by authorization_code+PKCE',
+    icon: 'circle-alert', group: 'Deprecated' },
+  { value: 'password', label: 'password',
+    subtitle: 'DEPRECATED — resource-owner password credentials',
+    icon: 'circle-alert', group: 'Deprecated' },
 ]
 
-const scopeOptions = computed(() =>
-  scopeStore.scopes.map((s) => ({
-    value: s.Name,
-    label: s.DisplayName ? `${s.Name} — ${s.DisplayName}` : s.Name,
-  })),
-)
+const scopeOptions = computed(() => {
+  const standardOidc = new Set(['openid', 'profile', 'email', 'roles', 'offline_access'])
+  return scopeStore.scopes.map((s) => {
+    const isStandard = standardOidc.has(s.Name) || !s.AppId
+    const appLabel = s.AppId
+      ? applicationsStore.apps.find((a) => a.Id === s.AppId)?.DisplayName ?? s.AppId
+      : null
+    const subtitleParts = [s.DisplayName, appLabel].filter(Boolean)
+    return {
+      value: s.Name,
+      label: s.Name,
+      subtitle: subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined,
+      icon: 'tag',
+      group: isStandard ? 'Realm-wide (OIDC standard)' : `App: ${appLabel ?? '—'}`,
+    }
+  })
+})
 
-// App-link MultiSelect (n:m). Empty selection = realm-wide. Multiple
-// selections = Keycloak-style multi-app client (the issued token's
-// resource_access claim will carry one entry per selected app).
+// App-link DualListbox (n:m). Empty Linked = realm-wide. Multiple
+// = Keycloak-style multi-app client (the issued token's resource_access
+// claim will carry one entry per linked app).
 const appOptions = computed(() =>
   applicationsStore.apps.map((a) => ({
     value: a.Id,
-    label: `${a.DisplayName} (${a.Slug})`,
+    label: a.DisplayName,
+    subtitle: a.Description ?? a.Slug,
+    icon: a.IsSystem ? 'shield' : 'layout-grid',
+    group: a.IsSystem ? 'System apps' : 'User apps',
   })),
 )
 
@@ -401,7 +427,7 @@ async function copySecret() {
             :options="appOptions"
             drag-drop
             sort-options="asc"
-            :search-fields="['label']"
+            :search-fields="['label', 'subtitle', 'group']"
             :available-label="t('admin.oauthClients.apps.available', {}, 'Available apps')"
             :selected-label="t('admin.oauthClients.apps.selected', {}, 'Linked')"
             :search-placeholder="t('admin.oauthClients.apps.searchPlaceholder', {}, 'Search apps…')" />
@@ -421,7 +447,7 @@ async function copySecret() {
             :options="scopeOptions"
             drag-drop
             sort-options="asc"
-            :search-fields="['label']"
+            :search-fields="['label', 'subtitle', 'group']"
             :available-label="t('admin.oauthClients.scopes.available', {}, 'Available scopes')"
             :selected-label="t('admin.oauthClients.scopes.selected', {}, 'Allowed')"
             :search-placeholder="t('admin.oauthClients.scopes.searchPlaceholder', {}, 'Search scopes…')" />
@@ -441,7 +467,7 @@ async function copySecret() {
             :options="grantTypeOptions"
             drag-drop
             sort-options="asc"
-            :search-fields="['label']"
+            :search-fields="['label', 'subtitle', 'group']"
             :available-label="t('admin.oauthClients.grantTypes.available', {}, 'Available grant types')"
             :selected-label="t('admin.oauthClients.grantTypes.selected', {}, 'Enabled')"
             :search-placeholder="t('admin.oauthClients.grantTypes.searchPlaceholder', {}, 'Search…')" />
