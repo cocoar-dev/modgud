@@ -38,6 +38,12 @@ const builder = CoarGridBuilder.create<ApplicationDto>()
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
   .searchHighlight()
+  // System apps (cocoar-auth, control-plane) are bootstrap-managed and
+  // should never be edited from the admin surface — dim the row to
+  // signal "look but don't touch".
+  .rowClassRules({
+    'is-system': (p: any) => p.data?.IsSystem === true,
+  })
   .rowSelection('single')
   .onCellDoubleClicked((event) => {
     if (event.data) navigateToModal(event.data.Id)
@@ -54,7 +60,13 @@ const builder = CoarGridBuilder.create<ApplicationDto>()
   })
   .onViewportContextMenu(($event) => viewportMenu.open($event))
   .columns([
-    (col) => col.field('Slug').header('Slug', 'admin.apps.slug').width(180),
+    (col) => col
+      .wrap(col.field('Slug').header('Slug', 'admin.apps.slug').width(180))
+      .left({
+        icon: (r: any) => r?.IsSystem ? 'lock' : null,
+        color: 'var(--coar-text-neutral-secondary, #9ca3af)',
+        tooltip: t('admin.system.lockedHint', {}, 'System entry — managed by the IdP, read-only'),
+      }),
     (col) => col.field('DisplayName').header('Display Name', 'admin.apps.displayName').flex(1).minWidth(180),
     (col) => col.field('Description').header('Description', 'common.description').flex(2),
     (col) => col.field('Permissions').header('Permissions', 'admin.apps.permissions').flex(2)

@@ -40,6 +40,12 @@ const builder = CoarGridBuilder.create<OAuthScopeDto>()
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
   .searchHighlight()
+  // Standard OIDC scopes (openid / email / profile / roles /
+  // offline_access) ship with the IdP and aren't admin-editable —
+  // dim the row to telegraph that.
+  .rowClassRules({
+    'is-system': (p: any) => p.data?.IsStandard === true,
+  })
   .rowSelection('single')
   .onCellDoubleClicked((event) => {
     if (event.data) navigateToModal(event.data.Id)
@@ -54,7 +60,13 @@ const builder = CoarGridBuilder.create<OAuthScopeDto>()
   })
   .onViewportContextMenu(($event) => viewportMenu.open($event))
   .columns([
-    (col) => col.field('Name').header('Name', 'admin.oauthScopes.name').flex(1).minWidth(140),
+    (col) => col
+      .wrap(col.field('Name').header('Name', 'admin.oauthScopes.name').flex(1).minWidth(140))
+      .left({
+        icon: (r: any) => r?.IsStandard ? 'lock' : null,
+        color: 'var(--coar-text-neutral-secondary, #9ca3af)',
+        tooltip: t('admin.system.lockedHint', {}, 'OIDC standard scope — read-only'),
+      }),
     (col) => col.field('DisplayName').header('Display Name', 'admin.oauthScopes.displayName').flex(1),
     (col) => col.field('Description').header('Description', 'admin.oauthScopes.description').flex(2),
     (col) => col.field('Resources').header('Resources', 'admin.oauthScopes.resources').flex(1)

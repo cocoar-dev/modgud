@@ -140,6 +140,12 @@ export interface OAuthScopeDto {
    * same App.
    */
   AppId?: string | null
+  /**
+   * True for the five OIDC standard scopes (openid/email/profile/roles/
+   * offline_access) — shipped with the IdP and not editable. Drives the
+   * dimmed row treatment in the admin grid.
+   */
+  IsStandard: boolean
 }
 
 export interface CreateOAuthScopeDto {

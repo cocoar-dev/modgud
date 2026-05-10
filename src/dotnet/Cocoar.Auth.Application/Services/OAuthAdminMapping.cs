@@ -344,6 +344,7 @@ internal static class OAuthAdminMapping
         // so the admin UI can equality-compare these values 1:1 with the
         // applications-store entries when applying the App-context filter.
         AppId = s.AppId is null ? null : new ShortGuid(s.AppId.Value).ToString(),
+        IsStandard = StandardScopes.IsStandard(s.Name),
     };
 
     /// <summary>

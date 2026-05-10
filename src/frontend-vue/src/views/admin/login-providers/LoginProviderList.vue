@@ -52,6 +52,11 @@ const builder = CoarGridBuilder.create<LoginProviderDto>()
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
   .searchHighlight()
+  // Built-in providers (Internal Authentication) ship with the IdP and
+  // can't be removed/edited — dim the row to telegraph that.
+  .rowClassRules({
+    'is-system': (p: any) => p.data?.IsBuiltIn === true,
+  })
   .rowSelection('single')
   .onCellDoubleClicked((event) => {
     if (event.data) navigateToModal(event.data.Id)

@@ -14,6 +14,13 @@ public record OAuthScopeDto
     public List<string> UserClaims { get; init; } = [];
     /// <summary>FK to <c>App.Id</c>. Null = global / standard OIDC scope.</summary>
     public string? AppId { get; init; }
+    /// <summary>
+    /// True for the five OIDC standard scopes (<c>openid</c>, <c>email</c>,
+    /// <c>profile</c>, <c>roles</c>, <c>offline_access</c>) — shipped with
+    /// the IdP, not editable. The admin UI uses this to render those rows
+    /// dimmed.
+    /// </summary>
+    public bool IsStandard { get; init; }
 }
 
 public record CreateOAuthScopeDto
