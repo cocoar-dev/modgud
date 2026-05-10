@@ -87,7 +87,15 @@ public sealed class RealmSigningKeyHandler : IOpenIddictServerHandler<GenerateTo
         // changes.
         if (context.BaseUri is not null)
         {
-            var realmIssuer = context.BaseUri.OriginalString.TrimEnd('/');
+            // Use the .NET Uri serialization verbatim (AbsoluteUri keeps
+            // the trailing slash for host-only URIs) so the iss claim we
+            // stamp onto tokens matches the issuer value Discovery
+            // publishes. Trimming the slash here breaks OpenIdConnect
+            // clients with "IDX10205: Issuer validation failed" because
+            // Discovery's Uri-typed issuer field always serialises with
+            // the trailing slash and we have no clean way to override
+            // that on the discovery side.
+            var realmIssuer = context.BaseUri.AbsoluteUri;
             context.Principal?.SetClaim(OpenIddictConstants.Claims.Private.Issuer, realmIssuer);
             if (context.SecurityTokenDescriptor is not null)
             {

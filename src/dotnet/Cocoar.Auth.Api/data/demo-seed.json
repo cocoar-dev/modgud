@@ -468,7 +468,8 @@
       "scopes": ["openid", "email", "profile", "demo.read"],
       "requireConsent": false,
       "requireClientSecret": false,
-      "accessTokenType": "Jwt"
+      "accessTokenType": "Jwt",
+      "appKeys": ["demo-app"]
     },
     {
       "clientId": "demo-backend",
@@ -482,7 +483,8 @@
       "scopes": ["demo.read", "demo.write"],
       "requireConsent": false,
       "requireClientSecret": true,
-      "accessTokenType": "Jwt"
+      "accessTokenType": "Jwt",
+      "appKeys": ["demo-app"]
     },
     {
       "clientId": "demo-bff",
@@ -496,7 +498,8 @@
       "scopes": ["openid", "email", "profile", "offline_access", "demo.read", "demo.write"],
       "requireConsent": false,
       "requireClientSecret": true,
-      "accessTokenType": "Jwt"
+      "accessTokenType": "Jwt",
+      "appKeys": ["demo-app"]
     },
     {
       "clientId": "demo-mobile",
@@ -509,7 +512,8 @@
       "scopes": ["openid", "email", "profile", "offline_access", "demo.read"],
       "requireConsent": true,
       "requireClientSecret": false,
-      "accessTokenType": "Jwt"
+      "accessTokenType": "Jwt",
+      "appKeys": ["demo-app"]
     },
 
     { "// smoke-test clients": "Different shapes: single-app SPA, multi-microservice SPA, mini-UI, fat-client cross-app dashboard, confidential backend." },
