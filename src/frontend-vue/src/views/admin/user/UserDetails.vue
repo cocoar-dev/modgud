@@ -20,7 +20,7 @@ const groupStore = useGroupStore()
 const appConfig = useAppConfigStore()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
-const activeTab = ref<'general' | 'groups' | 'security'>('general')
+const activeTab = ref<'general' | 'groups' | 'effective' | 'security'>('general')
 
 // Security info (2FA methods + grace due date) — loaded with user profile.
 const securityInfo = ref<{
@@ -105,8 +105,12 @@ async function loadGroups() {
   groupsLoaded.value = true
 }
 
+// Both Gruppen and Effektiv tabs read from the same loadGroups() call
+// (it pulls direct + inherited + effective in parallel) — load on the
+// first switch to either tab so the user can hop between them without
+// a re-fetch flicker.
 watch(activeTab, (tab) => {
-  if (tab === 'groups' && !groupsLoaded.value) loadGroups()
+  if ((tab === 'groups' || tab === 'effective') && !groupsLoaded.value) loadGroups()
 })
 
 function effectiveSourceLabel(g: EffectiveGroupDto): string {
@@ -301,7 +305,8 @@ watch(() => form.value.UserName, () => {
     <div v-if="!loading" class="flex flex-col min-w-0 min-h-0 flex-1">
       <CoarTabGroup v-if="!isCreate" v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.userDetails.tabs.general', {}, 'General') }}</CoarTab>
-        <CoarTab id="groups">{{ t('admin.userDetails.tabs.groups', {}, 'Groups') }}</CoarTab>
+        <CoarTab id="groups">{{ t('admin.userDetails.tabs.groups', {}, 'Direkte Gruppen') }}</CoarTab>
+        <CoarTab id="effective">{{ t('admin.userDetails.tabs.effective', {}, 'Effektiv') }}</CoarTab>
         <CoarTab id="security">{{ t('admin.userDetails.tabs.security', {}, 'Security') }}</CoarTab>
       </CoarTabGroup>
 
@@ -404,16 +409,39 @@ watch(() => form.value.UserName, () => {
         </section>
       </div>
 
-      <!-- Tab: Groups -->
+      <!-- Tab: Direct Groups — the editor surface. The admin picks who
+           the user is a direct member of; everything else (inheritance,
+           auto-script matches) is shown on the Effektiv tab. -->
       <div v-show="!isCreate && activeTab === 'groups'" class="tab-content">
-        <!-- Read-only debug surface: live effective membership (Direct/Inherited
-             materialized + Auto-script matches), independent of MemberIds state.
-             "Drift" warnings flag Auto rows where the predicate matches but the
-             user is not in MemberIds — somebody never recomputed. -->
+        <section class="flex-section flex-1">
+          <CoarDualListbox
+            v-model="directGroupIds"
+            :options="allGroupsOptions"
+            drag-drop
+            sort-options="asc"
+            :search-fields="['label', 'subtitle', 'group']"
+            :available-label="t('admin.userDetails.availableGroups', {}, 'Available')"
+            :selected-label="t('admin.userDetails.memberOf', {}, 'Member of')"
+            :search-placeholder="t('admin.userDetails.searchGroups', {}, 'Search groups…')"
+            :disabled="groupsSaving"
+            class="flex-1 min-h-0"
+          />
+        </section>
+      </div>
+
+      <!-- Tab: Effective — read-only debug surface. Live effective
+           membership (Direct/Inherited materialized + Auto-script
+           matches), independent of MemberIds state. "Drift" warnings
+           flag Auto rows where the predicate matches but the user is
+           not in MemberIds — somebody never recomputed. -->
+      <div v-show="!isCreate && activeTab === 'effective'" class="tab-content">
         <section v-if="effectiveGroups.length > 0 || effectiveDiagnostics.length > 0" class="flex-section">
           <div class="section-heading">
-            {{ t('admin.userDetails.effectiveGroups.heading', {}, 'Effektive Gruppen') }}
+            {{ t('admin.userDetails.effectiveGroups.heading', {}, 'Effektive Mitgliedschaft') }}
           </div>
+          <p class="tab-hint">
+            {{ t('admin.userDetails.effectiveGroups.hint', {}, 'Materialisierte Sicht aller Gruppen die diesem User aktuell zugewiesen sind — direkt, geerbt über genestete Gruppen, oder per Auto-Skript.') }}
+          </p>
           <div class="effective-list">
             <div v-for="g in effectiveGroups" :key="g.Id" class="effective-row">
               <CoarIcon name="users" size="s" class="effective-icon" />
@@ -446,34 +474,28 @@ watch(() => form.value.UserName, () => {
           </CoarNote>
         </section>
 
-        <section class="flex-section flex-1">
-          <div class="section-heading">{{ t('admin.userDetails.directGroups', {}, 'Direct memberships') }}</div>
-          <CoarDualListbox
-            v-model="directGroupIds"
-            :options="allGroupsOptions"
-            drag-drop
-            sort-options="asc"
-            :search-fields="['label', 'subtitle', 'group']"
-            :available-label="t('admin.userDetails.availableGroups', {}, 'Available')"
-            :selected-label="t('admin.userDetails.memberOf', {}, 'Member of')"
-            :search-placeholder="t('admin.userDetails.searchGroups', {}, 'Search groups…')"
-            :disabled="groupsSaving"
-            class="flex-1 min-h-0"
-          />
-        </section>
         <section v-if="inheritedGroups.length > 0" class="flex-section">
-          <div class="section-heading">{{ t('admin.userDetails.inheritedGroups', {}, 'Inherited via nested groups') }}</div>
+          <div class="section-heading">
+            {{ t('admin.userDetails.inheritedGroups', {}, 'Geerbt über genestete Gruppen') }}
+          </div>
+          <p class="tab-hint">
+            {{ t('admin.userDetails.inheritedGroups.hint', {}, 'Diese Gruppen sind nicht direkt zugewiesen, aber der User ist über eine andere Gruppe (die diese als Mitglied hat) drin.') }}
+          </p>
           <CoarListbox
             :options="inheritedOptions"
-            :label="t('admin.userDetails.memberOf', {}, 'Member of')"
             searchable
             display-only
             sort-options="asc"
             :search-fields="['label', 'subtitle', 'group']"
             :search-placeholder="t('admin.userDetails.searchGroups', {}, 'Search groups…')"
-            height="200px"
+            height="280px"
           />
         </section>
+
+        <p v-if="effectiveGroups.length === 0 && effectiveDiagnostics.length === 0 && inheritedGroups.length === 0"
+           class="text-sm text-gray-500">
+          {{ t('admin.userDetails.effectiveGroups.empty', {}, 'Dieser User ist aktuell in keiner Gruppe — weder direkt noch geerbt noch über Auto-Skripte.') }}
+        </p>
       </div>
     </div>
     <div v-else class="flex flex-1 items-center justify-center p-8">
@@ -558,6 +580,12 @@ watch(() => form.value.UserName, () => {
   gap: 16px;
   padding: 2px 2px 16px;
   min-height: 0;
+}
+
+.tab-hint {
+  font-size: 0.78rem;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  margin-top: -8px;
 }
 
 .flex-section {
