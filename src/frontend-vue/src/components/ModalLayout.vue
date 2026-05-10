@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { watch } from 'vue'
-import { CoarIcon, CoarButton } from '@cocoar/vue-ui'
+import { computed, provide, watch } from 'vue'
+import { CoarIcon, CoarButton, CoarTag } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { provideUI, type UIButton } from '@/composables/useUI'
+import { MODAL_READONLY_KEY } from '@/composables/useModalReadOnly'
 
 const props = defineProps<{
   close: (result?: unknown) => void
@@ -10,18 +12,31 @@ const props = defineProps<{
   icon?: string
   width?: string
   footerButton?: UIButton
+  /**
+   * Render the modal in read-only mode: hides the primary save/footer
+   * button and surfaces a "Nur Lesen" badge in the title bar. The slot
+   * content can call useModalReadOnly() to drive its own input
+   * disabled-state without prop-drilling.
+   */
+  readonly?: boolean
 }>()
+
+const { t } = useI18n()
+const isReadOnly = computed(() => props.readonly === true)
+provide(MODAL_READONLY_KEY, isReadOnly)
 
 const { state: ui } = provideUI()
 
-// Sync props to UI state reactively
+// Sync props to UI state reactively. Read-only mode hides the footer
+// even if a footerButton is supplied — the slot content can keep its
+// existing onSave wiring without having to know about read-only.
 watch(
-  () => [props.title, props.subTitle, props.icon, props.footerButton] as const,
-  ([title, subTitle, icon, footerButton]) => {
+  () => [props.title, props.subTitle, props.icon, props.footerButton, props.readonly] as const,
+  ([title, subTitle, icon, footerButton, readonly]) => {
     ui.header.title = title
     ui.header.subTitle = subTitle
     ui.header.icon = icon
-    if (footerButton) {
+    if (footerButton && !readonly) {
       ui.footer.show = true
       Object.assign(ui.footer.button1, footerButton)
     } else {
@@ -40,6 +55,9 @@ watch(
       <div class="flex flex-col justify-center min-w-0 flex-1">
         <div class="modal-title" :class="{ 'modal-title--solo': !ui.header.subTitle }">
           {{ ui.header.title }}
+          <CoarTag v-if="isReadOnly" size="s" variant="warning" class="readonly-badge">
+            {{ t('common.readOnly', {}, 'Nur Lesen') }}
+          </CoarTag>
         </div>
         <div v-if="ui.header.subTitle" class="modal-subtitle">
           {{ ui.header.subTitle }}
@@ -136,6 +154,11 @@ watch(
 
 .modal-title--solo {
   font-size: 1.25rem;
+}
+
+.readonly-badge {
+  margin-left: 8px;
+  vertical-align: middle;
 }
 
 .modal-subtitle {

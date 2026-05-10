@@ -1,6 +1,23 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 
+/**
+ * Fixed size for every admin-modal opened via routedFragments.
+ *
+ * <para>The admin surface is desktop-only — using a single size for
+ * every modal keeps the dialog from resizing when the user switches
+ * between tabs (some tabs have one CoarTextInput, others have a full
+ * DualListbox). Without a fixed size that flickering is jarring; with
+ * one the layout feels stable.</para>
+ *
+ * <para>Set on the route (not the ModalLayout) so the size is the
+ * routing layer's contract: every entry of every grid opens at the
+ * same dimensions, regardless of which view component renders inside.
+ * Per-view <c>width</c> overrides on <c>ModalLayout</c> are
+ * intentionally ignored.</para>
+ */
+const ADMIN_MODAL_SIZE = { width: '80rem', height: '80vh' } as const
+
 const routes = [
     {
       path: '/login',
@@ -71,17 +88,13 @@ const routes = [
                     type: 'modal',
                     path: 'claims/:id',
                     component: () => import('@/views/admin/user/IdpClaimsModal.vue'),
-                    overlayOptions: {
-                      size: { minHeight: '80vh', maxHeight: '90vh' },
-                    },
+                    overlayOptions: { size: ADMIN_MODAL_SIZE },
                   },
                   {
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/user/UserDetails.vue'),
-                    overlayOptions: {
-                      size: { minHeight: '80vh', maxHeight: '80vh' },
-                    },
+                    overlayOptions: { size: ADMIN_MODAL_SIZE },
                   },
                 ],
               },
@@ -95,6 +108,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/role/RoleDetails.vue'),
+                    overlayOptions: { size: ADMIN_MODAL_SIZE },
                   },
                 ],
               },
@@ -108,9 +122,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/group/GroupDetails.vue'),
-                    overlayOptions: {
-                      size: { minHeight: '80vh', maxHeight: '80vh' },
-                    },
+                    overlayOptions: { size: ADMIN_MODAL_SIZE },
                   },
                 ],
               },
@@ -132,9 +144,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/oauth/ClientDetails.vue'),
-                    overlayOptions: {
-                      size: { minHeight: '80vh', maxHeight: '90vh' },
-                    },
+                    overlayOptions: { size: ADMIN_MODAL_SIZE },
                   },
                 ],
               },
@@ -148,6 +158,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/oauth/ScopeDetails.vue'),
+                    overlayOptions: { size: ADMIN_MODAL_SIZE },
                   },
                 ],
               },
@@ -161,9 +172,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/oauth/ApiDetails.vue'),
-                    overlayOptions: {
-                      size: { minHeight: '80vh', maxHeight: '90vh' },
-                    },
+                    overlayOptions: { size: ADMIN_MODAL_SIZE },
                   },
                 ],
               },
@@ -177,9 +186,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/login-providers/LoginProviderDetails.vue'),
-                    overlayOptions: {
-                      size: { minHeight: '80vh', maxHeight: '90vh' },
-                    },
+                    overlayOptions: { size: ADMIN_MODAL_SIZE },
                   },
                 ],
               },
@@ -195,6 +202,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/realms/RealmDetails.vue'),
+                    overlayOptions: { size: ADMIN_MODAL_SIZE },
                   },
                 ],
               },
@@ -210,6 +218,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/apps/AppDetails.vue'),
+                    overlayOptions: { size: ADMIN_MODAL_SIZE },
                   },
                 ],
               },

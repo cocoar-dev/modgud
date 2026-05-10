@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarFormField, CoarNote, CoarTag, CoarButton, CoarIcon } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarFormField, CoarNote, CoarTag, CoarButton, CoarIcon, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
@@ -143,6 +143,7 @@ const hasIncompleteRows = computed(() => catalog.value.some((r) =>
 ))
 
 const isSystem = computed(() => dto.value?.IsSystem === true)
+const activeTab = ref<'general' | 'catalog' | 'rs'>('general')
 
 const modalTitle = computed(() =>
   isCreate.value
@@ -242,43 +243,51 @@ async function provisionDefaultResourceServer() {
 
 <template>
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="layout-grid"
-    :footer-button="footerButton" width="48rem">
+    :footer-button="footerButton" :readonly="isSystem" width="56rem">
     <div v-if="loading && !dto && !isCreate" class="flex flex-1 items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
     </div>
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
+      <CoarTabGroup v-if="!isCreate" v-model="activeTab" class="tab-bar">
+        <CoarTab id="general">{{ t('admin.apps.tabs.general', {}, 'Allgemein') }}</CoarTab>
+        <CoarTab id="catalog">{{ t('admin.apps.tabs.catalog', {}, 'Permission-Catalog') }}</CoarTab>
+        <CoarTab v-if="!isSystem" id="rs">{{ t('admin.apps.tabs.rs', {}, 'Resource Server') }}</CoarTab>
+      </CoarTabGroup>
+
       <CoarNote v-if="isCreate" variant="info">
         {{ t('admin.apps.createHint', {}, 'Eine neue App registriert sich für Permission-Resolution. Slug ist nach dem Erstellen unveränderbar.') }}
       </CoarNote>
       <CoarNote v-else-if="isSystem" variant="warning">
-        {{ t('admin.apps.systemHint', {}, 'Dies ist die System-App (cocoar-auth). Sie kann nicht gelöscht oder umbenannt werden; den Permission-Catalog nur mit Bedacht ändern — die Einträge müssen mit den RequiresPermission-Aufrufen im Backend konsistent bleiben.') }}
+        {{ t('admin.apps.systemHint', {}, 'Dies ist eine System-App des IdP. Slug, Display Name und Permission-Catalog sind im Backend hartkodiert — der Catalog hier ist read-only und nur zur Inspektion. Änderungen an den Strings würden die RequiresPermission-Aufrufe im Backend brechen.') }}
       </CoarNote>
 
-      <div class="grid grid-cols-2 gap-3">
-        <CoarFormField :label="t('admin.apps.slug', {}, 'Slug (immutable)')">
-          <CoarTextInput v-model="form.Slug" :disabled="!isCreate" clearable
-            :placeholder="t('admin.apps.slugPlaceholder', {}, 'kebab-case-slug')" />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.apps.displayName', {}, 'Display Name')">
-          <CoarTextInput v-model="form.DisplayName" clearable />
+      <!-- Tab: General -->
+      <div v-show="isCreate || activeTab === 'general'" class="tab-content">
+        <div class="grid grid-cols-2 gap-3">
+          <CoarFormField :label="t('admin.apps.slug', {}, 'Slug (immutable)')">
+            <CoarTextInput v-model="form.Slug" :disabled="!isCreate || isSystem" clearable
+              :placeholder="t('admin.apps.slugPlaceholder', {}, 'kebab-case-slug')" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.apps.displayName', {}, 'Display Name')">
+            <CoarTextInput v-model="form.DisplayName" :disabled="isSystem" clearable />
+          </CoarFormField>
+        </div>
+
+        <CoarFormField :label="t('common.description', {}, 'Beschreibung')">
+          <CoarTextInput v-model="form.Description" :disabled="isSystem" clearable />
         </CoarFormField>
       </div>
 
-      <CoarFormField :label="t('common.description', {}, 'Beschreibung')">
-        <CoarTextInput v-model="form.Description" clearable />
-      </CoarFormField>
+      <!-- Tab: Permission Catalog -->
+      <div v-show="isCreate || activeTab === 'catalog'" class="tab-content">
+        <p class="catalog-subtitle">
+          {{ isSystem
+            ? t('admin.apps.permissionsHintSystem', {}, 'Permission-Catalog der System-App — read-only. Diese Einträge entsprechen 1:1 den RequiresPermission-Aufrufen im Backend-Code.')
+            : t('admin.apps.permissionsHint', {}, 'Resource und Action je 1+ lowercase-Buchstaben/Ziffern/Bindestriche. Ids bleiben über Renames stabil — Role-Grants und RS-Subsets folgen automatisch.') }}
+        </p>
 
-      <!-- Catalog editor — structured table. -->
-      <div class="catalog-section">
-        <div class="catalog-header">
-          <span class="catalog-title">{{ t('admin.apps.permissions', {}, 'Permission-Catalog') }}</span>
-          <span class="catalog-subtitle">
-            {{ t('admin.apps.permissionsHint', {}, 'Resource und Action je 1+ lowercase-Buchstaben/Ziffern/Bindestriche. Ids bleiben über Renames stabil — Role-Grants und RS-Subsets folgen automatisch.') }}
-          </span>
-        </div>
-
-        <CoarNote v-if="renamedCount > 0" variant="warning">
-          {{ t('admin.apps.renamedWarning', { count: renamedCount }, `${renamedCount} Eintrag/Einträge wurden umbenannt. Die String-Form ändert sich (z.B. in Distribution-API-Responses und UserInfo), aber Role-Grants und RS-Subsets folgen automatisch über die stabile Id.`) }}
+        <CoarNote v-if="renamedCount > 0 && !isSystem" variant="warning">
+          {{ t('admin.apps.renamedWarning', { count: renamedCount }, `${renamedCount} Eintrag/Einträge wurden umbenannt. Die String-Form ändert sich (z.B. in UserInfo), aber Role-Grants und RS-Subsets folgen automatisch über die stabile Id.`) }}
         </CoarNote>
 
         <table class="catalog-table">
@@ -287,26 +296,26 @@ async function provisionDefaultResourceServer() {
               <th class="col-resource">{{ t('admin.apps.cat.resource', {}, 'Resource') }}</th>
               <th class="col-action">{{ t('admin.apps.cat.action', {}, 'Action') }}</th>
               <th class="col-description">{{ t('admin.apps.cat.description', {}, 'Beschreibung') }}</th>
-              <th class="col-actions"></th>
+              <th v-if="!isSystem" class="col-actions"></th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(row, index) in catalog" :key="index">
               <td>
-                <input v-model="row.resource"
+                <input v-model="row.resource" :disabled="isSystem"
                   :class="{ 'invalid': row.resource && !isSegmentValid(row.resource), 'duplicate': duplicateKeys.has(`${row.resource.trim()}:${row.action.trim()}`) }"
                   class="catalog-input" placeholder="user" />
               </td>
               <td>
-                <input v-model="row.action"
+                <input v-model="row.action" :disabled="isSystem"
                   :class="{ 'invalid': row.action && !isSegmentValid(row.action), 'duplicate': duplicateKeys.has(`${row.resource.trim()}:${row.action.trim()}`) }"
                   class="catalog-input" placeholder="read" />
               </td>
               <td>
-                <input v-model="row.description" class="catalog-input"
+                <input v-model="row.description" :disabled="isSystem" class="catalog-input"
                   :placeholder="t('admin.apps.cat.descriptionPlaceholder', {}, 'optional')" />
               </td>
-              <td class="col-actions-cell">
+              <td v-if="!isSystem" class="col-actions-cell">
                 <CoarTag v-if="rowRenamed(row)" size="s" variant="warning"
                   :title="t('admin.apps.cat.renamedTitle', {}, 'Umbenannt — Id bleibt stabil')">
                   ✎
@@ -320,7 +329,7 @@ async function provisionDefaultResourceServer() {
             </tr>
           </tbody>
         </table>
-        <div class="catalog-footer">
+        <div v-if="!isSystem" class="catalog-footer">
           <CoarButton size="s" variant="secondary" icon-start="plus" @click="addRow">
             {{ t('admin.apps.cat.add', {}, 'Eintrag hinzufügen') }}
           </CoarButton>
@@ -334,32 +343,27 @@ async function provisionDefaultResourceServer() {
             {{ t('admin.apps.cat.duplicate', {}, 'Doppelte Einträge: ') + [...duplicateKeys].join(', ') }}
           </span>
         </div>
+
+        <CoarNote v-if="catalogBlockers.length > 0" variant="error">
+          <div class="font-semibold mb-1">
+            {{ t('admin.apps.cat.blockedTitle', {}, 'Diese Einträge sind noch in Verwendung:') }}
+          </div>
+          <ul class="blocker-list">
+            <li v-for="b in catalogBlockers" :key="b.PermissionId">
+              <code>{{ b.Permission }}</code>
+              <span v-if="b.ReferencedByRoles.length > 0">
+                · {{ t('admin.apps.cat.refRoles', {}, 'Rollen:') }} {{ b.ReferencedByRoles.join(', ') }}
+              </span>
+              <span v-if="b.ReferencedByResourceServers.length > 0">
+                · {{ t('admin.apps.cat.refRSes', {}, 'Resource Server:') }} {{ b.ReferencedByResourceServers.join(', ') }}
+              </span>
+            </li>
+          </ul>
+        </CoarNote>
       </div>
 
-      <!-- Delete-block panel — surfaced after a 409 from the server. -->
-      <CoarNote v-if="catalogBlockers.length > 0" variant="error">
-        <div class="font-semibold mb-1">
-          {{ t('admin.apps.cat.blockedTitle', {}, 'Diese Einträge sind noch in Verwendung:') }}
-        </div>
-        <ul class="blocker-list">
-          <li v-for="b in catalogBlockers" :key="b.PermissionId">
-            <code>{{ b.Permission }}</code>
-            <span v-if="b.ReferencedByRoles.length > 0">
-              · {{ t('admin.apps.cat.refRoles', {}, 'Rollen:') }} {{ b.ReferencedByRoles.join(', ') }}
-            </span>
-            <span v-if="b.ReferencedByResourceServers.length > 0">
-              · {{ t('admin.apps.cat.refRSes', {}, 'Resource Server:') }} {{ b.ReferencedByResourceServers.join(', ') }}
-            </span>
-          </li>
-        </ul>
-      </CoarNote>
-
-      <div v-if="!isCreate && dto" class="flex items-center gap-2 text-sm text-gray-500">
-        <CoarTag v-if="isSystem" size="s" variant="warning">{{ t('admin.apps.systemTag', {}, 'System') }}</CoarTag>
-      </div>
-
-      <!-- Klick-Aktion: provision default resource-server. -->
-      <div v-if="!isCreate && dto && !isSystem" class="rs-panel">
+      <!-- Tab: Resource Server (provision default) — only for user apps. -->
+      <div v-if="!isCreate && dto && !isSystem" v-show="activeTab === 'rs'" class="tab-content rs-panel">
         <div class="rs-panel-header">
           {{ t('admin.apps.rs.title', {}, 'Resource Server') }}
         </div>
@@ -402,9 +406,16 @@ async function provisionDefaultResourceServer() {
 </template>
 
 <style scoped>
+.tab-bar {
+  margin-bottom: 12px;
+}
+.tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
 .rs-panel {
-  border-top: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
-  padding-top: 0.75rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
