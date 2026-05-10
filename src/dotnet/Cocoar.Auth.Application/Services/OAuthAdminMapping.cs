@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using BuildingBlocks.Helper;
 using Cocoar.Auth.Application.DTOs.OAuth;
 using Cocoar.Auth.Domain.OAuth.Apis;
 using Cocoar.Auth.Domain.OAuth.Applications;
@@ -323,7 +324,7 @@ internal static class OAuthAdminMapping
             ClientClaimsPrefix = prefix,
             Claims = GetClaimsProp(props),
             Roles = GetStringListProp(props, OAuthApplicationPropertyKeys.Roles),
-            AppIds = s.AppIds.Select(g => g.ToString()).ToList(),
+            AppIds = s.AppIds.Select(g => new ShortGuid(g).ToString()).ToList(),
         };
     }
 
@@ -339,7 +340,10 @@ internal static class OAuthAdminMapping
         Emphasize = s.Emphasize,
         ShowInDiscoveryDocument = s.ShowInDiscoveryDocument,
         UserClaims = s.UserClaims.ToList(),
-        AppId = s.AppId?.ToString(),
+        // Match the ShortGuid format the App-list endpoint already uses,
+        // so the admin UI can equality-compare these values 1:1 with the
+        // applications-store entries when applying the App-context filter.
+        AppId = s.AppId is null ? null : new ShortGuid(s.AppId.Value).ToString(),
     };
 
     /// <summary>
@@ -369,8 +373,8 @@ internal static class OAuthAdminMapping
             Enabled = s.Enabled,
             Scopes = s.Scopes.ToList(),
             UserClaims = s.UserClaims.ToList(),
-            AppId = s.AppId?.ToString(),
-            PermissionIds = s.PermissionIds.Select(id => id.ToString()).ToList(),
+            AppId = s.AppId is null ? null : new ShortGuid(s.AppId.Value).ToString(),
+            PermissionIds = s.PermissionIds.Select(id => new ShortGuid(id).ToString()).ToList(),
             Secrets = secretDtos,
         };
     }

@@ -18,6 +18,7 @@ import { useSignalR } from '@/composables/useSignalR'
 import { provideUI } from '@/composables/useUI'
 import { useAuthStore } from '@/stores/auth.store'
 import LogoutConfirmModal from '@/views/auth/LogoutConfirmModal.vue'
+import AppContextSelector from '@/components/AppContextSelector.vue'
 
 const { t } = useI18n()
 
@@ -73,6 +74,22 @@ async function logout() {
 function goToProfile() {
     router.push('/profile')
 }
+
+// The App-context selector appears only on admin pages whose grids
+// actually consume the filter (Scopes / APIs / Clients / Roles /
+// Groups). The Apps page itself is the App-master-list, the System-
+// section pages are realm-level, the Users page is realm-level too —
+// none of them filter by App, so the selector would just be confusing
+// noise there.
+const appContextSelectorRoutes = [
+    '/admin/oauth/clients',
+    '/admin/oauth/scopes',
+    '/admin/oauth/apis',
+    '/admin/roles',
+    '/admin/groups',
+]
+const showAppContextSelector = computed(() =>
+    appContextSelectorRoutes.some((p) => route.path.startsWith(p)))
 
 function openHelp() {
     // End-user docs live at /docs — a separate VitePress app served by the backend.
@@ -133,6 +150,8 @@ const hasAnyAdminPermission = computed(() =>
                 </div>
                 <div class="flex-1"></div>
                 <div id="header-outlet-right"></div>
+
+                <AppContextSelector v-if="showAppContextSelector" class="ml-2" />
 
                 <!-- User Avatar -->
                 <button

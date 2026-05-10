@@ -11,6 +11,7 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useRoleStore } from '@/stores/role.store'
+import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
 import type { RoleDto } from '@/models/role'
 
@@ -18,6 +19,7 @@ const { t, language } = useI18n()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const roleStore = useRoleStore()
+const appCtx = useAppContextStore()
 
 const ui = useUI()
 watch(language, () => ui.set((ctx) => {
@@ -27,7 +29,12 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-const roles = computed(() => roleStore.roles)
+// Roles with IsRealmAdmin=true (e.g. System Admin) are kept in the
+// 'global' bucket alongside roles that have no AppId — both are
+// realm-scoped from the admin's perspective.
+const roles = computed(() =>
+  roleStore.roles.filter((r) =>
+    appCtx.matchesSingleAppId(r.IsRealmAdmin ? null : r.AppId)))
 
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()

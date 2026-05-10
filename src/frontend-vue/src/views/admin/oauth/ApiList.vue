@@ -11,6 +11,7 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useOAuthApiStore } from '@/stores/oauthApi.store'
+import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
 import type { OAuthApiDto } from '@/models/oauth'
 
@@ -18,6 +19,7 @@ const { t, language } = useI18n()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const store = useOAuthApiStore()
+const appCtx = useAppContextStore()
 
 const ui = useUI()
 watch(language, () => ui.set((ctx) => {
@@ -27,7 +29,8 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-const rows = computed(() => store.apis)
+const rows = computed(() =>
+  store.apis.filter((a) => appCtx.matchesSingleAppId(a.AppId)))
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])

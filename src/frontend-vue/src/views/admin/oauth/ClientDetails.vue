@@ -4,12 +4,12 @@ import {
   CoarTextInput,
   CoarFormField,
   CoarSelect,
-  CoarMultiSelect,
   CoarCheckbox,
   CoarButton,
   CoarTabGroup,
   CoarTab,
   CoarNote,
+  CoarDualListbox,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -31,7 +31,7 @@ const applicationsStore = useApplicationsStore()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
-const activeTab = ref<'general' | 'urls' | 'lifetimes'>('general')
+const activeTab = ref<'general' | 'apps' | 'scopes' | 'grants' | 'urls' | 'lifetimes'>('general')
 
 // Cleartext secret returned once at creation / regeneration — surfaced for copy.
 const newSecret = ref<string | null>(null)
@@ -325,14 +325,17 @@ async function copySecret() {
 
 <template>
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="app-window"
-    :footer-button="footerButton" width="48rem">
+    :footer-button="footerButton" width="80rem">
     <div v-if="loading && !original && !isCreate" class="flex flex-1 items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
     </div>
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1">
       <CoarTabGroup v-if="!isCreate" v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.oauthClients.tabs.general', {}, 'Allgemein') }}</CoarTab>
-        <CoarTab id="urls">{{ t('admin.oauthClients.tabs.urls', {}, 'URLs & Grants') }}</CoarTab>
+        <CoarTab id="apps">{{ t('admin.oauthClients.tabs.apps', {}, 'Apps') }}</CoarTab>
+        <CoarTab id="scopes">{{ t('admin.oauthClients.tabs.scopes', {}, 'Scopes') }}</CoarTab>
+        <CoarTab id="grants">{{ t('admin.oauthClients.tabs.grants', {}, 'Grants') }}</CoarTab>
+        <CoarTab id="urls">{{ t('admin.oauthClients.tabs.urls', {}, 'URLs') }}</CoarTab>
         <CoarTab id="lifetimes">{{ t('admin.oauthClients.tabs.lifetimes', {}, 'Token-Laufzeiten') }}</CoarTab>
       </CoarTabGroup>
 
@@ -349,7 +352,8 @@ async function copySecret() {
         </div>
       </CoarNote>
 
-      <!-- General -->
+      <!-- General — identity + flags only. Apps / Scopes / Grants moved
+           to dedicated tabs so the picker has room to breathe. -->
       <div v-show="isCreate || activeTab === 'general'" class="tab-content">
         <div class="grid grid-cols-2 gap-3">
           <CoarFormField :label="t('admin.oauthClients.clientId', {}, 'Client ID')">
@@ -364,40 +368,10 @@ async function copySecret() {
           <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent-Typ')">
             <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" />
           </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.apps', {}, 'Applications')">
-            <CoarMultiSelect
-              v-model="form.AppIds"
-              :options="appOptions"
-              searchable
-              clearable
-              :placeholder="t('admin.oauthClients.apps.placeholder', {}, 'Select apps (none = realm-wide)…')" />
-          </CoarFormField>
           <CoarFormField v-if="isCreate" :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (leer = generieren)')">
             <CoarTextInput v-model="form.ClientSecret" type="password" clearable />
           </CoarFormField>
         </div>
-        <CoarFormField :label="t('admin.oauthClients.scopes', {}, 'Allowed Scopes')">
-          <CoarMultiSelect
-            v-model="form.Scopes"
-            :options="scopeOptions"
-            searchable
-            clearable
-            :placeholder="t('admin.oauthClients.scopes.placeholder', {}, 'Choose which scopes this client may request…')" />
-          <p class="text-xs text-gray-500 mt-1">
-            {{ t('admin.oauthClients.scopes.hint', {}, 'OpenIddict rejects /connect/authorize and /connect/token requests for any scope not listed here. Add at minimum openid + roles for OIDC clients.') }}
-          </p>
-        </CoarFormField>
-        <CoarFormField :label="t('admin.oauthClients.grantTypes', {}, 'Allowed Grant Types')">
-          <CoarMultiSelect
-            v-model="form.AllowedGrantTypes"
-            :options="grantTypeOptions"
-            searchable
-            clearable
-            :placeholder="t('admin.oauthClients.grantTypes.placeholder', {}, 'Pick the OAuth flows this client may use…')" />
-          <p class="text-xs text-gray-500 mt-1">
-            {{ t('admin.oauthClients.grantTypes.hint', {}, 'No silent defaults: leaving this empty produces a client that cannot mint tokens. SPAs / mobile apps: authorization_code + refresh_token. Server-to-server: client_credentials. Pick what the client actually needs.') }}
-          </p>
-        </CoarFormField>
         <div class="mt-3 flex flex-wrap gap-x-6 gap-y-2">
           <CoarCheckbox v-model="form.Enabled" :label="t('admin.oauthClients.enabled', {}, 'Aktiv')" />
           <CoarCheckbox v-model="form.RequireClientSecret" :label="t('admin.oauthClients.requireSecret', {}, 'Secret erforderlich')" />
@@ -411,6 +385,67 @@ async function copySecret() {
             {{ t('admin.oauthClients.regenerate', {}, 'Client Secret neu generieren') }}
           </CoarButton>
         </div>
+      </div>
+
+      <!-- Apps — link the client to one or more registered Applications.
+           Empty selection = realm-wide (cross-app, OIDC standard scopes
+           only). -->
+      <div v-show="!isCreate && activeTab === 'apps'" class="tab-content">
+        <p class="tab-hint">
+          {{ t('admin.oauthClients.apps.hint', {}, 'Apps this client may operate in. Empty = realm-wide (only standard OIDC scopes). Multiple apps = Keycloak-style cross-app client.') }}
+        </p>
+        <section class="flex-section">
+          <CoarDualListbox
+            class="flex-1 min-h-0"
+            v-model="form.AppIds"
+            :options="appOptions"
+            drag-drop
+            sort-options="asc"
+            :search-fields="['label']"
+            :available-label="t('admin.oauthClients.apps.available', {}, 'Available apps')"
+            :selected-label="t('admin.oauthClients.apps.selected', {}, 'Linked')"
+            :search-placeholder="t('admin.oauthClients.apps.searchPlaceholder', {}, 'Search apps…')" />
+        </section>
+      </div>
+
+      <!-- Scopes — explicitly opt-in. OpenIddict rejects /connect/authorize
+           and /connect/token requests for any scope not on this list. -->
+      <div v-show="!isCreate && activeTab === 'scopes'" class="tab-content">
+        <p class="tab-hint">
+          {{ t('admin.oauthClients.scopes.hint', {}, 'OpenIddict rejects /connect/authorize and /connect/token requests for any scope not listed here. Add at minimum openid + roles for OIDC clients.') }}
+        </p>
+        <section class="flex-section">
+          <CoarDualListbox
+            class="flex-1 min-h-0"
+            v-model="form.Scopes"
+            :options="scopeOptions"
+            drag-drop
+            sort-options="asc"
+            :search-fields="['label']"
+            :available-label="t('admin.oauthClients.scopes.available', {}, 'Available scopes')"
+            :selected-label="t('admin.oauthClients.scopes.selected', {}, 'Allowed')"
+            :search-placeholder="t('admin.oauthClients.scopes.searchPlaceholder', {}, 'Search scopes…')" />
+        </section>
+      </div>
+
+      <!-- Grants — no silent defaults. Empty list produces a client that
+           cannot mint any tokens. -->
+      <div v-show="!isCreate && activeTab === 'grants'" class="tab-content">
+        <p class="tab-hint">
+          {{ t('admin.oauthClients.grantTypes.hint', {}, 'No silent defaults: leaving this empty produces a client that cannot mint tokens. SPAs / mobile apps: authorization_code + refresh_token. Server-to-server: client_credentials. Pick what the client actually needs.') }}
+        </p>
+        <section class="flex-section">
+          <CoarDualListbox
+            class="flex-1 min-h-0"
+            v-model="form.AllowedGrantTypes"
+            :options="grantTypeOptions"
+            drag-drop
+            sort-options="asc"
+            :search-fields="['label']"
+            :available-label="t('admin.oauthClients.grantTypes.available', {}, 'Available grant types')"
+            :selected-label="t('admin.oauthClients.grantTypes.selected', {}, 'Enabled')"
+            :search-placeholder="t('admin.oauthClients.grantTypes.searchPlaceholder', {}, 'Search…')" />
+        </section>
       </div>
 
       <!-- URLs / Grants -->
@@ -472,6 +507,16 @@ async function copySecret() {
   gap: 12px;
   padding-bottom: 16px;
   min-height: 0;
+}
+.tab-hint {
+  font-size: 0.78rem;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  margin-bottom: 4px;
+}
+.flex-section {
+  flex: 1;
+  display: flex;
+  min-height: 22rem;
 }
 .textarea {
   width: 100%;

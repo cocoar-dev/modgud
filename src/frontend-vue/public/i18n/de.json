@@ -557,7 +557,10 @@
       "loadFailed": "Client konnte nicht geladen werden.",
       "tabs": {
         "general": "Allgemein",
-        "urls": "URLs & Grants",
+        "apps": "Apps",
+        "scopes": "Scopes",
+        "grants": "Grants",
+        "urls": "URLs",
         "lifetimes": "Token-Laufzeiten"
       },
       "lifetimesHint": "Werte in Sekunden. Leer = Default des IdP.",

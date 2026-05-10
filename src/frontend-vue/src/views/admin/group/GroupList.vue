@@ -11,6 +11,8 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useGroupStore } from '@/stores/group.store'
+import { useAppContextStore } from '@/stores/appContext.store'
+import { useApplicationsStore } from '@/stores/applications.store'
 import { useUI } from '@/composables/useUI'
 import type { GroupDto } from '@/models/group'
 
@@ -18,6 +20,8 @@ const { t, language } = useI18n()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const groupStore = useGroupStore()
+const appCtx = useAppContextStore()
+const appsStore = useApplicationsStore()
 
 const ui = useUI()
 watch(language, () => ui.set((ctx) => {
@@ -27,7 +31,17 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-const groups = computed(() => groupStore.groups)
+// Groups carry their App-link as a slug-list in BoundTo (with '*' as
+// the realm-wide wildcard). Translate the selected App.Id back to a
+// slug for the comparison.
+const selectedAppSlug = computed(() => {
+  const id = appCtx.selectedAppId
+  if (!id) return null
+  return appsStore.apps.find((a) => a.Id === id)?.Slug ?? null
+})
+const groups = computed(() =>
+  groupStore.groups.filter((g) =>
+    appCtx.matchesBoundToSlugs(g.BoundTo, selectedAppSlug.value)))
 
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
