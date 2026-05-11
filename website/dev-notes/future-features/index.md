@@ -75,6 +75,21 @@ beim Discovery-Build.
 
 **Status:** Implementiert 2026-05-11/12.
 
+### [Per-App Login-Customization (Routing + Form-Builder)](./per-app-login-customization)
+
+Cocoar.Auth zentralisiert Login — heute ein Realm = eine Login-Seite,
+alle Apps teilen sich denselben UI. Wenn derselbe Kunde mehrere
+Produkte fährt (alpha-blog, beta-shop, event-tree, …) will Marketing
+dass jedes wie es selbst aussieht. Design: App-Context-aware Routing
+(Subdomain ODER Subpath ODER implicit via `client_id`, alle konvergieren
+auf denselben Slot) plus Form-Builder mit vorgefertigten Bausteinen
+(UsernameField, PasswordField, MagicLinkButton, PasskeyButton, …) statt
+free-HTML — Security + A11y eingebaut. Builds auf
+[white-label-customization](./white-label-customization) (per-Realm)
+auf, ist die feinere App-Schicht darunter.
+
+**Status:** Designkonsens 2026-05-12. Nicht implementiert.
+
 ### [Application as permission catalog; Resource Server gets a subset](./app-resources-as-permissions)
 
 ⚠️ **Teilweise superseded durch das oben verlinkte
