@@ -1,11 +1,19 @@
 # Implicit-Scope-Per-API + Discovery-Privacy
 
-> **Status:** Designkonsens 2026-05-11. Nicht implementiert.
+> **Status:** Implementiert 2026-05-11/12.
+> - **Implicit-Scope-Per-API:** ✅ ein-Click-Button im OAuthApi-Modal,
+>   Backend-Endpoint `POST /api/admin/oauth/apis/{id}/create-implicit-scope`.
+> - **Discovery-Privacy:** ✅ neuer `RealmScopesSupportedHandler` honoriert
+>   das existierende `ShowInDiscoveryDocument`-Flag pro Scope.
+>   Implicit-Scopes defaulten auf `false`, manuell angelegte auf `true`.
+>
 > **Trigger:** Erste externe Integration (EventTree) — Integrator
 > musste *zweimal* anlegen (`OAuthApi event-tree-api` + `OAuthScope
 > event-tree.api`) für etwas das semantisch ein einzelner Click sein
-> sollte, plus die Erkenntnis dass *jeder* App-Scope öffentlich im
-> `.well-known/openid-configuration` landet.
+> sollte. Während der Diskussion entdeckt: OpenIddict's stock
+> Discovery-Handler ignoriert dynamische Store-Scopes komplett — das
+> `ShowInDiscoveryDocument`-Flag landete nirgends, weil kein Handler
+> es las.
 
 ## Problem
 
@@ -128,36 +136,76 @@ Funktioniert gleich — Implicit-Scope-Resolution greift auf der
 Authorize/Token-Endpoint-Seite, RS macht Introspection (bekommt aud
 + scp), Token-Typ ist orthogonal.
 
-## Implementation-Skizze
+## Wie's tatsächlich implementiert wurde
 
-- **Scope-Resolver-Layer:** wrapt `IOpenIddictScopeManager`. Beim
-  `FindByNameAsync(name)`: erst explicit, dann OAuthApi-as-implicit
-  (synthetisiert ein „virtuelles" Scope-Descriptor mit
-  `Resources: [name]`).
-- **Discovery-Customization:** existiert schon — `RealmSigningKeyHandler`
-  hookt `OpenIddictServerEvents.HandleConfigurationRequest`. Dort einen
-  weiteren Handler für `scopes_supported`-Filterung anhängen.
-- **UI:** OAuthApi-Liste-Tabelle kriegt Spalte „Implicit-Scope" =
-  API-Name. OAuthScope-Detail-Modal kriegt `IsPublic`-Toggle. Eigene
-  Section in der API-Detail-View „Granularere Scopes anlegen" mit
-  einem Quick-Add-Button (`<api-name>.read`, `.write`, `.admin` als
-  Templates).
-- **Validation:** `OAuthApiValidator` + `OAuthScopeValidator` kriegen
-  je eine Cross-Tabel-Check-Rule (Name darf nicht in der anderen
-  Tabelle vorkommen).
+Vom ursprünglich vorgeschlagenen Resolver-Wrapper auf Auto-Create-Real-Row
+umgeschwenkt (siehe Memory `project_scope_api_coupling_2026_05_11.md`).
+Begründung: synthetisierte Scope-States ohne stabile Id sind fragil weil
+OpenIddict im Token-Flow noch mehrere Store-Methoden ruft. Real-Row-Pattern
+hält das Data-Modell uniform und ist debugbar.
+
+**Backend:**
+- `POST /api/admin/oauth/apis/{id}/create-implicit-scope` (in
+  `OAuthApisEndpoints.cs`) → ruft `OAuthAdminService.CreateImplicitScopeForApiAsync`.
+- Service legt eine reale `OAuthScopeAggregate` an: `Name = api.Name`,
+  `Resources = [api.Name]`, `DisplayName = api.DisplayName ?? api.Name`,
+  `Description = "Implicit scope granting access to the {api.Name} resource server."`,
+  `AppId = api.AppId`, `Enabled = true`, **`ShowInDiscoveryDocument = false`**.
+- Cross-Tabel-Validation: wenn ein Scope mit demselben Namen schon
+  existiert, kommt `OAuthErrors.ScopeNameAlreadyExists` zurück (409).
+- Reverse-Relation: API.Scopes kriegt den neuen Namen appended damit
+  bidirektionale Metadata konsistent bleibt.
+
+**Discovery:**
+- `RealmScopesSupportedHandler` (in
+  `Cocoar.Auth.Infrastructure/OpenIddict/`) hookt
+  `HandleConfigurationRequestContext`, ordering
+  `Discovery.AttachScopes.Descriptor.Order + 100`.
+- Liest tenant-scoped Marten-Session, filtert auf
+  `!IsDeleted && Enabled && ShowInDiscoveryDocument`, `UnionWith`'d in
+  `context.Scopes`. Same Pattern wie `RealmJwksHandler` für JWKS.
+
+**UI:**
+- `ApiDetails.vue` — neue `CoarNote` mit „Scope anlegen"-Button,
+  gegated auf `!isCreate && dto && !dto.HasImplicitScope`. Nach
+  Success: Reload → Flag flippt → Button verschwindet.
+- `OAuthApiDto.HasImplicitScope: bool` — computed im Service via
+  Scope-Name-Probe.
+
+## Was nicht (mehr) implementiert wurde
+
+Diese Ideen aus der ursprünglichen Skizze haben sich erübrigt oder
+sind verschoben:
+
+- **Per-Scope `IsPublic`-Flag** — `OAuthScopeState` hat schon
+  `ShowInDiscoveryDocument` (kommt von der OpenIddict-IdentityResource-
+  Ära). Das gleiche Feld, anderer Name. Kein neuer Flag nötig.
+- **Cross-Tabel-Validation auch beim API-Create / Scope-Create
+  generell** — heute nur am `CreateImplicitScopeForApiAsync` geprüft.
+  Wenn der Admin manuell einen Scope erstellt der einen API-Namen
+  trifft (oder umgekehrt), fängt das niemand ab. Bleibt offen als
+  Edge-Case-Hardening.
+- **Granularere Scope-Templates (`<api>.read/.write/.admin`)** —
+  Nice-to-have UI-Komfort, nicht implementiert. Admin legt die heute
+  manuell an.
 
 ## Was bleibt offen
 
-- **Migration-Pfad:** Sollen wir die bestehenden 1:1-Scopes
-  (`alpha-blog.use`, `beta-*.use`, `gamma-crm.use`) automatisch
-  cleanen, oder als „explicit-aber-redundant" weiter laufen lassen?
-  Eher letzteres — Touch only when touched.
+- **Cross-Tabel-Validation am manuellen Pfad:** der Admin könnte
+  einen `OAuthScope` mit Namen `event-tree-api` anlegen ohne dass
+  Cross-Check greift. Nicht gefährlich (Scope-Resolver matched dann
+  beide), aber semantisch verwirrend. Edge-Case-Hardening.
+- **Migration-Pfad:** Bestehende 1:1-Scopes (`alpha-blog.use` etc.)
+  bleiben unangetastet. Touch only when touched.
 - **`introspection_endpoint`-Privacy:** Introspection-Response zeigt
   Scopes des Tokens — kein Realm-Inventar, aber für einen Insider
   trotzdem informativ. Out-of-scope für diese Note.
-- **Wann implementieren?** Wenn der zweite Integrator die gleiche
-  Friction trifft, oder mit dem nächsten OAuth-Admin-UX-Pass. Heute
-  workaround-fähig (zwei Clicks statt einer), kein Blocker.
+- **Separate-Claim-Emission-Frage (neu, nicht in Original-Note):** Heute
+  emittiert UserInfo Permissions + Roles + Groups *bedingungslos* pro
+  Audience. Diskussion 2026-05-12 (siehe Memory): Admin/Client sollte
+  steuern können was raus geht (Per-API-Flags + Per-Scope-Gates). Eigene
+  Note nötig, weil das den UserInfo-Contract berührt — nicht nur die
+  Verwaltungs-UX.
 
 ## Referenzen
 
