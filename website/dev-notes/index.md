@@ -27,6 +27,14 @@ Capabilities we know we'll need to build but haven't prioritised:
 - [Login alerts + manual IP blacklist](./future-features/login-alerts-ip-blacklist) —
   NAT-safe brute-force detection: alert + admin decides, no auto-block.
 
+### [Upstream feature-requests](./upstream-feature-requests/)
+
+Drafted-but-not-filed issues against Cocoar libraries we depend on
+(e.g. `@cocoar/vue-ui`). Each page is structured to drop straight
+into a GitHub issue — Problem / Proposed change / Rationale /
+Workaround. Currently parked: two `@cocoar/vue-ui` requests
+surfaced during the first external onboarding.
+
 ---
 
 When something here matures into a real plan, promote it: move the

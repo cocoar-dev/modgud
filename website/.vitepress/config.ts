@@ -298,6 +298,14 @@ export default withMermaid(defineConfig({
             { text: 'UserInfo Hybrid-Emission (Single-Aud)', link: '/dev-notes/future-features/userinfo-hybrid-flat-emission' },
           ],
         },
+        {
+          text: 'Upstream feature-requests',
+          items: [
+            { text: 'Overview', link: '/dev-notes/upstream-feature-requests/' },
+            { text: '@cocoar/vue-ui — Sidebar aria-label', link: '/dev-notes/upstream-feature-requests/vue-ui-sidebar-item-aria-label' },
+            { text: '@cocoar/vue-ui — Listbox toggle mode', link: '/dev-notes/upstream-feature-requests/vue-ui-listbox-cumulative-highlight' },
+          ],
+        },
       ],
     },
   },
