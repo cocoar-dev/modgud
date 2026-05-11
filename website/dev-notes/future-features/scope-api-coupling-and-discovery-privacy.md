@@ -191,21 +191,32 @@ sind verschoben:
 
 ## Was bleibt offen
 
-- **Cross-Tabel-Validation am manuellen Pfad:** der Admin könnte
-  einen `OAuthScope` mit Namen `event-tree-api` anlegen ohne dass
-  Cross-Check greift. Nicht gefährlich (Scope-Resolver matched dann
-  beide), aber semantisch verwirrend. Edge-Case-Hardening.
 - **Migration-Pfad:** Bestehende 1:1-Scopes (`alpha-blog.use` etc.)
   bleiben unangetastet. Touch only when touched.
 - **`introspection_endpoint`-Privacy:** Introspection-Response zeigt
   Scopes des Tokens — kein Realm-Inventar, aber für einen Insider
   trotzdem informativ. Out-of-scope für diese Note.
-- **Separate-Claim-Emission-Frage (neu, nicht in Original-Note):** Heute
-  emittiert UserInfo Permissions + Roles + Groups *bedingungslos* pro
-  Audience. Diskussion 2026-05-12 (siehe Memory): Admin/Client sollte
-  steuern können was raus geht (Per-API-Flags + Per-Scope-Gates). Eigene
-  Note nötig, weil das den UserInfo-Contract berührt — nicht nur die
-  Verwaltungs-UX.
+
+## Bewusst geskippt (2026-05-12)
+
+- **Cross-Tabel-Name-Validation am manuellen Pfad** — der Admin könnte
+  einen `OAuthScope` mit Namen `event-tree-api` anlegen ohne dass ein
+  Cross-Check greift. Nicht gefährlich (Scope-Resolver matched dann
+  beide, alle Token-Flows funktionieren weiter), nur semantisch
+  verwirrend. User-Entscheidung: nicht notwendig.
+- **Granular-Scope-Templates (`<api>.read/.write/.admin`)** als
+  UI-Quick-Add-Buttons. Lohnender UX-Win in der Theorie, aber Admin
+  legt diese Scopes heute manuell so selten an dass der Templating-
+  Aufwand nicht trägt. User-Entscheidung: nicht notwendig.
+
+## Folgereform: Per-Scope-Claim-Gating
+
+Während der Implementation hier ist ein verwandtes Thema hochgekommen
+das **eigenständig umgesetzt** wurde, nicht hier: UserInfo emittierte
+ursprünglich Permissions + Roles **gemeinsam** unter dem einen
+`scope=roles`-Gate. Per-Scope-Gating (eigener `permissions`-Scope
+neben `roles`) wurde am 2026-05-12 als separater Commit gemerged
+(`372a753`). Permission-Modell-Memory führt den neuen Contract.
 
 ## Referenzen
 
