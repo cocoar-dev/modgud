@@ -46,6 +46,8 @@
     <PackageVersion Include="Wangkanai.Detection" Version="8.20.0" />
     <!-- BCrypt for OAuth client/api secret hashing -->
     <PackageVersion Include="BCrypt.Net-Next" Version="4.1.0" />
+    <!-- SourceLink for published NuGet packages -->
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <!-- OpenIddict (custom Marten stores, no EF Core) -->
     <PackageVersion Include="OpenIddict" Version="7.4.0" />
     <PackageVersion Include="OpenIddict.Abstractions" Version="7.4.0" />

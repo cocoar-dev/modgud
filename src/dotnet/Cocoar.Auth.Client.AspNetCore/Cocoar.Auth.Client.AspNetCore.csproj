@@ -12,6 +12,37 @@
     </Description>
   </PropertyGroup>
 
+  <!-- NuGet package metadata. Version is supplied by CI via
+       -p:Version=… (GitVersion output); kept out of source so the
+       source-of-truth for versioning is the git tag, not a checked-in
+       string. -->
+  <PropertyGroup>
+    <PackageId>Cocoar.Auth.Client.AspNetCore</PackageId>
+    <Authors>Cocoar</Authors>
+    <Company>Cocoar</Company>
+    <Copyright>Copyright © Cocoar</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/cocoar-dev/Cocoar.Auth</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/cocoar-dev/Cocoar.Auth</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>cocoar-auth;oidc;oauth;openid-connect;authorization;resource-access;aspnetcore;identity</PackageTags>
+    <!-- Build artifacts the NuGet package needs. -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <!-- Pack only when explicitly requested (`dotnet pack`), not on
+         every `dotnet build` — the IdP host repo builds far more often
+         than it publishes. -->
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <!-- Files packed into the nupkg next to the assembly. -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
@@ -21,6 +52,13 @@
          its own package. The lib hooks JwtBearer.Events.OnTokenValidated
          to fetch UserInfo and merge resource_access onto the principal. -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <!-- SourceLink — embeds git metadata so debuggers can step into
+         this package's source on github.com. PrivateAssets=All keeps it
+         out of consumers' transitive graph. -->
+    <PackageReference Include="Microsoft.SourceLink.GitHub">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
