@@ -354,7 +354,7 @@ internal static class OAuthAdminMapping
     /// only the metadata (id, type, description, dates) carries through, so
     /// the response stays safe to serialise back to a UI / log.
     /// </summary>
-    internal static OAuthApiDto MapApiState(OAuthApiState s, IEnumerable<ApiSecretEntry>? secrets)
+    internal static OAuthApiDto MapApiState(OAuthApiState s, IEnumerable<ApiSecretEntry>? secrets, bool hasImplicitScope = false)
     {
         var secretDtos = secrets?.Select(x => new ApiSecretEntryDto
         {
@@ -377,6 +377,7 @@ internal static class OAuthAdminMapping
             AppId = s.AppId is null ? null : new ShortGuid(s.AppId.Value).ToString(),
             PermissionIds = s.PermissionIds.Select(id => new ShortGuid(id).ToString()).ToList(),
             Secrets = secretDtos,
+            HasImplicitScope = hasImplicitScope,
         };
     }
 

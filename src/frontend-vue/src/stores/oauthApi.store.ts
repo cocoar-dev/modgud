@@ -9,6 +9,7 @@ import type {
   UpdateOAuthApiDto,
   CreateApiSecretDto,
   ApiSecretCreatedDto,
+  OAuthScopeDto,
 } from '@/models/oauth'
 
 /**
@@ -83,6 +84,19 @@ export const useOAuthApiStore = defineStore('oauth-api', () => {
     await loadOne(id)
   }
 
+  /**
+   * Creates the 1:1 companion OAuthScope for an existing API. Eliminates
+   * the manual two-step "create API + create matching scope" flow. The
+   * server-side mints a scope with name=api.Name, Resources=[api.Name],
+   * ShowInDiscoveryDocument=false; the API's HasImplicitScope flag flips
+   * to true after a reload.
+   */
+  async function createImplicitScope(id: string): Promise<OAuthScopeDto> {
+    const created = await http.addPath(id, 'create-implicit-scope').post<OAuthScopeDto>({})
+    await loadOne(id)
+    return created
+  }
+
   return {
     apis,
     loaded,
@@ -96,6 +110,7 @@ export const useOAuthApiStore = defineStore('oauth-api', () => {
     regenerateSecret,
     createSecret,
     deleteSecret,
+    createImplicitScope,
   }
 })
 

@@ -210,6 +210,12 @@ export interface OAuthApiDto {
    */
   PermissionIds: string[]
   Secrets: ApiSecretEntryDto[]
+  /**
+   * `true` when a sibling `OAuthScope` with the same `Name` already exists.
+   * Drives the admin UI "Create implicit scope" affordance — hidden when
+   * the API already has its 1:1 scope wired up.
+   */
+  HasImplicitScope: boolean
 }
 
 export interface CreateOAuthApiDto {

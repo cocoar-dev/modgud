@@ -658,6 +658,90 @@ public class OAuthAdminService
         return true;
     }
 
+    /// <summary>
+    /// Creates the 1:1 companion <c>OAuthScope</c> for an existing
+    /// <c>OAuthApi</c> — eliminating the manual two-step "create API +
+    /// create matching scope" flow that 100% of single-RS integrations end
+    /// up doing.
+    ///
+    /// <para>The created scope is shaped to mirror the API:</para>
+    /// <list type="bullet">
+    ///   <item><c>Name</c> = <c>api.Name</c> (so <c>scope=<api></c> in a
+    ///   client request maps 1:1 to this RS).</item>
+    ///   <item><c>Resources</c> = <c>[api.Name]</c> (the token request
+    ///   adds the API's name as <c>aud</c>).</item>
+    ///   <item><c>ShowInDiscoveryDocument</c> = <c>false</c> (privacy by
+    ///   default — the RS shouldn't be enumerable via
+    ///   <c>.well-known/openid-configuration</c>).</item>
+    ///   <item><c>AppId</c> inherited from the API (or null if
+    ///   unassigned).</item>
+    /// </list>
+    ///
+    /// <para>The API's <c>Scopes</c> metadata gets the new name appended
+    /// so the reverse relation stays consistent.</para>
+    ///
+    /// <para>Rejects if a scope (live or anything else) with the API's
+    /// name already exists — the admin should manage that scope directly
+    /// rather than going through this convenience endpoint.</para>
+    /// </summary>
+    public async Task<ErrorOr<OAuthScopeDto>> CreateImplicitScopeForApiAsync(
+        string apiId, CancellationToken ct = default)
+    {
+        if (!Guid.TryParse(apiId, out var guid))
+            return OAuthErrors.ApiNotFound(apiId);
+
+        var apiAggregate = await _session.Events.AggregateStreamAsync<OAuthApiAggregate>(guid, token: ct);
+        if (apiAggregate is null || apiAggregate.IsDeleted)
+            return OAuthErrors.ApiNotFound(apiId);
+
+        var existing = await _session.Query<OAuthScopeState>()
+            .FirstOrDefaultAsync(x => x.Name == apiAggregate.Name && !x.IsDeleted, ct);
+        if (existing is not null)
+            return OAuthErrors.ScopeNameAlreadyExists(apiAggregate.Name);
+
+        var scopeId = Guid.NewGuid();
+        var scopeName = apiAggregate.Name;
+        var displayName = string.IsNullOrWhiteSpace(apiAggregate.DisplayName)
+            ? apiAggregate.Name
+            : apiAggregate.DisplayName;
+        var description = $"Implicit scope granting access to the {apiAggregate.Name} resource server.";
+
+        var (scopeAggregate, createdEvent) = OAuthScopeAggregate.Create(
+            scopeId, scopeName, displayName, description, new[] { apiAggregate.Name });
+        _session.Events.StartStream<OAuthScopeAggregate>(scopeId, createdEvent);
+
+        // Hidden from `.well-known/openid-configuration` by default — the
+        // implicit-scope convention is "1 RS = 1 scope", and exposing every
+        // RS name in Discovery is a Multi-Tenant info-disclosure with no
+        // upside (clients learn their scopes from RS docs anyway). Admins
+        // can flip ShowInDiscoveryDocument later if they explicitly want it.
+        _session.Events.Append(scopeId, scopeAggregate.SetShowInDiscoveryDocument(false));
+
+        // Mirror identity-resource flags onto Properties — matches the path
+        // taken by manual scope-create so the runtime reads consistent
+        // metadata regardless of how the scope was minted.
+        _session.Events.Append(scopeId, scopeAggregate.SetProperties(BuildScopeProperties(
+            enabled: true, required: false, emphasize: false,
+            showInDiscovery: false, userClaims: Array.Empty<string>())));
+
+        if (apiAggregate.AppId.HasValue)
+            _session.Events.Append(scopeId, scopeAggregate.SetAppId(apiAggregate.AppId));
+
+        // Reverse relation: surface the new scope name on the API so the
+        // admin grid + DTO show that the link is in place even if the UI
+        // re-checks via HasImplicitScope.
+        if (!apiAggregate.Scopes.Contains(scopeName))
+        {
+            var nextScopes = apiAggregate.Scopes.Append(scopeName).ToList();
+            _session.Events.Append(guid, apiAggregate.SetScopes(nextScopes));
+        }
+
+        await _session.SaveChangesAsync(ct);
+
+        var state = await _session.LoadAsync<OAuthScopeState>(scopeId, ct);
+        return MapScope(state!);
+    }
+
     public async Task<ErrorOr<ApiSecretDto>> RegenerateApiSecretAsync(string id, CancellationToken ct = default)
     {
         if (!Guid.TryParse(id, out var guid))
@@ -779,7 +863,12 @@ public class OAuthAdminService
     private async Task<OAuthApiDto> MapApiAsync(OAuthApiState s, CancellationToken ct)
     {
         var sec = await _session.LoadAsync<OAuthApiSecurityData>(s.Id, ct);
-        return MapApiState(s, sec?.Secrets);
+        // The implicit-scope-per-API convention pairs `scope.Name == api.Name`.
+        // Probe for a live scope row with that name so the UI knows whether to
+        // surface the "Create implicit scope" affordance.
+        var hasImplicit = await _session.Query<OAuthScopeState>()
+            .AnyAsync(x => x.Name == s.Name && !x.IsDeleted, ct);
+        return MapApiState(s, sec?.Secrets, hasImplicit);
     }
 
     /// <summary>

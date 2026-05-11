@@ -234,6 +234,30 @@ async function copySecret() {
   if (!newSecret.value) return
   try { await navigator.clipboard.writeText(newSecret.value.value) } catch { /* ignore */ }
 }
+
+/**
+ * One-click convenience: ask the backend to mint the 1:1 OAuthScope
+ * companion for this API. Hidden once `dto.HasImplicitScope` flips
+ * — the call returns 409 if a scope with the same name already
+ * exists, so the button is only safe to show when the flag is false.
+ */
+async function createImplicitScope() {
+  if (isCreate.value || !dto.value) return
+  loading.value = true
+  error.value = null
+  try {
+    await store.createImplicitScope(dto.value.Id)
+    const reloaded = await store.loadOne(dto.value.Id)
+    if (reloaded) {
+      dto.value = reloaded
+      form.value = fromDto(reloaded)
+    }
+  } catch (e: any) {
+    error.value = e?.body?.Message ?? e?.message ?? String(e)
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <template>
@@ -262,6 +286,28 @@ async function copySecret() {
 
       <!-- General -->
       <div v-show="isCreate || activeTab === 'general'" class="tab-content">
+        <!--
+          Implicit-scope affordance: most APIs end up with a 1:1 OAuthScope
+          companion of the same name. Surface the one-click action so the
+          admin doesn't have to open a second modal in the OAuth-Scopes
+          section. Hidden when the scope already exists; hidden in Create
+          mode because the API hasn't been minted yet (no Id to attach to).
+        -->
+        <CoarNote v-if="!isCreate && dto && !dto.HasImplicitScope" variant="info" class="mb-1">
+          <div class="flex items-center gap-3">
+            <div class="flex flex-col min-w-0 flex-1">
+              <div class="text-sm font-medium">
+                {{ t('admin.oauthApis.implicitScope.title', {}, 'Kein passender OAuth-Scope angelegt') }}
+              </div>
+              <div class="text-xs text-gray-600">
+                {{ t('admin.oauthApis.implicitScope.hint', {}, 'Clients brauchen einen Scope um diese API anzufragen. Erstellt einen Scope mit gleichem Namen (Resources = Audience, nicht im Discovery sichtbar).') }}
+              </div>
+            </div>
+            <CoarButton size="s" icon-start="plus" :loading="loading" @click="createImplicitScope">
+              {{ t('admin.oauthApis.implicitScope.button', {}, 'Scope anlegen') }}
+            </CoarButton>
+          </div>
+        </CoarNote>
         <div class="grid grid-cols-2 gap-3">
           <CoarFormField :label="t('admin.oauthApis.name', {}, 'Name (Audience)')">
             <CoarTextInput v-model="form.Name" :disabled="!isCreate" clearable />

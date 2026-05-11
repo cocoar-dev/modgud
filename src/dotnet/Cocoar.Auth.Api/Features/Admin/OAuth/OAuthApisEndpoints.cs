@@ -80,6 +80,21 @@ public static class OAuthApisEndpoints
         .WithName("OAuth_Apis_DeleteSecret")
         .RequiresPermission("oauth-api:write");
 
+        // One-click convenience: create the 1:1 OAuthScope companion for an
+        // existing API. Eliminates the manual two-modal "API + matching
+        // scope" flow that every single-RS integration ends up doing. The
+        // permission gate is `oauth-scope:write` (not `oauth-api:write`)
+        // because the side-effect that needs authorising is the scope
+        // creation; an oauth-api admin who can't manage scopes shouldn't be
+        // able to back-door one in.
+        group.MapPost("{id}/create-implicit-scope", async (string id, OAuthAdminService svc, CancellationToken ct) =>
+        {
+            var result = await svc.CreateImplicitScopeForApiAsync(id, ct);
+            return result.ToResult(scope => Results.Created($"/api/admin/oauth/scopes/{scope.Id}", scope));
+        })
+        .WithName("OAuth_Apis_CreateImplicitScope")
+        .RequiresPermission("oauth-scope:write");
+
         return app;
     }
 }

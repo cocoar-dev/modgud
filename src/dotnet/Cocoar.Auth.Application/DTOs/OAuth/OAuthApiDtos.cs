@@ -33,6 +33,16 @@ public record OAuthApiDto
     public List<string> PermissionIds { get; init; } = new();
 
     public List<ApiSecretEntryDto> Secrets { get; init; } = new();
+
+    /// <summary>
+    /// <c>true</c> when a sibling <see cref="OAuthScopeDto"/> with the same
+    /// <c>Name</c> already exists. Drives the admin-UI affordance "Create
+    /// implicit scope" — hidden when the API already has a 1:1 scope wired
+    /// up. The check is "name match", not "linked-to-this-api", because
+    /// scope-name uniqueness is realm-global and the implicit-scope
+    /// convention is `scope.Name == api.Name`.
+    /// </summary>
+    public bool HasImplicitScope { get; init; }
 }
 
 public record CreateOAuthApiDto
