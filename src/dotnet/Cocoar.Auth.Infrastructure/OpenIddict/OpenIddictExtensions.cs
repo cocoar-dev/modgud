@@ -141,8 +141,15 @@ public static class OpenIddictExtensions
                 // through OpenIddict itself). Tokens remain signed.
                 options.DisableAccessTokenEncryption();
 
+                // The OIDC standards plus the Cocoar-specific `permissions`
+                // scope — both static-registered so they appear in Discovery
+                // (via OpenIddict's stock AttachScopes handler) and so the
+                // consent screen offers them as opt-ins. `permissions`
+                // mirrors the `roles` pattern: per-scope-per-claim gate in
+                // the UserInfo emission pipeline (AuthorizationEndpoints).
                 options.RegisterScopes(
-                    Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles, Scopes.OfflineAccess);
+                    Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles, Scopes.OfflineAccess,
+                    "permissions");
 
                 // Multi-tenant IdP: audiences (OAuthApi names) live in tenant
                 // databases, so the built-in resource validators would reject

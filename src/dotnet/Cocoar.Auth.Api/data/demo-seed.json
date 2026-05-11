@@ -495,7 +495,7 @@
       "redirectUris": ["http://localhost:7080/signin-oidc"],
       "postLogoutRedirectUris": ["http://localhost:7080/signout-callback-oidc"],
       "allowedGrantTypes": ["authorization_code", "refresh_token"],
-      "scopes": ["openid", "email", "profile", "offline_access", "demo.read", "demo.write"],
+      "scopes": ["openid", "email", "profile", "offline_access", "roles", "permissions", "demo.read", "demo.write"],
       "requireConsent": false,
       "requireClientSecret": true,
       "accessTokenType": "Jwt",

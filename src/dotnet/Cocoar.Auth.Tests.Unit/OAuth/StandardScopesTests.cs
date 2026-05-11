@@ -18,6 +18,7 @@ public class StandardScopesTests
         [InlineData("address")]
         [InlineData("roles")]
         [InlineData("offline_access")]
+        [InlineData("permissions")]
         public void Recognises_each_standard_scope(string scope) =>
             Assert.True(StandardScopes.IsStandard(scope));
 
@@ -45,10 +46,11 @@ public class StandardScopesTests
     public class AllSet
     {
         [Fact]
-        public void Contains_seven_scopes()
+        public void Contains_eight_scopes()
         {
-            // openid + email + profile + phone + address + roles + offline_access.
-            Assert.Equal(7, StandardScopes.All.Count);
+            // OIDC core (openid + email + profile + phone + address + offline_access)
+            // plus the Cocoar-specific authz-claim gates (roles + permissions).
+            Assert.Equal(8, StandardScopes.All.Count);
         }
 
         [Fact]

@@ -23,7 +23,8 @@ public static class OAuthRealmSeeder
         (DomainScopes.OpenId, "OpenID", "Required scope for OpenID Connect"),
         (DomainScopes.Email, "Email", "Access to email address"),
         (DomainScopes.Profile, "Profile", "Access to profile information"),
-        (DomainScopes.Roles, "Roles", "Access to user roles"),
+        (DomainScopes.Roles, "Roles", "Access to user roles per resource server"),
+        (DomainScopes.Permissions, "Permissions", "Access to your permission grants per resource server"),
         (DomainScopes.OfflineAccess, "Offline Access", "Issue refresh tokens for offline access"),
     ];
 

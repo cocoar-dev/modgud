@@ -70,6 +70,12 @@ builder.Services.AddAuthentication(options =>
         options.Scope.Add("profile");
         options.Scope.Add("email");
         options.Scope.Add("offline_access");
+        // Authz-claim opt-ins per permission-modell: `roles` is the OIDC
+        // standard convention for role names, `permissions` is Cocoar's
+        // matching opt-in for the per-RS permission array. The BFF wants
+        // both so /connect/userinfo emits a full resource_access block.
+        options.Scope.Add("roles");
+        options.Scope.Add("permissions");
         options.Scope.Add("demo.read");
         options.Scope.Add("demo.write");
 

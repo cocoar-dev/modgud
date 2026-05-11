@@ -415,7 +415,7 @@ public static class AuthorizationEndpoints
         // For each aud in the validated access token: resolve the OAuthApi
         // by Name, find the linked App, build a block with the user's
         // bypass-pre-expanded permissions ∩ OAuthApi.PermissionIds, plus
-        // roles + groups for that App.
+        // roles for that App.
         //
         // Bypass-pre-expansion means: if the user holds realm:admin we
         // emit every concrete catalog string of every reachable App (the
@@ -439,10 +439,19 @@ public static class AuthorizationEndpoints
         // silently skipped — authz info is meaningful only in the
         // context of an actual resource server.
         //
-        // Gated on the OIDC `roles` scope: clients that don't ask for it
-        // get a pure-identity UserInfo response. (The roles scope is the
-        // OIDC convention for "I want authz claims".)
-        if (httpContext.User.HasScope(Scopes.Roles))
+        // **Per-scope-per-claim gating.** Each authz array lands only if
+        // the client opted in to its scope:
+        //   - `scope=roles`       → emits `resource_access[<aud>].roles`
+        //   - `scope=permissions` → emits `resource_access[<aud>].permissions`
+        // Standard OIDC-style consent: the user sees each scope on the
+        // consent screen and can grant/deny independently. A client that
+        // never requests either gets a pure-identity UserInfo response
+        // (no `resource_access` key at all). Groups stay out — pure
+        // IdP-internal per permission-model, no `groups` scope.
+        var wantsRoles = httpContext.User.HasScope(Scopes.Roles);
+        var wantsPermissions = httpContext.User.HasScope("permissions");
+
+        if (wantsRoles || wantsPermissions)
         {
             var audiences = httpContext.User.GetAudiences().ToList();
             if (audiences.Count > 0)
@@ -458,21 +467,30 @@ public static class AuthorizationEndpoints
                     var app = await session.LoadAsync<App>(appId);
                     if (app is null || app.IsDeleted) continue;
 
-                    var rolesForApp = await permissionService.GetUserRolesAsync(user.Id, app.Slug);
-                    var rawPermissions = await permissionService.GetUserPermissionsAsync(user.Id, app.Slug);
+                    // Only fetch what we'll actually emit — saves a DB hit
+                    // when the client opted in to only one of the two arrays.
+                    var block = new Dictionary<string, object>(StringComparer.Ordinal);
 
-                    var expandedPermissions = ExpandBypassTiers(rawPermissions, app);
-                    var apiPermissions = NarrowToApiSubset(expandedPermissions, api, app);
-
-                    // Public RS-block contract: permissions (gating) + role
-                    // names (display). App and Group are pure IdP-internal
-                    // vehicles — never leaked. Org/directory operations live
-                    // on a separate API, not here.
-                    resourceAccess[audience] = new Dictionary<string, object>(StringComparer.Ordinal)
+                    if (wantsPermissions)
                     {
-                        ["permissions"] = apiPermissions,
-                        ["roles"] = rolesForApp.Select(r => r.Name).ToArray(),
-                    };
+                        var rawPermissions = await permissionService.GetUserPermissionsAsync(user.Id, app.Slug);
+                        var expandedPermissions = ExpandBypassTiers(rawPermissions, app);
+                        var apiPermissions = NarrowToApiSubset(expandedPermissions, api, app);
+                        block["permissions"] = apiPermissions;
+                    }
+
+                    if (wantsRoles)
+                    {
+                        var rolesForApp = await permissionService.GetUserRolesAsync(user.Id, app.Slug);
+                        block["roles"] = rolesForApp.Select(r => r.Name).ToArray();
+                    }
+
+                    // If neither scope is requested for an audience that
+                    // resolved to an RS, we'd emit an empty block — skip
+                    // those. (Can happen with HasScope() flag-only
+                    // combinations, e.g. partial scope grants by consent.)
+                    if (block.Count > 0)
+                        resourceAccess[audience] = block;
                 }
 
                 if (resourceAccess.Count > 0)
