@@ -62,6 +62,19 @@ existierender Konsument, aber jederzeit additiv nachrüstbar.
 
 **Status:** Geparkt 2026-05-08. Nicht blockierend.
 
+### [Implicit-Scope-Per-API + Discovery-Privacy](./scope-api-coupling-and-discovery-privacy)
+
+Erste externe Integration (EventTree) zeigte zwei UX-Schmerzen:
+Admin muss API + Scope doppelt anlegen für die 1:1-Standardkopplung,
+und `.well-known/openid-configuration` leakt alle App-Scope-Namen
+und damit die Realm-Topologie. Designkonsens: API-aware
+Scope-Resolver (impliziter Scope = API-Name, kein separater
+DB-Row), Discovery filtert auf OIDC-Standards, opt-in `IsPublic`
+per Scope. Standards-Trennung bleibt — nur Verwaltungs-UX +
+Sichtbarkeit ändern sich.
+
+**Status:** Designkonsens 2026-05-11. Nicht implementiert.
+
 ### [Application as permission catalog; Resource Server gets a subset](./app-resources-as-permissions)
 
 ⚠️ **Teilweise superseded durch das oben verlinkte

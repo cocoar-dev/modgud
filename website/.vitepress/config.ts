@@ -296,6 +296,7 @@ export default withMermaid(defineConfig({
             { text: 'Permission-Modell (finaler Stand)', link: '/dev-notes/future-features/permission-modell' },
             { text: 'Permission-Modell — Adversarial Review', link: '/dev-notes/future-features/permission-modell-adversarial-review' },
             { text: 'UserInfo Hybrid-Emission (Single-Aud)', link: '/dev-notes/future-features/userinfo-hybrid-flat-emission' },
+            { text: 'Implicit-Scope-Per-API + Discovery-Privacy', link: '/dev-notes/future-features/scope-api-coupling-and-discovery-privacy' },
           ],
         },
         {
