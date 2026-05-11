@@ -95,6 +95,13 @@ const scopeOptions = computed(() => {
 // App-link DualListbox (n:m). Empty Linked = realm-wide. Multiple
 // = Keycloak-style multi-app client (the issued token's resource_access
 // claim will carry one entry per linked app).
+//
+// searchText folds Slug + Description into the searchable text — the
+// listbox's default search only walks label/subtitle/group, so without
+// this an admin searching by slug (the identity used everywhere else in
+// the IdP) gets zero hits when the app has a Description that displaces
+// the slug from the subtitle. Worth ~zero perf and removes a real
+// friction point reported during cross-app onboarding.
 const appOptions = computed(() =>
   applicationsStore.apps.map((a) => ({
     value: a.Id,
@@ -102,6 +109,7 @@ const appOptions = computed(() =>
     subtitle: a.Description ?? a.Slug,
     icon: a.IsSystem ? 'shield' : 'layout-grid',
     group: a.IsSystem ? 'System apps' : 'User apps',
+    searchText: `${a.DisplayName} ${a.Slug} ${a.Description ?? ''}`,
   })),
 )
 
@@ -420,6 +428,9 @@ async function copySecret() {
         <p class="tab-hint">
           {{ t('admin.oauthClients.apps.hint', {}, 'Apps this client may operate in. Empty = realm-wide (only standard OIDC scopes). Multiple apps = Keycloak-style cross-app client.') }}
         </p>
+        <p class="tab-hint tab-hint--shortcut">
+          {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
+        </p>
         <section class="flex-section">
           <CoarDualListbox
             class="flex-1 min-h-0"
@@ -440,6 +451,9 @@ async function copySecret() {
         <p class="tab-hint">
           {{ t('admin.oauthClients.scopes.hint', {}, 'OpenIddict rejects /connect/authorize and /connect/token requests for any scope not listed here. Add at minimum openid + roles for OIDC clients.') }}
         </p>
+        <p class="tab-hint tab-hint--shortcut">
+          {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
+        </p>
         <section class="flex-section">
           <CoarDualListbox
             class="flex-1 min-h-0"
@@ -459,6 +473,9 @@ async function copySecret() {
       <div v-show="!isCreate && activeTab === 'grants'" class="tab-content">
         <p class="tab-hint">
           {{ t('admin.oauthClients.grantTypes.hint', {}, 'No silent defaults: leaving this empty produces a client that cannot mint tokens. SPAs / mobile apps: authorization_code + refresh_token. Server-to-server: client_credentials. Pick what the client actually needs.') }}
+        </p>
+        <p class="tab-hint tab-hint--shortcut">
+          {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
         </p>
         <section class="flex-section">
           <CoarDualListbox

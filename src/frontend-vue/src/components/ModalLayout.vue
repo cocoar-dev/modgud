@@ -63,7 +63,13 @@ watch(
           {{ ui.header.subTitle }}
         </div>
       </div>
-      <button class="modal-close" @click="close()">
+      <button
+        class="modal-close"
+        type="button"
+        :aria-label="t('common.closeModal', {}, 'Dialog schließen')"
+        :title="t('common.closeModal', {}, 'Dialog schließen')"
+        @click="close()"
+      >
         <CoarIcon name="x" size="m" />
       </button>
     </div>
