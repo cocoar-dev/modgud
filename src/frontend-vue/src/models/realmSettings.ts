@@ -5,10 +5,12 @@
 
 export interface RealmSettingsDto {
   SelfRegistration: SelfRegistrationDto
+  Dcr: DcrSettingsDto
 }
 
 export interface UpdateRealmSettingsDto {
   SelfRegistration?: UpdateSelfRegistrationDto | null
+  Dcr?: UpdateDcrSettingsDto | null
 }
 
 // Read shape. CaptchaSecretSet is the only signal the SPA gets about the
@@ -40,4 +42,30 @@ export interface UpdateSelfRegistrationDto {
   CaptchaEnabled?: boolean
   CaptchaSiteKey?: string | null
   CaptchaSecret?: string | null
+}
+
+// Dynamic Client Registration (RFC 7591) — per-realm config that gates
+// the public /connect/register endpoint. The triple-opt-in design also
+// requires AllowDynamicRegistration on at least one OAuthApi AND
+// AllowDynamicRegistrationClients on at least one OAuthScope for DCR
+// clients to be able to mint usable tokens — flipping the master toggle
+// here is necessary but not sufficient.
+export interface DcrSettingsDto {
+  Enabled: boolean
+  AccessTokenLifetimeMinutes: number
+  RefreshTokenLifetimeDays: number
+  GcTtlDays: number
+  PerIpRateLimitPerHour: number
+  PerRealmRateLimitPerDay: number
+  ReservedNames?: string[] | null
+}
+
+export interface UpdateDcrSettingsDto {
+  Enabled?: boolean
+  AccessTokenLifetimeMinutes?: number
+  RefreshTokenLifetimeDays?: number
+  GcTtlDays?: number
+  PerIpRateLimitPerHour?: number
+  PerRealmRateLimitPerDay?: number
+  ReservedNames?: string[] | null
 }
