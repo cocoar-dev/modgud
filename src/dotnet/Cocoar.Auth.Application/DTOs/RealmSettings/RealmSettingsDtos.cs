@@ -13,6 +13,7 @@ namespace Cocoar.Auth.Application.DTOs.RealmSettings;
 public record RealmSettingsDto
 {
     public SelfRegistrationDto SelfRegistration { get; init; } = new();
+    public DcrSettingsDto Dcr { get; init; } = new();
 }
 
 /// <summary>Patch payload for <c>PATCH /api/admin/realm-settings</c>.
@@ -22,4 +23,5 @@ public record RealmSettingsDto
 public record UpdateRealmSettingsDto
 {
     public UpdateSelfRegistrationDto? SelfRegistration { get; init; }
+    public UpdateDcrSettingsDto? Dcr { get; init; }
 }

@@ -43,6 +43,14 @@ public record OAuthApiDto
     /// convention is `scope.Name == api.Name`.
     /// </summary>
     public bool HasImplicitScope { get; init; }
+
+    /// <summary>
+    /// When <c>true</c>, this resource server is a valid <c>resource=</c>
+    /// target for clients minted via Dynamic Client Registration (RFC 7591).
+    /// Off by default — every RS has to be explicitly opted in. One half of
+    /// the triple opt-in (realm master + per-Api flag + per-Scope flag).
+    /// </summary>
+    public bool AllowDynamicRegistration { get; init; }
 }
 
 public record CreateOAuthApiDto
@@ -68,6 +76,10 @@ public record CreateOAuthApiDto
     /// AppId).
     /// </summary>
     public List<string> PermissionIds { get; init; } = new();
+
+    /// <summary>Per-API DCR opt-in. Default <c>false</c>; admin flips on
+    /// before publishing the RS as a DCR-target.</summary>
+    public bool AllowDynamicRegistration { get; init; }
 }
 
 public record UpdateOAuthApiDto
@@ -90,6 +102,9 @@ public record UpdateOAuthApiDto
     /// in the same payload requires PermissionIds to be empty or absent.
     /// </summary>
     public List<string>? PermissionIds { get; init; }
+
+    /// <summary>PATCH semantics: null = no change.</summary>
+    public bool? AllowDynamicRegistration { get; init; }
 }
 
 public record OAuthApiListDto

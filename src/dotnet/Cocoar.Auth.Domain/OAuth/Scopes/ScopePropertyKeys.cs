@@ -8,6 +8,14 @@ public static class ScopePropertyKeys
     public const string Emphasize = "cocoar:emphasize";
     public const string ShowInDiscoveryDocument = "cocoar:show_in_discovery_document";
     public const string UserClaims = "cocoar:user_claims";
+
+    /// <summary>Boolean — when <c>true</c>, this scope is requestable by
+    /// clients minted via Dynamic Client Registration. Off by default.
+    /// One half of the triple opt-in: gates which capabilities DCR
+    /// clients can ever ask for, regardless of their resource target.
+    /// Stops a DCR client from requesting <c>tenant.admin.*</c> and
+    /// relying on a habit-click consent.</summary>
+    public const string AllowDynamicRegistrationClients = "cocoar:allow_dynamic_registration_clients";
 }
 
 /// <summary>

@@ -352,7 +352,8 @@ public class OAuthAdminService
 
         // Mirror identity-resource flags onto Properties — the runtime will read them from there.
         _session.Events.Append(id, aggregate.SetProperties(BuildScopeProperties(
-            dto.Enabled, dto.Required, dto.Emphasize, dto.ShowInDiscoveryDocument, dto.UserClaims)));
+            dto.Enabled, dto.Required, dto.Emphasize, dto.ShowInDiscoveryDocument, dto.UserClaims,
+            dto.AllowDynamicRegistrationClients)));
 
         if (appId.HasValue)
             _session.Events.Append(id, aggregate.SetAppId(appId));
@@ -408,12 +409,14 @@ public class OAuthAdminService
             _session.Events.Append(guid, aggregate.SetUserClaims(dto.UserClaims));
 
         // Always write a fresh Properties snapshot reflecting the merged values.
+        var currentAllowDcr = GetBoolProp(aggregate.Properties, ScopePropertyKeys.AllowDynamicRegistrationClients, false);
         _session.Events.Append(guid, aggregate.SetProperties(BuildScopeProperties(
             dto.Enabled ?? aggregate.Enabled,
             dto.Required ?? aggregate.Required,
             dto.Emphasize ?? aggregate.Emphasize,
             dto.ShowInDiscoveryDocument ?? aggregate.ShowInDiscoveryDocument,
-            dto.UserClaims ?? aggregate.UserClaims)));
+            dto.UserClaims ?? aggregate.UserClaims,
+            dto.AllowDynamicRegistrationClients ?? currentAllowDcr)));
 
         // App-link patch — null=no change, ""=make global, "guid"=assign.
         if (dto.AppId is not null)
@@ -534,6 +537,13 @@ public class OAuthAdminService
         if (permissionIdsResult.Value.Count > 0)
             _session.Events.Append(id, aggregate.SetPermissionIds(permissionIdsResult.Value));
 
+        // Write the canonical Properties snapshot so the DCR opt-in flag is
+        // queryable consistently regardless of whether it was set at create
+        // time or via a later patch. Always emit — the runtime reads
+        // AllowDynamicRegistration from Properties, and an absent key is a
+        // no-DCR default we want to be explicit about.
+        _session.Events.Append(id, aggregate.SetProperties(BuildApiProperties(dto.AllowDynamicRegistration)));
+
         // Initial API secret — stored in OAuthApiSecurityData (BCrypt-hashed).
         var apiSecret = GenerateSecret();
         var sec = OAuthApiSecurityData.Create(id);
@@ -634,6 +644,17 @@ public class OAuthAdminService
 
             if (!permissionIdsResult.Value.SequenceEqual(aggregate.PermissionIds))
                 _session.Events.Append(guid, aggregate.SetPermissionIds(permissionIdsResult.Value));
+        }
+
+        // AllowDynamicRegistration patch — only emit a Properties event if
+        // the value actually changes. Reading the current value from the
+        // aggregate's Properties dict keeps the comparison honest if the
+        // flag was set by a parallel admin path.
+        if (dto.AllowDynamicRegistration.HasValue)
+        {
+            var currentAllowDcr = GetBoolProp(aggregate.Properties, OAuthApiPropertyKeys.AllowDynamicRegistration, false);
+            if (dto.AllowDynamicRegistration.Value != currentAllowDcr)
+                _session.Events.Append(guid, aggregate.SetProperties(BuildApiProperties(dto.AllowDynamicRegistration.Value)));
         }
 
         await _session.SaveChangesAsync(ct);

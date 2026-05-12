@@ -21,6 +21,14 @@ public record OAuthScopeDto
     /// dimmed.
     /// </summary>
     public bool IsStandard { get; init; }
+
+    /// <summary>
+    /// When <c>true</c>, this scope is requestable by clients minted via
+    /// Dynamic Client Registration. Off by default. The other half of the
+    /// triple opt-in alongside <c>OAuthApi.AllowDynamicRegistration</c>:
+    /// gates which capabilities DCR clients can ever ask for.
+    /// </summary>
+    public bool AllowDynamicRegistrationClients { get; init; }
 }
 
 public record CreateOAuthScopeDto
@@ -36,6 +44,9 @@ public record CreateOAuthScopeDto
     public List<string> UserClaims { get; init; } = [];
     /// <summary>App.Id (Guid string). Null/missing = global scope.</summary>
     public string? AppId { get; init; }
+
+    /// <summary>Per-scope DCR opt-in. Default <c>false</c>.</summary>
+    public bool AllowDynamicRegistrationClients { get; init; }
 }
 
 public record UpdateOAuthScopeDto
@@ -53,6 +64,9 @@ public record UpdateOAuthScopeDto
     /// "<guid>" = assign / change.
     /// </summary>
     public string? AppId { get; init; }
+
+    /// <summary>PATCH semantics: null = no change.</summary>
+    public bool? AllowDynamicRegistrationClients { get; init; }
 }
 
 public record OAuthScopeListDto

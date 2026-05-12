@@ -145,7 +145,8 @@ internal static class OAuthAdminMapping
         };
 
     internal static Dictionary<string, object?> BuildScopeProperties(
-        bool enabled, bool required, bool emphasize, bool showInDiscovery, IReadOnlyList<string> userClaims)
+        bool enabled, bool required, bool emphasize, bool showInDiscovery,
+        IReadOnlyList<string> userClaims, bool allowDcrClients = false)
         => new()
         {
             [ScopePropertyKeys.Enabled] = JsonSerializer.SerializeToElement(enabled),
@@ -153,6 +154,13 @@ internal static class OAuthAdminMapping
             [ScopePropertyKeys.Emphasize] = JsonSerializer.SerializeToElement(emphasize),
             [ScopePropertyKeys.ShowInDiscoveryDocument] = JsonSerializer.SerializeToElement(showInDiscovery),
             [ScopePropertyKeys.UserClaims] = JsonSerializer.SerializeToElement(userClaims),
+            [ScopePropertyKeys.AllowDynamicRegistrationClients] = JsonSerializer.SerializeToElement(allowDcrClients),
+        };
+
+    internal static Dictionary<string, object?> BuildApiProperties(bool allowDcr)
+        => new()
+        {
+            [OAuthApiPropertyKeys.AllowDynamicRegistration] = JsonSerializer.SerializeToElement(allowDcr),
         };
 
     // ───────────────────────────────────────────── Property decoding ──────────
@@ -345,6 +353,7 @@ internal static class OAuthAdminMapping
         // applications-store entries when applying the App-context filter.
         AppId = s.AppId is null ? null : new ShortGuid(s.AppId.Value).ToString(),
         IsStandard = StandardScopes.IsStandard(s.Name),
+        AllowDynamicRegistrationClients = GetBoolProp(s.Properties, ScopePropertyKeys.AllowDynamicRegistrationClients, false),
     };
 
     /// <summary>
@@ -378,6 +387,7 @@ internal static class OAuthAdminMapping
             PermissionIds = s.PermissionIds.Select(id => new ShortGuid(id).ToString()).ToList(),
             Secrets = secretDtos,
             HasImplicitScope = hasImplicitScope,
+            AllowDynamicRegistration = GetBoolProp(s.Properties, OAuthApiPropertyKeys.AllowDynamicRegistration, false),
         };
     }
 

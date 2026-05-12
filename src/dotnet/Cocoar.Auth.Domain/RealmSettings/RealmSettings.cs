@@ -33,4 +33,12 @@ public class RealmSettings
     /// been touched for this realm; API treats null as equivalent to
     /// <c>SelfRegistrationSettings { Enabled = false }</c>.</summary>
     public SelfRegistrationSettings? SelfRegistration { get; set; }
+
+    /// <summary>Dynamic Client Registration sub-section. Null = feature
+    /// has never been touched for this realm; API treats null as
+    /// equivalent to <c>DcrSettings { Enabled = false }</c>. When
+    /// <see cref="DcrSettings.Enabled"/> is <c>false</c>, the public
+    /// <c>/connect/register</c> endpoint refuses every request and the
+    /// discovery document omits <c>registration_endpoint</c>.</summary>
+    public DcrSettings? Dcr { get; set; }
 }

@@ -55,6 +55,11 @@ public sealed class RealmSettingsService(
             doc.SelfRegistration = ApplySelfRegistrationPatch(doc.SelfRegistration, dto.SelfRegistration);
         }
 
+        if (dto.Dcr is not null)
+        {
+            doc.Dcr = ApplyDcrPatch(doc.Dcr, dto.Dcr);
+        }
+
         if (!isCreate) doc.UpdatedAt = DateTimeOffset.UtcNow;
 
         session.Store(doc);
@@ -91,7 +96,42 @@ public sealed class RealmSettingsService(
     internal static RealmSettingsDto ToDto(RealmSettingsDoc doc) => new()
     {
         SelfRegistration = MapSelfRegistrationToDto(doc.SelfRegistration),
+        Dcr = MapDcrToDto(doc.Dcr),
     };
+
+    private static DcrSettings ApplyDcrPatch(DcrSettings? current, UpdateDcrSettingsDto patch)
+    {
+        var s = current ?? new DcrSettings();
+        return s with
+        {
+            Enabled = patch.Enabled ?? s.Enabled,
+            AccessTokenLifetime = patch.AccessTokenLifetimeMinutes is { } atm
+                ? TimeSpan.FromMinutes(atm)
+                : s.AccessTokenLifetime,
+            RefreshTokenLifetime = patch.RefreshTokenLifetimeDays is { } rtd
+                ? TimeSpan.FromDays(rtd)
+                : s.RefreshTokenLifetime,
+            GcTtlDays = patch.GcTtlDays ?? s.GcTtlDays,
+            PerIpRateLimitPerHour = patch.PerIpRateLimitPerHour ?? s.PerIpRateLimitPerHour,
+            PerRealmRateLimitPerDay = patch.PerRealmRateLimitPerDay ?? s.PerRealmRateLimitPerDay,
+            ReservedNames = patch.ReservedNames ?? s.ReservedNames,
+        };
+    }
+
+    internal static DcrSettingsDto MapDcrToDto(DcrSettings? s)
+    {
+        if (s is null) return new DcrSettingsDto();
+        return new DcrSettingsDto
+        {
+            Enabled = s.Enabled,
+            AccessTokenLifetimeMinutes = (int)s.AccessTokenLifetime.TotalMinutes,
+            RefreshTokenLifetimeDays = (int)s.RefreshTokenLifetime.TotalDays,
+            GcTtlDays = s.GcTtlDays,
+            PerIpRateLimitPerHour = s.PerIpRateLimitPerHour,
+            PerRealmRateLimitPerDay = s.PerRealmRateLimitPerDay,
+            ReservedNames = s.ReservedNames,
+        };
+    }
 
     internal static SelfRegistrationDto MapSelfRegistrationToDto(SelfRegistrationSettings? s)
     {

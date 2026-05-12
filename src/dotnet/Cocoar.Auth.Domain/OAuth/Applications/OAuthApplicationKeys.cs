@@ -27,4 +27,30 @@ public static class OAuthApplicationPropertyKeys
     public const string UpdateAccessTokenClaimsOnRefresh = "cocoar:update_access_token_claims_on_refresh";
     public const string ClientClaims = "cocoar:client_claims";
     public const string Roles = "cocoar:roles";
+
+    // ─────── Dynamic Client Registration (RFC 7591) ────────
+    // Set on creation by the /connect/register handler — admin-created
+    // clients never carry these keys, which is how the rest of the
+    // system (consent screen, resource-indicator handler, GC service)
+    // distinguishes DCR clients from admin-registered ones.
+
+    /// <summary>Boolean — <c>true</c> for clients minted via the public
+    /// <c>/connect/register</c> endpoint. Single source of truth for
+    /// "is this a DCR client".</summary>
+    public const string DcrIsDynamicallyRegistered = "cocoar:dcr:is_dynamically_registered";
+
+    /// <summary>ISO-8601 timestamp string of when the DCR registration
+    /// happened. Stable for the lifetime of the client.</summary>
+    public const string DcrRegisteredAt = "cocoar:dcr:registered_at";
+
+    /// <summary>Source IP that submitted the registration request. Stored
+    /// for audit-log correlation; not used for any policy decision after
+    /// the registration completes.</summary>
+    public const string DcrRegisteredFromIp = "cocoar:dcr:registered_from_ip";
+
+    /// <summary>ISO-8601 timestamp string updated on each successful token
+    /// issuance for this client. Drives the GC sweep — clients with
+    /// <c>LastUsedAt</c> older than the per-realm DCR TTL get
+    /// soft-deleted.</summary>
+    public const string DcrLastUsedAt = "cocoar:dcr:last_used_at";
 }
