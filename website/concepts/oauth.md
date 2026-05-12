@@ -137,6 +137,16 @@ token.
 - List of supported scopes
 - `UserClaims` that should land in tokens for this API
 
+## Discovery privacy
+
+`scopes_supported` in `/.well-known/openid-configuration` lists **only the scopes a realm has explicitly published**. Standard OIDC scopes default to public; custom App and API scopes default to private. Background:
+
+- RFC 8414 §3 declares `scopes_supported` as `RECOMMENDED`, not `MUST` — publishing every scope is allowed but not required.
+- In multi-tenant SaaS, leaking which APIs a tenant operates is information disclosure with no upside: clients learn the scopes they need from the resource server's integration docs, not from discovery.
+- The realm-DB scope validation is the access control. Hiding from discovery is defense-in-depth — an attacker can still guess scope names and probe `/connect/token`.
+
+Admins toggle per scope via the **`Show in discovery document`** flag (see [OAuth Scopes admin](/admin/oauth-scopes#discovery-visibility)). Implementation: `RealmScopesSupportedHandler` (an OpenIddict pipeline hook in `Cocoar.Auth.Infrastructure/OpenIddict/`) overrides the discovery handler so the realm-DB-backed scope set is filtered on this flag.
+
 ## Token lifetimes
 
 Configured in `OpenIddictSettings` (overridable per client):

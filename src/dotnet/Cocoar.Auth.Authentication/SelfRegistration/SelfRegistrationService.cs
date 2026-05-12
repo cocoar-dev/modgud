@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using RealmSettingsDoc = Cocoar.Auth.Domain.RealmSettings.RealmSettings;
 
 namespace Cocoar.Auth.Authentication.SelfRegistration;
 
@@ -79,7 +80,10 @@ public sealed class SelfRegistrationService(
         string? remoteIp,
         CancellationToken ct)
     {
-        var settings = realm.SelfRegistration;
+        // Tenant-scoped session points at the current realm's DB (resolved
+        // by RealmMiddleware). The settings doc lives there as a singleton.
+        var settingsDoc = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        var settings = settingsDoc?.SelfRegistration;
         if (settings is null || !settings.Enabled)
         {
             // Anti-enumeration: same response shape even if the feature

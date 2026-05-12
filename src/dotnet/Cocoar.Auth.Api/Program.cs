@@ -547,6 +547,12 @@ try
     builder.Services.AddSingleton<Cocoar.Auth.Authentication.SelfRegistration.Captcha.TurnstileVerifier>();
     builder.Services.AddScoped<Cocoar.Auth.Authentication.SelfRegistration.ISelfRegistrationService,
         Cocoar.Auth.Authentication.SelfRegistration.SelfRegistrationService>();
+
+    // Tenant-scoped realm-wide settings (one singleton doc per tenant DB).
+    // Owned by realm-admin via /api/admin/realm-settings; the service is
+    // scoped so the injected IDocumentSession tracks the current tenant.
+    builder.Services.AddScoped<Cocoar.Auth.Authentication.RealmSettings.IRealmSettingsService,
+        Cocoar.Auth.Authentication.RealmSettings.RealmSettingsService>();
     builder.Services.AddScoped<Cocoar.Auth.Application.Services.ILoginProviderRealmSeeder,
         Cocoar.Auth.Authentication.Setup.LoginProviderRealmSeeder>();
 
@@ -873,6 +879,7 @@ try
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");
     app.MapRegisterEndpoints("api");
+    app.MapRealmSettingsEndpoints("api");
     app.MapBootstrapEndpoints("api");
     app.MapSessionEndpoints("api");
     app.MapGdprEndpoints("api");

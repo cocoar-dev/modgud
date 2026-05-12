@@ -44,7 +44,25 @@
       "passkeyFailed": "Passkey-Anmeldung fehlgeschlagen.",
       "rememberMe": "Angemeldet bleiben",
       "passwordDisabled": "Passwort-Anmeldung ist deaktiviert.",
-      "passwordlessMode": "Diese Anwendung verwendet passwortlose Anmeldung."
+      "passwordlessMode": "Diese Anwendung verwendet passwortlose Anmeldung.",
+      "registerLink": "Noch kein Konto? Registrieren →"
+    },
+    "register": {
+      "subtitle": "Konto erstellen.",
+      "username": "Benutzername",
+      "email": "E-Mail",
+      "password": "Passwort",
+      "firstname": "Vorname (optional)",
+      "lastname": "Nachname (optional)",
+      "submit": "Konto erstellen",
+      "toLogin": "Zur Anmeldung",
+      "haveAccount": "Schon ein Konto?",
+      "privacy": "Datenschutz",
+      "viewTerms": "AGB anzeigen",
+      "acceptTerms": "Ich akzeptiere die AGB",
+      "allowedDomainsHint": "Nur E-Mails dieser Domains:",
+      "error": "Registrierung fehlgeschlagen.",
+      "rateLimited": "Zu viele Versuche. Bitte später erneut probieren."
     },
     "secureSetup": {
       "subtitle": "Sichern Sie Ihren Account ab, bevor Sie fortfahren.",
@@ -688,6 +706,34 @@
       "canManageTenants": "Kann andere Realms verwalten (System-Realm)",
       "confirmDelete": "Realm \"{slug}\" wirklich löschen?",
       "loadFailed": "Realm konnte nicht geladen werden."
+    },
+    "realmSettings": {
+      "title": "Realm-Einstellungen",
+      "saved": "Gespeichert.",
+      "tabs": {
+        "selfRegistration": "Self-Registration"
+      },
+      "selfReg": {
+        "hint": "Wenn aktiviert, können Besucher unter /register selbst ein Konto anlegen. Default: deaktiviert.",
+        "enabled": "Self-Registration aktivieren",
+        "requireEmailVerification": "E-Mail-Verifizierung verlangen",
+        "requireAdminApproval": "Admin-Freigabe verlangen",
+        "allowedDomains": "Erlaubte E-Mail-Domains (leer = alle)",
+        "allowedDomains.placeholder": "example.com",
+        "defaultGroups": "Default-Gruppen (Auto-Mitgliedschaft nach Verifikation)",
+        "defaultGroups.placeholder": "Gruppen wählen…",
+        "tosUrl": "AGB-URL (zeigt Pflicht-Checkbox)",
+        "privacyUrl": "Datenschutz-URL (Footer-Link)",
+        "captchaEnabled": "Cloudflare-Turnstile-Captcha aktivieren",
+        "captchaSiteKey": "Captcha Site-Key (leer = Cocoar-Default)",
+        "captchaSiteKey.placeholder": "Site-Key (public)",
+        "captchaSecret": "Captcha Secret",
+        "captchaSecret.set": "(gesetzt — überschreibt Default)",
+        "captchaSecret.unset": "(nicht gesetzt — verwendet Cocoar-Default)",
+        "captchaSecret.replace": "Ersetzen",
+        "captchaSecret.inputPlaceholder": "Neuer Secret (leer = clear/Default)",
+        "captchaSecret.help": "Beim Speichern angewandt. Leer-Feld + Speichern = Secret löschen (zurück auf Cocoar-Default)."
+      }
     }
   },
   "permissions": {
@@ -712,7 +758,13 @@
     "successTitle": "E-Mail bestätigt",
     "successBody": "Danke! Deine neue E-Mail-Adresse wurde bestätigt. Ein Administrator prüft die Änderung und gibt sie frei, bevor sie übernommen wird.",
     "errorTitle": "Bestätigung fehlgeschlagen",
-    "toLogin": "Zum Login"
+    "toLogin": "Zum Login",
+    "selfReg": {
+      "success": "Dein Konto ist bestätigt. Du kannst dich jetzt anmelden.",
+      "pendingTitle": "E-Mail bestätigt — Admin-Freigabe ausstehend",
+      "pendingBody": "Deine E-Mail-Adresse ist bestätigt. Ein Administrator muss dein Konto noch freischalten — du bekommst dann Bescheid.",
+      "invalid": "Bestätigungslink ist ungültig oder abgelaufen. Bitte erneut registrieren."
+    }
   },
   "dashboard": {
     "title": "Dashboard",

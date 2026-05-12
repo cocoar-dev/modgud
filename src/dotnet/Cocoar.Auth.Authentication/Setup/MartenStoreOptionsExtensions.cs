@@ -10,6 +10,7 @@ using Cocoar.Auth.Authentication.Events;
 using Cocoar.Auth.Authentication.Gdpr;
 using Cocoar.Auth.Domain.Common;
 using Cocoar.Auth.Domain.Users.Events;
+using RealmSettingsDoc = Cocoar.Auth.Domain.RealmSettings.RealmSettings;
 using Cocoar.Auth.Authentication.Identity.ExternalAuth;
 using Cocoar.Auth.Authentication.Identity.LoginProviders;
 using Cocoar.Auth.Authentication.Projections;
@@ -97,6 +98,12 @@ public static class MartenStoreOptionsExtensions
             .DatabaseSchemaName("marten")
             .Identity(x => x.Id)
             .Index(x => x.Timestamp);
+
+        // Tenant-scoped singleton config doc. One row per tenant DB,
+        // addressed by the fixed `RealmSettings.SingletonId`. Owned by
+        // the realm-admin via /api/admin/realm-settings.
+        options.Schema.For<RealmSettingsDoc>()
+            .Identity(x => x.Id);
 
         // Identity events
         options.Events.MapEventType<UserIdentitySetupEvent>("user_identity_setup");

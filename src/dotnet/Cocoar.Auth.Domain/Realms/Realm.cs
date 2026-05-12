@@ -44,13 +44,4 @@ public class Realm
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
-
-    /// <summary>
-    /// Per-realm public self-registration configuration. Null = feature
-    /// has never been touched for this realm; the API treats null as
-    /// equivalent to <c>SelfRegistrationSettings { Enabled = false }</c>.
-    /// Stored as a JSONB sub-document so adding fields later doesn't need
-    /// a schema migration.
-    /// </summary>
-    public SelfRegistrationSettings? SelfRegistration { get; set; }
 }

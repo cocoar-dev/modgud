@@ -2,9 +2,11 @@ namespace Cocoar.Auth.Domain.Realms;
 
 /// <summary>
 /// Per-realm configuration for the public self-registration flow
-/// (<c>POST /api/account/register</c>). Lives on the <see cref="Realm"/>
-/// document — opt-in by default (every realm starts with
-/// <c>Enabled=false</c> and the registration endpoint returns 404 for it).
+/// (<c>POST /api/account/register</c>). A sub-document on the
+/// tenant-DB <c>RealmSettings</c> aggregate — owned by the realm-admin,
+/// not by Control-Plane. Opt-in by default (every realm starts with
+/// <c>Enabled=false</c> and the registration endpoint returns the
+/// anti-enumeration "feature absent" response).
 ///
 /// <para>The captcha integration is opt-in at two levels: a Cocoar-wide
 /// default Turnstile key-pair lives in <c>StartUpConfiguration</c>
@@ -14,8 +16,9 @@ namespace Cocoar.Auth.Domain.Realms;
 /// up the cocoar-default. A realm with no key-pair anywhere goes through
 /// the honeypot + email-rate-limit path only.</para>
 ///
-/// <para>Stored as a JSONB sub-document on the master-DB <see cref="Realm"/>
-/// record — adding fields here doesn't need a schema migration.</para>
+/// <para>Stored as a JSONB sub-document on the tenant-DB
+/// <c>RealmSettings</c> record — adding fields here doesn't need a
+/// schema migration.</para>
 /// </summary>
 public record SelfRegistrationSettings
 {

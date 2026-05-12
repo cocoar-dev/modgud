@@ -2,7 +2,6 @@ using System.Security.Claims;
 using Cocoar.Auth.Application.DTOs.Realms;
 using Cocoar.Auth.Authentication.ExtensionMethods;
 using Cocoar.Auth.Authentication.Domain;
-using Cocoar.Auth.Authentication.SelfRegistration.Captcha;
 using Cocoar.Auth.Authentication.Setup;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.AspNetCore;
@@ -170,17 +169,9 @@ public static class RealmsEndpoints
             string slug,
             UpdateRealmDto dto,
             IRealmProvisioningService svc,
-            CaptchaSecretStore captchaStore,
             CancellationToken ct) =>
         {
-            // The captcha-secret never enters the Infrastructure project in
-            // cleartext: this delegate is the single bridge that takes the
-            // admin's plaintext input, runs it through DataProtection in the
-            // Authentication slice, and hands the resulting bytes to the
-            // provisioning service for at-rest storage.
-            Func<string, byte[]> encryptor = captchaStore.Encrypt;
-
-            var result = await svc.UpdateRealmAsync(slug, dto, encryptor, ct);
+            var result = await svc.UpdateRealmAsync(slug, dto, ct);
             return result.ToResult(realm => Results.Ok(MapToDto(realm)));
         })
         .WithName("Realms_Update")
@@ -208,30 +199,7 @@ public static class RealmsEndpoints
         IsActive = realm.IsActive,
         NeedsSetup = false, // per-realm setup detection comes in a later etappe
         CreatedAt = realm.CreatedAt,
-        SelfRegistration = MapSelfRegistrationToDto(realm.SelfRegistration),
     };
-
-    /// <summary>Render the per-realm self-registration sub-document for the
-    /// admin response. The captcha-secret never round-trips —
-    /// <see cref="SelfRegistrationDto.CaptchaSecretSet"/> just surfaces
-    /// whether one is stored.</summary>
-    internal static SelfRegistrationDto MapSelfRegistrationToDto(SelfRegistrationSettings? s)
-    {
-        if (s is null) return new SelfRegistrationDto();
-        return new SelfRegistrationDto
-        {
-            Enabled = s.Enabled,
-            RequireEmailVerification = s.RequireEmailVerification,
-            AllowedEmailDomains = s.AllowedEmailDomains,
-            RequireAdminApproval = s.RequireAdminApproval,
-            DefaultGroupIds = s.DefaultGroupIds,
-            TermsOfServiceUrl = s.TermsOfServiceUrl,
-            PrivacyPolicyUrl = s.PrivacyPolicyUrl,
-            CaptchaEnabled = s.CaptchaEnabled,
-            CaptchaSiteKey = s.CaptchaSiteKey,
-            CaptchaSecretSet = s.EncryptedCaptchaSecret is { Length: > 0 },
-        };
-    }
 }
 
 // RequireControlPlaneFilter lives in Cocoar.Auth.Infrastructure.Realms so

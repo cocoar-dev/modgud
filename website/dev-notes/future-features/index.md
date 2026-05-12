@@ -62,30 +62,6 @@ existierender Konsument, aber jederzeit additiv nachrüstbar.
 
 **Status:** Geparkt 2026-05-08. Nicht blockierend.
 
-### [Implicit-Scope-Per-API + Discovery-Privacy](./scope-api-coupling-and-discovery-privacy)
-
-Erste externe Integration (EventTree) zeigte zwei UX-Schmerzen:
-Admin muss API + Scope doppelt anlegen für die 1:1-Standardkopplung,
-und das `ShowInDiscoveryDocument`-Flag auf OAuthScope wurde von
-OpenIddict's Stock-Handler ignoriert. Beide gelöst: One-Click
-„Scope anlegen"-Button im OAuthApi-Modal legt einen realen
-1:1-OAuthScope an (privacy-by-default, `ShowInDiscoveryDocument=false`),
-und ein neuer `RealmScopesSupportedHandler` honoriert das Flag
-beim Discovery-Build.
-
-**Status:** Implementiert 2026-05-11/12.
-
-### [Self-Registration (Handoff)](./self-registration)
-
-Per-Tenant konfigurierbare Self-Registration mit Email-Verification +
-optionalem Cloudflare-Turnstile-Captcha + Default-Group-Auto-Attach +
-Admin-Approval-Gate. Backend-MVP fertig (Foundation + Service +
-Endpoints + DI-Wireup), Frontend-Phase 3 offen. Note ist primär ein
-Handoff-Doc für die nächste Session — enthält Wire-Contracts,
-Frontend-Plan, Phasen-Status und Known-Limits.
-
-**Status:** Backend-MVP 2026-05-12. Frontend offen.
-
 ### [Per-App Login-Customization (Routing + Form-Builder)](./per-app-login-customization)
 
 Cocoar.Auth zentralisiert Login — heute ein Realm = eine Login-Seite,

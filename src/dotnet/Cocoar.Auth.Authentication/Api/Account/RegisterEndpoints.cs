@@ -5,6 +5,8 @@ using Cocoar.Auth.Authentication.SelfRegistration.Captcha;
 using Cocoar.Auth.Domain.Realms;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Cocoar.Auth.Infrastructure.Realms;
+using Marten;
+using RealmSettingsDoc = Cocoar.Auth.Domain.RealmSettings.RealmSettings;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
 
@@ -33,12 +35,14 @@ public static class RegisterEndpoints
 
         group.MapGet("self-registration-info", async (
             HttpContext http,
-            IRealmProvisioningService realmSvc,
+            IDocumentSession session,
             ITurnstileSecretResolver resolver,
             CancellationToken ct) =>
         {
-            var realm = await ResolveCurrentRealmAsync(http, realmSvc, ct);
-            var settings = realm?.SelfRegistration;
+            // Tenant-scoped session — implicit realm via RealmMiddleware.
+            // No need to load the Realm doc; settings live in the tenant DB.
+            var settingsDoc = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+            var settings = settingsDoc?.SelfRegistration;
 
             // Anti-enumeration: always return SOMETHING. A drive-by can't
             // tell whether a realm has self-reg disabled or just isn't

@@ -35,6 +35,11 @@ const routes = [
       meta: { public: true },
     },
     {
+      path: '/register',
+      component: () => import('@/views/auth/RegisterView.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/reset-password',
       component: () => import('@/views/auth/ResetPasswordView.vue'),
       meta: { public: true },
@@ -224,6 +229,10 @@ const routes = [
               },
             },
             {
+              path: 'realm-settings',
+              component: () => import('@/views/admin/RealmSettingsView.vue'),
+            },
+            {
               path: 'settings',
               component: () => import('@/views/admin/AppSettingsView.vue'),
             },
@@ -276,7 +285,7 @@ router.beforeEach(async (to) => {
       'oauth-client:read', 'oauth-scope:read',
       'oauth-api:read',
       'login-provider:read',
-      'realm:read',
+      'realm:read', 'realm-settings:read',
       'auth-log:read', 'session:read',
       'app:read',
     ]

@@ -11,15 +11,6 @@ public record RealmDto
     public bool IsActive { get; init; }
     public bool NeedsSetup { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
-
-    /// <summary>
-    /// Per-realm public self-registration configuration. Never null in
-    /// responses — null on the domain object surfaces as a
-    /// <c>SelfRegistrationDto</c> with <c>Enabled = false</c> and the rest
-    /// at defaults, so the admin UI doesn't need to special-case the
-    /// "never configured" branch.
-    /// </summary>
-    public SelfRegistrationDto SelfRegistration { get; init; } = new();
 }
 
 /// <summary>Read shape for the per-realm self-registration settings.
@@ -132,11 +123,6 @@ public record UpdateRealmDto
     public string? Description { get; init; }
     public string[]? Domains { get; init; }
     public bool? IsActive { get; init; }
-
-    /// <summary>Patch the self-registration sub-document. Null = leave
-    /// untouched; non-null = merge field-by-field (see
-    /// <see cref="UpdateSelfRegistrationDto"/>).</summary>
-    public UpdateSelfRegistrationDto? SelfRegistration { get; init; }
 }
 
 public record RealmListDto

@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Cocoar.Auth.Application.DTOs.Realms;
 using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Domain.Realms;
@@ -25,19 +24,14 @@ public interface IRealmProvisioningService
     Task<Realm?> GetRealmBySlugAsync(string slug, CancellationToken ct = default);
     Task<ErrorOr<Realm>> CreateRealmAsync(CreateRealmDto dto, CancellationToken ct = default);
     /// <summary>
-    /// Patches a realm. Most fields are mirrored 1:1 from the DTO. The
-    /// optional <paramref name="captchaSecretEncryptor"/> is invoked when
-    /// the self-registration sub-patch carries a new captcha-secret —
-    /// the provisioning service stays inside the Infrastructure layer
-    /// while the encryption primitive (which depends on ASP.NET
-    /// <c>DataProtection</c>) lives in the Authentication slice and gets
-    /// passed in as a delegate to keep the project-reference graph
-    /// one-way.
+    /// Patches a realm's structural metadata (DisplayName, Description,
+    /// Domains, IsActive). Tenant-owned settings (self-registration etc.)
+    /// live in the tenant-DB <c>RealmSettings</c> aggregate and have
+    /// their own endpoint — see <c>RealmSettingsEndpoints</c>.
     /// </summary>
     Task<ErrorOr<Realm>> UpdateRealmAsync(
         string slug,
         UpdateRealmDto dto,
-        Func<string, byte[]>? captchaSecretEncryptor = null,
         CancellationToken ct = default);
     Task<ErrorOr<bool>> DeleteRealmAsync(string slug, CancellationToken ct = default);
     Task EnsureSystemRealmExistsAsync(CancellationToken ct = default);
@@ -224,7 +218,6 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
     public async Task<ErrorOr<Realm>> UpdateRealmAsync(
         string slug,
         UpdateRealmDto dto,
-        Func<string, byte[]>? captchaSecretEncryptor = null,
         CancellationToken ct = default)
     {
         await using var session = _globalStore.LightweightSession();
@@ -249,8 +242,6 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         if (dto.Description is not null) realm.Description = dto.Description;
         if (dto.Domains is not null) realm.Domains = dto.Domains;
         if (dto.IsActive.HasValue) realm.IsActive = dto.IsActive.Value;
-        if (dto.SelfRegistration is not null)
-            realm.SelfRegistration = ApplySelfRegistrationPatch(realm.SelfRegistration, dto.SelfRegistration, captchaSecretEncryptor);
         realm.UpdatedAt = DateTimeOffset.UtcNow;
 
         session.Store(realm);
@@ -258,41 +249,6 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
 
         _realmCache.Invalidate();
         return realm;
-    }
-
-    /// <summary>
-    /// PATCH-merge for the self-registration sub-document. Each field is
-    /// independent: null in the patch = no change, non-null = replace.
-    /// The captcha-secret has a three-state shape (null / "" / value)
-    /// described on <see cref="UpdateSelfRegistrationDto.CaptchaSecret"/>.
-    /// </summary>
-    internal static SelfRegistrationSettings ApplySelfRegistrationPatch(
-        SelfRegistrationSettings? current,
-        UpdateSelfRegistrationDto patch,
-        Func<string, byte[]>? captchaSecretEncryptor)
-    {
-        var s = current ?? new SelfRegistrationSettings();
-        return s with
-        {
-            Enabled = patch.Enabled ?? s.Enabled,
-            RequireEmailVerification = patch.RequireEmailVerification ?? s.RequireEmailVerification,
-            AllowedEmailDomains = patch.AllowedEmailDomains ?? s.AllowedEmailDomains,
-            RequireAdminApproval = patch.RequireAdminApproval ?? s.RequireAdminApproval,
-            DefaultGroupIds = patch.DefaultGroupIds ?? s.DefaultGroupIds,
-            TermsOfServiceUrl = patch.TermsOfServiceUrl ?? s.TermsOfServiceUrl,
-            PrivacyPolicyUrl = patch.PrivacyPolicyUrl ?? s.PrivacyPolicyUrl,
-            CaptchaEnabled = patch.CaptchaEnabled ?? s.CaptchaEnabled,
-            CaptchaSiteKey = patch.CaptchaSiteKey ?? s.CaptchaSiteKey,
-            EncryptedCaptchaSecret = patch.CaptchaSecret switch
-            {
-                null => s.EncryptedCaptchaSecret,                        // no change
-                "" => null,                                              // clear (revert to Cocoar-default)
-                var plain => captchaSecretEncryptor is null
-                    ? throw new InvalidOperationException(
-                        "Cannot encrypt captcha-secret: no encryptor delegate supplied by the caller.")
-                    : captchaSecretEncryptor(plain),                     // replace
-            },
-        };
     }
 
     public async Task<ErrorOr<bool>> DeleteRealmAsync(string slug, CancellationToken ct = default)

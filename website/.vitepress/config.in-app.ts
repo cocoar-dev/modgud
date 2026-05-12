@@ -94,6 +94,7 @@ export default defineConfig({
             { text: 'Login Providers', link: '/admin/login-providers' },
             { text: 'External Identity Providers (SSO)', link: '/admin/identity-providers' },
             { text: 'Realms', link: '/admin/realms' },
+            { text: 'Realm Settings', link: '/admin/realm-settings' },
           ],
         },
         {

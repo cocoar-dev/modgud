@@ -101,6 +101,20 @@ async function loadExternalLogins() {
     if (res.ok) externalLogins.value = await res.json()
   } catch { /* ignore — login page works without external buttons */ }
 }
+
+// Self-registration toggle — fetched anonymously. Adds a "Register"
+// link to the login screen iff the realm has self-reg opted in.
+const selfRegistrationEnabled = ref(false)
+async function loadSelfRegistrationInfo() {
+  try {
+    const res = await fetch('/api/account/self-registration-info')
+    if (!res.ok) return
+    const info = await res.json()
+    selfRegistrationEnabled.value = !!info?.Enabled
+  } catch { /* ignore — login page works without register link */ }
+}
+loadSelfRegistrationInfo()
+
 function startExternalLogin(loginProviderId: string) {
   const returnUrl = new URLSearchParams(window.location.search).get('returnUrl') ?? '/'
   const target = `/api/account/external-login/${loginProviderId}/start?returnUrl=${encodeURIComponent(returnUrl)}`
@@ -498,6 +512,11 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 
           <RouterLink v-if="!isPasswordless()" to="/forgot-password" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.login.forgotPassword', {}, 'Forgot password?') }}
+          </RouterLink>
+
+          <RouterLink v-if="selfRegistrationEnabled" to="/register"
+            class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
+            {{ t('auth.login.registerLink', {}, 'No account yet? Register →') }}
           </RouterLink>
         </form>
 

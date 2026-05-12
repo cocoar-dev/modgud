@@ -178,6 +178,12 @@ public static class DependencyInjection
             // Login providers (the configurable buttons on the login page)
             opt.RegisterResource(app, "login-provider", "admin", "read", "write");
 
+            // Realm-wide settings (self-registration etc.) — owned by the
+            // realm-admin, not Control-Plane. The realm-admin gets these
+            // via the `realm:admin` bypass; granular grants are also
+            // supported. See Authentication/Api/Admin/RealmSettingsEndpoints.
+            opt.RegisterResource(app, "realm-settings", "read", "write");
+
             // ── control-plane app — cross-realm administration surface ─────────
             // Resources under this slug are ONLY mounted on the configured
             // Control-Plane hostname (see ControlPlaneGateMiddleware in

@@ -53,6 +53,17 @@ When a client requests `scope=timetodo.read` and gets back an access token, the 
 If the resource URI here is spelled differently from how the API checks during validation (e.g. `http` vs. `https`, trailing slash, port differences), every API request fails with `401 Unauthorized — invalid audience`. Keep both sides in sync.
 :::
 
+### Discovery visibility
+
+Every scope has a **`Show in discovery document`** flag. When `true`, the scope's name is listed in the realm's `/.well-known/openid-configuration` under `scopes_supported`. When `false`, the scope still works for normal client requests, but is not advertised publicly.
+
+- **OIDC standard scopes** (`openid`, `profile`, `email`, `offline_access`, `roles`) default to `true` — clients commonly read these from discovery.
+- **App / API scopes** (and implicit scopes auto-created from an [OAuth API](./oauth-apis)) default to `false` — clients learn these from the resource server's integration docs, not from discovery. Hiding them is a privacy-by-default measure that prevents drive-by enumeration of which APIs a tenant operates.
+
+::: tip Hiding is tenant isolation, not security
+Hiding scopes from discovery is defense-in-depth. An attacker can still try arbitrary `scope=` values at the token endpoint — they'll just have to guess instead of reading the list. The realm-DB validation is the actual access control.
+:::
+
 ## Allowing a scope on a client
 
 In the [OAuth client](./oauth-clients) → tab **Scopes** → add the new scope to "Allowed scopes". Only then may the client include it in its authorisation request.

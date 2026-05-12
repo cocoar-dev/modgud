@@ -43,6 +43,24 @@ Administration → **OAuth → APIs** → **Create**.
 
 A list of scope names this API understands. Any token whose `scope` claim contains one of these is considered "for this API". Used for OIDC discovery and (in some setups) for resource indication.
 
+#### One-click implicit scope
+
+In the API detail modal there is a **Create implicit scope** button when the API has no scope with the same name yet. Clicking it creates a real `OAuthScope` row with:
+
+- `Name` = API name
+- `Resources` = `[<api-name>]` (so the audience matches the API)
+- `Enabled = true`, `ShowInDiscoveryDocument = false` (private by default, see below)
+- Linked to the same App as the API
+
+This is the fast path for the common 1:1 case: an API and a scope that always go together. After creation the button disappears (re-check via API list reload). The implicit scope is otherwise a normal scope row — editable, deletable, can be requested by clients via `scope=<api-name>`.
+
+::: tip When to keep things separate
+Two situations warrant a manually-created additional scope on top of the implicit one:
+
+- **Granularity** — `<api>.read` / `.write` / `.admin` against the same audience. Differentiates capabilities via `scp`, not `aud`.
+- **Multi-RS scope** — one scope name pointing to multiple APIs (`scope=admin` → `aud: [policy-api, audit-api]`). Edge case but valid.
+:::
+
 ### User claims
 
 Optional list of claim types this API expects in tokens. Used by some IdP-side filtering mechanisms; for most setups, leave empty.
