@@ -147,6 +147,13 @@ public static class DcrErrorCodes
 /// because rate-limit and reserved-name rejections both map to
 /// <c>invalid_client_metadata</c> on the wire but matter as separate
 /// signals for threat-hunting.</summary>
+/// <summary>Metadata captured by the <c>/connect/register</c> handler
+/// and stamped onto the new client's Properties dict in the same
+/// transaction as the rest of the create flow. Lives next to the
+/// validator request because it's the validator's caller (the endpoint)
+/// that produces it.</summary>
+public sealed record DcrMetadataInput(DateTimeOffset RegisteredAt, string SourceIp);
+
 public enum DcrRejectionReason
 {
     RealmDisabled,

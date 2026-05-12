@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using BuildingBlocks.Helper;
+using Cocoar.Auth.Application.Dcr;
 using Cocoar.Auth.Application.DTOs.OAuth;
 using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Authorization.Apps;
@@ -61,8 +62,21 @@ public class OAuthAdminService
         return MapClient(state);
     }
 
-    public async Task<ErrorOr<OAuthClientCreatedDto>> CreateClientAsync(
+    public Task<ErrorOr<OAuthClientCreatedDto>> CreateClientAsync(
         CreateOAuthClientDto dto, CancellationToken ct = default)
+        => CreateClientAsync(dto, dcrMetadata: null, ct);
+
+    /// <summary>
+    /// Internal overload used by the DCR registration endpoint. When
+    /// <paramref name="dcrMetadata"/> is non-null, the new client's
+    /// Properties dict carries the DCR-marker keys
+    /// (<c>cocoar:dcr:is_dynamically_registered</c> +
+    /// timestamps + source IP) in the SAME transaction as the rest of
+    /// the create flow — no second round-trip, no half-created
+    /// "DCR client without DCR metadata" failure window.
+    /// </summary>
+    public async Task<ErrorOr<OAuthClientCreatedDto>> CreateClientAsync(
+        CreateOAuthClientDto dto, DcrMetadataInput? dcrMetadata, CancellationToken ct = default)
     {
         if (dto.ClientType is not (OAuthClientTypes.Public or OAuthClientTypes.Confidential))
             return OAuthErrors.InvalidClientType(dto.ClientType);
@@ -131,6 +145,16 @@ public class OAuthAdminService
             dto.EnableLocalLogin, dto.RequireConsent, dto.AllowRememberConsent,
             dto.AllowedCorsOrigins, dto.AlwaysSendClientClaims,
             dto.UpdateAccessTokenClaimsOnRefresh, dto.Claims, dto.Roles);
+        if (dcrMetadata is not null)
+        {
+            properties[OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered] = JsonSerializer.SerializeToElement(true);
+            properties[OAuthApplicationPropertyKeys.DcrRegisteredAt] = JsonSerializer.SerializeToElement(
+                dcrMetadata.RegisteredAt.ToString("O"));
+            properties[OAuthApplicationPropertyKeys.DcrRegisteredFromIp] = JsonSerializer.SerializeToElement(
+                dcrMetadata.SourceIp);
+            properties[OAuthApplicationPropertyKeys.DcrLastUsedAt] = JsonSerializer.SerializeToElement(
+                dcrMetadata.RegisteredAt.ToString("O"));
+        }
         if (properties.Count > 0)
         {
             _session.Events.Append(id, aggregate.SetProperties(properties));

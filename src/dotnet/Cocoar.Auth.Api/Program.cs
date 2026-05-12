@@ -548,6 +548,13 @@ try
     builder.Services.AddScoped<Cocoar.Auth.Authentication.SelfRegistration.ISelfRegistrationService,
         Cocoar.Auth.Authentication.SelfRegistration.SelfRegistrationService>();
 
+    // Dynamic Client Registration — validator is stateless (scoped is fine,
+    // but singleton avoids a per-request allocation). Rate limiter is
+    // process-wide in-memory state so MUST be singleton.
+    builder.Services.AddSingleton<Cocoar.Auth.Application.Dcr.IDcrRegistrationValidator,
+        Cocoar.Auth.Application.Dcr.DcrRegistrationValidator>();
+    builder.Services.AddSingleton<Cocoar.Auth.Application.Dcr.DcrRateLimiter>();
+
     // Tenant-scoped realm-wide settings (one singleton doc per tenant DB).
     // Owned by realm-admin via /api/admin/realm-settings; the service is
     // scoped so the injected IDocumentSession tracks the current tenant.
@@ -852,6 +859,7 @@ try
     // explicit minimal-API handlers.
     app.MapAuthorizationEndpoints();
     app.MapConsentEndpoints();
+    app.MapDcrRegistrationEndpoints();
 
     app.MapStatusEndpoints();
     app.MapAuthLogEndpoints("api");
