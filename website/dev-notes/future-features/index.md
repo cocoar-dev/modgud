@@ -75,6 +75,17 @@ beim Discovery-Build.
 
 **Status:** Implementiert 2026-05-11/12.
 
+### [Self-Registration (Handoff)](./self-registration)
+
+Per-Tenant konfigurierbare Self-Registration mit Email-Verification +
+optionalem Cloudflare-Turnstile-Captcha + Default-Group-Auto-Attach +
+Admin-Approval-Gate. Backend-MVP fertig (Foundation + Service +
+Endpoints + DI-Wireup), Frontend-Phase 3 offen. Note ist primär ein
+Handoff-Doc für die nächste Session — enthält Wire-Contracts,
+Frontend-Plan, Phasen-Status und Known-Limits.
+
+**Status:** Backend-MVP 2026-05-12. Frontend offen.
+
 ### [Per-App Login-Customization (Routing + Form-Builder)](./per-app-login-customization)
 
 Cocoar.Auth zentralisiert Login — heute ein Realm = eine Login-Seite,

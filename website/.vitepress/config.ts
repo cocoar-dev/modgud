@@ -297,6 +297,7 @@ export default withMermaid(defineConfig({
             { text: 'Permission-Modell — Adversarial Review', link: '/dev-notes/future-features/permission-modell-adversarial-review' },
             { text: 'UserInfo Hybrid-Emission (Single-Aud)', link: '/dev-notes/future-features/userinfo-hybrid-flat-emission' },
             { text: 'Implicit-Scope-Per-API + Discovery-Privacy', link: '/dev-notes/future-features/scope-api-coupling-and-discovery-privacy' },
+            { text: 'Self-Registration (Handoff)', link: '/dev-notes/future-features/self-registration' },
             { text: 'Per-App Login-Customization (Routing + Form-Builder)', link: '/dev-notes/future-features/per-app-login-customization' },
           ],
         },

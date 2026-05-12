@@ -92,6 +92,13 @@ try
             rule.For<OpenIddictSettings>().FromFile("data/configuration.json").Select("OpenIddict"),
             rule.For<OpenIddictSettings>().FromFile("data/configuration.local.json").Select("OpenIddict"),
             rule.For<OpenIddictSettings>().FromEnvironment("OpenIddict"),
+
+            // Cocoar-default Cloudflare Turnstile keys. Optional — per-realm
+            // overrides win, and realms with CaptchaEnabled=false never look
+            // here at all. Env-var form: `Turnstile__SiteKey` / `Turnstile__SecretKey`.
+            rule.For<TurnstileSettings>().FromFile("data/configuration.json").Select("Turnstile"),
+            rule.For<TurnstileSettings>().FromFile("data/configuration.local.json").Select("Turnstile"),
+            rule.For<TurnstileSettings>().FromEnvironment("Turnstile"),
         ], setup =>
         [
             setup.ConcreteType<StartUpConfiguration>().AsSingleton(),
@@ -100,6 +107,7 @@ try
             setup.ConcreteType<EmailOtpConfiguration>().AsSingleton(),
             setup.ConcreteType<AppSettings>().AsSingleton(),
             setup.ConcreteType<OpenIddictSettings>().AsSingleton(),
+            setup.ConcreteType<TurnstileSettings>().AsSingleton(),
         ]));
 
     // Expose concrete config types as Authentication interfaces so Authentication
@@ -518,6 +526,27 @@ try
     // host-rooted keys, dedicated Purpose so the two ciphertext blobs
     // are not interchangeable). See SelfRegistration/Captcha/CaptchaSecretStore.cs.
     builder.Services.AddSingleton<Cocoar.Auth.Authentication.SelfRegistration.Captcha.CaptchaSecretStore>();
+
+    // Self-Registration: captcha verifier + resolver + rate-limiter +
+    // orchestrator. Resolver pulls per-realm encrypted secrets via
+    // CaptchaSecretStore and falls back to the Cocoar-default
+    // TurnstileSettings env-var config. Each piece is independently
+    // testable; orchestration lives in SelfRegistrationService.
+    builder.Services.AddHttpClient(nameof(Cocoar.Auth.Authentication.SelfRegistration.Captcha.TurnstileVerifier));
+    builder.Services.AddSingleton<Cocoar.Auth.Authentication.SelfRegistration.RegistrationRateLimiter>();
+    builder.Services.AddSingleton<Cocoar.Auth.Authentication.SelfRegistration.Captcha.ITurnstileSecretResolver>(sp =>
+    {
+        var resolver = new Cocoar.Auth.Authentication.SelfRegistration.Captcha.TurnstileSecretResolver(
+            sp.GetRequiredService<Cocoar.Auth.Authentication.SelfRegistration.Captcha.CaptchaSecretStore>())
+        {
+            SystemDefaultSecret = () => sp.GetRequiredService<TurnstileSettings>().SecretKey,
+            SystemDefaultSiteKey = () => sp.GetRequiredService<TurnstileSettings>().SiteKey,
+        };
+        return resolver;
+    });
+    builder.Services.AddSingleton<Cocoar.Auth.Authentication.SelfRegistration.Captcha.TurnstileVerifier>();
+    builder.Services.AddScoped<Cocoar.Auth.Authentication.SelfRegistration.ISelfRegistrationService,
+        Cocoar.Auth.Authentication.SelfRegistration.SelfRegistrationService>();
     builder.Services.AddScoped<Cocoar.Auth.Application.Services.ILoginProviderRealmSeeder,
         Cocoar.Auth.Authentication.Setup.LoginProviderRealmSeeder>();
 
@@ -843,6 +872,7 @@ try
     app.MapPasskeyEndpoints("api");
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");
+    app.MapRegisterEndpoints("api");
     app.MapBootstrapEndpoints("api");
     app.MapSessionEndpoints("api");
     app.MapGdprEndpoints("api");
