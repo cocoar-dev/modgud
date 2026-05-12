@@ -3,9 +3,7 @@ using Cocoar.Auth.Application.Dcr;
 using Cocoar.Auth.Domain.OAuth.Applications;
 using Marten;
 using Microsoft.Extensions.Logging;
-using OpenIddict.Abstractions;
 using OpenIddict.Server;
-using RealmSettingsDoc = Cocoar.Auth.Domain.RealmSettings.RealmSettings;
 
 namespace Cocoar.Auth.Infrastructure.OpenIddict;
 
@@ -62,18 +60,6 @@ public sealed class DcrLastUsedTrackerHandler
 
         var props = state.Properties;
         if (!GetBool(props, OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered)) return;
-
-        // Apply per-realm DCR token-lifetime overrides via the principal
-        // (per-request, takes precedence over the server-global default
-        // configured in OpenIddictExtensions). Loading RealmSettings is
-        // one extra tenant-DB read per DCR-token issue; admin clients
-        // already bailed above, so non-DCR flows still pay nothing.
-        var realmSettings = await _session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId);
-        if (realmSettings?.Dcr is { } dcr)
-        {
-            context.Principal.SetAccessTokenLifetime(dcr.AccessTokenLifetime);
-            context.Principal.SetRefreshTokenLifetime(dcr.RefreshTokenLifetime);
-        }
 
         var aggregate = await _session.Events.AggregateStreamAsync<OAuthApplicationAggregate>(state.Id);
         if (aggregate is null || aggregate.IsDeleted) return;

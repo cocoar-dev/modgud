@@ -59,17 +59,18 @@ public class DcrFullFlowTests : IntegrationTestBase
         // RFC 8707: aud is narrowed to exactly the requested resource(s).
         Assert.Contains(AllowedAudience, jwt.Audiences);
 
-        // KNOWN LIMITATION (v1, see DcrLastUsedTrackerHandler): the
-        // per-realm DcrSettings.AccessTokenLifetime override is set on
-        // the principal via SetAccessTokenLifetime but OpenIddict's
-        // pipeline still resolves the server-global default. The
-        // override needs to live on the OpenIddictApplicationDescriptor
-        // settings dict (oi_tkn_lft.ats key) instead of the Cocoar-
-        // custom one — followup. For now, just assert the token has
-        // a positive lifetime + the standard iat/exp shape.
+        // DCR default access-token lifetime is 15 min (DcrSettings default,
+        // EnableDcrAsync below doesn't override). The fix for bug #30
+        // writes the OpenIddict-recognized "tkn_lft:act" settings key on
+        // the application at registration time, so OpenIddict's pipeline
+        // applies it natively. Compute lifetime from iat+exp claims (the
+        // jwt.ValidFrom defaults to MinValue when nbf is absent, which
+        // makes .ValidTo - .ValidFrom useless). Allow ±60s for wall-
+        // clock skew between issuing and reading.
         var iat = long.Parse(jwt.Payload["iat"].ToString()!);
         var exp = long.Parse(jwt.Payload["exp"].ToString()!);
-        Assert.True(exp > iat, "exp must be later than iat");
+        var lifetimeMinutes = (exp - iat) / 60.0;
+        Assert.InRange(lifetimeMinutes, 14, 16);
     }
 
     [Fact]

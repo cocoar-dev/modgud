@@ -26,6 +26,21 @@ namespace Cocoar.Auth.Application.Services;
 /// </summary>
 public class OAuthAdminService
 {
+    /// <summary>OpenIddict's well-known Settings key for per-application
+    /// access-token lifetime. Mirrors
+    /// <c>OpenIddictConstants.Settings.TokenLifetimes.AccessToken</c> —
+    /// inlined here to avoid pulling OpenIddict.Abstractions into the
+    /// Application layer. Drift against the OpenIddict value would
+    /// silently disable the DCR per-realm lifetime override — pinned
+    /// by a unit test that uses reflection to fetch the OpenIddict
+    /// constant and asserts equality.</summary>
+    internal const string OpenIddictAccessTokenLifetimeSettingKey = "tkn_lft:act";
+
+    /// <summary>OpenIddict's well-known Settings key for per-application
+    /// refresh-token lifetime. See
+    /// <see cref="OpenIddictAccessTokenLifetimeSettingKey"/>.</summary>
+    internal const string OpenIddictRefreshTokenLifetimeSettingKey = "tkn_lft:reft";
+
     private readonly IDocumentSession _session;
 
     public OAuthAdminService(IDocumentSession session)
@@ -133,6 +148,25 @@ public class OAuthAdminService
 
         // Settings (primitive lifetime + token-type values).
         var settings = BuildClientSettings(dto);
+        if (dcrMetadata is not null)
+        {
+            // Per-realm DCR token-lifetime override. Written as OpenIddict's
+            // own well-known settings keys (OpenIddictConstants.Settings.
+            // TokenLifetimes.AccessToken / RefreshToken — string-literal
+            // inlined to keep OpenIddict.Abstractions out of the Application
+            // layer). Format matches what
+            // OpenIddictApplicationDescriptor.SetAccessTokenLifetime
+            // produces: TimeSpan.ToString("c") + invariant culture.
+            // OpenIddict's EvaluateGeneratedTokens pipeline reads these
+            // directly from the persisted Application.Settings — no
+            // per-request handler gymnastics, no order-of-handlers race.
+            // Pinned against drift by OpenIddictLifetimeSettingKeysTests
+            // in the unit-test suite.
+            settings[OpenIddictAccessTokenLifetimeSettingKey] =
+                dcrMetadata.AccessTokenLifetime.ToString("c", System.Globalization.CultureInfo.InvariantCulture);
+            settings[OpenIddictRefreshTokenLifetimeSettingKey] =
+                dcrMetadata.RefreshTokenLifetime.ToString("c", System.Globalization.CultureInfo.InvariantCulture);
+        }
         if (settings.Count > 0)
         {
             _session.Events.Append(id, aggregate.SetSettings(settings));

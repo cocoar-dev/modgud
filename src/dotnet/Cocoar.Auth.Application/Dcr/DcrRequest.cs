@@ -148,11 +148,22 @@ public static class DcrErrorCodes
 /// <c>invalid_client_metadata</c> on the wire but matter as separate
 /// signals for threat-hunting.</summary>
 /// <summary>Metadata captured by the <c>/connect/register</c> handler
-/// and stamped onto the new client's Properties dict in the same
-/// transaction as the rest of the create flow. Lives next to the
-/// validator request because it's the validator's caller (the endpoint)
-/// that produces it.</summary>
-public sealed record DcrMetadataInput(DateTimeOffset RegisteredAt, string SourceIp);
+/// and stamped onto the new client's Properties + Settings dicts in
+/// the same transaction as the rest of the create flow. Lives next to
+/// the validator request because it's the validator's caller (the
+/// endpoint) that produces it.
+///
+/// <para>The token-lifetime fields are persisted into the
+/// OpenIddict-recognized Settings keys
+/// (<c>OpenIddictConstants.Settings.TokenLifetimes.AccessToken</c> /
+/// <c>RefreshToken</c>) so OpenIddict's own pipeline applies the
+/// per-realm-DCR override at token-issue time. Without this the
+/// server-global default would win (see bug #30).</para></summary>
+public sealed record DcrMetadataInput(
+    DateTimeOffset RegisteredAt,
+    string SourceIp,
+    TimeSpan AccessTokenLifetime,
+    TimeSpan RefreshTokenLifetime);
 
 public enum DcrRejectionReason
 {

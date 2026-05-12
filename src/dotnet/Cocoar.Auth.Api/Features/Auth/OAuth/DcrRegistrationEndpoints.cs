@@ -107,7 +107,11 @@ public static class DcrRegistrationEndpoints
         // ───────── Persist ─────────
         var createResult = await oauthAdminService.CreateClientAsync(
             normalized,
-            new DcrMetadataInput(registeredAt, sourceIp),
+            new DcrMetadataInput(
+                registeredAt,
+                sourceIp,
+                settings.AccessTokenLifetime,
+                settings.RefreshTokenLifetime),
             ct);
         if (createResult.IsError)
         {
