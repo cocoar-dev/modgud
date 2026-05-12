@@ -23,23 +23,29 @@ namespace Cocoar.Auth.Application.Dcr;
 /// audit-trail fallback.</para>
 ///
 /// <para>Both lookups use ordinal-case-sensitive keys: source IPs are
-/// already normalised by the endpoint layer, and realm ids are Guids.</para>
+/// already normalised by the endpoint layer, and realm slugs are the
+/// stable string keys (matches the tenant id Marten uses). Earlier
+/// drafts used Guid for the realm key, but
+/// <c>HttpContext.Items["TenantId"]</c> is set to the slug by
+/// <c>RealmMiddleware</c> — a parse-to-Guid attempt would collapse
+/// every realm onto <c>Guid.Empty</c> and turn the per-realm limit
+/// into a global one shared across all tenants.</para>
 /// </summary>
 public sealed class DcrRateLimiter
 {
     private readonly ConcurrentDictionary<string, RingBuffer> _perIp = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<Guid, RingBuffer> _perRealm = new();
+    private readonly ConcurrentDictionary<string, RingBuffer> _perRealm = new(StringComparer.Ordinal);
 
     private static readonly TimeSpan IpWindow = TimeSpan.FromHours(1);
     private static readonly TimeSpan RealmWindow = TimeSpan.FromDays(1);
 
     public DcrRateLimitVerdict TryConsume(
-        string sourceIp, Guid realmId, int perIpLimit, int perRealmLimit)
+        string sourceIp, string realmSlug, int perIpLimit, int perRealmLimit)
     {
         var now = DateTimeOffset.UtcNow;
 
         var ipBuffer = _perIp.GetOrAdd(sourceIp, _ => new RingBuffer());
-        var realmBuffer = _perRealm.GetOrAdd(realmId, _ => new RingBuffer());
+        var realmBuffer = _perRealm.GetOrAdd(realmSlug, _ => new RingBuffer());
 
         // Check both windows BEFORE committing to either, so a realm-limit
         // hit doesn't pre-charge the per-IP counter (which would

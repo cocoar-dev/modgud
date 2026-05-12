@@ -28,8 +28,7 @@ public interface IDcrRegistrationValidator
     DcrValidationResult Validate(
         DcrRegistrationRequest request,
         DcrSettings settings,
-        string sourceIp,
-        Guid realmId);
+        string sourceIp);
 }
 
 public abstract record DcrValidationResult
@@ -66,9 +65,9 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
     public DcrValidationResult Validate(
         DcrRegistrationRequest request,
         DcrSettings settings,
-        string sourceIp,
-        Guid realmId)
+        string sourceIp)
     {
+        _ = sourceIp; // Reserved for future per-IP-aware decisions; rate-limit lives in DcrRateLimiter.
         // ───────── redirect_uris ────────────────────────────────────
         if (request.RedirectUris is null || request.RedirectUris.Count == 0)
         {

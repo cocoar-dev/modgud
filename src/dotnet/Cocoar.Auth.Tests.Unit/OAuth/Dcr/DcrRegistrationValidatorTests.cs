@@ -12,7 +12,6 @@ namespace Cocoar.Auth.Tests.Unit.OAuth.Dcr;
 public class DcrRegistrationValidatorTests
 {
     private static readonly DcrRegistrationValidator Sut = new();
-    private static readonly Guid RealmId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
     private static DcrSettings Settings(params string[]? reservedNames) =>
         new() { Enabled = true, ReservedNames = reservedNames is { Length: > 0 } ? reservedNames : null };
@@ -26,7 +25,7 @@ public class DcrRegistrationValidatorTests
     [Fact]
     public void Happy_path_returns_allow_with_dcr_prefixed_client_id()
     {
-        var result = Sut.Validate(ValidRequest(), Settings(), "1.2.3.4", RealmId);
+        var result = Sut.Validate(ValidRequest(), Settings(), "1.2.3.4");
         var allow = Assert.IsType<DcrValidationResult.Allow>(result);
         Assert.StartsWith("dcr-", allow.Normalized.ClientId);
         Assert.Equal("Test Client", allow.Normalized.DisplayName);
@@ -39,7 +38,7 @@ public class DcrRegistrationValidatorTests
     public void Missing_redirect_uris_rejected_as_missing_redirect()
     {
         var req = ValidRequest() with { RedirectUris = null };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrErrorCodes.InvalidRedirectUri, reject.ErrorCode);
         Assert.Equal(DcrRejectionReason.MissingRedirectUri, reject.Reason);
     }
@@ -48,7 +47,7 @@ public class DcrRegistrationValidatorTests
     public void Empty_redirect_uris_rejected_as_missing_redirect()
     {
         var req = ValidRequest() with { RedirectUris = new() };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrRejectionReason.MissingRedirectUri, reject.Reason);
     }
 
@@ -62,7 +61,7 @@ public class DcrRegistrationValidatorTests
     public void Bad_redirect_uri_rejected(string uri)
     {
         var req = ValidRequest() with { RedirectUris = new() { uri } };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrErrorCodes.InvalidRedirectUri, reject.ErrorCode);
         Assert.Equal(DcrRejectionReason.InvalidRedirectUri, reject.Reason);
     }
@@ -78,14 +77,14 @@ public class DcrRegistrationValidatorTests
     public void Good_redirect_uri_accepted(string uri)
     {
         var req = ValidRequest() with { RedirectUris = new() { uri } };
-        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip", RealmId));
+        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
     }
 
     [Fact]
     public void Token_endpoint_auth_method_other_than_none_rejected()
     {
         var req = ValidRequest() with { TokenEndpointAuthMethod = "client_secret_basic" };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrErrorCodes.InvalidClientMetadata, reject.ErrorCode);
         Assert.Equal(DcrRejectionReason.InvalidTokenAuthMethod, reject.Reason);
     }
@@ -94,7 +93,7 @@ public class DcrRegistrationValidatorTests
     public void Token_endpoint_auth_method_defaults_to_none_when_omitted()
     {
         var req = ValidRequest() with { TokenEndpointAuthMethod = null };
-        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip", RealmId));
+        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
     }
 
     [Theory]
@@ -105,7 +104,7 @@ public class DcrRegistrationValidatorTests
     public void Disallowed_grant_type_rejected(string grant)
     {
         var req = ValidRequest() with { GrantTypes = new() { "authorization_code", grant } };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrRejectionReason.InvalidGrantType, reject.Reason);
     }
 
@@ -113,7 +112,7 @@ public class DcrRegistrationValidatorTests
     public void Authorization_code_and_refresh_token_grants_accepted()
     {
         var req = ValidRequest() with { GrantTypes = new() { "authorization_code", "refresh_token" } };
-        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(new[] { "authorization_code", "refresh_token" }, allow.Normalized.AllowedGrantTypes);
     }
 
@@ -124,7 +123,7 @@ public class DcrRegistrationValidatorTests
     public void Disallowed_response_type_rejected(string responseType)
     {
         var req = ValidRequest() with { ResponseTypes = new() { responseType } };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrRejectionReason.InvalidResponseType, reject.Reason);
     }
 
@@ -132,7 +131,7 @@ public class DcrRegistrationValidatorTests
     public void Missing_client_name_rejected()
     {
         var req = ValidRequest() with { ClientName = null };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrRejectionReason.ClientNameMissing, reject.Reason);
     }
 
@@ -140,7 +139,7 @@ public class DcrRegistrationValidatorTests
     public void Whitespace_client_name_rejected_as_missing()
     {
         var req = ValidRequest() with { ClientName = "   " };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrRejectionReason.ClientNameMissing, reject.Reason);
     }
 
@@ -148,7 +147,7 @@ public class DcrRegistrationValidatorTests
     public void Client_name_over_80_chars_rejected()
     {
         var req = ValidRequest() with { ClientName = new string('a', 81) };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrRejectionReason.ClientNameTooLong, reject.Reason);
     }
 
@@ -156,7 +155,7 @@ public class DcrRegistrationValidatorTests
     public void Client_name_at_80_chars_accepted()
     {
         var req = ValidRequest() with { ClientName = new string('a', 80) };
-        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip", RealmId));
+        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
     }
 
     [Theory]
@@ -166,7 +165,7 @@ public class DcrRegistrationValidatorTests
     public void Latin1_or_ascii_client_name_accepted(string name)
     {
         var req = ValidRequest() with { ClientName = name };
-        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip", RealmId));
+        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
     }
 
     [Theory]
@@ -177,7 +176,7 @@ public class DcrRegistrationValidatorTests
     public void Non_latin1_client_name_rejected(string name)
     {
         var req = ValidRequest() with { ClientName = name };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrRejectionReason.ClientNameNonLatin1, reject.Reason);
     }
 
@@ -186,7 +185,7 @@ public class DcrRegistrationValidatorTests
     {
         var req = ValidRequest() with { ClientName = "Cocoar Helper" };
         var reject = Assert.IsType<DcrValidationResult.Reject>(
-            Sut.Validate(req, Settings("Cocoar"), "ip", RealmId));
+            Sut.Validate(req, Settings("Cocoar"), "ip"));
         Assert.Equal(DcrRejectionReason.ClientNameReservedName, reject.Reason);
     }
 
@@ -195,7 +194,7 @@ public class DcrRegistrationValidatorTests
     {
         var req = ValidRequest() with { ClientName = "ANTHROPIC AGENT" };
         var reject = Assert.IsType<DcrValidationResult.Reject>(
-            Sut.Validate(req, Settings("anthropic"), "ip", RealmId));
+            Sut.Validate(req, Settings("anthropic"), "ip"));
         Assert.Equal(DcrRejectionReason.ClientNameReservedName, reject.Reason);
     }
 
@@ -203,7 +202,7 @@ public class DcrRegistrationValidatorTests
     public void Empty_reserved_names_list_does_not_match_anything()
     {
         var req = ValidRequest() with { ClientName = "Anything Goes" };
-        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip", RealmId));
+        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
     }
 
     [Fact]
@@ -212,7 +211,7 @@ public class DcrRegistrationValidatorTests
         // Defensive: a sloppy admin save with a blank entry mustn't
         // accidentally match every client name.
         var req = ValidRequest() with { ClientName = "Anything Goes" };
-        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings("", "Cocoar"), "ip", RealmId));
+        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings("", "Cocoar"), "ip"));
     }
 
     [Fact]
@@ -224,7 +223,7 @@ public class DcrRegistrationValidatorTests
             AccessTokenLifetime = TimeSpan.FromMinutes(7),
             RefreshTokenLifetime = TimeSpan.FromDays(3),
         };
-        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(ValidRequest(), settings, "ip", RealmId));
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(ValidRequest(), settings, "ip"));
         Assert.Equal(420, allow.Normalized.AccessTokenLifetime); // seconds
         Assert.Equal(3 * 86400, allow.Normalized.AbsoluteRefreshTokenLifetime);
     }
@@ -233,7 +232,7 @@ public class DcrRegistrationValidatorTests
     public void Scope_string_split_on_spaces_into_distinct_list()
     {
         var req = ValidRequest() with { Scope = "openid profile  openid email" };
-        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(new[] { "openid", "profile", "email" }, allow.Normalized.Scopes);
     }
 
@@ -241,7 +240,7 @@ public class DcrRegistrationValidatorTests
     public void Null_scope_yields_empty_list()
     {
         var req = ValidRequest() with { Scope = null };
-        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip", RealmId));
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
         Assert.Empty(allow.Normalized.Scopes);
     }
 }

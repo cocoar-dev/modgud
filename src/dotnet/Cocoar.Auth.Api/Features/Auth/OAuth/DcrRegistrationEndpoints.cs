@@ -61,7 +61,7 @@ public static class DcrRegistrationEndpoints
         }
 
         var sourceIp = ResolveSourceIp(httpContext);
-        var realmId = ResolveRealmId(httpContext);
+        var realmSlug = ResolveRealmSlug(httpContext);
 
         // ───────── Realm gate ─────────
         // Reading the singleton RealmSettings doc does a tenant-DB
@@ -76,7 +76,7 @@ public static class DcrRegistrationEndpoints
 
         // ───────── Rate-limit ─────────
         var verdict = rateLimiter.TryConsume(
-            sourceIp, realmId, settings.PerIpRateLimitPerHour, settings.PerRealmRateLimitPerDay);
+            sourceIp, realmSlug, settings.PerIpRateLimitPerHour, settings.PerRealmRateLimitPerDay);
         if (verdict != DcrRateLimitVerdict.Allowed)
         {
             var reason = verdict == DcrRateLimitVerdict.PerIpExceeded
@@ -90,7 +90,7 @@ public static class DcrRegistrationEndpoints
         }
 
         // ───────── Validation ─────────
-        var validation = validator.Validate(request, settings, sourceIp, realmId);
+        var validation = validator.Validate(request, settings, sourceIp);
         if (validation is DcrValidationResult.Reject reject)
         {
             LogRejected(logger, sourceIp, request.ClientName, reject.Reason);
@@ -133,7 +133,7 @@ public static class DcrRegistrationEndpoints
             .Information(
                 "Auth: " + DcrAuditEvents.ClientRegistered +
                 " ClientId={ClientId} Name={ClientName} Realm={Realm}",
-                created.ClientId, created.DisplayName ?? "(none)", realmId);
+                created.ClientId, created.DisplayName ?? "(none)", realmSlug);
 
         // ───────── Response ─────────
         return Results.Created((string?)null, new DcrRegistrationResponse
@@ -164,15 +164,20 @@ public static class DcrRegistrationEndpoints
         return ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
     }
 
-    private static Guid ResolveRealmId(HttpContext ctx)
+    private static string ResolveRealmSlug(HttpContext ctx)
     {
         // RealmMiddleware stamps the tenant id on Items at request start.
-        // No realm == request shouldn't have hit this endpoint, but fall
-        // back to Guid.Empty so the rate-limiter doesn't blow up if it
-        // does — every other check (settings.Enabled) will fail first.
-        if (ctx.Items.TryGetValue("TenantId", out var raw) && raw is string s && Guid.TryParse(s, out var g))
-            return g;
-        return Guid.Empty;
+        // The value is the realm SLUG (e.g. "system", "acme"), the same
+        // string Marten uses as the tenant id — NOT a Guid. Earlier code
+        // tried to parse this to Guid and fell back to Guid.Empty, which
+        // collapsed every realm's rate-limit bucket into one shared
+        // counter (manual-smoke bug #28). The endpoint already runs in
+        // the tenant-scoped pipeline, so an empty / missing TenantId
+        // here is degenerate; the "(unresolved)" fallback keeps the
+        // rate-limiter alive but the log line surfaces it.
+        if (ctx.Items.TryGetValue("TenantId", out var raw) && raw is string s && !string.IsNullOrEmpty(s))
+            return s;
+        return "(unresolved)";
     }
 
     private static void LogRejected(Serilog.ILogger logger, string ip, string? clientName, DcrRejectionReason reason)

@@ -8,7 +8,7 @@ namespace Cocoar.Auth.Tests.Unit.OAuth.Dcr;
 /// </summary>
 public class DcrRateLimiterTests
 {
-    private static readonly Guid RealmId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private const string RealmId = "system";
 
     [Fact]
     public void First_request_is_allowed()
@@ -58,7 +58,7 @@ public class DcrRateLimiterTests
     public void Per_realm_limit_isolates_different_realms()
     {
         var sut = new DcrRateLimiter();
-        var realm2 = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var realm2 = "tenant-acme";
 
         for (var n = 0; n < 10; n++)
             sut.TryConsume($"10.0.0.{n}", RealmId, 5, 10);
