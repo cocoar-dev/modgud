@@ -100,13 +100,11 @@ onboarding. First trigger is `cocoar-policy` wanting
 (which shares the word "register" but is a totally different
 concept and shipped 2026-05-12).
 
-**Status:** v1 design locked 2026-05-12 (sharpened after external
-review same day, codebase-reality-checked same day). **Gated on a
-prerequisite:** the OAuth consent UI is missing from the SPA (1-2d
-to build), without which the `[unverified]` marker has no screen
-to live on. **End-to-end 9-10 days** (1-2d prereq + 7-8d DCR v1).
-MCP-flavoured scope: public PKCE only, triple opt-in (realm master
-toggle + per-`OAuthApi.AllowDynamicRegistration` +
+**Status:** v1 design locked 2026-05-12, **ready to implement
+(7-8 days)** — consent-UI prereq shipped same day (commit
+`9090007`), nothing blocking. MCP-flavoured scope: public PKCE
+only, triple opt-in (realm master toggle +
+per-`OAuthApi.AllowDynamicRegistration` +
 per-`OAuthScope.AllowDynamicRegistrationClients`),
 HTTPS-resource-indicator mandatory, `client_name`-spoofing rules
 (NFKC + Latin-1 whitelist + realm-configured reserved-names

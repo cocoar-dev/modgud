@@ -1,10 +1,11 @@
 # Dynamic Client Registration (RFC 7591) for MCP clients
 
-> **Status:** v1 design locked in **but gated on a prerequisite**:
-> the OAuth consent UI does not currently exist in the frontend
-> (see Prereqs below). Captured 2026-05-07, design consolidated
-> 2026-05-12, sharpened after external review same day,
-> codebase-reality-check 2026-05-12.
+> **Status:** v1 design locked in, **ready to implement (7-8 days)**.
+> The consent-UI prerequisite — flagged during the codebase-reality
+> check — was built and shipped 2026-05-12 (commit `9090007`), so
+> nothing is blocking anymore. Captured 2026-05-07, design
+> consolidated 2026-05-12, sharpened after external review same
+> day, codebase-reality-check + prereq-shipped 2026-05-12.
 > **Why:** The MCP authorization spec (revision 2025-06-18) expects
 > a generic AI agent (Claude Code, Cursor, Continue, claude.ai,
 > hosted IDEs, …) to be able to attach to a public-internet MCP
@@ -19,15 +20,14 @@
 > + refresh-token rotation: all live. Self-Registration
 > infrastructure (RealmSettings tab surface, per-realm settings
 > doc) shipped 2026-05-12 — DCR plugs into the same shape.
-> **Missing prereq (BLOCKER):** OAuth consent UI does not exist in
-> the SPA. Backend creates a `ConsentTicket` and redirects to
-> `/consent?ticket=X`, but there is no Vue route or view to render
-> that page. Today all OAuth clients implicitly run on
-> `ConsentType=implicit`. The `[unverified]` marker — the
-> strongest brand-impersonation defence in this design — has no
-> screen to live on until the consent UI is built. Estimated 1-2d
-> on top of the DCR effort. See "Prerequisite: build the consent
-> UI" section below for scope.
+> **Consent UI prereq:** ✅ shipped 2026-05-12. New
+> `ConsentView.vue` at `/consent?ticket=X` renders the
+> server-side-ticket flow's request, both approve and deny verified
+> end-to-end against `demo-mobile` (the only existing
+> `ConsentType=explicit` client). The `[unverified]`-marker work
+> for DCR clients now just adds a conditional render branch + a
+> small backend response-shape extension; see the Consent screen
+> section below.
 
 ## What DCR is — and what it isn't
 
@@ -152,7 +152,7 @@ For DCR clients (`IsDynamicallyRegistered=true`), the consent page renders:
 
 This is the user-facing safety net. DCR creates a stub; the actual code-grab attempt happens at `/connect/authorize`, and the consent decision is the gate. Brand-impersonation defense is the warning text PLUS the reserved-names rejection at registration time — neither alone is sufficient.
 
-**The consent UI itself does not currently exist in the SPA** — see [Prerequisite: build the consent UI](#prerequisite-build-the-consent-ui) below. The `[unverified]` marker is part of that prerequisite work, not DCR-specific frontend.
+The consent UI itself was built and shipped 2026-05-12 (commit `9090007`) — `ConsentView.vue` at `/consent?ticket=X` renders the existing server-side-ticket flow's request. The DCR-specific work here is just the `[unverified]` conditional + a small backend response-shape extension; see [DCR-specific backend touch-up for the consent screen](#dcr-specific-backend-touch-up-for-the-consent-screen) below.
 
 ### Auto-cleanup
 
@@ -199,80 +199,36 @@ The first wave of tests should verify both: the endpoint is reachable AND it sho
 | Custom URI schemes (`com.example.app://callback`) | RFC 8252 §7.1 lists them as legitimate for native apps, but they're hard to validate (no DNS anchor). Desktop MCP clients today predominantly use loopback HTTP. | Add a per-realm allow-list of reverse-domain schemes (regex `[a-z]+(\.[a-z0-9-]+){1,}://`). Trigger: first concrete vendor request. |
 | ICU `uspoof`-based confusables detection | NFKC + Latin-1 whitelist covers the obvious attacks; full confusables-detection adds a heavier dependency. | Add when v1 telemetry shows real-world spoofing attempts that slip past the basic whitelist. |
 
-## Prerequisite: build the consent UI
+## DCR-specific backend touch-up for the consent screen
 
-The backend has the full server-side-ticket consent flow shipped
-(`ConsentTicket` aggregate, `AuthorizationEndpoints` redirects to
-`/consent?ticket=X`, `ConsentEndpoints.GetConsentInfoAsync` /
-`SubmitConsentAsync`). **The Vue SPA has no `/consent` route and
-no view to render the ticket.** Today's OAuth clients run on
-`ConsentType=implicit` so the gap is invisible; flipping a client
-to `explicit` produces a 404.
+The shipped consent flow surfaces `ClientName` + `RequestedScopes`
+already. For DCR we add one field to `ConsentInfoResponse`:
 
-The DCR `[unverified]` marker lives on this screen, so the screen
-has to exist before DCR can ship the marker. The work itself is
-not DCR-specific — every OAuth client with explicit consent gets
-it for free.
+- `IsDynamicallyRegistered: bool` — resolved from the
+  Application-properties dict key
+  `cocoar:dcr:is_dynamically_registered`
 
-### Scope of the prerequisite
-
-- New Vue route `/consent` (public — no auth-gate, the
-  `RequireAuthorization()` is on the backend `GET /connect/consent`
-  endpoint; the route just renders, the API call carries the
-  session cookie).
-- `ConsentView.vue`: reads `?ticket=<guid>` from the URL, calls
-  `GET /connect/consent?ticket=…`, renders:
-  - Client name (with `[unverified]` marker + warning text when
-    `IsDynamicallyRegistered=true`)
-  - Realm display name
-  - Requested scopes as cards: scope display-name + description
-  - Approve / Deny buttons → `POST /connect/consent`
-- Approve handler reads the response's `redirectUrl` and does a
-  full-page `window.location.assign` (the backend rebuilds the
-  OpenID redirect from the locked-in query string in the ticket).
-- Deny handler same shape but `approved: false` → backend returns
-  the OAuth error redirect.
-- Response-shape mapping: `ConsentEndpoints.cs` already returns
-  `ClientName` + `RequestedScopes` (with `Name`, `DisplayName`,
-  `Description`, `Emphasize`, `Required`) — the SPA needs a
-  matching TS interface in `models/consent.ts`.
-
-### Backend touch-up needed
-
-The current `GetConsentInfoAsync` response shape doesn't surface
-the `IsDynamicallyRegistered` flag. One field to add to
-`ConsentInfoResponse`:
-
-- `IsDynamicallyRegistered: bool` — resolved from
-  `application.Properties["cocoar:dcr:is_dynamically_registered"]`
-
-### Estimated effort
-
-1-2 days for the consent UI + the small backend response-shape
-extension. Lands in this dev-notes folder as a separate-but-linked
-sub-project once DCR work picks up.
+The SPA's `ConsentView.vue` then renders the `[unverified]` marker
++ warning text conditionally on that flag. Small change, included
+in the DCR effort estimate below.
 
 ## Effort
-
-**Prerequisite (consent UI):** 1-2d
-
-**DCR v1 itself:**
 
 - OpenIddict endpoint enablement + custom validation handler (incl. client_name spoofing rules + reserved-names check + redirect-uri policy): 1d
 - Realm-Settings tab + OAuthApi-flag + OAuthScope-flag + Reserved-names admin UI: 1d
 - ResourceIndicatorHandler extension for AllowDcr-flag check (or sibling handler): 0.5d
 - Rate-limit + audit-log event types (5 new): 0.5d
 - Application-properties DCR keys + last-used tracking + token-lifetime overrides via Settings dict: 0.5d
-- Consent-screen `[unverified]` marker (depends on prereq above being done): 0.25d
+- Consent-screen `[unverified]` marker (conditional render branch + small backend response-shape extension): 0.25d
 - GC background service: 0.5d
 - Admin UI (OAuth-Clients-Grid filter + "Registration Info" tab + Auth-Log event filters): 1d
 - Per-tenant DCR-endpoint 404 filter (OpenIddict mounts `/connect/register` globally): 0.5d
 - Tests + docs: 1d
 
-**Total: 7-8 days** for DCR v1, **plus 1-2d** for the consent-UI
-prerequisite → 9-10 days realistic end-to-end.
+**Total: 7-8 days** for DCR v1. Consent-UI prereq is shipped — no
+extra time needed.
 
-(Up from 5d original estimate after absorbing: external-review feedback (scope-containment, name-spoofing, reserved-names, IPv6-loopback, tighter TTLs, expanded audit events), codebase-reality-check (Properties-dict storage instead of new fields, ResourceIndicatorHandler extension, per-tenant endpoint filter), and the consent-UI prerequisite.)
+(Up from 5d original estimate after absorbing: external-review feedback (scope-containment, name-spoofing, reserved-names, IPv6-loopback, tighter TTLs, expanded audit events), and codebase-reality-check (Properties-dict storage instead of new fields, ResourceIndicatorHandler extension, per-tenant endpoint filter). The 1-2d consent-UI prereq was eliminated by shipping it ahead of DCR.)
 
 ## Risks accepted in v1 design
 
