@@ -3,7 +3,6 @@ using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Authentication.RealmSettings;
 using Cocoar.Auth.Domain.Realms;
 using Microsoft.AspNetCore.Mvc;
-using Serilog.Context;
 
 namespace Cocoar.Auth.Api.Features.Auth.OAuth;
 
@@ -132,7 +131,8 @@ public static class DcrRegistrationEndpoints
         logger
             .ForContext("IP", sourceIp)
             .Information(
-                "Auth: DCR client registered ClientId={ClientId} Name={ClientName} Realm={Realm}",
+                "Auth: " + DcrAuditEvents.ClientRegistered +
+                " ClientId={ClientId} Name={ClientName} Realm={Realm}",
                 created.ClientId, created.DisplayName ?? "(none)", realmId);
 
         // ───────── Response ─────────
@@ -183,7 +183,8 @@ public static class DcrRegistrationEndpoints
         logger
             .ForContext("IP", ip)
             .Warning(
-                "Auth: DCR registration rejected Reason={Reason} ClientName={ClientName}",
+                "Auth: " + DcrAuditEvents.RegistrationRejected +
+                " Reason={Reason} ClientName={ClientName}",
                 reason, clientName ?? "(none)");
     }
 
@@ -191,6 +192,6 @@ public static class DcrRegistrationEndpoints
     {
         logger
             .ForContext("IP", ip)
-            .Warning("Auth: DCR rate-limit triggered Reason={Reason}", reason);
+            .Warning("Auth: " + DcrAuditEvents.RateLimitTriggered + " Reason={Reason}", reason);
     }
 }
