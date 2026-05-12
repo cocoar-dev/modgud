@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, onUnmounted } from 'vue'
+import { computed, ref, onMounted, watch, onUnmounted } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
-import { CoarButton } from '@cocoar/vue-ui'
+import { CoarButton, CoarCheckbox } from '@cocoar/vue-ui'
 
 const { t, language } = useI18n()
 const http = useHttpClient('/api/admin/auth-log')
@@ -27,7 +27,17 @@ interface AuthLogEntry {
 
 const entries = ref<AuthLogEntry[]>([])
 const loading = ref(true)
+const dcrOnly = ref(false)
 let pollInterval: ReturnType<typeof setInterval> | null = null
+
+// DCR audit lines all carry the "DCR " prefix on the Message column
+// (see Cocoar.Auth.Application/Dcr/DcrAuditEvents.cs for the canonical
+// vocabulary). Filtering by prefix avoids needing a separate
+// category-column migration on the AuthLogDocument.
+const filteredEntries = computed(() =>
+  dcrOnly.value
+    ? entries.value.filter((e) => e.Message?.startsWith('DCR '))
+    : entries.value)
 
 async function loadEntries() {
   try {
@@ -58,7 +68,7 @@ onUnmounted(() => {
 })
 
 const gridBuilder = CoarGridBuilder.create<AuthLogEntry>()
-  .rowDataRef(entries)
+  .rowDataRef(filteredEntries)
   .searchHighlight()
   .rowClassRules({
     'auth-log-warning': (p) => p.data?.Level === 'Warning',
@@ -85,6 +95,9 @@ const gridBuilder = CoarGridBuilder.create<AuthLogEntry>()
       elevated
     >
       <template #toolbar-right>
+        <CoarCheckbox v-model="dcrOnly"
+          :label="t('admin.authLog.dcrOnly', {}, 'DCR events only')"
+          :title="t('admin.authLog.dcrOnly.help', {}, 'Show only events from the Dynamic Client Registration endpoint (registration, rate-limit, GC). Matches any audit line beginning with the DCR prefix.')" />
         <CoarButton size="s" variant="ghost" @click="loadEntries">
           {{ t('admin.authLog.refresh', {}, 'Refresh') }}
         </CoarButton>
