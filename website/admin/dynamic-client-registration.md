@@ -36,6 +36,16 @@ Anonymous registration is gated **three times**. All three must be on for a DCR-
 
 The master toggle just turns the registration endpoint on. The per-API flag controls which resource servers a DCR client can target with `resource=`. The per-scope flag controls which scopes a DCR client can ever request. A DCR-registered client that asks for `tenant:admin:*` and a non-opted-in API is rejected at the token endpoint with `invalid_target`.
 
+### How the per-Scope flag interacts with app-scoped scopes
+
+Most scopes you create in Cocoar.Auth are **app-scoped** — they belong to one [Application](./applications) (`Scope.AppId` is set). Non-DCR clients are restricted to scopes whose `AppId` matches one of their own linked Apps. **DCR clients have no `AppId`** by design (they're realm-wide public PKCE clients), so the per-Scope `Allow DCR Clients` flag replaces the app-link check for them:
+
+- **Global scopes** (`AppId = null` — the OIDC standards `openid`, `email`, `profile`, … plus any cross-app scope you create): always reachable by DCR clients.
+- **App-scoped scope with `Allow DCR Clients = true`**: reachable by DCR clients. The realm-admin has explicitly opted this scope in for anonymous-registrant access.
+- **App-scoped scope with `Allow DCR Clients = false`** (default): `/connect/authorize` rejects the request with `invalid_scope` before the user ever sees the consent screen. The agent gets a clear error description.
+
+The combined effect: enabling DCR safely requires you to walk through your existing scopes once and decide which ones agents are allowed to ask for. Until you tick `Allow DCR Clients` on at least one app-scoped scope (or create a fresh global scope), DCR clients can only request the OIDC standard scopes.
+
 ## Enabling DCR for a realm
 
 1. **Realm Settings → Dynamic Client Registration** → enable.

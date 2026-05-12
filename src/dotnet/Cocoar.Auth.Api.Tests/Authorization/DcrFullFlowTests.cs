@@ -9,6 +9,8 @@ using Cocoar.Auth.Application.DTOs.OAuth;
 using Cocoar.Auth.Application.DTOs.RealmSettings;
 using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Authentication.RealmSettings;
+using Cocoar.Auth.Authorization.Apps;
+using Cocoar.Auth.Authorization.Events;
 using Cocoar.Auth.Domain.OAuth.Apis;
 using Cocoar.Auth.Domain.OAuth.Applications;
 using Marten;
@@ -104,6 +106,69 @@ public class DcrFullFlowTests : IntegrationTestBase
             tokenResources: Array.Empty<string>());
 
         await AssertInvalidTargetAsync(tokenResp);
+    }
+
+    [Fact]
+    public async Task App_scoped_scope_with_AllowDcrClients_true_passes_authorize_for_DCR_client()
+    {
+        // The fix for manual-smoke bug #29: an app-scoped scope opted in
+        // via AllowDynamicRegistrationClients=true is reachable by a DCR
+        // client even though DCR clients have no AppIds of their own.
+        await SeedAsync();
+        var app = await CreateAppAsync($"dcr-app-{Guid.NewGuid():N}", "DCR Test App");
+        var apiName = "https://dcr-appscoped-test.example/";
+        await CreateAppScopedApiAsync(apiName, app.Id, allowDcr: true);
+        var appScopedScope = $"dcr-appscoped-scope-{Guid.NewGuid():N}";
+        await CreateAppScopedScopeAsync(appScopedScope, app.Id, apiName, allowDcrClients: true);
+
+        var clientId = await RegisterDcrClientAsync(scope: $"openid {appScopedScope}");
+
+        var (accessToken, _) = await DriveDcrAuthCodeFlowAsync(
+            clientId: clientId,
+            scope: $"openid {appScopedScope}",
+            resource: apiName);
+
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
+        Assert.Contains(apiName, jwt.Audiences);
+    }
+
+    [Fact]
+    public async Task App_scoped_scope_without_AllowDcrClients_rejects_authorize_for_DCR_client()
+    {
+        // Negative twin: the same setup but AllowDynamicRegistrationClients=false
+        // on the scope. /connect/authorize must short-circuit with
+        // invalid_scope before the user ever lands on the consent screen.
+        await SeedAsync();
+        var app = await CreateAppAsync($"dcr-app-{Guid.NewGuid():N}", "DCR Test App (negative)");
+        var apiName = "https://dcr-appscoped-negative.example/";
+        await CreateAppScopedApiAsync(apiName, app.Id, allowDcr: true);
+        var appScopedScope = $"dcr-appscoped-scope-{Guid.NewGuid():N}";
+        await CreateAppScopedScopeAsync(appScopedScope, app.Id, apiName, allowDcrClients: false);
+
+        var clientId = await RegisterDcrClientAsync(scope: $"openid {appScopedScope}");
+
+        var verifier = GeneratePkceVerifier();
+        var challenge = GeneratePkceS256Challenge(verifier);
+        var cookieClient = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
+
+        var authorizeUri = "/connect/authorize?" + string.Join("&", new[]
+        {
+            "response_type=code",
+            $"client_id={Uri.EscapeDataString(clientId)}",
+            $"redirect_uri={Uri.EscapeDataString(RedirectUri)}",
+            $"scope=openid+{Uri.EscapeDataString(appScopedScope)}",
+            "state=neg",
+            $"code_challenge={challenge}",
+            "code_challenge_method=S256",
+            $"resource={Uri.EscapeDataString(apiName)}",
+        });
+
+        var resp = await cookieClient.GetAsync(authorizeUri, TestContext.Current.CancellationToken);
+        // The endpoint redirects back to redirect_uri with error=invalid_scope.
+        AssertRedirect(resp);
+        var loc = resp.Headers.Location!.ToString();
+        Assert.Contains("error=invalid_scope", loc);
+        Assert.Contains("error_description=", loc);
     }
 
     [Fact]
@@ -377,6 +442,54 @@ public class DcrFullFlowTests : IntegrationTestBase
 
     private static string DescribeErrors(IEnumerable<ErrorOr.Error> errors) =>
         string.Join(", ", errors.Select(e => $"{e.Code}: {e.Description}"));
+
+    private async Task<App> CreateAppAsync(string slug, string displayName)
+    {
+        using var scope = NewSystemTenantScope();
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+
+        var id = Guid.NewGuid();
+        session.Events.StartStream<App>(id, new AppCreatedEvent(
+            Id: id,
+            Slug: slug,
+            DisplayName: displayName,
+            Description: null,
+            Permissions: new List<AppPermission>(),
+            IsSystem: false));
+        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var loaded = await session.LoadAsync<App>(id, TestContext.Current.CancellationToken);
+        return loaded!;
+    }
+
+    private async Task CreateAppScopedApiAsync(string name, Guid appId, bool allowDcr)
+    {
+        using var scope = NewSystemTenantScope();
+        var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
+        var result = await oauthAdmin.CreateApiAsync(new CreateOAuthApiDto
+        {
+            Name = name,
+            DisplayName = name,
+            AppId = new BuildingBlocks.Helper.ShortGuid(appId).ToString(),
+            AllowDynamicRegistration = allowDcr,
+        }, TestContext.Current.CancellationToken);
+        Assert.False(result.IsError, DescribeErrors(result.Errors));
+    }
+
+    private async Task CreateAppScopedScopeAsync(string name, Guid appId, string resource, bool allowDcrClients)
+    {
+        using var scope = NewSystemTenantScope();
+        var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
+        var result = await oauthAdmin.CreateScopeAsync(new CreateOAuthScopeDto
+        {
+            Name = name,
+            DisplayName = name,
+            Resources = new List<string> { resource },
+            AppId = new BuildingBlocks.Helper.ShortGuid(appId).ToString(),
+            AllowDynamicRegistrationClients = allowDcrClients,
+        }, TestContext.Current.CancellationToken);
+        Assert.False(result.IsError, DescribeErrors(result.Errors));
+    }
 
     // ─── PKCE helpers (identical to UserInfoPerAudienceTests') ───────────
 

@@ -966,19 +966,51 @@ public static class AuthorizationEndpoints
         var appScoped = scopes.Where(s => s.AppId.HasValue).ToList();
         if (appScoped.Count == 0) return null;
 
-        // App-scoped scopes are present — we must know which Apps the
-        // calling client may target (the n:m link from Stufe 1).
-        var clientAppIds = new HashSet<Guid>();
+        // Resolve the calling client. We need it twice: once for the
+        // app-link set, once for the IsDynamicallyRegistered flag.
+        OAuthApplicationState? client = null;
         if (!string.IsNullOrEmpty(clientId))
         {
-            var client = await session.Query<OAuthApplicationState>()
+            client = await session.Query<OAuthApplicationState>()
                 .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted);
-            if (client is not null)
-                foreach (var id in client.AppIds) clientAppIds.Add(id);
         }
 
-        // A scope passes if its App is in the client's App set. (Global
-        // scopes — AppId == null — were filtered out above.)
+        // DCR clients have no AppIds by design — they're realm-wide
+        // public PKCE clients minted via /connect/register. The
+        // triple-opt-in design uses per-scope `AllowDynamicRegistrationClients`
+        // as the boundary instead of the app-link check: an app-scoped
+        // scope is reachable by a DCR client iff the realm-admin opted
+        // it in via that flag. The audience-containment handler
+        // additionally requires `resource=` to point at an opted-in
+        // OAuthApi, so the security primitive holds without needing
+        // the client to share an App with the scope.
+        var isDcrClient = client is not null
+            && ReadDcrFlag(client.Properties, OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered);
+
+        if (isDcrClient)
+        {
+            var notOptedIn = appScoped.FirstOrDefault(s =>
+                !ReadDcrFlag(s.Properties, ScopePropertyKeys.AllowDynamicRegistrationClients));
+            if (notOptedIn is not null)
+            {
+                return Results.Forbid(
+                    new AuthenticationProperties(new Dictionary<string, string?>
+                    {
+                        [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidScope,
+                        [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] =
+                            $"Scope '{notOptedIn.Name}' is not opted in for Dynamic Client Registration clients. " +
+                            "Ask the realm admin to enable AllowDynamicRegistrationClients on the scope, " +
+                            "or use a global (cross-app) scope.",
+                    }),
+                    new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+            }
+            return null;
+        }
+
+        // Non-DCR client: app-scoped scope must intersect the client's
+        // own App set. (Global scopes — AppId == null — were filtered
+        // out above.)
+        var clientAppIds = client?.AppIds.ToHashSet() ?? new HashSet<Guid>();
         var bad = appScoped.FirstOrDefault(s => !clientAppIds.Contains(s.AppId!.Value));
         if (bad is not null)
         {
@@ -995,6 +1027,21 @@ public static class AuthorizationEndpoints
         }
 
         return null;
+    }
+
+    /// <summary>Reads a cocoar:* boolean from a Marten-serialised
+    /// Properties dict. The value may come back as a plain bool
+    /// (Newtonsoft default) OR a JsonElement depending on the
+    /// serializer the host happens to use — both cases handled.</summary>
+    private static bool ReadDcrFlag(IDictionary<string, object?> props, string key)
+    {
+        if (!props.TryGetValue(key, out var raw) || raw is null) return false;
+        return raw switch
+        {
+            bool b => b,
+            System.Text.Json.JsonElement el when el.ValueKind is System.Text.Json.JsonValueKind.True => true,
+            _ => false,
+        };
     }
 }
 
