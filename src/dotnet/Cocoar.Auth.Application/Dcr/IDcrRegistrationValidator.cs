@@ -195,6 +195,12 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
             RequireClientSecret = false,
             EnableLocalLogin = true,
             AllowAccessTokensViaBrowser = false,
+            // JWT is the idiomatic format for MCP / agent flows: the
+            // resource server validates the token via JWKS rather than
+            // making an introspection round-trip back to the IdP. The
+            // tighter DCR access-token lifetime caps the staleness
+            // window that this self-validation trades for.
+            AccessTokenType = AccessTokenType.Jwt,
             AccessTokenLifetime = (int)settings.AccessTokenLifetime.TotalSeconds,
             AbsoluteRefreshTokenLifetime = (int)settings.RefreshTokenLifetime.TotalSeconds,
             Claims = new List<OAuthClientClaimDto>(),

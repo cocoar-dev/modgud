@@ -74,10 +74,17 @@ public static class ConsentEndpoints
         // for one property and stays in the tenant-scoped session.
         var state = await session.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(x => x.ClientId == record.ClientId && !x.IsDeleted);
+        // Marten/Newtonsoft roundtrip: booleans may come back as either
+        // a JsonElement (System.Text.Json path) or a plain bool
+        // (Newtonsoft auto-conversion); handle both.
         var isDcr = state is not null
             && state.Properties.TryGetValue(OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered, out var raw)
-            && raw is JsonElement el
-            && el.ValueKind is JsonValueKind.True;
+            && raw switch
+            {
+                bool b => b,
+                JsonElement el when el.ValueKind is JsonValueKind.True => true,
+                _ => false,
+            };
 
         var scopeInfos = new List<ConsentScopeInfo>();
         foreach (var scopeName in record.RequestedScopes)

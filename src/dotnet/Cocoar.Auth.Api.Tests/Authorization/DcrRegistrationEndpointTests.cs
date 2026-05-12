@@ -205,11 +205,16 @@ public class DcrRegistrationEndpointTests : IntegrationTestBase
             };
 
         var settingsService = scope.ServiceProvider.GetRequiredService<IRealmSettingsService>();
+        // Rate limits raised for tests — see DcrFullFlowTests for the
+        // rationale (singleton DcrRateLimiter state survives the shared
+        // SharedPostgresFixture).
         await settingsService.PatchAsync(new UpdateRealmSettingsDto
         {
             Dcr = new UpdateDcrSettingsDto
             {
                 Enabled = true,
+                PerIpRateLimitPerHour = 10_000,
+                PerRealmRateLimitPerDay = 10_000,
                 ReservedNames = reservedNames,
             },
         }, TestContext.Current.CancellationToken);
