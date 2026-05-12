@@ -42,6 +42,7 @@ interface FormState {
   ShowInDiscoveryDocument: boolean
   /** Empty string = "global", otherwise an App.Id. */
   AppId: string
+  AllowDynamicRegistrationClients: boolean
 }
 
 function emptyForm(): FormState {
@@ -56,6 +57,7 @@ function emptyForm(): FormState {
     Emphasize: false,
     ShowInDiscoveryDocument: true,
     AppId: '',
+    AllowDynamicRegistrationClients: false,
   }
 }
 
@@ -73,6 +75,7 @@ function fromDto(dto: OAuthScopeDto): FormState {
     Emphasize: dto.Emphasize,
     ShowInDiscoveryDocument: dto.ShowInDiscoveryDocument,
     AppId: dto.AppId ?? '',
+    AllowDynamicRegistrationClients: dto.AllowDynamicRegistrationClients,
   }
 }
 
@@ -124,6 +127,7 @@ async function save() {
         Emphasize: form.value.Emphasize,
         ShowInDiscoveryDocument: form.value.ShowInDiscoveryDocument,
         AppId: form.value.AppId || null,
+        AllowDynamicRegistrationClients: form.value.AllowDynamicRegistrationClients,
       })
     } else {
       await store.update(props.id, {
@@ -137,6 +141,7 @@ async function save() {
         ShowInDiscoveryDocument: form.value.ShowInDiscoveryDocument,
         // Always send — empty string = make global, guid = assign.
         AppId: form.value.AppId,
+        AllowDynamicRegistrationClients: form.value.AllowDynamicRegistrationClients,
       })
     }
     props.close()
@@ -189,6 +194,10 @@ async function save() {
         <CoarCheckbox v-model="form.Required" :label="t('admin.oauthScopes.required', {}, 'Pflicht')" />
         <CoarCheckbox v-model="form.Emphasize" :label="t('admin.oauthScopes.emphasize', {}, 'Hervorheben')" />
         <CoarCheckbox v-model="form.ShowInDiscoveryDocument" :label="t('admin.oauthScopes.showInDiscovery', {}, 'In Discovery anzeigen')" />
+        <CoarCheckbox
+          v-model="form.AllowDynamicRegistrationClients"
+          :label="t('admin.oauthScopes.allowDcr', {}, 'Allow DCR clients to request this scope')"
+          :title="t('admin.oauthScopes.allowDcr.help', {}, 'Capability containment for Dynamic Client Registration. Off by default: DCR-registered clients cannot request this scope unless explicitly allowed here.')" />
       </div>
       <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
     </div>

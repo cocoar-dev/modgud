@@ -146,6 +146,13 @@ export interface OAuthScopeDto {
    * dimmed row treatment in the admin grid.
    */
   IsStandard: boolean
+  /**
+   * Per-scope opt-in for Dynamic Client Registration (RFC 7591). When
+   * `true`, clients minted via DCR can request this scope; default `false`.
+   * Capability-containment half of the triple-opt-in (master toggle +
+   * per-Api flag + per-Scope flag).
+   */
+  AllowDynamicRegistrationClients: boolean
 }
 
 export interface CreateOAuthScopeDto {
@@ -160,6 +167,8 @@ export interface CreateOAuthScopeDto {
   UserClaims?: string[]
   /** App.Id (Guid string). Null/undefined = global scope. */
   AppId?: string | null
+  /** Per-scope DCR opt-in. Default `false`. */
+  AllowDynamicRegistrationClients?: boolean
 }
 
 export interface OAuthScopeListDto {
@@ -178,6 +187,8 @@ export interface UpdateOAuthScopeDto {
   UserClaims?: string[] | null
   /** PATCH semantics: undefined/missing = no change, "" = make global, "<guid>" = assign. */
   AppId?: string | null
+  /** PATCH semantics: null = no change. */
+  AllowDynamicRegistrationClients?: boolean | null
 }
 
 // ─── APIs / Resources ──────────────────────────────────────────────────────
@@ -216,6 +227,12 @@ export interface OAuthApiDto {
    * the API already has its 1:1 scope wired up.
    */
   HasImplicitScope: boolean
+  /**
+   * Per-API opt-in for Dynamic Client Registration (RFC 7591). When
+   * `true`, DCR-registered clients can target this RS via `resource=`.
+   * Resource-target-containment half of the triple-opt-in.
+   */
+  AllowDynamicRegistration: boolean
 }
 
 export interface CreateOAuthApiDto {
@@ -233,6 +250,8 @@ export interface CreateOAuthApiDto {
    * catalog at create time. Must be empty/absent when AppId is null.
    */
   PermissionIds?: string[]
+  /** Per-API DCR opt-in. Default `false`. */
+  AllowDynamicRegistration?: boolean
 }
 
 export interface UpdateOAuthApiDto {
@@ -252,6 +271,8 @@ export interface UpdateOAuthApiDto {
    * [...] = replace. Validated against the linked App's catalog.
    */
   PermissionIds?: string[] | null
+  /** PATCH semantics: null = no change. */
+  AllowDynamicRegistration?: boolean | null
 }
 
 export interface OAuthApiListDto {

@@ -56,6 +56,7 @@ interface FormState {
   AppId: string
   /** Subset of the linked App's catalog (AppPermission.Id values). */
   PermissionIds: Set<string>
+  AllowDynamicRegistration: boolean
 }
 
 function emptyForm(): FormState {
@@ -68,6 +69,7 @@ function emptyForm(): FormState {
     Enabled: true,
     AppId: '',
     PermissionIds: new Set<string>(),
+    AllowDynamicRegistration: false,
   }
 }
 
@@ -84,6 +86,7 @@ function fromDto(dto: OAuthApiDto): FormState {
     Enabled: dto.Enabled,
     AppId: dto.AppId ?? '',
     PermissionIds: new Set(dto.PermissionIds ?? []),
+    AllowDynamicRegistration: dto.AllowDynamicRegistration,
   }
 }
 
@@ -156,6 +159,7 @@ async function save() {
         Enabled: form.value.Enabled,
         AppId: form.value.AppId || null,
         PermissionIds: form.value.AppId ? Array.from(form.value.PermissionIds) : [],
+        AllowDynamicRegistration: form.value.AllowDynamicRegistration,
       })
       newSecret.value = { value: created.ApiSecret }
       // Switch to read-mode (id known) so the secret panel is visible.
@@ -177,6 +181,7 @@ async function save() {
         // Detaching the App must clear the subset; the backend rejects
         // non-empty PermissionIds without an AppId.
         PermissionIds: form.value.AppId ? Array.from(form.value.PermissionIds) : [],
+        AllowDynamicRegistration: form.value.AllowDynamicRegistration,
       })
       dto.value = updated
       props.close()
@@ -353,8 +358,12 @@ async function createImplicitScope() {
             v-model="form.UserClaims"
             :placeholder="t('admin.oauthApis.userClaim.placeholder', {}, 'email')" />
         </CoarFormField>
-        <div class="mt-1">
+        <div class="mt-1 flex flex-wrap gap-x-6 gap-y-2">
           <CoarCheckbox v-model="form.Enabled" :label="t('common.enabled', {}, 'Aktiviert')" />
+          <CoarCheckbox
+            v-model="form.AllowDynamicRegistration"
+            :label="t('admin.oauthApis.allowDcr', {}, 'Allow DCR clients to target this API')"
+            :title="t('admin.oauthApis.allowDcr.help', {}, 'Resource-target containment for Dynamic Client Registration. Off by default: DCR-registered clients cannot request tokens for this RS unless explicitly allowed here.')" />
         </div>
       </div>
 
