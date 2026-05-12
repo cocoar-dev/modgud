@@ -48,6 +48,14 @@ const APP_HOST_PORT = 14200 // bound port avoids collisions with manual-smoke 42
 const MAILPIT_NAME = 'cocoar-auth-e2e-mailpit'
 const MAILPIT_HTTP_PORT = 18025
 
+// Bootstrap-admin credentials. Override via env vars so a CI matrix
+// can vary them per realm or per branch; specs read the same env vars
+// (`process.env.E2E_ADMIN_USER` / `E2E_ADMIN_PASSWORD`) so seed and
+// login stay in lockstep.
+const E2E_ADMIN_USER = process.env.E2E_ADMIN_USER ?? 'admin'
+const E2E_ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'admin@cocoar-auth.test'
+const E2E_ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'ABC12abc!'
+
 // Project root: walk up from src/frontend-vue/e2e/ to repo root.
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..')
 
@@ -171,13 +179,30 @@ export default async function globalSetup(_config: FullConfig) {
     `${APP_IMAGE}`)
 
   const baseURL = `http://localhost:${APP_HOST_PORT}`
-  console.log(`[e2e] App starting, polling ${baseURL}/api/setup/status ...`)
+  console.log(`[e2e] App starting, polling ${baseURL}/api/health ...`)
   await waitFor(async () => {
     try {
-      const res = await fetch(`${baseURL}/api/setup/status`)
+      const res = await fetch(`${baseURL}/api/health`)
       return res.ok
     } catch { return false }
   }, 60_000, 'App healthy')
+
+  // Post-cutover (C15 reform) there is no anonymous /setup endpoint to
+  // mint the first admin — the recovery CLI is the supported path.
+  // Exec into the live container, run the bootstrap-admin command, and
+  // proceed once the credentials are in place. Idempotent on a fresh
+  // DB; harmless if re-run with a different password (creates a new
+  // admin user with a unique username).
+  console.log(`[e2e] Bootstrapping first admin via recovery CLI ...`)
+  try {
+    docker(`exec ${APP_NAME} dotnet Cocoar.Auth.Api.dll recover bootstrap-admin ` +
+      `--email ${E2E_ADMIN_EMAIL} --username ${E2E_ADMIN_USER} ` +
+      `--firstname E2E --lastname Admin --password "${E2E_ADMIN_PASSWORD}"`)
+  } catch (err) {
+    throw new Error(
+      `[e2e] bootstrap-admin failed. The CLI is invoked inside the app ` +
+      `container; check 'docker logs ${APP_NAME}' for the underlying error. ${err}`)
+  }
 
   // Persist state so specs and teardown can find the rig.
   fs.writeFileSync(STATE_FILE, JSON.stringify({

@@ -19,36 +19,23 @@ import { clearMailpit, extractQueryParam, extractTokenFromHtml, waitForMail } fr
  * cookie + redirect behaviour, and SignalR live updates.
  *
  * Tests run in file-declaration order under workers=1 (set in
- * playwright.config.ts), so they form a sequence: the setup-wizard test
- * creates the admin, downstream tests reuse them.
+ * playwright.config.ts), so they form a sequence. Admin is created
+ * up-front by `global-setup.ts` via the recovery CLI (the anonymous
+ * /setup wizard was removed in the C15 reform), then downstream tests
+ * reuse those credentials.
  */
 
-const ADMIN_USER = 'admin'
-const ADMIN_PASSWORD = 'ABC12abc!'
-const ADMIN_EMAIL = 'admin@cocoar-auth.test'
+const ADMIN_USER = process.env.E2E_ADMIN_USER ?? 'admin'
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'ABC12abc!'
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'admin@cocoar-auth.test'
 
 test.beforeAll(async () => {
   await clearMailpit()
 })
 
-test.describe('§1 First-time setup', () => {
-  test('setup wizard creates the admin and grants realm:admin', async ({ page }) => {
-    await page.goto('/setup')
-    await expect(page.getByText(/Ersteinrichtung|First.time setup/i)).toBeVisible()
-
-    await page.getByRole('textbox', { name: /Benutzername|Username/i }).fill(ADMIN_USER)
-    const passwordFields = page.getByRole('textbox', { name: /Passwort|Password/i })
-    await passwordFields.first().fill(ADMIN_PASSWORD)
-    await passwordFields.last().fill(ADMIN_PASSWORD)
-
-    await page.getByRole('button', { name: /Administrator|Create admin/i }).click()
-
-    // Auto-login → /dashboard. The page may briefly bounce through the
-    // 2FA-grace modal (`/login/secure-setup`); either landing satisfies
-    // the contract.
-    await page.waitForURL((url) => /\/dashboard|\/login\/secure-setup/.test(url.pathname), { timeout: 15_000 })
-
-    // Source-of-truth check: /me returns the seeded permission set.
+test.describe('§1 First admin (bootstrapped pre-test)', () => {
+  test('admin from recovery-CLI bootstrap can log in and carries realm:admin', async ({ page }) => {
+    await apiLogin(page, ADMIN_USER, ADMIN_PASSWORD)
     const me = await page.request.get('/api/account/me')
     expect(me.ok()).toBeTruthy()
     const body = await me.json()
