@@ -69,6 +69,22 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
 
         builder.ConfigureServices(services =>
         {
+            // .NET HostOptions.ShutdownTimeout defaults to 5 seconds. That's
+            // not enough for Wolverine + Marten + Testcontainer to release
+            // Postgres ownership cleanly during teardown — under load on the
+            // CI runner the shutdown can take 8-12s, which manifests as a
+            // flaky `MessageStoreCollection.ReleaseAllOwnershipAsync` /
+            // `OperationCanceledException` in `SharedPostgresFixture.DisposeAsync`
+            // (entire test run reports failure even though every test
+            // passed). 30s is the .NET-host-builder default for ASP.NET
+            // Core apps in current versions; bumping the test host to the
+            // same value eliminates the race without affecting production
+            // shutdown behaviour.
+            services.Configure<HostOptions>(o =>
+            {
+                o.ShutdownTimeout = TimeSpan.FromSeconds(30);
+            });
+
             // Remove EventLog provider explicitly (Windows adds it by default and it causes dispose issues)
             services.RemoveAll<ILoggerProvider>();
 
