@@ -101,13 +101,17 @@ onboarding. First trigger is `cocoar-policy` wanting
 concept and shipped 2026-05-12).
 
 **Status:** v1 design locked 2026-05-12 (sharpened after external
-review same day), ready to implement. **6-7 days**. MCP-flavoured
-scope: public PKCE only, triple opt-in (realm master toggle +
-per-`OAuthApi.AllowDynamicRegistration` + per-`OAuthScope.AllowDynamicRegistrationClients`),
+review same day, codebase-reality-checked same day). **Gated on a
+prerequisite:** the OAuth consent UI is missing from the SPA (1-2d
+to build), without which the `[unverified]` marker has no screen
+to live on. **End-to-end 9-10 days** (1-2d prereq + 7-8d DCR v1).
+MCP-flavoured scope: public PKCE only, triple opt-in (realm master
+toggle + per-`OAuthApi.AllowDynamicRegistration` +
+per-`OAuthScope.AllowDynamicRegistrationClients`),
 HTTPS-resource-indicator mandatory, `client_name`-spoofing rules
 (NFKC + Latin-1 whitelist + realm-configured reserved-names
 blocklist), `[unverified]` marker + warning text on consent,
-tighter token TTLs for DCR clients, refresh-rotation hard-pinned,
+tighter token TTLs for DCR clients, refresh-rotation globally on,
 5 dedicated audit-event types, 90-day GC TTL.
 
 ---

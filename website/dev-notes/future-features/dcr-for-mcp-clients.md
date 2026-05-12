@@ -1,8 +1,10 @@
 # Dynamic Client Registration (RFC 7591) for MCP clients
 
-> **Status:** v1 design locked in, ready to implement. Captured
-> 2026-05-07, design consolidated 2026-05-12, sharpened after
-> external review 2026-05-12.
+> **Status:** v1 design locked in **but gated on a prerequisite**:
+> the OAuth consent UI does not currently exist in the frontend
+> (see Prereqs below). Captured 2026-05-07, design consolidated
+> 2026-05-12, sharpened after external review same day,
+> codebase-reality-check 2026-05-12.
 > **Why:** The MCP authorization spec (revision 2025-06-18) expects
 > a generic AI agent (Claude Code, Cursor, Continue, claude.ai,
 > hosted IDEs, …) to be able to attach to a public-internet MCP
@@ -17,6 +19,15 @@
 > + refresh-token rotation: all live. Self-Registration
 > infrastructure (RealmSettings tab surface, per-realm settings
 > doc) shipped 2026-05-12 — DCR plugs into the same shape.
+> **Missing prereq (BLOCKER):** OAuth consent UI does not exist in
+> the SPA. Backend creates a `ConsentTicket` and redirects to
+> `/consent?ticket=X`, but there is no Vue route or view to render
+> that page. Today all OAuth clients implicitly run on
+> `ConsentType=implicit`. The `[unverified]` marker — the
+> strongest brand-impersonation defence in this design — has no
+> screen to live on until the consent UI is built. Estimated 1-2d
+> on top of the DCR effort. See "Prerequisite: build the consent
+> UI" section below for scope.
 
 ## What DCR is — and what it isn't
 
@@ -73,7 +84,7 @@ The endpoint is plumbing from OpenIddict; the policy layer is custom and rejects
 | `grant_types ⊆ {authorization_code, refresh_token}` | enforced | Hostile registrants can't get client_credentials tokens |
 | `response_types ⊆ {code}` | enforced | Implicit / hybrid flows are out |
 | PKCE mandatory | already global | Code-grab without verifier doesn't reach the token |
-| Refresh-token rotation hard-pinned on | enforced | OpenIddict's `UseRollingRefreshTokens` is non-overridable for DCR clients regardless of realm config |
+| Refresh-token rotation is globally on (Cocoar default) | enforced server-wide | OpenIddict's `EnableRollingRefreshTokens()` is a server-config switch, not per-client. The plan ensures the admin UI does not offer a per-client opt-out for DCR clients — the global default applies. |
 | `redirect_uris` — every URI must be HTTPS, OR `http://localhost`, OR `http://127.0.0.1`, OR `http://[::1]` (IPv6 loopback) | enforced | HTTP only on loopback (RFC 8252 §7.3). HTTPS everywhere else. Custom URI schemes (`com.example.app://`) explicitly rejected in v1 with a clear `invalid_redirect_uri` error message pointing vendors to the allowed forms. |
 | At least one redirect_uri | enforced | Empty list is silent breakage |
 | `client_name` length ≤ 80 chars | enforced | Display-area limit + cuts a spoofing surface |
@@ -100,14 +111,36 @@ Shorter blast radius if a token leaks. Admin can raise per-realm if a vendor's u
 - HTTPS-URI form mandatory (`resource=https://mcp.cocoar.dev`) — strict RFC 8707 §2 conformance, easier client tooling, fewer string-match foot-guns. Bare-name resources are reserved for non-DCR/internal flows.
 - This is the core defence: **DCR-issued client → constrained audience**. A malicious DCR client can't get tokens targeted at unrelated realm APIs.
 
+**Implementation caveat:** the existing `ResourceIndicatorHandler`
+validates that the requested `resource` is one the principal would
+otherwise have been granted via scope-binding — it does **not**
+know about the `AllowDynamicRegistration` flag on `OAuthApi`. The
+DCR work needs to extend it (or add a sibling handler running
+after it) with a second check: if the issuing client carries
+`cocoar:dcr:is_dynamically_registered=true`, the resolved
+`OAuthApi` MUST have `AllowDynamicRegistration=true`, else
+`invalid_target`. The lookup adds one tenant-DB read per
+token-issue for DCR-issued tokens only.
+
 ### Token persistence
 
-`OpenIddictApplication` gets four new fields (Marten JSONB columns, no schema migration):
+OAuth clients in Cocoar.Auth are stored as event-sourced
+aggregates (`OAuthApplicationAggregate` → `OAuthApplicationState`),
+not plain JSONB docs. The DCR metadata uses the existing
+`OAuthApplicationState.Properties` dict — same pattern that
+`ScopePropertyKeys` already uses on the scope side. No new
+aggregate events, no schema migration, no projection rebuild.
 
-- `IsDynamicallyRegistered: bool` — flagged at creation
-- `RegisteredAt: DateTimeOffset`
-- `RegisteredFromIp: string?`
-- `LastUsedAt: DateTimeOffset?` — updated on each token-issue
+New constants in a new `Cocoar.Auth.Domain/OAuth/Applications/ApplicationPropertyKeys.cs`:
+
+- `cocoar:dcr:is_dynamically_registered` (bool)
+- `cocoar:dcr:registered_at` (ISO-8601 string)
+- `cocoar:dcr:registered_from_ip` (string)
+- `cocoar:dcr:last_used_at` (ISO-8601 string, updated on each token-issue)
+
+The registration handler writes these on creation; the
+`/connect/token` handler reads + updates `last_used_at` on each
+successful issue (cheap — already a write path).
 
 ### Consent screen
 
@@ -118,6 +151,8 @@ For DCR clients (`IsDynamicallyRegistered=true`), the consent page renders:
 - All other content unchanged.
 
 This is the user-facing safety net. DCR creates a stub; the actual code-grab attempt happens at `/connect/authorize`, and the consent decision is the gate. Brand-impersonation defense is the warning text PLUS the reserved-names rejection at registration time — neither alone is sufficient.
+
+**The consent UI itself does not currently exist in the SPA** — see [Prerequisite: build the consent UI](#prerequisite-build-the-consent-ui) below. The `[unverified]` marker is part of that prerequisite work, not DCR-specific frontend.
 
 ### Auto-cleanup
 
@@ -164,20 +199,80 @@ The first wave of tests should verify both: the endpoint is reachable AND it sho
 | Custom URI schemes (`com.example.app://callback`) | RFC 8252 §7.1 lists them as legitimate for native apps, but they're hard to validate (no DNS anchor). Desktop MCP clients today predominantly use loopback HTTP. | Add a per-realm allow-list of reverse-domain schemes (regex `[a-z]+(\.[a-z0-9-]+){1,}://`). Trigger: first concrete vendor request. |
 | ICU `uspoof`-based confusables detection | NFKC + Latin-1 whitelist covers the obvious attacks; full confusables-detection adds a heavier dependency. | Add when v1 telemetry shows real-world spoofing attempts that slip past the basic whitelist. |
 
+## Prerequisite: build the consent UI
+
+The backend has the full server-side-ticket consent flow shipped
+(`ConsentTicket` aggregate, `AuthorizationEndpoints` redirects to
+`/consent?ticket=X`, `ConsentEndpoints.GetConsentInfoAsync` /
+`SubmitConsentAsync`). **The Vue SPA has no `/consent` route and
+no view to render the ticket.** Today's OAuth clients run on
+`ConsentType=implicit` so the gap is invisible; flipping a client
+to `explicit` produces a 404.
+
+The DCR `[unverified]` marker lives on this screen, so the screen
+has to exist before DCR can ship the marker. The work itself is
+not DCR-specific — every OAuth client with explicit consent gets
+it for free.
+
+### Scope of the prerequisite
+
+- New Vue route `/consent` (public — no auth-gate, the
+  `RequireAuthorization()` is on the backend `GET /connect/consent`
+  endpoint; the route just renders, the API call carries the
+  session cookie).
+- `ConsentView.vue`: reads `?ticket=<guid>` from the URL, calls
+  `GET /connect/consent?ticket=…`, renders:
+  - Client name (with `[unverified]` marker + warning text when
+    `IsDynamicallyRegistered=true`)
+  - Realm display name
+  - Requested scopes as cards: scope display-name + description
+  - Approve / Deny buttons → `POST /connect/consent`
+- Approve handler reads the response's `redirectUrl` and does a
+  full-page `window.location.assign` (the backend rebuilds the
+  OpenID redirect from the locked-in query string in the ticket).
+- Deny handler same shape but `approved: false` → backend returns
+  the OAuth error redirect.
+- Response-shape mapping: `ConsentEndpoints.cs` already returns
+  `ClientName` + `RequestedScopes` (with `Name`, `DisplayName`,
+  `Description`, `Emphasize`, `Required`) — the SPA needs a
+  matching TS interface in `models/consent.ts`.
+
+### Backend touch-up needed
+
+The current `GetConsentInfoAsync` response shape doesn't surface
+the `IsDynamicallyRegistered` flag. One field to add to
+`ConsentInfoResponse`:
+
+- `IsDynamicallyRegistered: bool` — resolved from
+  `application.Properties["cocoar:dcr:is_dynamically_registered"]`
+
+### Estimated effort
+
+1-2 days for the consent UI + the small backend response-shape
+extension. Lands in this dev-notes folder as a separate-but-linked
+sub-project once DCR work picks up.
+
 ## Effort
 
+**Prerequisite (consent UI):** 1-2d
+
+**DCR v1 itself:**
+
 - OpenIddict endpoint enablement + custom validation handler (incl. client_name spoofing rules + reserved-names check + redirect-uri policy): 1d
-- Realm-Settings tab + OAuthApi-flag + OAuthScope-flag + Resource-binding enforcement + Reserved-names admin UI: 1d
+- Realm-Settings tab + OAuthApi-flag + OAuthScope-flag + Reserved-names admin UI: 1d
+- ResourceIndicatorHandler extension for AllowDcr-flag check (or sibling handler): 0.5d
 - Rate-limit + audit-log event types (5 new): 0.5d
-- Client-doc fields + last-used tracking + token-lifetime overrides: 0.5d
-- Consent-screen `[unverified]` marker + warning text: 0.5d
+- Application-properties DCR keys + last-used tracking + token-lifetime overrides via Settings dict: 0.5d
+- Consent-screen `[unverified]` marker (depends on prereq above being done): 0.25d
 - GC background service: 0.5d
 - Admin UI (OAuth-Clients-Grid filter + "Registration Info" tab + Auth-Log event filters): 1d
+- Per-tenant DCR-endpoint 404 filter (OpenIddict mounts `/connect/register` globally): 0.5d
 - Tests + docs: 1d
 
-**Total: 6-7 days** for v1.
+**Total: 7-8 days** for DCR v1, **plus 1-2d** for the consent-UI
+prerequisite → 9-10 days realistic end-to-end.
 
-(Up from 5d after absorbing the external-review feedback: scope-containment + name-spoofing + reserved-names-list + IPv6-loopback + tighter token TTLs + expanded audit events.)
+(Up from 5d original estimate after absorbing: external-review feedback (scope-containment, name-spoofing, reserved-names, IPv6-loopback, tighter TTLs, expanded audit events), codebase-reality-check (Properties-dict storage instead of new fields, ResourceIndicatorHandler extension, per-tenant endpoint filter), and the consent-UI prerequisite.)
 
 ## Risks accepted in v1 design
 
