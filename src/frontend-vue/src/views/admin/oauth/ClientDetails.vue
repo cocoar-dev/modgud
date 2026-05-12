@@ -13,6 +13,7 @@ import {
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
+import EditableStringList from '@/components/EditableStringList.vue'
 import { useOAuthClientStore } from '@/stores/oauthClient.store'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
@@ -124,11 +125,11 @@ interface FormState {
   Scopes: string[]
   /** JWT (self-contained, parsed by JwtBearer) vs Reference (needs introspection). */
   AccessTokenType: AccessTokenType
-  RedirectUris: string  // newline-separated in form
-  PostLogoutRedirectUris: string
+  RedirectUris: string[]
+  PostLogoutRedirectUris: string[]
   /** Pre-bound to a multi-select; sent as-is to the backend. */
   AllowedGrantTypes: string[]
-  AllowedCorsOrigins: string
+  AllowedCorsOrigins: string[]
   RequireClientSecret: boolean
   RequireConsent: boolean
   AllowRememberConsent: boolean
@@ -169,10 +170,10 @@ function emptyForm(): FormState {
     // call /connect/introspect on every request, which most setups don't
     // wire up. JWT is the safer pick-by-default for the smoke flow.
     AccessTokenType: 'Jwt',
-    RedirectUris: '',
-    PostLogoutRedirectUris: '',
+    RedirectUris: [],
+    PostLogoutRedirectUris: [],
     AllowedGrantTypes: [],
-    AllowedCorsOrigins: '',
+    AllowedCorsOrigins: [],
     RequireClientSecret: true,
     RequireConsent: false,
     AllowRememberConsent: true,
@@ -200,10 +201,10 @@ function fromDto(dto: OAuthClientDto): FormState {
     Enabled: dto.Enabled,
     Scopes: extractScopeNames(dto.Permissions),
     AccessTokenType: (dto.AccessTokenType as AccessTokenType) ?? 'Jwt',
-    RedirectUris: (dto.RedirectUris ?? []).join('\n'),
-    PostLogoutRedirectUris: (dto.PostLogoutRedirectUris ?? []).join('\n'),
+    RedirectUris: [...(dto.RedirectUris ?? [])],
+    PostLogoutRedirectUris: [...(dto.PostLogoutRedirectUris ?? [])],
     AllowedGrantTypes: [...(dto.AllowedGrantTypes ?? [])],
-    AllowedCorsOrigins: (dto.AllowedCorsOrigins ?? []).join('\n'),
+    AllowedCorsOrigins: [...(dto.AllowedCorsOrigins ?? [])],
     RequireClientSecret: dto.RequireClientSecret,
     RequireConsent: dto.RequireConsent,
     AllowRememberConsent: dto.AllowRememberConsent,
@@ -218,9 +219,6 @@ function fromDto(dto: OAuthClientDto): FormState {
   }
 }
 
-function splitLines(input: string): string[] {
-  return input.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean)
-}
 function parseInt(input: string): number | null {
   const trimmed = input.trim()
   if (!trimmed) return null
@@ -300,10 +298,10 @@ function buildCreateDto(): CreateOAuthClientDto {
     AccessTokenType: form.value.AccessTokenType,
     RequireClientSecret: form.value.RequireClientSecret,
     RequireConsent: form.value.RequireConsent,
-    RedirectUris: splitLines(form.value.RedirectUris),
-    PostLogoutRedirectUris: splitLines(form.value.PostLogoutRedirectUris),
+    RedirectUris: [...form.value.RedirectUris],
+    PostLogoutRedirectUris: [...form.value.PostLogoutRedirectUris],
     AllowedGrantTypes: [...form.value.AllowedGrantTypes],
-    AllowedCorsOrigins: splitLines(form.value.AllowedCorsOrigins),
+    AllowedCorsOrigins: [...form.value.AllowedCorsOrigins],
   }
   const secret = form.value.ClientSecret.trim()
   if (secret) dto.ClientSecret = secret
@@ -318,10 +316,10 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     Enabled: form.value.Enabled,
     Scopes: [...form.value.Scopes],
     AccessTokenType: form.value.AccessTokenType,
-    RedirectUris: splitLines(form.value.RedirectUris),
-    PostLogoutRedirectUris: splitLines(form.value.PostLogoutRedirectUris),
+    RedirectUris: [...form.value.RedirectUris],
+    PostLogoutRedirectUris: [...form.value.PostLogoutRedirectUris],
     AllowedGrantTypes: [...form.value.AllowedGrantTypes],
-    AllowedCorsOrigins: splitLines(form.value.AllowedCorsOrigins),
+    AllowedCorsOrigins: [...form.value.AllowedCorsOrigins],
     RequireClientSecret: form.value.RequireClientSecret,
     RequireConsent: form.value.RequireConsent,
     AllowRememberConsent: form.value.AllowRememberConsent,
@@ -493,11 +491,15 @@ async function copySecret() {
 
       <!-- URLs / Grants -->
       <div v-show="!isCreate && activeTab === 'urls'" class="tab-content">
-        <CoarFormField :label="t('admin.oauthClients.redirectUris', {}, 'Redirect-URIs (eine pro Zeile)')">
-          <textarea v-model="form.RedirectUris" rows="4" class="textarea" />
+        <CoarFormField :label="t('admin.oauthClients.redirectUris', {}, 'Redirect-URIs')">
+          <EditableStringList
+            v-model="form.RedirectUris"
+            :placeholder="t('admin.oauthClients.redirectUri.placeholder', {}, 'https://app.example.com/signin-oidc')" />
         </CoarFormField>
-        <CoarFormField :label="t('admin.oauthClients.postLogoutRedirectUris', {}, 'Post-Logout Redirect-URIs (eine pro Zeile)')">
-          <textarea v-model="form.PostLogoutRedirectUris" rows="3" class="textarea" />
+        <CoarFormField :label="t('admin.oauthClients.postLogoutRedirectUris', {}, 'Post-Logout Redirect-URIs')">
+          <EditableStringList
+            v-model="form.PostLogoutRedirectUris"
+            :placeholder="t('admin.oauthClients.postLogoutRedirectUri.placeholder', {}, 'https://app.example.com/signout-callback-oidc')" />
         </CoarFormField>
         <CoarFormField :label="t('admin.oauthClients.accessTokenType', {}, 'Access-Token-Typ')">
           <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" />
@@ -505,8 +507,10 @@ async function copySecret() {
             {{ t('admin.oauthClients.accessTokenType.hint', {}, 'JWT: token is self-contained, the resource server validates it locally via signature. Reference: token is opaque, the RS must call /connect/introspect on every request. JWT is the right pick for AddJwtBearer-based RSes.') }}
           </p>
         </CoarFormField>
-        <CoarFormField :label="t('admin.oauthClients.corsOrigins', {}, 'CORS Origins (eine pro Zeile)')">
-          <textarea v-model="form.AllowedCorsOrigins" rows="3" class="textarea" />
+        <CoarFormField :label="t('admin.oauthClients.corsOrigins', {}, 'CORS Origins')">
+          <EditableStringList
+            v-model="form.AllowedCorsOrigins"
+            :placeholder="t('admin.oauthClients.corsOrigin.placeholder', {}, 'https://app.example.com')" />
         </CoarFormField>
       </div>
 

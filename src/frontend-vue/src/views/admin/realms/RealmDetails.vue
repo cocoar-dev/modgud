@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { CoarTextInput, CoarFormField, CoarCheckbox, CoarNote, CoarButton } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
+import EditableStringList from '@/components/EditableStringList.vue'
 import { useRealmStore } from '@/stores/realm.store'
 import type { RealmDto, InitialAdminInviteDto } from '@/models/realm'
 
@@ -24,7 +25,7 @@ interface FormState {
   Slug: string
   DisplayName: string
   Description: string
-  Domains: string  // newline
+  Domains: string[]
   IsControlPlane: boolean
   IsActive: boolean
   InitialAdminUserName: string
@@ -38,7 +39,7 @@ function emptyForm(): FormState {
     Slug: '',
     DisplayName: '',
     Description: '',
-    Domains: '',
+    Domains: [],
     IsControlPlane: false,
     IsActive: true,
     InitialAdminUserName: '',
@@ -64,14 +65,10 @@ function fromDto(dto: RealmDto): FormState {
     Slug: dto.Slug,
     DisplayName: dto.DisplayName,
     Description: dto.Description ?? '',
-    Domains: (dto.Domains ?? []).join('\n'),
+    Domains: [...(dto.Domains ?? [])],
     IsControlPlane: dto.IsControlPlane,
     IsActive: dto.IsActive,
   }
-}
-
-function splitLines(input: string): string[] {
-  return input.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean)
 }
 
 const modalTitle = computed(() =>
@@ -131,7 +128,7 @@ async function save() {
         Slug: form.value.Slug.trim(),
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
-        Domains: splitLines(form.value.Domains),
+        Domains: [...form.value.Domains],
         IsControlPlane: form.value.IsControlPlane,
         InitialAdmin: {
           UserName: form.value.InitialAdminUserName.trim(),
@@ -148,7 +145,7 @@ async function save() {
       await store.update(slug.value, {
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
-        Domains: splitLines(form.value.Domains),
+        Domains: [...form.value.Domains],
         IsControlPlane: form.value.IsControlPlane,
         IsActive: form.value.IsActive,
       })
@@ -242,9 +239,10 @@ async function copyLink() {
         <CoarTextInput v-model="form.Description" clearable />
       </CoarFormField>
 
-      <CoarFormField :label="t('admin.realms.domains', {}, 'Domains (eine pro Zeile)')">
-        <textarea v-model="form.Domains" rows="3" class="textarea"
-          placeholder="example.com&#10;auth.example.com" />
+      <CoarFormField :label="t('admin.realms.domains', {}, 'Domains')">
+        <EditableStringList
+          v-model="form.Domains"
+          :placeholder="t('admin.realms.domain.placeholder', {}, 'auth.example.com')" />
       </CoarFormField>
 
       <div class="flex flex-wrap gap-x-6 gap-y-2 mt-1">

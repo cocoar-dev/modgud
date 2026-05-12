@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
+import EditableStringList from '@/components/EditableStringList.vue'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import type { OAuthScopeDto } from '@/models/oauth'
@@ -33,8 +34,8 @@ interface FormState {
   Name: string
   DisplayName: string
   Description: string
-  Resources: string  // newline-separated
-  UserClaims: string  // newline-separated
+  Resources: string[]
+  UserClaims: string[]
   Enabled: boolean
   Required: boolean
   Emphasize: boolean
@@ -48,8 +49,8 @@ function emptyForm(): FormState {
     Name: '',
     DisplayName: '',
     Description: '',
-    Resources: '',
-    UserClaims: '',
+    Resources: [],
+    UserClaims: [],
     Enabled: true,
     Required: false,
     Emphasize: false,
@@ -65,18 +66,14 @@ function fromDto(dto: OAuthScopeDto): FormState {
     Name: dto.Name,
     DisplayName: dto.DisplayName ?? '',
     Description: dto.Description ?? '',
-    Resources: (dto.Resources ?? []).join('\n'),
-    UserClaims: (dto.UserClaims ?? []).join('\n'),
+    Resources: [...(dto.Resources ?? [])],
+    UserClaims: [...(dto.UserClaims ?? [])],
     Enabled: dto.Enabled,
     Required: dto.Required,
     Emphasize: dto.Emphasize,
     ShowInDiscoveryDocument: dto.ShowInDiscoveryDocument,
     AppId: dto.AppId ?? '',
   }
-}
-
-function splitLines(input: string): string[] {
-  return input.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean)
 }
 
 const modalTitle = computed(() =>
@@ -120,8 +117,8 @@ async function save() {
         Name: form.value.Name.trim(),
         DisplayName: form.value.DisplayName.trim() || null,
         Description: form.value.Description.trim() || null,
-        Resources: splitLines(form.value.Resources),
-        UserClaims: splitLines(form.value.UserClaims),
+        Resources: [...form.value.Resources],
+        UserClaims: [...form.value.UserClaims],
         Enabled: form.value.Enabled,
         Required: form.value.Required,
         Emphasize: form.value.Emphasize,
@@ -132,8 +129,8 @@ async function save() {
       await store.update(props.id, {
         DisplayName: form.value.DisplayName.trim() || null,
         Description: form.value.Description.trim() || null,
-        Resources: splitLines(form.value.Resources),
-        UserClaims: splitLines(form.value.UserClaims),
+        Resources: [...form.value.Resources],
+        UserClaims: [...form.value.UserClaims],
         Enabled: form.value.Enabled,
         Required: form.value.Required,
         Emphasize: form.value.Emphasize,
@@ -177,11 +174,15 @@ async function save() {
             : t('admin.oauthScopes.app.globalHint', {}, 'Cross-app scope (e.g. standard OIDC scopes). Any client may request it.') }}
         </p>
       </CoarFormField>
-      <CoarFormField :label="t('admin.oauthScopes.resources', {}, 'Resources (eine pro Zeile, z.B. API-Audiences)')">
-        <textarea v-model="form.Resources" rows="3" class="textarea" />
+      <CoarFormField :label="t('admin.oauthScopes.resources', {}, 'Resources (API-Audiences)')">
+        <EditableStringList
+          v-model="form.Resources"
+          :placeholder="t('admin.oauthScopes.resource.placeholder', {}, 'event-tree-api')" />
       </CoarFormField>
-      <CoarFormField :label="t('admin.oauthScopes.userClaims', {}, 'User Claims (eine pro Zeile)')">
-        <textarea v-model="form.UserClaims" rows="3" class="textarea" />
+      <CoarFormField :label="t('admin.oauthScopes.userClaims', {}, 'User Claims')">
+        <EditableStringList
+          v-model="form.UserClaims"
+          :placeholder="t('admin.oauthScopes.userClaim.placeholder', {}, 'email')" />
       </CoarFormField>
       <div class="flex flex-wrap gap-x-6 gap-y-2 mt-1">
         <CoarCheckbox v-model="form.Enabled" :label="t('common.enabled', {}, 'Aktiviert')" />

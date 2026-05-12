@@ -13,6 +13,7 @@ import {
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
+import EditableStringList from '@/components/EditableStringList.vue'
 import { useOAuthApiStore } from '@/stores/oauthApi.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import type { OAuthApiDto } from '@/models/oauth'
@@ -48,8 +49,8 @@ interface FormState {
   Name: string
   DisplayName: string
   Description: string
-  Scopes: string  // newline
-  UserClaims: string  // newline
+  Scopes: string[]
+  UserClaims: string[]
   Enabled: boolean
   /** Empty = unassigned, otherwise an App.Id. */
   AppId: string
@@ -62,8 +63,8 @@ function emptyForm(): FormState {
     Name: '',
     DisplayName: '',
     Description: '',
-    Scopes: '',
-    UserClaims: '',
+    Scopes: [],
+    UserClaims: [],
     Enabled: true,
     AppId: '',
     PermissionIds: new Set<string>(),
@@ -78,16 +79,12 @@ function fromDto(dto: OAuthApiDto): FormState {
     Name: dto.Name,
     DisplayName: dto.DisplayName ?? '',
     Description: dto.Description ?? '',
-    Scopes: (dto.Scopes ?? []).join('\n'),
-    UserClaims: (dto.UserClaims ?? []).join('\n'),
+    Scopes: [...(dto.Scopes ?? [])],
+    UserClaims: [...(dto.UserClaims ?? [])],
     Enabled: dto.Enabled,
     AppId: dto.AppId ?? '',
     PermissionIds: new Set(dto.PermissionIds ?? []),
   }
-}
-
-function splitLines(input: string): string[] {
-  return input.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean)
 }
 
 /**
@@ -154,8 +151,8 @@ async function save() {
         Name: form.value.Name.trim(),
         DisplayName: form.value.DisplayName.trim() || null,
         Description: form.value.Description.trim() || null,
-        Scopes: splitLines(form.value.Scopes),
-        UserClaims: splitLines(form.value.UserClaims),
+        Scopes: [...form.value.Scopes],
+        UserClaims: [...form.value.UserClaims],
         Enabled: form.value.Enabled,
         AppId: form.value.AppId || null,
         PermissionIds: form.value.AppId ? Array.from(form.value.PermissionIds) : [],
@@ -172,8 +169,8 @@ async function save() {
       const updated = await store.update(props.id, {
         DisplayName: form.value.DisplayName.trim() || null,
         Description: form.value.Description.trim() || null,
-        Scopes: splitLines(form.value.Scopes),
-        UserClaims: splitLines(form.value.UserClaims),
+        Scopes: [...form.value.Scopes],
+        UserClaims: [...form.value.UserClaims],
         Enabled: form.value.Enabled,
         // Always send — empty string detaches, guid assigns.
         AppId: form.value.AppId,
@@ -346,11 +343,15 @@ async function createImplicitScope() {
             </label>
           </div>
         </CoarFormField>
-        <CoarFormField :label="t('admin.oauthApis.scopes', {}, 'Scopes (eine pro Zeile)')">
-          <textarea v-model="form.Scopes" rows="3" class="textarea" />
+        <CoarFormField :label="t('admin.oauthApis.scopes', {}, 'Scopes')">
+          <EditableStringList
+            v-model="form.Scopes"
+            :placeholder="t('admin.oauthApis.scope.placeholder', {}, 'event-tree.api')" />
         </CoarFormField>
-        <CoarFormField :label="t('admin.oauthApis.userClaims', {}, 'User-Claims (eine pro Zeile)')">
-          <textarea v-model="form.UserClaims" rows="3" class="textarea" />
+        <CoarFormField :label="t('admin.oauthApis.userClaims', {}, 'User-Claims')">
+          <EditableStringList
+            v-model="form.UserClaims"
+            :placeholder="t('admin.oauthApis.userClaim.placeholder', {}, 'email')" />
         </CoarFormField>
         <div class="mt-1">
           <CoarCheckbox v-model="form.Enabled" :label="t('common.enabled', {}, 'Aktiviert')" />
