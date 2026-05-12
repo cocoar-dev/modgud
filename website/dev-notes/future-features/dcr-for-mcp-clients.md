@@ -5,7 +5,19 @@
 > check — was built and shipped 2026-05-12 (commit `9090007`), so
 > nothing is blocking anymore. Captured 2026-05-07, design
 > consolidated 2026-05-12, sharpened after external review same
-> day, codebase-reality-check + prereq-shipped 2026-05-12.
+> day, codebase-reality-check + prereq-shipped 2026-05-12,
+> OpenIddict-fact-check 2026-05-12.
+>
+> **OpenIddict has NO built-in `/connect/register` endpoint.** Earlier
+> drafts of this note (and the reality-check pass) assumed OpenIddict 7
+> shipped a DCR endpoint that just needed to be toggled on. False —
+> OpenIddict's server endpoint list is Authorization, Configuration,
+> DeviceAuthorization, EndSession, Introspection, JsonWebKeySet,
+> PushedAuthorization, Revocation, Token, UserInfo, EndUserVerification
+> — no ClientRegistration. By design: OpenIddict is policy-free and DCR
+> is policy-heavy. **We build the `/connect/register` endpoint
+> ourselves**, Minimal-API style, just like `OAuthApplicationEndpoints`
+> and `RealmSettingsEndpoints`. See "Implementation approach" below.
 > **Why:** The MCP authorization spec (revision 2025-06-18) expects
 > a generic AI agent (Claude Code, Cursor, Continue, claude.ai,
 > hosted IDEs, …) to be able to attach to a public-internet MCP
@@ -57,6 +69,62 @@ From the MCP authorization spec, revision 2025-06-18:
 8. Client exchanges code for an access token (audience-bound to the MCP server).
 
 Note: `/.well-known/oauth-protected-resource` (RFC 9728) lives on the **MCP server** side, not the IdP. MCP-server vendors are responsible for emitting it — our role is just to publish a discoverable `registration_endpoint` from the AS-side discovery doc.
+
+## Implementation approach (Minimal-API, not OpenIddict-built-in)
+
+Since OpenIddict 7 has no `/connect/register` endpoint and no
+`SetRegistrationEndpointUris()` option, we build the endpoint
+ourselves — Minimal-API style, matching the existing OAuth admin
+endpoints (`OAuthApplicationEndpoints`, `RealmSettingsEndpoints`).
+This is not a workaround, it's the right approach: OpenIddict is
+deliberately policy-free, and DCR is policy-heavy.
+
+What the custom path looks like:
+
+- **Endpoint:** `app.MapPost("/connect/register", …)` mounted in the
+  tenant-scoped request pipeline. No need for a per-tenant 404 filter
+  upstream — the Realm middleware already gates everything to the
+  resolved realm. Per-realm enable/disable is just a check on the
+  `RealmSettings.Dcr.Enabled` flag inside the handler.
+- **Validation:** a normal `IDcrRegistrationValidator` service that
+  takes the request body, the resolved realm, and the realm settings.
+  Returns either `Validated(NormalizedRequest)` or
+  `Invalid(errorCode, errorDescription)`. Easy to unit-test, no
+  OpenIddict-event-handler-order gymnastics (see
+  `feedback_openiddict_handler_order.md` — exactly the kind of issue
+  this avoids).
+- **Persistence:** call `OAuthAdminService.CreateAsync` (existing
+  service that wraps the event-sourced `OAuthApplicationAggregate`)
+  with the validated metadata. The DCR-specific Properties-dict keys
+  (`cocoar:dcr:is_dynamically_registered` etc.) ride along in the
+  same call. Same write path as admin-created clients.
+- **Discovery:** a new custom handler analogous to
+  `RealmScopesSupportedHandler` — hooks
+  `HandleConfigurationRequestContext`, adds `registration_endpoint`
+  to the response when the realm has DCR enabled. Tenant-scoped via
+  `IDocumentSession`. Same pattern that's already serving
+  `scopes_supported`.
+- **Response:** RFC 7591 §3.2.1 — 201 Created with JSON body
+  containing `client_id`, `client_id_issued_at`, plus the echoed
+  client metadata (sanitized). No `registration_access_token` /
+  `registration_client_uri` in v1 (RFC 7592 management is
+  out-of-scope, see the deferred list).
+- **Errors:** RFC 7591 §3.2.2 — 400 with `{ error, error_description }`.
+  Same shape MCP clients expect.
+
+What we explicitly skip from "what-OpenIddict-would-give-us":
+
+- The pipeline-event model — we don't need ProcessRegistrationContext
+  etc. because we own the endpoint. Validation runs once, deterministically.
+- Built-in Discovery-doc auto-injection — replaced by our own custom
+  handler (which we'd write anyway for tenant-scoped Discovery
+  filtering, see existing `RealmScopesSupportedHandler`).
+
+Effort impact: roughly net-zero. Building the endpoint by hand costs
+~0.5d more than toggling an OpenIddict option would have, but we save
+the same ~0.5d on the per-tenant 404 filter (which is no longer needed,
+since gating is intrinsic to the tenant-scoped route). Total v1 stays
+at 7-8 days.
 
 ## v1 design (locked 2026-05-12)
 
@@ -214,21 +282,21 @@ in the DCR effort estimate below.
 
 ## Effort
 
-- OpenIddict endpoint enablement + custom validation handler (incl. client_name spoofing rules + reserved-names check + redirect-uri policy): 1d
+- Custom Minimal-API `/connect/register` endpoint + `IDcrRegistrationValidator` service (client_name spoofing rules incl. NFKC + Latin-1 + reserved-names check, redirect-uri policy, grant/auth-method whitelist, rate-limit hook): 1.5d
+- Custom Discovery handler for `registration_endpoint` (analog to existing `RealmScopesSupportedHandler`): 0.25d
 - Realm-Settings tab + OAuthApi-flag + OAuthScope-flag + Reserved-names admin UI: 1d
 - ResourceIndicatorHandler extension for AllowDcr-flag check (or sibling handler): 0.5d
-- Rate-limit + audit-log event types (5 new): 0.5d
+- Audit-log event types (5 new): 0.25d
 - Application-properties DCR keys + last-used tracking + token-lifetime overrides via Settings dict: 0.5d
 - Consent-screen `[unverified]` marker (conditional render branch + small backend response-shape extension): 0.25d
 - GC background service: 0.5d
 - Admin UI (OAuth-Clients-Grid filter + "Registration Info" tab + Auth-Log event filters): 1d
-- Per-tenant DCR-endpoint 404 filter (OpenIddict mounts `/connect/register` globally): 0.5d
-- Tests + docs: 1d
+- Tests + docs: 1.25d
 
 **Total: 7-8 days** for DCR v1. Consent-UI prereq is shipped — no
 extra time needed.
 
-(Up from 5d original estimate after absorbing: external-review feedback (scope-containment, name-spoofing, reserved-names, IPv6-loopback, tighter TTLs, expanded audit events), and codebase-reality-check (Properties-dict storage instead of new fields, ResourceIndicatorHandler extension, per-tenant endpoint filter). The 1-2d consent-UI prereq was eliminated by shipping it ahead of DCR.)
+(Up from 5d original estimate after absorbing: external-review feedback (scope-containment, name-spoofing, reserved-names, IPv6-loopback, tighter TTLs, expanded audit events), codebase-reality-check (Properties-dict storage instead of new fields, ResourceIndicatorHandler extension), and the OpenIddict-fact-check (no built-in DCR endpoint → custom Minimal-API). The 1-2d consent-UI prereq was eliminated by shipping it ahead of DCR; the per-tenant 404 filter was eliminated by going Minimal-API.)
 
 ## Risks accepted in v1 design
 
