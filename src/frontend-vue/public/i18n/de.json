@@ -750,6 +750,49 @@
     "errorTitle": "Bestätigung fehlgeschlagen",
     "toProfile": "Zum Profil"
   },
+  "consent": {
+    "title": "{client} autorisieren",
+    "subtitle": "Prüfe welchen Zugriff diese App anfragt.",
+    "required": "Pflicht",
+    "allow": "Erlauben",
+    "deny": "Ablehnen",
+    "toLogin": "Zurück zur Anmeldung",
+    "missingTicket": "Ungültiger Consent-Link — kein Ticket.",
+    "notFound": "Consent-Anfrage nicht gefunden oder abgelaufen. Bitte den Anmelde-Flow erneut von der App starten.",
+    "alreadyUsed": "Diese Consent-Anfrage wurde bereits bearbeitet. Bitte von der App neu starten.",
+    "expired": "Consent-Anfrage abgelaufen. Bitte von der App neu starten.",
+    "forbidden": "Dieser Consent-Link gehört zu einem anderen Benutzer. Bitte mit dem richtigen Account anmelden.",
+    "loadError": "Consent-Anfrage konnte nicht geladen werden.",
+    "submitError": "Entscheidung konnte nicht gesendet werden. Bitte erneut versuchen.",
+    "deniedTitle": "Zugriff abgelehnt",
+    "deniedBody": "Du hast {client} nicht autorisiert. Du kannst diese Seite schließen oder dich erneut anmelden.",
+    "scope": {
+      "openid": {
+        "label": "Anmelde-Identität",
+        "description": "Bestätigt wer du bist. Notwendig für die Anmeldung."
+      },
+      "profile": {
+        "label": "Profil",
+        "description": "Name, Bild, Sprache."
+      },
+      "email": {
+        "label": "E-Mail-Adresse",
+        "description": "Deine E-Mail-Adresse und ob sie bestätigt ist."
+      },
+      "offline_access": {
+        "label": "Angemeldet bleiben",
+        "description": "Erlaubt der App ihren Zugriff zu erneuern ohne dass du dich nochmal anmelden musst."
+      },
+      "roles": {
+        "label": "Rollen",
+        "description": "Lässt die App sehen welche Rollen du in diesem Realm hast."
+      },
+      "permissions": {
+        "label": "Berechtigungen",
+        "description": "Lässt die App sehen welche granulären Berechtigungen du hast."
+      }
+    }
+  },
   "verifyEmail": {
     "missing": "Ungültiger Bestätigungs-Link.",
     "invalid": "Link ist ungültig oder abgelaufen.",

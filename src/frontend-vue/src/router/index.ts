@@ -40,6 +40,16 @@ const routes = [
       meta: { public: true },
     },
     {
+      // OAuth consent prompt — server-side ticket flow.
+      // /connect/authorize creates a ConsentTicket, redirects here
+      // with ?ticket=<id>. The view itself is public (no auth-gate),
+      // but the underlying /connect/consent API call demands the
+      // session cookie. 401 from that endpoint bounces back to /login.
+      path: '/consent',
+      component: () => import('@/views/auth/ConsentView.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/reset-password',
       component: () => import('@/views/auth/ResetPasswordView.vue'),
       meta: { public: true },

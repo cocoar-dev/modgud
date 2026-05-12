@@ -46,6 +46,18 @@ export default defineConfig({
         target: 'http://localhost:9099',
         changeOrigin: true,
       },
+      // OpenIddict OAuth endpoints (/connect/authorize, /connect/token,
+      // /connect/consent, /connect/userinfo, …). Keep changeOrigin:false
+      // so Host header survives — same realm-resolution reason as /api.
+      '/connect': {
+        target: 'http://localhost:9099',
+        changeOrigin: false,
+      },
+      // Discovery + JWKS — well-known endpoints served by OpenIddict.
+      '/.well-known': {
+        target: 'http://localhost:9099',
+        changeOrigin: false,
+      },
     },
   },
 })
