@@ -342,9 +342,20 @@ internal static class OAuthAdminMapping
 
     internal static DateTimeOffset? GetDateTimeOffsetProp(IDictionary<string, object?> props, string key)
     {
-        var raw = GetStringProp(props, key);
-        if (string.IsNullOrEmpty(raw)) return null;
-        return DateTimeOffset.TryParse(raw, out var dt) ? dt : null;
+        if (!props.TryGetValue(key, out var raw) || raw is null) return null;
+        return raw switch
+        {
+            // Newtonsoft.Json (Marten's default serializer) auto-parses
+            // ISO-8601 strings to DateTime/DateTimeOffset on the dict roundtrip,
+            // so the value comes back typed even though we wrote a string.
+            DateTimeOffset dto => dto,
+            DateTime dt => new DateTimeOffset(dt.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(dt, DateTimeKind.Utc) : dt),
+            string s => DateTimeOffset.TryParse(s, out var parsed) ? parsed : null,
+            JsonElement e when e.ValueKind is JsonValueKind.String
+                && DateTimeOffset.TryParse(e.GetString(), out var parsed) => parsed,
+            _ => null,
+        };
     }
 
     internal static string? GetStringProp(IDictionary<string, object?> props, string key)
@@ -354,6 +365,9 @@ internal static class OAuthAdminMapping
         {
             string s => s,
             JsonElement e when e.ValueKind is JsonValueKind.String => e.GetString(),
+            DateTimeOffset dto => dto.ToString("O"),
+            DateTime dt => new DateTimeOffset(dt.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(dt, DateTimeKind.Utc) : dt).ToString("O"),
             _ => null,
         };
     }

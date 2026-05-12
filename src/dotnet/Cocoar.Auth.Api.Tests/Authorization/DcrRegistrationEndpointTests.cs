@@ -125,6 +125,51 @@ public class DcrRegistrationEndpointTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task Registered_client_carries_full_DCR_property_set_in_storage()
+    {
+        await EnableDcrAsync();
+        var http = Factory.CreateClient();
+
+        var body = JsonContent.Create(new
+        {
+            client_name = "Property Set Probe",
+            redirect_uris = new[] { "https://probe.example.com/callback" },
+            grant_types = new[] { "authorization_code", "refresh_token" },
+        });
+        var resp = await http.PostAsync("/connect/register", body, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
+
+        var bodyText = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        using var doc = JsonDocument.Parse(bodyText);
+        var clientId = doc.RootElement.GetProperty("client_id").GetString()!;
+
+        // Inspect storage via the tenanted admin service — proves the
+        // DCR properties land on the persisted projection state, not
+        // just on the response wire shape.
+        using var scope = Factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>()
+            .HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+            {
+                Items = { ["TenantId"] = "system" },
+            };
+        var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
+
+        var listing = await oauthAdmin.GetClientsAsync(
+            new PaginationRequest { Page = 1, PageSize = 100 },
+            TestContext.Current.CancellationToken);
+        var stored = listing.Items.SingleOrDefault(c => c.ClientId == clientId);
+        Assert.NotNull(stored);
+        Assert.True(stored.IsDynamicallyRegistered);
+        Assert.NotNull(stored.DcrRegisteredAt);
+        Assert.NotNull(stored.DcrRegisteredFromIp);
+        Assert.Equal(stored.DcrRegisteredAt, stored.DcrLastUsedAt);
+        // The validator should have forced public+explicit-consent shape.
+        Assert.Equal(OAuthClientTypes.Public, stored.ClientType);
+        Assert.Equal(OAuthConsentTypes.Explicit, stored.ConsentType);
+        Assert.False(stored.AllowRememberConsent);
+    }
+
+    [Fact]
     public async Task Returns_400_when_client_name_matches_realm_reserved_name()
     {
         await EnableDcrAsync(reservedNames: new[] { "Cocoar" });
