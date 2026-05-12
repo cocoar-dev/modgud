@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarFormField, CoarNote, CoarTag, CoarButton, CoarIcon, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarFormField, CoarNote, CoarButton, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
+import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
@@ -46,14 +47,23 @@ const catalogBlockers = ref<CatalogBlocker[]>([])
  * save. The optional `originalKey` records the resource:action shape the
  * row started life with, so the rename-warning surfaces when the admin
  * edits an existing row's key.
+ *
+ * <c>_uid</c> is the grid's row-tracking key — always set, never sent to
+ * the server. Existing rows reuse their server id; new rows get a
+ * generated transient string. Without a stable id AG Grid loses scroll
+ * position and editor focus on every reactive update.
  */
 interface CatalogRow {
+  _uid: string
   id: string | null
   resource: string
   action: string
   description: string
   originalKey: string | null
 }
+
+let catalogUidCounter = 0
+const newCatalogUid = () => `catalog-${Date.now()}-${catalogUidCounter++}`
 
 const catalog = ref<CatalogRow[]>([])
 
@@ -76,6 +86,7 @@ function fromDto(d: ApplicationDto): { form: FormState; catalog: CatalogRow[] } 
       Description: d.Description ?? '',
     },
     catalog: (d.Permissions ?? []).map((p) => ({
+      _uid: p.Id ?? newCatalogUid(),
       id: p.Id,
       resource: p.Resource,
       action: p.Action,
@@ -98,12 +109,17 @@ function buildPermissionsPayload(): ApplicationPermissionInputDto[] {
 
 function addRow() {
   catalog.value = [...catalog.value, {
-    id: null, resource: '', action: '', description: '', originalKey: null,
+    _uid: newCatalogUid(),
+    id: null,
+    resource: '',
+    action: '',
+    description: '',
+    originalKey: null,
   }]
 }
 
-function removeRow(index: number) {
-  catalog.value = catalog.value.filter((_, i) => i !== index)
+function removeRow(row: CatalogRow) {
+  catalog.value = catalog.value.filter((r) => r._uid !== row._uid)
 }
 
 function isSegmentValid(value: string): boolean {
@@ -144,6 +160,83 @@ const hasIncompleteRows = computed(() => catalog.value.some((r) =>
 
 const isSystem = computed(() => dto.value?.IsSystem === true)
 const activeTab = ref<'general' | 'catalog' | 'rs'>('general')
+
+/**
+ * Per-cell visual cue for the resource/action validation surface. The
+ * editor doesn't block invalid input — the save button is the gate
+ * (footerButton.disabled covers hasInvalidSegments / hasIncompleteRows /
+ * duplicateKeys). The CSS class just paints the broken cells red so the
+ * admin sees where the problem is without scrolling to the footer hint.
+ */
+function cellClassFor(field: 'resource' | 'action') {
+  return (params: any): string => {
+    const row = params.data as CatalogRow
+    const value = (row[field] ?? '').trim()
+    if (value && !isSegmentValid(value)) return 'catalog-cell--invalid'
+    const key = `${row.resource.trim()}:${row.action.trim()}`
+    if (key !== ':' && duplicateKeys.value.has(key)) return 'catalog-cell--duplicate'
+    return ''
+  }
+}
+
+const catalogBuilder = computed(() =>
+  CoarGridBuilder.create<CatalogRow>()
+    .rowDataRef(catalog)
+    .option('getRowId', (p: any) => p.data._uid)
+    .stopEditingWhenCellsLoseFocus(true)
+    .columns([
+      (col) =>
+        col
+          .text('resource', (c) => c.placeholder('user'))
+          .editable(() => !isSystem.value)
+          .header(t('admin.apps.cat.resource', {}, 'Resource'))
+          .flex(1)
+          .cellClass(cellClassFor('resource')),
+      (col) =>
+        col
+          .text('action', (c) => c.placeholder('read'))
+          .editable(() => !isSystem.value)
+          .header(t('admin.apps.cat.action', {}, 'Action'))
+          .flex(1)
+          .cellClass(cellClassFor('action')),
+      (col) =>
+        col
+          .wrap(
+            col
+              .text('description', (c) =>
+                c.placeholder(t('admin.apps.cat.descriptionPlaceholder', {}, 'optional')),
+              )
+              .editable(() => !isSystem.value)
+              .header(t('admin.apps.cat.description', {}, 'Beschreibung'))
+              .flex(2),
+          )
+          .right([
+            // Renamed-Indicator: existing row whose resource/action diverges
+            // from its server-issued key. IdP keeps Id stable; we just
+            // surface that the wire-string changed so admins know consumers
+            // doing `.includes("user:write")` will see a different value.
+            {
+              icon: 'pencil',
+              size: 's',
+              color: 'var(--coar-text-semantic-warning, #b45309)',
+              tooltip: t(
+                'admin.apps.cat.renamedTitle',
+                {},
+                'Umbenannt — Id bleibt stabil',
+              ),
+              show: (row) => rowRenamed(row),
+            },
+            {
+              icon: 'trash-2',
+              size: 's',
+              color: 'var(--coar-text-neutral-secondary, #9ca3af)',
+              tooltip: t('admin.apps.cat.removeTitle', {}, 'Eintrag entfernen'),
+              show: () => !isSystem.value,
+              onClick: (row) => removeRow(row),
+            },
+          ]),
+    ]),
+)
 
 const modalTitle = computed(() =>
   isCreate.value
@@ -290,49 +383,22 @@ async function provisionDefaultResourceServer() {
           {{ t('admin.apps.renamedWarning', { count: renamedCount }, `${renamedCount} Eintrag/Einträge wurden umbenannt. Die String-Form ändert sich (z.B. in UserInfo), aber Role-Grants und RS-Subsets folgen automatisch über die stabile Id.`) }}
         </CoarNote>
 
-        <table class="catalog-table">
-          <thead>
-            <tr>
-              <th class="col-resource">{{ t('admin.apps.cat.resource', {}, 'Resource') }}</th>
-              <th class="col-action">{{ t('admin.apps.cat.action', {}, 'Action') }}</th>
-              <th class="col-description">{{ t('admin.apps.cat.description', {}, 'Beschreibung') }}</th>
-              <th v-if="!isSystem" class="col-actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, index) in catalog" :key="index">
-              <td>
-                <input v-model="row.resource" :disabled="isSystem"
-                  :class="{ 'invalid': row.resource && !isSegmentValid(row.resource), 'duplicate': duplicateKeys.has(`${row.resource.trim()}:${row.action.trim()}`) }"
-                  class="catalog-input" placeholder="user" />
-              </td>
-              <td>
-                <input v-model="row.action" :disabled="isSystem"
-                  :class="{ 'invalid': row.action && !isSegmentValid(row.action), 'duplicate': duplicateKeys.has(`${row.resource.trim()}:${row.action.trim()}`) }"
-                  class="catalog-input" placeholder="read" />
-              </td>
-              <td>
-                <input v-model="row.description" :disabled="isSystem" class="catalog-input"
-                  :placeholder="t('admin.apps.cat.descriptionPlaceholder', {}, 'optional')" />
-              </td>
-              <td v-if="!isSystem" class="col-actions-cell">
-                <CoarTag v-if="rowRenamed(row)" size="s" variant="warning"
-                  :title="t('admin.apps.cat.renamedTitle', {}, 'Umbenannt — Id bleibt stabil')">
-                  ✎
-                </CoarTag>
-                <button type="button" class="row-delete"
-                  :title="t('admin.apps.cat.removeTitle', {}, 'Eintrag entfernen')"
-                  @click="removeRow(index)">
-                  <CoarIcon name="trash-2" size="s" />
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-if="!isSystem" class="catalog-footer">
-          <CoarButton size="s" variant="secondary" icon-start="plus" @click="addRow">
-            {{ t('admin.apps.cat.add', {}, 'Eintrag hinzufügen') }}
-          </CoarButton>
+        <div class="catalog-grid">
+          <CoarDataGrid :builder="catalogBuilder" bordered>
+            <template #toolbar-left>
+              <CoarButton
+                v-if="!isSystem"
+                size="s"
+                variant="ghost"
+                icon-start="plus"
+                @click="addRow"
+              >
+                {{ t('admin.apps.cat.add', {}, 'Eintrag hinzufügen') }}
+              </CoarButton>
+            </template>
+          </CoarDataGrid>
+        </div>
+        <div v-if="!isSystem" class="catalog-hints">
           <span v-if="hasInvalidSegments" class="hint-error">
             {{ t('admin.apps.cat.invalidSegment', {}, 'Format: ^[a-z0-9-]+$ je Segment.') }}
           </span>
@@ -464,73 +530,32 @@ async function provisionDefaultResourceServer() {
   color: var(--coar-text-neutral-secondary, #6b7280);
 }
 
-.catalog-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.82rem;
+/* Catalog-grid wrapper: ensure the data-grid gets a sensible height. AG
+   Grid collapses to 0 height inside a flex column without an explicit
+   floor; this keeps the empty state and the first few rows visible
+   without forcing the whole modal to grow. */
+.catalog-grid {
+  min-height: 18rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
-.catalog-table th {
-  text-align: left;
-  font-weight: 500;
-  font-size: 0.74rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--coar-text-neutral-secondary, #6b7280);
-  padding: 4px 6px;
-  border-bottom: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
-}
-
-.catalog-table td {
-  padding: 3px 4px;
-  vertical-align: middle;
-}
-
-.col-resource { width: 26%; }
-.col-action { width: 22%; }
-.col-description {  }
-.col-actions { width: 4.5rem; }
-
-.col-actions-cell {
-  text-align: right;
-  white-space: nowrap;
-}
-
-.catalog-input {
-  width: 100%;
-  padding: 4px 6px;
-  border: 1px solid var(--coar-border-neutral-secondary, #d1d5db);
-  border-radius: var(--coar-radius-s, 3px);
-  background: var(--coar-background-neutral-primary, #fff);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.78rem;
-}
-
-.catalog-input.invalid {
-  border-color: #dc2626;
+/* Per-cell validation styles applied by `cellClassFor()`. Targets the
+   AG Grid cell element directly; the cellRenderer inside is unchanged
+   so the editor opens identically. Light tint + colored left-edge
+   matches the existing red/amber palette used in the form footers. */
+:deep(.ag-cell.catalog-cell--invalid) {
   background: #fef2f2;
+  box-shadow: inset 2px 0 0 #dc2626;
 }
 
-.catalog-input.duplicate {
-  border-color: #b45309;
+:deep(.ag-cell.catalog-cell--duplicate) {
   background: #fffbeb;
+  box-shadow: inset 2px 0 0 #b45309;
 }
 
-.row-delete {
-  background: none;
-  border: 0;
-  cursor: pointer;
-  padding: 4px;
-  color: var(--coar-text-neutral-secondary, #6b7280);
-  border-radius: 3px;
-}
-
-.row-delete:hover {
-  color: #dc2626;
-  background: #fef2f2;
-}
-
-.catalog-footer {
+.catalog-hints {
   display: flex;
   align-items: center;
   gap: 8px;
