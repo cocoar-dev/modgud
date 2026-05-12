@@ -514,6 +514,10 @@ try
     builder.Services.AddSingleton<ILoginProviderFlavor, GenericOidcFlavor>();
     builder.Services.AddSingleton<LoginProviderFlavorRegistry>();
     builder.Services.AddSingleton<LoginProviderSecretStore>();
+    // Mirrors the LoginProvider-secret-store pattern (DataProtection,
+    // host-rooted keys, dedicated Purpose so the two ciphertext blobs
+    // are not interchangeable). See SelfRegistration/Captcha/CaptchaSecretStore.cs.
+    builder.Services.AddSingleton<Cocoar.Auth.Authentication.SelfRegistration.Captcha.CaptchaSecretStore>();
     builder.Services.AddScoped<Cocoar.Auth.Application.Services.ILoginProviderRealmSeeder,
         Cocoar.Auth.Authentication.Setup.LoginProviderRealmSeeder>();
 

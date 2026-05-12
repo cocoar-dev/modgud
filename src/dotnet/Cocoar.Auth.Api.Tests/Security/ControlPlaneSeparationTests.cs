@@ -136,7 +136,7 @@ public class ControlPlaneSeparationTests : IntegrationTestBase
         var svc = Factory.Services.GetRequiredService<IRealmProvisioningService>();
         var result = await svc.UpdateRealmAsync("system",
             new UpdateRealmDto { IsActive = false },
-            TestContext.Current.CancellationToken);
+            ct: TestContext.Current.CancellationToken);
 
         Assert.True(result.IsError);
         Assert.Equal("Realm.CannotDeactivateControlPlane", result.FirstError.Code);

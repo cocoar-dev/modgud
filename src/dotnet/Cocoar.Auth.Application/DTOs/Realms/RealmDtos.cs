@@ -11,6 +11,70 @@ public record RealmDto
     public bool IsActive { get; init; }
     public bool NeedsSetup { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>
+    /// Per-realm public self-registration configuration. Never null in
+    /// responses — null on the domain object surfaces as a
+    /// <c>SelfRegistrationDto</c> with <c>Enabled = false</c> and the rest
+    /// at defaults, so the admin UI doesn't need to special-case the
+    /// "never configured" branch.
+    /// </summary>
+    public SelfRegistrationDto SelfRegistration { get; init; } = new();
+}
+
+/// <summary>Read shape for the per-realm self-registration settings.
+/// The captcha-secret is never returned — only a boolean
+/// <see cref="CaptchaSecretSet"/> flag so the admin UI can show
+/// "configured" vs "not configured" without ever shipping the plaintext
+/// to the client.</summary>
+public record SelfRegistrationDto
+{
+    public bool Enabled { get; init; }
+    public bool RequireEmailVerification { get; init; } = true;
+    public string[]? AllowedEmailDomains { get; init; }
+    public bool RequireAdminApproval { get; init; }
+    public string[]? DefaultGroupIds { get; init; }
+    public string? TermsOfServiceUrl { get; init; }
+    public string? PrivacyPolicyUrl { get; init; }
+
+    /// <summary>Captcha master toggle. When <c>false</c>, captcha is
+    /// skipped at /register entirely — useful for intern / air-gapped
+    /// deployments. When <c>true</c>, a valid key-pair must resolve via
+    /// per-realm settings or the Cocoar-default fallback.</summary>
+    public bool CaptchaEnabled { get; init; }
+
+    /// <summary>Per-realm Turnstile site-key (public). Null = use the
+    /// Cocoar-default site-key from system configuration.</summary>
+    public string? CaptchaSiteKey { get; init; }
+
+    /// <summary><c>true</c> when this realm has its own
+    /// captcha-secret stored encrypted-at-rest; <c>false</c> = falls
+    /// through to the Cocoar-default secret. The plaintext is never
+    /// surfaced.</summary>
+    public bool CaptchaSecretSet { get; init; }
+}
+
+/// <summary>Patch payload for the self-registration settings. PATCH
+/// semantics throughout: <c>null</c>/missing = no change; setting a
+/// nullable field to its default-ish value (empty array, empty string)
+/// = clear. The captcha-secret has three states:
+/// <list type="bullet">
+///   <item><c>null</c> = no change</item>
+///   <item>empty string = clear (revert to Cocoar-default secret)</item>
+///   <item>non-empty string = replace with this value (encrypted at rest)</item>
+/// </list></summary>
+public record UpdateSelfRegistrationDto
+{
+    public bool? Enabled { get; init; }
+    public bool? RequireEmailVerification { get; init; }
+    public string[]? AllowedEmailDomains { get; init; }
+    public bool? RequireAdminApproval { get; init; }
+    public string[]? DefaultGroupIds { get; init; }
+    public string? TermsOfServiceUrl { get; init; }
+    public string? PrivacyPolicyUrl { get; init; }
+    public bool? CaptchaEnabled { get; init; }
+    public string? CaptchaSiteKey { get; init; }
+    public string? CaptchaSecret { get; init; }
 }
 
 public record CreateRealmDto
@@ -68,6 +132,11 @@ public record UpdateRealmDto
     public string? Description { get; init; }
     public string[]? Domains { get; init; }
     public bool? IsActive { get; init; }
+
+    /// <summary>Patch the self-registration sub-document. Null = leave
+    /// untouched; non-null = merge field-by-field (see
+    /// <see cref="UpdateSelfRegistrationDto"/>).</summary>
+    public UpdateSelfRegistrationDto? SelfRegistration { get; init; }
 }
 
 public record RealmListDto
