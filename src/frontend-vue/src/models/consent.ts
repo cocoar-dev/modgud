@@ -20,6 +20,9 @@ export interface ConsentModel {
   ClientName: string
   RequestedScopes: ConsentScopeInfo[]
   ExpiresAt: string
+  /** True for clients minted via RFC 7591 Dynamic Client Registration.
+   * Drives the [unverified] marker + warning text on the consent UI. */
+  IsDynamicallyRegistered: boolean
 }
 
 export interface ConsentDecision {

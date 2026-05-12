@@ -217,12 +217,22 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
         <div v-else class="space-y-4">
           <div class="text-center">
             <h2 class="text-lg font-semibold text-surface-800">
-              {{ t('consent.title', { client: model!.ClientName }, 'Authorise {client}') }}
+              <template v-if="model!.IsDynamicallyRegistered">
+                {{ t('consent.title', { client: model!.ClientName }, 'Authorise {client}') }}
+                <span class="unverified-tag">[{{ t('consent.unverified', {}, 'unverified') }}]</span>
+              </template>
+              <template v-else>
+                {{ t('consent.title', { client: model!.ClientName }, 'Authorise {client}') }}
+              </template>
             </h2>
             <p class="mt-1 text-sm text-surface-500">
               {{ t('consent.subtitle', {}, 'Review the access this app is asking for.') }}
             </p>
           </div>
+
+          <CoarNote v-if="model!.IsDynamicallyRegistered" variant="warning">
+            {{ t('consent.dcrWarning', {}, 'This app registered itself with the identity provider — its name has not been verified by an administrator. Make sure the name above matches the app you actually intended to authorise before continuing.') }}
+          </CoarNote>
 
           <div class="space-y-2">
             <div
@@ -273,3 +283,15 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
     </div>
   </div>
 </template>
+
+<style scoped>
+.unverified-tag {
+  display: inline-block;
+  margin-left: 0.4em;
+  font-size: 0.7em;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  color: var(--coar-text-semantic-warning, #92400e);
+  vertical-align: middle;
+}
+</style>

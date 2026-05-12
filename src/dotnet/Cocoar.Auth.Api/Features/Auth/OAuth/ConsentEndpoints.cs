@@ -1,6 +1,8 @@
 using System.Collections.Immutable;
 using System.Security.Claims;
+using System.Text.Json;
 using Cocoar.Auth.Authentication.Domain;
+using Cocoar.Auth.Domain.OAuth.Applications;
 using Cocoar.Auth.Domain.OAuth.Consent;
 using Marten;
 using Microsoft.AspNetCore.Identity;
@@ -66,6 +68,17 @@ public static class ConsentEndpoints
 
         var clientName = await applicationManager.GetDisplayNameAsync(application) ?? record.ClientId;
 
+        // Surface IsDynamicallyRegistered so ConsentView.vue can render the
+        // [unverified] marker for DCR clients. Loading the projection state
+        // is faster than going through the OpenIddict application manager
+        // for one property and stays in the tenant-scoped session.
+        var state = await session.Query<OAuthApplicationState>()
+            .FirstOrDefaultAsync(x => x.ClientId == record.ClientId && !x.IsDeleted);
+        var isDcr = state is not null
+            && state.Properties.TryGetValue(OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered, out var raw)
+            && raw is JsonElement el
+            && el.ValueKind is JsonValueKind.True;
+
         var scopeInfos = new List<ConsentScopeInfo>();
         foreach (var scopeName in record.RequestedScopes)
         {
@@ -93,6 +106,7 @@ public static class ConsentEndpoints
             ClientName = clientName,
             RequestedScopes = scopeInfos,
             ExpiresAt = record.ExpiresAt,
+            IsDynamicallyRegistered = isDcr,
         });
     }
 
@@ -226,6 +240,10 @@ public class ConsentModel
     public required string ClientName { get; init; }
     public required List<ConsentScopeInfo> RequestedScopes { get; init; }
     public required DateTimeOffset ExpiresAt { get; init; }
+    /// <summary>True for clients minted via RFC 7591 DCR; lets the
+    /// consent UI render an <c>[unverified]</c> marker + warning text
+    /// so the user pauses before authorising an anonymous registrant.</summary>
+    public bool IsDynamicallyRegistered { get; init; }
 }
 
 public class ConsentScopeInfo
