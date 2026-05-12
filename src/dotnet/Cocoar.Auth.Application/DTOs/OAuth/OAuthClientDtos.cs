@@ -46,6 +46,29 @@ public record OAuthClientDto
     /// against its apps store to resolve slugs.
     /// </summary>
     public List<string> AppIds { get; init; } = [];
+
+    /// <summary>
+    /// <c>true</c> when this client was minted via the public
+    /// <c>/connect/register</c> endpoint (RFC 7591). Drives the
+    /// "DCR"-badged row treatment in the admin grid and the optional
+    /// Registration-Info tab. Admin-created clients always carry
+    /// <c>false</c>; the field doesn't appear in the Update DTO since
+    /// admins can't retroactively "convert" a client into a DCR one.
+    /// </summary>
+    public bool IsDynamicallyRegistered { get; init; }
+
+    /// <summary>ISO-8601 timestamp of when DCR registration happened.
+    /// Null for non-DCR clients.</summary>
+    public DateTimeOffset? DcrRegisteredAt { get; init; }
+
+    /// <summary>Source IP that submitted the DCR registration. Null for
+    /// non-DCR clients.</summary>
+    public string? DcrRegisteredFromIp { get; init; }
+
+    /// <summary>ISO-8601 timestamp updated by the GC infra on each
+    /// successful token-issue for DCR clients. Drives the soft-delete
+    /// sweep. Null for non-DCR clients.</summary>
+    public DateTimeOffset? DcrLastUsedAt { get; init; }
 }
 
 public record OAuthClientClaimDto

@@ -48,6 +48,19 @@ export interface OAuthClientDto {
    * to resolve slugs and display names.
    */
   AppIds: string[]
+  /**
+   * `true` when this client was minted via the public /connect/register
+   * endpoint (RFC 7591 Dynamic Client Registration). Drives the
+   * "DCR"-badged row treatment in the admin grid and the optional
+   * Registration-Info tab.
+   */
+  IsDynamicallyRegistered: boolean
+  /** ISO-8601 timestamp of DCR registration. Null for non-DCR clients. */
+  DcrRegisteredAt?: string | null
+  /** Source IP that submitted the DCR registration. Null for non-DCR clients. */
+  DcrRegisteredFromIp?: string | null
+  /** ISO-8601 timestamp of the most recent token-issue for a DCR client. */
+  DcrLastUsedAt?: string | null
 }
 
 export interface CreateOAuthClientDto {

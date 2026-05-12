@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import {
   CoarButton,
+  CoarCheckbox,
   useContextMenu,
   CoarContextMenu,
   CoarMenuItem,
@@ -29,8 +30,11 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
+const showDcrOnly = ref(false)
 const rows = computed(() =>
-  store.clients.filter((c) => appCtx.matchesAppIdList(c.AppIds)))
+  store.clients
+    .filter((c) => appCtx.matchesAppIdList(c.AppIds))
+    .filter((c) => !showDcrOnly.value || c.IsDynamicallyRegistered))
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
@@ -57,6 +61,9 @@ const builder = CoarGridBuilder.create<OAuthClientDto>()
     (col) => col.field('ClientId').header('Client ID', 'admin.oauthClients.clientId').flex(1).minWidth(180),
     (col) => col.field('DisplayName').header('Display Name', 'admin.oauthClients.displayName').flex(1),
     (col) => col.field('ClientType').header('Type', 'admin.oauthClients.type').width(120),
+    (col) => col.field('IsDynamicallyRegistered').header('DCR', 'admin.oauthClients.dcr').width(80)
+      .option('valueGetter', (p: any) => p.data?.IsDynamicallyRegistered ? '●' : '')
+      .option('cellStyle', { textAlign: 'center', color: 'var(--coar-accent-primary, #6366f1)' }),
     (col) => col.field('Enabled').header('Enabled', 'admin.oauthClients.enabled').width(100)
       .option('valueGetter', (p: any) => p.data?.Enabled === false
         ? t('common.no', {}, 'No')
@@ -85,6 +92,9 @@ onMounted(() => store.initialize())
   <div class="flex flex-1 flex-col min-w-0 p-4">
     <CoarDataGrid :builder="builder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
+        <CoarCheckbox v-model="showDcrOnly"
+          :label="t('admin.oauthClients.dcrOnly', {}, 'DCR only')"
+          :title="t('admin.oauthClients.dcrOnly.help', {}, 'Show only clients minted via /connect/register (RFC 7591). Useful for spotting agent-registered clients separate from admin-created ones.')" />
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">
           {{ t('common.create', {}, 'Erstellen') }}
         </CoarButton>

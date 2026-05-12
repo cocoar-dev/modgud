@@ -333,6 +333,28 @@ internal static class OAuthAdminMapping
             Claims = GetClaimsProp(props),
             Roles = GetStringListProp(props, OAuthApplicationPropertyKeys.Roles),
             AppIds = s.AppIds.Select(g => new ShortGuid(g).ToString()).ToList(),
+            IsDynamicallyRegistered = GetBoolProp(props, OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered, false),
+            DcrRegisteredAt = GetDateTimeOffsetProp(props, OAuthApplicationPropertyKeys.DcrRegisteredAt),
+            DcrRegisteredFromIp = GetStringProp(props, OAuthApplicationPropertyKeys.DcrRegisteredFromIp),
+            DcrLastUsedAt = GetDateTimeOffsetProp(props, OAuthApplicationPropertyKeys.DcrLastUsedAt),
+        };
+    }
+
+    internal static DateTimeOffset? GetDateTimeOffsetProp(IDictionary<string, object?> props, string key)
+    {
+        var raw = GetStringProp(props, key);
+        if (string.IsNullOrEmpty(raw)) return null;
+        return DateTimeOffset.TryParse(raw, out var dt) ? dt : null;
+    }
+
+    internal static string? GetStringProp(IDictionary<string, object?> props, string key)
+    {
+        if (!props.TryGetValue(key, out var raw) || raw is null) return null;
+        return raw switch
+        {
+            string s => s,
+            JsonElement e when e.ValueKind is JsonValueKind.String => e.GetString(),
+            _ => null,
         };
     }
 

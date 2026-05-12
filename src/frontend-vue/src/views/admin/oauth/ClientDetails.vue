@@ -32,7 +32,8 @@ const applicationsStore = useApplicationsStore()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
-const activeTab = ref<'general' | 'apps' | 'scopes' | 'grants' | 'urls' | 'lifetimes'>('general')
+type ClientTab = 'general' | 'apps' | 'scopes' | 'grants' | 'urls' | 'lifetimes' | 'dcr'
+const activeTab = ref<ClientTab>('general')
 
 // Cleartext secret returned once at creation / regeneration — surfaced for copy.
 const newSecret = ref<string | null>(null)
@@ -369,6 +370,9 @@ async function copySecret() {
         <CoarTab id="grants">{{ t('admin.oauthClients.tabs.grants', {}, 'Grants') }}</CoarTab>
         <CoarTab id="urls">{{ t('admin.oauthClients.tabs.urls', {}, 'URLs') }}</CoarTab>
         <CoarTab id="lifetimes">{{ t('admin.oauthClients.tabs.lifetimes', {}, 'Token-Laufzeiten') }}</CoarTab>
+        <CoarTab v-if="original?.IsDynamicallyRegistered" id="dcr">
+          {{ t('admin.oauthClients.tabs.dcr', {}, 'Registration Info') }}
+        </CoarTab>
       </CoarTabGroup>
 
       <!-- New-secret notice — shown once after create or regenerate -->
@@ -534,6 +538,24 @@ async function copySecret() {
           </CoarFormField>
           <CoarFormField :label="t('admin.oauthClients.slidingRefreshLifetime', {}, 'Sliding Refresh-Token')">
             <CoarTextInput v-model="form.SlidingRefreshTokenLifetime" type="number" clearable />
+          </CoarFormField>
+        </div>
+      </div>
+
+      <!-- Registration Info — DCR clients only -->
+      <div v-show="!isCreate && activeTab === 'dcr' && original?.IsDynamicallyRegistered" class="tab-content">
+        <p class="tab-hint">
+          {{ t('admin.oauthClients.dcrInfoHint', {}, 'This client was registered anonymously via POST /connect/register. The fields below are the audit trail captured at registration time and on each successful token issue.') }}
+        </p>
+        <div class="grid grid-cols-2 gap-3">
+          <CoarFormField :label="t('admin.oauthClients.dcr.registeredAt', {}, 'Registered at (UTC)')">
+            <CoarTextInput :model-value="original?.DcrRegisteredAt ?? ''" disabled />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.oauthClients.dcr.registeredFromIp', {}, 'Registered from IP')">
+            <CoarTextInput :model-value="original?.DcrRegisteredFromIp ?? ''" disabled />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.oauthClients.dcr.lastUsedAt', {}, 'Last successful token-issue')">
+            <CoarTextInput :model-value="original?.DcrLastUsedAt ?? ''" disabled />
           </CoarFormField>
         </div>
       </div>
