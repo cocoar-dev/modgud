@@ -730,6 +730,10 @@ try
     builder.Services.AddSingleton(authLogSink);
     builder.Services.AddHostedService<AuthLogPersistenceService>();
 
+    // DCR garbage collector — daily sweep of stale DCR clients whose
+    // LastUsedAt has aged past the per-realm TTL. Soft-delete only.
+    builder.Services.AddHostedService<Cocoar.Auth.Infrastructure.OpenIddict.DcrGarbageCollectorService>();
+
     builder.Services.AddSerilog(logConfig =>
     {
         // Global minimum: Information (so Auth: Info events are generated)
