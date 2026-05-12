@@ -1,12 +1,11 @@
 # Dynamic Client Registration (RFC 7591) for MCP clients
 
-> **Status:** v1 design locked in, **ready to implement (7-8 days)**.
-> The consent-UI prerequisite — flagged during the codebase-reality
-> check — was built and shipped 2026-05-12 (commit `9090007`), so
-> nothing is blocking anymore. Captured 2026-05-07, design
-> consolidated 2026-05-12, sharpened after external review same
-> day, codebase-reality-check + prereq-shipped 2026-05-12,
-> OpenIddict-fact-check 2026-05-12.
+> **Status: shipped 2026-05-12.** User-facing docs live at
+> [`admin/dynamic-client-registration.md`](../../admin/dynamic-client-registration.md);
+> this dev-note is kept as the historical design record. v1 design
+> captured 2026-05-07, consolidated 2026-05-12, external-review
+> sharpened, codebase-reality-checked + OpenIddict-fact-checked,
+> consent-UI prereq shipped, full implementation shipped same day.
 >
 > **OpenIddict has NO built-in `/connect/register` endpoint.** Earlier
 > drafts of this note (and the reality-check pass) assumed OpenIddict 7

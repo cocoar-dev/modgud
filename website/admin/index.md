@@ -27,6 +27,7 @@ Cocoar.Auth is not just a login frontend — it's a full **OAuth 2.0 / OpenID Co
 - [OAuth Clients](./oauth-clients) — apps that sign in through the IdP (web, mobile, CLI)
 - [OAuth Scopes](./oauth-scopes) — which capabilities (scopes) are available?
 - [OAuth APIs (Resource Servers)](./oauth-apis) — register backends that validate tokens
+- [Dynamic Client Registration](./dynamic-client-registration) — let AI agents (Claude Code, Cursor, MCP clients) register themselves as OAuth clients
 
 ### Federation & Realms
 

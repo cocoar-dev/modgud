@@ -171,6 +171,7 @@ export const baseConfig = defineConfig({
               { text: 'OAuth Clients', link: '/admin/oauth-clients' },
               { text: 'OAuth Scopes', link: '/admin/oauth-scopes' },
               { text: 'OAuth APIs (Resource Servers)', link: '/admin/oauth-apis' },
+              { text: 'Dynamic Client Registration', link: '/admin/dynamic-client-registration' },
             ],
           },
           {
