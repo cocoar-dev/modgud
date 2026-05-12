@@ -93,14 +93,22 @@ Detail-Banner oben in der Note.
 ### [DCR for MCP clients](./dcr-for-mcp-clients)
 
 Dynamic Client Registration (RFC 7591) so AI agents (Claude Code,
-Cursor, Continue, …) can self-register against the IdP and attach
-to cocoar-internal MCP servers without per-agent admin onboarding.
-First trigger is `cocoar-policy` wanting `auth.cocoar.dev` as its
-IdP. Distinct from user self-registration (which shares the word
-"register" but is a totally different concept).
+Cursor, Continue, claude.ai, …) can self-register against the IdP
+and attach to public-internet MCP servers without per-agent admin
+onboarding. First trigger is `cocoar-policy` wanting
+`auth.cocoar.dev` as its IdP. Distinct from user self-registration
+(which shares the word "register" but is a totally different
+concept and shipped 2026-05-12).
 
-**Status:** Parked 2026-05-07. Not before Resource Indicators
-(RFC 8707) ships.
+**Status:** v1 design locked 2026-05-12 (sharpened after external
+review same day), ready to implement. **6-7 days**. MCP-flavoured
+scope: public PKCE only, triple opt-in (realm master toggle +
+per-`OAuthApi.AllowDynamicRegistration` + per-`OAuthScope.AllowDynamicRegistrationClients`),
+HTTPS-resource-indicator mandatory, `client_name`-spoofing rules
+(NFKC + Latin-1 whitelist + realm-configured reserved-names
+blocklist), `[unverified]` marker + warning text on consent,
+tighter token TTLs for DCR clients, refresh-rotation hard-pinned,
+5 dedicated audit-event types, 90-day GC TTL.
 
 ---
 
