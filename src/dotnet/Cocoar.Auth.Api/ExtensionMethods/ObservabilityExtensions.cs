@@ -1,7 +1,9 @@
 using System.Reflection;
 using Cocoar.Auth.Api.Middleware;
 using Cocoar.Auth.Infrastructure.Observability;
+using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Npgsql;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -72,8 +74,24 @@ internal static class ObservabilityExtensions
                         options.Filter = ctx =>
                             !ctx.Request.Path.StartsWithSegments("/metrics") &&
                             !ctx.Request.Path.StartsWithSegments("/health");
+
+                        // Stamp the active realm onto every request-root span.
+                        // TenantContext is AsyncLocal-backed and set by
+                        // RealmMiddleware before the endpoint runs.
+                        options.EnrichWithHttpRequest = (activity, _) =>
+                            activity.SetTag("cocoar.realm", TenantContext.Current);
                     })
-                    .AddHttpClientInstrumentation();
+                    .AddHttpClientInstrumentation()
+                    // Npgsql ships its own ActivitySource — adds query spans
+                    // (name, duration, parameter count) under the request root.
+                    .AddNpgsql()
+                    // Wolverine 5.x emits dispatch + handler spans on its own
+                    // ActivitySource so Outbox + message-handler flows are
+                    // traceable end-to-end. Source name is "Wolverine".
+                    .AddSource("Wolverine")
+                    // Domain ActivitySource for Cocoar.Auth-emitted spans
+                    // (added incrementally at flow sites that need them).
+                    .AddSource(CocoarAuthActivitySources.Name);
 
                 if (settings.Otlp.Enabled)
                 {
