@@ -1,6 +1,11 @@
 @import "tailwindcss" layer(tailwind);
 @import "@cocoar/vue-ui/styles";
 @import "@cocoar/vue-data-grid/styles";
+/* @cocoar/vue-page-builder 2.1.0 ships dist/index.css but its package.json
+ * exports map only exposes `.` (JS only) — no `./styles` subpath. Workaround
+ * is the deep dist path which Vite resolves via filesystem. Upstream fix
+ * captured in website/dev-notes/upstream-feature-requests/. */
+@import "@cocoar/vue-page-builder/dist/index.css";
 
 :root {
   --color-primary: #525e76;

@@ -312,6 +312,7 @@ export default withMermaid(defineConfig({
             { text: 'Overview', link: '/dev-notes/upstream-feature-requests/' },
             { text: '@cocoar/vue-ui — Sidebar aria-label', link: '/dev-notes/upstream-feature-requests/vue-ui-sidebar-item-aria-label' },
             { text: '@cocoar/vue-ui — Listbox toggle mode', link: '/dev-notes/upstream-feature-requests/vue-ui-listbox-cumulative-highlight' },
+            { text: '@cocoar/vue-page-builder — styles export', link: '/dev-notes/upstream-feature-requests/vue-page-builder-styles-export' },
           ],
         },
       ],
