@@ -112,13 +112,11 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
         var securityData = await session.LoadAsync<UserSecurityData>(user.Id);
         var now = DateTime.UtcNow;
 
-        // Hard opt-out: exempt users bypass the grace check entirely. Audit-log so admins
-        // can review who's accumulating requests under the exemption.
+        // Hard opt-out: exempt users bypass the grace check entirely. The grant of the
+        // exemption itself is audited in AdminGraceEndpoints; per-request logging here
+        // would just spam the audit log.
         if (securityData?.TwoFactorExempt == true)
         {
-            Serilog.Log.Warning(
-                "Auth: 2FA-exempt request allowed. User={UserName} Path={Path}",
-                user.UserName, context.Request.Path.Value);
             await next(context);
             return;
         }
