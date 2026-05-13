@@ -1,15 +1,15 @@
 using System.Xml.Linq;
-using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Marten;
 using Microsoft.AspNetCore.DataProtection.Repositories;
 
 namespace Cocoar.Auth.Infrastructure.Persistence.DataProtection;
 
 /// <summary>
-/// <see cref="IXmlRepository"/> backed by Marten in the system tenant.
-/// Lets every API instance share one DataProtection-key pool — Cookies +
-/// Antiforgery + any other DataProtection-protected payload survives
-/// Container-Restarts and (when scaled out) cross-instance round-trip.
+/// <see cref="IXmlRepository"/> bound to a single tenant's database.
+/// Keys never leave that database — a master-DB compromise cannot forge
+/// cookies for any tenant, and a tenant-DB compromise is contained to
+/// that tenant. Aligns with the per-realm signing-key model used by
+/// <c>RealmSigningKey</c>.
 ///
 /// <para>Reads run on every framework call (cheap in our Volumina), writes
 /// happen on key rollover (default every 90 days). The framework keeps an
@@ -18,15 +18,17 @@ namespace Cocoar.Auth.Infrastructure.Persistence.DataProtection;
 public sealed class MartenXmlRepository : IXmlRepository
 {
     private readonly IDocumentStore _store;
+    private readonly string _tenantId;
 
-    public MartenXmlRepository(IDocumentStore store)
+    public MartenXmlRepository(IDocumentStore store, string tenantId)
     {
         _store = store;
+        _tenantId = tenantId;
     }
 
     public IReadOnlyCollection<XElement> GetAllElements()
     {
-        using var session = _store.QuerySession(TenantConstants.SystemTenantId);
+        using var session = _store.QuerySession(_tenantId);
         var docs = session.Query<DataProtectionKeyDocument>().ToList();
         return docs
             .Select(d => XElement.Parse(d.Xml))
@@ -36,7 +38,7 @@ public sealed class MartenXmlRepository : IXmlRepository
 
     public void StoreElement(XElement element, string friendlyName)
     {
-        using var session = _store.LightweightSession(TenantConstants.SystemTenantId);
+        using var session = _store.LightweightSession(_tenantId);
         session.Store(new DataProtectionKeyDocument
         {
             // friendlyName is framework-supplied and stable (UUID-shaped),

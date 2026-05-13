@@ -678,15 +678,14 @@ try
         observabilitySettings,
         conf.DbSettings.ConnectionString);
 
-    // DataProtection keys persisted in Marten (system tenant). Lifts the
-    // single-instance restart pain — cookies + antiforgery survive
-    // `docker-compose down && up`. Also a prereq for any future >1
-    // instance deployment, see HA-2a in
+    // Per-tenant DataProtection. Each realm's keys live in that realm's
+    // database — a master-DB compromise yields no cookie-forgery for any
+    // tenant, and a tenant-DB compromise is contained to that tenant.
+    // Cookies + antiforgery survive `docker-compose down && up` as a
+    // free side effect (no more login-everyone-out on deploy).
+    // See HA-2a in
     // website/dev-notes/future-features/ha-multi-instance.md.
-    builder.Services
-        .AddDataProtection()
-        .SetApplicationName("Cocoar.Auth")
-        .PersistKeysWithMarten();
+    builder.Services.AddTenantedDataProtection();
 
     // OpenIddict OAuth 2.0 / OIDC server — uses our custom Marten stores. Settings are
     // captured at config time so signing certs / lifetimes can be pinned before the
