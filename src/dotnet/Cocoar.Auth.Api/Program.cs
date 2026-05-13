@@ -38,6 +38,8 @@ using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Infrastructure;
 using Cocoar.Auth.Infrastructure.OAuth;
 using Cocoar.Auth.Infrastructure.OpenIddict;
+using Cocoar.Auth.Infrastructure.Persistence.DataProtection;
+using Microsoft.AspNetCore.DataProtection;
 using Cocoar.Auth.Api.Features.Auth.OAuth;
 using Cocoar.Auth.Authentication.Setup;
 using Cocoar.Auth.Authentication.Identity;
@@ -676,6 +678,16 @@ try
         observabilitySettings,
         conf.DbSettings.ConnectionString);
 
+    // DataProtection keys persisted in Marten (system tenant). Lifts the
+    // single-instance restart pain — cookies + antiforgery survive
+    // `docker-compose down && up`. Also a prereq for any future >1
+    // instance deployment, see HA-2a in
+    // website/dev-notes/future-features/ha-multi-instance.md.
+    builder.Services
+        .AddDataProtection()
+        .SetApplicationName("Cocoar.Auth")
+        .PersistKeysWithMarten();
+
     // OpenIddict OAuth 2.0 / OIDC server — uses our custom Marten stores. Settings are
     // captured at config time so signing certs / lifetimes can be pinned before the
     // host is built. Per-realm issuer is applied at request time via RealmIssuerHandler.
@@ -739,13 +751,32 @@ try
     // Migration services for legacy Cocoar.Auth data have been removed in the
     // IdP-only baseline — no historical documents to upgrade to event streams.
 
-    // Wolverine CQRS + Marten projection side effects
+    // Wolverine CQRS + Marten projection side effects.
+    //
+    // HA-2a — DurabilityMode is now env-overridable so a future Multi-
+    // Instance Deployment can switch to Balanced without a code change.
+    // Default Solo because that's correct for the supported deployment
+    // shape today (one instance). Two instances in Solo mode would both
+    // process the same outbox row → silent double-execution.
+    var wolverineMode = Enum.TryParse<DurabilityMode>(
+        Environment.GetEnvironmentVariable("Wolverine__DurabilityMode"),
+        ignoreCase: true,
+        out var parsedMode)
+            ? parsedMode
+            : DurabilityMode.Solo;
+
+    Log.Information(
+        "Wolverine running in {Mode} mode. Multi-instance deployments must " +
+        "set Wolverine__DurabilityMode=Balanced (Solo is correct for the " +
+        "default single-instance setup).",
+        wolverineMode);
+
     builder.Host.UseWolverine(opts =>
     {
         opts.Discovery.IncludeAssembly(typeof(Program).Assembly);
         opts.Discovery.IncludeAssembly(typeof(Cocoar.Auth.Authentication.Api.Admin.RecoveryCli).Assembly);
         opts.Discovery.IncludeAssembly(typeof(Cocoar.Auth.Authorization.Commands.CreateGroupCommand).Assembly);
-        opts.Durability.Mode = DurabilityMode.Solo;
+        opts.Durability.Mode = wolverineMode;
         opts.CodeGeneration.TypeLoadMode = JasperFx.CodeGeneration.TypeLoadMode.Auto;
 
         // Auto-register Event Forwarding subscriptions for all ReferenceSyncHandler<TEvent> implementations

@@ -66,6 +66,14 @@ public static class MartenConfiguration
             .Identity(x => x.Id)
             .Index(x => x.ExpiresAt);
 
+        // DataProtection keys (cookie/antiforgery encryption material).
+        // Lives in the system tenant so every instance shares one key pool
+        // and keys survive Container-Restart. Friendly-name (UUID-shaped,
+        // framework-supplied) is the stable document key. See
+        // Cocoar.Auth.Infrastructure.Persistence.DataProtection.
+        options.Schema.For<Cocoar.Auth.Infrastructure.Persistence.DataProtection.DataProtectionKeyDocument>()
+            .Identity(x => x.Id);
+
         // Authentication-specific Marten setup (documents + events + projections)
         // is wired via UseCocoarAuthAuthentication(), called from AddInfrastructure's
         // additionalMartenConfig callback so Infrastructure stays unaware of Authentication.

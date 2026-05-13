@@ -1,11 +1,115 @@
 # HA / Multi-Instance Readiness
 
-> **Status:** Roadmap-Item. Designspace captured 2026-05-13.
-> **Why:** Cocoar.Auth ist heute hart auf Single-Instance verdrahtet.
-> Zwei Replicas hinter einem Load-Balancer brechen mindestens in 4
-> getrennten Stellen. Audit-Finding aus
+> **Status:** Aufgesplittet in **2a Deployment-Hygiene** (jetzt
+> umsetzbar, Nutzen auch Single-Instance) und **2b Echte HA**
+> (deferred bis echtes Multi-Box-Setup zum Testen existiert).
+> Audit-Finding aus
 > [production-readiness-audit-2026-05-13](./production-readiness-audit-2026-05-13)
 > Punkt #2.
+
+## Ehrliche Reality-Check (2026-05-13 abends)
+
+Ursprünglich war hier ein vollständiger HA-Plan mit 7 Brüchen + Phasen.
+Beim ehrlichen Durchgehen mit dem Owner-Operator wurde klar:
+
+1. Wir können **kein echtes HA hier testen** — kein zweiter Server, kein
+   echter Load-Balancer mit Sticky-Sessions, keine Chaos-Engineering-
+   Möglichkeit, keine Failover-Drills.
+2. **Untested HA-Code ist schlechter als gar kein HA-Code** — er feuert
+   unter Stress, und Race-Conditions zeigen sich nur unter Last die wir
+   hier nicht simulieren können.
+3. Die meisten "Brüche" sind mit **Sticky-Sessions am Reverse-Proxy
+   trivial** behebbar (Cookie-Affinity in HAProxy/nginx/Sophos = Standard-
+   Feature). Was sticky-sessions NICHT löst: Wolverine-Outbox.
+4. Was wirklich **deployment-hygienisch** ist (DataProtection-Keys
+   persistent + Wolverine-Mode-Toggle) lohnt sich auch im Single-
+   Instance-Setup und ist hier-und-jetzt testbar.
+
+Deshalb der Split:
+
+- **2a Deployment-Hygiene** — wird jetzt umgesetzt, ~1 Tag, jeder
+  Schritt einzeln single-instance verifizierbar
+- **2b Echte HA** — bleibt parked bis du a) wirklich skalierst und
+  b) das in einer echten Failover-Umgebung testen kannst
+
+## 2a — Deployment-Hygiene (jetzt umsetzbar)
+
+### Win 1: DataProtection-Keys persistent in Postgres
+
+**Problem ohne:** Container-Restart oder Pod-Reschedule = alle Auth-
+Cookies, Antiforgery-Tokens, Session-Cookies broken bis User sich neu
+einloggt. Auch wenn man NICHT auf Multi-Instance skaliert ist das
+Nutzer-feindlich beim `docker-compose down && up` Deploy.
+
+**Lösung:** Custom `IXmlRepository` der Keys in Marten/Postgres
+persistiert (master-DB, system-tenant). Singleton.
+
+**Verifikation:** Single-Instance. Login → Cookie. API-Container
+restart. Erneuter Request mit gleichem Cookie → kein Re-Login nötig.
+
+### Win 2: Wolverine `DurabilityMode` als Config
+
+**Problem ohne:** Code hat `opts.Durability.Mode = DurabilityMode.Solo`
+hartcodiert. Solo bedeutet "ich bin allein, keine Leader-Election
+nötig". Wenn ein Operator 2 Instanzen mit dieser Code-Base startet,
+verarbeiten **beide** Outbox-Messages → Emails doppelt, Wolverine-Events
+doppelt. Stille Data-Corruption.
+
+**Lösung:** Mode in Config rausziehen (default Solo), per Env-Var
+überschreibbar. Boot-Log "Wolverine running in <Mode> mode" + Hinweis
+dass Multi-Instance einen anderen Mode braucht.
+
+**Verifikation:** Single-Instance. App startet mit default Solo,
+Boot-Log zeigt's. Mit `Wolverine__DurabilityMode=Balanced` startet
+sie im anderen Mode (auch wenn sie es im Single-Instance-Betrieb
+nicht braucht).
+
+### Nicht gemacht in 2a (bewusst)
+
+- **Sticky-Session-Konfig** — operator-side, nicht code-side
+- **Distributed Rate-Limiter, RealmCache-Invalidation, SignalR-
+  Backplane** — alles 2b-Items (echtes HA, brauchen echten Test)
+
+## 2b — Echte HA (deferred)
+
+Was im 2-Instanz-Betrieb noch brechen wird (selbst mit Sticky-Sessions
+und 2a):
+
+- **In-Memory Rate-Limiter** (DCR + Self-Registration): effektives
+  Limit ist 2× konfiguriert. Niedrig-severity weil wir nicht primär
+  auf Rate-Limits als Defense verlassen
+- **RealmCache** (Hostname→Realm-Auflösung): pro-Pod, Realm-Settings-
+  Änderungen propagieren über TTL statt sofort. Niedrig-severity
+- **Observability ActivityBuffer**: pro-Pod, Admin-Dashboard sieht
+  nur Events der Instanz auf der die SignalR-Connection sitzt.
+  Mittel-severity (Live-View wird halb-blind)
+- **SignalARR DataEventDispatcher**: pro-Pod, UserActions-Stream
+  zeigt nur lokale Events. Mittel-severity (Profile-Refresh-Latenz)
+
+Lösungs-Skizze für später (KEIN Code jetzt):
+
+| Bedarf | Postgres-only-Weg | Externe-Dep-Weg |
+|---|---|---|
+| Cross-Instance Event-Pub/Sub | `LISTEN/NOTIFY` + eigene `ICrossInstanceEventBus`-Abstraktion (~1.5-2 Tage) | Redis Pub/Sub + SignalR-Backplane-Package (~0.5 Tage, +1 Container) |
+| Distributed Rate-Limiter | `UPDATE … RETURNING` Atomic-Counter (~1 Tag) | Redis `INCR` (Standard) |
+| RealmCache-Invalidation | Hängt am Event-Bus oben | Hängt am Event-Bus oben |
+
+**Designziel "minimum stateful deps"** spricht für Postgres-only-Weg.
+Aufwand ~3-4 Tage Eigenbau plus echte Failover-Tests. Wird relevant
+wenn:
+- Echter Hetzner-Box-Pair-Deploy ansteht
+- Ein Customer eine HA-SLA fordert
+- Wir gemerkt haben dass die OpenTelemetry-Metrics sagen "eine Instanz
+  ist überlastet"
+
+Bis dahin: Single-Instance + 2a + Backup-Pipeline ([realm-backup-restore](./realm-backup-restore))
+ist das Production-Setup.
+
+## Historischer Block (Original-7-Brüche-Plan)
+
+Bleibt unten als Referenz falls 2b irgendwann ranschneidet. Achtung:
+die Phasen-Aufwände gehen von "wir haben jetzt eine echte Multi-Box-
+Umgebung" aus.
 
 ## Was heute bricht bei 2+ Instanzen
 

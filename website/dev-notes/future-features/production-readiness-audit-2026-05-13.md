@@ -51,8 +51,9 @@ Produkte.
 
 | # | Punkt | Severity | Detail-Page | Status |
 |---|---|---|---|---|
-| 1 | OpenTelemetry / Metrics / Tracing | HIGH | [observability-opentelemetry](./observability-opentelemetry) | NEXT |
-| 2 | HA / Multi-Instance (DataProtection + Distributed Cache + Rate-Limiter) | HIGH | [ha-multi-instance](./ha-multi-instance) | Captured |
+| 1 | OpenTelemetry / Metrics / Tracing | HIGH | [observability-opentelemetry](./observability-opentelemetry) | ✅ **DONE 2026-05-13** (Phase 1-5b) |
+| 2a | Deployment-Hygiene (DataProtection persistent + Wolverine-Mode-Toggle) | HIGH | [ha-multi-instance](./ha-multi-instance) | NEXT — Single-Instance-Nutzen, kein HA-Blindflug |
+| 2b | Echte HA / Multi-Instance (Cross-Instance Pub/Sub, Distributed Caches) | HIGH | [ha-multi-instance](./ha-multi-instance) | ⏸ Deferred — braucht echtes Multi-Box-Setup zum Testen |
 | 3 | Realm-Backup / Restore / DR-Tooling (N Tenant-DBs) | MEDIUM | [realm-backup-restore](./realm-backup-restore) | Captured |
 | 4 | Enterprise-SSO: SAML 2.0 + LDAP/AD-Federation | MEDIUM | [enterprise-sso-saml-ldap](./enterprise-sso-saml-ldap) | Captured |
 | 5 | Brute-Force Visibility (Login-Alerts + manuelle IP-Blacklist) | MEDIUM | [login-alerts-ip-blacklist](./login-alerts-ip-blacklist) | Captured (2026-05-07) |
