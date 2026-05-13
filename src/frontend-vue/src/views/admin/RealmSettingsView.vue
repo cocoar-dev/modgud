@@ -10,7 +10,10 @@ import {
   CoarMultiSelect,
   CoarTabGroup,
   CoarTab,
+  useDialog,
 } from '@cocoar/vue-ui'
+import AssetPicker from '@/components/AssetPicker.vue'
+import type { AssetDto } from '@/models/assets'
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import EditableStringList from '@/components/EditableStringList.vue'
@@ -114,13 +117,22 @@ function dcrFromDto(d: DcrSettingsDto): DcrFormState {
 // ── Branding form state ──────────────────────────────────────────────
 interface BrandingFormState {
   ProductName: string
+  LogoAssetId: string
   LogoUrl: string
+  FaviconAssetId: string
   FaviconUrl: string
   PrimaryColor: string
 }
 
 function emptyBranding(): BrandingFormState {
-  return { ProductName: '', LogoUrl: '', FaviconUrl: '', PrimaryColor: '' }
+  return {
+    ProductName: '',
+    LogoAssetId: '',
+    LogoUrl: '',
+    FaviconAssetId: '',
+    FaviconUrl: '',
+    PrimaryColor: '',
+  }
 }
 
 const brandingForm = ref<BrandingFormState>(emptyBranding())
@@ -129,10 +141,46 @@ const originalBranding = ref<BrandingSettingsDto | null>(null)
 function brandingFromDto(b: BrandingSettingsDto): BrandingFormState {
   return {
     ProductName: b.ProductName ?? '',
+    LogoAssetId: b.LogoAssetId ?? '',
     LogoUrl: b.LogoUrl ?? '',
+    FaviconAssetId: b.FaviconAssetId ?? '',
     FaviconUrl: b.FaviconUrl ?? '',
     PrimaryColor: b.PrimaryColor ?? '',
   }
+}
+
+const dialog = useDialog()
+
+async function pickLogo() {
+  const ref = dialog.open<AssetDto>(AssetPicker, { title: t('admin.realmSettings.branding.pickLogo', {}, 'Select logo'), size: 'l' }, {
+    selectedId: brandingForm.value.LogoAssetId || null,
+  })
+  const result = await ref.result
+  if (result) {
+    brandingForm.value.LogoAssetId = result.Id
+    brandingForm.value.LogoUrl = result.Url
+  }
+}
+
+function clearLogo() {
+  brandingForm.value.LogoAssetId = ''
+  brandingForm.value.LogoUrl = ''
+}
+
+async function pickFavicon() {
+  const ref = dialog.open<AssetDto>(AssetPicker, { title: t('admin.realmSettings.branding.pickFavicon', {}, 'Select favicon'), size: 'l' }, {
+    selectedId: brandingForm.value.FaviconAssetId || null,
+  })
+  const result = await ref.result
+  if (result) {
+    brandingForm.value.FaviconAssetId = result.Id
+    brandingForm.value.FaviconUrl = result.Url
+  }
+}
+
+function clearFavicon() {
+  brandingForm.value.FaviconAssetId = ''
+  brandingForm.value.FaviconUrl = ''
 }
 
 // Captcha-secret — write-only with three states: leave, clear, replace.
@@ -244,16 +292,14 @@ function buildBrandingPatch(): UpdateBrandingSettingsDto | undefined {
   const cur = brandingForm.value
   const patch: UpdateBrandingSettingsDto = {}
 
-  // For each field: trimmed-empty maps to null (clear → revert to default),
-  // changed value writes through, unchanged is omitted from the patch.
+  // Tri-state per field: trimmed-empty maps to "" (clear → revert to
+  // default), changed value writes through, unchanged is omitted.
   const productName = cur.ProductName.trim()
-  if (productName !== (orig.ProductName ?? '')) patch.ProductName = productName || null
-  const logo = cur.LogoUrl.trim()
-  if (logo !== (orig.LogoUrl ?? '')) patch.LogoUrl = logo || null
-  const favicon = cur.FaviconUrl.trim()
-  if (favicon !== (orig.FaviconUrl ?? '')) patch.FaviconUrl = favicon || null
+  if (productName !== (orig.ProductName ?? '')) patch.ProductName = productName
+  if (cur.LogoAssetId !== (orig.LogoAssetId ?? '')) patch.LogoAssetId = cur.LogoAssetId
+  if (cur.FaviconAssetId !== (orig.FaviconAssetId ?? '')) patch.FaviconAssetId = cur.FaviconAssetId
   const color = cur.PrimaryColor.trim()
-  if (color !== (orig.PrimaryColor ?? '')) patch.PrimaryColor = color || null
+  if (color !== (orig.PrimaryColor ?? '')) patch.PrimaryColor = color
 
   return Object.keys(patch).length === 0 ? undefined : patch
 }
@@ -492,11 +538,33 @@ async function save() {
           <CoarFormField :label="t('admin.realmSettings.branding.primaryColor', {}, 'Primary color (CSS color, e.g. #5A6478)')">
             <CoarTextInput v-model="brandingForm.PrimaryColor" clearable placeholder="#5A6478" />
           </CoarFormField>
-          <CoarFormField :label="t('admin.realmSettings.branding.logoUrl', {}, 'Logo URL')">
-            <CoarTextInput v-model="brandingForm.LogoUrl" clearable placeholder="https://… or /assets/logo.svg" />
+          <CoarFormField :label="t('admin.realmSettings.branding.logo', {}, 'Logo')">
+            <div class="asset-row">
+              <div class="asset-thumb">
+                <img v-if="brandingForm.LogoUrl" :src="brandingForm.LogoUrl" alt="logo" />
+                <span v-else class="asset-thumb-empty">—</span>
+              </div>
+              <CoarButton size="s" variant="ghost" @click="pickLogo">
+                {{ t('admin.realmSettings.branding.pick', {}, 'Browse…') }}
+              </CoarButton>
+              <CoarButton v-if="brandingForm.LogoAssetId" size="s" variant="ghost" @click="clearLogo">
+                {{ t('common.clear', {}, 'Clear') }}
+              </CoarButton>
+            </div>
           </CoarFormField>
-          <CoarFormField :label="t('admin.realmSettings.branding.faviconUrl', {}, 'Favicon URL')">
-            <CoarTextInput v-model="brandingForm.FaviconUrl" clearable placeholder="https://… or /assets/favicon.svg" />
+          <CoarFormField :label="t('admin.realmSettings.branding.favicon', {}, 'Favicon')">
+            <div class="asset-row">
+              <div class="asset-thumb">
+                <img v-if="brandingForm.FaviconUrl" :src="brandingForm.FaviconUrl" alt="favicon" />
+                <span v-else class="asset-thumb-empty">—</span>
+              </div>
+              <CoarButton size="s" variant="ghost" @click="pickFavicon">
+                {{ t('admin.realmSettings.branding.pick', {}, 'Browse…') }}
+              </CoarButton>
+              <CoarButton v-if="brandingForm.FaviconAssetId" size="s" variant="ghost" @click="clearFavicon">
+                {{ t('common.clear', {}, 'Clear') }}
+              </CoarButton>
+            </div>
           </CoarFormField>
         </div>
 
@@ -509,6 +577,38 @@ async function save() {
     </CoarCard>
   </div>
 </template>
+
+<style scoped>
+.asset-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.asset-thumb {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--coar-background-neutral-primary);
+  border: 1px solid var(--coar-border-neutral-secondary);
+  border-radius: 0.25rem;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.asset-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.asset-thumb-empty {
+  color: var(--coar-text-neutral-secondary);
+  font-size: 0.75rem;
+}
+</style>
 
 <style scoped>
 .tab-bar {

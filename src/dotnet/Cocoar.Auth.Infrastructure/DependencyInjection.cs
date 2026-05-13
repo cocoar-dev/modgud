@@ -171,6 +171,11 @@ public static class DependencyInjection
             // separately by bearer token at the perimeter.
             opt.RegisterResource(app, "observability", "read");
 
+            // Per-realm asset library — uploads + delete are admin-only,
+            // read needed by anyone who can configure things that reference
+            // an asset (branding, login providers later, …).
+            opt.RegisterResource(app, "asset", "read", "write");
+
             // GDPR (permanent-erase only — self-service is implicit on the caller)
             opt.RegisterResource(app, "gdpr", "admin");
 

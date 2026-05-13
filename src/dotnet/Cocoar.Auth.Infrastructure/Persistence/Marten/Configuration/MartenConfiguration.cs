@@ -74,6 +74,12 @@ public static class MartenConfiguration
         options.Schema.For<Cocoar.Auth.Infrastructure.Persistence.DataProtection.DataProtectionKeyDocument>()
             .Identity(x => x.Id);
 
+        // Tenant-scoped asset library (logos, favicons, login illustrations).
+        // Indexed on UploadedAt for the admin-list "newest first" ordering.
+        options.Schema.For<Cocoar.Auth.Domain.Assets.Asset>()
+            .Identity(x => x.Id)
+            .Index(x => x.UploadedAt);
+
         // Authentication-specific Marten setup (documents + events + projections)
         // is wired via UseCocoarAuthAuthentication(), called from AddInfrastructure's
         // additionalMartenConfig callback so Infrastructure stays unaware of Authentication.

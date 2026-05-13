@@ -1,7 +1,10 @@
+using System.Text.RegularExpressions;
+using BuildingBlocks.Helper;
 using Cocoar.Auth.Application.DTOs.RealmSettings;
 using Cocoar.Auth.Application.DTOs.Realms;
 using Cocoar.Auth.Authentication.SelfRegistration.Captcha;
 using Cocoar.Auth.Domain.Realms;
+using ErrorOr;
 using Marten;
 using RealmSettingsDoc = Cocoar.Auth.Domain.RealmSettings.RealmSettings;
 
@@ -18,7 +21,7 @@ public interface IRealmSettingsService
 {
     Task<RealmSettingsDoc> LoadAsync(CancellationToken ct = default);
     Task<RealmSettingsDto> GetDtoAsync(CancellationToken ct = default);
-    Task<RealmSettingsDto> PatchAsync(UpdateRealmSettingsDto dto, CancellationToken ct = default);
+    Task<ErrorOr<RealmSettingsDto>> PatchAsync(UpdateRealmSettingsDto dto, CancellationToken ct = default);
 }
 
 public sealed class RealmSettingsService(
@@ -40,7 +43,7 @@ public sealed class RealmSettingsService(
         return ToDto(doc);
     }
 
-    public async Task<RealmSettingsDto> PatchAsync(UpdateRealmSettingsDto dto, CancellationToken ct = default)
+    public async Task<ErrorOr<RealmSettingsDto>> PatchAsync(UpdateRealmSettingsDto dto, CancellationToken ct = default)
     {
         var existing = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
         var isCreate = existing is null;
@@ -62,7 +65,9 @@ public sealed class RealmSettingsService(
 
         if (dto.Branding is not null)
         {
-            doc.Branding = ApplyBrandingPatch(doc.Branding, dto.Branding);
+            var branding = ApplyBrandingPatch(doc.Branding, dto.Branding);
+            if (branding.IsError) return branding.FirstError;
+            doc.Branding = branding.Value;
         }
 
         if (!isCreate) doc.UpdatedAt = DateTimeOffset.UtcNow;
@@ -105,7 +110,7 @@ public sealed class RealmSettingsService(
         Branding = MapBrandingToDto(doc.Branding),
     };
 
-    private static BrandingSettings ApplyBrandingPatch(
+    private static ErrorOr<BrandingSettings> ApplyBrandingPatch(
         BrandingSettings? current,
         UpdateBrandingSettingsDto patch)
     {
@@ -113,12 +118,28 @@ public sealed class RealmSettingsService(
         // Tri-state per field: missing/null = no change, "" = clear (revert
         // to Cocoar default), other = replace. Matches the captcha-secret
         // semantics on the self-registration section.
+        var color = MergeBrandingField(s.PrimaryColor, patch.PrimaryColor);
+        if (color is not null && !IsValidCssColor(color))
+            return Error.Validation("Branding.InvalidPrimaryColor",
+                "PrimaryColor must be a hex (#rgb / #rrggbb / #rrggbbaa), rgb()/rgba(), hsl()/hsla(), or a CSS named-color.");
+
+        var productName = MergeBrandingField(s.ProductName, patch.ProductName);
+        if (productName is not null && productName.Length > 100)
+            return Error.Validation("Branding.ProductNameTooLong",
+                "ProductName must be 100 characters or fewer.");
+
+        var logoAsset = MergeAssetIdField(s.LogoAssetId, patch.LogoAssetId);
+        if (logoAsset.IsError) return logoAsset.FirstError;
+
+        var faviconAsset = MergeAssetIdField(s.FaviconAssetId, patch.FaviconAssetId);
+        if (faviconAsset.IsError) return faviconAsset.FirstError;
+
         return s with
         {
-            ProductName = MergeBrandingField(s.ProductName, patch.ProductName),
-            LogoUrl = MergeBrandingField(s.LogoUrl, patch.LogoUrl),
-            FaviconUrl = MergeBrandingField(s.FaviconUrl, patch.FaviconUrl),
-            PrimaryColor = MergeBrandingField(s.PrimaryColor, patch.PrimaryColor),
+            ProductName = productName,
+            LogoAssetId = logoAsset.Value,
+            FaviconAssetId = faviconAsset.Value,
+            PrimaryColor = color,
         };
     }
 
@@ -129,14 +150,41 @@ public sealed class RealmSettingsService(
         var v => v,
     };
 
+    private static ErrorOr<Guid?> MergeAssetIdField(Guid? current, string? patch)
+    {
+        if (patch is null) return current;
+        if (patch.Length == 0) return (Guid?)null;
+        if (ShortGuid.TryDecode(patch, out var parsed)) return (Guid?)parsed;
+        return Error.Validation("Branding.InvalidAssetId",
+            "Asset id must be a ShortGuid or empty string to clear.");
+    }
+
+    // CSS color tokens we accept on write. Strict (no calc(), no var())
+    // to keep injection-risk to zero: this value gets dropped into
+    // --coar-color-primary which is then var()-consumed in property
+    // values across the SPA.
+    private static readonly Regex CssColorRegex = new(
+        @"^(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})" +
+        @"|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)" +
+        @"|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\)" +
+        @"|hsl\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*\)" +
+        @"|hsla\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*,\s*(0|1|0?\.\d+)\s*\)" +
+        @"|[a-zA-Z]{3,30})$",
+        RegexOptions.Compiled);
+
+    private static bool IsValidCssColor(string value) =>
+        !string.IsNullOrWhiteSpace(value) && CssColorRegex.IsMatch(value.Trim());
+
     internal static BrandingSettingsDto MapBrandingToDto(BrandingSettings? s)
     {
         if (s is null) return new BrandingSettingsDto();
         return new BrandingSettingsDto
         {
             ProductName = s.ProductName,
-            LogoUrl = s.LogoUrl,
-            FaviconUrl = s.FaviconUrl,
+            LogoAssetId = s.LogoAssetId is { } lid ? ShortGuid.Encode(lid) : null,
+            LogoUrl = s.LogoAssetId is { } l ? $"/assets/{ShortGuid.Encode(l)}" : null,
+            FaviconAssetId = s.FaviconAssetId is { } fid ? ShortGuid.Encode(fid) : null,
+            FaviconUrl = s.FaviconAssetId is { } f ? $"/assets/{ShortGuid.Encode(f)}" : null,
             PrimaryColor = s.PrimaryColor,
         };
     }

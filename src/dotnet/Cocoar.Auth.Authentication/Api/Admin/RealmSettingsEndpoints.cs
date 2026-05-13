@@ -40,7 +40,14 @@ public static class RealmSettingsEndpoints
             CancellationToken ct) =>
         {
             var result = await svc.PatchAsync(dto, ct);
-            return Results.Ok(result);
+            return result.Match(
+                ok => Results.Ok(ok),
+                errors => Results.Problem(
+                    statusCode: errors.First().Type == ErrorOr.ErrorType.Validation
+                        ? StatusCodes.Status400BadRequest
+                        : StatusCodes.Status500InternalServerError,
+                    title: errors.First().Code,
+                    detail: errors.First().Description));
         })
         .WithName("RealmSettings_Patch")
         .RequiresPermission("realm-settings:write");

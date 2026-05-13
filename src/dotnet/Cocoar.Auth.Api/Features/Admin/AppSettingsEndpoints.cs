@@ -1,3 +1,4 @@
+using BuildingBlocks.Helper;
 using Cocoar.Auth.Api;
 using Cocoar.Auth.Authentication.RealmSettings;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
@@ -35,8 +36,15 @@ public static class AppSettingsEndpoints
                     Branding = new
                     {
                         ProductName = realmDoc.Branding?.ProductName,
-                        LogoUrl = realmDoc.Branding?.LogoUrl,
-                        FaviconUrl = realmDoc.Branding?.FaviconUrl,
+                        // Resolve the asset id to a public URL so the SPA
+                        // can drop it straight into <img src>. No need to
+                        // expose the raw asset id to anonymous callers.
+                        LogoUrl = realmDoc.Branding?.LogoAssetId is { } l
+                            ? $"/assets/{ShortGuid.Encode(l)}"
+                            : null,
+                        FaviconUrl = realmDoc.Branding?.FaviconAssetId is { } f
+                            ? $"/assets/{ShortGuid.Encode(f)}"
+                            : null,
                         PrimaryColor = realmDoc.Branding?.PrimaryColor,
                     },
                 });

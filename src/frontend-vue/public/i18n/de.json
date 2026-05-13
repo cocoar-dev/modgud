@@ -3,6 +3,8 @@
     "loading": "Laden...",
     "create": "Erstellen",
     "save": "Speichern",
+    "clear": "Leeren",
+    "ok": "OK",
     "apply": "Übernehmen",
     "delete": "Löschen",
     "open": "Öffnen",
@@ -29,6 +31,13 @@
     "confirmDelete": "Wirklich löschen?",
     "copy": "Kopieren",
     "search": "Suchen..."
+  },
+  "asset": {
+    "picker": {
+      "title": "Asset auswählen",
+      "upload": "Neu hochladen…",
+      "empty": "Noch keine Assets — bitte erst hochladen."
+    }
   },
   "auth": {
     "login": {
@@ -543,6 +552,15 @@
       "refresh": "Aktualisieren",
       "clear": "Leeren"
     },
+    "assets": {
+      "title": "Asset-Library",
+      "empty": "Noch keine Assets hochgeladen.",
+      "dropHere": "Dateien hier ablegen oder unten auswählen. PNG, JPEG, GIF, WebP, SVG, ICO — max. 2 MB pro Datei.",
+      "selectFiles": "Dateien auswählen…",
+      "deleteConfirm": "Asset löschen?",
+      "deleteWarning": "Das Asset wird unwiderruflich entfernt. Items, die es referenzieren, blockieren das Löschen.",
+      "inUseHeadline": "Löschen nicht möglich — noch referenziert von:"
+    },
     "observability": {
       "title": "Observability",
       "loginSuccess": "Erfolgreiche Logins",
@@ -732,11 +750,14 @@
         "branding": "Branding"
       },
       "branding": {
-        "hint": "Pro-Realm-Branding für die SPA. Alle Felder optional — leer lassen für die Cocoar-Defaults. Logo-/Favicon-URLs absolut (https://…) oder SPA-relativ (/assets/…). Änderungen wirken beim nächsten SPA-Load.",
+        "hint": "Pro-Realm-Branding für die SPA. Alle Felder optional — leer lassen für die Cocoar-Defaults. Logo + Favicon werden aus der Asset-Library gewählt. Änderungen wirken beim nächsten SPA-Load.",
         "productName": "Produkt-Name",
         "primaryColor": "Primärfarbe (CSS-Color, z.B. #5A6478)",
-        "logoUrl": "Logo-URL",
-        "faviconUrl": "Favicon-URL"
+        "logo": "Logo",
+        "favicon": "Favicon",
+        "pick": "Auswählen…",
+        "pickLogo": "Logo auswählen",
+        "pickFavicon": "Favicon auswählen"
       },
       "selfReg": {
         "hint": "Wenn aktiviert, können Besucher unter /register selbst ein Konto anlegen. Default: deaktiviert.",

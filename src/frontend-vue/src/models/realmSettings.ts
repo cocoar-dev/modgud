@@ -15,21 +15,26 @@ export interface UpdateRealmSettingsDto {
   Branding?: UpdateBrandingSettingsDto | null
 }
 
-// Read shape for the Branding sub-section. All fields nullable —
-// null = SPA falls back to the Cocoar defaults.
+// Read shape for the Branding sub-section. LogoUrl/FaviconUrl are
+// server-resolved from the asset id (handy for the SPA to drop into
+// <img src>); LogoAssetId/FaviconAssetId round-trip back into the
+// admin form. All nullable — null = SPA falls back to Cocoar defaults.
 export interface BrandingSettingsDto {
   ProductName?: string | null
+  LogoAssetId?: string | null
   LogoUrl?: string | null
+  FaviconAssetId?: string | null
   FaviconUrl?: string | null
   PrimaryColor?: string | null
 }
 
-// PATCH shape. Each field: undefined/null = no change, "" = clear
-// (revert to Cocoar default), other = replace.
+// PATCH shape. Tri-state per field: undefined/null = no change,
+// "" = clear (revert to Cocoar default), other = replace. The
+// asset-id fields take ShortGuid strings.
 export interface UpdateBrandingSettingsDto {
   ProductName?: string | null
-  LogoUrl?: string | null
-  FaviconUrl?: string | null
+  LogoAssetId?: string | null
+  FaviconAssetId?: string | null
   PrimaryColor?: string | null
 }
 
