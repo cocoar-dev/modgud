@@ -31,6 +31,14 @@ public sealed class ObservabilityActivityBuffer
         _capacity = capacity;
     }
 
+    /// <summary>
+    /// Fired after every <see cref="Record"/> so live observers (the
+    /// SignalARR <c>ObservabilityHub</c>) can push to subscribed clients
+    /// without polling the buffer. Handlers are invoked synchronously on
+    /// the recording thread — keep them cheap.
+    /// </summary>
+    public event Action<ObservabilityEvent>? EventRecorded;
+
     public void Record(string eventType, string realm, IReadOnlyDictionary<string, string>? tags = null)
     {
         var evt = new ObservabilityEvent(
@@ -43,6 +51,16 @@ public sealed class ObservabilityActivityBuffer
         // Cheap trim — never block; over-shoot by a few entries under
         // burst contention is fine.
         while (_events.Count > _capacity && _events.TryDequeue(out _)) { }
+
+        // Notify live subscribers. Swallow handler exceptions so a buggy
+        // subscriber can't kill recording for everyone else.
+        var handler = EventRecorded;
+        if (handler is null) return;
+        foreach (var single in handler.GetInvocationList())
+        {
+            try { ((Action<ObservabilityEvent>)single)(evt); }
+            catch { /* swallow */ }
+        }
     }
 
     /// <summary>Most-recent first.</summary>

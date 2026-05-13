@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
+import { useSignalR } from '@/composables/useSignalR'
 import { useUI } from '@/composables/useUI'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarCard, CoarTag } from '@cocoar/vue-ui'
 
 const { t, language } = useI18n()
 const http = useHttpClient('/api/admin/observability')
+const signalr = useSignalR()
 
 const ui = useUI()
 watch(language, () => ui.set((ctx) => {
@@ -35,9 +37,15 @@ interface ActivityItem {
 const snapshot = ref<Snapshot | null>(null)
 const activity = ref<ActivityItem[]>([])
 const lastUpdate = ref<Date | null>(null)
-let pollHandle: ReturnType<typeof setInterval> | null = null
+let driftRefreshHandle: ReturnType<typeof setInterval> | null = null
 
-async function refresh() {
+// Initial state + drift-correction: REST snapshot delivers the rolling-
+// window aggregates and sparkline buckets pre-bucketed by the server.
+// SignalR carries live events, but the sparkline buckets shift over time
+// (every minute the window rolls forward) which the client can't fully
+// reconstruct without a re-sync. 30s drift-refresh keeps the sparkline
+// correctly aligned; counts are kept fresh by live events in between.
+async function refreshSnapshot() {
   try {
     const [snap, act] = await Promise.all([
       http.addPath('snapshot').get<Snapshot>(),
@@ -49,17 +57,40 @@ async function refresh() {
   } catch { /* swallow — keep previous values rather than blink */ }
 }
 
+function applyLiveEvent(ev: ActivityItem) {
+  // Prepend to feed (cap at 50).
+  activity.value = [ev, ...activity.value].slice(0, 50)
+  lastUpdate.value = new Date()
+
+  // Incrementally update the snapshot in place — keeps KPI cards live
+  // without waiting for the next drift refresh.
+  const s = snapshot.value
+  if (!s) return
+
+  s.Counts[ev.EventType] = (s.Counts[ev.EventType] ?? 0) + 1
+  if (ev.EventType === 'login') {
+    const outcome = ev.Tags.outcome ?? 'unknown'
+    s.LoginByOutcome[outcome] = (s.LoginByOutcome[outcome] ?? 0) + 1
+    // Latest bucket of the sparkline = current minute. Increment in place.
+    const last = s.LoginSparkline.length - 1
+    if (last >= 0) s.LoginSparkline[last] = (s.LoginSparkline[last] ?? 0) + 1
+  }
+}
+
 onMounted(() => {
-  refresh()
-  // 3s polling: tight enough to feel realtime on the activity feed,
-  // light enough that an open admin tab isn't a noticeable load.
-  // Replace with SignalR push once a backplane decision is made (see
-  // dev-notes/future-features/ha-multi-instance.md).
-  pollHandle = setInterval(refresh, 3_000)
+  refreshSnapshot()
+  driftRefreshHandle = setInterval(refreshSnapshot, 30_000)
+
+  signalr.runOnEveryReconnect(() => {
+    signalr.stream<ActivityItem>('Observability.Subscribe').subscribe({
+      next: applyLiveEvent,
+      error: (err) => console.error('[observability] stream error', err),
+    })
+  }, 'AdminObservabilityView.Observability.Subscribe')
 })
 
 onUnmounted(() => {
-  if (pollHandle) clearInterval(pollHandle)
+  if (driftRefreshHandle) clearInterval(driftRefreshHandle)
 })
 
 // KPI cards — pulled from the LoginByOutcome breakdown.
