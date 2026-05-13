@@ -126,12 +126,14 @@ onMounted(() => list())
             <span>{{ formatBytes(asset.SizeBytes) }}</span>
           </div>
         </div>
-        <CoarPopconfirm
-          :title="t('admin.assets.deleteConfirm', {}, 'Delete this asset?')"
-          :message="t('admin.assets.deleteWarning', {}, 'The asset will be permanently removed. Items currently referencing it will block the delete.')"
-          @confirmed="deleteAsset(asset)">
-          <CoarButton size="s" variant="ghost" icon="trash-2" />
-        </CoarPopconfirm>
+        <div class="asset-delete">
+          <CoarPopconfirm
+            :title="t('admin.assets.deleteConfirm', {}, 'Delete this asset?')"
+            :message="t('admin.assets.deleteWarning', {}, 'The asset will be permanently removed. Items currently referencing it will block the delete.')"
+            @confirmed="deleteAsset(asset)">
+            <CoarButton size="s" variant="ghost" icon-start="trash-2" :title="t('common.delete', {}, 'Delete')" />
+          </CoarPopconfirm>
+        </div>
       </CoarCard>
     </div>
   </div>
@@ -187,6 +189,15 @@ onMounted(() => list())
   padding: 0.75rem;
   align-items: stretch;
   position: relative;
+}
+
+.asset-delete {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  background: var(--coar-background-neutral-primary, white);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .asset-preview {
