@@ -543,6 +543,22 @@
       "refresh": "Aktualisieren",
       "clear": "Leeren"
     },
+    "observability": {
+      "title": "Observability",
+      "loginSuccess": "Erfolgreiche Logins",
+      "loginFailure": "Fehlgeschlagene Logins",
+      "twoFactorBlocks": "2FA-Enforcement-Blocks",
+      "refreshRejected": "Refresh-Token Rejections",
+      "tokensMinted": "Ausgestellte Tokens",
+      "dcrRegistrations": "DCR-Registrierungen",
+      "loginRate": "Logins pro Minute",
+      "windowLabel": "Rolling Window",
+      "minutes": "Min",
+      "peak": "Peak",
+      "activityFeed": "Letzte Ereignisse",
+      "updated": "Aktualisiert",
+      "empty": "Keine Ereignisse im aktuellen Fenster."
+    },
     "section": {
       "authorization": "Autorisierung",
       "oauth": "OAuth & Federation",
