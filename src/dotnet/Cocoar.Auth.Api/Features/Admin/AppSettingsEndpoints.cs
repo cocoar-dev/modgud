@@ -40,10 +40,10 @@ public static class AppSettingsEndpoints
                         // can drop it straight into <img src>. No need to
                         // expose the raw asset id to anonymous callers.
                         LogoUrl = realmDoc.Branding?.LogoAssetId is { } l
-                            ? $"/assets/{ShortGuid.Encode(l)}"
+                            ? $"/api/assets/{ShortGuid.Encode(l)}"
                             : null,
                         FaviconUrl = realmDoc.Branding?.FaviconAssetId is { } f
-                            ? $"/assets/{ShortGuid.Encode(f)}"
+                            ? $"/api/assets/{ShortGuid.Encode(f)}"
                             : null,
                         PrimaryColor = realmDoc.Branding?.PrimaryColor,
                     },

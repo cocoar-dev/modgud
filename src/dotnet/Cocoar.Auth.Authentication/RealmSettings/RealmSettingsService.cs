@@ -182,9 +182,9 @@ public sealed class RealmSettingsService(
         {
             ProductName = s.ProductName,
             LogoAssetId = s.LogoAssetId is { } lid ? ShortGuid.Encode(lid) : null,
-            LogoUrl = s.LogoAssetId is { } l ? $"/assets/{ShortGuid.Encode(l)}" : null,
+            LogoUrl = s.LogoAssetId is { } l ? $"/api/assets/{ShortGuid.Encode(l)}" : null,
             FaviconAssetId = s.FaviconAssetId is { } fid ? ShortGuid.Encode(fid) : null,
-            FaviconUrl = s.FaviconAssetId is { } f ? $"/assets/{ShortGuid.Encode(f)}" : null,
+            FaviconUrl = s.FaviconAssetId is { } f ? $"/api/assets/{ShortGuid.Encode(f)}" : null,
             PrimaryColor = s.PrimaryColor,
         };
     }

@@ -14,7 +14,7 @@ namespace Cocoar.Auth.Api.Features.Admin;
 
 /// <summary>
 /// Per-realm asset library endpoints. Uploads are admin-gated; the public
-/// read endpoint at <c>/assets/{id}</c> is anonymous so the login page can
+/// read endpoint at <c>/api/assets/{id}</c> is anonymous so the login page can
 /// fetch branding-logos before the user authenticates.
 ///
 /// <para>Storage: BYTEA in the tenant DB. Backups are self-contained,
@@ -105,7 +105,7 @@ public static class AssetsEndpoints
             session.Store(asset);
             await session.SaveChangesAsync(ct);
 
-            return Results.Created($"/assets/{ShortGuid.Encode(asset.Id)}", ToDto(asset));
+            return Results.Created($"/api/assets/{ShortGuid.Encode(asset.Id)}", ToDto(asset));
         })
         .RequiresPermission("asset:write")
         .WithName("Admin_Assets_Upload")
@@ -143,7 +143,12 @@ public static class AssetsEndpoints
         // user is authenticated. Per-realm via TenantContext (asset only
         // resolvable from the realm's own DB). Long-lived immutable cache
         // since the GUID-keyed payload is content-stable for its lifetime.
-        application.MapGet("/assets/{id}", async (
+        //
+        // URL sits under `/api/assets/` so it shares the existing Vite proxy
+        // (no new proxy entry needed in dev) and stays distinct from Vite's
+        // own `/assets/` chunk-output directory — which would otherwise let
+        // this parametric route swallow the SPA's JS chunks in production.
+        application.MapGet("/api/assets/{id}", async (
             string id,
             IQuerySession session,
             HttpContext http,
@@ -192,7 +197,7 @@ public static class AssetsEndpoints
         Sha256 = a.Sha256,
         UploadedAt = a.UploadedAt,
         UploadedByUsername = a.UploadedByUsername,
-        Url = $"/assets/{ShortGuid.Encode(a.Id)}",
+        Url = $"/api/assets/{ShortGuid.Encode(a.Id)}",
     };
 
     private static Guid? ResolveUserId(ClaimsPrincipal principal)
