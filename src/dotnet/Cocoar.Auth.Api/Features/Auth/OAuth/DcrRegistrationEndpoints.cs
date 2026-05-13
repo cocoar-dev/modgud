@@ -2,6 +2,7 @@ using Cocoar.Auth.Application.Dcr;
 using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Authentication.RealmSettings;
 using Cocoar.Auth.Domain.Realms;
+using Cocoar.Auth.Infrastructure.Observability;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Cocoar.Auth.Api.Features.Auth.OAuth;
@@ -71,6 +72,7 @@ public static class DcrRegistrationEndpoints
         if (!settings.Enabled)
         {
             LogRejected(logger, sourceIp, request.ClientName, DcrRejectionReason.RealmDisabled);
+            CocoarAuthMeters.RecordDcrRegistration(CocoarAuthMeters.DcrOutcome.PolicyDenied);
             return Results.NotFound();
         }
 
@@ -83,6 +85,11 @@ public static class DcrRegistrationEndpoints
                 ? DcrRejectionReason.PerIpRateLimit
                 : DcrRejectionReason.PerRealmRateLimit;
             LogRateLimit(logger, sourceIp, reason);
+            CocoarAuthMeters.RecordDcrRegistration(CocoarAuthMeters.DcrOutcome.RateLimited);
+            CocoarAuthMeters.RecordDcrRateLimitHit(
+                verdict == DcrRateLimitVerdict.PerIpExceeded
+                    ? CocoarAuthMeters.DcrRateLimitScope.Client
+                    : CocoarAuthMeters.DcrRateLimitScope.Realm);
             // RFC 6585 §4 — 429 Too Many Requests. RFC 7591 doesn't
             // mandate a status for rate-limit; 429 is the closest match
             // and well-understood by tooling.
@@ -94,6 +101,7 @@ public static class DcrRegistrationEndpoints
         if (validation is DcrValidationResult.Reject reject)
         {
             LogRejected(logger, sourceIp, request.ClientName, reject.Reason);
+            CocoarAuthMeters.RecordDcrRegistration(CocoarAuthMeters.DcrOutcome.InvalidRequest);
             return Results.BadRequest(new DcrErrorResponse
             {
                 Error = reject.ErrorCode,
@@ -124,6 +132,7 @@ public static class DcrRegistrationEndpoints
                 .ForContext("IP", sourceIp)
                 .Warning("Auth: DCR persist failed — {Reason}",
                     createResult.FirstError.Description);
+            CocoarAuthMeters.RecordDcrRegistration(CocoarAuthMeters.DcrOutcome.InvalidRequest);
             return Results.BadRequest(new DcrErrorResponse
             {
                 Error = DcrErrorCodes.InvalidClientMetadata,
@@ -138,6 +147,7 @@ public static class DcrRegistrationEndpoints
                 "Auth: " + DcrAuditEvents.ClientRegistered +
                 " ClientId={ClientId} Name={ClientName} Realm={Realm}",
                 created.ClientId, created.DisplayName ?? "(none)", realmSlug);
+        CocoarAuthMeters.RecordDcrRegistration(CocoarAuthMeters.DcrOutcome.Success);
 
         // ───────── Response ─────────
         return Results.Created((string?)null, new DcrRegistrationResponse

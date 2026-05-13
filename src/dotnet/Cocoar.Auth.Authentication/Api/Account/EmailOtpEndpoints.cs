@@ -8,6 +8,7 @@ using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Identity;
 using Cocoar.Auth.Authentication.Sessions;
+using Cocoar.Auth.Infrastructure.Observability;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
 
@@ -136,12 +137,16 @@ public static class EmailOtpEndpoints
 
             var user = await signInManager.GetTwoFactorAuthenticationUserAsync();
             if (user is null)
+            {
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.EmailOtp, CocoarAuthMeters.LoginOutcome.Failure);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+            }
 
             var result = await emailOtpService.VerifyOtpAsync(user.Id, request.Code, ct);
             if (result.IsError)
             {
                 var error = result.FirstError;
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.EmailOtp, CocoarAuthMeters.LoginOutcome.Failure);
                 return Results.Problem(
                     statusCode: StatusCodes.Status400BadRequest,
                     title: error.Code,
@@ -154,6 +159,7 @@ public static class EmailOtpEndpoints
 
             await SessionTracker.RecordLoginAsync(sessionService, context, user.Id, ct);
 
+            CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.EmailOtp, CocoarAuthMeters.LoginOutcome.Success);
             return Results.Ok(new { Message = "Login successful" });
         })
         .WithName("EmailOtp_Login")

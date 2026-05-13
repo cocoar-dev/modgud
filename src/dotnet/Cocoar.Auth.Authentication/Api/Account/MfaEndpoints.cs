@@ -9,6 +9,7 @@ using Cocoar.Auth.Authentication.Api.Account.Services;
 using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Sessions;
+using Cocoar.Auth.Infrastructure.Observability;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
 
@@ -155,14 +156,19 @@ public static class MfaEndpoints
                     await SessionTracker.RecordLoginAsync(sessionService, context, twoFactorUser.Id);
 
                 Serilog.Log.Information("Auth: MFA login successful. IP={IP}", ip);
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.Mfa, CocoarAuthMeters.LoginOutcome.Success);
                 return Results.Ok(new { Message = "Login successful" });
             }
 
             Serilog.Log.Warning("Auth: MFA login failed — invalid code. IP={IP} Locked={Locked}", ip, result.IsLockedOut);
 
             if (result.IsLockedOut)
+            {
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.Mfa, CocoarAuthMeters.LoginOutcome.Locked);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+            }
 
+            CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.Mfa, CocoarAuthMeters.LoginOutcome.Failure);
             return Results.Json(new { Message = "Invalid authenticator code." }, statusCode: 401);
         })
         .WithName("Mfa_Login")

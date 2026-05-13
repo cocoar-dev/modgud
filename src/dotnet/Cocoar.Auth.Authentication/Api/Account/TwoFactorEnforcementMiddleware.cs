@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Cocoar.Auth.Authentication.Api.Account.Services;
 using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Domain;
+using Cocoar.Auth.Infrastructure.Observability;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
 
@@ -151,6 +152,7 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
         Serilog.Log.Warning(
             "Auth: 2FA enforcement blocked request. User={UserName} Path={Path}",
             user.UserName, path);
+        CocoarAuthMeters.RecordTwoFactorBlocked();
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
         await context.Response.WriteAsJsonAsync(new
         {

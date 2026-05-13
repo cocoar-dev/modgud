@@ -2,6 +2,7 @@ using Marten;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Cocoar.Auth.Authentication.Domain.LoginProviders;
+using Cocoar.Auth.Infrastructure.Observability;
 
 namespace Cocoar.Auth.Authentication.Api.ExternalAuth;
 
@@ -138,6 +139,7 @@ public static class ExternalAuthEndpoints
                 if (!result.Succeeded)
                 {
                     await http.SignOutAsync(Microsoft.AspNetCore.Identity.IdentityConstants.ExternalScheme);
+                    CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.External, CocoarAuthMeters.LoginOutcome.Failure);
                     var code = Uri.EscapeDataString(result.ErrorCode ?? "unknown");
                     return Results.Redirect($"/login?error={code}");
                 }
@@ -148,6 +150,8 @@ public static class ExternalAuthEndpoints
                     Microsoft.AspNetCore.Identity.IdentityConstants.ApplicationScheme,
                     result.Principal!,
                     new Microsoft.AspNetCore.Authentication.AuthenticationProperties { IsPersistent = true });
+
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.External, CocoarAuthMeters.LoginOutcome.Success);
 
                 // Discard the short-lived External ticket now that we have
                 // the application cookie — defense against stale claim-replay.

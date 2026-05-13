@@ -1,5 +1,6 @@
 using System.Reflection;
 using Cocoar.Auth.Api.Middleware;
+using Cocoar.Auth.Infrastructure.Observability;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
@@ -47,7 +48,8 @@ internal static class ObservabilityExtensions
                 metrics
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation();
+                    .AddRuntimeInstrumentation()
+                    .AddMeter(CocoarAuthMeters.Name);
 
                 if (settings.Prometheus.Enabled)
                 {

@@ -13,6 +13,7 @@ using Cocoar.Auth.Authentication.Identity;
 using Cocoar.Auth.Authentication.Sessions;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Services;
+using Cocoar.Auth.Infrastructure.Observability;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
 
@@ -94,6 +95,7 @@ public static class AccountEndpoints
             if (user is null || !user.IsActive)
             {
                 Log.Warning("Auth: Login failed — user not found or inactive. UserName={UserName} IP={IP}", request.UserName, ip);
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.Password, CocoarAuthMeters.LoginOutcome.Failure);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
             }
 
@@ -103,6 +105,7 @@ public static class AccountEndpoints
             if (result.Succeeded)
             {
                 Log.Information("Auth: Login successful. User={UserName} IP={IP}", user.UserName, ip);
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.Password, CocoarAuthMeters.LoginOutcome.Success);
 
                 // Track per-user device session (best-effort).
                 await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
@@ -162,6 +165,7 @@ public static class AccountEndpoints
             if (result.RequiresTwoFactor)
             {
                 Log.Information("Auth: Login requires MFA. User={UserName} IP={IP}", user.UserName, ip);
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.Password, CocoarAuthMeters.LoginOutcome.TwoFactorRequired);
                 var mfaMethods = new List<string>();
                 if (user.TwoFactorEnabled) mfaMethods.Add("totp");
                 if (user.EmailOtpEnabled && !string.IsNullOrEmpty(user.Email)) mfaMethods.Add("email");
@@ -169,9 +173,15 @@ public static class AccountEndpoints
             }
 
             if (result.IsLockedOut)
+            {
                 Log.Warning("Auth: Login failed — account locked. User={UserName} IP={IP}", user.UserName, ip);
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.Password, CocoarAuthMeters.LoginOutcome.Locked);
+            }
             else
+            {
                 Log.Warning("Auth: Login failed — wrong password. User={UserName} IP={IP}", user.UserName, ip);
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.Password, CocoarAuthMeters.LoginOutcome.Failure);
+            }
 
             return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
         })

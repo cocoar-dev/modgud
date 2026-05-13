@@ -7,6 +7,7 @@ using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Sessions;
 using Cocoar.Auth.Infrastructure.Email;
+using Cocoar.Auth.Infrastructure.Observability;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
 
@@ -134,6 +135,7 @@ public static class MagicLinkEndpoints
             if (challenge is null || challenge.IsExpired)
             {
                 Serilog.Log.Warning("Auth: Magic link login failed — invalid/expired token. IP={IP}", ip);
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.MagicLink, CocoarAuthMeters.LoginOutcome.Failure);
                 if (challenge is not null) { session.Delete(challenge); await session.SaveChangesAsync(); }
                 return Results.Json(new { Message = "Invalid or expired link" }, statusCode: 401);
             }
@@ -143,6 +145,7 @@ public static class MagicLinkEndpoints
             if (user is null || user.IsDeleted || !user.IsActive)
             {
                 Serilog.Log.Warning("Auth: Magic link login failed — user not found/inactive. IP={IP}", ip);
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.MagicLink, CocoarAuthMeters.LoginOutcome.Failure);
                 session.Delete(challenge);
                 await session.SaveChangesAsync();
                 return Results.Json(new { Message = "Invalid or expired link" }, statusCode: 401);
@@ -159,6 +162,7 @@ public static class MagicLinkEndpoints
             await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
 
             Serilog.Log.Information("Auth: Magic link login successful. User={UserName} IP={IP}", user.UserName, ip);
+            CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.MagicLink, CocoarAuthMeters.LoginOutcome.Success);
             return Results.Ok(new { Message = "Login successful" });
         })
         .WithName("MagicLink_Login");

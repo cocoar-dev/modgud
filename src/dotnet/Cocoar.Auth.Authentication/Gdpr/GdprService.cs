@@ -4,6 +4,7 @@ using Cocoar.Auth.Authentication.Sessions;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Services;
 using Cocoar.Auth.Infrastructure.Email;
+using Cocoar.Auth.Infrastructure.Observability;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using ErrorOr;
 using Marten;
@@ -45,6 +46,8 @@ public class GdprService(
             .ToListAsync(ct);
 
         var loginHistory = await GetLoginHistoryAsync(userId, 100, ct);
+
+        CocoarAuthMeters.RecordGdprRequest(CocoarAuthMeters.GdprRequestType.Export);
 
         return new UserDataExportDto
         {
@@ -122,6 +125,8 @@ public class GdprService(
                 """;
             await emailService.SendEmailAsync(user.Email, "Confirm account deletion", body, ct);
         }
+
+        CocoarAuthMeters.RecordGdprRequest(CocoarAuthMeters.GdprRequestType.Delete);
 
         return new DeletionRequestResponseDto
         {
@@ -255,6 +260,8 @@ public class GdprService(
         await using var archiveSession = store.LightweightSession(tenantId);
         archiveSession.Events.ArchiveStream(userId);
         await archiveSession.SaveChangesAsync(ct);
+
+        CocoarAuthMeters.RecordGdprRequest(CocoarAuthMeters.GdprRequestType.Mask);
 
         return true;
     }

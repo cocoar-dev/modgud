@@ -6,6 +6,7 @@ using Cocoar.Auth.Authentication.Setup;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.AspNetCore;
 using Cocoar.Auth.Domain.Realms;
+using Cocoar.Auth.Infrastructure.Observability;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Cocoar.Auth.Infrastructure.Realms;
 using Marten;
@@ -58,6 +59,7 @@ public static class RealmsEndpoints
             var result = await svc.CreateRealmAsync(dto, ct);
             if (result.IsError) return result.ToResult();
 
+            CocoarAuthMeters.RecordRealmProvisioned();
             var realm = result.Value;
             var issuedBy = http.User.Identity?.IsAuthenticated == true
                 ? (http.User.FindFirstValue(ClaimTypes.Name) ?? http.User.Identity.Name)

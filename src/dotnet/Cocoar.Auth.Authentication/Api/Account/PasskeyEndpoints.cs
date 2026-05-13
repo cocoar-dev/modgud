@@ -11,6 +11,7 @@ using Cocoar.Auth.Authentication.Api.Account.Services;
 using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Authentication.Sessions;
+using Cocoar.Auth.Infrastructure.Observability;
 
 namespace Cocoar.Auth.Authentication.Api.Account;
 
@@ -306,7 +307,10 @@ public static class PasskeyEndpoints
             // Sign in
             var user = await session.LoadAsync<ApplicationUser>(storedCredential.UserId);
             if (user is null || !user.IsActive)
+            {
+                CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.Passkey, CocoarAuthMeters.LoginOutcome.Failure);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+            }
 
             // Passkey login is always persistent — user can re-authenticate anytime via biometrics
             await signInManager.SignInAsync(user, isPersistent: true);
@@ -315,6 +319,7 @@ public static class PasskeyEndpoints
 
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
             Serilog.Log.Information("Auth: Passkey login successful. User={UserName} IP={IP}", user.UserName, ip);
+            CocoarAuthMeters.RecordLogin(CocoarAuthMeters.LoginMethod.Passkey, CocoarAuthMeters.LoginOutcome.Success);
 
             return Results.Ok(new { Message = "Login successful" });
         })
