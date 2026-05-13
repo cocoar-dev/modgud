@@ -129,7 +129,7 @@ onMounted(() => list())
         <CoarPopconfirm
           :title="t('admin.assets.deleteConfirm', {}, 'Delete this asset?')"
           :message="t('admin.assets.deleteWarning', {}, 'The asset will be permanently removed. Items currently referencing it will block the delete.')"
-          @confirm="deleteAsset(asset)">
+          @confirmed="deleteAsset(asset)">
           <CoarButton size="s" variant="ghost" icon="trash-2" />
         </CoarPopconfirm>
       </CoarCard>
