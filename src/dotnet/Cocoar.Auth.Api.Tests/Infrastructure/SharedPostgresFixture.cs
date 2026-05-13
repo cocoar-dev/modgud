@@ -64,6 +64,15 @@ public class SharedPostgresFixture : IAsyncLifetime
                 RefreshTokenLifetimeDays = 14,
                 AuthorizationCodeLifetimeMinutes = 5,
             }),
+            // Observability: disable Prometheus + OTLP so the test host doesn't
+            // need a bearer token or a collector. Activity buffer is still
+            // wired (in-memory only), so metric-record sites stay exercised.
+            rule.For<ObservabilitySettings>().FromStatic(_ => new ObservabilitySettings
+            {
+                ServiceName = "cocoar-auth-tests",
+                Prometheus = new ObservabilitySettings.PrometheusSettings { Enabled = false },
+                Otlp = new ObservabilitySettings.OtlpSettings { Enabled = false },
+            }),
         ]);
 
         // Apply config before creating factory (must be in same async context)
