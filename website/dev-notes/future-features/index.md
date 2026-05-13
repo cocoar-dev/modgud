@@ -5,7 +5,26 @@ Each page captures the design space — options, trade-offs, risks —
 so that when a customer ask makes one of them urgent, we don't have
 to re-derive the analysis from scratch.
 
-## Pages
+## Production-Readiness-Roadmap
+
+⭐ **Einstiegspunkt für „wie weit sind wir?":**
+[Production-Readiness-Audit 2026-05-13](./production-readiness-audit-2026-05-13)
+— ehrliche Audit-Zusammenfassung mit Vergleich gegen Keycloak / Auth0
+/ Zitadel, Verdict, und Backlog-Tabelle mit allen offenen Punkten und
+Severity. Detail-Pages unten.
+
+### Audit-Followups (in Severity-Reihenfolge)
+
+- [Observability — OpenTelemetry / Metrics / Tracing](./observability-opentelemetry)
+  — **NEXT UP**. Foundation + Custom-Meters + Tracing + Health-Checks.
+- [HA / Multi-Instance Readiness](./ha-multi-instance) — DataProtection,
+  Distributed Rate-Limiter, IDistributedCache, SignalR-Backplane.
+- [Realm Backup / Restore / DR](./realm-backup-restore) — CLI für
+  N-Tenant-DB-Backup/Restore + WAL-Pattern + Realm-Migration.
+- [Enterprise SSO — SAML + LDAP](./enterprise-sso-saml-ldap) —
+  customer-getrieben, Designspace captured.
+
+## Andere Future-Features
 
 ### [White-label customization](./white-label-customization)
 

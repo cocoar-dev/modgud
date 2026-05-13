@@ -291,6 +291,11 @@ export default withMermaid(defineConfig({
           text: 'Future Features',
           items: [
             { text: 'Overview', link: '/dev-notes/future-features/' },
+            { text: '⭐ Production-Readiness Audit 2026-05-13', link: '/dev-notes/future-features/production-readiness-audit-2026-05-13' },
+            { text: 'Observability — OpenTelemetry', link: '/dev-notes/future-features/observability-opentelemetry' },
+            { text: 'HA / Multi-Instance Readiness', link: '/dev-notes/future-features/ha-multi-instance' },
+            { text: 'Realm Backup / Restore / DR', link: '/dev-notes/future-features/realm-backup-restore' },
+            { text: 'Enterprise SSO — SAML + LDAP', link: '/dev-notes/future-features/enterprise-sso-saml-ldap' },
             { text: 'White-label customization', link: '/dev-notes/future-features/white-label-customization' },
             { text: 'Login alerts + IP blacklist', link: '/dev-notes/future-features/login-alerts-ip-blacklist' },
             { text: 'DCR for MCP clients', link: '/dev-notes/future-features/dcr-for-mcp-clients' },
