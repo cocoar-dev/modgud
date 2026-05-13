@@ -99,6 +99,12 @@ try
             rule.For<TurnstileSettings>().FromFile("data/configuration.json").Select("Turnstile"),
             rule.For<TurnstileSettings>().FromFile("data/configuration.local.json").Select("Turnstile"),
             rule.For<TurnstileSettings>().FromEnvironment("Turnstile"),
+
+            // OpenTelemetry observability settings (Phase 1 foundation, see
+            // website/dev-notes/future-features/observability-opentelemetry.md).
+            rule.For<ObservabilitySettings>().FromFile("data/configuration.json").Select("Observability"),
+            rule.For<ObservabilitySettings>().FromFile("data/configuration.local.json").Select("Observability"),
+            rule.For<ObservabilitySettings>().FromEnvironment("Observability"),
         ], setup =>
         [
             setup.ConcreteType<StartUpConfiguration>().AsSingleton(),
@@ -108,6 +114,7 @@ try
             setup.ConcreteType<AppSettings>().AsSingleton(),
             setup.ConcreteType<OpenIddictSettings>().AsSingleton(),
             setup.ConcreteType<TurnstileSettings>().AsSingleton(),
+            setup.ConcreteType<ObservabilitySettings>().AsSingleton(),
         ]));
 
     // Expose concrete config types as Authentication interfaces so Authentication
@@ -662,6 +669,13 @@ try
             options.UseCocoarAuthOAuth();
         });
 
+    // OpenTelemetry foundation (Phase 1). See
+    // website/dev-notes/future-features/observability-opentelemetry.md.
+    var observabilitySettings = configManager.GetRequiredConfig<ObservabilitySettings>();
+    builder.Services.AddCocoarAuthObservability(
+        observabilitySettings,
+        conf.DbSettings.ConnectionString);
+
     // OpenIddict OAuth 2.0 / OIDC server — uses our custom Marten stores. Settings are
     // captured at config time so signing certs / lifetimes can be pinned before the
     // host is built. Per-realm issuer is applied at request time via RealmIssuerHandler.
@@ -705,6 +719,19 @@ try
         if (openIddictSettings.Issuer.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
                 $"OpenIddict.Issuer ('{openIddictSettings.Issuer}') must use HTTPS in Production.");
+
+        // Observability: Prometheus scrape is enabled by default and emits
+        // realm-labelled internal counters — leaving it unauthenticated on a
+        // public host hands an attacker free telemetry. Force a bearer token
+        // in Production (the operator can still disable Prometheus entirely
+        // via Observability__Prometheus__Enabled=false).
+        if (observabilitySettings.Prometheus.Enabled
+            && string.IsNullOrWhiteSpace(observabilitySettings.Prometheus.BearerToken))
+            throw new InvalidOperationException(
+                "Observability.Prometheus.Enabled is true but no BearerToken is set. " +
+                "Production deployments must set Observability__Prometheus__BearerToken " +
+                "to a strong random string (the scraper sends 'Authorization: Bearer …'), " +
+                "or set Observability__Prometheus__Enabled=false.");
     }
 
     builder.Services.AddOpenIddictWithMarten(openIddictSettings);
@@ -854,6 +881,12 @@ try
     // /api/account/magic-link below). Endpoints without an explicit
     // policy are not rate-limited at the app layer.
     app.UseRateLimiter();
+
+    // Observability surface: /metrics (Prometheus scrape) + /health/live +
+    // /health/ready. AllowAnonymous applied inside the helper. Operator
+    // must keep /metrics off the public internet — bind via reverse-proxy
+    // ACL or localhost-only listener.
+    app.MapCocoarAuthObservability(observabilitySettings);
 
 
     // OpenIddict OAuth/OIDC endpoints (/connect/authorize, /token, /userinfo, /logout, /consent).

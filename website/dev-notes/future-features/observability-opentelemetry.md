@@ -67,6 +67,42 @@ Eigene `Meter`-Instanz `Cocoar.Auth` mit:
 - **NICHT öffentlich** — hinter `realm:admin`-Auth oder IP-Allowlist
   (verrät sonst Internal-Topologie)
 
+### Phase 5 — In-App Live-View (Admin-UI)
+
+Sobald Meters fliessen, on-top eine Live-Operational-View im Admin —
+nicht als Grafana-Ersatz, sondern als „auf einen Blick: was passiert
+gerade in meinem IdP?" für den Operator. Vorbild: Zitadel- /
+Auth0-Dashboards. Keycloak hat das nicht — wäre also auch ein
+konkretes Differenzierungs-Plus.
+
+**Scope (in-app sinnvoll):**
+
+- **Live-Activity-Feed** (letzte ~100 Events, SignalR-Push): Logins,
+  Failures, 2FA-Blocks, Refresh-Reuse-Detections, DCR-Registrations,
+  Realm-Provisioning. Pro Realm filterbar.
+- **Realtime-Sparklines** (rolling 15min-Fenster in-memory): Login-
+  Rate, Failure-Rate, Token-Mint-Rate, Active-Sessions. Kein Storage,
+  Ring-Buffer im Prozess.
+- **Per-Realm-Snapshot-Counter** (on-demand via Postgres-Query):
+  Active Sessions, Token-Mints letzte Stunde, Recent Failures, 2FA-
+  Coverage in %.
+
+**Scope (NICHT in-app — extern lassen):**
+
+- Historische Charts > 24h → Grafana-Job, nicht IdP-Job
+- Trace-Browser → Jaeger/Tempo, nicht selbst nachbauen
+- Cross-Realm-Aggregationen → nicht trivial in Multi-Tenant-Welt
+  (Berechtigung), und sowieso ein Grafana-Use-Case
+
+**Permission-Gating:**
+
+- `cocoar-auth:observability:read` für Per-Realm-View — Tenant-Admin
+  sieht eigenen Realm
+- `realm:admin` (Control-Plane) sieht alles inkl. Cross-Realm-Summary
+
+**Effort:** ~2-3 Tage on-top von Phase 1-3 (Backend-Endpoints + SignalR-
+Push + Vue-Dashboard-View mit Sparkline-Components).
+
 ## Konfiguration
 
 `AppSettings.Observability`:
@@ -92,14 +128,48 @@ Infrastruktur, nicht User-Surface.
 
 ## Security-Notizen
 
-- `/metrics` nie öffentlich freigeben — verrät Internal-Service-Counts,
-  Realm-Namen via Labels, Rate-Profile (Attack-Surface). Auf
-  `localhost`-only binden oder hinter Reverse-Proxy-Auth.
+- `/metrics` ist Bearer-Token-gated über `PrometheusBearerTokenMiddleware`.
+  Token in `Observability.Prometheus.BearerToken` (env:
+  `Observability__Prometheus__BearerToken`). Production-Boot-Validator
+  refused den Start wenn Prometheus enabled aber kein Token gesetzt ist.
+  Mismatch → **404** (nicht 401, versteckt Endpoint-Existenz).
+  Vergleich via `CryptographicOperations.FixedTimeEquals` (timing-safe).
+- Token-Gate ist **Service-Auth, kein User-Auth** — kein User-Principal
+  wird erstellt, also greifen weder Cookie-Auth noch
+  `TwoFactorEnforcementMiddleware`. Damit kann Prometheus mit einem
+  statischen Token scrapen ohne durch die User-Auth-Pipeline zu müssen.
+- `/health/live` + `/health/ready` bleiben anonymous-allowed —
+  Orchestrator-Probes (Docker HEALTHCHECK, Kubernetes httpGet) brauchen
+  unprädiktierbare Source-IPs/Credentials, und der Info-Leak ist
+  minimal (`Healthy`/`Unhealthy`).
 - Activity-Tags dürfen **keine PII** enthalten. `LogPiiMasking`-Pattern
   (siehe `feedback_pii_log_masking.md`) gilt auch hier — `user.email`
   in Spans nur als gehashter/maskierter Wert, `user.id` ist OK.
 - Sampling default `1.0` für Local-Dev, in Production auf z.B. `0.1`
   konfigurierbar (sonst explodiert das Trace-Volumen).
+
+### Beispiel: Prometheus scrape_config
+
+```yaml
+scrape_configs:
+  - job_name: cocoar-auth
+    scheme: https
+    metrics_path: /metrics
+    bearer_token_file: /etc/prometheus/cocoar-auth.token
+    static_configs:
+      - targets: ['auth.cocoar.dev:443']
+```
+
+### Beispiel: Docker HEALTHCHECK / curl-Probe
+
+```bash
+# /health/live anonym (keine Auth nötig)
+curl -fsS http://localhost:8081/health/live
+
+# /metrics mit Token
+curl -fsS -H "Authorization: Bearer $OBSERVABILITY_TOKEN" \
+     http://localhost:8081/metrics
+```
 
 ## Was NICHT in Phase 1 gehört
 
@@ -115,7 +185,9 @@ Infrastruktur, nicht User-Surface.
 - Phase 2 (Custom Meters): **1 Tag**
 - Phase 3 (Tracing + Marten/Wolverine/Http): **1 Tag**
 - Phase 4 (Health-Checks): **0.5 Tage**
-- Total: **~3 Tage** für volle Coverage.
+- Phase 5 (In-App Live-View): **2-3 Tage**
+- Total Phase 1-4: **~3 Tage** für externe Telemetrie-Coverage.
+- Total inkl. Phase 5: **~5-6 Tage** für externe + in-app.
 
 ## Trigger
 

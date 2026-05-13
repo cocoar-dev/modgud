@@ -43,5 +43,19 @@
         "AccessTokenLifetimeMinutes": 60,
         "RefreshTokenLifetimeDays": 14,
         "AuthorizationCodeLifetimeMinutes": 5
+    },
+    "Observability": {
+        "ServiceName": "cocoar-auth",
+        "SamplingRatio": 1.0,
+        "Prometheus": {
+            "Enabled": true,
+            "Path": "/metrics",
+            "BearerToken": ""
+        },
+        "Otlp": {
+            "Enabled": false,
+            "Endpoint": "http://localhost:4317",
+            "Protocol": "Grpc"
+        }
     }
 }

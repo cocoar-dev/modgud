@@ -65,5 +65,16 @@
     <PackageVersion Include="Cocoar.Configuration" Version="5.0.0" />
     <PackageVersion Include="Cocoar.Configuration.AspNetCore" Version="5.0.0" />
     <PackageVersion Include="Cocoar.Configuration.Abstractions" Version="5.0.0" />
+    <!-- OpenTelemetry (Audit-Followup 2026-05-13, Phase 1 foundation).
+         Prometheus AspNetCore exporter stays officially beta in upstream
+         OTel-dotnet but is widely used; OTLP exporter is GA. -->
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
+    <PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.15.3-beta.1" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <!-- Health-checks: Npgsql probe for /health/ready. -->
+    <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
   </ItemGroup>
 </Project>
