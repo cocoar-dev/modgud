@@ -108,6 +108,9 @@ public sealed class RealmSettingsService(
         SelfRegistration = MapSelfRegistrationToDto(doc.SelfRegistration),
         Dcr = MapDcrToDto(doc.Dcr),
         Branding = MapBrandingToDto(doc.Branding),
+        Pages = doc.Pages is null
+            ? new Dictionary<string, string>()
+            : new Dictionary<string, string>(doc.Pages),
     };
 
     private static ErrorOr<BrandingSettings> ApplyBrandingPatch(

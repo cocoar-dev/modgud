@@ -581,7 +581,40 @@
       "authorization": "Autorisierung",
       "oauth": "OAuth & Federation",
       "identity": "Identitätsquellen",
+      "customization": "Anpassung",
       "system": "System"
+    },
+    "customization": {
+      "branding": {
+        "title": "Branding",
+        "hint": "Pro-Realm-Branding für die SPA-Shell. Alle Felder optional — leer lassen für die Cocoar-Defaults. Logo + Favicon werden aus der Asset-Library gewählt. Änderungen wirken beim nächsten SPA-Load.",
+        "productName": "Produkt-Name",
+        "primaryColor": "Primärfarbe (CSS-Color, z.B. #5A6478)",
+        "logo": "Logo",
+        "favicon": "Favicon",
+        "pick": "Auswählen…",
+        "pickLogo": "Logo auswählen",
+        "pickFavicon": "Favicon auswählen"
+      },
+      "pages": {
+        "title": "Pages",
+        "hint": "Stelle die SPA-Seiten zusammen, auf denen die User landen. Pages ohne gespeichertes Schema fallen auf die hardcoded View zurück. Elemente reinziehen, konfigurieren, speichern — der Renderer (noch WIP) zieht sie zur Laufzeit.",
+        "customised": "Angepasst",
+        "default": "Default",
+        "reset": "Auf Default zurücksetzen",
+        "login": {
+          "title": "Login",
+          "hint": "Benutzername + Passwort + Provider-Buttons."
+        },
+        "logout": {
+          "title": "Logout",
+          "hint": "Abschiedsseite nach Sign-Out."
+        },
+        "passwordForgot": {
+          "title": "Passwort vergessen",
+          "hint": "E-Mail-Adresse für den Reset-Link."
+        }
+      }
     },
     "oauthClients": {
       "title": "OAuth-Clients",

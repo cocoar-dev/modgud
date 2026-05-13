@@ -24,6 +24,9 @@ importers:
       '@cocoar/vue-localization':
         specifier: 2.1.0
         version: 2.1.0(vue@3.5.32(typescript@6.0.2))
+      '@cocoar/vue-page-builder':
+        specifier: 2.1.0
+        version: 2.1.0(@cocoar/vue-ui@2.1.0(vue@3.5.32(typescript@6.0.2)))(vue@3.5.32(typescript@6.0.2))
       '@cocoar/vue-script-editor':
         specifier: 2.1.0
         version: 2.1.0(monaco-editor@0.55.1)(vue@3.5.32(typescript@6.0.2))
@@ -138,6 +141,12 @@ packages:
   '@cocoar/vue-localization@2.1.0':
     resolution: {integrity: sha512-TNdLc5YrNuV7psfRk0epZoJwcE5QimbAJA+9bcoEwQ2sYsUapfFZaoT9ZtjGDOjZCu2zmgtXQdKw3Nm1BoIa/A==}
     peerDependencies:
+      vue: ^3.5.0
+
+  '@cocoar/vue-page-builder@2.1.0':
+    resolution: {integrity: sha512-2IjMb1xEbuDJdRXNT6qOBCxE2yexHt+5ODuBVUTseNwvTh7RYHqSYkxXWCGP0VFqNBzehXQJns5K1unnZJokWg==}
+    peerDependencies:
+      '@cocoar/vue-ui': 2.1.0
       vue: ^3.5.0
 
   '@cocoar/vue-script-editor@2.1.0':
@@ -1817,6 +1826,11 @@ snapshots:
 
   '@cocoar/vue-localization@2.1.0(vue@3.5.32(typescript@6.0.2))':
     dependencies:
+      vue: 3.5.32(typescript@6.0.2)
+
+  '@cocoar/vue-page-builder@2.1.0(@cocoar/vue-ui@2.1.0(vue@3.5.32(typescript@6.0.2)))(vue@3.5.32(typescript@6.0.2))':
+    dependencies:
+      '@cocoar/vue-ui': 2.1.0(vue@3.5.32(typescript@6.0.2))
       vue: 3.5.32(typescript@6.0.2)
 
   '@cocoar/vue-script-editor@2.1.0(monaco-editor@0.55.1)(vue@3.5.32(typescript@6.0.2))':

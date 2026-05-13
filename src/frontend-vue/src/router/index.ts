@@ -151,8 +151,20 @@ const routes = [
               component: () => import('@/views/admin/AdminObservabilityView.vue'),
             },
             {
-              path: 'assets',
+              path: 'customization/assets',
               component: () => import('@/views/admin/assets/AssetsView.vue'),
+            },
+            {
+              path: 'customization/branding',
+              component: () => import('@/views/admin/customization/BrandingView.vue'),
+            },
+            {
+              path: 'customization/pages',
+              component: () => import('@/views/admin/customization/PagesView.vue'),
+            },
+            {
+              path: 'customization/pages/:slug',
+              component: () => import('@/views/admin/customization/PageEditorView.vue'),
             },
             {
               path: 'change-requests',

@@ -12,7 +12,7 @@ const authStore = useAuthStore()
 
 interface NavItem {
   /** Section heading the item belongs to. Used to hide empty sections. */
-  section: 'authorization' | 'oauth' | 'system'
+  section: 'authorization' | 'oauth' | 'customization' | 'system'
   label: string
   icon: string
   path: string
@@ -35,11 +35,14 @@ const allNavItems: NavItem[] = [
   { section: 'oauth', label: 'admin.oauthClients.title', icon: 'app-window', path: '/admin/oauth/clients', requirePermissions: ['oauth-client:read'] },
   { section: 'oauth', label: 'admin.oauthScopes.title', icon: 'tags', path: '/admin/oauth/scopes', requirePermissions: ['oauth-scope:read'] },
   { section: 'oauth', label: 'admin.oauthApis.title', icon: 'server', path: '/admin/oauth/apis', requirePermissions: ['oauth-api:read'] },
+  // Customization (SPA-shell branding + per-page form composition)
+  { section: 'customization', label: 'admin.customization.branding.title', icon: 'palette', path: '/admin/customization/branding', requirePermissions: ['realm-settings:read'] },
+  { section: 'customization', label: 'admin.customization.pages.title', icon: 'layout-template', path: '/admin/customization/pages', requirePermissions: ['realm-settings:read'] },
+  { section: 'customization', label: 'admin.assets.title', icon: 'image', path: '/admin/customization/assets', requirePermissions: ['asset:read'] },
   // System
   { section: 'system', label: 'admin.apps.title', icon: 'layout-grid', path: '/admin/apps', requirePermissions: ['app:read'] },
   { section: 'system', label: 'admin.realms.title', icon: 'globe', path: '/admin/realms', requirePermissions: ['realm:read'] },
   { section: 'system', label: 'admin.realmSettings.title', icon: 'sliders', path: '/admin/realm-settings', requirePermissions: ['realm-settings:read'] },
-  { section: 'system', label: 'admin.assets.title', icon: 'image', path: '/admin/assets', requirePermissions: ['asset:read'] },
   { section: 'system', label: 'admin.authLog.title', icon: 'scroll-text', path: '/admin/auth-log', requirePermissions: ['auth-log:read'] },
   { section: 'system', label: 'admin.observability.title', icon: 'activity', path: '/admin/observability', requirePermissions: ['observability:read'] },
   { section: 'system', label: 'admin.changeRequests.title', icon: 'inbox', path: '/admin/change-requests', requirePermissions: ['user:write'] },
@@ -64,6 +67,7 @@ const sections = computed<Section[]>(() => {
   const grouped: Record<NavItem['section'], NavItem[]> = {
     authorization: [],
     oauth: [],
+    customization: [],
     system: [],
   }
   for (const item of visibleItems.value) {
@@ -73,6 +77,7 @@ const sections = computed<Section[]>(() => {
   const all: Section[] = [
     { key: 'authorization', heading: t('admin.section.authorization', {}, 'Autorisierung'), items: grouped.authorization },
     { key: 'oauth', heading: t('admin.section.oauth', {}, 'OAuth & Federation'), items: grouped.oauth },
+    { key: 'customization', heading: t('admin.section.customization', {}, 'Anpassung'), items: grouped.customization },
     { key: 'system', heading: t('admin.section.system', {}, 'System'), items: grouped.system },
   ]
   return all.filter((s) => s.items.length > 0)

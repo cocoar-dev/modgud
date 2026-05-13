@@ -10,10 +10,7 @@ import {
   CoarMultiSelect,
   CoarTabGroup,
   CoarTab,
-  useDialog,
 } from '@cocoar/vue-ui'
-import AssetPicker from '@/components/AssetPicker.vue'
-import type { AssetDto } from '@/models/assets'
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import EditableStringList from '@/components/EditableStringList.vue'
@@ -24,8 +21,6 @@ import type {
   UpdateSelfRegistrationDto,
   DcrSettingsDto,
   UpdateDcrSettingsDto,
-  BrandingSettingsDto,
-  UpdateBrandingSettingsDto,
 } from '@/models/realmSettings'
 
 const { t, language } = useI18n()
@@ -41,7 +36,7 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.hasSubNav = true
 }), { immediate: true })
 
-type TabId = 'self-registration' | 'dcr' | 'branding'
+type TabId = 'self-registration' | 'dcr'
 const activeTab = ref<TabId>('self-registration')
 
 // ── Self-Registration form state ─────────────────────────────────────
@@ -114,74 +109,6 @@ function dcrFromDto(d: DcrSettingsDto): DcrFormState {
   }
 }
 
-// ── Branding form state ──────────────────────────────────────────────
-interface BrandingFormState {
-  ProductName: string
-  LogoAssetId: string
-  LogoUrl: string
-  FaviconAssetId: string
-  FaviconUrl: string
-  PrimaryColor: string
-}
-
-function emptyBranding(): BrandingFormState {
-  return {
-    ProductName: '',
-    LogoAssetId: '',
-    LogoUrl: '',
-    FaviconAssetId: '',
-    FaviconUrl: '',
-    PrimaryColor: '',
-  }
-}
-
-const brandingForm = ref<BrandingFormState>(emptyBranding())
-const originalBranding = ref<BrandingSettingsDto | null>(null)
-
-function brandingFromDto(b: BrandingSettingsDto): BrandingFormState {
-  return {
-    ProductName: b.ProductName ?? '',
-    LogoAssetId: b.LogoAssetId ?? '',
-    LogoUrl: b.LogoUrl ?? '',
-    FaviconAssetId: b.FaviconAssetId ?? '',
-    FaviconUrl: b.FaviconUrl ?? '',
-    PrimaryColor: b.PrimaryColor ?? '',
-  }
-}
-
-const dialog = useDialog()
-
-async function pickLogo() {
-  const ref = dialog.open<AssetDto>(AssetPicker, { title: t('admin.realmSettings.branding.pickLogo', {}, 'Select logo'), size: 'l' }, {
-    selectedId: brandingForm.value.LogoAssetId || null,
-  })
-  const result = await ref.result
-  if (result) {
-    brandingForm.value.LogoAssetId = result.Id
-    brandingForm.value.LogoUrl = result.Url
-  }
-}
-
-function clearLogo() {
-  brandingForm.value.LogoAssetId = ''
-  brandingForm.value.LogoUrl = ''
-}
-
-async function pickFavicon() {
-  const ref = dialog.open<AssetDto>(AssetPicker, { title: t('admin.realmSettings.branding.pickFavicon', {}, 'Select favicon'), size: 'l' }, {
-    selectedId: brandingForm.value.FaviconAssetId || null,
-  })
-  const result = await ref.result
-  if (result) {
-    brandingForm.value.FaviconAssetId = result.Id
-    brandingForm.value.FaviconUrl = result.Url
-  }
-}
-
-function clearFavicon() {
-  brandingForm.value.FaviconAssetId = ''
-  brandingForm.value.FaviconUrl = ''
-}
 
 // Captcha-secret — write-only with three states: leave, clear, replace.
 const editingSecret = ref(false)
@@ -218,8 +145,6 @@ onMounted(async () => {
     form.value = fromDto(dto.SelfRegistration)
     originalDcr.value = dto.Dcr
     dcrForm.value = dcrFromDto(dto.Dcr)
-    originalBranding.value = dto.Branding
-    brandingForm.value = brandingFromDto(dto.Branding)
   } catch (e: any) {
     error.value = e?.body?.detail ?? e?.message ?? String(e)
   } finally {
@@ -286,29 +211,10 @@ function buildDcrPatch(): UpdateDcrSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
-function buildBrandingPatch(): UpdateBrandingSettingsDto | undefined {
-  const orig = originalBranding.value
-  if (!orig) return undefined
-  const cur = brandingForm.value
-  const patch: UpdateBrandingSettingsDto = {}
-
-  // Tri-state per field: trimmed-empty maps to "" (clear → revert to
-  // default), changed value writes through, unchanged is omitted.
-  const productName = cur.ProductName.trim()
-  if (productName !== (orig.ProductName ?? '')) patch.ProductName = productName
-  if (cur.LogoAssetId !== (orig.LogoAssetId ?? '')) patch.LogoAssetId = cur.LogoAssetId
-  if (cur.FaviconAssetId !== (orig.FaviconAssetId ?? '')) patch.FaviconAssetId = cur.FaviconAssetId
-  const color = cur.PrimaryColor.trim()
-  if (color !== (orig.PrimaryColor ?? '')) patch.PrimaryColor = color
-
-  return Object.keys(patch).length === 0 ? undefined : patch
-}
-
 async function save() {
   const selfRegPatch = buildSelfRegPatch()
   const dcrPatch = buildDcrPatch()
-  const brandingPatch = buildBrandingPatch()
-  if (!selfRegPatch && !dcrPatch && !brandingPatch) {
+  if (!selfRegPatch && !dcrPatch) {
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1200)
     return
@@ -319,18 +225,14 @@ async function save() {
     const payload: {
       SelfRegistration?: UpdateSelfRegistrationDto
       Dcr?: UpdateDcrSettingsDto
-      Branding?: UpdateBrandingSettingsDto
     } = {}
     if (selfRegPatch) payload.SelfRegistration = selfRegPatch
     if (dcrPatch) payload.Dcr = dcrPatch
-    if (brandingPatch) payload.Branding = brandingPatch
     const updated = await settingsStore.patch(payload)
     originalSelfReg.value = updated.SelfRegistration
     form.value = fromDto(updated.SelfRegistration)
     originalDcr.value = updated.Dcr
     dcrForm.value = dcrFromDto(updated.Dcr)
-    originalBranding.value = updated.Branding
-    brandingForm.value = brandingFromDto(updated.Branding)
     editingSecret.value = false
     secretInput.value = ''
     savedFlash.value = true
@@ -351,9 +253,6 @@ async function save() {
       </CoarTab>
       <CoarTab id="dcr">
         {{ t('admin.realmSettings.tabs.dcr', {}, 'Dynamic Client Registration') }}
-      </CoarTab>
-      <CoarTab id="branding">
-        {{ t('admin.realmSettings.tabs.branding', {}, 'Branding') }}
       </CoarTab>
     </CoarTabGroup>
 
@@ -524,91 +423,8 @@ async function save() {
         </div>
       </div>
     </CoarCard>
-
-    <CoarCard v-else-if="activeTab === 'branding'" class="p-4">
-      <div class="flex flex-col gap-3">
-        <p class="text-xs text-gray-500">
-          {{ t('admin.realmSettings.branding.hint', {}, 'Per-realm branding for the SPA. All fields optional — leave empty to fall back to the Cocoar defaults. Logo/Favicon URLs can be absolute (https://…) or SPA-relative paths (/assets/…). Changes apply on the next SPA load.') }}
-        </p>
-
-        <div class="grid grid-cols-2 gap-3">
-          <CoarFormField :label="t('admin.realmSettings.branding.productName', {}, 'Product name')">
-            <CoarTextInput v-model="brandingForm.ProductName" clearable placeholder="Cocoar.Auth" />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.realmSettings.branding.primaryColor', {}, 'Primary color (CSS color, e.g. #5A6478)')">
-            <CoarTextInput v-model="brandingForm.PrimaryColor" clearable placeholder="#5A6478" />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.realmSettings.branding.logo', {}, 'Logo')">
-            <div class="asset-row">
-              <div class="asset-thumb">
-                <img v-if="brandingForm.LogoUrl" :src="brandingForm.LogoUrl" alt="logo" />
-                <span v-else class="asset-thumb-empty">—</span>
-              </div>
-              <CoarButton size="s" variant="ghost" @click="pickLogo">
-                {{ t('admin.realmSettings.branding.pick', {}, 'Browse…') }}
-              </CoarButton>
-              <CoarButton v-if="brandingForm.LogoAssetId" size="s" variant="ghost" @click="clearLogo">
-                {{ t('common.clear', {}, 'Clear') }}
-              </CoarButton>
-            </div>
-          </CoarFormField>
-          <CoarFormField :label="t('admin.realmSettings.branding.favicon', {}, 'Favicon')">
-            <div class="asset-row">
-              <div class="asset-thumb">
-                <img v-if="brandingForm.FaviconUrl" :src="brandingForm.FaviconUrl" alt="favicon" />
-                <span v-else class="asset-thumb-empty">—</span>
-              </div>
-              <CoarButton size="s" variant="ghost" @click="pickFavicon">
-                {{ t('admin.realmSettings.branding.pick', {}, 'Browse…') }}
-              </CoarButton>
-              <CoarButton v-if="brandingForm.FaviconAssetId" size="s" variant="ghost" @click="clearFavicon">
-                {{ t('common.clear', {}, 'Clear') }}
-              </CoarButton>
-            </div>
-          </CoarFormField>
-        </div>
-
-        <div class="flex">
-          <CoarButton :loading="saving" @click="save">
-            {{ t('common.save', {}, 'Save') }}
-          </CoarButton>
-        </div>
-      </div>
-    </CoarCard>
   </div>
 </template>
-
-<style scoped>
-.asset-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.asset-thumb {
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--coar-background-neutral-primary);
-  border: 1px solid var(--coar-border-neutral-secondary);
-  border-radius: 0.25rem;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.asset-thumb img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.asset-thumb-empty {
-  color: var(--coar-text-neutral-secondary);
-  font-size: 0.75rem;
-}
-</style>
 
 <style scoped>
 .tab-bar {

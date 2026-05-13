@@ -47,4 +47,12 @@ public class RealmSettings
     /// the anonymous <c>/api/app-info</c> so the login page renders branded
     /// before the user authenticates.</summary>
     public BrandingSettings? Branding { get; set; }
+
+    /// <summary>Page-builder schemas keyed by SPA-page-slug
+    /// (<c>login</c>, <c>logout</c>, <c>password-forgot</c>, …). Each
+    /// value is the serialised <c>PageNode</c> tree as JSON. Missing key
+    /// or empty value = render the SPA's hardcoded view for that page.
+    /// Dictionary keeps the slug-set extensible without a schema change
+    /// when more page-slots get adopted.</summary>
+    public Dictionary<string, string>? Pages { get; set; }
 }

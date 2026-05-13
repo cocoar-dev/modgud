@@ -7,6 +7,9 @@ export interface RealmSettingsDto {
   SelfRegistration: SelfRegistrationDto
   Dcr: DcrSettingsDto
   Branding: BrandingSettingsDto
+  /** Page-builder schemas keyed by slug. Read-only here — writes use
+   * the dedicated /api/admin/customization/pages/{slug} endpoints. */
+  Pages: Record<string, string>
 }
 
 export interface UpdateRealmSettingsDto {

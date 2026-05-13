@@ -17,6 +17,7 @@
     "@cocoar/vue-data-grid": "2.1.0",
     "@cocoar/vue-fragment-parser": "2.1.0",
     "@cocoar/vue-localization": "2.1.0",
+    "@cocoar/vue-page-builder": "2.1.0",
     "@cocoar/vue-script-editor": "2.1.0",
     "@cocoar/vue-ui": "2.1.0",
     "dompurify": "^3.4.2",

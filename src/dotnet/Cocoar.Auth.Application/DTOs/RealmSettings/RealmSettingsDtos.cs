@@ -15,6 +15,12 @@ public record RealmSettingsDto
     public SelfRegistrationDto SelfRegistration { get; init; } = new();
     public DcrSettingsDto Dcr { get; init; } = new();
     public BrandingSettingsDto Branding { get; init; } = new();
+
+    /// <summary>Page-builder schemas keyed by slug. Read-only via the bulk
+    /// GET; writes go through the dedicated <c>/api/admin/customization/pages/{slug}</c>
+    /// endpoints. Empty dict = no slot customised yet.</summary>
+    public IReadOnlyDictionary<string, string> Pages { get; init; }
+        = new Dictionary<string, string>();
 }
 
 /// <summary>Patch payload for <c>PATCH /api/admin/realm-settings</c>.

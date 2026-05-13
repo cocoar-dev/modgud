@@ -946,6 +946,7 @@ try
     app.MapAdminGdprEndpoints("api");
     app.MapAdminObservabilityEndpoints("api");
     app.MapAssetsEndpoints("api");
+    app.MapCustomizationPagesEndpoints("api");
 
     // Account & Setup Endpoints (have additional strict "auth" rate limit)
     app.MapAccountEndpoints("api");
