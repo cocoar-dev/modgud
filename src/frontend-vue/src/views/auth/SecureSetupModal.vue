@@ -6,7 +6,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import {
   CoarCard,
   CoarButton,
-  CoarTextInput,
+  CoarOtpInput,
   CoarFormField,
   CoarNote,
   CoarIcon,
@@ -176,7 +176,7 @@ function bufferToBase64Url(b: ArrayBuffer): string {
           </details>
 
           <CoarFormField :label="t('auth.secureSetup.totpVerifyLabel', {}, 'Verification Code')">
-            <CoarTextInput v-model="totpCode" placeholder="000 000" autocomplete="one-time-code" @keydown.enter="verifyTotp" />
+            <CoarOtpInput v-model="totpCode" type="numeric" :length="6" auto-focus @complete="verifyTotp" />
           </CoarFormField>
 
           <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>

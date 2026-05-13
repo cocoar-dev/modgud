@@ -13,6 +13,7 @@ import {
   CoarFormField,
   CoarCheckbox,
   CoarNote,
+  CoarOtpInput,
 } from '@cocoar/vue-ui'
 import SecureSetupModal from './SecureSetupModal.vue'
 
@@ -540,7 +541,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
         <!-- Step: TOTP Code -->
         <form v-else-if="step === 'totp'" class="space-y-4" @submit.prevent="handleMfaLogin">
           <CoarFormField :label="t('auth.mfa.authenticatorCode', {}, 'Authenticator Code')">
-            <CoarTextInput v-model="totpCode" placeholder="000 000" autocomplete="one-time-code" required />
+            <CoarOtpInput v-model="totpCode" type="numeric" :length="6" auto-focus required />
           </CoarFormField>
           <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
           <CoarButton type="submit" :disabled="!totpCode.trim()" :loading="submitting" full-width>
@@ -560,7 +561,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
             {{ t('auth.emailOtp.codeSent', {}, 'A code was sent to your email address.') }}
           </CoarNote>
           <CoarFormField :label="t('auth.emailOtp.label', {}, 'Email Code')">
-            <CoarTextInput v-model="emailOtpCode" placeholder="000000" autocomplete="one-time-code" required />
+            <CoarOtpInput v-model="emailOtpCode" type="numeric" :length="6" auto-focus required />
           </CoarFormField>
           <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
           <CoarButton type="submit" :disabled="!emailOtpCode.trim()" :loading="submitting" full-width>

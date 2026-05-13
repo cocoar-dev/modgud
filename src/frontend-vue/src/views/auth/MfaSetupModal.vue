@@ -5,7 +5,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import {
   CoarButton,
-  CoarTextInput,
+  CoarOtpInput,
   CoarFormField,
   CoarNote,
 } from '@cocoar/vue-ui'
@@ -81,10 +81,11 @@ async function verifyCode() {
         <!-- Verification -->
         <form @submit.prevent="verifyCode" class="space-y-4">
           <CoarFormField :label="t('profile.mfaSetup.verificationCode', {}, 'Verification Code')">
-            <CoarTextInput
+            <CoarOtpInput
               v-model="verificationCode"
-              placeholder="000 000"
-              autocomplete="one-time-code"
+              type="numeric"
+              :length="6"
+              auto-focus
               required
             />
           </CoarFormField>
