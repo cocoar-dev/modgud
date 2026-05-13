@@ -102,6 +102,13 @@ internal static class ObservabilityExtensions
                 }
             });
 
+        // In-memory activity buffer for the in-app live view (Phase 5).
+        // Singleton; statically referenced by CocoarAuthMeters so any slice
+        // can push to it without taking a DI dependency.
+        var activityBuffer = new ObservabilityActivityBuffer();
+        services.AddSingleton(activityBuffer);
+        CocoarAuthMeters.ActivityBuffer = activityBuffer;
+
         // Health checks. Liveness is always trivial-success (process is up).
         // Readiness gates routing on three probes: TCP-level Postgres ping,
         // Marten master-schema queryability, and the on-disk OpenIddict

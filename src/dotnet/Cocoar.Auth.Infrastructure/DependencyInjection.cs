@@ -166,6 +166,11 @@ public static class DependencyInjection
             opt.RegisterResource(app, "session", "read", "write");
             opt.RegisterResource(app, "auth-log", "read");
 
+            // In-app live observability view (Phase 5 of the OpenTelemetry
+            // followup). Read-only; the granular Prometheus scrape is gated
+            // separately by bearer token at the perimeter.
+            opt.RegisterResource(app, "observability", "read");
+
             // GDPR (permanent-erase only — self-service is implicit on the caller)
             opt.RegisterResource(app, "gdpr", "admin");
 

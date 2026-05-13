@@ -40,6 +40,7 @@ const allNavItems: NavItem[] = [
   { section: 'system', label: 'admin.realms.title', icon: 'globe', path: '/admin/realms', requirePermissions: ['realm:read'] },
   { section: 'system', label: 'admin.realmSettings.title', icon: 'sliders', path: '/admin/realm-settings', requirePermissions: ['realm-settings:read'] },
   { section: 'system', label: 'admin.authLog.title', icon: 'scroll-text', path: '/admin/auth-log', requirePermissions: ['auth-log:read'] },
+  { section: 'system', label: 'admin.observability.title', icon: 'activity', path: '/admin/observability', requirePermissions: ['observability:read'] },
   { section: 'system', label: 'admin.changeRequests.title', icon: 'inbox', path: '/admin/change-requests', requirePermissions: ['user:write'] },
   { section: 'system', label: 'nav.settings', icon: 'settings', path: '/admin/settings', requirePermissions: ['realm:admin'] },
 ]

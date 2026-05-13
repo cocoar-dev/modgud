@@ -147,6 +147,10 @@ const routes = [
               component: () => import('@/views/admin/AuthLogView.vue'),
             },
             {
+              path: 'observability',
+              component: () => import('@/views/admin/AdminObservabilityView.vue'),
+            },
+            {
               path: 'change-requests',
               component: () => import('@/views/admin/ChangeRequestsView.vue'),
             },
@@ -296,7 +300,7 @@ router.beforeEach(async (to) => {
       'oauth-api:read',
       'login-provider:read',
       'realm:read', 'realm-settings:read',
-      'auth-log:read', 'session:read',
+      'auth-log:read', 'session:read', 'observability:read',
       'app:read',
     ]
     if (!ADMIN_PERMS.some((p) => authStore.hasPermission(p))) {

@@ -25,6 +25,13 @@ public static class CocoarAuthMeters
 
     public static readonly Meter Meter = new(Name);
 
+    /// <summary>
+    /// In-memory ring buffer for the in-app live view (Phase 5). Set once
+    /// at DI bootstrap; left null when the API host doesn't wire it (unit
+    /// tests, recovery-CLI, …) so Record* stays a pure OTel emission.
+    /// </summary>
+    public static ObservabilityActivityBuffer? ActivityBuffer { get; set; }
+
     // Login methods — bounded set, callers use the constants below.
     public static class LoginMethod
     {
@@ -118,40 +125,75 @@ public static class CocoarAuthMeters
         unit: "{request}",
         description: "GDPR self-service requests by type.");
 
-    public static void RecordLogin(string method, string outcome, string? realm = null) =>
+    public static void RecordLogin(string method, string outcome, string? realm = null)
+    {
+        var r = realm ?? TenantContext.Current;
         _logins.Add(1,
-            new KeyValuePair<string, object?>("realm", realm ?? TenantContext.Current),
+            new KeyValuePair<string, object?>("realm", r),
             new KeyValuePair<string, object?>("method", method),
             new KeyValuePair<string, object?>("outcome", outcome));
+        ActivityBuffer?.Record(ObservabilityEventTypes.Login, r,
+            new Dictionary<string, string> { ["method"] = method, ["outcome"] = outcome });
+    }
 
-    public static void RecordTokenMinted(string grantType, string clientType, string? realm = null) =>
+    public static void RecordTokenMinted(string grantType, string clientType, string? realm = null)
+    {
+        var r = realm ?? TenantContext.Current;
         _tokenMinted.Add(1,
-            new KeyValuePair<string, object?>("realm", realm ?? TenantContext.Current),
+            new KeyValuePair<string, object?>("realm", r),
             new KeyValuePair<string, object?>("grant_type", grantType),
             new KeyValuePair<string, object?>("client_type", clientType));
+        ActivityBuffer?.Record(ObservabilityEventTypes.TokenMinted, r,
+            new Dictionary<string, string> { ["grant_type"] = grantType, ["client_type"] = clientType });
+    }
 
-    public static void RecordRefreshRejected(string? realm = null) =>
-        _refreshRejected.Add(1,
-            new KeyValuePair<string, object?>("realm", realm ?? TenantContext.Current));
+    public static void RecordRefreshRejected(string? realm = null)
+    {
+        var r = realm ?? TenantContext.Current;
+        _refreshRejected.Add(1, new KeyValuePair<string, object?>("realm", r));
+        ActivityBuffer?.Record(ObservabilityEventTypes.TokenRefreshRejected, r);
+    }
 
-    public static void RecordTwoFactorBlocked(string? realm = null) =>
-        _twoFactorBlocked.Add(1,
-            new KeyValuePair<string, object?>("realm", realm ?? TenantContext.Current));
+    public static void RecordTwoFactorBlocked(string? realm = null)
+    {
+        var r = realm ?? TenantContext.Current;
+        _twoFactorBlocked.Add(1, new KeyValuePair<string, object?>("realm", r));
+        ActivityBuffer?.Record(ObservabilityEventTypes.TwoFactorBlocked, r);
+    }
 
-    public static void RecordDcrRegistration(string outcome, string? realm = null) =>
+    public static void RecordDcrRegistration(string outcome, string? realm = null)
+    {
+        var r = realm ?? TenantContext.Current;
         _dcrRegistration.Add(1,
-            new KeyValuePair<string, object?>("realm", realm ?? TenantContext.Current),
+            new KeyValuePair<string, object?>("realm", r),
             new KeyValuePair<string, object?>("outcome", outcome));
+        ActivityBuffer?.Record(ObservabilityEventTypes.DcrRegistration, r,
+            new Dictionary<string, string> { ["outcome"] = outcome });
+    }
 
-    public static void RecordDcrRateLimitHit(string scope, string? realm = null) =>
+    public static void RecordDcrRateLimitHit(string scope, string? realm = null)
+    {
+        var r = realm ?? TenantContext.Current;
         _dcrRateLimit.Add(1,
-            new KeyValuePair<string, object?>("realm", realm ?? TenantContext.Current),
+            new KeyValuePair<string, object?>("realm", r),
             new KeyValuePair<string, object?>("scope", scope));
+        ActivityBuffer?.Record(ObservabilityEventTypes.DcrRateLimitHit, r,
+            new Dictionary<string, string> { ["scope"] = scope });
+    }
 
-    public static void RecordRealmProvisioned() => _realmProvisioned.Add(1);
+    public static void RecordRealmProvisioned()
+    {
+        _realmProvisioned.Add(1);
+        ActivityBuffer?.Record(ObservabilityEventTypes.RealmProvisioned, TenantContext.Current);
+    }
 
-    public static void RecordGdprRequest(string type, string? realm = null) =>
+    public static void RecordGdprRequest(string type, string? realm = null)
+    {
+        var r = realm ?? TenantContext.Current;
         _gdprRequest.Add(1,
-            new KeyValuePair<string, object?>("realm", realm ?? TenantContext.Current),
+            new KeyValuePair<string, object?>("realm", r),
             new KeyValuePair<string, object?>("type", type));
+        ActivityBuffer?.Record(ObservabilityEventTypes.GdprRequest, r,
+            new Dictionary<string, string> { ["type"] = type });
+    }
 }
