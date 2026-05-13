@@ -56,7 +56,7 @@ verarbeiten **beide** Outbox-Messages → Emails doppelt, Wolverine-Events
 doppelt. Stille Data-Corruption.
 
 **Lösung:** Mode in Config rausziehen (default Solo), per Env-Var
-überschreibbar. Boot-Log "Wolverine running in <Mode> mode" + Hinweis
+überschreibbar. Boot-Log `Wolverine running in {Mode} mode` + Hinweis
 dass Multi-Instance einen anderen Mode braucht.
 
 **Verifikation:** Single-Instance. App startet mit default Solo,
