@@ -14,6 +14,7 @@ public record RealmSettingsDto
 {
     public SelfRegistrationDto SelfRegistration { get; init; } = new();
     public DcrSettingsDto Dcr { get; init; } = new();
+    public BrandingSettingsDto Branding { get; init; } = new();
 }
 
 /// <summary>Patch payload for <c>PATCH /api/admin/realm-settings</c>.
@@ -24,4 +25,5 @@ public record UpdateRealmSettingsDto
 {
     public UpdateSelfRegistrationDto? SelfRegistration { get; init; }
     public UpdateDcrSettingsDto? Dcr { get; init; }
+    public UpdateBrandingSettingsDto? Branding { get; init; }
 }

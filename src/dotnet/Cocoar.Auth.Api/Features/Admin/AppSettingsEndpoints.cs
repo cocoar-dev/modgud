@@ -1,4 +1,5 @@
 using Cocoar.Auth.Api;
+using Cocoar.Auth.Authentication.RealmSettings;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Cocoar.Auth.Infrastructure.Realms;
 
@@ -15,16 +16,29 @@ public static class AppSettingsEndpoints
         // resolved tenant — a tenant realm sees `false`, the Control-Plane
         // realm sees `true`. RealmMiddleware runs before the endpoint, so
         // TenantInfo is always populated when the request reaches us.
+        //
+        // Branding section is included anonymously because the login page
+        // needs to render branded BEFORE the user authenticates. Branding
+        // is metadata, no secrets — same disclosure surface as the existing
+        // public realm settings.
         application.MapGet($"{path}/app-info",
-            (HttpContext http, AppSettings settings) =>
+            async (HttpContext http, AppSettings settings, IRealmSettingsService realmSettings) =>
             {
                 var tenant = http.Items[TenantConstants.HttpContextTenantInfoKey] as TenantInfo;
+                var realmDoc = await realmSettings.LoadAsync(http.RequestAborted);
                 return Results.Ok(new
                 {
                     settings.AuthenticationMinimumLevel,
                     settings.MagicLinkSelfService,
                     settings.TwoFactorGracePeriodDays,
                     IsControlPlane = tenant?.IsControlPlane ?? false,
+                    Branding = new
+                    {
+                        ProductName = realmDoc.Branding?.ProductName,
+                        LogoUrl = realmDoc.Branding?.LogoUrl,
+                        FaviconUrl = realmDoc.Branding?.FaviconUrl,
+                        PrimaryColor = realmDoc.Branding?.PrimaryColor,
+                    },
                 });
             })
         .WithName("AppInfo")

@@ -6,11 +6,31 @@
 export interface RealmSettingsDto {
   SelfRegistration: SelfRegistrationDto
   Dcr: DcrSettingsDto
+  Branding: BrandingSettingsDto
 }
 
 export interface UpdateRealmSettingsDto {
   SelfRegistration?: UpdateSelfRegistrationDto | null
   Dcr?: UpdateDcrSettingsDto | null
+  Branding?: UpdateBrandingSettingsDto | null
+}
+
+// Read shape for the Branding sub-section. All fields nullable —
+// null = SPA falls back to the Cocoar defaults.
+export interface BrandingSettingsDto {
+  ProductName?: string | null
+  LogoUrl?: string | null
+  FaviconUrl?: string | null
+  PrimaryColor?: string | null
+}
+
+// PATCH shape. Each field: undefined/null = no change, "" = clear
+// (revert to Cocoar default), other = replace.
+export interface UpdateBrandingSettingsDto {
+  ProductName?: string | null
+  LogoUrl?: string | null
+  FaviconUrl?: string | null
+  PrimaryColor?: string | null
 }
 
 // Read shape. CaptchaSecretSet is the only signal the SPA gets about the

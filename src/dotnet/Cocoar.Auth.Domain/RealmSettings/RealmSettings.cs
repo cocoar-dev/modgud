@@ -41,4 +41,10 @@ public class RealmSettings
     /// <c>/connect/register</c> endpoint refuses every request and the
     /// discovery document omits <c>registration_endpoint</c>.</summary>
     public DcrSettings? Dcr { get; set; }
+
+    /// <summary>Per-realm SPA branding (product name, logo, primary color,
+    /// favicon). Null = SPA falls back to the Cocoar default. Surfaced via
+    /// the anonymous <c>/api/app-info</c> so the login page renders branded
+    /// before the user authenticates.</summary>
+    public BrandingSettings? Branding { get; set; }
 }

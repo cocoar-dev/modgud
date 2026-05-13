@@ -60,6 +60,11 @@ public sealed class RealmSettingsService(
             doc.Dcr = ApplyDcrPatch(doc.Dcr, dto.Dcr);
         }
 
+        if (dto.Branding is not null)
+        {
+            doc.Branding = ApplyBrandingPatch(doc.Branding, dto.Branding);
+        }
+
         if (!isCreate) doc.UpdatedAt = DateTimeOffset.UtcNow;
 
         session.Store(doc);
@@ -97,7 +102,44 @@ public sealed class RealmSettingsService(
     {
         SelfRegistration = MapSelfRegistrationToDto(doc.SelfRegistration),
         Dcr = MapDcrToDto(doc.Dcr),
+        Branding = MapBrandingToDto(doc.Branding),
     };
+
+    private static BrandingSettings ApplyBrandingPatch(
+        BrandingSettings? current,
+        UpdateBrandingSettingsDto patch)
+    {
+        var s = current ?? new BrandingSettings();
+        // Tri-state per field: missing/null = no change, "" = clear (revert
+        // to Cocoar default), other = replace. Matches the captcha-secret
+        // semantics on the self-registration section.
+        return s with
+        {
+            ProductName = MergeBrandingField(s.ProductName, patch.ProductName),
+            LogoUrl = MergeBrandingField(s.LogoUrl, patch.LogoUrl),
+            FaviconUrl = MergeBrandingField(s.FaviconUrl, patch.FaviconUrl),
+            PrimaryColor = MergeBrandingField(s.PrimaryColor, patch.PrimaryColor),
+        };
+    }
+
+    private static string? MergeBrandingField(string? current, string? patch) => patch switch
+    {
+        null => current,
+        "" => null,
+        var v => v,
+    };
+
+    internal static BrandingSettingsDto MapBrandingToDto(BrandingSettings? s)
+    {
+        if (s is null) return new BrandingSettingsDto();
+        return new BrandingSettingsDto
+        {
+            ProductName = s.ProductName,
+            LogoUrl = s.LogoUrl,
+            FaviconUrl = s.FaviconUrl,
+            PrimaryColor = s.PrimaryColor,
+        };
+    }
 
     private static DcrSettings ApplyDcrPatch(DcrSettings? current, UpdateDcrSettingsDto patch)
     {

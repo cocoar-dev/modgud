@@ -20,6 +20,7 @@ import SecureSetupModal from './SecureSetupModal.vue'
 const { t, language } = useI18n()
 const localization = useLocalization()!
 const appConfig = useAppConfigStore()
+const branding = computed(() => appConfig.config.Branding)
 
 async function toggleLanguage() {
   const next = language.value === 'de' ? 'en' : 'de'
@@ -401,8 +402,11 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
     <div class="w-full max-w-sm">
       <!-- Logo + Title -->
       <div class="mb-8 text-center">
-        <img src="/td-logo.svg" alt="Cocoar.Auth" class="mx-auto mb-1 h-16 w-auto" />
-        <h1 class="text-2xl font-bold tracking-tight text-surface-800">
+        <img :src="branding.LogoUrl ?? '/td-logo.svg'" :alt="branding.ProductName ?? 'Cocoar.Auth'" class="mx-auto mb-1 h-16 w-auto" />
+        <h1 v-if="branding.ProductName" class="text-2xl font-bold tracking-tight text-surface-800">
+          {{ branding.ProductName }}
+        </h1>
+        <h1 v-else class="text-2xl font-bold tracking-tight text-surface-800">
           Cocoar<span class="text-[#525e76]">.Auth</span>
         </h1>
         <p class="mt-2 text-sm text-surface-500">

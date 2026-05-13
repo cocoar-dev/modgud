@@ -21,6 +21,8 @@ import type {
   UpdateSelfRegistrationDto,
   DcrSettingsDto,
   UpdateDcrSettingsDto,
+  BrandingSettingsDto,
+  UpdateBrandingSettingsDto,
 } from '@/models/realmSettings'
 
 const { t, language } = useI18n()
@@ -36,7 +38,7 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.hasSubNav = true
 }), { immediate: true })
 
-type TabId = 'self-registration' | 'dcr'
+type TabId = 'self-registration' | 'dcr' | 'branding'
 const activeTab = ref<TabId>('self-registration')
 
 // ── Self-Registration form state ─────────────────────────────────────
@@ -109,6 +111,30 @@ function dcrFromDto(d: DcrSettingsDto): DcrFormState {
   }
 }
 
+// ── Branding form state ──────────────────────────────────────────────
+interface BrandingFormState {
+  ProductName: string
+  LogoUrl: string
+  FaviconUrl: string
+  PrimaryColor: string
+}
+
+function emptyBranding(): BrandingFormState {
+  return { ProductName: '', LogoUrl: '', FaviconUrl: '', PrimaryColor: '' }
+}
+
+const brandingForm = ref<BrandingFormState>(emptyBranding())
+const originalBranding = ref<BrandingSettingsDto | null>(null)
+
+function brandingFromDto(b: BrandingSettingsDto): BrandingFormState {
+  return {
+    ProductName: b.ProductName ?? '',
+    LogoUrl: b.LogoUrl ?? '',
+    FaviconUrl: b.FaviconUrl ?? '',
+    PrimaryColor: b.PrimaryColor ?? '',
+  }
+}
+
 // Captcha-secret — write-only with three states: leave, clear, replace.
 const editingSecret = ref(false)
 const secretInput = ref('')
@@ -144,6 +170,8 @@ onMounted(async () => {
     form.value = fromDto(dto.SelfRegistration)
     originalDcr.value = dto.Dcr
     dcrForm.value = dcrFromDto(dto.Dcr)
+    originalBranding.value = dto.Branding
+    brandingForm.value = brandingFromDto(dto.Branding)
   } catch (e: any) {
     error.value = e?.body?.detail ?? e?.message ?? String(e)
   } finally {
@@ -210,10 +238,31 @@ function buildDcrPatch(): UpdateDcrSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildBrandingPatch(): UpdateBrandingSettingsDto | undefined {
+  const orig = originalBranding.value
+  if (!orig) return undefined
+  const cur = brandingForm.value
+  const patch: UpdateBrandingSettingsDto = {}
+
+  // For each field: trimmed-empty maps to null (clear → revert to default),
+  // changed value writes through, unchanged is omitted from the patch.
+  const productName = cur.ProductName.trim()
+  if (productName !== (orig.ProductName ?? '')) patch.ProductName = productName || null
+  const logo = cur.LogoUrl.trim()
+  if (logo !== (orig.LogoUrl ?? '')) patch.LogoUrl = logo || null
+  const favicon = cur.FaviconUrl.trim()
+  if (favicon !== (orig.FaviconUrl ?? '')) patch.FaviconUrl = favicon || null
+  const color = cur.PrimaryColor.trim()
+  if (color !== (orig.PrimaryColor ?? '')) patch.PrimaryColor = color || null
+
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
 async function save() {
   const selfRegPatch = buildSelfRegPatch()
   const dcrPatch = buildDcrPatch()
-  if (!selfRegPatch && !dcrPatch) {
+  const brandingPatch = buildBrandingPatch()
+  if (!selfRegPatch && !dcrPatch && !brandingPatch) {
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1200)
     return
@@ -221,14 +270,21 @@ async function save() {
   saving.value = true
   error.value = null
   try {
-    const payload: { SelfRegistration?: UpdateSelfRegistrationDto; Dcr?: UpdateDcrSettingsDto } = {}
+    const payload: {
+      SelfRegistration?: UpdateSelfRegistrationDto
+      Dcr?: UpdateDcrSettingsDto
+      Branding?: UpdateBrandingSettingsDto
+    } = {}
     if (selfRegPatch) payload.SelfRegistration = selfRegPatch
     if (dcrPatch) payload.Dcr = dcrPatch
+    if (brandingPatch) payload.Branding = brandingPatch
     const updated = await settingsStore.patch(payload)
     originalSelfReg.value = updated.SelfRegistration
     form.value = fromDto(updated.SelfRegistration)
     originalDcr.value = updated.Dcr
     dcrForm.value = dcrFromDto(updated.Dcr)
+    originalBranding.value = updated.Branding
+    brandingForm.value = brandingFromDto(updated.Branding)
     editingSecret.value = false
     secretInput.value = ''
     savedFlash.value = true
@@ -249,6 +305,9 @@ async function save() {
       </CoarTab>
       <CoarTab id="dcr">
         {{ t('admin.realmSettings.tabs.dcr', {}, 'Dynamic Client Registration') }}
+      </CoarTab>
+      <CoarTab id="branding">
+        {{ t('admin.realmSettings.tabs.branding', {}, 'Branding') }}
       </CoarTab>
     </CoarTabGroup>
 
@@ -413,6 +472,35 @@ async function save() {
         </template>
 
         <div class="flex justify-end mt-2">
+          <CoarButton :loading="saving" @click="save">
+            {{ t('common.save', {}, 'Save') }}
+          </CoarButton>
+        </div>
+      </div>
+    </CoarCard>
+
+    <CoarCard v-else-if="activeTab === 'branding'" class="p-4">
+      <div class="flex flex-col gap-3">
+        <p class="text-xs text-gray-500">
+          {{ t('admin.realmSettings.branding.hint', {}, 'Per-realm branding for the SPA. All fields optional — leave empty to fall back to the Cocoar defaults. Logo/Favicon URLs can be absolute (https://…) or SPA-relative paths (/assets/…). Changes apply on the next SPA load.') }}
+        </p>
+
+        <div class="grid grid-cols-2 gap-3">
+          <CoarFormField :label="t('admin.realmSettings.branding.productName', {}, 'Product name')">
+            <CoarTextInput v-model="brandingForm.ProductName" clearable placeholder="Cocoar.Auth" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.realmSettings.branding.primaryColor', {}, 'Primary color (CSS color, e.g. #5A6478)')">
+            <CoarTextInput v-model="brandingForm.PrimaryColor" clearable placeholder="#5A6478" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.realmSettings.branding.logoUrl', {}, 'Logo URL')">
+            <CoarTextInput v-model="brandingForm.LogoUrl" clearable placeholder="https://… or /assets/logo.svg" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.realmSettings.branding.faviconUrl', {}, 'Favicon URL')">
+            <CoarTextInput v-model="brandingForm.FaviconUrl" clearable placeholder="https://… or /assets/favicon.svg" />
+          </CoarFormField>
+        </div>
+
+        <div class="flex">
           <CoarButton :loading="saving" @click="save">
             {{ t('common.save', {}, 'Save') }}
           </CoarButton>

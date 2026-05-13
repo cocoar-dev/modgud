@@ -17,6 +17,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useSignalR } from '@/composables/useSignalR'
 import { provideUI } from '@/composables/useUI'
 import { useAuthStore } from '@/stores/auth.store'
+import { useAppConfigStore } from '@/stores/appconfig.store'
 import LogoutConfirmModal from '@/views/auth/LogoutConfirmModal.vue'
 import AppContextSelector from '@/components/AppContextSelector.vue'
 
@@ -27,6 +28,8 @@ const router = useRouter()
 const route = useRoute()
 const { state: ui } = provideUI()
 const authStore = useAuthStore()
+const appConfig = useAppConfigStore()
+const branding = computed(() => appConfig.config.Branding)
 
 const collapsed = ref(
     // Default collapsed for first-time users; persisted choice wins thereafter.
@@ -133,8 +136,8 @@ const hasAnyAdminPermission = computed(() =>
         <header v-if="ui.header.show" class="main-header">
             <!-- Logo area (aligned with sidebar width) -->
             <button @click="router.push('/')" class="header-logo" :style="{ width: collapsed ? '4rem' : '16rem' }">
-                <img src="/td-logo-white.svg" alt="Cocoar.Auth" class="header-logo-icon" />
-                <span v-if="!collapsed" class="text-sm font-medium tracking-wide opacity-80">Cocoar.Auth</span>
+                <img :src="branding.LogoUrl ?? '/td-logo-white.svg'" :alt="branding.ProductName ?? 'Cocoar.Auth'" class="header-logo-icon" />
+                <span v-if="!collapsed" class="text-sm font-medium tracking-wide opacity-80">{{ branding.ProductName ?? 'Cocoar.Auth' }}</span>
             </button>
 
             <!-- Header content (90% container) -->

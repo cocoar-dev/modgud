@@ -8,11 +8,19 @@ import { useHttpClient } from '@/composables/useHttpClient'
  * resolved to a tenant by the time it returns: IsControlPlane reflects the
  * realm of the host the SPA was loaded from.
  */
+export interface BrandingConfig {
+  ProductName: string | null
+  LogoUrl: string | null
+  FaviconUrl: string | null
+  PrimaryColor: string | null
+}
+
 export interface AppConfig {
   AuthenticationMinimumLevel: number  // 0=None, 1=SecureLogin, 2=Passwordless
   MagicLinkSelfService: boolean
   TwoFactorGracePeriodDays: number
   IsControlPlane: boolean              // true ⇔ the realm hosting this SPA is the Control Plane
+  Branding: BrandingConfig
 }
 
 const defaults: AppConfig = {
@@ -20,6 +28,41 @@ const defaults: AppConfig = {
   MagicLinkSelfService: true,
   TwoFactorGracePeriodDays: 14,
   IsControlPlane: false,
+  Branding: {
+    ProductName: null,
+    LogoUrl: null,
+    FaviconUrl: null,
+    PrimaryColor: null,
+  },
+}
+
+/**
+ * Applies per-realm branding to the document at SPA boot. Sets
+ * --coar-color-primary CSS variable, document title prefix, and rewrites
+ * the favicon link element. Falls back silently when a branding field is
+ * null — the design-system defaults stay in effect.
+ *
+ * Logo + ProductName are read by views that render them (header / login)
+ * via the store directly — DOM-side this function only handles globals.
+ */
+function applyBranding(branding: BrandingConfig): void {
+  if (branding.PrimaryColor) {
+    document.documentElement.style.setProperty('--coar-color-primary', branding.PrimaryColor)
+  }
+
+  if (branding.ProductName) {
+    document.title = branding.ProductName
+  }
+
+  if (branding.FaviconUrl) {
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = 'icon'
+      document.head.appendChild(link)
+    }
+    link.href = branding.FaviconUrl
+  }
 }
 
 export const useAppConfigStore = defineStore('appConfig', () => {
@@ -31,7 +74,14 @@ export const useAppConfigStore = defineStore('appConfig', () => {
     if (loaded.value) return
     try {
       const result = await http.get<AppConfig>()
-      if (result) config.value = { ...defaults, ...result }
+      if (result) {
+        config.value = {
+          ...defaults,
+          ...result,
+          Branding: { ...defaults.Branding, ...(result.Branding ?? {}) },
+        }
+        applyBranding(config.value.Branding)
+      }
     } catch { /* use defaults */ }
     finally { loaded.value = true }
   }

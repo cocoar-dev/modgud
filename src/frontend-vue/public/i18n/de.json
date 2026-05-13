@@ -727,7 +727,16 @@
       "title": "Realm-Einstellungen",
       "saved": "Gespeichert.",
       "tabs": {
-        "selfRegistration": "Self-Registration"
+        "selfRegistration": "Self-Registration",
+        "dcr": "Dynamic Client Registration",
+        "branding": "Branding"
+      },
+      "branding": {
+        "hint": "Pro-Realm-Branding für die SPA. Alle Felder optional — leer lassen für die Cocoar-Defaults. Logo-/Favicon-URLs absolut (https://…) oder SPA-relativ (/assets/…). Änderungen wirken beim nächsten SPA-Load.",
+        "productName": "Produkt-Name",
+        "primaryColor": "Primärfarbe (CSS-Color, z.B. #5A6478)",
+        "logoUrl": "Logo-URL",
+        "faviconUrl": "Favicon-URL"
       },
       "selfReg": {
         "hint": "Wenn aktiviert, können Besucher unter /register selbst ein Konto anlegen. Default: deaktiviert.",
