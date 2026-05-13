@@ -2,10 +2,11 @@
 @import "@cocoar/vue-ui/styles";
 @import "@cocoar/vue-data-grid/styles";
 /* @cocoar/vue-page-builder 2.1.0 ships dist/index.css but its package.json
- * exports map only exposes `.` (JS only) — no `./styles` subpath. Workaround
- * is the deep dist path which Vite resolves via filesystem. Upstream fix
- * captured in website/dev-notes/upstream-feature-requests/. */
-@import "@cocoar/vue-page-builder/dist/index.css";
+ * exports map only exposes `.` (JS only) — no `./styles` subpath. We add
+ * an alias in vite.config.ts that resolves "/styles" to the dist file so
+ * this import looks canonical. Upstream fix captured in
+ * website/dev-notes/upstream-feature-requests/. */
+@import "@cocoar/vue-page-builder/styles";
 
 :root {
   --color-primary: #525e76;
