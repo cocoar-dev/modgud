@@ -1,8 +1,11 @@
 using System.Reflection;
+using System.Text.Json;
+using Cocoar.Auth.Api.HealthChecks;
 using Cocoar.Auth.Api.Middleware;
 using Cocoar.Auth.Infrastructure.Observability;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Npgsql;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
@@ -100,8 +103,9 @@ internal static class ObservabilityExtensions
             });
 
         // Health checks. Liveness is always trivial-success (process is up).
-        // Readiness adds a Postgres probe so a Kubernetes-style readiness gate
-        // won't route traffic until the DB is reachable.
+        // Readiness gates routing on three probes: TCP-level Postgres ping,
+        // Marten master-schema queryability, and the on-disk OpenIddict
+        // signing cert (non-DevelopmentMode only).
         var healthBuilder = services.AddHealthChecks();
         if (!string.IsNullOrWhiteSpace(postgresConnectionString))
         {
@@ -110,6 +114,12 @@ internal static class ObservabilityExtensions
                 name: "postgres",
                 tags: new[] { "ready" });
         }
+        healthBuilder.AddCheck<MartenSchemaHealthCheck>(
+            name: "marten-schema",
+            tags: new[] { "ready" });
+        healthBuilder.AddCheck<OpenIddictCertHealthCheck>(
+            name: "openiddict-cert",
+            tags: new[] { "ready" });
 
         return services;
     }
@@ -149,13 +159,40 @@ internal static class ObservabilityExtensions
         app.MapHealthChecks("/health/live", new HealthCheckOptions
         {
             Predicate = _ => false, // No dependency checks — liveness is just "process answers".
+            ResponseWriter = WriteHealthCheckJson,
         }).AllowAnonymous();
 
         app.MapHealthChecks("/health/ready", new HealthCheckOptions
         {
             Predicate = check => check.Tags.Contains("ready"),
+            ResponseWriter = WriteHealthCheckJson,
         }).AllowAnonymous();
 
         return app;
+    }
+
+    /// <summary>
+    /// Structured JSON response so failed probes are debuggable from a curl
+    /// rather than a "Unhealthy" string with no context. Keeps the contract
+    /// flat — Kubernetes / Docker only look at the status code.
+    /// </summary>
+    private static Task WriteHealthCheckJson(HttpContext context, HealthReport report)
+    {
+        context.Response.ContentType = "application/json; charset=utf-8";
+        var payload = new
+        {
+            status = report.Status.ToString(),
+            totalDurationMs = report.TotalDuration.TotalMilliseconds,
+            checks = report.Entries.Select(e => new
+            {
+                name = e.Key,
+                status = e.Value.Status.ToString(),
+                durationMs = e.Value.Duration.TotalMilliseconds,
+                description = e.Value.Description,
+                exception = e.Value.Exception?.Message,
+            }),
+        };
+        return context.Response.WriteAsync(
+            JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = false }));
     }
 }
