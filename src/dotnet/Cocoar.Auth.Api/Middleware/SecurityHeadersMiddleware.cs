@@ -60,19 +60,33 @@ public sealed class SecurityHeadersMiddleware
     private static bool IsOidcServerPath(PathString path)
         => path.StartsWithSegments("/connect");
 
+    // Paths under the in-app VitePress docs build. VitePress emits inline
+    // <script> tags for SSR hydration + per-page data + the hash-map; strict
+    // 'self' script-src blocks them and the page fails to bootstrap. The
+    // docs surface is pure static markdown-rendered HTML with no user-
+    // controlled content path, so the marginal XSS surface is essentially
+    // nil and the pragmatic relaxation matches what we already do for
+    // /connect/*. A nonce-based approach would be cleaner but VitePress
+    // doesn't support build-time nonces and runtime HTML rewriting in
+    // middleware is a heavier change for low return.
+    private static bool IsInAppDocsPath(PathString path)
+        => path.StartsWithSegments("/docs");
+
     private static string BuildContentSecurityPolicy(bool isDevelopment, PathString path)
     {
         var isOidc = IsOidcServerPath(path);
+        var isDocs = IsInAppDocsPath(path);
 
         // Vite's dev server uses HMR over websockets and eval-style helpers
         // — relax script-src in Development with 'unsafe-eval'. Production
         // SPA pages get strict 'self' (Vue 3 production builds emit module
         // scripts only, no inline <script>). The /connect/* OIDC endpoints
-        // need 'unsafe-inline' for OpenIddict's form_post auto-submitter;
-        // they're the only paths that get the relaxation.
+        // and the /docs/* VitePress in-app help need 'unsafe-inline' for
+        // their inline-script use; they're the only paths that get the
+        // relaxation.
         var scriptSrc = isDevelopment
             ? "'self' 'unsafe-inline' 'unsafe-eval'"
-            : isOidc ? "'self' 'unsafe-inline'" : "'self'";
+            : (isOidc || isDocs) ? "'self' 'unsafe-inline'" : "'self'";
 
         var connectSrc = isDevelopment
             ? "'self' ws: wss:"
