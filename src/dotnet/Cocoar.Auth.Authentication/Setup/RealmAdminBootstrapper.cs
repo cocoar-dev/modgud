@@ -119,6 +119,10 @@ public sealed class RealmAdminBootstrapper(
         Guid adminRoleId;
         if (existingAdminRole is null)
         {
+            // PermissionRoleProjection (inline) builds the doc from
+            // PermissionRoleCreatedEvent. Direct session.Store(adminRole)
+            // would conflict with the projection's own write under Marten
+            // 8.34+ optimistic-concurrency detection — emit the event only.
             var adminRole = new PermissionRole
             {
                 Id = Guid.NewGuid(),
@@ -128,7 +132,6 @@ public sealed class RealmAdminBootstrapper(
                 IsRealmAdmin = true,
                 PermissionIds = [],
             };
-            session.Store(adminRole);
             session.Events.StartStream(adminRole.Id,
                 new PermissionRoleCreatedEvent(
                     adminRole.Id, adminRole.Name, adminRole.Description,
@@ -170,7 +173,6 @@ public sealed class RealmAdminBootstrapper(
                 IsRealmAdmin = false,
                 PermissionIds = userManagerPermissionIds,
             };
-            session.Store(userManagerRole);
             session.Events.StartStream(userManagerRole.Id,
                 new PermissionRoleCreatedEvent(
                     userManagerRole.Id, userManagerRole.Name, userManagerRole.Description,
@@ -191,7 +193,6 @@ public sealed class RealmAdminBootstrapper(
                 IsRealmAdmin = false,
                 PermissionIds = viewerPermissionIds,
             };
-            session.Store(viewerRole);
             session.Events.StartStream(viewerRole.Id,
                 new PermissionRoleCreatedEvent(
                     viewerRole.Id, viewerRole.Name, viewerRole.Description,
@@ -211,6 +212,8 @@ public sealed class RealmAdminBootstrapper(
 
         if (existingGroup is null)
         {
+            // PrincipalProjection (inline) builds the Group doc from
+            // GroupCreatedEvent — direct Store conflicts under Marten 8.34+.
             var group = new Group
             {
                 Id = Guid.NewGuid(),
@@ -220,7 +223,6 @@ public sealed class RealmAdminBootstrapper(
                 RoleIds = [adminRoleId],
                 BoundTo = [PermissionService.AllAppsWildcard],
             };
-            session.Store(group);
             session.Events.StartStream(group.Id,
                 new GroupCreatedEvent(group.Id, group.Name, group.Description,
                     group.MemberIds, group.RoleIds,
@@ -228,12 +230,14 @@ public sealed class RealmAdminBootstrapper(
         }
         else if (!existingGroup.MemberIds.Contains(userId))
         {
-            existingGroup.MemberIds = [.. existingGroup.MemberIds, userId];
-            session.Store(existingGroup);
+            // Append the update event only; PrincipalProjection.Apply
+            // mutates the existing doc. Don't re-Store the mutated record
+            // — it would race the projection's own write.
+            var newMemberIds = (List<Guid>)[.. existingGroup.MemberIds, userId];
             session.Events.Append(existingGroup.Id,
                 new GroupUpdatedEvent(
                     existingGroup.Id, existingGroup.Name, existingGroup.Description,
-                    existingGroup.MemberIds, existingGroup.RoleIds,
+                    newMemberIds, existingGroup.RoleIds,
                     Email: existingGroup.Email,
                     BoundTo: existingGroup.BoundTo));
         }

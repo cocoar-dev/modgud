@@ -66,13 +66,19 @@ public static class RolesEndpoints
             .WithName("V2_Role_GetById")
             .RequiresPermission("permission-role:read");
 
+        // PermissionRoleProjection (inline) writes the PermissionRole doc
+        // from PermissionRoleCreatedEvent / …UpdatedEvent / …DeletedEvent.
+        // Direct session.Store(role) alongside the event in the same
+        // SaveChangesAsync conflicts with the projection's own write under
+        // Marten 8.34+ optimistic-concurrency detection — emit the event
+        // only. Build the in-memory `role` instance just to compute the
+        // response payload; the persisted doc comes from the projection.
         roleGroup.MapPost("", async (RolePayload dto, IDocumentSession session) =>
             {
                 var built = await BuildRoleAsync(dto, session);
                 if (built.Error is not null) return built.Error;
 
                 var role = built.Role;
-                session.Store(role);
                 session.Events.StartStream(role.Id,
                     new PermissionRoleCreatedEvent(
                         role.Id, role.Name, role.Description,
@@ -96,7 +102,6 @@ public static class RolesEndpoints
                 existing.AppId = built.Role.AppId;
                 existing.IsRealmAdmin = built.Role.IsRealmAdmin;
                 existing.PermissionIds = built.Role.PermissionIds;
-                session.Store(existing);
                 session.Events.Append(id.Guid,
                     new PermissionRoleUpdatedEvent(
                         id.Guid, existing.Name, existing.Description,
@@ -111,8 +116,6 @@ public static class RolesEndpoints
             {
                 var role = await session.LoadAsync<PermissionRole>(id.Guid);
                 if (role is null || role.IsDeleted) return Results.NotFound();
-                role.IsDeleted = true;
-                session.Store(role);
                 session.Events.Append(id.Guid, new PermissionRoleDeletedEvent(id.Guid));
                 await session.SaveChangesAsync();
                 return Results.NoContent();
