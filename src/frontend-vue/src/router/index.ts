@@ -20,21 +20,99 @@ const pageBuilderFeatureGate: NavigationGuard = () => {
 }
 
 /**
- * Fixed size for every admin-modal opened via routedFragments.
+ * Per-modal sizes for routedFragments. The Admin UI is desktop-only —
+ * each modal gets a size tailored to its own content density (Scope
+ * form has 5 fields; ClientDetails has 8 tabs with 20 inputs).
  *
- * <para>The admin surface is desktop-only — using a single size for
- * every modal keeps the dialog from resizing when the user switches
- * between tabs (some tabs have one CoarTextInput, others have a full
- * DualListbox). Without a fixed size that flickering is jarring; with
- * one the layout feels stable.</para>
+ * <para>Two principles enforced by the constraint quartet
+ * (<c>width</c> + <c>height</c> + the four <c>min/max</c> twins):</para>
  *
- * <para>Set on the route (not the ModalLayout) so the size is the
- * routing layer's contract: every entry of every grid opens at the
- * same dimensions, regardless of which view component renders inside.
- * Per-view <c>width</c> overrides on <c>ModalLayout</c> are
- * intentionally ignored.</para>
+ * <list type="number">
+ *   <item><description><b>Panel size is content-immune.</b> Tab switches
+ *   inside a modal must never resize the modal. The lower bounds
+ *   prevent that completely.</description></item>
+ *   <item><description><b>Panel size is viewport-respectful.</b> For
+ *   large modals we use <c>vw/vh</c> with a <c>maxWidth</c>/
+ *   <c>maxHeight</c> cap so the modal grows on big monitors but never
+ *   exceeds a sane upper bound. For compact forms we pin <c>width</c>=
+ *   <c>minWidth</c>=<c>maxWidth</c> on the same rem value — the panel
+ *   is literally that fixed.</description></item>
+ * </list>
+ *
+ * <para>Set on the route rather than inside the Vue component so the
+ * sizing contract lives next to the route, and every consumer of a
+ * <c>routedFragments</c> list reads it in one place. The component
+ * itself is expected to be <c>width:100%; height:100%; display:flex;
+ * flex-direction:column; min-height:0</c> at its root — the size
+ * decision is the route's, the inner component just fills.</para>
  */
-const ADMIN_MODAL_SIZE = { width: '80rem', height: '80vh' } as const
+
+// Compact forms — fixed rem widths, no flex.
+const SCOPE_MODAL_SIZE = {
+  width: '44rem', minWidth: '44rem', maxWidth: '44rem',
+  height: '70vh', minHeight: '70vh', maxHeight: '70vh',
+} as const
+
+const REALM_MODAL_SIZE = {
+  width: '50rem', minWidth: '50rem', maxWidth: '50rem',
+  height: '72vh', minHeight: '72vh', maxHeight: '72vh',
+} as const
+
+const ROLE_MODAL_SIZE = {
+  width: '56rem', minWidth: '56rem', maxWidth: '56rem',
+  height: '72vh', minHeight: '72vh', maxHeight: '72vh',
+} as const
+
+const IDP_CLAIMS_MODAL_SIZE = {
+  width: '60rem', minWidth: '60rem', maxWidth: '60rem',
+  height: '72vh', minHeight: '72vh', maxHeight: '72vh',
+} as const
+
+const API_MODAL_SIZE = {
+  width: '64rem', minWidth: '64rem', maxWidth: '64rem',
+  height: '78vh', minHeight: '78vh', maxHeight: '78vh',
+} as const
+
+// Big modals — pure vw/vh with a maxWidth cap, NO minWidth floor.
+//
+// A minWidth floor wins over the vw computation as soon as the viewport
+// is smaller than the floor — the modal then overflows the viewport
+// horizontally. Tested 2026-05-15 with ClientDetails: an 84rem floor
+// (1344px) broke at 1280px viewport (the right edge cut off, including
+// the close button). The vw-only approach scales naturally to any
+// viewport size: 92vw on 1920px = 1766px; 92vw on 1280px = 1178px;
+// 92vw on 4K (3840px) = 3533px — and the maxWidth cap stops it from
+// becoming silly on ultrawides.
+//
+// vw isn't capped against viewport overflow by definition, so on
+// every viewport the modal sits comfortably with a backdrop margin on
+// each side. No need for a floor; if content is genuinely too wide
+// for a tiny viewport, the content scrolls inside its tab panel — the
+// modal frame stays correctly sized.
+const LOGIN_PROVIDER_MODAL_SIZE = {
+  width: '80vw', maxWidth: '90rem',
+  height: '82vh', minHeight: '82vh', maxHeight: '82vh',
+} as const
+
+const APP_MODAL_SIZE = {
+  width: '85vw', maxWidth: '100rem',
+  height: '88vh', minHeight: '88vh', maxHeight: '88vh',
+} as const
+
+const USER_MODAL_SIZE = {
+  width: '90vw', maxWidth: '110rem',
+  height: '90vh', minHeight: '90vh', maxHeight: '90vh',
+} as const
+
+const GROUP_MODAL_SIZE = {
+  width: '90vw', maxWidth: '110rem',
+  height: '90vh', minHeight: '90vh', maxHeight: '90vh',
+} as const
+
+const CLIENT_MODAL_SIZE = {
+  width: '92vw', maxWidth: '120rem',
+  height: '92vh', minHeight: '92vh', maxHeight: '92vh',
+} as const
 
 const routes = [
     {
@@ -121,13 +199,13 @@ const routes = [
                     type: 'modal',
                     path: 'claims/:id',
                     component: () => import('@/views/admin/user/IdpClaimsModal.vue'),
-                    overlayOptions: { size: ADMIN_MODAL_SIZE },
+                    overlayOptions: { size: IDP_CLAIMS_MODAL_SIZE },
                   },
                   {
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/user/UserDetails.vue'),
-                    overlayOptions: { size: ADMIN_MODAL_SIZE },
+                    overlayOptions: { size: USER_MODAL_SIZE },
                   },
                 ],
               },
@@ -141,7 +219,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/role/RoleDetails.vue'),
-                    overlayOptions: { size: ADMIN_MODAL_SIZE },
+                    overlayOptions: { size: ROLE_MODAL_SIZE },
                   },
                 ],
               },
@@ -155,7 +233,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/group/GroupDetails.vue'),
-                    overlayOptions: { size: ADMIN_MODAL_SIZE },
+                    overlayOptions: { size: GROUP_MODAL_SIZE },
                   },
                 ],
               },
@@ -199,7 +277,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/oauth/ClientDetails.vue'),
-                    overlayOptions: { size: ADMIN_MODAL_SIZE },
+                    overlayOptions: { size: CLIENT_MODAL_SIZE },
                   },
                 ],
               },
@@ -213,7 +291,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/oauth/ScopeDetails.vue'),
-                    overlayOptions: { size: ADMIN_MODAL_SIZE },
+                    overlayOptions: { size: SCOPE_MODAL_SIZE },
                   },
                 ],
               },
@@ -227,7 +305,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/oauth/ApiDetails.vue'),
-                    overlayOptions: { size: ADMIN_MODAL_SIZE },
+                    overlayOptions: { size: API_MODAL_SIZE },
                   },
                 ],
               },
@@ -241,7 +319,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/login-providers/LoginProviderDetails.vue'),
-                    overlayOptions: { size: ADMIN_MODAL_SIZE },
+                    overlayOptions: { size: LOGIN_PROVIDER_MODAL_SIZE },
                   },
                 ],
               },
@@ -257,7 +335,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/realms/RealmDetails.vue'),
-                    overlayOptions: { size: ADMIN_MODAL_SIZE },
+                    overlayOptions: { size: REALM_MODAL_SIZE },
                   },
                 ],
               },
@@ -273,7 +351,7 @@ const routes = [
                     type: 'modal',
                     path: ':id',
                     component: () => import('@/views/admin/apps/AppDetails.vue'),
-                    overlayOptions: { size: ADMIN_MODAL_SIZE },
+                    overlayOptions: { size: APP_MODAL_SIZE },
                   },
                 ],
               },

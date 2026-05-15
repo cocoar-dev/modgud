@@ -10,6 +10,12 @@ const props = defineProps<{
   title?: string
   subTitle?: string
   icon?: string
+  /**
+   * @deprecated Modal size is owned by the route's `overlayOptions.size`
+   * (see router/index.ts). This prop is ignored — kept on the type
+   * surface only so existing call-sites keep compiling during the
+   * migration. Remove call-site uses and then drop this prop.
+   */
   width?: string
   footerButton?: UIButton
   /**
@@ -20,6 +26,8 @@ const props = defineProps<{
    */
   readonly?: boolean
 }>()
+// Suppress "props.width is unused" — kept for back-compat per the JSDoc.
+void props
 
 const { t } = useI18n()
 const isReadOnly = computed(() => props.readonly === true)
@@ -48,7 +56,7 @@ watch(
 </script>
 
 <template>
-  <div class="modal-container" :style="{ width: width ?? '40rem' }">
+  <div class="modal-container">
     <!-- Header -->
     <div v-if="ui.header.show" class="modal-header">
       <CoarIcon v-if="ui.header.icon" :name="ui.header.icon" size="l" class="modal-header-icon" />
@@ -122,8 +130,14 @@ watch(
 .modal-container {
   display: flex;
   flex-direction: column;
-  max-height: 90vh;
-  max-width: 95vw;
+  /* Modal size is owned by the route's overlayOptions.size — see
+     router/index.ts. The container fills the panel completely so
+     viewport-aware sizing (vw/vh + min/max constraints) on the panel
+     translates directly to a same-size modal-container. */
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   border-radius: var(--coar-radius-m, 4px);
   overflow: hidden;
   background: var(--coar-background-neutral-secondary, #f7f7f7);
