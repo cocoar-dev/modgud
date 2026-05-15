@@ -28,6 +28,25 @@ See [Single-tenant mode](single-tenant-mode) for the recipe.
 
 All three paths end up with the same shape inside the realm: an `ApplicationUser`, the three default roles (System Admin / User Manager / Viewer), and an `Administratoren` group containing the new user with `realm:admin` — exactly what every other admin in the system has.
 
+## Prerequisite — add your public hostname to the system realm
+
+::: warning Production deployments must do this BEFORE the first admin bootstrap
+The system realm is auto-created on first boot with a hardcoded dev-friendly domain list — `system.localhost`, `localhost`, `127.0.0.1`. `RealmMiddleware` matches incoming requests against that list to resolve which realm a request belongs to. A request to `https://auth.example.com/...` against an unmodified system realm gets rejected as "no realm" and you can't reach the SPA, the login page, or even the bootstrap-magic-link.
+
+Add your real public hostname first:
+
+```bash
+docker exec cocoar-auth \
+  dotnet Cocoar.Auth.Api.dll recover realm-add-domain \
+    --slug system \
+    --domain auth.example.com
+```
+
+The command is idempotent — re-running with the same domain is a no-op. List the current domains with `recover realm-list`. Remove with `recover realm-remove-domain --slug system --domain auth.example.com`.
+
+Skip this section if you're on the default `localhost:4300` dev setup — the seeded domains already cover that.
+:::
+
 ## Path A — Recovery CLI, direct mode
 
 The simplest path for local development and self-hosted first-installs. Sets the password right away — no email roundtrip needed.

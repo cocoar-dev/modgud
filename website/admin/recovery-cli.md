@@ -115,6 +115,32 @@ The CLI invite path is the operator's escape hatch when SMTP is down
 or a token needs to be reissued out of band.
 :::
 
+### `realm-list`
+
+```bash
+dotnet Cocoar.Auth.Api.dll recover realm-list
+```
+
+Prints every realm in the master database with its slug, display name, active flag, control-plane flag, and domain list. Read-only. Useful before adding a domain or bootstrapping an admin to confirm the realm names you have.
+
+### `realm-add-domain --slug=<slug> --domain=<hostname>`
+
+```bash
+dotnet Cocoar.Auth.Api.dll recover realm-add-domain \
+  --slug system \
+  --domain auth.example.com
+```
+
+Adds a host to the realm's `Domains` list. `RealmMiddleware` matches the incoming `Host` header against this list to decide which tenant a request targets, so a fresh production deployment **must** add its public hostname to the system realm before anyone can reach the SPA, the login page, or a bootstrap-magic-link.
+
+The system realm is auto-seeded with `system.localhost`, `localhost`, `127.0.0.1` so local development boots without configuration. Production needs your real hostname added on top.
+
+The command is idempotent — re-adding the same domain is a no-op. Cross-realm uniqueness is enforced: two realms cannot claim the same domain.
+
+### `realm-remove-domain --slug=<slug> --domain=<hostname>`
+
+Inverse of `realm-add-domain`. Refuses to remove the realm's last domain — leaves at least one entry standing so the realm stays reachable.
+
 ## Default realm
 
 If `--realm` is omitted, the CLI defaults to the `system` realm.
