@@ -27,4 +27,24 @@ public class AppSettings : IAuthSettings
     /// After expiry, login still succeeds (cookie is set) but the setup modal becomes blocking.
     /// </summary>
     public int TwoFactorGracePeriodDays { get; set; } = 14;
+
+    /// <summary>
+    /// Operator-level feature toggles. System-wide (not per-tenant), set in
+    /// configuration.json / ENV-overrides. Use for shipping work-in-progress
+    /// surfaces dark until they're ready to expose to tenant admins.
+    /// </summary>
+    public FeatureFlags Features { get; set; } = new();
+}
+
+public class FeatureFlags : IFeatureFlags
+{
+    /// <summary>
+    /// Visibility of the Page-Builder editor in Admin → Customization → Pages.
+    /// While off (default): sidebar entry hidden, /admin/customization/pages
+    /// routes redirect away, /api/admin/customization/pages/* returns 404,
+    /// and RealmSettingsDto omits the Pages section. While on: editor mounts
+    /// and persists schemas. Runtime rendering of those schemas on /login etc.
+    /// is a separate sprint and not gated by this flag.
+    /// </summary>
+    public bool PageBuilder { get; set; } = false;
 }

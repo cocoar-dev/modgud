@@ -1,5 +1,23 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import type { NavigationGuard } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
+import { useAppConfigStore } from '@/stores/appconfig.store'
+
+/**
+ * Per-route gate for routes that depend on the page-builder feature
+ * flag. AppConfig has already loaded by the time the user navigates
+ * into /admin/* (the global beforeEach in this file ensures
+ * authStore.fetchMe runs first, and the layout root awaits the
+ * appConfig load). When the flag is off we redirect to the visible
+ * Branding sibling so deep-links don't dead-end on a blank screen.
+ */
+const pageBuilderFeatureGate: NavigationGuard = () => {
+  const appConfig = useAppConfigStore()
+  if (!appConfig.config.Features.PageBuilder) {
+    return { path: '/admin/customization/branding', replace: true }
+  }
+  return true
+}
 
 /**
  * Fixed size for every admin-modal opened via routedFragments.
@@ -161,10 +179,12 @@ const routes = [
             {
               path: 'customization/pages',
               component: () => import('@/views/admin/customization/PagesView.vue'),
+              beforeEnter: pageBuilderFeatureGate,
             },
             {
               path: 'customization/pages/:slug',
               component: () => import('@/views/admin/customization/PageEditorView.vue'),
+              beforeEnter: pageBuilderFeatureGate,
             },
             {
               path: 'change-requests',

@@ -47,6 +47,10 @@ public static class AppSettingsEndpoints
                             : null,
                         PrimaryColor = realmDoc.Branding?.PrimaryColor,
                     },
+                    Features = new
+                    {
+                        settings.Features.PageBuilder,
+                    },
                 });
             })
         .WithName("AppInfo")

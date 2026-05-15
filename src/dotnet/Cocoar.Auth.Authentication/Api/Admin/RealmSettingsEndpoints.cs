@@ -26,9 +26,19 @@ public static class RealmSettingsEndpoints
 
         group.MapGet("", async (
             IRealmSettingsService svc,
+            IFeatureFlags features,
             CancellationToken ct) =>
         {
             var dto = await svc.GetDtoAsync(ct);
+            // Mask Pages when the page-builder feature is off so the SPA
+            // (and any direct curl-caller) can't fingerprint stored
+            // schemas — the editor is dark, the data is invisible. The
+            // schemas themselves persist in the tenant DB and resurface
+            // when the flag is flipped back on.
+            if (!features.PageBuilder)
+            {
+                dto = dto with { Pages = new Dictionary<string, string>() };
+            }
             return Results.Ok(dto);
         })
         .WithName("RealmSettings_Get")

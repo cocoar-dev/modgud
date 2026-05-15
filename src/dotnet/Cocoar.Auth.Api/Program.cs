@@ -122,6 +122,7 @@ try
     // Expose concrete config types as Authentication interfaces so Authentication
     // can inject them without depending on the Api project.
     builder.Services.AddSingleton<IAuthSettings>(sp => sp.GetRequiredService<AppSettings>());
+    builder.Services.AddSingleton<IFeatureFlags>(sp => sp.GetRequiredService<AppSettings>().Features);
     builder.Services.AddSingleton<IServerConfiguration>(sp => sp.GetRequiredService<StartUpConfiguration>());
     builder.Services.AddSingleton<IMagicLinkConfiguration>(sp => sp.GetRequiredService<MagicLinkConfiguration>());
 

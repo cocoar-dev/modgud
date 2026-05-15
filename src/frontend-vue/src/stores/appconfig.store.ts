@@ -15,12 +15,23 @@ export interface BrandingConfig {
   PrimaryColor: string | null
 }
 
+/**
+ * Operator-level feature toggles. System-wide (set in configuration.json /
+ * ENV), not per-tenant. Source of truth is the backend AppSettings.Features
+ * block. Defaults below are the SAFE-OFF state — if /api/app-info ever fails
+ * the SPA falls back to "everything dark".
+ */
+export interface FeatureFlags {
+  PageBuilder: boolean
+}
+
 export interface AppConfig {
   AuthenticationMinimumLevel: number  // 0=None, 1=SecureLogin, 2=Passwordless
   MagicLinkSelfService: boolean
   TwoFactorGracePeriodDays: number
   IsControlPlane: boolean              // true ⇔ the realm hosting this SPA is the Control Plane
   Branding: BrandingConfig
+  Features: FeatureFlags
 }
 
 const defaults: AppConfig = {
@@ -33,6 +44,9 @@ const defaults: AppConfig = {
     LogoUrl: null,
     FaviconUrl: null,
     PrimaryColor: null,
+  },
+  Features: {
+    PageBuilder: false,
   },
 }
 
@@ -79,6 +93,7 @@ export const useAppConfigStore = defineStore('appConfig', () => {
           ...defaults,
           ...result,
           Branding: { ...defaults.Branding, ...(result.Branding ?? {}) },
+          Features: { ...defaults.Features, ...(result.Features ?? {}) },
         }
         applyBranding(config.value.Branding)
       }

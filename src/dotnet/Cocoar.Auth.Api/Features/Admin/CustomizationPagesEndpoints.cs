@@ -30,11 +30,16 @@ public static class CustomizationPagesEndpoints
             .RequireAuthorization();
 
         // GET /{slug} — returns the schema (or empty when never saved).
+        // Gated by AppSettings.Features.PageBuilder: while off the entire
+        // surface returns 404 so the SPA + curl-callers see "no such
+        // endpoint" and the editor stays dark.
         group.MapGet("{slug}", async (
             string slug,
+            AppSettings settings,
             IQuerySession session,
             CancellationToken ct) =>
         {
+            if (!settings.Features.PageBuilder) return Results.NotFound();
             if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
 
             var doc = await session.LoadAsync<RealmSettings>(RealmSettings.SingletonId, ct);
@@ -49,9 +54,11 @@ public static class CustomizationPagesEndpoints
         group.MapPut("{slug}", async (
             string slug,
             UpdatePageRequest body,
+            AppSettings settings,
             IDocumentSession session,
             CancellationToken ct) =>
         {
+            if (!settings.Features.PageBuilder) return Results.NotFound();
             if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
             if (body.Schema is null) return Results.BadRequest(new { Message = "Schema required." });
             if (body.Schema.Length > MaxSchemaBytes)
@@ -84,9 +91,11 @@ public static class CustomizationPagesEndpoints
         // view for that page.
         group.MapDelete("{slug}", async (
             string slug,
+            AppSettings settings,
             IDocumentSession session,
             CancellationToken ct) =>
         {
+            if (!settings.Features.PageBuilder) return Results.NotFound();
             if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
 
             var doc = await session.LoadAsync<RealmSettings>(RealmSettings.SingletonId, ct);

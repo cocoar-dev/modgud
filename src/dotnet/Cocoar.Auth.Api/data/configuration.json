@@ -32,7 +32,10 @@
     "AppSettings": {
         "AuthenticationMinimumLevel": 0,
         "MagicLinkSelfService": true,
-        "TwoFactorGracePeriodDays": 14
+        "TwoFactorGracePeriodDays": 14,
+        "Features": {
+            "PageBuilder": false
+        }
     },
     "DbSettings": {
         "ConnectionString": "Host=localhost;Database=cocoar_auth;Username=postgres;Password=postgres"

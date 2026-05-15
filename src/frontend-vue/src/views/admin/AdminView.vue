@@ -4,11 +4,13 @@ import { useRouter, useRoute, RouterView } from 'vue-router'
 import { CoarMenu, CoarMenuItem } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useAuthStore } from '@/stores/auth.store'
+import { useAppConfigStore } from '@/stores/appconfig.store'
 
 const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const appConfig = useAppConfigStore()
 
 interface NavItem {
   /** Section heading the item belongs to. Used to hide empty sections. */
@@ -22,6 +24,11 @@ interface NavItem {
    * `authStore.hasPermission`.
    */
   requirePermissions: string[]
+  /**
+   * Optional gate that hides the item when the named operator-level
+   * feature flag is off. Independent from permissions — both must pass.
+   */
+  requireFeature?: 'PageBuilder'
 }
 
 // Order matters — drives both rendering order and the section-grouping below.
@@ -37,7 +44,7 @@ const allNavItems: NavItem[] = [
   { section: 'oauth', label: 'admin.oauthApis.title', icon: 'server', path: '/admin/oauth/apis', requirePermissions: ['oauth-api:read'] },
   // Customization (SPA-shell branding + per-page form composition)
   { section: 'customization', label: 'admin.customization.branding.title', icon: 'palette', path: '/admin/customization/branding', requirePermissions: ['realm-settings:read'] },
-  { section: 'customization', label: 'admin.customization.pages.title', icon: 'layout-template', path: '/admin/customization/pages', requirePermissions: ['realm-settings:read'] },
+  { section: 'customization', label: 'admin.customization.pages.title', icon: 'layout-template', path: '/admin/customization/pages', requirePermissions: ['realm-settings:read'], requireFeature: 'PageBuilder' },
   { section: 'customization', label: 'admin.assets.title', icon: 'image', path: '/admin/customization/assets', requirePermissions: ['asset:read'] },
   // System
   { section: 'system', label: 'admin.apps.title', icon: 'layout-grid', path: '/admin/apps', requirePermissions: ['app:read'] },
@@ -50,8 +57,10 @@ const allNavItems: NavItem[] = [
 ]
 
 // Per-resource visibility — `authStore.hasPermission` already bypasses on
-// realm:admin and the app/resource admin shortcuts.
+// realm:admin and the app/resource admin shortcuts. Plus optional
+// operator-feature gate; both must pass.
 function canSee(item: NavItem): boolean {
+  if (item.requireFeature && !appConfig.config.Features[item.requireFeature]) return false
   return item.requirePermissions.some((p) => authStore.hasPermission(p))
 }
 
