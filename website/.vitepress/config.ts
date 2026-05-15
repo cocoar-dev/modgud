@@ -183,11 +183,21 @@ export const baseConfig = defineConfig({
             ],
           },
           {
+            text: 'Customization',
+            items: [
+              { text: 'Branding', link: '/admin/customization-branding' },
+              { text: 'Asset Library', link: '/admin/customization-assets' },
+              { text: 'Pages (Beta)', link: '/admin/customization-pages' },
+            ],
+          },
+          {
             text: 'Operations',
             items: [
+              { text: 'Observability', link: '/admin/observability' },
               { text: 'Auth Log', link: '/admin/auth-log' },
               { text: 'Change Requests', link: '/admin/change-requests' },
               { text: 'Settings', link: '/admin/settings' },
+              { text: 'Feature Flags', link: '/admin/feature-flags' },
               { text: 'Recovery CLI', link: '/admin/recovery-cli' },
             ],
           },

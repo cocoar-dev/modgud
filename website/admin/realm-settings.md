@@ -4,8 +4,18 @@
 
 ::: info Realm structure vs. Realm settings
 - **[Realms](./realms)** (structural metadata: slug, domains, Control-Plane flag, active state) are managed by the **Control-Plane admin** only.
-- **Realm Settings** (self-registration, future: branded templates, password-policy overrides, …) are managed by the **realm admin** inside their own realm. The Control-Plane admin reaches their own realm's settings the same way as any other realm admin would — through this page.
+- **Realm Settings** (self-registration, DCR policy, branding, …) are managed by the **realm admin** inside their own realm. The Control-Plane admin reaches their own realm's settings the same way as any other realm admin would — through this page.
 :::
+
+## Tabs
+
+The page is a tab surface. Each tab is independently saved and described in its own section below or on a linked page:
+
+- [Self-Registration](#self-registration) — public sign-up policy
+- [Dynamic Client Registration](#dynamic-client-registration) — anonymous OAuth-client registration policy (linked detail page: [Dynamic Client Registration](./dynamic-client-registration))
+- [Branding](#branding) — per-realm SPA-shell branding (linked detail page: [Customization — Branding](./customization-branding))
+
+Future tabs (password-policy overrides, branded email templates, …) land as additional tabs here without needing a new admin page.
 
 Permissions: `realm-settings:read` / `realm-settings:write`. The realm-admin role grants both via the `realm:admin` bypass.
 
@@ -79,6 +89,22 @@ The email-verification endpoint (`POST /api/account/register/verify-email`) is t
 - **No pre-submit username availability check.** The form surfaces username collisions through the generic 200-OK like every other rejection. An anonymous `GET /api/account/check-username/{name}` (rate-limited) would improve the UX without touching the anti-enumeration guarantees on email.
 - **Email template is shared with the email-change flow.** Both reuse `EmailTemplate.EmailVerification`. A dedicated `EmailTemplate.SelfRegistrationVerify` with welcome wording is a quality-of-life improvement.
 
-## Future tabs
+## Dynamic Client Registration
 
-This page is structured as a tab surface — Self-Registration is the first occupant. Other realm-admin-owned configuration (e.g. branded email templates, password-policy overrides) will land here as additional tabs without needing a new admin page.
+Anonymous OAuth-client registration policy: master toggle, token lifetimes, GC TTL, rate limits, reserved-name blocklist. The companion per-API and per-Scope toggles live on [OAuth APIs](./oauth-apis) and [OAuth Scopes](./oauth-scopes) respectively — DCR is a **triple opt-in** by design.
+
+Off by default. See the full feature page for when to enable it, what gets accepted, and the consent-screen `[unverified]` marker:
+
+→ **[Dynamic Client Registration](./dynamic-client-registration)** (full feature page)
+
+## Branding
+
+Per-realm SPA-shell branding: product name, primary color, logo, favicon. Logo and favicon reference uploaded files from the [Asset Library](./customization-assets). All four fields are optional — missing = SPA falls back to the Cocoar default.
+
+The Branding tab here is the same form as the dedicated **Administration → Customization → Branding** view; both write the same `RealmSettings.Branding` sub-document. Editing in either place affects the same data.
+
+→ **[Customization — Branding](./customization-branding)** (full feature page)
+
+::: tip Where branding takes effect
+Branding values are exposed by the public `/api/app-info` endpoint, which the SPA reads at boot for the login page (anonymous-reachable, no token needed). Changes take effect on the next page load — no SPA rebuild required.
+:::

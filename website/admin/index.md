@@ -33,13 +33,24 @@ Cocoar.Auth is not just a login frontend — it's a full **OAuth 2.0 / OpenID Co
 
 - [Login Providers](./login-providers) — built-in Internal plus external OIDC (Google, Microsoft, Entra, any OIDC); step-by-step setup walkthroughs included
 - [Realms](./realms) — multi-tenant setup; each tenant gets its own database
+- [Realm Settings](./realm-settings) — realm-admin-owned config (self-registration, DCR policy, branding)
+
+### Customization
+
+Per-realm look and feel. SPA-shell branding plus a beta page-builder editor.
+
+- [Branding](./customization-branding) — product name, primary color, logo, favicon
+- [Asset Library](./customization-assets) — upload images for branding (and, later, page schemas); SVG sanitisation built in
+- [Pages (Beta)](./customization-pages) — drag-and-drop editor for login / logout / forgot-password; gated behind a [feature flag](./feature-flags) while the runtime renderer is still being built
 
 ### Operations
 
+- [Observability](./observability) — OpenTelemetry metrics + tracing + in-app live activity feed
 - [Auth Log](./auth-log) — audit trail of all login events
 - [Change Requests](./change-requests) — approve profile changes (when the approval flow is enabled)
-- [Recovery CLI](./recovery-cli) — when the UI no longer responds
 - [Settings](./settings) — 2FA enforcement, grace period, SMTP, …
+- [Feature Flags](./feature-flags) — operator-level toggles for beta / WIP surfaces
+- [Recovery CLI](./recovery-cli) — when the UI no longer responds
 
 ## Permissions: the three-segment model
 
