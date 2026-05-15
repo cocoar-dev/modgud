@@ -32,8 +32,13 @@
     <PackageVersion Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.23.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
     <!-- Marten & Wolverine -->
-    <PackageVersion Include="Marten" Version="8.33.0" />
-    <PackageVersion Include="Marten.AspNetCore" Version="8.33.0" />
+    <!-- 8.37.0 fixes CVE-2026-45288 / GHSA-vmw2-qwm8-x84c (SQL injection in
+         full-text search regConfig parameter). We don't use the affected
+         APIs (Search/PlainTextSearch/PhraseSearch/...), so no application-
+         level exposure, but the CI dotnet-audit gate flags every version
+         <= 8.36. -->
+    <PackageVersion Include="Marten" Version="8.37.0" />
+    <PackageVersion Include="Marten.AspNetCore" Version="8.37.0" />
     <PackageVersion Include="WolverineFx.Marten" Version="5.32.1" />
     <!-- Other packages -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />

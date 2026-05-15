@@ -213,32 +213,26 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         // via Group → Role → Permission.
         if (isRealmAdmin)
         {
-            var role = new PermissionRole
-            {
-                Id = Guid.CreateVersion7(),
-                Name = $"TestSystemAdmin_{userView.Id:N}",
-                AppId = null,
-                IsRealmAdmin = true,
-                PermissionIds = [],
-            };
-            session.Store(role);
-            session.Events.StartStream(role.Id,
-                new PermissionRoleCreatedEvent(role.Id, role.Name, null,
-                    role.AppId, role.IsRealmAdmin, role.PermissionIds));
+            // PermissionRole + Principal (= polymorphic Group/Person) both have
+            // inline SingleStreamProjections that build the doc from their
+            // Create-event. Marten 8.34+ tightened optimistic-concurrency
+            // detection — a direct session.Store(...) alongside the same
+            // SaveChangesAsync as the StartStream now conflicts with the
+            // projection-emitted upsert. Trust the projection, only emit the
+            // event: the inline projection writes the doc synchronously
+            // during SaveChangesAsync so post-save reads see it immediately.
+            var roleId = Guid.CreateVersion7();
+            var roleName = $"TestSystemAdmin_{userView.Id:N}";
+            session.Events.StartStream(roleId,
+                new PermissionRoleCreatedEvent(roleId, roleName, null,
+                    null, true, []));
 
-            var group = new Group
-            {
-                Id = Guid.CreateVersion7(),
-                Name = $"TestAdmins_{userView.Id:N}",
-                MemberIds = [userView.Id],
-                RoleIds = [role.Id],
-                BoundTo = ["*"],
-            };
-            session.Store(group);
-            session.Events.StartStream(group.Id,
-                new GroupCreatedEvent(group.Id, group.Name, group.Description,
-                    group.MemberIds, group.RoleIds,
-                    BoundTo: group.BoundTo));
+            var groupId = Guid.CreateVersion7();
+            var groupName = $"TestAdmins_{userView.Id:N}";
+            session.Events.StartStream(groupId,
+                new GroupCreatedEvent(groupId, groupName, null,
+                    [userView.Id], [roleId],
+                    BoundTo: ["*"]));
 
             await session.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
@@ -297,6 +291,8 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
             appId = app?.Id;
         }
 
+        // PermissionRole has an inline projection — Events.StartStream is
+        // enough; a direct session.Store conflicts under Marten 8.34+.
         var role = new PermissionRole
         {
             Id = Guid.CreateVersion7(),
@@ -306,7 +302,6 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
             IsRealmAdmin = isRealmAdmin,
             PermissionIds = permissionIds,
         };
-        session.Store(role);
         session.Events.StartStream(role.Id,
             new PermissionRoleCreatedEvent(role.Id, name, description, role.AppId, role.IsRealmAdmin, role.PermissionIds));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -326,6 +321,9 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
         using var scope = Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
+        // Group is a polymorphic Principal — PrincipalProjection.Create(GroupCreatedEvent)
+        // writes the doc inline. Same Marten 8.34+ concurrency rule as
+        // PermissionRole: emit the event only, skip the direct Store.
         var bound = boundTo ?? [AppSlugs.CocoarAuth];
         var group = new Group
         {
@@ -336,7 +334,6 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
             RoleIds = roleIds ?? [],
             BoundTo = bound,
         };
-        session.Store(group);
         session.Events.StartStream(group.Id,
             new GroupCreatedEvent(group.Id, name, description,
                 memberIds, roleIds ?? [],

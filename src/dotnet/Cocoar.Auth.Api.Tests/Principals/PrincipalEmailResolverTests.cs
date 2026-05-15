@@ -103,6 +103,8 @@ public class PrincipalEmailResolverTests : IntegrationTestBase
         using var scope = Factory.Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
+        // PrincipalProjection (inline) builds the Group doc from
+        // GroupCreatedEvent — direct Store conflicts under Marten 8.34+.
         var group = new Group
         {
             Id = Guid.CreateVersion7(),
@@ -111,7 +113,6 @@ public class PrincipalEmailResolverTests : IntegrationTestBase
             Email = email,
             EmailMode = emailMode,
         };
-        session.Store(group);
         session.Events.StartStream(group.Id,
             new GroupCreatedEvent(group.Id, group.Name, group.Description,
                 group.MemberIds, group.RoleIds,

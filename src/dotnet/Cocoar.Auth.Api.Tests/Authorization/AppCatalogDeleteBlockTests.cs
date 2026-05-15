@@ -175,6 +175,8 @@ public class AppCatalogDeleteBlockTests : IntegrationTestBase
         using var scope = Factory.Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
+        // PermissionRoleProjection (inline) writes the doc from the event —
+        // direct Store conflicts under Marten 8.34+ optimistic concurrency.
         var role = new PermissionRole
         {
             Id = Guid.NewGuid(),
@@ -183,7 +185,6 @@ public class AppCatalogDeleteBlockTests : IntegrationTestBase
             IsRealmAdmin = false,
             PermissionIds = permissionIds,
         };
-        session.Store(role);
         session.Events.StartStream(role.Id, new PermissionRoleCreatedEvent(
             role.Id, role.Name, role.Description, role.AppId, role.IsRealmAdmin, role.PermissionIds));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);

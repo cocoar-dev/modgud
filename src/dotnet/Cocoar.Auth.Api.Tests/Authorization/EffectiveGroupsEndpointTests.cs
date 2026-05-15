@@ -88,7 +88,8 @@ public class EffectiveGroupsEndpointTests : IntegrationTestBase
             CompiledMembershipScript = compiled,
         };
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-        session.Store(autoGroup);
+        // PrincipalProjection (inline) builds the Group doc from
+        // GroupCreatedEvent — direct Store conflicts under Marten 8.34+.
         session.Events.StartStream(autoGroup.Id,
             new GroupCreatedEvent(
                 autoGroup.Id, autoGroup.Name, autoGroup.Description,
@@ -160,7 +161,8 @@ public class EffectiveGroupsEndpointTests : IntegrationTestBase
             // surfaces as CompileFailed or EvalFailed (both are Diagnostic outcomes).
             CompiledMembershipScript = compiled ?? "this is not a valid arrow function",
         };
-        session.Store(autoGroup);
+        // PrincipalProjection (inline) builds the Group doc from
+        // GroupCreatedEvent — direct Store conflicts under Marten 8.34+.
         session.Events.StartStream(autoGroup.Id,
             new GroupCreatedEvent(
                 autoGroup.Id, autoGroup.Name, autoGroup.Description,
