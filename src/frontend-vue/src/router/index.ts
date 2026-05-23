@@ -69,8 +69,8 @@ const IDP_CLAIMS_MODAL_SIZE = {
 } as const
 
 const SERVICE_ACCOUNT_MODAL_SIZE = {
-  width: '40rem', minWidth: '40rem', maxWidth: '40rem',
-  height: 'auto', minHeight: 'auto', maxHeight: '72vh',
+  width: '52rem', minWidth: '52rem', maxWidth: '52rem',
+  height: 'auto', minHeight: 'auto', maxHeight: '80vh',
 } as const
 
 const API_MODAL_SIZE = {

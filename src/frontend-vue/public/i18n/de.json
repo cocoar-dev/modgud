@@ -30,7 +30,11 @@
     "connectionError": "Verbindung zum Server fehlgeschlagen.",
     "confirmDelete": "Wirklich löschen?",
     "copy": "Kopieren",
-    "search": "Suchen..."
+    "search": "Suchen...",
+    "dismiss": "Schließen",
+    "done": "Fertig",
+    "issue": "Ausstellen",
+    "edit": "Bearbeiten"
   },
   "asset": {
     "picker": {
@@ -373,6 +377,44 @@
       "createTitle": "Service Account anlegen",
       "editTitle": "Service Account"
     },
+    "serviceAccountCredentials": {
+      "sectionTitle": "Credentials",
+      "sectionHint": "OAuth-Clients, die diesem Service Account gehören. Jede Credential authentifiziert sich separat an /connect/token, teilt aber Permissions und Group-Memberships dieses SAs.",
+      "issueButton": "Credential ausstellen",
+      "issueTitle": "Credential ausstellen",
+      "editTitle": "Credential bearbeiten",
+      "secretTitle": "Credential ausgestellt",
+      "secretOnce": "Bitte Client Secret jetzt kopieren — es wird nicht wieder angezeigt.",
+      "clientId": "Client ID",
+      "displayName": "Anzeigename",
+      "displayNamePlaceholder": "CI Build Agent — staging",
+      "scopes": "Scopes",
+      "scopesHint": "Welche Scopes diese Credential anfordern darf. Realm-weite OIDC-Scopes sind immer verfügbar; pro-API-Scopes brauchen einen passenden App-Link unten.",
+      "scopesAvailable": "Verfügbar",
+      "scopesSelected": "Erlaubt",
+      "scopesSearch": "Scopes suchen…",
+      "apps": "Apps",
+      "appsHint": "Apps, für die diese Credential agieren darf. Leer = realm-weit. Mehrere wenn der M2M-Backend mit verschiedenen APIs spricht.",
+      "appsAvailable": "Verfügbar",
+      "appsSelected": "Verknüpft",
+      "appsSearch": "Apps suchen…",
+      "appsLinked": "App(s)",
+      "accessTokenLifetime": "Access-Token-Lebenszeit (Sekunden)",
+      "accessTokenLifetimePlaceholder": "3600 (Default)",
+      "enabled": "Aktiv",
+      "disabled": "Deaktiviert",
+      "noScopes": "Keine Scopes gesetzt",
+      "empty": "Noch keine Credentials. Eine ausstellen, damit sich Services als dieser Account authentifizieren können.",
+      "rotateButton": "Rotieren",
+      "rotateTitle": "Secret rotieren?",
+      "rotateConfirm": "Das alte Secret funktioniert sofort nicht mehr; das neue wird nur einmal angezeigt.",
+      "rotated": "Secret rotiert. Bitte jetzt kopieren — es wird nicht wieder angezeigt.",
+      "rotatedTitle": "Neues Secret für",
+      "deleteTitle": "Credential löschen?",
+      "deleteConfirm": "Bestehende Tokens bleiben gültig bis zum Ablauf, aber es können keine neuen mehr ausgestellt werden.",
+      "deleted": "Credential gelöscht.",
+      "notFound": "Credential nicht gefunden."
+    },
     "userDetails": {
       "createTitle": "Erstelle Benutzer",
       "profileSection": "Profil",
@@ -460,6 +502,9 @@
     },
     "groupDetails": {
       "createTitle": "Erstelle Gruppe",
+      "groupsLabel": "Gruppen",
+      "usersLabel": "Benutzer",
+      "serviceAccountsLabel": "Service Accounts",
       "tabs": {
         "general": "Allgemein",
         "members": "Mitglieder",

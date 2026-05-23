@@ -61,6 +61,12 @@ export interface OAuthClientDto {
   DcrRegisteredFromIp?: string | null
   /** ISO-8601 timestamp of the most recent token-issue for a DCR client. */
   DcrLastUsedAt?: string | null
+  /**
+   * ShortGuid of the ServiceAccount that owns this client's credentials, or
+   * null for user-flow clients. Drives the M2M-badge in the admin grid and
+   * the read-only modal that deep-links to the SA editor.
+   */
+  LinkedServiceAccountId?: string | null
 }
 
 export interface CreateOAuthClientDto {

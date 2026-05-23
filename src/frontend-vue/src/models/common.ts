@@ -7,12 +7,19 @@ export interface RefPropertyDto {
   Label?: string
   /**
    * For principal references (Responsibles, CreatedBy, UpdatedBy):
-   * 'Person' or 'Group'. Null/undefined for non-principal refs (e.g. Customer).
+   * 'person', 'group', or 'service-account'. Lowercase to match the
+   * backend's Principal.Type override. Null/undefined for non-principal
+   * refs (e.g. Customer).
    */
-  PrincipalType?: 'Person' | 'Group' | null
+  PrincipalType?: PrincipalType | null
 }
 
-export type PrincipalType = 'Person' | 'Group'
+/**
+ * Principal kind discriminator emitted by the backend as the lowercase
+ * Principal.Type override. Pre-Phase-2C only Person + Group existed; the
+ * service-account kind ships in Phase 2C for machine-to-machine identities.
+ */
+export type PrincipalType = 'person' | 'group' | 'service-account'
 
 export type EntityStatus = 'Pending' | 'Active'
 

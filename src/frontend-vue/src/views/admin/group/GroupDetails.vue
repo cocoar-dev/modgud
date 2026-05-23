@@ -129,7 +129,7 @@ const memberOptions = computed<CoarListboxOption<string>[]>(() =>
   principalStore.lookupEntities
     .filter(p => p.Id !== props.id)
     .map(p => {
-      if (p.Type === 'Group') {
+      if (p.Type === 'group') {
         return {
           value: p.Id,
           label: p.Label || p.Id,
@@ -137,6 +137,16 @@ const memberOptions = computed<CoarListboxOption<string>[]>(() =>
           tooltip: p.Description ?? undefined,
           icon: 'users',
           group: t('admin.groupDetails.groupsLabel', {}, 'Groups'),
+        }
+      }
+      if (p.Type === 'service-account') {
+        return {
+          value: p.Id,
+          label: p.Label || p.Id,
+          subtitle: p.Description ?? undefined,
+          tooltip: p.Description ?? undefined,
+          icon: 'cpu',
+          group: t('admin.groupDetails.serviceAccountsLabel', {}, 'Service accounts'),
         }
       }
       // Person
@@ -162,11 +172,13 @@ const computedMemberOptions = computed<CoarListboxOption<string>[]>(() => {
 })
 
 function mapEffectiveMember(m: import('@/stores/group.store').EffectiveMemberDto, includeVia: boolean): CoarListboxOption<string> {
-  const baseGroup = m.Type === 'Group'
+  const baseGroup = m.Type === 'group'
     ? t('admin.groupDetails.groupsLabel', {}, 'Groups')
+    : m.Type === 'service-account'
+    ? t('admin.groupDetails.serviceAccountsLabel', {}, 'Service accounts')
     : t('admin.groupDetails.usersLabel', {}, 'Users')
   const via = includeVia && m.ViaName ? m.ViaName : null
-  if (m.Type === 'Group') {
+  if (m.Type === 'group') {
     const desc = m.Description ?? ''
     const sub = via ? (desc ? `${desc} · über: ${via}` : `über: ${via}`) : desc
     return {
@@ -175,6 +187,18 @@ function mapEffectiveMember(m: import('@/stores/group.store').EffectiveMemberDto
       subtitle: sub || undefined,
       tooltip: m.Description || undefined,
       icon: 'users',
+      group: baseGroup,
+    }
+  }
+  if (m.Type === 'service-account') {
+    const desc = m.Description ?? ''
+    const sub = via ? (desc ? `${desc} · über: ${via}` : `über: ${via}`) : desc
+    return {
+      value: m.Id,
+      label: m.Label,
+      subtitle: sub || undefined,
+      tooltip: m.Description || undefined,
+      icon: 'cpu',
       group: baseGroup,
     }
   }
