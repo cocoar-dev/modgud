@@ -182,6 +182,15 @@ const form = ref({
   UserName: '',
 })
 
+// Identity-side flag — admin override. Persisted via PUT when changed
+// (or POST at create). Setting true also unblocks the user's forgot-password
+// and self-magic-link, which are gated on this flag.
+// Create-mode default: true. The admin is typing the address themselves
+// right now, so they're vouching for it — same logic as the bootstrap-admin
+// and invite-consume paths. Edit-mode reads the persisted value.
+const emailConfirmed = ref(true)
+const originalEmailConfirmed = ref(false)
+
 const userNameError = ref('')
 
 // Account state
@@ -200,7 +209,12 @@ const modalTitle = computed(() => {
 const footerButton = computed(() => ({
   visible: true,
   text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
-  disabled: !form.value.Firstname.trim() || !form.value.Lastname.trim() || !form.value.UserName.trim() || loading.value || graceBusy.value,
+  disabled: !form.value.Firstname.trim()
+    || !form.value.Lastname.trim()
+    || !form.value.UserName.trim()
+    || !form.value.Email.trim()
+    || loading.value
+    || graceBusy.value,
   onClick: save,
 }))
 
@@ -221,6 +235,8 @@ onMounted(async () => {
         Email: user.Email || '',
         UserName: user.UserName || '',
       }
+      emailConfirmed.value = user.EmailConfirmed
+      originalEmailConfirmed.value = user.EmailConfirmed
       isActive.value = user.IsActive
       originalActive.value = user.IsActive
       securityInfo.value = sec
@@ -235,7 +251,10 @@ onMounted(async () => {
 })
 
 async function save() {
-  if (!form.value.Firstname.trim() || !form.value.Lastname.trim() || !form.value.UserName.trim()) return
+  if (!form.value.Firstname.trim()
+      || !form.value.Lastname.trim()
+      || !form.value.UserName.trim()
+      || !form.value.Email.trim()) return
   loading.value = true
   try {
     if (isCreate.value) {
@@ -245,6 +264,7 @@ async function save() {
         Acronym: form.value.Acronym || undefined,
         Email: form.value.Email || undefined,
         UserName: form.value.UserName,
+        EmailConfirmed: emailConfirmed.value || undefined,
       })
     } else {
       // Optimistic update — update store immediately with expected state
@@ -262,7 +282,9 @@ async function save() {
         }])
       }
 
-      // Single request — profile + active state
+      // Single request — profile + active state + email-verified override.
+      // Only emit EmailConfirmed when the admin actually changed it; otherwise
+      // a no-op PUT could still rewrite (and audit-log) the flag.
       await userStore.httpClient.addPath(props.id).put({
         Firstname: form.value.Firstname,
         Lastname: form.value.Lastname,
@@ -270,6 +292,7 @@ async function save() {
         Email: form.value.Email || undefined,
         UserName: form.value.UserName,
         IsActive: isActive.value !== originalActive.value ? isActive.value : undefined,
+        EmailConfirmed: emailConfirmed.value !== originalEmailConfirmed.value ? emailConfirmed.value : undefined,
       })
 
       // Grace policy (per-user override + exempt). Only write when something changed,
@@ -315,20 +338,29 @@ watch(() => form.value.UserName, () => {
         <section>
           <div class="flex flex-col gap-2">
             <div class="flex items-end gap-2">
-              <CoarFormField :label="t('admin.users.firstname', {}, 'First Name')" class="flex-1">
+              <CoarFormField :label="t('admin.users.firstname', {}, 'First Name')" required class="flex-1">
                 <CoarTextInput v-model="form.Firstname" clearable />
               </CoarFormField>
-              <CoarFormField :label="t('admin.users.lastname', {}, 'Last Name')" class="flex-1">
+              <CoarFormField :label="t('admin.users.lastname', {}, 'Last Name')" required class="flex-1">
                 <CoarTextInput v-model="form.Lastname" clearable />
               </CoarFormField>
               <CoarFormField :label="t('admin.users.acronym', {}, 'Acronym')" class="w-20">
                 <CoarTextInput v-model="form.Acronym" clearable />
               </CoarFormField>
             </div>
-            <CoarFormField :label="t('admin.users.email', {}, 'Email')">
+            <CoarFormField :label="t('admin.users.email', {}, 'Email')" required>
               <CoarTextInput v-model="form.Email" clearable />
+              <div v-if="form.Email" class="email-verify-status">
+                <CoarCheckbox v-model="emailConfirmed"
+                  :label="t('admin.userDetails.emailVerifiedToggle', {}, 'Mark email address as verified')" />
+                <p class="email-verify-hint">
+                  {{ emailConfirmed
+                      ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
+                      : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.') }}
+                </p>
+              </div>
             </CoarFormField>
-            <CoarFormField :label="t('admin.users.username', {}, 'Username')">
+            <CoarFormField :label="t('admin.users.username', {}, 'Username')" required>
               <CoarTextInput v-model="form.UserName" clearable />
               <span v-if="userNameError" class="text-xs text-red-600">{{ userNameError }}</span>
             </CoarFormField>
@@ -568,6 +600,18 @@ watch(() => form.value.UserName, () => {
 .status-active { background-color: #dcfce7; color: #166534; }
 .status-inactive { background-color: #f3f4f6; color: #6b7280; }
 .status-exempt { background-color: #fef3c7; color: #92400e; }
+.email-verify-status {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.email-verify-hint {
+  font-size: 0.75rem;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  margin-left: 1.5rem;
+}
 
 .tab-bar {
   margin-bottom: 12px;

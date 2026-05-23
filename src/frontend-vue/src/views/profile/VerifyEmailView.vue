@@ -17,19 +17,21 @@ const router = useRouter()
 const profileHttp = useHttpClient('/api/account/profile')
 const accountHttp = useHttpClient('/api/account')
 
-// Two flows share the /verify-email route, dispatched by query params:
+// Three flows share the /verify-email route, dispatched by query params:
 // - profile email-change-verify: ?id=<requestId>&token=<token>
-// - self-registration verify-email: ?token=<plaintext>
+// - account email re-verify:     ?type=account&token=<plaintext>
+// - self-registration verify:    ?token=<plaintext>           (default)
 // The self-reg flow surfaces RequiresAdminApproval so the UI can tell
 // the user "wait for admin" vs "go log in".
 type State = 'verifying' | 'success' | 'success-pending-approval' | 'error'
 const state = ref<State>('verifying')
 const errorMessage = ref('')
-const flow = ref<'profile-change' | 'self-reg' | null>(null)
+const flow = ref<'profile-change' | 'account' | 'self-reg' | null>(null)
 
 onMounted(async () => {
   const id = route.query.id as string | undefined
   const token = route.query.token as string | undefined
+  const type = route.query.type as string | undefined
 
   if (!token) {
     state.value = 'error'
@@ -46,6 +48,20 @@ onMounted(async () => {
       state.value = 'error'
       errorMessage.value = e instanceof HttpClientError && e.status === 400
         ? t('verifyEmail.invalid', {}, 'Link is invalid or expired.')
+        : t('verifyEmail.error', {}, 'Confirmation failed.')
+    }
+    return
+  }
+
+  if (type === 'account') {
+    flow.value = 'account'
+    try {
+      await accountHttp.addPath('email', 'verify').post({ Token: token })
+      state.value = 'success'
+    } catch (e: unknown) {
+      state.value = 'error'
+      errorMessage.value = e instanceof HttpClientError && e.status === 400
+        ? t('verifyEmail.account.invalid', {}, 'Verification link is invalid or expired.')
         : t('verifyEmail.error', {}, 'Confirmation failed.')
     }
     return
@@ -84,6 +100,9 @@ onMounted(async () => {
           <p class="text-sm text-surface-600">
             <template v-if="flow === 'self-reg'">
               {{ t('verifyEmail.selfReg.success', {}, 'Your account has been confirmed. You can now sign in.') }}
+            </template>
+            <template v-else-if="flow === 'account'">
+              {{ t('verifyEmail.account.success', {}, 'Your email address has been verified. You can sign in again.') }}
             </template>
             <template v-else>
               {{ t('verifyEmail.successBody', {}, 'Thanks! Your new email address has been confirmed. An administrator will review and approve the change before it is applied.') }}

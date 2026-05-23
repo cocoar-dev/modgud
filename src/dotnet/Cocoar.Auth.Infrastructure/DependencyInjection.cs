@@ -158,6 +158,7 @@ public static class DependencyInjection
 
             // Identity / directory
             opt.RegisterResource(app, "user", "read", "write");
+            opt.RegisterResource(app, "service-account", "read", "write");
             opt.RegisterResource(app, "role", "read", "write");
             opt.RegisterResource(app, "authorization-group", "read", "write");
             opt.RegisterResource(app, "permission-role", "read", "write");

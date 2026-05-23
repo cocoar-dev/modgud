@@ -8,4 +8,9 @@ public class UserCreateDto
     public string? Email { get; set; }
     public string UserName { get; set; } = string.Empty;
     public string? Password { get; set; }
+    /// <summary>
+    /// Admin opt-in to mark the Identity EmailConfirmed flag at creation —
+    /// skips the magic-link verify step for internal/trusted users.
+    /// </summary>
+    public bool EmailConfirmed { get; set; }
 }

@@ -65,6 +65,14 @@ public static class ProfileEndpoints
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
 
+            // Gate the whole change-request flow on a verified email. The
+            // workflow round-trips through the user's mailbox (email-verify
+            // step + admin-approval notification), so an unverified address
+            // would leave the request stranded. Frontend disables the Save
+            // button parallel to this; the 403 here is the safety net.
+            if (!user.EmailConfirmed)
+                return Results.Json(new { error = "Email not verified", code = "Account.EmailNotVerified" }, statusCode: 403);
+
             string? desiredEmail = null;
             var emailSubmitted = body.Email is not null;
             if (emailSubmitted)

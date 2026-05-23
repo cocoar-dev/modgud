@@ -402,7 +402,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
     <div class="w-full max-w-sm">
       <!-- Logo + Title -->
       <div class="mb-8 text-center">
-        <img :src="branding.LogoUrl ?? '/td-logo.svg'" :alt="branding.ProductName ?? 'Cocoar.Auth'" class="mx-auto mb-1 h-16 w-auto" />
+        <img :src="branding.LogoUrl ?? '/idp-logo.svg'" :alt="branding.ProductName ?? 'Cocoar.Auth'" class="mx-auto mb-1 h-16 w-auto" />
         <h1 v-if="branding.ProductName" class="text-2xl font-bold tracking-tight text-surface-800">
           {{ branding.ProductName }}
         </h1>

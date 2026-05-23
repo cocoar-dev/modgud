@@ -10,7 +10,7 @@ using Cocoar.Auth.Authorization.Principals;
 
 namespace Cocoar.Auth.Api.Features.Users.Commands;
 
-public record CreateUserCommand(string? Firstname, string? Lastname, string? Acronym, string? Email, string UserName, string? Password);
+public record CreateUserCommand(string? Firstname, string? Lastname, string? Acronym, string? Email, string UserName, string? Password, bool EmailConfirmed = false);
 
 public class CreateUserHandler(IDocumentSession session, UserManager<ApplicationUser> userManager)
 {
@@ -20,6 +20,13 @@ public class CreateUserHandler(IDocumentSession session, UserManager<Application
     {
         if (string.IsNullOrWhiteSpace(command.UserName))
             return DomainErrors.User.UserNameRequired;
+
+        // Email is required on humans. The Authorization model carves out
+        // ServiceAccount as a separate Principal kind for emailless machine
+        // identities — this endpoint only creates Person+ApplicationUser,
+        // which always represents a human.
+        if (string.IsNullOrWhiteSpace(command.Email))
+            return DomainErrors.User.EmailRequired;
 
         var normalizedUserName = command.UserName.Trim().ToLowerInvariant();
 
@@ -56,7 +63,8 @@ public class CreateUserHandler(IDocumentSession session, UserManager<Application
             Firstname = command.Firstname,
             Lastname = command.Lastname,
             Acronym = command.Acronym,
-            IsActive = true
+            IsActive = true,
+            EmailConfirmed = command.EmailConfirmed,
         };
 
         // Store handles event stream creation (StartStream + UserCreatedEvent + UserUserNameChangedEvent)
@@ -87,7 +95,8 @@ public class CreateUserHandler(IDocumentSession session, UserManager<Application
             Email = command.Email,
             UserName = normalizedUserName,
             IsActive = true,
-            HasPassword = hasPassword
+            HasPassword = hasPassword,
+            EmailConfirmed = command.EmailConfirmed,
         };
     }
 }

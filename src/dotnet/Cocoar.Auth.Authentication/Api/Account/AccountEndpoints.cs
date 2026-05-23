@@ -53,7 +53,13 @@ public static class AccountEndpoints
         /// Display name of the IdP the session came from (e.g. "Entra ID"), or
         /// null for local sessions. Used to label the "Sign out everywhere" button.
         /// </summary>
-        string? IdpDisplayName);
+        string? IdpDisplayName,
+        /// <summary>
+        /// Identity-side EmailConfirmed flag. Drives the in-app
+        /// unverified-email banner and gates self-service forgot-password /
+        /// magic-link on the backend.
+        /// </summary>
+        bool EmailConfirmed);
 
     public static WebApplication MapAccountEndpoints(this WebApplication application, string path)
     {
@@ -268,7 +274,8 @@ public static class AccountEndpoints
                 securityData?.TwoFactorExempt ?? false,
                 isFederatedMfa,
                 isFederated,
-                idpDisplayName));
+                idpDisplayName,
+                user.EmailConfirmed));
         })
         .WithName("Account_Me");
 

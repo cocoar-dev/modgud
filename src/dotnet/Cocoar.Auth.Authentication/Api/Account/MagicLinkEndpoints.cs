@@ -58,6 +58,18 @@ public static class MagicLinkEndpoints
                 return Results.Ok(new { Message = genericMessage });
             }
 
+            // Gate self-service magic-link on a verified email — sending a
+            // login link to an unverified address would let a typo'd or
+            // attacker-controlled mailbox bypass the password factor entirely.
+            // Admin-side /api/admin/users/{id}/magic-link bypasses this on
+            // purpose: it's the recovery channel for users who can't verify
+            // themselves. Consuming any magic-link auto-confirms downstream.
+            if (!user.EmailConfirmed)
+            {
+                await AntiTimingDelayAsync();
+                return Results.Ok(new { Message = genericMessage });
+            }
+
             // Rate limiting: check for recent challenge for this user
             var existingChallenges = await session.Query<MagicLinkChallenge>()
                 .Where(c => c.UserId == user.Id)
@@ -149,6 +161,15 @@ public static class MagicLinkEndpoints
                 session.Delete(challenge);
                 await session.SaveChangesAsync();
                 return Results.Json(new { Message = "Invalid or expired link" }, statusCode: 401);
+            }
+
+            // A successfully consumed magic-link is proof the user controls
+            // the mailbox we sent it to. Auto-confirm the email so downstream
+            // self-service flows (forgot-password, self-magic-link) unblock.
+            if (!user.EmailConfirmed)
+            {
+                user.EmailConfirmed = true;
+                session.Store(user);
             }
 
             // Delete challenge (one-time use)

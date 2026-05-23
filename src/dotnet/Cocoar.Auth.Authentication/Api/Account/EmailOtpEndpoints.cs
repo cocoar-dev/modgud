@@ -54,6 +54,14 @@ public static class EmailOtpEndpoints
                     title: "Email required",
                     detail: "An email address is required to enable Email OTP.");
 
+            // Enabling Email-OTP makes the inbox a load-bearing security
+            // factor — only allow that on an address we know the user
+            // controls. Frontend mirrors this with a disabled toggle.
+            if (!user.EmailConfirmed)
+                return Results.Json(
+                    new { error = "Email not verified", code = "Account.EmailNotVerified" },
+                    statusCode: 403);
+
             user.EmailOtpEnabled = true;
             session.Store(user);
             await session.SaveChangesAsync();

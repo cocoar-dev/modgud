@@ -20,6 +20,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import LogoutConfirmModal from '@/views/auth/LogoutConfirmModal.vue'
 import AppContextSelector from '@/components/AppContextSelector.vue'
+import UnverifiedEmailBanner from '@/components/UnverifiedEmailBanner.vue'
 
 const { t } = useI18n()
 
@@ -136,7 +137,7 @@ const hasAnyAdminPermission = computed(() =>
         <header v-if="ui.header.show" class="main-header">
             <!-- Logo area (aligned with sidebar width) -->
             <button @click="router.push('/')" class="header-logo" :style="{ width: collapsed ? '4rem' : '16rem' }">
-                <img :src="branding.LogoUrl ?? '/td-logo-white.svg'" :alt="branding.ProductName ?? 'Cocoar.Auth'" class="header-logo-icon" />
+                <img :src="branding.LogoUrl ?? '/idp-logo-white.svg'" :alt="branding.ProductName ?? 'Cocoar.Auth'" class="header-logo-icon" />
                 <span v-if="!collapsed" class="text-sm font-medium tracking-wide opacity-80">{{ branding.ProductName ?? 'Cocoar.Auth' }}</span>
             </button>
 
@@ -213,6 +214,7 @@ const hasAnyAdminPermission = computed(() =>
             </CoarSidebar>
 
             <div class="flex flex-1 flex-col overflow-hidden">
+                <UnverifiedEmailBanner />
                 <!-- Content -->
                 <main class="flex flex-1 " :style="{ overflow: ui.content.container ? 'auto' : 'hidden' }">
                     <div class="main-container flex" :class="ui.content.container ? 'container-mode' : 'flex-1'">

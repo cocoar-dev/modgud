@@ -264,13 +264,15 @@
       "setupFailed": "Setup fehlgeschlagen.",
       "invalidCode": "Ungültiger Code. Bitte erneut versuchen."
     },
+    "lockedUnverified": "Profil-Änderungen sind blockiert, bis du deine E-Mail-Adresse bestätigt hast.",
     "emailOtp": {
       "title": "E-Mail-Code (OTP)",
       "noEmail": "Eine E-Mail-Adresse ist erforderlich, um die Anmeldung per E-Mail-Code zu nutzen. Bitte lassen Sie Ihre E-Mail-Adresse vom Administrator hinterlegen.",
       "description": "Bei jeder Anmeldung wird ein einmaliger Code an Ihre E-Mail-Adresse gesendet. Alternativ zur Authenticator-App.",
       "enableButton": "E-Mail-Code aktivieren",
       "enabledDescription": "Bei jeder Anmeldung wird ein einmaliger Code an",
-      "disableButton": "E-Mail-Code deaktivieren"
+      "disableButton": "E-Mail-Code deaktivieren",
+      "lockedUnverified": "Email-OTP-Aktivierung ist blockiert, bis du deine E-Mail-Adresse bestätigt hast."
     },
     "passkeys": {
       "title": "Passkeys",
@@ -360,6 +362,17 @@
       "noOutput": "Kein Script-Output für diese Anmeldung aufgezeichnet.",
       "scriptError": "Script-Fehler"
     },
+    "serviceAccounts": {
+      "title": "Service Accounts",
+      "accountName": "Account-Name",
+      "accountNamePlaceholder": "ci.build-agent, integrations.timetodo, …",
+      "accountNameHint": "Kleinbuchstaben, Ziffern, Punkte, Bindestriche oder Unterstriche. Wird im Audit-Log als Handle für diesen Account verwendet.",
+      "purpose": "Verwendungszweck",
+      "purposePlaceholder": "CI Deployment, nächtliche Sync, …",
+      "active": "Aktiv",
+      "createTitle": "Service Account anlegen",
+      "editTitle": "Service Account"
+    },
     "userDetails": {
       "createTitle": "Erstelle Benutzer",
       "profileSection": "Profil",
@@ -390,6 +403,9 @@
       "policyDaysPlaceholder": "{days} (Default)",
       "exemptBadge": "Ausgenommen — 2FA nicht erforderlich",
       "activeCheckbox": "Benutzer aktiv",
+      "emailVerifiedToggle": "Mail-Adresse als bestätigt markieren",
+      "emailVerifiedHint": "Forgot-Password und Self-Magic-Link sind für diesen User freigeschaltet.",
+      "emailUnverifiedHint": "Forgot-Password und Self-Magic-Link sind blockiert, bis der User die Mail bestätigt.",
       "exemptCheckbox": "2FA-Pflicht für diesen User deaktivieren",
       "exemptHint": "User umgeht Grace und Enforcement komplett. Für Service-Accounts / Legacy-User.",
       "directGroups": "Direkte Mitgliedschaften",
@@ -886,7 +902,20 @@
       "pendingTitle": "E-Mail bestätigt — Admin-Freigabe ausstehend",
       "pendingBody": "Deine E-Mail-Adresse ist bestätigt. Ein Administrator muss dein Konto noch freischalten — du bekommst dann Bescheid.",
       "invalid": "Bestätigungslink ist ungültig oder abgelaufen. Bitte erneut registrieren."
+    },
+    "account": {
+      "invalid": "Bestätigungslink ist ungültig oder abgelaufen.",
+      "success": "Deine E-Mail-Adresse wurde bestätigt. Du kannst dich wieder einloggen."
     }
+  },
+  "emailBanner": {
+    "title": "E-Mail nicht bestätigt",
+    "body": "Bestätige {email}. Solange unverified sind Profil-Änderungen, Email-OTP, Passwort-Reset und Login-Links blockiert.",
+    "send": "Bestätigungs-Mail senden",
+    "dismiss": "Später",
+    "sent": "Bestätigungs-Mail gesendet. Bitte Posteingang prüfen.",
+    "rateLimit": "Zu viele Anfragen. Bitte später erneut versuchen.",
+    "failed": "Konnte Bestätigungs-Mail nicht senden."
   },
   "dashboard": {
     "title": "Dashboard",

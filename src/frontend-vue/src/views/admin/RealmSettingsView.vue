@@ -31,7 +31,7 @@ const groupStore = useGroupStore()
 watch(language, () => ui.set((ctx) => {
   ctx.header.title = t('nav.administration', {}, 'Administration')
   ctx.header.subTitle = t('admin.realmSettings.title', {}, 'Realm settings')
-  ctx.header.icon = 'sliders'
+  ctx.header.icon = 'sliders-horizontal'
   ctx.content.container = false
   ctx.content.hasSubNav = true
 }), { immediate: true })

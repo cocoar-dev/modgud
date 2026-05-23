@@ -68,6 +68,11 @@ const IDP_CLAIMS_MODAL_SIZE = {
   height: '72vh', minHeight: '72vh', maxHeight: '72vh',
 } as const
 
+const SERVICE_ACCOUNT_MODAL_SIZE = {
+  width: '40rem', minWidth: '40rem', maxWidth: '40rem',
+  height: 'auto', minHeight: 'auto', maxHeight: '72vh',
+} as const
+
 const API_MODAL_SIZE = {
   width: '64rem', minWidth: '64rem', maxWidth: '64rem',
   height: '78vh', minHeight: '78vh', maxHeight: '78vh',
@@ -206,6 +211,20 @@ const routes = [
                     path: ':id',
                     component: () => import('@/views/admin/user/UserDetails.vue'),
                     overlayOptions: { size: USER_MODAL_SIZE },
+                  },
+                ],
+              },
+            },
+            {
+              path: 'service-accounts',
+              component: () => import('@/views/admin/serviceAccount/ServiceAccountsView.vue'),
+              meta: {
+                routedFragments: [
+                  {
+                    type: 'modal',
+                    path: ':id',
+                    component: () => import('@/views/admin/serviceAccount/ServiceAccountDetails.vue'),
+                    overlayOptions: { size: SERVICE_ACCOUNT_MODAL_SIZE },
                   },
                 ],
               },

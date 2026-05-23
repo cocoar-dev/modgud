@@ -512,6 +512,22 @@ try
                     QueueLimit = 0,
                 });
         });
+
+        // Email-verification (re)send — same bucket sizing as magic-link.
+        // Covers both authenticated 1-click and the anonymous self-service
+        // form; the endpoint itself returns a generic response either way.
+        options.AddPolicy("email-verification", context =>
+        {
+            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ip,
+                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 5,
+                    Window = TimeSpan.FromHours(1),
+                    QueueLimit = 0,
+                });
+        });
     });
 
     builder.Services.AddHttpContextAccessor();
@@ -957,6 +973,7 @@ try
     app.MapPasskeyEndpoints("api");
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");
+    app.MapEmailVerificationEndpoints("api");
     app.MapRegisterEndpoints("api");
     app.MapRealmSettingsEndpoints("api");
     app.MapBootstrapEndpoints("api");
@@ -969,6 +986,7 @@ try
 
     // Marten Endpoints
     app.MapUsersEndpoints("api");
+    Cocoar.Auth.Api.Features.ServiceAccounts.ServiceAccountsEndpoints.MapServiceAccountsEndpoints(app, "api");
     app.MapPrincipalEndpoints("api");
     app.MapRolesEndpoints("api");
     app.MapGroupEndpoints("api");

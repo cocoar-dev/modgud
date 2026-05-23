@@ -11,7 +11,6 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useUserStore } from '@/stores/user.store'
-import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
 import type { UserDto } from '@/models/user'
@@ -21,7 +20,6 @@ const { t, language } = useI18n()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const userStore = useUserStore()
-const loginProviderStore = useLoginProviderStore()
 const adminHttp = useHttpClient('/api/admin/users')
 
 const ui = useUI()
@@ -65,24 +63,25 @@ const builder = CoarGridBuilder.create<UserDto>()
     viewportMenu.open($event)
   })
   .columns([
-    (col) => col.field('UserName').header('Username', 'admin.users.username').width(150),
-    (col) => col.icon('HasPassword').header('').valueGetter((p: any) => p.data?.HasPassword ? 'key-round' : '').width(38).resizable(false),
-    (col) => col.icon('ExternalLoginProviderIds', { color: '#2563eb', size: 's' })
-      .option('valueGetter', (p: any) => (p.data?.ExternalLoginProviderIds?.length ?? 0) > 0 ? 'link-2' : '')
-      .option('tooltipValueGetter', (p: any) => {
-        const ids: string[] = p.data?.ExternalLoginProviderIds ?? []
-        if (ids.length === 0) return ''
-        const names = ids.map(id => loginProviderStore.providers.find(c => c.Id === id)?.DisplayName ?? id)
-        return `${t('admin.users.linkedIdps', {}, 'Verknüpfte Login-Provider')}: ${names.join(', ')}`
-      })
-      .header('IdP', 'admin.users.idp').width(60).resizable(false),
+    // Password-set indicator — pinned first so the admin sees account-setup
+    // state at a glance, even with many columns scrolled away.
+    (col) => col.icon('HasPassword').header('')
+      .valueGetter((p: any) => p.data?.HasPassword ? 'key-round' : '')
+      .width(38).resizable(false).pinned('left'),
+    // Identity column — pinned next to the password indicator and
+    // emphasized as the row's primary label.
+    (col) => col.field('UserName').header('Username', 'admin.users.username')
+      .width(150).pinned('left').cellClass('user-name-cell'),
     (col) => col.field('Firstname').header('First Name', 'admin.users.firstname').flex(1),
     (col) => col.field('Lastname').header('Last Name', 'admin.users.lastname').flex(1),
     (col) => col.field('Acronym').header('Acronym', 'admin.users.acronym').width(100),
     (col) => col.icon('IsActive', { color: '#16a34a', size: 's' })
       .option('valueGetter', (p: any) => p.data?.IsActive ? 'check' : '')
       .header('Active', 'admin.users.active').width(80),
-    (col) => col.field('Email').header('Email', 'admin.users.email').flex(1),
+    // Email — visually de-emphasized when Identity-side EmailConfirmed=false
+    // so unverified addresses don't read like authoritative contact info.
+    (col) => col.field('Email').header('Email', 'admin.users.email').flex(1)
+      .classRule('email-unverified', (p: any) => !!p.data?.Email && !p.data?.EmailConfirmed),
   ])
 
 async function deleteUsers() {
@@ -112,8 +111,6 @@ async function sendMagicLink() {
 
 onMounted(() => {
   userStore.initialize()
-  // Pre-load login providers for the IdP-link column tooltip
-  loginProviderStore.initialize()
 })
 </script>
 
@@ -175,5 +172,16 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   background-color: rgba(0, 0, 0, 0.4);
+}
+
+/* AG Grid cells render inside the host component, so style hooks need
+   :deep() to reach them from scoped styles. */
+:deep(.user-name-cell) {
+  font-weight: 600;
+}
+
+:deep(.email-unverified) {
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  font-style: italic;
 }
 </style>

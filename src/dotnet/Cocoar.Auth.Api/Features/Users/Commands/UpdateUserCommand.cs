@@ -37,6 +37,12 @@ public class UpdateUserHandler(IDocumentSession session)
                 return DomainErrors.User.UserNameTaken(normalizedUserName);
         }
 
+        // Email is required on humans — reject attempts to clear it. The
+        // ServiceAccount Principal kind carves out emailless machine
+        // identities; this endpoint only mutates Person+ApplicationUser.
+        if (command.Email.HasValue && string.IsNullOrWhiteSpace(command.Email.Value))
+            return DomainErrors.User.EmailRequired;
+
         // Check Email uniqueness (exclude current user). Groups have their own Email
         // field — check both to prevent collisions across principal kinds.
         if (command.Email.HasValue && !string.IsNullOrWhiteSpace(command.Email.Value))

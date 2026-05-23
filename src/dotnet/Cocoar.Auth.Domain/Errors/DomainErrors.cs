@@ -29,5 +29,9 @@ public static class DomainErrors
         public static Error UserNameRequired => Error.Validation(
             code: "User.UserNameRequired",
             description: "Username is required");
+
+        public static Error EmailRequired => Error.Validation(
+            code: "User.EmailRequired",
+            description: "Email is required");
     }
 }

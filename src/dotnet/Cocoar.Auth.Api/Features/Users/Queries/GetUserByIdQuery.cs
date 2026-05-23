@@ -1,5 +1,6 @@
 using ErrorOr;
 using Marten;
+using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Infrastructure.Persistence.Marten.Mappers;
 using Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.Users;
 using Cocoar.Auth.Application.DTOs.User;
@@ -18,7 +19,12 @@ public class GetUserByIdHandler(IDocumentSession session)
         if (user is null || user.IsDeleted)
             return Error.NotFound("User.NotFound", "User not found");
 
-        // View is fully denormalized — no manual joining needed
-        return user.ToDto();
+        var dto = user.ToDto();
+
+        // EmailConfirmed lives on the ApplicationUser doc — join in.
+        var appUser = await session.LoadAsync<ApplicationUser>(query.UserId, ct);
+        dto.EmailConfirmed = appUser?.EmailConfirmed ?? false;
+
+        return dto;
     }
 }

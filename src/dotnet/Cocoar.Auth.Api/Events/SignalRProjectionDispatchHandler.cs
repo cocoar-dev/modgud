@@ -1,14 +1,28 @@
 using BuildingBlocks.EventDispatcher;
 using BuildingBlocks.Helper;
+using Marten;
+using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Infrastructure.Events;
+using Cocoar.Auth.Infrastructure.Persistence.Marten.Mappers;
 
 namespace Cocoar.Auth.Api.Events;
 
-public class SignalRProjectionDispatchHandler(DataEventDispatcher eventDispatcher)
+public class SignalRProjectionDispatchHandler(DataEventDispatcher eventDispatcher, IDocumentSession session)
 {
-    public void Handle(UserViewSignalRDispatch message)
+    public async Task Handle(UserViewSignalRDispatch message)
     {
-        Dispatch("User", message.Action, message.View, message.Id);
+        // Enrich the view-snapshot with EmailConfirmed from the ApplicationUser
+        // doc (Identity-side, not tracked by the projection) so the SignalR
+        // payload matches the DTO admin clients fetched on initial load.
+        object? payload = message.View;
+        if (message.Action != SignalRDispatchAction.Deleted && message.View is not null)
+        {
+            var dto = message.View.ToDto();
+            var appUser = await session.LoadAsync<ApplicationUser>(message.Id);
+            dto.EmailConfirmed = appUser?.EmailConfirmed ?? false;
+            payload = dto;
+        }
+        Dispatch("User", message.Action, payload, message.Id);
     }
 
     private void Dispatch(string subject, SignalRDispatchAction action, object? view, Guid id)

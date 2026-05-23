@@ -13,6 +13,12 @@ public class UserDto
     public bool IsActive { get; set; } = true;
     public bool HasPassword { get; set; }
     /// <summary>
+    /// Identity-side EmailConfirmed flag. Sourced from the ApplicationUser
+    /// document (not the read-projection) and joined in at query time; the
+    /// view does not track confirmation events.
+    /// </summary>
+    public bool EmailConfirmed { get; set; }
+    /// <summary>
     /// LoginProvider ids (ShortGuid strings) this user has an active external-identity
     /// link with. Empty = local-only. Frontend resolves ids → display names via
     /// the LoginProvider store for the Admin-list IdP-connected indicator.

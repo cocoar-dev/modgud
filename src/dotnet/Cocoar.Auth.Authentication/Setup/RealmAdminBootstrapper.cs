@@ -79,12 +79,19 @@ public sealed class RealmAdminBootstrapper(
         // PasswordOptions (length, digit, uppercase, special). A weak password
         // is rejected here — same treatment for CLI Direct-Mode and for the
         // Invite-Mode bootstrap endpoint, no privilege bypass.
+        // Bootstrap-admin is created out-of-band — either the operator typed
+        // the email at the CLI (Direct-Mode) or they clicked the invite mail
+        // we sent them (Invite-Mode). Both are sufficient proof of email
+        // control, so we pre-confirm. Otherwise the first admin of every
+        // freshly-provisioned realm would land in an unverified state and
+        // self-service forgot-password / magic-link would be gated off.
         var appUser = new ApplicationUser(normalizedUserName, email)
         {
             Id = Guid.NewGuid(),
             Firstname = firstname,
             Lastname = lastname,
             IsActive = true,
+            EmailConfirmed = true,
         };
 
         var createResult = await userManager.CreateAsync(appUser, password);

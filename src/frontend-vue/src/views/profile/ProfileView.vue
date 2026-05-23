@@ -313,8 +313,13 @@ async function loadRequest() {
   } catch { /* ignore */ }
 }
 
+// Sensitive actions that rely on the inbox (profile change-request,
+// Email-OTP enable) are gated on a verified email — server enforces this
+// independently, UI mirrors with disabled controls + an inline hint.
+const emailUnverified = computed(() => authStore.user?.EmailConfirmed === false)
+
 async function saveProfile() {
-  if (!profileDirty.value || profileSaving.value) return
+  if (!profileDirty.value || profileSaving.value || emailUnverified.value) return
   profileSaving.value = true
   profileError.value = ''
   try {
@@ -657,8 +662,12 @@ function onMfaSetupClose(enabled: boolean) {
                 </div>
               </div>
 
+              <CoarNote v-if="emailUnverified" variant="warning">
+                {{ t('profile.lockedUnverified', {}, 'Profile changes are blocked until you verify your email address.') }}
+              </CoarNote>
+
               <div class="flex items-center gap-3 flex-wrap">
-                <CoarButton :disabled="!profileDirty" :loading="profileSaving" @click="saveProfile">
+                <CoarButton :disabled="!profileDirty || emailUnverified" :loading="profileSaving" @click="saveProfile">
                   {{ t('common.save', {}, 'Speichern') }}
                 </CoarButton>
                 <span v-if="profileSavedHint" class="text-sm text-green-700">
@@ -765,7 +774,15 @@ function onMfaSetupClose(enabled: boolean) {
               </template>
               <template v-else-if="emailOtpStatus && !emailOtpStatus.Enabled">
                 <p class="text-sm text-surface-600 mb-4">{{ t('profile.emailOtp.description', {}, 'A one-time code will be sent to your email.') }}</p>
-                <CoarButton :loading="emailOtpToggling" @click="toggleEmailOtp">{{ t('profile.emailOtp.enableButton', {}, 'Enable email code') }}</CoarButton>
+                <!-- Enabling Email-OTP makes the inbox load-bearing; gate it
+                     on a verified email. Disable is left ungated so users
+                     who accidentally turned it on can recover. -->
+                <CoarNote v-if="emailUnverified" variant="warning" class="mb-2">
+                  {{ t('profile.emailOtp.lockedUnverified', {}, 'Enabling Email-OTP is blocked until you verify your email address.') }}
+                </CoarNote>
+                <CoarButton :loading="emailOtpToggling" :disabled="emailUnverified" @click="toggleEmailOtp">
+                  {{ t('profile.emailOtp.enableButton', {}, 'Enable email code') }}
+                </CoarButton>
               </template>
               <template v-else-if="emailOtpStatus?.Enabled">
                 <p class="text-sm text-surface-600 mb-4">{{ t('profile.emailOtp.enabledDescription', {}, 'A one-time code will be sent to') }} <strong>{{ authStore.user?.Email }}</strong></p>

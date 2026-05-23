@@ -78,7 +78,8 @@ public static class UsersEndpoints
                     createDto.Acronym,
                     createDto.Email,
                     !string.IsNullOrWhiteSpace(createDto.UserName) ? createDto.UserName : createDto.Acronym ?? "",
-                    createDto.Password);
+                    createDto.Password,
+                    createDto.EmailConfirmed);
                 var result = await bus.InvokeAsync<ErrorOr.ErrorOr<UserDto>>(command);
                 return result.ToResult(dto =>
                 {
@@ -120,6 +121,20 @@ public static class UsersEndpoints
                         else
                             session.Events.Append(id.Guid, new UserDeactivatedEvent(id.Guid));
                     }
+                }
+
+                // 3. Admin override of EmailConfirmed — direct write to the
+                //    ApplicationUser doc; not event-sourced, so SignalR push
+                //    pulls the fresh value via SignalRProjectionDispatchHandler.
+                if (dto.EmailConfirmed.HasValue)
+                {
+                    var appUser = await session.LoadAsync<ApplicationUser>(id.Guid);
+                    if (appUser is not null && appUser.EmailConfirmed != dto.EmailConfirmed.Value)
+                    {
+                        appUser.EmailConfirmed = dto.EmailConfirmed.Value;
+                        session.Store(appUser);
+                    }
+                    result.Value.EmailConfirmed = dto.EmailConfirmed.Value;
                 }
 
                 // Role management happens via Groups — no direct user→role assignments exist.

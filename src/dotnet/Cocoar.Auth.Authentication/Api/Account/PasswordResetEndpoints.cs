@@ -34,7 +34,11 @@ public static class PasswordResetEndpoints
             var user = await userManager.FindByNameAsync(request.UserName)
                     ?? await userManager.FindByEmailAsync(request.UserName);
 
-            if (user is not null && !string.IsNullOrEmpty(user.Email))
+            // Gate on EmailConfirmed: sending a reset link to an unverified
+            // address would route the credential-reset path to a mailbox we
+            // haven't established the user controls. Generic response holds
+            // either way to keep enumeration silent.
+            if (user is not null && !string.IsNullOrEmpty(user.Email) && user.EmailConfirmed)
             {
                 var token = await userManager.GeneratePasswordResetTokenAsync(user);
                 var encodedToken = HttpUtility.UrlEncode(token);

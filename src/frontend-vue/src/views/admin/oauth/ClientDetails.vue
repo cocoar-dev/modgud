@@ -32,8 +32,10 @@ const applicationsStore = useApplicationsStore()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
-type ClientTab = 'general' | 'apps' | 'scopes' | 'grants' | 'urls' | 'lifetimes' | 'dcr'
-const activeTab = ref<ClientTab>('general')
+// "General" lives in the persistent left column (identity always visible)
+// — tabs only host the multi-item editors that benefit from full width.
+type ClientTab = 'apps' | 'scopes' | 'grants' | 'urls' | 'lifetimes' | 'dcr'
+const activeTab = ref<ClientTab>('apps')
 
 // Cleartext secret returned once at creation / regeneration — surfaced for copy.
 const newSecret = ref<string | null>(null)
@@ -358,25 +360,13 @@ async function copySecret() {
 
 <template>
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="app-window"
-    :footer-button="footerButton" width="80rem">
+    :footer-button="footerButton">
     <div v-if="loading && !original && !isCreate" class="flex flex-1 items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
     </div>
-    <div v-else class="flex flex-col min-w-0 min-h-0 flex-1">
-      <CoarTabGroup v-if="!isCreate" v-model="activeTab" class="tab-bar">
-        <CoarTab id="general">{{ t('admin.oauthClients.tabs.general', {}, 'Allgemein') }}</CoarTab>
-        <CoarTab id="apps">{{ t('admin.oauthClients.tabs.apps', {}, 'Apps') }}</CoarTab>
-        <CoarTab id="scopes">{{ t('admin.oauthClients.tabs.scopes', {}, 'Scopes') }}</CoarTab>
-        <CoarTab id="grants">{{ t('admin.oauthClients.tabs.grants', {}, 'Grants') }}</CoarTab>
-        <CoarTab id="urls">{{ t('admin.oauthClients.tabs.urls', {}, 'URLs') }}</CoarTab>
-        <CoarTab id="lifetimes">{{ t('admin.oauthClients.tabs.lifetimes', {}, 'Token-Laufzeiten') }}</CoarTab>
-        <CoarTab v-if="original?.IsDynamicallyRegistered" id="dcr">
-          {{ t('admin.oauthClients.tabs.dcr', {}, 'Registration Info') }}
-        </CoarTab>
-      </CoarTabGroup>
-
-      <!-- New-secret notice — shown once after create or regenerate -->
-      <CoarNote v-if="newSecret" variant="warning" class="mb-3">
+    <div v-else class="modal-body">
+      <!-- New-secret notice — full-width across both columns -->
+      <CoarNote v-if="newSecret" variant="warning" class="secret-banner">
         <div class="flex flex-col gap-2">
           <div class="font-medium">{{ t('admin.oauthClients.secretOnce', {}, 'Bitte Client Secret jetzt kopieren — es wird nicht wieder angezeigt.') }}</div>
           <div class="flex items-center gap-2">
@@ -388,176 +378,209 @@ async function copySecret() {
         </div>
       </CoarNote>
 
-      <!-- General — identity + flags only. Apps / Scopes / Grants moved
-           to dedicated tabs so the picker has room to breathe. -->
-      <div v-show="isCreate || activeTab === 'general'" class="tab-content">
-        <div class="grid grid-cols-2 gap-3">
-          <CoarFormField :label="t('admin.oauthClients.clientId', {}, 'Client ID')">
-            <CoarTextInput v-model="form.ClientId" :disabled="!isCreate" clearable />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.displayName', {}, 'Display Name')">
-            <CoarTextInput v-model="form.DisplayName" clearable />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.type', {}, 'Client-Typ')">
-            <CoarSelect v-model="form.ClientType" :options="clientTypeOptions" :disabled="!isCreate" />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent-Typ')">
-            <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" />
-          </CoarFormField>
-          <CoarFormField v-if="isCreate" :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (leer = generieren)')">
-            <CoarTextInput v-model="form.ClientSecret" type="password" clearable />
-          </CoarFormField>
-        </div>
-        <div class="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+      <!-- CREATE MODE: single-column compact form (no tabs yet, no Id to associate). -->
+      <div v-if="isCreate" class="create-form">
+        <CoarFormField :label="t('admin.oauthClients.clientId', {}, 'Client ID')">
+          <CoarTextInput v-model="form.ClientId" clearable class="input-id" />
+        </CoarFormField>
+        <CoarFormField :label="t('admin.oauthClients.displayName', {}, 'Display Name')">
+          <CoarTextInput v-model="form.DisplayName" clearable class="input-name" />
+        </CoarFormField>
+        <CoarFormField :label="t('admin.oauthClients.type', {}, 'Client-Typ')">
+          <CoarSelect v-model="form.ClientType" :options="clientTypeOptions" class="input-enum" />
+        </CoarFormField>
+        <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent-Typ')">
+          <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" class="input-enum" />
+        </CoarFormField>
+        <CoarFormField :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (leer = generieren)')">
+          <CoarTextInput v-model="form.ClientSecret" type="password" clearable class="input-name" />
+        </CoarFormField>
+        <div class="checkbox-stack">
           <CoarCheckbox v-model="form.Enabled" :label="t('admin.oauthClients.enabled', {}, 'Aktiv')" />
           <CoarCheckbox v-model="form.RequireClientSecret" :label="t('admin.oauthClients.requireSecret', {}, 'Secret erforderlich')" />
-          <CoarCheckbox v-model="form.RequireConsent" :label="t('admin.oauthClients.requireConsent', {}, 'Zustimmung erforderlich')" />
-          <CoarCheckbox v-model="form.AllowRememberConsent" :label="t('admin.oauthClients.rememberConsent', {}, 'Zustimmung speichern')" />
-          <CoarCheckbox v-model="form.AllowAccessTokensViaBrowser" :label="t('admin.oauthClients.tokensInBrowser', {}, 'Token im Browser erlaubt')" />
-          <CoarCheckbox v-model="form.EnableLocalLogin" :label="t('admin.oauthClients.localLogin', {}, 'Lokaler Login erlaubt')" />
         </div>
-        <div v-if="!isCreate" class="mt-4">
-          <CoarButton size="s" variant="secondary" icon-start="rotate-ccw" :loading="loading" @click="regenerateSecret">
+      </div>
+
+      <!-- EDIT MODE: two-column master-detail.
+           Left = identity + status (always visible, never lost on tab switch).
+           Right = the multi-item tabs that benefit from full width. -->
+      <div v-else class="two-col">
+        <aside class="col-identity">
+          <h3 class="col-heading">{{ t('admin.oauthClients.tabs.general', {}, 'Allgemein') }}</h3>
+          <CoarFormField :label="t('admin.oauthClients.clientId', {}, 'Client ID')">
+            <CoarTextInput v-model="form.ClientId" disabled class="input-id" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.oauthClients.displayName', {}, 'Display Name')">
+            <CoarTextInput v-model="form.DisplayName" clearable class="input-name" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.oauthClients.type', {}, 'Client-Typ')">
+            <CoarSelect v-model="form.ClientType" :options="clientTypeOptions" disabled class="input-enum" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent-Typ')">
+            <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" class="input-enum" />
+          </CoarFormField>
+          <div class="checkbox-stack">
+            <CoarCheckbox v-model="form.Enabled" :label="t('admin.oauthClients.enabled', {}, 'Aktiv')" />
+            <CoarCheckbox v-model="form.RequireClientSecret" :label="t('admin.oauthClients.requireSecret', {}, 'Secret erforderlich')" />
+            <CoarCheckbox v-model="form.RequireConsent" :label="t('admin.oauthClients.requireConsent', {}, 'Zustimmung erforderlich')" />
+            <CoarCheckbox v-model="form.AllowRememberConsent" :label="t('admin.oauthClients.rememberConsent', {}, 'Zustimmung speichern')" />
+            <CoarCheckbox v-model="form.AllowAccessTokensViaBrowser" :label="t('admin.oauthClients.tokensInBrowser', {}, 'Token im Browser erlaubt')" />
+            <CoarCheckbox v-model="form.EnableLocalLogin" :label="t('admin.oauthClients.localLogin', {}, 'Lokaler Login erlaubt')" />
+          </div>
+          <CoarButton size="s" variant="secondary" icon-start="rotate-ccw" :loading="loading" @click="regenerateSecret" class="regen-btn">
             {{ t('admin.oauthClients.regenerate', {}, 'Client Secret neu generieren') }}
           </CoarButton>
-        </div>
-      </div>
+        </aside>
 
-      <!-- Apps — link the client to one or more registered Applications.
-           Empty selection = realm-wide (cross-app, OIDC standard scopes
-           only). -->
-      <div v-show="!isCreate && activeTab === 'apps'" class="tab-content">
-        <p class="tab-hint">
-          {{ t('admin.oauthClients.apps.hint', {}, 'Apps this client may operate in. Empty = realm-wide (only standard OIDC scopes). Multiple apps = Keycloak-style cross-app client.') }}
-        </p>
-        <p class="tab-hint tab-hint--shortcut">
-          {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
-        </p>
-        <section class="flex-section">
-          <CoarDualListbox
-            class="flex-1 min-h-0"
-            v-model="form.AppIds"
-            :options="appOptions"
-            drag-drop
-            sort-options="asc"
-            :search-fields="['label', 'subtitle', 'group']"
-            :available-label="t('admin.oauthClients.apps.available', {}, 'Available apps')"
-            :selected-label="t('admin.oauthClients.apps.selected', {}, 'Linked')"
-            :search-placeholder="t('admin.oauthClients.apps.searchPlaceholder', {}, 'Search apps…')" />
+        <section class="col-tabs">
+          <CoarTabGroup v-model="activeTab" class="tab-bar">
+            <CoarTab id="apps">{{ t('admin.oauthClients.tabs.apps', {}, 'Apps') }}</CoarTab>
+            <CoarTab id="scopes">{{ t('admin.oauthClients.tabs.scopes', {}, 'Scopes') }}</CoarTab>
+            <CoarTab id="grants">{{ t('admin.oauthClients.tabs.grants', {}, 'Grants') }}</CoarTab>
+            <CoarTab id="urls">{{ t('admin.oauthClients.tabs.urls', {}, 'URLs') }}</CoarTab>
+            <CoarTab id="lifetimes">{{ t('admin.oauthClients.tabs.lifetimes', {}, 'Token-Laufzeiten') }}</CoarTab>
+            <CoarTab v-if="original?.IsDynamicallyRegistered" id="dcr">
+              {{ t('admin.oauthClients.tabs.dcr', {}, 'Registration Info') }}
+            </CoarTab>
+          </CoarTabGroup>
+
+          <!-- Apps — link the client to one or more registered Applications.
+               Empty selection = realm-wide (cross-app, OIDC standard scopes
+               only). -->
+          <div v-show="activeTab === 'apps'" class="tab-content">
+            <p class="tab-hint">
+              {{ t('admin.oauthClients.apps.hint', {}, 'Apps this client may operate in. Empty = realm-wide (only standard OIDC scopes). Multiple apps = Keycloak-style cross-app client.') }}
+            </p>
+            <p class="tab-hint tab-hint--shortcut">
+              {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
+            </p>
+            <section class="flex-section">
+              <CoarDualListbox
+                class="flex-1 min-h-0"
+                v-model="form.AppIds"
+                :options="appOptions"
+                drag-drop
+                sort-options="asc"
+                :search-fields="['label', 'subtitle', 'group']"
+                :available-label="t('admin.oauthClients.apps.available', {}, 'Available apps')"
+                :selected-label="t('admin.oauthClients.apps.selected', {}, 'Linked')"
+                :search-placeholder="t('admin.oauthClients.apps.searchPlaceholder', {}, 'Search apps…')" />
+            </section>
+          </div>
+
+          <!-- Scopes — explicitly opt-in. OpenIddict rejects /connect/authorize
+               and /connect/token requests for any scope not on this list. -->
+          <div v-show="activeTab === 'scopes'" class="tab-content">
+            <p class="tab-hint">
+              {{ t('admin.oauthClients.scopes.hint', {}, 'OpenIddict rejects /connect/authorize and /connect/token requests for any scope not listed here. Add at minimum openid + roles for OIDC clients.') }}
+            </p>
+            <p class="tab-hint tab-hint--shortcut">
+              {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
+            </p>
+            <section class="flex-section">
+              <CoarDualListbox
+                class="flex-1 min-h-0"
+                v-model="form.Scopes"
+                :options="scopeOptions"
+                drag-drop
+                sort-options="asc"
+                :search-fields="['label', 'subtitle', 'group']"
+                :available-label="t('admin.oauthClients.scopes.available', {}, 'Available scopes')"
+                :selected-label="t('admin.oauthClients.scopes.selected', {}, 'Allowed')"
+                :search-placeholder="t('admin.oauthClients.scopes.searchPlaceholder', {}, 'Search scopes…')" />
+            </section>
+          </div>
+
+          <!-- Grants — no silent defaults. Empty list produces a client that
+               cannot mint any tokens. -->
+          <div v-show="activeTab === 'grants'" class="tab-content">
+            <p class="tab-hint">
+              {{ t('admin.oauthClients.grantTypes.hint', {}, 'No silent defaults: leaving this empty produces a client that cannot mint tokens. SPAs / mobile apps: authorization_code + refresh_token. Server-to-server: client_credentials. Pick what the client actually needs.') }}
+            </p>
+            <p class="tab-hint tab-hint--shortcut">
+              {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
+            </p>
+            <section class="flex-section">
+              <CoarDualListbox
+                class="flex-1 min-h-0"
+                v-model="form.AllowedGrantTypes"
+                :options="grantTypeOptions"
+                drag-drop
+                sort-options="asc"
+                :search-fields="['label', 'subtitle', 'group']"
+                :available-label="t('admin.oauthClients.grantTypes.available', {}, 'Available grant types')"
+                :selected-label="t('admin.oauthClients.grantTypes.selected', {}, 'Enabled')"
+                :search-placeholder="t('admin.oauthClients.grantTypes.searchPlaceholder', {}, 'Search…')" />
+            </section>
+          </div>
+
+          <!-- URLs -->
+          <div v-show="activeTab === 'urls'" class="tab-content">
+            <CoarFormField :label="t('admin.oauthClients.redirectUris', {}, 'Redirect-URIs')">
+              <EditableStringList
+                v-model="form.RedirectUris"
+                :placeholder="t('admin.oauthClients.redirectUri.placeholder', {}, 'https://app.example.com/signin-oidc')" />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.oauthClients.postLogoutRedirectUris', {}, 'Post-Logout Redirect-URIs')">
+              <EditableStringList
+                v-model="form.PostLogoutRedirectUris"
+                :placeholder="t('admin.oauthClients.postLogoutRedirectUri.placeholder', {}, 'https://app.example.com/signout-callback-oidc')" />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.oauthClients.accessTokenType', {}, 'Access-Token-Typ')">
+              <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" class="input-enum" />
+              <p class="text-xs text-gray-500 mt-1">
+                {{ t('admin.oauthClients.accessTokenType.hint', {}, 'JWT: token is self-contained, the resource server validates it locally via signature. Reference: token is opaque, the RS must call /connect/introspect on every request. JWT is the right pick for AddJwtBearer-based RSes.') }}
+              </p>
+            </CoarFormField>
+            <CoarFormField :label="t('admin.oauthClients.corsOrigins', {}, 'CORS Origins')">
+              <EditableStringList
+                v-model="form.AllowedCorsOrigins"
+                :placeholder="t('admin.oauthClients.corsOrigin.placeholder', {}, 'https://app.example.com')" />
+            </CoarFormField>
+          </div>
+
+          <!-- Lifetimes -->
+          <div v-show="activeTab === 'lifetimes'" class="tab-content">
+            <p class="text-xs text-gray-500 mb-2">
+              {{ t('admin.oauthClients.lifetimesHint', {}, 'Werte in Sekunden. Leer = Default des IdP.') }}
+            </p>
+            <div class="lifetime-grid">
+              <CoarFormField :label="t('admin.oauthClients.identityTokenLifetime', {}, 'Identity-Token')">
+                <CoarTextInput v-model="form.IdentityTokenLifetime" type="number" clearable class="input-number" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.oauthClients.accessTokenLifetime', {}, 'Access-Token')">
+                <CoarTextInput v-model="form.AccessTokenLifetime" type="number" clearable class="input-number" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.oauthClients.authCodeLifetime', {}, 'Authorization-Code')">
+                <CoarTextInput v-model="form.AuthorizationCodeLifetime" type="number" clearable class="input-number" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.oauthClients.absRefreshLifetime', {}, 'Absolute Refresh-Token')">
+                <CoarTextInput v-model="form.AbsoluteRefreshTokenLifetime" type="number" clearable class="input-number" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.oauthClients.slidingRefreshLifetime', {}, 'Sliding Refresh-Token')">
+                <CoarTextInput v-model="form.SlidingRefreshTokenLifetime" type="number" clearable class="input-number" />
+              </CoarFormField>
+            </div>
+          </div>
+
+          <!-- Registration Info — DCR clients only -->
+          <div v-show="activeTab === 'dcr' && original?.IsDynamicallyRegistered" class="tab-content">
+            <p class="tab-hint">
+              {{ t('admin.oauthClients.dcrInfoHint', {}, 'This client was registered anonymously via POST /connect/register. The fields below are the audit trail captured at registration time and on each successful token issue.') }}
+            </p>
+            <div class="lifetime-grid">
+              <CoarFormField :label="t('admin.oauthClients.dcr.registeredAt', {}, 'Registered at (UTC)')">
+                <CoarTextInput :model-value="original?.DcrRegisteredAt ?? ''" disabled class="input-name" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.oauthClients.dcr.registeredFromIp', {}, 'Registered from IP')">
+                <CoarTextInput :model-value="original?.DcrRegisteredFromIp ?? ''" disabled class="input-name" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.oauthClients.dcr.lastUsedAt', {}, 'Last successful token-issue')">
+                <CoarTextInput :model-value="original?.DcrLastUsedAt ?? ''" disabled class="input-name" />
+              </CoarFormField>
+            </div>
+          </div>
         </section>
-      </div>
-
-      <!-- Scopes — explicitly opt-in. OpenIddict rejects /connect/authorize
-           and /connect/token requests for any scope not on this list. -->
-      <div v-show="!isCreate && activeTab === 'scopes'" class="tab-content">
-        <p class="tab-hint">
-          {{ t('admin.oauthClients.scopes.hint', {}, 'OpenIddict rejects /connect/authorize and /connect/token requests for any scope not listed here. Add at minimum openid + roles for OIDC clients.') }}
-        </p>
-        <p class="tab-hint tab-hint--shortcut">
-          {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
-        </p>
-        <section class="flex-section">
-          <CoarDualListbox
-            class="flex-1 min-h-0"
-            v-model="form.Scopes"
-            :options="scopeOptions"
-            drag-drop
-            sort-options="asc"
-            :search-fields="['label', 'subtitle', 'group']"
-            :available-label="t('admin.oauthClients.scopes.available', {}, 'Available scopes')"
-            :selected-label="t('admin.oauthClients.scopes.selected', {}, 'Allowed')"
-            :search-placeholder="t('admin.oauthClients.scopes.searchPlaceholder', {}, 'Search scopes…')" />
-        </section>
-      </div>
-
-      <!-- Grants — no silent defaults. Empty list produces a client that
-           cannot mint any tokens. -->
-      <div v-show="!isCreate && activeTab === 'grants'" class="tab-content">
-        <p class="tab-hint">
-          {{ t('admin.oauthClients.grantTypes.hint', {}, 'No silent defaults: leaving this empty produces a client that cannot mint tokens. SPAs / mobile apps: authorization_code + refresh_token. Server-to-server: client_credentials. Pick what the client actually needs.') }}
-        </p>
-        <p class="tab-hint tab-hint--shortcut">
-          {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
-        </p>
-        <section class="flex-section">
-          <CoarDualListbox
-            class="flex-1 min-h-0"
-            v-model="form.AllowedGrantTypes"
-            :options="grantTypeOptions"
-            drag-drop
-            sort-options="asc"
-            :search-fields="['label', 'subtitle', 'group']"
-            :available-label="t('admin.oauthClients.grantTypes.available', {}, 'Available grant types')"
-            :selected-label="t('admin.oauthClients.grantTypes.selected', {}, 'Enabled')"
-            :search-placeholder="t('admin.oauthClients.grantTypes.searchPlaceholder', {}, 'Search…')" />
-        </section>
-      </div>
-
-      <!-- URLs / Grants -->
-      <div v-show="!isCreate && activeTab === 'urls'" class="tab-content">
-        <CoarFormField :label="t('admin.oauthClients.redirectUris', {}, 'Redirect-URIs')">
-          <EditableStringList
-            v-model="form.RedirectUris"
-            :placeholder="t('admin.oauthClients.redirectUri.placeholder', {}, 'https://app.example.com/signin-oidc')" />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.oauthClients.postLogoutRedirectUris', {}, 'Post-Logout Redirect-URIs')">
-          <EditableStringList
-            v-model="form.PostLogoutRedirectUris"
-            :placeholder="t('admin.oauthClients.postLogoutRedirectUri.placeholder', {}, 'https://app.example.com/signout-callback-oidc')" />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.oauthClients.accessTokenType', {}, 'Access-Token-Typ')">
-          <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" />
-          <p class="text-xs text-gray-500 mt-1">
-            {{ t('admin.oauthClients.accessTokenType.hint', {}, 'JWT: token is self-contained, the resource server validates it locally via signature. Reference: token is opaque, the RS must call /connect/introspect on every request. JWT is the right pick for AddJwtBearer-based RSes.') }}
-          </p>
-        </CoarFormField>
-        <CoarFormField :label="t('admin.oauthClients.corsOrigins', {}, 'CORS Origins')">
-          <EditableStringList
-            v-model="form.AllowedCorsOrigins"
-            :placeholder="t('admin.oauthClients.corsOrigin.placeholder', {}, 'https://app.example.com')" />
-        </CoarFormField>
-      </div>
-
-      <!-- Lifetimes -->
-      <div v-show="!isCreate && activeTab === 'lifetimes'" class="tab-content">
-        <p class="text-xs text-gray-500 mb-2">
-          {{ t('admin.oauthClients.lifetimesHint', {}, 'Werte in Sekunden. Leer = Default des IdP.') }}
-        </p>
-        <div class="grid grid-cols-2 gap-3">
-          <CoarFormField :label="t('admin.oauthClients.identityTokenLifetime', {}, 'Identity-Token')">
-            <CoarTextInput v-model="form.IdentityTokenLifetime" type="number" clearable />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.accessTokenLifetime', {}, 'Access-Token')">
-            <CoarTextInput v-model="form.AccessTokenLifetime" type="number" clearable />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.authCodeLifetime', {}, 'Authorization-Code')">
-            <CoarTextInput v-model="form.AuthorizationCodeLifetime" type="number" clearable />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.absRefreshLifetime', {}, 'Absolute Refresh-Token')">
-            <CoarTextInput v-model="form.AbsoluteRefreshTokenLifetime" type="number" clearable />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.slidingRefreshLifetime', {}, 'Sliding Refresh-Token')">
-            <CoarTextInput v-model="form.SlidingRefreshTokenLifetime" type="number" clearable />
-          </CoarFormField>
-        </div>
-      </div>
-
-      <!-- Registration Info — DCR clients only -->
-      <div v-show="!isCreate && activeTab === 'dcr' && original?.IsDynamicallyRegistered" class="tab-content">
-        <p class="tab-hint">
-          {{ t('admin.oauthClients.dcrInfoHint', {}, 'This client was registered anonymously via POST /connect/register. The fields below are the audit trail captured at registration time and on each successful token issue.') }}
-        </p>
-        <div class="grid grid-cols-2 gap-3">
-          <CoarFormField :label="t('admin.oauthClients.dcr.registeredAt', {}, 'Registered at (UTC)')">
-            <CoarTextInput :model-value="original?.DcrRegisteredAt ?? ''" disabled />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.dcr.registeredFromIp', {}, 'Registered from IP')">
-            <CoarTextInput :model-value="original?.DcrRegisteredFromIp ?? ''" disabled />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.dcr.lastUsedAt', {}, 'Last successful token-issue')">
-            <CoarTextInput :model-value="original?.DcrLastUsedAt ?? ''" disabled />
-          </CoarFormField>
-        </div>
       </div>
 
       <p v-if="error" class="mt-3 text-sm text-red-600">{{ error }}</p>
@@ -566,7 +589,73 @@ async function copySecret() {
 </template>
 
 <style scoped>
+/* Body-level layout — flex column so children (banner + content) stack. */
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  gap: 12px;
+}
+
+.secret-banner {
+  flex-shrink: 0;
+}
+
+/* CREATE mode — single column compact form. No tabs (Id not yet associated). */
+.create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 36rem;
+}
+.checkbox-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+/* EDIT mode — master-detail. Identity stays visible while tabs change. */
+.two-col {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 24rem 1fr;
+  gap: 1.25rem;
+  min-height: 0;
+  min-width: 0;
+}
+.col-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-right: 1.25rem;
+  border-right: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
+  overflow-y: auto;
+  min-height: 0;
+}
+.col-heading {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+}
+.regen-btn {
+  margin-top: 0.5rem;
+  align-self: flex-start;
+}
+
+.col-tabs {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
 .tab-bar {
+  flex-shrink: 0;
   margin-bottom: 12px;
 }
 .tab-content {
@@ -576,17 +665,49 @@ async function copySecret() {
   gap: 12px;
   padding-bottom: 16px;
   min-height: 0;
+  overflow-y: auto;
 }
 .tab-hint {
   font-size: 0.78rem;
   color: var(--coar-text-neutral-secondary, #6b7280);
   margin-bottom: 4px;
 }
+.tab-hint--shortcut {
+  opacity: 0.85;
+}
 .flex-section {
   flex: 1;
   display: flex;
   min-height: 22rem;
 }
+
+/* Content-appropriate input widths — never blindly width:100% so a
+   12-char client_id doesn't sit in a 1000px wide box. Each class targets
+   the wrapping CoarTextInput / CoarSelect; the inner DOM still does
+   width:100% inside the bounded wrapper. */
+.input-id :deep(input),
+.input-id :deep(.coar-input) {
+  max-width: 20rem;
+}
+.input-name :deep(input),
+.input-name :deep(.coar-input) {
+  max-width: 24rem;
+}
+.input-enum {
+  max-width: 18rem;
+}
+.input-number :deep(input),
+.input-number :deep(.coar-input) {
+  max-width: 8rem;
+}
+
+/* Lifetime tab grid — five short number fields, two columns, packed. */
+.lifetime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 0.75rem;
+}
+
 .textarea {
   width: 100%;
   padding: 8px 10px;

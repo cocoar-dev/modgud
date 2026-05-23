@@ -36,6 +36,18 @@ the 80%-coverage version first.
 
 **Status:** Design captured 2026-05-07. Not started.
 
+### [Service Account credentials — link to OAuth Clients](./service-account-credentials)
+
+How machine identities (ServiceAccount principal) authenticate against the
+IdP. Standard answer: bind a `client_credentials`-only OAuth Client 1:N
+to the SA; token-endpoint resolves `sub = SA.Id` so audit logs and the
+Group → Role → Permission chain work the same for machines and humans.
+Includes the rule that user-flow clients (`authorization_code`) and M2M
+clients are strictly separated — one OAuth Client = one auth mode.
+
+**Status:** Design captured 2026-05-23. ServiceAccount CRUD UI shipped
+(Phase 2B); credentials-linkage still open (Phase 2C).
+
 ### [Login alerts + manual IP blacklist](./login-alerts-ip-blacklist)
 
 Brute-force visibility without NAT-aussperr-Risk: detect anomalous

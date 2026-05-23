@@ -16,6 +16,8 @@ export interface AuthUser {
   IsFederated?: boolean
   /** DisplayName of the IdP the session came from (e.g. "Entra ID"). */
   IdpDisplayName?: string | null
+  /** Identity-side EmailConfirmed flag. Drives the in-app unverified-email banner. */
+  EmailConfirmed?: boolean
 }
 
 export interface LoginRequest {

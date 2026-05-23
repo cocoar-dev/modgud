@@ -35,6 +35,7 @@ interface NavItem {
 const allNavItems: NavItem[] = [
   // Authorization
   { section: 'authorization', label: 'nav.users', icon: 'users', path: '/admin/users', requirePermissions: ['user:read'] },
+  { section: 'authorization', label: 'admin.serviceAccounts.title', icon: 'cpu', path: '/admin/service-accounts', requirePermissions: ['service-account:read'] },
   { section: 'authorization', label: 'nav.roles', icon: 'shield', path: '/admin/roles', requirePermissions: ['permission-role:read'] },
   { section: 'authorization', label: 'nav.groups', icon: 'users-round', path: '/admin/groups', requirePermissions: ['authorization-group:read'] },
   // OAuth & Federation
@@ -49,7 +50,7 @@ const allNavItems: NavItem[] = [
   // System
   { section: 'system', label: 'admin.apps.title', icon: 'layout-grid', path: '/admin/apps', requirePermissions: ['app:read'] },
   { section: 'system', label: 'admin.realms.title', icon: 'globe', path: '/admin/realms', requirePermissions: ['realm:read'] },
-  { section: 'system', label: 'admin.realmSettings.title', icon: 'sliders', path: '/admin/realm-settings', requirePermissions: ['realm-settings:read'] },
+  { section: 'system', label: 'admin.realmSettings.title', icon: 'sliders-horizontal', path: '/admin/realm-settings', requirePermissions: ['realm-settings:read'] },
   { section: 'system', label: 'admin.authLog.title', icon: 'scroll-text', path: '/admin/auth-log', requirePermissions: ['auth-log:read'] },
   { section: 'system', label: 'admin.observability.title', icon: 'activity', path: '/admin/observability', requirePermissions: ['observability:read'] },
   { section: 'system', label: 'admin.changeRequests.title', icon: 'inbox', path: '/admin/change-requests', requirePermissions: ['user:write'] },
