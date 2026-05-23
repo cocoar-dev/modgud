@@ -2,6 +2,8 @@ using System.Text.RegularExpressions;
 using BuildingBlocks.EventDispatcher;
 using BuildingBlocks.Helper;
 using Cocoar.Auth.Application.DTOs.ServiceAccount;
+using Cocoar.Auth.Application.Services;
+using Cocoar.Auth.Authentication.ExtensionMethods;
 using Cocoar.Auth.Authorization.AspNetCore;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Domain.ValueObjects;
@@ -127,20 +129,98 @@ public static class ServiceAccountsEndpoints
             .WithName("V2_ServiceAccount_Update")
             .RequiresPermission("service-account:write");
 
-        group.MapDelete("{id}", async (ShortGuid id, IDocumentSession session, DataEventDispatcher dispatcher) =>
+        group.MapDelete("{id}", async (
+                ShortGuid id,
+                IDocumentSession session,
+                OAuthAdminService oauth,
+                DataEventDispatcher dispatcher,
+                CancellationToken ct) =>
             {
-                var sa = await session.LoadAsync<ServiceAccount>(id.Guid);
+                var sa = await session.LoadAsync<ServiceAccount>(id.Guid, ct);
                 if (sa is null || sa.IsDeleted) return Results.NotFound();
+
+                // Phase 2C — cascade-delete every credential owned by this SA
+                // BEFORE soft-deleting the principal itself. Doing it in
+                // reverse order would leave dangling M2M clients whose
+                // `sub` resolves to a soft-deleted Service Account at the
+                // token endpoint.
+                var deletedCredentialCount = await oauth.DeleteAllServiceAccountCredentialsAsync(id.Guid, ct);
 
                 // Soft-delete — keeps audit / role-membership references
                 // resolvable. Matches how Person soft-deletes work.
                 sa.IsDeleted = true;
                 session.Store(sa);
-                await session.SaveChangesAsync();
+                await session.SaveChangesAsync(ct);
                 dispatcher.DispatchDeletedEvent("ServiceAccount", new ShortGuid(sa.Id).ToString());
-                return Results.NoContent();
+                return Results.Ok(new { DeletedCredentialCount = deletedCredentialCount });
             })
             .WithName("V2_ServiceAccount_Delete")
+            .RequiresPermission("service-account:write");
+
+        // ── SA-scoped credentials (Phase 2C) ──────────────────────────────────
+        //
+        // A "credential" on a Service Account is a confidential OAuth client
+        // pinned to the SA with the single client_credentials grant. The
+        // endpoints below are the ONLY mutation path — /admin/oauth/clients
+        // rejects mutations on SA-managed clients.
+
+        var credentials = group.MapGroup("{id}/credentials").WithTags("Service Account Credentials");
+
+        credentials.MapGet("", async (ShortGuid id, OAuthAdminService svc, CancellationToken ct) =>
+            {
+                var list = await svc.ListServiceAccountCredentialsAsync(id.Guid, ct);
+                return Results.Ok(list);
+            })
+            .WithName("V2_ServiceAccount_Credentials_List")
+            .RequiresPermission("service-account:read");
+
+        credentials.MapPost("", async (
+                ShortGuid id,
+                IssueServiceAccountCredentialDto dto,
+                OAuthAdminService svc,
+                CancellationToken ct) =>
+            {
+                var result = await svc.IssueServiceAccountCredentialAsync(id.Guid, dto, ct);
+                return result.ToResult(issued => Results.Ok(issued));
+            })
+            .WithName("V2_ServiceAccount_Credentials_Issue")
+            .RequiresPermission("service-account:write");
+
+        credentials.MapPut("{credId}", async (
+                ShortGuid id,
+                string credId,
+                UpdateServiceAccountCredentialDto dto,
+                OAuthAdminService svc,
+                CancellationToken ct) =>
+            {
+                var result = await svc.UpdateServiceAccountCredentialAsync(id.Guid, credId, dto, ct);
+                return result.ToResult(updated => Results.Ok(updated));
+            })
+            .WithName("V2_ServiceAccount_Credentials_Update")
+            .RequiresPermission("service-account:write");
+
+        credentials.MapPost("{credId}/rotate", async (
+                ShortGuid id,
+                string credId,
+                OAuthAdminService svc,
+                CancellationToken ct) =>
+            {
+                var result = await svc.RotateServiceAccountCredentialAsync(id.Guid, credId, ct);
+                return result.ToResult(secret => Results.Ok(secret));
+            })
+            .WithName("V2_ServiceAccount_Credentials_Rotate")
+            .RequiresPermission("service-account:write");
+
+        credentials.MapDelete("{credId}", async (
+                ShortGuid id,
+                string credId,
+                OAuthAdminService svc,
+                CancellationToken ct) =>
+            {
+                var result = await svc.DeleteServiceAccountCredentialAsync(id.Guid, credId, ct);
+                return result.IsError ? result.ToResult() : Results.NoContent();
+            })
+            .WithName("V2_ServiceAccount_Credentials_Delete")
             .RequiresPermission("service-account:write");
 
         return application;

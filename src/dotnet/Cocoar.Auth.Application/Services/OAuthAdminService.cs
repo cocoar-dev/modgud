@@ -3,6 +3,7 @@ using System.Text.Json;
 using BuildingBlocks.Helper;
 using Cocoar.Auth.Application.Dcr;
 using Cocoar.Auth.Application.DTOs.OAuth;
+using Cocoar.Auth.Application.DTOs.ServiceAccount;
 using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Principals;
@@ -359,6 +360,23 @@ public class OAuthAdminService
         if (aggregate is null || aggregate.IsDeleted)
             return OAuthErrors.ClientNotFound(id);
 
+        // Phase 2C — SA-managed clients can only be deleted via the SA-scoped
+        // endpoints (or as part of cascade on SA delete). Symmetric with the
+        // PUT guard in UpdateClientAsync.
+        if (aggregate.LinkedServiceAccountId.HasValue)
+            return OAuthErrors.CannotMutateServiceAccountManagedClient(aggregate.ClientId);
+
+        return await DeleteClientInternalAsync(guid, aggregate, ct);
+    }
+
+    /// <summary>
+    /// Guard-free deletion path. Used by the public API after the SA-link
+    /// guard cleared and by the SA-scoped cascade on Service-Account delete.
+    /// Caller must SaveChangesAsync.
+    /// </summary>
+    private async Task<ErrorOr<bool>> DeleteClientInternalAsync(
+        Guid guid, OAuthApplicationAggregate aggregate, CancellationToken ct)
+    {
         _session.Events.Append(guid, aggregate.Delete());
         // Hard-delete the secrets document — projection rebuild safety doesn't
         // apply to security data (we never replay secrets).
@@ -381,6 +399,17 @@ public class OAuthAdminService
         if (state.ClientType != OAuthClientTypes.Confidential)
             return OAuthErrors.CannotRegenerateSecretForPublicClient;
 
+        // Phase 2C — SA-managed clients rotate via the SA-scoped /rotate
+        // endpoint, not the generic admin path.
+        if (state.LinkedServiceAccountId.HasValue)
+            return OAuthErrors.CannotMutateServiceAccountManagedClient(state.ClientId);
+
+        return await RegenerateClientSecretInternalAsync(guid, ct);
+    }
+
+    private async Task<ClientSecretDto> RegenerateClientSecretInternalAsync(
+        Guid guid, CancellationToken ct)
+    {
         var newSecret = GenerateSecret();
         var sec = await _session.LoadAsync<OAuthApplicationSecurityData>(guid, ct)
                   ?? OAuthApplicationSecurityData.Create(guid);
@@ -390,6 +419,221 @@ public class OAuthAdminService
 
         await _session.SaveChangesAsync(ct);
         return new ClientSecretDto { ClientSecret = newSecret };
+    }
+
+    // ───────────────────────────────────────────── SA credentials ─────────────
+    //
+    // A "Service-Account credential" is a confidential OAuth client with
+    // <see cref="OAuthApplicationState.LinkedServiceAccountId"/> set. The
+    // SA-scoped endpoints below are the SINGLE source of mutations for these
+    // clients — the standard /admin/oauth/clients endpoints reject them via
+    // the SA-link guard. The DisplayName / Scopes / AppIds / lifetime /
+    // enabled surface is intentionally narrower than the generic OAuth client
+    // edit form: grant-types, client-type, secret-required, redirect URIs are
+    // all system-pinned (client_credentials + confidential + always-secret +
+    // no-redirect) so the SA admin can't accidentally produce a malformed
+    // M2M client.
+
+    public async Task<List<OAuthClientDto>> ListServiceAccountCredentialsAsync(
+        Guid serviceAccountId, CancellationToken ct = default)
+    {
+        var rows = await _session.Query<OAuthApplicationState>()
+            .Where(x => !x.IsDeleted && x.LinkedServiceAccountId == serviceAccountId)
+            .OrderBy(x => x.ClientId)
+            .ToListAsync(ct);
+        return rows.Select(MapClient).ToList();
+    }
+
+    public async Task<ErrorOr<ServiceAccountCredentialIssuedDto>> IssueServiceAccountCredentialAsync(
+        Guid serviceAccountId,
+        IssueServiceAccountCredentialDto dto,
+        CancellationToken ct = default)
+    {
+        var sa = await _session.LoadAsync<Cocoar.Auth.Authorization.Principals.ServiceAccount>(serviceAccountId, ct);
+        if (sa is null || sa.IsDeleted)
+            return OAuthErrors.ServiceAccountNotFound(new ShortGuid(serviceAccountId).ToString());
+
+        var clientId = (dto.ClientId ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(clientId))
+        {
+            // {accountName}.{8-char suffix}. ShortGuid trims to 22 chars; we
+            // slice 8 to keep the visible client_id short enough for log
+            // grep, while still providing enough entropy to avoid collisions
+            // between credentials of the same SA. Loops on collision (the
+            // CreateClientAsync uniqueness check would reject otherwise).
+            for (var attempt = 0; attempt < 8; attempt++)
+            {
+                var suffix = new ShortGuid(Guid.NewGuid()).ToString()[..8];
+                var candidate = $"{sa.AccountName}.{suffix}";
+                var clash = await _session.Query<OAuthApplicationState>()
+                    .AnyAsync(x => !x.IsDeleted && x.ClientId == candidate, ct);
+                if (!clash) { clientId = candidate; break; }
+            }
+            if (string.IsNullOrEmpty(clientId))
+                return Error.Conflict("OAuth.ClientIdAutoGenerationFailed",
+                    "Could not generate a unique client_id for the new credential after 8 attempts.");
+        }
+
+        var createDto = new CreateOAuthClientDto
+        {
+            ClientId = clientId,
+            DisplayName = string.IsNullOrWhiteSpace(dto.DisplayName) ? sa.AccountName : dto.DisplayName,
+            ClientType = OAuthClientTypes.Confidential,
+            ConsentType = OAuthConsentTypes.Implicit,
+            AllowedGrantTypes = [OAuthAdminMapping.ClientCredentialsGrantType],
+            Scopes = dto.Scopes,
+            RequireClientSecret = true,
+            RequireConsent = false,
+            Enabled = true,
+            AccessTokenType = AccessTokenType.Jwt,
+            AccessTokenLifetime = dto.AccessTokenLifetime,
+            AppIds = dto.AppIds,
+            LinkedServiceAccountId = new ShortGuid(serviceAccountId).ToString(),
+        };
+
+        var result = await CreateClientAsync(createDto, ct);
+        if (result.IsError) return result.Errors;
+        return new ServiceAccountCredentialIssuedDto
+        {
+            Credential = result.Value.Client,
+            ClientSecret = result.Value.ClientSecret!,
+        };
+    }
+
+    public async Task<ErrorOr<OAuthClientDto>> UpdateServiceAccountCredentialAsync(
+        Guid serviceAccountId,
+        string credentialId,
+        UpdateServiceAccountCredentialDto dto,
+        CancellationToken ct = default)
+    {
+        if (!Guid.TryParse(credentialId, out var guid))
+            return OAuthErrors.ClientNotFound(credentialId);
+
+        var aggregate = await _session.Events.AggregateStreamAsync<OAuthApplicationAggregate>(guid, token: ct);
+        if (aggregate is null || aggregate.IsDeleted)
+            return OAuthErrors.ClientNotFound(credentialId);
+
+        // Tenant-style ownership check: the credential MUST belong to the SA
+        // named in the route, not just any SA. Prevents a request that
+        // squeezes through /api/service-account/{otherSaId}/credentials/{credId}
+        // from editing credentials it shouldn't see.
+        if (aggregate.LinkedServiceAccountId != serviceAccountId)
+            return OAuthErrors.ClientNotFound(credentialId);
+
+        if (dto.DisplayName is not null && dto.DisplayName != aggregate.DisplayName)
+            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName));
+
+        if (dto.Scopes is not null)
+        {
+            var grants = ExtractGrantTypes(aggregate.Permissions);
+            var newPermissions = BuildClientPermissions(grants, dto.Scopes, aggregate.ClientType ?? OAuthClientTypes.Confidential);
+            if (!newPermissions.SequenceEqual(aggregate.Permissions))
+                _session.Events.Append(guid, aggregate.SetPermissions(newPermissions));
+        }
+
+        if (dto.AppIds is not null)
+        {
+            var distinct = dto.AppIds.Where(s => !string.IsNullOrEmpty(s)).Distinct(StringComparer.Ordinal).ToList();
+            var parsed = new List<Guid>();
+            foreach (var raw in distinct)
+            {
+                if (!ShortGuid.TryParse(raw, out Guid parsedId))
+                    return Error.Validation("OAuthClient.InvalidAppId", $"AppId '{raw}' is not a valid Guid or ShortGuid.");
+                var app = await _session.LoadAsync<App>(parsedId, ct);
+                if (app is null || app.IsDeleted)
+                    return Error.Validation("OAuthClient.AppNotFound", $"App {raw} not found.");
+                parsed.Add(parsedId);
+            }
+            var current = aggregate.AppIds.ToHashSet();
+            var next = parsed.ToHashSet();
+            if (!current.SetEquals(next))
+                _session.Events.Append(guid, aggregate.SetAppIds(parsed));
+        }
+
+        if (dto.AccessTokenLifetime.HasValue)
+        {
+            var settings = new Dictionary<string, string>(aggregate.Settings)
+            {
+                [OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString(),
+            };
+            if (!DictEquals(settings, aggregate.Settings))
+                _session.Events.Append(guid, aggregate.SetSettings(settings));
+        }
+
+        if (dto.Enabled.HasValue)
+        {
+            var current = GetBoolProp(aggregate.Properties, OAuthApplicationPropertyKeys.Enabled, true);
+            if (current != dto.Enabled.Value)
+            {
+                var newProps = new Dictionary<string, object?>(aggregate.Properties)
+                {
+                    [OAuthApplicationPropertyKeys.Enabled] = JsonSerializer.SerializeToElement(dto.Enabled.Value),
+                };
+                _session.Events.Append(guid, aggregate.SetProperties(newProps));
+            }
+        }
+
+        await _session.SaveChangesAsync(ct);
+        var state = await _session.LoadAsync<OAuthApplicationState>(guid, ct);
+        return MapClient(state!);
+    }
+
+    public async Task<ErrorOr<ClientSecretDto>> RotateServiceAccountCredentialAsync(
+        Guid serviceAccountId, string credentialId, CancellationToken ct = default)
+    {
+        if (!Guid.TryParse(credentialId, out var guid))
+            return OAuthErrors.ClientNotFound(credentialId);
+
+        var state = await _session.LoadAsync<OAuthApplicationState>(guid, ct);
+        if (state is null || state.IsDeleted)
+            return OAuthErrors.ClientNotFound(credentialId);
+        if (state.LinkedServiceAccountId != serviceAccountId)
+            return OAuthErrors.ClientNotFound(credentialId);
+
+        return await RegenerateClientSecretInternalAsync(guid, ct);
+    }
+
+    public async Task<ErrorOr<bool>> DeleteServiceAccountCredentialAsync(
+        Guid serviceAccountId, string credentialId, CancellationToken ct = default)
+    {
+        if (!Guid.TryParse(credentialId, out var guid))
+            return OAuthErrors.ClientNotFound(credentialId);
+
+        var aggregate = await _session.Events.AggregateStreamAsync<OAuthApplicationAggregate>(guid, token: ct);
+        if (aggregate is null || aggregate.IsDeleted)
+            return OAuthErrors.ClientNotFound(credentialId);
+        if (aggregate.LinkedServiceAccountId != serviceAccountId)
+            return OAuthErrors.ClientNotFound(credentialId);
+
+        return await DeleteClientInternalAsync(guid, aggregate, ct);
+    }
+
+    /// <summary>
+    /// Cascade-delete every credential owned by a Service Account. Called from
+    /// the SA delete handler so an admin removing a Service Account can't
+    /// leave dangling M2M clients that would resolve <c>sub</c> to a
+    /// soft-deleted principal at the token endpoint. Returns the number of
+    /// credentials that were deleted; the caller surfaces that to the SPA
+    /// for the confirmation toast.
+    /// </summary>
+    public async Task<int> DeleteAllServiceAccountCredentialsAsync(
+        Guid serviceAccountId, CancellationToken ct = default)
+    {
+        var states = await _session.Query<OAuthApplicationState>()
+            .Where(x => !x.IsDeleted && x.LinkedServiceAccountId == serviceAccountId)
+            .ToListAsync(ct);
+        if (states.Count == 0) return 0;
+
+        foreach (var state in states)
+        {
+            var aggregate = await _session.Events
+                .AggregateStreamAsync<OAuthApplicationAggregate>(state.Id, token: ct);
+            if (aggregate is null || aggregate.IsDeleted) continue;
+            _session.Events.Append(state.Id, aggregate.Delete());
+            _session.Delete<OAuthApplicationSecurityData>(state.Id);
+        }
+        await _session.SaveChangesAsync(ct);
+        return states.Count;
     }
 
     // ───────────────────────────────────────────── Scopes ──────────────────────
