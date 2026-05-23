@@ -6,6 +6,8 @@ using Cocoar.Auth.Authorization.Apps;
 using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Authorization.Projections;
 using Cocoar.Auth.Authorization.Services;
+using Cocoar.Auth.Domain.OAuth.Applications;
+using Cocoar.Auth.Domain.OAuth.Common;
 using Cocoar.Auth.Domain.Realms;
 using Cocoar.Auth.Permissions;
 using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
@@ -64,6 +66,7 @@ public static class RecoveryCli
             "magic-link" => await MagicLinkAsync(session, scope.ServiceProvider, args, conf, env),
             "rebuild-projections" => await RebuildProjectionsAsync(scope.ServiceProvider),
             "bootstrap-admin" => await BootstrapAdminAsync(scope.ServiceProvider, args, realmSlug),
+            "migrate-cc-credentials" => await MigrateClientCredentialsAsync(scope.ServiceProvider, args, realmSlug),
             "realm-add-domain" => await RealmAddDomainAsync(scope.ServiceProvider, args),
             "realm-remove-domain" => await RealmRemoveDomainAsync(scope.ServiceProvider, args),
             "realm-list" => await RealmListAsync(scope.ServiceProvider),
@@ -89,6 +92,16 @@ public static class RecoveryCli
               rebuild-projections            Rebuild all Marten projections (inline + async).
                                              Bootstrap path for the first migration after
                                              a schema change when no admin can authenticate yet.
+              migrate-cc-credentials         Phase-2C retrofit: for every OAuth client that
+                                             still has the `client_credentials` grant without
+                                             a LinkedServiceAccountId (i.e. seeded or pre-2C
+                                             clients), auto-provision a SA named
+                                             `legacy.{clientId}` and backfill the link so
+                                             the standard SA-managed mutation guard kicks
+                                             in. Idempotent — already-linked clients are
+                                             skipped; existing legacy.* SAs are re-used.
+                                             Optional --realm flag scopes to one tenant
+                                             (defaults to "system").
               bootstrap-admin                Create the first admin in a realm. Two modes:
                   --email <email>            Email — required in both modes.
                   [--username <username>]    Username — defaults to the local-part of the email.
@@ -502,6 +515,142 @@ public static class RecoveryCli
     // requires building an UpdateRealmDto with the full new Domains list
     // (CLI gets to be additive) and (b) the recovery CLI's job is to
     // unstick a deployment, not to honour every endpoint guard.
+
+    // ── migrate-cc-credentials ──────────────────────────────────────────
+    //
+    // Phase-2C retrofit. Pre-2C dev seeds + any legacy production data may
+    // still hold `client_credentials`-grant OAuth clients without a
+    // LinkedServiceAccountId — that combination violates the SA-link
+    // invariant (R1) introduced in Step 2 and won't survive any standard
+    // PUT/DELETE/regenerate-secret path (the standard endpoints all reject
+    // SA-managed-or-not-yet-linked cc clients via the invariant). The
+    // migration walks every such client and:
+    //
+    //   1. Picks (or re-uses) a ServiceAccount named `legacy.{clientId}`.
+    //      The pattern keeps the audit trail self-documenting — every SA
+    //      coming from migration has a name that points back at the
+    //      original client_id.
+    //   2. Emits OAuthApplicationServiceAccountLinkChanged on the client's
+    //      event stream so the projection picks up the new link and the
+    //      token endpoint resolves sub = SA.Id from the next request on.
+    //
+    // Idempotent: clients that are already linked are skipped; if a
+    // `legacy.{clientId}` SA already exists from a previous run, it's
+    // re-used (looked up by name).
+
+    private static async Task<int> MigrateClientCredentialsAsync(
+        IServiceProvider scopedServices, string[] args, string realmSlug)
+    {
+        _ = args; // no flags beyond the global --realm parsed in RunAsync
+        var session = scopedServices.GetRequiredService<IDocumentSession>();
+
+        // Find every cc-grant OAuth client without a SA link in this tenant.
+        // The grant lives encoded in Permissions as "gt:client_credentials"
+        // (see OAuthPermissions.GrantTypes.ClientCredentials); avoid string-
+        // matching it by querying via the constant.
+        var unlinked = await session.Query<OAuthApplicationState>()
+            .Where(x => !x.IsDeleted
+                     && x.LinkedServiceAccountId == null
+                     && x.Permissions.Contains(OAuthPermissions.GrantTypes.ClientCredentials))
+            .ToListAsync();
+
+        if (unlinked.Count == 0)
+        {
+            Console.WriteLine($"✓ No client_credentials clients need migration in realm '{realmSlug}'.");
+            return 0;
+        }
+
+        Console.WriteLine($"Found {unlinked.Count} unlinked client_credentials client(s) in realm '{realmSlug}'.");
+
+        var migrated = 0;
+        var saReused = 0;
+        var saCreated = 0;
+
+        foreach (var client in unlinked)
+        {
+            // Normalize the SA name: `legacy.{clientId}` lowercased. ClientIds
+            // come in many shapes (dots, hyphens, underscores) so we sanitize
+            // anything outside the AccountName charset down to a hyphen.
+            var sanitized = SanitizeForAccountName(client.ClientId);
+            var saName = $"legacy.{sanitized}";
+
+            // Re-use an existing legacy.* SA if one is already there from a
+            // prior run. Polymorphic Marten query — works because
+            // ServiceAccount is registered as a Principal subclass.
+            var existingSa = await session.Query<ServiceAccount>()
+                .FirstOrDefaultAsync(s => !s.IsDeleted && s.AccountName == saName);
+
+            ServiceAccount sa;
+            if (existingSa is not null)
+            {
+                sa = existingSa;
+                saReused++;
+            }
+            else
+            {
+                sa = new ServiceAccount
+                {
+                    Id = Guid.NewGuid(),
+                    AccountName = saName,
+                    Purpose = $"Auto-provisioned by migrate-cc-credentials for OAuth client '{client.ClientId}'.",
+                    IsActive = true,
+                };
+                session.Store(sa);
+                saCreated++;
+            }
+
+            // Emit the link event on the client's stream so the projection
+            // picks up LinkedServiceAccountId. We pass through the aggregate
+            // for symmetry with the rest of the codebase — the aggregate's
+            // SetLinkedServiceAccountId both produces the event and updates
+            // its own state so the next read is consistent.
+            var aggregate = await session.Events
+                .AggregateStreamAsync<OAuthApplicationAggregate>(client.Id);
+            if (aggregate is null || aggregate.IsDeleted)
+            {
+                // Soft-deleted in the meantime — skip; the cleanup is the
+                // operator's job, the migration just unsticks the linkable.
+                continue;
+            }
+
+            session.Events.Append(client.Id, aggregate.SetLinkedServiceAccountId(sa.Id));
+            migrated++;
+
+            Console.WriteLine($"  → {client.ClientId}  →  SA '{saName}'");
+        }
+
+        await session.SaveChangesAsync();
+
+        Serilog.Log.Warning(
+            "Auth: Recovery migrate-cc-credentials completed. Realm={Realm} Migrated={Migrated} SaCreated={SaCreated} SaReused={SaReused}",
+            realmSlug, migrated, saCreated, saReused);
+
+        Console.WriteLine();
+        Console.WriteLine($"✓ Done. Migrated={migrated}  ServiceAccounts created={saCreated}  re-used={saReused}");
+        return 0;
+    }
+
+    /// <summary>
+    /// Coerce an OAuth client_id into the SA AccountName charset
+    /// (<c>^[a-z0-9][a-z0-9._-]{1,63}$</c>). Lowercase + replace anything
+    /// outside the allowed set with a hyphen. Truncates to 56 chars so the
+    /// resulting <c>legacy.{...}</c> still fits the 64-char total budget.
+    /// </summary>
+    private static string SanitizeForAccountName(string clientId)
+    {
+        var sb = new StringBuilder(clientId.Length);
+        foreach (var ch in clientId.ToLowerInvariant())
+        {
+            sb.Append(ch is >= 'a' and <= 'z'
+                       or >= '0' and <= '9'
+                       or '.' or '-' or '_'
+                ? ch : '-');
+        }
+        var s = sb.ToString().Trim('-', '.', '_');
+        if (s.Length == 0) s = "client";
+        if (s.Length > 56) s = s[..56];
+        return s;
+    }
 
     private static async Task<int> RealmListAsync(IServiceProvider services)
     {

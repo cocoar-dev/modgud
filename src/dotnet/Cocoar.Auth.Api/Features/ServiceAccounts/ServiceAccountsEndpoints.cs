@@ -140,16 +140,23 @@ public static class ServiceAccountsEndpoints
                 if (sa is null || sa.IsDeleted) return Results.NotFound();
 
                 // Phase 2C — cascade-delete every credential owned by this SA
-                // BEFORE soft-deleting the principal itself. Doing it in
-                // reverse order would leave dangling M2M clients whose
-                // `sub` resolves to a soft-deleted Service Account at the
-                // token endpoint.
-                var deletedCredentialCount = await oauth.DeleteAllServiceAccountCredentialsAsync(id.Guid, ct);
+                // PLUS soft-delete the SA itself in one unit of work. The SA
+                // delete is queued via the strongly-typed Delete<T> overload
+                // (Marten translates this into a soft-delete on the polymorphic
+                // mt_doc_principal table without triggering an optimistic
+                // concurrency check against the in-memory ServiceAccount
+                // instance we loaded above — which Store(sa) would have).
+                var deletedCredentialCount = await oauth
+                    .StageDeleteAllServiceAccountCredentialsAsync(id.Guid, ct);
 
-                // Soft-delete — keeps audit / role-membership references
-                // resolvable. Matches how Person soft-deletes work.
+                // We want soft-delete semantics (IsDeleted=true) so audit /
+                // group-membership references stay resolvable. Mutate the
+                // loaded instance + Update — Marten's Update path skips the
+                // Store identity-map concurrency dance that Store + Append
+                // mix-mode runs into. (See Marten 8 polymorphic-store +
+                // events.Append in one session.)
                 sa.IsDeleted = true;
-                session.Store(sa);
+                session.Update(sa);
                 await session.SaveChangesAsync(ct);
                 dispatcher.DispatchDeletedEvent("ServiceAccount", new ShortGuid(sa.Id).ToString());
                 return Results.Ok(new { DeletedCredentialCount = deletedCredentialCount });

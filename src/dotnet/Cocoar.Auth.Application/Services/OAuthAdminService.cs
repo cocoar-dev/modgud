@@ -609,14 +609,17 @@ public class OAuthAdminService
     }
 
     /// <summary>
-    /// Cascade-delete every credential owned by a Service Account. Called from
-    /// the SA delete handler so an admin removing a Service Account can't
-    /// leave dangling M2M clients that would resolve <c>sub</c> to a
-    /// soft-deleted principal at the token endpoint. Returns the number of
-    /// credentials that were deleted; the caller surfaces that to the SPA
-    /// for the confirmation toast.
+    /// Stage cascade-deletion of every credential owned by a Service Account.
+    /// Queues delete events + secret-doc removals on the active session but
+    /// does NOT call SaveChangesAsync — the caller commits the whole unit of
+    /// work (cascade + SA soft-delete) together so Marten's optimistic
+    /// concurrency check doesn't reject the second mutation against a
+    /// version it already advanced internally.
+    /// <para>
+    /// Returns the credential count for the response toast.
+    /// </para>
     /// </summary>
-    public async Task<int> DeleteAllServiceAccountCredentialsAsync(
+    public async Task<int> StageDeleteAllServiceAccountCredentialsAsync(
         Guid serviceAccountId, CancellationToken ct = default)
     {
         var states = await _session.Query<OAuthApplicationState>()
@@ -632,7 +635,6 @@ public class OAuthAdminService
             _session.Events.Append(state.Id, aggregate.Delete());
             _session.Delete<OAuthApplicationSecurityData>(state.Id);
         }
-        await _session.SaveChangesAsync(ct);
         return states.Count;
     }
 
