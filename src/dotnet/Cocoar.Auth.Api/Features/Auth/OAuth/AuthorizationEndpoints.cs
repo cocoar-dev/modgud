@@ -223,6 +223,7 @@ public static class AuthorizationEndpoints
         IOpenIddictScopeManager scopeManager,
         SignInManager<ApplicationUser> signInManager,
         UserManager<ApplicationUser> userManager,
+        IPermissionService permissionService,
         IDocumentSession session)
     {
         var request = httpContext.GetOpenIddictServerRequest()
@@ -307,22 +308,72 @@ public static class AuthorizationEndpoints
             var application = await applicationManager.FindByClientIdAsync(request.ClientId!)
                 ?? throw new InvalidOperationException("The application cannot be found.");
 
+            var clientId = await applicationManager.GetClientIdAsync(application);
+
+            // Phase 2C — resolve the linked Service Account if any. The link
+            // lives on OAuthApplicationState; the OpenIddict manager doesn't
+            // surface it, so go through the projection directly.
+            var appState = await session.Query<OAuthApplicationState>()
+                .FirstOrDefaultAsync(x => x.ClientId == clientId && !x.IsDeleted);
+
+            string subjectClaim;
+            string? nameClaim;
+            Guid? principalId = null;
+
+            if (appState?.LinkedServiceAccountId is Guid saId)
+            {
+                var sa = await session.LoadAsync<ServiceAccount>(saId);
+                if (sa is null || sa.IsDeleted || !sa.IsActive)
+                    return ForbidInvalidGrant("The Service Account linked to this client is no longer active.");
+                subjectClaim = sa.Id.ToString();
+                nameClaim = sa.AccountName;
+                principalId = sa.Id;
+            }
+            else
+            {
+                // Legacy fallback: an unlinked client_credentials client (only
+                // seeded data or pre-Phase-2C clients before the Step 8
+                // migration ran). Behaves like the legacy IdP — sub = client_id —
+                // so existing M2M consumers keep working until they get
+                // migrated to a Service Account.
+                subjectClaim = clientId!;
+                nameClaim = await applicationManager.GetDisplayNameAsync(application);
+            }
+
             var identity = new ClaimsIdentity(
                 authenticationType: TokenValidationParameters.DefaultAuthenticationType,
                 nameType: Claims.Name,
                 roleType: Claims.Role);
 
-            identity.SetClaim(Claims.Subject, await applicationManager.GetClientIdAsync(application));
-            identity.SetClaim(Claims.Name, await applicationManager.GetDisplayNameAsync(application));
+            identity.SetClaim(Claims.Subject, subjectClaim);
+            identity.SetClaim(Claims.Name, nameClaim);
             identity.SetScopes(request.GetScopes());
 
             var clientResources = await scopeManager.ListResourcesAsync(identity.GetScopes()).ToListAsync();
-            var clientId = await applicationManager.GetClientIdAsync(application);
             if (!string.IsNullOrEmpty(clientId) && !clientResources.Contains(clientId))
             {
                 clientResources.Add(clientId);
             }
             identity.SetResources(clientResources);
+
+            // Phase 2C — per-audience resource_access emission on the access
+            // token itself. The cc-flow has no UserInfo round-trip in practice
+            // (no openid scope), so embedding the block in the JWT is the
+            // only way the resource server sees the SA's permissions / roles
+            // for the requested audiences. Mirrors the UserInfo behaviour
+            // for human tokens.
+            if (principalId is Guid pid)
+            {
+                var wantsRoles = identity.GetScopes().Contains(Scopes.Roles);
+                var wantsPermissions = identity.GetScopes().Contains("permissions");
+                var resourceAccess = await BuildResourceAccessAsync(
+                    pid, clientResources, wantsRoles, wantsPermissions, session, permissionService);
+                if (resourceAccess is not null)
+                {
+                    identity.SetClaim("resource_access",
+                        System.Text.Json.JsonSerializer.SerializeToElement(resourceAccess));
+                }
+            }
 
             identity.SetDestinations(static claim => claim.Type switch
             {
@@ -382,6 +433,37 @@ public static class AuthorizationEndpoints
         var user = await userManager.FindByIdAsync(subject);
         if (user is null)
         {
+            // Phase 2C — Service-Account-issued tokens carry the SA's Guid as
+            // sub, not an ApplicationUser id. Detect and serve a
+            // machine-flavoured response: just sub + name + resource_access,
+            // no email/profile claims. UserInfo for M2M is unusual (clients
+            // typically don't include the openid scope) but if the request
+            // does reach here the SA path is the right answer.
+            if (Guid.TryParse(subject, out var saGuid))
+            {
+                var sa = await session.LoadAsync<ServiceAccount>(saGuid);
+                if (sa is not null && !sa.IsDeleted && sa.IsActive)
+                {
+                    var saClaims = new Dictionary<string, object>(StringComparer.Ordinal)
+                    {
+                        [Claims.Subject] = sa.Id.ToString(),
+                    };
+                    if (httpContext.User.HasScope(Scopes.Profile))
+                        saClaims[Claims.Name] = sa.AccountName;
+
+                    var saResourceAccess = await BuildResourceAccessAsync(
+                        sa.Id,
+                        httpContext.User.GetAudiences().ToList(),
+                        httpContext.User.HasScope(Scopes.Roles),
+                        httpContext.User.HasScope("permissions"),
+                        session, permissionService);
+                    if (saResourceAccess is not null)
+                        saClaims["resource_access"] = saResourceAccess;
+
+                    return Results.Ok(saClaims);
+                }
+            }
+
             return Results.Challenge(
                 new AuthenticationProperties(new Dictionary<string, string?>
                 {
@@ -450,55 +532,68 @@ public static class AuthorizationEndpoints
         // IdP-internal per permission-model, no `groups` scope.
         var wantsRoles = httpContext.User.HasScope(Scopes.Roles);
         var wantsPermissions = httpContext.User.HasScope("permissions");
+        var audiences = httpContext.User.GetAudiences().ToList();
 
-        if (wantsRoles || wantsPermissions)
-        {
-            var audiences = httpContext.User.GetAudiences().ToList();
-            if (audiences.Count > 0)
-            {
-                var resourceAccess = new Dictionary<string, object>(StringComparer.Ordinal);
-
-                foreach (var audience in audiences)
-                {
-                    var api = await session.Query<OAuthApiState>()
-                        .FirstOrDefaultAsync(a => a.Name == audience && !a.IsDeleted);
-                    if (api?.AppId is not Guid appId) continue;
-
-                    var app = await session.LoadAsync<App>(appId);
-                    if (app is null || app.IsDeleted) continue;
-
-                    // Only fetch what we'll actually emit — saves a DB hit
-                    // when the client opted in to only one of the two arrays.
-                    var block = new Dictionary<string, object>(StringComparer.Ordinal);
-
-                    if (wantsPermissions)
-                    {
-                        var rawPermissions = await permissionService.GetUserPermissionsAsync(user.Id, app.Slug);
-                        var expandedPermissions = ExpandBypassTiers(rawPermissions, app);
-                        var apiPermissions = NarrowToApiSubset(expandedPermissions, api, app);
-                        block["permissions"] = apiPermissions;
-                    }
-
-                    if (wantsRoles)
-                    {
-                        var rolesForApp = await permissionService.GetUserRolesAsync(user.Id, app.Slug);
-                        block["roles"] = rolesForApp.Select(r => r.Name).ToArray();
-                    }
-
-                    // If neither scope is requested for an audience that
-                    // resolved to an RS, we'd emit an empty block — skip
-                    // those. (Can happen with HasScope() flag-only
-                    // combinations, e.g. partial scope grants by consent.)
-                    if (block.Count > 0)
-                        resourceAccess[audience] = block;
-                }
-
-                if (resourceAccess.Count > 0)
-                    claims["resource_access"] = resourceAccess;
-            }
-        }
+        var resourceAccess = await BuildResourceAccessAsync(
+            user.Id, audiences, wantsRoles, wantsPermissions, session, permissionService);
+        if (resourceAccess is not null)
+            claims["resource_access"] = resourceAccess;
 
         return Results.Ok(claims);
+    }
+
+    /// <summary>
+    /// Per-Audience <c>resource_access</c> emission shared between the
+    /// UserInfo endpoint (human tokens) and the token endpoint's
+    /// <c>client_credentials</c> branch (Service-Account-managed tokens).
+    /// Both consume <see cref="IPermissionService"/> which is principal-id
+    /// agnostic, so the same code path produces correct blocks for either.
+    ///
+    /// <para>Returns <c>null</c> when no audiences resolved to a registered
+    /// <see cref="OAuthApiState"/>; the caller suppresses the
+    /// <c>resource_access</c> key in that case (no empty object).</para>
+    /// </summary>
+    private static async Task<Dictionary<string, object>?> BuildResourceAccessAsync(
+        Guid principalId,
+        IEnumerable<string> audiences,
+        bool wantsRoles,
+        bool wantsPermissions,
+        IDocumentSession session,
+        IPermissionService permissionService)
+    {
+        if (!wantsRoles && !wantsPermissions) return null;
+
+        var resourceAccess = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (var audience in audiences)
+        {
+            var api = await session.Query<OAuthApiState>()
+                .FirstOrDefaultAsync(a => a.Name == audience && !a.IsDeleted);
+            if (api?.AppId is not Guid appId) continue;
+
+            var app = await session.LoadAsync<App>(appId);
+            if (app is null || app.IsDeleted) continue;
+
+            var block = new Dictionary<string, object>(StringComparer.Ordinal);
+
+            if (wantsPermissions)
+            {
+                var rawPermissions = await permissionService.GetUserPermissionsAsync(principalId, app.Slug);
+                var expandedPermissions = ExpandBypassTiers(rawPermissions, app);
+                var apiPermissions = NarrowToApiSubset(expandedPermissions, api, app);
+                block["permissions"] = apiPermissions;
+            }
+
+            if (wantsRoles)
+            {
+                var rolesForApp = await permissionService.GetUserRolesAsync(principalId, app.Slug);
+                block["roles"] = rolesForApp.Select(r => r.Name).ToArray();
+            }
+
+            if (block.Count > 0)
+                resourceAccess[audience] = block;
+        }
+
+        return resourceAccess.Count == 0 ? null : resourceAccess;
     }
 
     /// <summary>
