@@ -337,6 +337,9 @@ internal static class OAuthAdminMapping
             DcrRegisteredAt = GetDateTimeOffsetProp(props, OAuthApplicationPropertyKeys.DcrRegisteredAt),
             DcrRegisteredFromIp = GetStringProp(props, OAuthApplicationPropertyKeys.DcrRegisteredFromIp),
             DcrLastUsedAt = GetDateTimeOffsetProp(props, OAuthApplicationPropertyKeys.DcrLastUsedAt),
+            LinkedServiceAccountId = s.LinkedServiceAccountId is null
+                ? null
+                : new ShortGuid(s.LinkedServiceAccountId.Value).ToString(),
         };
     }
 

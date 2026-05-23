@@ -53,5 +53,8 @@ public class OAuthApplicationStateProjection : SingleStreamProjection<OAuthAppli
     public void Apply(OAuthApplicationAppIdsChanged e, OAuthApplicationState s)
         => s.AppIds = [.. e.AppIds];
 
+    public void Apply(OAuthApplicationServiceAccountLinkChanged e, OAuthApplicationState s)
+        => s.LinkedServiceAccountId = e.ServiceAccountId;
+
     public void Apply(OAuthApplicationDeleted e, OAuthApplicationState s) => s.IsDeleted = true;
 }

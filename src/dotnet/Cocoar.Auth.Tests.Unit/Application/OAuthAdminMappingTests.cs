@@ -678,6 +678,30 @@ public class OAuthAdminMappingTests
             Assert.Empty(dto.Roles);
             Assert.Empty(dto.Claims);
         }
+
+        [Fact]
+        public void LinkedServiceAccountId_round_trips_as_short_guid_when_set()
+        {
+            var saId = Guid.NewGuid();
+            var s = new OAuthApplicationState
+            {
+                Id = Guid.NewGuid(),
+                ClientId = "c",
+                LinkedServiceAccountId = saId,
+            };
+
+            var dto = OAuthAdminMapping.MapClient(s);
+
+            Assert.Equal(new BuildingBlocks.Helper.ShortGuid(saId).ToString(), dto.LinkedServiceAccountId);
+        }
+
+        [Fact]
+        public void LinkedServiceAccountId_is_null_on_user_flow_clients()
+        {
+            var s = new OAuthApplicationState { Id = Guid.NewGuid(), ClientId = "c" };
+            var dto = OAuthAdminMapping.MapClient(s);
+            Assert.Null(dto.LinkedServiceAccountId);
+        }
     }
 
     public class MapScope

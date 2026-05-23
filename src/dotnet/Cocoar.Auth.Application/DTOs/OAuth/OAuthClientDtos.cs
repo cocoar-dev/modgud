@@ -69,6 +69,15 @@ public record OAuthClientDto
     /// successful token-issue for DCR clients. Drives the soft-delete
     /// sweep. Null for non-DCR clients.</summary>
     public DateTimeOffset? DcrLastUsedAt { get; init; }
+
+    /// <summary>
+    /// ShortGuid of the ServiceAccount that owns this client's credentials,
+    /// or null for user-flow clients. Drives the M2M-badge in the Admin
+    /// grid and the read-only modal that deep-links into the SA editor.
+    /// Strict separation: one OAuth client = one auth mode (linked +
+    /// <c>client_credentials</c>, or unlinked + user-flow grants).
+    /// </summary>
+    public string? LinkedServiceAccountId { get; init; }
 }
 
 public record OAuthClientClaimDto
@@ -117,6 +126,14 @@ public record CreateOAuthClientDto
     /// Apps this client belongs to (Guid strings). Empty/null = realm-wide.
     /// </summary>
     public List<string>? AppIds { get; init; }
+
+    /// <summary>
+    /// Optional ShortGuid of a ServiceAccount that should own this client.
+    /// Required when <see cref="AllowedGrantTypes"/> includes
+    /// <c>client_credentials</c>, and forbidden when any user-flow grant
+    /// is present — endpoint-level validation enforces the split.
+    /// </summary>
+    public string? LinkedServiceAccountId { get; init; }
 }
 
 public record UpdateOAuthClientDto

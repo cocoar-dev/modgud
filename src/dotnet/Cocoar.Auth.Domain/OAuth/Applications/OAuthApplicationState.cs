@@ -32,6 +32,15 @@ public class OAuthApplicationState
     /// </summary>
     public List<Guid> AppIds { get; set; } = [];
     public AccessTokenType AccessTokenType { get; set; } = AccessTokenType.Reference;
+
+    /// <summary>
+    /// Link to a ServiceAccount that owns this client's credentials. Set
+    /// on a <c>client_credentials</c>-only client to make the SA the
+    /// effective principal at the token endpoint (<c>sub = SA.Id</c>).
+    /// Null on user-flow clients (<c>authorization_code</c>, etc.) —
+    /// strict separation: one OAuth client = one auth mode.
+    /// </summary>
+    public Guid? LinkedServiceAccountId { get; set; }
     public bool IsDeleted { get; set; }
 
     /// <summary>Transient — never persisted; used to surface fresh secrets to API responses.</summary>
