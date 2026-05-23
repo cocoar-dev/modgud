@@ -27,6 +27,14 @@ public class OAuthApplicationAggregate
     /// issued tokens).
     /// </summary>
     public List<Guid> AppIds { get; private set; } = [];
+
+    /// <summary>
+    /// ServiceAccount that owns this client's credentials, or null for user-flow
+    /// clients. Set on <c>client_credentials</c>-only clients so the token
+    /// endpoint can resolve <c>sub = SA.Id</c>. Strict separation enforced at
+    /// the service layer: one OAuth client = one auth mode.
+    /// </summary>
+    public Guid? LinkedServiceAccountId { get; private set; }
     public bool IsDeleted { get; private set; }
 
     public OAuthApplicationAggregate() { }
@@ -128,6 +136,13 @@ public class OAuthApplicationAggregate
         return e;
     }
 
+    public OAuthApplicationServiceAccountLinkChanged SetLinkedServiceAccountId(Guid? serviceAccountId)
+    {
+        var e = new OAuthApplicationServiceAccountLinkChanged(Id, serviceAccountId);
+        Apply(e);
+        return e;
+    }
+
     public OAuthApplicationDeleted Delete()
     {
         var e = new OAuthApplicationDeleted(Id);
@@ -169,6 +184,9 @@ public class OAuthApplicationAggregate
         => AppIds = @event.AppId is Guid id ? [id] : [];
 
     public void Apply(OAuthApplicationAppIdsChanged @event) => AppIds = [.. @event.AppIds];
+
+    public void Apply(OAuthApplicationServiceAccountLinkChanged @event)
+        => LinkedServiceAccountId = @event.ServiceAccountId;
 
     public void Apply(OAuthApplicationDeleted @event) => IsDeleted = true;
 }

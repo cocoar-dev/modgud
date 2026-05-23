@@ -2,10 +2,12 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using BuildingBlocks.Helper;
 using Cocoar.Auth.Application.DTOs.OAuth;
+using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Domain.OAuth.Apis;
 using Cocoar.Auth.Domain.OAuth.Applications;
 using Cocoar.Auth.Domain.OAuth.Common;
 using Cocoar.Auth.Domain.OAuth.Scopes;
+using ErrorOr;
 
 namespace Cocoar.Auth.Application.Services;
 
@@ -480,5 +482,48 @@ internal static class OAuthAdminMapping
     {
         try { return BCrypt.Net.BCrypt.Verify(secret, hash); }
         catch { return false; }
+    }
+
+    // ───────────────────────────────────────────── SA-link invariant ──────────
+    //
+    // Phase 2C — Service-Account-Credentials. Three rules, enforced at every
+    // create/update path so the standard admin CRUD can never produce a
+    // mixed-mode client:
+    //
+    //   R1  AllowedGrantTypes contains "client_credentials" ⇒ link required.
+    //   R2  link set ⇒ AllowedGrantTypes contains "client_credentials".
+    //   R3  link set ⇒ AllowedGrantTypes contains nothing else (no user-flow
+    //       grants alongside client_credentials).
+    //
+    // The split between user-flow and M2M is structural, not a per-token
+    // toggle — see website/dev-notes/future-features/service-account-credentials.md
+    // for the design.
+
+    internal const string ClientCredentialsGrantType = "client_credentials";
+
+    internal static readonly IReadOnlySet<string> UserFlowGrantTypes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "authorization_code",
+        "implicit",
+        "password",
+        "refresh_token",
+        "urn:ietf:params:oauth:grant-type:device_code",
+    };
+
+    /// <summary>
+    /// Checks the SA-link invariant against the effective grant list + link
+    /// after a create/update merge. Returns the first violation as an
+    /// <see cref="Error"/>; null when the combination is valid.
+    /// </summary>
+    internal static Error? ValidateServiceAccountLinkInvariant(
+        IReadOnlyList<string> effectiveGrants, Guid? linkedServiceAccountId)
+    {
+        var hasCc = effectiveGrants.Contains(ClientCredentialsGrantType, StringComparer.Ordinal);
+        var hasUserFlow = effectiveGrants.Any(g => UserFlowGrantTypes.Contains(g));
+        var hasLink = linkedServiceAccountId.HasValue;
+
+        if (hasCc && !hasLink) return OAuthErrors.ClientCredentialsRequiresServiceAccountLink;
+        if (hasLink && (!hasCc || hasUserFlow)) return OAuthErrors.ServiceAccountLinkRequiresClientCredentialsOnly;
+        return null;
     }
 }

@@ -5,6 +5,7 @@ using Cocoar.Auth.Application.Dcr;
 using Cocoar.Auth.Application.DTOs.OAuth;
 using Cocoar.Auth.Application.Errors;
 using Cocoar.Auth.Authorization.Apps;
+using Cocoar.Auth.Authorization.Principals;
 using Cocoar.Auth.Domain.OAuth.Apis;
 using Cocoar.Auth.Domain.OAuth.Applications;
 using Cocoar.Auth.Domain.OAuth.Common;
@@ -47,6 +48,7 @@ public class OAuthAdminService
     {
         _session = session;
     }
+
 
     // ───────────────────────────────────────────── Clients ─────────────────────
 
@@ -120,6 +122,27 @@ public class OAuthAdminService
                 appIds.Add(parsed);
             }
         }
+
+        // ServiceAccount-link validation. The endpoint accepts a raw
+        // LinkedServiceAccountId on the create DTO so M2M setup is a single
+        // round-trip; downstream mutations of the link (rotate, unlink, etc.)
+        // go through the SA-scoped credentials endpoints instead. Parse, then
+        // confirm the SA exists, then enforce the SA-link invariant
+        // (R1/R2/R3) against the combination of grants + link the admin
+        // submitted. DCR clients never come with a link — the DCR pipeline
+        // doesn't surface it.
+        Guid? linkedServiceAccountId = null;
+        if (!string.IsNullOrWhiteSpace(dto.LinkedServiceAccountId))
+        {
+            if (!ShortGuid.TryParse(dto.LinkedServiceAccountId, out Guid parsedSa))
+                return OAuthErrors.InvalidServiceAccountId(dto.LinkedServiceAccountId);
+            var sa = await _session.LoadAsync<ServiceAccount>(parsedSa, ct);
+            if (sa is null || sa.IsDeleted)
+                return OAuthErrors.ServiceAccountNotFound(dto.LinkedServiceAccountId);
+            linkedServiceAccountId = parsedSa;
+        }
+        if (ValidateServiceAccountLinkInvariant(dto.AllowedGrantTypes, linkedServiceAccountId) is { } createLinkErr)
+            return createLinkErr;
 
         // Confidential clients must have a secret (generated if not supplied).
         string? clientSecret = null;
@@ -202,6 +225,14 @@ public class OAuthAdminService
             _session.Events.Append(id, aggregate.SetAppIds(appIds));
         }
 
+        // ServiceAccount-link — same one-shot pattern as AppIds. Skipped when
+        // the link is null so user-flow clients don't carry a redundant
+        // unset-link event.
+        if (linkedServiceAccountId.HasValue)
+        {
+            _session.Events.Append(id, aggregate.SetLinkedServiceAccountId(linkedServiceAccountId.Value));
+        }
+
         // Persist the (hashed) secret separately from the event stream.
         if (clientSecret is not null)
         {
@@ -230,6 +261,24 @@ public class OAuthAdminService
         var aggregate = await _session.Events.AggregateStreamAsync<OAuthApplicationAggregate>(guid, token: ct);
         if (aggregate is null || aggregate.IsDeleted)
             return OAuthErrors.ClientNotFound(id);
+
+        // Phase 2C — SA-managed clients are read-only via the standard admin
+        // PUT. The SA owns its credentials as child resources, so mutations
+        // (rotate, scope edit, lifetime tweak, enable/disable) must go through
+        // the SA-scoped endpoints — that path is the single place where the
+        // SA-link invariant is preserved end-to-end. A standard PUT here
+        // would silently drift the M2M client off its owning SA.
+        if (aggregate.LinkedServiceAccountId.HasValue)
+            return OAuthErrors.CannotMutateServiceAccountManagedClient(aggregate.ClientId);
+
+        // Phase 2C — guard against the path "add client_credentials via PUT".
+        // The UpdateDto can't carry a LinkedServiceAccountId (by design — the
+        // SA-scoped endpoints own that mutation), so any attempt to add
+        // client_credentials here would necessarily violate R1 (cc requires a
+        // link). Fail fast with the same invariant error.
+        if (dto.AllowedGrantTypes is not null &&
+            ValidateServiceAccountLinkInvariant(dto.AllowedGrantTypes, linkedServiceAccountId: null) is { } updLinkErr)
+            return updLinkErr;
 
         if (dto.DisplayName is not null && dto.DisplayName != aggregate.DisplayName)
             _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName));

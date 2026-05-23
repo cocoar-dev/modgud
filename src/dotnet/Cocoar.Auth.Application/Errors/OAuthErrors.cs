@@ -51,4 +51,24 @@ public static class OAuthErrors
     public static Error ApiSecretNotFound(string secretId) => Error.NotFound(
         code: "OAuth.ApiSecretNotFound",
         description: $"API secret with ID '{secretId}' was not found.");
+
+    public static Error InvalidServiceAccountId(string id) => Error.Validation(
+        code: "OAuth.InvalidServiceAccountId",
+        description: $"LinkedServiceAccountId '{id}' is not a valid Guid or ShortGuid.");
+
+    public static Error ServiceAccountNotFound(string id) => Error.Validation(
+        code: "OAuth.ServiceAccountNotFound",
+        description: $"ServiceAccount '{id}' not found or deleted.");
+
+    public static Error ClientCredentialsRequiresServiceAccountLink => Error.Validation(
+        code: "OAuth.ClientCredentialsRequiresServiceAccountLink",
+        description: "A client with the 'client_credentials' grant must be linked to a ServiceAccount. Create the SA first, then link it via LinkedServiceAccountId.");
+
+    public static Error ServiceAccountLinkRequiresClientCredentialsOnly => Error.Validation(
+        code: "OAuth.ServiceAccountLinkRequiresClientCredentialsOnly",
+        description: "A ServiceAccount-linked client must use only the 'client_credentials' grant. User-flow grants (authorization_code, implicit, password, refresh_token, device_code) are forbidden — strict separation between user-flow and machine-to-machine clients.");
+
+    public static Error CannotMutateServiceAccountManagedClient(string clientId) => Error.Validation(
+        code: "OAuth.CannotMutateServiceAccountManagedClient",
+        description: $"OAuth client '{clientId}' is owned by a ServiceAccount. Mutations must go through the SA-scoped credentials endpoints; the standard admin PUT is read-only for SA-managed clients.");
 }

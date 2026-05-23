@@ -170,6 +170,22 @@ public class OAuthApplicationAggregateTests
             Assert.Equal("v", agg.Settings["k"]);
             Assert.False(agg.Settings.ContainsKey("k2"));
         }
+
+        [Fact]
+        public void SetLinkedServiceAccountId_round_trips_and_clears()
+        {
+            var (agg, _) = MakeDefault();
+            var saId = Guid.NewGuid();
+
+            var setEvent = agg.SetLinkedServiceAccountId(saId);
+            Assert.Equal(agg.Id, setEvent.ApplicationId);
+            Assert.Equal(saId, setEvent.ServiceAccountId);
+            Assert.Equal(saId, agg.LinkedServiceAccountId);
+
+            var clearEvent = agg.SetLinkedServiceAccountId(null);
+            Assert.Null(clearEvent.ServiceAccountId);
+            Assert.Null(agg.LinkedServiceAccountId);
+        }
     }
 
     public class Delete

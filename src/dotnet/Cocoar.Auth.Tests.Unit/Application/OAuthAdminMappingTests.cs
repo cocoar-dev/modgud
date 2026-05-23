@@ -704,6 +704,74 @@ public class OAuthAdminMappingTests
         }
     }
 
+    public class ValidateServiceAccountLinkInvariant
+    {
+        [Fact]
+        public void User_flow_only_grants_without_link_is_valid()
+        {
+            Assert.Null(OAuthAdminMapping.ValidateServiceAccountLinkInvariant(
+                new[] { "authorization_code", "refresh_token" }, linkedServiceAccountId: null));
+        }
+
+        [Fact]
+        public void Empty_grants_without_link_is_valid()
+        {
+            // An admin-created client with no grants yet picked is a valid
+            // intermediate state — BuildClientPermissions explicitly emits
+            // no token-flow permissions in that case (pinned elsewhere).
+            Assert.Null(OAuthAdminMapping.ValidateServiceAccountLinkInvariant(
+                Array.Empty<string>(), linkedServiceAccountId: null));
+        }
+
+        [Fact]
+        public void Client_credentials_without_link_is_rejected_R1()
+        {
+            var err = OAuthAdminMapping.ValidateServiceAccountLinkInvariant(
+                new[] { "client_credentials" }, linkedServiceAccountId: null);
+            Assert.NotNull(err);
+            Assert.Equal("OAuth.ClientCredentialsRequiresServiceAccountLink", err!.Value.Code);
+        }
+
+        [Fact]
+        public void Client_credentials_with_link_is_valid()
+        {
+            Assert.Null(OAuthAdminMapping.ValidateServiceAccountLinkInvariant(
+                new[] { "client_credentials" }, linkedServiceAccountId: Guid.NewGuid()));
+        }
+
+        [Fact]
+        public void Link_with_user_flow_grants_is_rejected_R3()
+        {
+            var err = OAuthAdminMapping.ValidateServiceAccountLinkInvariant(
+                new[] { "client_credentials", "authorization_code" }, linkedServiceAccountId: Guid.NewGuid());
+            Assert.NotNull(err);
+            Assert.Equal("OAuth.ServiceAccountLinkRequiresClientCredentialsOnly", err!.Value.Code);
+        }
+
+        [Fact]
+        public void Link_without_client_credentials_is_rejected_R2()
+        {
+            var err = OAuthAdminMapping.ValidateServiceAccountLinkInvariant(
+                new[] { "authorization_code" }, linkedServiceAccountId: Guid.NewGuid());
+            Assert.NotNull(err);
+            Assert.Equal("OAuth.ServiceAccountLinkRequiresClientCredentialsOnly", err!.Value.Code);
+        }
+
+        [Theory]
+        [InlineData("authorization_code")]
+        [InlineData("implicit")]
+        [InlineData("password")]
+        [InlineData("refresh_token")]
+        [InlineData("urn:ietf:params:oauth:grant-type:device_code")]
+        public void All_user_flow_grants_violate_R3_when_link_set(string userFlowGrant)
+        {
+            var err = OAuthAdminMapping.ValidateServiceAccountLinkInvariant(
+                new[] { "client_credentials", userFlowGrant }, linkedServiceAccountId: Guid.NewGuid());
+            Assert.NotNull(err);
+            Assert.Equal("OAuth.ServiceAccountLinkRequiresClientCredentialsOnly", err!.Value.Code);
+        }
+    }
+
     public class MapScope
     {
         [Fact]
