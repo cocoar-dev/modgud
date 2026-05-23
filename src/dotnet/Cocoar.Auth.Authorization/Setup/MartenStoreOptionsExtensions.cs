@@ -37,11 +37,15 @@ public static class MartenStoreOptionsExtensions
     /// </summary>
     public static StoreOptions UseCocoarAuthAuthorization(this StoreOptions martenOpts)
     {
-        // Polymorphic Principal table — Person + Group both land in mt_doc_principal,
-        // distinguished by mt_doc_type. Aliases are stable across class renames.
+        // Polymorphic Principal table — Person + Group + ServiceAccount all land
+        // in mt_doc_principal, distinguished by mt_doc_type. Aliases are stable
+        // across class renames. ServiceAccount inherits from Principal so the
+        // BFS group-membership graph + the polymorphic /api/principal/lookup
+        // see machine identities alongside humans without per-table joins.
         martenOpts.Schema.For<Principal>()
             .AddSubClass<Person>("person")
-            .AddSubClass<Group>("group");
+            .AddSubClass<Group>("group")
+            .AddSubClass<ServiceAccount>("service-account");
 
         // PermissionRole — its own top-level document.
         martenOpts.Schema.For<PermissionRole>();
@@ -108,5 +112,6 @@ public static class MartenStoreOptionsExtensions
         };
         ti.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(typeof(Person), "person"));
         ti.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(typeof(Group), "group"));
+        ti.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(typeof(ServiceAccount), "service-account"));
     }
 }
