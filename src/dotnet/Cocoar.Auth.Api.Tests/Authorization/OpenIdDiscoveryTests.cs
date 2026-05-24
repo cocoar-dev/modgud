@@ -9,6 +9,8 @@ using Cocoar.Auth.Application.Services;
 using Cocoar.Auth.Domain.OAuth.Common;
 using Microsoft.Extensions.DependencyInjection;
 using OpenIddict.Abstractions;
+using Cocoar.Auth.Authorization.Principals;
+using Marten;
 
 namespace Cocoar.Auth.Api.Tests.Authorization;
 
@@ -94,6 +96,21 @@ public class OpenIdDiscoveryTests : IntegrationTestBase
     private async Task CreateOAuthClientAsync(string clientId, string clientSecret, List<string> scopes)
     {
         using var scope = Factory.Services.CreateScope();
+
+        // Phase-2C invariant: clients with the client_credentials grant must be
+        // linked to a ServiceAccount (one OAuth client = one auth mode). Create
+        // an SA first so we can pass LinkedServiceAccountId to CreateClientAsync.
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        var sa = new ServiceAccount
+        {
+            Id = Guid.NewGuid(),
+            AccountName = "sa-" + Guid.NewGuid().ToString("N").Substring(0, 16),
+            Purpose = "Test SA for " + clientId,
+            IsActive = true,
+        };
+        session.Store(sa);
+        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+
         var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
         var dto = new CreateOAuthClientDto
         {
@@ -108,6 +125,7 @@ public class OpenIdDiscoveryTests : IntegrationTestBase
             AllowedGrantTypes = ["client_credentials"],
             RequireConsent = false,
             AccessTokenType = AccessTokenType.Jwt,
+            LinkedServiceAccountId = sa.Id.ToString(),
         };
         var result = await oauthAdmin.CreateClientAsync(dto, TestContext.Current.CancellationToken);
         if (result.IsError)
