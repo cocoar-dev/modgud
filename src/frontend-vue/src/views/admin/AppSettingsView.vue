@@ -11,11 +11,10 @@ const projectionHttp = useHttpClient('/api/admin/projections')
 const ui = useUI()
 
 watch(language, () => ui.set((ctx) => {
-  ctx.header.title = t('nav.administration', {}, 'Administration')
-  ctx.header.subTitle = t('nav.settings', {}, 'Settings')
+  ctx.header.title = t('nav.platform', {}, 'Plattform')
+  ctx.header.subTitle = t('nav.settings', {}, 'Einstellungen')
   ctx.header.icon = 'settings'
   ctx.content.container = false
-  ctx.content.hasSubNav = true
 }), { immediate: true })
 
 // Projection rebuild

@@ -1,117 +1,124 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
-import { useHttpClient } from '@/composables/useHttpClient'
-import { useSignalR } from '@/composables/useSignalR'
-import type { InboxCountDto, InboxItemDto } from '@/models/InboxItem'
-
-interface InboxHubEvent {
-  Action: 'Created' | 'Updated' | 'Deleted'
-  Subject: string
-  Payload: unknown[]
-}
+import { computed } from 'vue'
+import { useEntityService } from '@/composables/useEntityService'
+import type { InboxItemDto } from '@/models/InboxItem'
 
 /**
- * Per-user inbox store. Loads the open items on first access, then live-pushes
- * via SignalR (InboxHub on the backend filters per-recipient, so this client
- * stream is already user-scoped — no extra check needed here).
+ * Inbox store — notifications, reminders and other user-targeted messages.
  *
- * Items in `items` are open (DismissedAt === null). The bell badge reads
- * `unreadCount`; the panel renders `items` ordered newest-first.
+ * The backend emits per-recipient SignalR pushes (InboxHub filters server-side),
+ * so everything that arrives is already addressed to the current user. The
+ * store does not deduplicate or re-fetch on user change — login/logout fully
+ * re-creates the Pinia instance.
+ *
+ * Dismissed items stay in the underlying entity map (the SignalR Updated
+ * event lands with DismissedAt set), but `items` filters them out so the
+ * bell/panel never see them.
  */
 export const useInboxStore = defineStore('inbox', () => {
-  const http = useHttpClient('/api/inbox')
-  const signalr = useSignalR()
+  const service = useEntityService<InboxItemDto>({
+    apiPath: '/api/inbox',
+    entityName: 'Inbox',
+    enableSignalR: true,
+    // Initialization happens lazily after auth — see InboxBell's onMounted.
+    loadOnInit: false,
+  })
 
-  const items = ref<InboxItemDto[]>([])
-  const loaded = ref(false)
+  /** Sorted newest-first, dismissed filtered — what the panel renders. */
+  const items = computed(() =>
+    service.entities.value
+      .filter((i) => !i.DismissedAt)
+      .sort((a, b) => b.CreatedAt.localeCompare(a.CreatedAt)),
+  )
 
-  let signalrSubscribed = false
+  const unreadCount = computed(() =>
+    items.value.filter((i) => !i.ReadAt).length,
+  )
 
-  const unreadCount = computed(() => items.value.filter((i) => i.ReadAt == null).length)
-  const totalCount = computed(() => items.value.length)
-
-  async function loadAll(): Promise<void> {
-    // includeRead=true so the panel shows the recent context, not just the
-    // unread set. The badge derives Unread from the in-memory list above.
-    items.value = await http
-      .setQueryParameter('includeRead', 'true')
-      .setQueryParameter('includeDismissed', 'false')
-      .setQueryParameter('take', '100')
-      .get<InboxItemDto[]>()
-    loaded.value = true
-  }
-
-  async function loadCount(): Promise<InboxCountDto> {
-    return await http.addPath('count').get<InboxCountDto>()
-  }
+  /** Group items by Kind for filter tabs. */
+  const itemsByKind = computed(() => {
+    const out: Record<string, InboxItemDto[]> = {}
+    for (const i of items.value) {
+      const key = i.Kind
+      if (!out[key]) out[key] = []
+      out[key].push(i)
+    }
+    return out
+  })
 
   async function markRead(id: string): Promise<void> {
-    await http.addPath(id, 'read').post({})
-    const item = items.value.find((i) => i.Id === id)
-    if (item) item.ReadAt = new Date().toISOString()
+    // Optimistic update — the SignalR Updated event will confirm.
+    const existing = service.getFromStore(id)
+    if (existing && !existing.ReadAt) {
+      service.setStoreEntities([{ ...existing, ReadAt: new Date().toISOString() }])
+    }
+    try {
+      await service.httpClient.addPath(id, 'read').post({})
+    } catch (err) {
+      if (existing) service.setStoreEntities([existing])
+      throw err
+    }
   }
 
   async function markAllRead(): Promise<void> {
-    await http.addPath('read-all').post({})
     const now = new Date().toISOString()
-    for (const i of items.value) if (i.ReadAt == null) i.ReadAt = now
+    const snapshots: InboxItemDto[] = []
+    for (const item of items.value) {
+      if (!item.ReadAt) {
+        snapshots.push(item)
+        service.setStoreEntities([{ ...item, ReadAt: now }])
+      }
+    }
+    try {
+      await service.httpClient.addPath('read-all').post({})
+    } catch (err) {
+      if (snapshots.length > 0) service.setStoreEntities(snapshots)
+      throw err
+    }
   }
 
   async function dismiss(id: string): Promise<void> {
-    await http.addPath(id, 'dismiss').post({})
-    items.value = items.value.filter((i) => i.Id !== id)
+    const existing = service.getFromStore(id)
+    // Optimistic remove — items computed filters by DismissedAt, but the
+    // backend doesn't emit Deletes for dismiss (it emits Updated), so we
+    // also nudge it out of the entity store directly for snappy UX.
+    if (existing) service.deleteStoreEntities([id])
+    try {
+      await service.httpClient.addPath(id, 'dismiss').post({})
+    } catch (err) {
+      if (existing) service.setStoreEntities([existing])
+      throw err
+    }
   }
 
   async function dismissAll(): Promise<void> {
-    await http.addPath('dismiss-all').post({})
-    items.value = []
+    const ids = items.value.map((i) => i.Id)
+    if (ids.length === 0) return
+    service.deleteStoreEntities(ids)
+    try {
+      await service.httpClient.addPath('dismiss-all').post({})
+    } catch (err) {
+      // Best-effort restore. Refetch to recover from inconsistent state.
+      await service.loadAll()
+      throw err
+    }
   }
 
-  function ensureSubscription() {
-    if (signalrSubscribed) return
-    signalrSubscribed = true
-    signalr.runOnEveryReconnect(() => {
-      signalr.stream<InboxHubEvent>('InboxActions.Subscribe').subscribe({
-        next: (ev) => {
-          for (const p of ev.Payload) {
-            if (typeof p !== 'object' || p === null) continue
-            const dto = p as InboxItemDto
-            if (!('Id' in dto)) continue
-
-            const idx = items.value.findIndex((i) => i.Id === dto.Id)
-            if (dto.DismissedAt != null) {
-              if (idx >= 0) items.value.splice(idx, 1)
-              continue
-            }
-            if (idx >= 0) {
-              items.value[idx] = dto
-            } else {
-              // Insert newest-first; createdAt-desc maintained.
-              items.value = [dto, ...items.value]
-            }
-          }
-        },
-        error: (err) => console.error('[inbox.store] InboxActions stream error:', err),
-      })
-    }, 'inbox.store.InboxActions.Subscribe')
-  }
-
-  async function initialize() {
-    if (!loaded.value) await loadAll()
-    ensureSubscription()
+  async function snooze(id: string, until: Date | null): Promise<void> {
+    await service.httpClient
+      .addPath(id, 'snooze')
+      .post({ Until: until?.toISOString() ?? null })
   }
 
   return {
+    ...service,
     items,
-    loaded,
     unreadCount,
-    totalCount,
-    loadAll,
-    loadCount,
+    itemsByKind,
     markRead,
     markAllRead,
     dismiss,
     dismissAll,
-    initialize,
+    snooze,
   }
 })

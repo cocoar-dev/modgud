@@ -12,7 +12,7 @@ const router = useRouter()
 const settingsStore = useRealmSettingsStore()
 
 watch(language, () => ui.set((ctx) => {
-  ctx.header.title = t('nav.administration', {}, 'Administration')
+  ctx.header.title = t('nav.platform', {}, 'Plattform')
   ctx.header.subTitle = t('admin.customization.pages.title', {}, 'Pages')
   ctx.header.icon = 'layout-template'
   ctx.content.container = false
@@ -61,7 +61,7 @@ const tiles = computed(() => slots.map((s) => ({
 })))
 
 function open(slug: string) {
-  router.push(`/admin/customization/pages/${slug}`)
+  router.push(`/plattform/customization/pages/${slug}`)
 }
 </script>
 

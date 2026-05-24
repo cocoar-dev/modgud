@@ -14,7 +14,7 @@ import { useAppConfigStore } from '@/stores/appconfig.store'
 const pageBuilderFeatureGate: NavigationGuard = () => {
   const appConfig = useAppConfigStore()
   if (!appConfig.config.Features.PageBuilder) {
-    return { path: '/admin/customization/branding', replace: true }
+    return { path: '/plattform/customization/branding', replace: true }
   }
   return true
 }
@@ -267,28 +267,6 @@ const routes = [
               component: () => import('@/views/admin/AuthLogView.vue'),
             },
             {
-              path: 'observability',
-              component: () => import('@/views/admin/AdminObservabilityView.vue'),
-            },
-            {
-              path: 'customization/assets',
-              component: () => import('@/views/admin/assets/AssetsView.vue'),
-            },
-            {
-              path: 'customization/branding',
-              component: () => import('@/views/admin/customization/BrandingView.vue'),
-            },
-            {
-              path: 'customization/pages',
-              component: () => import('@/views/admin/customization/PagesView.vue'),
-              beforeEnter: pageBuilderFeatureGate,
-            },
-            {
-              path: 'customization/pages/:slug',
-              component: () => import('@/views/admin/customization/PageEditorView.vue'),
-              beforeEnter: pageBuilderFeatureGate,
-            },
-            {
               path: 'change-requests',
               component: () => import('@/views/admin/ChangeRequestsView.vue'),
             },
@@ -398,6 +376,41 @@ const routes = [
                   },
                 ],
               },
+            },
+          ],
+        },
+        // Plattform — second top-level admin area for operator-facing config
+        // (Anpassung + Betrieb). Own SubNavLayoutGrouped wrapper.
+        {
+          path: 'plattform',
+          component: () => import('@/views/platform/PlatformView.vue'),
+          children: [
+            { path: '', redirect: '/plattform/customization/branding' },
+            {
+              path: 'customization/branding',
+              component: () => import('@/views/admin/customization/BrandingView.vue'),
+            },
+            {
+              path: 'customization/pages',
+              component: () => import('@/views/admin/customization/PagesView.vue'),
+              beforeEnter: pageBuilderFeatureGate,
+            },
+            {
+              path: 'customization/pages/:slug',
+              component: () => import('@/views/admin/customization/PageEditorView.vue'),
+              beforeEnter: pageBuilderFeatureGate,
+            },
+            {
+              path: 'customization/assets',
+              component: () => import('@/views/admin/assets/AssetsView.vue'),
+            },
+            {
+              path: 'observability',
+              component: () => import('@/views/admin/AdminObservabilityView.vue'),
+            },
+            {
+              path: 'inbox-settings',
+              component: () => import('@/views/admin/InboxSettingsView.vue'),
             },
             {
               path: 'settings',

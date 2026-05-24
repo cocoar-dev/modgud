@@ -24,7 +24,7 @@ const settingsStore = useRealmSettingsStore()
 const dialog = useDialog()
 
 watch(language, () => ui.set((ctx) => {
-  ctx.header.title = t('nav.administration', {}, 'Administration')
+  ctx.header.title = t('nav.platform', {}, 'Plattform')
   ctx.header.subTitle = t('admin.customization.branding.title', {}, 'Branding')
   ctx.header.icon = 'palette'
   ctx.content.container = false

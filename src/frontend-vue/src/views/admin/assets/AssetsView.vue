@@ -11,7 +11,7 @@ const ui = useUI()
 const { assets, loading, error, list, upload, remove } = useAssets()
 
 watch(language, () => ui.set((ctx) => {
-  ctx.header.title = t('nav.administration', {}, 'Administration')
+  ctx.header.title = t('nav.platform', {}, 'Plattform')
   ctx.header.subTitle = t('admin.assets.title', {}, 'Asset Library')
   ctx.header.icon = 'image'
   ctx.content.container = false

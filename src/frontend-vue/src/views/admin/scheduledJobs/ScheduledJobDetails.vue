@@ -1,350 +1,323 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from '@cocoar/vue-localization'
 import {
-  CoarButton,
-  CoarFormField,
   CoarTextInput,
   CoarCheckbox,
+  CoarFormField,
+  CoarButton,
+  CoarIcon,
   CoarTag,
-  CoarSpinner,
-  useToast,
+  CoarTabGroup,
+  CoarTab,
 } from '@cocoar/vue-ui'
-import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useScheduledJobStore } from '@/stores/scheduledJob.store'
-import type { ScheduledJobDto, ScheduledJobHistoryDto, ScheduledJobUpdateDto } from '@/models/ScheduledJob'
+import type {
+  ScheduledJobDto,
+  ScheduledJobHistoryDto,
+  JobParameterField,
+} from '@/models/ScheduledJob'
 
-const { t } = useI18n()
+const { t, language } = useI18n()
 const store = useScheduledJobStore()
-const toast = useToast()
 
-// Routed-fragment modals receive the path param as a prop. The :id slot
-// in the router carries the job's Key (e.g. "dcr-gc").
+const locale = computed(() => language.value === 'de' ? 'de-DE' : 'en-US')
+
+// Routed-fragment modals receive the path param as `id`. The :id slot in
+// the router carries the job's Key (e.g. "dcr-gc").
 const props = defineProps<{ id: string; close: (result?: unknown) => void }>()
 const jobKey = computed(() => props.id)
 
 const job = ref<ScheduledJobDto | null>(null)
 const history = ref<ScheduledJobHistoryDto[]>([])
-const loading = ref(false)
+const loading = ref(true)
 const saving = ref(false)
 const triggering = ref(false)
 
-// Editable form state (initialised from `job` on load).
-const cronOverride = ref<string>('')
-const enabled = ref<boolean>(true)
-const paramValues = ref<Record<string, unknown>>({})
+const activeTab = ref<'schedule' | 'config' | 'history'>('schedule')
+
+// Editable form state — separated from `job` so a user can edit and discard.
+const form = ref({
+  cronOverride: '',
+  enabled: true,
+  // Parameter values keyed by ParameterField.Key. Stored as strings while
+  // editing so empty input == empty string == "use default" for the backend.
+  params: {} as Record<string, string | boolean>,
+})
 
 async function load() {
+  if (!jobKey.value) return
   loading.value = true
   try {
     const [j, h] = await Promise.all([
-      store.loadOne(jobKey.value),
-      store.loadHistory(jobKey.value, 20),
+      store.getByKey(jobKey.value),
+      store.getHistory(jobKey.value, 50),
     ])
     job.value = j
     history.value = h
     if (j) {
-      cronOverride.value = j.HasOverride ? j.EffectiveCron : ''
-      enabled.value = j.Enabled
-      // Start from persisted params, fall back to schema defaults for missing keys.
-      const seed: Record<string, unknown> = {}
-      for (const f of j.ParameterSchema) {
-        seed[f.Key] = j.Parameters[f.Key] ?? f.Default ?? null
-      }
-      paramValues.value = seed
+      form.value.cronOverride = j.HasOverride ? j.EffectiveCron : ''
+      form.value.enabled = j.Enabled
+      form.value.params = seedParams(j)
     }
   } finally {
     loading.value = false
   }
 }
 
-onMounted(load)
-watch(jobKey, load)
+/** Seed form.params from persisted Parameters + schema defaults. */
+function seedParams(j: ScheduledJobDto): Record<string, string | boolean> {
+  const out: Record<string, string | boolean> = {}
+  for (const field of j.ParameterSchema) {
+    const v = j.Parameters[field.Key]
+    if (field.Type === 'Boolean') {
+      out[field.Key] = typeof v === 'boolean' ? v : Boolean(field.Default)
+    } else {
+      out[field.Key] = v == null || v === '' ? '' : String(v)
+    }
+  }
+  return out
+}
+
+/** Build the Parameters payload — coerce strings to numbers per schema. */
+function buildParamsPayload(j: ScheduledJobDto): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const field of j.ParameterSchema) {
+    const raw = form.value.params[field.Key]
+    if (field.Type === 'Boolean') {
+      out[field.Key] = !!raw
+    } else if (field.Type === 'Number') {
+      if (raw === '' || raw == null) {
+        out[field.Key] = null
+      } else {
+        const n = Number(raw)
+        out[field.Key] = Number.isFinite(n) ? n : null
+      }
+    } else {
+      out[field.Key] = raw === '' ? null : raw
+    }
+  }
+  return out
+}
 
 async function save() {
-  if (!job.value) return
+  if (!jobKey.value || !job.value) return
   saving.value = true
   try {
-    const dto: ScheduledJobUpdateDto = {
-      // Empty string = clear override (use registration default cron).
-      CronOverride: cronOverride.value.trim() === '' ? null : cronOverride.value.trim(),
-      Enabled: enabled.value,
-      Parameters: paramValues.value,
-    }
-    await store.update(jobKey.value, dto)
-    toast.success(t('admin.scheduledJobs.savedToast', {}, 'Job configuration saved'))
+    await store.update(jobKey.value, {
+      CronOverride: form.value.cronOverride.trim() || null,
+      Enabled: form.value.enabled,
+      Parameters: buildParamsPayload(job.value),
+    })
     await load()
-  } catch (e: any) {
-    toast.error(e?.message ?? String(e))
   } finally {
     saving.value = false
   }
 }
 
-async function trigger() {
+async function triggerNow() {
+  if (!jobKey.value) return
   triggering.value = true
   try {
     await store.triggerNow(jobKey.value)
-    toast.success(t('admin.scheduledJobs.triggeredToast', {}, 'Job triggered — refreshing in a moment'))
-    // Quick refresh so the new history entry shows up.
-    setTimeout(load, 1500)
-  } catch (e: any) {
-    toast.error(e?.message ?? String(e))
+    await new Promise((r) => setTimeout(r, 800))
+    history.value = await store.getHistory(jobKey.value, 50)
+    job.value = await store.getByKey(jobKey.value)
+    await store.loadAll()
   } finally {
     triggering.value = false
   }
 }
 
-function fmtDuration(ms: number): string {
-  if (ms < 1000) return `${ms} ms`
-  const s = ms / 1000
-  return s < 60 ? `${s.toFixed(2)} s` : `${(s / 60).toFixed(1)} min`
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleString(locale.value, {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
 }
 
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString()
+function fmtDuration(ms: number) {
+  if (ms < 1000) return `${ms} ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`
+  return `${(ms / 60_000).toFixed(1)} min`
 }
+
+/** Group schema fields by Section, preserving declaration order. */
+const sectionedFields = computed<Array<{ name: string | null; fields: JobParameterField[] }>>(() => {
+  if (!job.value) return []
+  const groups: Array<{ name: string | null; fields: JobParameterField[] }> = []
+  for (const field of job.value.ParameterSchema) {
+    const sectionName = field.Section ?? null
+    const last = groups[groups.length - 1]
+    if (last && last.name === sectionName) {
+      last.fields.push(field)
+    } else {
+      groups.push({ name: sectionName, fields: [field] })
+    }
+  }
+  return groups
+})
+
+const hasParams = computed(() => (job.value?.ParameterSchema.length ?? 0) > 0)
+
+const footerButton = computed(() => ({
+  visible: !!job.value,
+  text: t('common.save', {}, 'Save'),
+  loading: saving.value,
+  onClick: save,
+}))
+
+onMounted(load)
+watch(jobKey, load)
 </script>
 
 <template>
   <ModalLayout
     :title="job?.Name ?? jobKey"
-    :subtitle="job?.Description ?? undefined"
+    :sub-title="job?.Key"
     icon="clock"
+    :close="close"
+    :footer-button="footerButton"
   >
-    <div v-if="loading && !job" class="loading-block">
-      <CoarSpinner />
-    </div>
+    <div class="flex flex-col min-h-0 flex-1">
+      <div v-if="loading" class="p-8 text-center text-gray-400">
+        {{ t('common.loading', {}, 'Loading…') }}
+      </div>
+      <div v-else-if="!job" class="p-8 text-center text-gray-400">
+        {{ t('admin.scheduledJobs.notFound', {}, 'Job not found') }}
+      </div>
+      <div v-else class="flex flex-col gap-4 min-h-0 flex-1">
+        <p v-if="job.Description" class="text-sm text-surface-500">{{ job.Description }}</p>
 
-    <div v-else-if="!job" class="empty-block">
-      {{ t('admin.scheduledJobs.notFound', {}, 'Job not registered (the backend may have been redeployed without it).') }}
-    </div>
+        <CoarTabGroup v-model="activeTab">
+          <CoarTab id="schedule">{{ t('admin.scheduledJobs.tabSchedule', {}, 'Schedule') }}</CoarTab>
+          <CoarTab v-if="hasParams" id="config">{{ t('admin.scheduledJobs.tabConfig', {}, 'Configuration') }}</CoarTab>
+          <CoarTab id="history">{{ t('admin.scheduledJobs.tabHistory', {}, 'History') }}</CoarTab>
+        </CoarTabGroup>
 
-    <div v-else class="details">
-      <!-- ── Configuration ───────────────────────────────────────── -->
-      <section class="card">
-        <h3>{{ t('admin.scheduledJobs.section.config', {}, 'Configuration') }}</h3>
-
-        <div class="grid-2">
-          <CoarFormField :label="t('admin.scheduledJobs.cron', {}, 'Cron')">
-            <CoarTextInput
-              v-model="cronOverride"
-              :placeholder="job.DefaultCron"
-            />
-            <template #help>
-              {{ t('admin.scheduledJobs.cronHelp', {}, 'Leave blank to use the registration default. Quartz cron format (7 fields).') }}
-            </template>
-          </CoarFormField>
-
-          <CoarFormField :label="t('admin.scheduledJobs.enabled', {}, 'Enabled')">
-            <CoarCheckbox v-model="enabled" />
-          </CoarFormField>
-        </div>
-
-        <div v-if="job.ParameterSchema.length > 0" class="params">
-          <h4>{{ t('admin.scheduledJobs.parameters', {}, 'Parameters') }}</h4>
-          <div class="grid-2">
-            <CoarFormField
-              v-for="field in job.ParameterSchema"
-              :key="field.Key"
-              :label="field.Label"
-            >
+        <!-- Schedule tab -->
+        <div v-show="activeTab === 'schedule'" class="flex flex-col gap-4 pt-2">
+          <div class="grid grid-cols-2 gap-4">
+            <CoarFormField :label="t('admin.scheduledJobs.cron', {}, 'Cron expression')">
               <CoarTextInput
-                v-if="field.Type === 'Number' || field.Type === 'String'"
-                :model-value="paramValues[field.Key] == null ? '' : String(paramValues[field.Key])"
-                :placeholder="field.Placeholder"
-                @update:model-value="(v: string) => {
-                  if (v.trim() === '') paramValues[field.Key] = null
-                  else if (field.Type === 'Number') {
-                    const n = Number(v)
-                    paramValues[field.Key] = Number.isNaN(n) ? v : n
-                  } else paramValues[field.Key] = v
-                }"
+                v-model="form.cronOverride"
+                :placeholder="job.DefaultCron"
+                spellcheck="false"
               />
-              <CoarCheckbox
-                v-else-if="field.Type === 'Boolean'"
-                :model-value="Boolean(paramValues[field.Key])"
-                @update:model-value="(v: boolean) => paramValues[field.Key] = v"
-              />
-              <template v-if="field.Description" #help>{{ field.Description }}</template>
+              <template #help>
+                <span class="text-xs text-surface-500">
+                  {{ t('admin.scheduledJobs.cronHelp', { default: job.DefaultCron },
+                    'Quartz 7-field cron. Leave blank to use default: {default}') }}
+                </span>
+              </template>
             </CoarFormField>
+
+            <CoarFormField :label="t('admin.scheduledJobs.enabled', {}, 'Enabled')">
+              <CoarCheckbox v-model="form.enabled" :label="t('admin.scheduledJobs.enabledHelp', {}, 'Run on schedule')" />
+            </CoarFormField>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <CoarButton size="s" variant="primary" icon-start="play" :loading="triggering" @click="triggerNow">
+              {{ t('admin.scheduledJobs.triggerNow', {}, 'Run now') }}
+            </CoarButton>
+            <span class="text-sm text-surface-500">
+              {{ t('admin.scheduledJobs.nextRun', {}, 'Next run') }}:
+              <strong>{{ job.NextFireAt ? fmtDate(job.NextFireAt) : '—' }}</strong>
+            </span>
           </div>
         </div>
 
-        <div class="actions">
-          <CoarButton variant="primary" :loading="saving" @click="save">
-            {{ t('admin.scheduledJobs.save', {}, 'Save') }}
-          </CoarButton>
-          <CoarButton variant="secondary" icon-start="play" :loading="triggering" @click="trigger">
-            {{ t('admin.scheduledJobs.triggerNow', {}, 'Trigger now') }}
-          </CoarButton>
+        <!-- Configuration tab -->
+        <div v-show="activeTab === 'config'" class="flex flex-col gap-5 pt-2 overflow-y-auto">
+          <div v-for="group in sectionedFields" :key="group.name ?? '__none'" class="flex flex-col gap-3">
+            <h3 v-if="group.name"
+                class="text-xs font-semibold uppercase tracking-wider text-surface-500 border-b border-surface-200 pb-1">
+              {{ group.name }}
+            </h3>
+            <div class="grid grid-cols-2 gap-4">
+              <CoarFormField
+                v-for="field in group.fields"
+                :key="field.Key"
+                :label="field.Label"
+              >
+                <CoarCheckbox
+                  v-if="field.Type === 'Boolean'"
+                  v-model="(form.params[field.Key] as boolean)"
+                  :label="field.Label"
+                />
+                <CoarTextInput
+                  v-else
+                  v-model="(form.params[field.Key] as string)"
+                  :placeholder="field.Placeholder ?? (field.Default != null ? String(field.Default) : '')"
+                  :type="field.Type === 'Number' ? 'number' : 'text'"
+                />
+                <template v-if="field.Description" #help>
+                  <span class="text-xs text-surface-500">{{ field.Description }}</span>
+                </template>
+              </CoarFormField>
+            </div>
+          </div>
         </div>
-      </section>
 
-      <!-- ── Schedule overview ───────────────────────────────────── -->
-      <section class="card">
-        <h3>{{ t('admin.scheduledJobs.section.schedule', {}, 'Schedule') }}</h3>
-        <dl class="kv">
-          <dt>{{ t('admin.scheduledJobs.key', {}, 'Key') }}</dt>
-          <dd><code>{{ job.Key }}</code></dd>
-          <dt>{{ t('admin.scheduledJobs.defaultCron', {}, 'Default cron') }}</dt>
-          <dd><code>{{ job.DefaultCron }}</code></dd>
-          <dt>{{ t('admin.scheduledJobs.effectiveCron', {}, 'Effective cron') }}</dt>
-          <dd><code>{{ job.EffectiveCron }}</code></dd>
-          <dt>{{ t('admin.scheduledJobs.nextFire', {}, 'Next fire') }}</dt>
-          <dd>{{ fmtDate(job.NextFireAt) }}</dd>
-        </dl>
-      </section>
-
-      <!-- ── Run history ─────────────────────────────────────────── -->
-      <section class="card">
-        <h3>
-          {{ t('admin.scheduledJobs.section.history', {}, 'Run history') }}
-          <span class="count">({{ history.length }})</span>
-        </h3>
-        <div v-if="history.length === 0" class="empty-block">
-          {{ t('admin.scheduledJobs.noHistory', {}, 'No runs recorded yet.') }}
+        <!-- History tab -->
+        <div v-show="activeTab === 'history'" class="flex-1 flex flex-col min-h-0 pt-2">
+          <div v-if="history.length === 0" class="text-sm text-surface-500 p-4">
+            {{ t('admin.scheduledJobs.noHistory', {}, 'No runs yet') }}
+          </div>
+          <div v-else class="history-list overflow-y-auto min-h-0">
+            <div
+              v-for="entry in history"
+              :key="entry.Id"
+              class="history-entry"
+              :class="{ 'history-entry--failed': !entry.Success }"
+            >
+              <div class="flex items-baseline gap-2">
+                <CoarIcon
+                  :name="entry.Success ? 'circle-check' : 'shield-alert'"
+                  size="s"
+                  :color="entry.Success ? '#16a34a' : '#dc2626'"
+                />
+                <span class="font-mono text-xs">{{ fmtDate(entry.StartedAt) }}</span>
+                <span class="text-xs text-surface-500">({{ fmtDuration(entry.DurationMs) }})</span>
+                <CoarTag v-if="entry.ManualTrigger" variant="info" size="s">
+                  {{ t('admin.scheduledJobs.manualTrigger', {}, 'manual') }}
+                </CoarTag>
+              </div>
+              <div v-if="entry.ResultSummary" class="text-sm mt-1">{{ entry.ResultSummary }}</div>
+              <div v-if="!entry.Success && entry.ErrorMessage" class="text-sm text-red-700 mt-1">
+                {{ entry.ErrorMessage }}
+              </div>
+              <details v-if="entry.ExceptionDetail" class="mt-1">
+                <summary class="text-xs text-surface-500 cursor-pointer">
+                  {{ t('admin.scheduledJobs.stacktrace', {}, 'Stack trace') }}
+                </summary>
+                <pre class="text-xs mt-1 p-2 bg-surface-100 overflow-x-auto">{{ entry.ExceptionDetail }}</pre>
+              </details>
+            </div>
+          </div>
         </div>
-        <table v-else class="history">
-          <thead>
-            <tr>
-              <th>{{ t('admin.scheduledJobs.history.startedAt', {}, 'Started') }}</th>
-              <th>{{ t('admin.scheduledJobs.history.duration', {}, 'Duration') }}</th>
-              <th>{{ t('admin.scheduledJobs.history.status', {}, 'Status') }}</th>
-              <th>{{ t('admin.scheduledJobs.history.trigger', {}, 'Trigger') }}</th>
-              <th>{{ t('admin.scheduledJobs.history.result', {}, 'Result') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="h in history" :key="h.Id">
-              <td>{{ fmtDate(h.StartedAt) }}</td>
-              <td>{{ fmtDuration(h.DurationMs) }}</td>
-              <td>
-                <CoarTag :variant="h.Success ? 'success' : 'danger'">
-                  {{ h.Success ? t('common.success', {}, 'OK') : t('common.failed', {}, 'Failed') }}
-                </CoarTag>
-              </td>
-              <td>
-                <CoarTag v-if="h.ManualTrigger" variant="info">
-                  {{ t('admin.scheduledJobs.history.manual', {}, 'manual') }}
-                </CoarTag>
-                <span v-else>—</span>
-              </td>
-              <td class="result-cell">
-                <div v-if="h.ResultSummary">{{ h.ResultSummary }}</div>
-                <div v-if="h.ErrorMessage" class="error">{{ h.ErrorMessage }}</div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
+      </div>
     </div>
   </ModalLayout>
 </template>
 
 <style scoped>
-.loading-block,
-.empty-block {
-  padding: 2rem;
-  text-align: center;
-  color: var(--coar-text-neutral-secondary);
-}
-
-.details {
+.history-list {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
+  gap: 0.4rem;
 }
 
-.card {
-  background: var(--coar-background-neutral-secondary);
-  border: 1px solid var(--coar-border-neutral-secondary);
-  border-radius: 8px;
-  padding: 1rem 1.25rem;
-}
-
-.card h3 {
-  margin: 0 0 0.75rem 0;
-  font-size: 0.95rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--coar-text-neutral-secondary);
-}
-
-.card h3 .count {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: normal;
-  margin-left: 0.25rem;
-}
-
-.card h4 {
-  margin: 1rem 0 0.5rem 0;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.grid-2 {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.kv {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.5rem 1rem;
-  margin: 0;
-}
-
-.kv dt {
-  font-weight: 500;
-  color: var(--coar-text-neutral-secondary);
-}
-
-.kv dd {
-  margin: 0;
-}
-
-.history {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.history th,
-.history td {
-  text-align: left;
+.history-entry {
   padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--coar-border-neutral-secondary);
+  border-radius: 0.375rem;
+  background: var(--coar-background-neutral-secondary, #f9fafb);
+  border-left: 3px solid var(--coar-background-semantic-success-bold, #16a34a);
 }
 
-.history th {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--coar-text-neutral-secondary);
-}
-
-.history .result-cell {
-  font-size: 0.9rem;
-}
-
-.history .error {
-  color: var(--coar-text-error, #b91c1c);
-  font-size: 0.85rem;
-  margin-top: 0.25rem;
-}
-
-code {
-  font-family: var(--coar-font-mono, monospace);
-  font-size: 0.85em;
+.history-entry--failed {
+  border-left-color: var(--coar-background-semantic-error-bold, #dc2626);
 }
 </style>

@@ -8,10 +8,25 @@ export interface UIButton {
   onClick?: () => void
 }
 
+/**
+ * One entry in a breadcrumb trail. `to` makes the entry a router link;
+ * omit it (or set null) for the current page — that entry renders as
+ * plain text. The last entry is conventionally the current page.
+ */
+export interface UIBreadcrumb {
+  label: string
+  to?: string | null
+}
+
 export interface UIHeader {
   show: boolean
   title?: string
-  subTitle?: string
+  /**
+   * Plain string → rendered as a simple subtitle.
+   * Array of breadcrumbs → rendered as a breadcrumb trail (chevron
+   * separators, parent entries as links).
+   */
+  subTitle?: string | UIBreadcrumb[]
   icon?: string
 }
 

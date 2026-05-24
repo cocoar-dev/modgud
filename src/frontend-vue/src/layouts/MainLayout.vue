@@ -130,6 +130,20 @@ const hasAnyAdminPermission = computed(() =>
     ADMIN_RESOURCE_PERMISSIONS.some((p) => authStore.hasPermission(p))
 )
 
+// Permission gate for the "Plattform" sidebar entry — its own wrapper view
+// (PlatformView) groups Anpassung + Betrieb (Observability / Inbox-Settings /
+// Einstellungen). The entry is visible if the user can see any of those.
+const PLATFORM_RESOURCE_PERMISSIONS = [
+    'realm-settings:read',
+    'asset:read',
+    'observability:read',
+    'inbox-settings:read',
+    'realm:admin',
+] as const
+const hasAnyPlatformPermission = computed(() =>
+    PLATFORM_RESOURCE_PERMISSIONS.some((p) => authStore.hasPermission(p))
+)
+
 </script>
 
 <template>
@@ -149,7 +163,21 @@ const hasAnyAdminPermission = computed(() =>
                     <div class="title" :class="{ 'title-only': !ui.header.subTitle }">
                         {{ ui.header.title }}
                     </div>
-                    <div v-if="ui.header.subTitle" class="subtitle">
+                    <!-- Subtitle is either a plain string or a breadcrumb array.
+                         The array form renders chevron-separated entries, with
+                         all but the last as router links. -->
+                    <div v-if="Array.isArray(ui.header.subTitle)" class="subtitle-breadcrumbs">
+                        <template v-for="(crumb, idx) in ui.header.subTitle" :key="idx">
+                            <CoarIcon v-if="idx > 0" name="chevron-right" class="subtitle-sep" />
+                            <RouterLink
+                                v-if="crumb.to && idx < ui.header.subTitle.length - 1"
+                                :to="crumb.to"
+                                class="subtitle-link"
+                            >{{ crumb.label }}</RouterLink>
+                            <span v-else class="subtitle-current">{{ crumb.label }}</span>
+                        </template>
+                    </div>
+                    <div v-else-if="ui.header.subTitle" class="subtitle">
                         {{ ui.header.subTitle }}
                     </div>
                 </div>
@@ -200,6 +228,11 @@ const hasAnyAdminPermission = computed(() =>
                         :label="t('nav.administration', {}, 'Administration')" :active="route.path.startsWith('/admin')"
                         @click="router.push('/admin')" />
                 </template>
+                <CoarSidebarItem v-if="hasAnyPlatformPermission"
+                    icon="server"
+                    :label="t('nav.platform', {}, 'Plattform')"
+                    :active="route.path.startsWith('/plattform')"
+                    @click="router.push('/plattform')" />
 
                 <CoarSidebarSpacer grow />
 
@@ -308,6 +341,36 @@ const hasAnyAdminPermission = computed(() =>
 
 .subtitle {
     font-size: 0.9em;
+}
+
+.subtitle-breadcrumbs {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    font-size: 0.9em;
+}
+
+.subtitle-sep {
+    width: 14px;
+    height: 14px;
+    color: rgba(255, 255, 255, 0.5);
+    flex-shrink: 0;
+}
+
+.subtitle-link {
+    color: rgba(255, 255, 255, 0.8);
+    text-decoration: none;
+}
+
+.subtitle-link:hover {
+    color: white;
+    text-decoration: underline;
+}
+
+.subtitle-current {
+    color: white;
+    font-weight: 500;
 }
 
 .main-footer {

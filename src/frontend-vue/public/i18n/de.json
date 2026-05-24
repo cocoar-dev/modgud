@@ -3,6 +3,7 @@
     "loading": "Laden...",
     "create": "Erstellen",
     "save": "Speichern",
+    "refresh": "Aktualisieren",
     "clear": "Leeren",
     "ok": "OK",
     "apply": "Übernehmen",
@@ -319,6 +320,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "administration": "Administration",
+    "platform": "Plattform",
     "settings": "Einstellungen",
     "users": "Benutzer",
     "roles": "Rollen",
@@ -624,25 +626,43 @@
     },
     "scheduledJobs": {
       "title": "Scheduled Jobs",
-      "name": "Name",
+      "name": "Job",
+      "description": "Beschreibung",
       "cron": "Cron",
       "defaultCron": "Standard-Cron",
       "effectiveCron": "Aktive Cron",
       "nextFire": "Nächste Ausführung",
+      "nextRun": "Nächster Lauf",
       "lastRun": "Letzter Lauf",
       "lastResult": "Ergebnis",
+      "lastStatus": "Status",
       "enabled": "Aktiv",
+      "enabledHelp": "Nach Zeitplan ausführen",
       "key": "Key",
       "overrideTag": "Override",
       "parameters": "Parameter",
       "save": "Speichern",
       "triggerNow": "Jetzt ausführen",
-      "cronHelp": "Leer = Standard-Cron der Registrierung verwenden. Quartz-Cron-Format (7 Felder).",
+      "cronHelp": "Quartz 7-Feld-Cron. Leer lassen für Default: {default}",
       "savedToast": "Job-Konfiguration gespeichert",
       "triggeredToast": "Job ausgelöst — Aktualisierung in Kürze",
       "empty": "Keine Jobs registriert",
       "notFound": "Job nicht registriert (Backend wurde möglicherweise ohne diesen Job neu deployt).",
       "noHistory": "Noch keine Läufe aufgezeichnet.",
+      "manualTrigger": "manuell",
+      "stacktrace": "Stack-Trace",
+      "tabSchedule": "Zeitplan",
+      "tabConfig": "Konfiguration",
+      "tabHistory": "Historie",
+      "enabledTag": {
+        "true": "Aktiv",
+        "false": "Inaktiv"
+      },
+      "statusTag": {
+        "success": "OK",
+        "error": "Fehler",
+        "neutral": "—"
+      },
       "section": {
         "config": "Konfiguration",
         "schedule": "Zeitplan",
@@ -655,6 +675,29 @@
         "trigger": "Auslöser",
         "result": "Ergebnis",
         "manual": "manuell"
+      }
+    },
+    "inboxSettings": {
+      "title": "Inbox-Einstellungen",
+      "saved": "Einstellungen gespeichert.",
+      "saveFailed": "Speichern fehlgeschlagen.",
+      "maxUnreadDays": "Max. Tage ungelesen",
+      "autoExpireDaysAfterRead": "Max. Tage nach Lesen",
+      "hardDeleteDaysAfterDismissed": "Hard-delete N Tage nach Erledigung",
+      "adminCr": {
+        "title": "Änderungsanträge (Admin-Inbox)",
+        "description": "Offene Anträge bleiben so lange in der Admin-Inbox, bis ein Admin sie approved oder rejected. Diese Einstellung steuert nur, wie lange erledigte Items für die Nachvollziehbarkeit bestehen bleiben."
+      },
+      "feedback": {
+        "title": "Antrags-Feedback (User-Inbox)",
+        "description": "Bestätigungen / Ablehnungen, die der Antragsteller bekommt."
+      },
+      "jobFeedback": {
+        "title": "Scheduled-Job-Feedback",
+        "description": "Operative Job-Signale (Failures an Admins, manuelle Trigger-Bestätigungen an den auslösenden User). Kürzere Defaults, weil operative Signale schneller veralten."
+      },
+      "help": {
+        "hardDeleteDaysAfterDismissed": "Items, die durch Approve/Reject erledigt wurden, werden nach so vielen Tagen endgültig gelöscht. Leer = nie löschen."
       }
     },
     "observability": {
@@ -681,6 +724,7 @@
       "system": "System"
     },
     "customization": {
+      "title": "Anpassung",
       "branding": {
         "title": "Branding",
         "hint": "Pro-Realm-Branding für die SPA-Shell. Alle Felder optional — leer lassen für die Cocoar-Defaults. Logo + Favicon werden aus der Asset-Library gewählt. Änderungen wirken beim nächsten SPA-Load.",
@@ -914,6 +958,44 @@
   "permissions": {
     "user": "Benutzer",
     "app": "App"
+  },
+  "platform": {
+    "section": {
+      "operations": "Betrieb"
+    }
+  },
+  "inbox": {
+    "title": "Inbox",
+    "tabAll": "Alle",
+    "tabUnread": "Ungelesen",
+    "empty": "Keine Benachrichtigungen",
+    "markAllRead": "Alle als gelesen markieren",
+    "dismissAll": "Alle entfernen",
+    "dismiss": "Entfernen",
+    "timeNow": "gerade eben",
+    "kinds": {
+      "adminChangeRequestSubmitted": {
+        "title": "Neuer Änderungsantrag",
+        "body": "Wartet auf Admin-Approval."
+      },
+      "changeRequestApproved": {
+        "title": "Antrag genehmigt",
+        "body": "Dein Änderungsantrag wurde genehmigt."
+      },
+      "changeRequestRejected": {
+        "title": "Antrag abgelehnt",
+        "body": "Dein Änderungsantrag wurde abgelehnt."
+      },
+      "scheduledJobFailed": {
+        "title": "Scheduled-Job fehlgeschlagen: {jobKey}",
+        "body": "{error}"
+      },
+      "manualJobCompleted": {
+        "titleSuccess": "Job „{jobKey}\" erfolgreich",
+        "titleFailed": "Job „{jobKey}\" fehlgeschlagen",
+        "body": "Dauer {durationMs} ms"
+      }
+    }
   },
   "confirmDeletion": {
     "missing": "Bestätigungs-Link unvollständig.",

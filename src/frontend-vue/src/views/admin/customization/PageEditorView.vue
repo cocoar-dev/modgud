@@ -68,8 +68,11 @@ const labelBySlot: Record<string, string> = {
 }
 
 watch([language, slug], () => ui.set((ctx) => {
-  ctx.header.title = t('admin.customization.pages.title', {}, 'Pages')
-  ctx.header.subTitle = labelBySlot[slug.value] ?? slug.value
+  ctx.header.title = t('nav.platform', {}, 'Plattform')
+  ctx.header.subTitle = [
+    { label: t('admin.customization.pages.title', {}, 'Pages'), to: '/plattform/customization/pages' },
+    { label: labelBySlot[slug.value] ?? slug.value },
+  ]
   ctx.header.icon = 'layout-template'
   ctx.content.container = false
 }), { immediate: true })
@@ -164,7 +167,7 @@ async function resetToDefault() {
 }
 
 function back() {
-  router.push('/admin/customization/pages')
+  router.push('/plattform/customization/pages')
 }
 
 onMounted(loadSchema)
