@@ -403,6 +403,23 @@ try
             options.Cookie.Name = "Cocoar.Auth.2FA";
             options.ExpireTimeSpan = TimeSpan.FromMinutes(5); // Short-lived — user must enter TOTP quickly
         })
+        // "Remember this device for 2FA" cookie. We don't issue it ourselves
+        // (the 2FA UI has no "remember me" checkbox today), but
+        // SecurityStampValidator unconditionally signs out from this scheme
+        // when it invalidates a session (e.g. after a security-stamp bump
+        // from a password change or email-confirm). Without the registration
+        // every Identity-cookie request that triggers stamp validation fails
+        // with "No sign-out authentication handler is registered for the
+        // scheme 'Identity.TwoFactorRememberMe'". Defensive-only — short
+        // expiry, locked-down cookie attrs match the other Identity schemes.
+        .AddCookie(IdentityConstants.TwoFactorRememberMeScheme, options =>
+        {
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+            options.Cookie.Name = "Cocoar.Auth.2FA.Remember";
+            options.ExpireTimeSpan = TimeSpan.FromDays(30);
+        })
         // External cookie: short-lived holder for OIDC tickets between the
         // remote authentication callback and our app-level sign-in decision.
         // SameSite=Lax so the browser keeps the cookie on the IdP→app redirect.
