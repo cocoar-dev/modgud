@@ -58,6 +58,11 @@ public static class AppRealmSeeder
 
         // Scheduled jobs (Quartz-based system jobs — DCR-GC, history-retention, ...)
         ("scheduled-job", ["read", "write"]),
+
+        // Inbox retention policy (admin-tunable per-kind config under /admin/inbox-settings).
+        // The user-facing /api/inbox endpoints are NOT gated by this — every authenticated
+        // user can see their own inbox items.
+        ("inbox-settings", ["read", "write"]),
     ];
 
     /// <summary>

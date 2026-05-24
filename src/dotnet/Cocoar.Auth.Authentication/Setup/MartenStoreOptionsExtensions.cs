@@ -190,6 +190,7 @@ public static class MartenStoreOptionsExtensions
         options.Projections.CompositeProjectionFor("ViewProjections", projection =>
         {
             projection.Add<UserViewProjection>();
+            projection.Add<Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.Inbox.InboxItemProjection>();
         });
 
         return options;

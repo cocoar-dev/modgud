@@ -25,6 +25,16 @@ public class SignalRProjectionDispatchHandler(DataEventDispatcher eventDispatche
         Dispatch("User", message.Action, payload, message.Id);
     }
 
+    public Task Handle(InboxItemSignalRDispatch message)
+    {
+        // We pass the raw InboxItemView through the dispatcher — the InboxHub
+        // is the place that knows about per-recipient filtering and DTO shape
+        // (it does `view.RecipientUserId == ctx.UserId` first, then ToDto()).
+        // Inbox items never delete; Dismiss is just another Update event.
+        Dispatch("InboxItem", message.Action, message.View, message.Id);
+        return Task.CompletedTask;
+    }
+
     private void Dispatch(string subject, SignalRDispatchAction action, object? view, Guid id)
     {
         switch (action)

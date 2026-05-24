@@ -839,6 +839,19 @@ try
         name: Cocoar.Auth.Api.Features.Admin.Jobs.DcrGcJob.Name,
         defaultCron: Cocoar.Auth.Api.Features.Admin.Jobs.DcrGcJob.DefaultCron,
         description: Cocoar.Auth.Api.Features.Admin.Jobs.DcrGcJob.Description);
+    builder.Services.AddSystemJob<Cocoar.Auth.Api.Features.Inbox.InboxRetentionJob>(
+        key: Cocoar.Auth.Api.Features.Inbox.InboxRetentionJob.Key,
+        name: Cocoar.Auth.Api.Features.Inbox.InboxRetentionJob.Name,
+        defaultCron: Cocoar.Auth.Api.Features.Inbox.InboxRetentionJob.DefaultCron,
+        description: Cocoar.Auth.Api.Features.Inbox.InboxRetentionJob.Description);
+
+    // Inbox — per-recipient notifications with SignalR live push. Both
+    // services are scoped (tenant-aware IDocumentSession). The InboxHub
+    // is auto-discovered by SignalARRR via Program assembly scan.
+    builder.Services.AddScoped<Cocoar.Auth.Application.Inbox.IInboxNotifier,
+        Cocoar.Auth.Infrastructure.Inbox.InboxNotifier>();
+    builder.Services.AddScoped<Cocoar.Auth.Application.Inbox.IInboxRetentionService,
+        Cocoar.Auth.Infrastructure.Inbox.InboxRetentionService>();
 
     builder.Services.AddSerilog(logConfig =>
     {
@@ -997,6 +1010,8 @@ try
     app.MapAssetsEndpoints("api");
     app.MapCustomizationPagesEndpoints("api");
     Cocoar.Auth.Api.Features.Admin.Jobs.JobsEndpoints.MapJobsEndpoints(app, "api");
+    Cocoar.Auth.Api.Features.Inbox.InboxEndpoints.MapInboxEndpoints(app, "api");
+    Cocoar.Auth.Api.Features.Inbox.InboxSettingsEndpoints.MapInboxSettingsEndpoints(app, "api");
 
     // Account & Setup Endpoints (have additional strict "auth" rate limit)
     app.MapAccountEndpoints("api");

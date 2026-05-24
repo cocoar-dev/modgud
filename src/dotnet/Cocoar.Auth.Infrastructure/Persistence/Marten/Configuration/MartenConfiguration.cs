@@ -91,6 +91,13 @@ public static class MartenConfiguration
             .Identity(x => x.Id)
             .Index(x => new { x.JobKey, x.StartedAt });
 
+        // Inbox retention settings — singleton per tenant (fixed id), admin-tunable.
+        // The async InboxItemView projection is registered via
+        // UseCocoarAuthAuthentication() so the composite ViewProjections daemon
+        // picks it up alongside UserViewProjection.
+        options.Schema.For<Cocoar.Auth.Application.Inbox.InboxRetentionSettings>()
+            .Identity(x => x.Id);
+
         // Authentication-specific Marten setup (documents + events + projections)
         // is wired via UseCocoarAuthAuthentication(), called from AddInfrastructure's
         // additionalMartenConfig callback so Infrastructure stays unaware of Authentication.
