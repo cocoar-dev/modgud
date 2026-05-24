@@ -622,6 +622,41 @@
       "deleteWarning": "Das Asset wird unwiderruflich entfernt. Items, die es referenzieren, blockieren das Löschen.",
       "inUseHeadline": "Löschen nicht möglich — noch referenziert von:"
     },
+    "scheduledJobs": {
+      "title": "Scheduled Jobs",
+      "name": "Name",
+      "cron": "Cron",
+      "defaultCron": "Standard-Cron",
+      "effectiveCron": "Aktive Cron",
+      "nextFire": "Nächste Ausführung",
+      "lastRun": "Letzter Lauf",
+      "lastResult": "Ergebnis",
+      "enabled": "Aktiv",
+      "key": "Key",
+      "overrideTag": "Override",
+      "parameters": "Parameter",
+      "save": "Speichern",
+      "triggerNow": "Jetzt ausführen",
+      "cronHelp": "Leer = Standard-Cron der Registrierung verwenden. Quartz-Cron-Format (7 Felder).",
+      "savedToast": "Job-Konfiguration gespeichert",
+      "triggeredToast": "Job ausgelöst — Aktualisierung in Kürze",
+      "empty": "Keine Jobs registriert",
+      "notFound": "Job nicht registriert (Backend wurde möglicherweise ohne diesen Job neu deployt).",
+      "noHistory": "Noch keine Läufe aufgezeichnet.",
+      "section": {
+        "config": "Konfiguration",
+        "schedule": "Zeitplan",
+        "history": "Lauf-Historie"
+      },
+      "history": {
+        "startedAt": "Gestartet",
+        "duration": "Dauer",
+        "status": "Status",
+        "trigger": "Auslöser",
+        "result": "Ergebnis",
+        "manual": "manuell"
+      }
+    },
     "observability": {
       "title": "Observability",
       "loginSuccess": "Erfolgreiche Logins",

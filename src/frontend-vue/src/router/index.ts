@@ -99,6 +99,11 @@ const LOGIN_PROVIDER_MODAL_SIZE = {
   height: '82vh', minHeight: '82vh', maxHeight: '82vh',
 } as const
 
+const SCHEDULED_JOB_MODAL_SIZE = {
+  width: '70vw', maxWidth: '80rem',
+  height: '80vh', minHeight: '80vh', maxHeight: '80vh',
+} as const
+
 const APP_MODAL_SIZE = {
   width: '85vw', maxWidth: '100rem',
   height: '88vh', minHeight: '88vh', maxHeight: '88vh',
@@ -378,6 +383,21 @@ const routes = [
             {
               path: 'realm-settings',
               component: () => import('@/views/admin/RealmSettingsView.vue'),
+            },
+            {
+              path: 'scheduled-jobs',
+              component: () => import('@/views/admin/scheduledJobs/ScheduledJobList.vue'),
+              meta: {
+                routedFragments: [
+                  {
+                    // :id slot carries the job Key (e.g. "dcr-gc").
+                    type: 'modal',
+                    path: ':id',
+                    component: () => import('@/views/admin/scheduledJobs/ScheduledJobDetails.vue'),
+                    overlayOptions: { size: SCHEDULED_JOB_MODAL_SIZE },
+                  },
+                ],
+              },
             },
             {
               path: 'settings',
