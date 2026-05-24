@@ -91,7 +91,17 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function login(userName: string, password: string, rememberMe: boolean = false): Promise<LoginResponse | void> {
     const result = await http.addPath('login').post<LoginResponse>({ UserName: userName, Password: password, RememberMe: rememberMe })
-    if (result?.RequiresMfa || result?.RequiresSecureSetup) {
+    if (result?.RequiresMfa) {
+      // Partial sign-in only (TwoFactorUserId cookie) — /api/account/me would 401.
+      // Caller (LoginView) shows the MFA-choice/code step; fetchMe runs after mfaLogin succeeds.
+      return result
+    }
+    if (result?.RequiresSecureSetup) {
+      // Full sign-in already happened on the backend (PasswordSignInAsync.Succeeded
+      // before the 2FA-setup-required gate). SecureSetupModal reads authStore.user.Email
+      // for the Email-OTP option, so we MUST populate the store now — otherwise the
+      // modal renders the "no email configured" branch even though one is on file.
+      await fetchMe()
       return result
     }
     await fetchMe()
