@@ -36,6 +36,7 @@ public static class AppRealmSeeder
 
         // Identity / directory
         ("user", ["read", "write"]),
+        ("service-account", ["read", "write"]),
         ("role", ["read", "write"]),
         ("authorization-group", ["read", "write"]),
         ("permission-role", ["read", "write"]),
@@ -56,10 +57,21 @@ public static class AppRealmSeeder
         // Login providers (the configurable buttons on the login page)
         ("login-provider", ["admin", "read", "write"]),
 
+        // Per-realm settings (Self-Reg, DCR, Branding-tab — tenant-admin owned
+        // config under /admin/realm-settings + /plattform/branding).
+        ("realm-settings", ["read", "write"]),
+
+        // Asset library — BYTEA-stored logos / favicons / page-builder media
+        // under /plattform/customization/assets.
+        ("asset", ["read", "write"]),
+
+        // Operator-facing observability dashboard (/plattform/observability).
+        ("observability", ["read"]),
+
         // Scheduled jobs (Quartz-based system jobs — DCR-GC, history-retention, ...)
         ("scheduled-job", ["read", "write"]),
 
-        // Inbox retention policy (admin-tunable per-kind config under /admin/inbox-settings).
+        // Inbox retention policy (admin-tunable per-kind config under /plattform/inbox-settings).
         // The user-facing /api/inbox endpoints are NOT gated by this — every authenticated
         // user can see their own inbox items.
         ("inbox-settings", ["read", "write"]),
@@ -125,26 +137,59 @@ public static class AppRealmSeeder
     {
         var existing = await session.Query<App>()
             .FirstOrDefaultAsync(a => a.Slug == slug && !a.IsDeleted, ct);
-        if (existing is not null) return;
 
-        var permissions = catalog
-            .SelectMany(entry => entry.Actions.Select(action =>
-                new AppPermission(Guid.NewGuid(), entry.Resource, action, Description: null)))
+        if (existing is null)
+        {
+            // First-time seed — new realm, no App yet.
+            var permissions = catalog
+                .SelectMany(entry => entry.Actions.Select(action =>
+                    new AppPermission(Guid.NewGuid(), entry.Resource, action, Description: null)))
+                .ToList();
+
+            var id = Guid.NewGuid();
+            var created = new AppCreatedEvent(
+                Id: id,
+                Slug: slug,
+                DisplayName: displayName,
+                Description: description,
+                Permissions: permissions,
+                IsSystem: true);
+
+            session.Events.StartStream<App>(id, created);
+
+            logger?.LogInformation(
+                "Seeded system app '{Slug}' for tenant '{TenantId}' with {PermissionCount} permission(s)",
+                slug, tenantId, permissions.Count);
+            return;
+        }
+
+        // Evolving seed — App already exists. Compare the catalog against the
+        // App's current permissions; append any missing (resource, action)
+        // pairs via AppUpdatedEvent so the role-grant UI surfaces newly-added
+        // gates without manual operator intervention. Existing permissions
+        // keep their stable Id; we only ADD here, never delete or rename.
+        var currentByKey = existing.Permissions
+            .ToDictionary(p => (p.Resource, p.Action), p => p);
+
+        var missing = catalog
+            .SelectMany(entry => entry.Actions.Select(action => (entry.Resource, Action: action)))
+            .Where(k => !currentByKey.ContainsKey(k))
+            .Select(k => new AppPermission(Guid.NewGuid(), k.Resource, k.Action, Description: null))
             .ToList();
 
-        var id = Guid.NewGuid();
-        var created = new AppCreatedEvent(
-            Id: id,
-            Slug: slug,
-            DisplayName: displayName,
-            Description: description,
-            Permissions: permissions,
-            IsSystem: true);
+        if (missing.Count == 0) return;
 
-        session.Events.StartStream<App>(id, created);
+        var merged = existing.Permissions.Concat(missing).ToList();
+
+        session.Events.Append(existing.Id, new AppUpdatedEvent(
+            Id: existing.Id,
+            DisplayName: existing.DisplayName,
+            Description: existing.Description,
+            Permissions: merged));
 
         logger?.LogInformation(
-            "Seeded system app '{Slug}' for tenant '{TenantId}' with {PermissionCount} permission(s)",
-            slug, tenantId, permissions.Count);
+            "Evolved system app '{Slug}' for tenant '{TenantId}' — added {MissingCount} permission(s): {Missing}",
+            slug, tenantId, missing.Count,
+            string.Join(", ", missing.Select(p => $"{p.Resource}:{p.Action}")));
     }
 }
