@@ -80,6 +80,17 @@ public static class MartenConfiguration
             .Identity(x => x.Id)
             .Index(x => x.UploadedAt);
 
+        // Quartz scheduling — per-tenant config overrides + run history.
+        // JobConfig keys are string-typed (registration keys, e.g. "dcr-gc").
+        // JobRunHistoryEntry is append-only; admin UI shows the last N
+        // per job-key. Indexed on (JobKey, StartedAt) for the descending
+        // history scan that drives the Last Run column + history tab.
+        options.Schema.For<Cocoar.Auth.Infrastructure.Scheduling.JobConfig>()
+            .Identity(x => x.Key);
+        options.Schema.For<Cocoar.Auth.Infrastructure.Scheduling.JobRunHistoryEntry>()
+            .Identity(x => x.Id)
+            .Index(x => new { x.JobKey, x.StartedAt });
+
         // Authentication-specific Marten setup (documents + events + projections)
         // is wired via UseCocoarAuthAuthentication(), called from AddInfrastructure's
         // additionalMartenConfig callback so Infrastructure stays unaware of Authentication.

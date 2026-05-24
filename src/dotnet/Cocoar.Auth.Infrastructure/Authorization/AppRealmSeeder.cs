@@ -55,6 +55,9 @@ public static class AppRealmSeeder
 
         // Login providers (the configurable buttons on the login page)
         ("login-provider", ["admin", "read", "write"]),
+
+        // Scheduled jobs (Quartz-based system jobs — DCR-GC, history-retention, ...)
+        ("scheduled-job", ["read", "write"]),
     ];
 
     /// <summary>

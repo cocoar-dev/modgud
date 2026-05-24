@@ -34,6 +34,7 @@
     <PackageReference Include="OpenIddict.Server" />
     <PackageReference Include="OpenIddict.Validation" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" />
+    <PackageReference Include="Quartz.Extensions.Hosting" />
   </ItemGroup>
 
   <ItemGroup>

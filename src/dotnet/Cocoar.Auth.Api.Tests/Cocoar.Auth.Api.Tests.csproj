@@ -19,6 +19,12 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <!-- Quartz.Extensions.Hosting is a transitive dep of Cocoar.Auth.Infrastructure
+         but its runtime assembly (Quartz.Extensions.DependencyInjection.dll)
+         doesn't propagate to test bin output reliably (FrameworkReference
+         interaction). Pull it in explicitly so AddScheduling() succeeds at
+         host boot. -->
+    <PackageReference Include="Quartz.Extensions.Hosting" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>

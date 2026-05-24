@@ -38,6 +38,7 @@ using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Infrastructure;
 using Cocoar.Auth.Infrastructure.OAuth;
 using Cocoar.Auth.Infrastructure.OpenIddict;
+using Cocoar.Auth.Infrastructure.Scheduling;
 using Cocoar.Auth.Infrastructure.Persistence.DataProtection;
 using Microsoft.AspNetCore.DataProtection;
 using Cocoar.Auth.Api.Features.Auth.OAuth;
@@ -822,9 +823,22 @@ try
     builder.Services.AddSingleton(authLogSink);
     builder.Services.AddHostedService<AuthLogPersistenceService>();
 
-    // DCR garbage collector — daily sweep of stale DCR clients whose
-    // LastUsedAt has aged past the per-realm TTL. Soft-delete only.
-    builder.Services.AddHostedService<Cocoar.Auth.Infrastructure.OpenIddict.DcrGarbageCollectorService>();
+    // Quartz-based scheduling framework + the system jobs we host. The DCR
+    // garbage collector was a hand-rolled BackgroundService before Phase 1A;
+    // now it runs as a Quartz job so admins can see runs, override the cron,
+    // and trigger manually from /admin/jobs.
+    builder.Services.AddScheduling();
+    builder.Services.AddSystemJob<Cocoar.Auth.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob>(
+        key: Cocoar.Auth.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.Key,
+        name: Cocoar.Auth.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.Name,
+        defaultCron: Cocoar.Auth.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.DefaultCron,
+        description: Cocoar.Auth.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.Description,
+        getParameterSchema: Cocoar.Auth.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.GetParameterSchema);
+    builder.Services.AddSystemJob<Cocoar.Auth.Api.Features.Admin.Jobs.DcrGcJob>(
+        key: Cocoar.Auth.Api.Features.Admin.Jobs.DcrGcJob.Key,
+        name: Cocoar.Auth.Api.Features.Admin.Jobs.DcrGcJob.Name,
+        defaultCron: Cocoar.Auth.Api.Features.Admin.Jobs.DcrGcJob.DefaultCron,
+        description: Cocoar.Auth.Api.Features.Admin.Jobs.DcrGcJob.Description);
 
     builder.Services.AddSerilog(logConfig =>
     {
@@ -982,6 +996,7 @@ try
     app.MapAdminObservabilityEndpoints("api");
     app.MapAssetsEndpoints("api");
     app.MapCustomizationPagesEndpoints("api");
+    Cocoar.Auth.Api.Features.Admin.Jobs.JobsEndpoints.MapJobsEndpoints(app, "api");
 
     // Account & Setup Endpoints (have additional strict "auth" rate limit)
     app.MapAccountEndpoints("api");
