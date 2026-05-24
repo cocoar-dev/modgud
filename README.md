@@ -6,6 +6,12 @@ Authentication and authorization Identity Provider for COCOAR applications.
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 [![Tests](https://img.shields.io/badge/tests-63%20passing-brightgreen)]()
 
+> Matched against **[Cocoar.AppBase](https://github.com/cocoar-dev/Cocoar.AppBase)
+> v2.0.0** (Critter Stack 2026 baseline, 2026-05-23). Current AppBase
+> reference version is recorded in [`APPBASE_VERSION`](./APPBASE_VERSION) —
+> diff against AppBase's `docs/changelog/v*.md` later to see what's worth
+> backporting.
+
 ---
 
 ## Overview
@@ -16,9 +22,9 @@ Cocoar.Auth is a full-featured Identity Provider built with:
 |-----------|------------|
 | **Backend** | ASP.NET Core 10.0 with Clean Architecture |
 | **Identity** | ASP.NET Core Identity |
-| **Database** | PostgreSQL via Marten 8.16.1 |
+| **Database** | PostgreSQL via Marten 9.0 |
 | **Event Sourcing** | Marten Event Store with inline projections |
-| **CQRS/Mediator** | Wolverine 5.3.0 |
+| **CQRS/Mediator** | Wolverine 6.0 |
 | **Testing** | xUnit + Testcontainers |
 
 ## Architecture
