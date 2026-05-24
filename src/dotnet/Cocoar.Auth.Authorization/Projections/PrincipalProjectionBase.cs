@@ -11,7 +11,7 @@ namespace Cocoar.Auth.Authorization.Projections;
 /// both Person and Group documents land in <c>mt_doc_principal</c>, distinguished
 /// by Marten's sub-class discriminator.
 /// </summary>
-public abstract class PrincipalProjectionBase : SingleStreamProjection<Principal, Guid>
+public abstract partial class PrincipalProjectionBase : SingleStreamProjection<Principal, Guid>
 {
     public Principal Create(GroupCreatedEvent @event) => new Group
     {

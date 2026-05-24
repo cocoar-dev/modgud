@@ -9,7 +9,7 @@ namespace Cocoar.Auth.Authorization.Projections;
 /// Inline so admin reads + slug-uniqueness checks see new state synchronously
 /// after a save.
 /// </summary>
-public class AppProjection : SingleStreamProjection<App, Guid>
+public partial class AppProjection : SingleStreamProjection<App, Guid>
 {
     public App Create(AppCreatedEvent @event) => new()
     {

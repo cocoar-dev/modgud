@@ -19,6 +19,11 @@
     <PackageReference Include="Marten" />
     <PackageReference Include="Marten.AspNetCore" />
     <PackageReference Include="WolverineFx.Marten" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
+    <PackageReference Include="JasperFx.Events.SourceGenerator">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="Riok.Mapperly" />
     <PackageReference Include="System.Linq.Async.Queryable" />
     <PackageReference Include="Cocoar.Reflectensions" />

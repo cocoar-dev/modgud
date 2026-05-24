@@ -8,7 +8,7 @@ namespace Cocoar.Auth.Authorization.Projections;
 /// Inline projection rebuilding a <see cref="PermissionRole"/> from its event stream.
 /// Inline so the admin UI sees the new role state immediately after a save.
 /// </summary>
-public class PermissionRoleProjection : SingleStreamProjection<PermissionRole, Guid>
+public partial class PermissionRoleProjection : SingleStreamProjection<PermissionRole, Guid>
 {
     public PermissionRole Create(PermissionRoleCreatedEvent @event) => new()
     {

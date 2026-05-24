@@ -13,6 +13,10 @@
     <!-- Persistence + messaging -->
     <PackageReference Include="Marten" />
     <PackageReference Include="WolverineFx.Marten" />
+    <PackageReference Include="JasperFx.Events.SourceGenerator">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
 
     <!-- FIDO2 / Passkey -->
     <PackageReference Include="Fido2.AspNet" />

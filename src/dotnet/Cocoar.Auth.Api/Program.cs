@@ -795,6 +795,25 @@ try
         opts.Durability.Mode = wolverineMode;
         opts.CodeGeneration.TypeLoadMode = JasperFx.CodeGeneration.TypeLoadMode.Auto;
 
+        // Wolverine 6 made `ServiceLocationPolicy.NotAllowed` the default. We
+        // keep that strict default — accidental new service-location dependencies
+        // fail loudly at codegen — and document each known exception below.
+        // Mirrors the AppBase v2.0.0 allowlist pattern; see
+        // C:\git\cocoar\Cocoar.AppBase\docs\migrations\v1-to-v2.md § "Schritt 6".
+
+        // ASP.NET Identity — UserManager<T>/SignInManager<T> take IServiceProvider
+        // in their constructors by design (IPasswordHasher<T>/IUserValidator<T>
+        // resolution). Not refactorable without forking Identity.
+        opts.CodeGeneration.AlwaysUseServiceLocationFor<Microsoft.AspNetCore.Identity.UserManager<Cocoar.Auth.Authentication.Domain.ApplicationUser>>();
+        opts.CodeGeneration.AlwaysUseServiceLocationFor<Microsoft.AspNetCore.Identity.SignInManager<Cocoar.Auth.Authentication.Domain.ApplicationUser>>();
+
+        // Cocoar.JsEval transitive deps — JsEngine + TsTranspiler use
+        // IServiceProvider internally for module/script resolution. Temporary;
+        // drops away once JsEval ships pure constructor DI (tracked as a
+        // backlog item; AppBase has the same workaround).
+        opts.CodeGeneration.AlwaysUseServiceLocationFor<Cocoar.Auth.Authorization.Membership.IMembershipEvaluator>();
+        opts.CodeGeneration.AlwaysUseServiceLocationFor<Cocoar.Auth.Authorization.Membership.IAutoMembershipRecalculator>();
+
         // Auto-register Event Forwarding subscriptions for all ReferenceSyncHandler<TEvent> implementations
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
     });

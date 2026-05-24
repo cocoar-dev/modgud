@@ -12,7 +12,7 @@ namespace Cocoar.Auth.Authentication.Projections;
 /// from user-stream events. The library base owns all group-stream events; this
 /// class adds the Person side (Person).
 /// </summary>
-public class CocoarAuthPrincipalProjection : PrincipalProjectionBase
+public partial class CocoarAuthPrincipalProjection : PrincipalProjectionBase
 {
     // SingleStreamProjection uses the event's stream-id automatically — user events
     // live on user streams (stream-id = user-id), group events on group streams

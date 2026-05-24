@@ -89,6 +89,23 @@ public static class MartenConfiguration
     {
         options.Events.StreamIdentity = StreamIdentity.AsGuid;
 
+        // Critter-Stack 2026 backport: pin two Marten 9 event-store defaults
+        // back to V8 behaviour. Walked back individually (instead of the blanket
+        // opts.RestoreV8Defaults()) so each entry can be re-evaluated on its own
+        // merits later. See C:\git\cocoar\Cocoar.AppBase\docs\migrations\v1-to-v2.md
+        // § "Schritt 5".
+        //
+        // AppendMode: 9.x default `QuickWithServerTimestamps` delegates metadata
+        // stamping to a Postgres function — can shift ordering/version timing.
+        // Our RaiseSideEffects overrides on UserViewProjection (and any future
+        // self-mutating projection) assume Rich-timing.
+        options.Events.AppendMode = EventAppendMode.Rich;
+        //
+        // UseIdentityMapForAggregates: 9.x default `true` can leak self-mutations
+        // via events within the same batch. Cocoar.Auth's principal projection
+        // and view projections rely on snapshot freshness — keep V8's `false`.
+        options.Events.UseIdentityMapForAggregates = false;
+
         // User profile events (kept here because the Authentication Principal projection
         // bridges them into the unified Principal document table — see CocoarAuthPrincipalProjection).
         // Aliases are decoupled from CLR type names — safe to refactor namespaces.

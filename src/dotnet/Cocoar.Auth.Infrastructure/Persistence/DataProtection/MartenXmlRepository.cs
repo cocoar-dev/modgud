@@ -29,7 +29,13 @@ public sealed class MartenXmlRepository : IXmlRepository
     public IReadOnlyCollection<XElement> GetAllElements()
     {
         using var session = _store.QuerySession(_tenantId);
-        var docs = session.Query<DataProtectionKeyDocument>().ToList();
+        // IXmlRepository is a sync contract; Marten 9 removed sync LINQ
+        // terminals on Marten queries. Key-ring refresh happens ~once every
+        // 90 days and never on a request thread, so sync-over-async here is
+        // negligible. Matches AppBase v2.0.0 backport pattern.
+        var docs = session.Query<DataProtectionKeyDocument>()
+            .ToListAsync()
+            .GetAwaiter().GetResult();
         return docs
             .Select(d => XElement.Parse(d.Xml))
             .ToList()

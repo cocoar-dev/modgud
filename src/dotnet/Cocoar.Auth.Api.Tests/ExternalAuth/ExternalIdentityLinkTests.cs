@@ -1,4 +1,5 @@
 using System.Text.Json;
+using JasperFx;
 using Marten;
 using Marten.Exceptions;
 using Microsoft.Extensions.DependencyInjection;

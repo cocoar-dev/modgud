@@ -11,7 +11,7 @@ using Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.Users;
 
 namespace Cocoar.Auth.Authentication.Projections;
 
-public class UserViewProjection : MultiStreamProjection<UserView, Guid>
+public partial class UserViewProjection : MultiStreamProjection<UserView, Guid>
 {
     public UserViewProjection()
     {

@@ -9,7 +9,7 @@ namespace Cocoar.Auth.Authentication.Identity.ExternalAuth;
 /// stream. Inline because the login flow reads (Issuer, Subject) → User lookups
 /// on every callback; stale reads would break JIT-user-creation decisions.
 /// </summary>
-public class ExternalIdentityLinkProjection : SingleStreamProjection<ExternalIdentityLink, Guid>
+public partial class ExternalIdentityLinkProjection : SingleStreamProjection<ExternalIdentityLink, Guid>
 {
     public ExternalIdentityLink Create(ExternalIdentityLinkedEvent @event) => new()
     {

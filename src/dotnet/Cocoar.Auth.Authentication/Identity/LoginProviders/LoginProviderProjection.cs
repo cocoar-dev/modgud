@@ -9,7 +9,7 @@ namespace Cocoar.Auth.Authentication.Identity.LoginProviders;
 /// Inline because login flows read this synchronously — any delay would show
 /// up as "admin changed config but login still uses old values".
 /// </summary>
-public class LoginProviderProjection : SingleStreamProjection<LoginProvider, Guid>
+public partial class LoginProviderProjection : SingleStreamProjection<LoginProvider, Guid>
 {
     public LoginProvider Create(LoginProviderAddedEvent @event) => new()
     {

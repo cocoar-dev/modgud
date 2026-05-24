@@ -3,7 +3,7 @@ using Marten.Events.Aggregation;
 
 namespace Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.OAuth;
 
-public class OAuthScopeStateProjection : SingleStreamProjection<OAuthScopeState, Guid>
+public partial class OAuthScopeStateProjection : SingleStreamProjection<OAuthScopeState, Guid>
 {
     public OAuthScopeState Create(OAuthScopeCreated e) => new()
     {

@@ -27,6 +27,10 @@
     <!-- Persistence + messaging — fix gesetzt für alle Konsumenten. -->
     <PackageReference Include="Marten" />
     <PackageReference Include="WolverineFx.Marten" />
+    <PackageReference Include="JasperFx.Events.SourceGenerator">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
 
     <!-- Script evaluation for access policies. -->
     <PackageReference Include="Cocoar.JsEval.Engine" />

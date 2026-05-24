@@ -4,7 +4,7 @@ using Marten.Events.Aggregation;
 
 namespace Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.OAuth;
 
-public class OAuthApplicationStateProjection : SingleStreamProjection<OAuthApplicationState, Guid>
+public partial class OAuthApplicationStateProjection : SingleStreamProjection<OAuthApplicationState, Guid>
 {
     public OAuthApplicationState Create(OAuthApplicationCreated e) => new()
     {
