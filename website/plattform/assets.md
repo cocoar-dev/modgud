@@ -38,7 +38,7 @@ The on-disk bytes are the sanitised version. The browser only ever sees what the
 1. Open **Administration → Customization → Asset Library**.
 2. Drag a file onto the upload zone, or click **Upload** and pick from the file dialog.
 3. The grid refreshes with the new asset — preview thumbnail, filename, content type, size, upload date, uploader.
-4. Reference the asset from [Branding](./customization-branding) by opening the Logo or Favicon picker.
+4. Reference the asset from [Branding](./branding) by opening the Logo or Favicon picker.
 
 ## Public read endpoint
 
@@ -60,7 +60,7 @@ The asset-library endpoint refuses to delete an asset that is **currently refere
 
 To delete a referenced asset:
 
-1. Open [Branding](./customization-branding).
+1. Open [Branding](./branding).
 2. Clear the field that references the asset (Logo or Favicon).
 3. **Save** the branding form.
 4. Return to **Asset Library** and delete the asset.

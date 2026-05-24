@@ -47,7 +47,7 @@ You should see:
 The CLI atomically creates the user, seeds the three default roles (System Admin / User Manager / Viewer) into the system realm, and adds the user to the **Administratoren** group with `realm:admin`.
 
 ::: tip Password rules
-The CLI enforces the same Identity password policy the SPA uses (length, mixed case, digit). A weak password is rejected — see [Settings](../admin/settings) for how to relax the policy if needed.
+The CLI enforces the same Identity password policy the SPA uses (length, mixed case, digit). A weak password is rejected — see [App-Einstellungen](../plattform/settings) for how to relax the policy if needed.
 :::
 
 ::: details Other ways to create the first admin
@@ -130,7 +130,7 @@ The bootstrap-admin command writes the user immediately. If login still fails, c
 :::
 
 ::: details Magic-link emails don't arrive
-Default `configuration.json` ships with an in-memory mail service for dev. Magic-link emails appear in the API logs (`docker logs cocoar-auth -f`) and in `data/dev-emails/` — they aren't actually sent. To use real SMTP, edit `configuration.local.json` (gitignored) and set the SMTP block — see [Settings](../admin/settings).
+Default `configuration.json` ships with an in-memory mail service for dev. Magic-link emails appear in the API logs (`docker logs cocoar-auth -f`) and in `data/dev-emails/` — they aren't actually sent. To use real SMTP, edit `configuration.local.json` (gitignored) and set the SMTP block — see [App-Einstellungen](../plattform/settings).
 :::
 
 ::: details OIDC discovery returns 404

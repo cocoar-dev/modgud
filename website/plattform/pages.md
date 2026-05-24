@@ -3,7 +3,7 @@
 Per-realm drag-and-drop editor for the SPA's login / logout / forgot-password screens. Editor stores a JSON schema per page-slot in the tenant DB; a future runtime sprint hooks `<CoarPageRenderer>` into those routes so the schemas actually render at login time.
 
 ::: warning Beta — gated behind an operator feature flag
-This surface is **disabled by default**. The Pages tile in the sidebar is hidden, the routes redirect away, and the underlying API returns 404 until the operator flips `AppSettings.Features.PageBuilder = true`. See [Feature Flags](./feature-flags) for how to turn it on in your environment.
+This surface is **disabled by default**. The Pages tile in the sidebar is hidden, the routes redirect away, and the underlying API returns 404 until the operator flips `AppSettings.Features.PageBuilder = true`. See [Feature Flags](../admin/feature-flags) for how to turn it on in your environment.
 
 The editor itself is functional and persists schemas. **Runtime rendering of stored schemas on `/login` / `/logout` / `/forgot-password` is not yet wired** — saving a schema in the editor does not currently change what end-users see. That second half is a separate sprint, planned but unscheduled.
 :::

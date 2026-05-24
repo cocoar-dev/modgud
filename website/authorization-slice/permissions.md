@@ -143,7 +143,7 @@ const allNavItems: NavItem[] = [
   { section: 'system', label: 'admin.realms.title', icon: 'globe',
     path: '/admin/realms', requirePermissions: ['control-plane:realm:read'] },
   { section: 'system', label: 'nav.settings', icon: 'settings',
-    path: '/admin/settings', requirePermissions: ['realm:admin'] },
+    path: '/plattform/settings', requirePermissions: ['realm:admin'] },
   // ...
 ]
 

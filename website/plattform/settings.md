@@ -16,7 +16,7 @@ Three enforcement levels:
 | **Optional** | New users get a non-blocking nudge to enable 2FA. They can postpone. |
 | **Required** | Users without 2FA are blocked from full access until they enrol. A grace period (configurable, default 7 days) lets them complete enrolment after the policy is enabled. |
 
-Per-user **2FA enforcement override** in the [user editor](./users) lets you exempt specific users from the realm-wide policy — sparingly, e.g. for service accounts.
+Per-user **2FA enforcement override** in the [user editor](../admin/users) lets you exempt specific users from the realm-wide policy — sparingly, e.g. for service accounts.
 
 ## Grace period
 
@@ -41,11 +41,11 @@ If SMTP is misconfigured, magic links can't be sent — users without 2FA can st
 
 ## Profile-change approval flow
 
-Toggle whether profile changes (email, name, phone) need admin approval — see [Change Requests](./change-requests). For trusted internal-staff realms, leaving this off is reasonable. For public-facing or compliance-sensitive realms, turn it on.
+Toggle whether profile changes (email, name, phone) need admin approval — see [Change Requests](../admin/change-requests). For trusted internal-staff realms, leaving this off is reasonable. For public-facing or compliance-sensitive realms, turn it on.
 
 ## Auth-log retention
 
-How long [Auth Log](./auth-log) entries are kept. Default: indefinite (long audit trails are usually a feature, not a bug). For compliance regimes that require deletion after N years, set it here.
+How long [Auth Log](../admin/auth-log) entries are kept. Default: indefinite (long audit trails are usually a feature, not a bug). For compliance regimes that require deletion after N years, set it here.
 
 ::: warning Retention is destructive
 Setting a retention shorter than current data triggers a one-time pruning pass that deletes entries beyond the window. There's no recovery — be sure.

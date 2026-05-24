@@ -142,47 +142,126 @@ export const useAuthStore = defineStore('auth', () => {
 Initialised in `main.ts` **before** `app.mount()` — prevents flash of
 unauthenticated content.
 
+## Two top-level admin areas
+
+The sidebar has **two** admin sidebar entries, each with its own 2nd-level
+nav rail:
+
+| Sidebar entry | Wrapper | Audience |
+|---|---|---|
+| **Administration** (`cog` icon, `/admin/*`) | `views/admin/AdminView.vue` | Tenant-/realm-admin work — "who can do what" |
+| **Plattform** (`server` icon, `/plattform/*`) | `views/platform/PlatformView.vue` | Operator-facing IdP config — "how this IdP instance is set up" |
+
+See [Plattform overview](../plattform/) for the rationale and what lives
+where.
+
 ## Per-resource sidebar gating
 
-In `views/admin/AdminView.vue` each sidebar item declares which
-permissions make it visible:
+In `views/admin/AdminView.vue` and `views/platform/PlatformView.vue` each
+sidebar item declares which permissions make it visible. The permission
+strings mirror the backend `RequiresPermission(...)` calls (bare 2-segment
+form — the app context `cocoar-auth:` is implicit in this codebase):
 
 ```typescript
-interface NavItem {
-  section: 'authorization' | 'oauth' | 'identity' | 'system'
+interface NavItemDef {
   label: string
   icon: string
-  path: string
-  requirePermissions: string[]   // mirrored 1:1 with backend strings
+  to: string
+  /** Any-of: matches if the user holds any of these. */
+  requirePermissions: string[]
+  /** Optional operator-level feature flag gate (both must pass). */
+  requireFeature?: 'PageBuilder'
 }
 
-const allNavItems: NavItem[] = [
-  { section: 'authorization', label: 'nav.users', icon: 'users',
-    path: '/admin/users', requirePermissions: ['cocoar-auth:user:read'] },
-  { section: 'oauth', label: 'admin.oauthClients.title', icon: 'app-window',
-    path: '/admin/oauth/clients', requirePermissions: ['cocoar-auth:oauth-client:read'] },
-  { section: 'system', label: 'nav.settings', icon: 'settings',
-    path: '/admin/settings', requirePermissions: ['realm:admin'] },
-  // ...
-]
+const sections = computed<SectionDef[]>(() => [
+  {
+    key: 'authorization',
+    heading: t('admin.section.authorization', {}, 'Autorisierung'),
+    items: [
+      { label: 'nav.users', icon: 'users', to: '/admin/users', requirePermissions: ['user:read'] },
+      { label: 'admin.serviceAccounts.title', icon: 'cpu', to: '/admin/service-accounts', requirePermissions: ['service-account:read'] },
+      // ...
+    ],
+  },
+  // OAuth & Federation, System sections follow ...
+])
 
-function canSee(item: NavItem): boolean {
+function canSee(item: NavItemDef): boolean {
+  if (item.requireFeature && !appConfig.config.Features[item.requireFeature]) return false
   return item.requirePermissions.some((p) => authStore.hasPermission(p))
 }
 ```
 
-Sections are hidden when all of their items are filtered out. A user
-with only `cocoar-auth:user:read` sees only "Authorization > Users"
-— no OAuth, no System.
+Items are passed to `SubNavLayoutGrouped` with `visible: canSee(item)`
+pre-filtering. Groups whose every item is hidden are dropped entirely by
+the layout — a user with only `user:read` sees only "Autorisierung →
+Benutzer", no OAuth section, no System section.
 
-The four sections:
+The Plattform entry itself is gated by `hasAnyPlatformPermission` in
+`MainLayout.vue` — visible if the user has any of
+`realm-settings:read`, `asset:read`, `observability:read`,
+`inbox-settings:read`, or `realm:admin`.
+
+The current `/admin/*` section layout:
 
 | Section | Items |
 |---|---|
-| **Authorization** | Users, Roles, Groups |
-| **OAuth & Federation** | Clients, Scopes, APIs |
-| **Identity Sources** | Login Providers, Identity Providers |
-| **System** | Realms, Auth Log, Change Requests, Settings |
+| **Autorisierung** | Benutzer, Service Accounts, Rollen, Gruppen |
+| **OAuth & Federation** | Login-Provider, OAuth-Clients, OAuth-Scopes, OAuth-APIs |
+| **System** | Anwendungen, Realms, Realm-Einstellungen, Auth Log, Scheduled Jobs, Änderungsanfragen |
+
+The current `/plattform/*` section layout:
+
+| Section | Items |
+|---|---|
+| **Anpassung** | Branding, Pages (PageBuilder-gated), Asset-Library |
+| **Betrieb** | Observability, Inbox-Einstellungen, App-Einstellungen |
+
+## Reusable Sub-Nav layouts
+
+Two layouts under `src/layouts/` power both wrapper views:
+
+- **`SubNavLayout.vue`** — single flat menu; menu scrolls **internally** if items overflow
+- **`SubNavLayoutGrouped.vue`** — multiple menus under section headings; the **whole container** scrolls if total content overflows, individual menus keep their natural height (no inner per-menu scrollbars)
+
+Both share `sub-nav-types.ts` (`SubNavItem` + `SubNavGroup`). An item with
+`visible: false` is filtered out by the layout; a group whose items are
+all filtered out is dropped from rendering. Pass `to: RouteLocationRaw`
+for navigation (RouterLink wraps the item — Ctrl/Cmd-click opens in a new
+tab natively), or `onClick` for action items.
+
+Adding a third top-level area is a 3-step recipe: (1) write a wrapper
+component that consumes `SubNavLayoutGrouped` with your `SubNavGroup[]`,
+(2) register the wrapper's route + its children in `router/index.ts`, (3)
+add a `<CoarSidebarItem>` to `MainLayout.vue` with a permission gate.
+
+## Header with breadcrumb trail
+
+`useUI()` exposes a reactive `header` slot for the title bar. The
+`subTitle` field accepts either a plain string or a `UIBreadcrumb[]` —
+the array form renders chevron-separated entries with all but the last as
+`<RouterLink>`s:
+
+```typescript
+import type { UIBreadcrumb } from '@/composables/useUI'
+
+watch(language, () => ui.set((ctx) => {
+  ctx.header.title = t('nav.platform', {}, 'Plattform')
+  // Plain string form — most page views:
+  ctx.header.subTitle = t('admin.observability.title', {}, 'Observability')
+
+  // Breadcrumb form — when a deeper page wants navigable parent crumbs:
+  // ctx.header.subTitle = [
+  //   { label: t('admin.customization.pages.title', {}, 'Pages'), to: '/plattform/customization/pages' },
+  //   { label: pageSlot.name },
+  // ] satisfies UIBreadcrumb[]
+  ctx.header.icon = 'activity'
+}), { immediate: true })
+```
+
+The `UIBreadcrumb` interface (`{ label: string; to?: string | null }`)
+keeps the breadcrumb purely declarative — no RouterLink wrapping at the
+call site.
 
 ## SignalR lifecycle (important!)
 
@@ -213,23 +292,34 @@ the path). Routes:
 | `/register` | RegisterView |
 | `/bootstrap?token=…` | BootstrapView (consumes a first-admin invite — see [First-time setup](../getting-started/first-time-setup)) |
 | `/2fa` | MfaLoginView |
-| `/profile` | ProfileView |
-| `/profile/sessions` | SessionsView |
-| `/profile/privacy` | PrivacyView (GDPR) |
-| `/profile/confirm-deletion?token=...` | ConfirmDeletionView |
-| `/admin/users` | UsersListView |
-| `/admin/users/:id` | UserDetailsView |
-| `/admin/groups` | GroupsListView |
-| `/admin/roles` | RolesListView |
-| `/admin/oauth/clients` | OAuthClientsListView |
-| `/admin/oauth/scopes` | OAuthScopesListView |
-| `/admin/oauth/apis` | OAuthApisListView |
-| `/admin/login-providers` | LoginProvidersListView |
-| `/admin/idp-config` | IdpConfigView |
-| `/admin/realms` | RealmsListView (only in manager realms) |
+| `/forgot-password` / `/reset-password` | Password-reset flows |
+| `/consent` | OAuth consent screen |
+| `/confirm-deletion?token=...` | ConfirmDeletionView (GDPR-delete confirm) |
+| `/profile` | ProfileView (tabs: account, sessions, privacy) |
+| `/dashboard` | DashboardView |
+| **Administration** (`/admin/*`) | `AdminView.vue` wrapper |
+| `/admin/users` | UserList + routed-fragment user-details modal |
+| `/admin/service-accounts` | ServiceAccountsView + details modal |
+| `/admin/roles` | RoleList + routed-fragment details modal |
+| `/admin/groups` | GroupList + routed-fragment details modal |
+| `/admin/oauth/clients` | ClientList + details modal |
+| `/admin/oauth/scopes` | ScopeList + details modal |
+| `/admin/oauth/apis` | ApiList + details modal |
+| `/admin/login-providers` | LoginProviderList + details modal |
+| `/admin/apps` | AppList + details modal |
+| `/admin/realms` | RealmList + details modal (control-plane realm only) |
+| `/admin/realm-settings` | RealmSettingsView |
 | `/admin/auth-log` | AuthLogView |
+| `/admin/scheduled-jobs` | ScheduledJobList + details modal (Schedule/Config/History tabs) |
 | `/admin/change-requests` | ChangeRequestsView |
-| `/admin/settings` | AppSettingsView |
+| **Plattform** (`/plattform/*`) | `PlatformView.vue` wrapper |
+| `/plattform/customization/branding` | BrandingView |
+| `/plattform/customization/pages` | PagesView (PageBuilder feature-gate) |
+| `/plattform/customization/pages/:slug` | PageEditorView |
+| `/plattform/customization/assets` | AssetsView |
+| `/plattform/observability` | AdminObservabilityView |
+| `/plattform/inbox-settings` | InboxSettingsView |
+| `/plattform/settings` | AppSettingsView |
 
 ## Vite dev setup
 

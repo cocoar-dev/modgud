@@ -104,7 +104,7 @@ and places the new admin into the **Administratoren** group:
 
 | Hard | Reason |
 |---|---|
-| Marten 8+ | Event store + polymorphic document storage (sub-class mapping) |
+| Marten 9+ | Event store + polymorphic document storage (sub-class mapping) |
 | WolverineFx.Marten | Commands + handler discovery + outbox |
 | Cocoar.JsEval + .Linq + .TypeScript | TS → JS transpile + JS → expression-tree translation for membership scripts |
 | ErrorOr | Command return types |

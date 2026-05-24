@@ -71,6 +71,7 @@ export const baseConfig = defineConfig({
         { text: 'Concepts', link: '/concepts/apps-and-resource-access' },
         { text: 'Guide', link: '/guide/integrating-resource-server' },
         { text: 'Admin', link: '/admin/' },
+        { text: 'Plattform', link: '/plattform/' },
         { text: 'Reference', link: '/reference/distribution-api' },
         { text: 'Testing', link: '/testing/' },
         { text: 'LLM Docs', link: '/llms-full.txt', target: '_blank' },
@@ -137,9 +138,22 @@ export const baseConfig = defineConfig({
             ],
           },
           {
+            text: 'Scheduling & Background Work',
+            items: [
+              { text: 'Quartz Jobs', link: '/guide/scheduling' },
+            ],
+          },
+          {
             text: 'Operations',
             items: [
               { text: 'Docker & Deployment', link: '/guide/deployment' },
+            ],
+          },
+          {
+            text: 'Engineering Gotchas',
+            items: [
+              { text: 'Marten `RaiseSideEffects`', link: '/guide/engineering-gotchas/marten-raise-side-effects' },
+              { text: 'Critter Stack 2026 (Marten 9 / Wolverine 6)', link: '/guide/engineering-gotchas/critter-stack-2026' },
             ],
           },
         ],
@@ -155,50 +169,62 @@ export const baseConfig = defineConfig({
             text: 'Identity & Access',
             items: [
               { text: 'Users', link: '/admin/users' },
+              { text: 'Service Accounts', link: '/admin/service-accounts' },
               { text: 'Roles', link: '/admin/roles' },
               { text: 'Groups', link: '/admin/groups' },
             ],
           },
           {
-            text: 'Apps',
-            items: [
-              { text: 'Applications', link: '/admin/applications' },
-            ],
-          },
-          {
-            text: 'OAuth & OIDC',
+            text: 'OAuth & Federation',
             items: [
               { text: 'OAuth Clients', link: '/admin/oauth-clients' },
               { text: 'OAuth Scopes', link: '/admin/oauth-scopes' },
               { text: 'OAuth APIs (Resource Servers)', link: '/admin/oauth-apis' },
               { text: 'Dynamic Client Registration', link: '/admin/dynamic-client-registration' },
+              { text: 'Login Providers', link: '/admin/login-providers' },
             ],
           },
           {
-            text: 'Federation & Realms',
+            text: 'System',
             items: [
-              { text: 'Login Providers', link: '/admin/login-providers' },
+              { text: 'Applications', link: '/admin/applications' },
               { text: 'Realms', link: '/admin/realms' },
               { text: 'Realm Settings', link: '/admin/realm-settings' },
-            ],
-          },
-          {
-            text: 'Customization',
-            items: [
-              { text: 'Branding', link: '/admin/customization-branding' },
-              { text: 'Asset Library', link: '/admin/customization-assets' },
-              { text: 'Pages (Beta)', link: '/admin/customization-pages' },
-            ],
-          },
-          {
-            text: 'Operations',
-            items: [
-              { text: 'Observability', link: '/admin/observability' },
               { text: 'Auth Log', link: '/admin/auth-log' },
+              { text: 'Scheduled Jobs', link: '/admin/scheduled-jobs' },
               { text: 'Change Requests', link: '/admin/change-requests' },
-              { text: 'Settings', link: '/admin/settings' },
+            ],
+          },
+          {
+            text: 'Tools',
+            items: [
               { text: 'Feature Flags', link: '/admin/feature-flags' },
               { text: 'Recovery CLI', link: '/admin/recovery-cli' },
+            ],
+          },
+        ],
+        '/plattform/': [
+          {
+            text: 'Plattform',
+            items: [
+              { text: 'Overview', link: '/plattform/' },
+            ],
+          },
+          {
+            text: 'Anpassung',
+            items: [
+              { text: 'Branding', link: '/plattform/branding' },
+              { text: 'Asset Library', link: '/plattform/assets' },
+              { text: 'Pages (Beta)', link: '/plattform/pages' },
+            ],
+          },
+          {
+            text: 'Betrieb',
+            items: [
+              { text: 'Observability', link: '/plattform/observability' },
+              { text: 'Inbox', link: '/plattform/inbox' },
+              { text: 'Inbox-Einstellungen', link: '/plattform/inbox-settings' },
+              { text: 'App-Einstellungen', link: '/plattform/settings' },
             ],
           },
         ],
@@ -298,23 +324,15 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: 'Engineering Gotchas',
-          items: [
-            { text: 'Marten `RaiseSideEffects`', link: '/dev-notes/marten-raise-side-effects' },
-          ],
-        },
-        {
           text: 'Future Features',
           items: [
             { text: 'Overview', link: '/dev-notes/future-features/' },
             { text: '⭐ Production-Readiness Audit 2026-05-13', link: '/dev-notes/future-features/production-readiness-audit-2026-05-13' },
-            { text: 'Observability — OpenTelemetry', link: '/dev-notes/future-features/observability-opentelemetry' },
             { text: 'HA / Multi-Instance Readiness', link: '/dev-notes/future-features/ha-multi-instance' },
             { text: 'Realm Backup / Restore / DR', link: '/dev-notes/future-features/realm-backup-restore' },
             { text: 'Enterprise SSO — SAML + LDAP', link: '/dev-notes/future-features/enterprise-sso-saml-ldap' },
-            { text: 'White-label customization', link: '/dev-notes/future-features/white-label-customization' },
+            { text: 'White-label customization (Phase 2)', link: '/dev-notes/future-features/white-label-customization' },
             { text: 'Login alerts + IP blacklist', link: '/dev-notes/future-features/login-alerts-ip-blacklist' },
-            { text: 'DCR for MCP clients', link: '/dev-notes/future-features/dcr-for-mcp-clients' },
             { text: 'App as permission catalog; RS gets subset', link: '/dev-notes/future-features/app-resources-as-permissions' },
             { text: 'Permission-Modell (finaler Stand)', link: '/dev-notes/future-features/permission-modell' },
             { text: 'Permission-Modell — Adversarial Review', link: '/dev-notes/future-features/permission-modell-adversarial-review' },

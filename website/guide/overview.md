@@ -2,7 +2,7 @@
 
 cocoar.auth is a self-contained multi-tenant Identity Provider
 (comparable to Keycloak, Zitadel, or Authentik). ASP.NET Core 10,
-Marten 8, OpenIddict 7, Vue 3.
+Marten 9, OpenIddict 7, Vue 3.
 
 ## What it does
 
@@ -46,8 +46,8 @@ Plus the frontend at `src/frontend-vue/`.
 | Layer | Technology |
 |---|---|
 | API | ASP.NET Core 10 (Minimal APIs) |
-| CQRS | Wolverine 5 (mediator + outbox) |
-| Persistence | Marten 8 (document DB + event store on PostgreSQL) |
+| CQRS | Wolverine 6 (mediator + outbox) |
+| Persistence | Marten 9 (document DB + event store on PostgreSQL) |
 | OAuth/OIDC | OpenIddict 7 with Marten stores |
 | Identity | ASP.NET Core Identity + EventSourcedUserStore |
 | Realtime | SignalR + Cocoar.SignalARRR (typed RPC) |

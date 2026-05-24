@@ -52,6 +52,7 @@ export default defineConfig({
 
     nav: [
       { text: 'Admin', link: '/admin/' },
+      { text: 'Plattform', link: '/plattform/' },
       { text: 'End-user help', link: '/end-user/' },
     ],
 
@@ -70,40 +71,60 @@ export default defineConfig({
           text: 'Identity & Access',
           items: [
             { text: 'Users', link: '/admin/users' },
+            { text: 'Service Accounts', link: '/admin/service-accounts' },
             { text: 'Roles', link: '/admin/roles' },
             { text: 'Groups', link: '/admin/groups' },
           ],
         },
         {
-          text: 'Apps',
-          items: [
-            { text: 'Applications', link: '/admin/applications' },
-          ],
-        },
-        {
-          text: 'OAuth & OIDC',
+          text: 'OAuth & Federation',
           items: [
             { text: 'OAuth Clients', link: '/admin/oauth-clients' },
             { text: 'OAuth Scopes', link: '/admin/oauth-scopes' },
             { text: 'OAuth APIs (Resource Servers)', link: '/admin/oauth-apis' },
+            { text: 'Dynamic Client Registration', link: '/admin/dynamic-client-registration' },
+            { text: 'Login Providers', link: '/admin/login-providers' },
           ],
         },
         {
-          text: 'Federation & Realms',
+          text: 'System',
           items: [
-            { text: 'Login Providers', link: '/admin/login-providers' },
-            { text: 'External Identity Providers (SSO)', link: '/admin/identity-providers' },
+            { text: 'Applications', link: '/admin/applications' },
             { text: 'Realms', link: '/admin/realms' },
             { text: 'Realm Settings', link: '/admin/realm-settings' },
+            { text: 'Auth Log', link: '/admin/auth-log' },
+            { text: 'Scheduled Jobs', link: '/admin/scheduled-jobs' },
+            { text: 'Change Requests', link: '/admin/change-requests' },
           ],
         },
         {
-          text: 'Operations',
+          text: 'Tools',
           items: [
-            { text: 'Auth Log', link: '/admin/auth-log' },
-            { text: 'Change Requests', link: '/admin/change-requests' },
-            { text: 'Settings', link: '/admin/settings' },
+            { text: 'Feature Flags', link: '/admin/feature-flags' },
             { text: 'Recovery CLI', link: '/admin/recovery-cli' },
+          ],
+        },
+        {
+          text: 'Plattform',
+          items: [
+            { text: 'Overview', link: '/plattform/' },
+          ],
+        },
+        {
+          text: 'Anpassung',
+          items: [
+            { text: 'Branding', link: '/plattform/branding' },
+            { text: 'Asset Library', link: '/plattform/assets' },
+            { text: 'Pages (Beta)', link: '/plattform/pages' },
+          ],
+        },
+        {
+          text: 'Betrieb',
+          items: [
+            { text: 'Observability', link: '/plattform/observability' },
+            { text: 'Inbox', link: '/plattform/inbox' },
+            { text: 'Inbox-Einstellungen', link: '/plattform/inbox-settings' },
+            { text: 'App-Einstellungen', link: '/plattform/settings' },
           ],
         },
         {

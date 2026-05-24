@@ -249,5 +249,5 @@ Customer der HA-SLA fordert**, was immer früher kommt.
 
 Anti-Trigger: keine Premature-Optimization. Eine Instanz tut's solange
 die nicht überlastet ist; OpenTelemetry-Metrics (siehe
-[observability-opentelemetry](./observability-opentelemetry)) sagen
+[Observability](/plattform/observability)) sagen
 uns wann das wirklich ansteht.

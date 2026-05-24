@@ -11,7 +11,7 @@ view this tree is locally:
 
 ```bash
 cd website
-pnpm dev          # uses config.dev-notes.ts → dev-notes/ visible
+pnpm dev          # uses config.ts → dev-notes/ visible
 pnpm dev:public   # uses config.ts          → dev-notes/ excluded (public preview)
 ```
 
@@ -45,7 +45,7 @@ pnpm dev:public   # uses config.ts          → dev-notes/ excluded (public prev
 ## Adding a new page
 
 1. Drop the `.md` file under `dev-notes/<section>/`.
-2. Register it in `website/.vitepress/config.dev-notes.ts` under the
+2. Register it in `website/.vitepress/config.ts` under the
    `'/dev-notes/'` sidebar so it shows up in local nav.
 3. Add a **Status** line at the top (`Status: Idea / Design /
    In progress / Done`).

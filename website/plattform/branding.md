@@ -7,7 +7,7 @@ Every realm starts unbranded. The Cocoar defaults (product name "Cocoar.Auth", p
 :::
 
 ::: info Two ways to reach this surface
-This page (**Administration → Customization → Branding**) and the **Branding** tab inside [Realm Settings](./realm-settings#branding) edit the same `RealmSettings.Branding` sub-document. Both render the same form. Pick whichever fits your mental model.
+This page (**Administration → Customization → Branding**) and the **Branding** tab inside [Realm Settings](../admin/realm-settings#branding) edit the same `RealmSettings.Branding` sub-document. Both render the same form. Pick whichever fits your mental model.
 :::
 
 Permissions: `realm-settings:read` / `realm-settings:write`. The `realm:admin` bypass grants both.
@@ -18,7 +18,7 @@ Permissions: `realm-settings:read` / `realm-settings:write`. The `realm:admin` b
 | --- | --- | --- |
 | **Product name** | "Cocoar.Auth" | Header title in the admin UI + login page; `document.title` prefix on every page. ≤ 100 characters. |
 | **Primary color** | design-system blue | Drives the `--coar-color-primary` CSS variable. Accepts hex (`#rgb`, `#rrggbb`, `#rrggbbaa`), `rgb()` / `rgba()`, `hsl()` / `hsla()`, or a CSS named colour. **No** `calc()` / `var()` / arbitrary CSS — that's blocked at the API to prevent injection into the property value. |
-| **Logo** | Cocoar logo (`/td-logo.svg`) | Header logo in the admin UI + login page. Pick from the [Asset Library](./customization-assets) via the asset picker. |
+| **Logo** | Cocoar logo (`/td-logo.svg`) | Header logo in the admin UI + login page. Pick from the [Asset Library](./assets) via the asset picker. |
 | **Favicon** | `/td-logo.svg` | Browser-tab icon. Same asset picker; the SPA rewrites the `<link rel="icon">` element at boot. |
 
 ::: tip Tri-state save semantics
@@ -27,7 +27,7 @@ Each field has three save states: **leave the value** (don't touch the input), *
 
 ## Setting it up
 
-1. Upload the images you want to use to the [Asset Library](./customization-assets). At minimum a logo (any of the allowlisted formats — usually SVG or PNG with transparency). Favicon is typically a square `.ico` or small PNG.
+1. Upload the images you want to use to the [Asset Library](./assets). At minimum a logo (any of the allowlisted formats — usually SVG or PNG with transparency). Favicon is typically a square `.ico` or small PNG.
 2. Open **Administration → Customization → Branding**.
 3. Fill in the form: type the product name, pick the primary colour, click the Logo / Favicon picker tiles and select from the uploaded assets.
 4. **Save**. The branding sub-document is rewritten in the tenant DB.
@@ -54,7 +54,7 @@ The Branding sub-document stores `LogoAssetId` and `FaviconAssetId` — **not** 
 | Data | Location |
 | --- | --- |
 | Branding sub-document (the four fields) | tenant DB, inside the singleton `RealmSettings` document |
-| Logo and favicon binary | tenant DB, `mt_doc_asset` (see [Asset Library](./customization-assets)) |
+| Logo and favicon binary | tenant DB, `mt_doc_asset` (see [Asset Library](./assets)) |
 | Default values served when a field is null | hardcoded in the SPA (`appconfig.store.ts`) |
 
 ## Public exposure

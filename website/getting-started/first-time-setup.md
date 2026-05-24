@@ -74,7 +74,7 @@ Output:
 Sign in immediately at the realm's host — `http://localhost:4300/` for a default dev setup.
 
 ::: tip Password rules apply
-The CLI enforces the same Identity password policy the SPA uses (length ≥ 8, mixed case, at least one digit). A weak password is rejected with a clear error — no privileged bypass. See [Settings](../admin/settings) to relax the policy if your operational needs require it.
+The CLI enforces the same Identity password policy the SPA uses (length ≥ 8, mixed case, at least one digit). A weak password is rejected with a clear error — no privileged bypass. See [App-Einstellungen](../plattform/settings) to relax the policy if your operational needs require it.
 :::
 
 ## Path B — Recovery CLI, invite mode

@@ -6,9 +6,6 @@ An **Application** in Cocoar.Auth is the organisational clamp around a SaaS app 
 If this is your first SaaS-app integration, the [SaaS App Integration Walkthrough](./saas-integration-walkthrough) is the better entry point — it walks through all five stations (App, Client, Resource Server, Roles, backend code).
 :::
 
-<!-- Screenshot placeholder: capture admin/applications list view and save as
-     /screenshots/admin-applications.png. Excluded from build until shot. -->
-
 ## What is an Application for?
 
 Cocoar.Auth manages permissions in the form `app:resource:action` — for instance `timetodo:todo:read` or `knowledge:article:write`. Every permission belongs to exactly one app.

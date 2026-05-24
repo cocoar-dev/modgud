@@ -1,6 +1,6 @@
 # Change Requests
 
-When the **profile-change approval flow** is enabled (see [Settings](./settings)), users can't change certain profile fields (typically email, name, phone) directly. Instead they submit a **change request** that an admin must approve before it takes effect.
+When the **profile-change approval flow** is enabled (see [Settings](../plattform/settings)), users can't change certain profile fields (typically email, name, phone) directly. Instead they submit a **change request** that an admin must approve before it takes effect.
 
 Administration → **Change Requests**.
 
@@ -52,5 +52,5 @@ An email change is essentially "give this account to a different mailbox". Doubl
 :::
 
 ::: tip Disable the flow for trusted realms
-For internal staff realms where users are well-known and the workflow's friction outweighs the security gain, disable the approval flow in [Settings](./settings). Users then change profile fields directly with double-opt-in for email.
+For internal staff realms where users are well-known and the workflow's friction outweighs the security gain, disable the approval flow in [Settings](../plattform/settings). Users then change profile fields directly with double-opt-in for email.
 :::

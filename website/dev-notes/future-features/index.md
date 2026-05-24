@@ -15,10 +15,11 @@ Severity. Detail-Pages unten.
 
 ### Audit-Followups (in Severity-Reihenfolge)
 
-- [Observability — OpenTelemetry / Metrics / Tracing](./observability-opentelemetry)
-  — **NEXT UP**. Foundation + Custom-Meters + Tracing + Health-Checks.
+- Observability — OpenTelemetry / Metrics / Tracing — ✅ shipped (see
+  [Observability](/plattform/observability)).
 - [HA / Multi-Instance Readiness](./ha-multi-instance) — DataProtection,
   Distributed Rate-Limiter, IDistributedCache, SignalR-Backplane.
+  (Phase 2a Deployment-Hygiene ✅ shipped 2026-05-13.)
 - [Realm Backup / Restore / DR](./realm-backup-restore) — CLI für
   N-Tenant-DB-Backup/Restore + WAL-Pattern + Realm-Migration.
 - [Enterprise SSO — SAML + LDAP](./enterprise-sso-saml-ldap) —
@@ -121,17 +122,16 @@ Detail-Banner oben in der Note.
 
 **Status:** Note 2026-05-07, teilweise revidiert 2026-05-08.
 
-### [DCR for MCP clients](./dcr-for-mcp-clients)
+### DCR for MCP clients — ✅ shipped
 
-Dynamic Client Registration (RFC 7591) so AI agents (Claude Code,
-Cursor, Continue, claude.ai, …) can self-register against the IdP
-and attach to public-internet MCP servers without per-agent admin
-onboarding. First trigger is `cocoar-policy` wanting
-`auth.cocoar.dev` as its IdP. Distinct from user self-registration
-(which shares the word "register" but is a totally different
-concept and shipped 2026-05-12).
+Dynamic Client Registration (RFC 7591) for AI agents to self-register
+against the IdP. Shipped 2026-05-12, see [Dynamic Client
+Registration](/admin/dynamic-client-registration) for the live admin
+page.
 
-**Status:** v1 design locked 2026-05-12, **ready to implement
+<!-- Below is historical-design-only — kept for context but no longer a future feature.
+
+**Status (pre-ship):** v1 design locked 2026-05-12, **ready to implement
 (7-8 days)** — consent-UI prereq shipped same day (commit
 `9090007`), nothing blocking. MCP-flavoured scope: public PKCE
 only, triple opt-in (realm master toggle +
@@ -143,6 +143,8 @@ blocklist), `[unverified]` marker + warning text on consent,
 tighter token TTLs for DCR clients, refresh-rotation globally on,
 5 dedicated audit-event types, 90-day GC TTL.
 
+-->
+
 ---
 
 ## Adding to this section
@@ -152,7 +154,7 @@ tighter token TTLs for DCR clients, refresh-rotation globally on,
    format)
 3. Capture the design space, not the final design — options with
    pros/cons, risks, what would block, what could phase
-4. Register in `.vitepress/config.dev-notes.ts` so it shows up in
+4. Register in `.vitepress/config.ts` so it shows up in
    the local sidebar
 5. Link from this page
 

@@ -32,7 +32,7 @@ Flags are read at startup; no hot-reload. A flip requires a restart.
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `PageBuilder` | `false` | Visibility of the [Customization → Pages](./customization-pages) editor. While off: sidebar tile hidden, `/admin/customization/pages` routes redirect to Branding, `/api/admin/customization/pages/*` returns 404, `RealmSettingsDto` omits the Pages section. While on: editor mounts and persists. **Runtime rendering of stored schemas on /login etc. is a separate sprint and is not gated by this flag.** |
+| `PageBuilder` | `false` | Visibility of the [Customization → Pages](../plattform/pages) editor. While off: sidebar tile hidden, `/plattform/customization/pages` routes redirect to Branding, `/api/admin/customization/pages/*` returns 404, `RealmSettingsDto` omits the Pages section. While on: editor mounts and persists. **Runtime rendering of stored schemas on /login etc. is a separate sprint and is not gated by this flag.** |
 
 ## Defense in depth
 

@@ -91,7 +91,7 @@ builder.Services.AddSingleton<IMagicLinkConfiguration>(sp => sp.GetRequiredServi
 
 | Hard | Reason |
 |---|---|
-| Marten 8+ | Document storage (Identity, challenges, change requests, AuthLog, IdpConfig) + event store |
+| Marten 9+ | Document storage (Identity, challenges, change requests, AuthLog, IdpConfig) + event store |
 | WolverineFx.Marten | Handler discovery (RecoveryCli, IdP event handlers) |
 | ASP.NET Core Identity | `UserManager`, `SignInManager`, `IUserStore` interfaces |
 | Fido2NetLib | FIDO2/WebAuthn attestation + assertion |

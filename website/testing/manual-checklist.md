@@ -243,7 +243,7 @@ already in `helpers.ts`).
 ## 16. Settings
 
 - ❌ Settings page renders only the "Wartung" (Maintenance) block (`Konsistenzprüfung`, `Projektionen neu aufbauen`). The promised `AuthenticationMinimumLevel` toggle, branding fields, and `MagicLinkSelfService` toggle are **not present in the UI** — and there is no `/api/admin/app-settings` endpoint either. **See [F18](#f18-settings-ui-and-api-promised-but-not-shipped).**
-- ⏳ `/admin/settings` only opens for `realm:admin` — **not yet verified manually** (no second-tier-perm user created in this run).
+- ⏳ `/plattform/settings` only opens for `realm:admin` — **not yet verified manually** (no second-tier-perm user created in this run).
 
 ## 17. Recovery CLI (break-glass)
 
@@ -658,7 +658,7 @@ behaviour. Live-verified: `GET /api/admin/oauth/clients` and
 
 **Severity:** Medium. **Section:** §16.
 
-`/admin/settings` renders only a "Wartung" (Maintenance) block with
+`/plattform/settings` renders only a "Wartung" (Maintenance) block with
 two buttons (Konsistenzprüfung + Projektionen neu aufbauen). The
 checklist promises an `AuthenticationMinimumLevel` toggle, branding
 fields, and a `MagicLinkSelfService` toggle. None of those are
