@@ -807,12 +807,11 @@ try
         opts.CodeGeneration.AlwaysUseServiceLocationFor<Microsoft.AspNetCore.Identity.UserManager<Cocoar.Auth.Authentication.Domain.ApplicationUser>>();
         opts.CodeGeneration.AlwaysUseServiceLocationFor<Microsoft.AspNetCore.Identity.SignInManager<Cocoar.Auth.Authentication.Domain.ApplicationUser>>();
 
-        // Cocoar.JsEval transitive deps — JsEngine + TsTranspiler use
-        // IServiceProvider internally for module/script resolution. Temporary;
-        // drops away once JsEval ships pure constructor DI (tracked as a
-        // backlog item; AppBase has the same workaround).
-        opts.CodeGeneration.AlwaysUseServiceLocationFor<Cocoar.Auth.Authorization.Membership.IMembershipEvaluator>();
-        opts.CodeGeneration.AlwaysUseServiceLocationFor<Cocoar.Auth.Authorization.Membership.IAutoMembershipRecalculator>();
+        // Cocoar.JsEval module-builder boundary — JsEval 4.1 collapsed the
+        // previous transitive service-location entries (IMembershipEvaluator,
+        // IAutoMembershipRecalculator) into a single one at the JsEngine's
+        // module-builder seam. Matches AppBase v2.1.0.
+        opts.CodeGeneration.AlwaysUseServiceLocationFor<Cocoar.JsEval.IJsModuleBuilder>();
 
         // Auto-register Event Forwarding subscriptions for all ReferenceSyncHandler<TEvent> implementations
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
