@@ -4,7 +4,7 @@ namespace Cocoar.Auth.Domain.OAuth.Apis;
 /// Event-sourced aggregate for an OAuth-protected API (resource server).
 /// Sensitive data (api secrets) lives in <see cref="OAuthApiSecurityData"/>.
 /// </summary>
-public class OAuthApiAggregate
+public partial class OAuthApiAggregate
 {
     public Guid Id { get; private set; }
     public string Name { get; private set; } = string.Empty;

@@ -4,7 +4,7 @@ namespace Cocoar.Auth.Domain.OAuth.Scopes;
 /// Event-sourced aggregate for OAuth scopes. No sensitive data — everything
 /// stays in the event stream.
 /// </summary>
-public class OAuthScopeAggregate
+public partial class OAuthScopeAggregate
 {
     public Guid Id { get; private set; }
     public string Name { get; private set; } = string.Empty;

@@ -5,7 +5,7 @@ namespace Cocoar.Auth.Domain.OAuth.Applications;
 /// Sensitive data (ClientSecret, JsonWebKeySet) lives in
 /// <see cref="OAuthApplicationSecurityData"/>, NOT in events.
 /// </summary>
-public class OAuthApplicationAggregate
+public partial class OAuthApplicationAggregate
 {
     public Guid Id { get; private set; }
     public string ClientId { get; private set; } = string.Empty;
