@@ -200,7 +200,14 @@ public sealed class CocoarAuthWebApplicationFactory : WebApplicationFactory<Prog
             Firstname = firstname,
             Lastname = lastname,
             Acronym = acronym,
-            IsActive = true
+            IsActive = true,
+            // Pre-confirm email so endpoints gated by the Phase-2B email-
+            // verification filter (ProfileEndpoints, EmailOtpEndpoints, ...)
+            // are reachable from test users. Mirrors RealmAdminBootstrapper's
+            // production-side pre-confirm rationale: a test-created user is
+            // out-of-band proof of identity, same as the CLI/invite-mode
+            // bootstrap-admin.
+            EmailConfirmed = true,
         };
         var result = await userManager.CreateAsync(appUser, password);
         if (!result.Succeeded)
