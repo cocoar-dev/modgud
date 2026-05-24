@@ -6,6 +6,7 @@ using Cocoar.Auth.Authentication.ExtensionMethods;
 using Cocoar.Auth.Authentication.Api.Account;
 using Cocoar.Auth.Authentication.Api.Users;
 using Cocoar.Auth.Application.DTOs.User;
+using Cocoar.Auth.Application.Inbox;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Infrastructure.Email;
 using Wolverine;
@@ -79,6 +80,7 @@ public static class AdminChangeRequestEndpoints
             IDocumentSession session,
             IMessageBus bus,
             IEmailService emailService,
+            IInboxNotifier inboxNotifier,
             HttpContext context) =>
         {
             var cr = await session.LoadAsync<UserChangeRequest>(id.Guid);
@@ -115,6 +117,26 @@ public static class AdminChangeRequestEndpoints
                     });
             }
 
+            // Inbox: notify the requester (always, independent of email opt-in — inbox is
+            // in-app, low-noise) and clear the "needs review" item from every admin's bell
+            // via the ids recorded on the request at submit time.
+            var changeList = ProfileEndpoints.EnumerateProfileChanges(cr.Payload, user).ToList();
+            await inboxNotifier.NotifyAsync(
+                kind: InboxKind.ChangeRequestApproved,
+                recipients: new[] { user.Id },
+                titleKey: "inbox.kinds.changeRequestApproved.title",
+                bodyKey: "inbox.kinds.changeRequestApproved.body",
+                parameters: new
+                {
+                    FieldList = string.Join(", ", changeList.Select(c => c.Field)),
+                    ChangeCount = changeList.Count,
+                },
+                link: "/profile",
+                sourceType: ProfileEndpoints.ChangeRequestInboxSource,
+                sourceId: cr.Id);
+            if (cr.AdminInboxItemIds.Count > 0)
+                await inboxNotifier.DismissByIdsAsync(cr.AdminInboxItemIds);
+
             Serilog.Log.Information("Admin: Change request approved. RequestId={RequestId} Type={Type}", cr.Id, cr.Type);
             return Results.Ok(new { Status = cr.Status.ToString() });
         });
@@ -124,6 +146,7 @@ public static class AdminChangeRequestEndpoints
             RejectRequest request,
             IDocumentSession session,
             IEmailService emailService,
+            IInboxNotifier inboxNotifier,
             HttpContext context) =>
         {
             var cr = await session.LoadAsync<UserChangeRequest>(id.Guid);
@@ -138,23 +161,42 @@ public static class AdminChangeRequestEndpoints
             session.Store(cr);
             await session.SaveChangesAsync();
 
-            if (request?.NotifyUser == true)
+            var targetUser = await session.LoadAsync<ApplicationUser>(cr.UserId);
+            if (request?.NotifyUser == true && targetUser is not null && !string.IsNullOrWhiteSpace(targetUser.Email))
             {
-                var user = await session.LoadAsync<ApplicationUser>(cr.UserId);
-                if (user is not null && !string.IsNullOrWhiteSpace(user.Email))
-                {
-                    var changes = ProfileEndpoints.EnumerateProfileChanges(cr.Payload, user).ToList();
-                    await emailService.SendTemplatedEmailAsync(user.Email, EmailTemplate.ChangeRequestRejected,
-                        new Dictionary<string, string>
-                        {
-                            ["AppName"] = "Cocoar.Auth",
-                            ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
-                            ["Field"] = string.Join(", ", changes.Select(c => c.Field)),
-                            ["NewValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.NewValue ?? "—"}")),
-                            ["ReviewerNote"] = cr.ReviewerNote ?? "—",
-                        });
-                }
+                var changes = ProfileEndpoints.EnumerateProfileChanges(cr.Payload, targetUser).ToList();
+                await emailService.SendTemplatedEmailAsync(targetUser.Email, EmailTemplate.ChangeRequestRejected,
+                    new Dictionary<string, string>
+                    {
+                        ["AppName"] = "Cocoar.Auth",
+                        ["DisplayName"] = targetUser.Firstname ?? targetUser.UserName ?? "",
+                        ["Field"] = string.Join(", ", changes.Select(c => c.Field)),
+                        ["NewValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.NewValue ?? "—"}")),
+                        ["ReviewerNote"] = cr.ReviewerNote ?? "—",
+                    });
             }
+
+            // Inbox: same shape as approval, plus the reviewer note so the user sees why.
+            if (targetUser is not null)
+            {
+                var changeList = ProfileEndpoints.EnumerateProfileChanges(cr.Payload, targetUser).ToList();
+                await inboxNotifier.NotifyAsync(
+                    kind: InboxKind.ChangeRequestRejected,
+                    recipients: new[] { targetUser.Id },
+                    titleKey: "inbox.kinds.changeRequestRejected.title",
+                    bodyKey: "inbox.kinds.changeRequestRejected.body",
+                    parameters: new
+                    {
+                        FieldList = string.Join(", ", changeList.Select(c => c.Field)),
+                        ChangeCount = changeList.Count,
+                        ReviewerNote = cr.ReviewerNote ?? string.Empty,
+                    },
+                    link: "/profile",
+                    sourceType: ProfileEndpoints.ChangeRequestInboxSource,
+                    sourceId: cr.Id);
+            }
+            if (cr.AdminInboxItemIds.Count > 0)
+                await inboxNotifier.DismissByIdsAsync(cr.AdminInboxItemIds);
 
             Serilog.Log.Information("Admin: Change request rejected. RequestId={RequestId} Note={Note}",
                 cr.Id, cr.ReviewerNote);

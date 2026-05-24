@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Serilog;
 using Cocoar.Auth.Domain.Common;
+using Cocoar.Auth.Application.Inbox;
 using Cocoar.Auth.Authentication;
 using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Infrastructure.Email;
@@ -59,6 +60,8 @@ public static class ProfileEndpoints
             IDocumentSession session,
             IServerConfiguration conf,
             IEmailService emailService,
+            IAdminNotifier adminNotifier,
+            IInboxNotifier inboxNotifier,
             IWebHostEnvironment env,
             HttpContext context) =>
         {
@@ -95,6 +98,11 @@ public static class ProfileEndpoints
                          && (r.Status == ChangeRequestStatus.EmailVerificationPending
                           || r.Status == ChangeRequestStatus.AdminApprovalPending))
                 .ToListAsync()).FirstOrDefault();
+
+            // Track whether the request was *already* in AdminApprovalPending — if so,
+            // re-submitting an edit shouldn't re-notify admins (they already have an item
+            // for this request via the inbox dedup; the live update is silent).
+            var wasInAdminPending = existing?.Status == ChangeRequestStatus.AdminApprovalPending;
 
             // Snapshot the previous pending email (if any) before we merge — we need it
             // to decide whether the verify token has to be regenerated.
@@ -186,6 +194,21 @@ public static class ProfileEndpoints
                     });
             }
 
+            // Inbox notification: fires only when this submit *transitions* the request
+            // into AdminApprovalPending. Repeated edits of an already-pending request are
+            // silently merged so admins don't get spammed. Record the created item-ids on
+            // the request so approve/reject/withdraw can dismiss them deterministically.
+            if (!wasInAdminPending && request.Status == ChangeRequestStatus.AdminApprovalPending)
+            {
+                var ids = await NotifyAdminsInboxAsync(adminNotifier, inboxNotifier, request, user);
+                if (ids.Count > 0)
+                {
+                    request.AdminInboxItemIds = ids.ToList();
+                    session.Store(request);
+                    await session.SaveChangesAsync();
+                }
+            }
+
             Log.Information("Profile: Change request upserted. User={UserName} Status={Status}",
                 user.UserName, request.Status);
 
@@ -197,6 +220,7 @@ public static class ProfileEndpoints
             IDocumentSession session,
             IEmailService emailService,
             IAdminNotifier adminNotifier,
+            IInboxNotifier inboxNotifier,
             IServerConfiguration conf,
             IWebHostEnvironment env) =>
         {
@@ -240,6 +264,22 @@ public static class ProfileEndpoints
                     });
             }
 
+            // Inbox: notify admins that this request is now ready for review. The
+            // submit path may have already notified (covered the verified-from-start
+            // case); this one covers the email-verify-then-pending path. Same dedup
+            // by sourceId means a duplicate fire would coalesce — but we still record
+            // the ids so withdraw/approve/reject can dismiss across recipients.
+            if (user is not null)
+            {
+                var ids = await NotifyAdminsInboxAsync(adminNotifier, inboxNotifier, cr, user);
+                if (ids.Count > 0)
+                {
+                    cr.AdminInboxItemIds = ids.ToList();
+                    session.Store(cr);
+                    await session.SaveChangesAsync();
+                }
+            }
+
             Log.Information("Profile: Email verified, awaiting admin approval. RequestId={RequestId}", cr.Id);
             return Results.Ok(new { Status = cr.Status.ToString() });
         })
@@ -248,6 +288,7 @@ public static class ProfileEndpoints
         group.MapDelete("request", [Authorize] async (
             UserManager<ApplicationUser> userManager,
             IDocumentSession session,
+            IInboxNotifier inboxNotifier,
             HttpContext context) =>
         {
             var user = await userManager.GetUserAsync(context.User);
@@ -260,8 +301,15 @@ public static class ProfileEndpoints
                 .ToListAsync()).FirstOrDefault();
             if (existing is null) return Results.NoContent();
 
+            // Snapshot the inbox-item ids BEFORE deleting the request — we still need
+            // to dismiss every admin's bell entry after the cr itself is gone.
+            var adminItemIds = existing.AdminInboxItemIds.ToList();
+
             session.Delete(existing);
             await session.SaveChangesAsync();
+
+            if (adminItemIds.Count > 0)
+                await inboxNotifier.DismissByIdsAsync(adminItemIds);
 
             Log.Information("Profile: Change request cancelled. User={UserName}", user.UserName);
             return Results.NoContent();
@@ -385,4 +433,47 @@ public static class ProfileEndpoints
             ? EnumerateProfileChanges(r.Payload, user).Select(c => new { c.Field, c.OldValue, c.NewValue })
             : Enumerable.Empty<object>().Cast<dynamic>(),
     };
+
+    /// <summary>Marker stored on inbox items so cross-cutting code (retention, dismiss
+    /// sweeps) can find every notification that references a change-request.</summary>
+    internal const string ChangeRequestInboxSource = "change-request";
+
+    /// <summary>
+    /// Build and send the admin-side inbox notification for a change-request that just
+    /// transitioned into <see cref="ChangeRequestStatus.AdminApprovalPending"/>. The
+    /// item dedups by <c>(change-request, request.Id)</c> — repeated transitions on
+    /// the same request collapse onto the same bell entry. The returned inbox-item ids
+    /// are stored on <c>cr.AdminInboxItemIds</c> by the caller so a later approve /
+    /// reject / withdraw can dismiss them deterministically.
+    /// </summary>
+    internal static async Task<IReadOnlyList<Guid>> NotifyAdminsInboxAsync(
+        IAdminNotifier adminNotifier,
+        IInboxNotifier inboxNotifier,
+        UserChangeRequest cr,
+        ApplicationUser user,
+        CancellationToken ct = default)
+    {
+        var adminUserIds = await adminNotifier.GetAdminRecipientUserIdsAsync(ct);
+        if (adminUserIds.Count == 0) return [];
+
+        var changes = EnumerateProfileChanges(cr.Payload, user).ToList();
+        var userLabel = $"{user.Firstname} {user.Lastname} ({user.UserName})".Trim();
+        if (string.IsNullOrWhiteSpace(userLabel)) userLabel = user.UserName ?? "—";
+
+        return await inboxNotifier.NotifyAsync(
+            kind: InboxKind.AdminChangeRequestSubmitted,
+            recipients: adminUserIds,
+            titleKey: "inbox.kinds.adminChangeRequestSubmitted.title",
+            bodyKey: "inbox.kinds.adminChangeRequestSubmitted.body",
+            parameters: new
+            {
+                UserLabel = userLabel,
+                FieldList = string.Join(", ", changes.Select(c => c.Field)),
+                ChangeCount = changes.Count,
+            },
+            link: "/admin/change-requests",
+            sourceType: ChangeRequestInboxSource,
+            sourceId: cr.Id,
+            ct: ct);
+    }
 }

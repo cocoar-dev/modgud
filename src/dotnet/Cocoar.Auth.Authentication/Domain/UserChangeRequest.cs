@@ -38,6 +38,14 @@ public class UserChangeRequest
     public DateTimeOffset? ReviewedAt { get; set; }
     public Guid? ReviewedByUserId { get; set; }
     public string? ReviewerNote { get; set; }
+
+    /// <summary>
+    /// Inbox-item IDs created on the admin side when this request transitioned into
+    /// <see cref="ChangeRequestStatus.AdminApprovalPending"/>. Recorded so that a
+    /// later approve / reject / withdraw can deterministically clear every admin's
+    /// "needs review" bell entry without an eventually-consistent projection roundtrip.
+    /// </summary>
+    public List<Guid> AdminInboxItemIds { get; set; } = new();
 }
 
 public enum ChangeRequestType
