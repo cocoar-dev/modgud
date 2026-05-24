@@ -7,6 +7,7 @@ using Cocoar.Auth.Authentication.Domain;
 using Cocoar.Auth.Infrastructure.Events;
 using Cocoar.Auth.Authentication.Projections;
 using Cocoar.Auth.Infrastructure.Persistence.Marten.Projections.Users;
+using Cocoar.Auth.Infrastructure.Persistence.Tenancy;
 
 namespace Cocoar.Auth.Api.Features.Admin;
 
@@ -28,6 +29,7 @@ public static class ProjectionEndpoints
         group.MapPost("rebuild", async (
             IDocumentStore store,
             IProjectionCoordinator coordinator,
+            HttpContext httpContext,
             CancellationToken ct) =>
         {
             if (!await _rebuildGate.WaitAsync(0, ct))
@@ -36,7 +38,21 @@ public static class ProjectionEndpoints
                 return Results.Conflict(new { Message = "A projection rebuild is already in progress" });
             }
 
-            Serilog.Log.Information("Admin: Starting full projection rebuild");
+            // Rebuild is scoped to the realm the admin is currently logged into —
+            // the host they hit determines which tenant DB gets replayed. We
+            // intentionally do NOT iterate every active realm: rebuild is heavy,
+            // non-resumable mid-flight, and per-realm host gating is the right
+            // authorization boundary. Defensive fallback to the system tenant if
+            // RealmMiddleware didn't run (shouldn't happen for this authenticated
+            // route, but opening against system is safer than throwing).
+            //
+            // Under MasterTableTenancy a session without an explicit tenant id is
+            // an error ("Default tenant does not supported"), so passing the id
+            // explicitly here is REQUIRED, not optional.
+            var tenantId = httpContext.Items[TenantConstants.HttpContextTenantIdKey] as string
+                           ?? TenantConstants.SystemTenantId;
+
+            Serilog.Log.Information("Admin: Starting full projection rebuild for tenant {TenantId}", tenantId);
             try
             {
                 await coordinator.PauseAsync();
@@ -49,11 +65,12 @@ public static class ProjectionEndpoints
                     // Async composite (UserView only in the IdP-only baseline) —
                     // explicit deletes mirror what each projection writes so
                     // RebuildProjectionAsync sees a clean slate before the daemon replays.
-                    await using var session = store.LightweightSession();
+                    await using var session = store.LightweightSession(tenantId);
                     session.DeleteWhere<UserView>(x => true);
                     await session.SaveChangesAsync(ct);
 
-                    using var daemon = await store.BuildProjectionDaemonAsync();
+                    // Daemon is scoped to a single tenant database under MasterTableTenancy.
+                    using var daemon = await store.BuildProjectionDaemonAsync(tenantId);
                     var timeout = TimeSpan.FromMinutes(10);
 
                     await daemon.RebuildProjectionAsync("ViewProjections", timeout, ct);
