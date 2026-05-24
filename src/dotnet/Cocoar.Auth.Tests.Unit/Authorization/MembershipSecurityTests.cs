@@ -153,12 +153,16 @@ public sealed class MembershipSecurityTests : IDisposable
 
         // Best-effort: just wait for the call to terminate within a
         // generous outer budget, no exception assertion either way.
+        // 15s headroom for GitHub-Actions runners (2-core, slow IO) where
+        // 1GB string-doubling + Jint compile-overhead + the engine's 2s
+        // timeout-wakeup latency can collectively exceed 5s. Local runs
+        // finish in ~2s.
         WithTimeBudget(() =>
         {
             try { _evaluator.BuildPredicate<Person>(compiled); }
             catch { /* timeout-cancel or OOM both acceptable here */ }
             return true;
-        }, TimeSpan.FromSeconds(5));
+        }, TimeSpan.FromSeconds(15));
     }
 
     [Fact]
