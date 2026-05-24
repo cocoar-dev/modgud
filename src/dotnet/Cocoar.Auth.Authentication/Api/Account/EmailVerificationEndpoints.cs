@@ -147,6 +147,20 @@ public static class EmailVerificationEndpoints
             {
                 user.EmailConfirmed = true;
                 session.Store(user);
+
+                // EmailConfirmed lives on the ApplicationUser doc, not on
+                // UserView, but the admin grid surfaces it (joined by
+                // SignalRProjectionDispatchHandler from the fresh ApplicationUser).
+                // Append a no-op UserUpdatedEvent so the UserView slice fires
+                // its RaiseSideEffects → SignalR push → admin grids learn the
+                // new state live without a manual reload. All-None Optionals =
+                // Apply does nothing structurally; only the dispatch matters.
+                session.Events.Append(user.Id, new Cocoar.Auth.Domain.Users.Events.UserUpdatedEvent(
+                    Id: user.Id,
+                    Firstname: default,
+                    Lastname: default,
+                    Acronym: default,
+                    Email: default));
             }
             session.Delete(challenge);
             await session.SaveChangesAsync();
