@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
@@ -6,6 +7,16 @@ import { fileURLToPath, URL } from 'node:url'
 export default defineConfig({
   build: {
     target: 'esnext',
+  },
+  // Vitest only scans the Vue source tree. The e2e/ directory is
+  // Playwright — its *.spec.ts files import from @playwright/test
+  // and crash on `test.describe()` if vitest tries to run them.
+  test: {
+    include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}'],
+    exclude: ['node_modules', 'dist', 'e2e'],
+    // No frontend unit tests exist yet (everything goes through e2e);
+    // don't fail CI just because the suite is empty.
+    passWithNoTests: true,
   },
   plugins: [
     vue(),
