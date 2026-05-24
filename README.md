@@ -7,10 +7,10 @@ Authentication and authorization Identity Provider for COCOAR applications.
 [![Tests](https://img.shields.io/badge/tests-63%20passing-brightgreen)]()
 
 > Matched against **[Cocoar.AppBase](https://github.com/cocoar-dev/Cocoar.AppBase)
-> v2.0.0** (Critter Stack 2026 baseline, 2026-05-23). Current AppBase
-> reference version is recorded in [`APPBASE_VERSION`](./APPBASE_VERSION) —
-> diff against AppBase's `docs/changelog/v*.md` later to see what's worth
-> backporting.
+> v2.1.0** (Critter Stack 2026 + dep refresh + NetArchTest slice-boundary
+> rules, 2026-05-24). Current AppBase reference version is recorded in
+> [`APPBASE_VERSION`](./APPBASE_VERSION) — diff against AppBase's
+> `docs/changelog/v*.md` later to see what's worth backporting.
 
 ---
 
