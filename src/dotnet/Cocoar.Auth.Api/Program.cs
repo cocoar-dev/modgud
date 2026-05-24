@@ -852,6 +852,12 @@ try
         Cocoar.Auth.Infrastructure.Inbox.InboxNotifier>();
     builder.Services.AddScoped<Cocoar.Auth.Application.Inbox.IInboxRetentionService,
         Cocoar.Auth.Infrastructure.Inbox.InboxRetentionService>();
+    // Override the Infrastructure-side no-op binding for IJobRunNotifier with
+    // the real Inbox-driven implementation. JobRunListener resolves this from
+    // the scope it opens per execution; failures notify admins, manual-trigger
+    // completions notify the triggering user.
+    builder.Services.AddScoped<Cocoar.Auth.Infrastructure.Scheduling.IJobRunNotifier,
+        Cocoar.Auth.Api.Features.Inbox.JobRunNotifier>();
 
     builder.Services.AddSerilog(logConfig =>
     {

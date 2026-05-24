@@ -104,7 +104,7 @@ public class JobsService(
         await RescheduleAsync(reg, cfg, ct);
     }
 
-    public async Task TriggerNowAsync(string key, CancellationToken ct = default)
+    public async Task TriggerNowAsync(string key, Guid? triggeredByUserId = null, CancellationToken ct = default)
     {
         var reg = registry.All.FirstOrDefault(r => r.Key == key)
             ?? throw new InvalidOperationException($"Unknown job key '{key}'");
@@ -114,10 +114,16 @@ public class JobsService(
         if (!await scheduler.CheckExists(jobKey, ct))
             throw new InvalidOperationException($"Job '{reg.Key}' is not registered with the scheduler");
 
-        // Push a JobDataMap flag so the listener can mark this run as manual.
+        // Push the manual-trigger flag + (optional) triggering-user id into
+        // the JobDataMap. JobRunListener reads them back on completion and
+        // stamps the history entry; the job→inbox bridge then routes the
+        // ManualJobCompleted notification to the triggering user.
         var data = new JobDataMap { [JobRunListener.ManualTriggerKey] = true };
+        if (triggeredByUserId is Guid uid && uid != Guid.Empty)
+            data[JobRunListener.TriggeredByUserIdKey] = uid;
         await scheduler.TriggerJob(jobKey, data, ct);
-        logger.LogInformation("[Jobs] Manual trigger for {Key}", reg.Key);
+        logger.LogInformation("[Jobs] Manual trigger for {Key} by user {UserId}",
+            reg.Key, triggeredByUserId?.ToString() ?? "(unknown)");
     }
 
     // ── helpers ─────────────────────────────────────────────────────

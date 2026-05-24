@@ -23,6 +23,9 @@ public static class SchedulingDependencyInjection
         services.AddSingleton<IJobRegistry, JobRegistry>();
         services.AddScoped<IJobsService, JobsService>();
         services.AddScoped<IJobRunHistoryRetentionService, JobRunHistoryRetentionService>();
+        // No-op default; hosts that want job→inbox notifications override
+        // this binding (Cocoar.Auth.Api does so in Program.cs).
+        services.AddScoped<IJobRunNotifier, NoopJobRunNotifier>();
         services.AddSingleton<JobRunListener>();
 
         services.AddQuartz(q =>

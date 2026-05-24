@@ -60,11 +60,18 @@ public static class JobsEndpoints
             .WithName("V2_AdminJobs_Update")
             .RequiresPermission("scheduled-job:write");
 
-        group.MapPost("{key}/trigger", async (string key, IJobsService jobs, CancellationToken ct) =>
+        group.MapPost("{key}/trigger", async (
+            string key,
+            HttpContext ctx,
+            IJobsService jobs,
+            CancellationToken ct) =>
         {
             try
             {
-                await jobs.TriggerNowAsync(key, ct);
+                // Capture the triggering admin so the job→inbox bridge can route
+                // the ManualJobCompleted notification back to the right inbox.
+                var triggeredBy = Cocoar.Auth.Authentication.ExtensionMethods.HttpContextExtensions.GetUserId(ctx);
+                await jobs.TriggerNowAsync(key, triggeredBy, ct);
                 return Results.NoContent();
             }
             catch (InvalidOperationException ex)

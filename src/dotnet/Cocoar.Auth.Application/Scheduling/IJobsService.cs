@@ -20,9 +20,12 @@ public interface IJobsService
 
     /// <summary>
     /// Fire the job once, off-schedule. Result is logged to history with
-    /// <c>ManualTrigger = true</c>.
+    /// <c>ManualTrigger = true</c>; when <paramref name="triggeredByUserId"/>
+    /// is provided, the listener stores it on the entry so the Phase-3
+    /// job→inbox bridge can route the <c>ManualJobCompleted</c> notification
+    /// back to the triggering admin.
     /// </summary>
-    Task TriggerNowAsync(string key, CancellationToken ct = default);
+    Task TriggerNowAsync(string key, Guid? triggeredByUserId = null, CancellationToken ct = default);
 }
 
 public sealed record JobOverviewDto

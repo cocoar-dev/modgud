@@ -62,9 +62,9 @@ public class JobRunListener(
             TriggeredByUserId = triggeredBy,
         };
 
+        using var scope = scopeFactory.CreateScope();
         try
         {
-            using var scope = scopeFactory.CreateScope();
             var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
             session.Store(entry);
             await session.SaveChangesAsync(cancellationToken);
@@ -73,6 +73,19 @@ public class JobRunListener(
         {
             // Persisting history must never crash the listener — log and move on.
             logger.LogWarning(ex, "[Jobs] Failed to persist run history for {Key}", key);
+        }
+
+        // Inbox-side notify: failures → admins, manual completions → trigger user.
+        // Same defensive shape as the history write — a notify failure must
+        // not crash the scheduler.
+        try
+        {
+            var notifier = scope.ServiceProvider.GetRequiredService<IJobRunNotifier>();
+            await notifier.NotifyAsync(entry, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[Jobs] Job-run notify failed for {Key}", key);
         }
     }
 
