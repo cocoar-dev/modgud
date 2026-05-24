@@ -20,6 +20,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import LogoutConfirmModal from '@/views/auth/LogoutConfirmModal.vue'
 import AppContextSelector from '@/components/AppContextSelector.vue'
+import InboxBell from '@/components/InboxBell.vue'
 import UnverifiedEmailBanner from '@/components/UnverifiedEmailBanner.vue'
 
 const { t } = useI18n()
@@ -156,6 +157,9 @@ const hasAnyAdminPermission = computed(() =>
                 <div id="header-outlet-right"></div>
 
                 <AppContextSelector v-if="showAppContextSelector" class="ml-2" />
+
+                <!-- Inbox bell — opens an inline panel; per-user notifications -->
+                <InboxBell class="ml-3" />
 
                 <!-- User Avatar -->
                 <button
