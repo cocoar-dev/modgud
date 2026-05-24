@@ -13,7 +13,7 @@
     <PackageVersion Include="Cocoar.JsEval.TsDefinition" Version="4.1.0" />
     <PackageVersion Include="Cocoar.JsEval.TypeScript" Version="4.1.0" />
     <PackageVersion Include="Cocoar.Reflectensions" Version="1.0.2" />
-    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="4.2.3" />
+    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="4.3.0" />
     <!-- Microsoft packages -->
     <PackageVersion Include="Fido2.AspNet" Version="4.0.1" />
     <PackageVersion Include="MailKit" Version="4.16.0" />
