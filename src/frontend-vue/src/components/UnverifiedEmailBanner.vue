@@ -35,7 +35,10 @@ async function sendVerification() {
     // Empty body — server reads the authenticated user via cookie.
     await http.addPath('send-verification').post({})
     toast.success(t('emailBanner.sent', {}, 'Verification email sent. Please check your inbox.'))
-    dismiss()
+    // Intentionally NOT dismiss() — "sent" ≠ "verified". If the user never
+    // completes the verify-link (broken URL, lost email, link expired), the
+    // banner should stay visible so the action remains discoverable. The
+    // toast tells them mail was sent; banner remains as the reminder.
   } catch (e: unknown) {
     const msg = e instanceof HttpClientError && e.status === 429
       ? t('emailBanner.rateLimit', {}, 'Too many requests. Please try again later.')
