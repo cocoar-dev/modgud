@@ -298,6 +298,12 @@ export default withMermaid(defineConfig({
           ],
         },
         {
+          text: 'Engineering Gotchas',
+          items: [
+            { text: 'Marten `RaiseSideEffects`', link: '/dev-notes/marten-raise-side-effects' },
+          ],
+        },
+        {
           text: 'Future Features',
           items: [
             { text: 'Overview', link: '/dev-notes/future-features/' },
