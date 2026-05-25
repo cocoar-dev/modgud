@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Modgud
   text: Multi-tenant Identity Provider
-  tagline: 'Named after <em>Móðguðr</em>, the watcher of Gjallarbrú.<br><br>OAuth 2.0 / OpenID Connect server with multi-app permissions, granular RBAC, full database-per-tenant isolation, and a Keycloak-shaped <code>resource_access</code> model.<br><br>Drop-in for any ASP.NET Core resource server — and the auth foundation of the Cocoar suite.'
+  tagline: 'Named after <em>Móðguðr</em>, the watcher of Gjallarbrú.<br><br>OAuth 2.0 / OpenID Connect server with multi-app permissions, granular RBAC, and full database-per-tenant isolation.<br><br>Drop-in for any ASP.NET Core resource server — and the auth foundation of the Cocoar suite.'
   image:
     light: /logo_light.svg
     dark: /logo_dark.svg
