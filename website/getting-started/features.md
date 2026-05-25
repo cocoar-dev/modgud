@@ -36,12 +36,12 @@ A point-by-point list of what Modgud delivers out of the box.
 - **Resources** declared per app
 - **Roles** bound to one app, holding permissions on its resources
 - **Groups** with `BoundTo` activation switch — wildcard `*`, specific apps, or dormant
-- Permission strings shaped `app:resource:action` with three bypass tiers (`realm:admin`, `<app>:admin`, `<app>:<resource>:admin`)
+- Permission strings shaped `<resource>:<action>` (two segments; app context implicit from the catalog container) with two bypass tiers (`realm:admin`, `<resource>:admin`)
 
-### Role distribution to resource servers
-- **Keycloak-style `resource_access`** claim emitted in UserInfo, keyed by app slug
+### Permission distribution to resource servers
+- **Keycloak-style `resource_access`** claim emitted in `/connect/userinfo`, keyed by app slug, per-Audience
+- **Bypass-pre-expanded + per-RS narrowed** — consumers do straight exact-match without porting the evaluator
 - **`Modgud.Client.AspNetCore`** library ships an `IClaimsTransformation` that flattens `resource_access[<app>].roles` into `ClaimTypes.Role` so `[Authorize(Roles="...")]` works on resource servers without per-endpoint code
-- **Distribution API** for live, granular permission lookups when role-only checks aren't enough
 
 ### ABAC
 
@@ -70,11 +70,12 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 - **Reference tokens** — server-side opaque, validated via introspection. Useful when you need short-circuit revocation across many resource servers.
 
 ### Standard scopes
-- `openid`, `profile`, `email`, `phone`, `address`, `offline_access`, `roles`
-- All emit standard OIDC claims plus the Cocoar-specific `resource_access` (under the `roles` scope)
+- `openid`, `profile`, `email`, `offline_access`, `roles`, `permissions` (seeded into every realm)
+- Plus the Keycloak-style `resource_access` claim shape (under the `roles` and/or `permissions` scopes)
+- `phone` and `address` are recognised but not auto-seeded — add them per-realm when needed
 
 ### App-scoped custom scopes
-- Define your own scopes (e.g. `timetodo.write`)
+- Define your own scopes (e.g. `billing.write`)
 - Bind them to apps; `/connect/authorize` rejects with `invalid_scope` if a client requests an app-scope it isn't entitled to
 
 ## Multi-tenancy
@@ -117,11 +118,11 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 ### Admin UI
 - Real-time updates via SignalR — multiple admins editing simultaneously stay in sync
 - Granular sidebar gating based on permissions
-- Resource-level permissions (`modgud:user:read`, `modgud:oauth-client:write`, …) — granular admins see only what they manage
+- Resource-level permissions (`user:read`, `oauth-client:write`, …) — granular admins see only what they manage
 
 ### Recovery CLI
 - Inside-container tool for breaking out of "no admin can sign in" situations
-- list-users, set-password, reset-2fa, add-realm-admin, unlock — all bypass the UI
+- `bootstrap-admin`, `set-email`, `magic-link`, `reset-2fa`, `list`, `realm-add-domain`, `rebuild-projections`, `migrate-cc-credentials` — all bypass the UI. See [Recovery CLI reference](../admin/recovery-cli).
 
 ### SignalR push
 - All admin lists update live across browser sessions
@@ -134,18 +135,17 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 ## Developer integration
 
 ### Resource server libraries
-- **`Modgud.Client.AspNetCore`** — drop-in claims-transformation + (planned) typed distribution-API client
+- **`Modgud.Client.AspNetCore`** — drop-in `IClaimsTransformation` that flattens the per-Audience `resource_access` block onto the principal
 - Standard `JwtBearerHandler` for token validation; nothing custom required on the framework side
 
-### Distribution API
-- `GET /api/v1/distribution/me-permissions` — bearer + RS-Auth, returns app-scoped permissions/roles/groups
-- 30 s cache header for predictable revocation propagation
-- Future endpoints for group lookups, mail expansion, service-token operations
+### UserInfo as the permission delivery channel
+- `/connect/userinfo` emits `resource_access` keyed by app slug, per Audience
+- Bypass-pre-expanded server-side + narrowed to each RS's declared `OAuthApi.PermissionIds` subset
+- Standard OIDC tooling consumes it; no Modgud-specific endpoint required
 
-### Vue admin SPA
-- Vue 3 + Pinia + AG Grid + `@cocoar/vue-ui`
-- Modular routes — drop-in additional admin sections per app
-- Localisation-ready (`@cocoar/vue-localization`)
+::: tip Legacy: distribution API
+The server-to-server `GET /api/v1/distribution/me-permissions` endpoint predates per-Audience UserInfo and is in surface-removal queue. Existing callers see an RFC 8594 `Deprecation: true` header; new integrators should not adopt it.
+:::
 
 ## Standards
 
@@ -164,6 +164,6 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 Documented but not yet implemented:
 
 - **SCIM 2.0** for directory sync from external IdPs
-- **SignalR push for permission revocations** (so consumers don't wait for the 30 s cache TTL)
+- **SignalR push for permission revocations** (so consumers don't have to poll UserInfo)
 - **Audience-restricted tokens** (RFC 8707 `resource` parameter) for hard cross-RS isolation
-- **Service-token endpoints** in `/distribution/*` for non-user-bound IAM lookups
+- **Distribution-API surface removal** once existing integrators have migrated to UserInfo

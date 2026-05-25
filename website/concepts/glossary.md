@@ -46,29 +46,32 @@ See [Auto membership](/authorization-slice/auto-membership).
 
 ### PermissionRole
 
-A named bundle of permissions. Binds a list of actions to a resource
-type:
+A named bundle of permissions. Binds to one App (or to the realm when
+`IsRealmAdmin = true`) and references a list of the App catalog's
+`PermissionIds`:
 
 ```
-Name:         "User Manager"
-ResourceType: "user"
-Permissions:  ["read", "write"]
-→ produces: modgud:user:read, modgud:user:write
+Name:          "User Manager"
+AppId:         <modgud app id>
+PermissionIds: [user:read, user:write]
 ```
 
 ### Permission
 
-A fully-qualified string `<app>:<resource>:<action>` — e.g.
-`modgud:user:read`, `timetodo:todo:write`, `realm:admin`.
-Permissions flow exclusively through groups:
+A two-segment string `<resource>:<action>` inside an App's catalog —
+the App context is implicit from the catalog container. Examples:
+`user:read` (in the `modgud` app), `invoice:write` (in a `billing`
+app), `realm:admin` (realm-constant bypass). Permissions flow
+exclusively through groups:
 
 ```
 User → Group → Role → Permission
 ```
 
-Three bypass tiers: `<app>:<resource>:admin` (resource-wide within an
-app), `<app>:admin` (app-wide), `realm:admin` (realm-wide emergency
-exit). See [Permissions & gating](/authorization-slice/permissions).
+Two bypass tiers: `<resource>:admin` (resource-wide within the calling
+app) and `realm:admin` (realm-wide emergency exit). See
+[Permissions & gating](/authorization-slice/permissions) for the full
+evaluator + UserInfo-emission story.
 
 ### Session
 
