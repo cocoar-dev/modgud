@@ -18,8 +18,8 @@ Permissions: `realm-settings:read` / `realm-settings:write`. The `realm:admin` b
 | --- | --- | --- |
 | **Product name** | "Modgud" | Header title in the admin UI + login page; `document.title` prefix on every page. ≤ 100 characters. |
 | **Primary color** | design-system blue | Drives the `--coar-color-primary` CSS variable. Accepts hex (`#rgb`, `#rrggbb`, `#rrggbbaa`), `rgb()` / `rgba()`, `hsl()` / `hsla()`, or a CSS named colour. **No** `calc()` / `var()` / arbitrary CSS — that's blocked at the API to prevent injection into the property value. |
-| **Logo** | Cocoar logo (`/td-logo.svg`) | Header logo in the admin UI + login page. Pick from the [Asset Library](./assets) via the asset picker. |
-| **Favicon** | `/td-logo.svg` | Browser-tab icon. Same asset picker; the SPA rewrites the `<link rel="icon">` element at boot. |
+| **Logo** | Modgud logo (`/idp-logo.svg`, white variant `/idp-logo-white.svg` for the dark header) | Header logo in the admin UI + login page. Pick from the [Asset Library](./assets) via the asset picker. |
+| **Favicon** | `/idp-logo.svg` | Browser-tab icon. Same asset picker; the SPA rewrites the `<link rel="icon">` element at boot. |
 
 ::: tip Tri-state save semantics
 Each field has three save states: **leave the value** (don't touch the input), **clear back to default** (empty the input and save), or **replace** (type / pick a new value). Clearing is how you revert to a Cocoar default without leaving a stale custom value behind.

@@ -28,7 +28,7 @@ public record BrandingSettings
 
     /// <summary>
     /// Asset id (from the per-realm asset library) for the logo image.
-    /// Null = SPA falls back to the Cocoar logo. The asset must exist in
+    /// Null = SPA falls back to the Modgud logo. The asset must exist in
     /// this realm's library — cross-realm references aren't possible by
     /// construction (each tenant's assets live in its own DB).
     /// </summary>
@@ -36,7 +36,7 @@ public record BrandingSettings
 
     /// <summary>
     /// Asset id for the favicon. Null = SPA keeps the default
-    /// <c>/td-logo.svg</c>.
+    /// <c>/idp-logo.svg</c>.
     /// </summary>
     public Guid? FaviconAssetId { get; init; }
 
