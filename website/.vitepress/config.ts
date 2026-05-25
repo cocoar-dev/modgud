@@ -101,6 +101,8 @@ export const baseConfig = defineConfig({
               { text: 'Control Plane / Data Plane', link: '/concepts/control-plane' },
               { text: 'Authentication', link: '/concepts/authentication' },
               { text: 'Authorization (RBAC)', link: '/concepts/groups-and-authorization' },
+              { text: 'Permissions & gating', link: '/concepts/permissions' },
+              { text: 'Auto-Membership', link: '/concepts/auto-membership' },
               { text: 'ABAC and the IAM boundary', link: '/concepts/abac' },
               { text: 'OAuth & OIDC', link: '/concepts/oauth' },
               { text: 'Sessions & Tokens', link: '/concepts/tokens' },
@@ -128,6 +130,8 @@ export const baseConfig = defineConfig({
             text: 'Authentication',
             items: [
               { text: 'Cookies & Sessions', link: '/guide/auth-cookies' },
+              { text: 'Login flows', link: '/guide/login-flows' },
+              { text: 'Login providers (OIDC federation)', link: '/guide/login-providers' },
               { text: '2FA (TOTP, Email, Passkey)', link: '/guide/two-factor' },
             ],
           },

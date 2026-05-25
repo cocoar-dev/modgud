@@ -42,7 +42,7 @@ and carry `PermissionRole` references. Groups exist in two modes:
 - **Manual** — admin maintains the member list
 - **Auto** — a membership script determines members dynamically
 
-See [Auto membership](/dev-notes/authorization-slice/auto-membership).
+See [Auto membership](/concepts/auto-membership).
 
 ### PermissionRole
 
@@ -70,7 +70,7 @@ User → Group → Role → Permission
 
 Two bypass tiers: `<resource>:admin` (resource-wide within the calling
 app) and `realm:admin` (realm-wide emergency exit). See
-[Permissions & gating](/dev-notes/authorization-slice/permissions) for the full
+[Permissions & gating](/concepts/permissions) for the full
 evaluator + UserInfo-emission story.
 
 ### Session

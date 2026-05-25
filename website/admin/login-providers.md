@@ -1,5 +1,12 @@
 # Login Providers
 
+::: tip Looking for the technical reference?
+This page is the admin UI walkthrough. For the provider model, dynamic
+scheme registration, `UserUpdateScript` runtime, and
+`ExternalIdentityLink` schema see
+[Guide → Login Providers](/guide/login-providers).
+:::
+
 A **login provider** is a way for users to authenticate with Modgud. Today
 two types are wired up:
 

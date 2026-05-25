@@ -25,7 +25,7 @@ Implemented in the **Authentication slice**
 | **Magic Link** | Email with single-use token; can also be sent by an admin | Always 30 days |
 | **OIDC External** | Federated login via Entra ID, Google, ... | 30 days |
 
-See [Login flows](/dev-notes/authentication-slice/login-flows) for details.
+See [Login flows](/guide/login-flows) for details.
 
 ### Authentication level
 
@@ -126,7 +126,7 @@ Auth0, ...). Configurable per realm.
 5. If the user has 2FA enabled, the normal 2FA flow runs afterwards
 6. Login cookie is set (always 30 days)
 
-See [Login providers (OIDC)](/dev-notes/authentication-slice/login-providers)
+See [Login providers (OIDC)](/guide/login-providers)
 for details.
 
 ## Account lifecycle

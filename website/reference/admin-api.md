@@ -195,7 +195,7 @@ the realm-CRUD endpoints):
 Effective permissions are computed per request from the BFS over all
 the user's group memberships (transitive, including nested), expanded
 through the assigned PermissionRoles. See
-[Permissions & gating](../dev-notes/authorization-slice/permissions) for the
+[Permissions & gating](../concepts/permissions) for the
 full evaluator + UserInfo-emission story.
 
 ## Pagination

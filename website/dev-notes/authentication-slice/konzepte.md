@@ -9,14 +9,19 @@ handling in the frontend.
 
 Why:
 
-- `HttpOnly` + `SameSite=Strict` protects against XSS token theft
+- `HttpOnly` protects against XSS token theft
 - Sliding expiration via cookie renewals, no refresh-token dance
 - The backend has full control over session invalidation (SignOut →
   cookie gone, done)
 
 The main cookie is named `Modgud.Auth` and is `HttpOnly`,
-`SameSite=Strict`. In production always `Secure=Always`; in dev
-`Secure=None`, because the Vite proxy talks to
+`SameSite=Lax`. `Lax` (not `Strict`) is required so the cookie rides
+along on the top-level GET that the external OIDC IdP redirects back
+to — `Strict` would drop the cookie on that hop and break SSO.
+Cross-site POSTs are still blocked by `SameSite=Lax`, plus the
+`CsrfDefenseMiddleware` rejects state-changing requests whose
+`Sec-Fetch-Site` indicates cross-origin. In production all cookies
+are `Secure`; in dev `Secure=None`, because the Vite proxy talks to
 `http://localhost:4300` and the backend `http://localhost:9099`
 without TLS.
 
@@ -76,7 +81,7 @@ window).
 ```
 ┌────────────────────────────────────────────────────────┐
 │  Modgud.Auth          ASP.NET Identity App-Cookie │
-│  HttpOnly, SameSite=Strict, Secure (Prod)              │
+│  HttpOnly, SameSite=Lax, Secure (Prod)                 │
 │  ExpireTimeSpan = 30 days, SlidingExpiration = true    │
 │                                                        │
 │  Session cookie:    RememberMe=false → expires when    │

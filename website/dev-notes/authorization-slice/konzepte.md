@@ -59,19 +59,22 @@ The slice services touch only the interface they need:
 
 ## Roles & permissions
 
-A permission is a fully-qualified string
-`<app>:<resource>:<action>` — e.g. `modgud:user:read`,
-`modgud:oauth-client:write`, `realm:admin`. A `PermissionRole`
-binds a list of actions to a resource type within an app:
+A permission is a **two-segment** string `<resource>:<action>` inside
+an App's catalog — e.g. `user:read`, `oauth-client:write`. The App
+context is implicit from the caller / token audience, never spelled
+into the permission string. The realm-wide bypass `realm:admin` is a
+realm-constant, modelled via `PermissionRole.IsRealmAdmin = true`.
+
+A `PermissionRole` references catalog entries through `PermissionIds`,
+scoped to an `AppId`:
 
 ```csharp
 public class PermissionRole
 {
     public string Name { get; set; }              // "User Manager"
-    public string AppSlug { get; set; }           // "modgud"
-    public string ResourceType { get; set; }      // "user"
-    public List<string> Permissions { get; set; } // ["read", "write"]
-    //  → modgud:user:read, modgud:user:write
+    public Guid AppId { get; set; }               // the modgud App
+    public List<Guid> PermissionIds { get; set; } // refs into App.Permissions
+    public bool IsRealmAdmin { get; set; }        // realm-wide bypass when true
 }
 ```
 
@@ -83,30 +86,28 @@ User → Group → Role → Permission
 
 No direct user → role assignments, no user → permission overrides.
 Path: which groups is the user in (transitively, including nested) →
-which roles do those groups have → which permissions follow.
+which roles do those groups have (filtered to `BoundTo` of the calling
+app) → which catalog permissions follow.
 
-### Bypass hierarchy
+### Bypass hierarchy — exactly two tiers
 
 | String | Effect |
 |---|---|
-| `<app>:<resource>:admin` | Bypasses all action checks for that resource within that app |
-| `<app>:admin` | Bypasses all action checks for all resources within that app |
+| `<resource>:admin` | Bypasses all action checks for that resource within the calling app |
 | `realm:admin` | Bypasses everything in every app (realm-wide emergency exit) |
 
-`hasPermission(needed)` returns true when:
+`Evaluate(grants, needed)` returns true when:
 
 1. the user holds `realm:admin`, or
 2. the user holds the requested permission directly, or
-3. the user holds `<app>:admin` for the requested permission's app, or
-4. the user holds `<app>:<resource>:admin` for the requested
-   permission's app + resource
+3. the user holds `<resource>:admin` for the same resource.
 
-The realm-wide `realm:admin` bypass is intentionally narrow — only
-the "System Admin" default role carries it. Typically you give
-per-area owners resource-level admin within the IAM app (e.g. "OAuth
-owners" get `modgud:oauth-client:admin` +
-`modgud:oauth-scope:admin` + `modgud:oauth-api:admin`, but
-not `modgud:user:admin`).
+There is **no app-wide bypass tier** (`<app>:admin`); bypass is either
+realm-wide or resource-wide. The realm-wide `realm:admin` is
+intentionally narrow — only the "System Admin" default role carries
+it. Typically you give per-area owners resource-level admin
+(e.g. an OAuth owner gets `oauth-client:admin` + `oauth-scope:admin`
++ `oauth-api:admin`, but not `user:admin`).
 
 ## ABAC
 
@@ -137,7 +138,7 @@ Nested groups are allowed — an auto-group can have another (manual or
 auto) as a member; BFS traversal with a visited set guards against
 cycles.
 
-For more detail see [Auto-Membership](./auto-membership).
+For more detail see [Auto-Membership](/concepts/auto-membership).
 
 ## Events & projections
 

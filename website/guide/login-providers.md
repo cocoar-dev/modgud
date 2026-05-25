@@ -1,5 +1,12 @@
 # Login Providers (OIDC Federated Login)
 
+::: tip Looking for the admin walkthrough?
+This page is the technical / integration reference — provider model,
+dynamic scheme registration, `UserUpdateScript` runtime, link schema.
+For the step-by-step "set up Entra ID in the admin UI" walkthrough see
+[Admin → Login Providers](/admin/login-providers).
+:::
+
 The slice models login providers as a single `LoginProvider` aggregate per
 realm with a `Type` discriminator. Today the wired-up types are:
 

@@ -16,18 +16,20 @@ IdP-specific resources.
   `oauth-scope`, `oauth-api`, `login-provider`, `idp-config`,
   `realm`, `auth-log`, `app` — all keyed under the `modgud` app
   slug
-- **Granular per-resource gating** — `<app>:<resource>:<action>`
-  strings (`modgud:user:read`, `modgud:oauth-client:write`).
-  Three bypass tiers: `<app>:<resource>:admin` (resource-wide within
-  one app), `<app>:admin` (app-wide), `realm:admin` (realm-wide
-  emergency exit)
+- **Granular per-resource gating** — `<resource>:<action>` strings
+  inside an App's catalog (`user:read`, `oauth-client:write`); the App
+  context is implicit from the caller / token audience. Exactly two
+  bypass tiers: `<resource>:admin` (resource-wide within the calling
+  app) and `realm:admin` (realm-wide emergency exit). For the canonical
+  story see [Permissions & gating](/concepts/permissions).
 - **Auto-Membership** — groups whose members are determined by a
   predicate script, including dependency tracking for selective
   recalculation. The script only sees IAM-owned fields (DisplayName,
   Email, IsActive, ExternalIdentities) — deliberately no app-schema
   fields, see [Concepts → ABAC](/concepts/abac)
 - **ASP.NET Core extension** —
-  `.RequiresPermission("modgud:oauth-client:write")` as an endpoint filter
+  `.RequiresPermission("oauth-client:write")` as an endpoint filter
+  (the app catalog the gate runs against is implicit from the caller)
 - **Marten integration** — polymorphic storage via sub-class mapping
   (Person + Group + ServiceAccount in the same `mt_doc_principal`
   table), inline projection for synchronous consistency, Wolverine
@@ -79,7 +81,7 @@ services.AddModgudAuthorization(opts =>
     opts.RegisterResource("idp-config");
     opts.RegisterResource("realm");
     opts.RegisterResource("auth-log");
-    opts.RegisterResource("app");  // for app-wide bypass `modgud:admin`
+    opts.RegisterResource("app");
 });
 ```
 
@@ -94,11 +96,11 @@ bootstrap-invite — see [First-time setup](../../getting-started/first-time-set
 `RealmAdminBootstrapper` atomically seeds three default `PermissionRole`s
 and places the new admin into the **Administratoren** group:
 
-| Role | Permissions |
+| Role | Permissions (within the `modgud` app's catalog unless noted) |
 |---|---|
-| **System Admin** | `realm:admin` (realm-wide bypass; group is `BoundTo: ["*"]`) |
-| **User Manager** | `modgud:user:read`, `modgud:user:write`, `modgud:permission-role:read`, `modgud:authorization-group:read`, `modgud:authorization-group:write` |
-| **Viewer** | `modgud:user:read`, `modgud:permission-role:read`, `modgud:authorization-group:read`, `modgud:oauth-client:read`, `modgud:oauth-scope:read` |
+| **System Admin** | `IsRealmAdmin = true` → realm-wide bypass; group is `BoundTo: ["*"]` |
+| **User Manager** | `user:read`, `user:write`, `permission-role:read`, `authorization-group:read`, `authorization-group:write` |
+| **Viewer** | `user:read`, `permission-role:read`, `authorization-group:read`, `oauth-client:read`, `oauth-scope:read` |
 
 ## Dependencies
 
@@ -119,6 +121,6 @@ Modgud uses this slice in production. Wired through
 ## Table of contents
 
 - [Concepts](./konzepte) — mental model, polymorphism, events, projections
-- [Permissions & gating](./permissions) — per-resource gating, sidebar, endpoint filter
-- [Auto-Membership](./auto-membership) — groups with predicate membership
+- [Permissions & gating](/concepts/permissions) — per-resource gating, sidebar, endpoint filter (public)
+- [Auto-Membership](/concepts/auto-membership) — groups with predicate membership (public)
 - [ABAC and the IAM boundary](/concepts/abac) — why row-level access stays in the app
