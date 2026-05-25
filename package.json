@@ -1,11 +1,11 @@
 {
   "name": "modgud-root",
   "private": true,
-  "description": "Root scripts for building the SPA + end-user docs directly into the backend's wwwroot.",
+  "description": "Root convenience scripts for building the Vue SPA and the in-app docs straight into the backend's wwwroot — used when you want `dotnet run` (no Docker) to serve a current frontend + docs.",
   "scripts": {
     "build:frontend": "cd src/frontend-vue && pnpm install --prefer-offline && pnpm exec vite build --outDir ../dotnet/Modgud.Api/wwwroot --emptyOutDir",
-    "build:userdocs": "cd userdocs && pnpm install --prefer-offline && pnpm exec vitepress build --outDir ../src/dotnet/Modgud.Api/wwwroot/docs",
-    "build:backend": "pnpm run build:frontend && pnpm run build:userdocs",
+    "build:docs": "cd docs && pnpm install --prefer-offline && pnpm exec vitepress build --config .vitepress/config.in-app.ts --outDir ../src/dotnet/Modgud.Api/wwwroot/docs",
+    "build:backend": "pnpm run build:frontend && pnpm run build:docs",
     "watch:frontend": "cd src/frontend-vue && pnpm exec vite build --outDir ../dotnet/Modgud.Api/wwwroot --emptyOutDir --watch"
   }
 }

@@ -108,8 +108,8 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-        working-directory: ./website
+        working-directory: ./docs
 
       - name: Build docs (public + in-app)
         run: pnpm build:all
-        working-directory: ./website
+        working-directory: ./docs
