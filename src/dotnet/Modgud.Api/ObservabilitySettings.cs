@@ -3,7 +3,7 @@ namespace Modgud.Api;
 /// <summary>
 /// OpenTelemetry observability settings. Bound from configuration JSON
 /// (section "Observability") with env overrides. See
-/// website/dev-notes/future-features/observability-opentelemetry.md
+/// dev-docs/future-features/observability-opentelemetry.md
 /// for the phased plan this is the foundation of.
 /// </summary>
 public class ObservabilitySettings

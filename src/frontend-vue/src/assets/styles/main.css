@@ -5,7 +5,7 @@
  * exports map only exposes `.` (JS only) — no `./styles` subpath. We add
  * an alias in vite.config.ts that resolves "/styles" to the dist file so
  * this import looks canonical. Upstream fix captured in
- * website/dev-notes/upstream-feature-requests/. */
+ * dev-docs/upstream-feature-requests/. */
 @import "@cocoar/vue-page-builder/styles";
 
 :root {

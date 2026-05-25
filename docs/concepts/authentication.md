@@ -147,4 +147,6 @@ Lifecycle states:
 - **GDPR-erased** — stream archived, PII masked, irreversible
   (Article 17)
 
-See [GDPR & sessions](/dev-notes/authentication-slice/gdpr-sessions).
+Detailed slice-internal walkthrough lives in the repo-only
+[Authentication slice — GDPR & sessions](https://github.com/cocoar-dev/Modgud/blob/develop/dev-docs/authentication-slice/gdpr-sessions.md)
+notes.

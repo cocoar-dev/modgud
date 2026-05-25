@@ -104,7 +104,7 @@ try
             rule.For<TurnstileSettings>().FromEnvironment("Turnstile"),
 
             // OpenTelemetry observability settings (Phase 1 foundation, see
-            // website/dev-notes/future-features/observability-opentelemetry.md).
+            // dev-docs/future-features/observability-opentelemetry.md).
             rule.For<ObservabilitySettings>().FromFile("data/configuration.json").Select("Observability"),
             rule.For<ObservabilitySettings>().FromFile("data/configuration.local.json").Select("Observability"),
             rule.For<ObservabilitySettings>().FromEnvironment("Observability"),
@@ -707,7 +707,7 @@ try
         });
 
     // OpenTelemetry foundation (Phase 1). See
-    // website/dev-notes/future-features/observability-opentelemetry.md.
+    // dev-docs/future-features/observability-opentelemetry.md.
     var observabilitySettings = configManager.GetRequiredConfig<ObservabilitySettings>();
     builder.Services.AddModgudObservability(
         observabilitySettings,
@@ -719,7 +719,7 @@ try
     // Cookies + antiforgery survive `docker-compose down && up` as a
     // free side effect (no more login-everyone-out on deploy).
     // See HA-2a in
-    // website/dev-notes/future-features/ha-multi-instance.md.
+    // dev-docs/future-features/ha-multi-instance.md.
     builder.Services.AddTenantedDataProtection();
 
     // OpenIddict OAuth 2.0 / OIDC server — uses our custom Marten stores. Settings are

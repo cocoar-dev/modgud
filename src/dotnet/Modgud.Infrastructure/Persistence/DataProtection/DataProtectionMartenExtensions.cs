@@ -14,7 +14,7 @@ public static class DataProtectionMartenExtensions
     /// own cryptographically-isolated key pool stored in that realm's own
     /// database. Aligns with the per-realm signing-key model used by the
     /// rest of the IdP. See the deployment-hygiene section of
-    /// <c>website/dev-notes/future-features/ha-multi-instance.md</c>
+    /// <c>dev-docs/future-features/ha-multi-instance.md</c>
     /// (HA-2a) for the threat model.
     ///
     /// <para>Replaces the default <see cref="IDataProtectionProvider"/>

@@ -8,6 +8,8 @@
 **/test-results
 **/playwright-report
 **/playwright/.auth
-website/node_modules
-website/.vitepress/cache
-website/.vitepress/dist
+docs/node_modules
+docs/.vitepress/cache
+docs/.vitepress/dist
+docs/.vitepress/dist-in-app
+dev-docs/

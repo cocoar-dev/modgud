@@ -37,7 +37,7 @@ Cocoar.JsEval (TS → LINQ for membership scripts), Cocoar.SignalARRR.
 - TimeToDo Authorization slice (`Modgud.Authorization`) — groups
   (incl. JsEval-based auto-membership scripts), roles, permissions,
   ResourceRegistry. Pure RBAC — row-level access (ABAC) stays in the
-  consuming app, see `website/concepts/abac.md`.
+  consuming app, see `docs/concepts/abac.md`.
 - IdP-specific layers added on top: OAuth aggregates, OpenIddict
   Marten stores, Realm domain + provisioning + middleware, Sessions
   with UAParser, GDPR Marten masking + ArchiveStream

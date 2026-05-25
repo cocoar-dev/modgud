@@ -14,21 +14,20 @@ COPY src/frontend-vue/ ./
 RUN pnpm install --frozen-lockfile
 RUN pnpm build
 
-# ── Stage 3: Build docs (VitePress) ────────────────────────────────
-# The website/ tree has a dedicated "in-app" config (config.in-app.ts)
+# ── Stage 3: Build docs (VitePress, in-app variant) ────────────────
+# The docs/ tree has a dedicated "in-app" config (config.in-app.ts)
 # that sets `base: '/docs/'` and points outDir at `.vitepress/dist-in-app`.
-# VitePress 1.6.x silently ignores `--config` on the build command, so
-# we route around the bug by overwriting config.ts with the in-app
-# variant before the build. The public marketing site is never built
-# in the image, only the in-app variant that knows it lives under /docs.
+# Both variants build the same content — the in-app version just
+# carries a different `base` URL and a slimmed-down nav.
+# (The repo also has a sibling `dev-docs/` VitePress site for
+# repo-only design notes; that one is never bundled in the image.)
 FROM node:22-slim AS userdocs-build
 ENV CI=true
 RUN corepack enable && corepack prepare pnpm@10.13.1 --activate
 WORKDIR /src
-COPY website/ ./
+COPY docs/ ./
 RUN pnpm install --frozen-lockfile
-RUN cp .vitepress/config.in-app.ts .vitepress/config.ts
-RUN pnpm build
+RUN pnpm build:in-app
 
 # ── Stage 4: Runtime ───────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/aspnet:10.0

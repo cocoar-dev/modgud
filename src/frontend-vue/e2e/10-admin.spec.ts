@@ -3,7 +3,7 @@ import { apiLogin } from './helpers'
 
 /**
  * Phase B of the manual-checklist port. Admin CRUD coverage for §6 + §7 +
- * §8 + §9 + §10 + §11 + §12 of `website/testing/manual-checklist.md`.
+ * §8 + §9 + §10 + §11 + §12 of `docs/testing/manual-checklist.md`.
  *
  * Most assertions are API-driven — the API surface is already heavily
  * integration-tested, so the value E2E adds at the **HTTP-route + DTO**

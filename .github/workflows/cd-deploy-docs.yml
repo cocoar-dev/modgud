@@ -31,15 +31,15 @@ jobs:
         run: corepack enable && corepack prepare pnpm@10.13.1 --activate
 
       - name: Install dependencies
-        working-directory: website
+        working-directory: docs
         run: pnpm install --frozen-lockfile
 
       - name: Build VitePress
-        working-directory: website
+        working-directory: docs
         run: pnpm build
 
       - name: Package
-        run: cd website/.vitepress/dist && zip -r $GITHUB_WORKSPACE/docs.zip .
+        run: cd docs/.vitepress/dist && zip -r $GITHUB_WORKSPACE/docs.zip .
 
       - name: Upload to Shelf
         env:

@@ -1,10 +1,10 @@
 # 🔒 Dev Notes
 
-> **Repo-only.** This section never ships in any deployed artifact —
-> not on the public docs site, not in the in-app help bundle.
-> Visible only when running VitePress locally via `pnpm dev`.
-> See [`dev-notes/README.md`](https://github.com/cocoar-dev/Modgud/tree/develop/website/dev-notes/README.md)
-> for the convention.
+> **Repo-only.** This site lives in `dev-docs/` and never ships in
+> any deployed artifact — not on the public docs site, not in the
+> in-app help bundle. Visible only when running VitePress locally
+> via `pnpm dev` inside `dev-docs/`, or reading the .md files on
+> GitHub. See [README](./README) for the convention.
 
 Parking lot for things that need to live alongside the codebase but
 shouldn't appear on customer-facing docs:
@@ -38,6 +38,7 @@ surfaced during the first external onboarding.
 ---
 
 When something here matures into a real plan, promote it: move the
-file out of `dev-notes/` into the appropriate public section
-(`/concepts/`, `/guide/`, `/admin/`, `/reference/`), update the
-sidebar registrations, and the next public build picks it up.
+file out of `dev-docs/` into the appropriate public section in
+`docs/` (`/concepts/`, `/guide/`, `/admin/`, `/reference/`), update
+the sidebar registration in `docs/.vitepress/config.ts`, and the next
+public build picks it up.

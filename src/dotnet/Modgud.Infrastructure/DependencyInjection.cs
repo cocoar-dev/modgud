@@ -226,7 +226,7 @@ public static class DependencyInjection
         // synchronous translator phase that the engine timeout cannot
         // reach.
         //
-        // See website/testing/jseval-threat-model.md for the full
+        // See dev-docs/jseval-threat-model.md for the full
         // engine-globals catalog and the rationale per global.
         services.AddJsEval(b => b
             .AddLinq()

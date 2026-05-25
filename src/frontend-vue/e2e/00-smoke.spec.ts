@@ -4,7 +4,7 @@ import { clearMailpit, extractQueryParam, extractTokenFromHtml, waitForMail } fr
 
 /**
  * Phase A of the manual-checklist port. One spec covering §0 + §1 + §2 of
- * `website/testing/manual-checklist.md` end-to-end against the **production
+ * `docs/testing/manual-checklist.md` end-to-end against the **production
  * shipping image** (no Development-mode tricks). Mailpit captures outbound
  * SMTP so the magic-link flow can be verified for real.
  *

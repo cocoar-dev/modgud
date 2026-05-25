@@ -12,7 +12,7 @@ namespace Modgud.Api.Features.Admin;
 /// <para>v1 filters by the caller's tenant realm — each realm-admin sees
 /// only their own realm's events. Cross-realm aggregate (a "global-ops"
 /// view) is parked for Phase 5.5; rationale + design in
-/// website/dev-notes/future-features/observability-opentelemetry.md.</para>
+/// dev-docs/future-features/observability-opentelemetry.md.</para>
 /// </summary>
 public static class AdminObservabilityEndpoints
 {

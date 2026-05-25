@@ -220,7 +220,7 @@ The Vue frontend lives at `src/frontend-vue/` and is served from the
 container as static `wwwroot/` content via `app.UseSpaUI()`. The SignalR
 hub is mounted at `/signalr/ui` (`MapHARRRController<UIHub>`).
 
-See [Vue frontend](/dev-notes/frontend) for more.
+See the repo-only [Vue frontend notes](https://github.com/cocoar-dev/Modgud/blob/develop/dev-docs/frontend.md) for the slice-internal detail.
 
 ## Testing
 
