@@ -5,6 +5,10 @@ hero:
   name: Modgud
   text: Multi-tenant Identity Provider
   tagline: OAuth 2.0 / OpenID Connect server with multi-app permissions, granular RBAC, full database-per-tenant isolation, and a Keycloak-shaped resource_access model — drop-in for Cocoar SaaS apps and any ASP.NET Core resource server.
+  image:
+    light: /logo_light.svg
+    dark: /logo_dark.svg
+    alt: Modgud shield logo
   actions:
     - theme: brand
       text: Get started
