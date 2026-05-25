@@ -1,36 +1,42 @@
 # Auth Endpoints
 
-Endpoints under `/api/account/...`. The current realm is resolved via
+Endpoints under `/api/account/...` (and a handful of identity-lifecycle
+operations under `/api/auth/...`). The current realm is resolved via
 the **Host header** — no realm path prefixes.
 
-Full endpoint list in
-`src/dotnet/Modgud.Authentication/Api/Account/`.
+Full endpoint source in
+`src/dotnet/Modgud.Authentication/Api/Account/` and
+`src/dotnet/Modgud.Authentication/Api/ExternalAuth/`.
 
-## Public Authentication
+## Public authentication
 
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/account/login` | Login with username + password |
 | `POST` | `/api/account/logout` | Logout (cookie removed, session invalidated) |
-| `POST` | `/api/account/register` | Self-registration |
+| `POST` | `/api/account/register` | Self-registration (when enabled per realm) |
 | `POST` | `/api/account/forgot-password` | Request a password-reset link |
 | `POST` | `/api/account/reset-password` | Reset password with a token |
-| `GET` | `/api/account/confirm-email` | Confirm email via token link |
-| `POST` | `/api/account/resend-confirmation` | Resend confirmation email |
 
-## Current User & Profile
+## Email verification
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/account/email/send-verification` | Send (or resend) a verification email for the signed-in user's address |
+| `POST` | `/api/account/email/verify` | Anonymous — verify with the token from the email |
+
+## Current user & profile
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/account/me` | Current user info (incl. effective permissions, realm slug) |
 | `GET` | `/api/account/profile` | Detailed profile |
-| `PUT` | `/api/account/profile` | Edit profile (creates a UserChangeRequest) |
+| `PUT` | `/api/account/profile` | Edit profile (creates a UserChangeRequest for non-email fields) |
 | `POST` | `/api/account/change-password` | Change password |
-| `GET` | `/api/account/profile/links` | Linked OIDC identities |
-| `POST` | `/api/account/external-link/{idpConfigId}/start` | Initiate account linking |
-| `DELETE` | `/api/account/external-link/{linkId}` | Remove a link |
+| `GET` | `/api/account/external-links` | Linked OIDC identities for the signed-in user |
+| `DELETE` | `/api/account/external-links/{linkId}` | Remove a link |
 
-## Two-Factor Authentication
+## Two-factor authentication
 
 ### Status & TOTP
 
@@ -48,7 +54,7 @@ Full endpoint list in
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/account/email-otp/status` | Email-OTP status |
+| `GET` | `/api/account/email-otp/status` | Email-OTP enrolment status |
 | `POST` | `/api/account/email-otp/login/request` | Request email OTP for login |
 | `POST` | `/api/account/email-otp/login` | Login with email OTP |
 
@@ -64,31 +70,32 @@ Full endpoint list in
 | `DELETE` | `/api/account/passkey/credentials/{id}` | Delete a passkey |
 | `PATCH` | `/api/account/passkey/credentials/{id}` | Change a passkey label |
 
-### Magic Link
+### Magic link
 
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/account/magic-link/request` | Request a magic link (self-service, only when enabled) |
-| `GET` | `/api/account/magic-link/login?token=...&user=...` | Magic-link login |
+| `GET` | `/api/account/magic-link/login?token=…&user=…` | Magic-link login |
 
-## External Login (OIDC)
+## External login (OIDC)
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/account/external-login/providers` | List of active IdpConfigs (no secret) |
-| `GET` | `/api/account/external-login/{idpConfigId}/start?returnUrl=/` | Start OIDC flow |
-| `GET` | `/api/account/external-login/callback` | OIDC callback (from the external IdP) |
+| `GET` | `/api/account/external-logins` | List of active LoginProviders (no secrets) |
+| `GET` | `/api/account/external-login/{loginProviderId}/start?returnUrl=/` | Start OIDC flow |
+| `GET` | `/api/account/external-login/finish` | OIDC callback from the external IdP |
+| `GET` | `/api/account/external-logout/{loginProviderId}` | Single-logout signal back to the external IdP |
 
 ### Login flow
 
 ```
-1. Frontend: GET /api/account/external-login/providers → shows provider buttons
-2. User clicks "Login with Acme SSO" (= IdpConfig "acme-sso")
-3. Browser: GET /api/account/external-login/{id}/start?returnUrl=/
+1. Frontend: GET /api/account/external-logins → shows provider buttons
+2. User clicks "Login with Acme SSO"
+3. Browser: GET /api/account/external-login/{loginProviderId}/start?returnUrl=/
 4. Backend: ASP.NET Challenge with the dynamically registered OIDC scheme
 5. Browser: 302 → external IdP
 6. User authenticates with the IdP
-7. IdP: 302 → /api/account/external-login/callback
+7. IdP: 302 → /api/account/external-login/finish
 8. Backend: ExternalLoginProcessor runs (look up user or JIT create,
    run UserUpdateScript, set login cookie)
 9. Backend: 302 → returnUrl
@@ -102,22 +109,25 @@ Full endpoint list in
 | `DELETE` | `/api/account/sessions/{id}` | Revoke a session |
 | `DELETE` | `/api/account/sessions` | Revoke all sessions except current ("logout everywhere") |
 
-## GDPR / Privacy
+## GDPR / privacy
+
+These live under `/api/auth/...` (separate from the day-to-day account
+surface) because they're identity-lifecycle operations:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/account/gdpr/export` | Data export (Article 20) — ZIP |
-| `GET` | `/api/account/gdpr/delete-status` | Status of the delete workflow |
-| `POST` | `/api/account/gdpr/delete-request` | Request account deletion (token email goes out) |
-| `POST` | `/api/account/gdpr/delete-confirm` | Confirm with token → archive stream + mask PII |
-| `POST` | `/api/account/gdpr/delete-cancel` | Cancel a pending delete request |
+| `GET` | `/api/auth/export-data` | Data export (Article 20) — ZIP |
+| `GET` | `/api/auth/deletion-status` | Status of the delete workflow |
+| `POST` | `/api/auth/delete-account` | Request account deletion (token email goes out) |
+| `POST` | `/api/auth/confirm-deletion` | Confirm with token → archive stream + mask PII |
+| `POST` | `/api/auth/cancel-deletion` | Cancel a pending delete request |
 
-## Bootstrap (first-time admin)
+## Bootstrap (first admin in a realm)
 
-There is no anonymous setup wizard. The first admin in any realm is created
-either through the recovery CLI (filesystem trust) or via a Control-Plane
-admin issuing an invite through the realm-create API. The single anonymous
-endpoint is the bootstrap-invite consumer:
+There is no anonymous setup wizard. The first admin in any realm is
+created either through the recovery CLI (filesystem trust) or via a
+Control-Plane admin issuing an invite through the realm-create API.
+The single anonymous endpoint is the bootstrap-invite consumer:
 
 | Method | Path | Description |
 |---|---|---|
@@ -125,13 +135,16 @@ endpoint is the bootstrap-invite consumer:
 
 The token comes from one of:
 
-- `dotnet Modgud.Api.dll recover bootstrap-admin --email <e>` (without `--password`) — see [Recovery CLI](../admin/recovery-cli)
-- `POST /api/admin/realms` with an `InitialAdmin` payload — see [Realm API](./realm-api)
-- `POST /api/admin/realms/{slug}/resend-bootstrap-invite` — re-issue a fresh token for the same recipient
+- `dotnet Modgud.Api.dll recover bootstrap-admin --email <e>`
+  (without `--password`) — see [Recovery CLI](../admin/recovery-cli)
+- `POST /api/admin/realms` with an `InitialAdmin` payload — see
+  [Realm API](./realm-api)
+- `POST /api/admin/realms/{slug}/resend-bootstrap-invite` — re-issue a
+  fresh token for the same recipient
 
-Token properties: SHA-256-hashed in the DB, 7-day TTL, single-use (reuse → 400
-`BootstrapInvite.TokenUsed`). Endpoint is rate-limited under the `bootstrap`
-policy (10 attempts per IP per 15 minutes).
+Token properties: SHA-256-hashed in the DB, 7-day TTL, single-use
+(reuse → 400 `BootstrapInvite.TokenUsed`). Endpoint is rate-limited
+under the `bootstrap` policy (10 attempts per IP per 15 minutes).
 
 ## Response format conventions
 
@@ -140,6 +153,15 @@ policy (10 attempts per IP per 15 minutes).
 - `null` fields are omitted (`JsonIgnoreCondition.WhenWritingNull`)
 - Enums are serialised as strings
 - Errors as `ProblemDetails` (`application/problem+json`)
+
+## Anti-enumeration responses
+
+Endpoints that could otherwise reveal account existence (forgot-password,
+email-OTP login request, magic-link request) deliberately return the
+same response for "valid email" and "no such user" — and apply an
+artificial delay on the no-user path so timing analysis is no help
+either. This applies across the whole password-reset / magic-link /
+email-OTP family.
 
 ## Auth status codes
 
@@ -151,4 +173,4 @@ policy (10 attempts per IP per 15 minutes).
 | `200 { requiresSecureSetup: true, gracePeriod: false }` | Grace period over, blocking |
 | `401` | Not authenticated or wrong credentials |
 | `403` | Authenticated but no permission, or passwordless-only realm |
-| `429` | Rate limit (Email OTP, Magic Link) |
+| `429` | Rate limit (Email OTP, Magic Link, bootstrap-admin) |

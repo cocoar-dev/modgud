@@ -34,23 +34,17 @@ The list view supports:
 
 - **Free-text search** across user, message
 - **Refresh** the grid manually
-- **Clear** the entire AuthLog (admin only — destructive)
-
-::: warning Future filters
-The doc previously promised "Date range / Event type multi-select /
-Outcome / Actor" filters. Those aren't shipped today — only the
-free-text search above. The promise is parked in the testing
-checklist's findings list (F8) and will land alongside the
-event-type taxonomy.
-:::
+- **Clear** the entire AuthLog (realm-admin only — destructive)
 
 ## Retention
 
-Auth log entries are kept indefinitely by default — the audit trail
-is intentionally long-lived. Realm-level retention settings will
-land with the Settings UI rebuild (the back-end has `AppSettings` for
-it; the front-end surface isn't shipped yet — see the testing
-checklist finding F18).
+Auth log entries are kept for **7 days**, enforced by a background
+worker in `AuthLogPersistenceService` (`RetentionPeriod = TimeSpan.FromDays(7)`).
+The window isn't currently realm-configurable — it's the same across
+every realm in a deployment.
+
+Reads (`GET /api/admin/auth-log`) require `auth-log:read`; clearing
+the entire log (`DELETE /api/admin/auth-log`) requires `realm:admin`.
 
 ## GDPR
 

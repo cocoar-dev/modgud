@@ -9,15 +9,18 @@
 
 ## Tabs
 
-The page is a tab surface. Each tab is independently saved and described in its own section below or on a linked page:
+The page currently has two tabs:
 
 - [Self-Registration](#self-registration) — public sign-up policy
-- [Dynamic Client Registration](#dynamic-client-registration) — anonymous OAuth-client registration policy (linked detail page: [Dynamic Client Registration](./dynamic-client-registration))
-- [Branding](#branding) — per-realm SPA-shell branding (linked detail page: [Customization — Branding](../plattform/branding))
+- [Dynamic Client Registration](#dynamic-client-registration) —
+  anonymous OAuth-client registration policy (linked detail page:
+  [Dynamic Client Registration](./dynamic-client-registration))
 
-Future tabs (password-policy overrides, branded email templates, …) land as additional tabs here without needing a new admin page.
+Per-realm **branding** is configured on a separate page under
+Plattform — see [Customization → Branding](../plattform/branding).
 
-Permissions: `realm-settings:read` / `realm-settings:write`. The realm-admin role grants both via the `realm:admin` bypass.
+Permissions: `realm-settings:read` / `realm-settings:write`. The
+realm-admin role grants both via the `realm:admin` bypass.
 
 ## Self-Registration
 
@@ -97,14 +100,10 @@ Off by default. See the full feature page for when to enable it, what gets accep
 
 → **[Dynamic Client Registration](./dynamic-client-registration)** (full feature page)
 
-## Branding
+## Branding (separate page)
 
-Per-realm SPA-shell branding: product name, primary color, logo, favicon. Logo and favicon reference uploaded files from the [Asset Library](../plattform/assets). All four fields are optional — missing = SPA falls back to the Cocoar default.
+Branding lives on its own page under Plattform — go to
+**Plattform → Customization → Branding**. It writes a sub-document on
+the same `RealmSettings` doc but isn't surfaced as a tab here today.
 
-The Branding tab here is the same form as the dedicated **Administration → Customization → Branding** view; both write the same `RealmSettings.Branding` sub-document. Editing in either place affects the same data.
-
-→ **[Customization — Branding](../plattform/branding)** (full feature page)
-
-::: tip Where branding takes effect
-Branding values are exposed by the public `/api/app-info` endpoint, which the SPA reads at boot for the login page (anonymous-reachable, no token needed). Changes take effect on the next page load — no SPA rebuild required.
-:::
+→ **[Customization — Branding](../plattform/branding)**
