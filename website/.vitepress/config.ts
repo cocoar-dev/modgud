@@ -74,6 +74,7 @@ export const baseConfig = defineConfig({
         { text: 'Plattform', link: '/plattform/' },
         { text: 'Reference', link: '/reference/oauth-api' },
         { text: 'Testing', link: '/testing/' },
+        { text: 'Roadmap', link: '/roadmap' },
         { text: 'LLM Docs', link: '/llms-full.txt', target: '_blank' },
       ],
 
