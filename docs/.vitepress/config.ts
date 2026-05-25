@@ -38,6 +38,13 @@ export default withMermaid(defineConfig({
       excludeUnnecessaryFiles: false,
       ignoreFiles: ['changelog.md'],
     })],
+    // Mermaid 11.x depends on dayjs which is CJS-only; Vite's dev-mode
+    // optimiser otherwise hands the browser a bare `import default from
+    // dayjs` that fails at load. Force pre-bundling so the ESM shim is in
+    // place. Production build is unaffected (rollup handles CJS fine).
+    optimizeDeps: {
+      include: ['dayjs'],
+    },
   },
 
   themeConfig: {
