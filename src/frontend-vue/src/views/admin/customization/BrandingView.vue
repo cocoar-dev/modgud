@@ -175,7 +175,7 @@ async function save() {
 
         <div class="grid grid-cols-2 gap-3">
           <CoarFormField :label="t('admin.customization.branding.productName', {}, 'Product name')">
-            <CoarTextInput v-model="form.ProductName" clearable placeholder="Cocoar.Auth" />
+            <CoarTextInput v-model="form.ProductName" clearable placeholder="Modgud" />
           </CoarFormField>
           <CoarFormField :label="t('admin.customization.branding.primaryColor', {}, 'Primary color (CSS color, e.g. #5A6478)')">
             <CoarTextInput v-model="form.PrimaryColor" clearable placeholder="#5A6478" />

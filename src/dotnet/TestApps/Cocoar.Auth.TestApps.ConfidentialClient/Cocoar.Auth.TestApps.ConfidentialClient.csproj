@@ -1,8 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <RootNamespace>Cocoar.Auth.TestApps.ConfidentialClient</RootNamespace>
-  </PropertyGroup>
-
-</Project>

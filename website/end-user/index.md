@@ -1,12 +1,12 @@
 # End-user help
 
-Welcome to Cocoar.Auth. This section helps you sign in, secure your account, and manage your profile.
+Welcome to Modgud. This section helps you sign in, secure your account, and manage your profile.
 
 If you've just been invited and need to set up your account for the first time, jump to [First steps](./first-steps).
 
-## What is Cocoar.Auth?
+## What is Modgud?
 
-Cocoar.Auth is an **identity provider**. Instead of a separate password for every connected app, you sign in here once and all linked apps know who you are (Single Sign-On).
+Modgud is an **identity provider**. Instead of a separate password for every connected app, you sign in here once and all linked apps know who you are (Single Sign-On).
 
 Manage from this account:
 

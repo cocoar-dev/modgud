@@ -9,7 +9,7 @@ import type {
 
 /**
  * Applications store — the realm's registered Cocoar SaaS apps. The system
- * app (`cocoar-auth`) is always present and cannot be deleted.
+ * app (`modgud`) is always present and cannot be deleted.
  *
  * Distinct from the existing `useAppStore` (UI shell state for the
  * header/footer/content layout) — that one keeps its name; this one is

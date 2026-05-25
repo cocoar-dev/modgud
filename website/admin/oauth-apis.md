@@ -1,6 +1,6 @@
 # OAuth APIs (Resource Servers)
 
-An **OAuth API** in Cocoar.Auth is the registration of a **resource server** — an API that wants to validate access tokens issued by Cocoar.Auth and use them to authorise requests.
+An **OAuth API** in Modgud is the registration of a **resource server** — an API that wants to validate access tokens issued by Modgud and use them to authorise requests.
 
 ::: info OAuth API vs OAuth Client
 - **OAuth Client** = the app that performs the user login and **gets** tokens
@@ -67,7 +67,7 @@ Optional list of claim types this API expects in tokens. Used by some IdP-side f
 
 ## API secrets
 
-After creation, every OAuth API has at least one **API secret** — a shared symmetric key used when the RS authenticates against Cocoar.Auth (introspection endpoint, distribution API, …).
+After creation, every OAuth API has at least one **API secret** — a shared symmetric key used when the RS authenticates against Modgud (introspection endpoint, distribution API, …).
 
 The **Secrets** tab shows all secrets currently valid for this API. You can:
 
@@ -76,7 +76,7 @@ The **Secrets** tab shows all secrets currently valid for this API. You can:
 - **Regenerate** rotates the default secret (old one is invalidated)
 
 ::: warning One-time reveal
-Cleartext secret values are shown **only once** — at creation or regeneration. After that Cocoar.Auth only stores the hash. Lost a secret? Generate a new one and update your consumer.
+Cleartext secret values are shown **only once** — at creation or regeneration. After that Modgud only stores the hash. Lost a secret? Generate a new one and update your consumer.
 :::
 
 ## Editing
@@ -99,7 +99,7 @@ Each microservice gets its own OAuth API with its own secret. All link to the sa
 
 ### Multi-tenant API
 
-If the same API logic serves multiple realms, each realm gets its own OAuth API entry. Cocoar.Auth's tenancy already enforces realm separation at the database level, so cross-realm token leakage is impossible.
+If the same API logic serves multiple realms, each realm gets its own OAuth API entry. Modgud's tenancy already enforces realm separation at the database level, so cross-realm token leakage is impossible.
 
 ## Tips
 

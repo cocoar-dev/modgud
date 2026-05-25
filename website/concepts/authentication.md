@@ -1,18 +1,18 @@
 # Authentication
 
-cocoar.auth has two orthogonal authentication axes:
+modgud has two orthogonal authentication axes:
 
-1. **First-party login** — the user signs in to cocoar.auth itself
+1. **First-party login** — the user signs in to modgud itself
    (admin UI, profile, setup). Cookie-based, no token in the browser.
 2. **OAuth/OIDC server** — external apps let users sign in via
-   cocoar.auth. Authorization Code + PKCE, classic.
+   modgud. Authorization Code + PKCE, classic.
 
 Both share the same login methods under the hood.
 
 ## First-party login
 
 Implemented in the **Authentication slice**
-(`Cocoar.Auth.Authentication`). Endpoints mounted under `/api/account/...`.
+(`Modgud.Authentication`). Endpoints mounted under `/api/account/...`.
 
 ### Login methods
 
@@ -44,10 +44,10 @@ authenticated requests from users without 2FA (with a grace period).
 
 | Cookie | Purpose | SameSite | Lifetime |
 |---|---|---|---|
-| `Cocoar.Auth.Auth` | Main session (HttpOnly) | Lax | Session or 30 days |
-| `Cocoar.Auth.2FA` | UserId between password step and 2FA step | Strict | 5 min |
-| `Cocoar.Auth.External` | OIDC callback holder | Lax | 10 min |
-| `Cocoar.Auth.Session` | Only for passkey attestation options | Strict | 5 min idle |
+| `Modgud.Auth` | Main session (HttpOnly) | Lax | Session or 30 days |
+| `Modgud.2FA` | UserId between password step and 2FA step | Strict | 5 min |
+| `Modgud.External` | OIDC callback holder | Lax | 10 min |
+| `Modgud.Session` | Only for passkey attestation options | Strict | 5 min idle |
 
 `SameSite=Lax` on the main session cookie is required so that OIDC
 redirect-back navigations carry the cookie (top-level GET → cookie sent).
@@ -60,7 +60,7 @@ Vite dev server (`http://localhost:4300`) can write them.
 
 ## OAuth 2.0 / OIDC server
 
-cocoar.auth is at the same time a full-fledged OpenID Connect provider
+modgud is at the same time a full-fledged OpenID Connect provider
 for external apps. Implemented via **OpenIddict 7** with its own
 Marten-based stores (no Entity Framework).
 
@@ -69,7 +69,7 @@ Marten-based stores (no Entity Framework).
 ```mermaid
 sequenceDiagram
     participant App as External App
-    participant Auth as cocoar.auth
+    participant Auth as modgud
     participant User
     App->>Auth: GET /connect/authorize?...&code_challenge=...
     Auth->>User: Login page (if needed)

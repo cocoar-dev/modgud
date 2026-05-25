@@ -33,7 +33,7 @@ interface GroupPayload {
   EmailMode?: 'Shared' | 'ExpandToMembers'
   /**
    * App slugs the group is active in. On create, omitting falls back to
-   * the backend default (currently [cocoar-auth]). On update, omitting
+   * the backend default (currently [modgud]). On update, omitting
    * keeps the stored value untouched.
    */
   BoundTo?: string[]

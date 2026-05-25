@@ -1,6 +1,6 @@
 # Two-Factor Authentication
 
-cocoar.auth supports four 2FA methods, all implemented in the
+modgud supports four 2FA methods, all implemented in the
 Authentication slice. Any number of methods can be active per user.
 
 | Method | Service | Storage |
@@ -25,7 +25,7 @@ sequenceDiagram
     Frontend->>Backend: POST /api/account/login
     Backend->>SignInManager: PasswordSignInAsync()
     SignInManager-->>Backend: RequiresTwoFactor = true
-    Backend->>Backend: SignIn TwoFactorUserIdScheme<br/>(Cocoar.Auth.2FA cookie)
+    Backend->>Backend: SignIn TwoFactorUserIdScheme<br/>(Modgud.2FA cookie)
     Backend-->>Frontend: 200 { requiresTwoFactor, mfaMethods: [...] }
     Frontend->>Frontend: Redirect to MFA page
 
@@ -45,13 +45,13 @@ sequenceDiagram
         Frontend->>Backend: POST /api/account/mfa/recovery-login
     end
 
-    Backend->>Backend: SignIn ApplicationScheme<br/>(Cocoar.Auth.Auth cookie)
+    Backend->>Backend: SignIn ApplicationScheme<br/>(Modgud.Auth cookie)
     Backend-->>Frontend: 200 OK + Cookie
 ```
 
-On the first login step the `Cocoar.Auth.2FA` cookie is set
+On the first login step the `Modgud.2FA` cookie is set
 (lifetime: 5 min), holding the UserId between step 1 and step 2. Only
-a successful second step issues the full `Cocoar.Auth.Auth` cookie.
+a successful second step issues the full `Modgud.Auth` cookie.
 
 ## TOTP (authenticator apps)
 
@@ -70,7 +70,7 @@ POST /api/account/mfa/setup
 ```json
 {
   "sharedKey": "ABCD EFGH IJKL MNOP",
-  "authenticatorUri": "otpauth://totp/CocoarAuth:alice@example.com?secret=...&issuer=CocoarAuth&digits=6"
+  "authenticatorUri": "otpauth://totp/Modgud:alice@example.com?secret=...&issuer=Modgud&digits=6"
 }
 ```
 
@@ -146,7 +146,7 @@ POST /api/account/passkey/register/options
 - `excludeCredentials` = the user's existing credentials
 
 Challenge bytes + options JSON are stored in a
-`Cocoar.Auth.Session` ASP.NET session entry (Marten
+`Modgud.Session` ASP.NET session entry (Marten
 `DistributedMemoryCache` as the session store), 5 min idle.
 
 ```http
@@ -205,7 +205,7 @@ Derived in `Program.cs` from `IServerConfiguration.PublicUrl`:
 builder.Services.AddFido2(options =>
 {
     options.ServerDomain = publicUri.Host;
-    options.ServerName = "Cocoar.Auth";
+    options.ServerName = "Modgud";
     options.Origins = fido2Origins;
 });
 ```

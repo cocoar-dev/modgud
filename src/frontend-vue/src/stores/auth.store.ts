@@ -58,7 +58,7 @@ export const useAuthStore = defineStore('auth', () => {
    * Mirrors the backend PermissionEvaluator (post-Step-4 catalog refactor).
    * Permission strings are bare 2-segment <c>"&lt;resource&gt;:&lt;action&gt;"</c>
    * (e.g. "user:read") plus the synthetic "realm:admin" entry. The App
-   * context is implicit: /me returns the union of cocoar-auth and (when
+   * context is implicit: /me returns the union of modgud and (when
    * the realm has it) control-plane grants, so all admin sidebar gates
    * and dashboard cards see a single bare-string set.
    *

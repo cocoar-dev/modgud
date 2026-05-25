@@ -1,10 +1,10 @@
 # Apps and resource_access
 
-This page explains the mental model behind Cocoar.Auth's permission system: what an "App" is, how it relates to OAuth concepts, how the Keycloak-style `resource_access` claim is shaped, and how the permission resolver gets from a logged-in user to a concrete answer.
+This page explains the mental model behind Modgud's permission system: what an "App" is, how it relates to OAuth concepts, how the Keycloak-style `resource_access` claim is shaped, and how the permission resolver gets from a logged-in user to a concrete answer.
 
 ## The four-axis model
 
-OAuth/OIDC officially knows four roles: Resource Owner (the user), Client, Authorization Server, Resource Server. Cocoar.Auth adds a fifth concept that the OAuth spec doesn't model — the **App**.
+OAuth/OIDC officially knows four roles: Resource Owner (the user), Client, Authorization Server, Resource Server. Modgud adds a fifth concept that the OAuth spec doesn't model — the **App**.
 
 ```
                           Realm
@@ -48,7 +48,7 @@ Two real-world deviations from "one App = one Resource Server":
 
 **Multi-app frontends.** A unified webshop frontend might call into a `shop` app, a `payments` app, and an `inventory` app. The frontend has *one* OAuth Client (one user-facing identity), but the client is linked to all three Apps via its `AppIds` list. The issued token then carries `resource_access` blocks for all three; each backend reads its own block.
 
-The two flexibilities together let Cocoar.Auth represent any reasonable architecture without forcing you into "everything is one app" or "split everything into separate clients".
+The two flexibilities together let Modgud represent any reasonable architecture without forcing you into "everything is one app" or "split everything into separate clients".
 
 ## Permission resolution: step by step
 
@@ -69,7 +69,7 @@ Given a `(userId, appSlug)` pair (e.g. `(bernhard, "timetodo")`), what permissio
 
 Two filters, not one: BoundTo on the group, AppSlug on the role. They serve different purposes — BoundTo is "is this group active here?", AppSlug is "is this role about this app?".
 
-The resolver lives in `Cocoar.Auth.Authorization.Services.PermissionService`. It runs on the IDP (not at token-issue time, but at /me-permissions and any future server-side query).
+The resolver lives in `Modgud.Authorization.Services.PermissionService`. It runs on the IDP (not at token-issue time, but at /me-permissions and any future server-side query).
 
 ## The token shape
 

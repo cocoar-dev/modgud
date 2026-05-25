@@ -2,7 +2,7 @@
 layout: home
 
 hero:
-  name: Cocoar.Auth
+  name: Modgud
   text: Multi-tenant Identity Provider
   tagline: OAuth 2.0 / OpenID Connect server with multi-app permissions, granular RBAC, full database-per-tenant isolation, and a Keycloak-shaped resource_access model — drop-in for Cocoar SaaS apps and any ASP.NET Core resource server.
   actions:
@@ -17,7 +17,7 @@ hero:
       link: /guide/integrating-resource-server
     - theme: alt
       text: Source on GitHub
-      link: https://github.com/cocoar-dev/Cocoar.Auth
+      link: https://github.com/cocoar-dev/Modgud
 
 features:
   - title: Multi-tenant by design

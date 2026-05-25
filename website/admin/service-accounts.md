@@ -5,7 +5,7 @@ description: Machine identities that authenticate via OAuth client_credentials, 
 
 # Service Accounts
 
-A **Service Account** (SA) is a non-human principal — a build agent, an integration, a scheduled job. It carries a stable account name, lives in the same `Principal → Group → Role → Permission` model as a `Person`, but has no email, no password, no MFA. Machines authenticate by exchanging an OAuth `client_secret` for an access token; Cocoar.Auth then resolves the token's `sub` claim to the owning Service Account so audit logs read `ci.build-agent did X` instead of `client_id=4f7a9b…e3 did X`.
+A **Service Account** (SA) is a non-human principal — a build agent, an integration, a scheduled job. It carries a stable account name, lives in the same `Principal → Group → Role → Permission` model as a `Person`, but has no email, no password, no MFA. Machines authenticate by exchanging an OAuth `client_secret` for an access token; Modgud then resolves the token's `sub` claim to the owning Service Account so audit logs read `ci.build-agent did X` instead of `client_id=4f7a9b…e3 did X`.
 
 Create a Service Account whenever a non-interactive caller — CI runner, scheduled sync, server-to-server integration — needs to act against a Cocoar-protected API.
 
@@ -26,12 +26,12 @@ A working M2M setup needs two objects living in two layers. The split is deliber
 
 ### Why both
 
-Cocoar.Auth has a unified permission model that has to work identically for humans and machines:
+Modgud has a unified permission model that has to work identically for humans and machines:
 
 - `bwi` (Person) → group `data-engineers` → role `data-read` → permission `timetodo:data:read`
 - `ci.build-agent` (ServiceAccount) → group `data-engineers` → role `data-read` → permission `timetodo:data:read`
 
-If the OAuth client carried the machine identity directly, the entire group/role/permission graph would have to be duplicated on the client side, and audit logs would surface opaque `client_id` strings. The industry pattern is consistent: Keycloak auto-creates a hidden "service account user" behind every `client_credentials` client, AWS IAM separates Roles from access keys, GCP IAM separates Service Accounts from JSON keys. Cocoar.Auth surfaces both layers explicitly because admins need to manage them — but the SA is the user-facing concept and the OAuth client is an implementation detail of "how does this SA authenticate".
+If the OAuth client carried the machine identity directly, the entire group/role/permission graph would have to be duplicated on the client side, and audit logs would surface opaque `client_id` strings. The industry pattern is consistent: Keycloak auto-creates a hidden "service account user" behind every `client_credentials` client, AWS IAM separates Roles from access keys, GCP IAM separates Service Accounts from JSON keys. Modgud surfaces both layers explicitly because admins need to manage them — but the SA is the user-facing concept and the OAuth client is an implementation detail of "how does this SA authenticate".
 
 ## Strict grant separation
 
@@ -79,7 +79,7 @@ To issue a credential:
 ### Rotate and delete
 
 - **Rotate secret** generates a fresh `client_secret`, invalidates the old one immediately, and surfaces the new one in the same one-time-display panel. Use it for periodic rotation or after suspected exposure.
-- **Delete** removes the OAuth client. Tokens issued before the delete remain valid until their natural expiry (Cocoar.Auth does not currently revoke outstanding tokens at delete time); no new tokens can be minted.
+- **Delete** removes the OAuth client. Tokens issued before the delete remain valid until their natural expiry (Modgud does not currently revoke outstanding tokens at delete time); no new tokens can be minted.
 
 ### 1:N
 
@@ -140,7 +140,7 @@ Realms that existed before the Service-Account-credentials feature shipped may s
 To migrate them in one shot, run the recovery CLI:
 
 ```bash
-dotnet Cocoar.Auth.Api.dll recover migrate-cc-credentials [--realm <slug>]
+dotnet Modgud.Api.dll recover migrate-cc-credentials [--realm <slug>]
 ```
 
 For each un-linked `client_credentials` client the command auto-provisions a Service Account named `legacy.{clientId}`, links the client to it, and leaves a re-runnable trail (already-linked clients are skipped; existing `legacy.*` SAs are re-used). Defaults to the `system` realm; pass `--realm` to scope to a specific tenant. After migration, rename the SA from the admin UI or merge it into a properly-named one.

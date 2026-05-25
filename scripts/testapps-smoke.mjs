@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * End-to-end smoke test of the Cocoar.Auth permission model.
+ * End-to-end smoke test of the Modgud permission model.
  *
  * Drives a wide grid of (user, client) combinations through the full
  * OAuth flow (auth-code + PKCE for SPAs, client_credentials for M2M),
@@ -342,7 +342,7 @@ async function runScenario(s, idx) {
 }
 
 async function main() {
-  pushln(`# Cocoar.Auth Smoke Test — Permission Model End-to-End`)
+  pushln(`# Modgud Smoke Test — Permission Model End-to-End`)
   pushln()
   pushln(`Generated: ${new Date().toISOString()}`)
   pushln(`IdP: ${BASE_URL}`)

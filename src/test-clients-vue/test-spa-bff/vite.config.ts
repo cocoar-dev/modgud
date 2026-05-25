@@ -18,7 +18,7 @@ export default defineConfig({
   build: {
     // Output directly into the BFF's wwwroot so `dotnet run` ships the
     // SPA shell. Adjust if you'd rather copy as a separate step.
-    outDir: '../../dotnet/TestApps/Cocoar.Auth.TestApps.Bff/wwwroot',
+    outDir: '../../dotnet/TestApps/Modgud.TestApps.Bff/wwwroot',
     emptyOutDir: true,
   },
 })

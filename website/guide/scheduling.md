@@ -5,17 +5,17 @@ description: Backend contributor guide for the Quartz.NET-based scheduling slice
 
 # Scheduling framework
 
-Cocoar.Auth uses [Quartz.NET](https://www.quartz-scheduler.net/) for all recurring background work. Jobs are compile-time-registered, schedules persist in Marten as per-tenant overrides, and every run is recorded in an append-only history ledger that powers the [/admin/scheduled-jobs](/admin/scheduled-jobs) admin surface.
+Modgud uses [Quartz.NET](https://www.quartz-scheduler.net/) for all recurring background work. Jobs are compile-time-registered, schedules persist in Marten as per-tenant overrides, and every run is recorded in an append-only history ledger that powers the [/admin/scheduled-jobs](/admin/scheduled-jobs) admin surface.
 
 ## Architecture
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│ Cocoar.Auth.Application/Scheduling                             │
+│ Modgud.Application/Scheduling                             │
 │   IJobsService, JobParameterField, JobKind                     │
 │   IJobRunHistoryRetentionService                               │
 ├────────────────────────────────────────────────────────────────┤
-│ Cocoar.Auth.Infrastructure/Scheduling                          │
+│ Modgud.Infrastructure/Scheduling                          │
 │   IJobRegistry  (in-memory catalogue of JobRegistrations)      │
 │   JobConfig     (Marten doc — per-tenant override + params)    │
 │   JobRunHistoryEntry  (Marten doc — append-only ledger)        │
@@ -24,9 +24,9 @@ Cocoar.Auth uses [Quartz.NET](https://www.quartz-scheduler.net/) for all recurri
 │   SchedulingBootstrap (HostedService — reapplies on startup)   │
 │   IJobRunNotifier (cross-slice seam, default no-op)            │
 ├────────────────────────────────────────────────────────────────┤
-│ Cocoar.Auth.Api/Features/Admin/Jobs                            │
+│ Modgud.Api/Features/Admin/Jobs                            │
 │   DcrGcJob, JobRunHistoryRetentionJob, JobsEndpoints           │
-│ Cocoar.Auth.Api/Features/Inbox                                 │
+│ Modgud.Api/Features/Inbox                                 │
 │   InboxRetentionJob, JobRunNotifier (real impl)                │
 └────────────────────────────────────────────────────────────────┘
 ```
@@ -156,7 +156,7 @@ Cross-slice notifications happen via `IJobRunNotifier` (`IJobRunNotifier.cs`). T
 services.AddScoped<IJobRunNotifier, JobRunNotifier>();    // real impl
 ```
 
-`Cocoar.Auth.Api.Features.Inbox.JobRunNotifier` (`JobRunNotifier.cs`) does two things:
+`Modgud.Api.Features.Inbox.JobRunNotifier` (`JobRunNotifier.cs`) does two things:
 
 1. **Failed run** (regardless of trigger source) → notify all admins (`IAdminNotifier.GetAdminRecipientUserIdsAsync`) with `InboxKind.ScheduledJobFailed`. The dedup `sourceId` is a stable Guid derived from the job key, so repeat failures of the same job collapse onto one bell entry per admin.
 2. **Manual trigger completion** (success or fail, with captured user-id) → notify the triggering user with `InboxKind.ManualJobCompleted`. Scheduled runs intentionally don't notify on success — operators don't need a bell ping every cron tick.

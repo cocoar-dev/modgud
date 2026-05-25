@@ -2,7 +2,7 @@
 
 **Repo:** `@cocoar/vue-ui`
 **Component:** `CoarSidebarItem`
-**Reported by:** Cocoar.Auth onboarding (2026-05-11) — an integrator
+**Reported by:** Modgud onboarding (2026-05-11) — an integrator
 trying to drive the admin UI via browser-automation could not address
 the collapsed sidebar items because the icon-only buttons have neither
 a `title` nor an `aria-label`.

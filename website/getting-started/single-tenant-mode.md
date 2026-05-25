@@ -1,13 +1,13 @@
 # Single-tenant mode
 
-Cocoar.Auth is multi-tenant by design — every realm gets its own
+Modgud is multi-tenant by design — every realm gets its own
 PostgreSQL database, hostname routing, OAuth-client + user store. But
 the multi-tenant architecture is **opt-in**: for a "one app, one
 company" deployment the system realm is enough on its own.
 
 ## When this fits
 
-- You're running cocoar.auth as the IdP for **your own** apps and
+- You're running modgud as the IdP for **your own** apps and
   users, not hosting tenants for third parties.
 - You don't need per-customer data isolation.
 - The deployment has one public hostname (e.g. `auth.acme.com`) and
@@ -43,21 +43,21 @@ Same recipe as the [Quickstart](quickstart) without any extra steps:
 
 ```bash
 docker run -d \
-  --name cocoar-auth \
+  --name modgud \
   -p 80:8081 \
   -v cocoar-keys:/app/data/keys \
-  -e DbSettings__ConnectionString="Host=...;Database=cocoar_auth;..." \
+  -e DbSettings__ConnectionString="Host=...;Database=modgud;..." \
   -e OpenIddict__Issuer="https://auth.example.com" \
   -e ProxyAllowedNetworks="<reverse-proxy-CIDR>" \
-  ghcr.io/cocoar/cocoar.auth:latest
+  ghcr.io/cocoar/modgud:latest
 
 # Add the public hostname to the system realm and restart
-docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll \
+docker exec modgud dotnet Modgud.Api.dll \
     recover realm-add-domain --slug system --domain auth.example.com
 docker compose restart auth
 
 # Bootstrap the first admin into the system realm (default)
-docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll \
+docker exec modgud dotnet Modgud.Api.dll \
     recover bootstrap-admin \
     --email admin@example.com --username admin --password 'StrongPass1!'
 ```
@@ -97,4 +97,4 @@ The new realm gets its own PostgreSQL database (`<master-db>_<slug>`),
 its own hostname-routing entry, its own everything. Cross-realm
 isolation is enforced at the database level — there's no path for
 tenant data to leak from one realm to another, even if a bug in
-cocoar.auth opened a query without the tenant scope.
+modgud opened a query without the tenant scope.

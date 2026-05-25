@@ -4,7 +4,7 @@ How to bootstrap the very first admin account in a fresh deployment, and how to 
 
 ## The mental model
 
-Cocoar.Auth has **no anonymous setup wizard**. A freshly-deployed instance with zero users does not expose a "click here to claim the instance" form — that would be a race window where the first stranger to reach the URL becomes the global admin.
+Modgud has **no anonymous setup wizard**. A freshly-deployed instance with zero users does not expose a "click here to claim the instance" form — that would be a race window where the first stranger to reach the URL becomes the global admin.
 
 Instead, the first admin is created by someone with a **proven trust boundary**:
 
@@ -36,8 +36,8 @@ The system realm is auto-created on first boot with a hardcoded dev-friendly dom
 Add your real public hostname first:
 
 ```bash
-docker exec cocoar-auth \
-  dotnet Cocoar.Auth.Api.dll recover realm-add-domain \
+docker exec modgud \
+  dotnet Modgud.Api.dll recover realm-add-domain \
     --slug system \
     --domain auth.example.com
 ```
@@ -52,8 +52,8 @@ Skip this section if you're on the default `localhost:4300` dev setup — the se
 The simplest path for local development and self-hosted first-installs. Sets the password right away — no email roundtrip needed.
 
 ```bash
-docker exec cocoar-auth \
-  dotnet Cocoar.Auth.Api.dll recover bootstrap-admin \
+docker exec modgud \
+  dotnet Modgud.Api.dll recover bootstrap-admin \
     --email admin@example.com \
     --username admin \
     --password 'StrongPass1!' \
@@ -82,8 +82,8 @@ The CLI enforces the same Identity password policy the SPA uses (length ≥ 8, m
 Same CLI, but **without** `--password`. Useful when the operator (you) shouldn't know the admin's password — e.g. when handing off a customer's instance.
 
 ```bash
-docker exec cocoar-auth \
-  dotnet Cocoar.Auth.Api.dll recover bootstrap-admin \
+docker exec modgud \
+  dotnet Modgud.Api.dll recover bootstrap-admin \
     --email max@acme.com \
     --username max \
     [--realm system]
@@ -122,7 +122,7 @@ The Control-Plane admin sends:
 POST /api/admin/realms HTTP/1.1
 Host: auth.example.com           # the Control-Plane host
 Content-Type: application/json
-Cookie: Cocoar.Auth.Auth=…       # the CP-admin's session cookie
+Cookie: Modgud.Auth=…       # the CP-admin's session cookie
 
 {
   "Slug": "acme",
@@ -157,7 +157,7 @@ Response (201 Created):
 
 Behind the scenes, atomically with the realm creation:
 
-1. The tenant DB is provisioned and the realm-internal `cocoar-auth` app is seeded.
+1. The tenant DB is provisioned and the realm-internal `modgud` app is seeded.
 2. A `PendingAdminInvite` is written into the new tenant DB.
 3. The magic-link email is sent to `InitialAdmin.Email`.
 
@@ -180,7 +180,7 @@ The HTTP API requires `InitialAdmin.UserName` and `InitialAdmin.Email`. There is
 You're now signed in. The admin SPA dashboard shows:
 
 - Sidebar with every section visible — you hold `realm:admin`, the wildcard bypass.
-- The `cocoar-auth` system app already registered (seeded by `AppRealmSeeder` on realm creation).
+- The `modgud` system app already registered (seeded by `AppRealmSeeder` on realm creation).
 
 Recommended next steps:
 

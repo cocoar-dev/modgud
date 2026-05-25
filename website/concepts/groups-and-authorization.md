@@ -1,6 +1,6 @@
 # Authorization (RBAC)
 
-Cocoar.Auth is a pure **RBAC + grouping** Identity & Access Management system. It answers `(user, app, permission)` — nothing more.
+Modgud is a pure **RBAC + grouping** Identity & Access Management system. It answers `(user, app, permission)` — nothing more.
 
 Row-level access policies (ABAC) deliberately stay **outside** the IAM and live in the consuming app where the row schema is. See [ABAC and the IAM boundary](./abac) for the rationale and the three deployment profiles.
 
@@ -31,8 +31,8 @@ Three segments, slash-free:
 
 | Example | Meaning |
 | --- | --- |
-| `cocoar-auth:user:read` | Read users in the IAM admin app |
-| `cocoar-auth:oauth-client:write` | Manage OAuth clients in the IAM admin app |
+| `modgud:user:read` | Read users in the IAM admin app |
+| `modgud:oauth-client:write` | Manage OAuth clients in the IAM admin app |
 | `timetodo:todo:write` | Create/update todos in the TimeToDo app |
 | `realm:admin` | Realm-wide bypass — everything in every app |
 | `<app>:admin` | App-wide bypass for that app |
@@ -49,7 +49,7 @@ The `realm:admin` bypass is intentionally narrow — only the System Admin defau
 
 ## Apps and BoundTo
 
-The IAM hosts an arbitrary number of consuming apps in one realm; each is identified by a slug (`cocoar-auth`, `timetodo`, `knowledge`, …). Permissions and roles are app-scoped.
+The IAM hosts an arbitrary number of consuming apps in one realm; each is identified by a slug (`modgud`, `timetodo`, `knowledge`, …). Permissions and roles are app-scoped.
 
 A group's `BoundTo` field is the **activation switch**: it lists the app slugs in which the group's roles take effect.
 
@@ -67,7 +67,7 @@ Removing an app from a group's BoundTo is a non-destructive deactivation: role a
 | Role | Permissions |
 | --- | --- |
 | **System Admin** | `realm:admin` |
-| **User Manager** | `cocoar-auth:user:read/write`, `cocoar-auth:permission-role:read`, `cocoar-auth:authorization-group:read/write` |
+| **User Manager** | `modgud:user:read/write`, `modgud:permission-role:read`, `modgud:authorization-group:read/write` |
 | **Viewer** | Read-only on Users, Roles, Groups, OAuth-Clients, OAuth-Scopes |
 
 The first-time-setup admin lands in the System Admin group with `BoundTo: ["*"]`, so they immediately see every app.
@@ -115,7 +115,7 @@ The Vue admin shell mirrors the same logic 1:1: each sidebar item declares the p
 
 ```ts
 { section: 'authorization', label: 'nav.users', icon: 'users',
-  path: '/admin/users', requirePermissions: ['cocoar-auth:user:read'] }
+  path: '/admin/users', requirePermissions: ['modgud:user:read'] }
 ```
 
-A user with only `cocoar-auth:user:read` sees just "Users" in the sidebar — no OAuth, no System.
+A user with only `modgud:user:read` sees just "Users" in the sidebar — no OAuth, no System.

@@ -41,7 +41,7 @@ async function createUserWithPassword(api: APIRequestContext, userName: string):
   const created = await (await api.post('/api/user', {
     data: {
       Firstname: 'Gate', Lastname: 'Test', Acronym: userName,
-      Email: `${userName}@cocoar-auth.test`,
+      Email: `${userName}@modgud.test`,
     },
   })).json()
   const passRes = await api.put(`/api/user/${created.Id}/password`, {
@@ -121,23 +121,23 @@ test.beforeAll(async ({ request }) => {
   })
   if (!login.ok()) throw new Error(`admin login failed: ${login.status()}`)
 
-  // user 1: cocoar-auth:user:read only — should see "Users" sidebar item only
+  // user 1: modgud:user:read only — should see "Users" sidebar item only
   readOnlyUser = await buildScopedUser(
-    request, 'readonly', 'cocoar-auth', 'user', ['read'], ['cocoar-auth'],
+    request, 'readonly', 'modgud', 'user', ['read'], ['modgud'],
   )
 
-  // user 2: cocoar-auth:user:admin (resource-admin bypass) — Users + nothing else
+  // user 2: modgud:user:admin (resource-admin bypass) — Users + nothing else
   resourceAdminUser = await buildScopedUser(
-    request, 'resourceadmin', 'cocoar-auth', 'user', ['admin'], ['cocoar-auth'],
+    request, 'resourceadmin', 'modgud', 'user', ['admin'], ['modgud'],
   )
 
-  // user 3: cocoar-auth:admin (app-admin bypass) — every cocoar-auth resource
+  // user 3: modgud:admin (app-admin bypass) — every modgud resource
   appAdminUser = await buildScopedUser(
-    request, 'appadmin', 'cocoar-auth', 'app', ['cocoar-auth:admin'], ['cocoar-auth'],
+    request, 'appadmin', 'modgud', 'app', ['modgud:admin'], ['modgud'],
   )
 })
 
-test.describe('§21 read-only user (cocoar-auth:user:read)', () => {
+test.describe('§21 read-only user (modgud:user:read)', () => {
   test('GET /api/user → 200, GET /api/role → 403', async ({ request }) => {
     await request.post('/api/account/login', {
       data: { UserName: readOnlyUser.userName, Password: readOnlyUser.password, RememberMe: false },
@@ -167,7 +167,7 @@ test.describe('§21 read-only user (cocoar-auth:user:read)', () => {
   })
 })
 
-test.describe('§21 resource-admin user (cocoar-auth:user:admin)', () => {
+test.describe('§21 resource-admin user (modgud:user:admin)', () => {
   test('GET /api/user works, GET /api/role does NOT — bypass is per-resource', async ({ request }) => {
     await request.post('/api/account/login', {
       data: { UserName: resourceAdminUser.userName, Password: resourceAdminUser.password, RememberMe: false },
@@ -177,13 +177,13 @@ test.describe('§21 resource-admin user (cocoar-auth:user:admin)', () => {
     expect(users.status()).toBe(200)
 
     // user:admin bypasses every action ON USER, not on other resources.
-    // /api/role is gated by cocoar-auth:permission-role:read which we don't have.
+    // /api/role is gated by modgud:permission-role:read which we don't have.
     const roles = await request.get('/api/role')
     expect(roles.status()).toBe(403)
   })
 })
 
-test.describe('§21 app-admin user (cocoar-auth:admin)', () => {
+test.describe('§21 app-admin user (modgud:admin)', () => {
   test('GET /api/user, /api/role, /api/group all 200 — app-wide bypass', async ({ request }) => {
     await request.post('/api/account/login', {
       data: { UserName: appAdminUser.userName, Password: appAdminUser.password, RememberMe: false },

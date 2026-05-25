@@ -52,7 +52,7 @@ Once enabled, the login page picks up a **"No account yet? Register →"** link 
 Cloudflare Turnstile is the only supported captcha provider. It is **independent of the master toggle** so two scenarios both work:
 
 - **Public-internet deployment** → enable captcha, configure either per-realm keys or rely on the Cocoar-default keys configured via the `Turnstile__SiteKey` / `Turnstile__SecretKey` environment variables.
-- **Air-gapped / intern deployment** → leave captcha disabled. Cocoar.Auth then never calls out to `challenges.cloudflare.com`. Honeypot field + per-email rate-limit (1/min, 3/hour) cover the bot-spam surface.
+- **Air-gapped / intern deployment** → leave captcha disabled. Modgud then never calls out to `challenges.cloudflare.com`. Honeypot field + per-email rate-limit (1/min, 3/hour) cover the bot-spam surface.
 
 Resolution order when the captcha is enabled:
 
@@ -61,7 +61,7 @@ Resolution order when the captcha is enabled:
 3. None configured → the verifier rejects every registration and logs a `WARN` so the admin notices the misconfiguration
 
 ::: tip One captcha secret per realm
-The captcha secret is encrypted with ASP.NET Data Protection (purpose `Cocoar.Auth.SelfRegistration.CaptchaSecret.v1`). Migrating data-protection keys between deployments invalidates all per-realm captcha secrets — they need to be re-entered. The same warning applies to login-provider client secrets.
+The captcha secret is encrypted with ASP.NET Data Protection (purpose `Modgud.SelfRegistration.CaptchaSecret.v1`). Migrating data-protection keys between deployments invalidates all per-realm captcha secrets — they need to be re-entered. The same warning applies to login-provider client secrets.
 :::
 
 ### Anti-enumeration

@@ -1,11 +1,11 @@
-# Contributing to Cocoar.Auth
+# Contributing to Modgud
 
-Thank you for your interest in contributing to Cocoar.Auth!
+Thank you for your interest in contributing to Modgud!
 
 ## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/cocoar.auth.git`
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/modgud.git`
 3. Create a feature branch: `git checkout -b feature/my-new-feature`
 4. Make your changes
 5. Run tests to ensure everything works

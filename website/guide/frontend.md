@@ -160,7 +160,7 @@ where.
 In `views/admin/AdminView.vue` and `views/platform/PlatformView.vue` each
 sidebar item declares which permissions make it visible. The permission
 strings mirror the backend `RequiresPermission(...)` calls (bare 2-segment
-form — the app context `cocoar-auth:` is implicit in this codebase):
+form — the app context `modgud:` is implicit in this codebase):
 
 ```typescript
 interface NavItemDef {
@@ -283,7 +283,7 @@ the backend keeps trying to push notifications there.
 ## URL routing
 
 Vue Router runs with `createWebHistory('/')`. There is **no realm path
-prefix** anymore (cocoar.auth does realm routing via the domain, not
+prefix** anymore (modgud does realm routing via the domain, not
 the path). Routes:
 
 | Route | View |

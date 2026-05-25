@@ -9,7 +9,7 @@ export const DEMO_PASSWORD = process.env.TESTAPPS_DEMO_PASSWORD ?? 'Demo1234!'
 
 /**
  * Fetches a client_credentials token directly from the IdP. Mirrors what
- * Cocoar.Auth.TestApps.ConfidentialClient does — kept as a helper so other
+ * Modgud.TestApps.ConfidentialClient does — kept as a helper so other
  * specs can grab a service-account token when they need to call the
  * resource API without going through the BFF cookie session.
  */

@@ -146,6 +146,6 @@ dotnet_diagnostic.CA5403.severity = error  # do not hard-code certificate
 # These projects don't ship in the runtime image, so the security-rule
 # noise is more harmful than the rule itself. Production code paths are
 # still covered by the rules above.
-[{**/Cocoar.Auth.Api.Tests/**.cs,**/Cocoar.Auth.Tests.Unit/**.cs}]
+[{**/Modgud.Api.Tests/**.cs,**/Modgud.Tests.Unit/**.cs}]
 dotnet_diagnostic.CA5350.severity = suggestion
 dotnet_diagnostic.CA5351.severity = suggestion

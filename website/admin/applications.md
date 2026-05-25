@@ -1,6 +1,6 @@
 # Applications
 
-An **Application** in Cocoar.Auth is the organisational clamp around a SaaS app — it owns its own resources, its own roles, and its own OAuth bindings. When a realm is created the system app `cocoar-auth` (= Cocoar.Auth itself) is provisioned automatically; every other app you register here.
+An **Application** in Modgud is the organisational clamp around a SaaS app — it owns its own resources, its own roles, and its own OAuth bindings. When a realm is created the system app `modgud` (= Modgud itself) is provisioned automatically; every other app you register here.
 
 ::: tip First time?
 If this is your first SaaS-app integration, the [SaaS App Integration Walkthrough](./saas-integration-walkthrough) is the better entry point — it walks through all five stations (App, Client, Resource Server, Roles, backend code).
@@ -8,7 +8,7 @@ If this is your first SaaS-app integration, the [SaaS App Integration Walkthroug
 
 ## What is an Application for?
 
-Cocoar.Auth manages permissions in the form `app:resource:action` — for instance `timetodo:todo:read` or `knowledge:article:write`. Every permission belongs to exactly one app.
+Modgud manages permissions in the form `app:resource:action` — for instance `timetodo:todo:read` or `knowledge:article:write`. Every permission belongs to exactly one app.
 
 An app therefore bundles:
 
@@ -27,7 +27,7 @@ An app therefore bundles:
 | Display Name | What appears in lists and consent screens |
 | Description | Optional, one-liner |
 | Resources | One per line. Together with the slug they form the permission vocabulary (`<slug>:<resource>:<action>`) |
-| IsSystem | True only for `cocoar-auth`, cannot be deleted |
+| IsSystem | True only for `modgud`, cannot be deleted |
 
 ## Reserved slugs
 
@@ -35,7 +35,7 @@ These slugs are forbidden — they collide with the permission grammar:
 
 - `realm` — would clash with `realm:admin` (realm-wide bypass)
 - `*` — wildcard in `Group.BoundTo`
-- `cocoar-auth` — system app, seeded automatically
+- `modgud` — system app, seeded automatically
 
 ## Creating an app
 
@@ -54,7 +54,7 @@ The app appears in the list. **It still has no effect** on its own — you also 
 
 ## Click-action: provision the default resource server
 
-In an app's detail modal (except `cocoar-auth`) you'll find a **Resource Server** section at the bottom with a **Create default resource server** button.
+In an app's detail modal (except `modgud`) you'll find a **Resource Server** section at the bottom with a **Create default resource server** button.
 
 What happens on click:
 
@@ -62,16 +62,16 @@ What happens on click:
 2. It is linked to the app (`AppId`)
 3. An initial **API secret is returned exactly once**
 
-**Copy that secret immediately** — Cocoar.Auth only stores its hash, you'll never see the cleartext again.
+**Copy that secret immediately** — Modgud only stores its hash, you'll never see the cleartext again.
 
-What is it for? When your app's backend calls the distribution API (`/api/v1/distribution/me-permissions`), it identifies itself to Cocoar.Auth via:
+What is it for? When your app's backend calls the distribution API (`/api/v1/distribution/me-permissions`), it identifies itself to Modgud via:
 
 ```
 X-Resource-Server-Id: <app-slug>
 X-Resource-Server-Secret: <secret-from-the-click>
 ```
 
-Pressing the button again on an app that already has a default resource server: Cocoar.Auth says "Already exists" — no new secret, no second RS.
+Pressing the button again on an app that already has a default resource server: Modgud says "Already exists" — no new secret, no second RS.
 
 ::: tip When do I not need a default RS?
 If your app only checks coarse roles (`[Authorize(Roles = "Admin")]`) and never makes live permission lookups, the OAuth client + UserInfo claims are enough; you can skip the default RS.
@@ -94,18 +94,18 @@ Resources can be edited any time, but:
 | Roles | [Roles](./roles) | n:1 via the role's `AppSlug` |
 | Groups | [Groups](./groups) | n:m via the group's `BoundTo` list |
 
-## The system app cocoar-auth
+## The system app modgud
 
-The app `cocoar-auth` represents Cocoar.Auth itself. Permissions like `cocoar-auth:user:read` or `cocoar-auth:oauth-client:write` are what gate the admin UI's sidebar.
+The app `modgud` represents Modgud itself. Permissions like `modgud:user:read` or `modgud:oauth-client:write` are what gate the admin UI's sidebar.
 
 It is:
 
 - **Auto-seeded** on first realm setup
 - **Not deletable** (IsSystem = true)
-- **Slug not renameable** (always `cocoar-auth`)
+- **Slug not renameable** (always `modgud`)
 - Resources match the built-in admin surface — edit cautiously
 
-If you change `cocoar-auth` resources, the admin sidebar may hide items because the corresponding permissions no longer exist. When in doubt, restore the default resource list (see `AppRealmSeeder` in source).
+If you change `modgud` resources, the admin sidebar may hide items because the corresponding permissions no longer exist. When in doubt, restore the default resource list (see `AppRealmSeeder` in source).
 
 ## Deleting an app
 

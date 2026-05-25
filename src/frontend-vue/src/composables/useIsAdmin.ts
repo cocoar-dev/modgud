@@ -11,8 +11,8 @@ import { useAuthStore } from '@/stores/auth.store'
  * a new admin resource is added, both pick it up by editing this list.
  *
  * Strings are bare 2-segment `<resource>:<action>` form — the App context
- * (cocoar-auth, with control-plane realm:read mixed in) is implicit.
- * `authStore.hasPermission` evaluates against the cocoar-auth grant set
+ * (modgud, with control-plane realm:read mixed in) is implicit.
+ * `authStore.hasPermission` evaluates against the modgud grant set
  * by default and falls through to realm:admin for everything.
  */
 export const ADMIN_PERMISSIONS: readonly string[] = [

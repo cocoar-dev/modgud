@@ -1,0 +1,27 @@
+<Solution>
+  <Folder Name="/Common/">
+    <Project Path="Common/BuildingBlocks.EventDispatcher/BuildingBlocks.EventDispatcher.csproj" />
+    <Project Path="Common/BuildingBlocks.Helper/BuildingBlocks.Helper.csproj" />
+  </Folder>
+  <Folder Name="/Modgud/">
+    <Project Path="Modgud.Permissions.Abstractions/Modgud.Permissions.Abstractions.csproj" />
+    <Project Path="Modgud.Authorization/Modgud.Authorization.csproj" />
+    <Project Path="Modgud.Authentication/Modgud.Authentication.csproj" />
+    <Project Path="Modgud.Domain/Modgud.Domain.csproj" />
+    <Project Path="Modgud.Application/Modgud.Application.csproj" />
+    <Project Path="Modgud.Infrastructure/Modgud.Infrastructure.csproj" />
+    <Project Path="Modgud.Api/Modgud.Api.csproj" />
+    <Project Path="Modgud.Api.Tests/Modgud.Api.Tests.csproj" />
+    <Project Path="Modgud.Tests.Unit/Modgud.Tests.Unit.csproj" />
+    <Project Path="Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj" />
+  </Folder>
+  <Folder Name="/TestApps/">
+    <Project Path="TestApps/Modgud.TestApps.ResourceApi/Modgud.TestApps.ResourceApi.csproj" />
+    <Project Path="TestApps/Modgud.TestApps.ConfidentialClient/Modgud.TestApps.ConfidentialClient.csproj" />
+    <Project Path="TestApps/Modgud.TestApps.Bff/Modgud.TestApps.Bff.csproj" />
+  </Folder>
+<Folder Name="/_Solution Items/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+  </Folder>
+</Solution>

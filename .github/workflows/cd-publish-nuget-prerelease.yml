@@ -1,6 +1,6 @@
 name: NuGet Prerelease (Client.AspNetCore)
 
-# Builds and publishes a prerelease of Cocoar.Auth.Client.AspNetCore to
+# Builds and publishes a prerelease of Modgud.Client.AspNetCore to
 # nuget.org. Mirrors the cocoar.configuration workflow pattern so the
 # release plumbing is consistent across the org:
 #
@@ -13,7 +13,7 @@ name: NuGet Prerelease (Client.AspNetCore)
 #     gate down without catching anything new.
 #
 # Required org-wide secret: NUGET_API_KEY (nuget.org "Push" scope,
-# glob `Cocoar.Auth.*`).
+# glob `Modgud.*`).
 #
 # Stable releases (X.Y.Z, no prerelease suffix) ship via the separate
 # `cd-publish-nuget-stable.yml` workflow on GitHub-Release publish.
@@ -48,22 +48,22 @@ jobs:
 
       - name: Restore client lib + unit tests
         run: |
-          dotnet restore Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj
-          dotnet restore Cocoar.Auth.Tests.Unit/Cocoar.Auth.Tests.Unit.csproj
+          dotnet restore Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj
+          dotnet restore Modgud.Tests.Unit/Modgud.Tests.Unit.csproj
         working-directory: ./src/dotnet
 
       - name: Build client lib + unit tests
         run: |
-          dotnet build Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj -c Release --no-restore
-          dotnet build Cocoar.Auth.Tests.Unit/Cocoar.Auth.Tests.Unit.csproj -c Release --no-restore
+          dotnet build Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj -c Release --no-restore
+          dotnet build Modgud.Tests.Unit/Modgud.Tests.Unit.csproj -c Release --no-restore
         working-directory: ./src/dotnet
 
       # Filter to the Client.AspNetCore tests so we don't pull in
       # integration tests that need Docker/Postgres (those live in
-      # Cocoar.Auth.Api.Tests and aren't relevant for a client-lib
+      # Modgud.Api.Tests and aren't relevant for a client-lib
       # publish gate).
       - name: Test client lib
-        run: dotnet test Cocoar.Auth.Tests.Unit/Cocoar.Auth.Tests.Unit.csproj -c Release --no-build --verbosity normal --filter "FullyQualifiedName~Client"
+        run: dotnet test Modgud.Tests.Unit/Modgud.Tests.Unit.csproj -c Release --no-build --verbosity normal --filter "FullyQualifiedName~Client"
         working-directory: ./src/dotnet
 
   publish-prerelease:
@@ -109,12 +109,12 @@ jobs:
           echo "Calculated prerelease version: $VERSION"
 
       - name: Restore
-        run: dotnet restore Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj
+        run: dotnet restore Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj
         working-directory: ./src/dotnet
 
       - name: Build
         run: |
-          dotnet build Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj \
+          dotnet build Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj \
             -c Release --no-restore \
             -p:Version=$PACKAGE_VERSION \
             -p:AssemblyVersion=${{ steps.gv.outputs.AssemblySemVer }} \
@@ -124,7 +124,7 @@ jobs:
 
       - name: Pack (incl. symbols)
         run: |
-          dotnet pack Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj \
+          dotnet pack Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj \
             -c Release --no-build \
             -p:Version=$PACKAGE_VERSION \
             -p:ContinuousIntegrationBuild=true \
@@ -157,7 +157,7 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "### Cocoar.Auth.Client.AspNetCore — $PACKAGE_VERSION (prerelease)"
+            echo "### Modgud.Client.AspNetCore — $PACKAGE_VERSION (prerelease)"
             echo ""
-            echo "**Pushed to:** https://www.nuget.org/packages/Cocoar.Auth.Client.AspNetCore/$PACKAGE_VERSION"
+            echo "**Pushed to:** https://www.nuget.org/packages/Modgud.Client.AspNetCore/$PACKAGE_VERSION"
           } >> "$GITHUB_STEP_SUMMARY"

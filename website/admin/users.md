@@ -33,7 +33,7 @@ Optional but recommended:
 Two ways to give a new user their first access:
 
 1. **Set an initial password** — type a temporary password and share it with the user via a secure channel. They change it on first login.
-2. **Send a sign-in link** — Cocoar.Auth emails a one-time magic link. The user clicks it, lands logged in, sets their own password.
+2. **Send a sign-in link** — Modgud emails a one-time magic link. The user clicks it, lands logged in, sets their own password.
 
 Option 2 is more convenient and safer — no cleartext password travels through chat or email.
 :::
@@ -95,11 +95,11 @@ Raw and mapped claims from the user's most recent external login. Useful for deb
 
 ## Unlocking a user
 
-After too many failed attempts, Cocoar.Auth temporarily locks the account. List → right-click → **Lift lockout**, or in the security tab → **Unlock**.
+After too many failed attempts, Modgud temporarily locks the account. List → right-click → **Lift lockout**, or in the security tab → **Unlock**.
 
 ## Soft delete vs. permanent erase
 
-Cocoar.Auth uses **soft delete** by default — deleted users are flagged as deleted, but the records stay (for audit trail, projection rebuild safety, …).
+Modgud uses **soft delete** by default — deleted users are flagged as deleted, but the records stay (for audit trail, projection rebuild safety, …).
 
 ### Soft delete
 

@@ -26,8 +26,8 @@
 
 | Project | Purpose | Run time | Needs Docker? |
 |---|---|---|---|
-| `Cocoar.Auth.Tests.Unit` | Pure logic — pinning behavior of helpers, evaluators, aggregates, flavors. No web host, no Marten, no Wolverine. | ~1 s test execution, ~3 s wall-clock with build | no |
-| `Cocoar.Auth.Api.Tests` | Integration — full WebApplicationFactory against a real Testcontainers PostgreSQL. End-to-end HTTP through the actual middleware stack. | ~90 s | yes |
+| `Modgud.Tests.Unit` | Pure logic — pinning behavior of helpers, evaluators, aggregates, flavors. No web host, no Marten, no Wolverine. | ~1 s test execution, ~3 s wall-clock with build | no |
+| `Modgud.Api.Tests` | Integration — full WebApplicationFactory against a real Testcontainers PostgreSQL. End-to-end HTTP through the actual middleware stack. | ~90 s | yes |
 
 ## Run commands
 
@@ -35,10 +35,10 @@
 cd src/dotnet
 
 # Fast feedback — recommended default during development
-dotnet test Cocoar.Auth.Tests.Unit
+dotnet test Modgud.Tests.Unit
 
 # Full integration suite (Docker must be running)
-dotnet test Cocoar.Auth.Api.Tests
+dotnet test Modgud.Api.Tests
 
 # Both
 dotnet test
@@ -47,7 +47,7 @@ dotnet test
 ## Unit-test inventory
 
 757 tests. Every entry below is at least one file under
-`src/dotnet/Cocoar.Auth.Tests.Unit/`.
+`src/dotnet/Modgud.Tests.Unit/`.
 
 ### Authorization slice
 
@@ -124,7 +124,7 @@ dotnet test
 
 ## Integration-test inventory
 
-96 tests in `Cocoar.Auth.Api.Tests`. Currently **89/96 green**. The remaining 7 in
+96 tests in `Modgud.Api.Tests`. Currently **89/96 green**. The remaining 7 in
 `Security/ProfileSelfServiceTests` need a tenant-aware
 `IDocumentSession`/`IDocumentStore` helper analogous to the
 `GetTenantedMessageBus(scope)` helper in `IntegrationTestBase`. Tracked in
@@ -194,8 +194,8 @@ These are listed so we don't have the same "should we test this?" conversation a
 
 - xUnit.v3.
 - Test file mirrors the source folder:
-  `Cocoar.Auth.Authorization/Services/PermissionEvaluator.cs` →
-  `Cocoar.Auth.Tests.Unit/Authorization/PermissionEvaluatorTests.cs`.
+  `Modgud.Authorization/Services/PermissionEvaluator.cs` →
+  `Modgud.Tests.Unit/Authorization/PermissionEvaluatorTests.cs`.
 - Test names are full English sentences with underscores
   (`Resource_admin_grants_every_action_on_that_resource`). Read like rule
   statements.
@@ -209,9 +209,9 @@ These are listed so we don't have the same "should we test this?" conversation a
 - Pinning tests are explicit. If we test "this currently does X but maybe
   shouldn't", say so in the test name or a comment, and add an entry to
   [backlog.md](backlog.md).
-- `InternalsVisibleTo Cocoar.Auth.Tests.Unit` is set on
-  `Cocoar.Auth.Authorization`, `Cocoar.Auth.Application`, and
-  `Cocoar.Auth.Authentication` so test code can reach internal extracted
+- `InternalsVisibleTo Modgud.Tests.Unit` is set on
+  `Modgud.Authorization`, `Modgud.Application`, and
+  `Modgud.Authentication` so test code can reach internal extracted
   helpers (e.g. `OAuthAdminMapping`, `TwoFactorEnforcementMiddleware` static
   helpers).
 
@@ -221,16 +221,16 @@ These are pure-extractions made to enable unit-testing. None changed behaviour.
 
 | Source | What was extracted | Test file |
 |---|---|---|
-| `Cocoar.Auth.Authorization/Services/PermissionService.cs` | bypass logic → `PermissionEvaluator.Evaluate(grants, permission)` (static class) | `Authorization/PermissionEvaluatorTests.cs` |
-| `Cocoar.Auth.Infrastructure/Realms/RealmProvisioningService.cs` | slug regex + reserved set → `Cocoar.Auth.Domain.Realms.RealmSlugRules` | `Realms/RealmSlugRulesTests.cs` |
-| `Cocoar.Auth.Infrastructure/Realms/RealmCache.cs` | host-matching + localhost-fallback → `Cocoar.Auth.Infrastructure.Realms.RealmCacheLookup` | `Realms/RealmCacheLookupTests.cs` |
-| `Cocoar.Auth.Application/Services/OAuthAdminService.cs` | 16 `private static` helpers (mapping, permission building, BCrypt wrappers) → `internal static OAuthAdminMapping`. Service shrunk by 262 LoC. Wave 4 added three more pure extractions to the same class: `MapApiState(state, secrets)` (the body of `MapApiAsync` minus the session load), `BuildApiSecretEntry(...)` (the constructor for both initial-secret and ad-hoc-secret paths), and `MergeClientSettings`/`MergeClientProperties` (the partial-PATCH semantics in `UpdateClientAsync`). | `Application/OAuthAdminMappingTests.cs` |
-| `Cocoar.Auth.Authentication/Api/Account/TwoFactorEnforcementMiddleware.cs` | `IsWhitelisted`, `HasFederatedMfa`, `FederatedMfaAmrValues` lifted from `private static` to `internal static` | `Authentication/Account/TwoFactorEnforcementMiddlewareTests.cs` |
-| `Cocoar.Auth.Api/Features/Auth/OAuth/ConsentEndpoints.cs` | `ParseAuthorizationUrl`, `AppendErrorToUrl` → `internal static ConsentUrlHelper` | `Api/Features/Auth/OAuth/ConsentUrlHelperTests.cs` |
-| `Cocoar.Auth.Api/Features/Auth/OAuth/AuthorizationEndpoints.cs` | `GetDisplayName(user)`, `GetDestinations(claim)` → `internal static AuthorizationEndpointHelpers` | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` |
-| `Cocoar.Auth.Api/Features/Admin/ProjectionEndpoints.cs` | `DetectCycles`, `HasCycle`, `GroupRef`, `CycleReport` → `internal static GroupCycleDetector` | `Api/Features/Admin/GroupCycleDetectorTests.cs` |
-| `Cocoar.Auth.Api/Features/Admin/RealmsEndpoints.cs` | `MapToDto` private→internal | `Api/Features/Admin/RealmsEndpointsTests.cs` |
-| `Cocoar.Auth.Authentication/Api/Account/Services/TwoFactorHelper.cs` | `BuildMethodsList(user, passkeyCount)` (the inline list-building from `GetMethodsAsync`) and `TryExpireSetupGrace(security, now)` (the exempt-check + stamp from `ExpireSetupGraceAsync`) | `Authentication/Account/Services/TwoFactorHelperTests.cs` |
+| `Modgud.Authorization/Services/PermissionService.cs` | bypass logic → `PermissionEvaluator.Evaluate(grants, permission)` (static class) | `Authorization/PermissionEvaluatorTests.cs` |
+| `Modgud.Infrastructure/Realms/RealmProvisioningService.cs` | slug regex + reserved set → `Modgud.Domain.Realms.RealmSlugRules` | `Realms/RealmSlugRulesTests.cs` |
+| `Modgud.Infrastructure/Realms/RealmCache.cs` | host-matching + localhost-fallback → `Modgud.Infrastructure.Realms.RealmCacheLookup` | `Realms/RealmCacheLookupTests.cs` |
+| `Modgud.Application/Services/OAuthAdminService.cs` | 16 `private static` helpers (mapping, permission building, BCrypt wrappers) → `internal static OAuthAdminMapping`. Service shrunk by 262 LoC. Wave 4 added three more pure extractions to the same class: `MapApiState(state, secrets)` (the body of `MapApiAsync` minus the session load), `BuildApiSecretEntry(...)` (the constructor for both initial-secret and ad-hoc-secret paths), and `MergeClientSettings`/`MergeClientProperties` (the partial-PATCH semantics in `UpdateClientAsync`). | `Application/OAuthAdminMappingTests.cs` |
+| `Modgud.Authentication/Api/Account/TwoFactorEnforcementMiddleware.cs` | `IsWhitelisted`, `HasFederatedMfa`, `FederatedMfaAmrValues` lifted from `private static` to `internal static` | `Authentication/Account/TwoFactorEnforcementMiddlewareTests.cs` |
+| `Modgud.Api/Features/Auth/OAuth/ConsentEndpoints.cs` | `ParseAuthorizationUrl`, `AppendErrorToUrl` → `internal static ConsentUrlHelper` | `Api/Features/Auth/OAuth/ConsentUrlHelperTests.cs` |
+| `Modgud.Api/Features/Auth/OAuth/AuthorizationEndpoints.cs` | `GetDisplayName(user)`, `GetDestinations(claim)` → `internal static AuthorizationEndpointHelpers` | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` |
+| `Modgud.Api/Features/Admin/ProjectionEndpoints.cs` | `DetectCycles`, `HasCycle`, `GroupRef`, `CycleReport` → `internal static GroupCycleDetector` | `Api/Features/Admin/GroupCycleDetectorTests.cs` |
+| `Modgud.Api/Features/Admin/RealmsEndpoints.cs` | `MapToDto` private→internal | `Api/Features/Admin/RealmsEndpointsTests.cs` |
+| `Modgud.Authentication/Api/Account/Services/TwoFactorHelper.cs` | `BuildMethodsList(user, passkeyCount)` (the inline list-building from `GetMethodsAsync`) and `TryExpireSetupGrace(security, now)` (the exempt-check + stamp from `ExpireSetupGraceAsync`) | `Authentication/Account/Services/TwoFactorHelperTests.cs` |
 
 ## Production bugs found and fixed during the test sweep
 
@@ -322,8 +322,8 @@ where we stopped and what's next.
 
 ### What's done (stop reading further if you only need today's status)
 
-- **Two test projects exist and run.** `Cocoar.Auth.Tests.Unit` (757 tests,
-  ~1 s) and `Cocoar.Auth.Api.Tests` (96 tests, ~90 s, 89 green).
+- **Two test projects exist and run.** `Modgud.Tests.Unit` (757 tests,
+  ~1 s) and `Modgud.Api.Tests` (96 tests, ~90 s, 89 green).
 - **Unit coverage swept across:** Domain (Realms, OAuth aggregates, OAuth
   wire-format constants), Application (OAuthAdminMapping after extraction —
   86 tests including the partial-PATCH merges, PaginationRequest), Authorization
@@ -373,13 +373,13 @@ Remaining work in `backlog.md` is integration-test or feature work:
 
 ```bash
 cd src/dotnet
-dotnet test Cocoar.Auth.Tests.Unit          # confirm baseline still green (757 tests, ~1 s)
-dotnet test Cocoar.Auth.Api.Tests           # only if Docker is up; 89/96 green
+dotnet test Modgud.Tests.Unit          # confirm baseline still green (757 tests, ~1 s)
+dotnet test Modgud.Api.Tests           # only if Docker is up; 89/96 green
 ```
 
 The pure-unit-test sweep itself is done as of wave 7. The next test-area
 work that's actually useful is the integration-test backlog (the 7 red
-`ProfileSelfService` tests in `Cocoar.Auth.Api.Tests`). Pattern that's
+`ProfileSelfService` tests in `Modgud.Api.Tests`). Pattern that's
 worked on every wave so far:
 
 1. Read `docs/backlog.md` "Triage at a glance" + `docs/testing.md` status

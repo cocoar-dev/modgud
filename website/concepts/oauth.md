@@ -2,7 +2,7 @@
 
 ## Overview
 
-cocoar.auth is a full-fledged OAuth 2.0 authorization server and
+modgud is a full-fledged OAuth 2.0 authorization server and
 OpenID Connect provider. Implemented via **OpenIddict 7** with its
 own Marten-based stores (`MartenApplicationStore`, `MartenScopeStore`,
 `MartenAuthorizationStore`, `MartenTokenStore`) — no Entity Framework.
@@ -18,7 +18,7 @@ Terminology (Client, Scope, API, Grant Type, token types) in the
 | **Client** | The application requesting access | SPA, mobile app, backend service |
 | **API** | The protected service | A billing API, an order API |
 
-cocoar.auth sits in the middle — it authenticates the user, issues
+modgud sits in the middle — it authenticates the user, issues
 tokens to the client, and the API verifies the tokens.
 
 ## Supported flows
@@ -31,7 +31,7 @@ Exchange) is **enforced** (`RequireProofKeyForCodeExchange`).
 ```mermaid
 sequenceDiagram
     participant App as Client App
-    participant Auth as cocoar.auth
+    participant Auth as modgud
     participant User
     App->>Auth: GET /connect/authorize<br/>(client_id, code_challenge, scopes)
     Auth->>User: Login + 2FA (if not yet)
@@ -63,7 +63,7 @@ Enabled for clients that request `offline_access`. Refresh tokens are
 reference tokens, stored server-side in `OpenIddictTokenDocument`.
 
 ::: warning No Implicit, no ROPC
-cocoar.auth rejects Implicit Flow and Resource Owner Password
+modgud rejects Implicit Flow and Resource Owner Password
 Credentials. Both are considered insecure — OAuth 2.1 deprecates them.
 :::
 
@@ -74,7 +74,7 @@ format (settable per client):
 
 | Token type | How the API validates |
 |---|---|
-| **Reference Token** (default) | Calls cocoar.auth's introspection endpoint — gets back user info, scopes, expiry. Can be revoked instantly. |
+| **Reference Token** (default) | Calls modgud's introspection endpoint — gets back user info, scopes, expiry. Can be revoked instantly. |
 | **JWT** | Verifies the signature locally with the signing key from the JWKS endpoint. No roundtrip needed, but revocation only works via expiry. |
 
 Which one when? See
@@ -145,7 +145,7 @@ token.
 - In multi-tenant SaaS, leaking which APIs a tenant operates is information disclosure with no upside: clients learn the scopes they need from the resource server's integration docs, not from discovery.
 - The realm-DB scope validation is the access control. Hiding from discovery is defense-in-depth — an attacker can still guess scope names and probe `/connect/token`.
 
-Admins toggle per scope via the **`Show in discovery document`** flag (see [OAuth Scopes admin](/admin/oauth-scopes#discovery-visibility)). Implementation: `RealmScopesSupportedHandler` (an OpenIddict pipeline hook in `Cocoar.Auth.Infrastructure/OpenIddict/`) overrides the discovery handler so the realm-DB-backed scope set is filtered on this flag.
+Admins toggle per scope via the **`Show in discovery document`** flag (see [OAuth Scopes admin](/admin/oauth-scopes#discovery-visibility)). Implementation: `RealmScopesSupportedHandler` (an OpenIddict pipeline hook in `Modgud.Infrastructure/OpenIddict/`) overrides the discovery handler so the realm-DB-backed scope set is filtered on this flag.
 
 ## Token lifetimes
 
@@ -165,7 +165,7 @@ Configured in `OpenIddictSettings` (overridable per client):
 | Production | X.509 certificate from file (`SigningCertificatePath`) |
 
 In dev mode every client app has to refresh its token validation after
-each cocoar.auth restart (JWKS changes). In production the certificate
+each modgud restart (JWKS changes). In production the certificate
 is persistent — a restart changes nothing.
 
 ## Admin UI
@@ -178,7 +178,7 @@ The admin area (`/admin/oauth/...`) has list and detail views for:
   UserClaim mappings
 - **APIs** — protected API resources with scopes and UserClaims
 
-Gating: `cocoar-auth:oauth-client:read/write/delete`,
-`cocoar-auth:oauth-scope:read/write/delete`,
-`cocoar-auth:oauth-api:read/write/delete`. Per-resource admin bypass
-via `cocoar-auth:oauth-client:admin` etc.
+Gating: `modgud:oauth-client:read/write/delete`,
+`modgud:oauth-scope:read/write/delete`,
+`modgud:oauth-api:read/write/delete`. Per-resource admin bypass
+via `modgud:oauth-client:admin` etc.

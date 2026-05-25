@@ -58,9 +58,9 @@ jobs:
 
       - name: Restore, build & test
         run: |
-          dotnet restore Cocoar.Auth.slnx
-          dotnet build Cocoar.Auth.slnx -c Release --no-restore -p:Version=${{ needs.validate-version.outputs.version }}
-          dotnet test Cocoar.Auth.slnx -c Release --no-build --verbosity normal
+          dotnet restore Modgud.slnx
+          dotnet build Modgud.slnx -c Release --no-restore -p:Version=${{ needs.validate-version.outputs.version }}
+          dotnet test Modgud.slnx -c Release --no-build --verbosity normal
         working-directory: ./src/dotnet
 
   deploy:

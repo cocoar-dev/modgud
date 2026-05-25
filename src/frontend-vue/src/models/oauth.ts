@@ -1,5 +1,5 @@
 // OAuth admin models — mirror DTOs in
-// src/dotnet-next/Cocoar.Auth.Application/DTOs/OAuth/.
+// src/dotnet-next/Modgud.Application/DTOs/OAuth/.
 // Backend serializes with PropertyNamingPolicy=null, so PascalCase is required.
 
 export interface OAuthClientClaimDto {

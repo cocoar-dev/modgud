@@ -1,5 +1,5 @@
 // Mirrors the server-side ticket variant of the OAuth consent flow.
-// See src/dotnet/Cocoar.Auth.Api/Features/Auth/OAuth/ConsentEndpoints.cs
+// See src/dotnet/Modgud.Api/Features/Auth/OAuth/ConsentEndpoints.cs
 // for the full contract; the SPA receives a fully-resolved consent
 // model from /connect/consent?ticket=… and posts a decision back to
 // the same path. The redirect target is rebuilt server-side from the

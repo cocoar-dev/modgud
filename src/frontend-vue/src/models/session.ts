@@ -1,5 +1,5 @@
 // Session self-service models — mirror DTOs in
-// src/dotnet-next/Cocoar.Auth.Authentication/Sessions/SessionDtos.cs.
+// src/dotnet-next/Modgud.Authentication/Sessions/SessionDtos.cs.
 
 export interface SessionDto {
   Id: string

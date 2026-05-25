@@ -1,6 +1,6 @@
 # Login Providers
 
-A **login provider** is a way for users to authenticate with Cocoar.Auth. Today
+A **login provider** is a way for users to authenticate with Modgud. Today
 two types are wired up:
 
 - **Internal** — built-in username + password, auto-seeded once per realm
@@ -36,16 +36,16 @@ fallback — there is no UI option to delete it on purpose.
 ## OIDC providers
 
 External IdPs let users sign in via SSO instead of maintaining a local
-password — Cocoar.Auth retains control over groups, roles, and sessions.
+password — Modgud retains control over groups, roles, and sessions.
 
-### What the external IdP handles — what Cocoar.Auth keeps
+### What the external IdP handles — what Modgud keeps
 
 **The IdP handles:**
 
 - Authentication (who are you? — password, MFA, biometric)
 - User-property updates on every login (first/last name, email)
 
-**Cocoar.Auth retains control over:**
+**Modgud retains control over:**
 
 - Group and role assignment (manual admin management or automatic via
   membership scripts)
@@ -55,8 +55,8 @@ password — Cocoar.Auth retains control over groups, roles, and sessions.
 
 ::: warning IdP claims ≠ automatic roles
 A user who's in the Entra "Administrators" group does **not** automatically
-get the `Admin` role in Cocoar.Auth. You either add them manually to a
-Cocoar.Auth group with the right role, or write a membership script that
+get the `Admin` role in Modgud. You either add them manually to a
+Modgud group with the right role, or write a membership script that
 classifies them.
 
 This is deliberate — it protects against staleness (IdP group revoked while
@@ -71,14 +71,14 @@ on access.
 **Create an App Registration**
 
 1. Azure Portal → **Microsoft Entra ID** → **App registrations** → **+ New registration**
-2. Name: e.g. "Cocoar.Auth"
+2. Name: e.g. "Modgud"
 3. **Supported account types**: "Accounts in this organizational directory only" (single-tenant)
 4. **Redirect URI**: leave empty — we'll fill this in later
 5. **Register**
 
 **Write down**
 
-- **Application (client) ID** — you'll need it as the *Client ID* in Cocoar.Auth
+- **Application (client) ID** — you'll need it as the *Client ID* in Modgud
 - **Directory (tenant) ID** — you'll need it as the *Tenant ID*
 
 **Create a client secret**
@@ -88,7 +88,7 @@ on access.
 3. **Add**
 4. **Copy the Value column immediately** — Entra shows the secret only once
 
-#### 2. In Cocoar.Auth
+#### 2. In Modgud
 
 **Add the login provider**
 
@@ -131,12 +131,12 @@ through last.
 #### 3. Back in Entra: paste the redirect URI
 
 1. Azure Portal → your App Registration → **Authentication** → **+ Add a platform** → **Web**
-2. Paste the redirect URI you copied from Cocoar.Auth
+2. Paste the redirect URI you copied from Modgud
 3. **Configure**
 
 #### 4. Test
 
-1. Open Cocoar.Auth's login page in incognito
+1. Open Modgud's login page in incognito
 2. The new SSO button should appear
 3. Click → redirect to Microsoft → sign in → redirect back
 4. You're signed in. Check the user's IdP-Claims tab to verify the mapped fields
@@ -154,7 +154,7 @@ If your IdP isn't Entra, pick **Generic OIDC** instead:
 
 ### Just-in-Time provisioning
 
-By default Cocoar.Auth provisions a new local user the first time someone
+By default Modgud provisions a new local user the first time someone
 signs in via the external IdP — no admin action needed. The user-update
 script populates the master data from claims.
 
@@ -166,7 +166,7 @@ request access.
 ### Linking OIDC to existing users
 
 When a user is already signed in and visits **Profile → Linked accounts**,
-they can attach additional OIDC identities to their existing Cocoar.Auth
+they can attach additional OIDC identities to their existing Modgud
 account. The link is stored on `ExternalIdentityLink` (issuer + subject →
 user id) and survives email changes on either side.
 
@@ -191,12 +191,12 @@ panel on the **Verbindung** tab.
 ## Common pitfalls
 
 - **Wrong redirect URI** in Entra → "AADSTS50011" error. Copy it exactly
-  from Cocoar.Auth.
+  from Modgud.
 - **Client secret expired** → users get redirected, then 500 in
-  Cocoar.Auth's external auth callback. Rotate in Entra and update.
+  Modgud's external auth callback. Rotate in Entra and update.
 - **User update script returns wrong field names** → master data is empty
   after login. Use the test panel before saving.
-- **Mismatch between Entra group and Cocoar.Auth role** → user is "Admin"
+- **Mismatch between Entra group and Modgud role** → user is "Admin"
   in Entra but has no admin permission. By design — assign manually or via
   membership script.
 

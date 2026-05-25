@@ -63,12 +63,12 @@ jobs:
 
       - name: Restore & build backend
         run: |
-          dotnet restore Cocoar.Auth.slnx
-          dotnet build Cocoar.Auth.slnx -c Release --no-restore -p:Version=${{ needs.version.outputs.version }}
+          dotnet restore Modgud.slnx
+          dotnet build Modgud.slnx -c Release --no-restore -p:Version=${{ needs.version.outputs.version }}
         working-directory: ./src/dotnet
 
       - name: Test backend
-        run: dotnet test Cocoar.Auth.slnx -c Release --no-build --verbosity normal
+        run: dotnet test Modgud.slnx -c Release --no-build --verbosity normal
         working-directory: ./src/dotnet
 
   deploy:

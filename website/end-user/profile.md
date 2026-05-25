@@ -8,11 +8,11 @@ Manage your account: name, email, phone, sessions, privacy. Click your avatar in
 
 Master data — first name, last name, profile name, email, phone, profile picture.
 
-Some fields may be **read-only** if your realm uses an external Identity Provider that owns them (e.g. Microsoft Entra controls your name and email; Cocoar.Auth syncs them on every login but doesn't let you edit them locally).
+Some fields may be **read-only** if your realm uses an external Identity Provider that owns them (e.g. Microsoft Entra controls your name and email; Modgud syncs them on every login but doesn't let you edit them locally).
 
 ### Change email — double-opt-in
 
-Changing your email never takes effect immediately. Cocoar.Auth needs proof you control the new address:
+Changing your email never takes effect immediately. Modgud needs proof you control the new address:
 
 1. You enter the new email and save
 2. Both addresses receive a confirmation email
@@ -48,12 +48,12 @@ Actions:
 
 Self-service GDPR operations:
 
-- **Export my data** — download everything Cocoar.Auth knows about you (profile, sessions, login history, OAuth consents) as JSON. Article 20 export.
+- **Export my data** — download everything Modgud knows about you (profile, sessions, login history, OAuth consents) as JSON. Article 20 export.
 - **Delete my account** — initiates the deletion flow. You receive a confirmation email; once confirmed, you have a grace period (default 7 days) during which you can cancel. After that, your account is permanently erased — see [admin docs on permanent erase](../admin/users#gdpr-permanent-erase) for the technical details.
 - **Cancel deletion** — visible while a deletion request is pending. Click to abort.
 
 ::: warning Permanent erase is final
-Once the grace period expires, the deletion is irrevocable. Cocoar.Auth replaces your PII with `***ERASED***` markers and archives the account. There is no restore.
+Once the grace period expires, the deletion is irrevocable. Modgud replaces your PII with `***ERASED***` markers and archives the account. There is no restore.
 :::
 
 ## Tips

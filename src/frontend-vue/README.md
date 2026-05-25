@@ -1,6 +1,6 @@
-# Cocoar.Auth — Frontend
+# Modgud — Frontend
 
-Vue 3 SPA for the Cocoar.Auth Identity Provider. Built on TimeToDo's
+Vue 3 SPA for the Modgud Identity Provider. Built on TimeToDo's
 frontend shell, extended with the IdP-specific admin views (OAuth,
 Login-Providers, Realms) and self-service (Sessions, Privacy/GDPR).
 

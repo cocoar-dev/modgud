@@ -1,5 +1,5 @@
 // Realm-wide settings, owned by the realm-admin (not Control-Plane).
-// Mirrors src/dotnet/Cocoar.Auth.Application/DTOs/RealmSettings/RealmSettingsDtos.cs.
+// Mirrors src/dotnet/Modgud.Application/DTOs/RealmSettings/RealmSettingsDtos.cs.
 // Surfaced via GET/PATCH /api/admin/realm-settings — the current realm
 // is implicit from the host (RealmMiddleware), no slug in the URL.
 

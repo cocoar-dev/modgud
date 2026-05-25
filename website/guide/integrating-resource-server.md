@@ -1,8 +1,8 @@
 # Integrating a Resource Server
 
-This guide walks through wiring a Cocoar SaaS app's backend (a "resource server" in OAuth-speak) to Cocoar.Auth so it can:
+This guide walks through wiring a Cocoar SaaS app's backend (a "resource server" in OAuth-speak) to Modgud so it can:
 
-1. Validate access tokens that Cocoar.Auth issued
+1. Validate access tokens that Modgud issued
 2. Pick up role claims via UserInfo so `[Authorize(Roles = "…")]` works
 3. Optionally fetch granular permissions live via the distribution API
 
@@ -10,7 +10,7 @@ The reference scenario is a fictional `timetodo` app — replace the slug with y
 
 ## Prerequisites
 
-Before wiring code, finish the admin setup in Cocoar.Auth:
+Before wiring code, finish the admin setup in Modgud:
 
 1. Create the app `timetodo` (with its resources)
 2. Create an OAuth client (e.g. `timetodo-web`) and link it to `timetodo`
@@ -23,19 +23,19 @@ The full admin walkthrough lives at [Admin → SaaS App Integration Walkthrough]
 
 ### 1. Add the package reference
 
-Until the NuGet package ships, reference the project from the Cocoar.Auth source tree:
+Until the NuGet package ships, reference the project from the Modgud source tree:
 
 ```xml
 <ItemGroup>
   <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
-  <ProjectReference Include="..\..\cocoar.auth\src\dotnet\Cocoar.Auth.Client.AspNetCore\Cocoar.Auth.Client.AspNetCore.csproj" />
+  <ProjectReference Include="..\..\modgud\src\dotnet\Modgud.Client.AspNetCore\Modgud.Client.AspNetCore.csproj" />
 </ItemGroup>
 ```
 
 ### 2. Configure authentication
 
 ```csharp
-using Cocoar.Auth.Client.AspNetCore;
+using Modgud.Client.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -44,7 +44,7 @@ services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         // Your realm's issuer — the slug after /<host>/ is the realm slug.
         options.Authority = "https://auth.cocoar.dev/system";
 
-        // Your app's slug. Cocoar.Auth uses the app slug as the audience
+        // Your app's slug. Modgud uses the app slug as the audience
         // claim, so all microservices under one app share the same `aud`.
         options.Audience = "timetodo";
 
@@ -57,7 +57,7 @@ services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 // Flattens resource_access["timetodo"].roles into ClaimTypes.Role so
 // [Authorize(Roles = "Editor")] just works. Also flattens the optional
 // "groups" claim into a "group" claim type.
-services.AddCocoarAuthClaimsTransformation(o =>
+services.AddModgudClaimsTransformation(o =>
 {
     o.AppSlug = "timetodo";
 });
@@ -85,7 +85,7 @@ That's it for the standard role-based path. If your app needs nothing more granu
 
 ## Granular permissions: the distribution API
 
-Roles like "Editor" are coarse. If your endpoint logic asks "does this user have `timetodo:todo:write`?" — that level of detail isn't in the access token. Cocoar.Auth exposes it via the **distribution API**, which you call live (and cache for ~30 seconds).
+Roles like "Editor" are coarse. If your endpoint logic asks "does this user have `timetodo:todo:write`?" — that level of detail isn't in the access token. Modgud exposes it via the **distribution API**, which you call live (and cache for ~30 seconds).
 
 ### Anatomy of the call
 
@@ -246,13 +246,13 @@ app.MapPost("/todos", (TodoDto dto) => Results.Ok())
 ## Common pitfalls
 
 - **`GetClaimsFromUserInfoEndpoint = false`** (default in some templates) — UserInfo is never called, so `resource_access` never reaches the principal, so role claims are missing, so `[Authorize(Roles)]` denies everyone. Always opt in.
-- **Wrong `AppSlug` in `AddCocoarAuthClaimsTransformation`** — the transformation reads `resource_access[<wrong-slug>]`, finds nothing, doesn't add roles. Symptoms: authenticated user, no roles. Double-check the slug matches the App in cocoar.auth.
-- **Resource server not linked to an App** — distribution API returns 400 `ResourceServerUnassigned`. Open the OAuth API in cocoar.auth admin and pick an App.
+- **Wrong `AppSlug` in `AddModgudClaimsTransformation`** — the transformation reads `resource_access[<wrong-slug>]`, finds nothing, doesn't add roles. Symptoms: authenticated user, no roles. Double-check the slug matches the App in modgud.
+- **Resource server not linked to an App** — distribution API returns 400 `ResourceServerUnassigned`. Open the OAuth API in modgud admin and pick an App.
 - **Token's `aud` doesn't match `JwtBearerOptions.Audience`** — JWT validation rejects with audience mismatch. The convention is `aud == app-slug`; align both sides.
-- **Distribution API call without `X-Resource-Server-*` headers** — 401 with `WWW-Authenticate: CocoarAuthRS`. Add the headers; they're required on `/distribution/*` (not on `/me/*`, which is cookie-only).
+- **Distribution API call without `X-Resource-Server-*` headers** — 401 with `WWW-Authenticate: ModgudRS`. Add the headers; they're required on `/distribution/*` (not on `/me/*`, which is cookie-only).
 
 ## Reference
 
 - Concept overview: [Apps and resource_access](../concepts/apps-and-resource-access.md)
 - Distribution API spec: [reference/distribution-api](../reference/distribution-api.md)
-- Library source: `src/dotnet/Cocoar.Auth.Client.AspNetCore/`
+- Library source: `src/dotnet/Modgud.Client.AspNetCore/`

@@ -5,12 +5,12 @@ import { defineConfig } from '@playwright/test'
  *
  * Topology:
  *
- *   Cocoar.Auth      :9099  (must already be running, demo seed loaded)
+ *   Modgud      :9099  (must already be running, demo seed loaded)
  *   ResourceApi      :7081  (started by webServer below)
  *   BFF              :7080  (started by webServer below)
  *
  * Pre-conditions to running this suite:
- *   1. Cocoar.Auth is reachable at TESTAPPS_AUTHORITY (default localhost:9099)
+ *   1. Modgud is reachable at TESTAPPS_AUTHORITY (default localhost:9099)
  *   2. The /setup wizard has been completed AND demo-seed.json has been
  *      imported (admin runs /setup with LoadDemoData=true). The seed
  *      provides demo-bff (BFF client), demo-backend (M2M client),
@@ -49,7 +49,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        `dotnet run --project ../src/dotnet/TestApps/Cocoar.Auth.TestApps.ResourceApi --no-launch-profile`,
+        `dotnet run --project ../src/dotnet/TestApps/Modgud.TestApps.ResourceApi --no-launch-profile`,
       env: {
         ASPNETCORE_URLS: RESOURCEAPI_URL,
         'TESTAPPS__AUTHORITY': AUTHORITY,
@@ -63,7 +63,7 @@ export default defineConfig({
     },
     {
       command:
-        `dotnet run --project ../src/dotnet/TestApps/Cocoar.Auth.TestApps.Bff --no-launch-profile`,
+        `dotnet run --project ../src/dotnet/TestApps/Modgud.TestApps.Bff --no-launch-profile`,
       env: {
         ASPNETCORE_URLS: BFF_URL,
         'TESTAPPS__AUTHORITY': AUTHORITY,

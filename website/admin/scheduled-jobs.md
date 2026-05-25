@@ -14,7 +14,7 @@ description: Tenant-admin surface for the realm's background scheduled jobs — 
 | List + grid | `/admin/scheduled-jobs` | `scheduled-job:read` |
 | Detail modal (Schedule / Configuration / History) | `/admin/scheduled-jobs#<job-key>` | `scheduled-job:read` to view, `scheduled-job:write` to save / trigger |
 
-The `realm:admin` role bypasses both; granular delegation works by handing out `scheduled-job:read` and/or `scheduled-job:write` from the cocoar-auth App catalog.
+The `realm:admin` role bypasses both; granular delegation works by handing out `scheduled-job:read` and/or `scheduled-job:write` from the modgud App catalog.
 
 ::: info Per-tenant
 Run history (`JobRunHistoryEntry`) and per-job overrides (`JobConfig`) live in the **calling tenant's** Marten DB. Each realm sees only its own runs and configures its own retention.
@@ -22,7 +22,7 @@ Run history (`JobRunHistoryEntry`) and per-job overrides (`JobConfig`) live in t
 
 ## Registered jobs
 
-Three jobs ship with Cocoar.Auth today. All three iterate every active realm internally — you see one row per job, not one row per (job, realm).
+Three jobs ship with Modgud today. All three iterate every active realm internally — you see one row per job, not one row per (job, realm).
 
 ### `inbox-retention` — Inbox Retention
 
@@ -99,7 +99,7 @@ See [Inbox](/plattform/inbox) for the notification slice in general.
 | `scheduled-job:read` | List all jobs, view a single job, fetch run history. |
 | `scheduled-job:write` | Save schedule / parameter overrides, trigger a job manually. Implies `:read` is also needed to see anything. |
 
-Both are seeded in the cocoar-auth App permission catalog. `realm:admin` bypasses both per Cocoar.Auth's standard 3-tier model.
+Both are seeded in the modgud App permission catalog. `realm:admin` bypasses both per Modgud's standard 3-tier model.
 
 ---
 

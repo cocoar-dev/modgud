@@ -1,8 +1,8 @@
 # Automated tests
 
 Inventory of what the unit and integration suites pin. Every entry is at
-least one file under `src/dotnet/Cocoar.Auth.Tests.Unit/` or
-`src/dotnet/Cocoar.Auth.Api.Tests/`.
+least one file under `src/dotnet/Modgud.Tests.Unit/` or
+`src/dotnet/Modgud.Api.Tests/`.
 
 [[toc]]
 
@@ -10,8 +10,8 @@ least one file under `src/dotnet/Cocoar.Auth.Tests.Unit/` or
 
 | Project | Purpose | Run time | Needs Docker? |
 |---|---|---|---|
-| `Cocoar.Auth.Tests.Unit` | Pure logic — pinning behaviour of helpers, evaluators, aggregates, flavors. No web host, no Marten, no Wolverine. | ~1 s test execution, ~3 s wall-clock with build | no |
-| `Cocoar.Auth.Api.Tests` | Integration — full `WebApplicationFactory` against a real Testcontainers Postgres. End-to-end HTTP through the actual middleware stack. | ~90 s | yes |
+| `Modgud.Tests.Unit` | Pure logic — pinning behaviour of helpers, evaluators, aggregates, flavors. No web host, no Marten, no Wolverine. | ~1 s test execution, ~3 s wall-clock with build | no |
+| `Modgud.Api.Tests` | Integration — full `WebApplicationFactory` against a real Testcontainers Postgres. End-to-end HTTP through the actual middleware stack. | ~90 s | yes |
 
 Run commands:
 
@@ -19,10 +19,10 @@ Run commands:
 cd src/dotnet
 
 # Fast feedback — recommended default during development
-dotnet test Cocoar.Auth.Tests.Unit
+dotnet test Modgud.Tests.Unit
 
 # Full integration suite (Docker must be running)
-dotnet test Cocoar.Auth.Api.Tests
+dotnet test Modgud.Api.Tests
 
 # Both
 dotnet test
@@ -43,8 +43,8 @@ removed).
 | Person principal | `Authorization/Principals/PersonTests.cs` | 12 | DisplayName fallback chain (Acronym → Name → AccountName → Id), whitespace-only-fields filter |
 | Group principal | `Authorization/Principals/GroupTests.cs` | 15 | GetEmailsAsync over Shared / ExpandToMembers / Shared-without-Email-fallback, inactive/deleted/dangling-member skips, nested recursion, **cycle detection (this test caught a real production bug — see commit `b6b2dc3`)** |
 | ServiceAccount principal | `Authorization/Principals/ServiceAccountTests.cs` | 4 | type discriminator, DisplayName, capability-interface set |
-| App aggregate + projection | `Authorization/Apps/*Tests.cs` | 11 | Create / Setters / Delete / Replay; `IsSystem` flag for the seeded `cocoar-auth` app |
-| App slug rules | `Authorization/Apps/AppSlugRulesTests.cs` | reserved set (`realm`, `*`, `cocoar-auth`), 3-63 chars, lowercase + digits + hyphens, no leading/trailing hyphen |
+| App aggregate + projection | `Authorization/Apps/*Tests.cs` | 11 | Create / Setters / Delete / Replay; `IsSystem` flag for the seeded `modgud` app |
+| App slug rules | `Authorization/Apps/AppSlugRulesTests.cs` | reserved set (`realm`, `*`, `modgud`), 3-63 chars, lowercase + digits + hyphens, no leading/trailing hyphen |
 
 ### Realms
 
@@ -70,7 +70,7 @@ removed).
 
 | Area | File(s) | Tests | What's pinned |
 |---|---|---:|---|
-| `CocoarAuthClaimsTransformation` | `Client/AspNetCore/CocoarAuthClaimsTransformationTests.cs` | 12 | per-app role flattening from `resource_access[<app>].roles` to `ClaimTypes.Role`, cross-app isolation, malformed JSON tolerance, idempotence, anonymous short-circuit, `AppSlug` configuration validation |
+| `ModgudClaimsTransformation` | `Client/AspNetCore/ModgudClaimsTransformationTests.cs` | 12 | per-app role flattening from `resource_access[<app>].roles` to `ClaimTypes.Role`, cross-app isolation, malformed JSON tolerance, idempotence, anonymous short-circuit, `AppSlug` configuration validation |
 
 ### ExternalAuth (OIDC IdP federation)
 
@@ -117,7 +117,7 @@ removed).
 
 ## Integration-test inventory
 
-121 tests in `Cocoar.Auth.Api.Tests`, all green (~2 min, Docker
+121 tests in `Modgud.Api.Tests`, all green (~2 min, Docker
 required for the Testcontainers Postgres fixture).
 
 | Folder | Files | What's covered |
@@ -198,16 +198,16 @@ behaviour.
 
 | Source | What was extracted | Test file |
 |---|---|---|
-| `Cocoar.Auth.Authorization/Services/PermissionService.cs` | bypass logic → `PermissionEvaluator.Evaluate(grants, permission)` (static class), now 3-segment + 3 bypass tiers | `Authorization/PermissionEvaluatorTests.cs` |
-| `Cocoar.Auth.Infrastructure/Realms/RealmProvisioningService.cs` | slug regex + reserved set → `Cocoar.Auth.Domain.Realms.RealmSlugRules` | `Realms/RealmSlugRulesTests.cs` |
-| `Cocoar.Auth.Infrastructure/Realms/RealmCache.cs` | host-matching + localhost-fallback → `Cocoar.Auth.Infrastructure.Realms.RealmCacheLookup` | `Realms/RealmCacheLookupTests.cs` |
-| `Cocoar.Auth.Application/Services/OAuthAdminService.cs` | 16 `private static` helpers (mapping, permission building, BCrypt wrappers) → `internal static OAuthAdminMapping`. Service shrunk by 262 LoC. Wave 4 added `MapApiState`, `BuildApiSecretEntry`, `MergeClientSettings`/`MergeClientProperties`. | `Application/OAuthAdminMappingTests.cs` |
-| `Cocoar.Auth.Authentication/Api/Account/TwoFactorEnforcementMiddleware.cs` | `IsWhitelisted`, `HasFederatedMfa`, `FederatedMfaAmrValues` lifted from `private static` to `internal static` | `Authentication/Account/TwoFactorEnforcementMiddlewareTests.cs` |
-| `Cocoar.Auth.Api/Features/Auth/OAuth/ConsentEndpoints.cs` | `ParseAuthorizationUrl`, `AppendErrorToUrl` → `internal static ConsentUrlHelper` | `Api/Features/Auth/OAuth/ConsentUrlHelperTests.cs` |
-| `Cocoar.Auth.Api/Features/Auth/OAuth/AuthorizationEndpoints.cs` | `GetDisplayName(user)`, `GetDestinations(claim)` → `internal static AuthorizationEndpointHelpers` | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` |
-| `Cocoar.Auth.Api/Features/Admin/ProjectionEndpoints.cs` | `DetectCycles`, `HasCycle`, `GroupRef`, `CycleReport` → `internal static GroupCycleDetector` | `Api/Features/Admin/GroupCycleDetectorTests.cs` |
-| `Cocoar.Auth.Api/Features/Admin/RealmsEndpoints.cs` | `MapToDto` private→internal | `Api/Features/Admin/RealmsEndpointsTests.cs` |
-| `Cocoar.Auth.Authentication/Api/Account/Services/TwoFactorHelper.cs` | `BuildMethodsList(user, passkeyCount)` and `TryExpireSetupGrace(security, now)` | `Authentication/Account/Services/TwoFactorHelperTests.cs` |
+| `Modgud.Authorization/Services/PermissionService.cs` | bypass logic → `PermissionEvaluator.Evaluate(grants, permission)` (static class), now 3-segment + 3 bypass tiers | `Authorization/PermissionEvaluatorTests.cs` |
+| `Modgud.Infrastructure/Realms/RealmProvisioningService.cs` | slug regex + reserved set → `Modgud.Domain.Realms.RealmSlugRules` | `Realms/RealmSlugRulesTests.cs` |
+| `Modgud.Infrastructure/Realms/RealmCache.cs` | host-matching + localhost-fallback → `Modgud.Infrastructure.Realms.RealmCacheLookup` | `Realms/RealmCacheLookupTests.cs` |
+| `Modgud.Application/Services/OAuthAdminService.cs` | 16 `private static` helpers (mapping, permission building, BCrypt wrappers) → `internal static OAuthAdminMapping`. Service shrunk by 262 LoC. Wave 4 added `MapApiState`, `BuildApiSecretEntry`, `MergeClientSettings`/`MergeClientProperties`. | `Application/OAuthAdminMappingTests.cs` |
+| `Modgud.Authentication/Api/Account/TwoFactorEnforcementMiddleware.cs` | `IsWhitelisted`, `HasFederatedMfa`, `FederatedMfaAmrValues` lifted from `private static` to `internal static` | `Authentication/Account/TwoFactorEnforcementMiddlewareTests.cs` |
+| `Modgud.Api/Features/Auth/OAuth/ConsentEndpoints.cs` | `ParseAuthorizationUrl`, `AppendErrorToUrl` → `internal static ConsentUrlHelper` | `Api/Features/Auth/OAuth/ConsentUrlHelperTests.cs` |
+| `Modgud.Api/Features/Auth/OAuth/AuthorizationEndpoints.cs` | `GetDisplayName(user)`, `GetDestinations(claim)` → `internal static AuthorizationEndpointHelpers` | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` |
+| `Modgud.Api/Features/Admin/ProjectionEndpoints.cs` | `DetectCycles`, `HasCycle`, `GroupRef`, `CycleReport` → `internal static GroupCycleDetector` | `Api/Features/Admin/GroupCycleDetectorTests.cs` |
+| `Modgud.Api/Features/Admin/RealmsEndpoints.cs` | `MapToDto` private→internal | `Api/Features/Admin/RealmsEndpointsTests.cs` |
+| `Modgud.Authentication/Api/Account/Services/TwoFactorHelper.cs` | `BuildMethodsList(user, passkeyCount)` and `TryExpireSetupGrace(security, now)` | `Authentication/Account/Services/TwoFactorHelperTests.cs` |
 
 ## Production bugs found and fixed during the test sweep
 

@@ -1,6 +1,6 @@
 # Backend architecture
 
-cocoar.auth is **not** classically layered (Domain → Application →
+modgud is **not** classically layered (Domain → Application →
 Infrastructure). Instead, the core features are organised as vertical
 slices, with additional IdP-specific layers on top.
 
@@ -8,13 +8,13 @@ slices, with additional IdP-specific layers on top.
 
 ```
 src/dotnet/
-├── Cocoar.Auth.Authentication/   ← Slice (Login, 2FA, OIDC, GDPR, Sessions)
-├── Cocoar.Auth.Authorization/    ← Slice (Groups, Roles, Permissions)
-├── Cocoar.Auth.Domain/           ← Realm, OAuth, LoginProvider domain
-├── Cocoar.Auth.Application/      ← DTOs, service interfaces
-├── Cocoar.Auth.Infrastructure/   ← OpenIddict stores, tenancy, realm cache, Wolverine handlers
-├── Cocoar.Auth.Api/              ← Minimal API endpoints, middleware, setup, SignalR hub
-├── Cocoar.Auth.Api.Tests/        ← Integration tests (Testcontainers + PostgreSQL)
+├── Modgud.Authentication/   ← Slice (Login, 2FA, OIDC, GDPR, Sessions)
+├── Modgud.Authorization/    ← Slice (Groups, Roles, Permissions)
+├── Modgud.Domain/           ← Realm, OAuth, LoginProvider domain
+├── Modgud.Application/      ← DTOs, service interfaces
+├── Modgud.Infrastructure/   ← OpenIddict stores, tenancy, realm cache, Wolverine handlers
+├── Modgud.Api/              ← Minimal API endpoints, middleware, setup, SignalR hub
+├── Modgud.Api.Tests/        ← Integration tests (Testcontainers + PostgreSQL)
 └── Common/                       ← Shared utilities (PathHelper, Optional<T>, ...)
 ```
 
@@ -26,7 +26,7 @@ graph TB
         SPA["Vue SPA + Pinia + SignalARRR client"]
     end
 
-    subgraph Api ["Cocoar.Auth.Api"]
+    subgraph Api ["Modgud.Api"]
         MW[RealmMiddleware]
         Endpoints[Minimal API endpoints<br/>per feature in Features/]
         Hub[UIHub - SignalR]
@@ -34,11 +34,11 @@ graph TB
     end
 
     subgraph Slices ["Slices (TimeToDo copies)"]
-        Authn[Cocoar.Auth.Authentication<br/>Login, 2FA, OIDC, GDPR]
-        Authz[Cocoar.Auth.Authorization<br/>Groups, Roles, Permissions]
+        Authn[Modgud.Authentication<br/>Login, 2FA, OIDC, GDPR]
+        Authz[Modgud.Authorization<br/>Groups, Roles, Permissions]
     end
 
-    subgraph Infra ["Cocoar.Auth.Infrastructure"]
+    subgraph Infra ["Modgud.Infrastructure"]
         Tenancy[TenantedSessionFactory<br/>+ MasterTableTenancy]
         OpenIddictStores[Marten OpenIddict stores<br/>Application/Scope/Auth/Token]
         Realms[RealmCache + RealmProvisioning]
@@ -101,7 +101,7 @@ var result = await _messageBus.InvokeAsync<ErrorOr<UserDto>>(
     new CreateUserCommand(...));
 ```
 
-Handlers are auto-discovered. cocoar.auth runs with
+Handlers are auto-discovered. modgud runs with
 `DurabilityMode.Solo` (in-memory, local) — no external message broker
 required. The Marten outbox is still active for event side-effects:
 SignalR notifications fire after `SaveChangesAsync` via
@@ -113,7 +113,7 @@ avoid Roslyn compilation at runtime.
 
 ## Marten usage
 
-cocoar.auth uses three Marten patterns:
+modgud uses three Marten patterns:
 
 ### 1. Document storage
 
@@ -161,8 +161,8 @@ events are kept separately for audit and for the `PrincipalProjection`
 
 ## OpenIddict stores
 
-cocoar.auth implements all four OpenIddict stores as Marten-backed
-stores, in `Cocoar.Auth.Infrastructure/OpenIddict/`:
+modgud implements all four OpenIddict stores as Marten-backed
+stores, in `Modgud.Infrastructure/OpenIddict/`:
 
 | Store | Backing |
 |---|---|
@@ -204,11 +204,11 @@ Kestrel, the image can run in the container with the `recover`
 subcommand:
 
 ```bash
-dotnet Cocoar.Auth.Api.dll recover list
-dotnet Cocoar.Auth.Api.dll recover reset-2fa <username>
-dotnet Cocoar.Auth.Api.dll recover set-email <username> <email>
-dotnet Cocoar.Auth.Api.dll recover magic-link <username>
-dotnet Cocoar.Auth.Api.dll recover rebuild-projections
+dotnet Modgud.Api.dll recover list
+dotnet Modgud.Api.dll recover reset-2fa <username>
+dotnet Modgud.Api.dll recover set-email <username> <email>
+dotnet Modgud.Api.dll recover magic-link <username>
+dotnet Modgud.Api.dll recover rebuild-projections
 ```
 
 Helps with lockouts: all 2FA lost, no admin left, projection
@@ -224,7 +224,7 @@ See [Vue frontend](/guide/frontend) for more.
 
 ## Testing
 
-Integration tests (`Cocoar.Auth.Api.Tests`) use:
+Integration tests (`Modgud.Api.Tests`) use:
 
 - **Testcontainers** — PostgreSQL in Docker, started automatically on
   test runs

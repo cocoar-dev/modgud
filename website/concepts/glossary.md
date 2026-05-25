@@ -1,6 +1,6 @@
 # Glossary
 
-Terms in cocoar.auth and their counterparts in other identity systems.
+Terms in modgud and their counterparts in other identity systems.
 
 ## Core terms
 
@@ -12,7 +12,7 @@ OAuth clients, and login providers.
 
 Mapping to other systems:
 
-| cocoar.auth | Keycloak | Auth0 | Azure AD |
+| modgud | Keycloak | Auth0 | Azure AD |
 |---|---|---|---|
 | Realm | Realm | Tenant | Tenant (Directory) |
 
@@ -31,7 +31,7 @@ A human or service account inside a realm. Users belong to exactly
 one realm. Identical usernames in different realms are different
 accounts.
 
-In code: `Cocoar.Auth.Authentication.Domain.ApplicationUser` (ASP.NET
+In code: `Modgud.Authentication.Domain.ApplicationUser` (ASP.NET
 Core Identity user).
 
 ### Group
@@ -53,13 +53,13 @@ type:
 Name:         "User Manager"
 ResourceType: "user"
 Permissions:  ["read", "write"]
-→ produces: cocoar-auth:user:read, cocoar-auth:user:write
+→ produces: modgud:user:read, modgud:user:write
 ```
 
 ### Permission
 
 A fully-qualified string `<app>:<resource>:<action>` — e.g.
-`cocoar-auth:user:read`, `timetodo:todo:write`, `realm:admin`.
+`modgud:user:read`, `timetodo:todo:write`, `realm:admin`.
 Permissions flow exclusively through groups:
 
 ```
@@ -124,7 +124,7 @@ token) and a list of scopes it supports. In code:
 | **Refresh Token** | Renew expired access tokens |
 
 ::: warning No Implicit, no ROPC
-cocoar.auth supports neither Implicit Flow nor Resource Owner
+modgud supports neither Implicit Flow nor Resource Owner
 Password Credentials (ROPC). Both are considered insecure and are
 deprecated in OAuth 2.1.
 :::

@@ -115,7 +115,7 @@ async function exportMyData() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `cocoar-auth-export-${new Date().toISOString().slice(0, 10)}.json`
+    a.download = `modgud-export-${new Date().toISOString().slice(0, 10)}.json`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -838,7 +838,7 @@ function onMfaSetupClose(enabled: boolean) {
                 </div>
               </div>
               <p class="text-sm text-surface-600 mb-4">
-                {{ t('profile.externalLinks.description', {}, 'Sign in to Cocoar.Auth using these identity providers.') }}
+                {{ t('profile.externalLinks.description', {}, 'Sign in to Modgud using these identity providers.') }}
               </p>
 
               <!-- Existing links — click the row to expand the last known claim snapshot -->

@@ -1,8 +1,8 @@
 // Application admin models — mirror the DTOs in
-// src/dotnet/Cocoar.Auth.Api/Features/Admin/Apps/AppsEndpoints.cs.
+// src/dotnet/Modgud.Api/Features/Admin/Apps/AppsEndpoints.cs.
 //
 // "Application" is the user-facing concept. The backend C# class is named
-// `App` to avoid colliding with the `Cocoar.Auth.Application` CQRS-layer
+// `App` to avoid colliding with the `Modgud.Application` CQRS-layer
 // namespace; on the frontend we keep the user-facing word.
 
 export interface ApplicationPermissionDto {

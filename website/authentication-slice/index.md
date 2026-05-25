@@ -1,8 +1,8 @@
-# Cocoar.Auth.Authentication
+# Modgud.Authentication
 
 Vertical slice for the authentication core. Standalone C# project
-(`src/dotnet/Cocoar.Auth.Authentication/`), copied from TimeToDo's
-slice of the same name into cocoar.auth and extended for IdP needs.
+(`src/dotnet/Modgud.Authentication/`), copied from TimeToDo's
+slice of the same name into modgud and extended for IdP needs.
 
 ## What is in the slice
 
@@ -38,7 +38,7 @@ slice of the same name into cocoar.auth and extended for IdP needs.
 - **AuthLog** — Serilog sink (`AuthLogSink`) → `Channel<T>` →
   `AuthLogPersistenceService` → Marten; 7-day retention,
   `Auth:`-prefix filter
-- **Marten wiring** — `UseCocoarAuthAuthentication()` registers all
+- **Marten wiring** — `UseModgudAuthentication()` registers all
   identity documents, event aliases, inline projections (IdpConfig,
   ExternalIdentityLink) and the abstract `PrincipalProjectionBase`
   extension
@@ -53,9 +53,9 @@ slice of the same name into cocoar.auth and extended for IdP needs.
   the current Marten tenant session. Tenant resolution happens in
   `RealmMiddleware` (Api layer) before authentication code runs
 
-## Boundary against cocoar.auth
+## Boundary against modgud
 
-| Responsibility | Authentication slice | cocoar.auth Api |
+| Responsibility | Authentication slice | modgud Api |
 |---|---|---|
 | Who is this user? | ASP.NET Identity, Passkey, OIDC | — |
 | What is the user's name? | `ApplicationUser` (Firstname, Lastname, Email, ...) | — |
@@ -98,14 +98,14 @@ builder.Services.AddSingleton<IMagicLinkConfiguration>(sp => sp.GetRequiredServi
 | OtpNet (via Identity DefaultTokenProviders) | TOTP code generation + verification |
 | Jint | JavaScript runtime for `UserUpdateScript` (OIDC claim mapping) |
 | Serilog | `AuthLogSink` implements `ILogEventSink` |
-| Cocoar.Auth.Authorization | `PrincipalProjectionBase` for the app-specific projection |
+| Modgud.Authorization | `PrincipalProjectionBase` for the app-specific projection |
 
 ## Status
 
-Cocoar.Auth uses this slice in production. Code under
-`src/dotnet/Cocoar.Auth.Authentication/`, included via
-`ProjectReference`. Wired through `UseCocoarAuthAuthentication()` in
-the Marten configuration and `services.AddCocoarAuthAuthentication()`
+Modgud uses this slice in production. Code under
+`src/dotnet/Modgud.Authentication/`, included via
+`ProjectReference`. Wired through `UseModgudAuthentication()` in
+the Marten configuration and `services.AddModgudAuthentication()`
 in DI.
 
 ## Table of contents

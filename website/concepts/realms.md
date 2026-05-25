@@ -3,7 +3,7 @@
 ## What is a realm?
 
 A realm is a **fully autonomous identity provider**. It is the
-fundamental isolation boundary in cocoar.auth.
+fundamental isolation boundary in modgud.
 
 Per realm:
 
@@ -15,12 +15,12 @@ Per realm:
 - its own **login providers** (Internal + OIDC IdPs)
 - its own **cookie domain**
 
-Each realm looks like a standalone cocoar.auth installation —
+Each realm looks like a standalone modgud installation —
 because that is essentially what it is.
 
 ## Domain-based routing
 
-cocoar.auth identifies the realm via the **HTTP Host header** —
+modgud identifies the realm via the **HTTP Host header** —
 not via URL paths. Each realm has one or more configured domains.
 
 ```
@@ -31,7 +31,7 @@ system.example.com       → System realm
 localhost                → System realm  (single-tenant fallback in dev)
 ```
 
-`RealmMiddleware` (in `Cocoar.Auth.Api.Middleware`) runs before all
+`RealmMiddleware` (in `Modgud.Api.Middleware`) runs before all
 other middlewares and:
 
 1. Reads `request.Host.Host`
@@ -51,7 +51,7 @@ entry.
 
 ## Database-per-tenant via Marten
 
-cocoar.auth uses Marten's `MasterTableTenancy`:
+modgud uses Marten's `MasterTableTenancy`:
 
 ```mermaid
 graph TD
@@ -119,7 +119,7 @@ On first start:
 4. **Apply the Marten schema again** → per-tenant tables for system
 5. **Seed the system realm document** in `IGlobalStore`, flagged `IsControlPlane = true`
 6. **Seed default OAuth scopes + the Internal login provider**
-7. **Seed the `cocoar-auth` and `control-plane` apps** into the system tenant DB
+7. **Seed the `modgud` and `control-plane` apps** into the system tenant DB
 8. **Warm `RealmCache`**
 9. The instance is ready, but has zero users — the first admin is created via the [recovery CLI](../admin/recovery-cli) or, for additional realms, by an existing CP-admin via `POST /api/admin/realms`. See [First-time setup](../getting-started/first-time-setup).
 
@@ -152,7 +152,7 @@ Backend:
 3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`.
 4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`.
 5. **`OAuthRealmSeeder`** → 5 default scopes + Internal login provider.
-6. **`AppRealmSeeder`** → registers the `cocoar-auth` app in the new tenant DB. The `control-plane` app is **not** seeded — it only exists in the Control-Plane realm.
+6. **`AppRealmSeeder`** → registers the `modgud` app in the new tenant DB. The `control-plane` app is **not** seeded — it only exists in the Control-Plane realm.
 7. Save the `Realm` document in `IGlobalStore`.
 8. `RealmCache.Invalidate()`.
 9. **Bootstrap-invite** issued atomically: writes a `PendingAdminInvite` into the new tenant DB, sends a magic-link email to `InitialAdmin.Email`, returns the URL in the API response.

@@ -1,4 +1,4 @@
-# Cocoar.Auth - Improvement Tracker
+# Modgud - Improvement Tracker
 
 > **Created:** 2026-02-07
 > **Last Updated:** 2026-02-08

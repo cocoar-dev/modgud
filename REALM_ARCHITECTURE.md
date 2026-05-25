@@ -1,4 +1,4 @@
-# Realm Architecture - Multi-Tenancy for Cocoar.Auth
+# Realm Architecture - Multi-Tenancy for Modgud
 
 ## Concept
 
@@ -93,10 +93,10 @@ This realm contains the initial admin user and is always present.
 
 Every request MUST have a realm context. There is no "realm-less" operation.
 
-Database naming convention: `cocoar_auth_{realm_name}`
-- `cocoar_auth_default` (default realm)
-- `cocoar_auth_acme` (tenant "acme")
-- `cocoar_auth_globex` (tenant "globex")
+Database naming convention: `modgud_{realm_name}`
+- `modgud_default` (default realm)
+- `modgud_acme` (tenant "acme")
+- `modgud_globex` (tenant "globex")
 
 ---
 
@@ -106,10 +106,10 @@ Database naming convention: `cocoar_auth_{realm_name}`
 
 ```
 PostgreSQL Server
-├── cocoar_auth_master     ← Master DB: realm registry, system config
-├── cocoar_auth_default    ← Default realm: users, roles, clients, events...
-├── cocoar_auth_acme       ← Acme realm: users, roles, clients, events...
-└── cocoar_auth_globex     ← Globex realm: users, roles, clients, events...
+├── modgud_master     ← Master DB: realm registry, system config
+├── modgud_default    ← Default realm: users, roles, clients, events...
+├── modgud_acme       ← Acme realm: users, roles, clients, events...
+└── modgud_globex     ← Globex realm: users, roles, clients, events...
 ```
 
 ### Marten Configuration: Master Table Approach
@@ -122,7 +122,7 @@ services.AddMarten(opts =>
         x.ConnectionString = masterConnectionString;
         x.SchemaName = "realms";
         x.AutoCreate = AutoCreate.CreateOrUpdate;
-        x.ApplicationName = "CocoarAuth";
+        x.ApplicationName = "Modgud";
 
         // Pre-register default realm
         x.RegisterDatabase("default", defaultRealmConnectionString);
@@ -142,15 +142,15 @@ This creates a table `realms.mt_tenant_databases` in the master DB:
 
 | tenant_id | connection_string |
 |---|---|
-| default | Host=localhost;Database=cocoar_auth_default;... |
-| acme | Host=localhost;Database=cocoar_auth_acme;... |
+| default | Host=localhost;Database=modgud_default;... |
+| acme | Host=localhost;Database=modgud_acme;... |
 
 ### Dynamic Realm Provisioning
 
 ```csharp
 // Create a new realm at runtime
 var tenancy = (MasterTableTenancy)store.Options.Tenancy;
-var connectionString = $"Host=localhost;Database=cocoar_auth_{realmName};...";
+var connectionString = $"Host=localhost;Database=modgud_{realmName};...";
 
 // Register in master table (Marten auto-creates the database on same server)
 await tenancy.AddDatabaseRecordAsync(realmName, connectionString);
@@ -247,7 +247,7 @@ Each realm needs its own signing keys. Stored in the realm's database:
 
 **Goal: Enable database-per-tenant with a single "default" realm. Everything works as before.**
 
-- [ ] Create master database (`cocoar_auth_master`) with realm registry
+- [ ] Create master database (`modgud_master`) with realm registry
 - [ ] Configure Marten with `MultiTenantedDatabasesWithMasterDatabaseTable`
 - [ ] Register "default" realm pointing to existing database
 - [ ] Add RealmMiddleware that extracts realm from URL and sets tenant context
@@ -257,7 +257,7 @@ Each realm needs its own signing keys. Stored in the realm's database:
 - [ ] All existing tests pass (they use "default" realm implicitly)
 - [ ] OpenIdDict issuer becomes `/{realm}` based
 
-**Data migration:** Existing database becomes `cocoar_auth_default`. Master DB is new.
+**Data migration:** Existing database becomes `modgud_default`. Master DB is new.
 
 ### Phase 2: URL Routing
 
@@ -317,7 +317,7 @@ Each realm needs its own signing keys. Stored in the realm's database:
 | `Api/Program.cs` | Register middleware, master DB connection, Wolverine integration |
 | `Infrastructure/OpenIddict/OpenIddictExtensions.cs` | Realm-specific issuer |
 | `Api/Controllers/AuthorizationController.cs` | Dynamic issuer from realm context |
-| `Tests/Infrastructure/CocoarAuthWebApplicationFactory.cs` | Test with "default" tenant |
+| `Tests/Infrastructure/ModgudWebApplicationFactory.cs` | Test with "default" tenant |
 | `Tests/Infrastructure/SharedPostgresFixture.cs` | Provision test tenant database |
 
 ### common.internal
@@ -347,17 +347,17 @@ Each realm needs its own signing keys. Stored in the realm's database:
 
 ```
 # Backup a single tenant
-pg_dump cocoar_auth_acme > acme_backup.sql
+pg_dump modgud_acme > acme_backup.sql
 
 # Restore a tenant
-psql -c "CREATE DATABASE cocoar_auth_acme"
-psql cocoar_auth_acme < acme_backup.sql
+psql -c "CREATE DATABASE modgud_acme"
+psql modgud_acme < acme_backup.sql
 
 # Delete a tenant completely (GDPR right to erasure)
-psql -c "DROP DATABASE cocoar_auth_acme"
+psql -c "DROP DATABASE modgud_acme"
 
 # Migrate a tenant to another server
-pg_dump cocoar_auth_acme | psql -h other-server cocoar_auth_acme
+pg_dump modgud_acme | psql -h other-server modgud_acme
 
 # Per-tenant projection rebuild
 dotnet run -- marten-rebuild --tenant acme

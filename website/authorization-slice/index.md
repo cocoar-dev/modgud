@@ -1,8 +1,8 @@
-# Cocoar.Auth.Authorization
+# Modgud.Authorization
 
-Vertical slice for the authorization core of cocoar.auth. Standalone
-C# project (`src/dotnet/Cocoar.Auth.Authorization/`), copied from
-TimeToDo's slice of the same name into cocoar.auth and extended with
+Vertical slice for the authorization core of modgud. Standalone
+C# project (`src/dotnet/Modgud.Authorization/`), copied from
+TimeToDo's slice of the same name into modgud and extended with
 IdP-specific resources.
 
 ## What is in the slice
@@ -11,13 +11,13 @@ IdP-specific resources.
   `ServiceAccount`; everything addressable by id that can carry
   permissions
 - **Roles + permissions** — RBAC with free resource/action
-  registration via `IResourceRegistry`. cocoar.auth registers:
+  registration via `IResourceRegistry`. modgud registers:
   `user`, `permission-role`, `authorization-group`, `oauth-client`,
   `oauth-scope`, `oauth-api`, `login-provider`, `idp-config`,
-  `realm`, `auth-log`, `app` — all keyed under the `cocoar-auth` app
+  `realm`, `auth-log`, `app` — all keyed under the `modgud` app
   slug
 - **Granular per-resource gating** — `<app>:<resource>:<action>`
-  strings (`cocoar-auth:user:read`, `cocoar-auth:oauth-client:write`).
+  strings (`modgud:user:read`, `modgud:oauth-client:write`).
   Three bypass tiers: `<app>:<resource>:admin` (resource-wide within
   one app), `<app>:admin` (app-wide), `realm:admin` (realm-wide
   emergency exit)
@@ -27,7 +27,7 @@ IdP-specific resources.
   Email, IsActive, ExternalIdentities) — deliberately no app-schema
   fields, see [Concepts → ABAC](/concepts/abac)
 - **ASP.NET Core extension** —
-  `.RequiresPermission("cocoar-auth:oauth-client:write")` as an endpoint filter
+  `.RequiresPermission("modgud:oauth-client:write")` as an endpoint filter
 - **Marten integration** — polymorphic storage via sub-class mapping
   (Person + Group + ServiceAccount in the same `mt_doc_principal`
   table), inline projection for synchronous consistency, Wolverine
@@ -67,7 +67,7 @@ The central hub for all permission strings. The Authorization slice
 provides the interface; each app registers its resources at boot:
 
 ```csharp
-services.AddCocoarAuthAuthorization(opts =>
+services.AddModgudAuthorization(opts =>
 {
     opts.RegisterResource("user");
     opts.RegisterResource("permission-role");
@@ -79,7 +79,7 @@ services.AddCocoarAuthAuthorization(opts =>
     opts.RegisterResource("idp-config");
     opts.RegisterResource("realm");
     opts.RegisterResource("auth-log");
-    opts.RegisterResource("app");  // for app-wide bypass `cocoar-auth:admin`
+    opts.RegisterResource("app");  // for app-wide bypass `modgud:admin`
 });
 ```
 
@@ -97,8 +97,8 @@ and places the new admin into the **Administratoren** group:
 | Role | Permissions |
 |---|---|
 | **System Admin** | `realm:admin` (realm-wide bypass; group is `BoundTo: ["*"]`) |
-| **User Manager** | `cocoar-auth:user:read`, `cocoar-auth:user:write`, `cocoar-auth:permission-role:read`, `cocoar-auth:authorization-group:read`, `cocoar-auth:authorization-group:write` |
-| **Viewer** | `cocoar-auth:user:read`, `cocoar-auth:permission-role:read`, `cocoar-auth:authorization-group:read`, `cocoar-auth:oauth-client:read`, `cocoar-auth:oauth-scope:read` |
+| **User Manager** | `modgud:user:read`, `modgud:user:write`, `modgud:permission-role:read`, `modgud:authorization-group:read`, `modgud:authorization-group:write` |
+| **Viewer** | `modgud:user:read`, `modgud:permission-role:read`, `modgud:authorization-group:read`, `modgud:oauth-client:read`, `modgud:oauth-scope:read` |
 
 ## Dependencies
 
@@ -112,9 +112,9 @@ and places the new admin into the **Administratoren** group:
 
 ## Status
 
-Cocoar.Auth uses this slice in production. Wired through
-`UseCocoarAuthAuthorization()` in the Marten configuration and
-`services.AddCocoarAuthAuthorization()` in DI.
+Modgud uses this slice in production. Wired through
+`UseModgudAuthorization()` in the Marten configuration and
+`services.AddModgudAuthorization()` in DI.
 
 ## Table of contents
 

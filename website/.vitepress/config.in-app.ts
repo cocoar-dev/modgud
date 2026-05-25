@@ -9,8 +9,8 @@ import { defineConfig } from 'vitepress'
 // Build target lives at .vitepress/dist-in-app so it's distinguishable
 // from the public build's dist/.
 export default defineConfig({
-  title: 'Cocoar.Auth — Help',
-  description: 'In-application help for the running Cocoar.Auth instance.',
+  title: 'Modgud — Help',
+  description: 'In-application help for the running Modgud instance.',
   lang: 'en-US',
   base: '/docs/',
   outDir: '.vitepress/dist-in-app',
@@ -151,7 +151,7 @@ export default defineConfig({
     },
 
     footer: {
-      message: 'In-app help for this Cocoar.Auth instance.',
+      message: 'In-app help for this Modgud instance.',
     },
   },
 })

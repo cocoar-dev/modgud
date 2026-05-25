@@ -36,7 +36,7 @@ import llmstxt from 'vitepress-plugin-llms'
 // or another bundled plugin's hardcoded ignore. Renamed to dev-notes/
 // after the issue surfaced; the semantic intent is identical.)
 export const baseConfig = defineConfig({
-    title: 'Cocoar.Auth',
+    title: 'Modgud',
     description: 'Multi-Tenant Identity Provider — OAuth 2.0 / OpenID Connect, multi-app permissions, granular RBAC, GDPR-ready.',
     lang: 'en-US',
 
@@ -230,7 +230,7 @@ export const baseConfig = defineConfig({
         ],
         '/authentication-slice/': [
           {
-            text: 'Cocoar.Auth.Authentication',
+            text: 'Modgud.Authentication',
             items: [
               { text: 'Overview', link: '/authentication-slice/' },
               { text: 'Concepts', link: '/authentication-slice/konzepte' },
@@ -242,7 +242,7 @@ export const baseConfig = defineConfig({
         ],
         '/authorization-slice/': [
           {
-            text: 'Cocoar.Auth.Authorization',
+            text: 'Modgud.Authorization',
             items: [
               { text: 'Overview', link: '/authorization-slice/' },
               { text: 'Concepts', link: '/authorization-slice/konzepte' },
@@ -279,7 +279,7 @@ export const baseConfig = defineConfig({
       },
 
       socialLinks: [
-        { icon: 'github', link: 'https://github.com/cocoar-dev/Cocoar.Auth' },
+        { icon: 'github', link: 'https://github.com/cocoar-dev/Modgud' },
       ],
 
       search: {

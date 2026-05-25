@@ -32,7 +32,7 @@ jobs:
         uses: gittools/actions/gitversion/execute@v4
 
       - name: Restore backend dependencies
-        run: dotnet restore Cocoar.Auth.slnx
+        run: dotnet restore Modgud.slnx
         working-directory: ./src/dotnet
 
       - name: Audit NuGet dependencies for known CVEs
@@ -47,11 +47,11 @@ jobs:
         working-directory: ./src/dotnet
 
       - name: Build backend
-        run: dotnet build Cocoar.Auth.slnx -c Release --no-restore -p:Version=${{ steps.gv.outputs.SemVer }}
+        run: dotnet build Modgud.slnx -c Release --no-restore -p:Version=${{ steps.gv.outputs.SemVer }}
         working-directory: ./src/dotnet
 
       - name: Test backend
-        run: dotnet test Cocoar.Auth.slnx -c Release --no-build --verbosity normal
+        run: dotnet test Modgud.slnx -c Release --no-build --verbosity normal
         working-directory: ./src/dotnet
 
   frontend:

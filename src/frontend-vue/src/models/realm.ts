@@ -1,5 +1,5 @@
 // Realm admin models — mirror DTOs in
-// src/dotnet/Cocoar.Auth.Application/DTOs/Realms/RealmDtos.cs.
+// src/dotnet/Modgud.Application/DTOs/Realms/RealmDtos.cs.
 //
 // Tenant-owned settings (self-registration etc.) live in `realmSettings.ts`
 // and are addressed via `/api/admin/realm-settings`, not here.

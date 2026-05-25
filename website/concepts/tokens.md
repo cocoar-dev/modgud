@@ -2,7 +2,7 @@
 
 ## Sessions (first-party login)
 
-When a user signs in to cocoar.auth (admin UI, OAuth login page),
+When a user signs in to modgud (admin UI, OAuth login page),
 a **session** is created as a `UserSession` Marten document. Sessions
 track:
 
@@ -42,7 +42,7 @@ GET    /api/admin/users/{id}/sessions
 DELETE /api/admin/users/{id}/sessions   # Force logout
 ```
 
-Admin needs `cocoar-auth:user:read` or `cocoar-auth:user:write` (or the `:admin` bypass).
+Admin needs `modgud:user:read` or `modgud:user:write` (or the `:admin` bypass).
 
 ## OAuth tokens
 
@@ -56,7 +56,7 @@ as one of two formats:
 
 | Format | Looks like | API validation |
 |---|---|---|
-| **Reference** (default) | Opaque string — not decodable | API calls cocoar.auth's introspection endpoint |
+| **Reference** (default) | Opaque string — not decodable | API calls modgud's introspection endpoint |
 | **JWT** | Signed JSON token — decodable | API verifies the signature locally |
 
 - **Short-lived** — typically 60 min (configurable per client)

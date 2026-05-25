@@ -11,7 +11,7 @@ Two-factor authentication (2FA) adds a second proof beyond your password. Even i
 | **Passkey** | WebAuthn/FIDO2 — Touch ID, Windows Hello, YubiKey | Phishing-resistant, fastest sign-in |
 | **Recovery codes** | One-time backup codes you save offline | Emergency-only, used when you've lost the others |
 
-You can combine multiple. Cocoar.Auth picks the most secure available; you can override per sign-in if needed.
+You can combine multiple. Modgud picks the most secure available; you can override per sign-in if needed.
 
 ## Enrol TOTP
 
@@ -19,13 +19,13 @@ Profile → Security → **Add 2FA → TOTP**.
 
 1. Scan the QR code with your authenticator app
 2. Type the 6 digits the app shows to confirm
-3. **Save your recovery codes** — Cocoar.Auth shows them once, never again. Print or store in a password manager.
+3. **Save your recovery codes** — Modgud shows them once, never again. Print or store in a password manager.
 
 The next time you sign in, the password screen is followed by a TOTP screen.
 
 ## Enrol email-OTP
 
-Profile → Security → **Add 2FA → Email-OTP**. No further setup beyond a verified email — Cocoar.Auth emails you a code on every sign-in.
+Profile → Security → **Add 2FA → Email-OTP**. No further setup beyond a verified email — Modgud emails you a code on every sign-in.
 
 ::: warning Email-OTP is the weakest 2FA
 If your inbox is compromised, email-OTP is bypassable. Use it only if you can't do TOTP or Passkey.

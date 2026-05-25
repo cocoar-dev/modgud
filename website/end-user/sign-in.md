@@ -1,6 +1,6 @@
 # Signing in
 
-The login page is where every sign-in starts. Cocoar.Auth supports several methods — your admin decides which are available on this instance.
+The login page is where every sign-in starts. Modgud supports several methods — your admin decides which are available on this instance.
 
 ## Available methods
 
@@ -36,7 +36,7 @@ You land on the page that brought you here:
 ::: details "Username or password is incorrect"
 Most common cause: typo. Check Caps Lock, paste-from-clipboard for invisible whitespace, retry once.
 
-If still failing: use "Forgot password?" — Cocoar.Auth emails you a magic link.
+If still failing: use "Forgot password?" — Modgud emails you a magic link.
 :::
 
 ::: details "Account locked"
@@ -55,6 +55,6 @@ Ask your admin. The external provider may be misconfigured. As a workaround, sig
 
 ## Signing out
 
-Top-right user menu → **Sign out**. Cocoar.Auth invalidates your session here and (if the connected app uses front-channel logout) signs you out of every app you've used in this browser session.
+Top-right user menu → **Sign out**. Modgud invalidates your session here and (if the connected app uses front-channel logout) signs you out of every app you've used in this browser session.
 
 To end **other** sessions you've forgotten about — say, on a coworker's laptop — go to Profile → Sessions and end them individually.

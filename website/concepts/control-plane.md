@@ -1,6 +1,6 @@
 # Control Plane / Data Plane
 
-cocoar.auth separates **cross-realm administration** (realm CRUD, the
+modgud separates **cross-realm administration** (realm CRUD, the
 first-run setup wizard) from **tenant self-service** (everything else)
 on three independent layers. A request that hits a Control-Plane endpoint
 from a tenant host has to defeat all three to succeed — and they're
@@ -8,7 +8,7 @@ deliberately decoupled so a regression in one doesn't open the others.
 
 ## Why bother
 
-Every realm in cocoar.auth is a fully autonomous IdP — its own DB, users,
+Every realm in modgud is a fully autonomous IdP — its own DB, users,
 OAuth clients, login providers (see [Realms](./realms.md)). But two
 operations are inherently cross-realm:
 
@@ -51,7 +51,7 @@ remaining guards.
 
 ::: tip Naming
 The permission namespace is `control-plane:*`, deliberately decoupled
-from the product slug `cocoar-auth`. If the IdP product is ever
+from the product slug `modgud`. If the IdP product is ever
 rebranded, cross-realm permissions don't need a migration.
 :::
 
@@ -78,7 +78,7 @@ graph TD
 
 ### Layer 1 — Routing gate
 
-`ControlPlaneGateMiddleware` (in `Cocoar.Auth.Api/Middleware`) runs
+`ControlPlaneGateMiddleware` (in `Modgud.Api/Middleware`) runs
 **before** authentication. For paths under `/api/admin/realms` and
 `/api/setup`, it inspects the resolved `TenantInfo` and 404s the
 request when `IsControlPlane=false` (or when no tenant resolved at all
@@ -90,7 +90,7 @@ server that never had those endpoints.
 
 ### Layer 2 — Endpoint filter
 
-`RequireControlPlaneFilter` (in `Cocoar.Auth.Infrastructure/Realms`) is
+`RequireControlPlaneFilter` (in `Modgud.Infrastructure/Realms`) is
 attached to the route group of every Control-Plane-only endpoint —
 currently `/api/admin/realms/*` and `/api/setup/*`. It performs the
 same `IsControlPlane` check the routing gate does.
@@ -108,7 +108,7 @@ live on a separate `App` slug. `AppRealmSeeder` only registers the
 
 ```csharp
 // AppRealmSeeder.SeedAsync — called once per realm DB, on creation
-await SeedAppIfMissingAsync(session, slug: AppSlugs.CocoarAuth, ...);
+await SeedAppIfMissingAsync(session, slug: AppSlugs.Modgud, ...);
 if (isControlPlane)
 {
     await SeedAppIfMissingAsync(session, slug: AppSlugs.ControlPlane, ...);
@@ -128,7 +128,7 @@ boots without any ENV setup. For a deployed installation, the
 operator adds the public hostname via the Recovery CLI:
 
 ```bash
-docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll \
+docker exec modgud dotnet Modgud.Api.dll \
   recover realm-add-domain --slug system --domain auth.example.com
 ```
 
@@ -152,7 +152,7 @@ race window. Three explicit-trust paths replace it:
 Filesystem trust. The operator runs:
 
 ```bash
-docker exec <container> dotnet Cocoar.Auth.Api.dll recover bootstrap-admin \
+docker exec <container> dotnet Modgud.Api.dll recover bootstrap-admin \
     --email admin@example.com \
     --username admin \
     --password 'StrongPass1!' \
@@ -173,7 +173,7 @@ by email when SMTP is configured). The recipient clicks, sets a
 password via `/bootstrap?token=...`, gets auto-signed in.
 
 ```bash
-dotnet Cocoar.Auth.Api.dll recover bootstrap-admin \
+dotnet Modgud.Api.dll recover bootstrap-admin \
     --email max@acme.com \
     --realm acme
 ```
@@ -234,10 +234,10 @@ The SPA reads `IsControlPlane: bool` from the anonymous
 
 | Layer | Tests | Where |
 |---|---|---|
-| Routing gate | `ControlPlaneGateMiddlewareTests` | `Cocoar.Auth.Tests.Unit/Api/Middleware/` |
-| Endpoint filter | `RealmsEndpointsTests.RequireControlPlaneFilterTests` | `Cocoar.Auth.Tests.Unit/Api/Features/Admin/` |
-| End-to-end | `ControlPlaneSeparationTests` (tenant→404, CP→OK, exactly-one-CP invariant on create + promote + demote, app-info IsControlPlane) | `Cocoar.Auth.Api.Tests/Security/` |
-| Realm-cache resolution | `RealmCacheLookupTests` | `Cocoar.Auth.Tests.Unit/Realms/` |
+| Routing gate | `ControlPlaneGateMiddlewareTests` | `Modgud.Tests.Unit/Api/Middleware/` |
+| Endpoint filter | `RealmsEndpointsTests.RequireControlPlaneFilterTests` | `Modgud.Tests.Unit/Api/Features/Admin/` |
+| End-to-end | `ControlPlaneSeparationTests` (tenant→404, CP→OK, exactly-one-CP invariant on create + promote + demote, app-info IsControlPlane) | `Modgud.Api.Tests/Security/` |
+| Realm-cache resolution | `RealmCacheLookupTests` | `Modgud.Tests.Unit/Realms/` |
 
 A regression in any one layer is caught by the layer's tests; a
 regression in middleware ordering or wiring is caught by the

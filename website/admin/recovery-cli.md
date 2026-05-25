@@ -1,6 +1,6 @@
 # Recovery CLI
 
-The **Recovery CLI** is a shell tool that lives inside the Cocoar.Auth container and writes directly to the database, bypassing the web UI entirely. It exists for situations where the UI doesn't work — typically because no admin can sign in.
+The **Recovery CLI** is a shell tool that lives inside the Modgud container and writes directly to the database, bypassing the web UI entirely. It exists for situations where the UI doesn't work — typically because no admin can sign in.
 
 ::: warning Last resort
 The CLI bypasses authorization. Anyone who can run it inside the container has full access to the realm databases. Treat it like root access — log every use, prefer fixing UI issues to using the CLI.
@@ -22,7 +22,7 @@ The CLI runs inside the same container image as the API. Two invocation styles:
 ### As an extra command-line argument
 
 ```bash
-docker exec -it cocoar-auth-api dotnet Cocoar.Auth.Api.dll recover <subcommand> [args...]
+docker exec -it modgud-api dotnet Modgud.Api.dll recover <subcommand> [args...]
 ```
 
 This pattern boots the host without starting Kestrel, runs the recovery subcommand, exits.
@@ -82,7 +82,7 @@ weak passwords are rejected just like in the SPA. The user can sign
 in immediately on the realm's host.
 
 ```bash
-dotnet Cocoar.Auth.Api.dll recover bootstrap-admin \
+dotnet Modgud.Api.dll recover bootstrap-admin \
     --email admin@example.com \
     --username admin \
     --password 'StrongPass1!' \
@@ -98,7 +98,7 @@ again revokes any open invites for the same email and issues a fresh
 one.
 
 ```bash
-dotnet Cocoar.Auth.Api.dll recover bootstrap-admin \
+dotnet Modgud.Api.dll recover bootstrap-admin \
     --email max@acme.com \
     --realm acme
 ```
@@ -118,7 +118,7 @@ or a token needs to be reissued out of band.
 ### `realm-list`
 
 ```bash
-dotnet Cocoar.Auth.Api.dll recover realm-list
+dotnet Modgud.Api.dll recover realm-list
 ```
 
 Prints every realm in the master database with its slug, display name, active flag, control-plane flag, and domain list. Read-only. Useful before adding a domain or bootstrapping an admin to confirm the realm names you have.
@@ -126,7 +126,7 @@ Prints every realm in the master database with its slug, display name, active fl
 ### `realm-add-domain --slug=<slug> --domain=<hostname>`
 
 ```bash
-dotnet Cocoar.Auth.Api.dll recover realm-add-domain \
+dotnet Modgud.Api.dll recover realm-add-domain \
   --slug system \
   --domain auth.example.com
 ```

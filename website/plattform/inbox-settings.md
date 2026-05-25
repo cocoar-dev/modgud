@@ -21,7 +21,7 @@ The `realm:admin` bypass grants both, as it does for every per-resource permissi
 
 ## The three retention sections
 
-The shape of each section follows the lifecycle of the kinds it covers. The defaults below match `Cocoar.Auth.Application/Inbox/InboxRetentionSettings.cs`.
+The shape of each section follows the lifecycle of the kinds it covers. The defaults below match `Modgud.Application/Inbox/InboxRetentionSettings.cs`.
 
 ### 1. Änderungsanträge (Admin-Inbox) — event-driven
 

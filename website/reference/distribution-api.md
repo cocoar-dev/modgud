@@ -1,6 +1,6 @@
 # Distribution API reference
 
-The distribution API is Cocoar.Auth's server-to-server surface for resource servers (TimeToDo, Knowledge, …) to query authorisation data live, on behalf of an authenticated user.
+The distribution API is Modgud's server-to-server surface for resource servers (TimeToDo, Knowledge, …) to query authorisation data live, on behalf of an authenticated user.
 
 Base path: **`/api/v1/distribution`**
 
@@ -17,14 +17,14 @@ If either axis is missing or invalid the response is **`401 Unauthorized`** with
 
 ```http
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: CocoarAuthRS error="invalid_client", error_description="Resource-server credentials rejected."
+WWW-Authenticate: ModgudRS error="invalid_client", error_description="Resource-server credentials rejected."
 ```
 
 The Resource-Server-Id is the OAuth API's `Name` (visible in the OAuth APIs admin), and the secret is the cleartext value the admin saved at provisioning time. Use the **Klick-Aktion** in the App detail or the **Regenerate** button in the OAuth API detail to obtain or rotate one.
 
 ### Why a separate axis?
 
-The user bearer token says *who* the request is about. The RS-Auth says *which resource server* is asking. Cocoar.Auth needs both:
+The user bearer token says *who* the request is about. The RS-Auth says *which resource server* is asking. Modgud needs both:
 
 - to **scope the response to the calling RS's App** (so app context is implicit, no `?app=` query)
 - to **audit** which RS pulled which user's data (future logging hook)
@@ -99,13 +99,13 @@ Not part of the distribution API — separate path, separate semantics. Document
 
 ```http
 GET /api/v1/me/permissions[?app=<slug>] HTTP/1.1
-Cookie: Cocoar.Auth.Auth=<session-cookie>
+Cookie: Modgud.Auth=<session-cookie>
 ```
 
 | Aspect | `/api/v1/me/permissions` | `/api/v1/distribution/me-permissions` |
 | --- | --- | --- |
 | Auth | Cookie (admin SPA's session) | Bearer + RS-Auth |
-| App | `?app=<slug>` query (default `cocoar-auth`) | Derived from RS-Auth |
+| App | `?app=<slug>` query (default `modgud`) | Derived from RS-Auth |
 | Audience | Browser-side introspection | Server-to-server |
 | Bearer accepted? | No — bearer is rejected | Yes (required) |
 

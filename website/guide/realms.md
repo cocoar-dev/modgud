@@ -1,6 +1,6 @@
 # Multi-tenancy / Realms
 
-cocoar.auth uses a **realm model** for multi-tenancy. Each realm is a
+modgud uses a **realm model** for multi-tenancy. Each realm is a
 fully autonomous Identity Provider with its own database, users,
 roles, OAuth configuration, and login providers.
 
@@ -23,7 +23,7 @@ realm has one or more configured domains:
 | `auth.acme.example.com` | Acme realm (second domain) |
 | `localhost` (dev, single-realm) | System realm (single-tenant fallback) |
 
-`RealmMiddleware` (`src/dotnet/Cocoar.Auth.Api/Middleware/RealmMiddleware.cs`)
+`RealmMiddleware` (`src/dotnet/Modgud.Api/Middleware/RealmMiddleware.cs`)
 runs as the very first middleware:
 
 ```csharp
@@ -60,7 +60,7 @@ single-realm dev boot works without a hosts-file entry.
 
 ## RealmCache
 
-`RealmCache` (`Cocoar.Auth.Infrastructure/Realms/RealmCache.cs`) holds
+`RealmCache` (`Modgud.Infrastructure/Realms/RealmCache.cs`) holds
 a snapshot of the domain → realm mappings in memory:
 
 ```csharp
@@ -74,7 +74,7 @@ Invalidated on realm CUD (Create/Update/Delete via the admin API).
 
 ## Database-per-tenant via Marten
 
-cocoar.auth uses Marten's `MasterTableTenancy`:
+modgud uses Marten's `MasterTableTenancy`:
 
 ```mermaid
 graph TD
@@ -108,7 +108,7 @@ more tenant DBs without migrating the system tenant.
 ## TenantedSessionFactory
 
 A Marten `ISessionFactory` implementation
-(`Cocoar.Auth.Infrastructure/Persistence/Tenancy/TenantedSessionFactory.cs`)
+(`Modgud.Infrastructure/Persistence/Tenancy/TenantedSessionFactory.cs`)
 that reads the `TenantId` from `HttpContext.Items`:
 
 ```csharp
@@ -216,7 +216,7 @@ Backend:
 4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`.
 5. **`OAuthRealmSeeder`** seeds 5 default scopes + the Internal login
    provider into the new tenant DB.
-6. **`AppRealmSeeder`** seeds the `cocoar-auth` app. The
+6. **`AppRealmSeeder`** seeds the `modgud` app. The
    `control-plane` app is **only** seeded when the new realm is itself
    the Control Plane.
 7. `Realm` document persisted in `IGlobalStore`.

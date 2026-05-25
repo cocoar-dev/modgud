@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Modgud.Domain</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ErrorOr" />
+    <!-- Marten 9 source-generates Apply/Create dispatchers for live
+         aggregates (AggregateStreamAsync<T>). The 3 OAuth aggregates
+         (Application, Scope, Api) live here, so the analyzer needs to
+         see this project too — otherwise the runtime throws
+         "No source-generated dispatcher found". -->
+    <PackageReference Include="JasperFx.Events.SourceGenerator">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Modgud.Authorization\Modgud.Authorization.csproj" />
+  </ItemGroup>
+
+</Project>

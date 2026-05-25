@@ -13,14 +13,14 @@
 docker run --name cocoar-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres:17-alpine
 
 # Create master DB (one-off — the backend can do this on boot, but doing it here survives container restarts more cleanly)
-docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE cocoar_auth;"
+docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE modgud;"
 
 # Build the backend
 cd src/dotnet
 dotnet build
 
 # Start the backend (port 9099 in dev — see data/configuration.json)
-cd Cocoar.Auth.Api
+cd Modgud.Api
 ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile
 ```
 
@@ -31,7 +31,7 @@ On first start the bootstrap path runs:
 3. Apply the system tenant schema
 4. Seed the system realm document (flagged `IsControlPlane = true`)
 5. Seed 5 default OAuth scopes + the Internal login provider into the system tenant DB
-6. Seed the `cocoar-auth` and `control-plane` apps into the system tenant DB
+6. Seed the `modgud` and `control-plane` apps into the system tenant DB
 7. Warm up RealmCache
 
 Then Kestrel starts listening on `http://localhost:9099`.
@@ -75,7 +75,7 @@ your reverse proxy.
 There is no anonymous setup wizard. Run the recovery CLI in direct mode:
 
 ```bash
-cd src/dotnet/Cocoar.Auth.Api
+cd src/dotnet/Modgud.Api
 dotnet run --no-launch-profile -- recover bootstrap-admin \
     --email admin@example.com \
     --username admin \
@@ -149,7 +149,7 @@ If you change handlers or aggregates, delete the Generated folder and
 restart, or have Wolverine pre-generate:
 
 ```bash
-cd src/dotnet/Cocoar.Auth.Api
+cd src/dotnet/Modgud.Api
 dotnet run --no-launch-profile -- codegen write
 ```
 
@@ -158,7 +158,7 @@ dotnet run --no-launch-profile -- codegen write
 When all admin accounts are locked out or a projection is corrupted:
 
 ```bash
-cd src/dotnet/Cocoar.Auth.Api
+cd src/dotnet/Modgud.Api
 dotnet run --no-launch-profile -- recover list
 dotnet run --no-launch-profile -- recover reset-2fa <username>
 dotnet run --no-launch-profile -- recover set-email <username> <email>
@@ -166,12 +166,12 @@ dotnet run --no-launch-profile -- recover magic-link <username>
 dotnet run --no-launch-profile -- recover rebuild-projections
 ```
 
-In the container: `docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover list`.
+In the container: `docker exec modgud dotnet Modgud.Api.dll recover list`.
 
 ## Dev endpoints
 
 In development mode, additional endpoints are mounted under `/api/dev/*`
-(see `Cocoar.Auth.Api.Features.Dev`):
+(see `Modgud.Api.Features.Dev`):
 
 - Email inspector (shows sent mails without SMTP)
 - MFA reset for test users

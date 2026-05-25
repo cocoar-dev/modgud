@@ -22,7 +22,7 @@ export default async function globalTeardown() {
   fs.unlinkSync(STATE_FILE)
 
   console.log('[e2e teardown] Stopping containers...')
-  docker('rm -f cocoar-auth-e2e-app cocoar-auth-e2e-pg cocoar-auth-e2e-mailpit')
-  docker('network rm cocoar-auth-e2e-net')
+  docker('rm -f modgud-e2e-app modgud-e2e-pg modgud-e2e-mailpit')
+  docker('network rm modgud-e2e-net')
   console.log('[e2e teardown] Done')
 }

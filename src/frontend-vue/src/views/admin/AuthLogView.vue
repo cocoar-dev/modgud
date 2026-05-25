@@ -31,7 +31,7 @@ const dcrOnly = ref(false)
 let pollInterval: ReturnType<typeof setInterval> | null = null
 
 // DCR audit lines all carry the "DCR " prefix on the Message column
-// (see Cocoar.Auth.Application/Dcr/DcrAuditEvents.cs for the canonical
+// (see Modgud.Application/Dcr/DcrAuditEvents.cs for the canonical
 // vocabulary). Filtering by prefix avoids needing a separate
 // category-column migration on the AuthLogDocument.
 const filteredEntries = computed(() =>

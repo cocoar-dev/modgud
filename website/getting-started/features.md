@@ -1,6 +1,6 @@
 # Features
 
-A point-by-point list of what Cocoar.Auth delivers out of the box.
+A point-by-point list of what Modgud delivers out of the box.
 
 ## Authentication
 
@@ -40,12 +40,12 @@ A point-by-point list of what Cocoar.Auth delivers out of the box.
 
 ### Role distribution to resource servers
 - **Keycloak-style `resource_access`** claim emitted in UserInfo, keyed by app slug
-- **`Cocoar.Auth.Client.AspNetCore`** library ships an `IClaimsTransformation` that flattens `resource_access[<app>].roles` into `ClaimTypes.Role` so `[Authorize(Roles="...")]` works on resource servers without per-endpoint code
+- **`Modgud.Client.AspNetCore`** library ships an `IClaimsTransformation` that flattens `resource_access[<app>].roles` into `ClaimTypes.Role` so `[Authorize(Roles="...")]` works on resource servers without per-endpoint code
 - **Distribution API** for live, granular permission lookups when role-only checks aren't enough
 
 ### ABAC
 
-Cocoar.Auth is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in the consuming app where the row schema lives — see [Concepts → ABAC](../concepts/abac) for the boundary and the three deployment profiles (IAM-only, code-static ABAC, admin-pluggable via local groups).
+Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in the consuming app where the row schema lives — see [Concepts → ABAC](../concepts/abac) for the boundary and the three deployment profiles (IAM-only, code-static ABAC, admin-pluggable via local groups).
 
 ### Auto membership
 - Groups can compute their members from a JsEval predicate over the principal directory
@@ -117,7 +117,7 @@ Cocoar.Auth is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live
 ### Admin UI
 - Real-time updates via SignalR — multiple admins editing simultaneously stay in sync
 - Granular sidebar gating based on permissions
-- Resource-level permissions (`cocoar-auth:user:read`, `cocoar-auth:oauth-client:write`, …) — granular admins see only what they manage
+- Resource-level permissions (`modgud:user:read`, `modgud:oauth-client:write`, …) — granular admins see only what they manage
 
 ### Recovery CLI
 - Inside-container tool for breaking out of "no admin can sign in" situations
@@ -134,7 +134,7 @@ Cocoar.Auth is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live
 ## Developer integration
 
 ### Resource server libraries
-- **`Cocoar.Auth.Client.AspNetCore`** — drop-in claims-transformation + (planned) typed distribution-API client
+- **`Modgud.Client.AspNetCore`** — drop-in claims-transformation + (planned) typed distribution-API client
 - Standard `JwtBearerHandler` for token validation; nothing custom required on the framework side
 
 ### Distribution API

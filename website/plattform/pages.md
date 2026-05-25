@@ -14,7 +14,7 @@ Today, **never in production** — the editor can produce schemas that the runti
 
 - preview the editor flow and the per-slot palette
 - pin down which page-slots you'd want to customise once the runtime ships
-- give early feedback into `@cocoar/vue-page-builder` (Cocoar.Auth is the first beta integration)
+- give early feedback into `@cocoar/vue-page-builder` (Modgud is the first beta integration)
 
 Permissions when the flag is on: `realm-settings:read` / `realm-settings:write`. The `realm:admin` bypass grants both. The flag itself is operator-level — realm admins cannot turn it on.
 

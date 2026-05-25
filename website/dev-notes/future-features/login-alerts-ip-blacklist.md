@@ -126,18 +126,18 @@ trivial:
   log. Forensic gold dust when an admin later wants to know "why
   am I blocked".
 
-## Architecture: in cocoar.auth or in alert-hub?
+## Architecture: in modgud or in alert-hub?
 
 We have a sibling project `alert-hub` (per the claude-memory
 reference) that does generic alerting infrastructure. Two options:
 
 | Option | Where the alerting lives |
 |---|---|
-| **A** — In cocoar.auth | Self-contained, no external dependency. Simpler MVP. |
+| **A** — In modgud | Self-contained, no external dependency. Simpler MVP. |
 | **B** — Delegated to alert-hub | Reusable across all cocoar SaaS projects, but adds an integration boundary. |
 
 **Recommendation:** Option A for v1 (alert pipeline lives in
-cocoar.auth), with the events emitted in a format that alert-hub
+modgud), with the events emitted in a format that alert-hub
 could consume later if/when we want to centralise.
 
 ## Effort estimate

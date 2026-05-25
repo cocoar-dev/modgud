@@ -1,4 +1,4 @@
-# Cocoar.Auth - Project Status
+# Modgud - Project Status
 
 > **Last Updated:** 2026-01-25
 > **Status:** Phase 1-4 Complete | Ready for OAuth/OIDC Integration
@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-**Cocoar.Auth** is a production-ready Identity Provider foundation built with modern .NET practices. It provides complete user authentication, authorization, two-factor authentication, session management, GDPR compliance, and admin management with full event sourcing for audit trails.
+**Modgud** is a production-ready Identity Provider foundation built with modern .NET practices. It provides complete user authentication, authorization, two-factor authentication, session management, GDPR compliance, and admin management with full event sourcing for audit trails.
 
 ### Current State
 
@@ -25,13 +25,13 @@
 A multi-stage identity product:
 
 ```
-Cocoar.Auth (Solution)
-├── Cocoar.Auth.IDP    # Core Identity Provider (open-source)
+Modgud (Solution)
+├── Modgud.IDP    # Core Identity Provider (open-source)
 │   └── OAuth 2.0 / OpenID Connect
 │   └── User Management
 │   └── Authentication
 │
-└── Cocoar.Auth.IAM    # Full IAM Product (commercial)
+└── Modgud.IAM    # Full IAM Product (commercial)
     └── Multi-tenancy
     └── Advanced Policies
     └── Audit & Compliance
@@ -61,11 +61,11 @@ Cocoar.Auth (Solution)
 
 ```
 src/dotnet/
-├── Cocoar.Auth.Domain/           # Entities, Aggregates, Events
-├── Cocoar.Auth.Application/      # Commands, Queries, Services, DTOs
-├── Cocoar.Auth.Infrastructure/   # Marten Stores, Projections, Repositories
-├── Cocoar.Auth.Api/              # REST Controllers
-├── Cocoar.Auth.Tests/            # Integration Tests (120+)
+├── Modgud.Domain/           # Entities, Aggregates, Events
+├── Modgud.Application/      # Commands, Queries, Services, DTOs
+├── Modgud.Infrastructure/   # Marten Stores, Projections, Repositories
+├── Modgud.Api/              # REST Controllers
+├── Modgud.Tests/            # Integration Tests (120+)
 └── Cocoar.Primitives/            # Shared utilities (Optional<T>, ShortGuid)
 ```
 
@@ -296,7 +296,7 @@ Uses Marten's built-in GDPR support:
 cd src/dotnet
 dotnet restore
 dotnet build
-dotnet run --project Cocoar.Auth.Api
+dotnet run --project Modgud.Api
 ```
 
 ### Test

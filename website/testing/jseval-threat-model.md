@@ -14,14 +14,14 @@ consumers don't need this file — see
 admin-facing documentation of auto-membership scripts.
 :::
 
-**Date:** 2026-05-06 · **Scope:** auto-membership scripts (`Group.MembershipScript`) and any future script-driven feature reusing the same pipeline. · **Status:** ✅ Phases 1-3 complete. All six findings (F1-F6) closed lib-side in Cocoar.JsEval 4.0; Cocoar.Auth runs both layers (lib defaults + consumer-side belt-and-braces). 41 pinning tests in `MembershipSecurityTests`, zero skip-trackers.
+**Date:** 2026-05-06 · **Scope:** auto-membership scripts (`Group.MembershipScript`) and any future script-driven feature reusing the same pipeline. · **Status:** ✅ Phases 1-3 complete. All six findings (F1-F6) closed lib-side in Cocoar.JsEval 4.0; Modgud runs both layers (lib defaults + consumer-side belt-and-braces). 41 pinning tests in `MembershipSecurityTests`, zero skip-trackers.
 
 ## Pipeline (the actual code path)
 
 ```
 Admin writes TS in the SPA Group editor
   ↓ POST /api/admin/groups
-CreateGroupCommand.Handle (Cocoar.Auth.Authorization/Commands/CreateGroupCommand.cs)
+CreateGroupCommand.Handle (Modgud.Authorization/Commands/CreateGroupCommand.cs)
   ↓
 TsTranspiler.Transpile(typeScript) → compiledJs : string
   ↓ stored on Group.CompiledMembershipScript
@@ -48,18 +48,18 @@ Two distinct "user code runs" points:
 
 ### Today
 
-- **Authentication required** — all script-create paths sit behind `cocoar-auth:group:write` permission, gated by `RequiresPermission` middleware.
-- **Realm-Admin or higher** — the only role that holds `cocoar-auth:group:write` in default seeding is the System Admin (`realm:admin`). Realm-Admins are by current threat model "trusted authenticated principals".
+- **Authentication required** — all script-create paths sit behind `modgud:group:write` permission, gated by `RequiresPermission` middleware.
+- **Realm-Admin or higher** — the only role that holds `modgud:group:write` in default seeding is the System Admin (`realm:admin`). Realm-Admins are by current threat model "trusted authenticated principals".
 - **Defense-in-depth nonetheless required** — a compromised admin account, an XSS bug elsewhere that hijacks an admin session, or simple bug-on-our-side script writing should not be allowed to escalate to host-level RCE, cross-tenant data access, or DoS of the IdP.
 
 ### Tomorrow (when Tenant-Admins author scripts)
 
-- **Privilege boundary** — at that moment, any escape from JsEval becomes a real privilege escalation: tenant-admin (limited to their tenant) → Cocoar.Auth host (cross-tenant, host RCE).
+- **Privilege boundary** — at that moment, any escape from JsEval becomes a real privilege escalation: tenant-admin (limited to their tenant) → Modgud host (cross-tenant, host RCE).
 - This document is written so the test surface is solid *before* that boundary tightens, not after.
 
-## Engine configuration (as wired in Cocoar.Auth today)
+## Engine configuration (as wired in Modgud today)
 
-`Cocoar.Auth.Infrastructure/DependencyInjection.cs:196-201`:
+`Modgud.Infrastructure/DependencyInjection.cs:196-201`:
 
 ```csharp
 services.AddJsEval(b => b
@@ -75,7 +75,7 @@ What this gives us, what it doesn't:
 | Property | State | Risk |
 |---|---|---|
 | `AllowClr(...)` | **NOT called** | ✓ User scripts can't `System.IO.File.ReadAllText(...)` — Jint blocks CLR access by default. |
-| `AddExtensionMethods(...)` | not called by Cocoar.Auth itself, but `AddLinq()` adds `linq.*` helpers (typed-literal coercions etc.) | low — those helpers are pure value constructors |
+| `AddExtensionMethods(...)` | not called by Modgud itself, but `AddLinq()` adds `linq.*` helpers (typed-literal coercions etc.) | low — those helpers are pure value constructors |
 | `EnableFetch()` | **NOT called** | ✓ `fetch()` global not available — no outbound HTTP from inside scripts. |
 | `JintOptions.CatchClrExceptions()` | **on** | ✓ CLR exceptions caught inside engine, prevents Jint internal state corruption from bubbling exceptions. |
 | `AllowOperatorOverloading()` | **on** | low — only operator semantics on user types, no security impact. |
@@ -102,11 +102,11 @@ inventory + the consumer-side strip decision:
 | `__perf_now` + `performance` shim | `RegisterWebApis` + `PerformanceScript` | timing only, no privileged surface | kept (harmless) |
 | `__te_encode` / `__td_decode` + `TextEncoder`/`TextDecoder` shim | `RegisterWebApis` + `TextEncoderDecoderScript` | UTF-8 round-trip | kept (harmless) |
 | `structuredClone` | `StructuredCloneScript` (`JSON.parse(JSON.stringify(...))`) | pure data round-trip | kept (harmless) |
-| `fetch` / `fetchOptions` | `Fetch.FetchHandler.Register` — only when `EnableFetch()` is called | network egress, not enabled in Cocoar.Auth | confirmed absent (test pin) |
-| `CsDateTime` | `CsDateTimeGlobals.Register` — only when configurator wires it | ctor-style DateTime, not wired in Cocoar.Auth | n/a |
+| `fetch` / `fetchOptions` | `Fetch.FetchHandler.Register` — only when `EnableFetch()` is called | network egress, not enabled in Modgud | confirmed absent (test pin) |
+| `CsDateTime` | `CsDateTimeGlobals.Register` — only when configurator wires it | ctor-style DateTime, not wired in Modgud | n/a |
 
 The strip is implemented in
-`Cocoar.Auth.Infrastructure/DependencyInjection.cs` via
+`Modgud.Infrastructure/DependencyInjection.cs` via
 `RegisterEngineConfigurator` and pinned by the
 `MembershipSecurityTests.A2_*Global*` tests. Anything that grows the
 surface needs an addition both to that configurator and to the
@@ -185,12 +185,12 @@ Checks the suite must run:
 
 - `eval("...")` and `Function("...")` — Jint blocks both by default; verify.
 - `globalThis.process` / `globalThis.require` — neither exposed by Jint, verify they are `undefined`.
-- `__proto__` and prototype-chain manipulation — `({}).__proto__.toString = () => leak()` — does this affect *subsequent* engine calls for the same scoped JsEngine instance? Cocoar.Auth's JsEngine is **`Scoped` lifetime** so per-request, but `JsLinqContext.Scope(...)` shares the underlying engine across the recompute.
+- `__proto__` and prototype-chain manipulation — `({}).__proto__.toString = () => leak()` — does this affect *subsequent* engine calls for the same scoped JsEngine instance? Modgud's JsEngine is **`Scoped` lifetime** so per-request, but `JsLinqContext.Scope(...)` shares the underlying engine across the recompute.
 - `Array.prototype.join.call(this, ...)` and similar prototype borrowing — does it surface CLR types when `this` is a CLR object?
 - `import("file:///...")` / `import("System.IO.File")` — the translator rejects `ImportExpression` in the lambda body, but Stage B1 evaluates top-level — does it accept top-level `import()`?
 - Type-conversion gymnastics — `({valueOf: () => leak()})` passed to a property comparison — does the translator emit code that calls `valueOf` at host runtime?
 
-::: danger Finding A2-NewObject (critical) — closed in Cocoar.Auth, lib-side fix pending
+::: danger Finding A2-NewObject (critical) — closed in Modgud, lib-side fix pending
 `Cocoar.JsEval.Engine.JsEngine.Initialize` registers two globals
 unconditionally:
 
@@ -208,7 +208,7 @@ type**. A membership script can therefore call e.g.
 get a real `FileInfo` instance, or `NewObject('System.Diagnostics.Process')`
 followed by `.Start(...)` for arbitrary process spawning — anything
 with a public constructor in any loaded assembly. This is host-RCE
-equivalent for anyone holding `cocoar-auth:group:write` and bypasses
+equivalent for anyone holding `modgud:group:write` and bypasses
 every Translator-side check (it executes during Stage B1 before Stage
 B2 even runs).
 
@@ -218,8 +218,8 @@ resolves, so a realistic attacker doesn't need to know the
 `NewObject` API name — `new System.Net.Http.HttpClient()` reaches the
 same vector.
 
-**Cocoar.Auth-side mitigation (commit `<below>`):** the
-`AddJsEval(...)` builder in `Cocoar.Auth.Infrastructure.DependencyInjection`
+**Modgud-side mitigation (commit `<below>`):** the
+`AddJsEval(...)` builder in `Modgud.Infrastructure.DependencyInjection`
 now calls `RegisterEngineConfigurator(engine => { engine.SetValue("NewObject",
 JsValue.Undefined); engine.SetValue("require", JsValue.Undefined); })`.
 Configurators run after `JsEngine.Initialize`, so the unsafe defaults
@@ -295,7 +295,7 @@ and `A1_TopLevelAllocationFlood_TimesOutOrCompletes`.
 :::
 
 ::: tip Gap-2 (medium) · CLOSED — input length cap
-`Cocoar.Auth.Authorization.Membership.ScriptInputLimits` defines a
+`Modgud.Authorization.Membership.ScriptInputLimits` defines a
 16 KiB cap and a `Validate(script, errorCode)` helper. Applied at
 `CreateGroupCommand`/`UpdateGroupCommand` for `MembershipScript` and
 at `UpdateLoginProviderCommand` for `UserUpdateScript`. Multi-MiB
@@ -352,7 +352,7 @@ See A2-NewObject finding above. `cocoar.js-eval` registers `NewObject`
 and `require` as engine globals unconditionally; `NewObject`'s
 fallback walks every loaded assembly, allowing arbitrary CLR-type
 construction including `Process`, `FileInfo`, `HttpClient`, etc.
-**Closed in Cocoar.Auth via post-init engine configurator** that
+**Closed in Modgud via post-init engine configurator** that
 overwrites both globals with `JsValue.Undefined`. Lib-side fix should
 make assembly-walking fallback opt-in.
 :::
@@ -370,7 +370,7 @@ lib-side and consumer-side fixes:
 
 ## Phase 2 — adversarial test suite (shipped)
 
-`Cocoar.Auth.Tests.Unit/Authorization/MembershipSecurityTests.cs`.
+`Modgud.Tests.Unit/Authorization/MembershipSecurityTests.cs`.
 Six categorised test groups; total **41 tests**, zero skips.
 
 | Group | Goal | Tests |
@@ -392,8 +392,8 @@ The lib-vs-consumer split landed roughly as the table above suggests:
   safe-by-default, `WithExecutionTimeout` / `WithMaxStatements`
   builder flags, translator depth-cap (`MaxAstDepth`) and parser
   depth-cap (`MaxParseDepth`).
-- **Consumer-side fixes** in Cocoar.Auth —
-  `Cocoar.Auth.Authorization.Membership.ScriptInputLimits` for
+- **Consumer-side fixes** in Modgud —
+  `Modgud.Authorization.Membership.ScriptInputLimits` for
   length/depth caps with domain-specific error codes,
   `MembershipEvaluator.BuildPredicate` with a `CancellationToken`
   parameter that registers `jsEngine.Stop()` on cancel, length+depth

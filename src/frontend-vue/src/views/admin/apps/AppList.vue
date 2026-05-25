@@ -38,7 +38,7 @@ const builder = CoarGridBuilder.create<ApplicationDto>()
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
   .searchHighlight()
-  // System apps (cocoar-auth, control-plane) are bootstrap-managed and
+  // System apps (modgud, control-plane) are bootstrap-managed and
   // should never be edited from the admin surface — dim the row to
   // signal "look but don't touch".
   .rowClassRules({

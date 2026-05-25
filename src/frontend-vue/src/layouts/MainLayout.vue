@@ -109,7 +109,7 @@ const connectionColor = computed(() =>
 // Permissions that grant access to *any* admin area. Mirrors the resource list
 // in `AdminView.vue` so the top-level "Administration" entry hides cleanly when
 // the user has zero admin permissions. Bare 2-segment form (App context is
-// implicit; cocoar-auth's grants drive everything except `realm:read` which is
+// implicit; modgud's grants drive everything except `realm:read` which is
 // the control-plane realm-management resource). `hasPermission` short-circuits
 // on `realm:admin` and `<resource>:admin`, so we don't list those.
 const ADMIN_RESOURCE_PERMISSIONS = [
@@ -152,8 +152,8 @@ const hasAnyPlatformPermission = computed(() =>
         <header v-if="ui.header.show" class="main-header">
             <!-- Logo area (aligned with sidebar width) -->
             <button @click="router.push('/')" class="header-logo" :style="{ width: collapsed ? '4rem' : '16rem' }">
-                <img :src="branding.LogoUrl ?? '/idp-logo-white.svg'" :alt="branding.ProductName ?? 'Cocoar.Auth'" class="header-logo-icon" />
-                <span v-if="!collapsed" class="text-sm font-medium tracking-wide opacity-80">{{ branding.ProductName ?? 'Cocoar.Auth' }}</span>
+                <img :src="branding.LogoUrl ?? '/idp-logo-white.svg'" :alt="branding.ProductName ?? 'Modgud'" class="header-logo-icon" />
+                <span v-if="!collapsed" class="text-sm font-medium tracking-wide opacity-80">{{ branding.ProductName ?? 'Modgud' }}</span>
             </button>
 
             <!-- Header content (90% container) -->

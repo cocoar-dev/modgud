@@ -6,7 +6,7 @@
 
 ## Standard OIDC scopes (built in)
 
-Cocoar.Auth always provides the OIDC standard scopes:
+Modgud always provides the OIDC standard scopes:
 
 | Scope | Contents |
 | --- | --- |

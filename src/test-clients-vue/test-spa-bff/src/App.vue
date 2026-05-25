@@ -56,7 +56,7 @@ onMounted(loadUser)
 </script>
 
 <template>
-  <h1>Cocoar Auth — BFF Test SPA</h1>
+  <h1>Modgud — BFF Test SPA</h1>
   <p>
     Status:
     <span v-if="user" class="pill ok">authenticated</span>
@@ -64,7 +64,7 @@ onMounted(loadUser)
   </p>
 
   <div class="row">
-    <button v-if="!user" @click="login">Login via Cocoar.Auth</button>
+    <button v-if="!user" @click="login">Login via Modgud</button>
     <button v-if="user" @click="logout">Logout</button>
     <button @click="loadUser">Refresh /bff/user</button>
   </div>

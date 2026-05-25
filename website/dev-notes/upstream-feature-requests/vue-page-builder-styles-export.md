@@ -1,7 +1,7 @@
 # @cocoar/vue-page-builder — expose `./styles` in package exports
 
 **Repo:** `@cocoar/vue-page-builder`
-**Reported by:** Cocoar.Auth beta-test of 2.1.0 (2026-05-13) — the
+**Reported by:** Modgud beta-test of 2.1.0 (2026-05-13) — the
 editor mounted but rendered with zero styling. Tracked down to the
 package shipping the CSS but not exposing it through the exports map.
 
@@ -37,13 +37,13 @@ the JS entry (`dist/index.js` has no top-level `import './index.css'`),
 so consumers have no way to load the stylesheet through the public
 surface of the package.
 
-## Effect on Cocoar.Auth
+## Effect on Modgud
 
 `<CoarPageBuilder>` renders the unstyled HTML — three vertical lists
 with no panel borders, no palette tile styling, no canvas frame, no
 properties panel layout. Effectively unusable without a workaround.
 
-## Workaround in Cocoar.Auth
+## Workaround in Modgud
 
 Deep-import via the dist path, which Vite resolves through filesystem
 even when the exports map doesn't allow it:

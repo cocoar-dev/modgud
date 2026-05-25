@@ -1,6 +1,6 @@
 # Persistence (Marten)
 
-cocoar.auth uses [Marten](https://martendb.io/) as a document DB and
+modgud uses [Marten](https://martendb.io/) as a document DB and
 event store on top of PostgreSQL. Marten manages its own schema — no
 manual EF Core migrations.
 

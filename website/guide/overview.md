@@ -1,6 +1,6 @@
 # Overview
 
-cocoar.auth is a self-contained multi-tenant Identity Provider
+modgud is a self-contained multi-tenant Identity Provider
 (comparable to Keycloak, Zitadel, or Authentik). ASP.NET Core 10,
 Marten 9, OpenIddict 7, Vue 3.
 
@@ -23,20 +23,20 @@ Marten 9, OpenIddict 7, Vue 3.
 
 ## Structure
 
-cocoar.auth sits on two vertical slices, pulled in as C# projects:
+modgud sits on two vertical slices, pulled in as C# projects:
 
-- [`Cocoar.Auth.Authentication`](/authentication-slice/) — login,
+- [`Modgud.Authentication`](/authentication-slice/) — login,
   2FA, OIDC, GDPR, sessions
-- [`Cocoar.Auth.Authorization`](/authorization-slice/) — groups,
+- [`Modgud.Authorization`](/authorization-slice/) — groups,
   roles, permissions
 
 On top of that lives the IdP-specific code:
 
-- **`Cocoar.Auth.Domain`** — Realm, OAuth, LoginProvider aggregates
-- **`Cocoar.Auth.Infrastructure`** — OpenIddict Marten stores,
+- **`Modgud.Domain`** — Realm, OAuth, LoginProvider aggregates
+- **`Modgud.Infrastructure`** — OpenIddict Marten stores,
   tenancy plumbing, realm cache + provisioning, Wolverine handlers
-- **`Cocoar.Auth.Application`** — DTOs, service interfaces
-- **`Cocoar.Auth.Api`** — Minimal API endpoints, middleware,
+- **`Modgud.Application`** — DTOs, service interfaces
+- **`Modgud.Api`** — Minimal API endpoints, middleware,
   setup bootstrap, SignalR hub
 
 Plus the frontend at `src/frontend-vue/`.
@@ -85,7 +85,7 @@ path-prefix acrobatics.
 
 The Authentication and Authorization slices are pulled in as C#-project
 copies straight from TimeToDo. Updates don't flow automatically —
-whoever changes something in cocoar.auth changes their copy. This
+whoever changes something in modgud changes their copy. This
 gives stability against upstream breaking changes and allows
 app-specific extensions (e.g. more resources in the Authorization
 slice).
@@ -93,8 +93,8 @@ slice).
 ### Granular per-resource gating
 
 Permissions follow the `<app>:<resource>:<action>` format
-(`cocoar-auth:user:read`, `timetodo:todo:write`, …). Every endpoint
+(`modgud:user:read`, `timetodo:todo:write`, …). Every endpoint
 and every sidebar entry checks the same string. Three bypass tiers:
 `<app>:<resource>:admin` (resource-wide within an app), `<app>:admin`
 (app-wide), `realm:admin` (realm-wide emergency exit). This scales
-cleanly as Cocoar.Auth hosts additional consuming apps.
+cleanly as Modgud hosts additional consuming apps.

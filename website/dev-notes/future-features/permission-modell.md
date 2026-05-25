@@ -110,7 +110,7 @@ Depth"-Filter, nicht ersatzloser Schutz.
 ## 4. Evaluator — IdP-internes Werkzeug
 
 Der `PermissionEvaluator` lebt in
-`Cocoar.Auth.Permissions.Abstractions` und macht 2-Tier-Logik (zzgl.
+`Modgud.Permissions.Abstractions` und macht 2-Tier-Logik (zzgl.
 exact-match):
 
 ```csharp
@@ -249,7 +249,7 @@ Multi-App-Suite-Dashboard liest mehrere Audience-Keys.
 ### Resource Server (.NET)
 
 Standard-`AddJwtBearer` + `GetClaimsFromUserInfoEndpoint = true`.
-Optional: `Cocoar.Auth.Client.AspNetCore`-`AddCocoarAuthClient(o =>
+Optional: `Modgud.Client.AspNetCore`-`AddModgudClient(o =>
 { o.AppSlug = ... })` für die Convenience-`ClaimsTransformation` die
 `resource_access[<audience>]` flach auf `ClaimTypes.Role` /
 `"permission"` / `"group"`-Claims projiziert. Dann `[Authorize(Roles
@@ -272,7 +272,7 @@ Authz-Info weiterreicht.
 ### Cocoar-Auth eigenes Admin-SPA
 
 Sonderfall: läuft Cookie-basiert gegen den IdP selbst (kein OIDC),
-holt Authz via `/api/account/me` (eigenes Endpunkt, returnt cocoar-auth
+holt Authz via `/api/account/me` (eigenes Endpunkt, returnt modgud
 + control-plane-Grants gemerged in einer flachen Liste). UserInfo ist
 für die SPA nicht relevant.
 
@@ -347,7 +347,7 @@ verbleibenden Use-Case.
 
 Kommentiert was schon gebaut ist + die finale Korrektur:
 
-1. ✅ `Cocoar.Auth.Permissions.Abstractions` extrahiert (Step 1).
+1. ✅ `Modgud.Permissions.Abstractions` extrahiert (Step 1).
 2. ✅ App.Permissions als ID-keyed Catalog (Step 2).
 3. ✅ OAuthApi.PermissionIds als FK-Subset (Step 3).
 4. ✅ PermissionRole als (AppId, IsRealmAdmin, PermissionIds) +

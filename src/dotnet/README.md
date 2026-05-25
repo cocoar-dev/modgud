@@ -1,4 +1,4 @@
-# Cocoar.Auth — Backend
+# Modgud — Backend
 
 ASP.NET Core 10 Identity Provider built on top of TimeToDo's
 `Authentication` + `Authorization` slices, extended with the IdP-specific
@@ -9,14 +9,14 @@ granular gating).
 
 | Project | Purpose |
 |---|---|
-| `Cocoar.Auth.Api` | ASP.NET Core host, Minimal API endpoints, Wolverine + Marten wiring, OAuth/Realm/Sessions/GDPR endpoints |
-| `Cocoar.Auth.Authentication` | Login, register, 2FA, magic link, passkey, email OTP, external OIDC, change requests, sessions, GDPR, recovery CLI, IdP-config |
-| `Cocoar.Auth.Authorization` | Groups (incl. JsEval-based auto-membership scripts), roles, permissions, principals, ResourceRegistry, RequiresPermission filter. Pure RBAC — no row-level ABAC, that stays in the consuming app. |
-| `Cocoar.Auth.Application` | DTOs, application services (OAuthAdminService, LoginProviderService, etc.) |
-| `Cocoar.Auth.Domain` | Aggregates (OAuth, LoginProviders, Realms), domain events, value objects |
-| `Cocoar.Auth.Infrastructure` | Marten setup (master-table multi-tenancy), TenantedSessionFactory, OpenIddict Marten stores, RealmCache + RealmProvisioningService |
+| `Modgud.Api` | ASP.NET Core host, Minimal API endpoints, Wolverine + Marten wiring, OAuth/Realm/Sessions/GDPR endpoints |
+| `Modgud.Authentication` | Login, register, 2FA, magic link, passkey, email OTP, external OIDC, change requests, sessions, GDPR, recovery CLI, IdP-config |
+| `Modgud.Authorization` | Groups (incl. JsEval-based auto-membership scripts), roles, permissions, principals, ResourceRegistry, RequiresPermission filter. Pure RBAC — no row-level ABAC, that stays in the consuming app. |
+| `Modgud.Application` | DTOs, application services (OAuthAdminService, LoginProviderService, etc.) |
+| `Modgud.Domain` | Aggregates (OAuth, LoginProviders, Realms), domain events, value objects |
+| `Modgud.Infrastructure` | Marten setup (master-table multi-tenancy), TenantedSessionFactory, OpenIddict Marten stores, RealmCache + RealmProvisioningService |
 | `Common` | BuildingBlocks (event dispatcher helpers) |
-| `Cocoar.Auth.Api.Tests` | Integration tests (Testcontainers + PostgreSQL) |
+| `Modgud.Api.Tests` | Integration tests (Testcontainers + PostgreSQL) |
 
 ## Build & run
 
@@ -29,7 +29,7 @@ docker exec cocoar-postgres psql -U postgres -c "DROP DATABASE IF EXISTS <master
 docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE <master-db>;"
 
 # Run the API
-cd Cocoar.Auth.Api
+cd Modgud.Api
 ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile
 # → http://localhost:9099
 
@@ -40,7 +40,7 @@ dotnet test
 
 ## Configuration
 
-`Cocoar.Auth.Api/data/configuration.json` (committed defaults) +
+`Modgud.Api/data/configuration.json` (committed defaults) +
 `configuration.local.json` (gitignored, local overrides). Cocoar.Configuration
 v5 layered binding.
 

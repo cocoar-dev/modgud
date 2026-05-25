@@ -1,6 +1,6 @@
 # Pinned-by-design
 
-Behaviours in Cocoar.Auth that look surprising on first read but are
+Behaviours in Modgud that look surprising on first read but are
 intentional. Each one has at least one unit test that documents it, so
 an accidental change flips the test red.
 

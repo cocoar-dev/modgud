@@ -132,7 +132,7 @@ anchor for SSO. Selected fields:
 | `Id` | hash(Issuer + Subject) |
 | `Issuer` | From `iss` claim |
 | `Subject` | From `sub` claim |
-| `UserId` | Linked Cocoar.Auth user |
+| `UserId` | Linked Modgud user |
 | `LoginProviderId` | Which `LoginProvider` minted the link |
 | `LinkedAt` | First link |
 | `LastLoginAt` | Most recent login through this link |

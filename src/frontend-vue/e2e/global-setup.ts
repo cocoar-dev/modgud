@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 /**
- * Playwright global setup for Cocoar.Auth E2E.
+ * Playwright global setup for Modgud E2E.
  *
  * Runs against a **bit-for-bit production image** of the auth API. Nothing
  * is wired in `Development` mode — every timing-sensitive code path the test
@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
  * Topology:
  *
  *   ┌──────────────┐   port 1025 SMTP    ┌──────────────┐
- *   │ cocoar-auth  │────────────────────▶│ mailpit       │  exposes
+ *   │ modgud  │────────────────────▶│ mailpit       │  exposes
  *   │ Production   │                     │  - SMTP 1025  │  - HTTP API on 8025
  *   │ talks to     │                     │  - Web UI 8025│    (read mails from tests)
  *   │ postgres +   │                     └──────────────┘
@@ -33,19 +33,19 @@ import { fileURLToPath } from 'node:url'
  *   - E2E_BASE_URL unset → bring up the rig via raw `docker run` commands.
  *
  * Image build:
- *   The script auto-builds `cocoar-auth:e2e` if it's missing. To force a rebuild
- *   (e.g. after editing backend code), `docker rmi cocoar-auth:e2e` between runs.
+ *   The script auto-builds `modgud:e2e` if it's missing. To force a rebuild
+ *   (e.g. after editing backend code), `docker rmi modgud:e2e` between runs.
  */
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const STATE_FILE = path.join(__dirname, '.e2e-containers.json')
 
-const NETWORK = 'cocoar-auth-e2e-net'
-const PG_NAME = 'cocoar-auth-e2e-pg'
-const APP_NAME = 'cocoar-auth-e2e-app'
-const APP_IMAGE = 'cocoar-auth:e2e'
+const NETWORK = 'modgud-e2e-net'
+const PG_NAME = 'modgud-e2e-pg'
+const APP_NAME = 'modgud-e2e-app'
+const APP_IMAGE = 'modgud:e2e'
 const APP_HOST_PORT = 14200 // bound port avoids collisions with manual-smoke 4200
-const MAILPIT_NAME = 'cocoar-auth-e2e-mailpit'
+const MAILPIT_NAME = 'modgud-e2e-mailpit'
 const MAILPIT_HTTP_PORT = 18025
 
 // Bootstrap-admin credentials. Override via env vars so a CI matrix
@@ -53,7 +53,7 @@ const MAILPIT_HTTP_PORT = 18025
 // (`process.env.E2E_ADMIN_USER` / `E2E_ADMIN_PASSWORD`) so seed and
 // login stay in lockstep.
 const E2E_ADMIN_USER = process.env.E2E_ADMIN_USER ?? 'admin'
-const E2E_ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'admin@cocoar-auth.test'
+const E2E_ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'admin@modgud.test'
 const E2E_ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'ABC12abc!'
 
 // Project root: walk up from src/frontend-vue/e2e/ to repo root.
@@ -82,11 +82,11 @@ function imageExists(tag: string): boolean {
  *   pnpm build → copy dist to wwwroot → dotnet publish → docker build.
  */
 function buildImage(): void {
-  console.log('[e2e] Building cocoar-auth:e2e image (first run, ~30s)...')
+  console.log('[e2e] Building modgud:e2e image (first run, ~30s)...')
   const frontendDir = path.join(REPO_ROOT, 'src', 'frontend-vue')
   const dotnetDir = path.join(REPO_ROOT, 'src', 'dotnet')
-  const wwwroot = path.join(dotnetDir, 'Cocoar.Auth.Api', 'wwwroot')
-  const publishOut = path.join(dotnetDir, 'output', 'Cocoar.Auth')
+  const wwwroot = path.join(dotnetDir, 'Modgud.Api', 'wwwroot')
+  const publishOut = path.join(dotnetDir, 'output', 'Modgud')
 
   // Frontend (skip if dist already exists — dev iteration wins)
   const distDir = path.join(frontendDir, 'dist')
@@ -102,7 +102,7 @@ function buildImage(): void {
   // Backend publish
   fs.rmSync(publishOut, { recursive: true, force: true })
   execSync(
-    `dotnet publish Cocoar.Auth.Api/Cocoar.Auth.Api.csproj -c Release -o "${publishOut}" --nologo`,
+    `dotnet publish Modgud.Api/Modgud.Api.csproj -c Release -o "${publishOut}" --nologo`,
     { cwd: dotnetDir, stdio: 'inherit' },
   )
 
@@ -133,7 +133,7 @@ export default async function globalSetup(_config: FullConfig) {
 
   // PostgreSQL
   docker(`run -d --name ${PG_NAME} --network ${NETWORK} --network-alias postgres ` +
-    `-e POSTGRES_DB=cocoar_auth_e2e -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres ` +
+    `-e POSTGRES_DB=modgud_e2e -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres ` +
     `postgres:17-alpine`)
   console.log('[e2e] PostgreSQL starting...')
   await waitFor(() => {
@@ -159,7 +159,7 @@ export default async function globalSetup(_config: FullConfig) {
   // store and become readable via http://localhost:18025/api/v1/messages.
   // OPENIDDICT__DEVELOPMENTMODE=true keeps signing keys ephemeral so we
   // don't need a real cert in the test image.
-  const connStr = `Host=postgres;Database=cocoar_auth_e2e;Username=postgres;Password=postgres;Keepalive=30`
+  const connStr = `Host=postgres;Database=modgud_e2e;Username=postgres;Password=postgres;Keepalive=30`
   const publicUrl = `http://localhost:${APP_HOST_PORT}`
   docker(`run -d --name ${APP_NAME} --network ${NETWORK} -p ${APP_HOST_PORT}:80 ` +
     `-e ASPNETCORE_ENVIRONMENT=Production ` +
@@ -172,8 +172,8 @@ export default async function globalSetup(_config: FullConfig) {
     `-e EMAIL__SMTP__HOST=mailpit ` +
     `-e EMAIL__SMTP__PORT=1025 ` +
     `-e EMAIL__SMTP__USESSL=false ` +
-    `-e EMAIL__SMTP__FROMADDRESS=noreply@cocoar-auth.test ` +
-    `-e EMAIL__SMTP__FROMNAME="Cocoar Auth E2E" ` +
+    `-e EMAIL__SMTP__FROMADDRESS=noreply@modgud.test ` +
+    `-e EMAIL__SMTP__FROMNAME="Modgud E2E" ` +
     `-e MAGICLINK__RATELIMITMINUTES=0 ` +
     `-e EMAILOTP__RATELIMITMINUTES=0 ` +
     `${APP_IMAGE}`)
@@ -195,7 +195,7 @@ export default async function globalSetup(_config: FullConfig) {
   // admin user with a unique username).
   console.log(`[e2e] Bootstrapping first admin via recovery CLI ...`)
   try {
-    docker(`exec ${APP_NAME} dotnet Cocoar.Auth.Api.dll recover bootstrap-admin ` +
+    docker(`exec ${APP_NAME} dotnet Modgud.Api.dll recover bootstrap-admin ` +
       `--email ${E2E_ADMIN_EMAIL} --username ${E2E_ADMIN_USER} ` +
       `--firstname E2E --lastname Admin --password "${E2E_ADMIN_PASSWORD}"`)
   } catch (err) {

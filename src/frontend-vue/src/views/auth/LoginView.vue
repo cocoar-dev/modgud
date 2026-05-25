@@ -132,12 +132,12 @@ const idpErrorMessages: Record<string, string> = {
   'Idp.NotEnabled': t('auth.idp.notEnabled', {}, 'This identity provider is not available.'),
   'Idp.InvalidToken': t('auth.idp.invalidToken', {}, 'The identity provider did not return a valid response.'),
   'Idp.Unlinked': t('auth.idp.unlinked', {}, 'This external identity has been disconnected. Contact your administrator.'),
-  'Idp.LinkedToOtherUser': t('auth.idp.linkedToOther', {}, 'This identity is already linked to a different Cocoar.Auth account.'),
+  'Idp.LinkedToOtherUser': t('auth.idp.linkedToOther', {}, 'This identity is already linked to a different Modgud account.'),
   'Idp.UserMissing': t('auth.idp.userMissing', {}, 'The linked user no longer exists. Please contact your administrator.'),
   'Idp.EmailNotAllowed': t('auth.idp.emailNotAllowed', {}, 'Your email domain is not allowed for this provider.'),
   'Idp.EmailRequired': t('auth.idp.emailRequired', {}, 'The identity provider did not return an email. Cannot create a new account.'),
-  'Idp.EmailConflict': t('auth.idp.emailConflict', {}, 'A Cocoar.Auth account with this email already exists. Please contact your administrator.'),
-  'Idp.NoUserAndAutoCreateOff': t('auth.idp.noUser', {}, 'No Cocoar.Auth account is linked to this identity and auto-creation is disabled.'),
+  'Idp.EmailConflict': t('auth.idp.emailConflict', {}, 'A Modgud account with this email already exists. Please contact your administrator.'),
+  'Idp.NoUserAndAutoCreateOff': t('auth.idp.noUser', {}, 'No Modgud account is linked to this identity and auto-creation is disabled.'),
   'Idp.JitCreationFailed': t('auth.idp.jitFailed', {}, 'Could not create a new user account.'),
   'Idp.UserUpdateFailed': t('auth.idp.updateFailed', {}, 'Failed to update the user record from the identity provider.'),
   'oidc:Correlation failed.': t('auth.idp.correlationFailed', {}, 'Login session expired. Please try again.'),
@@ -402,7 +402,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
     <div class="w-full max-w-sm">
       <!-- Logo + Title -->
       <div class="mb-8 text-center">
-        <img :src="branding.LogoUrl ?? '/idp-logo.svg'" :alt="branding.ProductName ?? 'Cocoar.Auth'" class="mx-auto mb-1 h-16 w-auto" />
+        <img :src="branding.LogoUrl ?? '/idp-logo.svg'" :alt="branding.ProductName ?? 'Modgud'" class="mx-auto mb-1 h-16 w-auto" />
         <h1 v-if="branding.ProductName" class="text-2xl font-bold tracking-tight text-surface-800">
           {{ branding.ProductName }}
         </h1>

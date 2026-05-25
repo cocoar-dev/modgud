@@ -4,7 +4,7 @@
  * Exports the VitePress documentation as a single Markdown file.
  *
  * Usage:  node scripts/export-md.mjs [output-path]
- * Default: ./dist/cocoar-auth-docs.md
+ * Default: ./dist/modgud-docs.md
  */
 
 import fs from 'fs';
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const OUTPUT = process.argv[2] || path.join(ROOT, 'dist', 'cocoar-auth-docs.md');
+const OUTPUT = process.argv[2] || path.join(ROOT, 'dist', 'modgud-docs.md');
 
 // ─── Document structure (matches VitePress sidebar) ─────────────────────────
 
@@ -123,7 +123,7 @@ function buildDocument() {
   const parts = [];
 
   // Header
-  parts.push(`# Cocoar.Auth Documentation`);
+  parts.push(`# Modgud Documentation`);
   parts.push('');
   parts.push(`*Multi-tenant Identity Provider — ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}*`);
   parts.push('');
@@ -163,7 +163,7 @@ function buildDocument() {
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 const pageCount = structure.reduce((sum, s) => sum + s.pages.length, 0);
-console.log(`Exporting Cocoar.Auth documentation to Markdown...\n`);
+console.log(`Exporting Modgud documentation to Markdown...\n`);
 console.log(`  Sections: ${structure.length}`);
 console.log(`  Pages:    ${pageCount}`);
 

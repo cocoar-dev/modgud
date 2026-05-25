@@ -1,12 +1,12 @@
 name: NuGet Stable (Client.AspNetCore)
 
-# Publishes a stable release of Cocoar.Auth.Client.AspNetCore to
+# Publishes a stable release of Modgud.Client.AspNetCore to
 # nuget.org. Mirrors cocoar.configuration: triggered by a GitHub Release
 # tagged `v<X.Y.Z>` (strict semver, no prerelease suffix). Releases must
 # be cut from `develop`.
 #
 # Required org-wide secret: NUGET_API_KEY (nuget.org "Push" scope,
-# glob `Cocoar.Auth.*`).
+# glob `Modgud.*`).
 #
 # Why a GitHub Release (not just a tag push)? Releases carry release
 # notes + an explicit "published" event that's easier to track in the
@@ -70,21 +70,21 @@ jobs:
 
       - name: Restore client lib + unit tests
         run: |
-          dotnet restore Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj
-          dotnet restore Cocoar.Auth.Tests.Unit/Cocoar.Auth.Tests.Unit.csproj
+          dotnet restore Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj
+          dotnet restore Modgud.Tests.Unit/Modgud.Tests.Unit.csproj
         working-directory: ./src/dotnet
 
       - name: Build client lib + unit tests
         run: |
-          dotnet build Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj -c Release --no-restore
-          dotnet build Cocoar.Auth.Tests.Unit/Cocoar.Auth.Tests.Unit.csproj -c Release --no-restore
+          dotnet build Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj -c Release --no-restore
+          dotnet build Modgud.Tests.Unit/Modgud.Tests.Unit.csproj -c Release --no-restore
         working-directory: ./src/dotnet
 
       # Filter — same rationale as the prerelease workflow: we only
       # gate on the Client tests; integration tests need Docker and
       # ship via a different pipeline.
       - name: Test client lib
-        run: dotnet test Cocoar.Auth.Tests.Unit/Cocoar.Auth.Tests.Unit.csproj -c Release --no-build --verbosity normal --filter "FullyQualifiedName~Client"
+        run: dotnet test Modgud.Tests.Unit/Modgud.Tests.Unit.csproj -c Release --no-build --verbosity normal --filter "FullyQualifiedName~Client"
         working-directory: ./src/dotnet
 
   publish:
@@ -109,12 +109,12 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj
+        run: dotnet restore Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj
         working-directory: ./src/dotnet
 
       - name: Build (stable)
         run: |
-          dotnet build Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj \
+          dotnet build Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj \
             -c Release --no-restore \
             -p:Version=${{ needs.validate-version.outputs.version }} \
             -p:ContinuousIntegrationBuild=true
@@ -122,7 +122,7 @@ jobs:
 
       - name: Pack (incl. symbols)
         run: |
-          dotnet pack Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj \
+          dotnet pack Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj \
             -c Release --no-build \
             -p:Version=${{ needs.validate-version.outputs.version }} \
             -p:ContinuousIntegrationBuild=true \
@@ -154,8 +154,8 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "### Cocoar.Auth.Client.AspNetCore — ${{ needs.validate-version.outputs.version }} (stable)"
+            echo "### Modgud.Client.AspNetCore — ${{ needs.validate-version.outputs.version }} (stable)"
             echo ""
             echo "**Released from:** ${{ github.event.release.tag_name }} on develop"
-            echo "**URL:** https://www.nuget.org/packages/Cocoar.Auth.Client.AspNetCore/${{ needs.validate-version.outputs.version }}"
+            echo "**URL:** https://www.nuget.org/packages/Modgud.Client.AspNetCore/${{ needs.validate-version.outputs.version }}"
           } >> "$GITHUB_STEP_SUMMARY"

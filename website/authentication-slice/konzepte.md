@@ -2,7 +2,7 @@
 
 ## BFF pattern (Backend-for-Frontend)
 
-Cocoar.Auth uses **cookie-based authentication** without JWTs in the
+Modgud uses **cookie-based authentication** without JWTs in the
 browser. The Vue SPA talks exclusively to its own backend, which holds
 an `HttpOnly` session cookie. No token in localStorage, no OAuth token
 handling in the frontend.
@@ -14,7 +14,7 @@ Why:
 - The backend has full control over session invalidation (SignOut →
   cookie gone, done)
 
-The main cookie is named `Cocoar.Auth.Auth` and is `HttpOnly`,
+The main cookie is named `Modgud.Auth` and is `HttpOnly`,
 `SameSite=Strict`. In production always `Secure=Always`; in dev
 `Secure=None`, because the Vite proxy talks to
 `http://localhost:4300` and the backend `http://localhost:9099`
@@ -22,7 +22,7 @@ without TLS.
 
 ::: tip The OAuth/OIDC server is separate
 The cookie is only for the first-party frontend session with the
-admin/user UI of cocoar.auth. The OAuth/OIDC server (OpenIddict)
+admin/user UI of modgud. The OAuth/OIDC server (OpenIddict)
 issues classical access + refresh tokens to external apps — that's a
 completely different axis.
 :::
@@ -75,7 +75,7 @@ window).
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│  Cocoar.Auth.Auth          ASP.NET Identity App-Cookie │
+│  Modgud.Auth          ASP.NET Identity App-Cookie │
 │  HttpOnly, SameSite=Strict, Secure (Prod)              │
 │  ExpireTimeSpan = 30 days, SlidingExpiration = true    │
 │                                                        │
@@ -86,20 +86,20 @@ window).
 └────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────┐
-│  Cocoar.Auth.2FA           2FA partial cookie          │
+│  Modgud.2FA           2FA partial cookie          │
 │  Valid 5 minutes — holds the UserId between            │
 │  the password step and the TOTP/Email-OTP step         │
 └────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────┐
-│  Cocoar.Auth.External      OIDC external cookie        │
+│  Modgud.External      OIDC external cookie        │
 │  SameSite=Lax (browser keeps the cookie across the     │
 │  IdP redirect)                                         │
 │  Valid 10 minutes — Callback → app sign-in             │
 └────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────┐
-│  Cocoar.Auth.Session       ASP.NET Session             │
+│  Modgud.Session       ASP.NET Session             │
 │  HttpOnly, SameSite=Strict, 5 min idle                 │
 │  Only for passkey attestation options (challenge       │
 │  store)                                                │

@@ -39,7 +39,7 @@ test.beforeAll(async ({ request }) => {
   const created = await (await request.post('/api/user', {
     data: {
       Firstname: 'Totp', Lastname: 'User', Acronym: userName,
-      Email: `${userName}@cocoar-auth.test`,
+      Email: `${userName}@modgud.test`,
     },
   })).json()
   const passRes = await request.put(`/api/user/${created.Id}/password`, {

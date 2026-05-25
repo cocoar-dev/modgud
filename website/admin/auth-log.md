@@ -64,7 +64,7 @@ remains traceable without revealing personal data.
 ::: tip Watch for failed-login clusters
 A burst of `Login failed — wrong password` for the same username from
 the same IP in a short window points at a credential-stuffing attempt.
-Cocoar.Auth's account lockout (5 attempts → 1 minute lock) already
+Modgud's account lockout (5 attempts → 1 minute lock) already
 mitigates this, but the pattern is worth a periodic eyeball.
 :::
 

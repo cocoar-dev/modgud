@@ -113,7 +113,7 @@ const modalTitle = computed(() => userName.value || t('admin.idpClaims.loadingUs
       <!-- After: user-update-script output JSON -->
       <div v-show="activeTab === 'after'" class="flex flex-col flex-1 min-h-0">
         <p class="text-xs text-gray-500 mb-2">
-          {{ t('admin.idpClaims.afterHint', {}, 'The object the user-update script returned. Cocoar.Auth uses this to patch the user record (firstname, lastname, email, acronym). Other keys are kept only for debugging.') }}
+          {{ t('admin.idpClaims.afterHint', {}, 'The object the user-update script returned. Modgud uses this to patch the user record (firstname, lastname, email, acronym). Other keys are kept only for debugging.') }}
         </p>
         <div v-if="selectedLink?.LastScriptError"
           class="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2 mb-2">

@@ -1,6 +1,6 @@
 # OAuth / OpenIddict implementation
 
-cocoar.auth is a fully-featured OAuth 2.0 + OIDC server using
+modgud is a fully-featured OAuth 2.0 + OIDC server using
 [OpenIddict 7](https://documentation.openiddict.com/). All four
 OpenIddict stores are built as Marten-based custom implementations —
 no EF Core dependency.
@@ -9,7 +9,7 @@ Conceptual overview: [OAuth & OIDC](/concepts/oauth).
 
 ## Custom Marten stores
 
-In `Cocoar.Auth.Infrastructure/OpenIddict/`:
+In `Modgud.Infrastructure/OpenIddict/`:
 
 | Store | Backing | Strategy |
 |---|---|---|
@@ -39,7 +39,7 @@ The inline projection `OAuthApplicationStateProjection` builds
 
 ### Client-secret separation
 
-As everywhere in cocoar.auth: security-sensitive data does NOT land in
+As everywhere in modgud: security-sensitive data does NOT land in
 the event stream. Instead:
 
 ```csharp
@@ -128,7 +128,7 @@ OpenIddict tickets.
 ## Authorize flow
 
 Simplified pseudo-code (full implementation in
-`Cocoar.Auth.Api/Features/Auth/OAuth/AuthorizationEndpoints.cs`):
+`Modgud.Api/Features/Auth/OAuth/AuthorizationEndpoints.cs`):
 
 ```
 1. GET /connect/authorize comes in
@@ -215,11 +215,11 @@ In the admin area (`/admin/oauth/...`):
 - `/admin/oauth/scopes` — list + details
 - `/admin/oauth/apis` — list + details
 
-Endpoints in `Cocoar.Auth.Api/Features/Admin/OAuth/`. Gating:
+Endpoints in `Modgud.Api/Features/Admin/OAuth/`. Gating:
 
-- `cocoar-auth:oauth-client:read/write/delete` (+ `:admin`)
-- `cocoar-auth:oauth-scope:read/write/delete` (+ `:admin`)
-- `cocoar-auth:oauth-api:read/write/delete` (+ `:admin`)
+- `modgud:oauth-client:read/write/delete` (+ `:admin`)
+- `modgud:oauth-scope:read/write/delete` (+ `:admin`)
+- `modgud:oauth-api:read/write/delete` (+ `:admin`)
 
 ## Token lifetimes
 
@@ -242,5 +242,5 @@ Configured in `OpenIddictSettings`:
 | `DevelopmentMode = false` | X.509 cert from `SigningCertificatePath` (required!) |
 
 In dev, every OAuth client may have to refresh its token validation
-on every cocoar.auth restart (JWKS changes). In prod the cert stays
+on every modgud restart (JWKS changes). In prod the cert stays
 stable.

@@ -6,13 +6,13 @@
 
 ## Goal
 
-Make Cocoar.Auth ready to act as a central IAM for multiple Cocoar SaaS
+Make Modgud ready to act as a central IAM for multiple Cocoar SaaS
 apps. Phase 1 introduces the **Application** aggregate and **app-scoped
-permissions** internally — Cocoar.Auth itself is registered as the first
-application (`cocoar-auth`) and its existing permissions are migrated
+permissions** internally — Modgud itself is registered as the first
+application (`modgud`) and its existing permissions are migrated
 into that namespace. **No external app is integrated yet.**
 
-The model is validated by dogfooding: if Cocoar.Auth runs correctly
+The model is validated by dogfooding: if Modgud runs correctly
 under the new scheme, the foundation for a second app is solid.
 
 ## What we decided (recap)
@@ -49,7 +49,7 @@ under the new scheme, the foundation for a second app is solid.
 ## Design choices that need a one-line confirmation before coding
 
 1. **Permission-string format:** `<app>:<resource>:<action>`, e.g.
-   `cocoar-auth:user:read`, `timetodo:todo:write`.
+   `modgud:user:read`, `timetodo:todo:write`.
 2. **Rename existing `app:admin` → `realm:admin`** (the current global
    bypass). This avoids semantic collision with `<app>:admin`. All ~40
    `[RequiresPermission("app:admin")]` sites change.
@@ -72,7 +72,7 @@ under the new scheme, the foundation for a second app is solid.
 
 ### New aggregate: `Application`
 
-Per-realm document, lives in `Cocoar.Auth.Authorization` next to
+Per-realm document, lives in `Modgud.Authorization` next to
 `PermissionRole`. **Application is a logical discriminator within the
 realm, not an isolation boundary** — the realm/tenant split already
 provides hard isolation via the per-realm Marten store. The app axis
@@ -80,11 +80,11 @@ is just a column-level filter on existing tenant-scoped tables.
 
 ```
 Application {
-    Slug:        string   // immutable, e.g. "cocoar-auth", "timetodo"
+    Slug:        string   // immutable, e.g. "modgud", "timetodo"
     DisplayName: string
     Description: string?
     Resources:   string[] // e.g. ["user", "oauth-client", "session", ...]
-    IsSystem:    bool     // true for cocoar-auth (cannot be deleted)
+    IsSystem:    bool     // true for modgud (cannot be deleted)
 }
 ```
 
@@ -120,12 +120,12 @@ activation switch, removing an app does **not** strip roles).
 ### Modified: `ResourceRegistry`
 
 Becomes app-aware. `RegisterResource(...)` calls in
-`Cocoar.Auth.Infrastructure/DependencyInjection.cs` get an extra
+`Modgud.Infrastructure/DependencyInjection.cs` get an extra
 `appSlug` argument. The registry stores `(appSlug, resource) → actions`
 and validates permissions against that compound key.
 
 For Phase 1 the registrations are still hardcoded — every current
-resource is registered under `appSlug = "cocoar-auth"`.
+resource is registered under `appSlug = "modgud"`.
 
 ### Modified: `PermissionService`
 
@@ -154,14 +154,14 @@ Resolution algorithm:
 ### Modified: `PermissionEndpointFilter` & `RequiresPermission`
 
 The endpoint filter needs to know **which app** an endpoint belongs to.
-For Phase 1 every Cocoar.Auth endpoint is in the `cocoar-auth` app —
+For Phase 1 every Modgud endpoint is in the `modgud` app —
 the simplest implementation is a hardcoded constant in the filter (or
-an additional optional argument that defaults to `"cocoar-auth"`).
+an additional optional argument that defaults to `"modgud"`).
 External apps in Phase 2 will call the distribution API with their own
 slug.
 
 All call sites of `[RequiresPermission("foo:bar")]` get rewritten to
-`[RequiresPermission("cocoar-auth:foo:bar")]`. The `app:admin` bypass
+`[RequiresPermission("modgud:foo:bar")]`. The `app:admin` bypass
 literal becomes `realm:admin`.
 
 ## Bootstrap / seeding
@@ -170,7 +170,7 @@ literal becomes `realm:admin`.
 
 After existing scope/login-provider seeding, add:
 
-1. Create `Application` document with slug `cocoar-auth`, the system
+1. Create `Application` document with slug `modgud`, the system
    Resources list, `IsSystem=true`.
 2. (No automatic admin group here — that happens in `/setup`.)
 
@@ -179,12 +179,12 @@ After existing scope/login-provider seeding, add:
 Existing flow already creates a "System Admin" `PermissionRole` and an
 "Administratoren" `Group`. Adjust:
 
-- The seeded role gets `ApplicationSlug = "cocoar-auth"` and its
+- The seeded role gets `ApplicationSlug = "modgud"` and its
   permission list becomes `["realm:admin"]` (instead of today's
   `["admin"]` which expanded to `app:admin`).
-- The seeded group gets `BoundTo = ["cocoar-auth"]`.
+- The seeded group gets `BoundTo = ["modgud"]`.
 - The two starter roles ("User Manager", "Viewer") similarly get
-  `ApplicationSlug = "cocoar-auth"`.
+  `ApplicationSlug = "modgud"`.
 
 ## Implementation order
 
@@ -194,26 +194,26 @@ at the boundary. Stop and review between steps if anything feels wrong.
 1. **Add `Application` aggregate** (events, projection, read model,
    Marten registration). No callers yet. Tests for aggregate creation /
    resource add/remove.
-2. **Seed `cocoar-auth` Application** in `RealmProvisioningService`.
+2. **Seed `modgud` Application** in `RealmProvisioningService`.
    Verify by spinning up a fresh realm in the integration tests.
 3. **Add `ApplicationSlug` to `PermissionRole`** (additive, default
-   `"cocoar-auth"` during the rebuild). Update projection. Update
+   `"modgud"` during the rebuild). Update projection. Update
    `SetupEndpoints` to set the slug explicitly on seeded roles.
 4. **Add `BoundTo: string[]` to `Group`**. Update projection. Default
-   `["cocoar-auth"]` in `SetupEndpoints` for the Administratoren group.
+   `["modgud"]` in `SetupEndpoints` for the Administratoren group.
    Existing `CreateGroupCommand` / `UpdateGroupCommand` get an extra
    field.
 5. **Refactor `ResourceRegistry`** to be `(appSlug, resource)`-keyed.
-   Pass `cocoar-auth` everywhere in
-   `Cocoar.Auth.Infrastructure/DependencyInjection.cs`.
+   Pass `modgud` everywhere in
+   `Modgud.Infrastructure/DependencyInjection.cs`.
 6. **Refactor `PermissionService`** signatures (add `appSlug`). Apply
    the new resolution algorithm. Update `PermissionEvaluator` to
    recognise `realm:admin` and `<app>:admin` as bypasses.
 7. **Refactor `PermissionEndpointFilter`** + `RequiresPermission`
-   extension methods to thread `appSlug` (default `"cocoar-auth"` for
+   extension methods to thread `appSlug` (default `"modgud"` for
    Phase 1).
 8. **Bulk-rewrite `[RequiresPermission(...)]` literals** —
-   `app:admin` → `realm:admin`, all others gain `cocoar-auth:` prefix.
+   `app:admin` → `realm:admin`, all others gain `modgud:` prefix.
 9. **Run the full test suite, fix what falls over.**
 
 ## Test impact (rough estimate)
@@ -234,7 +234,7 @@ at the boundary. Stop and review between steps if anything feels wrong.
   - `realm:admin` and `<app>:admin` bypass behaviour
   - `PermissionService` with multiple apps in the registry (add a
     fake second app to validate filtering really works — even though
-    Phase 1 only ships `cocoar-auth` to production)
+    Phase 1 only ships `modgud` to production)
 
 ## What this enables for Phase 2
 

@@ -1,5 +1,5 @@
 // Login-Provider admin models — mirror DTOs in
-// src/dotnet/Cocoar.Auth.Application/DTOs/LoginProviders/LoginProviderDto.cs.
+// src/dotnet/Modgud.Application/DTOs/LoginProviders/LoginProviderDto.cs.
 // LoginProviderType is serialized as a string (JsonStringEnumConverter).
 //
 // Today only "Internal" (seeded, non-editable) and "Oidc" (admin-creatable) are

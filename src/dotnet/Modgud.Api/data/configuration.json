@@ -1,0 +1,64 @@
+{
+    "AllowedHosts": "*",
+    "AppUrl": "http://localhost:9099",
+    "CertPath": "",
+    "CertPassword": "",
+    "Logging": {
+        "LogPath": "",
+        "LogLevels": {
+            "Default": "Information",
+            "Microsoft.Hosting.Lifetime": "Information"
+        }
+    },
+    "MagicLink": {
+        "Enabled": true,
+        "ExpirationMinutes": 15,
+        "RateLimitMinutes": 2
+    },
+    "EmailOtp": {
+        "ExpirationMinutes": 10,
+        "RateLimitMinutes": 2,
+        "MaxAttempts": 3
+    },
+    "Email": {
+        "Provider": "Smtp",
+        "Smtp": {
+            "Host": "localhost",
+            "Port": 2525,
+            "FromAddress": "noreply@modgud.local",
+            "FromName": "Modgud"
+        }
+    },
+    "AppSettings": {
+        "AuthenticationMinimumLevel": 0,
+        "MagicLinkSelfService": true,
+        "TwoFactorGracePeriodDays": 14,
+        "Features": {
+            "PageBuilder": false
+        }
+    },
+    "DbSettings": {
+        "ConnectionString": "Host=localhost;Database=modgud;Username=postgres;Password=postgres"
+    },
+    "OpenIddict": {
+        "Issuer": "http://localhost:9099",
+        "DevelopmentMode": true,
+        "AccessTokenLifetimeMinutes": 60,
+        "RefreshTokenLifetimeDays": 14,
+        "AuthorizationCodeLifetimeMinutes": 5
+    },
+    "Observability": {
+        "ServiceName": "modgud",
+        "SamplingRatio": 1.0,
+        "Prometheus": {
+            "Enabled": true,
+            "Path": "/metrics",
+            "BearerToken": ""
+        },
+        "Otlp": {
+            "Enabled": false,
+            "Endpoint": "http://localhost:4317",
+            "Protocol": "Grpc"
+        }
+    }
+}

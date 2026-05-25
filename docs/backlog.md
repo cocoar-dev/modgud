@@ -9,7 +9,7 @@ once they're addressed.
 >
 > Companion file: [testing.md](testing.md) — what's already pinned and how to
 > resume the test sweep. Pinned bugs in this backlog all have at least one
-> test in `Cocoar.Auth.Tests.Unit` that documents the broken behaviour.
+> test in `Modgud.Tests.Unit` that documents the broken behaviour.
 
 ---
 
@@ -56,8 +56,8 @@ The full description for each entry is below.
 
 ### `TenantContextMiddleware` silently coerces non-string `TenantId` items
 
-**File:** `Cocoar.Auth.Api/TenantContextMiddleware.cs`
-**Pinning test:** `Cocoar.Auth.Tests.Unit/Api/TenantContextMiddlewareTests.cs`
+**File:** `Modgud.Api/TenantContextMiddleware.cs`
+**Pinning test:** `Modgud.Tests.Unit/Api/TenantContextMiddlewareTests.cs`
 
 `HttpContext.Items["TenantId"] as string` returns null for any non-string
 value, and we fall back to the `system` tenant. Defensive, but if some
@@ -70,8 +70,8 @@ only `string` values are valid and a non-string is a hard error.
 
 ### `ResourceRegistry` lookup is case-sensitive
 
-**File:** `Cocoar.Auth.Authorization/Resources/ResourceRegistry.cs`
-**Pinning test:** `Cocoar.Auth.Tests.Unit/Resources/ResourceRegistryTests.cs`
+**File:** `Modgud.Authorization/Resources/ResourceRegistry.cs`
+**Pinning test:** `Modgud.Tests.Unit/Resources/ResourceRegistryTests.cs`
 
 Uses `StringComparer.Ordinal`. A future contributor flipping to
 `OrdinalIgnoreCase` would silently relax the permission grammar
@@ -82,8 +82,8 @@ is the right call — permission strings are wire-format identifiers.
 
 ### `GenericOidcFlavor.DeriveEndpoints` does not normalise trailing slashes
 
-**File:** `Cocoar.Auth.Authentication/Identity/ExternalAuth/Flavors/GenericOidcFlavor.cs`
-**Pinning test:** `Cocoar.Auth.Tests.Unit/ExternalAuth/GenericOidcFlavorTests.cs`
+**File:** `Modgud.Authentication/Identity/ExternalAuth/Flavors/GenericOidcFlavor.cs`
+**Pinning test:** `Modgud.Tests.Unit/ExternalAuth/GenericOidcFlavorTests.cs`
 
 The `.well-known/openid-configuration` suffix is stripped via literal
 end-match. URLs with trailing slashes or doubled separators don't match and
@@ -93,7 +93,7 @@ later has to be deliberate.
 
 ### Aggregates have no post-delete write guards
 
-**Files:** `Cocoar.Auth.Domain/OAuth/**/Aggregate.cs`, `LoginProviderAggregate.cs`
+**Files:** `Modgud.Domain/OAuth/**/Aggregate.cs`, `LoginProviderAggregate.cs`
 **Pinning test:** the four `*AggregateTests.cs` files (each has a
 `Setters_after_delete_still_apply_aggregate_does_not_self_guard` test)
 
@@ -168,7 +168,7 @@ scheduled doc pass.
 network and DB names from the TimeToDo origin. They need to be renamed
 before E2E can actually run against this codebase.
 
-### Cookie names changed `TimeToDo.*` → `Cocoar.Auth.*`
+### Cookie names changed `TimeToDo.*` → `Modgud.*`
 
 There's no production data so this is a non-event today. Worth flagging
 when the first deployment lands.

@@ -1,5 +1,5 @@
 // Per-realm asset library. Mirrors
-// src/dotnet/Cocoar.Auth.Application/DTOs/Assets/AssetDtos.cs.
+// src/dotnet/Modgud.Application/DTOs/Assets/AssetDtos.cs.
 
 export interface AssetDto {
   Id: string

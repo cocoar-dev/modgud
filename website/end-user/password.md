@@ -8,7 +8,7 @@ Profile → Security → **Change password**. Type the current one, then the new
 
 ## Forgot it
 
-On the login page: **Forgot password?** Type your username (or email if you don't remember the username). Cocoar.Auth emails you a magic link valid for ~30 minutes.
+On the login page: **Forgot password?** Type your username (or email if you don't remember the username). Modgud emails you a magic link valid for ~30 minutes.
 
 Click the link → you're signed in (no password needed) → set a new password from your profile.
 
@@ -28,11 +28,11 @@ If you have **no email access** AND **no working 2FA** AND **no recovery codes**
 ## Best practices
 
 ::: tip Use a password manager
-Cocoar.Auth doesn't enforce password rules beyond non-empty — that doesn't mean any password is fine. Use a manager to generate a unique, long passphrase per service.
+Modgud doesn't enforce password rules beyond non-empty — that doesn't mean any password is fine. Use a manager to generate a unique, long passphrase per service.
 :::
 
 ::: warning Don't reuse this password elsewhere
-A breach of any other service that shared this password becomes a breach of your Cocoar.Auth account. Unique per service is non-negotiable.
+A breach of any other service that shared this password becomes a breach of your Modgud account. Unique per service is non-negotiable.
 :::
 
 ## When passwordless is an option

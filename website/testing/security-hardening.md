@@ -22,7 +22,7 @@ Living tracker für die Production-Hardening-Befunde aus dem 4-Track-Audit
 > ☐ Open · 🔄 In Progress · ✅ Done · ⏸ Deferred (mit Begründung)
 
 ::: tip Public-Internet-Freigabe
-Alle 13 Cluster über alle 3 Wellen abgeschlossen (33 Findings: 31 ✅, 2 ⏸ accepted mit Begründung). Cocoar.Auth ist **freigegeben für öffentliche Internet-Erreichbarkeit** unter folgenden Operations-Voraussetzungen:
+Alle 13 Cluster über alle 3 Wellen abgeschlossen (33 Findings: 31 ✅, 2 ⏸ accepted mit Begründung). Modgud ist **freigegeben für öffentliche Internet-Erreichbarkeit** unter folgenden Operations-Voraussetzungen:
 
 - C2-Boot-Validierungen passieren in Production:
   - `OpenIddict__SigningCertificatePath` — Pfad zur PFX
@@ -68,11 +68,11 @@ Alle 13 Cluster über alle 3 Wellen abgeschlossen (33 Findings: 31 ✅, 2 ⏸ ac
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| PROD-01 | 🔴 Critical | `Cocoar.Auth.Api.csproj:55-64` + `data/demo-seed.json` | demo-seed.json wird im publishten Image mitgeliefert; Operator kann Production via `/setup` mit `LoadDemoData=true` mit bekannten Credentials kompromittieren | ✅ |
+| PROD-01 | 🔴 Critical | `Modgud.Api.csproj:55-64` + `data/demo-seed.json` | demo-seed.json wird im publishten Image mitgeliefert; Operator kann Production via `/setup` mit `LoadDemoData=true` mit bekannten Credentials kompromittieren | ✅ |
 | OAUTH-06 | 🟠 High | `data/demo-seed.json:129,143` | Hartcodierte Confidential-Client-Secrets — bleiben in Dev/Test als Fixture, durch Publish-Exclude und Production-Gate aber wirkungslos außerhalb von Dev | ✅ (gemildert) |
 
 **Implementierte Fixes:**
-- `Cocoar.Auth.Api.csproj`: `<Content Update="data\demo-seed.json">` mit
+- `Modgud.Api.csproj`: `<Content Update="data\demo-seed.json">` mit
   `<CopyToPublishDirectory>Never</CopyToPublishDirectory>` ergänzt → Datei
   ist nach `dotnet publish` nicht mehr im Output (verifiziert: `data/`
   fehlt komplett im Publish-Verzeichnis)
@@ -153,14 +153,14 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 **Implementierte Architektur (4 Sub-Commits):**
 
 **C3a — AsyncLocal `TenantContext` + Wolverine** (`e4c86b0`)
-- `Cocoar.Auth.Infrastructure/Persistence/Tenancy/TenantContext.cs` — `AsyncLocal<string?>` mit `Set/Enter`-API
+- `Modgud.Infrastructure/Persistence/Tenancy/TenantContext.cs` — `AsyncLocal<string?>` mit `Set/Enter`-API
 - `RealmMiddleware` pusht Tenant beim Request-Start; restored beim Unwind
 - `TenantedSessionFactory` resolved jetzt: HttpContext → AsyncLocal → "system"
 - `DemoSeedService` setzt `bus.TenantId = TenantContext.Current` nach Inner-Scope
 - `OidcSchemeBootstrap` iteriert alle aktiven Realms via `IRealmCache.GetAllActiveAsync()`
 
 **C3b — Per-Realm RSA Signing Keys** (`68b7440`, Storage-Move `6328ff1`)
-- `Cocoar.Auth.Domain/Realms/RealmSigningKey.cs` — Marten-Document, jetzt **pro Tenant-DB** (Storage-Move-Refactor: ein kompromittiertes Master-DB-Backup leakt nicht mehr alle Realms' Private-Keys; jeder Realm hat seinen Key in seiner eigenen physischen Postgres-DB)
+- `Modgud.Domain/Realms/RealmSigningKey.cs` — Marten-Document, jetzt **pro Tenant-DB** (Storage-Move-Refactor: ein kompromittiertes Master-DB-Backup leakt nicht mehr alle Realms' Private-Keys; jeder Realm hat seinen Key in seiner eigenen physischen Postgres-DB)
 - `IRealmKeyStore` + `RealmKeyStore`: lazy generation pro Realm, in-memory cache, async per-slug lock, Rotation-API; injectet jetzt `IDocumentStore` direkt und öffnet Sessions mit explizitem Slug (`_store.LightweightSession(realmSlug)`)
 - `RealmSigningKeyHandler` (GenerateTokenContext): überschreibt `SigningCredentials` mit Realm-Key für Access+Id-Tokens
 - `RealmTokenValidationHandler` (ValidateTokenContext): beschränkt `IssuerSigningKeys` auf den Realm-Key des aktiven Tenants
@@ -208,7 +208,7 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 **Implementierte Architektur:**
 
-`Cocoar.Auth.Domain/OAuth/Consent/ConsentTicket.cs` — Per-Tenant-DB-Document:
+`Modgud.Domain/OAuth/Consent/ConsentTicket.cs` — Per-Tenant-DB-Document:
 - `Id` (Guid v7), `Subject` (user.Id), `ClientId`, `RequestedScopes[]`, `AuthorizeRequestQuery`, `CreatedAt`, `ExpiresAt` (5 min), `ConsumedAt?`
 
 `AuthorizationEndpoints.cs` — `/connect/authorize` (Explicit-Consent-Pfad):
@@ -288,7 +288,7 @@ Härteschritt, ist aber ohne Production-Pfad keine konkrete Bedrohung mehr.
 
 **Implementierte Architektur:**
 
-**COOKIE-01** — `Cocoar.Auth.Auth` Cookie auf `SameSite=Lax`:
+**COOKIE-01** — `Modgud.Auth` Cookie auf `SameSite=Lax`:
 - Strict blockierte den OIDC-Redirect-Back (Cookie wurde bei Cross-Site-Top-Level-Navigation nicht mitgesendet → User wurde bei jedem SSO neu zum Login gezwungen).
 - Lax sendet bei Top-Level-GETs (= OIDC-Redirect), blockiert Cross-Site-POSTs (= CSRF) — exakt das richtige Verhalten für ein IdP-Cookie.
 - Andere Cookies (2FA, External, Session) bleiben Strict bzw. Lax wie konfiguriert.
@@ -306,7 +306,7 @@ war ein Race-Window — wer die Instanz vor dem legitimen Operator erreichte, ko
 den ersten Admin "klauen" (oder zumindest ein Reset erzwingen). Stattdessen:
 
 - **CLI-Pfad** (Filesystem-Trust, lokal/Operator):
-  `dotnet Cocoar.Auth.Api.dll recover bootstrap-admin --email … [--password …]`.
+  `dotnet Modgud.Api.dll recover bootstrap-admin --email … [--password …]`.
   Direct-Mode mit `--password` legt User direkt an (Identity-Password-Rules
   validiert), Invite-Mode ohne `--password` schreibt einen
   `PendingAdminInvite` und gibt den Magic-Link auf stdout aus + sendet ihn
@@ -494,12 +494,12 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| OAUTH-12 | 🟡 Medium | `AuthorizationEndpoints.cs UserinfoAsync` | UserInfo emittiert `resource_access` jetzt nur für explizit gelinkte AppIds; Fallback auf `cocoar-auth` entfernt → kein Implicit-Roles-Leak an "unassigned" Clients mehr | ✅ |
+| OAUTH-12 | 🟡 Medium | `AuthorizationEndpoints.cs UserinfoAsync` | UserInfo emittiert `resource_access` jetzt nur für explizit gelinkte AppIds; Fallback auf `modgud` entfernt → kein Implicit-Roles-Leak an "unassigned" Clients mehr | ✅ |
 | OAUTH-15 | 🟡 Medium | `AuthorizationEndpoints.cs UserinfoAsync` | Explizit `RequireScope(Scopes.OpenId)` Check als erstes; ohne openid-scope → 403 insufficient_scope | ✅ |
 | OAUTH-16 | 🟢 Low | `OAuthAdminMapping.cs GenerateSecret` | Base64Url statt Base64; Test angepasst → keine `+`/`/`/`=` mehr | ✅ |
-| OAUTH-17 | 🟡 Medium | `Cocoar.Auth.Tests.Unit/OAuth/PkceRequirementPinTests.cs` (neu) | Unit-Test pinnt: AddOpenIddictWithMarten konfiguriert `CodeChallengeMethods` mit S256 → PKCE-required-Toggle ist gepinnt | ✅ |
+| OAUTH-17 | 🟡 Medium | `Modgud.Tests.Unit/OAuth/PkceRequirementPinTests.cs` (neu) | Unit-Test pinnt: AddOpenIddictWithMarten konfiguriert `CodeChallengeMethods` mit S256 → PKCE-required-Toggle ist gepinnt | ✅ |
 | COOKIE-02 | 🟡 Medium | Session-Cookie `SameSite=Strict` | Akzeptabel — Session ist nur für Passkey-Registration-Challenges (same-origin SPA), keine Cross-Origin-Anforderung | ⏸ accepted |
-| COOKIE-03 | 🟡 Medium | Cookie-Namen `Cocoar.Auth.*` | Akzeptabel — IdP advertised seine Identität ohnehin via Discovery-Doc | ⏸ accepted |
+| COOKIE-03 | 🟡 Medium | Cookie-Namen `Modgud.*` | Akzeptabel — IdP advertised seine Identität ohnehin via Discovery-Doc | ⏸ accepted |
 | OIDC-02 | 🟡 Medium | `Program.cs:409` Placeholder-OIDC | `RequireHttpsMetadata = !IsDevelopment()` (war hardcoded false) → kein Copy-Paste-Hazard mehr | ✅ |
 
 **Tests:** 781 Unit (+1 PKCE-Pin) · 135 Integration · 14 Playwright — alle grün.
@@ -512,7 +512,7 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 | ID | Severity | Fundstelle | Beschreibung | Status |
 |---|---|---|---|---|
-| LOG-01 | 🟢 Low | `TestApps/Cocoar.Auth.TestApps.ConfidentialClient/Program.cs:44` | Token-Length-Log entfernt — keine Token-Eigenschaften mehr im Stdout | ✅ |
+| LOG-01 | 🟢 Low | `TestApps/Modgud.TestApps.ConfidentialClient/Program.cs:44` | Token-Length-Log entfernt — keine Token-Eigenschaften mehr im Stdout | ✅ |
 | LOG-02 | ℹ️ Info | `AuthLogDocument.cs` Klassen-Doc | Retention-Window (7 Tage), persistierte Felder, GDPR-Basis (legitimate-interest), Erasure-Pfad und Access-Control-Permission im XML-Doc-Comment dokumentiert | ✅ |
 
 ---
@@ -532,7 +532,7 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 - `SigningCertificatePath` — passwordless PFX
 - `PreviousSigningCertificatePaths[]` — Rotation-Overlap: alte Certs werden als validation-only Keys nach der aktiven gehängt
 - `EncryptionCertificatePath` — separate Encryption-Cert (Fallback: Signing-Cert)
-- **Passwordless-Convention**: Cocoar.Auth folgt der Cocoar.Configuration-`cocoar-secrets`-Konvention. Die privaten Schlüssel werden durch Datei-Permissions (`0600` auf Linux) geschützt, nicht durch ein PFX-Password. `*Password`-Properties wurden in 2026-05-06 entfernt (siehe „Auto-Generated Self-signed Certs" Abschnitt unten). Bei Migration aus password-protected PFX: `cocoar-secrets convert-cert -i in.pfx --ipass <old> -o out.pfx`.
+- **Passwordless-Convention**: Modgud folgt der Cocoar.Configuration-`cocoar-secrets`-Konvention. Die privaten Schlüssel werden durch Datei-Permissions (`0600` auf Linux) geschützt, nicht durch ein PFX-Password. `*Password`-Properties wurden in 2026-05-06 entfernt (siehe „Auto-Generated Self-signed Certs" Abschnitt unten). Bei Migration aus password-protected PFX: `cocoar-secrets convert-cert -i in.pfx --ipass <old> -o out.pfx`.
 
 `OpenIddictExtensions.LoadCertificate`:
 - `X509CertificateLoader.LoadPkcs12FromFile(path, password: ReadOnlySpan<char>.Empty)` — passwordless
@@ -544,12 +544,12 @@ Die OpenIddict-Interface-Verträge spezifizieren `FindByApplicationIdAsync`/`Fin
 
 **Auto-Generated Self-signed Certs (post-CERT-01 hardening 2026-05-06):**
 
-Im `Program.cs`-Bootstrap (vor C2-Validation) ruft Cocoar.Auth `EnsureCertificateExists` auf — wenn der konfigurierte (oder Default-) Pfad nicht existiert, wird ein passwordless self-signed PFX dort generiert via `Cocoar.Configuration.X509Encryption.X509CertificateGenerator.GenerateAndSavePfx`. Default-Pfade:
+Im `Program.cs`-Bootstrap (vor C2-Validation) ruft Modgud `EnsureCertificateExists` auf — wenn der konfigurierte (oder Default-) Pfad nicht existiert, wird ein passwordless self-signed PFX dort generiert via `Cocoar.Configuration.X509Encryption.X509CertificateGenerator.GenerateAndSavePfx`. Default-Pfade:
 
 - Signing: `data/keys/signing.pfx`
 - Encryption: `data/keys/encryption.pfx`
 
-Im Container als persistentes Volume mounten (`-v cocoar-auth-keys:/app/data/keys`), damit der erste Container-Start generiert und Folge-Restarts denselben Schlüssel laden — Tokens bleiben über Restarts hinweg gültig. `Log.Warning` beim Auto-Gen weist Operatoren auf den Self-signed-Status hin (für Cloud → Key Vault statt Auto-Gen).
+Im Container als persistentes Volume mounten (`-v modgud-keys:/app/data/keys`), damit der erste Container-Start generiert und Folge-Restarts denselben Schlüssel laden — Tokens bleiben über Restarts hinweg gültig. `Log.Warning` beim Auto-Gen weist Operatoren auf den Self-signed-Status hin (für Cloud → Key Vault statt Auto-Gen).
 
 **Rotation-Procedure (dokumentiert im Code):**
 1. Neuen Signing-Cert deployen mit `SigningCertificatePath=new.pfx` + `PreviousSigningCertificatePaths=[old.pfx]`
@@ -586,7 +586,7 @@ Im Container als persistentes Volume mounten (`-v cocoar-auth-keys:/app/data/key
   weil das die Deployment-Administration aus der Welt schaffen würde.
 - Eigener **App-Slug `control-plane`** für die Realm-Verwaltungs-Resource
   (`control-plane:realm:read|write`). Bewusst losgelöst vom Produkt-Slug
-  `cocoar-auth`: würde der IdP rebrandet, müssten cross-realm-Permissions
+  `modgud`: würde der IdP rebrandet, müssten cross-realm-Permissions
   nicht migriert werden.
 - **Per-Tenant-DB-Seeding:** der `control-plane`-App-Eintrag wird ausschließlich
   in die CP-Realm-DB geseedet (`AppRealmSeeder.SeedAsync(isControlPlane: …)`).
@@ -623,7 +623,7 @@ das System-Realm wird mit Default-Domains
 Production-Hostname fügt der Operator per Recovery-CLI hinzu:
 
 ```bash
-docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll \
+docker exec modgud dotnet Modgud.Api.dll \
   recover realm-add-domain --slug system --domain auth.example.com
 ```
 
@@ -649,7 +649,7 @@ app-info IsControlPlane) — 139 Integration-Tests gesamt grün.
 - ✅ **C14a** — Cross-Host Integration-Test (`ControlPlaneSeparationTests`)
 - ✅ **C14b** — `RequireControlPlaneFilter` auf `/api/setup/*` als
   Defence-in-Depth zusätzlich zum Routing-Gate. Filter nach
-  `Cocoar.Auth.Infrastructure/Realms/` verschoben, damit beide Slices
+  `Modgud.Infrastructure/Realms/` verschoben, damit beide Slices
   (Api + Authentication) ihn ohne Circular-Reference nutzen können.
 - ✅ **C14c** — Konzept-Doku [`website/concepts/control-plane.md`](../concepts/control-plane)
   mit Mermaid-Diagram der drei Layer; Realm-Doku auf `IsControlPlane`-Naming
@@ -676,7 +676,7 @@ anonymen Endpoints mehr für privilegierte First-Run-Operationen.
 **Drei Pfade:**
 
 1. **Recovery-CLI Direct-Mode** (lokal/Operator): `dotnet
-   Cocoar.Auth.Api.dll recover bootstrap-admin --email <e> --username <u>
+   Modgud.Api.dll recover bootstrap-admin --email <e> --username <u>
    --password <pw> [--realm <slug>]`. Atomar User+Role+Group via
    `IRealmAdminBootstrapper`. Identity-Password-Rules werden geprüft (kein
    CLI-Bypass — verhindert ein "vergiss-mein-4-char-Passwort"-Disaster
@@ -709,10 +709,10 @@ AsyncLocal first. RealmMiddleware setzt im Normalfall beide auf
 denselben Wert, also kein Verhaltensunterschied. WOLV-01-Pfad profitiert.
 
 **Was eliminiert wurde (C15d):**
-- `Cocoar.Auth.Authentication/Api/Account/SetupEndpoints.cs`
-- `Cocoar.Auth.Api/Features/Setup/SetupTokenService.cs`
-- `Cocoar.Auth.Api/Features/Setup/SetupTokenBootstrap.cs`
-- `Cocoar.Auth.Authentication/Configuration/ISetupTokenService.cs`
+- `Modgud.Authentication/Api/Account/SetupEndpoints.cs`
+- `Modgud.Api/Features/Setup/SetupTokenService.cs`
+- `Modgud.Api/Features/Setup/SetupTokenBootstrap.cs`
+- `Modgud.Authentication/Configuration/ISetupTokenService.cs`
 - `src/frontend-vue/src/views/auth/SetupView.vue` + `/setup`-Route +
   `setupChecked`-Guard im Router + `fetchSetupStatus`/`createAdmin` im
   Auth-Store + `SetupStatus`/`CreateAdminRequest`-Models

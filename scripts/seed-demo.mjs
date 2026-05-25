@@ -8,7 +8,7 @@
  *       [--base-url=http://localhost:9099] \
  *       [--user=admin] [--password=ABC12abc!] \
  *       [--realm=system] \
- *       [--json=src/dotnet/Cocoar.Auth.Api/data/demo-seed.json]
+ *       [--json=src/dotnet/Modgud.Api/data/demo-seed.json]
  *
  * Defaults pick up env vars: BASE_URL, SEED_USER, SEED_PASSWORD, SEED_REALM,
  * SEED_JSON. The script is idempotent — entities that already exist by their
@@ -46,7 +46,7 @@ const USERNAME  = argv['user']     ?? process.env.SEED_USER ?? 'admin'
 const PASSWORD  = argv['password'] ?? process.env.SEED_PASSWORD ?? 'ABC12abc!'
 const REALM     = argv['realm']    ?? process.env.SEED_REALM ?? null   // null = use BASE_URL host as-is
 const JSON_PATH = argv['json']     ?? process.env.SEED_JSON
-                  ?? resolvePath(REPO_ROOT, 'src/dotnet/Cocoar.Auth.Api/data/demo-seed.json')
+                  ?? resolvePath(REPO_ROOT, 'src/dotnet/Modgud.Api/data/demo-seed.json')
 
 // ── tiny HTTP client ──────────────────────────────────────────────────────
 
@@ -131,7 +131,7 @@ function fail(msg, res) {
 const idsByKey = {
   users: new Map(),  // demo-seed key  → ShortGuid string
   roles: new Map(),  // demo-seed key OR @PascalKey → ShortGuid
-  apps:  new Map(),  // demo-seed key (e.g. 'demo-app') OR @cocoar-auth → ShortGuid
+  apps:  new Map(),  // demo-seed key (e.g. 'demo-app') OR @modgud → ShortGuid
   // catalogs: appKey → Map<"resource:action", AppPermission.Id>. Built up
   // during seedApps so role/api seeding can resolve (resource, action) tuples
   // to FK ids.
@@ -140,21 +140,21 @@ const idsByKey = {
 
 /**
  * Provisions the catalog of each app declared in the seed and indexes the
- * resulting AppPermission ids by (appKey, resource, action). The cocoar-auth
+ * resulting AppPermission ids by (appKey, resource, action). The modgud
  * app is special: it's seeded automatically by AppRealmSeeder, so we just
  * look it up by slug rather than POSTing it. Apps already present (by slug)
  * are merged: existing catalog entries are kept, new entries are added.
  */
 async function seedApps(spec) {
-  // Always look up cocoar-auth so '@cocoar-auth' references work in roles.
+  // Always look up modgud so '@modgud' references work in roles.
   const existing = await get('/api/app')
   if (!existing.ok) throw new Error('GET /api/app failed: ' + existing.status)
   const bySlug = new Map((existing.body ?? []).map(a => [a.Slug, a]))
 
-  const cocoarAuth = bySlug.get('cocoar-auth')
+  const cocoarAuth = bySlug.get('modgud')
   if (cocoarAuth) {
-    idsByKey.apps.set('@cocoar-auth', cocoarAuth.Id)
-    idsByKey.catalogs.set('@cocoar-auth', buildCatalogIndex(cocoarAuth.Permissions ?? []))
+    idsByKey.apps.set('@modgud', cocoarAuth.Id)
+    idsByKey.catalogs.set('@modgud', buildCatalogIndex(cocoarAuth.Permissions ?? []))
   }
 
   let created = 0
@@ -197,7 +197,7 @@ function buildCatalogIndex(permissions) {
 }
 
 /**
- * Resolves an app reference (either '@cocoar-auth' for the system app or
+ * Resolves an app reference (either '@modgud' for the system app or
  * a key from the seed's `apps` array) to (AppId, catalogIndex). Throws
  * with a clear message when the app or any referenced (resource, action)
  * is missing — the seed JSON is the single source of truth and a typo
@@ -207,7 +207,7 @@ function resolveApp(appKey, contextLabel) {
   const appId = idsByKey.apps.get(appKey)
   if (!appId) {
     throw new Error(`${contextLabel}: appKey '${appKey}' not found. ` +
-      `Add it to the seed's "apps" array (or use '@cocoar-auth' for the system app).`)
+      `Add it to the seed's "apps" array (or use '@modgud' for the system app).`)
   }
   const catalog = idsByKey.catalogs.get(appKey) ?? new Map()
   return { appId, catalog }
@@ -352,10 +352,10 @@ async function seedGroups(spec) {
       MembershipMode: isAuto ? 'Auto' : 'Manual',
       MembershipScript: isAuto ? g.membershipScript : null,
       // Per-group `boundTo` from the seed honoured. Defaults to
-      // ["cocoar-auth"] for legacy demo entries that don't specify —
+      // ["modgud"] for legacy demo entries that don't specify —
       // smoke-test groups use ["*"] so the role applies for any app
       // the role's AppId points at.
-      BoundTo: g.boundTo ?? ['cocoar-auth'],
+      BoundTo: g.boundTo ?? ['modgud'],
     })
     if (!res.ok) { fail(`group '${g.name}'`, res); continue }
     created++

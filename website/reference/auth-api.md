@@ -4,7 +4,7 @@ Endpoints under `/api/account/...`. The current realm is resolved via
 the **Host header** — no realm path prefixes.
 
 Full endpoint list in
-`src/dotnet/Cocoar.Auth.Authentication/Api/Account/`.
+`src/dotnet/Modgud.Authentication/Api/Account/`.
 
 ## Public Authentication
 
@@ -125,7 +125,7 @@ endpoint is the bootstrap-invite consumer:
 
 The token comes from one of:
 
-- `dotnet Cocoar.Auth.Api.dll recover bootstrap-admin --email <e>` (without `--password`) — see [Recovery CLI](../admin/recovery-cli)
+- `dotnet Modgud.Api.dll recover bootstrap-admin --email <e>` (without `--password`) — see [Recovery CLI](../admin/recovery-cli)
 - `POST /api/admin/realms` with an `InitialAdmin` payload — see [Realm API](./realm-api)
 - `POST /api/admin/realms/{slug}/resend-bootstrap-invite` — re-issue a fresh token for the same recipient
 

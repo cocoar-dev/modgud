@@ -97,7 +97,7 @@ The Resource Server should write:
 app.MapPost("/api/policy", ...).RequiresPermission("policy:write");
 ```
 
-…and the middleware (in `Cocoar.Auth.Client.AspNetCore`) prefixes
+…and the middleware (in `Modgud.Client.AspNetCore`) prefixes
 the configured AppSlug before checking against the user's grants.
 Same pattern Keycloak uses: `resource_access[<my-app>].roles`
 gets flattened into bare `[Authorize(Roles = "...")]` on the RS
@@ -107,9 +107,9 @@ side, with the app context coming from configuration, not code.
 
 | Concern | Today | Missing |
 |---|---|---|
-| Role flattening | ✅ `CocoarAuthClaimsTransformation` reads `resource_access[appSlug].roles` and surfaces flat `ClaimTypes.Role` | – |
+| Role flattening | ✅ `ModgudClaimsTransformation` reads `resource_access[appSlug].roles` and surfaces flat `ClaimTypes.Role` | – |
 | Permission flattening | ❌ no permission claim is emitted into tokens (cf. the TODO in `AuthorizationEndpoints.CreateClaimsPrincipalAsync`) | a parallel `resource_access[appSlug].permissions` claim |
-| Client-side `RequiresPermission(bare)` | ❌ — the existing `RequiresPermission` extension lives in `Cocoar.Auth.Authorization` and is hardcoded to `AppSlugs.CocoarAuth` (= the IdP itself) | a Cocoar.Auth.Client.AspNetCore equivalent that prefixes with the configured `AppSlug` |
+| Client-side `RequiresPermission(bare)` | ❌ — the existing `RequiresPermission` extension lives in `Modgud.Authorization` and is hardcoded to `AppSlugs.Modgud` (= the IdP itself) | a Modgud.Client.AspNetCore equivalent that prefixes with the configured `AppSlug` |
 | RS-side validation against the App's catalog | ❌ — the RS doesn't know what permissions exist for its app | distribution-API endpoint that returns `App.Permissions` filtered to the RS's subset, fetched at startup |
 
 ### Implementation outline
@@ -122,8 +122,8 @@ side, with the app context coming from configuration, not code.
    677-678 hints this is already on the roadmap.
 
 2. **Client-side extension**: ship
-   `Cocoar.Auth.Client.AspNetCore.PermissionEndpointFilter` that:
-   - Reads `CocoarAuthOptions.AppSlug` from DI
+   `Modgud.Client.AspNetCore.PermissionEndpointFilter` that:
+   - Reads `ModgudOptions.AppSlug` from DI
    - Reads `resource_access[<AppSlug>].permissions` from the
      `ClaimsPrincipal`
    - Evaluates `<configured-AppSlug>:<bare-permission>` against
@@ -140,7 +140,7 @@ side, with the app context coming from configuration, not code.
 4. **Cross-deployment slug independence**: the RS's `Program.cs`
    reads `AppSlug` from configuration, not from a constant:
    ```csharp
-   services.AddCocoarAuthClaimsTransformation(o =>
+   services.AddModgudClaimsTransformation(o =>
        o.AppSlug = builder.Configuration["Cocoar:AppSlug"] ?? "cocoar-policy");
    ```
    Same code, two deployments, two different slugs — works.
@@ -166,11 +166,11 @@ the app's own startup code.
 
 ## Why this is awkward
 
-- **Cocoar.Auth admin can't see what permissions are valid for an
+- **Modgud admin can't see what permissions are valid for an
   external app.** When the realm admin creates a role and wants to
   grant `cocoar-policy:policy:write`, the IdP's role-editor has no
   way to suggest valid actions — it only knows about its own +
-  control-plane registries (which are populated from `cocoar.auth`'s
+  control-plane registries (which are populated from `modgud`'s
   startup code, in the same process).
 - **Two sources of truth** that have to be kept in sync manually.
   Nothing alerts you when `App.Resources` says `policy` exists but
@@ -299,7 +299,7 @@ warning — they're free.
    The app can fetch its declared permission set at startup via the
    distribution API to populate its own validator.
 
-4. **System app (cocoar-auth) keeps its code-time registrations** —
+4. **System app (modgud) keeps its code-time registrations** —
    it's the IdP itself, has direct DI access to the registry, and
    doesn't need DB-driven configuration.
 
@@ -318,7 +318,7 @@ test deployment. We design the schema fresh.
   parent App's catalog.
 - **`RolePermission: (AppId, PermissionId)`** — role grants
   reference IDs, never strings.
-- **`opt.RegisterResource()` API** stays for `cocoar-auth` itself
+- **`opt.RegisterResource()` API** stays for `modgud` itself
   (it's the IdP — code-time registration is fine), marked obsolete
   for external apps with a hint pointing at the admin UI.
 - **Distribution API**: new endpoint
@@ -333,7 +333,7 @@ test deployment. We design the schema fresh.
   + RS-subset checklist + delete-block "show usages" view + rename-
   warning dialog: **3 days**
 - Distribution-API extension: **0.5 day**
-- Update cocoar-auth's own seed to use the new shape: **0.5 day**
+- Update modgud's own seed to use the new shape: **0.5 day**
 - Cross-app docs + walkthrough updates: **0.5 day**
 - Tests (rename-survives-grant, delete-blocks-on-usage,
   role-grant-by-id, token-intersection): **1.5 days**
@@ -352,7 +352,7 @@ test deployment. We design the schema fresh.
    one place instead of having to read the app's source.
 
 3. **Validation at role-creation time.** Currently the registry
-   only validates `cocoar-auth`'s own permissions; a typo in a
+   only validates `modgud`'s own permissions; a typo in a
    role like `cocoar-policy:polcy:write` (note: `polcy`) silently
    passes. After: rejected at role save unless the permission
    string is in the app's declared list.

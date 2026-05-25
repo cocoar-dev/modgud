@@ -1,15 +1,15 @@
 # SaaS App Integration Walkthrough
 
-This page takes you from a freshly installed Cocoar.Auth all the way to a working external app (e.g. TimeToDo) doing single-sign-on against Cocoar.Auth and looking up live permissions through the distribution API.
+This page takes you from a freshly installed Modgud all the way to a working external app (e.g. TimeToDo) doing single-sign-on against Modgud and looking up live permissions through the distribution API.
 
 > **Audience:** realm admins and developers integrating their own Cocoar SaaS app. Regular end-user onboarding is documented in [first steps](../end-user/first-steps).
 
 ## Conceptual overview
 
-Cocoar.Auth models the world in three layers:
+Modgud models the world in three layers:
 
 - **Realm** — a tenant. Own database, own users, own apps. Setup automatically creates the `system` realm.
-- **App** — a SaaS application within a realm (e.g. `cocoar-auth`, `timetodo`, `knowledge`). Each app owns its resources, roles, and links to zero or more OAuth clients and resource servers.
+- **App** — a SaaS application within a realm (e.g. `modgud`, `timetodo`, `knowledge`). Each app owns its resources, roles, and links to zero or more OAuth clients and resource servers.
 - **Group / Role / Permission** — who may do what in which app. Groups bundle users, roles bundle permissions, permissions are `app:resource:action` strings.
 
 When you bind a new SaaS app you traverse **five stations**:
@@ -24,13 +24,13 @@ When you bind a new SaaS app you traverse **five stations**:
 
 You need:
 
-- A running Cocoar.Auth instance (see [Getting Started](../getting-started/quickstart))
+- A running Modgud instance (see [Getting Started](../getting-started/quickstart))
 - An admin account (a member of the `Administratoren` group, created via the [first-time bootstrap](../getting-started/first-time-setup))
 - A URL for your target app (for redirect URIs), e.g. `https://timetodo.dev.local`
 
 ## Station 1: register the app
 
-Navigate to **Administration → Applications** (sidebar entry under "Apps"). You'll see at least the system app `cocoar-auth`.
+Navigate to **Administration → Applications** (sidebar entry under "Apps"). You'll see at least the system app `modgud`.
 
 Click **Create**.
 
@@ -73,7 +73,7 @@ On `/connect/userinfo` the issued access token gets a `resource_access` block pe
 
 ## Station 3: provision the default resource server
 
-The resource server is the identity your app's **backend** uses to identify itself to Cocoar.Auth when looking up permissions live through the distribution API. It's a different identity from the OAuth client.
+The resource server is the identity your app's **backend** uses to identify itself to Modgud when looking up permissions live through the distribution API. It's a different identity from the OAuth client.
 
 Go back to **Administration → Applications**, open your `timetodo` app by double-clicking.
 
@@ -86,7 +86,7 @@ What happens internally:
 - It is linked to the `timetodo` app (`AppId`)
 - An initial API secret is returned
 
-If you press the button again later: Cocoar.Auth detects an existing default RS and just shows "Already exists" — no new secret.
+If you press the button again later: Modgud detects an existing default RS and just shows "Already exists" — no new secret.
 
 ::: tip Do I really need this?
 Only if your backend wants to look up granular permissions (`timetodo:todo:write`) live. If your app only checks coarse roles (`Admin`, `Viewer`), the OAuth client + UserInfo are enough; skip this station.
@@ -94,7 +94,7 @@ Only if your backend wants to look up granular permissions (`timetodo:todo:write
 
 ## Station 4: roles and groups
 
-On setup Cocoar.Auth seeds exactly one realm admin (`Administratoren` group with wildcard `BoundTo: ["*"]`). For your new app you'll usually want more nuanced roles.
+On setup Modgud seeds exactly one realm admin (`Administratoren` group with wildcard `BoundTo: ["*"]`). For your new app you'll usually want more nuanced roles.
 
 ### 4a. Create a role
 
@@ -145,7 +145,7 @@ Now the backend configuration of your SaaS app. ASP.NET Core example:
 ```bash
 dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
 # Until the NuGet ships, reference the project:
-dotnet add reference ../cocoar.auth/src/dotnet/Cocoar.Auth.Client.AspNetCore/Cocoar.Auth.Client.AspNetCore.csproj
+dotnet add reference ../modgud/src/dotnet/Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj
 ```
 
 ### `Program.cs`
@@ -163,7 +163,7 @@ services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 // Reads resource_access["timetodo"].roles from the UserInfo claims and
 // flattens them into ClaimTypes.Role. With this in place,
 // [Authorize(Roles = "TimeToDo Editor")] just works.
-services.AddCocoarAuthClaimsTransformation(o =>
+services.AddModgudClaimsTransformation(o =>
 {
     o.AppSlug = "timetodo";
 });
@@ -208,7 +208,7 @@ For a complete code recipe (caching wrapper, policy handlers): see [Integrating 
 ## End-to-end test
 
 1. Open `https://timetodo.dev.local`
-2. TimeToDo redirects you to the Cocoar.Auth login page
+2. TimeToDo redirects you to the Modgud login page
 3. Log in as a user from station 4
 4. Consent screen (if `explicit` consent type)
 5. Redirect back to TimeToDo with auth code
@@ -222,12 +222,12 @@ Made it through? **Done. First SaaS app integrated.**
 
 - **Multiple apps in one client:** a frontend that bundles TimeToDo + Knowledge assigns its OAuth client to both apps. The token then carries `resource_access.timetodo.roles` AND `resource_access.knowledge.roles`. Each backend reads its own block.
 - **Microservice apps:** several resource servers under one app — create more OAuth APIs in the **OAuth APIs** admin and link them all to the same App.
-- **External login providers:** under [Login Providers](./login-providers) you configure Google / Microsoft / EntraID. Cocoar.Auth stays the central IDP but delegates the login step.
+- **External login providers:** under [Login Providers](./login-providers) you configure Google / Microsoft / EntraID. Modgud stays the central IDP but delegates the login step.
 
 ## Tips and pitfalls
 
 - **Permission strings have three segments:** `app:resource:action`, not `resource:action`. Every permission since the App model follows this form. Exceptions: `realm:admin` (realm-wide bypass) and `<app>:admin` (app-wide bypass).
 - **`BoundTo: []` ≠ `BoundTo: ["*"]`.** Empty = the group is dormant for permission purposes but can still be used for email/mailing-list. Wildcard = active everywhere.
-- **Don't delete the system app `cocoar-auth`.** It's flagged IsSystem; the attempt is rejected.
+- **Don't delete the system app `modgud`.** It's flagged IsSystem; the attempt is rejected.
 - **Lost realm admin.** If you locked yourself out of the `Administratoren` group: the recovery CLI inside the container can pull you back in — see [Recovery CLI](./recovery-cli).
 - **Lost a secret.** Client secrets and API secrets are shown exactly once. If you've lost one: **regenerate** in the corresponding detail modal.

@@ -2,8 +2,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-build
 WORKDIR /src
 COPY src/dotnet/ ./
-RUN dotnet restore Cocoar.Auth.Api/Cocoar.Auth.Api.csproj
-RUN dotnet publish Cocoar.Auth.Api/Cocoar.Auth.Api.csproj -c Release -o /app --no-restore
+RUN dotnet restore Modgud.Api/Modgud.Api.csproj
+RUN dotnet publish Modgud.Api/Modgud.Api.csproj -c Release -o /app --no-restore
 
 # ── Stage 2: Build frontend (Vue admin SPA) ────────────────────────
 FROM node:22-slim AS frontend-build
@@ -41,7 +41,7 @@ COPY --from=backend-build /app ./
 COPY --from=frontend-build /src/dist ./wwwroot/
 
 # VitePress build → wwwroot/docs/ (DocsExtensions middleware serves
-# this under /docs/ — see Cocoar.Auth.Api/ExtensionMethods/DocsExtensions.cs).
+# this under /docs/ — see Modgud.Api/ExtensionMethods/DocsExtensions.cs).
 # Stage 3 swaps config.in-app.ts into place so outDir is dist-in-app.
 COPY --from=userdocs-build /src/.vitepress/dist-in-app ./wwwroot/docs/
 
@@ -52,4 +52,4 @@ ENV AppUrl=http://0.0.0.0:8081
 ENV CertPath=
 ENV CertPassword=
 
-ENTRYPOINT ["dotnet", "Cocoar.Auth.Api.dll"]
+ENTRYPOINT ["dotnet", "Modgud.Api.dll"]

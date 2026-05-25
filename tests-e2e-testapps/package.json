@@ -1,9 +1,9 @@
 {
-  "name": "cocoar-auth-testapps-e2e",
+  "name": "modgud-testapps-e2e",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Playwright E2E suite for src/dotnet/TestApps and src/test-clients-vue/test-spa-bff. Drives the OAuth client_credentials flow, the BFF cookie+OIDC flow, the YARP proxy and the CSRF guard against a running Cocoar.Auth instance.",
+  "description": "Playwright E2E suite for src/dotnet/TestApps and src/test-clients-vue/test-spa-bff. Drives the OAuth client_credentials flow, the BFF cookie+OIDC flow, the YARP proxy and the CSRF guard against a running Modgud instance.",
   "scripts": {
     "test": "playwright test",
     "test:ui": "playwright test --ui",

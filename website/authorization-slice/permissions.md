@@ -1,15 +1,15 @@
 # Permissions & gating
 
-cocoar.auth uses **granular per-resource gating**: every endpoint and
+modgud uses **granular per-resource gating**: every endpoint and
 every sidebar item checks a single permission string, mirrored
 exactly between backend and frontend.
 
 ## Permission format
 
-Three segments: `<app>:<resource>:<action>`. Cocoar.Auth's own admin
+Three segments: `<app>:<resource>:<action>`. Modgud's own admin
 surface lives under two app slugs:
 
-- **`cocoar-auth`** — the realm-internal admin surface (users, groups,
+- **`modgud`** — the realm-internal admin surface (users, groups,
   roles, OAuth clients, login providers, etc.). Seeded into every realm.
 - **`control-plane`** — the cross-realm admin surface (realm CRUD).
   Seeded **only** into the realm flagged `IsControlPlane = true`.
@@ -19,17 +19,17 @@ and permissions under that slug.
 
 | Permission | Meaning |
 |---|---|
-| `cocoar-auth:user:read` | Read user list/detail |
-| `cocoar-auth:user:write` | Create/edit users |
-| `cocoar-auth:user:admin` | Resource-wide bypass for all user actions |
-| `cocoar-auth:oauth-client:read` | Read OAuth clients |
-| `cocoar-auth:oauth-client:write` | Create/edit OAuth clients |
-| `cocoar-auth:permission-role:read` | Read roles |
-| `cocoar-auth:authorization-group:write` | Create/edit groups |
-| `cocoar-auth:login-provider:read|write` | Login provider management |
-| `cocoar-auth:auth-log:read` | Read the auth log |
-| `cocoar-auth:gdpr:admin` | Permanent-erase GDPR operations |
-| `cocoar-auth:admin` | App-wide bypass for the realm-internal admin surface |
+| `modgud:user:read` | Read user list/detail |
+| `modgud:user:write` | Create/edit users |
+| `modgud:user:admin` | Resource-wide bypass for all user actions |
+| `modgud:oauth-client:read` | Read OAuth clients |
+| `modgud:oauth-client:write` | Create/edit OAuth clients |
+| `modgud:permission-role:read` | Read roles |
+| `modgud:authorization-group:write` | Create/edit groups |
+| `modgud:login-provider:read|write` | Login provider management |
+| `modgud:auth-log:read` | Read the auth log |
+| `modgud:gdpr:admin` | Permanent-erase GDPR operations |
+| `modgud:admin` | App-wide bypass for the realm-internal admin surface |
 | `control-plane:realm:read` | List realms (Control Plane only) |
 | `control-plane:realm:write` | Create/edit/deactivate realms (Control Plane only) |
 | `realm:admin` | **Realm-wide bypass** (every app, every resource, every action) |
@@ -53,12 +53,12 @@ and permissions under that slug.
 The `realm:admin` bypass is intentionally narrow — only the System
 Admin default role carries it. Per-area owners typically get
 per-resource `<resource>:admin` (e.g. OAuth owners get
-`cocoar-auth:oauth-client:admin` + `cocoar-auth:oauth-scope:admin` +
-`cocoar-auth:oauth-api:admin`, but not `cocoar-auth:user:admin`).
+`modgud:oauth-client:admin` + `modgud:oauth-scope:admin` +
+`modgud:oauth-api:admin`, but not `modgud:user:admin`).
 
 ## Resources
 
-### `cocoar-auth` (realm-internal — every realm)
+### `modgud` (realm-internal — every realm)
 
 | Resource | What for |
 |---|---|
@@ -92,10 +92,10 @@ Endpoints gate via an `EndpointFilter` extension:
 
 ```csharp
 app.MapGet("/api/admin/users", async (...) => { ... })
-   .RequiresPermission("cocoar-auth:user:read");
+   .RequiresPermission("modgud:user:read");
 
 app.MapPost("/api/admin/users", async (...) => { ... })
-   .RequiresPermission("cocoar-auth:user:write");
+   .RequiresPermission("modgud:user:write");
 
 app.MapPost("/api/admin/realms", async (...) => { ... })
    .RequiresPermission("control-plane:realm:write");
@@ -115,7 +115,7 @@ The `auth.store.ts` (Pinia) loads the effective permissions of the
 current user at login and mirrors the backend `PermissionEvaluator`:
 
 ```typescript
-// permissions: string[]  e.g. ["cocoar-auth:user:read", "cocoar-auth:user:write"]
+// permissions: string[]  e.g. ["modgud:user:read", "modgud:user:write"]
 
 function hasPermission(permission: string): boolean {
   const grants = permissions.value
@@ -137,9 +137,9 @@ make them visible:
 ```typescript
 const allNavItems: NavItem[] = [
   { section: 'authorization', label: 'nav.users',  icon: 'users',
-    path: '/admin/users',  requirePermissions: ['cocoar-auth:user:read'] },
+    path: '/admin/users',  requirePermissions: ['modgud:user:read'] },
   { section: 'oauth', label: 'admin.oauthClients.title', icon: 'app-window',
-    path: '/admin/oauth/clients', requirePermissions: ['cocoar-auth:oauth-client:read'] },
+    path: '/admin/oauth/clients', requirePermissions: ['modgud:oauth-client:read'] },
   { section: 'system', label: 'admin.realms.title', icon: 'globe',
     path: '/admin/realms', requirePermissions: ['control-plane:realm:read'] },
   { section: 'system', label: 'nav.settings', icon: 'settings',
@@ -153,7 +153,7 @@ function canSee(item: NavItem): boolean {
 ```
 
 Sections are hidden when all their items are filtered out. A user
-with only `cocoar-auth:user:read` sees just the Authorization section
+with only `modgud:user:read` sees just the Authorization section
 with "Users" — no OAuth, no System.
 
 ## Control-Plane separation
@@ -192,11 +192,11 @@ Admin role. Realm-wide bypass — sees and can do everything in every app.
 ### User Manager
 ```
 permissions: [
-  "cocoar-auth:user:read", "cocoar-auth:user:write",
-  "cocoar-auth:session:read", "cocoar-auth:session:write",
-  "cocoar-auth:authorization-group:read",
-  "cocoar-auth:permission-role:read",
-  "cocoar-auth:auth-log:read"
+  "modgud:user:read", "modgud:user:write",
+  "modgud:session:read", "modgud:session:write",
+  "modgud:authorization-group:read",
+  "modgud:permission-role:read",
+  "modgud:auth-log:read"
 ]
 ```
 Maintains users + groups + sessions, reads roles + auth log.
@@ -204,9 +204,9 @@ Maintains users + groups + sessions, reads roles + auth log.
 ### Viewer
 ```
 permissions: [
-  "cocoar-auth:user:read",
-  "cocoar-auth:authorization-group:read",
-  "cocoar-auth:permission-role:read"
+  "modgud:user:read",
+  "modgud:authorization-group:read",
+  "modgud:permission-role:read"
 ]
 ```
 Read-only auditor.
@@ -241,7 +241,7 @@ Checks:
 
 Resolution is scoped per request, not cached. That is intentional:
 permissions change live (an admin removes a user from a group), and
-cocoar.auth is not performance-critical (admin UI traffic, not a hot
+modgud is not performance-critical (admin UI traffic, not a hot
 path).
 
 If that ever changes: an `IMemoryCache` with sliding expiration (e.g.

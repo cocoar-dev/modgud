@@ -1,21 +1,21 @@
-# Cocoar.Auth - Implementation Plan
+# Modgud - Implementation Plan
 
-Tracking document for building the complete Identity Server based on cocoar.auth,
+Tracking document for building the complete Identity Server based on modgud,
 using xaidentity as feature reference.
 
 **Reference App**: C:\gitlab\xaidentity (running at http://localhost:5000)
 **Screenshots**: C:\gitlab\xaidentity\screenshots\
-**Target**: C:\git\cocoar\cocoar.auth
+**Target**: C:\git\cocoar\modgud
 **UI Library**: C:\git\cocoar\cocoar-ui-vue (@cocoar/vue-ui, @cocoar/vue-data-grid)
 
 ---
 
 ## Architecture Decisions
 
-- [x] Extend cocoar.auth (not refactor xaidentity)
+- [x] Extend modgud (not refactor xaidentity)
 - [x] OpenIdDict (not Duende - commercial)
 - [x] Reference Tokens are REQUIRED (key reason for custom identity server)
-- [x] Marten + Event Sourcing (already in cocoar.auth)
+- [x] Marten + Event Sourcing (already in modgud)
 - [x] Vue 3 + cocoar-ui-vue (already partially built)
 - [x] No recursive/nested roles (xaidentity has it, we skip it - unnecessary complexity)
 - [x] No LDAP (solve externally if needed)
@@ -28,7 +28,7 @@ using xaidentity as feature reference.
 
 **Status: DONE**
 
-OpenIdDict already integrated in cocoar.auth with Auth Code+PKCE, Client Credentials, Refresh Token flows.
+OpenIdDict already integrated in modgud with Auth Code+PKCE, Client Credentials, Refresh Token flows.
 Reference Tokens are now enabled.
 
 - [x] 1.1 Enable Reference Token support in OpenIdDict configuration
@@ -46,7 +46,7 @@ Reference Tokens are now enabled.
 
 **Status: FRONTEND DONE (2026-03-14)** - All 6 tabs implemented, backend fields marked with TODOs
 
-cocoar.auth has basic OAuth Application CRUD. xaidentity has much richer client config.
+modgud has basic OAuth Application CRUD. xaidentity has much richer client config.
 Need to add the missing fields visible in the screenshots.
 
 ### 2.1 Backend - Extend Application Model & Events

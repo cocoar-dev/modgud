@@ -1,6 +1,6 @@
 # Dynamic Client Registration
 
-**Dynamic Client Registration** (DCR, [RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591)) lets a piece of software register itself as an OAuth client without an administrator pre-provisioning it. Cocoar.Auth ships an MCP-flavoured subset focused on **AI agents and MCP servers**: public PKCE clients only, no client secrets, audience-bound tokens.
+**Dynamic Client Registration** (DCR, [RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591)) lets a piece of software register itself as an OAuth client without an administrator pre-provisioning it. Modgud ships an MCP-flavoured subset focused on **AI agents and MCP servers**: public PKCE clients only, no client secrets, audience-bound tokens.
 
 ::: warning Off by default
 Every realm starts with DCR disabled. The `POST /connect/register` endpoint refuses requests, and the discovery document omits `registration_endpoint` — visitors can't tell whether the feature exists per realm.
@@ -38,7 +38,7 @@ The master toggle just turns the registration endpoint on. The per-API flag cont
 
 ### How the per-Scope flag interacts with app-scoped scopes
 
-Most scopes you create in Cocoar.Auth are **app-scoped** — they belong to one [Application](./applications) (`Scope.AppId` is set). Non-DCR clients are restricted to scopes whose `AppId` matches one of their own linked Apps. **DCR clients have no `AppId`** by design (they're realm-wide public PKCE clients), so the per-Scope `Allow DCR Clients` flag replaces the app-link check for them:
+Most scopes you create in Modgud are **app-scoped** — they belong to one [Application](./applications) (`Scope.AppId` is set). Non-DCR clients are restricted to scopes whose `AppId` matches one of their own linked Apps. **DCR clients have no `AppId`** by design (they're realm-wide public PKCE clients), so the per-Scope `Allow DCR Clients` flag replaces the app-link check for them:
 
 - **Global scopes** (`AppId = null` — the OIDC standards `openid`, `email`, `profile`, … plus any cross-app scope you create): always reachable by DCR clients.
 - **App-scoped scope with `Allow DCR Clients = true`**: reachable by DCR clients. The realm-admin has explicitly opted this scope in for anonymous-registrant access.

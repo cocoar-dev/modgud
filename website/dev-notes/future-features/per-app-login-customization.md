@@ -1,7 +1,7 @@
 # Per-App login customization (routing + form-builder)
 
 > **Status:** Designkonsens 2026-05-12. Nicht implementiert.
-> **Why:** Cocoar.Auth zentralisiert Login — ein Realm, eine
+> **Why:** Modgud zentralisiert Login — ein Realm, eine
 > Login-Seite, alle Apps des Realms teilen sich denselben UI. Sobald
 > derselbe Cocoar-Kunde mehrere eigene Produkte/Apps fährt (alpha-blog,
 > beta-shop, gamma-crm, event-tree, ...) bricht das Marketing-mässig:

@@ -30,8 +30,8 @@ const TEST_PASSWORD = 'TestPass1234!'
 
 const SUFFIX = Math.random().toString(36).slice(2, 8)
 const userName = `profile-${SUFFIX}`
-const initialEmail = `${userName}-old@cocoar-auth.test`
-const newEmail = `${userName}-new@cocoar-auth.test`
+const initialEmail = `${userName}-old@modgud.test`
+const newEmail = `${userName}-new@modgud.test`
 
 test.describe.configure({ mode: 'serial' })
 

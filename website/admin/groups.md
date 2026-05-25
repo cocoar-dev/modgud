@@ -1,6 +1,6 @@
 # Groups
 
-Groups are the **organisational layer** in Cocoar.Auth. They serve two distinct purposes — and you decide per-group which one applies via the **Bound to apps** field.
+Groups are the **organisational layer** in Modgud. They serve two distinct purposes — and you decide per-group which one applies via the **Bound to apps** field.
 
 1. **Authorisation grouping.** Members of the group inherit the group's roles in the apps the group is bound to.
 2. **Mailing-list / distribution semantics.** Even a group with no roles and no app binding can carry an email address, expand to its members, and be addressed by notification flows.
@@ -36,7 +36,7 @@ Tabs in the detail dialog:
 | **Effective Members** | The fully expanded member list |
 
 ::: info No row-level ABAC in IAM
-Cocoar.Auth groups deliberately carry no row-level access policies. Whether the user may see a particular row depends on app-specific data the IAM neither owns nor wants to know — that decision lives in the consuming app. See [Concepts → ABAC](../concepts/abac).
+Modgud groups deliberately carry no row-level access policies. Whether the user may see a particular row depends on app-specific data the IAM neither owns nor wants to know — that decision lives in the consuming app. See [Concepts → ABAC](../concepts/abac).
 :::
 
 ### General
@@ -61,7 +61,7 @@ A group can have members and roles without taking effect for permissions. The de
 
 **Practical behaviour:** you can temporarily remove an app from the list (e.g. during maintenance) without losing role assignments. Re-adding the app reactivates the group immediately. BoundTo changes never cascade-delete the group's roles.
 
-**Default for new groups:** `[cocoar-auth]`. When creating a group for another app, remember to update the selection.
+**Default for new groups:** `[modgud]`. When creating a group for another app, remember to update the selection.
 
 ## Static membership
 
@@ -100,7 +100,7 @@ Groups are soft-deleted. Users who were members keep the membership entry techni
 
 ## Email & notifications
 
-Groups can carry an email address (Tab General, optional). Notification flows can address `<group-name>@…` and Cocoar.Auth resolves the recipient list:
+Groups can carry an email address (Tab General, optional). Notification flows can address `<group-name>@…` and Modgud resolves the recipient list:
 
 - **Shared** mode — mail goes to the group's own address (a shared mailbox, distribution list)
 - **Expand to members** mode — mail goes to each member's individual email, recursively across nested groups

@@ -1,9 +1,9 @@
 # Realms
 
-A **Realm** in Cocoar.Auth is a tenant — a fully isolated namespace with its own database, users, groups, OAuth clients, and apps. Realms are how multi-tenant Cocoar.Auth deployments separate customers / environments / staging.
+A **Realm** in Modgud is a tenant — a fully isolated namespace with its own database, users, groups, OAuth clients, and apps. Realms are how multi-tenant Modgud deployments separate customers / environments / staging.
 
 ::: info When do I need multiple realms?
-- **Multiple customers** sharing one Cocoar.Auth instance (each gets their own realm)
+- **Multiple customers** sharing one Modgud instance (each gets their own realm)
 - **Stage separation** (production, staging, development) on shared infrastructure
 - **Compliance isolation** (some customer data must not coexist in the same DB)
 
@@ -50,14 +50,14 @@ Admin → **Realms** → **Create**.
 
 The Initial-Admin block is mandatory. A realm with no admin path would be unreachable; the UI rejects the form if either UserName or Email is empty.
 
-On save, Cocoar.Auth:
+On save, Modgud:
 
 1. Validates the slug format (3-63 chars, lowercase, alphanumeric + hyphen) and the exactly-one-CP invariant.
 2. Creates a PostgreSQL database `<main-db>_acme`.
 3. Registers the realm with Marten's master-table tenancy and applies the schema.
 4. Stores the Realm document in the master DB.
 5. Seeds default OAuth scopes + the Internal login provider in the new tenant DB.
-6. Seeds the `cocoar-auth` app (the realm-internal admin surface). The `control-plane` app is **not** seeded into a tenant realm — it only exists in the Control-Plane realm.
+6. Seeds the `modgud` app (the realm-internal admin surface). The `control-plane` app is **not** seeded into a tenant realm — it only exists in the Control-Plane realm.
 7. Issues a **bootstrap-invite** for the Initial-Admin: writes a single-use, 7-day token into the new tenant DB and sends a magic-link email. The magic-link URL is also returned in the API response so you can copy it manually if SMTP isn't reachable.
 
 The recipient clicks the magic link, lands on `/bootstrap?token=…` in the new realm's SPA, sets their own password, and is auto-signed-in. The token is revoked on first use.
@@ -87,12 +87,12 @@ The realm is provisioned together with a bootstrap-invite for the Initial Admin 
 If something goes wrong:
 
 - **Token lost or expired** — reopen the realm in the admin UI and click **Resend invite**. Same recipient, fresh token.
-- **No prior invite, no admin yet** (e.g. you provisioned the realm via a tool that didn't issue one) — drop into the container and run `dotnet Cocoar.Auth.Api.dll recover bootstrap-admin --email <e> --realm <slug>`. See [Recovery CLI](./recovery-cli).
+- **No prior invite, no admin yet** (e.g. you provisioned the realm via a tool that didn't issue one) — drop into the container and run `dotnet Modgud.Api.dll recover bootstrap-admin --email <e> --realm <slug>`. See [Recovery CLI](./recovery-cli).
 - **Locked-out admin** — same recovery CLI, again with `bootstrap-admin --email <e>`. The CLI adds the new user to the existing Administratoren group rather than creating a duplicate.
 
 ## Routing
 
-Cocoar.Auth's `RealmMiddleware` resolves the realm from `HttpContext.Request.Host`. Each request finds its realm by matching the host against any realm's `Domains` list.
+Modgud's `RealmMiddleware` resolves the realm from `HttpContext.Request.Host`. Each request finds its realm by matching the host against any realm's `Domains` list.
 
 If a host doesn't match any realm: 404 (the request is for an unrecognised tenant). For dev work without hosts-file edits, the system realm's default `Domains` list includes `localhost` and `127.0.0.1` — the single-realm fallback in `RealmCache` also catches localhost variants when only one realm is active.
 

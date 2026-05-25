@@ -27,7 +27,7 @@ import { clearMailpit, extractQueryParam, extractTokenFromHtml, waitForMail } fr
 
 const ADMIN_USER = process.env.E2E_ADMIN_USER ?? 'admin'
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'ABC12abc!'
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'admin@cocoar-auth.test'
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'admin@modgud.test'
 
 test.beforeAll(async () => {
   await clearMailpit()

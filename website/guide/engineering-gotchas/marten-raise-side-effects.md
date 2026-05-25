@@ -1,6 +1,6 @@
 # Marten `RaiseSideEffects` — Gotchas
 
-Cocoar.Auth uses Marten's `RaiseSideEffects` override on the
+Modgud uses Marten's `RaiseSideEffects` override on the
 `UserViewProjection` (async `MultiStreamProjection`) to publish SignalR
 `Created` / `Updated` / `Deleted` events whenever a `UserView` document
 changes. The pattern is small, works, and tests cleanly — but the
@@ -28,7 +28,7 @@ options.Events.EnableSideEffectsOnInlineProjections = true;
 …in `MartenConfiguration.ConfigureEventStore`, alongside the
 existing V8-Pins.
 
-Today this flag is **not** set in Cocoar.Auth because no inline
+Today this flag is **not** set in Modgud because no inline
 projection raises side-effects. `UserViewProjection` is async, all
 other projections (`PermissionRoleProjection`, `AppProjection`,
 `PrincipalProjectionBase` subclasses, `LoginProviderProjection`,
@@ -48,7 +48,7 @@ in `ShardExecutionMode.Continuous`. During a **rebuild**
 `POST /api/admin/projections/rebuild`) the daemon runs in replay
 mode and skips the side-effects entirely.
 
-**Why this matters in Cocoar.Auth today:** it doesn't, because the
+**Why this matters in Modgud today:** it doesn't, because the
 single side-effect we raise is a SignalR push (`UserViewSignalRDispatch`).
 SignalR is purely transient — there is no persistent second read-model
 to keep in sync, so the worst that happens during a rebuild is "no
@@ -72,17 +72,17 @@ The mitigation is the same shape every time:
    developer-remembers-to-run-it manual step.
 
 The AppBase showcase keeps a `TodoLabelInitHandler` that demonstrates
-this compensation pattern — Cocoar.Auth has no equivalent today
+this compensation pattern — Modgud has no equivalent today
 because nothing needs it, but the shape is the precedent if/when we
 add a side-effect that targets a persistent model.
 
 ## Where this is enforced
 
-- **Schema-level pin:** `Cocoar.Auth.Infrastructure/Persistence/Marten/Configuration/MartenConfiguration.cs`
+- **Schema-level pin:** `Modgud.Infrastructure/Persistence/Marten/Configuration/MartenConfiguration.cs`
   is the single place where `options.Events` settings live. The two
   flags above (V8 `AppendMode`/`UseIdentityMapForAggregates`,
   `EnableSideEffectsOnInlineProjections`) all belong there.
-- **Recovery-CLI:** `Cocoar.Auth.Authentication/Api/Admin/RecoveryCli.cs`
+- **Recovery-CLI:** `Modgud.Authentication/Api/Admin/RecoveryCli.cs`
   `RebuildProjectionsAsync` — extend here if a future projection
   needs a post-rebuild compensation step.
 - **Side-effect target audit:** `grep -rn "RaiseSideEffects" src/dotnet/`

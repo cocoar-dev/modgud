@@ -406,13 +406,13 @@ website/.vitepress/dist/
 .pnpm-store/
 
 
-# Cocoar.Auth runtime data (local-only secrets, generated keys, demo seeds)
-src/dotnet/Cocoar.Auth.Api/data/configuration.local.json
-src/dotnet/Cocoar.Auth.Api/data/keys/
-src/dotnet/Cocoar.Auth.Api/logs/
+# Modgud runtime data (local-only secrets, generated keys, demo seeds)
+src/dotnet/Modgud.Api/data/configuration.local.json
+src/dotnet/Modgud.Api/data/keys/
+src/dotnet/Modgud.Api/logs/
 
-# Cocoar.Auth wwwroot is build-output (vite + vitepress), produced by `pnpm run build:backend`
-src/dotnet/Cocoar.Auth.Api/wwwroot/
+# Modgud wwwroot is build-output (vite + vitepress), produced by `pnpm run build:backend`
+src/dotnet/Modgud.Api/wwwroot/
 .claude/
 
 # Playwright test artifacts

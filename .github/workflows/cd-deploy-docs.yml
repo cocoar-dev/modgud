@@ -52,12 +52,12 @@ jobs:
             -H "Authorization: Bearer $KEY" \
             -H "Content-Type: application/zip" \
             --data-binary @$GITHUB_WORKSPACE/docs.zip \
-            "${URL}/_api/products/cocoar-auth/versions/${VER}"
+            "${URL}/_api/products/modgud/versions/${VER}"
 
       - name: Deployment summary
         run: |
           echo "### Docs Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Product:** cocoar-auth" >> $GITHUB_STEP_SUMMARY
+          echo "**Product:** modgud" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**URL:** ${{ secrets.SHELF_BASE_URL }}/cocoar-auth/" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ secrets.SHELF_BASE_URL }}/modgud/" >> $GITHUB_STEP_SUMMARY

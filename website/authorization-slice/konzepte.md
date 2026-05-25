@@ -60,18 +60,18 @@ The slice services touch only the interface they need:
 ## Roles & permissions
 
 A permission is a fully-qualified string
-`<app>:<resource>:<action>` — e.g. `cocoar-auth:user:read`,
-`cocoar-auth:oauth-client:write`, `realm:admin`. A `PermissionRole`
+`<app>:<resource>:<action>` — e.g. `modgud:user:read`,
+`modgud:oauth-client:write`, `realm:admin`. A `PermissionRole`
 binds a list of actions to a resource type within an app:
 
 ```csharp
 public class PermissionRole
 {
     public string Name { get; set; }              // "User Manager"
-    public string AppSlug { get; set; }           // "cocoar-auth"
+    public string AppSlug { get; set; }           // "modgud"
     public string ResourceType { get; set; }      // "user"
     public List<string> Permissions { get; set; } // ["read", "write"]
-    //  → cocoar-auth:user:read, cocoar-auth:user:write
+    //  → modgud:user:read, modgud:user:write
 }
 ```
 
@@ -104,13 +104,13 @@ which roles do those groups have → which permissions follow.
 The realm-wide `realm:admin` bypass is intentionally narrow — only
 the "System Admin" default role carries it. Typically you give
 per-area owners resource-level admin within the IAM app (e.g. "OAuth
-owners" get `cocoar-auth:oauth-client:admin` +
-`cocoar-auth:oauth-scope:admin` + `cocoar-auth:oauth-api:admin`, but
-not `cocoar-auth:user:admin`).
+owners" get `modgud:oauth-client:admin` +
+`modgud:oauth-scope:admin` + `modgud:oauth-api:admin`, but
+not `modgud:user:admin`).
 
 ## ABAC
 
-Row-level access is deliberately **not** an IAM concern. Cocoar.Auth
+Row-level access is deliberately **not** an IAM concern. Modgud
 delivers only RBAC answers (`(user, app, permission)`); the question
 "may the user see *this* row" depends on the app's own schema and
 belongs in the app. See [ABAC and the IAM boundary](/concepts/abac).
@@ -156,7 +156,7 @@ Two projections **inline** (synchronously consistent):
 
 1. **`PrincipalProjectionBase`** — abstract; processes all group
    events. The app inherits
-   (`Cocoar.Auth.Authentication.Projections.AuthPrincipalProjection`)
+   (`Modgud.Authentication.Projections.AuthPrincipalProjection`)
    and adds Apply methods for its person events (`UserCreatedEvent`,
    `UserUpdatedEvent` etc.). The resulting documents land
    polymorphically (via Marten `AddSubClass`) in the

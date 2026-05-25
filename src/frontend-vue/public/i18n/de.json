@@ -184,12 +184,12 @@
       "notEnabled": "Dieser Identity Provider ist nicht verfügbar.",
       "invalidToken": "Der Identity Provider hat keine gültige Antwort geliefert.",
       "unlinked": "Diese externe Identität wurde getrennt. Bitte Administrator kontaktieren.",
-      "linkedToOther": "Diese Identität ist bereits mit einem anderen Cocoar.Auth-Konto verknüpft.",
+      "linkedToOther": "Diese Identität ist bereits mit einem anderen Modgud-Konto verknüpft.",
       "userMissing": "Der verknüpfte Benutzer existiert nicht mehr. Bitte Administrator kontaktieren.",
       "emailNotAllowed": "Deine Email-Domäne ist für diesen Provider nicht erlaubt.",
       "emailRequired": "Der Identity Provider hat keine Email geliefert. Es kann kein neues Konto angelegt werden.",
-      "emailConflict": "Ein Cocoar.Auth-Konto mit dieser Email existiert bereits. Bitte Administrator kontaktieren.",
-      "noUser": "Zu dieser Identität ist kein Cocoar.Auth-Konto verknüpft und die automatische Erstellung ist deaktiviert.",
+      "emailConflict": "Ein Modgud-Konto mit dieser Email existiert bereits. Bitte Administrator kontaktieren.",
+      "noUser": "Zu dieser Identität ist kein Modgud-Konto verknüpft und die automatische Erstellung ist deaktiviert.",
       "jitFailed": "Das neue Benutzerkonto konnte nicht angelegt werden.",
       "updateFailed": "Das Benutzerprofil konnte nicht aus den IdP-Claims aktualisiert werden.",
       "correlationFailed": "Die Login-Session ist abgelaufen. Bitte erneut versuchen.",
@@ -362,7 +362,7 @@
       "tabBefore": "Vor Script (roh)",
       "tabAfter": "Nach Script (Ausgabe)",
       "beforeHint": "Alle Claims, die der Identity Provider über die Leitung geschickt hat. Nur gefüllt, wenn \"Rohclaims speichern\" aktiviert ist — sonst ist diese Ansicht leer.",
-      "afterHint": "Das Objekt, das das User-Update-Script zurückgegeben hat. Cocoar.Auth verwendet es, um den Benutzerdatensatz zu patchen (firstname, lastname, email, acronym). Andere Felder werden nur für Debugging behalten.",
+      "afterHint": "Das Objekt, das das User-Update-Script zurückgegeben hat. Modgud verwendet es, um den Benutzerdatensatz zu patchen (firstname, lastname, email, acronym). Andere Felder werden nur für Debugging behalten.",
       "rawDisabled": "Rohclaim-Speicherung ist für mindestens eine der verknüpften IdP-Konfigurationen deaktiviert. Aktiviere \"Rohclaims speichern\" in der IdP-Konfiguration, um sie bei der nächsten Anmeldung zu erfassen.",
       "noRaw": "Keine Rohclaims für diese Anmeldung gespeichert.",
       "noOutput": "Kein Script-Output für diese Anmeldung aufgezeichnet.",
@@ -1081,7 +1081,7 @@
   },
   "dashboard": {
     "title": "Dashboard",
-    "welcomeTitle": "Willkommen bei Cocoar.Auth",
+    "welcomeTitle": "Willkommen bei Modgud",
     "welcomeBody": "Du bist angemeldet als",
     "errors": {
       "loadFailed": "Daten konnten nicht geladen werden."

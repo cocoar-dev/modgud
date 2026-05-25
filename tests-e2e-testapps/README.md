@@ -1,11 +1,11 @@
 # tests-e2e-testapps
 
-Playwright E2E suite for the Cocoar.Auth test apps:
-`src/dotnet/TestApps/Cocoar.Auth.TestApps.ResourceApi`,
-`src/dotnet/TestApps/Cocoar.Auth.TestApps.Bff`, and the
+Playwright E2E suite for the Modgud test apps:
+`src/dotnet/TestApps/Modgud.TestApps.ResourceApi`,
+`src/dotnet/TestApps/Modgud.TestApps.Bff`, and the
 `src/test-clients-vue/test-spa-bff` Vue SPA.
 
-The suite drives **real OAuth/OIDC flows** against a running Cocoar.Auth
+The suite drives **real OAuth/OIDC flows** against a running Modgud
 instance — it never mocks the IdP.
 
 ## What it covers
@@ -20,7 +20,7 @@ instance — it never mocks the IdP.
 
 ## Pre-conditions
 
-1. **Cocoar.Auth running** at `http://localhost:9099` (override with
+1. **Modgud running** at `http://localhost:9099` (override with
    `TESTAPPS_AUTHORITY`).
 2. **Demo seed loaded** — run the `/setup` wizard and tick "load demo
    data", or POST `LoadDemoData=true`. The seed provides:

@@ -402,7 +402,7 @@ T8 (FatClient-Walkthrough) macht den User-Use-Case sichtbar.
 2. **Empirische Tests T1-T8 bauen** — verifiziert dass das
    spec'ed Verhalten auch implementierbar ist und keine OpenIddict-
    /Marten-spezifischen Hürden auftauchen. Mit
-   Cocoar.Auth.Api.Tests + zwei TestApps lässt sich das machen
+   Modgud.Api.Tests + zwei TestApps lässt sich das machen
    ohne neue Infrastruktur.
 
 3. **Erst dann mit Implementation-Sequenz aus

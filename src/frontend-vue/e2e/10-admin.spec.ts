@@ -50,7 +50,7 @@ test.describe('§6 Users (admin CRUD)', () => {
     const res = await page.request.post('/api/user', {
       data: {
         Firstname: 'Crud', Lastname: 'User', Acronym: userName,
-        Email: `${userName}@cocoar-auth.test`,
+        Email: `${userName}@modgud.test`,
       },
     })
     expect(res.ok()).toBeTruthy()
@@ -67,7 +67,7 @@ test.describe('§6 Users (admin CRUD)', () => {
     // Create + immediately update.
     const userName = `crud-edit-${SUFFIX}`
     const created = await (await page.request.post('/api/user', {
-      data: { Firstname: 'Old', Lastname: 'Name', Acronym: userName, Email: `${userName}@cocoar-auth.test` },
+      data: { Firstname: 'Old', Lastname: 'Name', Acronym: userName, Email: `${userName}@modgud.test` },
     })).json()
 
     // OptionalJsonConverterFactory: bare value means HasValue=true.
@@ -98,7 +98,7 @@ test.describe('§7 Roles (admin CRUD)', () => {
     const res = await page.request.post('/api/role', {
       data: {
         Name: name,
-        AppSlug: 'cocoar-auth',
+        AppSlug: 'modgud',
         ResourceType: 'user',
         Permissions: ['read'],
       },
@@ -106,7 +106,7 @@ test.describe('§7 Roles (admin CRUD)', () => {
     expect(res.ok()).toBeTruthy()
     const body = await res.json()
     expect(body.Name).toBe(name)
-    expect(body.AppSlug).toBe('cocoar-auth')
+    expect(body.AppSlug).toBe('modgud')
     // Permissions are stored as bare actions and expanded at resolution
     // time; the wire shape preserves the bare form.
     expect(body.Permissions).toContain('read')
@@ -131,7 +131,7 @@ test.describe('§8 Groups (Phase 6 — no AccessScripts)', () => {
     const member = await (await page.request.post('/api/user', {
       data: {
         Firstname: 'Group', Lastname: 'Member', Acronym: `gm${SUFFIX}`,
-        Email: `gm${SUFFIX}@cocoar-auth.test`,
+        Email: `gm${SUFFIX}@modgud.test`,
       },
     })).json()
 
@@ -144,13 +144,13 @@ test.describe('§8 Groups (Phase 6 — no AccessScripts)', () => {
         RoleIds: [],
         MembershipMode: 'Manual',
         EmailMode: 'Shared',
-        BoundTo: ['cocoar-auth'],
+        BoundTo: ['modgud'],
       },
     })
     expect(res.ok()).toBeTruthy()
     const body = await res.json()
     expect(body.Name).toBe(groupName)
-    expect(body.BoundTo).toEqual(['cocoar-auth'])
+    expect(body.BoundTo).toEqual(['modgud'])
     // Phase 6: AccessScripts is gone from the wire format.
     expect(body).not.toHaveProperty('AccessScripts')
   })
@@ -173,9 +173,9 @@ test.describe('§8 Groups (Phase 6 — no AccessScripts)', () => {
 })
 
 test.describe('§9 Apps', () => {
-  test('cocoar-auth system app exists with IsSystem=true', async ({ page }) => {
+  test('modgud system app exists with IsSystem=true', async ({ page }) => {
     const apps = await (await page.request.get('/api/app')).json() as { Slug: string; IsSystem: boolean }[]
-    const sys = apps.find(a => a.Slug === 'cocoar-auth')
+    const sys = apps.find(a => a.Slug === 'modgud')
     expect(sys).toBeDefined()
     expect(sys!.IsSystem).toBe(true)
   })
@@ -191,8 +191,8 @@ test.describe('§9 Apps', () => {
     expect(body.IsSystem).toBe(false)
   })
 
-  test('reserved slugs (realm / cocoar-auth / *) are rejected', async ({ page }) => {
-    for (const slug of ['realm', 'cocoar-auth', '*']) {
+  test('reserved slugs (realm / modgud / *) are rejected', async ({ page }) => {
+    for (const slug of ['realm', 'modgud', '*']) {
       const res = await page.request.post('/api/app', {
         data: { Slug: slug, DisplayName: 'Should Fail' },
       })

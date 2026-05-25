@@ -1,10 +1,10 @@
 # ABAC and the IAM boundary
 
-**Cocoar.Auth is a pure RBAC + grouping IAM.** It does **not** evaluate row-level access policies on behalf of consuming apps. ABAC ("can user X read row Y?") is the responsibility of the app that owns the data.
+**Modgud is a pure RBAC + grouping IAM.** It does **not** evaluate row-level access policies on behalf of consuming apps. ABAC ("can user X read row Y?") is the responsibility of the app that owns the data.
 
-This page explains where the line is, why it sits there, and how an app can layer ABAC on top of what Cocoar.Auth provides.
+This page explains where the line is, why it sits there, and how an app can layer ABAC on top of what Modgud provides.
 
-## What Cocoar.Auth gives you
+## What Modgud gives you
 
 - **Identity** — who the user is, with their stable id and verified contact info.
 - **Groups** — organisational membership, including transitive sub-groups, manual or auto-managed.
@@ -52,7 +52,7 @@ This covers the vast majority of "I need ABAC" cases. Reach for Profile 2b only 
 Common in enterprise IAMs: the IAM hands out *coarse* group membership, and the app keeps its own *narrow* groups whose membership is wired to the IAM groups. Active Directory has done this for decades.
 
 ```
-IAM (Cocoar.Auth)              App
+IAM (Modgud)              App
 ─────────────────              ───
 Group "All Editors"   ─maps→   LocalGroup "Editors of Vienna Office"
                                  + ABAC: row.officeId == "vienna"
@@ -62,7 +62,7 @@ The app stores its own JsEval (or any script-engine) policies on its own group e
 
 This is essentially Profile 2a with admin-pluggable predicates. The infrastructure (script engine, dependency tracker, recompute pipeline) is the same shape as `MembershipScript` in this repo — copy that pattern when you need it.
 
-## What about membership scripts in Cocoar.Auth?
+## What about membership scripts in Modgud?
 
 Group **membership scripts** (`MembershipMode = Auto`) stay. They're not ABAC: they decide *who is in this IAM group*, using only fields the IAM itself owns (display name, email, IsActive, external identities). No app schema is involved, no schema drift, no boundary violation.
 
@@ -80,6 +80,6 @@ The distinction is:
 - Only adopt Profile 2b when admins must author predicates without a developer round-trip. That's a real but narrow need.
 - Whatever profile you're in, the IAM token is still the source of identity and coarse roles. The app composes its row-level decisions on top.
 
-## Why this matters for Cocoar.Auth
+## Why this matters for Modgud
 
-Keeping ABAC out of the IAM is what lets Cocoar.Auth serve many apps with stable contracts. Adding row-level scripts back in would re-couple the IAM to every consumer's schema and turn it into a brittle, app-specific service. The boundary is intentional, not a missing feature.
+Keeping ABAC out of the IAM is what lets Modgud serve many apps with stable contracts. Adding row-level scripts back in would re-couple the IAM to every consumer's schema and turn it into a brittle, app-specific service. The boundary is intentional, not a missing feature.

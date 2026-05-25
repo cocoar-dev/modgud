@@ -21,7 +21,7 @@ post-cutover wholesale strip removed and never restored. Wave 9
 brings it back, ported to the new test infrastructure and adapted
 to the post-Phase-6 endpoint shape and 3-segment permission model.
 
-- **`Cocoar.Auth.Api.Tests/Security/OwaspTop10Tests.cs`** — 12
+- **`Modgud.Api.Tests/Security/OwaspTop10Tests.cs`** — 12
   tests across A01 (Broken Access Control), A02 (Cryptographic
   Failures), A03 (Injection), A05 (Security Misconfiguration), A07
   (Identification & Authentication Failures). Tagged with the xUnit
@@ -47,7 +47,7 @@ build-out and the ProfileSelfService red blockers.
 - **New `Authorization/PermissionResolutionTests`** — 10 end-to-end
   tests against `GET /api/user`, pinning the BFS resolution + BoundTo
   filter + role-AppSlug filter + bypass-cascade composition through
-  the real Marten store. Cases covered: no group, BoundTo cocoar-auth,
+  the real Marten store. Cases covered: no group, BoundTo modgud,
   dormant BoundTo, wildcard BoundTo, wrong-app BoundTo, resource-admin
   bypass within app, app-admin bypass, realm-admin bypass, cross-app
   role no leak, cross-app app-admin no leak.
@@ -61,7 +61,7 @@ Integration suite goes from **89/96 → 109/109 green**, ~2 min total.
 
 ### Applications Phase 6 — ABAC excised from IAM (2026-04-30)
 
-Cocoar.Auth is now a pure RBAC + grouping IAM. Row-level access
+Modgud is now a pure RBAC + grouping IAM. Row-level access
 policies (ABAC) move to the consuming app where the row schema lives;
 the IAM stays schema-free per app.
 
@@ -117,7 +117,7 @@ surfaces with proper auth shapes.
   `ValidateApiCredentialsAsync`, stamps the resolved RS context onto
   HttpContext.Items.
 - `/api/v1/me/*` — Cookie-only now. Browser-session self-introspection.
-  The admin SPA passes `?app=<slug>` (default cocoar-auth) and stays
+  The admin SPA passes `?app=<slug>` (default modgud) and stays
   inside the admin-cookie's identity.
 - `/api/v1/distribution/*` (new) — Bearer + RS-Auth required. The
   server-to-server surface for resource servers (TimeToDo, Knowledge,
@@ -152,7 +152,7 @@ nested `resource_access[<app-slug>].roles` shape.
   MUST pass `?app=<slug>`.
 - Stufe-3 scope-restriction: a scope passes when its AppId ∈
   `client.AppIds ∪ {null}`.
-- New library project `Cocoar.Auth.Client.AspNetCore` — drop-in
+- New library project `Modgud.Client.AspNetCore` — drop-in
   `IClaimsTransformation` that flattens `resource_access[appSlug].roles`
   into `ClaimTypes.Role` so resource servers get the
   `[Authorize(Roles="…")]` magic without writing it themselves. Same
@@ -201,13 +201,13 @@ Full unit suite 806 → 812.
   `PermissionEvaluator`: realm:admin / `<app>:admin` /
   `<app>:<resource>:admin` bypasses, three-segment exact match.
 - All sidebar / route-guard permission strings rewritten to
-  3-segment form (`cocoar-auth:user:read`, etc.); the legacy
+  3-segment form (`modgud:user:read`, etc.); the legacy
   `app:admin` shortcut for the settings page now reads `realm:admin`.
 - New admin section: `/admin/apps` — list + details modal mirror the
   realms admin pattern. Resource list edited as one entry per line.
   System app is identified by `IsSystem` and disallowed from delete.
 - Sidebar gained the "Applications" entry under System, gated on
-  `cocoar-auth:app:read`.
+  `modgud:app:read`.
 - Backend `pnpm build` succeeds; backend unit suite still 806 green.
 
 ### Applications Phase 2 — App admin API (2026-04-29)
@@ -215,15 +215,15 @@ Full unit suite 806 → 812.
 Builds on Phase 1 to let realm-admins register additional Cocoar SaaS
 apps in the IDP.
 
-- `cocoar-auth:app` resource extended with `read` + `write` actions
+- `modgud:app` resource extended with `read` + `write` actions
   alongside the existing `admin`.
 - `AppSlugRules` validator (mirrors `RealmSlugRules`): 3-63 chars,
-  lowercase + digits + hyphens, reserved set `{realm, *, cocoar-auth}`.
+  lowercase + digits + hyphens, reserved set `{realm, *, modgud}`.
 - `AppsEndpoints` — `GET /api/app/lookup` (any auth), `GET /api/app`,
   `GET /api/app/{id}`, `POST /api/app`, `PUT /api/app/{id}`,
   `DELETE /api/app/{id}` — all admin endpoints gated by
-  `cocoar-auth:app:read` / `cocoar-auth:app:write`. System app
-  (`cocoar-auth`) cannot be created, slug is reserved, and
+  `modgud:app:read` / `modgud:app:write`. System app
+  (`modgud`) cannot be created, slug is reserved, and
   `IsSystem=true` apps cannot be deleted.
 - 25 new unit tests pin slug rules; full unit suite at 806 green.
   Integration tests still 89/96 green (same 7 ProfileSelfService reds
@@ -239,12 +239,12 @@ Open follow-ups (intentionally deferred):
 ### Applications Phase 1 — App-scoped permissions (2026-04-29)
 
 Plan: `docs/plan-applications.md`. Internal refactor that turns
-Cocoar.Auth into a host for multiple Cocoar SaaS apps (next stop:
-TimeToDo SSO). Cocoar.Auth itself is the first registered app
-(`cocoar-auth`). Nine commits, ordered:
+Modgud into a host for multiple Cocoar SaaS apps (next stop:
+TimeToDo SSO). Modgud itself is the first registered app
+(`modgud`). Nine commits, ordered:
 
 1. New `App` aggregate (events, projection, Marten wiring)
-2. `cocoar-auth` seeded per realm (system + new realms)
+2. `modgud` seeded per realm (system + new realms)
 3. `AppSlug` added to `PermissionRole`
 4. `BoundTo: List<string>` added to `Group`
 5. `ResourceRegistry` rekeyed to `(appSlug, resource)`
@@ -252,7 +252,7 @@ TimeToDo SSO). Cocoar.Auth itself is the first registered app
    3-segment permission shape (`<app>:<resource>:<action>`); bypasses:
    `realm:admin` (realm-wide), `<app>:admin`, `<app>:<resource>:admin`
 7. `PermissionEndpointFilter` threads `appSlug` (defaults to
-   `cocoar-auth` for the IDP itself)
+   `modgud` for the IDP itself)
 8. Bulk-rewrite of every `RequiresPermission(...)` literal across the
    API surface; old `app:admin` → `realm:admin`
 9. Demo-seed JSON + System-Admin seed updated to the new shape
@@ -332,7 +332,7 @@ Todo) but no wave is open.
 - **E2E Playwright Docker container/db rename** — the global
   setup/teardown still says `timetodo-e2e-*`; needs renaming before E2E
   can run against this codebase.
-- **Cookie naming migration** `TimeToDo.*` → `Cocoar.Auth.*`. No
+- **Cookie naming migration** `TimeToDo.*` → `Modgud.*`. No
   production data, so a non-event today; flag at first deployment.
 - **`IdentityMigrationService` re-add if needed.** Was dropped during
   the strip; ~50 LoC if a use case surfaces.

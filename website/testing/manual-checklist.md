@@ -11,7 +11,7 @@ cross-cutting flows.
 
 > **Last run:** 2026-04-30 against the **Docker prod-shipping
 > constellation** (`pnpm build` → copy to `wwwroot/` →
-> `dotnet publish -c Release -o output/Cocoar.Auth` →
+> `dotnet publish -c Release -o output/Modgud` →
 > `docker build -f src/dotnet/Dockerfile` → `docker run` on the
 > `cocoar-dev` network alongside the existing `cocoar-postgres`
 > container). 24 sections walked. **18 findings logged below; the
@@ -42,7 +42,7 @@ cross-cutting flows.
 >   modal-tab walk stay manual.
 > - **§9 Apps** — `10-admin.spec.ts`: system app is `IsSystem: true`,
 >   create non-system app, reserved-slug rejection (realm /
->   cocoar-auth / *).
+>   modgud / *).
 > - **§10 OAuth Clients** + **§12 OAuth APIs** — `10-admin.spec.ts`:
 >   list endpoints return 200 + paginated shape even without
 >   `?page=` / `?pageSize=` (F16 fix). Create + AppIds MultiSelect
@@ -74,7 +74,7 @@ cross-cutting flows.
 >   `Has2FA: true`. Wrong code on second-factor login → 401.
 >
 > **33 / 33 tests green**, ~33 s on a warm rig (~60 s on first run
-> because the cocoar-auth image gets built). Run via
+> because the modgud image gets built). Run via
 > `cd src/frontend-vue && pnpm test:e2e`.
 
 [[toc]]
@@ -83,9 +83,9 @@ cross-cutting flows.
 
 - ✅ Backend builds: `cd src/dotnet && dotnet build`
 - ✅ Postgres container running: `docker ps | grep cocoar-postgres`
-- ✅ Master DB exists: created on the fly (`docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE cocoar_auth"`)
+- ✅ Master DB exists: created on the fly (`docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE modgud"`)
 - ✅ Backend starts cleanly with only the env vars from `docker-compose.yml` — **F1 + F2 fixed**: compose file rewritten to use the correct `<section>__<property>` names (`DBSETTINGS__CONNECTIONSTRING`, `OPENIDDICT__ISSUER` etc.), and the default `AppUrl` is now `http://0.0.0.0:80` so the cert-less prod image boots out of the box. Live-verified after the fix: `[INF] Now listening on: http://0.0.0.0:80`.
-- ✅ No errors on startup once the env-var override is applied — bootstrap path runs (master DB → schema → system tenant → realm seed → app seed → cache warm), seeded `5 scopes, Internal login provider: True` and `system app 'cocoar-auth'`.
+- ✅ No errors on startup once the env-var override is applied — bootstrap path runs (master DB → schema → system tenant → realm seed → app seed → cache warm), seeded `5 scopes, Internal login provider: True` and `system app 'modgud'`.
 - ✅ Frontend served from `wwwroot/` after publish (Prod-shipping constellation, **not** `pnpm dev`).
 - ✅ `http://localhost:4200/` loads without console errors.
 
@@ -109,7 +109,7 @@ Other observations during this section: **[F5](#f5-sidebar-shows-raw-i18n-key-ad
 - ✅ Sign out via header menu → `/login`.
 - ✅ Wrong password 5× → 6th attempt with the **correct** password still returns 401 (account locked).
 - ✅ After ~60 s the account is unlocked and the correct password succeeds.
-- ⏳ "Remember me" persists the cookie across browser restart — **not yet verified**; would need a second browser session and a real-clock wait. The cookie itself was inspected though: `Cocoar.Auth.Auth=…; path=/; secure; samesite=strict; httponly` — A02 controls all in place.
+- ⏳ "Remember me" persists the cookie across browser restart — **not yet verified**; would need a second browser session and a real-clock wait. The cookie itself was inspected though: `Modgud.Auth=…; path=/; secure; samesite=strict; httponly` — A02 controls all in place.
 - ✅ Magic-link end-to-end (request → click link → lands logged in) — automated in `00-smoke.spec.ts`. The Playwright rig stands up Mailpit alongside the auth container, points `EMAIL__SMTP__HOST` at it, and the spec polls Mailpit's REST API for the verification mail then POSTs the token. Same outbound SMTP path the prod image takes, no dev-mode shortcut. **F10 fixed.**
 - ⏳ Logout-everywhere from `/profile/sessions` — **not yet verified**; needs a second browser session.
 
@@ -158,17 +158,17 @@ already in `helpers.ts`).
 
 ## 7. Roles
 
-- ✅ Create role `User Reader` (`AppSlug=cocoar-auth`, `ResourceType=user`, `Permissions=["read"]`) — `POST /api/role` returns 200, automated in `10-admin.spec.ts`.
+- ✅ Create role `User Reader` (`AppSlug=modgud`, `ResourceType=user`, `Permissions=["read"]`) — `POST /api/role` returns 200, automated in `10-admin.spec.ts`.
 - ⏳ Edit + delete via the UI modal — **not yet verified** (UI walk pending; API CRUD covered by integration tests).
 - ✅ Three default roles exist after first-time setup with the **post-Phase-1 model** — automated in `10-admin.spec.ts`:
   - **System Admin** → `["realm:admin"]` (was `app:admin` in legacy — confirmed migrated)
-  - **User Manager** → `cocoar-auth:user:read/write`, `cocoar-auth:session:read/write`, `cocoar-auth:authorization-group:read`, `cocoar-auth:permission-role:read`, `cocoar-auth:auth-log:read` (3-segment confirmed)
-  - **Viewer** → `cocoar-auth:user:read`, `cocoar-auth:authorization-group:read`, `cocoar-auth:permission-role:read`
+  - **User Manager** → `modgud:user:read/write`, `modgud:session:read/write`, `modgud:authorization-group:read`, `modgud:permission-role:read`, `modgud:auth-log:read` (3-segment confirmed)
+  - **Viewer** → `modgud:user:read`, `modgud:authorization-group:read`, `modgud:permission-role:read`
 
 ## 8. Groups (this is where Phase 6 changes most)
 
 - ✅ Group create response carries no `AccessScripts` field — Phase-6 ABAC excision confirmed at the wire level. Automated in `10-admin.spec.ts`.
-- ✅ **Bound to apps** is on the create payload and round-trips: `POST /api/group` with `BoundTo: ["cocoar-auth"]` returns the field unchanged. Automated.
+- ✅ **Bound to apps** is on the create payload and round-trips: `POST /api/group` with `BoundTo: ["modgud"]` returns the field unchanged. Automated.
 - ✅ BoundTo `["*"]` wildcard accepted by the API — automated in `10-admin.spec.ts`.
 - ⏳ Group detail modal tabs: General / Members / Script (auto only) / Roles / Effective — **not yet verified end-to-end via the modal**; an earlier UI snapshot did not show an "Access" tab so Phase-6 looks correct, but the click-through wasn't done in this run.
 - ⏳ BoundTo `[]` (dormant) actually drops permission contributions — **not yet verified at the gate** in this run; this path is heavily integration-tested in `Authorization/PermissionResolutionTests.cs` (10 tests).
@@ -179,9 +179,9 @@ already in `helpers.ts`).
 
 ## 9. Apps
 
-- ✅ Admin → Applications: `cocoar-auth` listed as system app, `IsSystem=true`, all 15 resources in place. Automated in `10-admin.spec.ts`.
+- ✅ Admin → Applications: `modgud` listed as system app, `IsSystem=true`, all 15 resources in place. Automated in `10-admin.spec.ts`.
 - ✅ Create non-system app via `POST /api/app` → returns 200, `IsSystem=false`. Automated.
-- ✅ Reserved-slug rejection — `realm`, `cocoar-auth`, `*` all return 400. Automated.
+- ✅ Reserved-slug rejection — `realm`, `modgud`, `*` all return 400. Automated.
 - ⏳ App-detail Klick-Aktion **Create default resource server** with one-time secret reveal — **not yet verified** (needs UI walk).
 - ⏳ Pressing the button again surfaces the existing RS without rotating — **not yet verified**.
 - ⏳ Lookup endpoint `GET /api/app/lookup` minimal-shape — **not yet verified**.
@@ -247,7 +247,7 @@ already in `helpers.ts`).
 
 ## 17. Recovery CLI (break-glass)
 
-- ⏳ `dotnet Cocoar.Auth.Api.dll recover list` — **not yet verified** (would need a `docker exec` into the running container; out of scope for the browser smoke run).
+- ⏳ `dotnet Modgud.Api.dll recover list` — **not yet verified** (would need a `docker exec` into the running container; out of scope for the browser smoke run).
 - ⏳ `recover reset-2fa <username>` — **not yet verified**.
 - ⏳ `recover set-email <username> <new@example.com>` — **not yet verified**.
 - ⏳ `recover magic-link <username>` — **not yet verified**.
@@ -271,14 +271,14 @@ endpoints directly.
 ## 19. Token claims (Phase 4 — Keycloak `resource_access`)
 
 Bearer-token issuance needs a real auth-code flow harness — see §18.
-The shape itself is unit-tested (`CocoarAuthClaimsTransformationTests`,
+The shape itself is unit-tested (`ModgudClaimsTransformationTests`,
 12 tests; `AuthorizationEndpointHelpersTests`, 16 tests) and is left
 deferred for the manual run.
 
 - ⏳ UserInfo response carries `resource_access` keyed by app slug — **not yet verified manually**.
 - ⏳ `resource_access[<app>].roles` lists role names (not group names) — **not yet verified manually**.
 - ⏳ No `groups` claim on `/me` (IDP/IAM split) — **not yet verified manually**; cookie `/me` was inspected and only carries `Permissions: ["realm:admin"]` plus user/MFA state.
-- ⏳ `Cocoar.Auth.Client.AspNetCore` flattens roles to `ClaimTypes.Role` — **not yet verified manually**; unit-tested.
+- ⏳ `Modgud.Client.AspNetCore` flattens roles to `ClaimTypes.Role` — **not yet verified manually**; unit-tested.
 
 ## 20. Distribution API (Phase 5)
 
@@ -300,7 +300,7 @@ deferred for the manual run.
 ## 22. Multi-app scenarios
 
 - ✅ App `timetodo` created with no resources, then queryable via `/api/app/lookup` — **partially verified** (the slug is registered, the rest of the cross-app permission scenarios are integration-tested in `PermissionResolutionTests` cases #5/#9/#10).
-- ⏳ Manual end-to-end: same user holds `cocoar-auth:user:read` AND `timetodo:todo:write` simultaneously — **not yet verified**.
+- ⏳ Manual end-to-end: same user holds `modgud:user:read` AND `timetodo:todo:write` simultaneously — **not yet verified**.
 - ⏳ Distribution API for `timetodo` returns the `timetodo:todo:write` grant — **not yet verified manually**.
 - ⏳ Distribution API for an unrelated app the user is not bound to returns no permissions — **not yet verified manually**.
 - ⏳ Same role on a group with `BoundTo: []` contributes nothing — **not yet verified manually**.
@@ -372,7 +372,7 @@ must be supplied (Parameter 'configure')
    at Marten.StoreOptions.MultiTenantedDatabasesWithMasterDatabaseTable(...)
 ```
 
-right at boot. The `Cocoar.Auth.Infrastructure.Persistence.Marten.Configuration.MartenConfiguration.UseMasterTableMultiTenancy`
+right at boot. The `Modgud.Infrastructure.Persistence.Marten.Configuration.MartenConfiguration.UseMasterTableMultiTenancy`
 guard fires because the configured connection string is `""`.
 
 **Fix:** rename the env vars in `docker-compose.yml` and update the
@@ -450,7 +450,7 @@ shutdown instead of polling against the disposed data source.
 
 **Severity:** Informational. **Section:** §0.
 
-The `Cocoar.Auth.Api.csproj` deliberately excludes
+The `Modgud.Api.csproj` deliberately excludes
 `data/configuration.json` from publish (the comment in the csproj
 explains why — to stop the dev-only file from silently overriding the
 class defaults in prod). That's correct behaviour, just call it out
@@ -551,7 +551,7 @@ say "docs English-only, UI bilingual".
 **Severity:** Low. **Section:** §2, §3, §4.
 
 Several steps say "check the email at `/api/dev/emails`". The
-endpoint exists (`Cocoar.Auth.Api/Features/Dev/DevEndpoints.cs`) but
+endpoint exists (`Modgud.Api/Features/Dev/DevEndpoints.cs`) but
 is gated by `IsDevelopment()` and so unreachable in the
 `ASPNETCORE_ENVIRONMENT=Production` container we ship. The smoke
 checklist therefore can't end-to-end-test the magic-link / email-OTP
@@ -568,7 +568,7 @@ Mailpit's REST API on port 8025. The auth container itself stays
 endpoint. The dev-only `/api/dev/emails` route was deleted alongside
 the dev-mode `InMemoryEmailService` runtime registration; the class
 itself stays, used only as the in-process integration-test substitute
-via `CocoarAuthWebApplicationFactory`'s DI override. Magic-link
+via `ModgudWebApplicationFactory`'s DI override. Magic-link
 end-to-end now lives in `00-smoke.spec.ts` and the change-request
 flow in `30-profile.spec.ts`.
 
@@ -680,7 +680,7 @@ references to a non-existent surface.
 - **18 findings logged**, of which F1, F2 and F16 are the shipping-blockers; F6, F9, F18 are operationally important; the rest are polish.
 
 Status of the running container at the end of this run:
-`docker rm -f cocoar-auth-test` to remove. Postgres on `cocoar-postgres`
+`docker rm -f modgud-test` to remove. Postgres on `cocoar-postgres`
 left running (other repos depend on it).
 
 ## Fixes landed in this branch (post-run)

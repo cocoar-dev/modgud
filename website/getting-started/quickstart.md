@@ -1,11 +1,11 @@
 # Quickstart (Docker)
 
-Get a local Cocoar.Auth running, sign in for the first time, and verify the OAuth/OIDC endpoints respond — in under 10 minutes.
+Get a local Modgud running, sign in for the first time, and verify the OAuth/OIDC endpoints respond — in under 10 minutes.
 
 ## Prerequisites
 
 - Docker Desktop (or Docker Engine + Compose)
-- A free port 9099 (Cocoar.Auth API) and 4300 (Vue admin SPA, if you run the dev frontend separately)
+- A free port 9099 (Modgud API) and 4300 (Vue admin SPA, if you run the dev frontend separately)
 - About 200 MB of disk for the container + the tenant DB
 - Node 20+ on your machine if you want to run the optional demo-data seed script
 
@@ -14,12 +14,12 @@ For requirements beyond a quick local run, see [Requirements](./requirements).
 ## 1. Bring up the stack
 
 ```bash
-git clone https://github.com/cocoar-dev/Cocoar.Auth.git
-cd Cocoar.Auth
+git clone https://github.com/cocoar-dev/Modgud.git
+cd Modgud
 docker compose up -d
 ```
 
-This starts PostgreSQL + Cocoar.Auth in the background. First boot takes ~15 seconds while Marten provisions the master DB and seeds the system realm.
+This starts PostgreSQL + Modgud in the background. First boot takes ~15 seconds while Marten provisions the master DB and seeds the system realm.
 
 ## 2. Create your first admin
 
@@ -28,8 +28,8 @@ A fresh deployment has zero users. There is no anonymous "first-run wizard" — 
 For local development the simplest path is the recovery CLI in **direct mode** (sets a password right away):
 
 ```bash
-docker exec cocoar-auth \
-  dotnet Cocoar.Auth.Api.dll recover bootstrap-admin \
+docker exec modgud \
+  dotnet Modgud.Api.dll recover bootstrap-admin \
     --email admin@example.com \
     --username admin \
     --password 'StrongPass1!'
@@ -56,8 +56,8 @@ Two more paths are available — they trade off CLI convenience against email ve
 **Invite mode** (CLI, no `--password`) — the CLI writes a magic-link invite and prints the URL on stdout. You click the link, set the password yourself in the SPA. Useful when you want the recipient to own their credentials end-to-end.
 
 ```bash
-docker exec cocoar-auth \
-  dotnet Cocoar.Auth.Api.dll recover bootstrap-admin \
+docker exec modgud \
+  dotnet Modgud.Api.dll recover bootstrap-admin \
     --email admin@example.com
 # → magic-link printed; open it in your browser
 ```
@@ -86,7 +86,7 @@ In a separate terminal:
 curl http://localhost:9099/.well-known/openid-configuration | jq
 ```
 
-You should see `issuer`, `authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, etc. The endpoints are rooted at `http://localhost:9099/` — Cocoar.Auth resolves the realm from the **Host header**, not from a URL path segment. For `localhost` requests that's the system realm.
+You should see `issuer`, `authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, etc. The endpoints are rooted at `http://localhost:9099/` — Modgud resolves the realm from the **Host header**, not from a URL path segment. For `localhost` requests that's the system realm.
 
 ```bash
 # JWKS (signing keys)
@@ -94,7 +94,7 @@ curl http://localhost:9099/.well-known/jwks | jq '.keys[0].kid'
 ```
 
 ::: tip JWKS path
-The discovery document advertises the JWKS endpoint at `jwks_uri`. Cocoar.Auth serves it at `/.well-known/jwks` (no `.json` suffix) — use the path from the discovery document if you want to be format-agnostic.
+The discovery document advertises the JWKS endpoint at `jwks_uri`. Modgud serves it at `/.well-known/jwks` (no `.json` suffix) — use the path from the discovery document if you want to be format-agnostic.
 :::
 
 You should get a key ID — that's the public key resource servers use to validate tokens.
@@ -121,20 +121,20 @@ Click **Send Request** in oidcdebugger → log in as `admin` → consent → you
 
 ## 7. Bind your first SaaS app
 
-You're now ready for the linear walkthrough that turns Cocoar.Auth into the IdP for a real app of yours: [SaaS Integration Walkthrough](../admin/saas-integration-walkthrough).
+You're now ready for the linear walkthrough that turns Modgud into the IdP for a real app of yours: [SaaS Integration Walkthrough](../admin/saas-integration-walkthrough).
 
 ## Troubleshooting
 
 ::: details I get 401 "Invalid credentials" on the login page
-The bootstrap-admin command writes the user immediately. If login still fails, check `docker logs cocoar-auth` for the boot output — the admin creation also prints there. Most common cause: trying to sign in before the container finished its first migration. Wait ~15 seconds and retry.
+The bootstrap-admin command writes the user immediately. If login still fails, check `docker logs modgud` for the boot output — the admin creation also prints there. Most common cause: trying to sign in before the container finished its first migration. Wait ~15 seconds and retry.
 :::
 
 ::: details Magic-link emails don't arrive
-Default `configuration.json` ships with an in-memory mail service for dev. Magic-link emails appear in the API logs (`docker logs cocoar-auth -f`) and in `data/dev-emails/` — they aren't actually sent. To use real SMTP, edit `configuration.local.json` (gitignored) and set the SMTP block — see [App-Einstellungen](../plattform/settings).
+Default `configuration.json` ships with an in-memory mail service for dev. Magic-link emails appear in the API logs (`docker logs modgud -f`) and in `data/dev-emails/` — they aren't actually sent. To use real SMTP, edit `configuration.local.json` (gitignored) and set the SMTP block — see [App-Einstellungen](../plattform/settings).
 :::
 
 ::: details OIDC discovery returns 404
-Cocoar.Auth resolves the realm from the host header. For `localhost`, that's the system realm if its `Domains` list contains `localhost`. The single-realm dev fallback also kicks in: if there's only one active realm, localhost variants resolve to it. Check `docker logs cocoar-auth` for `RealmMiddleware` warnings if you suspect a host-resolution problem.
+Modgud resolves the realm from the host header. For `localhost`, that's the system realm if its `Domains` list contains `localhost`. The single-realm dev fallback also kicks in: if there's only one active realm, localhost variants resolve to it. Check `docker logs modgud` for `RealmMiddleware` warnings if you suspect a host-resolution problem.
 :::
 
 ::: details I want to start over
@@ -142,8 +142,8 @@ Drop the master DB and any tenant DBs, then bring the stack back up:
 
 ```bash
 docker exec cocoar-postgres \
-  psql -U postgres -c "DROP DATABASE cocoar_auth;"
-docker compose restart cocoar-auth
+  psql -U postgres -c "DROP DATABASE modgud;"
+docker compose restart modgud
 # then re-run step 2
 ```
 :::

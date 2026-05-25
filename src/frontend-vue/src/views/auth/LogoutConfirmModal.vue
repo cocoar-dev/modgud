@@ -70,7 +70,7 @@ async function logoutEverywhere() {
           <CoarIcon name="door-open" size="m" class="logout-choice-icon" />
           <div class="flex flex-col text-left">
             <span class="font-semibold">
-              {{ t('logout.localOnly', {}, 'Only from Cocoar.Auth') }}
+              {{ t('logout.localOnly', {}, 'Only from Modgud') }}
             </span>
             <span class="text-xs opacity-70">
               {{ t('logout.localOnlyHint', { idp: idpName }, 'Your {idp} session stays active') }}

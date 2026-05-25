@@ -1,6 +1,6 @@
 # Cookies & sessions
 
-cocoar.auth uses **cookie-based authentication** with ASP.NET Core
+modgud uses **cookie-based authentication** with ASP.NET Core
 Identity. No JWTs in the browser — all session state lives on the
 server.
 
@@ -23,7 +23,7 @@ Configured in `Program.cs`:
     options.Cookie.SecurePolicy = builder.Environment.IsProduction()
         ? CookieSecurePolicy.Always
         : CookieSecurePolicy.None;
-    options.Cookie.Name = "Cocoar.Auth.Auth";
+    options.Cookie.Name = "Modgud.Auth";
     options.ExpireTimeSpan = TimeSpan.FromDays(30);
     options.SlidingExpiration = true;
     options.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = 401; ... };
@@ -43,12 +43,12 @@ Configured in `Program.cs`:
 
 | Cookie | Purpose | Lifetime |
 |---|---|---|
-| `Cocoar.Auth.Auth` | Main session (app cookie) | 30 days (or session-only with `RememberMe=false`) |
-| `Cocoar.Auth.2FA` | UserId holder between password step and 2FA step | 5 min |
-| `Cocoar.Auth.External` | OIDC callback holder (`SameSite=Lax`!) | 10 min |
-| `Cocoar.Auth.Session` | Passkey attestation options only (ASP.NET session) | 5 min idle |
+| `Modgud.Auth` | Main session (app cookie) | 30 days (or session-only with `RememberMe=false`) |
+| `Modgud.2FA` | UserId holder between password step and 2FA step | 5 min |
+| `Modgud.External` | OIDC callback holder (`SameSite=Lax`!) | 10 min |
+| `Modgud.Session` | Passkey attestation options only (ASP.NET session) | 5 min idle |
 
-`Cocoar.Auth.External` is intentionally `SameSite=Lax` — otherwise the
+`Modgud.External` is intentionally `SameSite=Lax` — otherwise the
 cookie is lost on the IdP redirect and the OIDC callback can no longer
 find its own challenge.
 
@@ -63,7 +63,7 @@ For API calls, the cookie events return status codes instead of redirects:
 
 ## Multi-realm cookies
 
-In cocoar.auth the realm boundary is the **domain** (Host header), not
+In modgud the realm boundary is the **domain** (Host header), not
 the URL path. Cookies are not path-scoped — they live under the realm
 domain. A login on `acme.example.com` sets a cookie for exactly that
 domain; on `finance.example.com` it isn't sent.
@@ -80,7 +80,7 @@ style domains.
 
 ## Session tracking
 
-In parallel with the auth cookie, cocoar.auth maintains a `UserSession`
+In parallel with the auth cookie, modgud maintains a `UserSession`
 Marten document per active login. This enables session-management
 features (list sessions, revoke individually, log out everywhere) that
 a cookie alone can't provide.
@@ -128,7 +128,7 @@ security-relevant events (password change, 2FA toggle) the stamp is
 invalidated; on the next cookie validation the cookie is rejected and
 the user is logged out.
 
-cocoar.auth uses that plus the `UserSession` documents:
+modgud uses that plus the `UserSession` documents:
 "Log out everywhere" clears all `UserSession`s + invalidates the
 security stamp → all of the user's cookies are rejected on the next
 validation.

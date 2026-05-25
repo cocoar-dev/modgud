@@ -2,7 +2,7 @@
 
 Every login path in detail. Endpoints are mounted under
 `/api/account/...` (see `MapAccountEndpoints` in
-`Cocoar.Auth.Api/Program.cs`).
+`Modgud.Api/Program.cs`).
 
 ## Login flow overview
 
@@ -30,7 +30,7 @@ After `RequiresMfa` the client must send a second request:
 - Passkey: `POST /api/account/passkey/login/complete`
 
 After a successful second step the session is fully established — the
-`Cocoar.Auth.Auth` cookie is set, and all following requests run
+`Modgud.Auth` cookie is set, and all following requests run
 authenticated.
 
 ## Password login
@@ -69,7 +69,7 @@ Content-Type: application/json
 }
 ```
 
-Reads the `Cocoar.Auth.2FA` cookie set by `/login`, which holds the
+Reads the `Modgud.2FA` cookie set by `/login`, which holds the
 UserId for 5 minutes. Verifies the code via
 `UserManager.VerifyTwoFactorTokenAsync`. On success the session is
 fully established.
@@ -191,7 +191,7 @@ Details on IdP setup and scripting: see
 ## OAuth authorize flow (external apps)
 
 Different topic — an external app starts an OAuth flow against
-cocoar.auth via `/connect/authorize`. If the user is not logged in,
+modgud via `/connect/authorize`. If the user is not logged in,
 they are redirected to the login UI, run through the regular login
 flow above, come back to `/connect/authorize` and receive an
 authorization code. See [OAuth & OIDC](/concepts/oauth) and

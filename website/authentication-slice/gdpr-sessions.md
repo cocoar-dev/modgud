@@ -129,7 +129,7 @@ request a new email").
 
 ## Marten data masking
 
-Configured during Marten setup (`UseCocoarAuthAuthentication`):
+Configured during Marten setup (`UseModgudAuthentication`):
 
 ```csharp
 options.Events.AddMaskingRuleForProtectedInformation<UserCreated>(x =>
@@ -155,7 +155,7 @@ masked PII fields.
 
 ## Admin variant
 
-An admin (with `cocoar-auth:user:admin` permission) can trigger the GDPR flow:
+An admin (with `modgud:user:admin` permission) can trigger the GDPR flow:
 
 ```http
 POST   /api/admin/users/{id}/gdpr/delete-request

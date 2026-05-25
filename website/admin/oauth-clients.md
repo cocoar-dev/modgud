@@ -1,6 +1,6 @@
 # OAuth Clients
 
-An **OAuth client** is an app that signs in to Cocoar.Auth as the identity provider and authenticates its own users via OAuth 2.0 / OpenID Connect.
+An **OAuth client** is an app that signs in to Modgud as the identity provider and authenticates its own users via OAuth 2.0 / OpenID Connect.
 
 Examples:
 
@@ -48,7 +48,7 @@ Administration → **OAuth → Clients** → **Create**.
 | --- | --- |
 | **Implicit** | First-party app — no consent screen, immediate redirect |
 | **Explicit** | The user must click "Allow" once per scope set |
-| **External** | Consent is obtained out-of-band; Cocoar.Auth doesn't intervene |
+| **External** | Consent is obtained out-of-band; Modgud doesn't intervene |
 
 ### Applications
 
@@ -58,7 +58,7 @@ Picking multiple apps means: when this client requests a token and asks for the 
 
 ### Redirect URIs
 
-One per line. Cocoar.Auth strictly checks that the redirect URI presented in the auth request is one of these.
+One per line. Modgud strictly checks that the redirect URI presented in the auth request is one of these.
 
 For SPAs and mobile use a deep link (`com.example.app:/oauth/callback`) or a HTTPS callback page on your domain.
 

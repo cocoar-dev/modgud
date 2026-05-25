@@ -3,7 +3,7 @@
 > **Repo-only.** This section never ships in any deployed artifact —
 > not on the public docs site, not in the in-app help bundle.
 > Visible only when running VitePress locally via `pnpm dev`.
-> See [`dev-notes/README.md`](https://github.com/cocoar-dev/Cocoar.Auth/tree/develop/website/dev-notes/README.md)
+> See [`dev-notes/README.md`](https://github.com/cocoar-dev/Modgud/tree/develop/website/dev-notes/README.md)
 > for the convention.
 
 Parking lot for things that need to live alongside the codebase but

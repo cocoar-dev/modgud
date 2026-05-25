@@ -15,8 +15,8 @@ services:
       retries: 10
 
   auth:
-    image: ghcr.io/cocoar-dev/cocoar.auth:staging
-    container_name: cocoar-auth
+    image: ghcr.io/cocoar-dev/modgud:staging
+    container_name: modgud
     # Container listens on 8081 (non-privileged — the .NET aspnet image runs
     # as a non-root user and can't bind <1024 without USER root). The host
     # mapping exposes that as :80 so users can hit http://localhost/ without
@@ -33,7 +33,7 @@ services:
       #
       # Marten connection string. Keepalive=30 keeps idle pooled
       # connections healthy through the docker-network NAT.
-      DbSettings__ConnectionString: "Host=postgres;Database=cocoar_auth;Username=postgres;Password=postgres;Keepalive=30"
+      DbSettings__ConnectionString: "Host=postgres;Database=modgud;Username=postgres;Password=postgres;Keepalive=30"
       # AppUrl tells Kestrel what to bind inside the container. Stays at
       # 8081 — the host port mapping above exposes it as :80.
       AppUrl: "http://0.0.0.0:8081"
@@ -52,7 +52,7 @@ services:
       Email__Smtp__Port: "25"
       Email__Smtp__UseSsl: "false"
       Email__Smtp__FromAddress: "noreply@localhost"
-      Email__Smtp__FromName: "Cocoar Auth"
+      Email__Smtp__FromName: "Modgud"
     depends_on:
       postgres:
         condition: service_healthy

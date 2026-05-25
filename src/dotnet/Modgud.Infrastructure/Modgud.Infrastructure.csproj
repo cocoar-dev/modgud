@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Modgud.Infrastructure</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Cocoar.JsEval.Engine" />
+    <PackageReference Include="Cocoar.JsEval.Linq" />
+    <PackageReference Include="Cocoar.JsEval.TsDefinition" />
+    <PackageReference Include="Cocoar.JsEval.TypeScript" />
+    <PackageReference Include="MailKit" />
+    <PackageReference Include="Postmark" />
+    <PackageReference Include="Microsoft.Extensions.Identity.Stores" />
+    <PackageReference Include="Marten" />
+    <PackageReference Include="Marten.AspNetCore" />
+    <PackageReference Include="WolverineFx.Marten" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
+    <PackageReference Include="JasperFx.Events.SourceGenerator">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Riok.Mapperly" />
+    <PackageReference Include="System.Linq.Async.Queryable" />
+    <PackageReference Include="Cocoar.Reflectensions" />
+    <PackageReference Include="BCrypt.Net-Next" />
+    <PackageReference Include="OpenIddict" />
+    <PackageReference Include="OpenIddict.Abstractions" />
+    <PackageReference Include="OpenIddict.AspNetCore" />
+    <PackageReference Include="OpenIddict.Server" />
+    <PackageReference Include="OpenIddict.Validation" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" />
+    <PackageReference Include="Quartz.Extensions.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Modgud.Domain\Modgud.Domain.csproj" />
+    <ProjectReference Include="..\Modgud.Application\Modgud.Application.csproj" />
+    <ProjectReference Include="..\Common\BuildingBlocks.EventDispatcher\BuildingBlocks.EventDispatcher.csproj" />
+    <ProjectReference Include="..\Common\BuildingBlocks.Helper\BuildingBlocks.Helper.csproj" />
+  </ItemGroup>
+
+</Project>

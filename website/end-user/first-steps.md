@@ -1,6 +1,6 @@
 # First steps
 
-Welcome to Cocoar.Auth. This page covers what happens right after your account is created and how to make sure you'll always be able to sign back in.
+Welcome to Modgud. This page covers what happens right after your account is created and how to make sure you'll always be able to sign back in.
 
 ## How accounts are created
 
@@ -8,7 +8,7 @@ Three ways your account might come into being:
 
 1. **An admin creates you** — you'll receive an email with a sign-in link (magic link). Click it, set your password, you're in.
 2. **Self-registration** — if enabled on your instance, click "Register" on the login page.
-3. **External SSO** (Microsoft, Google, …) — sign in with your work account; Cocoar.Auth provisions a profile automatically the first time.
+3. **External SSO** (Microsoft, Google, …) — sign in with your work account; Modgud provisions a profile automatically the first time.
 
 ## Right after first sign-in
 
@@ -30,7 +30,7 @@ See [Two-factor authentication](./two-factor) for setup steps.
 
 ### 3. Save your recovery codes
 
-When you enable 2FA, Cocoar.Auth shows you a list of one-time recovery codes. Print them out, store them in a safe, or save them in a password manager. They're your way back in if you lose your 2FA device.
+When you enable 2FA, Modgud shows you a list of one-time recovery codes. Print them out, store them in a safe, or save them in a password manager. They're your way back in if you lose your 2FA device.
 
 ### 4. Verify your email
 
@@ -38,7 +38,7 @@ If your email isn't verified yet (a yellow banner shows up), click the verificat
 
 ### 5. Check your profile
 
-Profile → General. Make sure your first name, last name, and email are correct. Some apps connected to Cocoar.Auth display these.
+Profile → General. Make sure your first name, last name, and email are correct. Some apps connected to Modgud display these.
 
 ## What happens if I forget everything?
 
@@ -54,5 +54,5 @@ Almost every problem on this page disappears with a password manager. It generat
 :::
 
 ::: warning Don't share your passwords or recovery codes
-Cocoar.Auth, your admin, and your IT team will never ask for them. If anyone does, it's a phishing attempt.
+Modgud, your admin, and your IT team will never ask for them. If anyone does, it's a phishing attempt.
 :::

@@ -1,6 +1,6 @@
 # Requirements
 
-What you need to run Cocoar.Auth in development, and what to plan for in production.
+What you need to run Modgud in development, and what to plan for in production.
 
 ## Local development
 
@@ -21,7 +21,7 @@ What you need to run Cocoar.Auth in development, and what to plan for in product
 
 ### Ports
 
-- **9099** — Cocoar.Auth API
+- **9099** — Modgud API
 - **4300** — Vue admin SPA (only when running the dev frontend separately; in production it's served from the API container)
 - **5432** — PostgreSQL (host-side; container's internal port)
 
@@ -29,7 +29,7 @@ What you need to run Cocoar.Auth in development, and what to plan for in product
 
 ### Operating system / runtime
 
-Cocoar.Auth ships as a Linux container (multi-arch). Bare-metal .NET 10 deployment is supported but undocumented.
+Modgud ships as a Linux container (multi-arch). Bare-metal .NET 10 deployment is supported but undocumented.
 
 ### Database: PostgreSQL
 
@@ -43,9 +43,9 @@ Cocoar.Auth ships as a Linux container (multi-arch). Bare-metal .NET 10 deployme
 
 ### TLS / certificates
 
-Cocoar.Auth issues access tokens; the issuer URL must be HTTPS in production. Two common setups:
+Modgud issues access tokens; the issuer URL must be HTTPS in production. Two common setups:
 
-- **Reverse proxy** (Nginx, Caddy, Traefik) terminates TLS, proxies HTTP to Cocoar.Auth
+- **Reverse proxy** (Nginx, Caddy, Traefik) terminates TLS, proxies HTTP to Modgud
 - **Container-native TLS** — pass cert paths via configuration, Kestrel terminates TLS directly
 
 Tokens are signed with RSA 2048 keys auto-rotated on first run. The signing keys are persisted in the realm's database and recreate themselves if missing.
@@ -77,7 +77,7 @@ Per-tenant configuration via [Login Providers](../admin/login-providers).
 
 ### User count
 
-Cocoar.Auth's permission resolver loads the per-realm group set into memory. Practical sweet spot: **up to ~10,000 groups per realm**. Above that, query latency on `GetUserPermissionsAsync` becomes noticeable.
+Modgud's permission resolver loads the per-realm group set into memory. Practical sweet spot: **up to ~10,000 groups per realm**. Above that, query latency on `GetUserPermissionsAsync` becomes noticeable.
 
 User count itself is unbounded — the bottleneck is groups (and to a lesser extent, roles).
 
@@ -100,12 +100,12 @@ For deployments with **>50 active realms**, look at:
 The realm domain must reach the browser end-to-end via HTTPS. Common pitfalls:
 
 - **Mixed-content blocking** — admin SPA on HTTPS, API on HTTP behind a misconfigured proxy
-- **Cookie SameSite policies** — Cocoar.Auth uses `SameSite=Strict` by default; cross-domain integrations may need to relax this in `configuration.local.json`
+- **Cookie SameSite policies** — Modgud uses `SameSite=Strict` by default; cross-domain integrations may need to relax this in `configuration.local.json`
 - **CORS** — for SPA-style clients consuming the OAuth flow, add their origin to the OAuth client's allowed CORS origins
 
 ### Server-to-server endpoints
 
-Distribution-API consumers (resource servers) need network reachability to the Cocoar.Auth API endpoint, with the bearer token's audience matching their app slug. No special CORS — server-to-server.
+Distribution-API consumers (resource servers) need network reachability to the Modgud API endpoint, with the bearer token's audience matching their app slug. No special CORS — server-to-server.
 
 ## Browser support
 

@@ -2,7 +2,7 @@
 
 > **Status:** Roadmap-Item, **kontextabhängig**. Designspace captured
 > 2026-05-13.
-> **Why:** Cocoar.Auth federiert heute nur über OIDC (Entra, Okta, …).
+> **Why:** Modgud federiert heute nur über OIDC (Entra, Okta, …).
 > Enterprise-Kunden fordern oft SAML 2.0 (alte Identity-Provider,
 > Salesforce, ServiceNow) und/oder LDAP/AD-Direktanbindung. Beides
 > fehlt. Audit-Finding aus
@@ -52,7 +52,7 @@ Integration analog zu OIDC-External-Auth:
 ### Use-Case B: SAML IdP (wir gegenüber SAML-only Apps)
 
 Seltener, aber: alte interne Apps die nur SAML können (z.B. Confluence
-< 7, alte SharePoint). Customer will: „Cocoar.Auth als Single
+< 7, alte SharePoint). Customer will: „Modgud als Single
 IdP für alles — auch das alte SAML-Zeug."
 
 OpenIddict ist OAuth/OIDC-only. Für SAML-IdP-Funktion bräuchten wir:
@@ -60,7 +60,7 @@ OpenIddict ist OAuth/OIDC-only. Für SAML-IdP-Funktion bräuchten wir:
 - Separates SAML-IdP-Library (Sustainsys hat IdP-Mode auch)
 - ODER ein SAML→OIDC-Bridge-Pattern: Customer-App spricht SAML mit
   einem dedizierten SAML-Bridge-Service der intern OIDC gegen
-  Cocoar.Auth fährt
+  Modgud fährt
 - Bridge-Pattern ist einfacher (kein eigener IdP-Code), aber Extra-
   Hop und Extra-Cert-Management
 
@@ -71,14 +71,14 @@ OpenIddict ist OAuth/OIDC-only. Für SAML-IdP-Funktion bräuchten wir:
 ### Optionen
 
 - **A — Direct-Bind-Login**: User loggt sich mit AD-Credentials ein,
-  Cocoar.Auth bind't direkt gegen Customer-DC, validiert,
+  Modgud bind't direkt gegen Customer-DC, validiert,
   erstellt/aktualisiert lokalen User-Record. Customer-Passwörter
   niemals persistiert
 - **B — LDAP-Sync (one-way)**: Periodischer Job zieht User aus LDAP
-  in Cocoar.Auth-Tenant-DB. Login dann lokal mit gehashter Kopie.
+  in Modgud-Tenant-DB. Login dann lokal mit gehashter Kopie.
   Schlechter (PW-Drift, Security-Profil schlechter), aber funktioniert
   auch wenn DC nicht 24/7 erreichbar
-- **C — LDAP-Provisioning (SCIM-Style)**: Cocoar.Auth provided
+- **C — LDAP-Provisioning (SCIM-Style)**: Modgud provided
   Provisioning-Endpoint, Customer-Tool pushed User rein. Eigentlich
   SCIM, nicht LDAP
 
@@ -138,7 +138,7 @@ investiert 3 Wochen für „falls jemand fragt".
 
 ## Marktvergleich
 
-| | Cocoar.Auth | Keycloak | Auth0 | Zitadel |
+| | Modgud | Keycloak | Auth0 | Zitadel |
 |---|---|---|---|---|
 | SAML SP | ❌ | ✅ | ✅ | ✅ |
 | SAML IdP | ❌ | ✅ | ✅ | ❌ |

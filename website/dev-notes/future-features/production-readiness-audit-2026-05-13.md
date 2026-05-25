@@ -2,14 +2,14 @@
 
 > **Status:** Audit-Snapshot. Roadmap-Punkte werden in separaten Pages
 > ausgearbeitet, wenn sie ranschneiden.
-> **Why:** Ehrliche Einschätzung wo Cocoar.Auth gegenüber etablierten
+> **Why:** Ehrliche Einschätzung wo Modgud gegenüber etablierten
 > IdPs (Keycloak / Auth0 / Zitadel) steht — was solide ist, was riskant,
 > was schlicht fehlt. Geboren aus einem agent-gestützten Audit gegen
 > Codebase + Memory + Hardening-Track-Record.
 
 ## TL;DR
 
-Cocoar.Auth ist **kein Hobbyprojekt** — OpenIddict-basiert,
+Modgud ist **kein Hobbyprojekt** — OpenIddict-basiert,
 33 Audit-Findings systematisch geclosed, 4 SAST-Schichten, ~928 Tests
 grün. Aber es ist **scharf zugeschnitten auf einen Owner-Operator-
 Use-Case**, nicht auf „Drop-in-Replacement für Keycloak".
@@ -34,17 +34,17 @@ Use-Case**, nicht auf „Drop-in-Replacement für Keycloak".
 
 | Bereich | File-Reference |
 |---|---|
-| OAuth/OIDC-Core, PKCE-erzwingend, Refresh-Reuse-Detection mit Chain-Revocation | `Cocoar.Auth.Infrastructure/OpenIddict/OpenIddictExtensions.cs` |
+| OAuth/OIDC-Core, PKCE-erzwingend, Refresh-Reuse-Detection mit Chain-Revocation | `Modgud.Infrastructure/OpenIddict/OpenIddictExtensions.cs` |
 | Per-Realm Signing-Keys + Cert-Rotation-Overlap | OpenIddictExtensions + Realm-Domain |
-| **DCR (RFC 7591)** — Triple-Opt-in, `[unverified]`-Marker, GC | `Cocoar.Auth.Authentication/Api/Account/`, `Authorization/OAuth/` |
-| 2FA-Breite: TOTP, EmailOTP, Recovery-Codes, Passkeys, Magic-Link | `Cocoar.Auth.Authentication/Api/Account/` |
+| **DCR (RFC 7591)** — Triple-Opt-in, `[unverified]`-Marker, GC | `Modgud.Authentication/Api/Account/`, `Authorization/OAuth/` |
+| 2FA-Breite: TOTP, EmailOTP, Recovery-Codes, Passkeys, Magic-Link | `Modgud.Authentication/Api/Account/` |
 | Tenant-Isolation tief verdrahtet (`TenantedSessionFactory` + AsyncLocal) | `Infrastructure/Marten/TenantedSessionFactory.cs` |
 | GDPR echt umgesetzt (Event-Masking + ArchiveStream) | `Authentication/Gdpr/GdprService.cs` |
 | JsEval gefuzzt (834 Security-Tests + Depth/Length-Caps) | `MembershipSecurityTests.cs` |
 | Security-Hardening-Track-Record (33 Findings closed) | `website/testing/security-hardening.md` |
 
 In **DCR-Sauberkeit**, **2FA-Modalitätsbreite** und **Hardening-Detail
-für die Codebase-Größe** schlägt Cocoar.Auth mehrere kommerzielle
+für die Codebase-Größe** schlägt Modgud mehrere kommerzielle
 Produkte.
 
 ## Roadmap (Audit-Findings → Followup-Aktionen)
@@ -71,7 +71,7 @@ Produkte.
 **#7 HSM / KMS** — Signing-Keys liegen als PFX auf dem Filesystem mit
 `0600`. Auth0/Zitadel können in AWS KMS / Azure Key Vault. Für
 Single-Tenant-Self-Host wahrscheinlich nie nötig; wird relevant wenn
-Cocoar.Auth jemals als Managed-Service angeboten wird.
+Modgud jemals als Managed-Service angeboten wird.
 
 **#8 Realm-Provisioning Quota** — `RealmProvisioningService` legt eine
 neue Postgres-DB an. Ein kompromittierter Control-Plane-Admin kann
@@ -79,9 +79,9 @@ DBs schöpfen bis das Filesystem voll ist. Soft-Limit + Storage-Cap
 fehlt. Mitigation derzeit: nur `realm:admin` darf provisionieren +
 Audit-Event ist da.
 
-**#9 Bulk-Import/Export** — `Cocoar.Auth.Authentication/Api/Admin/`
+**#9 Bulk-Import/Export** — `Modgud.Authentication/Api/Admin/`
 hat nur per-User-CRUD. Ein einmaliges Migration-Bedürfnis ("alte
-Identity-Datenbank → Cocoar.Auth") wird das triggern.
+Identity-Datenbank → Modgud") wird das triggern.
 
 **#10 Step-up** — `acr_values` + `amr`-Claim-driven Re-Auth fehlt
 protokoll-getrieben. `TwoFactorEnforcementMiddleware` macht heute
@@ -100,7 +100,7 @@ ein Enterprise-Kunde es fordert. Aufwand: Mannmonate, nicht Tage.
 
 ## Vergleichstabelle (1–5)
 
-| Dimension | Cocoar.Auth | Keycloak | Auth0 | Zitadel |
+| Dimension | Modgud | Keycloak | Auth0 | Zitadel |
 |---|---:|---:|---:|---:|
 | OAuth/OIDC-Standards-Coverage | 4 | 5 | 5 | 5 |
 | Token-Lifecycle (Rotation, Reuse-Detection) | 4 | 4 | 5 | 5 |

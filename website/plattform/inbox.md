@@ -5,7 +5,7 @@ description: Per-user, in-app notification surface — bell in the header, panel
 
 # Inbox
 
-The **inbox** is Cocoar.Auth's in-app notification surface — a header bell with an unread badge and a drop-down panel listing items addressed to the current user. It complements (not replaces) email: every signal that needs an admin or end-user to *see something happened in the IdP* lands here first, with email reserved for things that have to leave the app (password-reset, magic-link, ...).
+The **inbox** is Modgud's in-app notification surface — a header bell with an unread badge and a drop-down panel listing items addressed to the current user. It complements (not replaces) email: every signal that needs an admin or end-user to *see something happened in the IdP* lands here first, with email reserved for things that have to leave the app (password-reset, magic-link, ...).
 
 Every authenticated user has an inbox — there is no permission gate. The retention policy that controls how long items stay around is configured under [Inbox-Einstellungen](./inbox-settings).
 
@@ -32,7 +32,7 @@ The backend supports per-item snooze (`POST /api/inbox/{id}/snooze` with `Until:
 
 ## The five inbox kinds
 
-Static metadata for every kind lives in `Cocoar.Auth.Application/Inbox/InboxKindRegistry.cs`. Adding a kind requires appending the enum, registering a descriptor, wiring a notify call-site, and (if the lifecycle is new) extending `InboxRetentionSettings`.
+Static metadata for every kind lives in `Modgud.Application/Inbox/InboxKindRegistry.cs`. Adding a kind requires appending the enum, registering a descriptor, wiring a notify call-site, and (if the lifecycle is new) extending `InboxRetentionSettings`.
 
 | Kind | Persistence | Severity | Icon | Dedup | Actionable |
 | --- | --- | --- | --- | --- | --- |
@@ -66,13 +66,13 @@ Why: admins should see the *current state* of a job/request, not its failure his
 
 ## Recipient filtering & SignalR live push
 
-`InboxHub` (`[MessageName("InboxActions")]`) is one shared SignalR hub for the whole inbox. Every connected client subscribes once; the per-event filter inside `Subscribe()` checks `view.RecipientUserId == userId.Value` and only forwards items addressed to the current user (`src/dotnet/Cocoar.Auth.Api/Features/Inbox/InboxHub.cs:31-57`). Result: the client doesn't need to know about other users' items, and bandwidth per connection is bounded by the user's actual inbox volume.
+`InboxHub` (`[MessageName("InboxActions")]`) is one shared SignalR hub for the whole inbox. Every connected client subscribes once; the per-event filter inside `Subscribe()` checks `view.RecipientUserId == userId.Value` and only forwards items addressed to the current user (`src/dotnet/Modgud.Api/Features/Inbox/InboxHub.cs:31-57`). Result: the client doesn't need to know about other users' items, and bandwidth per connection is bounded by the user's actual inbox volume.
 
 Server-side, recipient resolution lives at the call-site. For admin-fan-out kinds (`AdminChangeRequestSubmitted`, `ScheduledJobFailed`) the call-site invokes `IAdminNotifier.GetAdminRecipientUserIdsAsync()`, which returns the user-ids of every Realm-Admin-group member.
 
 ## Persistence model
 
-Each inbox item is a single Marten event stream. `InboxItemProjection` (async single-stream projection) folds the four events — `InboxItemCreatedEvent`, `InboxItemReadEvent`, `InboxItemDismissedEvent`, `InboxItemSnoozedEvent` — into `InboxItemView` and raises a SignalR side-effect from `RaiseSideEffects` so the recipient's clients see the change live, no polling (`src/dotnet/Cocoar.Auth.Infrastructure/Persistence/Marten/Projections/Inbox/InboxItemProjection.cs:23-36`).
+Each inbox item is a single Marten event stream. `InboxItemProjection` (async single-stream projection) folds the four events — `InboxItemCreatedEvent`, `InboxItemReadEvent`, `InboxItemDismissedEvent`, `InboxItemSnoozedEvent` — into `InboxItemView` and raises a SignalR side-effect from `RaiseSideEffects` so the recipient's clients see the change live, no polling (`src/dotnet/Modgud.Infrastructure/Persistence/Marten/Projections/Inbox/InboxItemProjection.cs:23-36`).
 
 ## REST endpoints
 

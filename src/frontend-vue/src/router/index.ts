@@ -443,7 +443,7 @@ router.beforeEach(async (to) => {
   // first-admin onboarding now goes through CP-issued bootstrap-invites
   // (which land at /bootstrap?token=…); a fresh deployment with no admin
   // simply shows the login screen — the operator runs
-  // `dotnet Cocoar.Auth.Api.dll recover bootstrap-admin --email …` once
+  // `dotnet Modgud.Api.dll recover bootstrap-admin --email …` once
   // and onboards via the printed magic-link.
 
   // Redirect to login if not authenticated (preserve intended destination)
@@ -456,7 +456,7 @@ router.beforeEach(async (to) => {
   // sidebar gating in AdminView further hides individual menu items the user
   // cannot see; this guard just keeps users with zero admin permissions out of
   // the empty admin shell. `hasPermission` short-circuits on realm:admin and
-  // <resource>:admin. Strings are bare 2-segment form (cocoar-auth context is
+  // <resource>:admin. Strings are bare 2-segment form (modgud context is
   // implicit; realm:read is control-plane).
   if (to.path.startsWith('/admin')) {
     const ADMIN_PERMS = [

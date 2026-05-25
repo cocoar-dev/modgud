@@ -1,6 +1,6 @@
 # XAIdentity Forms Reference
 
-Complete blueprint of all admin forms from xaidentity for rebuilding in cocoar.auth with Vue.
+Complete blueprint of all admin forms from xaidentity for rebuilding in modgud with Vue.
 
 ## 1. USERS
 

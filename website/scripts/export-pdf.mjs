@@ -4,7 +4,7 @@
  * Exports the VitePress documentation as a single, professionally-formatted PDF.
  *
  * Usage:  node scripts/export-pdf.mjs [output-path]
- * Default: ./dist/cocoar-auth-docs.pdf
+ * Default: ./dist/modgud-docs.pdf
  */
 
 import fs from 'fs';
@@ -16,7 +16,7 @@ import puppeteer from 'puppeteer-core';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const OUTPUT = process.argv[2] || path.join(ROOT, 'dist', 'cocoar-auth-docs.pdf');
+const OUTPUT = process.argv[2] || path.join(ROOT, 'dist', 'modgud-docs.pdf');
 
 // ─── Document structure (matches VitePress sidebar) ─────────────────────────
 
@@ -152,7 +152,7 @@ function generateCoverPage() {
     <div class="cover">
       <div class="cover-content">
         <div class="cover-badge">Documentation</div>
-        <h1 class="cover-title">Cocoar.Auth</h1>
+        <h1 class="cover-title">Modgud</h1>
         <p class="cover-subtitle">Multi-tenant Identity Provider</p>
         <div class="cover-meta">
           <span class="cover-date">${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}</span>
@@ -261,7 +261,7 @@ function buildHtml() {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Cocoar.Auth Documentation</title>
+  <title>Modgud Documentation</title>
   <style>${CSS}</style>
 </head>
 <body>
@@ -314,7 +314,7 @@ async function generatePdf(html) {
     headerTemplate: '<span></span>',
     footerTemplate: `
       <div style="width: 100%; text-align: center; font-size: 8pt; color: #94a3b8; font-family: sans-serif;">
-        <span>Cocoar.Auth</span>
+        <span>Modgud</span>
         <span style="margin: 0 8px;">&middot;</span>
         <span class="pageNumber"></span> / <span class="totalPages"></span>
       </div>`,
@@ -327,7 +327,7 @@ async function generatePdf(html) {
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log('Exporting Cocoar.Auth documentation to PDF...\n');
+  console.log('Exporting Modgud documentation to PDF...\n');
 
   const pageCount = structure.reduce((sum, s) => sum + s.pages.length, 0);
   console.log(`  Sections: ${structure.length}`);

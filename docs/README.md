@@ -1,6 +1,6 @@
 # docs/ — internal developer notes
 
-This folder is for **us** (the people building cocoar.auth), not for end users
+This folder is for **us** (the people building modgud), not for end users
 or anyone reading the published docs. Plain markdown, kept in the repo, never
 shipped in `wwwroot/`.
 

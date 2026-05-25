@@ -47,7 +47,7 @@ The stored data itself persists across flips — turning a flag off doesn't dele
 
 ## ENV-var casing
 
-Cocoar.Configuration v5 (the binding layer Cocoar.Auth uses) reads environment variables **case-sensitively** with the same shape as the JSON keys. PascalCase only — `AppSettings__Features__PageBuilder=true`, **never** `APPSETTINGS__FEATURES__PAGEBUILDER`. The latter is silently ignored.
+Cocoar.Configuration v5 (the binding layer Modgud uses) reads environment variables **case-sensitively** with the same shape as the JSON keys. PascalCase only — `AppSettings__Features__PageBuilder=true`, **never** `APPSETTINGS__FEATURES__PAGEBUILDER`. The latter is silently ignored.
 
 This applies to every config-bound type, not just feature flags. The same rule covers `DbSettings__ConnectionString`, `Observability__Prometheus__BearerToken`, etc.
 
@@ -55,10 +55,10 @@ This applies to every config-bound type, not just feature flags. The same rule c
 
 For repository contributors — flags follow a deliberate pattern:
 
-1. Add a property to `Cocoar.Auth.Api.FeatureFlags` with a `false` default.
-2. The `IFeatureFlags` abstraction in `Cocoar.Auth.Authentication` mirrors the property (read-only) so the Authentication slice can gate surfaces without depending on the Api project.
+1. Add a property to `Modgud.Api.FeatureFlags` with a `false` default.
+2. The `IFeatureFlags` abstraction in `Modgud.Authentication` mirrors the property (read-only) so the Authentication slice can gate surfaces without depending on the Api project.
 3. Wire it everywhere: sidebar `requireFeature` (with a matching `'PageBuilder' | …` union member in `NavItem`), Vue-router `beforeEnter` guard, backend endpoint 404 short-circuit, DTO masking.
-4. Add tests in `Cocoar.Auth.Api.Tests/Authorization/` covering on/off paths.
+4. Add tests in `Modgud.Api.Tests/Authorization/` covering on/off paths.
 5. Document the flag in this file plus its feature page.
 
 Don't add a flag for "I'm not sure if I want this enabled" — flags are commitment-eating maintenance work. Add them only when there's a concrete reason the feature isn't ready for general exposure (beta integration, half-built runtime, customer-specific).

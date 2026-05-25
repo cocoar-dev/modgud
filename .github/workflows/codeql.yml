@@ -51,7 +51,7 @@ jobs:
 
       - name: Build C# (manual mode for CodeQL)
         if: matrix.language == 'csharp'
-        run: dotnet build Cocoar.Auth.slnx -c Release
+        run: dotnet build Modgud.slnx -c Release
         working-directory: ./src/dotnet
 
       # `upload: never` runs the analysis and writes SARIF to `output/`

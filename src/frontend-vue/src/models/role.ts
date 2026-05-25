@@ -1,5 +1,5 @@
 // Role admin models — mirror the DTOs in
-// src/dotnet/Cocoar.Auth.Api/Features/Roles/RolesEndpoints.cs.
+// src/dotnet/Modgud.Api/Features/Roles/RolesEndpoints.cs.
 
 export interface RoleDto {
   Id: string

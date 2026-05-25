@@ -1,0 +1,597 @@
+{
+  "password": "Demo1234!",
+
+  "users": [
+    { "key": "demo.admin",         "userName": "demo.admin",         "firstname": "Demo",     "lastname": "Admin",       "acronym": "DA",  "email": "demo.admin@demo.local",         "isAdmin": true },
+    { "key": "demo.user-manager",  "userName": "demo.user-manager",  "firstname": "Doris",    "lastname": "Steiner",     "acronym": "DS",  "email": "doris.steiner@demo.local" },
+    { "key": "demo.oauth-admin",   "userName": "demo.oauth-admin",   "firstname": "Oliver",   "lastname": "Hofer",       "acronym": "OH",  "email": "oliver.hofer@demo.local" },
+    { "key": "demo.viewer",        "userName": "demo.viewer",        "firstname": "Vera",     "lastname": "Brunner",     "acronym": "VB",  "email": "vera.brunner@demo.local" },
+    { "key": "demo.user",          "userName": "demo.user",          "firstname": "Norbert",  "lastname": "Gruber",      "acronym": "NG",  "email": "norbert.gruber@demo.local" },
+
+    { "key": "anna.bauer",         "userName": "anna.bauer",         "firstname": "Anna",     "lastname": "Bauer",       "acronym": "AB",  "email": "anna.bauer@demo.local" },
+    { "key": "stefan.kurz",        "userName": "stefan.kurz",        "firstname": "Stefan",   "lastname": "Kurz",        "acronym": "SK",  "email": "stefan.kurz@partner-alpine.at" },
+    { "key": "julia.wagner",       "userName": "julia.wagner",       "firstname": "Julia",    "lastname": "Wagner",      "acronym": "JW",  "email": "julia.wagner@partner-alpine.at" },
+    { "key": "hans.berger",        "userName": "hans.berger",        "firstname": "Hans",     "lastname": "Berger",      "acronym": "HB",  "email": "hans.berger@contoso.example" },
+    { "key": "eva.richter",        "userName": "eva.richter",        "firstname": "Eva",      "lastname": "Richter",     "acronym": "ER",  "email": "eva.richter@contoso.example" },
+
+    { "comment": "── smoke-test users — see scripts/testapps-smoke.mjs for scenarios ──" },
+    { "key": "alice",              "userName": "alice",              "firstname": "Alice",    "lastname": "Adams",       "acronym": "AA",  "email": "alice@demo.local" },
+    { "key": "bob",                "userName": "bob",                "firstname": "Bob",      "lastname": "Brown",       "acronym": "BB",  "email": "bob@demo.local" },
+    { "key": "charlie",            "userName": "charlie",            "firstname": "Charlie",  "lastname": "Carter",      "acronym": "CC",  "email": "charlie@demo.local" },
+    { "key": "diana",              "userName": "diana",              "firstname": "Diana",    "lastname": "Davies",      "acronym": "DD",  "email": "diana@demo.local" },
+    { "key": "eve",                "userName": "eve",                "firstname": "Eve",      "lastname": "Evans",       "acronym": "EE",  "email": "eve@demo.local" },
+    { "key": "morgan",             "userName": "morgan",             "firstname": "Morgan",   "lastname": "Morris",      "acronym": "MM",  "email": "morgan@demo.local" },
+    { "key": "nico",               "userName": "nico",               "firstname": "Nico",     "lastname": "Novak",       "acronym": "NN",  "email": "nico@demo.local" }
+  ],
+
+  "// apps": "Each app has its own permission catalog. Roles FK into App.Permissions[].Id by (resource, action). The modgud app is seeded automatically — referenced here as @modgud via key (the seeder looks it up by slug rather than creating it).",
+  "apps": [
+    {
+      "key": "demo-app",
+      "slug": "demo-app",
+      "displayName": "Demo App",
+      "description": "Sample SaaS app demonstrating the Modgud permission model end-to-end.",
+      "catalog": [
+        { "resource": "demo", "action": "read",  "description": "Read demo resources" },
+        { "resource": "demo", "action": "write", "description": "Modify demo resources" },
+        { "resource": "demo", "action": "admin", "description": "Resource-wide admin bypass — covers read+write" }
+      ]
+    },
+
+    { "// smoke-test apps": "Three apps in different shapes: a WordPress-class single-RS app (alpha-blog), a multi-microservice e-commerce app (beta-shop, 4 RSes), a single-mini-service CRM (gamma-crm)." },
+
+    {
+      "key": "alpha-blog",
+      "slug": "alpha-blog",
+      "displayName": "Alpha Blog",
+      "description": "WordPress-class single-API app — pure auth + per-post gating. One App, one OAuthApi.",
+      "catalog": [
+        { "resource": "post",     "action": "read"  },
+        { "resource": "post",     "action": "write" },
+        { "resource": "post",     "action": "admin" },
+        { "resource": "comment",  "action": "read"  },
+        { "resource": "comment",  "action": "write" },
+        { "resource": "comment",  "action": "admin" },
+        { "resource": "settings", "action": "admin" }
+      ]
+    },
+    {
+      "key": "beta-shop",
+      "slug": "beta-shop",
+      "displayName": "Beta Shop",
+      "description": "Multi-microservice e-commerce SaaS. One App, four OAuthApis (orders / products / shipping / admin), shared catalog. Demonstrates the per-RS catalog-subset story.",
+      "catalog": [
+        { "resource": "order",    "action": "read"  },
+        { "resource": "order",    "action": "write" },
+        { "resource": "order",    "action": "refund"},
+        { "resource": "order",    "action": "admin" },
+        { "resource": "product",  "action": "read"  },
+        { "resource": "product",  "action": "write" },
+        { "resource": "product",  "action": "admin" },
+        { "resource": "shipment", "action": "read"  },
+        { "resource": "shipment", "action": "write" },
+        { "resource": "shipment", "action": "track" },
+        { "resource": "shipment", "action": "admin" }
+      ]
+    },
+    {
+      "key": "gamma-crm",
+      "slug": "gamma-crm",
+      "displayName": "Gamma CRM",
+      "description": "Single mini-service CRM — exemplary for a small consultancy SaaS. One App, one OAuthApi.",
+      "catalog": [
+        { "resource": "contact", "action": "read"  },
+        { "resource": "contact", "action": "write" },
+        { "resource": "contact", "action": "admin" },
+        { "resource": "lead",    "action": "read"  },
+        { "resource": "lead",    "action": "write" }
+      ]
+    }
+  ],
+
+  "// roles": "Each role names its app via appKey. permissions[] resolves to App.Permissions[].Id by (resource, action). isRealmAdmin: true is reserved for cross-realm bypass roles (the seeded System Admin handles that today).",
+  "roles": [
+    {
+      "key": "oauth-admin",
+      "name": "OAuth Admin",
+      "description": "Full management of OAuth clients, scopes, APIs and login providers.",
+      "appKey": "@modgud",
+      "permissions": [
+        { "resource": "oauth-client",    "action": "read"  },
+        { "resource": "oauth-client",    "action": "write" },
+        { "resource": "oauth-scope",     "action": "read"  },
+        { "resource": "oauth-scope",     "action": "write" },
+        { "resource": "oauth-api",       "action": "read"  },
+        { "resource": "oauth-api",       "action": "write" },
+        { "resource": "login-provider",  "action": "read"  },
+        { "resource": "login-provider",  "action": "write" }
+      ]
+    },
+    {
+      "key": "group-admin",
+      "name": "Group Admin",
+      "description": "Manage authorization groups; read permission roles.",
+      "appKey": "@modgud",
+      "permissions": [
+        { "resource": "authorization-group", "action": "read"  },
+        { "resource": "authorization-group", "action": "write" },
+        { "resource": "permission-role",     "action": "read"  }
+      ]
+    },
+    {
+      "key": "help-desk",
+      "name": "Help Desk",
+      "description": "Read-only access to users, sessions and the auth log.",
+      "appKey": "@modgud",
+      "permissions": [
+        { "resource": "user",     "action": "read" },
+        { "resource": "session",  "action": "read" },
+        { "resource": "auth-log", "action": "read" }
+      ]
+    },
+    {
+      "key": "demo-reader",
+      "name": "Demo Reader",
+      "description": "Read access to the Demo App.",
+      "appKey": "demo-app",
+      "permissions": [
+        { "resource": "demo", "action": "read" }
+      ]
+    },
+    {
+      "key": "demo-writer",
+      "name": "Demo Writer",
+      "description": "Read + write access to the Demo App.",
+      "appKey": "demo-app",
+      "permissions": [
+        { "resource": "demo", "action": "read"  },
+        { "resource": "demo", "action": "write" }
+      ]
+    },
+
+    { "// smoke-test roles": "Mixed shapes — direct grants, resource-admin (will be pre-expanded), realm-admin." },
+
+    {
+      "key": "alpha-blog-writer",
+      "name": "Alpha Blog Writer",
+      "description": "Posts + reads comments on alpha-blog.",
+      "appKey": "alpha-blog",
+      "permissions": [
+        { "resource": "post",    "action": "read"  },
+        { "resource": "post",    "action": "write" },
+        { "resource": "comment", "action": "read"  }
+      ]
+    },
+    {
+      "key": "alpha-blog-moderator",
+      "name": "Alpha Blog Moderator",
+      "description": "Resource-admin on post + comment — UserInfo will pre-expand to all post:* + comment:*.",
+      "appKey": "alpha-blog",
+      "permissions": [
+        { "resource": "post",    "action": "admin" },
+        { "resource": "comment", "action": "admin" }
+      ]
+    },
+    {
+      "key": "beta-orders-clerk",
+      "name": "Beta Orders Clerk",
+      "description": "Read-only on orders.",
+      "appKey": "beta-shop",
+      "permissions": [
+        { "resource": "order", "action": "read" }
+      ]
+    },
+    {
+      "key": "beta-shop-admin",
+      "name": "Beta Shop Admin",
+      "description": "Resource-admin on every beta-shop resource — UserInfo will pre-expand to all order:*/product:*/shipment:*.",
+      "appKey": "beta-shop",
+      "permissions": [
+        { "resource": "order",    "action": "admin" },
+        { "resource": "product",  "action": "admin" },
+        { "resource": "shipment", "action": "admin" }
+      ]
+    },
+    {
+      "key": "gamma-crm-user",
+      "name": "Gamma CRM User",
+      "description": "Read+write on contact + lead in gamma-crm.",
+      "appKey": "gamma-crm",
+      "permissions": [
+        { "resource": "contact", "action": "read"  },
+        { "resource": "contact", "action": "write" },
+        { "resource": "lead",    "action": "read"  },
+        { "resource": "lead",    "action": "write" }
+      ]
+    },
+    {
+      "key": "smoke-test-realm-admin",
+      "name": "Smoke-Test Realm Admin",
+      "description": "IsRealmAdmin role for the smoke-test bob user — bypass everywhere.",
+      "isRealmAdmin": true
+    },
+    {
+      "key": "beta-shipping-tracker",
+      "name": "Beta Shipping Tracker",
+      "description": "Read-only on shipments + the track action — partner-tier role.",
+      "appKey": "beta-shop",
+      "permissions": [
+        { "resource": "shipment", "action": "read"  },
+        { "resource": "shipment", "action": "track" }
+      ]
+    },
+    {
+      "key": "alpha-blog-comment-admin",
+      "name": "Alpha Blog Comment Admin",
+      "description": "Resource-admin only on comments — pre-expansion fills comment:* but NOT post:*.",
+      "appKey": "alpha-blog",
+      "permissions": [
+        { "resource": "comment", "action": "admin" }
+      ]
+    }
+  ],
+
+  "groups": [
+    {
+      "name": "Demo Administrators",
+      "description": "Demo administrators — joined into the existing System Admin group on top of this one.",
+      "members": ["demo.admin"],
+      "roles": ["@SystemAdmin"]
+    },
+    {
+      "name": "User Managers",
+      "description": "Manage day-to-day users, sessions and authorization grants.",
+      "members": ["demo.user-manager"],
+      "roles": ["@UserManager"]
+    },
+    {
+      "name": "OAuth Administrators",
+      "description": "Configure OAuth clients, scopes, APIs and login providers.",
+      "members": ["demo.oauth-admin"],
+      "roles": ["oauth-admin"]
+    },
+    {
+      "name": "Viewers",
+      "description": "Read-only access — perfect for auditors or new joiners.",
+      "members": ["demo.viewer"],
+      "roles": ["@Viewer"]
+    },
+    {
+      "name": "Demo Readers",
+      "description": "Read access to the Demo App via the Modgud.TestApps.ResourceApi.",
+      "members": ["demo.user", "anna.bauer"],
+      "roles": ["demo-reader"]
+    },
+    {
+      "name": "Demo Writers",
+      "description": "Read + write access to the Demo App.",
+      "members": ["demo.admin"],
+      "roles": ["demo-writer"]
+    },
+    {
+      "name": "Internal Staff (auto)",
+      "description": "Auto-membership: every active person whose email ends with @demo.local.",
+      "members": [],
+      "roles": ["help-desk"],
+      "membershipMode": "Auto",
+      "membershipScript": "(p) => Type.Is(p, 'person') && p.IsActive && (p.Email != null) && p.Email.endsWith('@demo.local')"
+    },
+    {
+      "name": "External Partners (auto)",
+      "description": "Auto-membership: every active person whose email is NOT @demo.local.",
+      "members": [],
+      "roles": [],
+      "membershipMode": "Auto",
+      "membershipScript": "(p) => Type.Is(p, 'person') && p.IsActive && (p.Email != null) && !p.Email.endsWith('@demo.local')"
+    },
+
+    { "// smoke-test groups": "Bind the smoke-test users to their roles. BoundTo=[*] so they apply for every app the role's AppId points at." },
+
+    {
+      "name": "Smoke Test — Alice (Blog Writer)",
+      "description": "alice has alpha-blog-writer grants only.",
+      "members": ["alice"],
+      "roles": ["alpha-blog-writer"],
+      "boundTo": ["*"]
+    },
+    {
+      "name": "Smoke Test — Bob (Realm Admin)",
+      "description": "bob has the IsRealmAdmin role — pre-expansion will fill EVERY block.",
+      "members": ["bob"],
+      "roles": ["smoke-test-realm-admin"],
+      "boundTo": ["*"]
+    },
+    {
+      "name": "Smoke Test — Charlie (Beta Shop Admin)",
+      "description": "charlie has resource-admin on every beta-shop resource — pre-expansion fills the catalog.",
+      "members": ["charlie"],
+      "roles": ["beta-shop-admin"],
+      "boundTo": ["*"]
+    },
+    { "// diana": "diana has NO group — she's the pure-auth WordPress-class user. UserInfo emits empty resource_access for her tokens." },
+    {
+      "name": "Smoke Test — Eve (Cross-App User)",
+      "description": "eve has grants in alpha-blog + beta-shop + gamma-crm.",
+      "members": ["eve"],
+      "roles": ["alpha-blog-writer", "beta-orders-clerk", "gamma-crm-user"],
+      "boundTo": ["*"]
+    },
+    {
+      "name": "Smoke Test — Morgan (Resource-Admin Moderator)",
+      "description": "morgan only holds comment:admin — UserInfo will pre-expand to all comment:* (read+write+admin) but NOT touch post:*.",
+      "members": ["morgan"],
+      "roles": ["alpha-blog-comment-admin"],
+      "boundTo": ["*"]
+    },
+    {
+      "name": "Smoke Test — Nico (Partner Tracker)",
+      "description": "nico is a logistics partner with shipment:read + shipment:track only. Demonstrates a narrow per-resource subset.",
+      "members": ["nico"],
+      "roles": ["beta-shipping-tracker"],
+      "boundTo": ["*"]
+    }
+  ],
+
+  "// scopes": "Each scope binds a token to a specific Audience via Resources=[<api-name>] and AppId=<app>. When a client requests this scope, the resulting access token's aud[] includes that audience.",
+  "scopes": [
+    { "name": "demo.read",  "displayName": "Demo API — Read",  "description": "Read access to the Demo API.",  "appKey": "demo-app", "resources": ["demo-api"] },
+    { "name": "demo.write", "displayName": "Demo API — Write", "description": "Read+write access to the Demo API.", "appKey": "demo-app", "resources": ["demo-api"] },
+    { "name": "demo.admin", "displayName": "Demo API — Admin", "description": "Administrative access to the Demo API.", "appKey": "demo-app", "resources": ["demo-api"] },
+
+    { "// smoke-test scopes": "One scope per OAuthApi audience — keeps the wiring obvious." },
+
+    { "name": "alpha-blog.use",     "displayName": "Alpha Blog — use",       "description": "Token grants access to the alpha-blog API.",     "appKey": "alpha-blog", "resources": ["https://alpha-blog-api.cocoar.local"] },
+    { "name": "beta-orders.use",    "displayName": "Beta Shop — orders",     "description": "Token grants access to the beta-orders API.",    "appKey": "beta-shop",  "resources": ["https://beta-orders-api.cocoar.local"] },
+    { "name": "beta-products.use",  "displayName": "Beta Shop — products",   "description": "Token grants access to the beta-products API.",  "appKey": "beta-shop",  "resources": ["https://beta-products-api.cocoar.local"] },
+    { "name": "beta-shipping.use",  "displayName": "Beta Shop — shipping",   "description": "Token grants access to the beta-shipping API.",  "appKey": "beta-shop",  "resources": ["https://beta-shipping-api.cocoar.local"] },
+    { "name": "beta-admin.use",     "displayName": "Beta Shop — admin",      "description": "Token grants access to the beta-admin API.",     "appKey": "beta-shop",  "resources": ["https://beta-admin-api.cocoar.local"] },
+    { "name": "gamma-crm.use",      "displayName": "Gamma CRM — use",        "description": "Token grants access to the gamma-crm API.",      "appKey": "gamma-crm",  "resources": ["https://gamma-crm-api.cocoar.local"] }
+  ],
+
+  "// apis": "OAuthApi.AppId + OAuthApi.PermissionIds bind a resource server to its App's catalog. The RS authenticates against the distribution-API with name + initial secret to fetch the union of (its catalog subset) ∩ (user's grants).",
+  "apis": [
+    {
+      "// demo-api note": "Bare-string aud — legal per RFC 7519 §2 (no colon, no URI required). Demonstrates the bare-identifier form alongside the URI form used by the smoke-test apis below.",
+      "name": "demo-api",
+      "displayName": "Demo API",
+      "description": "Sample resource server consumed by the demo OAuth clients and the TestApps.ResourceApi.",
+      "appKey": "demo-app",
+      "scopes": ["demo.read", "demo.write", "demo.admin"],
+      "permissions": [
+        { "resource": "demo", "action": "read"  },
+        { "resource": "demo", "action": "write" },
+        { "resource": "demo", "action": "admin" }
+      ]
+    },
+
+    { "// smoke-test apis": "alpha-blog: one RS for the whole catalog. beta-shop: 4 RSes, each with its own catalog subset. gamma-crm: one RS." },
+
+    {
+      "name": "https://alpha-blog-api.cocoar.local",
+      "displayName": "Alpha Blog API",
+      "description": "Single resource server for the alpha-blog app. Subset = full catalog.",
+      "appKey": "alpha-blog",
+      "scopes": ["alpha-blog.use"],
+      "permissions": [
+        { "resource": "post",     "action": "read"  },
+        { "resource": "post",     "action": "write" },
+        { "resource": "post",     "action": "admin" },
+        { "resource": "comment",  "action": "read"  },
+        { "resource": "comment",  "action": "write" },
+        { "resource": "comment",  "action": "admin" },
+        { "resource": "settings", "action": "admin" }
+      ]
+    },
+    {
+      "name": "https://beta-orders-api.cocoar.local",
+      "displayName": "Beta Shop — Orders API",
+      "description": "Microservice handling orders. Catalog subset is just the order:* entries.",
+      "appKey": "beta-shop",
+      "scopes": ["beta-orders.use"],
+      "permissions": [
+        { "resource": "order", "action": "read"  },
+        { "resource": "order", "action": "write" },
+        { "resource": "order", "action": "refund"},
+        { "resource": "order", "action": "admin" }
+      ]
+    },
+    {
+      "name": "https://beta-products-api.cocoar.local",
+      "displayName": "Beta Shop — Products API",
+      "description": "Microservice handling products. Catalog subset = product:*.",
+      "appKey": "beta-shop",
+      "scopes": ["beta-products.use"],
+      "permissions": [
+        { "resource": "product", "action": "read"  },
+        { "resource": "product", "action": "write" },
+        { "resource": "product", "action": "admin" }
+      ]
+    },
+    {
+      "name": "https://beta-shipping-api.cocoar.local",
+      "displayName": "Beta Shop — Shipping API",
+      "description": "Microservice handling shipments. Catalog subset = shipment:*.",
+      "appKey": "beta-shop",
+      "scopes": ["beta-shipping.use"],
+      "permissions": [
+        { "resource": "shipment", "action": "read"  },
+        { "resource": "shipment", "action": "write" },
+        { "resource": "shipment", "action": "track" },
+        { "resource": "shipment", "action": "admin" }
+      ]
+    },
+    {
+      "name": "https://beta-admin-api.cocoar.local",
+      "displayName": "Beta Shop — Admin API",
+      "description": "Cross-cutting admin microservice. Subset = the entire beta-shop catalog.",
+      "appKey": "beta-shop",
+      "scopes": ["beta-admin.use"],
+      "permissions": [
+        { "resource": "order",    "action": "read"  },
+        { "resource": "order",    "action": "write" },
+        { "resource": "order",    "action": "refund"},
+        { "resource": "order",    "action": "admin" },
+        { "resource": "product",  "action": "read"  },
+        { "resource": "product",  "action": "write" },
+        { "resource": "product",  "action": "admin" },
+        { "resource": "shipment", "action": "read"  },
+        { "resource": "shipment", "action": "write" },
+        { "resource": "shipment", "action": "track" },
+        { "resource": "shipment", "action": "admin" }
+      ]
+    },
+    {
+      "name": "https://gamma-crm-api.cocoar.local",
+      "displayName": "Gamma CRM API",
+      "description": "Single mini-service CRM API. Subset = full catalog.",
+      "appKey": "gamma-crm",
+      "scopes": ["gamma-crm.use"],
+      "permissions": [
+        { "resource": "contact", "action": "read"  },
+        { "resource": "contact", "action": "write" },
+        { "resource": "contact", "action": "admin" },
+        { "resource": "lead",    "action": "read"  },
+        { "resource": "lead",    "action": "write" }
+      ]
+    }
+  ],
+
+  "clients": [
+    {
+      "clientId": "demo-spa",
+      "displayName": "Demo SPA",
+      "clientType": "public",
+      "consentType": "implicit",
+      "redirectUris": ["http://localhost:3000/callback"],
+      "postLogoutRedirectUris": ["http://localhost:3000/"],
+      "allowedGrantTypes": ["authorization_code", "refresh_token"],
+      "scopes": ["openid", "email", "profile", "demo.read"],
+      "requireConsent": false,
+      "requireClientSecret": false,
+      "accessTokenType": "Jwt",
+      "appKeys": ["demo-app"]
+    },
+    {
+      "clientId": "demo-backend",
+      "displayName": "Demo Backend Service",
+      "clientType": "confidential",
+      "clientSecret": "demo-backend-secret-please-rotate",
+      "consentType": "implicit",
+      "redirectUris": [],
+      "postLogoutRedirectUris": [],
+      "allowedGrantTypes": ["client_credentials"],
+      "scopes": ["demo.read", "demo.write"],
+      "requireConsent": false,
+      "requireClientSecret": true,
+      "accessTokenType": "Jwt",
+      "appKeys": ["demo-app"]
+    },
+    {
+      "clientId": "demo-bff",
+      "displayName": "Demo BFF",
+      "clientType": "confidential",
+      "clientSecret": "demo-bff-secret-please-rotate",
+      "consentType": "implicit",
+      "redirectUris": ["http://localhost:7080/signin-oidc"],
+      "postLogoutRedirectUris": ["http://localhost:7080/signout-callback-oidc"],
+      "allowedGrantTypes": ["authorization_code", "refresh_token"],
+      "scopes": ["openid", "email", "profile", "offline_access", "roles", "permissions", "demo.read", "demo.write"],
+      "requireConsent": false,
+      "requireClientSecret": true,
+      "accessTokenType": "Jwt",
+      "appKeys": ["demo-app"]
+    },
+    {
+      "clientId": "demo-mobile",
+      "displayName": "Demo Mobile",
+      "clientType": "public",
+      "consentType": "explicit",
+      "redirectUris": ["cocoar-demo://callback", "http://localhost:3000/mobile-callback"],
+      "postLogoutRedirectUris": ["cocoar-demo://logged-out"],
+      "allowedGrantTypes": ["authorization_code", "refresh_token"],
+      "scopes": ["openid", "email", "profile", "offline_access", "demo.read"],
+      "requireConsent": true,
+      "requireClientSecret": false,
+      "accessTokenType": "Jwt",
+      "appKeys": ["demo-app"]
+    },
+
+    { "// smoke-test clients": "Different shapes: single-app SPA, multi-microservice SPA, mini-UI, fat-client cross-app dashboard, confidential backend." },
+
+    {
+      "clientId": "alpha-blog-spa",
+      "displayName": "Smoke — Alpha Blog SPA",
+      "clientType": "confidential",
+      "clientSecret": "alpha-blog-spa-secret-please-rotate",
+      "consentType": "implicit",
+      "redirectUris": ["http://localhost/test-callback"],
+      "postLogoutRedirectUris": [],
+      "allowedGrantTypes": ["authorization_code", "refresh_token"],
+      "scopes": ["openid", "email", "profile", "roles", "alpha-blog.use"],
+      "requireConsent": false,
+      "requireClientSecret": true,
+      "accessTokenType": "Jwt",
+      "appKeys": ["alpha-blog"]
+    },
+    {
+      "clientId": "beta-shop-spa",
+      "displayName": "Smoke — Beta Shop SPA (multi-microservice)",
+      "clientType": "confidential",
+      "clientSecret": "beta-shop-spa-secret-please-rotate",
+      "consentType": "implicit",
+      "redirectUris": ["http://localhost/test-callback"],
+      "postLogoutRedirectUris": [],
+      "allowedGrantTypes": ["authorization_code", "refresh_token"],
+      "scopes": ["openid", "email", "profile", "roles", "beta-orders.use", "beta-products.use", "beta-shipping.use"],
+      "requireConsent": false,
+      "requireClientSecret": true,
+      "accessTokenType": "Jwt",
+      "appKeys": ["beta-shop"]
+    },
+    {
+      "clientId": "gamma-crm-mini-ui",
+      "displayName": "Smoke — Gamma CRM mini-UI",
+      "clientType": "confidential",
+      "clientSecret": "gamma-crm-mini-ui-secret-please-rotate",
+      "consentType": "implicit",
+      "redirectUris": ["http://localhost/test-callback"],
+      "postLogoutRedirectUris": [],
+      "allowedGrantTypes": ["authorization_code", "refresh_token"],
+      "scopes": ["openid", "email", "profile", "roles", "gamma-crm.use"],
+      "requireConsent": false,
+      "requireClientSecret": true,
+      "accessTokenType": "Jwt",
+      "appKeys": ["gamma-crm"]
+    },
+    {
+      "clientId": "cross-app-dashboard",
+      "displayName": "Smoke — Cross-App Dashboard (fat client)",
+      "clientType": "confidential",
+      "clientSecret": "cross-app-dashboard-secret-please-rotate",
+      "consentType": "implicit",
+      "redirectUris": ["http://localhost/test-callback"],
+      "postLogoutRedirectUris": [],
+      "allowedGrantTypes": ["authorization_code", "refresh_token"],
+      "scopes": ["openid", "email", "profile", "roles", "alpha-blog.use", "beta-orders.use", "gamma-crm.use"],
+      "requireConsent": false,
+      "requireClientSecret": true,
+      "accessTokenType": "Jwt",
+      "appKeys": ["alpha-blog", "beta-shop", "gamma-crm"]
+    },
+    {
+      "clientId": "smoke-m2m-backend",
+      "displayName": "Smoke — M2M Backend",
+      "clientType": "confidential",
+      "clientSecret": "smoke-m2m-backend-secret-please-rotate",
+      "consentType": "implicit",
+      "redirectUris": [],
+      "postLogoutRedirectUris": [],
+      "allowedGrantTypes": ["client_credentials"],
+      "scopes": ["beta-orders.use"],
+      "requireConsent": false,
+      "requireClientSecret": true,
+      "accessTokenType": "Jwt",
+      "appKeys": ["beta-shop"]
+    }
+  ]
+}

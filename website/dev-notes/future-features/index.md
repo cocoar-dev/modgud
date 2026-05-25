@@ -96,7 +96,7 @@ existierender Konsument, aber jederzeit additiv nachrüstbar.
 
 ### [Per-App Login-Customization (Routing + Form-Builder)](./per-app-login-customization)
 
-Cocoar.Auth zentralisiert Login — heute ein Realm = eine Login-Seite,
+Modgud zentralisiert Login — heute ein Realm = eine Login-Seite,
 alle Apps teilen sich denselben UI. Wenn derselbe Kunde mehrere
 Produkte fährt (alpha-blog, beta-shop, event-tree, …) will Marketing
 dass jedes wie es selbst aussieht. Design: App-Context-aware Routing

@@ -191,7 +191,7 @@ async function handleSubmit() {
     </button>
     <div class="w-full max-w-sm">
       <div class="mb-8 text-center">
-        <img src="/idp-logo.svg" alt="Cocoar.Auth" class="mx-auto mb-1 h-16 w-auto" />
+        <img src="/idp-logo.svg" alt="Modgud" class="mx-auto mb-1 h-16 w-auto" />
         <h1 class="text-2xl font-bold tracking-tight text-surface-800">
           Cocoar<span class="text-[#525e76]">.Auth</span>
         </h1>

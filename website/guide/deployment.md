@@ -11,7 +11,7 @@
 
 ## Configuration
 
-cocoar.auth uses **Cocoar.Configuration v5** with layered binding.
+modgud uses **Cocoar.Configuration v5** with layered binding.
 Settings are loaded from multiple sources, each overriding the previous:
 
 1. `data/configuration.json` (defaults, committed)
@@ -70,7 +70,7 @@ settings, the OpenIddict issuer, the magic-link rate limit, the
       "UserName": "noreply@example.com",
       "Password": "...",
       "FromAddress": "noreply@example.com",
-      "FromName": "Cocoar Auth"
+      "FromName": "Modgud"
     }
   },
   "MagicLink": { "Enabled": true, "ExpirationMinutes": 15, "RateLimitMinutes": 2 },
@@ -92,7 +92,7 @@ they default to `data/keys/signing.pfx` and `data/keys/encryption.pfx`
 respectively, resolved relative to the app's working directory
 (`/app/` in the Docker image).
 
-When the resolved file is missing on disk at startup, cocoar.auth
+When the resolved file is missing on disk at startup, modgud
 auto-generates a passwordless self-signed PFX in place and logs a
 startup warning naming the path. The cert persists across container
 restarts as long as the directory is on a persistent volume — see
@@ -113,7 +113,7 @@ password-protected PFX from elsewhere:
 
 ::: info Database naming
 `DbSettings.ConnectionString` points at the master DB — pick any name
-you like. When additional realms are created, cocoar.auth appends
+you like. When additional realms are created, modgud appends
 `_<slug>` to that name for each tenant DB (e.g. for a master DB called
 `auth`: `auth_acme`, `auth_finance`).
 :::
@@ -124,8 +124,8 @@ The official Docker image bundles backend (.NET) + the built Vue SPA
 (as static `wwwroot/` content).
 
 ```
-ghcr.io/cocoar/cocoar.auth:latest        # Latest production release
-ghcr.io/cocoar/cocoar.auth:1.0.0         # Specific version
+ghcr.io/cocoar/modgud:latest        # Latest production release
+ghcr.io/cocoar/modgud:1.0.0         # Specific version
 ```
 
 Multi-arch: **linux/amd64** + **linux/arm64**.
@@ -137,13 +137,13 @@ variables** plus a persistent volume for auto-generated certs:
 
 ```bash
 docker run -d \
-  --name cocoar-auth \
+  --name modgud \
   -p 80:8081 \
   -v cocoar-keys:/app/data/keys \
   -e DbSettings__ConnectionString="Host=your-postgres;Database=<master-db>;Username=postgres;Password=..." \
   -e OpenIddict__Issuer="https://auth.example.com" \
   -e ProxyAllowedNetworks="10.0.0.0/24" \
-  ghcr.io/cocoar/cocoar.auth:latest
+  ghcr.io/cocoar/modgud:latest
 ```
 
 What each one does:
@@ -194,7 +194,7 @@ Recovery CLI, then restart so the in-process realm cache picks
 up the change:
 
 ```bash
-docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll \
+docker exec modgud dotnet Modgud.Api.dll \
     recover realm-add-domain --slug system --domain auth.example.com
 
 # The CLI runs as a separate process; the running server's realm
@@ -206,7 +206,7 @@ Then create the first admin user (the `system` slug is the default,
 so `--realm system` is implicit):
 
 ```bash
-docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll \
+docker exec modgud dotnet Modgud.Api.dll \
     recover bootstrap-admin \
     --email admin@example.com --username admin --password 'StrongPass1!'
 ```
@@ -229,7 +229,7 @@ services:
       retries: 10
 
   auth:
-    image: ghcr.io/cocoar/cocoar.auth:latest
+    image: ghcr.io/cocoar/modgud:latest
     ports:
       - "80:8081"   # Kestrel listens on 8081 in the image; map to 80
     environment:
@@ -265,14 +265,14 @@ to appear in the Compose file unless you want to override them.
 
 ## TLS
 
-cocoar.auth can terminate TLS itself (Kestrel with a cert) or run
+modgud can terminate TLS itself (Kestrel with a cert) or run
 behind a reverse proxy (Nginx, Sophos XG, ...).
 
 ### Own TLS termination
 
 ```yaml
 auth:
-  image: ghcr.io/cocoar/cocoar.auth:latest
+  image: ghcr.io/cocoar/modgud:latest
   ports:
     - "443:443"
   environment:
@@ -284,8 +284,8 @@ auth:
     - ./certs:/secrets:ro
 ```
 
-If `AppUrl` is HTTPS and `CertPath` is not set, cocoar.auth generates
-a self-signed cert at `certs/cocoar-auth.pfx` (fine for test setups,
+If `AppUrl` is HTTPS and `CertPath` is not set, modgud generates
+a self-signed cert at `certs/modgud.pfx` (fine for test setups,
 but browsers will warn).
 
 ::: tip Three different certificate slots
@@ -343,17 +343,17 @@ Important:
 - **WebSocket upgrade** for `/signalr` — otherwise no live-update
   stream
 
-cocoar.auth respects forwarded headers via `UseForwardedHeaders` in
+modgud respects forwarded headers via `UseForwardedHeaders` in
 `Program.cs`.
 
 ## Multi-realm deployment
 
-Each realm needs its own domain pointing at cocoar.auth:
+Each realm needs its own domain pointing at modgud:
 
 ```
-A record    auth.example.com         → cocoar.auth container
-A record    acme.example.com         → cocoar.auth container (same IP)
-A record    finance.example.com      → cocoar.auth container (same IP)
+A record    auth.example.com         → modgud container
+A record    acme.example.com         → modgud container (same IP)
+A record    finance.example.com      → modgud container (same IP)
 ```
 
 TLS termination must cover all domains (wildcard cert or SAN cert).
@@ -386,7 +386,7 @@ Additional realms are only created at runtime via
 `POST /api/admin/realms`.
 
 ::: warning Multi-pod deployments
-When several cocoar.auth instances boot in parallel, schema apply can
+When several modgud instances boot in parallel, schema apply can
 race. In practice this is not an issue today (Marten is idempotent +
 Postgres locks help), but for very large setups a separate migration
 phase is preferable: `AutoCreate.None` in the pods + a `migrate`
@@ -404,14 +404,14 @@ routing required.
 
 ## SignalR
 
-cocoar.auth pushes live updates over `/signalr/ui` (typed RPC via
+modgud pushes live updates over `/signalr/ui` (typed RPC via
 SignalARRR). Reverse proxies need upgrade headers (see above). The
 connection is auth-gated — the user must be logged in before it's
 established.
 
 ## Security headers
 
-cocoar.auth doesn't set its own security headers — that's the job of
+modgud doesn't set its own security headers — that's the job of
 the reverse proxy or a fronting WAF. Recommendations:
 
 ```
@@ -424,7 +424,7 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 
 ## Email provider
 
-cocoar.auth ships two outbound providers — pick whichever your
+modgud ships two outbound providers — pick whichever your
 infrastructure already gives you. Switch between them by flipping
 `Email__Provider`; the unused section is ignored.
 
@@ -439,7 +439,7 @@ environment:
   Email__Smtp__UserName: "noreply@example.com"
   Email__Smtp__Password: "${SMTP_PASSWORD}"
   Email__Smtp__FromAddress: "noreply@example.com"
-  Email__Smtp__FromName: "Cocoar Auth"
+  Email__Smtp__FromName: "Modgud"
 ```
 
 ### Postmark
@@ -449,7 +449,7 @@ environment:
   Email__Provider: "Postmark"
   Email__Postmark__ServerToken: "${POSTMARK_TOKEN}"
   Email__Postmark__FromAddress: "noreply@example.com"
-  Email__Postmark__FromName: "Cocoar Auth"
+  Email__Postmark__FromName: "Modgud"
   Email__Postmark__MessageStream: "outbound"   # default; e.g. "broadcast" for bulk-streams
 ```
 
@@ -471,7 +471,7 @@ before you go live.
 
 The Recovery CLI runs the same binary in command mode instead of
 starting Kestrel — pass `recover <verb>` to `dotnet
-Cocoar.Auth.Api.dll`. The CLI is for two situations:
+Modgud.Api.dll`. The CLI is for two situations:
 
 1. **First-time bootstrap** — set up the system realm's public
    domain and create the first admin (covered in [Quick start](#quick-start)
@@ -479,7 +479,7 @@ Cocoar.Auth.Api.dll`. The CLI is for two situations:
 2. **Break-glass recovery** — all admins locked out, 2FA reset,
    projection rebuild.
 
-Reference (`docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover help`
+Reference (`docker exec modgud dotnet Modgud.Api.dll recover help`
 prints the same):
 
 | Verb | Purpose |
@@ -499,9 +499,9 @@ to `system`).
 
 ```bash
 # A few representative invocations:
-docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover list
-docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover realm-list
-docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover \
+docker exec modgud dotnet Modgud.Api.dll recover list
+docker exec modgud dotnet Modgud.Api.dll recover realm-list
+docker exec modgud dotnet Modgud.Api.dll recover \
     realm-add-domain --slug system --domain auth.example.com
-docker exec cocoar-auth dotnet Cocoar.Auth.Api.dll recover reset-2fa admin
+docker exec modgud dotnet Modgud.Api.dll recover reset-2fa admin
 ```

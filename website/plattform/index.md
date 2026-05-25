@@ -1,6 +1,6 @@
 ---
 title: Plattform
-description: Operator-facing configuration of the Cocoar.Auth instance.
+description: Operator-facing configuration of the Modgud instance.
 ---
 
 # Plattform

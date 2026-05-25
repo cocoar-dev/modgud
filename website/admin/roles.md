@@ -27,12 +27,12 @@ Effect: a user is `Editor in TimeToDo` because
 
 ## Permission format: three segments
 
-Cocoar.Auth manages permissions as **`app:resource:action`** strings:
+Modgud manages permissions as **`app:resource:action`** strings:
 
 | Permission | Meaning |
 | --- | --- |
-| `cocoar-auth:user:read` | Read the user list in cocoar.auth |
-| `cocoar-auth:oauth-client:write` | Edit OAuth clients in cocoar.auth |
+| `modgud:user:read` | Read the user list in modgud |
+| `modgud:oauth-client:write` | Edit OAuth clients in modgud |
 | `timetodo:todo:write` | Write todos in the TimeToDo app |
 
 Plus three bypass tiers:
@@ -43,19 +43,19 @@ Plus three bypass tiers:
 
 ## Standard roles (after setup)
 
-When the first admin in a realm is created (recovery CLI or HTTP bootstrap-invite — see [First-time setup](../getting-started/first-time-setup)), Cocoar.Auth atomically seeds three roles — all under the system app `cocoar-auth`:
+When the first admin in a realm is created (recovery CLI or HTTP bootstrap-invite — see [First-time setup](../getting-started/first-time-setup)), Modgud atomically seeds three roles — all under the system app `modgud`:
 
 | Role | App | Effect |
 | --- | --- | --- |
-| **System Admin** | cocoar-auth | holds the fully-qualified permission `realm:admin` → realm-wide bypass |
-| **User Manager** | cocoar-auth | `cocoar-auth:user:read/write` + `:session:read/write` + `:authorization-group:read` + `:permission-role:read` + `:auth-log:read` |
-| **Viewer** | cocoar-auth | read-only on user, authorization-group, permission-role |
+| **System Admin** | modgud | holds the fully-qualified permission `realm:admin` → realm-wide bypass |
+| **User Manager** | modgud | `modgud:user:read/write` + `:session:read/write` + `:authorization-group:read` + `:permission-role:read` + `:auth-log:read` |
+| **Viewer** | modgud | read-only on user, authorization-group, permission-role |
 
 Run `node scripts/seed-demo.mjs` after first login and you'll get additional roles for realistic test setups (see `data/demo-seed.json` for the manifest).
 
 ## Resources available per app
 
-What resources an app has is defined by the app itself — see [Applications](./applications). The system app `cocoar-auth` has these built in:
+What resources an app has is defined by the app itself — see [Applications](./applications). The system app `modgud` has these built in:
 
 | Resource | Typical actions |
 | --- | --- |
@@ -94,17 +94,17 @@ Fields:
 If you want a role to span several resources (e.g. "User Manager" covers user, session, authorization-group), **leave Resource Type empty** and write fully-qualified permissions in the list:
 
 ```
-cocoar-auth:user:read
-cocoar-auth:user:write
-cocoar-auth:session:read
-cocoar-auth:authorization-group:read
+modgud:user:read
+modgud:user:write
+modgud:session:read
+modgud:authorization-group:read
 ```
 
 Fully-qualified strings (containing `:`) pass through the resolver unchanged. The seeded System Admin / User Manager / Viewer roles are built exactly this way.
 
 ## Cross-app roles (special case)
 
-A role can also include fully-qualified permissions from **other** apps in its permissions list — for example a "Cross-App Auditor" with `cocoar-auth:auth-log:read` AND `timetodo:audit:read`. This works because fully-qualified permissions pass through without further filtering.
+A role can also include fully-qualified permissions from **other** apps in its permissions list — for example a "Cross-App Auditor" with `modgud:auth-log:read` AND `timetodo:audit:read`. This works because fully-qualified permissions pass through without further filtering.
 
 In practice though: prefer two separate roles in two separate groups (each with their own BoundTo). Cleaner to understand and audit.
 
@@ -136,5 +136,5 @@ Many small roles, each tied to a clear resource, compose freely into groups. A "
 :::
 
 ::: tip Per-app roles
-Roles for TimeToDo go under `AppSlug = "timetodo"`, not `cocoar-auth`. They show up in the right permission lists, and `[Authorize(Roles = "...")]` in the TimeToDo backend finds them via the `resource_access["timetodo"]` claim in the token.
+Roles for TimeToDo go under `AppSlug = "timetodo"`, not `modgud`. They show up in the right permission lists, and `[Authorize(Roles = "...")]` in the TimeToDo backend finds them via the `resource_access["timetodo"]` claim in the token.
 :::

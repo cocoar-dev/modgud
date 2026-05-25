@@ -1,5 +1,5 @@
 // GDPR self-service models — mirror DTOs in
-// src/dotnet-next/Cocoar.Auth.Authentication/Gdpr/GdprDtos.cs.
+// src/dotnet-next/Modgud.Authentication/Gdpr/GdprDtos.cs.
 
 export interface RequestDeletionDto {
   Password: string

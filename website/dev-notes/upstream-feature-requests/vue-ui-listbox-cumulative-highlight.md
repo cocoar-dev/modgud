@@ -2,7 +2,7 @@
 
 **Repo:** `@cocoar/vue-ui`
 **Components:** `CoarListbox`, `CoarDualListbox`
-**Reported by:** Cocoar.Auth onboarding (2026-05-11) — an integrator
+**Reported by:** Modgud onboarding (2026-05-11) — an integrator
 filling the Scopes / Grants / Apps pickers on the OAuth-Client dialog
 expected single-click to toggle, hit the "this behaves single-select"
 trap, and didn't discover Ctrl/Shift-Click on their own.
@@ -21,7 +21,7 @@ GitHub-issue-row pattern, the Notion-multi-select pattern, the
 Linear-filter pattern. Users who don't know the keyboard shortcuts come
 away thinking the listbox is broken.
 
-Symptom on Cocoar.Auth's `ClientDetails.vue`:
+Symptom on Modgud's `ClientDetails.vue`:
 
 > Multi-Select in den Listboxen (Scopes/Grants/Apps) verhält sich
 > single-select — Mehrfaches Anklicken behält nur den letzten markierten
@@ -109,7 +109,7 @@ toggle — leave that path alone.
 ## Workaround until fixed
 
 Document the keyboard shortcuts in a one-line tab-hint per picker — done
-in Cocoar.Auth's `ClientDetails.vue` (`admin.dualListbox.multiSelectHint`
+in Modgud's `ClientDetails.vue` (`admin.dualListbox.multiSelectHint`
 localisation key, ~2026-05-11 commit). Effective but blunt: every page
 using a picker has to repeat the hint, and the underlying confusion is
 still there for first-time users.

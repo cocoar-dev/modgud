@@ -1,4 +1,4 @@
-# Cocoar.Auth
+# Modgud
 
 Authentication and authorization Identity Provider for COCOAR applications.
 
@@ -16,7 +16,7 @@ Authentication and authorization Identity Provider for COCOAR applications.
 
 ## Overview
 
-Cocoar.Auth is a full-featured Identity Provider built with:
+Modgud is a full-featured Identity Provider built with:
 
 | Component | Technology |
 |-----------|------------|
@@ -30,14 +30,14 @@ Cocoar.Auth is a full-featured Identity Provider built with:
 ## Architecture
 
 ```
-cocoar.auth/
+modgud/
 ├── src/
 │   ├── dotnet/                      # ASP.NET Core API
-│   │   ├── Cocoar.Auth.Domain/      # Entities, Events, Aggregates
-│   │   ├── Cocoar.Auth.Application/ # CQRS Commands/Queries, Services
-│   │   ├── Cocoar.Auth.Infrastructure/ # Marten stores, Projections
-│   │   ├── Cocoar.Auth.Api/         # REST Controllers
-│   │   └── Cocoar.Auth.Tests/       # Integration Tests
+│   │   ├── Modgud.Domain/      # Entities, Events, Aggregates
+│   │   ├── Modgud.Application/ # CQRS Commands/Queries, Services
+│   │   ├── Modgud.Infrastructure/ # Marten stores, Projections
+│   │   ├── Modgud.Api/         # REST Controllers
+│   │   └── Modgud.Tests/       # Integration Tests
 │   └── frontend/                    # Angular UI (planned)
 ├── docker/                          # Docker deployment
 └── docs/                            # Documentation
@@ -79,7 +79,7 @@ cocoar.auth/
 cd src/dotnet
 dotnet restore
 dotnet build
-dotnet run --project Cocoar.Auth.Api
+dotnet run --project Modgud.Api
 ```
 
 ### Run Tests

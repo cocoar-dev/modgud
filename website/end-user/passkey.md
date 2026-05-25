@@ -2,7 +2,7 @@
 
 A **passkey** lets you sign in without typing a password. Instead, you confirm with your device — Touch ID, Windows Hello, a security key like YubiKey, or your phone's biometric. Modern, phishing-resistant, fast.
 
-Technically it's an implementation of **WebAuthn / FIDO2** — your device generates a cryptographic key pair, the public half is stored with Cocoar.Auth, the private half never leaves the device.
+Technically it's an implementation of **WebAuthn / FIDO2** — your device generates a cryptographic key pair, the public half is stored with Modgud, the private half never leaves the device.
 
 ## When does a passkey help
 
@@ -15,14 +15,14 @@ Technically it's an implementation of **WebAuthn / FIDO2** — your device gener
 
 Profile → Security → **Add Passkey**.
 
-Cocoar.Auth asks your browser, "Please create a passkey for this user". Your browser shows the platform UI:
+Modgud asks your browser, "Please create a passkey for this user". Your browser shows the platform UI:
 
 - macOS / iOS: Touch ID or Face ID
 - Windows: Windows Hello
 - Android: fingerprint or face unlock
 - YubiKey or other security key: insert + tap
 
-Confirm. The passkey is saved on your device (or in iCloud Keychain / Google Password Manager / 1Password — depending on your setup) and registered with Cocoar.Auth.
+Confirm. The passkey is saved on your device (or in iCloud Keychain / Google Password Manager / 1Password — depending on your setup) and registered with Modgud.
 
 You can enrol several passkeys for one account — typical setup: laptop's biometric + phone's biometric + a YubiKey for emergencies.
 
@@ -30,7 +30,7 @@ You can enrol several passkeys for one account — typical setup: laptop's biome
 
 The login page has a **Sign in with passkey** button. Click it → your device prompts for biometric → you're in. No password screen, no separate 2FA screen.
 
-If multiple Cocoar.Auth accounts have passkeys on this device, the browser asks which one to use.
+If multiple Modgud accounts have passkeys on this device, the browser asks which one to use.
 
 ## Manage passkeys
 
@@ -40,13 +40,13 @@ Profile → Security → **Passkeys** lists every passkey enrolled on this accou
 - The creation date
 - A delete button
 
-Deleting a passkey on Cocoar.Auth's side **only removes the registration** — your device still has the private key, but Cocoar.Auth no longer accepts it. To clean up the device side too, remove it in Touch ID Settings / Windows Hello / your password manager.
+Deleting a passkey on Modgud's side **only removes the registration** — your device still has the private key, but Modgud no longer accepts it. To clean up the device side too, remove it in Touch ID Settings / Windows Hello / your password manager.
 
 ## Lost the device
 
 Two scenarios:
 
-- **You have other passkeys / 2FA methods**: sign in with one of those, delete the lost device's passkey from Cocoar.Auth, enrol a fresh one.
+- **You have other passkeys / 2FA methods**: sign in with one of those, delete the lost device's passkey from Modgud, enrol a fresh one.
 - **You have nothing else**: contact your admin. They can reset 2FA for you; you'll re-enrol from a clean slate.
 
 ## Browser support

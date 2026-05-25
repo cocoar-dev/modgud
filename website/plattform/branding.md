@@ -3,7 +3,7 @@
 Per-realm SPA-shell branding so every tenant can present its own product name, colour, logo, and favicon at the login page and across the admin UI — without the operator rebuilding the SPA bundle.
 
 ::: info Default is "no branding"
-Every realm starts unbranded. The Cocoar defaults (product name "Cocoar.Auth", primary color, logo, favicon) apply until at least one branding field is set. Partial branding is supported — set just the logo and leave the colour at default, etc.
+Every realm starts unbranded. The Cocoar defaults (product name "Modgud", primary color, logo, favicon) apply until at least one branding field is set. Partial branding is supported — set just the logo and leave the colour at default, etc.
 :::
 
 ::: info Two ways to reach this surface
@@ -16,7 +16,7 @@ Permissions: `realm-settings:read` / `realm-settings:write`. The `realm:admin` b
 
 | Field | Default | Effect when set |
 | --- | --- | --- |
-| **Product name** | "Cocoar.Auth" | Header title in the admin UI + login page; `document.title` prefix on every page. ≤ 100 characters. |
+| **Product name** | "Modgud" | Header title in the admin UI + login page; `document.title` prefix on every page. ≤ 100 characters. |
 | **Primary color** | design-system blue | Drives the `--coar-color-primary` CSS variable. Accepts hex (`#rgb`, `#rrggbb`, `#rrggbbaa`), `rgb()` / `rgba()`, `hsl()` / `hsla()`, or a CSS named colour. **No** `calc()` / `var()` / arbitrary CSS — that's blocked at the API to prevent injection into the property value. |
 | **Logo** | Cocoar logo (`/td-logo.svg`) | Header logo in the admin UI + login page. Pick from the [Asset Library](./assets) via the asset picker. |
 | **Favicon** | `/td-logo.svg` | Browser-tab icon. Same asset picker; the SPA rewrites the `<link rel="icon">` element at boot. |

@@ -4,7 +4,7 @@ Guidance for Claude Code working in this repository.
 
 ## What this is
 
-Cocoar.Auth is the central Identity Provider for all Cocoar SaaS apps.
+Modgud is the central Identity Provider for all Cocoar SaaS apps.
 Cookie-based login + full OAuth 2.0 / OIDC server (OpenIddict 7), built on
 TimeToDo's `Authentication` + `Authorization` slices and extended with
 IdP-specific concerns: multi-realm tenancy, OAuth aggregate admin,
@@ -31,10 +31,10 @@ Wolverine 5.x (CQRS + outbox), OpenIddict 7.x, ErrorOr, Mapperly,
 Cocoar.JsEval (TS → LINQ for membership scripts), Cocoar.SignalARRR.
 
 **Architecture:**
-- TimeToDo Authentication slice (`Cocoar.Auth.Authentication`) — login,
+- TimeToDo Authentication slice (`Modgud.Authentication`) — login,
   register, 2FA, magic link, passkey, email OTP, OIDC external auth,
   change requests, sessions, GDPR, recovery CLI
-- TimeToDo Authorization slice (`Cocoar.Auth.Authorization`) — groups
+- TimeToDo Authorization slice (`Modgud.Authorization`) — groups
   (incl. JsEval-based auto-membership scripts), roles, permissions,
   ResourceRegistry. Pure RBAC — row-level access (ABAC) stays in the
   consuming app, see `website/concepts/abac.md`.
@@ -50,7 +50,7 @@ tenant. Adding a realm provisions a fresh DB and seeds default
 OAuth scopes + Internal login provider.
 
 **Permissions:** `<app>:<resource>:<action>` style (e.g.
-`cocoar-auth:user:read`, `cocoar-auth:oauth-client:write`,
+`modgud:user:read`, `modgud:oauth-client:write`,
 `timetodo:todo:write`). Three bypass tiers: `<app>:<resource>:admin`
 (resource-wide within an app), `<app>:admin` (app-wide),
 `realm:admin` (realm-wide emergency exit, the System Admin role).
@@ -83,7 +83,7 @@ Tailwind 4, `@cocoar/vue-ui` (CoarButton, CoarSidebar, CoarMenu, ...),
 cd src/dotnet
 dotnet build
 docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE <master-db>;"  # first time
-cd Cocoar.Auth.Api
+cd Modgud.Api
 ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile
 
 # Frontend (port 4300)
@@ -97,14 +97,14 @@ pnpm dev
 
 ## Testing
 
-- `Cocoar.Auth.Api.Tests` — integration tests on Testcontainers + PostgreSQL
+- `Modgud.Api.Tests` — integration tests on Testcontainers + PostgreSQL
 - `dotnet test` from `src/dotnet`
 - The TimeToDo test patterns (xUnit collections, shared Postgres
   container, per-class DB isolation) carry over
 
 ## Configuration
 
-`src/dotnet/Cocoar.Auth.Api/data/configuration.json` (committed defaults)
+`src/dotnet/Modgud.Api/data/configuration.json` (committed defaults)
 + `configuration.local.json` (gitignored). Bound via Cocoar.Configuration
 v5 layered binding. Settings types: `StartUpConfiguration`, `AppSettings`,
 `EmailConfiguration`, `MagicLinkConfiguration`, `EmailOtpConfiguration`,

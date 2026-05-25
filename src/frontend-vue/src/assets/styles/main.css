@@ -71,7 +71,7 @@ body {
 
 /*
  * System-marked rows in admin grids — bootstrap-managed entries that
- * the admin should treat as read-only (cocoar-auth/control-plane apps,
+ * the admin should treat as read-only (modgud/control-plane apps,
  * the OIDC standard scopes, the built-in Internal-Authentication
  * provider, etc.). Visual cue: dimmed text + italic. The actual lock
  * glyph is rendered per-column via the data-grid's wrapper-column API

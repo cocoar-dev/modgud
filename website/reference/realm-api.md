@@ -6,7 +6,7 @@ flagged `IsControlPlane = true`). On any other host the endpoints return
 must not be leaked to tenant realms. See [Concepts: Control Plane](../concepts/control-plane)
 for the full three-layer defence.
 
-Endpoints in `Cocoar.Auth.Api/Features/Admin/RealmsEndpoints.cs`.
+Endpoints in `Modgud.Api/Features/Admin/RealmsEndpoints.cs`.
 
 | Method | Path | Permission |
 |---|---|---|
@@ -57,7 +57,7 @@ Content-Type: application/json
 7. **`OAuthRealmSeeder.SeedAsync`** seeds:
    - 5 default scopes (`openid`, `email`, `profile`, `roles`, `offline_access`)
    - Internal login provider
-8. **`AppRealmSeeder.SeedAsync`**: the `cocoar-auth` app is registered in
+8. **`AppRealmSeeder.SeedAsync`**: the `modgud` app is registered in
    the new tenant DB. The `control-plane` app is **only** seeded for realms
    where `IsControlPlane = true` — tenant realms cannot grant
    `control-plane:realm:*` permissions.
@@ -163,7 +163,7 @@ invalidated, and finally the DB dropped.
 
 ## Realm data model
 
-`src/dotnet/Cocoar.Auth.Domain/Realms/Realm.cs`:
+`src/dotnet/Modgud.Domain/Realms/Realm.cs`:
 
 ```csharp
 public class Realm

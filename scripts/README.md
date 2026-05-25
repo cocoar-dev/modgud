@@ -1,6 +1,6 @@
 # scripts/
 
-Operator scripts that drive Cocoar.Auth as a regular API client. They have
+Operator scripts that drive Modgud as a regular API client. They have
 the same trust boundary as any other admin user — none of them write to the
 DB directly. If a script can do something, the API can do it; if the API
 can't, neither can a script.
@@ -23,7 +23,7 @@ node scripts/seed-demo.mjs \
 
 Prerequisites:
 1. The API is running.
-2. The realm has an admin (bootstrap via `dotnet Cocoar.Auth.Api.dll recover
+2. The realm has an admin (bootstrap via `dotnet Modgud.Api.dll recover
    bootstrap-admin --email …` if it doesn't).
 3. The admin can log in.
 

@@ -1,7 +1,7 @@
 # Testing
 
 This section is the one place where you can see **what is tested in
-Cocoar.Auth and how**. Open it before any release, after any phase
+Modgud and how**. Open it before any release, after any phase
 change, or whenever you suspect drift between the runtime and what the
 docs claim.
 
@@ -9,11 +9,11 @@ docs claim.
 
 | Surface | Where | Status | Run |
 |---|---|---|---|
-| **Unit tests** | `src/dotnet/Cocoar.Auth.Tests.Unit/` | **813 / 813 green** (~1 s) | `dotnet test Cocoar.Auth.Tests.Unit` |
-| **Integration tests** | `src/dotnet/Cocoar.Auth.Api.Tests/` | **121 / 121 green** (~2 min, Docker required) | `dotnet test Cocoar.Auth.Api.Tests` |
-| **OWASP Top 10 (subset)** | `src/dotnet/Cocoar.Auth.Api.Tests/Security/OwaspTop10Tests.cs` | **12 / 12 green** (part of integration suite, runs in <30 s) | `dotnet test Cocoar.Auth.Api.Tests --filter "OWASP=Top10"` |
+| **Unit tests** | `src/dotnet/Modgud.Tests.Unit/` | **813 / 813 green** (~1 s) | `dotnet test Modgud.Tests.Unit` |
+| **Integration tests** | `src/dotnet/Modgud.Api.Tests/` | **121 / 121 green** (~2 min, Docker required) | `dotnet test Modgud.Api.Tests` |
+| **OWASP Top 10 (subset)** | `src/dotnet/Modgud.Api.Tests/Security/OwaspTop10Tests.cs` | **12 / 12 green** (part of integration suite, runs in <30 s) | `dotnet test Modgud.Api.Tests --filter "OWASP=Top10"` |
 | **Manual smoke checklist** | [`testing/manual-checklist`](./manual-checklist) | Operator-driven, ~1–2 h end-to-end | walk the page |
-| **E2E (Playwright)** | `src/frontend-vue/e2e/` | **Phase A green** — 4 tests, ~25 s after a warm rig (~60 s on first run because the cocoar-auth image gets built). Runs against the **bit-for-bit production image** with Mailpit catching outbound SMTP. | `cd src/frontend-vue && pnpm test:e2e` |
+| **E2E (Playwright)** | `src/frontend-vue/e2e/` | **Phase A green** — 4 tests, ~25 s after a warm rig (~60 s on first run because the modgud image gets built). Runs against the **bit-for-bit production image** with Mailpit catching outbound SMTP. | `cd src/frontend-vue && pnpm test:e2e` |
 
 Wave 8 (2026-04-30) closed the longstanding gaps: the previous
 89 / 96 ProfileSelfService blockers got fixed via a tenant-aware
@@ -49,18 +49,18 @@ were removed in the same wave (F10 closed).
   Manually-written test doubles beat Moq/NSubstitute for pure logic.
 - xUnit.v3 throughout.
 - Test file mirrors the source folder:
-  `Cocoar.Auth.Authorization/Services/PermissionEvaluator.cs` →
-  `Cocoar.Auth.Tests.Unit/Authorization/PermissionEvaluatorTests.cs`.
+  `Modgud.Authorization/Services/PermissionEvaluator.cs` →
+  `Modgud.Tests.Unit/Authorization/PermissionEvaluatorTests.cs`.
 
 ## When to run what
 
-- **During development:** `dotnet test Cocoar.Auth.Tests.Unit` —
+- **During development:** `dotnet test Modgud.Tests.Unit` —
   ~1 s feedback, no Docker. Run on every save if your editor supports it.
-- **Before pushing a branch:** add `dotnet test Cocoar.Auth.Api.Tests`.
+- **Before pushing a branch:** add `dotnet test Modgud.Api.Tests`.
   Needs Docker for Testcontainers Postgres.
 - **Before a release / after a phase:**
   - Run the Playwright suite: `cd src/frontend-vue && pnpm test:e2e`.
-    On first run it builds the `cocoar-auth:e2e` Docker image (~60 s).
+    On first run it builds the `modgud:e2e` Docker image (~60 s).
     Re-runs reuse the image (~25 s). The rig is teared down between
     runs.
   - Walk the [manual smoke checklist](./manual-checklist) end to end

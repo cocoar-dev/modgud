@@ -1,6 +1,6 @@
 # OAuth / OIDC Endpoints
 
-cocoar.auth implements the full OpenID Connect protocol via
+modgud implements the full OpenID Connect protocol via
 **OpenIddict 7**. Endpoints are realm-scoped via the domain (each
 realm has its own).
 

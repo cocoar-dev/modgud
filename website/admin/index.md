@@ -3,7 +3,7 @@
 The administration area appears in the sidebar as soon as your account holds **at least one admin read permission** (see [Roles](./roles)). Realm administrators with `realm:admin` see everything; "granular" admins (e.g. a user manager) only see the areas they have rights for.
 
 ::: tip First time setting this up?
-If you've just installed Cocoar.Auth and want to bind your first SaaS app, start with the [SaaS App Integration Walkthrough](./saas-integration-walkthrough) — it's the linear path.
+If you've just installed Modgud and want to bind your first SaaS app, start with the [SaaS App Integration Walkthrough](./saas-integration-walkthrough) — it's the linear path.
 :::
 
 ## Areas
@@ -16,13 +16,13 @@ If you've just installed Cocoar.Auth and want to bind your first SaaS app, start
 
 ### Apps
 
-Cocoar.Auth is **multi-app capable**: every SaaS application in a realm is registered as its own App with its own resources, roles, and OAuth bindings.
+Modgud is **multi-app capable**: every SaaS application in a realm is registered as its own App with its own resources, roles, and OAuth bindings.
 
 - [Applications](./applications) — register apps, manage resources, provision a default resource server
 
 ### OAuth & OpenID Connect
 
-Cocoar.Auth is not just a login frontend — it's a full **OAuth 2.0 / OpenID Connect provider** built on OpenIddict. Third-party apps sign in via OIDC instead of maintaining their own user databases.
+Modgud is not just a login frontend — it's a full **OAuth 2.0 / OpenID Connect provider** built on OpenIddict. Third-party apps sign in via OIDC instead of maintaining their own user databases.
 
 - [OAuth Clients](./oauth-clients) — apps that sign in through the IdP (web, mobile, CLI)
 - [OAuth Scopes](./oauth-scopes) — which capabilities (scopes) are available?
@@ -54,16 +54,16 @@ Per-realm look and feel. SPA-shell branding plus a beta page-builder editor.
 
 ## Permissions: the three-segment model
 
-Cocoar.Auth manages permissions in the form **`app:resource:action`**. Examples:
+Modgud manages permissions in the form **`app:resource:action`**. Examples:
 
 | Permission | Meaning |
 | --- | --- |
-| `cocoar-auth:user:read` | Read the user list in cocoar.auth |
-| `cocoar-auth:oauth-client:write` | Manage OAuth clients in cocoar.auth |
+| `modgud:user:read` | Read the user list in modgud |
+| `modgud:oauth-client:write` | Manage OAuth clients in modgud |
 | `timetodo:todo:write` | Write todos in the TimeToDo app |
 | `realm:admin` | **Realm-wide bypass** — everything in any app |
-| `cocoar-auth:admin` | App-wide bypass for cocoar.auth |
-| `cocoar-auth:user:admin` | Resource-wide bypass for "user" in cocoar.auth |
+| `modgud:admin` | App-wide bypass for modgud |
+| `modgud:user:admin` | Resource-wide bypass for "user" in modgud |
 
 Three bypass tiers keep permission lists short:
 
@@ -80,9 +80,9 @@ The first admin in every realm — created via the recovery CLI or the Control-P
 The sidebar automatically hides everything you can't read. Examples:
 
 - **Realm admin** (`realm:admin`) — sees and may do everything, in every app
-- **User manager** in cocoar.auth — `cocoar-auth:user:read` + `:write` + `cocoar-auth:session:read` + `cocoar-auth:auth-log:read` → only the user/session area
-- **OAuth manager** — `cocoar-auth:oauth-client:*` + `cocoar-auth:oauth-scope:*` + `cocoar-auth:oauth-api:*` → only the OAuth area
-- **TimeToDo editor** (in the TimeToDo app) — `timetodo:todo:write` + `timetodo:project:write` → not an admin in cocoar.auth, but very much in TimeToDo
+- **User manager** in modgud — `modgud:user:read` + `:write` + `modgud:session:read` + `modgud:auth-log:read` → only the user/session area
+- **OAuth manager** — `modgud:oauth-client:*` + `modgud:oauth-scope:*` + `modgud:oauth-api:*` → only the OAuth area
+- **TimeToDo editor** (in the TimeToDo app) — `timetodo:todo:write` + `timetodo:project:write` → not an admin in modgud, but very much in TimeToDo
 
 ## Typical workflows
 

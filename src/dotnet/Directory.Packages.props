@@ -71,7 +71,7 @@
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.12.0" />
-    <!-- Slice-boundary tests under Cocoar.Auth.Tests.Unit/Architecture/. -->
+    <!-- Slice-boundary tests under Modgud.Tests.Unit/Architecture/. -->
     <PackageVersion Include="NetArchTest.Rules" Version="1.3.2" />
     <!-- Quartz.NET — in-memory store + AspNetCore hosting integration.
          Schedules don't survive restart; SchedulingBootstrap re-applies

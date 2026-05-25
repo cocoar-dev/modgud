@@ -5,7 +5,7 @@ description: Migration gotchas and patterns post-Marten-9 / Wolverine-6 upgrade.
 
 # Critter Stack 2026 — Marten 9 / Wolverine 6
 
-Cocoar.Auth shipped the Critter-Stack-2026 backport on **2026-05-24**, aligning
+Modgud shipped the Critter-Stack-2026 backport on **2026-05-24**, aligning
 with [Cocoar.AppBase v2.1.0](../../). The migration carries a handful of
 gotchas every backend contributor (and every future AppBase backport) should
 know about. This page is the canonical reference.
@@ -22,9 +22,9 @@ Pinned in `src/dotnet/Directory.Packages.props`:
 | `JasperFx.Events.SourceGenerator` | 2.0.0 |
 | `WolverineFx.RuntimeCompilation` | 6.0.0 |
 
-The two V8 event-store defaults Cocoar.Auth still pins (and the reasoning for
+The two V8 event-store defaults Modgud still pins (and the reasoning for
 each) are in
-[`MartenConfiguration.ConfigureEventStore`](https://github.com/cocoar-dev/cocoar.auth/blob/develop/src/dotnet/Cocoar.Auth.Infrastructure/Persistence/Marten/Configuration/MartenConfiguration.cs)
+[`MartenConfiguration.ConfigureEventStore`](https://github.com/cocoar-dev/modgud/blob/develop/src/dotnet/Modgud.Infrastructure/Persistence/Marten/Configuration/MartenConfiguration.cs)
 at lines 120-125:
 
 ```csharp
@@ -64,22 +64,22 @@ dispatcher.
 ### Where this bit us
 
 The initial migration grepped for `class \w+Projection` and added the analyzer
-to `Cocoar.Auth.Infrastructure`, `Cocoar.Auth.Authentication`, and
-`Cocoar.Auth.Authorization`. That missed three OAuth aggregates in
-`Cocoar.Auth.Domain` that are used as **live aggregates** rather than named
+to `Modgud.Infrastructure`, `Modgud.Authentication`, and
+`Modgud.Authorization`. That missed three OAuth aggregates in
+`Modgud.Domain` that are used as **live aggregates** rather than named
 projections:
 
-- `OAuthApplicationAggregate` (`src/dotnet/Cocoar.Auth.Domain/OAuth/Applications/OAuthApplicationAggregate.cs`)
-- `OAuthScopeAggregate` (`src/dotnet/Cocoar.Auth.Domain/OAuth/Scopes/OAuthScopeAggregate.cs`)
-- `OAuthApiAggregate` (`src/dotnet/Cocoar.Auth.Domain/OAuth/Apis/OAuthApiAggregate.cs`)
+- `OAuthApplicationAggregate` (`src/dotnet/Modgud.Domain/OAuth/Applications/OAuthApplicationAggregate.cs`)
+- `OAuthScopeAggregate` (`src/dotnet/Modgud.Domain/OAuth/Scopes/OAuthScopeAggregate.cs`)
+- `OAuthApiAggregate` (`src/dotnet/Modgud.Domain/OAuth/Apis/OAuthApiAggregate.cs`)
 
 All three are `public partial class …Aggregate` and define `Apply` / `Create`
-methods. Without the analyzer in `Cocoar.Auth.Domain.csproj`, Marten 9 threw
+methods. Without the analyzer in `Modgud.Domain.csproj`, Marten 9 threw
 "No source-generated dispatcher found" the first time
 `AggregateStreamAsync<OAuthApplicationAggregate>(id)` ran.
 
 The fix is the analyzer reference now visible in
-[`Cocoar.Auth.Domain.csproj`](https://github.com/cocoar-dev/cocoar.auth/blob/develop/src/dotnet/Cocoar.Auth.Domain/Cocoar.Auth.Domain.csproj) lines 14-17.
+[`Modgud.Domain.csproj`](https://github.com/cocoar-dev/modgud/blob/develop/src/dotnet/Modgud.Domain/Modgud.Domain.csproj) lines 14-17.
 
 ### Grep pattern that catches everything
 
@@ -97,11 +97,11 @@ crash waiting for the first `AggregateStreamAsync` call.
 
 Wolverine 6 made `ServiceLocationPolicy.NotAllowed` the **default**. Any
 handler that resolves a service from `IServiceProvider` at runtime now needs
-to be on an explicit allowlist or codegen fails loudly. Cocoar.Auth keeps the
+to be on an explicit allowlist or codegen fails loudly. Modgud keeps the
 strict default — accidental new service-location dependencies are caught at
 boot.
 
-The current allowlist lives in `Cocoar.Auth.Api/Program.cs` lines 805-815:
+The current allowlist lives in `Modgud.Api/Program.cs` lines 805-815:
 
 ```csharp
 opts.CodeGeneration.AlwaysUseServiceLocationFor<UserManager<ApplicationUser>>();
@@ -127,12 +127,12 @@ Wolverine 6 decoupled the Roslyn runtime codegen from core. Without
 `IMessageBus.InvokeAsync<T>` fails at runtime — the generated handler classes
 never compile.
 
-`Cocoar.Auth.Infrastructure.csproj` line 22 references it explicitly. Any
+`Modgud.Infrastructure.csproj` line 22 references it explicitly. Any
 future project that adds Wolverine handlers needs the same reference.
 
 ## Gotcha 4 — Inline-projection Store/Events ordering
 
-Cocoar.Auth proactively fixed this **before** Marten 8.34 made it the
+Modgud proactively fixed this **before** Marten 8.34 made it the
 documented pattern, so the code already reflects the corrected shape. The
 trap, restated for new contributors:
 
@@ -164,7 +164,7 @@ its own Marten table and is invisible to cross-type queries.
 :::
 
 1. **Marten** — `AddSubClass<NewPrincipalSubClass>("alias")` in
-   `Cocoar.Auth.Authorization/Setup/MartenStoreOptionsExtensions.cs` (lines
+   `Modgud.Authorization/Setup/MartenStoreOptionsExtensions.cs` (lines
    46-48) so the doc lands in `mt_doc_principal` instead of
    `mt_doc_newprincipalsubclass`.
 2. **System.Text.Json** — `[JsonDerivedType(typeof(NewPrincipalSubClass), "alias")]`
@@ -204,7 +204,7 @@ When AppBase pushes the next Critter-Stack baseline:
    Wolverine changes its default again, the allowlist may need entries (or
    be redundant).
 6. **Run `dotnet test`** — the architecture tests in
-   `Cocoar.Auth.Tests.Unit/Architecture/` enforce some of the discipline
+   `Modgud.Tests.Unit/Architecture/` enforce some of the discipline
    above and will fail noisily on regressions.
 7. **Smoke-test `AggregateStreamAsync` paths.** The OAuth-aggregate dispatcher
    gap from 2026-05-24 didn't show in unit tests — it surfaced the first time

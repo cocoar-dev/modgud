@@ -122,7 +122,7 @@ await recalculator.RecomputeAllMembersAsync(group, ct);
 → a single SQL query against all person documents, with the script as
 a WHERE clause. Result → set `MemberIds` + fire event.
 
-At a million persons this could be slow — but cocoar.auth is
+At a million persons this could be slow — but modgud is
 currently sized for an order of magnitude well below that
 (mid-sized SaaS org charts, a few thousand users per realm).
 
