@@ -1,5 +1,8 @@
 import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
 
 // Dev-docs VitePress site — repo-only design notes, never deployed.
 // Run locally with `pnpm dev` (or via the docs/ workspace) and rendered
@@ -34,10 +37,21 @@ export default withMermaid(defineConfig({
   ],
 
   vite: {
-    // Mermaid 11.x depends on dayjs which is CJS-only; Vite's dev-mode
-    // optimiser otherwise hands the browser a bare `import default from
-    // dayjs` that fails at load. Force pre-bundling so the ESM shim is in
-    // place. Production build is unaffected (rollup handles CJS fine).
+    // Mermaid 11.x depends on dayjs which is CJS-only — dayjs's package.json
+    // has `main: "dayjs.min.js"` (CJS) and no `"exports"` field, so a
+    // bare `import dayjs from 'dayjs'` lands on the CJS file. In Vite's
+    // dev mode the browser then gets a default-import that fails because
+    // CJS modules don't expose `default`. Route every dayjs import to the
+    // ESM build that ships in the same package. Production build is
+    // unaffected (rollup handles CJS fine).
+    resolve: {
+      // Exact-match regex so only the bare `import dayjs from 'dayjs'`
+      // is rewritten — sub-paths like `dayjs/plugin/isoWeek` must
+      // resolve normally.
+      alias: [
+        { find: /^dayjs$/, replacement: require.resolve('dayjs/esm/index.js') },
+      ],
+    },
     optimizeDeps: {
       include: ['dayjs'],
     },

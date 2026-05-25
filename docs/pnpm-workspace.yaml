@@ -1,2 +1,13 @@
 allowBuilds:
   esbuild: true
+
+# VitePress + vitepress-plugin-mermaid pulls a chain of CJS-only deps
+# (dayjs, @braintree/sanitize-url, debug, cytoscape, …). Under pnpm's
+# default isolated linker they live deep in .pnpm/, Vite's dev-mode
+# optimiser can't find them all, and the browser hits SyntaxError on
+# each `import default from <cjs-module>`. Hoist every transitive dep
+# to the top-level node_modules so Vite resolves them via the standard
+# lookup. Production builds work without this; it only matters for
+# `pnpm dev`.
+publicHoistPattern:
+  - '*'

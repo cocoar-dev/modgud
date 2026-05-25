@@ -1,6 +1,9 @@
 import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
 import llmstxt from 'vitepress-plugin-llms'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
 
 // Public docs site for Modgud. Single tree, single config, one build.
 // The repo-only design notes live in a sibling VitePress site at
@@ -38,10 +41,21 @@ export default withMermaid(defineConfig({
       excludeUnnecessaryFiles: false,
       ignoreFiles: ['changelog.md'],
     })],
-    // Mermaid 11.x depends on dayjs which is CJS-only; Vite's dev-mode
-    // optimiser otherwise hands the browser a bare `import default from
-    // dayjs` that fails at load. Force pre-bundling so the ESM shim is in
-    // place. Production build is unaffected (rollup handles CJS fine).
+    // Mermaid 11.x depends on dayjs which is CJS-only — dayjs's package.json
+    // has `main: "dayjs.min.js"` (CJS) and no `"exports"` field, so a
+    // bare `import dayjs from 'dayjs'` lands on the CJS file. In Vite's
+    // dev mode the browser then gets a default-import that fails because
+    // CJS modules don't expose `default`. Route every dayjs import to the
+    // ESM build that ships in the same package. Production build is
+    // unaffected (rollup handles CJS fine).
+    resolve: {
+      // Exact-match regex so only the bare `import dayjs from 'dayjs'`
+      // is rewritten — sub-paths like `dayjs/plugin/isoWeek` must
+      // resolve normally.
+      alias: [
+        { find: /^dayjs$/, replacement: require.resolve('dayjs/esm/index.js') },
+      ],
+    },
     optimizeDeps: {
       include: ['dayjs'],
     },

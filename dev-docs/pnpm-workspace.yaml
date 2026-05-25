@@ -1,2 +1,6 @@
 allowBuilds:
   esbuild: true
+
+# See docs/pnpm-workspace.yaml — same Mermaid+pnpm story.
+publicHoistPattern:
+  - '*'
