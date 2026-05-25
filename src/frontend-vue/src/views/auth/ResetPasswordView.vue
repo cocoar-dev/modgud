@@ -78,7 +78,7 @@ async function handleSubmit() {
           </svg>
         </div>
         <h1 class="text-2xl font-bold tracking-tight text-surface-800">
-          Cocoar<span class="text-[#525e76]">.Auth</span>
+          Modgud
         </h1>
         <p class="mt-2 text-sm text-surface-500">{{ t('auth.resetPassword.title', {}, 'Set New Password') }}</p>
       </div>

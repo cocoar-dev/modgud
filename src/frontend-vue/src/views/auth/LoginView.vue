@@ -407,7 +407,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
           {{ branding.ProductName }}
         </h1>
         <h1 v-else class="text-2xl font-bold tracking-tight text-surface-800">
-          Cocoar<span class="text-[#525e76]">.Auth</span>
+          Modgud
         </h1>
         <p class="mt-2 text-sm text-surface-500">
           <template v-if="step === 'credentials'">{{ t('auth.login.subtitle', {}, 'Sign in to continue.') }}</template>

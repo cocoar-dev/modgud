@@ -51,7 +51,7 @@ onMounted(async () => {
     <div class="w-full max-w-sm text-center">
       <div class="mb-8">
         <h1 class="text-2xl font-bold tracking-tight text-surface-800">
-          Cocoar<span class="text-[#525e76]">.Auth</span>
+          Modgud
         </h1>
       </div>
 
