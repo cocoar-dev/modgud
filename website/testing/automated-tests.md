@@ -30,15 +30,17 @@ dotnet test
 
 ## Unit-test inventory
 
-813 tests as of 2026-04-30 (post-Phase-6 ABAC excision; was 824 before
-the `UserContextTests` and a couple of `AccessScripts` asserts were
-removed).
+944 tests in `Modgud.Tests.Unit` (verified by `dotnet test
+Modgud.Tests.Unit/`, 2026-05-25 — current as of the OAuthApi-
+credential cut). The per-area numbers below are snapshots from
+earlier waves; if a row's count drifts, trust the file's own
+`[Fact]` count over this table.
 
 ### Authorization slice
 
 | Area | File(s) | Tests | What's pinned |
 |---|---|---:|---|
-| Permission evaluation | `Authorization/PermissionEvaluatorTests.cs` | 15 | 3-segment `<app>:<resource>:<action>` matching, `realm:admin` realm-wide bypass, `<app>:admin` app-wide bypass, `<app>:<resource>:admin` resource-wide bypass, no cross-app/cross-resource leak, no substring match (`oauth:admin` does NOT cover `oauth-client:read`), null/empty argument guards |
+| Permission evaluation | `Authorization/PermissionEvaluatorTests.cs` | 15 | 2-segment `<resource>:<action>` matching inside an App's catalog, `realm:admin` realm-wide bypass, `<resource>:admin` resource-wide bypass, no cross-app/cross-resource leak, no substring match (`oauth:admin` does NOT cover `oauth-client:read`), null/empty argument guards |
 | Resource registry | `Resources/ResourceRegistryTests.cs` | 16 | `(appSlug, resource)`-keyed registration, permission listing, case-sensitive lookup |
 | Person principal | `Authorization/Principals/PersonTests.cs` | 12 | DisplayName fallback chain (Acronym → Name → AccountName → Id), whitespace-only-fields filter |
 | Group principal | `Authorization/Principals/GroupTests.cs` | 15 | GetEmailsAsync over Shared / ExpandToMembers / Shared-without-Email-fallback, inactive/deleted/dangling-member skips, nested recursion, **cycle detection (this test caught a real production bug — see commit `b6b2dc3`)** |
@@ -117,8 +119,10 @@ removed).
 
 ## Integration-test inventory
 
-121 tests in `Modgud.Api.Tests`, all green (~2 min, Docker
-required for the Testcontainers Postgres fixture).
+`Modgud.Api.Tests` against Testcontainers PostgreSQL (~2 min,
+Docker required). The exact count moves with every test wave;
+`dotnet test Modgud.Api.Tests/ --list-tests | wc -l` is authoritative
+when an exact number matters.
 
 | Folder | Files | What's covered |
 |---|---|---|

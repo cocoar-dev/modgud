@@ -94,6 +94,8 @@ across the area regardless of which sub-page they landed on.
 - [Pages](./pages) — page-builder editor (Beta)
 - [Asset Library](./assets) — image upload + SVG sanitisation
 - [Observability](./observability) — metrics, traces, live activity feed
+- [Inbox](./inbox) — operator notification stream
+- [Inbox-Einstellungen](./inbox-settings) — per-tenant notification retention
 - [Einstellungen](./settings) — projections, SMTP, 2FA, grace period
 
 ::: tip Looking for tenant-admin work?

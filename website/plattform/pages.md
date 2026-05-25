@@ -59,14 +59,7 @@ Slug charset: `a-z0-9-`, length 1–32. Anything else is a 400.
 
 That property means a future safe-mode URL (`/login?safemode=1`) that bypasses the schema is a pure UX recovery, not a security bypass — the same backend policies apply whichever rendering path the page takes.
 
-## What's coming (deferred sprint)
+## What ships next
 
-When the runtime sprint lands:
-
-- `<CoarPageRenderer>` mounted on `/login`, `/logout`, `/forgot-password`. Per-slug resolver: stored schema → render; missing → hardcoded fallback view.
-- Each auth step is its own slug (`login`, `mfa-totp`, `mfa-email-otp`, …). Action handlers decide the next step; the state machine stays in code, not in the schema.
-- **Save-time validation**: the PUT endpoint will gain a "schema must contain the slot's primary-action button + required-field inputs" check, so you can't save a structurally broken page that locks the realm out.
-- **Safe-mode URL**: `?safemode=1` will render the hardcoded fallback even when a stored schema exists. Universal recovery for realm admins; not auth-gated (it's UX, not security).
-- **Recovery CLI fallback**: `recover reset-page --realm <slug> --page <slug>` for the SaaS-operator backstop when even safe-mode can't help.
-
-Until that sprint ships, leave the feature flag off in production.
+Runtime rendering of stored schemas is the next sprint and is
+deferred — until it lands, leave the feature flag off in production.

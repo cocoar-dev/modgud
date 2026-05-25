@@ -62,6 +62,14 @@ scope=billing.read
 Enabled for clients that request `offline_access`. Refresh tokens are
 reference tokens, stored server-side in `OpenIddictTokenDocument`.
 
+### Device Code (RFC 8628)
+
+For devices with no browser or limited input — CLIs, TVs,
+input-constrained appliances. The client polls
+`/connect/token` while the user completes the flow on a separate
+device. Endpoint shape + verification UI documented in
+[Reference → OAuth API](/reference/oauth-api).
+
 ::: warning No Implicit, no ROPC
 modgud rejects Implicit Flow and Resource Owner Password
 Credentials. Both are considered insecure — OAuth 2.1 deprecates them.
