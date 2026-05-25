@@ -424,3 +424,4 @@ src/frontend-vue/playwright-report/
 # files in incremental mode. None of this is source.
 src/frontend-vue/**/*.vue.js
 src/frontend-vue/**/*.tsbuildinfo
+.tmp-audit/

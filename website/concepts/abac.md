@@ -8,8 +8,8 @@ This page explains where the line is, why it sits there, and how an app can laye
 
 - **Identity** — who the user is, with their stable id and verified contact info.
 - **Groups** — organisational membership, including transitive sub-groups, manual or auto-managed.
-- **Roles** — coarse-grained `app:resource:action` permissions per app.
-- **Resolution** — a single decision per `(user, app, permission)`, propagated via UserInfo claims and the distribution API.
+- **Roles** — bundles of `<resource>:<action>` permissions inside one App's catalog (the App context is implicit).
+- **Resolution** — a single decision per `(user, app, permission)`, propagated via the per-Audience `resource_access` block on `/connect/userinfo`.
 
 That's the whole authorisation surface from the IAM. Every grant the IAM emits is **schema-free**: there is no `tenantId`, no `ownerId`, no row-level filter. Only "user X holds permission `app:resource:action` in app A".
 

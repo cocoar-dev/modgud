@@ -154,14 +154,6 @@ flattens the matching audience block onto the principal so standard
 ASP.NET Core `[Authorize(Roles="…")]` and `RequiresPermission(…)` work
 out of the box.
 
-::: tip Distribution API (legacy, deprecated)
-The server-to-server `GET /api/v1/distribution/me-permissions` endpoint
-predates the per-audience UserInfo emission and is in surface-removal
-queue. New integrators should not use it — UserInfo carries the same
-shape with broader OIDC tooling support. Existing callers see an RFC
-8594 `Deprecation: true` header on every response.
-:::
-
 ## Backend gating: `RequiresPermission`
 
 Endpoints gate via a `RouteHandlerBuilder` extension:

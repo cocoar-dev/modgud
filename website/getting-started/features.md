@@ -143,10 +143,6 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 - Bypass-pre-expanded server-side + narrowed to each RS's declared `OAuthApi.PermissionIds` subset
 - Standard OIDC tooling consumes it; no Modgud-specific endpoint required
 
-::: tip Legacy: distribution API
-The server-to-server `GET /api/v1/distribution/me-permissions` endpoint predates per-Audience UserInfo and is in surface-removal queue. Existing callers see an RFC 8594 `Deprecation: true` header; new integrators should not adopt it.
-:::
-
 ## Standards
 
 - OAuth 2.0 (RFC 6749)
@@ -166,4 +162,3 @@ Documented but not yet implemented:
 - **SCIM 2.0** for directory sync from external IdPs
 - **SignalR push for permission revocations** (so consumers don't have to poll UserInfo)
 - **Audience-restricted tokens** (RFC 8707 `resource` parameter) for hard cross-RS isolation
-- **Distribution-API surface removal** once existing integrators have migrated to UserInfo

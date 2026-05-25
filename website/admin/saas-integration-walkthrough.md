@@ -1,16 +1,26 @@
 # SaaS App Integration Walkthrough
 
-This page takes you from a freshly installed Modgud all the way to a working external app (e.g. TimeToDo) doing single-sign-on against Modgud and looking up live permissions through the distribution API.
+This page takes you from a freshly installed Modgud all the way to a
+working external app doing single-sign-on against Modgud and reading
+per-Audience permission claims out of `/connect/userinfo`.
 
-> **Audience:** realm admins and developers integrating their own Cocoar SaaS app. Regular end-user onboarding is documented in [first steps](../end-user/first-steps).
+> **Audience:** realm admins and developers integrating a SaaS app.
+> Regular end-user onboarding is documented in
+> [first steps](../end-user/first-steps).
 
 ## Conceptual overview
 
 Modgud models the world in three layers:
 
-- **Realm** — a tenant. Own database, own users, own apps. Setup automatically creates the `system` realm.
-- **App** — a SaaS application within a realm (e.g. `modgud`, `timetodo`, `knowledge`). Each app owns its resources, roles, and links to zero or more OAuth clients and resource servers.
-- **Group / Role / Permission** — who may do what in which app. Groups bundle users, roles bundle permissions, permissions are `app:resource:action` strings.
+- **Realm** — a tenant. Own database, own users, own apps. Setup
+  automatically creates the `system` realm.
+- **App** — a SaaS application within a realm (e.g. `modgud`, `acme`,
+  `billing`). Each app owns its permission catalog and links to zero
+  or more OAuth clients and resource servers.
+- **Group / Role / Permission** — who may do what in which app.
+  Groups bundle users and roles, roles bundle permissions,
+  permissions are `<resource>:<action>` strings within an App's
+  catalog (the App context is implicit).
 
 When you bind a new SaaS app you traverse **five stations**:
 
@@ -24,77 +34,101 @@ When you bind a new SaaS app you traverse **five stations**:
 
 You need:
 
-- A running Modgud instance (see [Getting Started](../getting-started/quickstart))
-- An admin account (a member of the `Administratoren` group, created via the [first-time bootstrap](../getting-started/first-time-setup))
-- A URL for your target app (for redirect URIs), e.g. `https://timetodo.dev.local`
+- A running Modgud instance (see
+  [Getting Started](../getting-started/quickstart))
+- An admin account (a member of the `Administratoren` group, created
+  via the [first-time bootstrap](../getting-started/first-time-setup))
+- A URL for your target app (for redirect URIs), e.g.
+  `https://acme.dev.local`
 
 ## Station 1: register the app
 
-Navigate to **Administration → Applications** (sidebar entry under "Apps"). You'll see at least the system app `modgud`.
+Navigate to **Administration → Applications**. You'll see at least the
+system app `modgud`.
 
 Click **Create**.
 
 | Field | Example | Explanation |
 | --- | --- | --- |
-| Slug (immutable) | `timetodo` | Permission prefix, kebab-case. **Cannot be changed after creation.** |
-| Display Name | `TimeToDo` | Shown in lists and consent screens |
+| Slug (immutable) | `acme` | Permission catalog container, kebab-case. **Cannot be changed after creation.** |
+| Display Name | `Acme` | Shown in lists and consent screens |
 | Description | `Team task manager` | Optional |
-| Resources | `todo`, `project`, `tag` (one per line) | The business objects the app manages — these become permissions like `timetodo:todo:read` |
+| Catalog entries | `todo:read`, `todo:write`, `project:read`, `project:write` (one per line) | `<resource>:<action>` strings — the App's permission vocabulary |
 
 After **Create** the app shows up in the list.
 
 ::: tip
-Resources aren't carved in stone — you can extend them later. But: existing roles/permissions break if you remove a resource that's still in use.
+Catalog entries aren't carved in stone — you can extend them later.
+But: existing roles break if you remove an entry that's still in use.
+The admin UI surfaces those references before letting you delete.
 :::
 
 ## Station 2: OAuth client for the frontend
 
-The OAuth client is the identity your app's **frontend** uses when requesting tokens from the IDP. An SPA, a mobile app, a desktop tool — they're all clients.
+The OAuth client is the identity your app's **frontend** uses when
+requesting tokens from the IDP. An SPA, a mobile app, a desktop tool
+— they're all clients.
 
 Navigate to **Administration → OAuth Clients**. Click **Create**.
 
 | Field | Example | Explanation |
 | --- | --- | --- |
-| Client ID | `timetodo-web` | Stable identifier used in the OAuth flow |
-| Display Name | `TimeToDo Web` | UI label |
+| Client ID | `acme-web` | Stable identifier used in the OAuth flow |
+| Display Name | `Acme Web` | UI label |
 | Client type | `confidential` | `confidential` for server-side / backend clients, `public` for SPA / mobile |
 | Consent type | `implicit` | for trusted first-party apps; `explicit` shows a consent screen |
-| **Applications** | pick `timetodo` | **Important** — binds the client to the app. Multi-select is allowed (multi-app frontends). Empty = realm-wide. |
+| **Applications** | pick `acme` | **Important** — binds the client to the app. Multi-select is allowed (multi-app frontends). |
 | Client Secret | leave empty = generate | Auto-generated for `confidential`, **shown only once** — copy it! |
-| Redirect URIs | `https://timetodo.dev.local/auth/callback` | One per line |
-| Post-Logout Redirect URIs | `https://timetodo.dev.local/` | One per line |
+| Redirect URIs | `https://acme.dev.local/auth/callback` | One per line |
+| Post-Logout Redirect URIs | `https://acme.dev.local/` | One per line |
 | Allowed Grant Types | `authorization_code, refresh_token` | Comma-separated |
+| Allowed Scopes | `openid email profile roles permissions` | Request `permissions` if your backend gates on `<resource>:<action>` |
 
-Click **Create**. The client secret is shown — copy it and store it safely; you'll never see it again.
+Click **Create**. The client secret is shown — copy it and store it
+safely; you'll never see it again.
 
 ::: info What does the apps choice change?
-On `/connect/userinfo` the issued access token gets a `resource_access` block per linked app, with the user's app-specific roles. The client may also only request scopes that belong to one of its apps (or the global OIDC standard scopes).
+On `/connect/userinfo` the access token's principal gets a
+`resource_access` block per linked app, with the user's app-specific
+roles (with `scope=roles`) and bypass-pre-expanded permissions narrowed
+to the calling OAuthApi's `PermissionIds` (with `scope=permissions`).
+The client may also only request scopes that belong to one of its apps
+(plus the standard OIDC scopes).
 :::
 
 ## Station 3: provision the default resource server
 
-The resource server is the identity your app's **backend** uses to identify itself to Modgud when looking up permissions live through the distribution API. It's a different identity from the OAuth client.
+The resource server is the identity Modgud uses to compute the
+per-Audience subset narrowing in `resource_access` UserInfo blocks.
+Each App needs at least one.
 
-Go back to **Administration → Applications**, open your `timetodo` app by double-clicking.
+Go back to **Administration → Applications**, open your `acme` app by
+double-clicking.
 
-At the bottom of the modal you'll see a **Resource Server** section with a **Create default resource server** button.
+At the bottom of the modal you'll see a **Resource Server** section
+with a **Create default resource server** button.
 
-Click it. A yellow note appears with the **API secret** — that's the resource-server counterpart to the client secret. **Copy and store it safely** (e.g. drop it into TimeToDo's configuration); you'll never see it again.
+Click it. What happens internally:
 
-What happens internally:
-- A new OAuth API named `timetodo` is created
-- It is linked to the `timetodo` app (`AppId`)
-- An initial API secret is returned
+- A new OAuth API named `acme` is created
+- It is linked to the `acme` app (`AppId`)
+- Its `PermissionIds` are seeded to the full catalog of `acme`
 
-If you press the button again later: Modgud detects an existing default RS and just shows "Already exists" — no new secret.
+If you press the button again later: Modgud detects an existing
+default RS and just shows "Already exists" — no second RS.
 
-::: tip Do I really need this?
-Only if your backend wants to look up granular permissions (`timetodo:todo:write`) live. If your app only checks coarse roles (`Admin`, `Viewer`), the OAuth client + UserInfo are enough; skip this station.
+::: tip Microservice apps
+Multi-service apps create one OAuthApi per microservice, each with a
+narrower `PermissionIds` subset. The user's `resource_access[acme]`
+block for that specific microservice is then narrowed to its
+declared subset — sibling microservices' permissions don't leak.
 :::
 
 ## Station 4: roles and groups
 
-On setup Modgud seeds exactly one realm admin (`Administratoren` group with wildcard `BoundTo: ["*"]`). For your new app you'll usually want more nuanced roles.
+On setup Modgud seeds exactly one realm admin (`Administratoren`
+group with wildcard `BoundTo: ["*"]`). For your new app you'll
+usually want more nuanced roles.
 
 ### 4a. Create a role
 
@@ -102,22 +136,14 @@ On setup Modgud seeds exactly one realm admin (`Administratoren` group with wild
 
 | Field | Example |
 | --- | --- |
-| Name | `TimeToDo Editor` |
+| Name | `Acme Editor` |
 | Description | `May create and edit todos and projects` |
-| **AppSlug** | `timetodo` |
-| Resource Type | `todo` |
-| Permissions | `read`, `write` |
+| **App** | `acme` |
+| Permissions | `todo:read`, `todo:write` |
 
-→ Effectively granted: `timetodo:todo:read`, `timetodo:todo:write`.
-
-Need a role that spans several resources? Leave `Resource Type` empty and put the permissions fully-qualified into the list:
-
-```
-timetodo:todo:read
-timetodo:todo:write
-timetodo:project:read
-timetodo:project:write
-```
+Roles bind to one App via `AppId`; the `PermissionIds` reference
+specific catalog entries of that App. The same string `todo:read`
+in a different App's catalog is a different permission.
 
 ### 4b. Create a group
 
@@ -125,16 +151,19 @@ timetodo:project:write
 
 | Tab | Field | Example |
 | --- | --- | --- |
-| General | Name | `TimeToDo Team` |
-| General | **Bound to apps** | pick `timetodo` |
+| General | Name | `Acme Team` |
+| General | **Bound to apps** | pick `acme` |
 | Members | (user list) | yourself + colleagues |
-| Roles |  | `TimeToDo Editor` |
+| Roles |  | `Acme Editor` |
 
 ::: warning BoundTo matters
-A group only takes effect in the apps listed in BoundTo. Pick **★ All apps (\*)** only for realm-wide admin groups. Leave it empty for pure mailing-list / org-only groups.
+A group only takes effect in the apps listed in BoundTo. Pick
+**★ All apps (\*)** only for realm-wide admin groups. Leave it empty
+for pure mailing-list / org-only groups.
 :::
 
-Save. Users in this group now hold `timetodo:todo:read` + `timetodo:todo:write`.
+Save. Users in this group now hold `todo:read` + `todo:write` within
+the `acme` app context.
 
 ## Station 5: resource-server code
 
@@ -155,79 +184,99 @@ services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         // Your realm issuer — adjust the host + realm slug to your instance.
-        options.Authority = "https://auth.cocoar.dev/system";
-        options.Audience  = "timetodo";
+        options.Authority = "https://auth.example.com/system";
+        options.Audience  = "acme";
         options.GetClaimsFromUserInfoEndpoint = true;
     });
 
-// Reads resource_access["timetodo"].roles from the UserInfo claims and
-// flattens them into ClaimTypes.Role. With this in place,
-// [Authorize(Roles = "TimeToDo Editor")] just works.
-services.AddModgudClaimsTransformation(o =>
+// Wires the Modgud ClaimsTransformation that reads the per-Audience
+// resource_access block and flattens it onto the principal:
+//   - resource_access["acme"].roles → ClaimTypes.Role
+//     so [Authorize(Roles = "Acme Editor")] just works.
+//   - resource_access["acme"].permissions → ModgudClaimTypes.Permission
+//     so user.HasClaim(ModgudClaimTypes.Permission, "todo:write") works.
+services.AddModgudClient(o =>
 {
-    o.AppSlug = "timetodo";
+    o.AppSlug = "acme";
 });
 
 services.AddAuthorization();
 ```
 
-### Endpoint example
+### Coarse role check
 
 ```csharp
 app.MapGet("/admin", () => "Admin only")
    .RequireAuthorization()
-   .RequireAuthorization(p => p.RequireRole("TimeToDo Editor"));
+   .RequireAuthorization(p => p.RequireRole("Acme Editor"));
 ```
 
-### Granular: live permission lookups (optional)
+### Granular permission check
 
-If you want to check permissions at the action level (`timetodo:todo:write`), call the distribution API:
-
-```
-GET https://auth.cocoar.dev/api/v1/distribution/me-permissions
-Authorization: Bearer <user-access-token>
-X-Resource-Server-Id: timetodo
-X-Resource-Server-Secret: <the-secret-copied-in-station-3>
-```
-
-Response:
-```json
+```csharp
+app.MapPost("/todos", (ClaimsPrincipal user, TodoDto dto) =>
 {
-  "UserId": "...",
-  "AppSlug": "timetodo",
-  "Permissions": ["timetodo:todo:read", "timetodo:todo:write"],
-  "Groups": [{ "Id": "...", "Name": "TimeToDo Team" }],
-  "Roles":  [{ "Id": "...", "Name": "TimeToDo Editor" }]
-}
+    if (!user.HasClaim(ModgudClaimTypes.Permission, "todo:write"))
+        return Results.Forbid();
+    // … create todo
+    return Results.Ok();
+});
 ```
 
-Cache header: `Cache-Control: private, max-age=30` — that means you may cache per user for 30 s, then refresh. Permission revocation propagates within ~30 s.
-
-For a complete code recipe (caching wrapper, policy handlers): see [Integrating a Resource Server](../guide/integrating-resource-server).
+Full integration patterns (authorization policies, dynamic checks,
+common pitfalls) live in
+[Guide → Integrating a Resource Server](../guide/integrating-resource-server).
 
 ## End-to-end test
 
-1. Open `https://timetodo.dev.local`
-2. TimeToDo redirects you to the Modgud login page
+1. Open `https://acme.dev.local`
+2. The frontend redirects you to the Modgud login page
 3. Log in as a user from station 4
 4. Consent screen (if `explicit` consent type)
-5. Redirect back to TimeToDo with auth code
-6. TimeToDo exchanges the code at `/connect/token`
-7. TimeToDo calls `/connect/userinfo`, sees `sub`, `email`, `name`, and `resource_access.timetodo.roles = ["TimeToDo Editor"]`
-8. `[Authorize(Roles = "TimeToDo Editor")]` lets you in
+5. Redirect back to the app with an auth code
+6. The app exchanges the code at `/connect/token`
+7. The app calls `/connect/userinfo`, sees `sub`, `email`, `name`,
+   and `resource_access.acme.roles = ["Acme Editor"]` plus
+   `resource_access.acme.permissions = ["todo:read", "todo:write"]`
+8. `[Authorize(Roles = "Acme Editor")]` lets you in;
+   `user.HasClaim(ModgudClaimTypes.Permission, "todo:write")` returns
+   true
 
 Made it through? **Done. First SaaS app integrated.**
 
 ## What comes next
 
-- **Multiple apps in one client:** a frontend that bundles TimeToDo + Knowledge assigns its OAuth client to both apps. The token then carries `resource_access.timetodo.roles` AND `resource_access.knowledge.roles`. Each backend reads its own block.
-- **Microservice apps:** several resource servers under one app — create more OAuth APIs in the **OAuth APIs** admin and link them all to the same App.
-- **External login providers:** under [Login Providers](./login-providers) you configure Google / Microsoft / EntraID. Modgud stays the central IDP but delegates the login step.
+- **Multiple apps in one client:** a frontend that bundles two apps
+  assigns its OAuth client to both. The user's UserInfo response then
+  carries a `resource_access[<a>]` block and a
+  `resource_access[<b>]` block. Each backend reads its own block.
+- **Microservice apps:** several resource servers under one app —
+  create more OAuth APIs in the **OAuth APIs** admin and link them
+  all to the same App, each with its own narrower `PermissionIds`
+  subset.
+- **External login providers:** under
+  [Login Providers](./login-providers) you configure Google /
+  Microsoft / EntraID. Modgud stays the central IDP but delegates
+  the login step.
 
 ## Tips and pitfalls
 
-- **Permission strings have three segments:** `app:resource:action`, not `resource:action`. Every permission since the App model follows this form. Exceptions: `realm:admin` (realm-wide bypass) and `<app>:admin` (app-wide bypass).
-- **`BoundTo: []` ≠ `BoundTo: ["*"]`.** Empty = the group is dormant for permission purposes but can still be used for email/mailing-list. Wildcard = active everywhere.
-- **Don't delete the system app `modgud`.** It's flagged IsSystem; the attempt is rejected.
-- **Lost realm admin.** If you locked yourself out of the `Administratoren` group: the recovery CLI inside the container can pull you back in — see [Recovery CLI](./recovery-cli).
-- **Lost a secret.** Client secrets and API secrets are shown exactly once. If you've lost one: **regenerate** in the corresponding detail modal.
+- **Permission strings have two segments:** `<resource>:<action>`,
+  inside an App's catalog. The App context is implicit from the
+  catalog — the same string in two different App catalogs is two
+  different permissions.
+- **`BoundTo: []` ≠ `BoundTo: ["*"]`.** Empty = the group is dormant
+  for permission purposes but can still be used for mailing-list.
+  Wildcard = active everywhere.
+- **Don't try to delete the system app `modgud`.** It's flagged
+  `IsSystem`; the attempt is rejected.
+- **Lost realm admin.** If you locked yourself out of the
+  `Administratoren` group: the recovery CLI inside the container can
+  pull you back in — see [Recovery CLI](./recovery-cli).
+- **Lost a secret.** Client secrets are shown exactly once. If you've
+  lost one: **regenerate** in the corresponding detail modal.
+- **`scope=permissions` not requested.** Without it, the
+  `permissions` array in the UserInfo `resource_access` block is
+  omitted — your `HasClaim(…)` check sees nothing. Add the scope to
+  the client's allowed-scopes list and to every authorization
+  request.

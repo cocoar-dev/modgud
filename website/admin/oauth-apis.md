@@ -1,31 +1,52 @@
 # OAuth APIs (Resource Servers)
 
-An **OAuth API** in Modgud is the registration of a **resource server** — an API that wants to validate access tokens issued by Modgud and use them to authorise requests.
+An **OAuth API** in Modgud is the registration of a **resource
+server** — an API that wants to validate access tokens issued by
+Modgud and use them to authorise requests.
 
 ::: info OAuth API vs OAuth Client
-- **OAuth Client** = the app that performs the user login and **gets** tokens
-- **OAuth API** = the API that **validates** tokens and authorises requests against them
+- **OAuth Client** = the app that performs the user login and **gets**
+  tokens
+- **OAuth API** = the API that **validates** tokens and authorises
+  requests against them
 
-An app can be both (e.g. a BFF pattern: user-login as a client, its own API as an API).
+An app can be both (e.g. a BFF pattern: user-login as a client, its
+own API as an API).
 :::
 
 ![OAuth APIs list](/screenshots/admin-oauth-apis.png)
 
 ## When do I need an OAuth API registration?
 
-Most cases, just configuring a [scope](./oauth-scopes) with a resource URI is enough — the resource API can rely on the standard OIDC discovery to validate tokens. An **explicit OAuth API registration** is required when:
+For most cases — a SaaS app that validates Modgud tokens — yes, you
+register an OAuth API for it. The registration is what lets Modgud
+emit a tailored `resource_access` block for this RS on
+`/connect/userinfo`. Specifically, it's required when:
 
-- Your backend wants to call the **distribution API** (`/api/v1/distribution/me-permissions`) for live permission lookups — there the OAuth API identity is the second auth axis next to the user bearer
-- The API wants to **authenticate against the OAuth server itself** (e.g. for token introspection)
-- You want **multi-secret support** (several parallel valid secrets, e.g. for seamless rotation)
+- You want **per-Audience permission narrowing** in `resource_access`
+  blocks. The RS declares its `PermissionIds` subset of the App's
+  catalog, and the IdP narrows each user's emission to that subset.
+- The API wants to **authenticate against the OAuth server itself**
+  (e.g. for token introspection)
+- You want **multi-secret support** (several parallel valid secrets,
+  e.g. for seamless rotation)
 - The API needs **explicit scope lists** for discovery
 
 ## Relationship to Applications
 
-Every OAuth API belongs to **exactly one [Application](./applications)** (1:1 mandatory link if you want to use the distribution API). A microservice architecture under one app — e.g. `timetodo-api`, `timetodo-search`, `timetodo-files` all linked to the App `timetodo` — works because permissions stay app-centric: every microservice sees identical roles for the same user.
+Every OAuth API belongs to **exactly one [Application](./applications)**.
+A microservice architecture under one app — e.g. `acme-api`,
+`acme-search`, `acme-files` all linked to the App `acme` — works
+because permissions stay app-centric: each microservice gets its own
+`PermissionIds` subset of the same App catalog, and the IdP narrows
+its `resource_access[acme]` emission accordingly.
 
 ::: tip The fast path: default resource server
-In an [Application's detail](./applications) modal there's a **Create default resource server** button that auto-creates an OAuth API with name = app slug, links it to the app, and reveals the initial secret once. The fastest way to provision the first RS for a new app.
+In an [Application's detail](./applications) modal there's a
+**Create default resource server** button that auto-creates an OAuth
+API with name = app slug, links it to the app, and seeds
+`PermissionIds` to the full catalog. The fastest way to provision the
+first RS for a new app.
 :::
 
 ## Creating an API manually
@@ -34,79 +55,125 @@ Administration → **OAuth → APIs** → **Create**.
 
 ### Required fields
 
-- **Name** — technical identifier (e.g. `timetodo-api`). Used in `aud` claims and as the value for `X-Resource-Server-Id` headers when calling the distribution API.
+- **Name** — technical identifier (e.g. `acme-api`). Used in `aud`
+  claims when the token is issued.
 - **Display Name** — UI label
-- **Application** — which App does this RS belong to? Required if you'll use the distribution API.
+- **Application** — which App does this RS belong to? Required for
+  per-Audience subset narrowing.
 - **Description** — optional
+
+### PermissionIds
+
+The subset of the linked App's catalog this RS gates on. Used by the
+IdP to narrow the `resource_access` block in UserInfo for this
+audience — sibling RSs under the same App don't see each other's
+permissions in the user's claims.
+
+Default at creation: full catalog. Tighten to a strict subset for
+microservices that only need a slice.
 
 ### Scopes
 
-A list of scope names this API understands. Any token whose `scope` claim contains one of these is considered "for this API". Used for OIDC discovery and (in some setups) for resource indication.
+A list of scope names this API understands. Any token whose `scope`
+claim contains one of these is considered "for this API". Used for
+OIDC discovery and resource indication.
 
 #### One-click implicit scope
 
-In the API detail modal there is a **Create implicit scope** button when the API has no scope with the same name yet. Clicking it creates a real `OAuthScope` row with:
+In the API detail modal there is a **Create implicit scope** button
+when the API has no scope with the same name yet. Clicking it creates
+a real `OAuthScope` row with:
 
 - `Name` = API name
 - `Resources` = `[<api-name>]` (so the audience matches the API)
-- `Enabled = true`, `ShowInDiscoveryDocument = false` (private by default, see below)
+- `Enabled = true`, `ShowInDiscoveryDocument = false` (private by
+  default, see below)
 - Linked to the same App as the API
 
-This is the fast path for the common 1:1 case: an API and a scope that always go together. After creation the button disappears (re-check via API list reload). The implicit scope is otherwise a normal scope row — editable, deletable, can be requested by clients via `scope=<api-name>`.
+This is the fast path for the common 1:1 case: an API and a scope
+that always go together. After creation the button disappears
+(re-check via API list reload). The implicit scope is otherwise a
+normal scope row — editable, deletable, can be requested by clients
+via `scope=<api-name>`.
 
 ::: tip When to keep things separate
-Two situations warrant a manually-created additional scope on top of the implicit one:
+Two situations warrant a manually-created additional scope on top of
+the implicit one:
 
-- **Granularity** — `<api>.read` / `.write` / `.admin` against the same audience. Differentiates capabilities via `scp`, not `aud`.
-- **Multi-RS scope** — one scope name pointing to multiple APIs (`scope=admin` → `aud: [policy-api, audit-api]`). Edge case but valid.
+- **Granularity** — `<api>.read` / `.write` / `.admin` against the
+  same audience. Differentiates capabilities via `scp`, not `aud`.
+- **Multi-RS scope** — one scope name pointing to multiple APIs
+  (`scope=admin` → `aud: [policy-api, audit-api]`). Edge case but
+  valid.
 :::
 
 ### User claims
 
-Optional list of claim types this API expects in tokens. Used by some IdP-side filtering mechanisms; for most setups, leave empty.
+Optional list of claim types this API expects in tokens. Used by some
+IdP-side filtering mechanisms; for most setups, leave empty.
 
 ## API secrets
 
-After creation, every OAuth API has at least one **API secret** — a shared symmetric key used when the RS authenticates against Modgud (introspection endpoint, distribution API, …).
+Every OAuth API has at least one **API secret** — a shared symmetric
+key the RS uses when authenticating against Modgud for endpoints that
+require RS-Auth (today: token introspection).
 
-The **Secrets** tab shows all secrets currently valid for this API. You can:
+The **Secrets** tab shows all secrets currently valid for this API.
+You can:
 
 - **Add** a new secret (parallel rotation)
 - **Delete** an existing secret
 - **Regenerate** rotates the default secret (old one is invalidated)
 
 ::: warning One-time reveal
-Cleartext secret values are shown **only once** — at creation or regeneration. After that Modgud only stores the hash. Lost a secret? Generate a new one and update your consumer.
+Cleartext secret values are shown **only once** — at creation or
+regeneration. After that Modgud only stores the hash. Lost a secret?
+Generate a new one and update your consumer.
 :::
 
 ## Editing
 
-Most fields can be edited live; **Name** is immutable after creation. Changing the linked **Application** is allowed but be careful — the RS's scope-resolution and distribution-API responses immediately switch to the new app context.
+Most fields can be edited live; **Name** is immutable after creation.
+Changing the linked **Application** is allowed but be careful — the
+RS's scope-resolution and the per-Audience `resource_access` shape
+immediately switch to the new app context.
 
 ## Deleting
 
-List → right-click → **Delete**. Soft-deleted; the secret hashes are kept for audit but the RS is no longer usable.
+List → right-click → **Delete**. Soft-deleted; the secret hashes are
+kept for audit but the RS is no longer usable.
 
 ## Common patterns
 
 ### One app, one resource server
 
-Default for most SaaS apps. Click the "Create default resource server" button on the App detail and you're done.
+Default for most SaaS apps. Click the "Create default resource
+server" button on the App detail and you're done.
 
 ### One app, multiple resource servers (microservices)
 
-Each microservice gets its own OAuth API with its own secret. All link to the same App. Permission lookups return identical results regardless of which RS asks — apps are the permission axis, not the RS.
+Each microservice gets its own OAuth API entry with its own narrower
+`PermissionIds` subset of the App's catalog. All link to the same
+App. Per-Audience narrowing in UserInfo means a token used against
+microservice A only carries A's permission subset, not B's — even
+when both are under the same App.
 
 ### Multi-tenant API
 
-If the same API logic serves multiple realms, each realm gets its own OAuth API entry. Modgud's tenancy already enforces realm separation at the database level, so cross-realm token leakage is impossible.
+If the same API logic serves multiple realms, each realm gets its own
+OAuth API entry. Modgud's tenancy already enforces realm separation
+at the database level, so cross-realm token leakage is impossible.
 
 ## Tips
 
 ::: tip Audit trail
-Every distribution-API call logs the calling RS's name. If multiple microservices share one App, this is how you tell which one initiated which permission lookup.
+RS-Auth-protected endpoint calls log the calling RS's name. Useful
+when several microservices share one App and you want to know which
+specific RS made a given request.
 :::
 
-::: tip Don't reuse the user-bearer scheme
-The user bearer token is **not** an authentication for the RS — it identifies the user the RS is acting on behalf of. The RS-side credentials (`X-Resource-Server-Id` + `X-Resource-Server-Secret`) are a separate axis. Both must be present on `/api/v1/distribution/*` endpoints.
+::: tip Two distinct identities
+A user bearer token identifies the user; the API secret (when
+required) identifies the RS itself. They sit on independent
+authentication axes — both can be relevant on the same request.
 :::

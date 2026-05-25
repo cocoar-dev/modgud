@@ -1,29 +1,39 @@
 # Integrating a Resource Server
 
-This guide walks through wiring a Cocoar SaaS app's backend (a "resource server" in OAuth-speak) to Modgud so it can:
+This guide walks through wiring an ASP.NET Core resource server to
+Modgud so it can:
 
 1. Validate access tokens that Modgud issued
 2. Pick up role claims via UserInfo so `[Authorize(Roles = "…")]` works
-3. Optionally fetch granular permissions live via the distribution API
+3. Read fine-grained permission strings from the per-Audience
+   `resource_access` block so it can gate on
+   `<resource>:<action>` checks
 
-The reference scenario is a fictional `timetodo` app — replace the slug with yours throughout.
+The reference scenario is a fictional `acme` app — replace the slug
+with yours throughout.
 
 ## Prerequisites
 
 Before wiring code, finish the admin setup in Modgud:
 
-1. Create the app `timetodo` (with its resources)
-2. Create an OAuth client (e.g. `timetodo-web`) and link it to `timetodo`
-3. Click **Create default resource server** in the app detail — copy the one-time API secret
-4. Set up at least one role + group with `BoundTo: ["timetodo"]` and assign your test user
+1. Create the app `acme` with its permission catalog
+   (`<resource>:<action>` entries)
+2. Create an OAuth client (e.g. `acme-web`) and link it to `acme`
+3. Click **Create default resource server** in the app detail (this
+   provisions an OAuthApi identity whose `PermissionIds` declare the
+   subset of the catalog this server gates on)
+4. Set up at least one role + group with `BoundTo: ["acme"]` and
+   assign your test user
 
-The full admin walkthrough lives at [Admin → SaaS App Integration Walkthrough](../admin/saas-integration-walkthrough).
+The full admin walkthrough lives at
+[Admin → SaaS App Integration Walkthrough](../admin/saas-integration-walkthrough).
 
 ## ASP.NET Core integration
 
 ### 1. Add the package reference
 
-Until the NuGet package ships, reference the project from the Modgud source tree:
+Until the NuGet package ships, reference the project from the Modgud
+source tree:
 
 ```xml
 <ItemGroup>
@@ -41,25 +51,27 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        // Your realm's issuer — the slug after /<host>/ is the realm slug.
-        options.Authority = "https://auth.cocoar.dev/system";
+        // Your realm's issuer — the segment after /<host>/ is the realm slug.
+        options.Authority = "https://auth.example.com/system";
 
         // Your app's slug. Modgud uses the app slug as the audience
         // claim, so all microservices under one app share the same `aud`.
-        options.Audience = "timetodo";
+        options.Audience = "acme";
 
         // CRITICAL: pulls UserInfo on every token validation and merges its
-        // claims into the principal. Without this, role claims sit on the
-        // server and your endpoints don't see them.
+        // claims into the principal. Without this, role + resource_access
+        // claims sit on the IdP and your endpoints don't see them.
         options.GetClaimsFromUserInfoEndpoint = true;
     });
 
-// Flattens resource_access["timetodo"].roles into ClaimTypes.Role so
-// [Authorize(Roles = "Editor")] just works. Also flattens the optional
-// "groups" claim into a "group" claim type.
-services.AddModgudClaimsTransformation(o =>
+// Wires the Modgud ClaimsTransformation:
+//   - flattens resource_access[<AppSlug>].roles into ClaimTypes.Role
+//     so [Authorize(Roles = "Editor")] just works.
+//   - flattens resource_access[<AppSlug>].permissions onto an exposed
+//     IModgudPrincipal so you can call user.HasPermission("todo:write").
+services.AddModgudClient(o =>
 {
-    o.AppSlug = "timetodo";
+    o.AppSlug = "acme";
 });
 
 services.AddAuthorization();
@@ -76,183 +88,124 @@ app.MapGet("/me", (ClaimsPrincipal user) => new
     Roles = user.FindAll(ClaimTypes.Role).Select(c => c.Value),
 }).RequireAuthorization();
 
-// Admin-only.
+// Role-only check (coarse).
 app.MapDelete("/admin/wipe", () => Results.Ok())
    .RequireAuthorization(p => p.RequireRole("Editor"));
 ```
 
-That's it for the standard role-based path. If your app needs nothing more granular than role checks, you can stop here.
+## Granular permission checks
 
-## Granular permissions: the distribution API
-
-Roles like "Editor" are coarse. If your endpoint logic asks "does this user have `timetodo:todo:write`?" — that level of detail isn't in the access token. Modgud exposes it via the **distribution API**, which you call live (and cache for ~30 seconds).
-
-### Anatomy of the call
-
-```http
-GET /api/v1/distribution/me-permissions HTTP/1.1
-Host: auth.cocoar.dev
-Authorization: Bearer <user-access-token>
-X-Resource-Server-Id: timetodo
-X-Resource-Server-Secret: <api-secret-from-the-Klick-Aktion>
-```
-
-Two auth axes:
-
-- **Bearer** (the user's access token) — answers "who is this user?"
-- **`X-Resource-Server-*` headers** — answers "which resource server is asking?". The credentials come from the OAuth API admin (or the Klick-Aktion in App detail).
-
-The **app context is derived from the resource server** — no `?app=` query is needed. The user's `X-Resource-Server-Id` is `timetodo`, so the IDP responds with permissions for `timetodo`.
-
-### Response
-
-```json
-{
-  "UserId": "abc123…",
-  "AppSlug": "timetodo",
-  "Permissions": [
-    "timetodo:todo:read",
-    "timetodo:todo:write",
-    "timetodo:project:read"
-  ],
-  "Groups": [
-    { "Id": "…", "Name": "TimeToDo Team" }
-  ],
-  "Roles": [
-    { "Id": "…", "Name": "Editor" }
-  ]
-}
-```
-
-The response carries `Cache-Control: private, max-age=30`. You may cache per-user for 30 seconds; after that, refetch. That bounds the staleness window for permission revocation.
-
-### Sample C# client
+For checks finer than role names, read the permissions array out of
+the principal. The ClaimsTransformation exposes it as plain claims
+under the canonical permission claim type:
 
 ```csharp
-public sealed class CocoarPermissionsClient
+public static class PrincipalExtensions
 {
-    private readonly HttpClient _http;
-    private readonly string _appSlug;
-    private readonly string _apiSecret;
-    private readonly IMemoryCache _cache;
-
-    public CocoarPermissionsClient(
-        HttpClient http,
-        IConfiguration config,
-        IMemoryCache cache)
-    {
-        _http      = http;
-        _appSlug   = config["Cocoar:AppSlug"]!;
-        _apiSecret = config["Cocoar:ApiSecret"]!;
-        _cache     = cache;
-    }
-
-    public async Task<MePermissionsDto> GetMyPermissionsAsync(
-        string userBearerToken, CancellationToken ct = default)
-    {
-        // Cache key includes a hash of the bearer so a user-switch in the
-        // same process invalidates correctly.
-        var cacheKey = $"perms:{Hash(userBearerToken)}";
-        if (_cache.TryGetValue(cacheKey, out MePermissionsDto? cached) && cached is not null)
-            return cached;
-
-        using var req = new HttpRequestMessage(HttpMethod.Get,
-            "/api/v1/distribution/me-permissions");
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", userBearerToken);
-        req.Headers.Add("X-Resource-Server-Id", _appSlug);
-        req.Headers.Add("X-Resource-Server-Secret", _apiSecret);
-
-        var res = await _http.SendAsync(req, ct);
-        res.EnsureSuccessStatusCode();
-        var dto = await res.Content.ReadFromJsonAsync<MePermissionsDto>(cancellationToken: ct)
-                  ?? throw new InvalidOperationException("Empty response from distribution API.");
-
-        _cache.Set(cacheKey, dto, TimeSpan.FromSeconds(30));
-        return dto;
-    }
-
-    private static string Hash(string s)
-    {
-        using var sha = System.Security.Cryptography.SHA256.Create();
-        return Convert.ToHexString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(s)));
-    }
+    public static bool HasPermission(this ClaimsPrincipal user, string permission)
+        => user.HasClaim(ModgudClaimTypes.Permission, permission);
 }
 
-public sealed record MePermissionsDto(
-    string UserId,
-    string AppSlug,
-    string[] Permissions,
-    GroupRef[] Groups,
-    RoleRef[] Roles);
+app.MapPost("/invoices", (ClaimsPrincipal user, InvoiceDto dto) =>
+{
+    if (!user.HasPermission("invoice:write"))
+        return Results.Forbid();
 
-public sealed record GroupRef(string Id, string Name);
-public sealed record RoleRef(string Id, string Name);
+    // … create invoice
+    return Results.Ok();
+});
 ```
 
-### Wire it into an authorization policy
-
-Use the response inside an authorization handler so endpoints can ask permission-level questions cleanly:
+### Or: an authorization policy
 
 ```csharp
-public sealed class HasPermissionRequirement : IAuthorizationRequirement
+public sealed class HasPermissionRequirement(string permission) : IAuthorizationRequirement
 {
-    public HasPermissionRequirement(string permission) => Permission = permission;
-    public string Permission { get; }
+    public string Permission { get; } = permission;
 }
 
 public sealed class HasPermissionHandler : AuthorizationHandler<HasPermissionRequirement>
 {
-    private readonly CocoarPermissionsClient _client;
-    private readonly IHttpContextAccessor _http;
-
-    public HasPermissionHandler(CocoarPermissionsClient client, IHttpContextAccessor http)
-    {
-        _client = client;
-        _http   = http;
-    }
-
-    protected override async Task HandleRequirementAsync(
+    protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext ctx, HasPermissionRequirement req)
     {
-        var bearer = _http.HttpContext?.Request.Headers.Authorization
-            .ToString().Replace("Bearer ", "");
-        if (string.IsNullOrEmpty(bearer)) return;
-
-        var perms = await _client.GetMyPermissionsAsync(bearer);
-        if (perms.Permissions.Contains(req.Permission))
+        if (ctx.User.HasClaim(ModgudClaimTypes.Permission, req.Permission))
             ctx.Succeed(req);
+        return Task.CompletedTask;
     }
 }
 
-// Registration:
 services.AddSingleton<IAuthorizationHandler, HasPermissionHandler>();
 services.AddAuthorization(o =>
-    o.AddPolicy("CanWriteTodos", p =>
-        p.AddRequirements(new HasPermissionRequirement("timetodo:todo:write"))));
+    o.AddPolicy("CanWriteInvoices", p =>
+        p.AddRequirements(new HasPermissionRequirement("invoice:write"))));
 
-// Use:
-app.MapPost("/todos", (TodoDto dto) => Results.Ok())
-   .RequireAuthorization("CanWriteTodos");
+app.MapPost("/invoices", (InvoiceDto dto) => Results.Ok())
+   .RequireAuthorization("CanWriteInvoices");
 ```
 
-## Two auth flavours, when to pick which
+### What's in the permissions array
+
+The IdP server-side does two transformations before emitting:
+
+- **Bypass-pre-expansion**: if the user holds `realm:admin`, the
+  block lists every concrete catalog entry of every reachable App; a
+  `<r>:admin` grant is expanded into every `<r>:*` entry in the
+  current App's catalog. Your check is always exact-match — no
+  evaluator port required.
+- **Per-RS subset narrowing**: each Audience block is narrowed to
+  the calling OAuthApi's declared `PermissionIds`. A microservice
+  within a multi-RS App sees only its own permissions, never a
+  sibling's.
+
+## Two gating flavours, when to pick which
 
 | You need | Use |
 | --- | --- |
-| Coarse role gating (`Admin`, `Editor`, `Viewer`) | `[Authorize(Roles = "…")]` via UserInfo + claims-transformation. Zero per-request HTTP cost. |
-| Granular per-action permissions (`todo:write`, `report:export`) | Distribution API + 30 s cache. One extra HTTP hop per user per ~30 s. |
-| Both | Both. They compose — the same user can be `Roles="Editor"` *and* hold permission `timetodo:todo:write`. |
+| Coarse role gating (`Admin`, `Editor`, `Viewer`) | `[Authorize(Roles = "…")]` via UserInfo + claims-transformation. |
+| Granular per-action permissions (`invoice:write`, `report:export`) | `user.HasPermission(…)` against the per-Audience `resource_access.permissions` block. |
+| Both | Both — they compose. The same user can be `Roles="Editor"` *and* hold permission `invoice:write`. |
+
+Both flavours use the same UserInfo call — there's no separate
+server-to-server endpoint to wire up.
+
+## Requesting the right scopes
+
+The `resource_access` block is gated by scope:
+
+- Request `scope=roles` to receive the `roles` array per Audience.
+- Request `scope=permissions` to receive the `permissions` array per
+  Audience (bypass-pre-expanded + RS-subset-narrowed).
+- Both standard scopes are seeded into every realm.
+
+Without those scopes, the corresponding arrays are omitted (or
+empty) and your gating will deny everyone — make sure the OAuth
+client requests them.
 
 ## Common pitfalls
 
-- **`GetClaimsFromUserInfoEndpoint = false`** (default in some templates) — UserInfo is never called, so `resource_access` never reaches the principal, so role claims are missing, so `[Authorize(Roles)]` denies everyone. Always opt in.
-- **Wrong `AppSlug` in `AddModgudClaimsTransformation`** — the transformation reads `resource_access[<wrong-slug>]`, finds nothing, doesn't add roles. Symptoms: authenticated user, no roles. Double-check the slug matches the App in modgud.
-- **Resource server not linked to an App** — distribution API returns 400 `ResourceServerUnassigned`. Open the OAuth API in modgud admin and pick an App.
-- **Token's `aud` doesn't match `JwtBearerOptions.Audience`** — JWT validation rejects with audience mismatch. The convention is `aud == app-slug`; align both sides.
-- **Distribution API call without `X-Resource-Server-*` headers** — 401 with `WWW-Authenticate: ModgudRS`. Add the headers; they're required on `/distribution/*` (not on `/me/*`, which is cookie-only).
+- **`GetClaimsFromUserInfoEndpoint = false`** (default in some
+  templates) — UserInfo is never called, so `resource_access` never
+  reaches the principal, so role/permission claims are missing, so
+  `[Authorize(Roles)]` denies everyone. Always opt in.
+- **Wrong `AppSlug` in `AddModgudClient`** — the transformation
+  reads `resource_access[<wrong-slug>]`, finds nothing, doesn't add
+  roles/permissions. Symptoms: authenticated user, no roles, no
+  permissions. Double-check the slug matches the App in Modgud.
+- **Resource server not linked to an App** — without a linked App
+  there's no `PermissionIds` subset, so the `resource_access` block
+  for this Audience is empty. Open the OAuth API in Modgud admin
+  and assign the App.
+- **Token's `aud` doesn't match `JwtBearerOptions.Audience`** — JWT
+  validation rejects with audience mismatch. The convention is
+  `aud == app-slug`; align both sides.
+- **`scope=permissions` not requested** — `resource_access` carries
+  roles but the permissions array stays empty. Add the scope to
+  your client's allowed scopes and to the authorization request.
 
 ## Reference
 
 - Concept overview: [Apps and resource_access](../concepts/apps-and-resource-access.md)
-- Distribution API spec: [reference/distribution-api](../reference/distribution-api.md)
+- Permissions reference: [Permissions & gating](../authorization-slice/permissions.md)
+- OAuth endpoints: [reference/oauth-api](../reference/oauth-api.md)
 - Library source: `src/dotnet/Modgud.Client.AspNetCore/`

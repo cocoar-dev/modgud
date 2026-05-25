@@ -12,7 +12,7 @@ Pick the one that matches what you're trying to do right now:
 
 ## What Modgud is — in one paragraph
 
-A self-hostable IdP. OAuth 2.0 + OpenID Connect server, runs on .NET 10, persists in PostgreSQL via Marten (event-sourced where it matters). Each customer / environment lives in an isolated realm with its own database. Apps within a realm declare their own resources, roles, and OAuth bindings. Tokens carry Keycloak-style `resource_access` so resource servers see one app's roles without a custom claim format. A small live-distribution API serves granular permissions on demand for apps that outgrow role-only checks.
+A self-hostable IdP. OAuth 2.0 + OpenID Connect server, runs on .NET 10, persists in PostgreSQL via Marten (event-sourced where it matters). Each customer / environment lives in an isolated realm with its own database. Apps within a realm declare their own permission catalogs and OAuth bindings. Tokens carry Keycloak-style `resource_access` keyed per Audience, with bypass-pre-expansion and per-RS subset narrowing — resource servers do straight exact-match against a flat permission list, no custom claim format and no separate IdP roundtrip.
 
 ## What it isn't
 

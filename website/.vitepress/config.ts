@@ -72,7 +72,7 @@ export const baseConfig = defineConfig({
         { text: 'Guide', link: '/guide/integrating-resource-server' },
         { text: 'Admin', link: '/admin/' },
         { text: 'Plattform', link: '/plattform/' },
-        { text: 'Reference', link: '/reference/distribution-api' },
+        { text: 'Reference', link: '/reference/oauth-api' },
         { text: 'Testing', link: '/testing/' },
         { text: 'LLM Docs', link: '/llms-full.txt', target: '_blank' },
       ],
@@ -255,10 +255,9 @@ export const baseConfig = defineConfig({
           {
             text: 'API Reference',
             items: [
-              { text: 'Distribution API', link: '/reference/distribution-api' },
+              { text: 'OAuth Endpoints', link: '/reference/oauth-api' },
               { text: 'Auth Endpoints', link: '/reference/auth-api' },
               { text: 'Admin Endpoints', link: '/reference/admin-api' },
-              { text: 'OAuth Endpoints', link: '/reference/oauth-api' },
               { text: 'Realm Endpoints', link: '/reference/realm-api' },
             ],
           },

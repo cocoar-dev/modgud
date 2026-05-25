@@ -1066,11 +1066,6 @@ try
     // /api/v1/me/* — Cookie-only, for the admin SPA's self-introspection.
     Modgud.Api.Features.Auth.MeEndpoints.MapMeEndpoints(app, "api");
 
-    // /api/v1/distribution/* — Bearer + RS-Auth. Server-to-server surface
-    // for resource servers (TimeToDo, Knowledge, …) calling on behalf of
-    // an authenticated user.
-    Modgud.Api.Features.Distribution.DistributionEndpoints.MapDistributionEndpoints(app, "api");
-
     // End-user VitePress documentation at /docs — auth-gated, redirect to /login on unauth.
     // MUST be BEFORE app.UseEndpoints — otherwise the SPA fallback endpoint (registered
     // inside UseSpaUI) terminates the pipeline here and swallows /docs/* requests.

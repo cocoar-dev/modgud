@@ -83,26 +83,18 @@ server** button.
 
 What happens on click:
 
-1. A new OAuth API named after the app slug is created
+1. A new OAuth API is created, named after the app slug
 2. It is linked to the app (`AppId`)
-3. An initial **API secret is returned exactly once**
+3. Its `PermissionIds` are seeded to the app's full catalog by default
 
-**Copy that secret immediately** — Modgud only stores its hash, you'll
-never see the cleartext again.
+The resource server is the identity Modgud uses to compute the
+per-Audience subset narrowing in `resource_access` UserInfo blocks.
+You can later narrow `PermissionIds` to a strict subset (so a
+microservice within a multi-RS app only sees its own permissions in
+the user's UserInfo response).
 
-What is it for? Resource servers authenticate to Modgud with these
-credentials when they call any RS-Auth-protected endpoint. Most
-integrators today won't need this — permission delivery now flows
-through standard `/connect/userinfo` per-Audience emission, and the
-resource server validates tokens locally.
-
-::: tip When do I not need a default RS?
-If your app reads permissions from `/connect/userinfo` (the recommended
-path) and uses `Modgud.Client.AspNetCore` for the
-`IClaimsTransformation`, you don't need RS credentials. The default RS
-is only required for the legacy distribution-API path or future
-RS-Auth-protected endpoints.
-:::
+You normally only want one default RS per app. Pressing the button
+again says "Already exists" — no second RS is created.
 
 ## Extending or changing the catalog
 
