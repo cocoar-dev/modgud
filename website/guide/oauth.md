@@ -215,11 +215,16 @@ In the admin area (`/admin/oauth/...`):
 - `/admin/oauth/scopes` — list + details
 - `/admin/oauth/apis` — list + details
 
-Endpoints in `Modgud.Api/Features/Admin/OAuth/`. Gating:
+Endpoints in `Modgud.Api/Features/Admin/OAuth/`. Gating (permissions
+in the `modgud` App's catalog; the resource-wide bypass
+`<resource>:admin` grants all actions on the resource):
 
-- `modgud:oauth-client:read/write/delete` (+ `:admin`)
-- `modgud:oauth-scope:read/write/delete` (+ `:admin`)
-- `modgud:oauth-api:read/write/delete` (+ `:admin`)
+- `oauth-client:read`, `oauth-client:write`, `oauth-client:delete`
+  (+ `oauth-client:admin` bypass)
+- `oauth-scope:read`, `oauth-scope:write`, `oauth-scope:delete`
+  (+ `oauth-scope:admin` bypass)
+- `oauth-api:read`, `oauth-api:write`, `oauth-api:delete`
+  (+ `oauth-api:admin` bypass)
 
 ## Token lifetimes
 

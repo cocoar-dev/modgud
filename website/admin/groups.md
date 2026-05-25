@@ -44,9 +44,9 @@ Modgud groups deliberately carry no row-level access policies. Whether the user 
 - **Name** (unique)
 - **Description** (optional)
 - **Membership mode**:
-  - **Static** — you maintain members manually on the Members tab
-  - **Auto (script)** — membership is computed by a script
-  - **Hybrid** — static members plus auto-computed additions
+  - **Manual** — you maintain members manually on the Members tab
+  - **Auto** — membership is computed by a JsEval script over the
+    principal directory
 - **Bound to apps** — *(MultiSelect)* which apps does this group take effect in? See below.
 
 #### Bound to apps — the activation switch
@@ -84,7 +84,7 @@ The script is recompiled and re-evaluated whenever a principal is created or cha
 
 Tab **Roles**: pick the roles the group should carry. A group can hold roles from **multiple apps** simultaneously — but they only contribute in apps where the group's BoundTo matches the role's AppSlug.
 
-> Example: a group `DevOps Team` with `BoundTo: ["timetodo", "knowledge"]` and roles `[timetodo-admin, knowledge-author]`. When a `timetodo` permission lookup runs, only the `timetodo-admin` role contributes. When a `knowledge` permission lookup runs, only `knowledge-author` does.
+> Example: a group `DevOps Team` with `BoundTo: ["acme", "knowledge"]` and roles `[acme-admin, knowledge-author]`. When a `acme` permission lookup runs, only the `acme-admin` role contributes. When a `knowledge` permission lookup runs, only `knowledge-author` does.
 
 ## Effective members
 

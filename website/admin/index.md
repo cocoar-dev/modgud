@@ -58,9 +58,9 @@ Modgud manages permissions in the form **`app:resource:action`**. Examples:
 
 | Permission | Meaning |
 | --- | --- |
-| `modgud:user:read` | Read the user list in modgud |
-| `modgud:oauth-client:write` | Manage OAuth clients in modgud |
-| `timetodo:todo:write` | Write todos in the TimeToDo app |
+| `user:read` | Read the user list in modgud |
+| `oauth-client:write` | Manage OAuth clients in modgud |
+| `todo:write` | Write todos in the acme app |
 | `realm:admin` | **Realm-wide bypass** — everything in any app |
 | `modgud:admin` | App-wide bypass for modgud |
 | `modgud:user:admin` | Resource-wide bypass for "user" in modgud |
@@ -80,9 +80,9 @@ The first admin in every realm — created via the recovery CLI or the Control-P
 The sidebar automatically hides everything you can't read. Examples:
 
 - **Realm admin** (`realm:admin`) — sees and may do everything, in every app
-- **User manager** in modgud — `modgud:user:read` + `:write` + `modgud:session:read` + `modgud:auth-log:read` → only the user/session area
+- **User manager** in modgud — `user:read` + `:write` + `session:read` + `auth-log:read` → only the user/session area
 - **OAuth manager** — `modgud:oauth-client:*` + `modgud:oauth-scope:*` + `modgud:oauth-api:*` → only the OAuth area
-- **TimeToDo editor** (in the TimeToDo app) — `timetodo:todo:write` + `timetodo:project:write` → not an admin in modgud, but very much in TimeToDo
+- **Acme Editor** (in the acme app) — `todo:write` + `project:write` → not an admin in modgud, but very much in acme
 
 ## Typical workflows
 

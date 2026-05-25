@@ -18,7 +18,7 @@ Every OAuth client can be linked to **zero, one, or more [Applications](./applic
 1. **Token contents** — on `/connect/userinfo`, the issued token carries a `resource_access` block per linked app, with the user's app-specific roles. Resource servers read their own block (Keycloak convention).
 2. **Scope restriction** — the client may only request scopes that belong to one of its apps (or are global, like the OIDC standard scopes `openid`, `email`, `profile`, `roles`, `offline_access`).
 
-The default case is **one client → one app** (`timetodo-web` belongs to `timetodo`). Multi-app clients exist for bundle frontends that talk to several resource servers at once.
+The default case is **one client → one app** (`acme-web` belongs to `acme`). Multi-app clients exist for bundle frontends that talk to several resource servers at once.
 
 ::: tip First time?
 Use the [SaaS App Integration Walkthrough](./saas-integration-walkthrough) for the linear path through your first integration.
@@ -95,7 +95,7 @@ List → right-click → **Delete**. Soft-deleted entries can still be queried f
 ## Tips
 
 ::: tip One client per integration, not per environment
-Use a single client `timetodo-web` and configure multiple redirect URIs for prod/staging/dev — instead of three separate clients. Easier to maintain, fewer secrets to rotate.
+Use a single client `acme-web` and configure multiple redirect URIs for prod/staging/dev — instead of three separate clients. Easier to maintain, fewer secrets to rotate.
 :::
 
 ::: warning Don't share secrets

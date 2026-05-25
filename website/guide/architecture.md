@@ -33,7 +33,7 @@ graph TB
         Setup[Bootstrap + master tenancy + seeding]
     end
 
-    subgraph Slices ["Slices (TimeToDo copies)"]
+    subgraph Slices ["Slices (acme copies)"]
         Authn[Modgud.Authentication<br/>Login, 2FA, OIDC, GDPR]
         Authz[Modgud.Authorization<br/>Groups, Roles, Permissions]
     end

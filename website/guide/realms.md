@@ -174,19 +174,20 @@ In `Program.cs` (before `app.Run`):
 4. **Apply Marten storage again** → the system tenant gets per-tenant
    tables
 5. **Seed system realm document** (`EnsureSystemRealmExistsAsync`)
-6. **OAuthRealmSeeder** seeds 5 default scopes
-   (`openid`, `email`, `profile`, `roles`, `offline_access`) +
-   internal LoginProvider into the system tenant
+6. **OAuthRealmSeeder** seeds 6 default scopes
+   (`openid`, `email`, `profile`, `roles`, `offline_access`,
+   `permissions`) + internal LoginProvider into the system tenant
 7. **Warm up RealmCache**
 8. **Check the recovery-CLI path** or start Kestrel
 
 ## Realm CRUD
 
-Endpoints under `/api/admin/realms` — gated by
-`control-plane:realm:read` / `control-plane:realm:write` and only
-reachable on the **Control-Plane realm** (the realm with slug
-`system`). On any other host: 404 (the existence of the surface is
-hidden from tenant realms — see [Concepts: Control Plane](../concepts/control-plane)).
+Endpoints under `/api/admin/realms` — gated by `realm:read` /
+`realm:write` (catalog entries in the `control-plane` App, which is
+only seeded on the Control-Plane realm). Only reachable on the
+**Control-Plane realm** (the realm with slug `system`). On any other
+host: 404 (the existence of the surface is hidden from tenant realms
+— see [Concepts: Control Plane](../concepts/control-plane)).
 
 ### Create
 
@@ -199,7 +200,6 @@ POST /api/admin/realms
   "Slug": "acme",
   "DisplayName": "Acme Corp",
   "Domains": ["acme.example.com"],
-  "IsControlPlane": false,
   "InitialAdmin": {
     "UserName": "max",
     "Email": "max@acme.com"
@@ -207,14 +207,16 @@ POST /api/admin/realms
 }
 ```
 
+`IsControlPlane` is **not** in the request body — it's a computed
+read-only property derived from `Slug == "system"`.
+
 Backend:
 
-1. Validates `slug` (regex, reserved-words check) and the
-   exactly-one-Control-Plane invariant.
+1. Validates `slug` (regex, reserved-words check).
 2. `CREATE DATABASE <master-db>_acme` (raw SQL).
 3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`.
 4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`.
-5. **`OAuthRealmSeeder`** seeds 5 default scopes + the Internal login
+5. **`OAuthRealmSeeder`** seeds 6 default scopes + the Internal login
    provider into the new tenant DB.
 6. **`AppRealmSeeder`** seeds the `modgud` app. The
    `control-plane` app is **only** seeded when the new realm is itself
