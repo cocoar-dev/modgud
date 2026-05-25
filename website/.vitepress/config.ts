@@ -119,11 +119,16 @@ export const baseConfig = defineConfig({
           {
             text: 'Architecture',
             items: [
-              { text: 'Overview', link: '/guide/overview' },
               { text: 'Backend Layout', link: '/guide/architecture' },
               { text: 'Multi-Tenancy / Realms', link: '/guide/realms' },
               { text: 'Persistence (Marten)', link: '/guide/database' },
               { text: 'OAuth / OpenIddict', link: '/guide/oauth' },
+            ],
+          },
+          {
+            text: 'Contributing',
+            items: [
+              { text: 'Developing locally', link: '/guide/developing-locally' },
             ],
           },
           {

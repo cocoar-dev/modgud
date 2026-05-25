@@ -47,8 +47,7 @@ const structure = [
   {
     part: 'Developer Guide',
     pages: [
-      { file: 'guide/overview.md', title: 'Overview' },
-      { file: 'guide/getting-started.md', title: 'Getting Started' },
+      { file: 'guide/developing-locally.md', title: 'Developing locally' },
       { file: 'guide/architecture.md', title: 'Clean Architecture' },
       { file: 'guide/cqrs-event-sourcing.md', title: 'CQRS & Event Sourcing' },
       { file: 'guide/realms.md', title: 'Multi-Tenancy / Realms' },

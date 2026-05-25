@@ -1,4 +1,9 @@
-# Getting started (dev)
+# Developing locally
+
+Running Modgud from source for development. For the
+"just want it running" path, use the
+[Docker quickstart](/getting-started/quickstart) instead — this page
+is for contributors who edit the code.
 
 ## Prerequisites
 
@@ -184,5 +189,3 @@ In production they are not mounted.
 - [Backend architecture](/guide/architecture)
 - [Multi-tenancy / Realms](/guide/realms)
 - [OAuth / OpenIddict](/guide/oauth)
-- [Authentication slice](/dev-notes/authentication-slice/)
-- [Authorization slice](/dev-notes/authorization-slice/)
