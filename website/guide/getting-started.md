@@ -184,5 +184,5 @@ In production they are not mounted.
 - [Backend architecture](/guide/architecture)
 - [Multi-tenancy / Realms](/guide/realms)
 - [OAuth / OpenIddict](/guide/oauth)
-- [Authentication slice](/authentication-slice/)
-- [Authorization slice](/authorization-slice/)
+- [Authentication slice](/dev-notes/authentication-slice/)
+- [Authorization slice](/dev-notes/authorization-slice/)

@@ -90,7 +90,7 @@ backend checks the strings on `RequiresPermission`.
 ## Default roles on first bootstrap
 
 When the first admin in a realm is created (recovery CLI or HTTP
-bootstrap-invite — see [First-time setup](../getting-started/first-time-setup)),
+bootstrap-invite — see [First-time setup](../../getting-started/first-time-setup)),
 `RealmAdminBootstrapper` atomically seeds three default `PermissionRole`s
 and places the new admin into the **Administratoren** group:
 

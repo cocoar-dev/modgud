@@ -238,13 +238,13 @@ surface. The other two:
    admin route group. Same 404 behaviour, even if the routing layer
    were misconfigured.
 
-See [Concepts: Control Plane / Data Plane](../concepts/control-plane)
+See [Concepts: Control Plane / Data Plane](../../concepts/control-plane)
 for the full defence-in-depth diagram.
 
 ## Default roles
 
 The first admin in every realm is created via one of the
-[bootstrap paths](../getting-started/first-time-setup). Atomic with the
+[bootstrap paths](../../getting-started/first-time-setup). Atomic with the
 user creation, three default `PermissionRole`s are seeded (idempotent
 — re-bootstrapping doesn't duplicate them):
 

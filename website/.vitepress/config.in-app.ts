@@ -33,8 +33,6 @@ export default defineConfig({
     'concepts/**',
     'guide/**',
     'reference/**',
-    'authentication-slice/**',
-    'authorization-slice/**',
     'dev-notes/**',
   ],
 

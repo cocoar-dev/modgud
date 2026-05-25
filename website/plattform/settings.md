@@ -1,62 +1,104 @@
-# Settings
+# Platform Settings
 
-Realm-wide operational settings. Administration → **Settings**.
+Instance-wide operational settings that apply across every realm in
+the deployment. Plattform → **Settings**.
 
-::: tip Where else are settings configured?
-Per-tenant settings live here. Cross-realm / instance-wide configuration lives in the deployment's `configuration.json` (and overlay `configuration.local.json`) — see [Deployment](../guide/deployment).
+::: tip Where do per-realm settings live?
+Anything realm-specific (self-registration, DCR policy, branding,
+inbox retention) is owned by the realm admin and lives under
+[Realm Settings](../admin/realm-settings). The Platform Settings on
+this page apply to *all* realms in the deployment.
+:::
+
+::: info Where does configuration come from?
+Three layers, in order of override precedence (deeper wins):
+
+1. **`configuration.json`** — committed defaults shipped with the
+   image.
+2. **`configuration.local.json`** — gitignored, per-deployment
+   overrides.
+3. **Environment variables** with PascalCase keys (e.g.
+   `EmailConfiguration__SmtpHost`).
+
+The admin UI surfaces only the subset that's runtime-editable —
+anything that touches startup wiring (Marten connection strings,
+OpenIddict signing-key material, listener URLs) stays in
+configuration files.
 :::
 
 ## 2FA enforcement
 
-Three enforcement levels:
+Three enforcement levels (`AuthenticationMinimumLevel` in
+`AppSettings`):
 
 | Level | Behaviour |
 | --- | --- |
-| **Off** | 2FA is purely opt-in. Users may enable it on their own. |
-| **Optional** | New users get a non-blocking nudge to enable 2FA. They can postpone. |
-| **Required** | Users without 2FA are blocked from full access until they enrol. A grace period (configurable, default 7 days) lets them complete enrolment after the policy is enabled. |
+| `0` — Off | 2FA is purely opt-in. Users may enable it on their own. |
+| `1` — Optional | Users without 2FA see a non-blocking nudge to enrol. They can postpone within the grace window. |
+| `2` — Required | Sign-in with only a password is rejected entirely. 2FA must already be set up. |
 
-Per-user **2FA enforcement override** in the [user editor](../admin/users) lets you exempt specific users from the realm-wide policy — sparingly, e.g. for service accounts.
+Per-user **2FA exempt** flag in the [user editor](../admin/users) lets
+you exempt specific users from the realm-wide policy — used sparingly
+(e.g. for service-account principals).
 
 ## Grace period
 
-When 2FA is **Required**, the grace period is the time window after a user is created (or after the policy is switched on) during which they can sign in without 2FA in order to enrol. After the grace period, sign-in fails until 2FA is set up.
+When `AuthenticationMinimumLevel >= 1`, the grace period is the
+window during which a user can sign in without 2FA in order to enrol.
+After it elapses, sign-in fails until 2FA is set up.
 
-Default: 7 days. Range: 1-30.
+Configured as `TwoFactorGracePeriodDays` in `AppSettings`. The
+shipping default is 14 days.
 
 ## Sign-in cookie lifetime
 
-How long a successful login cookie remains valid. Two values:
+The auth cookie's `ExpireTimeSpan` is 30 days with sliding expiration.
+"Remember me" controls whether the cookie is persistent at all —
+without it, the cookie is session-only and dies with the browser tab.
 
-- **Default** — for normal sign-ins
-- **Remember-me** — when the user ticks "Remember me" on the login page
-
-Defaults: 12h / 30d.
+These values currently come from deployment config (not the admin UI)
+— see [Authentication cookies](../guide/auth-cookies) for the full
+cookie inventory.
 
 ## SMTP
 
-For magic-link emails, password resets, 2FA codes, GDPR notifications. SMTP server / port / TLS / auth fields, plus a **Send test email** button to verify before saving.
+For transactional email: magic-link logins, password resets,
+email-OTP codes, email-verification, and bootstrap-admin invites.
+Configured under `EmailConfiguration` (host / port / TLS / auth /
+FromAddress / FromName).
 
-If SMTP is misconfigured, magic links can't be sent — users without 2FA can still sign in via password, but recovery flows degrade. Test before committing.
+A **Send test email** action in the admin verifies the configuration
+before you save changes.
+
+If SMTP is misconfigured, magic links can't be sent. Users with a
+working password still sign in, but recovery flows degrade — test
+before committing.
 
 ## Profile-change approval flow
 
-Toggle whether profile changes (email, name, phone) need admin approval — see [Change Requests](../admin/change-requests). For trusted internal-staff realms, leaving this off is reasonable. For public-facing or compliance-sensitive realms, turn it on.
+Toggle whether profile changes (email, name, phone) need admin
+approval — see [Change Requests](../admin/change-requests). For
+internal-staff realms, leaving this off is reasonable. For
+public-facing or compliance-sensitive realms, turn it on.
 
 ## Auth-log retention
 
-How long [Auth Log](../admin/auth-log) entries are kept. Default: indefinite (long audit trails are usually a feature, not a bug). For compliance regimes that require deletion after N years, set it here.
-
-::: warning Retention is destructive
-Setting a retention shorter than current data triggers a one-time pruning pass that deletes entries beyond the window. There's no recovery — be sure.
-:::
+The auth log is pruned to a fixed **7-day** window by the
+`AuthLogPersistenceService` background worker. This window is not
+currently runtime-configurable; it applies across every realm. See
+[Auth Log](../admin/auth-log).
 
 ## Tips
 
 ::: tip Stagger 2FA rollouts
-Switching directly from Off → Required is jarring. Step through Optional first for a few weeks: users see the nudge, most enrol voluntarily, then the Required transition only forces the late adopters.
+Switching directly from `Off` → `Required` is jarring. Step through
+`Optional` first for a few weeks: users see the nudge, most enrol
+voluntarily, then the `Required` transition only forces the late
+adopters.
 :::
 
 ::: tip Send a test email before saving SMTP
-A bad SMTP config that "looks right" can silently swallow magic links, leaving users stuck. The test-mail button takes 5 seconds and saves hours of debugging.
+A bad SMTP config that "looks right" can silently swallow magic
+links, leaving users stuck. The test-mail button takes 5 seconds and
+saves hours of debugging.
 :::

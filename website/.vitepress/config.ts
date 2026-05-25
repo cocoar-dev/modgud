@@ -132,12 +132,6 @@ export const baseConfig = defineConfig({
             ],
           },
           {
-            text: 'Frontend',
-            items: [
-              { text: 'Vue Frontend', link: '/guide/frontend' },
-            ],
-          },
-          {
             text: 'Scheduling & Background Work',
             items: [
               { text: 'Quartz Jobs', link: '/guide/scheduling' },
@@ -147,13 +141,6 @@ export const baseConfig = defineConfig({
             text: 'Operations',
             items: [
               { text: 'Docker & Deployment', link: '/guide/deployment' },
-            ],
-          },
-          {
-            text: 'Engineering Gotchas',
-            items: [
-              { text: 'Marten `RaiseSideEffects`', link: '/guide/engineering-gotchas/marten-raise-side-effects' },
-              { text: 'Critter Stack 2026 (Marten 9 / Wolverine 6)', link: '/guide/engineering-gotchas/critter-stack-2026' },
             ],
           },
         ],
@@ -225,29 +212,6 @@ export const baseConfig = defineConfig({
               { text: 'Inbox', link: '/plattform/inbox' },
               { text: 'Inbox-Einstellungen', link: '/plattform/inbox-settings' },
               { text: 'App-Einstellungen', link: '/plattform/settings' },
-            ],
-          },
-        ],
-        '/authentication-slice/': [
-          {
-            text: 'Modgud.Authentication',
-            items: [
-              { text: 'Overview', link: '/authentication-slice/' },
-              { text: 'Concepts', link: '/authentication-slice/konzepte' },
-              { text: 'Login Flows', link: '/authentication-slice/login-flows' },
-              { text: 'Login Providers (OIDC)', link: '/authentication-slice/login-providers' },
-              { text: 'GDPR & Sessions', link: '/authentication-slice/gdpr-sessions' },
-            ],
-          },
-        ],
-        '/authorization-slice/': [
-          {
-            text: 'Modgud.Authorization',
-            items: [
-              { text: 'Overview', link: '/authorization-slice/' },
-              { text: 'Concepts', link: '/authorization-slice/konzepte' },
-              { text: 'Permissions & Gating', link: '/authorization-slice/permissions' },
-              { text: 'Auto-Membership', link: '/authorization-slice/auto-membership' },
             ],
           },
         ],

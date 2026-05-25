@@ -8,7 +8,7 @@ Profile → Security → **Change password**. Type the current one, then the new
 
 ## Forgot it
 
-On the login page: **Forgot password?** Type your username (or email if you don't remember the username). Modgud emails you a magic link valid for ~30 minutes.
+On the login page: **Forgot password?** Type your username (or email if you don't remember the username). Modgud emails you a magic link valid for 15 minutes.
 
 Click the link → you're signed in (no password needed) → set a new password from your profile.
 
@@ -28,7 +28,11 @@ If you have **no email access** AND **no working 2FA** AND **no recovery codes**
 ## Best practices
 
 ::: tip Use a password manager
-Modgud doesn't enforce password rules beyond non-empty — that doesn't mean any password is fine. Use a manager to generate a unique, long passphrase per service.
+Modgud enforces a minimum policy: at least 8 characters, at least one digit, at least one uppercase letter. That keeps the worst passwords out — but a manager-generated, unique, long passphrase is the floor for anything you care about.
+:::
+
+::: tip Account lockout
+After 5 failed sign-in attempts in a row, your account is locked for one minute. Brief — but it means a typo-cluster can briefly lock you out. If you hit it, wait a moment and try again.
 :::
 
 ::: warning Don't reuse this password elsewhere

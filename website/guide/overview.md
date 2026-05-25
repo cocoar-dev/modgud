@@ -25,9 +25,9 @@ Marten 9, OpenIddict 7, Vue 3.
 
 modgud sits on two vertical slices, pulled in as C# projects:
 
-- [`Modgud.Authentication`](/authentication-slice/) — login,
+- [`Modgud.Authentication`](/dev-notes/authentication-slice/) — login,
   2FA, OIDC, GDPR, sessions
-- [`Modgud.Authorization`](/authorization-slice/) — groups,
+- [`Modgud.Authorization`](/dev-notes/authorization-slice/) — groups,
   roles, permissions
 
 On top of that lives the IdP-specific code:

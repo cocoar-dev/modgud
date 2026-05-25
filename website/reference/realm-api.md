@@ -23,7 +23,7 @@ These permissions live in the **`control-plane`** App's catalog
 (seeded only on the Control-Plane realm). The same string `realm:read`
 in the `modgud` App's catalog would be a different permission. The
 `realm:admin` realm-wide bypass grants all of them; see
-[Permissions & gating](../authorization-slice/permissions).
+[Permissions & gating](../dev-notes/authorization-slice/permissions).
 :::
 
 ## Create a realm

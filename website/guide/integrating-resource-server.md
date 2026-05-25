@@ -206,6 +206,6 @@ client requests them.
 ## Reference
 
 - Concept overview: [Apps and resource_access](../concepts/apps-and-resource-access.md)
-- Permissions reference: [Permissions & gating](../authorization-slice/permissions.md)
+- Permissions reference: [Permissions & gating](../dev-notes/authorization-slice/permissions.md)
 - OAuth endpoints: [reference/oauth-api](../reference/oauth-api.md)
 - Library source: `src/dotnet/Modgud.Client.AspNetCore/`

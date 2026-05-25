@@ -66,7 +66,7 @@ intentionally narrow — only the System Admin default role carries it.
 
 For the full evaluator + emission story (per-Audience UserInfo,
 bypass-pre-expansion, per-RS subset narrowing) see the canonical
-[Permissions reference](../authorization-slice/permissions).
+[Permissions reference](../dev-notes/authorization-slice/permissions).
 
 ## Apps and BoundTo
 
