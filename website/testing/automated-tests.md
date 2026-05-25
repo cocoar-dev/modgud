@@ -119,10 +119,11 @@ earlier waves; if a row's count drifts, trust the file's own
 
 ## Integration-test inventory
 
-`Modgud.Api.Tests` against Testcontainers PostgreSQL (~2 min,
-Docker required). The exact count moves with every test wave;
-`dotnet test Modgud.Api.Tests/ --list-tests | wc -l` is authoritative
-when an exact number matters.
+162 tests in `Modgud.Api.Tests`, all green against Testcontainers
+PostgreSQL (~3.5 min, Docker required; verified 2026-05-25 after the
+OAuthApi-credential cut). The per-folder breakdown below is a
+snapshot; if it drifts, `dotnet test Modgud.Api.Tests/ --list-tests`
+is authoritative.
 
 | Folder | Files | What's covered |
 |---|---|---|
