@@ -7,14 +7,14 @@ import type {
   OAuthApiCreatedDto,
   CreateOAuthApiDto,
   UpdateOAuthApiDto,
-  CreateApiSecretDto,
-  ApiSecretCreatedDto,
   OAuthScopeDto,
 } from '@/models/oauth'
 
 /**
- * OAuth API (resource server) store. Supports multiple secrets per API —
- * the create-secret endpoint returns the cleartext secret one time only.
+ * OAuth API (resource server) store. A resource server has no credential
+ * surface of its own — RS-to-IdP authentication runs through OAuth
+ * (Client-Credentials with a linked ServiceAccount), so this store covers
+ * only the RS metadata + implicit-scope companion.
  */
 export const useOAuthApiStore = defineStore('oauth-api', () => {
   const http = useHttpClient('/api/admin/oauth/apis')
@@ -50,8 +50,6 @@ export const useOAuthApiStore = defineStore('oauth-api', () => {
 
   async function create(dto: CreateOAuthApiDto): Promise<OAuthApiCreatedDto> {
     const created = await http.post<OAuthApiCreatedDto>(dto)
-    // Created DTO doesn't include `Secrets` — refresh that single record so
-    // the secret list shows the newly minted entry without an extra round-trip.
     await loadOne(created.Id)
     return created
   }
@@ -65,23 +63,6 @@ export const useOAuthApiStore = defineStore('oauth-api', () => {
   async function remove(id: string): Promise<void> {
     await http.addPath(id).delete()
     apis.value = apis.value.filter((a) => a.Id !== id)
-  }
-
-  async function regenerateSecret(id: string): Promise<{ ApiSecret: string }> {
-    const res = await http.addPath(id, 'regenerate-secret').post<{ ApiSecret: string }>({})
-    await loadOne(id)
-    return res
-  }
-
-  async function createSecret(id: string, dto: CreateApiSecretDto): Promise<ApiSecretCreatedDto> {
-    const created = await http.addPath(id, 'secrets').post<ApiSecretCreatedDto>(dto)
-    await loadOne(id)
-    return created
-  }
-
-  async function deleteSecret(id: string, secretId: string): Promise<void> {
-    await http.addPath(id, 'secrets', secretId).delete()
-    await loadOne(id)
   }
 
   /**
@@ -107,9 +88,6 @@ export const useOAuthApiStore = defineStore('oauth-api', () => {
     create,
     update,
     remove,
-    regenerateSecret,
-    createSecret,
-    deleteSecret,
     createImplicitScope,
   }
 })

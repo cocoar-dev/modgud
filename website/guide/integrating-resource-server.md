@@ -19,9 +19,9 @@ Before wiring code, finish the admin setup in Modgud:
 1. Create the app `acme` with its permission catalog
    (`<resource>:<action>` entries)
 2. Create an OAuth client (e.g. `acme-web`) and link it to `acme`
-3. Click **Create default resource server** in the app detail (this
-   provisions an OAuthApi identity whose `PermissionIds` declare the
-   subset of the catalog this server gates on)
+3. Create an OAuth API (resource server) named after the app's slug
+   under **OAuth → APIs**, link it to `acme`, and pick the catalog
+   subset its `PermissionIds` cover
 4. Set up at least one role + group with `BoundTo: ["acme"]` and
    assign your test user
 

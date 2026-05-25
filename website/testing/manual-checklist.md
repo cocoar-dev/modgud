@@ -182,8 +182,6 @@ already in `helpers.ts`).
 - ✅ Admin → Applications: `modgud` listed as system app, `IsSystem=true`, all 15 resources in place. Automated in `10-admin.spec.ts`.
 - ✅ Create non-system app via `POST /api/app` → returns 200, `IsSystem=false`. Automated.
 - ✅ Reserved-slug rejection — `realm`, `modgud`, `*` all return 400. Automated.
-- ⏳ App-detail Klick-Aktion **Create default resource server** with one-time secret reveal — **not yet verified** (needs UI walk).
-- ⏳ Pressing the button again surfaces the existing RS without rotating — **not yet verified**.
 - ⏳ Lookup endpoint `GET /api/app/lookup` minimal-shape — **not yet verified**.
 
 ## 10. OAuth Clients
@@ -205,9 +203,8 @@ already in `helpers.ts`).
 
 - ✅ List endpoint returns `{Items: [], TotalCount: 0}` even without pagination params. **F16 fixed** alongside `/oauth/clients`.
 - ⏳ Create RS, link to app `timetodo` — **not yet verified**.
-- ⏳ Add a parallel API secret + delete the old one — **not yet verified**.
-- ⏳ Move RS to a different app → distribution-API responses switch context — **not yet verified**.
-- ⏳ RS without linked App → distribution-API → 400 `ResourceServerUnassigned` — **not yet verified manually**; covered by `DistributionApiAuthFilterTests`.
+- ⏳ Move RS to a different app → `resource_access` block switches catalog — **not yet verified**.
+- ⏳ RS without linked App → UserInfo emits no `resource_access` for that audience — **not yet verified**.
 
 ## 13. Login providers + IdP Config (OIDC)
 
@@ -256,9 +253,8 @@ already in `helpers.ts`).
 ## 18. OAuth flows (real RP)
 
 All items below need a separate Relying-Party (demo SPA + demo
-backend, the `timetodo`-style integrations envisaged in the
-distribution-API guide). The current run only exercised the IDP-side
-endpoints directly.
+backend, a `timetodo`-style integration). The current run only
+exercised the IdP-side endpoints directly.
 
 - ⏳ **Authorization Code + PKCE** end-to-end — **not yet verified**.
 - ⏳ Reference token (default) — **not yet verified end-to-end**; reference-vs-JWT switch is unit-tested.
@@ -280,15 +276,6 @@ deferred for the manual run.
 - ⏳ No `groups` claim on `/me` (IDP/IAM split) — **not yet verified manually**; cookie `/me` was inspected and only carries `Permissions: ["realm:admin"]` plus user/MFA state.
 - ⏳ `Modgud.Client.AspNetCore` flattens roles to `ClaimTypes.Role` — **not yet verified manually**; unit-tested.
 
-## 20. Distribution API (Phase 5)
-
-- ✅ `GET /api/v1/distribution/me-permissions` without bearer → 401 with `WWW-Authenticate: Bearer`.
-- ⏳ With Bearer + `X-Resource-Server-Id` + `X-Resource-Server-Secret` → 200 with `MePermissionsResponse` — **not yet verified end-to-end** (needs real bearer; the negative auth-envelope is integration-tested in `DistributionApiAuthFilterTests`).
-- ⏳ App context derived from RS, no `?app=` accepted/needed — **not yet verified manually**.
-- ⏳ `Cache-Control: private, max-age=30` on the response — **not yet verified manually**.
-- ⏳ Wrong RS secret → 401 — **not yet verified manually**.
-- ⏳ RS not linked to App → 400 `ResourceServerUnassigned` — **not yet verified manually**.
-
 ## 21. Permission gating + bypass tiers
 
 - ✅ Default admin user has `Permissions: ["realm:admin"]` per `/api/account/me`. Sees the full sidebar. Phase-1 model live and correct.
@@ -300,9 +287,9 @@ deferred for the manual run.
 ## 22. Multi-app scenarios
 
 - ✅ App `timetodo` created with no resources, then queryable via `/api/app/lookup` — **partially verified** (the slug is registered, the rest of the cross-app permission scenarios are integration-tested in `PermissionResolutionTests` cases #5/#9/#10).
-- ⏳ Manual end-to-end: same user holds `modgud:user:read` AND `timetodo:todo:write` simultaneously — **not yet verified**.
-- ⏳ Distribution API for `timetodo` returns the `timetodo:todo:write` grant — **not yet verified manually**.
-- ⏳ Distribution API for an unrelated app the user is not bound to returns no permissions — **not yet verified manually**.
+- ⏳ Manual end-to-end: same user holds `user:read` in `modgud` AND `todo:write` in `timetodo` simultaneously — **not yet verified**.
+- ⏳ UserInfo's `resource_access[timetodo]` returns the `todo:write` grant — **not yet verified manually**.
+- ⏳ UserInfo emits no `resource_access` block for an unrelated app the user is not bound to — **not yet verified manually**.
 - ⏳ Same role on a group with `BoundTo: []` contributes nothing — **not yet verified manually**.
 
 ## 23. Documentation sanity

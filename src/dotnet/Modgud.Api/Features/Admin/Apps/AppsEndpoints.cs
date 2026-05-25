@@ -241,61 +241,6 @@ public static class AppsEndpoints
             .WithName("V2_App_Delete")
             .RequiresPermission("app:write");
 
-        // Klick-Aktion: provision a default Resource-Server for an App.
-        // Idempotent: if a non-deleted RS with the App's slug as Name
-        // already exists, surface that one (no new secret). Only when a
-        // fresh RS is created does the response include a one-time
-        // cleartext API secret — store it now or regenerate later.
-        appGroup.MapPost("{id}/default-resource-server",
-            async (ShortGuid id, IDocumentSession session, OAuthAdminService oauthAdmin) =>
-            {
-                var app = await session.LoadAsync<App>(id.Guid);
-                if (app is null || app.IsDeleted) return Results.NotFound();
-
-                // Look for an existing RS already linked to this app — by
-                // either AppId or by slug-named convention. Idempotent path.
-                var existing = await session.Query<OAuthApiState>()
-                    .FirstOrDefaultAsync(a => !a.IsDeleted && a.AppId == app.Id);
-                if (existing is not null)
-                {
-                    return Results.Ok(new
-                    {
-                        ApiId = new ShortGuid(existing.Id).ToString(),
-                        existing.Name,
-                        ApiSecret = (string?)null,  // null = "already exists, no fresh secret"
-                        AlreadyExisted = true,
-                    });
-                }
-
-                var createDto = new CreateOAuthApiDto
-                {
-                    Name = app.Slug,
-                    DisplayName = app.DisplayName,
-                    Description = $"Default resource server for {app.DisplayName}.",
-                    Enabled = true,
-                    AppId = app.Id.ToString(),
-                };
-                var result = await oauthAdmin.CreateApiAsync(createDto);
-                if (result.IsError)
-                {
-                    return Results.BadRequest(new
-                    {
-                        Error = result.FirstError.Code,
-                        result.FirstError.Description,
-                    });
-                }
-
-                return Results.Ok(new
-                {
-                    ApiId = new ShortGuid(Guid.Parse(result.Value.Id)).ToString(),
-                    Name = result.Value.Name,
-                    ApiSecret = result.Value.ApiSecret,  // ONE-TIME — copy now
-                    AlreadyExisted = false,
-                });
-            })
-            .WithName("V2_App_CreateDefaultResourceServer")
-            .RequiresPermission("app:write");
-
         return application;
     }
 

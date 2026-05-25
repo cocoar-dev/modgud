@@ -41,15 +41,7 @@ because permissions stay app-centric: each microservice gets its own
 `PermissionIds` subset of the same App catalog, and the IdP narrows
 its `resource_access[acme]` emission accordingly.
 
-::: tip The fast path: default resource server
-In an [Application's detail](./applications) modal there's a
-**Create default resource server** button that auto-creates an OAuth
-API with name = app slug, links it to the app, and seeds
-`PermissionIds` to the full catalog. The fastest way to provision the
-first RS for a new app.
-:::
-
-## Creating an API manually
+## Creating an API
 
 Administration → **OAuth → APIs** → **Create**.
 
@@ -112,24 +104,15 @@ the implicit one:
 Optional list of claim types this API expects in tokens. Used by some
 IdP-side filtering mechanisms; for most setups, leave empty.
 
-## API secrets
+## How a resource server authenticates against Modgud
 
-Every OAuth API has at least one **API secret** — a shared symmetric
-key the RS uses when authenticating against Modgud for endpoints that
-require RS-Auth (today: token introspection).
-
-The **Secrets** tab shows all secrets currently valid for this API.
-You can:
-
-- **Add** a new secret (parallel rotation)
-- **Delete** an existing secret
-- **Regenerate** rotates the default secret (old one is invalidated)
-
-::: warning One-time reveal
-Cleartext secret values are shown **only once** — at creation or
-regeneration. After that Modgud only stores the hash. Lost a secret?
-Generate a new one and update your consumer.
-:::
+An OAuth API has **no credential surface of its own**. When the
+resource server needs to call Modgud directly (e.g. token
+introspection), it does so via OAuth using a confidential
+[OAuth Client](./oauth-clients) linked to a
+[Service Account](./service-accounts): the client requests an
+access token via Client-Credentials and uses it as a bearer like any
+other token. There is no per-API shared secret to rotate.
 
 ## Editing
 
@@ -140,15 +123,15 @@ immediately switch to the new app context.
 
 ## Deleting
 
-List → right-click → **Delete**. Soft-deleted; the secret hashes are
-kept for audit but the RS is no longer usable.
+List → right-click → **Delete**. Soft-deleted; the OAuth API is no
+longer usable but the aggregate stream is retained for audit.
 
 ## Common patterns
 
 ### One app, one resource server
 
-Default for most SaaS apps. Click the "Create default resource
-server" button on the App detail and you're done.
+Default for most SaaS apps: create one OAuth API named after the app's
+slug, link it to the App, and pick the catalog subset it gates on.
 
 ### One app, multiple resource servers (microservices)
 
@@ -173,7 +156,8 @@ specific RS made a given request.
 :::
 
 ::: tip Two distinct identities
-A user bearer token identifies the user; the API secret (when
-required) identifies the RS itself. They sit on independent
+A user bearer token identifies the user; the RS-as-OAuth-client
+identity (a Client-Credentials access token minted via a Service
+Account) identifies the RS itself. They sit on independent
 authentication axes — both can be relevant on the same request.
 :::

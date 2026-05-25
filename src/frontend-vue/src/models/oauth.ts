@@ -212,14 +212,6 @@ export interface UpdateOAuthScopeDto {
 
 // ─── APIs / Resources ──────────────────────────────────────────────────────
 
-export interface ApiSecretEntryDto {
-  SecretId: string
-  Type: string
-  Description?: string | null
-  Expiration?: string | null
-  CreatedAt: string
-}
-
 export interface OAuthApiDto {
   Id: string
   Name: string
@@ -230,7 +222,8 @@ export interface OAuthApiDto {
   UserClaims: string[]
   /**
    * App.Id (Guid string) the resource server belongs to. Null = unassigned
-   * (RS exists but cannot authenticate against the distribution API yet).
+   * (the IdP has no catalog for this RS and won't emit a per-Audience
+   * `resource_access` block on UserInfo).
    */
   AppId?: string | null
   /**
@@ -239,7 +232,6 @@ export interface OAuthApiDto {
    * Empty when the RS doesn't gate on anything yet.
    */
   PermissionIds: string[]
-  Secrets: ApiSecretEntryDto[]
   /**
    * `true` when a sibling `OAuthScope` with the same `Name` already exists.
    * Drives the admin UI "Create implicit scope" affordance — hidden when
@@ -299,21 +291,12 @@ export interface OAuthApiListDto {
   TotalCount: number
 }
 
-export interface OAuthApiCreatedDto extends Omit<OAuthApiDto, 'Secrets'> {
-  ApiSecret: string
-}
-
-export interface CreateApiSecretDto {
-  Type?: string
+export interface OAuthApiCreatedDto {
+  Id: string
+  Name: string
+  DisplayName?: string | null
   Description?: string | null
-  Expiration?: string | null
-}
-
-export interface ApiSecretCreatedDto {
-  SecretId: string
-  ApiSecret: string
-}
-
-export interface ApiSecretDto {
-  ApiSecret: string
+  Enabled: boolean
+  Scopes: string[]
+  UserClaims: string[]
 }

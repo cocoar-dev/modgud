@@ -63,7 +63,7 @@ removed).
 | LoginProvider aggregate | `Identity/LoginProviderAggregateTests.cs` | 14 | Create / Setters / Delete / Replay (incl. Configuration defensive copy) |
 | StandardScopes constant set | `OAuth/StandardScopesTests.cs` | 7 | the seeded built-in scopes are stable |
 | OAuth wire-format constants | `OAuth/OAuthApplicationKeysTests.cs` (25), `OAuth/OAuthConstantsTests.cs` (32), `OAuth/ScopePropertyKeysTests.cs` (7) | 64 | every permission prefix (`scp:`/`gt:`/`rst:`/`ept:`), grant-type strings (incl. RFC-8628 device-code URN), client/consent types, `cocoar:` setting + property keys, distinctness across namespaces |
-| OAuthAdminMapping (extracted) | `Application/OAuthAdminMappingTests.cs` | 86 | `BuildClientPermissions`, grant-type round-trip, `BuildClient*` defaults + property survival, `MapClient`/`MapScope`, `MapApiState` (id-stringification, secret-metadata-only, defensive list copies), `BuildApiSecretEntry` (caller-owned hash, null expiration round-trip), `MergeClientSettings`/`MergeClientProperties` partial-PATCH semantics (omit-preserve / value-overwrite / list-replace / no-mutation), BCrypt hash+verify round-trip and malformed-hash safety |
+| OAuthAdminMapping (extracted) | `Application/OAuthAdminMappingTests.cs` | 70+ | `BuildClientPermissions`, grant-type round-trip, `BuildClient*` defaults + property survival, `MapClient`/`MapScope`, `MapApiState` (id-stringification, defensive list copies), `MergeClientSettings`/`MergeClientProperties` partial-PATCH semantics (omit-preserve / value-overwrite / list-replace / no-mutation), BCrypt hash+verify round-trip and malformed-hash safety |
 | OAuth `*StateProjection` (3) + LoginProvider | `Infrastructure/Persistence/Marten/Projections/OAuth/*Tests.cs` + `LoginProviders/...Tests.cs` | 54 | Create + every Apply + replay (incl. AccessTokenType case-sensitive parse bug pinning, AppIds n:m projection, AppId set/null/created-default for Scope + Api) |
 
 ### ClaimsTransformation library
@@ -124,8 +124,7 @@ required for the Testcontainers Postgres fixture).
 |---|---|---|
 | `Users/` | 1 | UserCRUD via `/api/user` (TimeToDo singular endpoint, not `/api/admin/users`) |
 | `Security/` | 6 | AuthEnforcement (grace period, whitelist), MFA (TOTP), EmailOtp, MagicLink, ProfileSelfService (UserChangeRequest), OWASP Top 10 (see below) |
-| `Authorization/` | 1 | PermissionResolutionTests — 10 end-to-end gate tests against `GET /api/user`: BoundTo on/off/wildcard/wrong-app, role-AppSlug filter, bypass cascade (resource-admin, app-admin, realm-admin), cross-app no-leak |
-| `Distribution/` | 1 | DistributionApiAuthFilterTests — auth-envelope: 401 without Bearer, 401 with cookie-only, 401 with cookie + RS-Auth headers (bearer policy wins over ambient cookie principal) |
+| `Authorization/` | 1 | PermissionResolutionTests — end-to-end gate tests against `GET /api/user`: BoundTo on/off/wildcard/wrong-app, role-AppSlug filter, bypass cascade (resource-admin, realm-admin), cross-app no-leak |
 | `ExternalAuth/` | 6 | OIDC IdpConfig CRUD, ExternalLoginProcessor (JIT account creation + linking), DynamicOidcSchemeManager, FlavorRegistry, ExternalIdentityLink aggregate, UserUpdateScriptRunner (JsEval) |
 | `Principals/` | 1 | PrincipalEmailResolver (group expansion) |
 
@@ -201,7 +200,7 @@ behaviour.
 | `Modgud.Authorization/Services/PermissionService.cs` | bypass logic → `PermissionEvaluator.Evaluate(grants, permission)` (static class), now 3-segment + 3 bypass tiers | `Authorization/PermissionEvaluatorTests.cs` |
 | `Modgud.Infrastructure/Realms/RealmProvisioningService.cs` | slug regex + reserved set → `Modgud.Domain.Realms.RealmSlugRules` | `Realms/RealmSlugRulesTests.cs` |
 | `Modgud.Infrastructure/Realms/RealmCache.cs` | host-matching + localhost-fallback → `Modgud.Infrastructure.Realms.RealmCacheLookup` | `Realms/RealmCacheLookupTests.cs` |
-| `Modgud.Application/Services/OAuthAdminService.cs` | 16 `private static` helpers (mapping, permission building, BCrypt wrappers) → `internal static OAuthAdminMapping`. Service shrunk by 262 LoC. Wave 4 added `MapApiState`, `BuildApiSecretEntry`, `MergeClientSettings`/`MergeClientProperties`. | `Application/OAuthAdminMappingTests.cs` |
+| `Modgud.Application/Services/OAuthAdminService.cs` | 16 `private static` helpers (mapping, permission building, BCrypt wrappers) → `internal static OAuthAdminMapping`. Service shrunk by 262 LoC. Wave 4 added `MapApiState`, `MergeClientSettings`/`MergeClientProperties`. | `Application/OAuthAdminMappingTests.cs` |
 | `Modgud.Authentication/Api/Account/TwoFactorEnforcementMiddleware.cs` | `IsWhitelisted`, `HasFederatedMfa`, `FederatedMfaAmrValues` lifted from `private static` to `internal static` | `Authentication/Account/TwoFactorEnforcementMiddlewareTests.cs` |
 | `Modgud.Api/Features/Auth/OAuth/ConsentEndpoints.cs` | `ParseAuthorizationUrl`, `AppendErrorToUrl` → `internal static ConsentUrlHelper` | `Api/Features/Auth/OAuth/ConsentUrlHelperTests.cs` |
 | `Modgud.Api/Features/Auth/OAuth/AuthorizationEndpoints.cs` | `GetDisplayName(user)`, `GetDestinations(claim)` → `internal static AuthorizationEndpointHelpers` | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` |

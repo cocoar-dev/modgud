@@ -1,14 +1,5 @@
 namespace Modgud.Application.DTOs.OAuth;
 
-public record ApiSecretEntryDto
-{
-    public required string SecretId { get; init; }
-    public required string Type { get; init; }
-    public string? Description { get; init; }
-    public DateTimeOffset? Expiration { get; init; }
-    public DateTimeOffset CreatedAt { get; init; }
-}
-
 public record OAuthApiDto
 {
     public required string Id { get; init; }
@@ -19,8 +10,9 @@ public record OAuthApiDto
     public required List<string> Scopes { get; init; }
     public required List<string> UserClaims { get; init; }
     /// <summary>
-    /// FK to <c>App.Id</c> (Guid string). Null = unassigned (this RS exists
-    /// but cannot authenticate against the distribution API yet).
+    /// FK to <c>App.Id</c> (Guid string). Null = unassigned (the RS exists
+    /// but <c>/connect/userinfo</c> emits no <c>resource_access</c> block
+    /// for this audience).
     /// </summary>
     public string? AppId { get; init; }
 
@@ -31,8 +23,6 @@ public record OAuthApiDto
     /// anything yet.
     /// </summary>
     public List<string> PermissionIds { get; init; } = new();
-
-    public List<ApiSecretEntryDto> Secrets { get; init; } = new();
 
     /// <summary>
     /// <c>true</c> when a sibling <see cref="OAuthScopeDto"/> with the same
@@ -122,26 +112,6 @@ public record OAuthApiCreatedDto
     public bool Enabled { get; init; }
     public required List<string> Scopes { get; init; }
     public required List<string> UserClaims { get; init; }
-
-    public required string ApiSecret { get; init; }
-}
-
-public record ApiSecretDto
-{
-    public required string ApiSecret { get; init; }
-}
-
-public record CreateApiSecretDto
-{
-    public string Type { get; init; } = "SharedSecret";
-    public string? Description { get; init; }
-    public DateTimeOffset? Expiration { get; init; }
-}
-
-public record ApiSecretCreatedDto
-{
-    public required string SecretId { get; init; }
-    public required string ApiSecret { get; init; }
 }
 
 public record PaginationRequest

@@ -1191,101 +1191,6 @@ public class OAuthAdminMappingTests
         }
     }
 
-    public class BuildApiSecretEntry
-    {
-        [Fact]
-        public void Stores_provided_hash_verbatim_so_caller_owns_the_BCrypt_step()
-        {
-            // Pure constructor — never re-hashes. Caller hashed once before
-            // calling. A double-hash would silently break VerifySecret on the
-            // round-trip.
-            var hashed = "$2a$12$caller-already-hashed-this";
-            var entry = OAuthAdminMapping.BuildApiSecretEntry(
-                secretId: Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
-                type: "SharedSecret",
-                hashedValue: hashed,
-                description: "ci-bot",
-                expiration: null,
-                createdAt: new DateTimeOffset(2026, 4, 29, 12, 0, 0, TimeSpan.Zero));
-
-            Assert.Equal(hashed, entry.HashedValue);
-        }
-
-        [Fact]
-        public void Maps_every_field_into_the_entry()
-        {
-            var id = Guid.Parse("11111111-2222-3333-4444-555555555555");
-            var created = new DateTimeOffset(2026, 4, 29, 12, 0, 0, TimeSpan.Zero);
-            var expires = new DateTimeOffset(2027, 4, 29, 12, 0, 0, TimeSpan.Zero);
-
-            var entry = OAuthAdminMapping.BuildApiSecretEntry(
-                secretId: id,
-                type: "X509",
-                hashedValue: "h",
-                description: "rotating cert",
-                expiration: expires,
-                createdAt: created);
-
-            Assert.Equal(id, entry.SecretId);
-            Assert.Equal("X509", entry.Type);
-            Assert.Equal("h", entry.HashedValue);
-            Assert.Equal("rotating cert", entry.Description);
-            Assert.Equal(expires, entry.Expiration);
-            Assert.Equal(created, entry.CreatedAt);
-        }
-
-        [Fact]
-        public void Null_expiration_passes_through_so_non_expiring_secrets_stay_non_expiring()
-        {
-            // The null vs. value distinction is the wire-format contract for
-            // "this secret never expires". A defensive default would silently
-            // break that.
-            var entry = OAuthAdminMapping.BuildApiSecretEntry(
-                secretId: Guid.NewGuid(),
-                type: "SharedSecret",
-                hashedValue: "h",
-                description: null,
-                expiration: null,
-                createdAt: DateTimeOffset.UnixEpoch);
-
-            Assert.Null(entry.Expiration);
-        }
-
-        [Fact]
-        public void Description_is_optional_and_passes_through_null()
-        {
-            var entry = OAuthAdminMapping.BuildApiSecretEntry(
-                secretId: Guid.NewGuid(),
-                type: "SharedSecret",
-                hashedValue: "h",
-                description: null,
-                expiration: null,
-                createdAt: DateTimeOffset.UnixEpoch);
-
-            Assert.Null(entry.Description);
-        }
-
-        [Fact]
-        public void Caller_supplies_secretId_so_two_calls_with_different_ids_dont_collide()
-        {
-            // The helper does not generate ids itself — that's the caller's
-            // (impure) responsibility. Pin: two calls with explicit different
-            // ids return entries with those exact ids.
-            var a = OAuthAdminMapping.BuildApiSecretEntry(
-                secretId: Guid.Parse("11111111-1111-1111-1111-111111111111"),
-                type: "SharedSecret", hashedValue: "h",
-                description: null, expiration: null,
-                createdAt: DateTimeOffset.UnixEpoch);
-            var b = OAuthAdminMapping.BuildApiSecretEntry(
-                secretId: Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                type: "SharedSecret", hashedValue: "h",
-                description: null, expiration: null,
-                createdAt: DateTimeOffset.UnixEpoch);
-
-            Assert.NotEqual(a.SecretId, b.SecretId);
-        }
-    }
-
     public class MapApiState
     {
         private static Modgud.Domain.OAuth.Apis.OAuthApiState SampleState() => new()
@@ -1302,7 +1207,7 @@ public class OAuthAdminMappingTests
         [Fact]
         public void Maps_every_state_field_into_dto_with_id_stringified()
         {
-            var dto = OAuthAdminMapping.MapApiState(SampleState(), secrets: null);
+            var dto = OAuthAdminMapping.MapApiState(SampleState());
 
             Assert.Equal("11111111-2222-3333-4444-555555555555", dto.Id);
             Assert.Equal("billing-api", dto.Name);
@@ -1314,91 +1219,12 @@ public class OAuthAdminMappingTests
         }
 
         [Fact]
-        public void Returns_empty_secret_list_when_secrets_argument_is_null()
-        {
-            // The session-bound caller passes null when the security-data document
-            // doesn't exist yet (newly created API before SaveChanges, or hard-deleted
-            // secrets). Pin: dto.Secrets must be a non-null empty list.
-            var dto = OAuthAdminMapping.MapApiState(SampleState(), secrets: null);
-
-            Assert.NotNull(dto.Secrets);
-            Assert.Empty(dto.Secrets);
-        }
-
-        [Fact]
-        public void Maps_secret_metadata_but_never_copies_the_hash_into_the_dto()
-        {
-            // Critical contract: ApiSecretEntry.HashedValue is BCrypt cyphertext, not
-            // a secret in the OWASP sense, but it leaving the service boundary is
-            // never necessary and would be a regression. Verifies the hash is
-            // simply not part of the DTO surface.
-            var entry = new Modgud.Domain.OAuth.Apis.ApiSecretEntry
-            {
-                SecretId = Guid.Parse("aaaaaaaa-1111-2222-3333-444444444444"),
-                Type = "SharedSecret",
-                HashedValue = "$2a$12$abcdefghijklmnopqrstuv.SECRET-HASH-MUST-NOT-LEAK",
-                Description = "ci",
-                Expiration = new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero),
-                CreatedAt = new DateTimeOffset(2026, 4, 29, 12, 0, 0, TimeSpan.Zero),
-            };
-
-            var dto = OAuthAdminMapping.MapApiState(SampleState(), new[] { entry });
-
-            var secret = Assert.Single(dto.Secrets);
-            Assert.Equal("aaaaaaaa-1111-2222-3333-444444444444", secret.SecretId);
-            Assert.Equal("SharedSecret", secret.Type);
-            Assert.Equal("ci", secret.Description);
-            Assert.Equal(entry.Expiration, secret.Expiration);
-            Assert.Equal(entry.CreatedAt, secret.CreatedAt);
-
-            // Property-shape assertion: ApiSecretEntryDto must not expose a
-            // HashedValue / Hash / Secret-style field.
-            var props = secret.GetType().GetProperties().Select(p => p.Name).ToArray();
-            Assert.DoesNotContain("HashedValue", props);
-            Assert.DoesNotContain("Hash", props);
-        }
-
-        [Fact]
-        public void Maps_multiple_secrets_preserving_order()
-        {
-            var first = new Modgud.Domain.OAuth.Apis.ApiSecretEntry
-            {
-                SecretId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
-                Type = "SharedSecret",
-                HashedValue = "h1",
-                CreatedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            };
-            var second = new Modgud.Domain.OAuth.Apis.ApiSecretEntry
-            {
-                SecretId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                Type = "X509",
-                HashedValue = "h2",
-                CreatedAt = new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero),
-            };
-
-            var dto = OAuthAdminMapping.MapApiState(SampleState(), new[] { first, second });
-
-            Assert.Equal(2, dto.Secrets.Count);
-            Assert.Equal("11111111-1111-1111-1111-111111111111", dto.Secrets[0].SecretId);
-            Assert.Equal("22222222-2222-2222-2222-222222222222", dto.Secrets[1].SecretId);
-        }
-
-        [Fact]
-        public void Empty_secrets_collection_yields_empty_dto_list_not_null()
-        {
-            var dto = OAuthAdminMapping.MapApiState(SampleState(), Array.Empty<Modgud.Domain.OAuth.Apis.ApiSecretEntry>());
-
-            Assert.NotNull(dto.Secrets);
-            Assert.Empty(dto.Secrets);
-        }
-
-        [Fact]
         public void Disabled_state_passes_through_to_dto()
         {
             var state = SampleState();
             state.Enabled = false;
 
-            var dto = OAuthAdminMapping.MapApiState(state, secrets: null);
+            var dto = OAuthAdminMapping.MapApiState(state);
 
             Assert.False(dto.Enabled);
         }
@@ -1410,7 +1236,7 @@ public class OAuthAdminMappingTests
             // to live in the projection cache. A later mutation of the state's
             // Scopes list must not retroactively change a previously-handed-out DTO.
             var state = SampleState();
-            var dto = OAuthAdminMapping.MapApiState(state, secrets: null);
+            var dto = OAuthAdminMapping.MapApiState(state);
 
             state.Scopes.Add("newly-added-scope");
             state.UserClaims.Add("newly-added-claim");

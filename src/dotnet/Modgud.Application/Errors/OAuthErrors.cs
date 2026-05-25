@@ -48,10 +48,6 @@ public static class OAuthErrors
         code: "OAuth.ApiNotFound",
         description: $"API with ID '{id}' was not found.");
 
-    public static Error ApiSecretNotFound(string secretId) => Error.NotFound(
-        code: "OAuth.ApiSecretNotFound",
-        description: $"API secret with ID '{secretId}' was not found.");
-
     public static Error InvalidServiceAccountId(string id) => Error.Validation(
         code: "OAuth.InvalidServiceAccountId",
         description: $"LinkedServiceAccountId '{id}' is not a valid Guid or ShortGuid.");

@@ -106,7 +106,7 @@ Logs in as `admin` / `ABC12abc!` (override with `--user=` / `--password=`),
 then POSTs the demo dataset (extra users, granular roles, auto-membership
 groups, OAuth clients, scopes, an API, a sample external login provider)
 through the regular admin API. Idempotent — re-runs only create what's
-missing. Generated client/API secrets are printed at the end.
+missing. Generated OAuth client secrets are printed at the end.
 
 ## Run the tests
 

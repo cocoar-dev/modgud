@@ -6,10 +6,7 @@ import {
   CoarCheckbox,
   CoarSelect,
   CoarButton,
-  CoarTabGroup,
-  CoarTab,
   CoarNote,
-  CoarIcon,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -40,10 +37,6 @@ const appOptions = computed(() => [
 ])
 const loading = ref(false)
 const error = ref<string | null>(null)
-const activeTab = ref<'general' | 'secrets'>('general')
-
-// Cleartext secret returned once at create / regenerate / new-secret.
-const newSecret = ref<{ secretId?: string; value: string } | null>(null)
 
 interface FormState {
   Name: string
@@ -161,14 +154,13 @@ async function save() {
         PermissionIds: form.value.AppId ? Array.from(form.value.PermissionIds) : [],
         AllowDynamicRegistration: form.value.AllowDynamicRegistration,
       })
-      newSecret.value = { value: created.ApiSecret }
-      // Switch to read-mode (id known) so the secret panel is visible.
+      // Load the freshly-minted RS so subsequent edits operate on real state.
       const loaded = await store.loadOne(created.Id)
       if (loaded) {
         dto.value = loaded
         form.value = fromDto(loaded)
-        // Stay open — admin needs to copy the secret.
       }
+      props.close()
     } else {
       const updated = await store.update(props.id, {
         DisplayName: form.value.DisplayName.trim() || null,
@@ -191,50 +183,6 @@ async function save() {
   } finally {
     loading.value = false
   }
-}
-
-async function regenerate() {
-  if (isCreate.value || !dto.value) return
-  if (!confirm(t('admin.oauthApis.confirmRegen', {}, 'Wirklich neu generieren? Bestehende Secrets bleiben gültig, ein neues Default-Secret wird zusätzlich angelegt.'))) return
-  loading.value = true
-  try {
-    const res = await store.regenerateSecret(dto.value.Id)
-    newSecret.value = { value: res.ApiSecret }
-    const loaded = await store.loadOne(dto.value.Id)
-    if (loaded) dto.value = loaded
-  } catch (e: any) {
-    error.value = e?.body?.Message ?? e?.message ?? String(e)
-  } finally { loading.value = false }
-}
-
-async function addSecret() {
-  if (isCreate.value || !dto.value) return
-  loading.value = true
-  try {
-    const created = await store.createSecret(dto.value.Id, { Type: 'SharedSecret' })
-    newSecret.value = { secretId: created.SecretId, value: created.ApiSecret }
-    const loaded = await store.loadOne(dto.value.Id)
-    if (loaded) dto.value = loaded
-  } catch (e: any) {
-    error.value = e?.body?.Message ?? e?.message ?? String(e)
-  } finally { loading.value = false }
-}
-
-async function deleteSecret(secretId: string) {
-  if (!dto.value) return
-  if (!confirm(t('admin.oauthApis.confirmSecretDelete', {}, 'Wirklich löschen?'))) return
-  try {
-    await store.deleteSecret(dto.value.Id, secretId)
-    const loaded = await store.loadOne(dto.value.Id)
-    if (loaded) dto.value = loaded
-  } catch (e: any) {
-    error.value = e?.body?.Message ?? e?.message ?? String(e)
-  }
-}
-
-async function copySecret() {
-  if (!newSecret.value) return
-  try { await navigator.clipboard.writeText(newSecret.value.value) } catch { /* ignore */ }
 }
 
 /**
@@ -269,25 +217,8 @@ async function createImplicitScope() {
       <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
     </div>
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1">
-      <CoarTabGroup v-if="!isCreate" v-model="activeTab" class="tab-bar">
-        <CoarTab id="general">{{ t('admin.oauthApis.tabs.general', {}, 'Allgemein') }}</CoarTab>
-        <CoarTab id="secrets">{{ t('admin.oauthApis.tabs.secrets', {}, 'Secrets') }}</CoarTab>
-      </CoarTabGroup>
-
-      <CoarNote v-if="newSecret" variant="warning" class="mb-3">
-        <div class="flex flex-col gap-2">
-          <div class="font-medium">{{ t('admin.oauthApis.secretOnce', {}, 'Bitte API-Secret jetzt kopieren — es wird nicht wieder angezeigt.') }}</div>
-          <div class="flex items-center gap-2">
-            <code class="flex-1 break-all rounded bg-white/40 px-2 py-1 text-xs">{{ newSecret.value }}</code>
-            <CoarButton size="s" variant="secondary" icon-start="copy" @click="copySecret">
-              {{ t('common.copy', {}, 'Kopieren') }}
-            </CoarButton>
-          </div>
-        </div>
-      </CoarNote>
-
       <!-- General -->
-      <div v-show="isCreate || activeTab === 'general'" class="tab-content">
+      <div class="tab-content">
         <!--
           Implicit-scope affordance: most APIs end up with a 1:1 OAuthScope
           companion of the same name. Surface the one-click action so the
@@ -367,53 +298,12 @@ async function createImplicitScope() {
         </div>
       </div>
 
-      <!-- Secrets -->
-      <div v-show="!isCreate && activeTab === 'secrets'" class="tab-content">
-        <p class="text-xs text-gray-500">
-          {{ t('admin.oauthApis.secretsHint', {}, 'Pro API können mehrere Secrets parallel existieren — z.B. für Rotation. Cleartext wird nur einmal beim Erstellen angezeigt.') }}
-        </p>
-        <div class="flex gap-2">
-          <CoarButton size="s" icon-start="plus" :loading="loading" @click="addSecret">
-            {{ t('admin.oauthApis.addSecret', {}, 'Neues Secret') }}
-          </CoarButton>
-          <CoarButton size="s" variant="secondary" icon-start="rotate-ccw" :loading="loading" @click="regenerate">
-            {{ t('admin.oauthApis.regenerate', {}, 'Default neu generieren') }}
-          </CoarButton>
-        </div>
-        <div v-if="dto && dto.Secrets.length > 0" class="secret-list">
-          <div v-for="s in dto.Secrets" :key="s.SecretId" class="secret-row">
-            <div class="flex flex-col flex-1 min-w-0">
-              <div class="flex items-center gap-2">
-                <CoarIcon name="key" size="s" />
-                <code class="text-xs">{{ s.SecretId }}</code>
-                <span class="text-xs text-gray-500">· {{ s.Type }}</span>
-              </div>
-              <div class="text-xs text-gray-500">
-                {{ t('admin.oauthApis.created', {}, 'Erstellt:') }} {{ new Date(s.CreatedAt).toLocaleString() }}
-                <template v-if="s.Expiration"> · {{ t('admin.oauthApis.expires', {}, 'Läuft ab:') }} {{ new Date(s.Expiration).toLocaleString() }}</template>
-              </div>
-              <div v-if="s.Description" class="text-xs">{{ s.Description }}</div>
-            </div>
-            <button class="text-surface-400 hover:text-red-600 transition" :title="t('common.delete', {}, 'Löschen')"
-              @click="deleteSecret(s.SecretId)">
-              <CoarIcon name="trash-2" size="s" />
-            </button>
-          </div>
-        </div>
-        <div v-else class="text-xs text-gray-400 italic">
-          {{ t('admin.oauthApis.noSecrets', {}, 'Keine Secrets vorhanden.') }}
-        </div>
-      </div>
-
       <p v-if="error" class="mt-3 text-sm text-red-600">{{ error }}</p>
     </div>
   </ModalLayout>
 </template>
 
 <style scoped>
-.tab-bar {
-  margin-bottom: 12px;
-}
 .tab-content {
   flex: 1;
   display: flex;
@@ -421,31 +311,6 @@ async function createImplicitScope() {
   gap: 12px;
   padding-bottom: 16px;
   min-height: 0;
-}
-.textarea {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--coar-border-neutral-secondary, #d1d5db);
-  border-radius: var(--coar-radius-m, 4px);
-  background: var(--coar-background-neutral-primary, #fff);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8rem;
-  resize: vertical;
-}
-.secret-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
-}
-.secret-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  border: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
-  border-radius: 6px;
-  background: var(--coar-background-neutral-primary, #fff);
 }
 .permission-checklist {
   display: flex;

@@ -107,7 +107,7 @@ The repo ships a Node script that POSTs a complete demo dataset (extra users, gr
 node scripts/seed-demo.mjs
 ```
 
-The script uses your admin login (defaults: `admin` / `ABC12abc!`; pass `--user=` and `--password=` to change). It is idempotent — re-running only creates what's missing. At the end it prints any generated client/API secrets — capture them, those values are not retrievable from the API later.
+The script uses your admin login (defaults: `admin` / `ABC12abc!`; pass `--user=` and `--password=` to change). It is idempotent — re-running only creates what's missing. At the end it prints any generated OAuth client secrets — capture them, those values are not retrievable from the API later.
 
 ::: tip Why a script and not a backend service
 The seed runs as a regular API client. There's no second write path that could drift from the admin endpoints, no production-disabled DI registration, and the script itself doubles as an end-to-end smoke test. See `scripts/README.md` for details.

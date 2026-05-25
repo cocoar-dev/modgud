@@ -897,19 +897,6 @@ public class OAuthAdminService
         // no-DCR default we want to be explicit about.
         _session.Events.Append(id, aggregate.SetProperties(BuildApiProperties(dto.AllowDynamicRegistration)));
 
-        // Initial API secret — stored in OAuthApiSecurityData (BCrypt-hashed).
-        var apiSecret = GenerateSecret();
-        var sec = OAuthApiSecurityData.Create(id);
-        sec.ApiSecret = HashSecret(apiSecret);
-        sec.Secrets.Add(BuildApiSecretEntry(
-            secretId: Guid.NewGuid(),
-            type: "SharedSecret",
-            hashedValue: sec.ApiSecret,
-            description: "Initial secret",
-            expiration: null,
-            createdAt: DateTimeOffset.UtcNow));
-        _session.Store(sec);
-
         await _session.SaveChangesAsync(ct);
 
         return new OAuthApiCreatedDto
@@ -921,7 +908,6 @@ public class OAuthAdminService
             Enabled = dto.Enabled,
             Scopes = dto.Scopes,
             UserClaims = dto.UserClaims,
-            ApiSecret = apiSecret,
         };
     }
 
@@ -1026,7 +1012,6 @@ public class OAuthAdminService
             return OAuthErrors.ApiNotFound(id);
 
         _session.Events.Append(guid, aggregate.Delete());
-        _session.Delete<OAuthApiSecurityData>(guid);
 
         await _session.SaveChangesAsync(ct);
         return true;
@@ -1116,133 +1101,20 @@ public class OAuthAdminService
         return MapScope(state!);
     }
 
-    public async Task<ErrorOr<ApiSecretDto>> RegenerateApiSecretAsync(string id, CancellationToken ct = default)
-    {
-        if (!Guid.TryParse(id, out var guid))
-            return OAuthErrors.ApiNotFound(id);
-
-        var state = await _session.LoadAsync<OAuthApiState>(guid, ct);
-        if (state is null || state.IsDeleted)
-            return OAuthErrors.ApiNotFound(id);
-
-        var newSecret = GenerateSecret();
-        var sec = await _session.LoadAsync<OAuthApiSecurityData>(guid, ct)
-                  ?? OAuthApiSecurityData.Create(guid);
-        sec.ApiSecret = HashSecret(newSecret);
-        sec.UpdateConcurrencyToken();
-        _session.Store(sec);
-
-        await _session.SaveChangesAsync(ct);
-        return new ApiSecretDto { ApiSecret = newSecret };
-    }
-
-    public async Task<ErrorOr<ApiSecretCreatedDto>> CreateApiSecretAsync(
-        string id, CreateApiSecretDto dto, CancellationToken ct = default)
-    {
-        if (!Guid.TryParse(id, out var guid))
-            return OAuthErrors.ApiNotFound(id);
-
-        var state = await _session.LoadAsync<OAuthApiState>(guid, ct);
-        if (state is null || state.IsDeleted)
-            return OAuthErrors.ApiNotFound(id);
-
-        var sec = await _session.LoadAsync<OAuthApiSecurityData>(guid, ct)
-                  ?? OAuthApiSecurityData.Create(guid);
-
-        var newSecret = GenerateSecret();
-        var hashed = HashSecret(newSecret);
-        var entry = BuildApiSecretEntry(
-            secretId: Guid.NewGuid(),
-            type: dto.Type,
-            hashedValue: hashed,
-            description: dto.Description,
-            expiration: dto.Expiration,
-            createdAt: DateTimeOffset.UtcNow);
-
-        sec.Secrets.Add(entry);
-        // Sync legacy single-secret slot to the latest entry for back-compat.
-        sec.ApiSecret = hashed;
-        sec.UpdateConcurrencyToken();
-        _session.Store(sec);
-
-        await _session.SaveChangesAsync(ct);
-
-        return new ApiSecretCreatedDto
-        {
-            SecretId = entry.SecretId.ToString(),
-            ApiSecret = newSecret,
-        };
-    }
-
-    public async Task<ErrorOr<bool>> DeleteApiSecretAsync(
-        string id, string secretId, CancellationToken ct = default)
-    {
-        if (!Guid.TryParse(id, out var guid))
-            return OAuthErrors.ApiNotFound(id);
-        if (!Guid.TryParse(secretId, out var secretGuid))
-            return OAuthErrors.ApiSecretNotFound(secretId);
-
-        var state = await _session.LoadAsync<OAuthApiState>(guid, ct);
-        if (state is null || state.IsDeleted)
-            return OAuthErrors.ApiNotFound(id);
-
-        var sec = await _session.LoadAsync<OAuthApiSecurityData>(guid, ct);
-        if (sec is null) return OAuthErrors.ApiSecretNotFound(secretId);
-
-        var entry = sec.Secrets.FirstOrDefault(s => s.SecretId == secretGuid);
-        if (entry is null) return OAuthErrors.ApiSecretNotFound(secretId);
-
-        sec.Secrets.Remove(entry);
-        sec.ApiSecret = sec.Secrets.LastOrDefault()?.HashedValue;
-        sec.UpdateConcurrencyToken();
-        _session.Store(sec);
-
-        await _session.SaveChangesAsync(ct);
-        return true;
-    }
-
-    public async Task<bool> ValidateApiCredentialsAsync(
-        string name, string secret, CancellationToken ct = default)
-    {
-        var api = await _session.Query<OAuthApiState>()
-            .FirstOrDefaultAsync(x => x.Name == name && !x.IsDeleted && x.Enabled, ct);
-        if (api is null) return false;
-
-        var sec = await _session.LoadAsync<OAuthApiSecurityData>(api.Id, ct);
-        if (sec is null) return false;
-
-        // OAUTH-09 — DoS-amplification cap on the BCrypt-Verify loop.
-        // Each VerifySecret runs BCrypt-12 (~100ms). Without a cap, an
-        // attacker who guesses against an API with N stored secrets pays
-        // 1× attempt for ~N×100ms of CPU. Bound the active-secret set to
-        // a sensible operational maximum (8) — APIs with more than that
-        // are misconfiguration, not legitimate operational overlap.
-        const int MaxSecretsToVerify = 8;
-        var checkedCount = 0;
-        foreach (var entry in sec.Secrets)
-        {
-            if (entry.Expiration.HasValue && entry.Expiration.Value < DateTimeOffset.UtcNow) continue;
-            if (++checkedCount > MaxSecretsToVerify) break;
-            if (VerifySecret(secret, entry.HashedValue)) return true;
-        }
-
-        return sec.ApiSecret is not null && VerifySecret(secret, sec.ApiSecret);
-    }
-
     // ───────────────────────────────────────────── Helpers ─────────────────────
     // Pure helpers (BuildClientPermissions, MapClient, etc.) live in
     // OAuthAdminMapping and are imported via `using static` above. The only
-    // remaining instance helper is MapApiAsync, which loads secrets from session.
+    // remaining instance helper is MapApiAsync, which probes for the
+    // implicit-scope companion alongside the projection state.
 
     private async Task<OAuthApiDto> MapApiAsync(OAuthApiState s, CancellationToken ct)
     {
-        var sec = await _session.LoadAsync<OAuthApiSecurityData>(s.Id, ct);
         // The implicit-scope-per-API convention pairs `scope.Name == api.Name`.
         // Probe for a live scope row with that name so the UI knows whether to
         // surface the "Create implicit scope" affordance.
         var hasImplicit = await _session.Query<OAuthScopeState>()
             .AnyAsync(x => x.Name == s.Name && !x.IsDeleted, ct);
-        return MapApiState(s, sec?.Secrets, hasImplicit);
+        return MapApiState(s, hasImplicit);
     }
 
     /// <summary>

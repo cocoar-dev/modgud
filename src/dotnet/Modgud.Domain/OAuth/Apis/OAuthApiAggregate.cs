@@ -1,8 +1,12 @@
 namespace Modgud.Domain.OAuth.Apis;
 
 /// <summary>
-/// Event-sourced aggregate for an OAuth-protected API (resource server).
-/// Sensitive data (api secrets) lives in <see cref="OAuthApiSecurityData"/>.
+/// Event-sourced aggregate for an OAuth-protected API (resource server). A
+/// resource server is identified by its <see cref="Name"/> (used as the
+/// <c>aud</c> claim) and gates on a subset of its linked <see cref="App"/>'s
+/// permission catalog. Resource servers authenticate via OAuth
+/// (Client-Credentials with a linked ServiceAccount), not via their own
+/// shared secret — this aggregate has no credential surface.
 /// </summary>
 public partial class OAuthApiAggregate
 {

@@ -26,7 +26,7 @@ When you bind a new SaaS app you traverse **five stations**:
 
 1. Register the app
 2. Create an OAuth client for the app's frontend
-3. Provision the default resource server (one click)
+3. Create the resource server (OAuth API) and link it to the app
 4. Optional: create roles + assign to a group
 5. Configure the resource-server code in the SaaS app's backend
 
@@ -96,26 +96,21 @@ The client may also only request scopes that belong to one of its apps
 (plus the standard OIDC scopes).
 :::
 
-## Station 3: provision the default resource server
+## Station 3: create the resource server
 
 The resource server is the identity Modgud uses to compute the
 per-Audience subset narrowing in `resource_access` UserInfo blocks.
 Each App needs at least one.
 
-Go back to **Administration → Applications**, open your `acme` app by
-double-clicking.
+Go to **Administration → OAuth → APIs** and click **Create**:
 
-At the bottom of the modal you'll see a **Resource Server** section
-with a **Create default resource server** button.
+- **Name** — `acme` (this becomes the `aud` claim)
+- **Application** — pick the `acme` App you just registered
+- **PermissionIds** — leave full catalog for now (a microservice would
+  tighten this to its slice)
 
-Click it. What happens internally:
-
-- A new OAuth API named `acme` is created
-- It is linked to the `acme` app (`AppId`)
-- Its `PermissionIds` are seeded to the full catalog of `acme`
-
-If you press the button again later: Modgud detects an existing
-default RS and just shows "Already exists" — no second RS.
+Save. The OAuth API now exists and the IdP knows which catalog to
+resolve against when a token targets `aud=acme`.
 
 ::: tip Microservice apps
 Multi-service apps create one OAuthApi per microservice, each with a

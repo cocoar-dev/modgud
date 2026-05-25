@@ -18,7 +18,7 @@ If you've just installed Modgud and want to bind your first SaaS app, start with
 
 Modgud is **multi-app capable**: every SaaS application in a realm is registered as its own App with its own resources, roles, and OAuth bindings.
 
-- [Applications](./applications) — register apps, manage resources, provision a default resource server
+- [Applications](./applications) — register apps and curate their permission catalogs
 
 ### OAuth & OpenID Connect
 
@@ -88,7 +88,7 @@ The sidebar automatically hides everything you can't read. Examples:
 
 ### Bind a new SaaS app
 
-Full step-by-step walkthrough: [SaaS App Integration](./saas-integration-walkthrough) — realm admin → app → OAuth client → default resource server → group/role → backend code.
+Full step-by-step walkthrough: [SaaS App Integration](./saas-integration-walkthrough) — realm admin → app → OAuth client → resource server → group/role → backend code.
 
 ### Onboard a new employee
 

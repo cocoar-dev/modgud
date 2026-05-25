@@ -72,29 +72,17 @@ you also need to:
 
 - link at least one OAuth client to it ([OAuth Clients](./oauth-clients))
 - (for an authenticated server-to-server callback into Modgud)
-  provision a resource server — see the click-action below
+  provision a resource server
 - create at least one role + group that connects users to the app
 
-## Click-action: provision the default resource server
+## Provisioning the resource server
 
-In an app's detail modal (except system apps) you'll find a **Resource
-Server** section at the bottom with a **Create default resource
-server** button.
-
-What happens on click:
-
-1. A new OAuth API is created, named after the app slug
-2. It is linked to the app (`AppId`)
-3. Its `PermissionIds` are seeded to the app's full catalog by default
-
-The resource server is the identity Modgud uses to compute the
-per-Audience subset narrowing in `resource_access` UserInfo blocks.
-You can later narrow `PermissionIds` to a strict subset (so a
-microservice within a multi-RS app only sees its own permissions in
-the user's UserInfo response).
-
-You normally only want one default RS per app. Pressing the button
-again says "Already exists" — no second RS is created.
+Under [OAuth → APIs](./oauth-apis), create an OAuth API named after
+the app's slug and link it to the app. Its `PermissionIds` declare
+which subset of the catalog this resource server gates on (full
+catalog is the typical default; tighten for microservices that only
+need a slice). This is the identity Modgud uses to compute the
+per-Audience `resource_access` block in UserInfo.
 
 ## Extending or changing the catalog
 

@@ -56,30 +56,6 @@ public static class OAuthApisEndpoints
         .WithName("OAuth_Apis_Delete")
         .RequiresPermission("oauth-api:write");
 
-        group.MapPost("{id}/regenerate-secret", async (string id, OAuthAdminService svc, CancellationToken ct) =>
-        {
-            var result = await svc.RegenerateApiSecretAsync(id, ct);
-            return result.ToResult(secret => Results.Ok(secret));
-        })
-        .WithName("OAuth_Apis_RegenerateSecret")
-        .RequiresPermission("oauth-api:write");
-
-        group.MapPost("{id}/secrets", async (string id, CreateApiSecretDto dto, OAuthAdminService svc, CancellationToken ct) =>
-        {
-            var result = await svc.CreateApiSecretAsync(id, dto, ct);
-            return result.ToResult(created => Results.Created($"{path}/admin/oauth/apis/{id}/secrets/{created.SecretId}", created));
-        })
-        .WithName("OAuth_Apis_CreateSecret")
-        .RequiresPermission("oauth-api:write");
-
-        group.MapDelete("{id}/secrets/{secretId}", async (string id, string secretId, OAuthAdminService svc, CancellationToken ct) =>
-        {
-            var result = await svc.DeleteApiSecretAsync(id, secretId, ct);
-            return result.IsError ? result.ToResult() : Results.NoContent();
-        })
-        .WithName("OAuth_Apis_DeleteSecret")
-        .RequiresPermission("oauth-api:write");
-
         // One-click convenience: create the 1:1 OAuthScope companion for an
         // existing API. Eliminates the manual two-modal "API + matching
         // scope" flow that every single-RS integration ends up doing. The

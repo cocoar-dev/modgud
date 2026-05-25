@@ -47,9 +47,6 @@ public static class OAuthMartenSetup
             .Index(x => x.AppId)
             .Index(x => x.IsDeleted);
 
-        options.Schema.For<OAuthApiSecurityData>()
-            .Identity(x => x.Id);
-
         // OpenIddict authorization + token documents — string-id (OpenIddict gives
         // us a Guid-as-string); not event-sourced, ephemeral.
         options.Schema.For<OpenIddictAuthorizationDocument>()

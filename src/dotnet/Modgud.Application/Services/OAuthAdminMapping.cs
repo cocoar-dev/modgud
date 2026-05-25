@@ -398,24 +398,13 @@ internal static class OAuthAdminMapping
     };
 
     /// <summary>
-    /// Maps an <see cref="OAuthApiState"/> projection plus the secret entries
-    /// from the matching <see cref="OAuthApiSecurityData"/> document into the
-    /// API DTO. Secret hashes are intentionally never copied into the DTO —
-    /// only the metadata (id, type, description, dates) carries through, so
-    /// the response stays safe to serialise back to a UI / log.
+    /// Maps an <see cref="OAuthApiState"/> projection into the API DTO. A
+    /// resource server has no credential surface of its own — RS-to-IdP
+    /// authentication runs through OAuth (Client-Credentials with a linked
+    /// ServiceAccount), so there is nothing secret-shaped on the response.
     /// </summary>
-    internal static OAuthApiDto MapApiState(OAuthApiState s, IEnumerable<ApiSecretEntry>? secrets, bool hasImplicitScope = false)
-    {
-        var secretDtos = secrets?.Select(x => new ApiSecretEntryDto
-        {
-            SecretId = x.SecretId.ToString(),
-            Type = x.Type,
-            Description = x.Description,
-            Expiration = x.Expiration,
-            CreatedAt = x.CreatedAt,
-        }).ToList() ?? new List<ApiSecretEntryDto>();
-
-        return new OAuthApiDto
+    internal static OAuthApiDto MapApiState(OAuthApiState s, bool hasImplicitScope = false)
+        => new()
         {
             Id = s.Id.ToString(),
             Name = s.Name,
@@ -426,11 +415,9 @@ internal static class OAuthAdminMapping
             UserClaims = s.UserClaims.ToList(),
             AppId = s.AppId is null ? null : new ShortGuid(s.AppId.Value).ToString(),
             PermissionIds = s.PermissionIds.Select(id => new ShortGuid(id).ToString()).ToList(),
-            Secrets = secretDtos,
             HasImplicitScope = hasImplicitScope,
             AllowDynamicRegistration = GetBoolProp(s.Properties, OAuthApiPropertyKeys.AllowDynamicRegistration, false),
         };
-    }
 
     // ───────────────────────────────────────────── Secrets ────────────────────
 
@@ -452,31 +439,6 @@ internal static class OAuthAdminMapping
 
     internal static string HashSecret(string secret) =>
         BCrypt.Net.BCrypt.HashPassword(secret, workFactor: 12);
-
-    /// <summary>
-    /// Pure constructor for an <see cref="ApiSecretEntry"/>. The non-pure work
-    /// (generating a fresh <paramref name="secretId"/>, capturing
-    /// <paramref name="createdAt"/>, hashing the plaintext into
-    /// <paramref name="hashedValue"/>) stays at the call site; this helper only
-    /// arranges the fields. Used by both initial-secret creation
-    /// (CreateApiAsync) and ad-hoc secret creation (CreateApiSecretAsync).
-    /// </summary>
-    internal static ApiSecretEntry BuildApiSecretEntry(
-        Guid secretId,
-        string type,
-        string hashedValue,
-        string? description,
-        DateTimeOffset? expiration,
-        DateTimeOffset createdAt)
-        => new()
-        {
-            SecretId = secretId,
-            Type = type,
-            HashedValue = hashedValue,
-            Description = description,
-            Expiration = expiration,
-            CreatedAt = createdAt,
-        };
 
     internal static bool VerifySecret(string secret, string hash)
     {
