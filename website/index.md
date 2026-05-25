@@ -37,3 +37,7 @@ features:
   - title: GDPR-ready
     details: Self-service data export (Article 20), confirmable account deletion, Marten data-masking that scrubs PII from event streams while preserving audit-chain integrity.
 ---
+
+## About the name
+
+**Modgud** takes its name from **Móðguðr**, the watcher of *Gjallarbrú* in Norse mythology — a bridge between worlds, where she challenged every traveler with the same question an IdP asks: *"Who are you, and what brings you here?"* A fitting namesake.
