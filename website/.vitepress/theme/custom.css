@@ -45,7 +45,7 @@
 .VPHero .text { color: #292F3B !important; }
 .dark .VPHero .text { color: #f1f5f9 !important; }
 .VPHero .tagline { color: #64748b !important; }
-.VPHero .VPImage { max-height: 240px; }
+.VPHero .VPImage { max-height: 340px; }
 
 /* --- Feature cards ----------------------------------------- */
 
