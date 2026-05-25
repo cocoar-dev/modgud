@@ -1,73 +1,93 @@
 # Permissions & gating
 
-modgud uses **granular per-resource gating**: every endpoint and
-every sidebar item checks a single permission string, mirrored
-exactly between backend and frontend.
+Modgud uses **granular per-resource gating**: every endpoint and every
+sidebar item checks a single permission string, and the same evaluator
+runs IdP-side (Authorization slice) and resource-server-side
+(Modgud.Client.AspNetCore).
 
 ## Permission format
 
-Three segments: `<app>:<resource>:<action>`. Modgud's own admin
-surface lives under two app slugs:
+**Two segments:** `<resource>:<action>`. The string carries no app slug.
+
+The app context is **implicit from the caller**:
+
+- For in-process gates inside Modgud, the gate's audience is the
+  Modgud app itself.
+- For resource-server gates, the audience is the RS's own App slug
+  (resolved from the access token's `aud` claim by the time
+  the request reaches the gate).
+
+This is enforced at write-time: catalog entries are validated against
+the regex `^[a-z0-9-]+:[a-z0-9-]+$` — exactly two lowercase segments,
+hyphens allowed inside a segment, no colon-prefix.
+
+Modgud's own admin surface uses two App slugs internally:
 
 - **`modgud`** — the realm-internal admin surface (users, groups,
   roles, OAuth clients, login providers, etc.). Seeded into every realm.
 - **`control-plane`** — the cross-realm admin surface (realm CRUD).
   Seeded **only** into the realm flagged `IsControlPlane = true`.
 
-Consuming SaaS apps get their own app slug (`timetodo`, `knowledge`, …)
-and permissions under that slug.
+A consuming SaaS app gets its own App slug and registers its own
+catalog of `<resource>:<action>` permissions. The slug is the *implicit
+context* — it never appears in the permission string itself.
 
-| Permission | Meaning |
+| Permission (catalog string) | Meaning |
 |---|---|
-| `modgud:user:read` | Read user list/detail |
-| `modgud:user:write` | Create/edit users |
-| `modgud:user:admin` | Resource-wide bypass for all user actions |
-| `modgud:oauth-client:read` | Read OAuth clients |
-| `modgud:oauth-client:write` | Create/edit OAuth clients |
-| `modgud:permission-role:read` | Read roles |
-| `modgud:authorization-group:write` | Create/edit groups |
-| `modgud:login-provider:read|write` | Login provider management |
-| `modgud:auth-log:read` | Read the auth log |
-| `modgud:gdpr:admin` | Permanent-erase GDPR operations |
-| `modgud:admin` | App-wide bypass for the realm-internal admin surface |
-| `control-plane:realm:read` | List realms (Control Plane only) |
-| `control-plane:realm:write` | Create/edit/deactivate realms (Control Plane only) |
+| `user:read` | Read user list/detail |
+| `user:write` | Create/edit users |
+| `user:admin` | Resource-wide bypass for all user actions |
+| `oauth-client:read` | Read OAuth clients |
+| `oauth-client:write` | Create/edit OAuth clients |
+| `permission-role:read` | Read roles |
+| `authorization-group:write` | Create/edit groups |
+| `login-provider:read` / `:write` | Login-provider management |
+| `auth-log:read` | Read the auth log |
+| `gdpr:admin` | Permanent-erase GDPR operations |
+| `realm:read` / `realm:write` | Realm CRUD (control-plane app) |
 | `realm:admin` | **Realm-wide bypass** (every app, every resource, every action) |
+
+`realm:admin` is the one exception: it's a *realm-constant* — a
+PermissionRole carries `IsRealmAdmin = true` and the resolver injects
+the literal grant. It bypasses every check anywhere in the realm.
 
 ## Bypass tiers
 
+Only **two** tiers, both checked by `PermissionEvaluator`:
+
 | Grant | Effect |
 |---|---|
-| `<app>:<resource>:admin` | All actions on that resource within that app |
-| `<app>:admin` | All resources within that app |
 | `realm:admin` | Everything in every app — the realm-wide emergency exit |
+| `<resource>:admin` | All actions on that resource in the calling app |
 
-`hasPermission(needed)` returns true when:
+`Evaluate(grants, "user:read")` returns true when:
 
 1. the user holds `realm:admin`, **or**
-2. the user holds the requested permission directly, **or**
-3. the user holds `<app>:admin` for the requested permission's app, **or**
-4. the user holds `<app>:<resource>:admin` for the requested
-   permission's app + resource.
+2. the user holds `user:read` directly, **or**
+3. the user holds `user:admin` (resource-wide bypass).
 
-The `realm:admin` bypass is intentionally narrow — only the System
-Admin default role carries it. Per-area owners typically get
-per-resource `<resource>:admin` (e.g. OAuth owners get
-`modgud:oauth-client:admin` + `modgud:oauth-scope:admin` +
-`modgud:oauth-api:admin`, but not `modgud:user:admin`).
+There is **no app-wide bypass tier** (`<app>:admin` was discussed but
+never shipped — bypass is either realm-wide or resource-wide, nothing
+in between). Per-area owners typically get per-resource `<resource>:admin`
+(e.g. an OAuth owner gets `oauth-client:admin` + `oauth-scope:admin`
++ `oauth-api:admin`, but not `user:admin`).
+
+The canonical evaluator implementation lives in
+`Modgud.Permissions.Abstractions/PermissionEvaluator.cs` — pure, no
+I/O, reused on both ends of the wire.
 
 ## Resources
 
-### `modgud` (realm-internal — every realm)
+### `modgud` app catalog (realm-internal — every realm)
 
 | Resource | What for |
 |---|---|
 | `app` | App registration management |
 | `user` | User management (`ApplicationUser`) |
-| `role` (`permission-role`) | Role management |
+| `permission-role` | Role management |
 | `authorization-group` | Group management |
-| `permission-role` | Role-to-permission management |
 | `session` | Per-user session management |
+| `service-account` | Service-account identity layer |
 | `auth-log` | Read AuthLog |
 | `gdpr` | Permanent-erase GDPR operations |
 | `oauth` | OAuth admin surface umbrella |
@@ -75,57 +95,113 @@ per-resource `<resource>:admin` (e.g. OAuth owners get
 | `oauth-scope` | OAuth scope management |
 | `oauth-api` | OAuth API resource management |
 | `login-provider` | Internal/external login providers |
+| `realm-settings` | Per-realm settings (self-reg, DCR, branding) |
+| `asset` | Asset library |
+| `observability` | Read-only observability view |
+| `scheduled-job` | Quartz scheduled job admin |
+| `inbox-settings` | Inbox retention configuration |
 
-### `control-plane` (Control Plane only)
+### `control-plane` app catalog (only on the Control-Plane realm)
 
 | Resource | What for |
 |---|---|
 | `realm` | Realm CRUD (`/api/admin/realms/*`) |
 
-The `control-plane` app slug is intentionally decoupled from the product
-name. If the IdP is ever rebranded, cross-realm permissions don't need a
-migration.
+The `control-plane` slug is intentionally decoupled from the product
+name. If the IdP is ever rebranded, cross-realm permissions don't need
+a migration.
+
+## How resource servers receive permissions
+
+Resource servers read permissions from a standard OIDC UserInfo call.
+For each audience (`aud`) the access token names, Modgud emits a
+**`resource_access`** block on `/connect/userinfo`, Keycloak-style:
+
+```json
+{
+  "sub": "…",
+  "resource_access": {
+    "billing-api": {
+      "permissions": ["invoice:read", "invoice:write"],
+      "roles": ["billing-owner"]
+    },
+    "shipping-api": {
+      "permissions": ["shipment:read"],
+      "roles": []
+    }
+  }
+}
+```
+
+What's in the block:
+
+- **Bypass-pre-expansion** — `realm:admin` is expanded server-side into
+  every concrete catalog string of every reachable App; a `<r>:admin`
+  bypass is expanded into every `<r>:*` string in the App's catalog.
+  Consumers do straight exact-match — no PermissionEvaluator port
+  required client-side.
+- **Per-RS-subset narrowing** — each audience block is narrowed to
+  `OAuthApi.PermissionIds` (the catalog subset the resource server
+  declared as its gating surface). Anything outside that subset is
+  excluded — no permission strings leak from one microservice into a
+  sibling's block.
+- **Roles vs Permissions** are gated by separate scopes
+  (`roles`, `permissions`) — request `scope=permissions` to see the
+  permissions block; without it you get just the roles list.
+
+The `Modgud.Client.AspNetCore` helper lib's `IClaimsTransformation`
+flattens the matching audience block onto the principal so standard
+ASP.NET Core `[Authorize(Roles="…")]` and `RequiresPermission(…)` work
+out of the box.
+
+::: tip Distribution API (legacy, deprecated)
+The server-to-server `GET /api/v1/distribution/me-permissions` endpoint
+predates the per-audience UserInfo emission and is in surface-removal
+queue. New integrators should not use it — UserInfo carries the same
+shape with broader OIDC tooling support. Existing callers see an RFC
+8594 `Deprecation: true` header on every response.
+:::
 
 ## Backend gating: `RequiresPermission`
 
-Endpoints gate via an `EndpointFilter` extension:
+Endpoints gate via a `RouteHandlerBuilder` extension:
 
 ```csharp
-app.MapGet("/api/admin/users", async (...) => { ... })
-   .RequiresPermission("modgud:user:read");
+app.MapGet("/api/user", async (...) => { ... })
+   .RequiresPermission("user:read");
 
-app.MapPost("/api/admin/users", async (...) => { ... })
-   .RequiresPermission("modgud:user:write");
+app.MapPost("/api/user", async (...) => { ... })
+   .RequiresPermission("user:write");
 
 app.MapPost("/api/admin/realms", async (...) => { ... })
-   .RequiresPermission("control-plane:realm:write");
+   .RequiresPermission("realm:write");      // control-plane app context
 ```
 
 The filter (`PermissionEndpointFilter`):
 
 1. Reads `ClaimTypes.NameIdentifier` from `HttpContext.User`
-2. Loads the user's effective permissions via
+2. Resolves the user's effective permissions via
    `IPermissionService.GetUserPermissionsAsync(userId, appSlug)`
-   (BFS through groups, BoundTo-filtered, role-filtered by AppSlug)
-3. Runs the bypass cascade above
+   (BFS through groups, BoundTo-filtered, role-filtered by AppSlug,
+   already bypass-pre-expanded)
+3. Calls `PermissionEvaluator.Evaluate(grants, "user:read")`
 
 ## Frontend gating: sidebar + buttons
 
 The `auth.store.ts` (Pinia) loads the effective permissions of the
-current user at login and mirrors the backend `PermissionEvaluator`:
+current user at login and uses the same evaluator logic:
 
 ```typescript
-// permissions: string[]  e.g. ["modgud:user:read", "modgud:user:write"]
+// grants: string[]  e.g. ["user:read", "user:write"]
 
-function hasPermission(permission: string): boolean {
+function hasPermission(needed: string): boolean {
   const grants = permissions.value
-  if (grants.includes('realm:admin')) return true
-  if (grants.includes(permission)) return true
+  if (grants.includes('realm:admin')) return true       // tier 1
+  if (grants.includes(needed)) return true              // exact match
 
-  const parts = permission.split(':')
-  if (parts.length === 3) {
+  const parts = needed.split(':')
+  if (parts.length === 2) {                             // tier 2
     if (grants.includes(`${parts[0]}:admin`)) return true
-    if (grants.includes(`${parts[0]}:${parts[1]}:admin`)) return true
   }
   return false
 }
@@ -136,79 +212,83 @@ make them visible:
 
 ```typescript
 const allNavItems: NavItem[] = [
-  { section: 'authorization', label: 'nav.users',  icon: 'users',
-    path: '/admin/users',  requirePermissions: ['modgud:user:read'] },
+  { section: 'authorization', label: 'nav.users', icon: 'users',
+    path: '/admin/users', requirePermissions: ['user:read'] },
   { section: 'oauth', label: 'admin.oauthClients.title', icon: 'app-window',
-    path: '/admin/oauth/clients', requirePermissions: ['modgud:oauth-client:read'] },
+    path: '/admin/oauth/clients', requirePermissions: ['oauth-client:read'] },
   { section: 'system', label: 'admin.realms.title', icon: 'globe',
-    path: '/admin/realms', requirePermissions: ['control-plane:realm:read'] },
+    path: '/admin/realms', requirePermissions: ['realm:read'] },
   { section: 'system', label: 'nav.settings', icon: 'settings',
     path: '/plattform/settings', requirePermissions: ['realm:admin'] },
   // ...
 ]
-
-function canSee(item: NavItem): boolean {
-  return item.requirePermissions.some((p) => authStore.hasPermission(p))
-}
 ```
 
 Sections are hidden when all their items are filtered out. A user
-with only `modgud:user:read` sees just the Authorization section
-with "Users" — no OAuth, no System.
+with only `user:read` sees just the Authorization section with
+"Users" — no OAuth, no System.
 
 ## Control-Plane separation
 
-Because the `control-plane` app slug is **only** seeded into the
-Control-Plane realm's tenant DB, a tenant realm physically cannot grant
-`control-plane:realm:*` permissions — the resource registry in that
-tenant DB doesn't list the `control-plane` app, so the backend
-permission validator rejects the grant.
+Because the `control-plane` App catalog is **only** seeded into the
+Control-Plane realm's tenant DB, a tenant realm physically cannot
+grant `realm:*` permissions under the control-plane context — the
+resource registry in that tenant DB doesn't list the `control-plane`
+App, so the backend permission validator rejects the grant.
 
 That's the third of three layers protecting the cross-realm admin
 surface. The other two:
 
-1. **`ControlPlaneGateMiddleware`** — runs before authentication. Returns
-   404 on `/api/admin/realms/*` from non-CP hosts. The route is
+1. **`ControlPlaneGateMiddleware`** — runs before authentication.
+   Returns 404 on `/api/admin/realms/*` from non-CP hosts. The route is
    discoverable only on the Control-Plane realm.
 2. **`RequireControlPlaneFilter`** — per-endpoint filter on the realm
-   admin route group. Same 404 behaviour, even if the routing layer were
-   misconfigured.
+   admin route group. Same 404 behaviour, even if the routing layer
+   were misconfigured.
 
-See [Concepts: Control Plane / Data Plane](../concepts/control-plane) for
-the full defence-in-depth diagram.
+See [Concepts: Control Plane / Data Plane](../concepts/control-plane)
+for the full defence-in-depth diagram.
 
 ## Default roles
 
-The first admin in every realm is created via one of the [bootstrap paths](../getting-started/first-time-setup). Atomic with the user creation, three default `PermissionRole`s are seeded (idempotent — re-bootstrapping doesn't duplicate them):
+The first admin in every realm is created via one of the
+[bootstrap paths](../getting-started/first-time-setup). Atomic with the
+user creation, three default `PermissionRole`s are seeded (idempotent
+— re-bootstrapping doesn't duplicate them):
 
 ### System Admin
+
 ```
-permissions: ["realm:admin"]
+IsRealmAdmin: true
 ```
+
 The new admin is added to the **Administratoren** group with
-`BoundTo: ["*"]` (active in every app), and that group carries the System
-Admin role. Realm-wide bypass — sees and can do everything in every app.
+`BoundTo: ["*"]` (active in every app), and that group carries the
+System Admin role. Realm-wide bypass — sees and can do everything in
+every app.
 
 ### User Manager
+
 ```
-permissions: [
-  "modgud:user:read", "modgud:user:write",
-  "modgud:session:read", "modgud:session:write",
-  "modgud:authorization-group:read",
-  "modgud:permission-role:read",
-  "modgud:auth-log:read"
-]
+AppId:        <modgud app id>
+PermissionIds:[user:read, user:write,
+               session:read, session:write,
+               authorization-group:read,
+               permission-role:read,
+               auth-log:read]
 ```
+
 Maintains users + groups + sessions, reads roles + auth log.
 
 ### Viewer
+
 ```
-permissions: [
-  "modgud:user:read",
-  "modgud:authorization-group:read",
-  "modgud:permission-role:read"
-]
+AppId:        <modgud app id>
+PermissionIds:[user:read,
+               authorization-group:read,
+               permission-role:read]
 ```
+
 Read-only auditor.
 
 Admins can adjust these roles or create more — they aren't hard-coded.
@@ -221,28 +301,29 @@ Request with cookie/bearer comes in
 PermissionEndpointFilter
   ↓
 ClaimTypes.NameIdentifier → UserId
-needed permission → split into (appSlug, resource, action)
+needed permission "<resource>:<action>" (2 segments)
+app context = the calling app's slug (modgud, control-plane, billing-api, …)
   ↓
 IPermissionService.GetUserPermissionsAsync(userId, appSlug)
   ├── BFS through all group memberships (transitive, with visited set)
   ├── filter to groups whose BoundTo contains appSlug or "*"
   ├── for each group: load PermissionRole refs
-  ├── filter to roles whose AppSlug == appSlug
-  ├── for each role: expand actions to "<app>:<resource>:<action>"
-  └── Set<string> of fully-qualified permissions
+  ├── filter to roles whose AppId == this app (or IsRealmAdmin = true)
+  ├── for each role: resolve PermissionIds → catalog strings
+  ├── bypass-pre-expand: realm:admin → all reachable catalog strings;
+  │                     <r>:admin → all <r>:* in this app's catalog
+  └── Set<string> of fully-expanded permissions
   ↓
-Checks:
+PermissionEvaluator.Evaluate(grants, "<resource>:<action>"):
   has "realm:admin"? → ✓
-  has needed permission directly? → ✓
-  has "<app>:admin"? → ✓
-  has "<app>:<resource>:admin"? → ✓
+  has the exact permission? → ✓
+  has "<resource>:admin"? → ✓
   otherwise → 403
 ```
 
 Resolution is scoped per request, not cached. That is intentional:
 permissions change live (an admin removes a user from a group), and
-modgud is not performance-critical (admin UI traffic, not a hot
-path).
+Modgud is not performance-critical (admin UI traffic, not a hot path).
 
 If that ever changes: an `IMemoryCache` with sliding expiration (e.g.
 30 seconds) and cache invalidation on
