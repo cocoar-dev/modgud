@@ -19,7 +19,7 @@ Configured in `Program.cs`:
 .AddCookie(IdentityConstants.ApplicationScheme, options =>
 {
     options.Cookie.HttpOnly = true;
-    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.Cookie.SameSite = SameSiteMode.Lax;
     options.Cookie.SecurePolicy = builder.Environment.IsProduction()
         ? CookieSecurePolicy.Always
         : CookieSecurePolicy.None;
@@ -35,22 +35,26 @@ Configured in `Program.cs`:
 |---|---|---|
 | `HttpOnly` | `true` | XSS mitigation — JS can't read the cookie |
 | `SecurePolicy` | `Always` (Prod) / `None` (Dev) | HTTPS-only in prod; HTTP Vite proxy allowed in dev |
-| `SameSite` | `Strict` | CSRF protection |
+| `SameSite` | `Lax` | Required for cross-site OIDC redirect-back navigations |
 | `ExpireTimeSpan` | 30 days | Max lifetime of persistent cookies |
 | `SlidingExpiration` | `true` | Refresh on active use |
 
-## Four cookies in detail
+## Cookies in detail
 
-| Cookie | Purpose | Lifetime |
-|---|---|---|
-| `Modgud.Auth` | Main session (app cookie) | 30 days (or session-only with `RememberMe=false`) |
-| `Modgud.2FA` | UserId holder between password step and 2FA step | 5 min |
-| `Modgud.External` | OIDC callback holder (`SameSite=Lax`!) | 10 min |
-| `Modgud.Session` | Passkey attestation options only (ASP.NET session) | 5 min idle |
+| Cookie | SameSite | Purpose | Lifetime |
+|---|---|---|---|
+| `Modgud.Auth` | `Lax` | Main session (app cookie) | 30 days (or session-only with `RememberMe=false`) |
+| `Modgud.2FA` | `Strict` | UserId holder between password step and 2FA step | 5 min |
+| `Modgud.2FA.Remember` | `Strict` | "Remember this browser, skip 2FA" — Identity.TwoFactorRememberMe scheme | Identity default (30 days) |
+| `Modgud.External` | `Lax` | OIDC callback holder | 10 min |
+| `Modgud.Session` | `Strict` | Passkey attestation options only (ASP.NET session) | 5 min idle |
 
-`Modgud.External` is intentionally `SameSite=Lax` — otherwise the
-cookie is lost on the IdP redirect and the OIDC callback can no longer
-find its own challenge.
+The main `Modgud.Auth` cookie is `Lax` (not `Strict`) — `Strict` would
+drop the cookie on the top-level GET redirect-back that OIDC clients
+use, breaking SSO. Modgud relies on `CsrfDefenseMiddleware` + the
+distinct cookie-scheme-per-step design (the 2FA / Session cookies are
+`Strict`) for CSRF protection rather than blanket-Strict on the main
+session.
 
 ## API response handling
 
@@ -87,9 +91,9 @@ a cookie alone can't provide.
 
 ### Session cookie
 
-A second cookie `cocoar.session_id` (HttpOnly, Secure in prod)
-correlates the browser with the `UserSession` document. On logout, the
-document is deleted and the cookie is cleared.
+The `Modgud.Session` cookie (HttpOnly, Secure in prod) correlates the
+browser with the `UserSession` document. On logout, the document is
+deleted and the cookie is cleared.
 
 ### UserSession document
 
@@ -139,7 +143,7 @@ validation.
 |---|---|
 | XSS token theft | `HttpOnly` |
 | Man-in-the-middle | `Secure` (prod) |
-| CSRF | `SameSite=Strict` |
+| CSRF | `SameSite=Lax` on the main cookie + `Strict` on 2FA/Session step cookies + `CsrfDefenseMiddleware` on mutating endpoints |
 | Cross-realm leakage | Realm domain → own cookie domain |
 | Forced logout | Security stamp + delete UserSession document |
 | Account lockout | 5 failed logins → 1 min lockout (DoS limit) |

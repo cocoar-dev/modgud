@@ -201,7 +201,7 @@ public static class AccountEndpoints
         {
             // Capture the provider the session came from BEFORE signing out —
             // we'll use it to build the IdP-side logout URL for the client.
-            var externalLoginProviderId = context.User.FindFirst("cocoar.external.loginProviderId")?.Value;
+            var externalLoginProviderId = context.User.FindFirst("modgud.external.loginProviderId")?.Value;
 
             await signInManager.SignOutAsync();
 
@@ -251,7 +251,7 @@ public static class AccountEndpoints
                        || c.Value.Equals("mca", StringComparison.OrdinalIgnoreCase)
                        || c.Value.Equals("pop", StringComparison.OrdinalIgnoreCase));
 
-            var externalLoginProviderIdRaw = context.User.FindFirst("cocoar.external.loginProviderId")?.Value;
+            var externalLoginProviderIdRaw = context.User.FindFirst("modgud.external.loginProviderId")?.Value;
             var isFederated = !string.IsNullOrWhiteSpace(externalLoginProviderIdRaw);
             string? idpDisplayName = null;
             if (isFederated && Guid.TryParse(externalLoginProviderIdRaw, out var loginProviderId))

@@ -144,7 +144,7 @@ anchor for SSO. Selected fields:
 artefacts** — overwritten on every login, not historised.
 
 The user-record claim that pins the originating provider on every issued
-session is `cocoar.external.loginProviderId`.
+session is `modgud.external.loginProviderId`.
 
 ## Email conflict handling
 

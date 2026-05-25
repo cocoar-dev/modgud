@@ -25,9 +25,9 @@ The pre-cutover legacy codebase is preserved at git tag `legacy-final`.
 
 ## Backend essentials
 
-**Stack:** .NET 10, Marten 8.x (multi-tenant, master-table strategy:
+**Stack:** .NET 10, Marten 9.x (multi-tenant, master-table strategy:
 each realm is a physical PostgreSQL database `<master-db>_<slug>`),
-Wolverine 5.x (CQRS + outbox), OpenIddict 7.x, ErrorOr, Mapperly,
+Wolverine 6.x (CQRS + outbox), OpenIddict 7.x, ErrorOr, Mapperly,
 Cocoar.JsEval (TS → LINQ for membership scripts), Cocoar.SignalARRR.
 
 **Architecture:**

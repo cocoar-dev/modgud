@@ -1,129 +1,127 @@
 # Recovery CLI
 
-The **Recovery CLI** is a shell tool that lives inside the Modgud container and writes directly to the database, bypassing the web UI entirely. It exists for situations where the UI doesn't work — typically because no admin can sign in.
+The recovery CLI is a break-glass tool. It runs **inside the
+container**, using the configured database connection — there's no
+network surface, no auth bypass. It exists for the situations where
+the admin UI cannot help: no admin can sign in, the projections
+desynced after a schema change, a legacy client needs a Phase-2C
+retrofit, etc.
 
-::: warning Last resort
-The CLI bypasses authorization. Anyone who can run it inside the container has full access to the realm databases. Treat it like root access — log every use, prefer fixing UI issues to using the CLI.
-:::
+Every invocation is written to the auth log.
 
-## When to use the CLI
-
-- **No admin can sign in** — last admin's 2FA is broken, password forgotten, account locked out, etc.
-- **External SSO is misconfigured** and the Internal provider is also disabled
-- **A new realm has no admin yet** and the auto-provision-on-first-request flow can't run for some reason
-- **A user has a corrupted account state** that the UI's editors can't repair
-
-For routine "user forgot password" cases, use the [user editor's "Send sign-in link" or "Set password"](./users) — far less invasive than the CLI.
-
-## How to invoke
-
-The CLI runs inside the same container image as the API. Two invocation styles:
-
-### As an extra command-line argument
+## Entry point
 
 ```bash
-docker exec -it modgud-api dotnet Modgud.Api.dll recover <subcommand> [args...]
+dotnet Modgud.Api.dll recover <command> [args...] [--realm <slug>]
 ```
 
-This pattern boots the host without starting Kestrel, runs the recovery subcommand, exits.
+The `--realm` flag defaults to `system`. Commands that don't need a
+tenant context ignore it.
 
-### Via `docker exec` into a running container
+## Commands
 
-If the container is already running, the same `dotnet … recover` invocation works inside the existing process boundary.
-
-## Subcommands
-
-The CLI's subcommands are functional but minimal — they cover the recovery-only operations the UI can't.
-
-### `list-users [--realm=<slug>]`
-
-Tabular dump of all users in a realm with their key flags:
-
-```
-UserName             Email                          Active   Admin   2FA      Passkeys
-─────────────────────────────────────────────────────────────────────────────────────
-admin                admin@firma.at                 yes      yes     TOTP     2
-bob                  bob@firma.at                   yes      no      EMAIL    0
-```
-
-The "Admin" column is true if the user effectively holds `realm:admin` (resolved through groups + roles in the system app).
-
-### `set-password --user=<username> [--realm=<slug>]`
-
-Sets a new password for the named user. The CLI prompts for the password interactively.
-
-The user is also marked **active** and **lockout cleared** to ensure they can sign in.
-
-### `reset-2fa --user=<username> [--realm=<slug>]`
-
-Disables every 2FA method for the user (TOTP, email-OTP, passkeys all dropped) and starts a fresh 2FA grace period. The user can sign in with just their password and re-enrol from a clean slate.
-
-### `add-realm-admin --user=<username> [--realm=<slug>]`
-
-Adds the user to the seeded `Administratoren` group with `BoundTo: ["*"]` — they become a realm admin. Use this when bootstrapping a fresh realm or when no admin remains.
-
-### `unlock --user=<username> [--realm=<slug>]`
-
-Clears the lockout flag, e.g. after too many failed login attempts.
-
-### `bootstrap-admin --email <email> [--username <name>] [--password <pw>] [--realm <slug>]`
-
-Creates the very first admin in a realm — the explicit-trust replacement
-for the anonymous setup wizard pattern. There is no anonymous endpoint
-that grants admin access; whoever can run this CLI inside the container
-already holds filesystem-level trust.
-
-Two modes, selected by the presence of `--password`:
-
-**Direct mode** (with `--password`): atomic seed of the user, the three
-default roles (System Admin / User Manager / Viewer) and the
-Administratoren group. The Identity password rules are enforced —
-weak passwords are rejected just like in the SPA. The user can sign
-in immediately on the realm's host.
+### `list`
+List every active user with `UserName · Email · Active · Admin · 2FA · Passkeys`.
 
 ```bash
+dotnet Modgud.Api.dll recover list
+```
+
+`Admin` means the user holds `realm:admin` (typically via the
+System Admin role inside the seeded Administratoren group).
+
+### `reset-2fa <username>`
+Disable TOTP and Email-OTP, delete every stored passkey credential,
+and clear the grace-period stamp so the user gets a fresh secure-setup
+window on next login.
+
+```bash
+dotnet Modgud.Api.dll recover reset-2fa alice
+```
+
+### `set-email <username> <new-email>`
+Update the user's email and append a `UserUpdatedEvent` so projections
++ SignalR-driven admin grids refresh live.
+
+```bash
+dotnet Modgud.Api.dll recover set-email alice alice@example.com
+```
+
+### `magic-link <username>`
+Issue a one-time magic-link URL and print it to stdout. Useful for
+nudging a locked-out user back in without resetting their password.
+
+```bash
+dotnet Modgud.Api.dll recover magic-link alice
+```
+
+### `rebuild-projections`
+Rebuild all Marten projections (inline + async). Bootstrap path for
+the first migration after a breaking schema change — runs without any
+admin authentication.
+
+```bash
+dotnet Modgud.Api.dll recover rebuild-projections
+```
+
+### `bootstrap-admin`
+Create the first admin in a realm. Default realm: `system`. Two modes
+— **Direct** (password set immediately) and **Invite** (a magic-link
+URL is printed and emailed if SMTP is configured).
+
+```bash
+# Direct mode
 dotnet Modgud.Api.dll recover bootstrap-admin \
-    --email admin@example.com \
-    --username admin \
-    --password 'StrongPass1!' \
-    --realm system
+  --email admin@example.com \
+  --username admin \
+  --firstname Admin \
+  --lastname User \
+  --password 'ChangeMe1!'
+
+# Invite mode (no --password)
+dotnet Modgud.Api.dll recover bootstrap-admin \
+  --email admin@example.com \
+  --username admin
 ```
 
-**Invite mode** (without `--password`): writes a `PendingAdminInvite`
-into the tenant DB and prints the magic-link URL on stdout (also sent
-by email when SMTP is configured). The recipient clicks the link
-(`/bootstrap?token=...`), sets a password, and gets auto-signed-in.
-The link is single-use and expires in 7 days; running `bootstrap-admin`
-again revokes any open invites for the same email and issues a fresh
-one.
+Flags:
+
+| Flag | Required | Notes |
+|---|---|---|
+| `--email` | yes | Email — required in both modes. |
+| `--username` | no | Defaults to the local-part of the email. |
+| `--firstname` | no | Optional. |
+| `--lastname` | no | Optional. |
+| `--password` | no | If present: Direct mode. Validated against the configured Identity password rules. If absent: Invite mode. |
+| `--realm <slug>` | no | Defaults to `system`. |
+
+### `migrate-cc-credentials`
+Phase-2C retrofit. For every OAuth client that still has the
+`client_credentials` grant without a `LinkedServiceAccountId` (i.e.
+pre-Phase-2C clients), auto-provision a Service Account named
+`legacy.{clientId}` and backfill the link so the standard
+SA-managed mutation guard applies.
+
+Idempotent — already-linked clients are skipped; existing `legacy.*`
+SAs are re-used.
 
 ```bash
-dotnet Modgud.Api.dll recover bootstrap-admin \
-    --email max@acme.com \
-    --realm acme
+dotnet Modgud.Api.dll recover migrate-cc-credentials --realm system
 ```
-
-If `--username` is omitted, the local part of the email is used.
-
-::: tip SaaS path
-For SaaS deployments where a tenant requester registers and pays before
-the realm is provisioned, prefer the HTTP path
-(`POST /api/admin/realms` with `InitialAdmin: { UserName, Email }`) —
-the CP-admin only enters the recipient's email, never sees the
-password, and the recipient owns the credentials end-to-end.
-The CLI invite path is the operator's escape hatch when SMTP is down
-or a token needs to be reissued out of band.
-:::
 
 ### `realm-list`
+List every active realm with its slug and configured domains.
+Useful first probe after a fresh deploy — shows the system realm's
+seeded localhost domains so you know which Host header to use.
 
 ```bash
 dotnet Modgud.Api.dll recover realm-list
 ```
 
-Prints every realm in the master database with its slug, display name, active flag, control-plane flag, and domain list. Read-only. Useful before adding a domain or bootstrapping an admin to confirm the realm names you have.
-
-### `realm-add-domain --slug=<slug> --domain=<hostname>`
+### `realm-add-domain`
+Add a domain to an active realm's `Domains` list. Typically used
+once after a fresh deploy to add the production hostname to the
+system realm.
 
 ```bash
 dotnet Modgud.Api.dll recover realm-add-domain \
@@ -131,30 +129,49 @@ dotnet Modgud.Api.dll recover realm-add-domain \
   --domain auth.example.com
 ```
 
-Adds a host to the realm's `Domains` list. `RealmMiddleware` matches the incoming `Host` header against this list to decide which tenant a request targets, so a fresh production deployment **must** add its public hostname to the system realm before anyone can reach the SPA, the login page, or a bootstrap-magic-link.
+Flags:
+- `--slug <slug>` — required.
+- `--domain <hostname>` — required. Stored verbatim; case-insensitive
+  match at request time.
 
-The system realm is auto-seeded with `system.localhost`, `localhost`, `127.0.0.1` so local development boots without configuration. Production needs your real hostname added on top.
+### `realm-remove-domain`
+Remove a domain from an active realm's `Domains` list. No-op if not
+present.
 
-The command is idempotent — re-adding the same domain is a no-op. Cross-realm uniqueness is enforced: two realms cannot claim the same domain.
+```bash
+dotnet Modgud.Api.dll recover realm-remove-domain \
+  --slug system \
+  --domain old.example.com
+```
 
-### `realm-remove-domain --slug=<slug> --domain=<hostname>`
+### `help`
+Show the usage summary.
 
-Inverse of `realm-add-domain`. Refuses to remove the realm's last domain — leaves at least one entry standing so the realm stays reachable.
+```bash
+dotnet Modgud.Api.dll recover help
+```
 
-## Default realm
+## Audit trail
 
-If `--realm` is omitted, the CLI defaults to the `system` realm.
+Every recovery invocation writes a `Auth: Recovery <command>` entry
+to the auth log via Serilog. Successful operations log at `Warning`
+level (to make them stand out in the log stream); failures log at
+`Error`.
 
-## Audit
+## When to reach for the CLI
 
-The recovery CLI writes its own audit entries into the [Auth Log](./auth-log) under the actor `recovery-cli` with the operating-system user (best effort), the affected user, and the action. Even though the CLI bypasses the UI's authorization, the audit chain stays intact.
+- **No admin can sign in** → `bootstrap-admin` (Direct mode) creates
+  a fresh admin in one shot.
+- **A user lost their 2FA device** → `reset-2fa <username>` then
+  `magic-link <username>` so they can log in and re-enrol.
+- **Production hostname doesn't route to a realm** → `realm-list` to
+  confirm what's configured, then `realm-add-domain` to bind the new
+  hostname.
+- **Marten projections out of sync after a schema change** →
+  `rebuild-projections`.
+- **Legacy `client_credentials` clients fail mutation guard** →
+  `migrate-cc-credentials` provisions the linked SA they need.
 
-## Tips
-
-::: tip Document who has container access
-The CLI's strength (full bypass) is also its risk. Maintain a list of who can `docker exec` into the production container, and treat that list with the same scrutiny as a list of database superusers.
-:::
-
-::: warning Don't use the CLI for routine ops
-Reaching for the CLI when the UI works fine is a bad habit — there's no permission gate, no SignalR push, no validation help. Use the admin UI; reserve the CLI for the cases the UI genuinely can't handle.
-:::
+For the operational story of first-time admin setup (when there's no
+admin yet to invite anyone), see
+[First-time setup](../getting-started/first-time-setup).
