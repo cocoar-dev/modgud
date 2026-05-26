@@ -38,7 +38,7 @@
          that collides with the existing one in PrincipalProjectionBase.
          Revisit when fixing source-gen collision: see
          dev-docs/engineering-gotchas/critter-stack-2026.md. -->
-    <PackageVersion Include="JasperFx.Events.SourceGenerator" Version="2.0.0" />
+    <PackageVersion Include="JasperFx.Events.SourceGenerator" Version="2.1.1" />
     <!-- Wolverine 6 decoupled the Roslyn runtime codegen from core;
          IMessageBus.InvokeAsync<T> needs it in the host project. -->
     <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.0.2" />
