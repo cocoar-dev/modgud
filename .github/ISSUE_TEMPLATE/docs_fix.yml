@@ -1,0 +1,40 @@
+name: Docs fix
+description: Typo, broken link, outdated example, or "the docs say X but the code does Y".
+title: "[Docs] "
+labels: ["docs", "good first issue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Smallest-effort PRs welcome — typo fixes can often skip the
+        issue entirely and just open a PR directly.
+
+  - type: input
+    id: page
+    attributes:
+      label: Which page?
+      description: |
+        Path under `docs/` (e.g. `docs/integrate/resource-server.md`)
+        or the docs-site URL.
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong?
+      description: |
+        Quote the current text and what it should say, or describe the
+        broken link / outdated example.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix (optional)
+      description: |
+        If you've got concrete wording in mind, paste it here. Or open
+        a PR directly — that's usually faster for small fixes.
+    validations:
+      required: false

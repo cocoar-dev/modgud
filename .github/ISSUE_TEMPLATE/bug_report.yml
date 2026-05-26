@@ -1,0 +1,117 @@
+name: Bug report
+description: Something doesn't work the way the docs say it should.
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. A few minutes spent on the form below
+        saves an evening of back-and-forth — please include the
+        sections that apply.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: |
+        Concise description of the actual behavior. Include the URL
+        path or the API endpoint if it's a runtime issue, the CLI
+        command if it's a recovery-CLI issue, or the build target if
+        it's a build issue.
+      placeholder: |
+        e.g. "POST /api/account/login with the seeded admin returns
+        500 instead of 200 after a fresh Docker compose up"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: |
+        What the docs say should happen, or what your read of the
+        codebase suggests should happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Numbered steps. If you have a minimal repro (a curl command,
+        a sample config, a Vue snippet) paste it here.
+      placeholder: |
+        1. `docker compose up -d`
+        2. Run `dotnet Modgud.Api.dll recover bootstrap-admin …`
+        3. Open https://localhost:9099/admin
+        4. Observe …
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: |
+        The git commit SHA (`git rev-parse HEAD`), tag, or Docker
+        image digest you're running.
+      placeholder: "e.g. develop@1e6f5e5 or ghcr.io/cocoar-dev/modgud:latest"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface?
+      multiple: true
+      options:
+        - Authentication slice (login, 2FA, sessions, OIDC federation)
+        - Authorization slice (groups, roles, permissions, auto-membership)
+        - OAuth/OIDC server (OpenIddict — /connect/*)
+        - Admin API (/api/admin/*)
+        - Admin SPA (Vue frontend)
+        - Plattform area (branding, assets, observability, settings)
+        - Recovery CLI
+        - Multi-realm provisioning
+        - Docs site
+        - Build / CI / Docker
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        OS, .NET version (if running from source), browser if it's a
+        frontend issue, Postgres version, whether you're behind a
+        reverse proxy.
+      placeholder: |
+        Windows 11 / .NET 10.0.x / Chrome 148 / Postgres 17 / no proxy
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Backend logs (Serilog) around the failure. Frontend console
+        errors if applicable. Wrap in triple-backticks for readability.
+        Please scrub any real secrets, tokens, or user emails first.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submit checks
+      options:
+        - label: I searched the existing issues and discussions
+          required: true
+        - label: This is not a security vulnerability (those go through the [private channel](https://github.com/cocoar-dev/modgud/security/advisories/new))
+          required: true

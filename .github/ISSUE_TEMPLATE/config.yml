@@ -1,0 +1,28 @@
+# Disable the "Open a blank issue" escape hatch so contributors land
+# on one of the structured templates below. Security reports always
+# go through the private channel — never the public tracker.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/cocoar-dev/modgud/security/advisories/new
+    about: |
+      Found something exploitable? Do NOT open a public issue. Use
+      GitHub's Private Vulnerability Reporting — see SECURITY.md for
+      scope, supported versions, and triage SLA.
+
+  - name: Question or discussion
+    url: https://github.com/cocoar-dev/modgud/discussions
+    about: |
+      Got a question, design discussion, or want to share how you're
+      using Modgud? Open a Discussion instead of an Issue — easier
+      to thread, easier to find later.
+
+  - name: Roadmap / Sizing reality check
+    url: https://github.com/cocoar-dev/modgud/blob/develop/docs/roadmap.md
+    about: |
+      Before requesting SAML, LDAP, day-one HA, or compliance certs —
+      please read the Roadmap. Modgud is owner-operator-shaped on
+      purpose; some features are intentionally out of scope. Mature
+      alternatives (Keycloak, Zitadel, Authentik) are recommended
+      there.
