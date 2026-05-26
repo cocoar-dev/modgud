@@ -1,5 +1,7 @@
 # Modgud
 
+![Modgud — multi-tenant Identity Provider](docs/public/social-preview-small.png)
+
 **Self-hosted multi-tenant Identity Provider for ASP.NET Core.**
 OAuth 2.0 / OpenID Connect server with database-per-realm isolation,
 multi-app permission catalogs, Keycloak-style `resource_access`
