@@ -1,111 +1,140 @@
 # Modgud
 
-Authentication and authorization Identity Provider for COCOAR applications.
+**Self-hosted multi-tenant Identity Provider for ASP.NET Core.**
+OAuth 2.0 / OpenID Connect server with database-per-realm isolation,
+multi-app permission catalogs, Keycloak-style `resource_access`
+emission, full 2FA spectrum, GDPR self-service.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
-[![Tests](https://img.shields.io/badge/tests-63%20passing-brightgreen)]()
+[![pre-1.0](https://img.shields.io/badge/status-pre--1.0-orange.svg)](./docs/roadmap.md)
 
-> Matched against **[Cocoar.AppBase](https://github.com/cocoar-dev/Cocoar.AppBase)
-> v2.1.0** (Critter Stack 2026 + dep refresh + NetArchTest slice-boundary
-> rules, 2026-05-24). Current AppBase reference version is recorded in
-> [`APPBASE_VERSION`](./APPBASE_VERSION) — diff against AppBase's
-> `docs/changelog/v*.md` later to see what's worth backporting.
+> Built for the **owner-operator SaaS** case — one team running their
+> own products, a handful of realms, OIDC as the federation contract.
+> Not a Keycloak drop-in. **[Read the Sizing reality check](./docs/roadmap.md#sizing-reality-check)**
+> before evaluating; some features are intentionally out of scope.
 
----
+## What you get
 
-## Overview
+- **Multi-tenant by design** — every realm gets its own PostgreSQL
+  database via Marten's `MasterTableTenancy`. Domain-based routing
+  maps `Host` headers to tenants. No `tenant_id` columns, no
+  cross-realm leaks possible.
+- **Multi-app permission model** — Apps are first-class. Permissions
+  are 2-segment (`<resource>:<action>`) inside an app's catalog. Two
+  bypass tiers, no more. Roles bind to one App, groups carry a
+  `BoundTo` activation list.
+- **Keycloak-style `resource_access` on UserInfo** — per-audience
+  blocks with bypass pre-expansion and per-RS subset narrowing. A
+  drop-in `IClaimsTransformation` library flattens the right block
+  into `ClaimTypes.Role` so `[Authorize(Roles = "...")]` works
+  without per-endpoint plumbing.
+- **Full 2FA spectrum + WebAuthn** — TOTP, Email-OTP, FIDO2/Passkey,
+  Magic Link, recovery codes. 2FA enforcement middleware with grace
+  period and per-user override.
+- **OIDC federation** — Microsoft Entra ID, Google, any OIDC IdP.
+  JIT user provisioning + JavaScript claim-mapping (`UserUpdateScript`).
+- **Dynamic Client Registration (RFC 7591)** with triple opt-in
+  (realm master / per-API / per-scope), audience-target containment,
+  full audit-event trail.
+- **GDPR-ready** — Article-20 self-service export, three-step
+  account deletion with confirmation token, Marten data-masking +
+  `ArchiveStream` for irreversible PII erase with audit-chain
+  integrity preserved.
+- **Observability built-in** — OpenTelemetry metrics + traces,
+  Prometheus scrape endpoint, custom IdP meter, in-app live
+  activity feed.
+- **Recovery CLI** — break-glass admin path (bootstrap-admin,
+  reset-2fa, magic-link, rebuild-projections) when the UI can't
+  help you.
 
-Modgud is a full-featured Identity Provider built with:
+## Quick links
 
-| Component | Technology |
-|-----------|------------|
-| **Backend** | ASP.NET Core 10.0 with Clean Architecture |
-| **Identity** | ASP.NET Core Identity |
-| **Database** | PostgreSQL via Marten 9.0 |
-| **Event Sourcing** | Marten Event Store with inline projections |
-| **CQRS/Mediator** | Wolverine 6.0 |
-| **Testing** | xUnit + Testcontainers |
+| | |
+|---|---|
+| [📘 Get Started](./docs/getting-started/) | What this is, requirements, first-time setup |
+| [⚡ Quickstart (Docker)](./docs/getting-started/quickstart.md) | From `docker compose up` to first login in 10 minutes |
+| [🧠 Concepts](./docs/concepts/) | Realms, apps, permissions, OAuth, tokens — the mental model |
+| [🛠️ Operate](./docs/operate/) | Deployment, observability, recovery CLI, feature flags |
+| [👤 Administer](./docs/admin/) | Users, groups, roles, OAuth clients, login providers |
+| [🔌 Integrate](./docs/integrate/) | Plug your ASP.NET Core / SaaS app into Modgud |
+| [📖 Reference](./docs/reference/) | OAuth / Auth / Admin / Realm endpoint reference |
+| [🗺️ Roadmap](./docs/roadmap.md) | What ships today, what's coming, what's intentionally out of scope |
 
-## Architecture
+## Is this for you?
 
-```
-modgud/
-├── src/
-│   ├── dotnet/                      # ASP.NET Core API
-│   │   ├── Modgud.Domain/      # Entities, Events, Aggregates
-│   │   ├── Modgud.Application/ # CQRS Commands/Queries, Services
-│   │   ├── Modgud.Infrastructure/ # Marten stores, Projections
-│   │   ├── Modgud.Api/         # REST Controllers
-│   │   └── Modgud.Tests/       # Integration Tests
-│   └── frontend/                    # Angular UI (planned)
-├── docker/                          # Docker deployment
-└── docs/                            # Documentation
-```
+Modgud is a **good fit** if you can answer "yes" to most of these:
 
-## Current Status
+- You own both the IdP and the SaaS apps it secures (no third-party
+  RPs depending on you for SLA)
+- A handful of realms, each with a few thousand to tens of thousands
+  of users
+- OIDC is enough — no immediate SAML / LDAP requirement
+- Single-instance with sub-minute restart windows is acceptable
+  (multi-instance HA is on the [roadmap](./docs/roadmap.md), not in
+  the box today)
+- You're comfortable with the recovery CLI as a break-glass path
 
-### ✅ Phase 1-2: Complete (63/63 tests passing)
+**Modgud is the wrong tool if** you need certified-compliance audits,
+sub-second RTO HA, fifty federation protocols on day one, or
+managed/hosted convenience. Use
+[Keycloak](https://www.keycloak.org/),
+[Zitadel](https://zitadel.com/),
+[Authentik](https://goauthentik.io/), or a hosted IdP (Auth0, Entra
+ID External Identities) instead.
 
-| Feature | Status |
-|---------|--------|
-| User Registration & Email Confirmation | ✅ |
-| Login/Logout (cookie-based) | ✅ |
-| Password Reset | ✅ |
-| User Profile Management | ✅ |
-| Admin User CRUD | ✅ |
-| Admin Role CRUD | ✅ |
-| Event Sourcing for Users & Roles | ✅ |
-| Inline State Projections (UserState, RoleState) | ✅ |
-| Async Projections (UserDetailsReadModel) | ✅ |
+## Status
 
-### 🔲 Planned Features
+**Pre-1.0.** The product is in use and the roadmap is honest about
+gaps. Single-maintainer, alongside a day job — response times in
+days, not hours.
 
-| Feature | Phase |
-|---------|-------|
-| OAuth 2.0 / OpenID Connect (OpenIddict) | Phase 3 |
-| Two-Factor Authentication (TOTP) | Phase 4 |
-| External Login Providers (Google, Microsoft) | Phase 5 |
-| Audit Logging & Session Management | Phase 6 |
+The [Roadmap](./docs/roadmap.md) is the canonical view of what's
+shipped, what's coming, and what's intentionally out of scope. It
+gets revised when something lands.
 
-## Quick Start
+## Build it yourself
 
-### Prerequisites
-- .NET 10 SDK
-- Docker Desktop (for PostgreSQL via Testcontainers)
+```bash
+# Prereqs: .NET 10 SDK, Node 22 + pnpm (via Corepack), Docker
 
-### Run the API
-```powershell
+# Backend (port 9099)
 cd src/dotnet
-dotnet restore
-dotnet build
-dotnet run --project Modgud.Api
+docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE modgud;"
+cd Modgud.Api
+ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile
+
+# Frontend (port 4300, separate terminal)
+cd src/frontend-vue
+pnpm install
+pnpm dev
 ```
 
-### Run Tests
-```powershell
-cd src/dotnet
-dotnet test
-```
+First-time admin bootstrap via the recovery CLI — see
+[First-time setup](./docs/getting-started/first-time-setup.md) for
+the walkthrough.
 
-## Documentation
+## Contributing
 
-- [Architecture](docs/architecture.md) - System design, layers, event sourcing
-- [API Reference](docs/api-reference.md) - Complete REST API documentation
-- [Backend README](src/dotnet/README.md) - Detailed implementation guide
+PRs welcome for typos and small fixes — for anything bigger, please
+open a [Discussion](https://github.com/cocoar-dev/modgud/discussions)
+first. The [Contributing guide](./CONTRIBUTING.md) has the full
+ground rules including the solo-maintainer realities.
+
+Security vulnerabilities **do not** go through the public issue
+tracker — see [SECURITY.md](./SECURITY.md) for the private channel.
+
+## About the name
+
+**Modgud** takes its name from **Móðguðr**, the watcher of
+*Gjallarbrú* in Norse mythology — a bridge between worlds, where
+she challenged every traveler with the same question an IdP asks:
+*"Who are you, and what brings you here?"* A fitting namesake.
 
 ## License
 
-Copyright © 2025 COCOAR e.U.
+Licensed under the [Apache License, Version 2.0](./LICENSE).
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
-
-## Contact
-
-COCOAR e.U.  
-Email: bwi@cocoar.dev  
-Web: https://cocoar.dev
-
----
-
-**Built with ❤️ by COCOAR**
+Copyright © 2025–2026 [COCOAR e.U.](https://cocoar.dev) — built
+solo by [@windischb](https://github.com/windischb) in Vienna,
+Austria.
