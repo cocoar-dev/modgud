@@ -1,0 +1,88 @@
+# Dependabot configuration for cocoar-dev/modgud
+#
+# Scoping rationale: production-runtime deps only.
+#   - src/frontend-vue/ — Vue 3 SPA, ships in the Docker image
+#   - src/dotnet/       — ASP.NET Core 10 backend, ships in the Docker image
+#   - .github/workflows — CI surface
+#
+# Deliberately excluded:
+#   - docs/             — VitePress build, not in production runtime
+#   - dev-docs/         — repo-only, never deployed
+#   - src/dotnet/package.json — only testcontainers (integration-test dev-dep)
+#
+# Out-of-scope vulnerabilities are documented in SECURITY.md.
+
+version: 2
+updates:
+  # Production Vue SPA
+  - package-ecosystem: "npm"
+    directory: "/src/frontend-vue"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Vienna"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "frontend"
+    groups:
+      vue-ecosystem:
+        patterns:
+          - "vue"
+          - "@vue/*"
+          - "vue-router"
+          - "pinia"
+      vite-build:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "esbuild"
+      cocoar-internals:
+        patterns:
+          - "@cocoar/*"
+      ag-grid:
+        patterns:
+          - "ag-grid*"
+          - "@ag-grid-*"
+      types:
+        patterns:
+          - "@types/*"
+
+  # Production .NET backend
+  - package-ecosystem: "nuget"
+    directory: "/src/dotnet"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Vienna"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "backend"
+    groups:
+      critter-stack:
+        patterns:
+          - "Marten*"
+          - "Wolverine*"
+          - "JasperFx*"
+      openiddict:
+        patterns:
+          - "OpenIddict*"
+      microsoft:
+        patterns:
+          - "Microsoft.*"
+      cocoar-internals:
+        patterns:
+          - "Cocoar.*"
+
+  # GitHub Actions workflow deps
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
