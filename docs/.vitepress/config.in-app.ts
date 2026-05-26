@@ -13,10 +13,14 @@ import publicConfig from './config'
 
 const base = publicConfig as ReturnType<typeof defineConfig>
 
+// `outDir` is set via the CLI flag in package.json's build:in-app
+// script (`--outDir .vitepress/dist-in-app`). VitePress 1.6 silently
+// ignores an inline `outDir` value when a custom --config is passed —
+// passing it on the CLI is the reliable hook.
+
 export default withMermaid(defineConfig({
   ...base,
   base: '/docs/',
-  outDir: '.vitepress/dist-in-app',
 
   // Marketing landing page has no place inside the container — the
   // admin enters at /admin/ directly and the docs/ root is reached
