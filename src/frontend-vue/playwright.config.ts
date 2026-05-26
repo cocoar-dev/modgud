@@ -14,7 +14,9 @@ export default defineConfig({
   retries: 0,
   reporter: 'list',
   use: {
-    // Dynamic baseURL from Testcontainers — set in global-setup via env var
+    // Dynamic baseURL set by global-setup.ts (env var) when it brings the
+    // rig up via raw `docker run`; falls back to a static port for the
+    // `E2E_BASE_URL=…` workflow that points at an external instance.
     baseURL: process.env.E2E_BASE_URL || 'http://localhost:8081',
     trace: 'on-first-retry',
   },

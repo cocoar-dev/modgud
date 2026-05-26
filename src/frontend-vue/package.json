@@ -8,10 +8,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:local": "E2E_BASE_URL=http://localhost:4300 playwright test",
-    "type-check": "vue-tsc --build"
+    "type-check": "vue-tsc --build",
+    "cleanup:check": "pnpm dlx knip"
   },
   "dependencies": {
     "@cocoar/signalarrr": "^4.3.0",
@@ -21,8 +21,6 @@
     "@cocoar/vue-page-builder": "2.1.0",
     "@cocoar/vue-script-editor": "2.5.1",
     "@cocoar/vue-ui": "2.5.1",
-    "dompurify": "^3.4.2",
-    "jodit": "3.24.9",
     "monaco-editor": "^0.55.1",
     "pinia": "^3.0.4",
     "vue": "^3.5.34",
@@ -31,15 +29,11 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.3.0",
-    "@testcontainers/postgresql": "^12.0.0",
     "@vitejs/plugin-vue": "^6.0.7",
-    "@vue/test-utils": "^2.4.10",
     "otplib": "^13.4.0",
     "tailwindcss": "^4.3.0",
-    "testcontainers": "^12.0.0",
     "typescript": "~6.0.3",
     "vite": "^8.0.14",
-    "vitest": "^4.1.7",
     "vue-tsc": "^3.3.1"
   },
   "volta": {

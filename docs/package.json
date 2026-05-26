@@ -11,7 +11,8 @@
     "preview:in-app": "vitepress preview --config .vitepress/config.in-app.ts --outDir .vitepress/dist-in-app --base /docs/",
     "build:all": "pnpm build && pnpm build:in-app",
     "export:md": "node scripts/export-md.mjs",
-    "export:pdf": "node scripts/export-pdf.mjs"
+    "export:pdf": "node scripts/export-pdf.mjs",
+    "cleanup:check": "pnpm dlx knip"
   },
   "devDependencies": {
     "highlight.js": "^11.11.1",

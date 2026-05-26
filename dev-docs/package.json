@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vitepress dev",
     "build": "vitepress build",
-    "preview": "vitepress preview"
+    "preview": "vitepress preview",
+    "cleanup:check": "pnpm dlx knip"
   },
   "devDependencies": {
     "mermaid": "^11.13.0",

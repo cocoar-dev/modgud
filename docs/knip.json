@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": [
+    ".vitepress/config.ts",
+    ".vitepress/config.in-app.ts",
+    ".vitepress/config-base.ts"
+  ],
+  "project": [
+    ".vitepress/**/*.{ts,vue}"
+  ],
+  "ignoreDependencies": [
+    "dayjs"
+  ]
+}
