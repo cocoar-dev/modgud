@@ -64,9 +64,10 @@ updates:
     ignore:
       # Pinned in Directory.Packages.props — 2.1.x generates an extra
       # Evolve(...) overload that collides with PrincipalProjectionBase.
-      # Revisit when the codegen collision is fixed.
+      # Revisit when the codegen collision is fixed. Dependabot wants a
+      # semver range here, glob-style "2.1.x" is ignored silently.
       - dependency-name: "JasperFx.Events.SourceGenerator"
-        versions: ["2.1.x"]
+        versions: [">=2.1.0 <3.0.0"]
     groups:
       critter-stack:
         patterns:
