@@ -14,9 +14,6 @@ hero:
       text: Quickstart (Docker)
       link: /getting-started/quickstart
     - theme: alt
-      text: Is this for you?
-      link: '#is-this-for-you'
-    - theme: alt
       text: View on GitHub
       link: https://github.com/cocoar-dev/modgud
 
@@ -40,29 +37,6 @@ features:
     title: GDPR-ready
     details: Self-service data export (Article 20), confirmable account deletion, Marten data-masking that scrubs PII from event streams while preserving audit-chain integrity.
 ---
-
-## Is this for you?
-
-Modgud is sized for the **owner-operator SaaS** case — one team running their own products, with OIDC as the federation contract. The honest filter:
-
-::: tip ✅ Good fit if you answer "yes" to most of these
-- You own both the IdP and the SaaS apps it secures (no third-party RPs depending on you for SLA)
-- A handful of realms (think: customer accounts), each with a few thousand to tens of thousands of users
-- OIDC is enough — no immediate SAML / LDAP requirement
-- Single-instance with sub-minute restart windows is acceptable ([multi-instance HA](./roadmap#high) is on the roadmap, not in the box today)
-- You're comfortable with the [recovery CLI](./operate/recovery-cli) as a break-glass path
-:::
-
-::: warning ❌ Wrong tool if you need
-- Certified-compliance audits (SOC 2, ISO 27001, FedRAMP)
-- Sub-second RTO HA on day one
-- Fifty+ federation protocols (SAML, LDAP, Kerberos) in production
-- Managed / hosted convenience with 24/7 commercial support
-
-Use [Keycloak](https://www.keycloak.org/), [Zitadel](https://zitadel.com/), [Authentik](https://goauthentik.io/), or a hosted IdP (Auth0, Entra ID External Identities) instead — these are mature, enterprise-shaped, and built for those use cases. Modgud isn't pretending to compete with them.
-:::
-
-The [Roadmap](./roadmap) has the full read on what ships today, what's coming next, and what's [intentionally out of scope](./roadmap#what-s-intentionally-out-of-scope).
 
 ## About the name
 
