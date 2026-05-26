@@ -24,6 +24,15 @@ thing.
   (Marten, Wolverine, OpenIddict, Fido2NetLib, Vue, etc.). If a
   vulnerability in a dep affects Modgud, *that's* in scope here too
   and we'll coordinate.
+- **Build-time and test-only dependencies.** Vulnerabilities in
+  packages that exist solely in our build pipeline or test harness
+  (e.g. VitePress build tools, testcontainers and its transitive
+  graph including `protobufjs`/`grpc-js`, `@vue/test-utils`, ESLint
+  plugins) are not treated as security issues — the vulnerable code
+  paths never run in the shipped runtime. We track them via the
+  weekly Dependabot sweep on the production manifests and patch on
+  a best-effort cadence. See `.github/dependabot.yml` for the exact
+  scope.
 - Deployments not run by COCOAR e.U. — if you find an issue with a
   third-party Modgud instance, please contact that operator first.
 - Recovery scenarios involving server access — the `recover` CLI
