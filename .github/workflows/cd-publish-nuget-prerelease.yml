@@ -42,9 +42,7 @@ jobs:
           fetch-tags: true
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 10.0.x
+        uses: ./.github/actions/setup-dotnet
 
       - name: Restore client lib + unit tests
         run: |
@@ -84,25 +82,17 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+      - name: Setup .NET + GitVersion
+        id: dotnet
+        uses: ./.github/actions/setup-dotnet
         with:
-          dotnet-version: 10.0.x
-
-      - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v4
-        with:
-          versionSpec: '6.x'
-
-      - name: Calculate version
-        id: gv
-        uses: gittools/actions/gitversion/execute@v4
+          with-gitversion: 'true'
 
       - name: Build prerelease version
         id: prerelease
         run: |
-          BASE="${{ steps.gv.outputs.MajorMinorPatch }}-${{ steps.gv.outputs.PreReleaseLabel }}"
-          N="${{ steps.gv.outputs.CommitsSinceVersionSource }}"
+          BASE="${{ steps.dotnet.outputs.major-minor-patch }}-${{ steps.dotnet.outputs.pre-release-label }}"
+          N="${{ steps.dotnet.outputs.commits-since-version-source }}"
           VERSION="$BASE.$N"
           echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_ENV
           echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_OUTPUT
@@ -117,8 +107,8 @@ jobs:
           dotnet build Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj \
             -c Release --no-restore \
             -p:Version=$PACKAGE_VERSION \
-            -p:AssemblyVersion=${{ steps.gv.outputs.AssemblySemVer }} \
-            -p:FileVersion=${{ steps.gv.outputs.AssemblySemFileVer }} \
+            -p:AssemblyVersion=${{ steps.dotnet.outputs.assembly-semver }} \
+            -p:FileVersion=${{ steps.dotnet.outputs.assembly-sem-file-ver }} \
             -p:ContinuousIntegrationBuild=true
         working-directory: ./src/dotnet
 

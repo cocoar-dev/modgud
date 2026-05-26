@@ -2,7 +2,12 @@ name: CI - Develop
 
 on:
   push:
-    branches: [ develop ]
+    # `ci/**` is the escape hatch for iterating on workflows or
+    # build setup without going through a PR — push a ci/<topic>
+    # branch, see CI green, then open one clean PR to develop.
+    # Path filtering in the changes-detector keeps cost low when
+    # only YAML/docs change.
+    branches: [ develop, 'ci/**' ]
 
 jobs:
   # Detect which surfaces the push actually touches, so we don't waste CI
@@ -53,22 +58,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+      - name: Setup .NET + GitVersion
+        id: dotnet
+        uses: ./.github/actions/setup-dotnet
         with:
-          dotnet-version: 10.0.x
-
-      - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v4
-        with:
-          versionSpec: '6.x'
-
-      - name: Calculate version
-        id: gv
-        uses: gittools/actions/gitversion/execute@v4
+          with-gitversion: 'true'
 
       - name: Log version
-        run: echo "Building version ${{ steps.gv.outputs.SemVer }}"
+        run: echo "Building version ${{ steps.dotnet.outputs.version }}"
 
       - name: Restore backend dependencies
         run: dotnet restore Modgud.slnx
@@ -86,7 +83,7 @@ jobs:
         working-directory: ./src/dotnet
 
       - name: Build backend
-        run: dotnet build Modgud.slnx -c Release --no-restore -p:Version=${{ steps.gv.outputs.SemVer }}
+        run: dotnet build Modgud.slnx -c Release --no-restore -p:Version=${{ steps.dotnet.outputs.version }}
         working-directory: ./src/dotnet
 
       - name: Test backend
@@ -105,17 +102,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node + pnpm + install
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          node-version: 22
-
-      - name: Install pnpm
-        run: corepack enable && corepack prepare pnpm@10.13.1 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: ./src/frontend-vue
+          working-directory: ./src/frontend-vue
 
       - name: Audit npm dependencies for known CVEs
         run: pnpm audit --prod --audit-level=moderate
@@ -141,17 +131,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node + pnpm + install
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          node-version: 22
-
-      - name: Install pnpm
-        run: corepack enable && corepack prepare pnpm@10.13.1 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: ./docs
+          working-directory: ./docs
 
       - name: Build docs (public + in-app)
         run: pnpm build:all

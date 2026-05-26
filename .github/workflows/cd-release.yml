@@ -37,9 +37,28 @@ name: CD - Release
 on:
   release:
     types: [published]
+  # Manual trigger for iterating on the release pipeline itself
+  # without cutting a real release. Defaults to dry-run, which gates
+  # every side-effecting step (NuGet push, Docker push of candidate
+  # tag, Docker retag, Shelf upload). A non-dry-run dispatch still
+  # works end-to-end but uses the version_override value — useful
+  # for republishing a botched release after fixing pipeline logic,
+  # *not* a substitute for cutting a normal release.
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: 'Version (X.Y.Z or X.Y.Z-suffix) to use; required for dispatch'
+        required: true
+        default: '0.0.0-test'
+      dry_run:
+        description: 'Skip side-effecting steps (recommended for pipeline testing)'
+        type: boolean
+        default: true
 
 concurrency:
-  group: cd-release-${{ github.event.release.id }}
+  # On release: scope by release id so concurrent releases don't fight.
+  # On workflow_dispatch: scope by run id so manual iterations don't fight either.
+  group: cd-release-${{ github.event.release.id || github.run_id }}
   cancel-in-progress: false
 
 env:
@@ -48,7 +67,9 @@ env:
 jobs:
   validate-version:
     name: Validate & Extract Version
-    if: github.event.release.target_commitish == 'develop'
+    # release: only develop-targeted releases are valid
+    # workflow_dispatch: always allowed (iteration on any branch)
+    if: github.event_name == 'workflow_dispatch' || github.event.release.target_commitish == 'develop'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
@@ -56,25 +77,31 @@ jobs:
     steps:
       - name: Extract and validate release version
         id: version
+        env:
+          # For release event: extract from the published tag.
+          # For workflow_dispatch: use the version_override input directly
+          # (already in X.Y.Z form, so prefix with 'v' for unified handling).
+          RAW_TAG: ${{ github.event.release.tag_name || format('v{0}', inputs.version_override) }}
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-          echo "Release tag: $TAG"
+          TAG="$RAW_TAG"
+          echo "Tag/version: $TAG"
 
           if [[ ! "$TAG" =~ ^v[0-9] ]]; then
             echo "::error ::Tag must start with 'v' followed by version (e.g. v0.2.0)"
             exit 1
           fi
           VERSION="${TAG#v}"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error ::Invalid version format. Expected X.Y.Z, got: $VERSION"
+          # Accept X.Y.Z and X.Y.Z-suffix (e.g. 0.0.0-test for dispatch dry-runs)
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.+-]+)?$ ]]; then
+            echo "::error ::Invalid version format. Expected X.Y.Z[-suffix], got: $VERSION"
             exit 1
           fi
 
           MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          MINOR=$(echo "$VERSION" | cut -d. -f2 | cut -d- -f1)
           DOCS="v${MAJOR}.${MINOR}"
 
-          echo "Using release version: $VERSION (docs slot: $DOCS)"
+          echo "Using version: $VERSION (docs slot: $DOCS)"
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "DOCS_VERSION=$DOCS" >> $GITHUB_OUTPUT
 
@@ -91,12 +118,10 @@ jobs:
       - name: Checkout tag
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 10.0.x
+        uses: ./.github/actions/setup-dotnet
 
       - name: Restore, build & test (full suite)
         run: |
@@ -119,12 +144,10 @@ jobs:
       - name: Checkout tag
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 10.0.x
+        uses: ./.github/actions/setup-dotnet
 
       - name: Restore
         run: dotnet restore Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj
@@ -175,7 +198,7 @@ jobs:
       - name: Checkout tag
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - name: Login to GHCR
         uses: docker/login-action@v4
@@ -189,7 +212,10 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile
-          push: true
+          # In dry-run dispatch: build locally on the runner, don't push.
+          # The candidate tag is never pulled because publish-docker
+          # is also skipped under dry-run, so a local-only build is fine.
+          push: ${{ github.event_name == 'release' || !inputs.dry_run }}
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
 
   build-docs:
@@ -203,19 +229,12 @@ jobs:
       - name: Checkout tag
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node + pnpm + install
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          node-version: 22
-
-      - name: Install pnpm
-        run: corepack enable && corepack prepare pnpm@10.13.1 --activate
-
-      - name: Install dependencies
-        working-directory: docs
-        run: pnpm install --frozen-lockfile
+          working-directory: docs
 
       - name: Build VitePress
         working-directory: docs
@@ -247,6 +266,9 @@ jobs:
 
   publish-nuget:
     name: Publish NuGet
+    # Real releases always publish. Manual dispatch publishes only if
+    # explicitly opted out of dry-run.
+    if: github.event_name == 'release' || !inputs.dry_run
     needs: [validate-version, release-gate]
     runs-on: ubuntu-latest
     permissions:
@@ -260,9 +282,7 @@ jobs:
           path: ${{ github.workspace }}/artifacts
 
       - name: Setup .NET (for `dotnet nuget push`)
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 10.0.x
+        uses: ./.github/actions/setup-dotnet
 
       - name: Push to NuGet.org
         env:
@@ -283,6 +303,9 @@ jobs:
 
   publish-docker:
     name: Publish Docker (retag candidate → release tags)
+    # Real releases always publish. Manual dispatch publishes only if
+    # explicitly opted out of dry-run.
+    if: github.event_name == 'release' || !inputs.dry_run
     needs: [validate-version, release-gate]
     runs-on: ubuntu-latest
     permissions:
@@ -339,6 +362,9 @@ jobs:
 
   deploy-docs:
     name: Deploy Docs
+    # Real releases always deploy docs. Manual dispatch deploys only if
+    # explicitly opted out of dry-run.
+    if: github.event_name == 'release' || !inputs.dry_run
     needs: [validate-version, publish-nuget, publish-docker]
     runs-on: ubuntu-latest
     permissions:

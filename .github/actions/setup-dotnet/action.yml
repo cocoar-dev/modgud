@@ -1,0 +1,63 @@
+name: Setup .NET + optional GitVersion
+description: |
+  Install the project's .NET SDK and optionally GitVersion. Single
+  source of truth for the .NET / GitVersion versions Modgud builds
+  against — bump them here once instead of in every workflow.
+
+  When `with-gitversion: true`, the calculated SemVer + related
+  values are exposed as outputs (`version`, `major-minor-patch`,
+  `pre-release-label`, `commits-since-version-source`,
+  `assembly-semver`, `assembly-sem-file-ver`).
+
+  Set `with-dotnet: false` when a job only needs GitVersion
+  (e.g. a pure version-calculation job that doesn't touch .NET).
+
+inputs:
+  with-dotnet:
+    description: 'Install .NET SDK (default: true)'
+    required: false
+    default: 'true'
+  with-gitversion:
+    description: 'Install + run GitVersion (default: false)'
+    required: false
+    default: 'false'
+
+outputs:
+  version:
+    description: 'GitVersion SemVer (only when with-gitversion=true)'
+    value: ${{ steps.gv.outputs.SemVer }}
+  major-minor-patch:
+    description: 'GitVersion MajorMinorPatch'
+    value: ${{ steps.gv.outputs.MajorMinorPatch }}
+  pre-release-label:
+    description: 'GitVersion PreReleaseLabel'
+    value: ${{ steps.gv.outputs.PreReleaseLabel }}
+  commits-since-version-source:
+    description: 'GitVersion CommitsSinceVersionSource'
+    value: ${{ steps.gv.outputs.CommitsSinceVersionSource }}
+  assembly-semver:
+    description: 'GitVersion AssemblySemVer'
+    value: ${{ steps.gv.outputs.AssemblySemVer }}
+  assembly-sem-file-ver:
+    description: 'GitVersion AssemblySemFileVer'
+    value: ${{ steps.gv.outputs.AssemblySemFileVer }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup .NET
+      if: inputs.with-dotnet == 'true'
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Install GitVersion
+      if: inputs.with-gitversion == 'true'
+      uses: gittools/actions/gitversion/setup@v4
+      with:
+        versionSpec: '6.x'
+
+    - name: Calculate version
+      if: inputs.with-gitversion == 'true'
+      id: gv
+      uses: gittools/actions/gitversion/execute@v4

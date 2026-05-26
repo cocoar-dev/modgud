@@ -236,6 +236,7 @@ export const baseConfig = {
           text: 'Contribute',
           items: [
             { text: 'Developing locally', link: '/contribute/developing-locally' },
+            { text: 'Local CI iteration', link: '/contribute/local-ci' },
           ],
         },
         {

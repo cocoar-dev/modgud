@@ -1,0 +1,28 @@
+name: Setup Node + pnpm + install
+description: |
+  Install the project's Node + pnpm versions and run
+  `pnpm install --frozen-lockfile` in the given working directory.
+  Single source of truth for the Node / pnpm versions Modgud builds
+  against — bump them here once instead of in every workflow.
+
+inputs:
+  working-directory:
+    description: 'Directory to run pnpm install in (e.g. src/frontend-vue, docs, dev-docs)'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: 22
+
+    - name: Install pnpm
+      shell: bash
+      run: corepack enable && corepack prepare pnpm@10.13.1 --activate
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: pnpm install --frozen-lockfile

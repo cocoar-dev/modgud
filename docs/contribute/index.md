@@ -16,6 +16,9 @@ for the ground rules.
 - [Developing locally](./developing-locally) — prerequisites, the
   local Postgres container, running the backend + frontend, dev-mode
   admin login.
+- [Local CI iteration](./local-ci) — `act` for local workflow runs,
+  `workflow_dispatch` + `dry_run` for the release pipeline,
+  `ci/**` branch trigger as the no-PR escape hatch.
 
 ## Testing
 

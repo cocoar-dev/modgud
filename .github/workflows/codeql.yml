@@ -3,8 +3,30 @@ name: CodeQL
 on:
   push:
     branches: [ develop ]
+    # Skip docs-only changes — CodeQL has nothing to analyse there
+    # and a typo fix shouldn't wait 8 minutes for a security scan.
+    # The weekly schedule still picks up newly-published advisories
+    # against unchanged code, so we don't lose coverage.
+    paths-ignore:
+      - 'docs/**'
+      - 'dev-docs/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'TRADEMARK.md'
+      - '.gitignore'
+      - '.gitattributes'
   pull_request:
     branches: [ develop ]
+    paths-ignore:
+      - 'docs/**'
+      - 'dev-docs/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'TRADEMARK.md'
+      - '.gitignore'
+      - '.gitattributes'
   schedule:
     # Weekly Sunday 03:14 UTC — picks up newly-published advisories that
     # match unchanged code.
