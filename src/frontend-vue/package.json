@@ -22,7 +22,7 @@
     "@cocoar/vue-script-editor": "2.5.1",
     "@cocoar/vue-ui": "2.5.1",
     "dompurify": "^3.4.2",
-    "jodit": "3.24.9",
+    "jodit": "4.12.2",
     "monaco-editor": "^0.55.1",
     "pinia": "^3.0.4",
     "vue": "^3.5.34",
