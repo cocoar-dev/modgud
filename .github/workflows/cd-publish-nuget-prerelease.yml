@@ -2,21 +2,44 @@ name: CD - Publish NuGet Prerelease
 
 # Builds and publishes a prerelease of Modgud.Client.AspNetCore to
 # nuget.org. Mirrors the cocoar.configuration workflow pattern so the
-# release plumbing is consistent across the org:
+# release plumbing is consistent across the org.
 #
-#   - workflow_dispatch only (manual trigger from any branch)
+# Why workflow_dispatch only (not auto-triggered on develop push)
+# ────────────────────────────────────────────────────────────────
+# Asymmetric with `cd-publish-staging-image.yml`, which DOES auto-
+# publish a Docker image on every develop merge. The reason:
+#
+#   - Docker `:staging` is a moving pointer tag. Each push
+#     overwrites the previous one; the previous image becomes
+#     untagged and the GHCR retention rule deletes it. Cheap to
+#     update on every commit.
+#   - NuGet versions are permanent. `0.1.0-beta.7` cannot be
+#     overwritten — only superseded by `0.1.0-beta.8`. Auto-
+#     publishing on every develop merge would pollute the
+#     nuget.org listing with hundreds of prerelease versions in a
+#     few months and bury the stable releases. Industry pattern
+#     for the same reason: NuGet prereleases are manual on-demand.
+#
+# Trigger this when:
+#   - You need a specific prerelease build to test in a downstream
+#     consumer app
+#   - An external user asked for "the latest" of the client library
+#   - Pre-stable release-candidate testing
+#
+# Otherwise leave it alone. The version still ships via the
+# `cd-release.yml` stable-publish path on Release-tag-published.
+#
+# What the workflow does
+# ──────────────────────
 #   - GitVersion computes the version as
 #       <MajorMinorPatch>-<PreReleaseLabel>.<CommitsSinceVersionSource>
 #     (so a build on `develop` becomes e.g. `0.1.0-beta.7`)
 #   - Ubuntu-only test/pack — the lib is pure managed code with no
-#     platform-specific behavior; multi-OS coverage would just slow the
-#     gate down without catching anything new.
+#     platform-specific behavior; multi-OS coverage would just slow
+#     the gate down without catching anything new.
 #
 # Required org-wide secret: NUGET_API_KEY (nuget.org "Push" scope,
 # glob `Modgud.*`).
-#
-# Stable releases (X.Y.Z, no prerelease suffix) ship via the separate
-# `cd-publish-nuget-stable.yml` workflow on GitHub-Release publish.
 
 on:
   workflow_dispatch:
