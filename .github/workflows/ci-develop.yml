@@ -5,8 +5,44 @@ on:
     branches: [ develop ]
 
 jobs:
+  # Detect which surfaces the push actually touches, so we don't waste CI
+  # minutes building the backend for a docs-only typo fix (or vice versa).
+  # Each downstream job gates its `if:` on the matching output below.
+  # Changes to the CI workflows themselves trigger everything — that's
+  # how we catch a broken workflow before it lands.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'src/dotnet/**'
+              - '.github/workflows/ci-*.yml'
+              - 'GitVersion.yml'
+            frontend:
+              - 'src/frontend-vue/**'
+              - '.github/workflows/ci-*.yml'
+            docs:
+              - 'docs/**'
+              - '.github/workflows/ci-*.yml'
+
   backend:
     name: Backend Build & Test
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -59,6 +95,8 @@ jobs:
 
   frontend:
     name: Frontend Build
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -93,6 +131,8 @@ jobs:
 
   docs:
     name: Docs Build
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
