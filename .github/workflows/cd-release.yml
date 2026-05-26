@@ -1,0 +1,373 @@
+name: CD - Release
+
+# Unified release pipeline. Triggered when a GitHub Release is published
+# (tag `v<X.Y.Z>` cut from develop). Replaces the previously-separate
+# cd-deploy-production.yml (Docker) and cd-publish-nuget-stable.yml
+# (NuGet), which could fire independently and leave a partial release
+# (NuGet shipped, Docker failed — or vice versa).
+#
+# Pipeline shape:
+#
+#   1. validate-version
+#         |
+#         +---> test-backend (unit + integration, ~4 min)
+#         +---> pack-nuget   (build + pack → nupkg artifact)
+#         +---> build-docker (build + push :candidate-<run-id>)
+#         +---> build-docs   (VitePress build → docs.zip artifact)
+#                       |
+#                  release-gate (sync — all above green)
+#                       |
+#         +---> publish-nuget  (download nupkg → nuget.org)
+#         +---> publish-docker (pull :candidate → retag release tags → push)
+#                       |
+#                  deploy-docs (download docs.zip → Shelf)
+#
+# Why a candidate tag for Docker: building once and pushing to a
+# transient `:candidate-<run-id>` GHCR tag means the image is provably
+# what we tested by the time publish-docker re-tags it. No rebuild,
+# no artifact-tar dance. The candidate tag is left behind for forensic
+# value — set a GHCR retention rule on `candidate-*` if cleanup matters.
+#
+# Iterative workflows (manual workflow_dispatch) live elsewhere and are
+# unchanged by this consolidation:
+#   - cd-deploy-staging.yml       — staging Docker push during dev
+#   - cd-publish-nuget-prerelease.yml — prerelease NuGet for client-lib
+#   - cd-deploy-docs.yml          — editorial doc deploy between releases
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: cd-release-${{ github.event.release.id }}
+  cancel-in-progress: false
+
+env:
+  CANDIDATE_TAG: candidate-${{ github.run_id }}
+
+jobs:
+  validate-version:
+    name: Validate & Extract Version
+    if: github.event.release.target_commitish == 'develop'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+      docs-version: ${{ steps.version.outputs.DOCS_VERSION }}
+    steps:
+      - name: Extract and validate release version
+        id: version
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "Release tag: $TAG"
+
+          if [[ ! "$TAG" =~ ^v[0-9] ]]; then
+            echo "::error ::Tag must start with 'v' followed by version (e.g. v0.2.0)"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error ::Invalid version format. Expected X.Y.Z, got: $VERSION"
+            exit 1
+          fi
+
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          DOCS="v${MAJOR}.${MINOR}"
+
+          echo "Using release version: $VERSION (docs slot: $DOCS)"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "DOCS_VERSION=$DOCS" >> $GITHUB_OUTPUT
+
+  # ─── Phase 1: build + test (parallel) ───────────────────────────────
+
+  test-backend:
+    name: Backend Tests (unit + integration)
+    needs: validate-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore, build & test (full suite)
+        run: |
+          dotnet restore Modgud.slnx
+          dotnet build Modgud.slnx -c Release --no-restore -p:Version=${{ needs.validate-version.outputs.version }}
+          dotnet test Modgud.slnx -c Release --no-build --verbosity normal
+        working-directory: ./src/dotnet
+
+  pack-nuget:
+    name: Pack NuGet (Client.AspNetCore)
+    needs: validate-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj
+        working-directory: ./src/dotnet
+
+      - name: Build (stable)
+        run: |
+          dotnet build Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj \
+            -c Release --no-restore \
+            -p:Version=${{ needs.validate-version.outputs.version }} \
+            -p:ContinuousIntegrationBuild=true
+        working-directory: ./src/dotnet
+
+      - name: Pack (incl. symbols)
+        run: |
+          dotnet pack Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj \
+            -c Release --no-build \
+            -p:Version=${{ needs.validate-version.outputs.version }} \
+            -p:ContinuousIntegrationBuild=true \
+            -o "$GITHUB_WORKSPACE/artifacts"
+        working-directory: ./src/dotnet
+
+      - name: Ensure packages exist
+        run: |
+          shopt -s nullglob
+          files=("$GITHUB_WORKSPACE"/artifacts/*.nupkg "$GITHUB_WORKSPACE"/artifacts/*.snupkg)
+          (( ${#files[@]} )) || { echo "::error ::No packages found in artifacts/"; exit 1; }
+
+      - name: Upload nupkg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages-${{ needs.validate-version.outputs.version }}
+          path: ${{ github.workspace }}/artifacts
+          retention-days: 7
+
+  build-docker:
+    name: Build Docker (push :candidate)
+    needs: validate-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push candidate
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+
+  build-docs:
+    name: Build Docs (VitePress)
+    needs: validate-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        run: corepack enable && corepack prepare pnpm@10.13.1 --activate
+
+      - name: Install dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+
+      - name: Build VitePress
+        working-directory: docs
+        run: pnpm build
+
+      - name: Package
+        run: cd docs/.vitepress/dist && zip -r $GITHUB_WORKSPACE/docs.zip .
+
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-${{ needs.validate-version.outputs.docs-version }}
+          path: ${{ github.workspace }}/docs.zip
+          retention-days: 7
+
+  # ─── Phase 2: release gate (sync point) ─────────────────────────────
+
+  release-gate:
+    name: Release gate (all builds green)
+    needs: [validate-version, test-backend, pack-nuget, build-docker, build-docs]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm all builds + tests succeeded
+        run: |
+          echo "✓ All builds + tests green for ${{ needs.validate-version.outputs.version }}"
+          echo "Proceeding to publish."
+
+  # ─── Phase 3: publish NuGet + Docker (parallel, gated) ──────────────
+
+  publish-nuget:
+    name: Publish NuGet
+    needs: [validate-version, release-gate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download nupkg artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-packages-${{ needs.validate-version.outputs.version }}
+          path: ${{ github.workspace }}/artifacts
+
+      - name: Setup .NET (for `dotnet nuget push`)
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Push to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          shopt -s nullglob
+          for p in "$GITHUB_WORKSPACE"/artifacts/*.nupkg "$GITHUB_WORKSPACE"/artifacts/*.snupkg; do
+            dotnet nuget push "$p" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate
+          done
+
+      - name: Summary
+        run: |
+          {
+            echo "### NuGet — Modgud.Client.AspNetCore ${{ needs.validate-version.outputs.version }}"
+            echo ""
+            echo "**URL:** https://www.nuget.org/packages/Modgud.Client.AspNetCore/${{ needs.validate-version.outputs.version }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-docker:
+    name: Publish Docker (retag candidate → release tags)
+    needs: [validate-version, release-gate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute release tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=production
+            type=semver,pattern={{version}},value=${{ needs.validate-version.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate-version.outputs.version }}
+            type=semver,pattern={{major}},value=${{ needs.validate-version.outputs.version }}
+
+      - name: Retag candidate as release tags and push
+        env:
+          CAND: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          docker pull "$CAND"
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            echo "Tagging $CAND → $tag"
+            docker tag "$CAND" "$tag"
+            docker push "$tag"
+          done <<< "$TAGS"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Docker — ${{ needs.validate-version.outputs.version }}"
+            echo ""
+            echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate-version.outputs.version }}\`"
+            echo "**Public tags:** latest, production, v${{ needs.validate-version.outputs.version }}, v<major>.<minor>, v<major>"
+            echo "**Build candidate (forensic):** \`${{ env.CANDIDATE_TAG }}\` — set a GHCR retention rule on \`candidate-*\` to auto-clean."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ─── Phase 4: deploy docs (last) ────────────────────────────────────
+
+  deploy-docs:
+    name: Deploy Docs
+    needs: [validate-version, publish-nuget, publish-docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download docs artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-${{ needs.validate-version.outputs.docs-version }}
+          path: ${{ github.workspace }}
+
+      - name: Upload to Shelf
+        env:
+          KEY: ${{ secrets.SHELF_API_KEY }}
+          URL: ${{ secrets.SHELF_BASE_URL }}
+          VER: ${{ needs.validate-version.outputs.docs-version }}
+        run: |
+          echo "Deploying modgud docs $VER to $URL"
+          curl -f -X POST \
+            -H "Authorization: Bearer $KEY" \
+            -H "Content-Type: application/zip" \
+            --data-binary @$GITHUB_WORKSPACE/docs.zip \
+            "${URL}/_api/products/modgud/versions/${VER}"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Docs — Modgud ${{ needs.validate-version.outputs.docs-version }}"
+            echo ""
+            echo "**URL:** ${{ secrets.SHELF_BASE_URL }}/modgud/${{ needs.validate-version.outputs.docs-version }}/"
+          } >> "$GITHUB_STEP_SUMMARY"
