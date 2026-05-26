@@ -110,6 +110,7 @@ export const baseConfig = {
             { text: 'Auto-Membership', link: '/concepts/auto-membership' },
             { text: 'ABAC and the IAM boundary', link: '/concepts/abac' },
             { text: 'OAuth & OIDC', link: '/concepts/oauth' },
+            { text: 'Dynamic Client Registration', link: '/concepts/dynamic-client-registration' },
             { text: 'Sessions & Tokens', link: '/concepts/tokens' },
           ],
         },

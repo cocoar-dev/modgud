@@ -70,6 +70,24 @@ input-constrained appliances. The client polls
 device. Endpoint shape + verification UI documented in
 [Reference → OAuth API](/reference/oauth-api).
 
+## Dynamic Client Registration (DCR)
+
+In addition to admin-created clients, Modgud supports
+[**Dynamic Client Registration**](/concepts/dynamic-client-registration)
+(RFC 7591) — software registers itself against the IdP without an
+administrator pre-provisioning it. This is the protocol path MCP
+agents use to attach to MCP servers without per-agent onboarding.
+
+DCR-registered clients are constrained to public PKCE +
+Authorization-Code/Refresh-Token only — no `client_credentials`, no
+secrets, no implicit/hybrid flows. The feature is **off by default**
+on every realm; turning it on is a triple opt-in (realm master +
+per-API + per-scope). See the
+[concept page](/concepts/dynamic-client-registration) for the design
+rationale and the
+[admin setup guide](/admin/dynamic-client-registration) for the
+operational checklist.
+
 ::: warning No Implicit, no ROPC
 modgud rejects Implicit Flow and Resource Owner Password
 Credentials. Both are considered insecure — OAuth 2.1 deprecates them.
