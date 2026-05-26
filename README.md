@@ -62,9 +62,9 @@ emission, full 2FA spectrum, GDPR self-service.
 is the canonical view of what's shipped and what's coming next — it
 gets revised when something lands.
 
-Single-maintainer, alongside a day job. Response times are in days,
-not hours; see [CONTRIBUTING.md](./CONTRIBUTING.md) for the working
-agreement.
+Built by [COCOAR e.U.](https://cocoar.dev). See
+[CONTRIBUTING.md](./CONTRIBUTING.md) for how PRs and issues are
+handled.
 
 ## Build it yourself
 
@@ -92,7 +92,7 @@ the walkthrough.
 PRs welcome for typos and small fixes — for anything bigger, please
 open a [Discussion](https://github.com/cocoar-dev/modgud/discussions)
 first. The [Contributing guide](./CONTRIBUTING.md) has the full
-ground rules including the solo-maintainer realities.
+ground rules.
 
 Security vulnerabilities **do not** go through the public issue
 tracker — see [SECURITY.md](./SECURITY.md) for the private channel.
@@ -108,6 +108,5 @@ she challenged every traveler with the same question an IdP asks:
 
 Licensed under the [Apache License, Version 2.0](./LICENSE).
 
-Copyright © 2025–2026 [COCOAR e.U.](https://cocoar.dev) — built
-solo by [@windischb](https://github.com/windischb) in Vienna,
+Copyright © 2025–2026 [COCOAR e.U.](https://cocoar.dev), Vienna,
 Austria.

@@ -73,8 +73,8 @@ ask for our public key in the first message if you want to use it.
 | High (CVSS 7.0–8.9) fix | within 30 days |
 | Medium / Low | next release cycle |
 
-Solo-maintainer reality: response is best-effort alongside a day job,
-not 24/7. Please don't take silence as dismissal — if you haven't
+Response is best-effort — we triage as fast as we can but don't run
+a 24/7 SOC. Please don't take silence as dismissal: if you haven't
 heard back within the acknowledgement window, send a one-line ping.
 
 ## Safe-harbor

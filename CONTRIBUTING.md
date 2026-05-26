@@ -3,25 +3,21 @@
 Thanks for being here. A few things up front so we're on the same
 page.
 
-## Solo-maintainer reality
+## Working with us
 
-Modgud is maintained by one person ([@windischb](https://github.com/windischb))
-alongside a day job. That shapes everything below:
+Modgud is built by [COCOAR e.U.](https://cocoar.dev). PRs and issues
+are welcome — we triage as fast as we can. If something stalls,
+ping the issue/PR once after a week.
 
-- **Response times are in days, not hours.** Silence isn't dismissal
-  — please ping the issue/PR once if a week has passed.
 - **Small PRs (typos, broken links, small bug fixes) land fast.**
   Open them directly.
 - **For anything bigger (new features, refactors, new dependencies):
   open a [Discussion](https://github.com/cocoar-dev/modgud/discussions)
-  first.** "Would you accept a PR for X?" gets a quick answer; a
-  surprise 2000-line PR for a feature I won't merge gets nobody what
-  they want.
-- **Out-of-scope features (SAML, LDAP, day-one HA, compliance certs)
-  won't land.** The [Roadmap → Sizing reality check](./docs/roadmap.md#sizing-reality-check)
-  has the rationale and points at mature alternatives. The
-  [enterprise-feature issue template](./.github/ISSUE_TEMPLATE/enterprise_feature.yml)
-  exists so the auto-close trail is on the record.
+  first.** "Would you accept a PR for X?" gets a quicker answer
+  than a surprise 2000-line PR.
+- **For features that aren't on the [Roadmap](./docs/roadmap.md) yet
+  (SAML, LDAP, SCIM, multi-instance HA, …):** still open them as
+  feature requests. We track demand and decide priority from there.
 
 ## Setting up locally
 
@@ -73,7 +69,7 @@ Sorted by "open a PR directly" → "open a Discussion first":
 7. **New dependencies** — Discussion first. Modgud's stack is
    intentionally narrow.
 
-## How to write a PR I can merge quickly
+## How to write a PR we can merge quickly
 
 - **One logical change per PR.** A "fix bug X" PR that also drive-by
   reformats 20 files makes review slow.
@@ -113,8 +109,7 @@ see [SECURITY.md](./SECURITY.md) for the private channel.
 ## Code of Conduct
 
 Be kind. The full text is in [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md).
-Reports go to `bwi@cocoar.dev`. I read everything, response best-
-effort, I reserve the right to lock issues that go off the rails.
+Reports go to `bwi@cocoar.dev`.
 
 ## License
 
