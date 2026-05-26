@@ -1,20 +1,17 @@
 name: Feature request
-description: A capability Modgud doesn't have yet that you'd like it to. Read the Roadmap first.
+description: A capability you'd like Modgud to have.
 title: "[Feature] "
 labels: ["enhancement", "triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        ## Before you open this
-        - Skim the [Roadmap](https://github.com/cocoar-dev/modgud/blob/develop/docs/roadmap.md)
-          — your idea might already be planned, or intentionally out of
-          scope.
-        - If it's **SAML, LDAP, day-one HA, or compliance certs**:
-          please use the "Enterprise feature" template instead.
-        - Modgud is solo-maintained. Big features are unlikely to land
-          quickly — a Discussion ("would you accept a PR for X?") is
-          often a better first step than an Issue.
+        Thanks for the suggestion. The [Roadmap](https://github.com/cocoar-dev/modgud/blob/develop/docs/roadmap.md)
+        shows what's coming next — your idea might already be tracked
+        there. If it's a bigger piece of work, opening a
+        [Discussion](https://github.com/cocoar-dev/modgud/discussions)
+        first is often the fastest path: "would you accept a PR for X?"
+        gets a quicker answer than a surprise PR.
 
   - type: textarea
     id: problem
@@ -46,7 +43,7 @@ body:
     attributes:
       label: Alternatives considered
       description: |
-        Workarounds you tried or rejected. Other IdPs that do this
+        Workarounds you tried or rejected. Other tools that solve this
         well, if any.
     validations:
       required: false
@@ -56,7 +53,5 @@ body:
     attributes:
       label: Pre-submit checks
       options:
-        - label: I read the [Roadmap](https://github.com/cocoar-dev/modgud/blob/develop/docs/roadmap.md) — this feature isn't already planned or intentionally out of scope
-          required: true
         - label: I searched existing issues and discussions
           required: true
