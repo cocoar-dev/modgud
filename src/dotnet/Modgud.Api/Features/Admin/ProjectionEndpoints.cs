@@ -195,7 +195,7 @@ public static class ProjectionEndpoints
                 Title: "Principal projection sync",
                 Description: "Every ApplicationUser must have a matching Person Principal; every Group must have a matching Group Principal. Drift here means the inline Principal projection diverged from its source documents — usually a stale projection that a rebuild can fix.",
                 Status: principalSyncOk ? "OK" : "ISSUES_FOUND",
-                DurationMs: checkWatch.ElapsedMilliseconds,
+                DurationMs: Math.Round(checkWatch.Elapsed.TotalMilliseconds, 2),
                 Summary: principalSyncOk
                     ? $"{appUserIds.Count}/{appUserIds.Count} ApplicationUsers ↔ Person principals, {groupIds.Count}/{groupIds.Count} Groups ↔ Group principals"
                     : $"{missingPerson.Count + orphanPerson.Count} person drift, {missingGroup.Count + orphanGroup.Count} group drift",
@@ -219,7 +219,7 @@ public static class ProjectionEndpoints
                 Title: "Dangling member references",
                 Description: "Every entry in a group's MemberIds must resolve to a live Principal. Dangling references happen when a member was deleted without first being removed from the groups they were in — the group would silently grant nothing for those ids and the projection-pruning is a manual catch-up.",
                 Status: danglingMembers.Count == 0 ? "OK" : "ISSUES_FOUND",
-                DurationMs: checkWatch.ElapsedMilliseconds,
+                DurationMs: Math.Round(checkWatch.Elapsed.TotalMilliseconds, 2),
                 Summary: danglingMembers.Count == 0
                     ? $"All MemberIds across {groups.Count} group(s) resolve"
                     : $"{danglingMembers.Count} dangling reference(s) found",
@@ -237,7 +237,7 @@ public static class ProjectionEndpoints
                 Title: "Dangling role references",
                 Description: "Every entry in a group's RoleIds must resolve to a live PermissionRole. Dangling references happen when a role was deleted while still bound to one or more groups — affected groups silently grant nothing for those role ids.",
                 Status: danglingRoleRefs.Count == 0 ? "OK" : "ISSUES_FOUND",
-                DurationMs: checkWatch.ElapsedMilliseconds,
+                DurationMs: Math.Round(checkWatch.Elapsed.TotalMilliseconds, 2),
                 Summary: danglingRoleRefs.Count == 0
                     ? $"All RoleIds across {groups.Count} group(s) resolve"
                     : $"{danglingRoleRefs.Count} dangling reference(s) found",
@@ -251,7 +251,7 @@ public static class ProjectionEndpoints
                 Title: "Nested-group cycles",
                 Description: "Group membership may nest one level deep or more, but never form a cycle (A → B → A). Update commands reject cycle-introducing edits, so any cycle found here was introduced out-of-band — direct DB edits, broken migration, or a bug in older code.",
                 Status: cycles.Count == 0 ? "OK" : "ISSUES_FOUND",
-                DurationMs: checkWatch.ElapsedMilliseconds,
+                DurationMs: Math.Round(checkWatch.Elapsed.TotalMilliseconds, 2),
                 Summary: cycles.Count == 0
                     ? $"No cycles in the group-member graph across {groups.Count} group(s)"
                     : $"{cycles.Count} cycle(s) detected",
@@ -300,7 +300,7 @@ public static class ProjectionEndpoints
                 Title: "Auto-group membership drift",
                 Description: "Auto-groups derive their membership from a TypeScript predicate. This check re-evaluates each predicate read-only and compares the result to the persisted MemberIds. Drift means the projection's recalculator missed a relevant event — usually transient (will self-heal on the next member change) but can surface a broken script if it persists.",
                 Status: autoDrift.Count == 0 ? "OK" : "ISSUES_FOUND",
-                DurationMs: checkWatch.ElapsedMilliseconds,
+                DurationMs: Math.Round(checkWatch.Elapsed.TotalMilliseconds, 2),
                 Summary: autoGroups.Count == 0
                     ? "No auto-groups configured — nothing to drift"
                     : (autoDrift.Count == 0
@@ -315,7 +315,7 @@ public static class ProjectionEndpoints
             {
                 Status = allOk ? "OK" : "ISSUES_FOUND",
                 RunAt = DateTime.UtcNow,
-                DurationTotalMs = totalWatch.ElapsedMilliseconds,
+                DurationTotalMs = Math.Round(totalWatch.Elapsed.TotalMilliseconds, 2),
                 Totals = new
                 {
                     ApplicationUsers = applicationUsers.Count,
@@ -384,7 +384,7 @@ internal record CheckResult(
     string Title,
     string Description,
     string Status,
-    long DurationMs,
+    double DurationMs,
     string Summary,
     object Issues);
 

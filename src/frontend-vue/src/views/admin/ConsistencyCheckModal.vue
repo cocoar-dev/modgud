@@ -39,6 +39,9 @@ interface CheckBlock {
   Title: string
   Description: string
   Status: 'OK' | 'ISSUES_FOUND'
+  // Sub-millisecond precision — checks on dev realms typically clock at
+  // 0.1–2 ms, displaying a `long` rounded-to-int was reading as "0 ms"
+  // for every check and looked like the button did nothing.
   DurationMs: number
   Summary: string
   // Per-check shape — anything we read is guarded with ?. fallback below.
@@ -103,6 +106,26 @@ const runAtLocal = computed(() => {
   return new Date(report.value.RunAt).toLocaleString()
 })
 
+// Pretty-print timing. Backend rounds to 2 decimals via
+// Math.Round(elapsed.TotalMilliseconds, 2). Display rules:
+//   < 1 ms      → "< 1 ms" (sub-ms is noise to humans — the precision
+//                 is honest, but reading 0.04 / 0.07 / 0.12 ms per
+//                 check is exhaust, not signal)
+//   < 10 ms     → 1 decimal: "1.7 ms"
+//   ≥ 10 ms    → whole number: "24 ms"
+//
+// The total at the top of the report uses the same formatter, so a
+// 0.4 ms total still reads as "< 1 ms" — consistent with the per-check
+// rule. If the total is genuinely sub-ms the work was indeed
+// near-zero (tiny dev realm), and "< 1 ms" beats "0.4 ms" for
+// scannability.
+function formatMs(ms: number): string {
+  if (!Number.isFinite(ms)) return '—'
+  if (ms < 1) return '< 1 ms'
+  if (ms < 10) return `${ms.toFixed(1)} ms`
+  return `${Math.round(ms)} ms`
+}
+
 // ─── Narrow-type helpers for the template ──────────────────────────
 // Each check carries a unique `Issues` shape; cast-narrowing keeps the
 // template tight without `as` clutter inline.
@@ -123,6 +146,16 @@ function asCycles(c: CheckBlock) {
 }
 function asAutoDrift(c: CheckBlock) {
   return (c.Issues.Items as AutoDriftIssue[]) ?? []
+}
+
+// Backend ships check titles in English (its convention — no locale
+// negotiation anywhere). For the well-known check ids we look up a
+// FE-side translation, falling back to the backend's title when an
+// id we don't know shows up (forward-compat). Descriptions + summaries
+// stay backend-supplied — long, technical, data-driven; admins doing
+// maintenance read English fine.
+function localizedTitle(check: CheckBlock): string {
+  return t(`admin.consistency.checks.${check.Id}.title`, {}, check.Title)
 }
 
 onMounted(runCheck)
@@ -181,7 +214,7 @@ onMounted(runCheck)
             </div>
             <div class="text-xs text-surface-600 mt-1">
               {{ report.Checks.length }} {{ t('admin.consistency.checksRun', {}, 'checks run') }}
-              · {{ report.DurationTotalMs }} ms
+              · {{ formatMs(report.DurationTotalMs) }}
               · {{ runAtLocal }}
             </div>
           </div>
@@ -233,13 +266,13 @@ onMounted(runCheck)
               />
               <div class="flex-1 min-w-0">
                 <div class="flex items-baseline gap-2 flex-wrap">
-                  <span class="font-semibold text-surface-900">{{ check.Title }}</span>
+                  <span class="font-semibold text-surface-900">{{ localizedTitle(check) }}</span>
                   <CoarTag size="s" :variant="check.Status === 'OK' ? 'success' : 'warning'">
                     {{ check.Status === 'OK'
                       ? t('admin.consistency.tagOk', {}, 'OK')
                       : t('admin.consistency.tagIssues', {}, 'Issues') }}
                   </CoarTag>
-                  <span class="text-xs text-surface-500 ml-auto">{{ check.DurationMs }} ms</span>
+                  <span class="text-xs text-surface-500 ml-auto">{{ formatMs(check.DurationMs) }}</span>
                 </div>
                 <div class="text-sm text-surface-700 mt-0.5">{{ check.Summary }}</div>
               </div>
