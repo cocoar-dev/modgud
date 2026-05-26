@@ -1,4 +1,5 @@
 using Modgud.Authorization.AspNetCore;
+using Modgud.Authorization.Membership;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Projections;
 using Marten;
@@ -119,6 +120,7 @@ public static class ProjectionEndpoints
         //   E. Auto-group membership drift
         group.MapGet("consistency-check", async (
             IQuerySession session,
+            IMembershipEvaluator membershipEvaluator,
             CancellationToken ct) =>
         {
             var applicationUsers = await session.Query<ApplicationUser>()
@@ -171,13 +173,71 @@ public static class ProjectionEndpoints
             // D. Nested-group cycles
             var cycles = GroupCycleDetector.DetectCycles(groups);
 
+            // E. Auto-group membership drift — for every auto-group with a script,
+            // recompute the expected member set in-memory (no event append) and
+            // compare against the persisted MemberIds. Both directions reported:
+            // missing (expected but not stored) and extra (stored but no longer
+            // matched). Script-compile failures surface as ScriptError so the
+            // admin can fix the predicate; the recalc cron will re-fail on its
+            // own clock, this just lets ops see the drift early.
+            var autoGroupDrift = new List<object>();
+            var autoGroups = groups.Where(g =>
+                g.MembershipMode == MembershipMode.Auto &&
+                !string.IsNullOrWhiteSpace(g.CompiledMembershipScript));
+
+            foreach (var ag in autoGroups)
+            {
+                try
+                {
+                    var predicate = membershipEvaluator.BuildPredicate<Principal>(ag.CompiledMembershipScript!, ct);
+                    var groupId = ag.Id;
+                    var expectedMembers = await session.Query<Principal>()
+                        .Where(p => !p.IsDeleted && p.Id != groupId)
+                        .Where(predicate)
+                        .Select(p => p.Id)
+                        .ToListAsync(ct);
+
+                    var expectedSet = expectedMembers.ToHashSet();
+                    var actualSet = ag.MemberIds.ToHashSet();
+                    var missing = expectedSet.Except(actualSet).ToList();
+                    var extra = actualSet.Except(expectedSet).ToList();
+
+                    if (missing.Count > 0 || extra.Count > 0)
+                    {
+                        autoGroupDrift.Add(new
+                        {
+                            GroupId = ag.Id,
+                            GroupName = ag.Name,
+                            ScriptError = false,
+                            MissingMembers = missing,
+                            ExtraMembers = extra,
+                        });
+                    }
+                }
+                catch (Exception)
+                {
+                    // Predicate compile/translate failed. Don't blow up the whole
+                    // consistency check — surface the script as broken so the admin
+                    // can navigate to the group and fix it.
+                    autoGroupDrift.Add(new
+                    {
+                        GroupId = ag.Id,
+                        GroupName = ag.Name,
+                        ScriptError = true,
+                        MissingMembers = new List<Guid>(),
+                        ExtraMembers = new List<Guid>(),
+                    });
+                }
+            }
+
             var ok = missingPersonPrincipals.Count == 0
                   && orphanPersonPrincipals.Count == 0
                   && missingGroupPrincipals.Count == 0
                   && orphanGroupPrincipals.Count == 0
                   && danglingMembers.Count == 0
                   && danglingRoles.Count == 0
-                  && cycles.Count == 0;
+                  && cycles.Count == 0
+                  && autoGroupDrift.Count == 0;
 
             return Results.Ok(new
             {
@@ -185,7 +245,7 @@ public static class ProjectionEndpoints
                 Totals = new
                 {
                     ApplicationUsers = applicationUsers.Count,
-                    Groups = groups.Count,
+                    AuthorizationGroups = groups.Count,
                     PrincipalsTotal = principals.Count,
                     PrincipalsPerson = principals.Count(p => p is Person),
                     PrincipalsGroup = principals.Count(p => p is Group),
@@ -204,6 +264,7 @@ public static class ProjectionEndpoints
                     RolesInGroups = danglingRoles,
                 },
                 GroupCycles = cycles,
+                AutoGroupDrift = autoGroupDrift,
             });
         })
         .WithName("AdminProjections_ConsistencyCheck");

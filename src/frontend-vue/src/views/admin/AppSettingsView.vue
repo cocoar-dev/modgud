@@ -46,6 +46,9 @@ interface AutoGroupDrift {
 }
 interface DanglingRef { GroupId?: string; GroupName?: string; MemberId?: string; RoleId?: string; PrincipalId?: string; Label?: string | null }
 
+// All collections are optional + defaulted-to-empty in the computed
+// helpers below so a backend-schema mismatch (forgotten field, version
+// drift) silently degrades instead of blanking the whole page.
 interface ConsistencyReport {
   Status: 'OK' | 'ISSUES_FOUND'
   Totals: {
@@ -56,18 +59,18 @@ interface ConsistencyReport {
     PrincipalsGroup: number
     Roles: number
   }
-  PrincipalValidation: {
-    MissingPerson: string[]
-    OrphanPerson: string[]
-    MissingGroup: string[]
-    OrphanGroup: string[]
+  PrincipalValidation?: {
+    MissingPerson?: string[]
+    OrphanPerson?: string[]
+    MissingGroup?: string[]
+    OrphanGroup?: string[]
   }
-  DanglingReferences: {
-    MembersInGroups: DanglingRef[]
-    RolesInGroups: DanglingRef[]
+  DanglingReferences?: {
+    MembersInGroups?: DanglingRef[]
+    RolesInGroups?: DanglingRef[]
   }
-  GroupCycles: { Groups: GroupRef[] }[]
-  AutoGroupDrift: AutoGroupDrift[]
+  GroupCycles?: { Groups: GroupRef[] }[]
+  AutoGroupDrift?: AutoGroupDrift[]
 }
 
 const checking = ref(false)
@@ -88,14 +91,16 @@ async function runConsistencyCheck() {
 const principalIssueCount = computed(() => {
   const pv = checkReport.value?.PrincipalValidation
   if (!pv) return 0
-  return pv.MissingPerson.length + pv.OrphanPerson.length
-       + pv.MissingGroup.length + pv.OrphanGroup.length
+  return (pv.MissingPerson?.length ?? 0)
+       + (pv.OrphanPerson?.length ?? 0)
+       + (pv.MissingGroup?.length ?? 0)
+       + (pv.OrphanGroup?.length ?? 0)
 })
 
 const danglingIssueCount = computed(() => {
   const d = checkReport.value?.DanglingReferences
   if (!d) return 0
-  return d.MembersInGroups.length + d.RolesInGroups.length
+  return (d.MembersInGroups?.length ?? 0) + (d.RolesInGroups?.length ?? 0)
 })
 </script>
 
@@ -145,21 +150,21 @@ const danglingIssueCount = computed(() => {
                   {{ t('admin.settings.consistencyPrincipalDrift', {}, 'PrincipalValidation drift') }}:
                 </p>
                 <div class="rounded border border-red-200 bg-white p-3 text-xs space-y-1">
-                  <div v-if="checkReport.PrincipalValidation.MissingPerson.length > 0">
-                    <strong>Missing Person entries</strong> ({{ checkReport.PrincipalValidation.MissingPerson.length }}):
-                    {{ checkReport.PrincipalValidation.MissingPerson.join(', ') }}
+                  <div v-if="checkReport.PrincipalValidation?.MissingPerson?.length ?? 0 > 0">
+                    <strong>Missing Person entries</strong> ({{ checkReport.PrincipalValidation?.MissingPerson?.length ?? 0 }}):
+                    {{ (checkReport.PrincipalValidation?.MissingPerson ?? []).join(', ') }}
                   </div>
-                  <div v-if="checkReport.PrincipalValidation.OrphanPerson.length > 0">
-                    <strong>Orphan Person entries</strong> ({{ checkReport.PrincipalValidation.OrphanPerson.length }}):
-                    {{ checkReport.PrincipalValidation.OrphanPerson.join(', ') }}
+                  <div v-if="checkReport.PrincipalValidation?.OrphanPerson?.length ?? 0 > 0">
+                    <strong>Orphan Person entries</strong> ({{ checkReport.PrincipalValidation?.OrphanPerson?.length ?? 0 }}):
+                    {{ (checkReport.PrincipalValidation?.OrphanPerson ?? []).join(', ') }}
                   </div>
-                  <div v-if="checkReport.PrincipalValidation.MissingGroup.length > 0">
-                    <strong>Missing Group entries</strong> ({{ checkReport.PrincipalValidation.MissingGroup.length }}):
-                    {{ checkReport.PrincipalValidation.MissingGroup.join(', ') }}
+                  <div v-if="checkReport.PrincipalValidation?.MissingGroup?.length ?? 0 > 0">
+                    <strong>Missing Group entries</strong> ({{ checkReport.PrincipalValidation?.MissingGroup?.length ?? 0 }}):
+                    {{ (checkReport.PrincipalValidation?.MissingGroup ?? []).join(', ') }}
                   </div>
-                  <div v-if="checkReport.PrincipalValidation.OrphanGroup.length > 0">
-                    <strong>Orphan Group entries</strong> ({{ checkReport.PrincipalValidation.OrphanGroup.length }}):
-                    {{ checkReport.PrincipalValidation.OrphanGroup.join(', ') }}
+                  <div v-if="checkReport.PrincipalValidation?.OrphanGroup?.length ?? 0 > 0">
+                    <strong>Orphan Group entries</strong> ({{ checkReport.PrincipalValidation?.OrphanGroup?.length ?? 0 }}):
+                    {{ (checkReport.PrincipalValidation?.OrphanGroup ?? []).join(', ') }}
                   </div>
                 </div>
               </div>
@@ -170,18 +175,18 @@ const danglingIssueCount = computed(() => {
                   {{ t('admin.settings.consistencyDanglingRefs', {}, 'Dangling references') }}:
                 </p>
                 <div class="rounded border border-red-200 bg-white p-3 text-xs space-y-2">
-                  <div v-if="checkReport.DanglingReferences.MembersInGroups.length > 0">
-                    <strong>Members in groups</strong> ({{ checkReport.DanglingReferences.MembersInGroups.length }}):
+                  <div v-if="checkReport.DanglingReferences?.MembersInGroups?.length ?? 0 > 0">
+                    <strong>Members in groups</strong> ({{ checkReport.DanglingReferences?.MembersInGroups?.length ?? 0 }}):
                     <ul class="ml-4 list-disc">
-                      <li v-for="(m, i) in checkReport.DanglingReferences.MembersInGroups" :key="i">
+                      <li v-for="(m, i) in (checkReport.DanglingReferences?.MembersInGroups ?? [])" :key="i">
                         {{ m.GroupName }} → {{ m.MemberId }}
                       </li>
                     </ul>
                   </div>
-                  <div v-if="checkReport.DanglingReferences.RolesInGroups.length > 0">
-                    <strong>Roles in groups</strong> ({{ checkReport.DanglingReferences.RolesInGroups.length }}):
+                  <div v-if="checkReport.DanglingReferences?.RolesInGroups?.length ?? 0 > 0">
+                    <strong>Roles in groups</strong> ({{ checkReport.DanglingReferences?.RolesInGroups?.length ?? 0 }}):
                     <ul class="ml-4 list-disc">
-                      <li v-for="(r, i) in checkReport.DanglingReferences.RolesInGroups" :key="i">
+                      <li v-for="(r, i) in (checkReport.DanglingReferences?.RolesInGroups ?? [])" :key="i">
                         {{ r.GroupName }} → {{ r.RoleId }}
                       </li>
                     </ul>
@@ -190,22 +195,22 @@ const danglingIssueCount = computed(() => {
               </div>
 
               <!-- Cycles -->
-              <div v-if="checkReport.GroupCycles.length > 0" class="space-y-2">
+              <div v-if="checkReport.GroupCycles?.length ?? 0 > 0" class="space-y-2">
                 <p class="text-sm font-medium text-red-800">
                   {{ t('admin.settings.consistencyCycles', {}, 'Group cycles') }}:
                 </p>
-                <div v-for="(c, i) in checkReport.GroupCycles" :key="i"
+                <div v-for="(c, i) in (checkReport.GroupCycles ?? [])" :key="i"
                   class="rounded border border-red-200 bg-white p-3 text-xs">
                   {{ c.Groups.map(g => g.Name).join(' → ') }}
                 </div>
               </div>
 
               <!-- Auto-group drift -->
-              <div v-if="checkReport.AutoGroupDrift.length > 0" class="space-y-2">
+              <div v-if="checkReport.AutoGroupDrift?.length ?? 0 > 0" class="space-y-2">
                 <p class="text-sm font-medium text-red-800">
                   {{ t('admin.settings.consistencyAutoDrift', {}, 'Auto-group membership drift') }}:
                 </p>
-                <div v-for="d in checkReport.AutoGroupDrift" :key="d.GroupId"
+                <div v-for="d in (checkReport.AutoGroupDrift ?? [])" :key="d.GroupId"
                   class="rounded border border-red-200 bg-white p-3 text-xs space-y-1">
                   <div class="font-medium">{{ d.GroupName }}</div>
                   <div v-if="d.ScriptError" class="text-red-700">Script error — check group configuration</div>
