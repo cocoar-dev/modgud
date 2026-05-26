@@ -1,6 +1,6 @@
 /**
  * DTOs for the /admin/jobs admin surface — Quartz-driven scheduled jobs
- * registered by the backend at startup. The shape mirrors AppBase v2.1.0's
+ * registered by the backend at startup. Mirrors the backend
  * IJobsService.JobOverviewDto + JobRunHistoryDto + JobUpdateDto.
  */
 export interface JobParameterField {

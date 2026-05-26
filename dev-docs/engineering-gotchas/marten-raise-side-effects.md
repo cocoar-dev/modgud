@@ -7,9 +7,8 @@ changes. The pattern is small, works, and tests cleanly — but the
 Marten library hides two silent traps that anybody extending this
 pattern is likely to hit, so they are documented here as a tripwire.
 
-Captured during the Critter-Stack-2026 backport from
-[Cocoar.AppBase v2.0.0](https://github.com/cocoar-dev/Cocoar.AppBase/blob/main/docs/changelog/v2.0.0.md) —
-where they cost hours of debugging in a sibling project.
+Captured during the Critter-Stack-2026 backport — both traps cost
+hours of debugging the first time they bit.
 
 ## Gotcha 1 — Inline projections silently swallow `RaiseSideEffects`
 
@@ -71,10 +70,9 @@ The mitigation is the same shape every time:
    `rebuild-projections` and the admin endpoint), not as a
    developer-remembers-to-run-it manual step.
 
-The AppBase showcase keeps a `TodoLabelInitHandler` that demonstrates
-this compensation pattern — Modgud has no equivalent today
-because nothing needs it, but the shape is the precedent if/when we
-add a side-effect that targets a persistent model.
+Modgud has no equivalent today because nothing needs it, but the
+shape above is the precedent if/when we add a side-effect that
+targets a persistent model.
 
 ## Where this is enforced
 
@@ -92,5 +90,4 @@ add a side-effect that targets a persistent model.
 
 ## See also
 
-- AppBase v2.0.0 changelog entry — [Document `RaiseSideEffects` gotchas in event-sourcing.md](https://github.com/cocoar-dev/Cocoar.AppBase/blob/main/docs/changelog/v2.0.0.md)
 - Marten docs — [Side Effects](https://martendb.io/events/projections/event-projections.html#side-effects)

@@ -48,10 +48,10 @@ public class ResourceRegistryTests
         [Fact]
         public void Returns_false_when_app_does_not_match()
         {
-            // Resource "user" exists under modgud but not under timetodo —
+            // Resource "user" exists under modgud but not under acme-tasks —
             // app-scoping must keep them apart.
             var registry = NewRegistryWith((A, "user", ["read"]));
-            Assert.False(registry.IsValidPermission("timetodo:user:read"));
+            Assert.False(registry.IsValidPermission("acme-tasks:user:read"));
         }
 
         [Theory]
@@ -106,7 +106,7 @@ public class ResourceRegistryTests
         public void Returns_false_for_unknown_app()
         {
             var registry = NewRegistryWith((A, "user", ["read"]));
-            Assert.False(registry.IsValidAction("timetodo", "user", "read"));
+            Assert.False(registry.IsValidAction("acme-tasks", "user", "read"));
         }
     }
 
@@ -125,7 +125,7 @@ public class ResourceRegistryTests
             var registry = NewRegistryWith(
                 (A, "user", ["read", "write"]),
                 (A, "role", ["read"]),
-                ("timetodo", "todo", ["read"]));
+                ("acme-tasks", "todo", ["read"]));
 
             var all = registry.GetAllPermissions();
 
@@ -133,7 +133,7 @@ public class ResourceRegistryTests
             Assert.Contains($"{A}:user:read", all);
             Assert.Contains($"{A}:user:write", all);
             Assert.Contains($"{A}:role:read", all);
-            Assert.Contains("timetodo:todo:read", all);
+            Assert.Contains("acme-tasks:todo:read", all);
         }
 
         [Fact]
@@ -187,7 +187,7 @@ public class ResourceRegistryTests
         public void Returns_empty_list_for_unknown_app_even_with_known_resource()
         {
             var registry = NewRegistryWith((A, "user", ["read"]));
-            Assert.Empty(registry.GetActionsForResource("timetodo", "user"));
+            Assert.Empty(registry.GetActionsForResource("acme-tasks", "user"));
         }
     }
 
@@ -207,7 +207,7 @@ public class ResourceRegistryTests
                 (A, "user", ["read"]),
                 (A, "role", ["read"]),
                 (A, "user", ["write"]),       // re-registration
-                ("timetodo", "todo", ["read"])); // different app, must NOT leak
+                ("acme-tasks", "todo", ["read"])); // different app, must NOT leak
 
             var types = registry.GetResourceTypes(A);
 
@@ -233,14 +233,14 @@ public class ResourceRegistryTests
             var registry = NewRegistryWith(
                 (A, "user", ["read"]),
                 (A, "role", ["read"]),
-                ("timetodo", "todo", ["read"]),
-                ("timetodo", "project", ["read"]));
+                ("acme-tasks", "todo", ["read"]),
+                ("acme-tasks", "project", ["read"]));
 
             var apps = registry.GetAppSlugs();
 
             Assert.Equal(2, apps.Count);
             Assert.Contains(A, apps);
-            Assert.Contains("timetodo", apps);
+            Assert.Contains("acme-tasks", apps);
         }
     }
 }

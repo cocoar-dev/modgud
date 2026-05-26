@@ -195,14 +195,14 @@ already in `helpers.ts`).
 ## 11. OAuth Scopes
 
 - ✅ Standard scopes (`openid`, `email`, `profile`, `roles`, `offline_access`) seeded with `AppId = null` (global). `GET /api/admin/oauth/scopes` returns the paginated `{Items: [...]}` shape.
-- ⏳ Create custom scope with `AppId = timetodo` → discoverable on `/.well-known/openid-configuration` — **not yet verified**.
+- ⏳ Create custom scope with `AppId = acme-tasks` → discoverable on `/.well-known/openid-configuration` — **not yet verified**.
 - ⏳ Scope on app A used by client linked only to app B → token endpoint rejects — **not yet verified manually**; covered by `OAuthScopeAggregateTests`.
 - ⏳ App-scoped scopes flagged visually — **not yet verified**.
 
 ## 12. OAuth APIs (Resource Servers)
 
 - ✅ List endpoint returns `{Items: [], TotalCount: 0}` even without pagination params. **F16 fixed** alongside `/oauth/clients`.
-- ⏳ Create RS, link to app `timetodo` — **not yet verified**.
+- ⏳ Create RS, link to app `acme-tasks` — **not yet verified**.
 - ⏳ Move RS to a different app → `resource_access` block switches catalog — **not yet verified**.
 - ⏳ RS without linked App → UserInfo emits no `resource_access` for that audience — **not yet verified**.
 
@@ -253,7 +253,7 @@ already in `helpers.ts`).
 ## 18. OAuth flows (real RP)
 
 All items below need a separate Relying-Party (demo SPA + demo
-backend, a `timetodo`-style integration). The current run only
+backend). The current run only
 exercised the IdP-side endpoints directly.
 
 - ⏳ **Authorization Code + PKCE** end-to-end — **not yet verified**.
@@ -279,16 +279,16 @@ deferred for the manual run.
 ## 21. Permission gating + bypass tiers
 
 - ✅ Default admin user has `Permissions: ["realm:admin"]` per `/api/account/me`. Sees the full sidebar. Phase-1 model live and correct.
-- ⏳ `app-admin-user` (`<app>:admin`) sees only IAM admin, 403 on `timetodo:*` — **not yet verified manually**; integration-tested in `PermissionResolutionTests`.
+- ⏳ `app-admin-user` (`<app>:admin`) sees only IAM admin, 403 on `acme-tasks:*` — **not yet verified manually**; integration-tested in `PermissionResolutionTests`.
 - ⏳ `resource-admin-user` (`<app>:<resource>:admin`) — **not yet verified manually**; integration-tested.
 - ⏳ `read-only-user` (`<app>:<resource>:read`) sees only the gated item — **not yet verified manually**; integration-tested.
 - ⏳ Sidebar visibility matches the backend gate (hidden item also returns 403 by URL) — **not yet verified manually**; the gating logic mirrors backend strings exactly via `auth.store.ts`.
 
 ## 22. Multi-app scenarios
 
-- ✅ App `timetodo` created with no resources, then queryable via `/api/app/lookup` — **partially verified** (the slug is registered, the rest of the cross-app permission scenarios are integration-tested in `PermissionResolutionTests` cases #5/#9/#10).
-- ⏳ Manual end-to-end: same user holds `user:read` in `modgud` AND `todo:write` in `timetodo` simultaneously — **not yet verified**.
-- ⏳ UserInfo's `resource_access[timetodo]` returns the `todo:write` grant — **not yet verified manually**.
+- ✅ App `acme-tasks` created with no resources, then queryable via `/api/app/lookup` — **partially verified** (the slug is registered, the rest of the cross-app permission scenarios are integration-tested in `PermissionResolutionTests` cases #5/#9/#10).
+- ⏳ Manual end-to-end: same user holds `user:read` in `modgud` AND `todo:write` in `acme-tasks` simultaneously — **not yet verified**.
+- ⏳ UserInfo's `resource_access[acme-tasks]` returns the `todo:write` grant — **not yet verified manually**.
 - ⏳ UserInfo emits no `resource_access` block for an unrelated app the user is not bound to — **not yet verified manually**.
 - ⏳ Same role on a group with `BoundTo: []` contributes nothing — **not yet verified manually**.
 
@@ -662,7 +662,7 @@ references to a non-existent surface.
 ## Summary
 
 - **9 sections** fully or substantially exercised: §0 through §2, §6, §7, §8 (group create), §9, §13–§15, §20 (negative path), §23.
-- **6 sections** with at least one positive verification but pending click-through: §3 (grace-period seen), §10–§12 (UI works via AG-Grid even though the API direct hit is broken), §22 (timetodo registered).
+- **6 sections** with at least one positive verification but pending click-through: §3 (grace-period seen), §10–§12 (UI works via AG-Grid even though the API direct hit is broken), §22 (acme-tasks registered).
 - **9 sections** entirely deferred: §4, §5, §11 (custom scope), §17, §18, §19, §21 (manual user-tier setup), §24.
 - **18 findings logged**, of which F1, F2 and F16 are the shipping-blockers; F6, F9, F18 are operationally important; the rest are polish.
 

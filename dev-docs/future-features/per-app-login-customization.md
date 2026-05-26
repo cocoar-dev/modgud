@@ -28,12 +28,12 @@ davon ab wie der User reinkommt:
 | Pattern | Beispiel-URL | Wo erkannt | Setup-Cost |
 |---|---|---|---|
 | **Subdomain** | `event-tree.cocoar.dev/login` | Host-Header | DNS-Eintrag (CNAME auf canonical IdP) + Wildcard-Cert (haben wir) |
-| **Subpath** | `auth.cocoar.dev/app/event-tree/login` | URL-Präfix | Null — eine Code-Route reicht |
-| **Implicit (OAuth-Flow)** | `auth.cocoar.dev/connect/authorize?client_id=event-tree-spa` | `client_id` → OAuthClient.AppIds → App | Nichts — heute schon Daten da |
+| **Subpath** | `auth.example.com/app/event-tree/login` | URL-Präfix | Null — eine Code-Route reicht |
+| **Implicit (OAuth-Flow)** | `auth.example.com/connect/authorize?client_id=event-tree-spa` | `client_id` → OAuthClient.AppIds → App | Nichts — heute schon Daten da |
 
 Der wichtigste Punkt: **keine komplett-getrennten TLDs**. Cookie-SSO
 funktioniert nur wenn alle App-Pfade unter einem gemeinsamen Cookie-Parent
-liegen (z.B. `.cocoar.dev` oder `auth.cocoar.dev`). Echte
+liegen (z.B. `.cocoar.dev` oder `auth.example.com`). Echte
 unabhängige TLDs (`event-tree.com` + `alpha-blog.com`) brechen
 Browser-SSO ohne zusätzlichen Silent-Renewal-Dance — nicht in Scope.
 
@@ -179,7 +179,7 @@ für v1.
 
 **Issuer-Claim bleibt realm-canonical.** Egal über welchen App-Pfad
 der User reinkommt — der ausgestellte Token trägt
-`iss: https://auth.cocoar.dev/` (oder die Realm-Hostname, je nach
+`iss: https://auth.example.com/` (oder die Realm-Hostname, je nach
 Setup). Wäre der Issuer App-spezifisch, würde RS-Token-Validation
 zerbrechen, weil derselbe Realm dann pro App ein anderes
 Discovery-Document publishen müsste. App-Pfad ist **nur Login-UX**,

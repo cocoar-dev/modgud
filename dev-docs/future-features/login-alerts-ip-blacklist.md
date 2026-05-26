@@ -126,19 +126,19 @@ trivial:
   log. Forensic gold dust when an admin later wants to know "why
   am I blocked".
 
-## Architecture: in modgud or in alert-hub?
+## Architecture: in-process or delegated?
 
-We have a sibling project `alert-hub` (per the claude-memory
-reference) that does generic alerting infrastructure. Two options:
+Two options for where the alerting pipeline lives:
 
 | Option | Where the alerting lives |
 |---|---|
 | **A** — In modgud | Self-contained, no external dependency. Simpler MVP. |
-| **B** — Delegated to alert-hub | Reusable across all cocoar SaaS projects, but adds an integration boundary. |
+| **B** — Delegated to a generic alerting service | Reusable across multiple projects, but adds an integration boundary. |
 
 **Recommendation:** Option A for v1 (alert pipeline lives in
-modgud), with the events emitted in a format that alert-hub
-could consume later if/when we want to centralise.
+modgud), with the events emitted in a format a downstream alerting
+service could consume later if/when centralisation becomes worth the
+boundary.
 
 ## Effort estimate
 

@@ -8,11 +8,9 @@ namespace Modgud.Tests.Unit.Architecture;
 /// rules. Pinning assemblies via <c>typeof(Marker).Assembly</c> avoids
 /// hard-coded assembly names and survives renames.
 ///
-/// <para>Pattern mirrors Cocoar.AppBase v2.1.0's Architecture tests
-/// (<c>Cocoar.AppBase.Api.Tests/Architecture/</c>). Kept narrower here on
-/// purpose: only the rules that are CURRENTLY true for Modgud are
-/// codified — known inversions (Domain → Authorization project reference)
-/// stay out so the suite reflects reality, not aspiration.</para>
+/// <para>Only the rules that are CURRENTLY true for Modgud are codified —
+/// known inversions (Domain → Authorization project reference) stay out so
+/// the suite reflects reality, not aspiration.</para>
 /// </summary>
 internal static class Assemblies
 {

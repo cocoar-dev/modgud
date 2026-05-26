@@ -47,8 +47,8 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
         // persistent, see Phase 10 refactor).
         var principal = result.Principal!;
         Assert.Equal(user.Id.ToString(), principal.FindFirst(ClaimTypes.NameIdentifier)?.Value);
-        Assert.Equal(Issuer, principal.FindFirst("timetodo.external.issuer")?.Value);
-        Assert.Empty(principal.FindAll("timetodo.external.group"));
+        Assert.Equal(Issuer, principal.FindFirst("modgud.external.issuer")?.Value);
+        Assert.Empty(principal.FindAll("modgud.external.group"));
 
         // Script-run snapshot was persisted on the link (debugging artifact).
         using var scope2 = Factory.Services.CreateScope();

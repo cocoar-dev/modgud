@@ -4,11 +4,10 @@ Guidance for Claude Code working in this repository.
 
 ## What this is
 
-Modgud is the central Identity Provider for all Cocoar SaaS apps.
-Cookie-based login + full OAuth 2.0 / OIDC server (OpenIddict 7), built on
-TimeToDo's `Authentication` + `Authorization` slices and extended with
-IdP-specific concerns: multi-realm tenancy, OAuth aggregate admin,
-sessions with device tracking, GDPR self-service, granular per-resource
+Modgud is a multi-tenant Identity Provider — cookie-based login plus
+a full OAuth 2.0 / OpenID Connect server (OpenIddict 7) with
+multi-realm tenancy, OAuth client/scope/API admin, sessions with
+device tracking, GDPR self-service, and granular per-resource
 permission gating.
 
 ## Layout
@@ -31,13 +30,13 @@ Wolverine 6.x (CQRS + outbox), OpenIddict 7.x, ErrorOr, Mapperly,
 Cocoar.JsEval (TS → LINQ for membership scripts), Cocoar.SignalARRR.
 
 **Architecture:**
-- TimeToDo Authentication slice (`Modgud.Authentication`) — login,
-  register, 2FA, magic link, passkey, email OTP, OIDC external auth,
-  change requests, sessions, GDPR, recovery CLI
-- TimeToDo Authorization slice (`Modgud.Authorization`) — groups
-  (incl. JsEval-based auto-membership scripts), roles, permissions,
-  ResourceRegistry. Pure RBAC — row-level access (ABAC) stays in the
-  consuming app, see `docs/concepts/abac.md`.
+- `Modgud.Authentication` slice — login, register, 2FA, magic link,
+  passkey, email OTP, OIDC external auth, change requests, sessions,
+  GDPR, recovery CLI
+- `Modgud.Authorization` slice — groups (incl. JsEval-based
+  auto-membership scripts), roles, permissions, ResourceRegistry.
+  Pure RBAC — row-level access (ABAC) stays in the consuming app,
+  see `docs/concepts/abac.md`.
 - IdP-specific layers added on top: OAuth aggregates, OpenIddict
   Marten stores, Realm domain + provisioning + middleware, Sessions
   with UAParser, GDPR Marten masking + ArchiveStream
@@ -51,7 +50,7 @@ OAuth scopes + Internal login provider.
 
 **Permissions:** `<app>:<resource>:<action>` style (e.g.
 `modgud:user:read`, `modgud:oauth-client:write`,
-`timetodo:todo:write`). Three bypass tiers: `<app>:<resource>:admin`
+`acme-tasks:todo:write`). Three bypass tiers: `<app>:<resource>:admin`
 (resource-wide within an app), `<app>:admin` (app-wide),
 `realm:admin` (realm-wide emergency exit, the System Admin role).
 Endpoints gate via `.RequiresPermission("...")` (extension on
@@ -99,8 +98,8 @@ pnpm dev
 
 - `Modgud.Api.Tests` — integration tests on Testcontainers + PostgreSQL
 - `dotnet test` from `src/dotnet`
-- The TimeToDo test patterns (xUnit collections, shared Postgres
-  container, per-class DB isolation) carry over
+- xUnit collections + a shared Postgres container + per-class DB
+  isolation keep parallelism safe.
 
 ## Configuration
 
@@ -112,8 +111,5 @@ v5 layered binding. Settings types: `StartUpConfiguration`, `AppSettings`,
 
 ## When in doubt
 
-- TimeToDo source is the canonical pattern reference: `C:\git\cocoar\timetodo`
-- TimeToDo doc on the patterns: `C:\git\cocoar\timetodo\website\technik\`
-  and `\konzept\`
-- The pre-cutover legacy is at `git checkout legacy-final` for any
-  historical lookup ("how did the old IdP do X?")
+- The pre-cutover legacy snapshot is at `git checkout legacy-final` for
+  any historical lookup ("how did the old IdP do X?").

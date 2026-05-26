@@ -15,7 +15,7 @@ namespace Modgud.Api.Features.Auth;
 /// session.
 ///
 /// <para>This is deliberately a Cookie-only path. Resource servers
-/// (TimeToDo, Knowledge, …) querying with their bearer tokens use
+/// querying with their bearer tokens use
 /// <c>/api/v1/distribution/me-permissions</c> instead — that endpoint
 /// also requires the calling RS to authenticate via X-Resource-Server-*
 /// headers, derives the App from the RS, and is the single home for all

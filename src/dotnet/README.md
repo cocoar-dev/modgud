@@ -1,9 +1,9 @@
 # Modgud — Backend
 
-ASP.NET Core 10 Identity Provider built on top of TimeToDo's
-`Authentication` + `Authorization` slices, extended with the IdP-specific
-concerns (Multi-Realm, OpenIddict, OAuth aggregates, GDPR, sessions,
-granular gating).
+ASP.NET Core 10 Identity Provider. Two reusable vertical slices
+(`Modgud.Authentication` + `Modgud.Authorization`) sit underneath the
+IdP-specific layers (multi-realm tenancy, OpenIddict, OAuth aggregates,
+GDPR, sessions, granular gating).
 
 ## Solution layout
 

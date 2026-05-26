@@ -151,9 +151,9 @@ Roles laufen nur noch über Distribution-API mit RS-Credentials.
 - Heutige Lib-less .NET-RSes die mit `GetClaimsFromUserInfoEndpoint`
   arbeiten würden silent stoppen zu funktionieren.
 
-Das Design behauptet *„alle Cocoar-RSes nutzen die Lib eh"* — das
-ist heute *empirisch wahr* für die geplante Roadmap (timetodo,
-knowledge, cocoar-policy, alle .NET, alle Lib-Nutzer). Aber:
+Das Design behauptet *„alle anvisierten RSes nutzen die Lib eh"* —
+das gilt heute für die geplante Hausintegration (alle .NET-RSes via
+`Modgud.Client.AspNetCore`). Aber:
 - MCP-Server gating auf scopes (nicht roles) — unaffected
 - Drittanbieter-Tools die generisches OIDC sprechen — affected
 - Künftige Non-.NET-RSes — affected

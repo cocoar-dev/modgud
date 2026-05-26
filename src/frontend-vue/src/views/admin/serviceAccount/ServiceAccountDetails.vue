@@ -202,7 +202,7 @@ function extractScopes(cred: OAuthClientDto): string[] {
     <div v-if="!loading || isCreate" class="flex flex-col gap-4 p-1">
       <CoarFormField :label="t('admin.serviceAccounts.accountName', {}, 'Account name')" required>
         <CoarTextInput v-model="form.AccountName" clearable :disabled="!isCreate"
-          :placeholder="t('admin.serviceAccounts.accountNamePlaceholder', {}, 'ci.build-agent, integrations.timetodo, …')" />
+          :placeholder="t('admin.serviceAccounts.accountNamePlaceholder', {}, 'ci.build-agent, integrations.acme, …')" />
       </CoarFormField>
       <p v-if="isCreate" class="text-xs text-surface-500 -mt-2">
         {{ t('admin.serviceAccounts.accountNameHint', {}, 'Lowercase letters, digits, dots, hyphens or underscores. Becomes the audit-log handle for this account.') }}

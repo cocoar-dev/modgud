@@ -7,10 +7,12 @@ docs (`/concepts/permissions`, `/concepts/auto-membership`,
 
 ## Project layout
 
-Standalone C# project at `src/dotnet/Modgud.Authorization/`, copied
-from TimeToDo's slice of the same name and extended with IdP-specific
-resources. Consumed by `Modgud.Api` via `ProjectReference`. Wires up
-through:
+Standalone C# project at `src/dotnet/Modgud.Authorization/`, kept
+separate from `Modgud.Api` so the authorization core (Principal,
+Group, Role, ResourceRegistry, evaluator, endpoint filter,
+projections) can evolve independently from the IdP-specific resources
+stacked on top. Consumed by `Modgud.Api` via `ProjectReference`.
+Wires up through:
 
 | Entry point | Where called | What it does |
 |---|---|---|

@@ -14,7 +14,7 @@ namespace Modgud.Api.Tests.Infrastructure;
 public class SharedPostgresFixture : IAsyncLifetime
 {
     public PostgreSqlContainer Container { get; } = new PostgreSqlBuilder("postgres:18-alpine")
-        .WithDatabase("timetodo_test")
+        .WithDatabase("modgud_test")
         .Build();
 
     public string ConnectionString => Container.GetConnectionString();

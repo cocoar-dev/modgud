@@ -90,14 +90,14 @@ public class SmtpConfiguration
     public bool UseSsl { get; set; } = false;
     public string? UserName { get; set; }
     public string? Password { get; set; }
-    public string FromAddress { get; set; } = "noreply@timetodo.local";
+    public string FromAddress { get; set; } = "noreply@cocoar.dev";
     public string FromName { get; set; } = "Modgud";
 }
 
 public class PostmarkConfiguration
 {
     public string ServerToken { get; set; } = "";
-    public string FromAddress { get; set; } = "noreply@timetodo.local";
+    public string FromAddress { get; set; } = "noreply@cocoar.dev";
     public string FromName { get; set; } = "Modgud";
     public string MessageStream { get; set; } = "outbound";
 }

@@ -127,7 +127,7 @@ is authoritative.
 
 | Folder | Files | What's covered |
 |---|---|---|
-| `Users/` | 1 | UserCRUD via `/api/user` (TimeToDo singular endpoint, not `/api/admin/users`) |
+| `Users/` | 1 | UserCRUD via the singular `/api/user` endpoint (not `/api/admin/users`) |
 | `Security/` | 6 | AuthEnforcement (grace period, whitelist), MFA (TOTP), EmailOtp, MagicLink, ProfileSelfService (UserChangeRequest), OWASP Top 10 (see below) |
 | `Authorization/` | 1 | PermissionResolutionTests — end-to-end gate tests against `GET /api/user`: BoundTo on/off/wildcard/wrong-app, role-AppSlug filter, bypass cascade (resource-admin, realm-admin), cross-app no-leak |
 | `ExternalAuth/` | 6 | OIDC IdpConfig CRUD, ExternalLoginProcessor (JIT account creation + linking), DynamicOidcSchemeManager, FlavorRegistry, ExternalIdentityLink aggregate, UserUpdateScriptRunner (JsEval) |

@@ -426,7 +426,7 @@ const isWideKpiGrid = computed(() => kpiTiles.value.length > 2)
 const showAdminListRow = computed(() => canSeeAuthLog.value || canSeeLoginProviders.value)
 
 // Tile-icon tone → scoped CSS class. The actual rgba(...0.15) palette lives
-// in the <style scoped> block (mirrors TimeToDo's kpi-icon--<tone> pattern).
+// in the <style scoped> block.
 const TONE_CLASS: Record<TileTone, string> = {
   rose: 'kpi-icon--red',
   amber: 'kpi-icon--orange',
@@ -456,8 +456,8 @@ onMounted(() => {
 <template>
   <div class="w-full py-6 space-y-6">
     <!-- ─── KPI tile row ─── -->
-    <!-- Adapted from TimeToDo: small grid count for end-users, fills out
-         to lg:grid-cols-6 once the admin tiles join in. -->
+    <!-- Small grid count for end-users, fills out to lg:grid-cols-6 once
+         the admin tiles join in. -->
     <div class="kpi-grid" :class="isWideKpiGrid ? 'kpi-grid--admin' : 'kpi-grid--user'">
       <CoarCard
         v-for="tile in kpiTiles"
@@ -665,7 +665,7 @@ onMounted(() => {
 
 <style scoped>
 /* KPI grid: 2-column for end-users, fans out to 6-column on lg viewports
-   when admin tiles are present. Mirrors TimeToDo's "grid-cols-2 lg:grid-cols-5". */
+   when admin tiles are present. */
 .kpi-grid {
   display: grid;
   gap: 1rem;
@@ -676,7 +676,7 @@ onMounted(() => {
   .kpi-grid--admin { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
-/* KPI cards: lifted-on-hover style — borrowed verbatim from TimeToDo. */
+/* KPI cards: lifted-on-hover style. */
 .kpi-card {
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -727,7 +727,7 @@ onMounted(() => {
   text-align: center;
 }
 
-/* List card heading: ALL-CAPS small text + leading icon — TimeToDo. */
+/* List card heading: ALL-CAPS small text + leading icon. */
 .list-card__heading {
   font-size: 0.875rem;
   font-weight: 600;
@@ -737,7 +737,7 @@ onMounted(() => {
   margin-bottom: 0.75rem;
 }
 
-/* List rows: button-based, hover-tinted — matches TimeToDo's todo-row. */
+/* List rows: button-based, hover-tinted. */
 .list-row {
   display: flex;
   align-items: center;

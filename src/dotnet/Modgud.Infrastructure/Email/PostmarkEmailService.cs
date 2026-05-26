@@ -118,7 +118,7 @@ public class PostmarkEmailService : IEmailService
 public class PostmarkEmailServiceOptions
 {
     public string ServerToken { get; set; } = "";
-    public string FromAddress { get; set; } = "noreply@timetodo.local";
+    public string FromAddress { get; set; } = "noreply@cocoar.dev";
     public string FromName { get; set; } = "Modgud";
     public string MessageStream { get; set; } = "outbound";
     public Dictionary<EmailTemplate, long> TemplateIds { get; set; } = new();

@@ -110,8 +110,7 @@ public static class MartenConfiguration
         // Critter-Stack 2026 backport: pin two Marten 9 event-store defaults
         // back to V8 behaviour. Walked back individually (instead of the blanket
         // opts.RestoreV8Defaults()) so each entry can be re-evaluated on its own
-        // merits later. See C:\git\cocoar\Cocoar.AppBase\docs\migrations\v1-to-v2.md
-        // § "Schritt 5".
+        // merits later.
         //
         // AppendMode: 9.x default `QuickWithServerTimestamps` delegates metadata
         // stamping to a Postgres function — can shift ordering/version timing.

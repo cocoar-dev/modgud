@@ -16,9 +16,9 @@ public class AuthorizationOptions
     /// <summary>
     /// Declares a resource type within an app and the actions it supports.
     /// Permissions follow the convention <c>"appSlug:resource:action"</c> —
-    /// a role with <c>AppSlug="timetodo"</c>, <c>ResourceType="todo"</c>, and
-    /// <c>Permissions=["read","update"]</c> resolves to <c>timetodo:todo:read</c>
-    /// and <c>timetodo:todo:update</c>.
+    /// a role with <c>AppSlug="acme-tasks"</c>, <c>ResourceType="todo"</c>, and
+    /// <c>Permissions=["read","update"]</c> resolves to <c>acme-tasks:todo:read</c>
+    /// and <c>acme-tasks:todo:update</c>.
     /// </summary>
     public AuthorizationOptions RegisterResource(string appSlug, string resourceType, params string[] actions)
     {

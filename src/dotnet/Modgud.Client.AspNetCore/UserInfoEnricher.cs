@@ -113,7 +113,7 @@ internal sealed class ModgudJwtBearerPostConfigure : IPostConfigureOptions<JwtBe
         if (string.IsNullOrWhiteSpace(_options.Authority))
             throw new InvalidOperationException(
                 "ModgudOptions.Authority must be set to the IdP base URL " +
-                "(e.g. \"https://auth.cocoar.dev\") so the lib can fetch /connect/userinfo. " +
+                "(e.g. \"https://auth.example.com\") so the lib can fetch /connect/userinfo. " +
                 "Configure it via AddModgudClient.");
 
         var existing = options.Events?.OnTokenValidated;

@@ -1,9 +1,9 @@
 # Legacy E2E specs (archived)
 
 These specs predate the post-cutover Phase-1+ rewrites and were the
-original TimeToDo-flavoured E2E suite. They aren't run by Playwright
-today — `playwright.config.ts` only picks up `*.spec.ts` directly
-under `e2e/`, not under `_legacy/`.
+original E2E suite from the pre-rebuild codebase. They aren't run by
+Playwright today — `playwright.config.ts` only picks up `*.spec.ts`
+directly under `e2e/`, not under `_legacy/`.
 
 They're kept here as **patterns for the porting effort**: when a new
 spec under `e2e/` covers the same area (login, MFA, magic-link,
@@ -14,7 +14,7 @@ shape from the file in this folder and adapt it to the new test rig
 
 ## Why they don't run as-is
 
-- Container names + image tags are still `timetodo-e2e-*`.
+- Container names + image tags are still from the pre-rebuild era.
 - They depend on `/api/dev/emails` and `/api/dev/reset-mfa` (gone —
   inspection now lives in Mailpit).
 - They use the legacy 2-segment permission strings (`user:read`)

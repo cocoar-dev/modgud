@@ -242,7 +242,7 @@ public static class AccountEndpoints
             var twoFactorMethods = await TwoFactorHelper.GetMethodsAsync(user, session);
             var securityData = await session.LoadAsync<UserSecurityData>(user.Id);
 
-            var isFederatedMfa = context.User.FindAll("timetodo.external.amr")
+            var isFederatedMfa = context.User.FindAll("modgud.external.amr")
                 .Any(c => c.Value.Equals("mfa", StringComparison.OrdinalIgnoreCase)
                        || c.Value.Equals("otp", StringComparison.OrdinalIgnoreCase)
                        || c.Value.Equals("fido", StringComparison.OrdinalIgnoreCase)

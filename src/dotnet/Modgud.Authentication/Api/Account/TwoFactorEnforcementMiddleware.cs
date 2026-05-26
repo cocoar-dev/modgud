@@ -79,7 +79,7 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
         }
 
         // Federated MFA: the ExternalLoginProcessor preserves Entra/Okta's amr
-        // claim onto the session cookie as timetodo.external.amr. If the IdP
+        // claim onto the session cookie as modgud.external.amr. If the IdP
         // already asserted a multi-factor sign-in for THIS session, treat it
         // as equivalent to having local 2FA for the duration of the session —
         // no SecureSetupModal, no grace check. The user still must configure
@@ -177,7 +177,7 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
     internal static bool HasFederatedMfa(System.Security.Claims.ClaimsPrincipal? principal)
     {
         if (principal is null) return false;
-        foreach (var claim in principal.FindAll("timetodo.external.amr"))
+        foreach (var claim in principal.FindAll("modgud.external.amr"))
         {
             foreach (var accepted in FederatedMfaAmrValues)
             {

@@ -371,7 +371,7 @@
     "serviceAccounts": {
       "title": "Service Accounts",
       "accountName": "Account-Name",
-      "accountNamePlaceholder": "ci.build-agent, integrations.timetodo, …",
+      "accountNamePlaceholder": "ci.build-agent, integrations.acme, …",
       "accountNameHint": "Kleinbuchstaben, Ziffern, Punkte, Bindestriche oder Unterstriche. Wird im Audit-Log als Handle für diesen Account verwendet.",
       "purpose": "Verwendungszweck",
       "purposePlaceholder": "CI Deployment, nächtliche Sync, …",

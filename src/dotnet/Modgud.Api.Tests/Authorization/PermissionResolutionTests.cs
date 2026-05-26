@@ -88,12 +88,13 @@ public class PermissionResolutionTests : IntegrationTestBase
     public async Task User_With_WrongAppBoundTo_Returns_403()
     {
         // Role grants user:read on modgud, but the group is only
-        // active in "timetodo". Permission resolution for modgud
+        // active in "acme-tasks". Permission resolution for modgud
         // ignores the group → no permission. Pins cross-app group isolation.
+        // (acme-tasks is a fictional placeholder app slug used in tests.)
         var user = await CreateUserAsync("wa", "wrong-app");
         await GrantAsync(user.Id,
             roleAppSlug: AppSlugs.Modgud, permissions: [("user", "read")],
-            groupBoundTo: ["timetodo"]);
+            groupBoundTo: ["acme-tasks"]);
         var client = await CreateAuthenticatedClientAsync("wa", "TestPass1234");
 
         var r = await client.GetAsync("/api/user", TestContext.Current.CancellationToken);
@@ -144,14 +145,14 @@ public class PermissionResolutionTests : IntegrationTestBase
         // active in modgud (BoundTo=["*"]). Pins the role-AppId
         // filter inside GetUserPermissionsAsync.
         //
-        // Implementation note: the timetodo App must be seeded for
+        // Implementation note: the acme-tasks App must be seeded for
         // CreateTestRoleAsync to FK against its catalog. The realm
-        // doesn't ship with a timetodo App by default, so the test
+        // doesn't ship with an acme-tasks App by default, so the test
         // creates one with a single user:read entry and grants from it.
         var user = await CreateUserAsync("xa", "cross-app");
-        await CreateMinimalAppAsync("timetodo", "TimeToDo", catalog: [("user", "read")]);
+        await CreateMinimalAppAsync("acme-tasks", "Acme Tasks", catalog: [("user", "read")]);
         await GrantAsync(user.Id,
-            roleAppSlug: "timetodo", permissions: [("user", "read")],
+            roleAppSlug: "acme-tasks", permissions: [("user", "read")],
             groupBoundTo: ["*"]);
         var client = await CreateAuthenticatedClientAsync("xa", "TestPass1234");
 

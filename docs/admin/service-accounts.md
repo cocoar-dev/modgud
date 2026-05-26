@@ -7,7 +7,7 @@ description: Machine identities that authenticate via OAuth client_credentials, 
 
 A **Service Account** (SA) is a non-human principal — a build agent, an integration, a scheduled job. It carries a stable account name, lives in the same `Principal → Group → Role → Permission` model as a `Person`, but has no email, no password, no MFA. Machines authenticate by exchanging an OAuth `client_secret` for an access token; Modgud then resolves the token's `sub` claim to the owning Service Account so audit logs read `ci.build-agent did X` instead of `client_id=4f7a9b…e3 did X`.
 
-Create a Service Account whenever a non-interactive caller — CI runner, scheduled sync, server-to-server integration — needs to act against a Cocoar-protected API.
+Create a Service Account whenever a non-interactive caller — CI runner, scheduled sync, server-to-server integration — needs to act against a Modgud-protected API.
 
 ## Surface
 
@@ -28,8 +28,8 @@ A working M2M setup needs two objects living in two layers. The split is deliber
 
 Modgud has a unified permission model that has to work identically for humans and machines:
 
-- `bwi` (Person) → group `data-engineers` → role `data-read` → permission `timetodo:data:read`
-- `ci.build-agent` (ServiceAccount) → group `data-engineers` → role `data-read` → permission `timetodo:data:read`
+- `bwi` (Person) → group `data-engineers` → role `data-read` → permission `acme-tasks:data:read`
+- `ci.build-agent` (ServiceAccount) → group `data-engineers` → role `data-read` → permission `acme-tasks:data:read`
 
 If the OAuth client carried the machine identity directly, the entire group/role/permission graph would have to be duplicated on the client side, and audit logs would surface opaque `client_id` strings. The industry pattern is consistent: Keycloak auto-creates a hidden "service account user" behind every `client_credentials` client, AWS IAM separates Roles from access keys, GCP IAM separates Service Accounts from JSON keys. Modgud surfaces both layers explicitly because admins need to manage them — but the SA is the user-facing concept and the OAuth client is an implementation detail of "how does this SA authenticate".
 
@@ -56,7 +56,7 @@ Concretely:
 
 1. Open `/admin/service-accounts` and click **Create**.
 2. Fill in:
-   - **Account name** — lowercase letters, digits, dots, hyphens or underscores; 2-64 chars; starts with a letter or digit. This is the audit-log handle (`ci.build-agent`, `integrations.timetodo`, `nightly.sync`). Unique across the whole principal table — a Person and a ServiceAccount can't share an account name, because both can act as the login handle in different contexts.
+   - **Account name** — lowercase letters, digits, dots, hyphens or underscores; 2-64 chars; starts with a letter or digit. This is the audit-log handle (`ci.build-agent`, `integrations.acme-tasks`, `nightly.sync`). Unique across the whole principal table — a Person and a ServiceAccount can't share an account name, because both can act as the login handle in different contexts.
    - **Purpose** (optional) — free text. Pure documentation; the authorization layer never reads it.
 3. **Create**. The SA exists but has no credentials yet — services can't authenticate as it.
 
@@ -101,7 +101,7 @@ curl -X POST https://idp.example.com/connect/token \
   -d "client_id=ci.build-agent.k7f2x9n3" \
   -d "client_secret=<secret>" \
   -d "scope=builds:write" \
-  -d "resource=https://timetodo.example.com"
+  -d "resource=https://acme-tasks.example.com"
 ```
 
 The token endpoint loads the OAuth client, follows `LinkedServiceAccountId` to the SA, verifies the SA isn't deleted or inactive, and issues an access token whose `sub` is the SA's `Id`.

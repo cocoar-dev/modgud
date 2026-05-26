@@ -18,12 +18,12 @@ Role(s) (with AppSlug)
 Permission(s)  →  app:resource:action
 ```
 
-Effect: a user is `Editor in TimeToDo` because
+Effect: a user is `Editor in Acme-Tasks` because
 
-1. they are a member of a group `TimeToDo Team`,
-2. the group has `BoundTo: ["timetodo"]`,
-3. the group references a role `TimeToDo Editor` with `AppSlug = "timetodo"`,
-4. the role's permissions `read`, `write` on resource `todo` expand to `timetodo:todo:read`, `timetodo:todo:write`.
+1. they are a member of a group `Acme-Tasks Team`,
+2. the group has `BoundTo: ["acme-tasks"]`,
+3. the group references a role `Acme-Tasks Editor` with `AppSlug = "acme-tasks"`,
+4. the role's permissions `read`, `write` on resource `todo` expand to `acme-tasks:todo:read`, `acme-tasks:todo:write`.
 
 ## Permission format: three segments
 
@@ -33,7 +33,7 @@ Modgud manages permissions as **`app:resource:action`** strings:
 | --- | --- |
 | `modgud:user:read` | Read the user list in modgud |
 | `modgud:oauth-client:write` | Edit OAuth clients in modgud |
-| `timetodo:todo:write` | Write todos in the TimeToDo app |
+| `acme-tasks:todo:write` | Write todos in the Acme-Tasks app |
 
 Plus three bypass tiers:
 
@@ -73,7 +73,7 @@ What resources an app has is defined by the app itself — see [Applications](./
 | **auth-log** | read |
 | **gdpr** | admin |
 
-External apps (TimeToDo, Knowledge, …) bring their own resources, defined in their App record.
+External apps (Acme-Tasks, Knowledge, …) bring their own resources, defined in their App record.
 
 ## Creating or editing a role
 
@@ -104,7 +104,7 @@ Fully-qualified strings (containing `:`) pass through the resolver unchanged. Th
 
 ## Cross-app roles (special case)
 
-A role can also include fully-qualified permissions from **other** apps in its permissions list — for example a "Cross-App Auditor" with `modgud:auth-log:read` AND `timetodo:audit:read`. This works because fully-qualified permissions pass through without further filtering.
+A role can also include fully-qualified permissions from **other** apps in its permissions list — for example a "Cross-App Auditor" with `modgud:auth-log:read` AND `acme-tasks:audit:read`. This works because fully-qualified permissions pass through without further filtering.
 
 In practice though: prefer two separate roles in two separate groups (each with their own BoundTo). Cleaner to understand and audit.
 
@@ -136,5 +136,5 @@ Many small roles, each tied to a clear resource, compose freely into groups. A "
 :::
 
 ::: tip Per-app roles
-Roles for TimeToDo go under `AppSlug = "timetodo"`, not `modgud`. They show up in the right permission lists, and `[Authorize(Roles = "...")]` in the TimeToDo backend finds them via the `resource_access["timetodo"]` claim in the token.
+Roles for Acme-Tasks go under `AppSlug = "acme-tasks"`, not `modgud`. They show up in the right permission lists, and `[Authorize(Roles = "...")]` in the Acme-Tasks backend finds them via the `resource_access["acme-tasks"]` claim in the token.
 :::

@@ -78,7 +78,7 @@ public class TwoFactorEnforcementMiddlewareTests
     {
         private static ClaimsPrincipal WithExternalAmr(params string[] amrValues)
         {
-            var claims = amrValues.Select(v => new Claim("timetodo.external.amr", v)).ToArray();
+            var claims = amrValues.Select(v => new Claim("modgud.external.amr", v)).ToArray();
             var identity = new ClaimsIdentity(claims, authenticationType: "Cookies");
             return new ClaimsPrincipal(identity);
         }
@@ -139,7 +139,7 @@ public class TwoFactorEnforcementMiddlewareTests
         [Fact]
         public void Standard_amr_claim_name_is_ignored()
         {
-            // Only "timetodo.external.amr" is consulted — the bare "amr" claim
+            // Only "modgud.external.amr" is consulted — the bare "amr" claim
             // belongs to the local cookie and is intentionally NOT trusted here
             // (otherwise locally-set claims could spoof federated MFA).
             var identity = new ClaimsIdentity(
@@ -221,7 +221,7 @@ public class TwoFactorEnforcementMiddlewareTests
         public async Task When_principal_has_federated_mfa_passes_through_without_touching_dependencies()
         {
             var (mw, wasCalled) = MakeMiddleware();
-            var ctx = AuthenticatedContext("/api/admin/users", new Claim("timetodo.external.amr", "mfa"));
+            var ctx = AuthenticatedContext("/api/admin/users", new Claim("modgud.external.amr", "mfa"));
 
             await mw.InvokeAsync(ctx, new FakeAuthSettings(level: 1), session: null!, userManager: null!);
 

@@ -36,15 +36,15 @@ public class AppProjectionTests
             var projectRead = Perm("project", "read");
             var state = new AppProjection().Create(new AppCreatedEvent(
                 Id: id,
-                Slug: "timetodo",
-                DisplayName: "TimeToDo",
+                Slug: "acme-tasks",
+                DisplayName: "Acme Tasks",
                 Description: "Task tracker",
                 Permissions: [todoRead, projectRead],
                 IsSystem: false));
 
             Assert.Equal(id, state.Id);
-            Assert.Equal("timetodo", state.Slug);
-            Assert.Equal("TimeToDo", state.DisplayName);
+            Assert.Equal("acme-tasks", state.Slug);
+            Assert.Equal("Acme Tasks", state.DisplayName);
             Assert.Equal("Task tracker", state.Description);
             Assert.Equal(new[] { todoRead, projectRead }, state.Permissions);
             Assert.False(state.IsSystem);
@@ -171,14 +171,14 @@ public class AppProjectionTests
             var p = new AppProjection();
 
             var s = p.Create(new AppCreatedEvent(
-                id, "timetodo", "TimeToDo", "old desc",
+                id, "acme-tasks", "Acme Tasks", "old desc",
                 [Perm("todo", "read")], IsSystem: false));
-            p.Apply(new AppUpdatedEvent(id, "TimeToDo (renamed)", "new desc",
+            p.Apply(new AppUpdatedEvent(id, "Acme Tasks (renamed)", "new desc",
                 [Perm("todo", "read"), Perm("project", "read")]), s);
 
             Assert.Equal(id, s.Id);
-            Assert.Equal("timetodo", s.Slug);
-            Assert.Equal("TimeToDo (renamed)", s.DisplayName);
+            Assert.Equal("acme-tasks", s.Slug);
+            Assert.Equal("Acme Tasks (renamed)", s.DisplayName);
             Assert.Equal("new desc", s.Description);
             Assert.Equal(2, s.Permissions.Count);
             Assert.False(s.IsSystem);
@@ -192,15 +192,15 @@ public class AppProjectionTests
             var p = new AppProjection();
 
             var s = p.Create(new AppCreatedEvent(
-                id, "timetodo", "TimeToDo", null,
+                id, "acme-tasks", "Acme Tasks", null,
                 [Perm("todo", "read")], IsSystem: false));
-            p.Apply(new AppUpdatedEvent(id, "TimeToDo!", null,
+            p.Apply(new AppUpdatedEvent(id, "Acme Tasks!", null,
                 [Perm("todo", "read"), Perm("project", "read")]), s);
             p.Apply(new AppDeletedEvent(id), s);
 
             Assert.True(s.IsDeleted);
             // Updates before delete are still visible — soft-delete preserves history.
-            Assert.Equal("TimeToDo!", s.DisplayName);
+            Assert.Equal("Acme Tasks!", s.DisplayName);
             Assert.Equal(2, s.Permissions.Count);
         }
     }

@@ -12,10 +12,10 @@ public class AppSlugRulesTests
     public class IsValidFormat
     {
         [Theory]
-        [InlineData("timetodo")]
+        [InlineData("acme-tasks")]
         [InlineData("foo")]                  // exactly 3 chars
         [InlineData("a1b")]                  // ends in digit
-        [InlineData("alert-hub")]            // hyphen allowed in middle
+        [InlineData("my-app")]               // hyphen allowed in middle
         [InlineData("ab-cd-ef")]
         [InlineData("a23456789012345678901234567890123456789012345678901234567890123")] // 63 chars
         public void Returns_true_for_valid_slugs(string slug)
@@ -88,9 +88,9 @@ public class AppSlugRulesTests
         [Fact]
         public void Ordinary_slugs_are_not_reserved()
         {
-            Assert.False(AppSlugRules.IsReserved("timetodo"));
-            Assert.False(AppSlugRules.IsReserved("knowledge"));
-            Assert.False(AppSlugRules.IsReserved("alert-hub"));
+            Assert.False(AppSlugRules.IsReserved("acme-tasks"));
+            Assert.False(AppSlugRules.IsReserved("acme-policy"));
+            Assert.False(AppSlugRules.IsReserved("my-app"));
         }
 
         [Fact]

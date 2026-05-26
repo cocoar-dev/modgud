@@ -5,10 +5,10 @@ description: Migration gotchas and patterns post-Marten-9 / Wolverine-6 upgrade.
 
 # Critter Stack 2026 — Marten 9 / Wolverine 6
 
-Modgud shipped the Critter-Stack-2026 backport on **2026-05-24**, aligning
-with [Cocoar.AppBase v2.1.0](../../). The migration carries a handful of
-gotchas every backend contributor (and every future AppBase backport) should
-know about. This page is the canonical reference.
+Modgud shipped the Critter-Stack-2026 backport on **2026-05-24** (Marten 9 /
+Wolverine 6). The migration carries a handful of gotchas every backend
+contributor — and every future Critter-Stack major upgrade — should know
+about. This page is the canonical reference.
 
 ## Status & versions
 
@@ -185,12 +185,11 @@ the rule.
 
 ## Upgrade checklist for new Marten/Wolverine majors
 
-When AppBase pushes the next Critter-Stack baseline:
+When the next Critter-Stack major lands:
 
-1. **Read the AppBase migration guide first.** Path:
-   `C:\git\cocoar\Cocoar.AppBase\docs\migrations\v<N-1>-to-v<N>.md` —
-   AppBase is the source-of-truth template and lists every breaking change
-   already validated against a clean baseline.
+1. **Read the Marten + Wolverine release notes first** — JasperFx publishes
+   migration guides per major; walk the breaking-change list against this
+   codebase before touching `Directory.Packages.props`.
 2. **Bump versions in `Directory.Packages.props`.** Marten, Marten.AspNetCore,
    WolverineFx.Marten, JasperFx.Events.SourceGenerator, WolverineFx.RuntimeCompilation.
 3. **Re-evaluate the V8-pins** in `ConfigureEventStore` (lines 120-125). Each
@@ -214,5 +213,3 @@ When AppBase pushes the next Critter-Stack baseline:
 
 - [Marten `RaiseSideEffects` — Gotchas](./marten-raise-side-effects) — the
   sibling page for projection side-effects.
-- AppBase v2.1.0 — `C:\git\cocoar\Cocoar.AppBase\docs\migrations\v1-to-v2.md`
-  for the full Critter-Stack-2026 backport checklist this migration followed.

@@ -33,13 +33,13 @@ public static class ServiceCollectionExtensions
     /// services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     ///     .AddJwtBearer(options =>
     ///     {
-    ///         options.Authority = "https://auth.cocoar.dev";
+    ///         options.Authority = "https://auth.example.com";
     ///         options.Audience  = "https://policy-api.cocoar.dev";
     ///     });
     ///
     /// services.AddModgudClient(o =>
     /// {
-    ///     o.Authority = "https://auth.cocoar.dev";
+    ///     o.Authority = "https://auth.example.com";
     ///     o.Audience  = "https://policy-api.cocoar.dev";
     /// });
     ///

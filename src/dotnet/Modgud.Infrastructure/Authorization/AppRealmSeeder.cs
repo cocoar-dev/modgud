@@ -13,8 +13,8 @@ namespace Modgud.Infrastructure.Authorization;
 /// re-running has no effect once seeded.
 ///
 /// <para>The modgud app is the namespace under which the IAM's own
-/// resources (user, oauth-client, session, …) live. Other apps (e.g.
-/// <c>timetodo</c>) are registered later via the admin surface.</para>
+/// resources (user, oauth-client, session, …) live. Downstream apps
+/// (e.g. <c>acme-tasks</c>) are registered later via the admin surface.</para>
 /// </summary>
 public static class AppRealmSeeder
 {

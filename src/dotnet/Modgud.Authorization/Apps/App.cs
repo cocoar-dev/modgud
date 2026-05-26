@@ -11,7 +11,7 @@ namespace Modgud.Authorization.Apps;
 /// distinguished by <see cref="Slug"/>.</para>
 ///
 /// <para>Modgud itself is registered as the app <c>modgud</c>
-/// (system, immutable). Other Cocoar SaaS apps (e.g. <c>timetodo</c>) get
+/// (system, immutable). Downstream apps (e.g. <c>acme-tasks</c>) get
 /// their own <see cref="App"/> per realm so the realm admin can decide which
 /// apps a tenant uses.</para>
 ///
@@ -24,7 +24,7 @@ public class App
     public Guid Id { get; set; }
 
     /// <summary>
-    /// Stable, URL-safe identifier (e.g. <c>"modgud"</c>, <c>"timetodo"</c>).
+    /// Stable, URL-safe identifier (e.g. <c>"modgud"</c>, <c>"acme-tasks"</c>).
     /// Used to disambiguate apps within a realm; never appears as a prefix in
     /// stored permission strings.
     /// </summary>

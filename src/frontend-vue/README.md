@@ -1,8 +1,10 @@
 # Modgud — Frontend
 
-Vue 3 SPA for the Modgud Identity Provider. Built on TimeToDo's
-frontend shell, extended with the IdP-specific admin views (OAuth,
-Login-Providers, Realms) and self-service (Sessions, Privacy/GDPR).
+Vue 3 SPA for the Modgud Identity Provider. Covers the IdP-specific
+admin views (Users, Roles, Groups, OAuth Clients/Scopes/APIs,
+Service Accounts, Login Providers, IdP Config, Realms, Customization,
+Observability, Inbox, Jobs) and end-user self-service (Profile,
+Sessions, Privacy/GDPR).
 
 ## Layout
 

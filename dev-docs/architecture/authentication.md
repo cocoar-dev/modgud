@@ -7,10 +7,12 @@ docs (`/concepts/authentication`, `/integrate/login-flows`,
 
 ## Project layout
 
-Standalone C# project at `src/dotnet/Modgud.Authentication/`, copied
-from TimeToDo's slice of the same name and extended with IdP-specific
-concerns. Consumed by `Modgud.Api` via `ProjectReference`. Wires up
-through two entry points:
+Standalone C# project at `src/dotnet/Modgud.Authentication/`, kept
+separate from `Modgud.Api` so the authentication core (Identity
+adapter, login flows, 2FA, OIDC external auth, sessions, GDPR,
+AuthLog, recovery CLI) can evolve independently from the IdP-specific
+layers stacked on top. Consumed by `Modgud.Api` via `ProjectReference`.
+Wires up through two entry points:
 
 | Entry point | Where called | What it does |
 |---|---|---|

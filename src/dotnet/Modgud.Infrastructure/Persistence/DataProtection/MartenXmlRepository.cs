@@ -32,7 +32,7 @@ public sealed class MartenXmlRepository : IXmlRepository
         // IXmlRepository is a sync contract; Marten 9 removed sync LINQ
         // terminals on Marten queries. Key-ring refresh happens ~once every
         // 90 days and never on a request thread, so sync-over-async here is
-        // negligible. Matches AppBase v2.0.0 backport pattern.
+        // negligible.
         var docs = session.Query<DataProtectionKeyDocument>()
             .ToListAsync()
             .GetAwaiter().GetResult();

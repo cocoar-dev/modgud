@@ -32,13 +32,13 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.Authority = "https://auth.cocoar.dev";
+        options.Authority = "https://auth.example.com";
         options.Audience  = "event-tree-api";   // matches an OAuthApi in the IdP
     });
 
 builder.Services.AddModgudClient(o =>
 {
-    o.Authority = "https://auth.cocoar.dev";
+    o.Authority = "https://auth.example.com";
     o.Audience  = "event-tree-api";             // same value as above
 });
 

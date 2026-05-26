@@ -760,7 +760,7 @@ try
             openIddictSettings.Issuer.Contains("127.0.0.1"))
             throw new InvalidOperationException(
                 $"OpenIddict.Issuer ('{openIddictSettings.Issuer}') is invalid for Production. " +
-                "Set it to the public HTTPS URL of the IdP (e.g. https://auth.cocoar.dev).");
+                "Set it to the public HTTPS URL of the IdP (e.g. https://auth.example.com).");
 
         if (openIddictSettings.Issuer.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
@@ -816,8 +816,6 @@ try
         // Wolverine 6 made `ServiceLocationPolicy.NotAllowed` the default. We
         // keep that strict default — accidental new service-location dependencies
         // fail loudly at codegen — and document each known exception below.
-        // Mirrors the AppBase v2.0.0 allowlist pattern; see
-        // C:\git\cocoar\Cocoar.AppBase\docs\migrations\v1-to-v2.md § "Schritt 6".
 
         // ASP.NET Identity — UserManager<T>/SignInManager<T> take IServiceProvider
         // in their constructors by design (IPasswordHasher<T>/IUserValidator<T>
@@ -828,7 +826,7 @@ try
         // Cocoar.JsEval module-builder boundary — JsEval 4.1 collapsed the
         // previous transitive service-location entries (IMembershipEvaluator,
         // IAutoMembershipRecalculator) into a single one at the JsEngine's
-        // module-builder seam. Matches AppBase v2.1.0.
+        // module-builder seam.
         opts.CodeGeneration.AlwaysUseServiceLocationFor<Cocoar.JsEval.IJsModuleBuilder>();
 
         // Auto-register Event Forwarding subscriptions for all ReferenceSyncHandler<TEvent> implementations

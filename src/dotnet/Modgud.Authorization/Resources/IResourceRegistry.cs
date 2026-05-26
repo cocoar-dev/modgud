@@ -9,7 +9,7 @@ namespace Modgud.Authorization.Resources;
 /// Permissions follow the convention <c>"appSlug:resource:action"</c>. A role
 /// stores a single <c>AppSlug</c> + <c>ResourceType</c> + bare action names
 /// (<c>"read"</c>); the full permission is reconstructed at evaluation time as
-/// <c>"timetodo:todo:read"</c>.
+/// <c>"acme-tasks:todo:read"</c>.
 /// </para>
 /// </summary>
 public interface IResourceRegistry

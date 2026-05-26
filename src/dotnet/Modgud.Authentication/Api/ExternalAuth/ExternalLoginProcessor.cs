@@ -346,13 +346,13 @@ public class ExternalLoginProcessor(
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()));
         if (!string.IsNullOrWhiteSpace(user.UserName))
             identity.AddClaim(new Claim(ClaimTypes.Name, user.UserName));
-        identity.AddClaim(new Claim("timetodo.external.issuer", issuer));
-        identity.AddClaim(new Claim("timetodo.external.linkId", link.Id.ToString()));
+        identity.AddClaim(new Claim("modgud.external.issuer", issuer));
+        identity.AddClaim(new Claim("modgud.external.linkId", link.Id.ToString()));
         identity.AddClaim(new Claim("modgud.external.loginProviderId", loginProviderId.ToString()));
 
         // Preserve AMR from the external ticket for TwoFactorFederated detection.
         foreach (var amr in external.FindAll("amr"))
-            identity.AddClaim(new Claim("timetodo.external.amr", amr.Value));
+            identity.AddClaim(new Claim("modgud.external.amr", amr.Value));
 
         return new ExternalLoginResult(
             Succeeded: true,

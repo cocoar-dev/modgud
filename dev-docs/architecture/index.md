@@ -1,9 +1,10 @@
 # Architecture — slice blueprints
 
 Two vertical slices form the IAM backbone of Modgud. Both are
-standalone C# projects under `src/dotnet/`, copied from TimeToDo and
-extended with IdP-specific concerns. They are consumed by
-`Modgud.Api` via `ProjectReference`.
+standalone C# projects under `src/dotnet/`, consumed by `Modgud.Api`
+via `ProjectReference`. The split exists so the IAM core can move
+independently of the IdP-specific layers (realms, OAuth aggregates,
+OpenIddict stores) stacked on top.
 
 | Slice | Project | Responsibility |
 |---|---|---|

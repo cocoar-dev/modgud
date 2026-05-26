@@ -87,7 +87,7 @@ already consumes — same value driving the tooltip directive).
 - WCAG 2.1 — Success Criterion 1.1.1 (Non-text Content) and 4.1.2
   (Name, Role, Value)
 - ARIA Authoring Practices — Menu pattern
-- Live example of the problem: https://auth.cocoar.dev/admin/users
+- Live example of the problem: https://auth.example.com/admin/users
   (collapse the sidebar → inspect any item → no `aria-label`)
 
 ## Workaround until fixed
