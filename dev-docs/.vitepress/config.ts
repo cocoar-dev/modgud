@@ -114,6 +114,7 @@ export default withMermaid(defineConfig({
           { text: 'Frontend dev notes', link: '/frontend' },
           { text: 'JsEval threat model', link: '/jseval-threat-model' },
           { text: 'Security hardening tracker', link: '/security-hardening' },
+          { text: 'CodeQL triage (initial sweep)', link: '/codeql-triage' },
         ],
       },
       {
