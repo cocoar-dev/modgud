@@ -1,4 +1,4 @@
-name: NuGet Prerelease (Client.AspNetCore)
+name: CD - Publish NuGet Prerelease
 
 # Builds and publishes a prerelease of Modgud.Client.AspNetCore to
 # nuget.org. Mirrors the cocoar.configuration workflow pattern so the

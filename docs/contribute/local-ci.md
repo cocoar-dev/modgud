@@ -75,10 +75,10 @@ Then point act at it: `act --secret-file .secrets`.
 act pull_request
 
 # A specific workflow file
-act -W .github/workflows/ci-pr-validation.yml
+act -W .github/workflows/ci.yml
 
 # A specific job inside a workflow
-act -j docs -W .github/workflows/ci-pr-validation.yml
+act -j docs -W .github/workflows/ci.yml
 
 # Manual-trigger workflow with inputs
 act workflow_dispatch -W .github/workflows/cd-release.yml \
@@ -136,9 +136,9 @@ actually publish — be sure that's what you want.
 
 ## ci/** branch trigger — for the CI workflows themselves
 
-The `ci-develop.yml` workflow triggers on pushes to **`develop`**
-*and* any branch matching **`ci/**`**. So if you're tweaking
-`ci-pr-validation.yml`, you can:
+The `ci.yml` workflow triggers on pushes to **`develop`** *and*
+any branch matching **`ci/**`** (and on pull requests). So if
+you're tweaking `ci.yml` itself or a build setup, you can:
 
 ```bash
 git checkout -b ci/tweak-path-filter

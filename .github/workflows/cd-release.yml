@@ -28,11 +28,13 @@ name: CD - Release
 # no artifact-tar dance. The candidate tag is left behind for forensic
 # value — set a GHCR retention rule on `candidate-*` if cleanup matters.
 #
-# Iterative workflows (manual workflow_dispatch) live elsewhere and are
-# unchanged by this consolidation:
-#   - cd-deploy-staging.yml       — staging Docker push during dev
+# Sibling workflows for staging / prerelease / editorial doc paths:
+#   - cd-publish-staging-image.yml    — pushes `:staging` Docker tag
+#                                       (auto on develop push + manual)
 #   - cd-publish-nuget-prerelease.yml — prerelease NuGet for client-lib
-#   - cd-deploy-docs.yml          — editorial doc deploy between releases
+#                                       (manual workflow_dispatch)
+#   - cd-deploy-docs.yml              — editorial doc deploy to Shelf
+#                                       between releases (manual)
 
 on:
   release:

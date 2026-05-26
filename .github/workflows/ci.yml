@@ -1,20 +1,33 @@
-name: CI - PR Validation
+name: CI
+
+# Unified CI for all develop-bound code paths:
+#   - pull_request: gate before merging into develop
+#   - push to develop: post-merge verification
+#   - push to ci/**: escape hatch for iterating on workflows or
+#     build setup without PR ceremony — see
+#     docs/contribute/local-ci.md
+#
+# The changes-detector job gates each downstream job (backend /
+# frontend / docs) on path-filters, so a docs-only typo PR doesn't
+# pay for backend tests, and a backend-only change doesn't rebuild
+# the frontend. Changes to the workflow itself (`ci.yml`) trigger
+# everything — that's how we catch a broken workflow before it
+# lands.
 
 on:
   pull_request:
-    branches: [ develop ]
+    branches: [develop]
+  push:
+    branches: [develop, 'ci/**']
 
 jobs:
-  # Detect which surfaces the PR actually touches, so we don't waste CI
-  # minutes building the backend for a docs-only typo fix (or vice versa).
-  # Each downstream job gates its `if:` on the matching output below.
-  # Changes to the CI workflows themselves trigger everything — that's
-  # how we catch a broken workflow before it lands.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Needed by paths-filter when running on pull_request events
+      # to read the list of changed files. Harmless on push events.
       pull-requests: read
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
@@ -31,14 +44,17 @@ jobs:
           filters: |
             backend:
               - 'src/dotnet/**'
-              - '.github/workflows/ci-*.yml'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/setup-dotnet/**'
               - 'GitVersion.yml'
             frontend:
               - 'src/frontend-vue/**'
-              - '.github/workflows/ci-*.yml'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/setup-node-pnpm/**'
             docs:
               - 'docs/**'
-              - '.github/workflows/ci-*.yml'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/setup-node-pnpm/**'
 
   backend:
     name: Backend Build & Test
@@ -59,6 +75,9 @@ jobs:
         uses: ./.github/actions/setup-dotnet
         with:
           with-gitversion: 'true'
+
+      - name: Log version
+        run: echo "Building version ${{ steps.dotnet.outputs.version }}"
 
       - name: Restore backend dependencies
         run: dotnet restore Modgud.slnx

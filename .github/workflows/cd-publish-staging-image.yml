@@ -1,0 +1,148 @@
+name: CD - Publish Staging Image
+
+# Builds the Modgud Docker image and pushes it to GHCR with the
+# `:staging` tag. Auto-runs on every push to `develop` (post-merge),
+# and is also available as a manual workflow_dispatch for re-pushes
+# when develop hasn't moved (e.g. recovering from a staging-side
+# config reset).
+#
+# This is a *publish*, not a deploy: the workflow's job ends with
+# `docker push` to ghcr.io/cocoar-dev/modgud:staging. Whatever pulls
+# that tag and runs it on a staging server (Watchtower, a cron, a
+# human) lives outside the workflow.
+#
+# Tagging strategy: only `:staging`. Each push overwrites the
+# pointer; the previous image becomes untagged. The GHCR package
+# retention policy (configured on the package settings page on
+# GitHub.com) is expected to delete untagged versions older than
+# N days, which keeps storage bounded without workflow-side cleanup
+# code. The `cd-release.yml` candidate-<run-id> tags follow the
+# same cleanup model.
+#
+# Path filtering: docs-only or markdown-only commits skip the build
+# (no need to rebuild the image for a typo fix). The full path
+# filter lives in the changes-detector job in `ci.yml`; here we use
+# a lighter `paths-ignore` because there's only one publishable
+# output and we don't gate per-component.
+
+on:
+  push:
+    branches: [develop]
+    paths-ignore:
+      - 'docs/**'
+      - 'dev-docs/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'TRADEMARK.md'
+      - '.gitignore'
+      - '.gitattributes'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Re-publish reason (when develop hasn''t moved)'
+        required: false
+        default: 'Manual republish'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: Calculate Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.build_version.outputs.VERSION }}
+      semver: ${{ steps.gv.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: GitVersion (no .NET needed)
+        id: gv
+        uses: ./.github/actions/setup-dotnet
+        with:
+          with-dotnet: 'false'
+          with-gitversion: 'true'
+
+      - name: Build version string
+        id: build_version
+        run: |
+          BASE="${{ steps.gv.outputs.major-minor-patch }}-${{ steps.gv.outputs.pre-release-label }}"
+          N="${{ steps.gv.outputs.commits-since-version-source }}"
+          VERSION="$BASE.$N"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Calculated version: $VERSION"
+
+  test:
+    name: Build & Test
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet
+
+      - name: Restore & build backend
+        run: |
+          dotnet restore Modgud.slnx
+          dotnet build Modgud.slnx -c Release --no-restore -p:Version=${{ needs.version.outputs.version }}
+        working-directory: ./src/dotnet
+
+      - name: Test backend
+        run: dotnet test Modgud.slnx -c Release --no-build --verbosity normal
+        working-directory: ./src/dotnet
+
+  publish:
+    name: Build Image & Push to GHCR
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push staging image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging
+          labels: |
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Publish summary
+        run: |
+          {
+            echo "### Staging image published"
+            echo ""
+            echo "**Version:** ${{ needs.version.outputs.version }}"
+            echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging\`"
+            echo "**Commit:** \`${{ github.sha }}\`"
+            echo "**Trigger:** ${{ github.event_name == 'push' && format('Auto-push from {0}', github.ref_name) || format('Manual: {0}', github.event.inputs.reason) }}"
+          } >> "$GITHUB_STEP_SUMMARY"

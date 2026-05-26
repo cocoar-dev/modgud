@@ -1,4 +1,4 @@
-name: CD - Documentation
+name: CD - Deploy Docs
 
 on:
   workflow_dispatch:
