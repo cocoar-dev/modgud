@@ -148,5 +148,5 @@ Lifecycle states:
   (Article 17)
 
 Detailed slice-internal walkthrough lives in the repo-only
-[Authentication slice blueprint](https://github.com/cocoar-dev/Modgud/blob/develop/dev-docs/architecture/authentication.md)
+[Authentication slice blueprint](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/architecture/authentication.md)
 notes.

@@ -1,7 +1,7 @@
 # Modgud.Client.AspNetCore
 
 ASP.NET Core integration for resource servers that authenticate against a
-[Modgud](https://github.com/cocoar-dev/Modgud) identity provider.
+[Modgud](https://github.com/cocoar-dev/modgud) identity provider.
 
 The lib does two things on top of vanilla `AddJwtBearer`:
 
@@ -99,4 +99,4 @@ var perms = ctx.User.FindAll("permission").Select(c => c.Value);
 
 ## License
 
-Apache-2.0. See [LICENSE](https://github.com/cocoar-dev/Modgud/blob/develop/LICENSE).
+Apache-2.0. See [LICENSE](https://github.com/cocoar-dev/modgud/blob/develop/LICENSE).

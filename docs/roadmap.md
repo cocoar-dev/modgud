@@ -67,7 +67,7 @@ and what's intentionally out of scope.
   Asset Library with SVG sanitisation and a 2 MB cap
 - Page-builder editor (Beta, feature-flagged) — editor lives, runtime
   rendering is the next sprint, see
-  [Page-builder runtime](https://github.com/cocoar-dev/Modgud/blob/develop/dev-docs/future-features/page-builder-runtime.md)
+  [Page-builder runtime](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/page-builder-runtime.md)
 
 **Compliance + safety**
 
@@ -90,13 +90,13 @@ Per-tenant DataProtection keys and Marten outbox already remove the
 "restart = everyone logged out" class of bugs, but real HA needs
 shared state (Redis or equivalent) for the sticky-session-vs-
 StateBag question, plus a failover test rig. See
-[HA / Multi-Instance Readiness](https://github.com/cocoar-dev/Modgud/blob/develop/dev-docs/future-features/ha-multi-instance.md)
+[HA / Multi-Instance Readiness](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/ha-multi-instance.md)
 for the seven concrete breakages identified.
 
 **Realm backup / restore / DR** — Database-per-realm makes pg_dump-
 per-tenant straightforward; what's missing is the tooling around it
 (scheduling, verification, restore-into-new-realm, point-in-time).
-See [Realm backup/restore/DR](https://github.com/cocoar-dev/Modgud/blob/develop/dev-docs/future-features/realm-backup-restore.md).
+See [Realm backup/restore/DR](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/realm-backup-restore.md).
 
 ### Medium
 
@@ -105,7 +105,7 @@ already discriminates by `Type`; `Saml`, `Ldap`, and `Kerberos`
 values are reserved but the handlers are unimplemented. Customer-
 driven; if you need SAML or LDAP as a first-class provider, get in
 touch. See
-[Enterprise SSO](https://github.com/cocoar-dev/Modgud/blob/develop/dev-docs/future-features/enterprise-sso-saml-ldap.md).
+[Enterprise SSO](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/enterprise-sso-saml-ldap.md).
 
 **Login alerts + manual IP blacklist** — Surfacing suspicious-login
 events to operators with an explicit allow/deny action, instead of
@@ -157,6 +157,6 @@ Identities) will serve you better.
 ## Where to follow along
 
 Detailed design notes for individual items live in the repo-only
-[dev-docs](https://github.com/cocoar-dev/Modgud/tree/develop/dev-docs/future-features)
+[dev-docs](https://github.com/cocoar-dev/modgud/tree/develop/dev-docs/future-features)
 tree. Read them on GitHub, or clone the repo and run `pnpm dev` in
 `dev-docs/` for the rendered VitePress experience.

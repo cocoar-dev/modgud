@@ -253,7 +253,7 @@ export default withMermaid(defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/cocoar-dev/Modgud' },
+      { icon: 'github', link: 'https://github.com/cocoar-dev/modgud' },
     ],
 
     search: {

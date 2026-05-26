@@ -14,7 +14,7 @@ For requirements beyond a quick local run, see [Requirements](./requirements).
 ## 1. Bring up the stack
 
 ```bash
-git clone https://github.com/cocoar-dev/Modgud.git
+git clone https://github.com/cocoar-dev/modgud.git
 cd Modgud
 docker compose up -d
 ```

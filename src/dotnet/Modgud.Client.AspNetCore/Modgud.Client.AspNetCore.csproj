@@ -23,8 +23,8 @@
     <Copyright>Copyright © Cocoar</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageProjectUrl>https://github.com/cocoar-dev/Modgud</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/cocoar-dev/Modgud</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/cocoar-dev/modgud</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/cocoar-dev/modgud</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>modgud;oidc;oauth;openid-connect;authorization;resource-access;aspnetcore;identity</PackageTags>
     <!-- Build artifacts the NuGet package needs. -->
