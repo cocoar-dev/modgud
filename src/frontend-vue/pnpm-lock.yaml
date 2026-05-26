@@ -25,8 +25,8 @@ importers:
         specifier: 2.5.1
         version: 2.5.1(vue@3.5.34(typescript@6.0.3))
       '@cocoar/vue-page-builder':
-        specifier: 2.1.0
-        version: 2.1.0(@cocoar/vue-ui@2.5.1(vue-router@5.0.7(@vue/compiler-sfc@3.5.34)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3))
+        specifier: 2.5.1
+        version: 2.5.1(@cocoar/vue-ui@2.5.1(vue-router@5.0.7(@vue/compiler-sfc@3.5.34)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3))
       '@cocoar/vue-script-editor':
         specifier: 2.5.1
         version: 2.5.1(monaco-editor@0.55.1)(vue@3.5.34(typescript@6.0.3))
@@ -144,10 +144,10 @@ packages:
     peerDependencies:
       vue: ^3.5.0
 
-  '@cocoar/vue-page-builder@2.1.0':
-    resolution: {integrity: sha512-2IjMb1xEbuDJdRXNT6qOBCxE2yexHt+5ODuBVUTseNwvTh7RYHqSYkxXWCGP0VFqNBzehXQJns5K1unnZJokWg==}
+  '@cocoar/vue-page-builder@2.5.1':
+    resolution: {integrity: sha512-q9azY7GxrztLzvOrJw1ccQnTGk94YdWQAXL9oOVpnu7Bdo3Vti356T9FHm7vxWYaQ8S9NJ+hClHDaBwnc0oJlA==}
     peerDependencies:
-      '@cocoar/vue-ui': 2.1.0
+      '@cocoar/vue-ui': 2.5.1
       vue: ^3.5.0
 
   '@cocoar/vue-script-editor@2.5.1':
@@ -1114,7 +1114,7 @@ snapshots:
     dependencies:
       vue: 3.5.34(typescript@6.0.3)
 
-  '@cocoar/vue-page-builder@2.1.0(@cocoar/vue-ui@2.5.1(vue-router@5.0.7(@vue/compiler-sfc@3.5.34)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3))':
+  '@cocoar/vue-page-builder@2.5.1(@cocoar/vue-ui@2.5.1(vue-router@5.0.7(@vue/compiler-sfc@3.5.34)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3))':
     dependencies:
       '@cocoar/vue-ui': 2.5.1(vue-router@5.0.7(@vue/compiler-sfc@3.5.34)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3))
       vue: 3.5.34(typescript@6.0.3)

@@ -18,7 +18,7 @@
     "@cocoar/vue-data-grid": "2.5.1",
     "@cocoar/vue-fragment-parser": "2.5.1",
     "@cocoar/vue-localization": "2.5.1",
-    "@cocoar/vue-page-builder": "2.1.0",
+    "@cocoar/vue-page-builder": "2.5.1",
     "@cocoar/vue-script-editor": "2.5.1",
     "@cocoar/vue-ui": "2.5.1",
     "monaco-editor": "^0.55.1",
