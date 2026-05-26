@@ -15,7 +15,6 @@
     <PackageReference Include="Cocoar.JsEval.TypeScript" />
     <PackageReference Include="MailKit" />
     <PackageReference Include="Postmark" />
-    <PackageReference Include="Microsoft.Extensions.Identity.Stores" />
     <PackageReference Include="Marten" />
     <PackageReference Include="Marten.AspNetCore" />
     <PackageReference Include="WolverineFx.Marten" />

@@ -92,9 +92,6 @@ public sealed class MembershipSecurityTests : IDisposable
         return task.Result;
     }
 
-    private static void WithTimeBudget(Action action, TimeSpan? budget = null)
-        => WithTimeBudget<bool>(() => { action(); return true; }, budget);
-
     // ─────────────────────────────────────────────────────────────────────
     // A1 — Resource exhaustion (DoS)
     //

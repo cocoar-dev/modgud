@@ -141,6 +141,18 @@ dotnet_diagnostic.CA5401.severity = error  # SymmetricAlgorithm with non-default
 dotnet_diagnostic.CA5402.severity = error  # CreateEncryptor with non-default IV
 dotnet_diagnostic.CA5403.severity = error  # do not hard-code certificate
 
+# ─────────────────────────────────────────────────────────────────────
+# Dead-code surfacing (Roslyn IDE analyzers)
+# ─────────────────────────────────────────────────────────────────────
+# These rules surface unused private members + unread fields + unused
+# parameters as warnings. Not elevated to error to avoid CI failures
+# on legitimate WIP — but the warnings make orphan code visible in
+# review + during `dotnet build` runs (and via the `cleanup:check`
+# pattern used in the frontend workspaces).
+dotnet_diagnostic.IDE0051.severity = warning  # unused private member
+dotnet_diagnostic.IDE0052.severity = warning  # read-but-never-used private member
+dotnet_diagnostic.IDE0060.severity = suggestion  # unused parameter (lots of public APIs satisfy interfaces, keep noisier)
+
 # Test projects must reproduce protocol-defined cryptographic primitives
 # (TOTP via HMACSHA1 per RFC 6238, etc.) to exercise real auth flows.
 # These projects don't ship in the runtime image, so the security-rule

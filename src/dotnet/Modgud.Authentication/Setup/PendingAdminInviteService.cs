@@ -80,7 +80,6 @@ public sealed record IssuedInvite(
 public sealed class PendingAdminInviteService(
     IDocumentSession session,
     IRealmAdminBootstrapper bootstrapper,
-    IServerConfiguration conf,
     IEmailService emailService,
     IWebHostEnvironment env,
     ILogger<PendingAdminInviteService> logger) : IPendingAdminInviteService

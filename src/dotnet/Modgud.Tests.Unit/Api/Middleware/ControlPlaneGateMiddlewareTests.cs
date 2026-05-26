@@ -50,23 +50,6 @@ public class ControlPlaneGateMiddlewareTests
             return http;
         }
 
-        private static ControlPlaneGateMiddleware NewMiddleware(out int nextCalls)
-        {
-            var calls = 0;
-            var mw = new ControlPlaneGateMiddleware(_ => { calls++; return Task.CompletedTask; });
-            nextCalls = 0;
-            return new MiddlewareWithCounter(mw, () => calls).Inner;
-        }
-
-        // Tiny helper so the closure can mutate while exposing reads.
-        private sealed class MiddlewareWithCounter
-        {
-            public ControlPlaneGateMiddleware Inner { get; }
-            private readonly Func<int> _read;
-            public MiddlewareWithCounter(ControlPlaneGateMiddleware inner, Func<int> read)
-            { Inner = inner; _read = read; }
-        }
-
         [Fact]
         public async Task Lets_through_unrelated_path_regardless_of_tenant()
         {

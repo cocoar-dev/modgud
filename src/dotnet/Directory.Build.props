@@ -4,6 +4,11 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
+        <!-- Run IDE-style analyzers (IDE0051 unused private member,
+             IDE0052 unread private member, etc.) at build time so
+             dead code surfaces in `dotnet build` output, not only in
+             the IDE. Severities tuned in repo-root .editorconfig. -->
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     </PropertyGroup>
 
     <!-- SecurityCodeScan adds SAST coverage on top of the built-in

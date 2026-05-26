@@ -1007,30 +1007,6 @@ public static class AuthorizationEndpoints
     }
 
     /// <summary>
-    /// Resolves the app slugs the bearer token's calling client is linked
-    /// to: looks up the OAuth client by <c>client_id</c>, walks its
-    /// <c>AppIds</c> list, and returns the slugs of the (non-deleted) Apps.
-    /// Returns an empty list when no client_id is on the principal
-    /// (interactive cookie auth), the client is not found, or the client
-    /// has no App link. Used by UserInfo to populate
-    /// <c>resource_access</c> per Keycloak convention.
-    /// </summary>
-    private static async Task<List<string>> ResolveAppSlugsForClientAsync(
-        ClaimsPrincipal user, IDocumentSession session)
-    {
-        var clientId = user.FindFirst(Claims.ClientId)?.Value;
-        if (string.IsNullOrEmpty(clientId)) return [];
-
-        var client = await session.Query<OAuthApplicationState>()
-            .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted);
-        if (client is null || client.AppIds.Count == 0) return [];
-
-        var apps = await session.Query<App>()
-            .Where(a => client.AppIds.Contains(a.Id) && !a.IsDeleted)
-            .ToListAsync();
-        return apps.Select(a => a.Slug).ToList();
-    }
-
     /// <summary>
     /// Stufe-3 scope restriction. Returns <c>null</c> if every requested scope
     /// is allowed for the calling client; otherwise returns a forbid result
