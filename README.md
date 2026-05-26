@@ -107,6 +107,8 @@ she challenged every traveler with the same question an IdP asks:
 ## License
 
 Licensed under the [Apache License, Version 2.0](./LICENSE).
+"Modgud" and the Modgud shield are trademarks of COCOAR e.U. —
+see [TRADEMARK.md](./TRADEMARK.md) for the practical rules.
 
 Copyright © 2025–2026 [COCOAR e.U.](https://cocoar.dev), Vienna,
 Austria.
