@@ -28,16 +28,20 @@
     <!-- Marten & Wolverine — Critter Stack 2026 (Marten 9 + Wolverine 6 +
          JasperFx 2). Migrated from 8.37 / 5.32 in chore/critter-stack-2026.
          Gotchas: dev-docs/engineering-gotchas/critter-stack-2026.md -->
-    <PackageVersion Include="Marten" Version="9.0.0" />
-    <PackageVersion Include="Marten.AspNetCore" Version="9.0.0" />
-    <PackageVersion Include="WolverineFx.Marten" Version="6.0.0" />
+    <PackageVersion Include="Marten" Version="9.0.2" />
+    <PackageVersion Include="Marten.AspNetCore" Version="9.0.2" />
+    <PackageVersion Include="WolverineFx.Marten" Version="6.0.2" />
     <!-- Marten 9 source-generates projection apply-dispatchers; every
          `.csproj` that declares a partial Projection class needs this as
          analyzer-style PackageReference. -->
+    <!-- Pinned to 2.0.0 — 2.1.1 generates an additional Evolve(...) overload
+         that collides with the existing one in PrincipalProjectionBase.
+         Revisit when fixing source-gen collision: see
+         dev-docs/engineering-gotchas/critter-stack-2026.md. -->
     <PackageVersion Include="JasperFx.Events.SourceGenerator" Version="2.0.0" />
     <!-- Wolverine 6 decoupled the Roslyn runtime codegen from core;
          IMessageBus.InvokeAsync<T> needs it in the host project. -->
-    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.0.0" />
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.0.2" />
     <!-- Other packages -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="System.Reactive" Version="6.1.0" />
@@ -48,17 +52,17 @@
     <!-- Device-info parsing for per-user session tracking -->
     <PackageVersion Include="Wangkanai.Detection" Version="8.20.0" />
     <!-- BCrypt for OAuth client/api secret hashing -->
-    <PackageVersion Include="BCrypt.Net-Next" Version="4.1.0" />
+    <PackageVersion Include="BCrypt.Net-Next" Version="4.2.0" />
     <!-- SourceLink for published NuGet packages -->
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
     <!-- OpenIddict (custom Marten stores, no EF Core) -->
-    <PackageVersion Include="OpenIddict" Version="7.4.0" />
-    <PackageVersion Include="OpenIddict.Abstractions" Version="7.4.0" />
-    <PackageVersion Include="OpenIddict.AspNetCore" Version="7.4.0" />
-    <PackageVersion Include="OpenIddict.Server" Version="7.4.0" />
-    <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.4.0" />
-    <PackageVersion Include="OpenIddict.Validation" Version="7.4.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.17.0" />
+    <PackageVersion Include="OpenIddict" Version="7.5.0" />
+    <PackageVersion Include="OpenIddict.Abstractions" Version="7.5.0" />
+    <PackageVersion Include="OpenIddict.AspNetCore" Version="7.5.0" />
+    <PackageVersion Include="OpenIddict.Server" Version="7.5.0" />
+    <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.5.0" />
+    <PackageVersion Include="OpenIddict.Validation" Version="7.5.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.18.0" />
     <!-- Testing -->
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
