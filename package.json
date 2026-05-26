@@ -1,6 +1,7 @@
 {
   "name": "modgud-root",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Root convenience scripts for building the Vue SPA and the in-app docs straight into the backend's wwwroot — used when you want `dotnet run` (no Docker) to serve a current frontend + docs.",
   "scripts": {
     "build:frontend": "cd src/frontend-vue && pnpm install --prefer-offline && pnpm exec vite build --outDir ../dotnet/Modgud.Api/wwwroot --emptyOutDir",
