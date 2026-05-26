@@ -9,11 +9,6 @@ emission, full 2FA spectrum, GDPR self-service.
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 [![pre-1.0](https://img.shields.io/badge/status-pre--1.0-orange.svg)](./docs/roadmap.md)
 
-> Built for the **owner-operator SaaS** case — one team running their
-> own products, a handful of realms, OIDC as the federation contract.
-> Not a Keycloak drop-in. **[Read the Sizing reality check](./docs/roadmap.md#sizing-reality-check)**
-> before evaluating; some features are intentionally out of scope.
-
 ## What you get
 
 - **Multi-tenant by design** — every realm gets its own PostgreSQL
@@ -61,37 +56,15 @@ emission, full 2FA spectrum, GDPR self-service.
 | [📖 Reference](./docs/reference/) | OAuth / Auth / Admin / Realm endpoint reference |
 | [🗺️ Roadmap](./docs/roadmap.md) | What ships today, what's coming, what's intentionally out of scope |
 
-## Is this for you?
-
-Modgud is a **good fit** if you can answer "yes" to most of these:
-
-- You own both the IdP and the SaaS apps it secures (no third-party
-  RPs depending on you for SLA)
-- A handful of realms, each with a few thousand to tens of thousands
-  of users
-- OIDC is enough — no immediate SAML / LDAP requirement
-- Single-instance with sub-minute restart windows is acceptable
-  (multi-instance HA is on the [roadmap](./docs/roadmap.md), not in
-  the box today)
-- You're comfortable with the recovery CLI as a break-glass path
-
-**Modgud is the wrong tool if** you need certified-compliance audits,
-sub-second RTO HA, fifty federation protocols on day one, or
-managed/hosted convenience. Use
-[Keycloak](https://www.keycloak.org/),
-[Zitadel](https://zitadel.com/),
-[Authentik](https://goauthentik.io/), or a hosted IdP (Auth0, Entra
-ID External Identities) instead.
-
 ## Status
 
-**Pre-1.0.** The product is in use and the roadmap is honest about
-gaps. Single-maintainer, alongside a day job — response times in
-days, not hours.
-
-The [Roadmap](./docs/roadmap.md) is the canonical view of what's
-shipped, what's coming, and what's intentionally out of scope. It
+**Pre-1.0, actively developed.** The [Roadmap](./docs/roadmap.md)
+is the canonical view of what's shipped and what's coming next — it
 gets revised when something lands.
+
+Single-maintainer, alongside a day job. Response times are in days,
+not hours; see [CONTRIBUTING.md](./CONTRIBUTING.md) for the working
+agreement.
 
 ## Build it yourself
 
