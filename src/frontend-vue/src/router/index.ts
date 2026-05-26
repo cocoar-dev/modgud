@@ -119,6 +119,15 @@ const GROUP_MODAL_SIZE = {
   height: '90vh', minHeight: '90vh', maxHeight: '90vh',
 } as const
 
+// Read-only diagnostic modal — a bit smaller than the editor modals
+// because there are no nested tabs, no script editor, no big grids.
+// Tall enough to show the per-check accordion without forcing the
+// outer scrollbar in typical (1080p) viewports.
+const CONSISTENCY_CHECK_MODAL_SIZE = {
+  width: '60rem', minWidth: '60rem', maxWidth: '60rem',
+  height: '80vh', minHeight: '80vh', maxHeight: '80vh',
+} as const
+
 const CLIENT_MODAL_SIZE = {
   width: '92vw', maxWidth: '120rem',
   height: '92vh', minHeight: '92vh', maxHeight: '92vh',
@@ -415,6 +424,16 @@ const routes = [
             {
               path: 'settings',
               component: () => import('@/views/admin/AppSettingsView.vue'),
+              meta: {
+                routedFragments: [
+                  {
+                    type: 'modal',
+                    path: 'consistency-check',
+                    component: () => import('@/views/admin/ConsistencyCheckModal.vue'),
+                    overlayOptions: { size: CONSISTENCY_CHECK_MODAL_SIZE },
+                  },
+                ],
+              },
             },
           ],
         },

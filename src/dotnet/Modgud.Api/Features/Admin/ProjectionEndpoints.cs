@@ -9,6 +9,7 @@ using Modgud.Infrastructure.Events;
 using Modgud.Authentication.Projections;
 using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using System.Diagnostics;
 
 namespace Modgud.Api.Features.Admin;
 
@@ -106,84 +107,162 @@ public static class ProjectionEndpoints
 
         // Consistency check — reports drift between authoritative sources and derived state.
         //
+        // Response shape: a flat `Checks` array, one entry per check, each
+        // self-describing (`Title`, `Description`, per-check `Summary` and
+        // `Issues`). Keeps the UI dumb: no hard-coded copy, no count
+        // arithmetic, no resolution work. The admin sees exactly what was
+        // checked, what was confirmed, and what's wrong — no GUID-only output.
+        //
         // Source of truth:
         //   • ApplicationUser documents   → should have a Person Principal entry
         //   • Group docs                  → should have a Group Principal entry
         //   • PermissionRole docs         → referenced by groups
         //
-        // Checks:
-        //   A. PrincipalValidation drift — source count vs. projection count, per type
-        //   B. Dangling principal refs in groups' MemberIds
-        //   C. Dangling role refs in groups' RoleIds
-        //   D. Nested-group cycles (defensive — UpdateGroupCommand prevents creation but
-        //       historical data or direct DB edits could introduce one)
-        //   E. Auto-group membership drift
+        // Checks (each in its own `CheckResult` block):
+        //   principal-sync     — source ↔ Principal projection drift
+        //   dangling-members   — MemberIds in groups that resolve to nothing
+        //   dangling-roles     — RoleIds in groups that resolve to nothing
+        //   group-cycles       — nested-group cycles (defensive — commands prevent
+        //                        creation but historical / direct-DB edits could land one)
+        //   auto-group-drift   — auto-group computed membership ↔ persisted MemberIds
         group.MapGet("consistency-check", async (
             IQuerySession session,
             IMembershipEvaluator membershipEvaluator,
             CancellationToken ct) =>
         {
+            var totalWatch = Stopwatch.StartNew();
+
             var applicationUsers = await session.Query<ApplicationUser>()
                 .Where(u => !u.IsDeleted)
                 .ToListAsync(ct);
-            var appUserIds = applicationUsers.Select(u => u.Id).ToHashSet();
+            var appUserById = applicationUsers.ToDictionary(u => u.Id);
+            var appUserIds = appUserById.Keys.ToHashSet();
 
             var groups = (await session.Query<Group>()
                 .Where(g => !g.IsDeleted)
                 .ToListAsync(ct)).ToList();
-            var groupIds = groups.Select(g => g.Id).ToHashSet();
+            var groupById = groups.ToDictionary(g => g.Id);
+            var groupIds = groupById.Keys.ToHashSet();
 
             var principals = await session.Query<Principal>()
                 .Where(p => !p.IsDeleted)
                 .ToListAsync(ct);
-            var principalIds = principals.Select(p => p.Id).ToHashSet();
+            var principalById = principals.ToDictionary(p => p.Id);
+            var principalIds = principalById.Keys.ToHashSet();
 
             var roles = await session.Query<PermissionRole>()
                 .Where(r => !r.IsDeleted)
                 .ToListAsync(ct);
-            var roleIds = roles.Select(r => r.Id).ToHashSet();
+            var roleById = roles.ToDictionary(r => r.Id);
+            var roleIds = roleById.Keys.ToHashSet();
 
-            // A. PrincipalValidation drift
-            var missingPersonPrincipals = appUserIds.Where(id => !principalIds.Contains(id)).ToList();
-            var orphanPersonPrincipals = principals
+            // Resolve a guid to a human-readable label by trying every store in
+            // turn. Falls back to the truncated GUID if nothing knows it.
+            IdName LabelFor(Guid id)
+            {
+                if (principalById.TryGetValue(id, out var p))
+                    return new IdName(id, !string.IsNullOrWhiteSpace(p.DisplayName) ? p.DisplayName : id.ToString("N").Substring(0, 8));
+                if (appUserById.TryGetValue(id, out var u))
+                    return new IdName(id, !string.IsNullOrWhiteSpace(u.Email) ? u.Email : (u.UserName ?? id.ToString("N").Substring(0, 8)));
+                if (groupById.TryGetValue(id, out var g))
+                    return new IdName(id, g.Name);
+                if (roleById.TryGetValue(id, out var r))
+                    return new IdName(id, r.Name);
+                return new IdName(id, $"<unknown {id.ToString("N").Substring(0, 8)}>");
+            }
+
+            var checkResults = new List<CheckResult>();
+
+            // ─── Check 1: Principal-Sync ─────────────────────────────────
+            var checkWatch = Stopwatch.StartNew();
+            var missingPerson = appUserIds.Where(id => !principalIds.Contains(id)).Select(LabelFor).ToList();
+            var orphanPerson = principals
                 .Where(p => p is Person && !appUserIds.Contains(p.Id))
-                .Select(p => p.Id)
+                .Select(p => new IdName(p.Id, !string.IsNullOrWhiteSpace(p.DisplayName) ? p.DisplayName : "<no display name>"))
                 .ToList();
-
-            var missingGroupPrincipals = groupIds.Where(id => !principalIds.Contains(id)).ToList();
-            var orphanGroupPrincipals = principals
+            var missingGroup = groupIds.Where(id => !principalIds.Contains(id))
+                .Select(id => new IdName(id, groupById[id].Name))
+                .ToList();
+            var orphanGroup = principals
                 .Where(p => p is Group && !groupIds.Contains(p.Id))
-                .Select(p => p.Id)
+                .Select(p => new IdName(p.Id, !string.IsNullOrWhiteSpace(p.DisplayName) ? p.DisplayName : "<no display name>"))
                 .ToList();
 
-            // B. Dangling MemberIds in groups
+            var principalSyncOk = missingPerson.Count == 0 && orphanPerson.Count == 0
+                               && missingGroup.Count == 0 && orphanGroup.Count == 0;
+            checkResults.Add(new CheckResult(
+                Id: "principal-sync",
+                Title: "Principal projection sync",
+                Description: "Every ApplicationUser must have a matching Person Principal; every Group must have a matching Group Principal. Drift here means the inline Principal projection diverged from its source documents — usually a stale projection that a rebuild can fix.",
+                Status: principalSyncOk ? "OK" : "ISSUES_FOUND",
+                DurationMs: checkWatch.ElapsedMilliseconds,
+                Summary: principalSyncOk
+                    ? $"{appUserIds.Count}/{appUserIds.Count} ApplicationUsers ↔ Person principals, {groupIds.Count}/{groupIds.Count} Groups ↔ Group principals"
+                    : $"{missingPerson.Count + orphanPerson.Count} person drift, {missingGroup.Count + orphanGroup.Count} group drift",
+                Issues: new
+                {
+                    MissingPerson = missingPerson,
+                    OrphanPerson = orphanPerson,
+                    MissingGroup = missingGroup,
+                    OrphanGroup = orphanGroup,
+                }));
+
+            // ─── Check 2: Dangling member references ─────────────────────
+            checkWatch.Restart();
             var danglingMembers = groups
                 .SelectMany(g => g.MemberIds
                     .Where(mid => !principalIds.Contains(mid))
-                    .Select(mid => new { GroupId = g.Id, GroupName = g.Name, MemberId = mid }))
+                    .Select(mid => new DanglingMember(g.Id, g.Name, LabelFor(mid))))
                 .ToList();
+            checkResults.Add(new CheckResult(
+                Id: "dangling-members",
+                Title: "Dangling member references",
+                Description: "Every entry in a group's MemberIds must resolve to a live Principal. Dangling references happen when a member was deleted without first being removed from the groups they were in — the group would silently grant nothing for those ids and the projection-pruning is a manual catch-up.",
+                Status: danglingMembers.Count == 0 ? "OK" : "ISSUES_FOUND",
+                DurationMs: checkWatch.ElapsedMilliseconds,
+                Summary: danglingMembers.Count == 0
+                    ? $"All MemberIds across {groups.Count} group(s) resolve"
+                    : $"{danglingMembers.Count} dangling reference(s) found",
+                Issues: new { Items = danglingMembers }));
 
-            // C. Dangling RoleIds in groups
-            var danglingRoles = groups
+            // ─── Check 3: Dangling role references ───────────────────────
+            checkWatch.Restart();
+            var danglingRoleRefs = groups
                 .SelectMany(g => g.RoleIds
                     .Where(rid => !roleIds.Contains(rid))
-                    .Select(rid => new { GroupId = g.Id, GroupName = g.Name, RoleId = rid }))
+                    .Select(rid => new DanglingRole(g.Id, g.Name, rid)))
                 .ToList();
+            checkResults.Add(new CheckResult(
+                Id: "dangling-roles",
+                Title: "Dangling role references",
+                Description: "Every entry in a group's RoleIds must resolve to a live PermissionRole. Dangling references happen when a role was deleted while still bound to one or more groups — affected groups silently grant nothing for those role ids.",
+                Status: danglingRoleRefs.Count == 0 ? "OK" : "ISSUES_FOUND",
+                DurationMs: checkWatch.ElapsedMilliseconds,
+                Summary: danglingRoleRefs.Count == 0
+                    ? $"All RoleIds across {groups.Count} group(s) resolve"
+                    : $"{danglingRoleRefs.Count} dangling reference(s) found",
+                Issues: new { Items = danglingRoleRefs }));
 
-            // D. Nested-group cycles
+            // ─── Check 4: Group cycles ───────────────────────────────────
+            checkWatch.Restart();
             var cycles = GroupCycleDetector.DetectCycles(groups);
+            checkResults.Add(new CheckResult(
+                Id: "group-cycles",
+                Title: "Nested-group cycles",
+                Description: "Group membership may nest one level deep or more, but never form a cycle (A → B → A). Update commands reject cycle-introducing edits, so any cycle found here was introduced out-of-band — direct DB edits, broken migration, or a bug in older code.",
+                Status: cycles.Count == 0 ? "OK" : "ISSUES_FOUND",
+                DurationMs: checkWatch.ElapsedMilliseconds,
+                Summary: cycles.Count == 0
+                    ? $"No cycles in the group-member graph across {groups.Count} group(s)"
+                    : $"{cycles.Count} cycle(s) detected",
+                Issues: new { Cycles = cycles }));
 
-            // E. Auto-group membership drift — for every auto-group with a script,
-            // recompute the expected member set in-memory (no event append) and
-            // compare against the persisted MemberIds. Both directions reported:
-            // missing (expected but not stored) and extra (stored but no longer
-            // matched). Script-compile failures surface as ScriptError so the
-            // admin can fix the predicate; the recalc cron will re-fail on its
-            // own clock, this just lets ops see the drift early.
-            var autoGroupDrift = new List<object>();
+            // ─── Check 5: Auto-group membership drift ────────────────────
+            checkWatch.Restart();
             var autoGroups = groups.Where(g =>
                 g.MembershipMode == MembershipMode.Auto &&
-                !string.IsNullOrWhiteSpace(g.CompiledMembershipScript));
+                !string.IsNullOrWhiteSpace(g.CompiledMembershipScript)).ToList();
+            var autoDrift = new List<AutoDriftIssue>();
 
             foreach (var ag in autoGroups)
             {
@@ -199,19 +278,12 @@ public static class ProjectionEndpoints
 
                     var expectedSet = expectedMembers.ToHashSet();
                     var actualSet = ag.MemberIds.ToHashSet();
-                    var missing = expectedSet.Except(actualSet).ToList();
-                    var extra = actualSet.Except(expectedSet).ToList();
+                    var missing = expectedSet.Except(actualSet).Select(LabelFor).ToList();
+                    var extra = actualSet.Except(expectedSet).Select(LabelFor).ToList();
 
                     if (missing.Count > 0 || extra.Count > 0)
                     {
-                        autoGroupDrift.Add(new
-                        {
-                            GroupId = ag.Id,
-                            GroupName = ag.Name,
-                            ScriptError = false,
-                            MissingMembers = missing,
-                            ExtraMembers = extra,
-                        });
+                        autoDrift.Add(new AutoDriftIssue(ag.Id, ag.Name, ScriptError: false, missing, extra));
                     }
                 }
                 catch (Exception)
@@ -219,29 +291,31 @@ public static class ProjectionEndpoints
                     // Predicate compile/translate failed. Don't blow up the whole
                     // consistency check — surface the script as broken so the admin
                     // can navigate to the group and fix it.
-                    autoGroupDrift.Add(new
-                    {
-                        GroupId = ag.Id,
-                        GroupName = ag.Name,
-                        ScriptError = true,
-                        MissingMembers = new List<Guid>(),
-                        ExtraMembers = new List<Guid>(),
-                    });
+                    autoDrift.Add(new AutoDriftIssue(ag.Id, ag.Name, ScriptError: true, new List<IdName>(), new List<IdName>()));
                 }
             }
 
-            var ok = missingPersonPrincipals.Count == 0
-                  && orphanPersonPrincipals.Count == 0
-                  && missingGroupPrincipals.Count == 0
-                  && orphanGroupPrincipals.Count == 0
-                  && danglingMembers.Count == 0
-                  && danglingRoles.Count == 0
-                  && cycles.Count == 0
-                  && autoGroupDrift.Count == 0;
+            checkResults.Add(new CheckResult(
+                Id: "auto-group-drift",
+                Title: "Auto-group membership drift",
+                Description: "Auto-groups derive their membership from a TypeScript predicate. This check re-evaluates each predicate read-only and compares the result to the persisted MemberIds. Drift means the projection's recalculator missed a relevant event — usually transient (will self-heal on the next member change) but can surface a broken script if it persists.",
+                Status: autoDrift.Count == 0 ? "OK" : "ISSUES_FOUND",
+                DurationMs: checkWatch.ElapsedMilliseconds,
+                Summary: autoGroups.Count == 0
+                    ? "No auto-groups configured — nothing to drift"
+                    : (autoDrift.Count == 0
+                        ? $"{autoGroups.Count}/{autoGroups.Count} auto-group(s) match their predicate"
+                        : $"{autoDrift.Count}/{autoGroups.Count} auto-group(s) drifted"),
+                Issues: new { Items = autoDrift }));
+
+            totalWatch.Stop();
+            var allOk = checkResults.All(c => c.Status == "OK");
 
             return Results.Ok(new
             {
-                Status = ok ? "OK" : "ISSUES_FOUND",
+                Status = allOk ? "OK" : "ISSUES_FOUND",
+                RunAt = DateTime.UtcNow,
+                DurationTotalMs = totalWatch.ElapsedMilliseconds,
                 Totals = new
                 {
                     ApplicationUsers = applicationUsers.Count,
@@ -251,20 +325,7 @@ public static class ProjectionEndpoints
                     PrincipalsGroup = principals.Count(p => p is Group),
                     Roles = roles.Count,
                 },
-                PrincipalValidation = new
-                {
-                    MissingPerson = missingPersonPrincipals,
-                    OrphanPerson = orphanPersonPrincipals,
-                    MissingGroup = missingGroupPrincipals,
-                    OrphanGroup = orphanGroupPrincipals,
-                },
-                DanglingReferences = new
-                {
-                    MembersInGroups = danglingMembers,
-                    RolesInGroups = danglingRoles,
-                },
-                GroupCycles = cycles,
-                AutoGroupDrift = autoGroupDrift,
+                Checks = checkResults,
             });
         })
         .WithName("AdminProjections_ConsistencyCheck");
@@ -279,6 +340,53 @@ public static class ProjectionEndpoints
 /// admin UI can render "<c>Eng</c> → <c>Leads</c> → <c>Eng</c>" without a follow-up lookup.
 /// </summary>
 internal record GroupRef(Guid Id, string Name);
+
+/// <summary>
+/// Resolved id+label pair surfaced in every consistency-check issue so the
+/// admin UI never has to fall back to bare GUIDs. <see cref="Label"/> is the
+/// best-effort display string we can derive from whichever store knows the id —
+/// DisplayName for principals, Email for users, Name for groups/roles. Stale-id
+/// fallback is "&lt;unknown 12345678&gt;".
+/// </summary>
+internal record IdName(Guid Id, string Label);
+
+/// <summary>
+/// One dangling member entry — a group's MemberIds list references an id that
+/// no longer resolves to a live principal.
+/// </summary>
+internal record DanglingMember(Guid GroupId, string GroupName, IdName Member);
+
+/// <summary>
+/// One dangling role entry — a group's RoleIds list references a role id that
+/// no longer resolves to a live PermissionRole. We can't label the role (it's
+/// gone), so only the GUID surfaces.
+/// </summary>
+internal record DanglingRole(Guid GroupId, string GroupName, Guid RoleId);
+
+/// <summary>
+/// One auto-group drift entry — the predicate's expected member set differs
+/// from the persisted MemberIds, or the predicate failed to compile entirely.
+/// </summary>
+internal record AutoDriftIssue(
+    Guid GroupId,
+    string GroupName,
+    bool ScriptError,
+    List<IdName> MissingMembers,
+    List<IdName> ExtraMembers);
+
+/// <summary>
+/// One block in the consistency-check response — self-describing so the FE
+/// doesn't hard-code copy. <see cref="Issues"/> is intentionally typed as
+/// <c>object</c> because each check carries its own shape.
+/// </summary>
+internal record CheckResult(
+    string Id,
+    string Title,
+    string Description,
+    string Status,
+    long DurationMs,
+    string Summary,
+    object Issues);
 
 /// <summary>
 /// One detected cycle in the nested-group graph, deduplicated across rotations
