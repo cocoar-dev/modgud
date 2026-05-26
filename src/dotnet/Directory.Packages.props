@@ -56,7 +56,7 @@
     <!-- BCrypt for OAuth client/api secret hashing -->
     <PackageVersion Include="BCrypt.Net-Next" Version="4.1.0" />
     <!-- SourceLink for published NuGet packages -->
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
     <!-- OpenIddict (custom Marten stores, no EF Core) -->
     <PackageVersion Include="OpenIddict" Version="7.4.0" />
     <PackageVersion Include="OpenIddict.Abstractions" Version="7.4.0" />
@@ -64,7 +64,7 @@
     <PackageVersion Include="OpenIddict.Server" Version="7.4.0" />
     <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.4.0" />
     <PackageVersion Include="OpenIddict.Validation" Version="7.4.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.17.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.18.0" />
     <!-- Testing -->
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
