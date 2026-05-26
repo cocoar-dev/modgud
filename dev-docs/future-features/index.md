@@ -97,6 +97,36 @@ existierender Konsument, aber jederzeit additiv nachrüstbar.
 
 **Status:** Geparkt 2026-05-08. Nicht blockierend.
 
+### [CI iteration hygiene — make workflow development cheap](./ci-iteration-hygiene)
+
+Five concrete items to make CI cheap to iterate on: `workflow_dispatch`
++ `dry_run` on `cd-release.yml` (so the release pipeline is testable
+without cutting releases), path-filter on `codeql.yml` (skip docs-only
+PRs), `act` local-runner setup doc, composite actions for repeated
+setup blocks, and a `ci/**` branch-trigger escape hatch. Stufe C
+(mandatory PRs on `develop`, no admin bypass) ships **only after**
+this wave — the gate is "trivial changes must remain cheap".
+
+**Status:** Plan captured 2026-05-26. First post-public-flip wave.
+
+### [NodaTime migration — store intent, not math](./nodatime-migration)
+
+Today every timestamp in Modgud is a `DateTimeOffset` UTC instant —
+correct for "happens N minutes from now" semantics (token expiry,
+magic links, audit logs) but wrong for any **future-scheduled
+event with admin-intended local time** (e.g. "deactivate user on
+2026-06-27 at 18:00"). 18:00 needs an IANA zone or the intent is
+lost the moment EU drops DST. Plan covers the migration to
+NodaTime (`Instant` + `LocalDateTime + DateTimeZone`),
+OpenIddict-boundary strategy, Marten/Postgres mapping, Quartz
+TZ-coupling, and a `(localDateTime, zoneId)` API contract paired
+with the Temporal-based date-time component suite already shipping
+in `@cocoar/vue-ui` (`CoarZonedDateTimePicker` &c).
+
+**Status:** Plan captured 2026-05-26. Scheduled to run as the
+first post-public-flip refactor wave. Pre-1.0 is the cheapest
+moment — no user data to migrate, no contributors to retrain.
+
 ### [Per-App Login-Customization (Routing + Form-Builder)](./per-app-login-customization)
 
 Modgud zentralisiert Login — heute ein Realm = eine Login-Seite,

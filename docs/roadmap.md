@@ -124,6 +124,14 @@ discriminates by `Type` with `Saml`, `Ldap`, and `Kerberos` values
 reserved; handlers come next. See
 [Enterprise SSO](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/enterprise-sso-saml-ldap.md).
 
+**Scheduled operations** — Admin-defined future actions: deactivate
+a user on a specific date, time-bounded group memberships, scheduled
+credential rotation, retention sweeps. Foundation work is captured —
+the domain model needs `LocalDateTime + IANA zone` (not UTC-only) so
+"18:00 Vienna" survives DST rule changes and re-reads correctly
+across timezones. See
+[NodaTime migration](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/nodatime-migration.md).
+
 **Login alerts + manual IP blacklist** — Surfacing suspicious-login
 events to operators with an explicit allow/deny action — a NAT-safer
 alternative to auto-rate-limiting that risks locking out legitimate

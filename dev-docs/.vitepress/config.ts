@@ -89,6 +89,8 @@ export default withMermaid(defineConfig({
           { text: 'Per-App Login-Customization', link: '/future-features/per-app-login-customization' },
           { text: 'Page-builder runtime', link: '/future-features/page-builder-runtime' },
           { text: 'Service-account credentials', link: '/future-features/service-account-credentials' },
+          { text: 'NodaTime migration', link: '/future-features/nodatime-migration' },
+          { text: 'CI iteration hygiene', link: '/future-features/ci-iteration-hygiene' },
         ],
       },
       {

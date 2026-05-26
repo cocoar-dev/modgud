@@ -57,6 +57,7 @@ emission, full 2FA spectrum, GDPR self-service.
 | [🔌 Integrate](./docs/integrate/) | Plug your ASP.NET Core / SaaS app into Modgud |
 | [📖 Reference](./docs/reference/) | OAuth / Auth / Admin / Realm endpoint reference |
 | [🗺️ Roadmap](./docs/roadmap.md) | What ships today, what's coming, what's intentionally out of scope |
+| [📦 Releases](https://github.com/cocoar-dev/modgud/releases) | Versioned releases with hand-written release notes — the canonical changelog |
 
 ## Status
 
