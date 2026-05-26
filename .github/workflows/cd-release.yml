@@ -154,7 +154,7 @@ jobs:
           (( ${#files[@]} )) || { echo "::error ::No packages found in artifacts/"; exit 1; }
 
       - name: Upload nupkg artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages-${{ needs.validate-version.outputs.version }}
           path: ${{ github.workspace }}/artifacts
@@ -225,7 +225,7 @@ jobs:
         run: cd docs/.vitepress/dist && zip -r $GITHUB_WORKSPACE/docs.zip .
 
       - name: Upload docs artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docs-${{ needs.validate-version.outputs.docs-version }}
           path: ${{ github.workspace }}/docs.zip
