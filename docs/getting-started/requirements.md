@@ -61,7 +61,7 @@ Required for:
 
 Without SMTP these flows degrade gracefully (password sign-in still works, TOTP / Passkey 2FA work) but you lose recovery capability.
 
-Configure via [App-Einstellungen](../plattform/settings) per realm or instance-wide via `configuration.json`.
+Configure via [Settings](../plattform/settings) per realm or instance-wide via `configuration.json`.
 
 ### Optional: external Identity Providers
 

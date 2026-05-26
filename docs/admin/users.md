@@ -64,7 +64,7 @@ Overview of the user's security status:
 Actions:
 
 - **Set password** — assign a new password (the user can still change it themselves later)
-- **Reset 2FA completely** — disable all methods, fresh grace period (see [Recovery CLI](./recovery-cli))
+- **Reset 2FA completely** — disable all methods, fresh grace period (see [Recovery CLI](../operate/recovery-cli))
 - **Send sign-in link** (magic link via email)
 - **Lift lockout** — when the user has locked themselves out via too many failed attempts
 - **2FA enforcement override** — exempt this user from the global 2FA requirement (use sparingly, audited)

@@ -7,7 +7,7 @@ description: Per-user, in-app notification surface — bell in the header, panel
 
 The **inbox** is Modgud's in-app notification surface — a header bell with an unread badge and a drop-down panel listing items addressed to the current user. It complements (not replaces) email: every signal that needs an admin or end-user to *see something happened in the IdP* lands here first, with email reserved for things that have to leave the app (password-reset, magic-link, ...).
 
-Every authenticated user has an inbox — there is no permission gate. The retention policy that controls how long items stay around is configured under [Inbox-Einstellungen](./inbox-settings).
+Every authenticated user has an inbox — there is no permission gate. The retention policy that controls how long items stay around is configured under [Inbox settings](./inbox-settings).
 
 ## Bell & panel UX
 
@@ -48,7 +48,7 @@ A user submitted a change-request that reached the `AdminApprovalPending` state.
 
 ### `ChangeRequestApproved` / `ChangeRequestRejected`
 
-FYI feedback to the requester. AutoExpire means the items stay around until the user reads/dismisses them or the retention sweep cleans them up (defaults: 60 days if still unread, 30 days after read — see [Inbox-Einstellungen](./inbox-settings)). No dedup — each decision creates a fresh item.
+FYI feedback to the requester. AutoExpire means the items stay around until the user reads/dismisses them or the retention sweep cleans them up (defaults: 60 days if still unread, 30 days after read — see [Inbox settings](./inbox-settings)). No dedup — each decision creates a fresh item.
 
 ### `ScheduledJobFailed`
 
@@ -95,5 +95,5 @@ Every authenticated user can call `/api/inbox/*`. The endpoints filter by `HttpC
 
 ## See also
 
-- [Inbox-Einstellungen](./inbox-settings) — per-kind retention policy (how long items live).
+- [Inbox settings](./inbox-settings) — per-kind retention policy (how long items live).
 - [Scheduled jobs](/admin/scheduled-jobs) — the source surface for `ScheduledJobFailed` and `ManualJobCompleted`.

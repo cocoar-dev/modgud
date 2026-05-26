@@ -23,7 +23,7 @@ If the email never arrives:
 If you have **no email access** AND **no working 2FA** AND **no recovery codes**:
 
 - Contact your admin. They can `Send sign-in link` from the user editor (which goes to whatever email they have on file — same problem if it's wrong) or `Set password` directly (they generate a temporary one for you).
-- Worst case (no admin available): the admin's [Recovery CLI](../admin/recovery-cli) is the last fallback. Someone with container access can reset your password without the UI.
+- Worst case (no admin available): the admin's [Recovery CLI](../operate/recovery-cli) is the last fallback. Someone with container access can reset your password without the UI.
 
 ## Best practices
 

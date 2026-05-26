@@ -136,7 +136,7 @@ The single anonymous endpoint is the bootstrap-invite consumer:
 The token comes from one of:
 
 - `dotnet Modgud.Api.dll recover bootstrap-admin --email <e>`
-  (without `--password`) — see [Recovery CLI](../admin/recovery-cli)
+  (without `--password`) — see [Recovery CLI](../operate/recovery-cli)
 - `POST /api/admin/realms` with an `InitialAdmin` payload — see
   [Realm API](./realm-api)
 - `POST /api/admin/realms/{slug}/resend-bootstrap-invite` — re-issue a

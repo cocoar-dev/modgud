@@ -4,7 +4,7 @@
 This page is the admin UI walkthrough. For the provider model, dynamic
 scheme registration, `UserUpdateScript` runtime, and
 `ExternalIdentityLink` schema see
-[Guide → Login Providers](/guide/login-providers).
+[Guide → Login Providers](/integrate/login-providers).
 :::
 
 A **login provider** is a way for users to authenticate with Modgud. Today
@@ -99,11 +99,11 @@ on access.
 
 **Add the login provider**
 
-1. Admin → **Login Providers** → **Provider hinzufügen**
+1. Admin → **Login Providers** → **Add provider**
 2. **Flavor**: *Microsoft Entra ID*
 3. **Display Name**: e.g. "Company SSO"
 4. **Tenant ID**: paste from Entra
-5. **Erstellen**
+5. **Create**
 
 The detail dialog opens.
 
@@ -209,5 +209,5 @@ panel on the **Verbindung** tab.
 
 ::: warning Test the new provider before disabling Internal
 If a misconfigured external provider is the only login path and an admin
-can't sign in, the [Recovery CLI](./recovery-cli) is your only way back.
+can't sign in, the [Recovery CLI](../operate/recovery-cli) is your only way back.
 :::

@@ -47,7 +47,7 @@ You should see:
 The CLI atomically creates the user, seeds the three default roles (System Admin / User Manager / Viewer) into the system realm, and adds the user to the **Administratoren** group with `realm:admin`.
 
 ::: tip Password rules
-The CLI enforces the same Identity password policy the SPA uses (length, mixed case, digit). A weak password is rejected — see [App-Einstellungen](../plattform/settings) for how to relax the policy if needed.
+The CLI enforces the same Identity password policy the SPA uses (length, mixed case, digit). A weak password is rejected — see [Settings](../plattform/settings) for how to relax the policy if needed.
 :::
 
 ::: details Other ways to create the first admin
@@ -121,7 +121,7 @@ Click **Send Request** in oidcdebugger → log in as `admin` → consent → you
 
 ## 7. Bind your first SaaS app
 
-You're now ready for the linear walkthrough that turns Modgud into the IdP for a real app of yours: [SaaS Integration Walkthrough](../admin/saas-integration-walkthrough).
+You're now ready for the linear walkthrough that turns Modgud into the IdP for a real app of yours: [SaaS Integration Walkthrough](../integrate/saas-walkthrough).
 
 ## Troubleshooting
 
@@ -130,7 +130,7 @@ The bootstrap-admin command writes the user immediately. If login still fails, c
 :::
 
 ::: details Magic-link emails don't arrive
-Default `configuration.json` ships with an in-memory mail service for dev. Magic-link emails appear in the API logs (`docker logs modgud -f`) and in `data/dev-emails/` — they aren't actually sent. To use real SMTP, edit `configuration.local.json` (gitignored) and set the SMTP block — see [App-Einstellungen](../plattform/settings).
+Default `configuration.json` ships with an in-memory mail service for dev. Magic-link emails appear in the API logs (`docker logs modgud -f`) and in `data/dev-emails/` — they aren't actually sent. To use real SMTP, edit `configuration.local.json` (gitignored) and set the SMTP block — see [Settings](../plattform/settings).
 :::
 
 ::: details OIDC discovery returns 404
@@ -152,5 +152,5 @@ docker compose restart modgud
 
 - [First-time setup](./first-time-setup) — the three bootstrap paths explained, when to use which
 - [Concepts: Apps & resource_access](../concepts/apps-and-resource-access) — the mental model behind the permission system
-- [Integrating a Resource Server](../guide/integrating-resource-server) — wire your own ASP.NET Core backend to validate tokens
-- [Recovery CLI](../admin/recovery-cli) — break-glass operations beyond bootstrap
+- [Integrating a Resource Server](../integrate/resource-server) — wire your own ASP.NET Core backend to validate tokens
+- [Recovery CLI](../operate/recovery-cli) — break-glass operations beyond bootstrap

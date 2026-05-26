@@ -14,7 +14,7 @@ Permissions for the in-app live view: `observability:read`. The `realm:admin` by
 | --- | --- | --- |
 | Prometheus scrape | `/metrics` (default) | Static **bearer token** — set via `Observability__Prometheus__BearerToken`. Mismatch returns 404 (not 401) so the endpoint's existence stays unconfirmed. Constant-time compare. |
 | OTLP push (metrics + traces) | configurable endpoint (default `http://localhost:4317`) | Whatever the collector requires. Off by default; turn on when you actually have a collector (Tempo, Honeycomb, …). |
-| In-app live view | `/plattform/observability` (Admin SPA) | Cookie auth + `observability:read`. Realm-scoped — each admin sees only their own realm. |
+| In-app live view | `/operate/observability` (Admin SPA) | Cookie auth + `observability:read`. Realm-scoped — each admin sees only their own realm. |
 | REST snapshot | `GET /api/admin/observability/snapshot?windowMinutes=15` | Same as in-app view. Returns event-type counts, login outcome breakdown, per-minute sparkline. |
 | REST activity feed | `GET /api/admin/observability/activity?limit=50` | Same. Most-recent first, last 60 min, capped at 200. |
 | Live push (SignalR) | `ObservabilityHub.Subscribe()` | Same. Streams new events for the subscriber's realm. The in-app view uses this — no polling. |
@@ -98,7 +98,7 @@ A baseline for owner-operator deployments (you can refine later):
 
 ## In-app live view
 
-`/plattform/observability` shows:
+`/operate/observability` shows:
 
 - **Headline counters** for the rolling window (default 15 min; selector for 1–60).
 - **Login outcome breakdown** — success vs failure vs locked vs 2fa-required.

@@ -186,6 +186,6 @@ In production they are not mounted.
 
 ## What's next?
 
-- [Backend architecture](/guide/architecture)
-- [Multi-tenancy / Realms](/guide/realms)
-- [OAuth / OpenIddict](/guide/oauth)
+- [Backend architecture](/operate/backend-architecture)
+- [Multi-tenancy / Realms](/operate/realms)
+- [OAuth / OpenIddict](/integrate/oauth)

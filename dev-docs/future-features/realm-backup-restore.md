@@ -112,7 +112,7 @@ Für Production-Setups wo `pg_dump` zu grob ist:
 
 Beim Shipping:
 
-- `admin/recovery-cli.md` erweitern (siehe DCR-Promotion-Pattern)
+- `operate/recovery-cli.md` erweitern (siehe DCR-Promotion-Pattern)
 - `concepts/disaster-recovery.md` neu — Backup/Restore-Strategie,
   RTO/RPO-Empfehlungen, WAL-Setup-Beispiele
 - Dev-notes-Page promoten/löschen

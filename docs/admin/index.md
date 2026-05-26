@@ -3,7 +3,7 @@
 The administration area appears in the sidebar as soon as your account holds **at least one admin read permission** (see [Roles](./roles)). Realm administrators with `realm:admin` see everything; "granular" admins (e.g. a user manager) only see the areas they have rights for.
 
 ::: tip First time setting this up?
-If you've just installed Modgud and want to bind your first SaaS app, start with the [SaaS App Integration Walkthrough](./saas-integration-walkthrough) — it's the linear path.
+If you've just installed Modgud and want to bind your first SaaS app, start with the [SaaS App Integration Walkthrough](../integrate/saas-walkthrough) — it's the linear path.
 :::
 
 ## Areas
@@ -41,16 +41,16 @@ Per-realm look and feel. SPA-shell branding plus a beta page-builder editor.
 
 - [Branding](../plattform/branding) — product name, primary color, logo, favicon
 - [Asset Library](../plattform/assets) — upload images for branding (and, later, page schemas); SVG sanitisation built in
-- [Pages (Beta)](../plattform/pages) — drag-and-drop editor for login / logout / forgot-password; gated behind a [feature flag](./feature-flags) while the runtime renderer is still being built
+- [Pages (Beta)](../plattform/pages) — drag-and-drop editor for login / logout / forgot-password; gated behind a [feature flag](../operate/feature-flags) while the runtime renderer is still being built
 
 ### Operations
 
-- [Observability](../plattform/observability) — OpenTelemetry metrics + tracing + in-app live activity feed
+- [Observability](../operate/observability) — OpenTelemetry metrics + tracing + in-app live activity feed
 - [Auth Log](./auth-log) — audit trail of all login events
 - [Change Requests](./change-requests) — approve profile changes (when the approval flow is enabled)
 - [Settings](../plattform/settings) — 2FA enforcement, grace period, SMTP, …
-- [Feature Flags](./feature-flags) — operator-level toggles for beta / WIP surfaces
-- [Recovery CLI](./recovery-cli) — when the UI no longer responds
+- [Feature Flags](../operate/feature-flags) — operator-level toggles for beta / WIP surfaces
+- [Recovery CLI](../operate/recovery-cli) — when the UI no longer responds
 
 ## Permissions: the three-segment model
 
@@ -88,7 +88,7 @@ The sidebar automatically hides everything you can't read. Examples:
 
 ### Bind a new SaaS app
 
-Full step-by-step walkthrough: [SaaS App Integration](./saas-integration-walkthrough) — realm admin → app → OAuth client → resource server → group/role → backend code.
+Full step-by-step walkthrough: [SaaS App Integration](../integrate/saas-walkthrough) — realm admin → app → OAuth client → resource server → group/role → backend code.
 
 ### Onboard a new employee
 
@@ -107,7 +107,7 @@ Each tenant gets its own [realm](./realms) — own database, own users, own role
 
 ### Admin locked out
 
-[Recovery CLI](./recovery-cli) — a shell tool inside the container that bypasses the UI and writes directly to the database.
+[Recovery CLI](../operate/recovery-cli) — a shell tool inside the container that bypasses the UI and writes directly to the database.
 
 ## Real-time updates
 

@@ -195,7 +195,7 @@ modgud via `/connect/authorize`. If the user is not logged in,
 they are redirected to the login UI, run through the regular login
 flow above, come back to `/connect/authorize` and receive an
 authorization code. See [OAuth & OIDC](/concepts/oauth) and
-[OpenIddict wiring](/guide/oauth).
+[OpenIddict wiring](/integrate/oauth).
 
 ## Logout
 

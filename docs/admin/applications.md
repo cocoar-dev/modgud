@@ -7,7 +7,7 @@ Modgud itself) is provisioned automatically; every other app you
 register here.
 
 ::: tip First time?
-If this is your first integration, the [SaaS App Integration Walkthrough](./saas-integration-walkthrough)
+If this is your first integration, the [SaaS App Integration Walkthrough](../integrate/saas-walkthrough)
 is the better entry point — it walks through all five stations (App,
 Client, Resource Server, Roles, backend code).
 :::

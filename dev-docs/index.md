@@ -17,6 +17,13 @@ shouldn't appear on customer-facing docs:
 
 ## Sections
 
+### [Architecture](./architecture/)
+
+Implementation blueprints for the two IAM slices
+(`Modgud.Authentication`, `Modgud.Authorization`). Pure
+"how it's built" — DI surface, projections, polymorphism, JsEval
+pipeline. The public docs cover *what it does*; these cover *how*.
+
 ### [Future Features](./future-features/)
 
 Capabilities we know we'll need to build but haven't prioritised:

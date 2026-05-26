@@ -220,7 +220,7 @@ app.MapPost("/todos", (ClaimsPrincipal user, TodoDto dto) =>
 
 Full integration patterns (authorization policies, dynamic checks,
 common pitfalls) live in
-[Guide → Integrating a Resource Server](../guide/integrating-resource-server).
+[Guide → Integrating a Resource Server](../integrate/resource-server).
 
 ## End-to-end test
 
@@ -267,7 +267,7 @@ Made it through? **Done. First SaaS app integrated.**
   `IsSystem`; the attempt is rejected.
 - **Lost realm admin.** If you locked yourself out of the
   `Administratoren` group: the recovery CLI inside the container can
-  pull you back in — see [Recovery CLI](./recovery-cli).
+  pull you back in — see [Recovery CLI](../operate/recovery-cli).
 - **Lost a secret.** Client secrets are shown exactly once. If you've
   lost one: **regenerate** in the corresponding detail modal.
 - **`scope=permissions` not requested.** Without it, the

@@ -141,7 +141,7 @@ If something goes wrong:
 - **No prior invite, no admin yet** (e.g. provisioned via a tool
   that didn't issue one) — drop into the container and run
   `dotnet Modgud.Api.dll recover bootstrap-admin --email <e> --realm <slug>`.
-  See [Recovery CLI](./recovery-cli).
+  See [Recovery CLI](../operate/recovery-cli).
 - **Locked-out admin** — same recovery CLI, again with
   `bootstrap-admin --email <e>`. The CLI adds the new user to the
   existing Administratoren group rather than creating a duplicate.

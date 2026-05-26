@@ -1,5 +1,14 @@
 # Permission-Modell — Adversarial Review
 
+> ⚠️ **Design-Archaeology.** Dieser Review evaluierte eine
+> Designvariante, in der eine Distribution-API der einzige Authz-Kanal
+> sein sollte. Die Distribution-API wurde nie ausgeliefert — der
+> finale Stand (UserInfo per-Audience-Emission) ist in
+> [permission-modell.md](./permission-modell) dokumentiert. Findings
+> zur UserInfo-Emission und zu den Sicherheits-Lücken am
+> Token-Aud-Check gelten weiterhin gegen das tatsächliche Modell;
+> Distribution-API-spezifische Findings (K1, K2, K3) sind moot.
+>
 > **Status:** Review 2026-05-08. Findings nach professioneller
 > Mehrteam-Adversarial-Analyse des Designs in
 > [permission-modell.md](./permission-modell). Vor jeder

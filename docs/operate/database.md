@@ -7,7 +7,7 @@ manual EF Core migrations.
 ## Multi-tenant setup
 
 Marten `MasterTableTenancy` with database-per-tenant. Details:
-[Multi-tenancy / Realms](/guide/realms).
+[Multi-tenancy / Realms](/operate/realms).
 
 ## Schema management
 

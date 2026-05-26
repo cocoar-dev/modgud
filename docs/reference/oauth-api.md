@@ -34,7 +34,7 @@ endpoint URLs. Tokens from this discovery are valid only in this
 realm.
 
 Implemented via `RealmIssuerHandler` (see
-[OAuth implementation](/guide/oauth#realmissuerhandler)).
+[OAuth implementation](/integrate/oauth#realmissuerhandler)).
 
 The discovery document advertises **only enabled scopes that are
 public-listed** (`OAuthScope.ShowInDiscoveryDocument = true`). The

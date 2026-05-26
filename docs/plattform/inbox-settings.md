@@ -1,9 +1,9 @@
 ---
-title: Inbox-Einstellungen
+title: Inbox settings
 description: Per-kind retention policy for the inbox — how long items stay around before the daily sweep dismisses or hard-deletes them.
 ---
 
-# Inbox-Einstellungen
+# Inbox settings
 
 `/plattform/inbox-settings` configures how long items in the [Inbox](./inbox) survive before the `inbox-retention` Quartz job sweeps them. Different kinds have different lifecycles, so the settings are structured per domain rather than as one flat number.
 

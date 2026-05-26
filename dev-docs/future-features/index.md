@@ -16,7 +16,7 @@ Severity. Detail-Pages unten.
 ### Audit-Followups (in Severity-Reihenfolge)
 
 - Observability — OpenTelemetry / Metrics / Tracing — ✅ shipped (see
-  [Observability](/plattform/observability)).
+  [Observability](/operate/observability)).
 - [HA / Multi-Instance Readiness](./ha-multi-instance) — DataProtection,
   Distributed Rate-Limiter, IDistributedCache, SignalR-Backplane.
   (Phase 2a Deployment-Hygiene ✅ shipped 2026-05-13.)
@@ -62,13 +62,14 @@ blacklist. The NAT-safe alternative to a naive IP rate-limit
 ### [Permission-Modell (finaler Stand)](./permission-modell)
 
 Konsolidierte deutsche Zusammenfassung aller Designgespräche zum
-zukünftigen Permission-Modell: App-Catalog mit `<resource>:<action>`
-Format, RS-Subset, 2-Tier-Bypass-Modell, UserInfo nur Identity,
-Distribution-API als einziger Authz-Kanal, Lib-Aufgaben + RS-Code-
-Konvention. *Diese Seite ist die autoritative Kurzfassung; die
-beiden folgenden Notes sind das Detailmaterial dahinter.*
+Permission-Modell: App-Catalog mit `<resource>:<action>` Format,
+RS-Subset, 2-Tier-Bypass-Modell, UserInfo per-Audience-nested
+Emission (Roles + Permissions + Groups bypass-pre-expanded),
+Lib-Aufgaben + RS-Code-Konvention. *Diese Seite ist die autoritative
+Kurzfassung; die beiden folgenden Notes sind das Detailmaterial
+dahinter.*
 
-**Status:** Designkonsolidierung 2026-05-08. Nicht implementiert.
+**Status:** Implementiert (Stand 2026-05-09).
 
 ### [Permission-Modell — Adversarial Review](./permission-modell-adversarial-review)
 
@@ -115,10 +116,9 @@ auf, ist die feinere App-Schicht darunter.
 [Permission-Modell](./permission-modell).** Die App-as-Catalog-
 Grundidee + RS-prefix-free-Rationale + ID-anchored-Entities-
 Begründung gelten weiter. Was revidiert wurde: Token-Claim-
-Emission verworfen (Distribution-API stattdessen), Bypass-Tiers
-auf 2 reduziert, Slug-tagged-Format auf bare reduziert, Roles
-aus UserInfo entfernt. Diese Note bleibt als Designexploration —
-Detail-Banner oben in der Note.
+Emission verworfen (UserInfo-Emission stattdessen), Bypass-Tiers
+auf 2 reduziert, Slug-tagged-Format auf bare reduziert. Diese Note
+bleibt als Designexploration — Detail-Banner oben in der Note.
 
 **Status:** Note 2026-05-07, teilweise revidiert 2026-05-08.
 
@@ -149,7 +149,7 @@ tighter token TTLs for DCR clients, refresh-rotation globally on,
 
 ## Adding to this section
 
-1. Create `dev-notes/future-features/<feature-slug>.md`
+1. Create `dev-docs/future-features/<feature-slug>.md`
 2. Open with **Status** + **Why** lines (see existing pages for
    format)
 3. Capture the design space, not the final design — options with
@@ -159,7 +159,7 @@ tighter token TTLs for DCR clients, refresh-rotation globally on,
 5. Link from this page
 
 When the feature ships, **promote** the page: move it into the
-appropriate public section (`/concepts/`, `/guide/`, `/admin/`,
-or `/reference/`), update the sidebar registrations, delete the
-dev-notes entry. Don't leave stale "future" docs around once the
-future has arrived.
+appropriate public section (`/concepts/`, `/integrate/`, `/operate/`,
+`/admin/`, `/plattform/`, or `/reference/`), update the sidebar
+registrations, delete the dev-docs entry. Don't leave stale "future"
+docs around once the future has arrived.

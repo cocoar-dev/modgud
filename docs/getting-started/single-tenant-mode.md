@@ -15,7 +15,7 @@ company" deployment the system realm is enough on its own.
 
 If any of those don't fit, you're a SaaS or multi-customer scenario
 and want one realm per tenant. See
-[Multi-realm deployment](../guide/realms) for that pattern.
+[Multi-realm deployment](../operate/realms) for that pattern.
 
 ## What you get
 

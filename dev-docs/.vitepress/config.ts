@@ -32,8 +32,8 @@ export default withMermaid(defineConfig({
     /^https?:\/\/localhost/,
     /^https?:\/\/127\.0\.0\.1/,
     /^https?:\/\/[a-z0-9.-]+\.(?:dev|local|localhost|invalid)/,
-    /^\/(concepts|admin|guide|plattform|reference|end-user|getting-started|testing|roadmap)(\/|$)/,
-    /^\.\.?\/.*\/(concepts|admin|guide|plattform|reference|end-user|getting-started|testing|roadmap|index)(\/|$)?/,
+    /^\/(concepts|admin|plattform|reference|end-user|getting-started|operate|integrate|contribute|roadmap)(\/|$)/,
+    /^\.\.?\/.*\/(concepts|admin|plattform|reference|end-user|getting-started|operate|integrate|contribute|roadmap|index)(\/|$)?/,
   ],
 
   vite: {
@@ -99,13 +99,11 @@ export default withMermaid(defineConfig({
         ],
       },
       {
-        text: 'Slice internals',
+        text: 'Architecture',
         items: [
-          { text: 'Authentication slice', link: '/authentication-slice/' },
-          { text: '  — Concepts', link: '/authentication-slice/konzepte' },
-          { text: '  — GDPR + Sessions', link: '/authentication-slice/gdpr-sessions' },
-          { text: 'Authorization slice', link: '/authorization-slice/' },
-          { text: '  — Concepts', link: '/authorization-slice/konzepte' },
+          { text: 'Overview', link: '/architecture/' },
+          { text: 'Authentication slice', link: '/architecture/authentication' },
+          { text: 'Authorization slice', link: '/architecture/authorization' },
         ],
       },
       {

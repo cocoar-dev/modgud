@@ -276,19 +276,7 @@ holt Authz via `/api/account/me` (eigenes Endpunkt, returnt modgud
 + control-plane-Grants gemerged in einer flachen Liste). UserInfo ist
 für die SPA nicht relevant.
 
-## 7. Distribution-API — deprecated
-
-Der frühere Endpoint `/api/v1/distribution/me-permissions` mit
-RS-Credentials ist **deprecated**. UserInfo liefert die gleichen
-Daten in OIDC-Standard-Shape — der Endpoint hat keinen
-verbleibenden Use-Case.
-
-- Bleibt funktional bis er entfernt wird (Followup-Commit).
-- Antwort trägt einen `Deprecation`-Header.
-- Externe Tooling sollte umstellen oder den Endpoint nie genutzt
-  haben.
-
-## 8. End-to-End-Flow
+## 7. End-to-End-Flow
 
 ```
 ┌─────────┐                                       ┌─────────────┐
@@ -329,7 +317,7 @@ verbleibenden Use-Case.
 └─────────┘                                       └─────────────┘
 ```
 
-## 9. Was bei der Implementation aufpassen
+## 8. Was bei der Implementation aufpassen
 
 - **Bypass-Pre-Expansion ist Pflicht** — nicht „nice-to-have".
   Konsumenten machen exact-match; ohne Pre-Expansion müsste jeder
@@ -343,7 +331,7 @@ verbleibenden Use-Case.
   ohne RFC-8707-`resource=` landet sonst als Schlüssel im
   resource_access-Dict, was inkonsistent wäre.
 
-## 10. Implementations-Sequenz (rückblickend)
+## 9. Implementations-Sequenz (rückblickend)
 
 Kommentiert was schon gebaut ist + die finale Korrektur:
 
@@ -359,9 +347,8 @@ Kommentiert was schon gebaut ist + die finale Korrektur:
    wird im aktuellen Refactor wiederhergestellt **plus
    Bypass-Pre-Expansion** (Step 7-fix).
 7. 🟡 Helper-Lib: in commit `7e300c6` als Distribution-Client gebaut,
-   wird im aktuellen Refactor zur reinen Claims-Transformation
-   reduziert (Step 8-fix).
-8. 🟡 Distribution-API: in commit `7e300c6` als Hauptkanal
-   konzipiert, wird jetzt deprecated.
-9. 🟡 TestApps.ResourceApi: an die finale Architektur anpassen
+   im aktuellen Refactor zur reinen Claims-Transformation reduziert
+   (Step 8-fix). Der zugehörige Distribution-API-Endpoint wurde
+   pre-release wieder entfernt — UserInfo ist der einzige Authz-Kanal.
+8. 🟡 TestApps.ResourceApi: an die finale Architektur anpassen
    (Standard-JwtBearer + UserInfo-Claims + optionale Lib).

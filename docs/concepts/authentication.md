@@ -25,7 +25,7 @@ Implemented in the **Authentication slice**
 | **Magic Link** | Email with single-use token; can also be sent by an admin | Always 30 days |
 | **OIDC External** | Federated login via Entra ID, Google, ... | 30 days |
 
-See [Login flows](/guide/login-flows) for details.
+See [Login flows](/integrate/login-flows) for details.
 
 ### Authentication level
 
@@ -86,7 +86,7 @@ Supported: **Authorization Code + PKCE**, **Client Credentials**,
 Not supported: Implicit Flow, ROPC.
 
 See [OAuth & OIDC](/concepts/oauth) and
-[OAuth implementation](/guide/oauth) for details.
+[OAuth implementation](/integrate/oauth) for details.
 
 ### Per-realm isolation
 
@@ -126,7 +126,7 @@ Auth0, ...). Configurable per realm.
 5. If the user has 2FA enabled, the normal 2FA flow runs afterwards
 6. Login cookie is set (always 30 days)
 
-See [Login providers (OIDC)](/guide/login-providers)
+See [Login providers (OIDC)](/integrate/login-providers)
 for details.
 
 ## Account lifecycle
@@ -148,5 +148,5 @@ Lifecycle states:
   (Article 17)
 
 Detailed slice-internal walkthrough lives in the repo-only
-[Authentication slice — GDPR & sessions](https://github.com/cocoar-dev/Modgud/blob/develop/dev-docs/authentication-slice/gdpr-sessions.md)
+[Authentication slice blueprint](https://github.com/cocoar-dev/Modgud/blob/develop/dev-docs/architecture/authentication.md)
 notes.

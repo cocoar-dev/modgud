@@ -364,7 +364,7 @@ guard fires because the configured connection string is `""`.
 
 **Fix:** rename the env vars in `docker-compose.yml` and update the
 docker-deployment guide page in the same commit. The guide page
-already shows the correct double-underscore form (`website/guide/deployment.md`),
+already shows the correct double-underscore form (`website/operate/deployment.md`),
 so the compose file is the only place that drifted.
 
 **Status:** ✅ **Fixed** in this branch — `docker-compose.yml`
@@ -444,7 +444,7 @@ class defaults in prod). That's correct behaviour, just call it out
 in the deployment guide so an operator who looks at the dev defaults
 in the repo doesn't expect them to apply in the container.
 
-**Status:** ✅ **Fixed** in this branch — `website/guide/deployment.md`
+**Status:** ✅ **Fixed** in this branch — `website/operate/deployment.md`
 gets a `:::warning` box that explicitly says "production runs on env
 vars + class defaults, **not** on the committed `configuration.json`",
 with the actual implication: tweaks at deploy time go through env
@@ -684,7 +684,7 @@ manual run, so a re-run starts from a cleaner baseline:
 | **F8** | AuthLog doc claimed columns the UI does not render | `website/admin/auth-log.md` rewritten to match what's shipped, with the missing filters explicitly tagged as future work. |
 | **F11** | Browser locale `de-AT` 404s on i18n bundle | `main.ts` strips the country suffix before the fetch (`de-AT` → `de`). |
 | **F16** | OAuth list endpoints required `page` + `pageSize` (400 without them) | Both `OAuthClientsEndpoints` and `OAuthApisEndpoints` now declare the params as `int? = null` and clamp to defaults via `WithDefaults`. |
-| **F4** | configuration.json publish-exclusion documentation | `website/guide/deployment.md` gains a `:::warning` callout explaining production runs on env vars + class defaults, not the committed file. |
+| **F4** | configuration.json publish-exclusion documentation | `website/operate/deployment.md` gains a `:::warning` callout explaining production runs on env vars + class defaults, not the committed file. |
 | **F7** | Frontend AuthLog grid not refreshing after login | Mitigated — poll cadence dropped from 10 s to 2 s. SignalR push remains the proper long-term fix. |
 | **F10** | Dev-only `/api/dev/emails` endpoint unreachable in prod container | Replaced with a real Mailpit container in the E2E rig; `/api/dev/emails` deleted from the runtime image entirely. |
 

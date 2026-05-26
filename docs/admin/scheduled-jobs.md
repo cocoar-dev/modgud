@@ -103,4 +103,4 @@ Both are seeded in the modgud App permission catalog. `realm:admin` bypasses bot
 
 ---
 
-Looking to add a new job, or curious how the Quartz wiring works under the hood? See the contributor guide: [Scheduling framework](/guide/scheduling).
+Looking to add a new job, or curious how the Quartz wiring works under the hood? See the contributor guide: [Scheduling framework](/integrate/scheduling).

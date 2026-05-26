@@ -122,7 +122,7 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 
 ### Recovery CLI
 - Inside-container tool for breaking out of "no admin can sign in" situations
-- `bootstrap-admin`, `set-email`, `magic-link`, `reset-2fa`, `list`, `realm-add-domain`, `rebuild-projections`, `migrate-cc-credentials` — all bypass the UI. See [Recovery CLI reference](../admin/recovery-cli).
+- `bootstrap-admin`, `set-email`, `magic-link`, `reset-2fa`, `list`, `realm-add-domain`, `rebuild-projections`, `migrate-cc-credentials` — all bypass the UI. See [Recovery CLI reference](../operate/recovery-cli).
 
 ### SignalR push
 - All admin lists update live across browser sessions

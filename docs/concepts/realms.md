@@ -121,7 +121,7 @@ On first start:
 6. **Seed default OAuth scopes + the Internal login provider**
 7. **Seed the `modgud` and `control-plane` apps** into the system tenant DB
 8. **Warm `RealmCache`**
-9. The instance is ready, but has zero users — the first admin is created via the [recovery CLI](../admin/recovery-cli) or, for additional realms, by an existing CP-admin via `POST /api/admin/realms`. See [First-time setup](../getting-started/first-time-setup).
+9. The instance is ready, but has zero users — the first admin is created via the [recovery CLI](../operate/recovery-cli) or, for additional realms, by an existing CP-admin via `POST /api/admin/realms`. See [First-time setup](../getting-started/first-time-setup).
 
 ### 2. Create additional realms
 

@@ -66,14 +66,21 @@ export default withMermaid(defineConfig({
       light: '/logo_light.svg',
       dark: '/logo_dark.svg',
     },
+    // Persona-explicit nav. Order mirrors a typical visitor journey:
+    // discover (Get Started) → understand (Concepts) → run (Operate) →
+    // configure (Administer) → integrate apps → support end-users →
+    // look things up (Reference) → contribute. /admin/ and /end-user/
+    // URL prefixes are intentionally preserved (familiar; widely
+    // linked); the sidebar text reflects the persona.
     nav: [
-      { text: 'Getting Started', link: '/getting-started/' },
+      { text: 'Get Started', link: '/getting-started/' },
       { text: 'Concepts', link: '/concepts/apps-and-resource-access' },
-      { text: 'Guide', link: '/guide/integrating-resource-server' },
-      { text: 'Admin', link: '/admin/' },
-      { text: 'Plattform', link: '/plattform/' },
+      { text: 'Operate', link: '/operate/deployment' },
+      { text: 'Administer', link: '/admin/' },
+      { text: 'Integrate', link: '/integrate/resource-server' },
+      { text: 'User Help', link: '/end-user/' },
       { text: 'Reference', link: '/reference/oauth-api' },
-      { text: 'Testing', link: '/testing/' },
+      { text: 'Contribute', link: '/contribute/developing-locally' },
       { text: 'Roadmap', link: '/roadmap' },
       { text: 'LLM Docs', link: '/llms-full.txt', target: '_blank' },
     ],
@@ -81,7 +88,7 @@ export default withMermaid(defineConfig({
     sidebar: {
       '/getting-started/': [
         {
-          text: 'Getting Started',
+          text: 'Get Started',
           items: [
             { text: 'Overview', link: '/getting-started/' },
             { text: 'Quickstart (Docker)', link: '/getting-started/quickstart' },
@@ -110,56 +117,25 @@ export default withMermaid(defineConfig({
           ],
         },
       ],
-      '/guide/': [
+      '/operate/': [
         {
-          text: 'Integration',
+          text: 'Operate',
           items: [
-            { text: 'Integrating a Resource Server', link: '/guide/integrating-resource-server' },
-          ],
-        },
-        {
-          text: 'Architecture',
-          items: [
-            { text: 'Backend Layout', link: '/guide/architecture' },
-            { text: 'Multi-Tenancy / Realms', link: '/guide/realms' },
-            { text: 'Persistence (Marten)', link: '/guide/database' },
-            { text: 'OAuth / OpenIddict', link: '/guide/oauth' },
-          ],
-        },
-        {
-          text: 'Authentication',
-          items: [
-            { text: 'Cookies & Sessions', link: '/guide/auth-cookies' },
-            { text: 'Login flows', link: '/guide/login-flows' },
-            { text: 'Login providers (OIDC federation)', link: '/guide/login-providers' },
-            { text: '2FA (TOTP, Email, Passkey)', link: '/guide/two-factor' },
-          ],
-        },
-        {
-          text: 'Scheduling & Background Work',
-          items: [
-            { text: 'Quartz Jobs', link: '/guide/scheduling' },
-          ],
-        },
-        {
-          text: 'Operations',
-          items: [
-            { text: 'Docker & Deployment', link: '/guide/deployment' },
-          ],
-        },
-        {
-          text: 'Contributing',
-          items: [
-            { text: 'Developing locally', link: '/guide/developing-locally' },
+            { text: 'Docker & Deployment', link: '/operate/deployment' },
+            { text: 'Backend layout', link: '/operate/backend-architecture' },
+            { text: 'Persistence (Marten)', link: '/operate/database' },
+            { text: 'Multi-tenancy / Realms', link: '/operate/realms' },
+            { text: 'Observability', link: '/operate/observability' },
+            { text: 'Recovery CLI', link: '/operate/recovery-cli' },
+            { text: 'Feature Flags', link: '/operate/feature-flags' },
           ],
         },
       ],
       '/admin/': [
         {
-          text: 'Admin Operations',
+          text: 'Administer (Realm-Admin)',
           items: [
             { text: 'Overview', link: '/admin/' },
-            { text: 'SaaS App Integration Walkthrough', link: '/admin/saas-integration-walkthrough' },
           ],
         },
         {
@@ -182,7 +158,7 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: 'System',
+          text: 'Realm',
           items: [
             { text: 'Applications', link: '/admin/applications' },
             { text: 'Realms', link: '/admin/realms' },
@@ -190,13 +166,6 @@ export default withMermaid(defineConfig({
             { text: 'Auth Log', link: '/admin/auth-log' },
             { text: 'Scheduled Jobs', link: '/admin/scheduled-jobs' },
             { text: 'Change Requests', link: '/admin/change-requests' },
-          ],
-        },
-        {
-          text: 'Tools',
-          items: [
-            { text: 'Feature Flags', link: '/admin/feature-flags' },
-            { text: 'Recovery CLI', link: '/admin/recovery-cli' },
           ],
         },
       ],
@@ -208,7 +177,7 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: 'Anpassung',
+          text: 'Customization',
           items: [
             { text: 'Branding', link: '/plattform/branding' },
             { text: 'Asset Library', link: '/plattform/assets' },
@@ -216,12 +185,40 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: 'Betrieb',
+          text: 'Operations',
           items: [
-            { text: 'Observability', link: '/plattform/observability' },
             { text: 'Inbox', link: '/plattform/inbox' },
-            { text: 'Inbox-Einstellungen', link: '/plattform/inbox-settings' },
-            { text: 'App-Einstellungen', link: '/plattform/settings' },
+            { text: 'Inbox settings', link: '/plattform/inbox-settings' },
+            { text: 'Settings', link: '/plattform/settings' },
+          ],
+        },
+      ],
+      '/integrate/': [
+        {
+          text: 'Integrate',
+          items: [
+            { text: 'Resource server (.NET)', link: '/integrate/resource-server' },
+            { text: 'SaaS app walkthrough', link: '/integrate/saas-walkthrough' },
+            { text: 'OAuth / OpenIddict', link: '/integrate/oauth' },
+            { text: 'Cookies & sessions', link: '/integrate/cookies-and-sessions' },
+            { text: 'Login flows', link: '/integrate/login-flows' },
+            { text: 'Login providers (OIDC federation)', link: '/integrate/login-providers' },
+            { text: '2FA (TOTP, Email, Passkey)', link: '/integrate/two-factor' },
+            { text: 'Scheduling (Quartz)', link: '/integrate/scheduling' },
+          ],
+        },
+      ],
+      '/end-user/': [
+        {
+          text: 'User Help',
+          items: [
+            { text: 'Overview', link: '/end-user/' },
+            { text: 'First steps', link: '/end-user/first-steps' },
+            { text: 'Sign in', link: '/end-user/sign-in' },
+            { text: 'Password', link: '/end-user/password' },
+            { text: 'Two-factor', link: '/end-user/two-factor' },
+            { text: 'Passkey', link: '/end-user/passkey' },
+            { text: 'Profile', link: '/end-user/profile' },
           ],
         },
       ],
@@ -236,14 +233,20 @@ export default withMermaid(defineConfig({
           ],
         },
       ],
-      '/testing/': [
+      '/contribute/': [
+        {
+          text: 'Contribute',
+          items: [
+            { text: 'Developing locally', link: '/contribute/developing-locally' },
+          ],
+        },
         {
           text: 'Testing',
           items: [
-            { text: 'Overview', link: '/testing/' },
-            { text: 'Automated tests', link: '/testing/automated-tests' },
-            { text: 'Pinned-by-design', link: '/testing/pinned-by-design' },
-            { text: 'Manual smoke checklist', link: '/testing/manual-checklist' },
+            { text: 'Overview', link: '/contribute/testing/' },
+            { text: 'Automated tests', link: '/contribute/testing/automated-tests' },
+            { text: 'Pinned-by-design', link: '/contribute/testing/pinned-by-design' },
+            { text: 'Manual smoke checklist', link: '/contribute/testing/manual-checklist' },
           ],
         },
       ],

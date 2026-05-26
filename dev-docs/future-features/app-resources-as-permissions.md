@@ -9,9 +9,11 @@
 > konsolidierten Note):
 >
 > - ❌ **Permission-Claim im Token** (`resource_access[<slug>].permissions`):
->   verworfen. Permissions kommen ausschließlich über die
->   Distribution-API, nie im JWT/UserInfo. Implementation-Outline
->   Schritt 1+2 unten ist obsolet.
+>   verworfen. Permissions kommen ausschließlich über UserInfo
+>   (per-Audience-nested), nie im JWT. Implementation-Outline
+>   Schritt 1+2 unten ist obsolet. (Eine zwischenzeitlich geplante
+>   Distribution-API wurde nie ausgeliefert; UserInfo ist der
+>   einzige Authz-Kanal.)
 > - ❌ **3 Bypass-Tiers** (`realm:admin` + `<app>:admin` +
 >   `<app>:<resource>:admin`): reduziert auf **2 Tiers**
 >   (`realm:admin` + `<resource>:admin`). App-wide Bypass
@@ -19,9 +21,9 @@
 > - ❌ **Slug-tagged Permission-Format** (`<app>:<resource>:<action>`):
 >   reduziert auf **2-Segment bare** (`<resource>:<action>`).
 >   Slug ist implicit aus der RS-Konfiguration.
-> - ❌ **Roles in UserInfo** (`resource_access[<slug>].roles`):
->   verworfen. UserInfo trägt nur Identity (sub/email/name).
->   Roles+Groups+Permissions kommen alle über Distribution-API.
+> - ✅ **Roles in UserInfo** (`resource_access[<slug>].roles`):
+>   beibehalten. UserInfo emittiert per-Audience-nested Blocks mit
+>   `permissions` + `roles`. Groups bleiben IdP-internal.
 > - ❌ **„Workaround until then"-Abschnitt** unten: obsolet, weil
 >   das neue Modell `App.Permissions` als strukturierten Catalog
 >   führt — kein freier-Text-Input mehr.

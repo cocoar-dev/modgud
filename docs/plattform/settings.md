@@ -57,7 +57,7 @@ The auth cookie's `ExpireTimeSpan` is 30 days with sliding expiration.
 without it, the cookie is session-only and dies with the browser tab.
 
 These values currently come from deployment config (not the admin UI)
-— see [Authentication cookies](../guide/auth-cookies) for the full
+— see [Authentication cookies](../integrate/cookies-and-sessions) for the full
 cookie inventory.
 
 ## SMTP

@@ -26,7 +26,7 @@ Before wiring code, finish the admin setup in Modgud:
    assign your test user
 
 The full admin walkthrough lives at
-[Admin → SaaS App Integration Walkthrough](../admin/saas-integration-walkthrough).
+[Admin → SaaS App Integration Walkthrough](../integrate/saas-walkthrough).
 
 ## ASP.NET Core integration
 

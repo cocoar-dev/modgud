@@ -74,7 +74,7 @@ Output:
 Sign in immediately at the realm's host — `http://localhost:4300/` for a default dev setup.
 
 ::: tip Password rules apply
-The CLI enforces the same Identity password policy the SPA uses (length ≥ 8, mixed case, at least one digit). A weak password is rejected with a clear error — no privileged bypass. See [App-Einstellungen](../plattform/settings) to relax the policy if your operational needs require it.
+The CLI enforces the same Identity password policy the SPA uses (length ≥ 8, mixed case, at least one digit). A weak password is rejected with a clear error — no privileged bypass. See [Settings](../plattform/settings) to relax the policy if your operational needs require it.
 :::
 
 ## Path B — Recovery CLI, invite mode
@@ -187,13 +187,13 @@ Recommended next steps:
 1. **Enable 2FA on your admin account** — Profile → Security → TOTP or Passkey.
 2. **Configure SMTP** — Settings → SMTP, then send a test email. Without real SMTP, magic-link / password-reset emails only land in the API logs and `data/dev-emails/`.
 3. **Seed demo data** (optional, dev/test only) — run `node scripts/seed-demo.mjs` to fill the realm with users, groups, OAuth clients and a sample external IdP.
-4. **Bind your first SaaS app** — [SaaS Integration Walkthrough](../admin/saas-integration-walkthrough).
+4. **Bind your first SaaS app** — [SaaS Integration Walkthrough](../integrate/saas-walkthrough).
 5. **Configure external SSO** (optional) — [Login Providers](../admin/login-providers).
 6. **Plan additional realms** — [Realms admin](../admin/realms).
 
 ## Lost the admin account?
 
-If the only admin in a realm loses their access, no UI flow can restore them — but the recovery CLI can. Run the same `bootstrap-admin` command again with a fresh email/username; it adds you to the existing `Administratoren` group rather than duplicating it. See [Recovery CLI](../admin/recovery-cli) for related commands (`reset-2fa`, `magic-link`, `set-email`).
+If the only admin in a realm loses their access, no UI flow can restore them — but the recovery CLI can. Run the same `bootstrap-admin` command again with a fresh email/username; it adds you to the existing `Administratoren` group rather than duplicating it. See [Recovery CLI](../operate/recovery-cli) for related commands (`reset-2fa`, `magic-link`, `set-email`).
 
 ## Tips
 

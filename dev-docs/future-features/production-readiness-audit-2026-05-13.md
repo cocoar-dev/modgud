@@ -41,7 +41,7 @@ Use-Case**, nicht auf „Drop-in-Replacement für Keycloak".
 | Tenant-Isolation tief verdrahtet (`TenantedSessionFactory` + AsyncLocal) | `Infrastructure/Marten/TenantedSessionFactory.cs` |
 | GDPR echt umgesetzt (Event-Masking + ArchiveStream) | `Authentication/Gdpr/GdprService.cs` |
 | JsEval gefuzzt (834 Security-Tests + Depth/Length-Caps) | `MembershipSecurityTests.cs` |
-| Security-Hardening-Track-Record (33 Findings closed) | `website/testing/security-hardening.md` |
+| Security-Hardening-Track-Record (33 Findings closed) | `dev-docs/security-hardening.md` |
 
 In **DCR-Sauberkeit**, **2FA-Modalitätsbreite** und **Hardening-Detail
 für die Codebase-Größe** schlägt Modgud mehrere kommerzielle
@@ -51,7 +51,7 @@ Produkte.
 
 | # | Punkt | Severity | Detail-Page | Status |
 |---|---|---|---|---|
-| 1 | OpenTelemetry / Metrics / Tracing | HIGH | — (shipped — see [Observability](/plattform/observability)) | ✅ **DONE 2026-05-13** (Phase 1-5b) |
+| 1 | OpenTelemetry / Metrics / Tracing | HIGH | — (shipped — see [Observability](/operate/observability)) | ✅ **DONE 2026-05-13** (Phase 1-5b) |
 | 2a | Deployment-Hygiene (DataProtection persistent + Wolverine-Mode-Toggle) | HIGH | [ha-multi-instance](./ha-multi-instance) | ✅ **DONE 2026-05-13** |
 | 2b | Echte HA / Multi-Instance (Cross-Instance Pub/Sub, Distributed Caches) | HIGH | [ha-multi-instance](./ha-multi-instance) | ⏸ Deferred — braucht echtes Multi-Box-Setup zum Testen |
 | 3 | Realm-Backup / Restore / DR-Tooling (N Tenant-DBs) | MEDIUM | [realm-backup-restore](./realm-backup-restore) | Captured |

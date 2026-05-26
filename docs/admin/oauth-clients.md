@@ -21,7 +21,7 @@ Every OAuth client can be linked to **zero, one, or more [Applications](./applic
 The default case is **one client → one app** (`acme-web` belongs to `acme`). Multi-app clients exist for bundle frontends that talk to several resource servers at once.
 
 ::: tip First time?
-Use the [SaaS App Integration Walkthrough](./saas-integration-walkthrough) for the linear path through your first integration.
+Use the [SaaS App Integration Walkthrough](../integrate/saas-walkthrough) for the linear path through your first integration.
 :::
 
 ## Creating a client

@@ -30,7 +30,7 @@ retention window" without scrolling past two dozen tenant grids.
 The Plattform area is itself split into two thematic groups inside its own
 sub-nav (see `PlatformView.vue`):
 
-### Anpassung
+### Customization
 
 | Item | Path | What it does |
 | --- | --- | --- |
@@ -38,13 +38,13 @@ sub-nav (see `PlatformView.vue`):
 | [Pages](./pages) | `/plattform/customization/pages` | Page-builder editor (Beta) for login / logout / forgot-password — gated by the `PageBuilder` feature flag |
 | [Asset Library](./assets) | `/plattform/customization/assets` | BYTEA store for logos, favicons, login illustrations; SVG sanitisation, 2 MB cap |
 
-### Betrieb
+### Operations
 
 | Item | Path | What it does |
 | --- | --- | --- |
-| [Observability](./observability) | `/plattform/observability` | Live IdP metrics + traces, with the OpenTelemetry pipeline behind it |
-| Inbox-Einstellungen | `/plattform/inbox-settings` | Per-tenant notification retention windows |
-| [Einstellungen](./settings) | `/plattform/settings` | Projection rebuild, 2FA enforcement, grace period, SMTP, …; the catch-all operator surface |
+| [Observability](../operate/observability) | `/operate/observability` | Live IdP metrics + traces, with the OpenTelemetry pipeline behind it |
+| Inbox settings | `/plattform/inbox-settings` | Per-tenant notification retention windows |
+| [Settings](./settings) | `/plattform/settings` | Projection rebuild, 2FA enforcement, grace period, SMTP, …; the catch-all operator surface |
 
 ## Permission gating
 
@@ -93,10 +93,10 @@ across the area regardless of which sub-page they landed on.
 - [Branding](./branding) — per-realm logo, colors, product name
 - [Pages](./pages) — page-builder editor (Beta)
 - [Asset Library](./assets) — image upload + SVG sanitisation
-- [Observability](./observability) — metrics, traces, live activity feed
+- [Observability](../operate/observability) — metrics, traces, live activity feed
 - [Inbox](./inbox) — operator notification stream
-- [Inbox-Einstellungen](./inbox-settings) — per-tenant notification retention
-- [Einstellungen](./settings) — projections, SMTP, 2FA, grace period
+- [Inbox settings](./inbox-settings) — per-tenant notification retention
+- [Settings](./settings) — projections, SMTP, 2FA, grace period
 
 ::: tip Looking for tenant-admin work?
 Users, groups, OAuth clients, realms — those live under
