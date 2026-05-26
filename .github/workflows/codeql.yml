@@ -54,17 +54,15 @@ jobs:
         run: dotnet build Modgud.slnx -c Release
         working-directory: ./src/dotnet
 
-      # `upload: never` runs the analysis and writes SARIF to `output/`
-      # without trying to push to GitHub Code Scanning — that endpoint
-      # requires either a public repo or GitHub Advanced Security on
-      # this private repo, neither of which we have. The SARIF then
-      # gets uploaded as a workflow artifact so we can pull it locally
-      # and view in VS Code (CodeQL or SARIF Viewer extension).
+      # Uploads SARIF to GitHub Code Scanning (Security tab) — works
+      # because the repo is public; code-scanning upload is free on
+      # public repos, no GitHub Advanced Security licence needed.
+      # We also write SARIF to `output:` and re-upload as a workflow
+      # artifact for local viewing in VS Code (CodeQL / SARIF Viewer).
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}
-          upload: never
           output: codeql-results
 
       - name: Upload SARIF as workflow artifact
