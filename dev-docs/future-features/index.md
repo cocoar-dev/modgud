@@ -46,8 +46,10 @@ Group → Role → Permission chain work the same for machines and humans.
 Includes the rule that user-flow clients (`authorization_code`) and M2M
 clients are strictly separated — one OAuth Client = one auth mode.
 
-**Status:** Design captured 2026-05-23. ServiceAccount CRUD UI shipped
-(Phase 2B); credentials-linkage still open (Phase 2C).
+**Status:** Shipped 2026-05-24. ServiceAccount CRUD UI (Phase 2B)
++ credentials linkage + strict grant separation + cascade-delete
++ migration CLI (Phase 2C) all landed; live doc is
+[`docs/admin/service-accounts.md`](../../docs/admin/service-accounts.md).
 
 ### [Login alerts + manual IP blacklist](./login-alerts-ip-blacklist)
 

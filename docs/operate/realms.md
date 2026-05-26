@@ -1,6 +1,6 @@
 # Multi-tenancy / Realms
 
-modgud uses a **realm model** for multi-tenancy. Each realm is a
+Modgud uses a **realm model** for multi-tenancy. Each realm is a
 fully autonomous Identity Provider with its own database, users,
 roles, OAuth configuration, and login providers.
 
@@ -74,7 +74,7 @@ Invalidated on realm CUD (Create/Update/Delete via the admin API).
 
 ## Database-per-tenant via Marten
 
-modgud uses Marten's `MasterTableTenancy`:
+Modgud uses Marten's `MasterTableTenancy`:
 
 ```mermaid
 graph TD

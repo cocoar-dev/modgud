@@ -38,7 +38,8 @@ rotate via `POST /api/admin/oauth/clients/{id}/secret`.
 
 ### Why a script and not a backend service
 
-Pre-C16 we had `IDemoSeedService` which wrote to the database directly,
+An earlier iteration shipped an in-process `IDemoSeedService` that wrote
+to the database directly,
 bypassing the admin API. That meant:
 - A second write path that could drift from the API (validation, events,
   permission checks).

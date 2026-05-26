@@ -1,6 +1,6 @@
 # Two-Factor Authentication
 
-modgud supports four 2FA methods, all implemented in the
+Modgud supports four 2FA methods, all implemented in the
 Authentication slice. Any number of methods can be active per user.
 
 | Method | Service | Storage |

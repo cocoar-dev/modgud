@@ -10,7 +10,7 @@ What you need to run Modgud in development, and what to plan for in production.
 | --- | --- | --- |
 | Docker Desktop / Docker Engine | 24+ | Multi-platform images, supports both x86_64 and arm64 |
 | .NET SDK | 10.0 | Only if you build/run from source rather than the container |
-| Node.js | 20+ | For running the Vue admin SPA in dev mode |
+| Node.js | 22+ | For running the Vue admin SPA in dev mode |
 | pnpm | 9+ | Package manager for the SPA |
 
 ### Resources
@@ -35,7 +35,7 @@ Modgud ships as a Linux container (multi-arch). Bare-metal .NET 10 deployment is
 
 | Aspect | Recommendation |
 | --- | --- |
-| **Version** | PostgreSQL 16+ |
+| **Version** | PostgreSQL 17+ |
 | **Storage per realm** | Plan ~50 MB baseline + 5 KB per user + 200 bytes per auth-log entry |
 | **Connection pool** | One pool per master DB connection plus pools per active tenant — Marten manages internally |
 | **Backups** | Standard pg_dump per database. The master DB and every tenant DB must be backed up; cross-realm restores require care |

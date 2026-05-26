@@ -18,18 +18,18 @@ namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
 /// End-to-end verification of the <c>/connect/userinfo</c> per-Audience
-/// emission per permission-modell §5: pro <c>aud</c> im Token wird ein
-/// <c>resource_access[<aud>]</c>-Block gerendert, dessen Inhalt durch
-/// die vom Client opted-in Scopes gegated ist:
+/// emission per the permission model §5: for every <c>aud</c> on the
+/// token, a <c>resource_access[<aud>]</c> block is rendered whose
+/// contents are gated by the scopes the client opted into:
 /// <list type="bullet">
-///   <item><c>scope=roles</c> → <c>roles</c>-Array</item>
-///   <item><c>scope=permissions</c> → <c>permissions</c>-Array
-///   (bypass-expanded + per-RS-subset gefiltert)</item>
+///   <item><c>scope=roles</c> → <c>roles</c> array</item>
+///   <item><c>scope=permissions</c> → <c>permissions</c> array
+///   (bypass-expanded + filtered to the per-RS subset)</item>
 /// </list>
-/// Diese Tests requesten beide Scopes und prüfen entsprechend beide
-/// Arrays; per-scope-gating-only-Verhalten ist Sache eines separaten
-/// Test-Setups. App und Group sind pure IdP-internal — sie tauchen
-/// im Block niemals auf.
+/// These tests request both scopes and assert both arrays;
+/// per-scope-gating-only behaviour is exercised by a separate test
+/// suite. App and Group are pure IdP-internal — they never appear
+/// in the block.
 ///
 /// <para>Drives the full auth-code+PKCE flow with an RFC-8707 <c>resource=</c>
 /// indicator so the assertion is meaningful end-to-end.</para>

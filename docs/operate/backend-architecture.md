@@ -1,6 +1,6 @@
 # Backend architecture
 
-modgud is **not** classically layered (Domain → Application →
+Modgud is **not** classically layered (Domain → Application →
 Infrastructure). Instead, the core features are organised as vertical
 slices, with additional IdP-specific layers on top.
 
@@ -101,7 +101,7 @@ var result = await _messageBus.InvokeAsync<ErrorOr<UserDto>>(
     new CreateUserCommand(...));
 ```
 
-Handlers are auto-discovered. modgud runs with
+Handlers are auto-discovered. Modgud runs with
 `DurabilityMode.Solo` (in-memory, local) — no external message broker
 required. The Marten outbox is still active for event side-effects:
 SignalR notifications fire after `SaveChangesAsync` via
@@ -113,7 +113,7 @@ avoid Roslyn compilation at runtime.
 
 ## Marten usage
 
-modgud uses three Marten patterns:
+Modgud uses three Marten patterns:
 
 ### 1. Document storage
 
@@ -161,7 +161,7 @@ events are kept separately for audit and for the `PrincipalProjection`
 
 ## OpenIddict stores
 
-modgud implements all four OpenIddict stores as Marten-backed
+Modgud implements all four OpenIddict stores as Marten-backed
 stores, in `Modgud.Infrastructure/OpenIddict/`:
 
 | Store | Backing |

@@ -191,7 +191,7 @@ Details on IdP setup and scripting: see
 ## OAuth authorize flow (external apps)
 
 Different topic — an external app starts an OAuth flow against
-modgud via `/connect/authorize`. If the user is not logged in,
+Modgud via `/connect/authorize`. If the user is not logged in,
 they are redirected to the login UI, run through the regular login
 flow above, come back to `/connect/authorize` and receive an
 authorization code. See [OAuth & OIDC](/concepts/oauth) and

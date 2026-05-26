@@ -123,7 +123,7 @@ public class PermissionResolutionTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task User_With_RealmAdmin_Returns_200_Even_With_TimetodoBoundTo()
+    public async Task User_With_RealmAdmin_Returns_200_Even_With_DifferentAppBoundTo()
     {
         // realm:admin is the realm-wide bypass — flagged via the
         // PermissionRole.IsRealmAdmin bit, NOT a catalog FK. Bypass works

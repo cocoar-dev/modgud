@@ -20,7 +20,7 @@ because that is essentially what it is.
 
 ## Domain-based routing
 
-modgud identifies the realm via the **HTTP Host header** —
+Modgud identifies the realm via the **HTTP Host header** —
 not via URL paths. Each realm has one or more configured domains.
 
 ```
@@ -51,7 +51,7 @@ entry.
 
 ## Database-per-tenant via Marten
 
-modgud uses Marten's `MasterTableTenancy`:
+Modgud uses Marten's `MasterTableTenancy`:
 
 ```mermaid
 graph TD

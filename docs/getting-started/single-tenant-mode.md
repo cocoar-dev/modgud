@@ -49,7 +49,7 @@ docker run -d \
   -e DbSettings__ConnectionString="Host=...;Database=modgud;..." \
   -e OpenIddict__Issuer="https://auth.example.com" \
   -e ProxyAllowedNetworks="<reverse-proxy-CIDR>" \
-  ghcr.io/cocoar/modgud:latest
+  ghcr.io/cocoar-dev/modgud:latest
 
 # Add the public hostname to the system realm and restart
 docker exec modgud dotnet Modgud.Api.dll \
@@ -97,4 +97,4 @@ The new realm gets its own PostgreSQL database (`<master-db>_<slug>`),
 its own hostname-routing entry, its own everything. Cross-realm
 isolation is enforced at the database level — there's no path for
 tenant data to leak from one realm to another, even if a bug in
-modgud opened a query without the tenant scope.
+Modgud opened a query without the tenant scope.

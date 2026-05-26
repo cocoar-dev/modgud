@@ -2,7 +2,7 @@
 
 ## Overview
 
-modgud is a full-fledged OAuth 2.0 authorization server and
+Modgud is a full-fledged OAuth 2.0 authorization server and
 OpenID Connect provider. Implemented via **OpenIddict 7** with its
 own Marten-based stores (`MartenApplicationStore`, `MartenScopeStore`,
 `MartenAuthorizationStore`, `MartenTokenStore`) — no Entity Framework.
@@ -18,7 +18,7 @@ Terminology (Client, Scope, API, Grant Type, token types) in the
 | **Client** | The application requesting access | SPA, mobile app, backend service |
 | **API** | The protected service | A billing API, an order API |
 
-modgud sits in the middle — it authenticates the user, issues
+Modgud sits in the middle — it authenticates the user, issues
 tokens to the client, and the API verifies the tokens.
 
 ## Supported flows
@@ -89,7 +89,7 @@ rationale and the
 operational checklist.
 
 ::: warning No Implicit, no ROPC
-modgud rejects Implicit Flow and Resource Owner Password
+Modgud rejects Implicit Flow and Resource Owner Password
 Credentials. Both are considered insecure — OAuth 2.1 deprecates them.
 :::
 

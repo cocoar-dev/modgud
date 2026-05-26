@@ -60,7 +60,7 @@ Modgud manages permissions in the form **`app:resource:action`**. Examples:
 | --- | --- |
 | `user:read` | Read the user list in modgud |
 | `oauth-client:write` | Manage OAuth clients in modgud |
-| `todo:write` | Write todos in the acme app |
+| `todo:write` | Write todos in the acme-tasks app |
 | `realm:admin` | **Realm-wide bypass** — everything in any app |
 | `modgud:admin` | App-wide bypass for modgud |
 | `modgud:user:admin` | Resource-wide bypass for "user" in modgud |
@@ -82,7 +82,7 @@ The sidebar automatically hides everything you can't read. Examples:
 - **Realm admin** (`realm:admin`) — sees and may do everything, in every app
 - **User manager** in modgud — `user:read` + `:write` + `session:read` + `auth-log:read` → only the user/session area
 - **OAuth manager** — `modgud:oauth-client:*` + `modgud:oauth-scope:*` + `modgud:oauth-api:*` → only the OAuth area
-- **Acme Editor** (in the acme app) — `todo:write` + `project:write` → not an admin in modgud, but very much in acme
+- **Acme-Tasks Editor** (in the `acme-tasks` app) — `todo:write` + `project:write` → not an admin in modgud, but very much in `acme-tasks`
 
 ## Typical workflows
 

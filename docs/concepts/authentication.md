@@ -1,6 +1,6 @@
 # Authentication
 
-modgud has two orthogonal authentication axes:
+Modgud has two orthogonal authentication axes:
 
 1. **First-party login** — the user signs in to modgud itself
    (admin UI, profile, setup). Cookie-based, no token in the browser.
@@ -60,7 +60,7 @@ Vite dev server (`http://localhost:4300`) can write them.
 
 ## OAuth 2.0 / OIDC server
 
-modgud is at the same time a full-fledged OpenID Connect provider
+Modgud is at the same time a full-fledged OpenID Connect provider
 for external apps. Implemented via **OpenIddict 7** with its own
 Marten-based stores (no Entity Framework).
 

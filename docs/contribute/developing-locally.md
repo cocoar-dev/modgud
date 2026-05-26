@@ -8,7 +8,7 @@ is for contributors who edit the code.
 ## Prerequisites
 
 - **.NET 10 SDK**
-- **Node.js 20+** and **pnpm**
+- **Node.js 22+** and **pnpm**
 - **Docker** (for PostgreSQL via container)
 
 ## Bring up the backend

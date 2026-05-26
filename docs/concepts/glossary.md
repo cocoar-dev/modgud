@@ -127,7 +127,7 @@ token) and a list of scopes it supports. In code:
 | **Refresh Token** | Renew expired access tokens |
 
 ::: warning No Implicit, no ROPC
-modgud supports neither Implicit Flow nor Resource Owner
+Modgud supports neither Implicit Flow nor Resource Owner
 Password Credentials (ROPC). Both are considered insecure and are
 deprecated in OAuth 2.1.
 :::

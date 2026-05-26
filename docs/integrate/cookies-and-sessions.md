@@ -1,6 +1,6 @@
 # Cookies & sessions
 
-modgud uses **cookie-based authentication** with ASP.NET Core
+Modgud uses **cookie-based authentication** with ASP.NET Core
 Identity. No JWTs in the browser — all session state lives on the
 server.
 
@@ -132,7 +132,7 @@ security-relevant events (password change, 2FA toggle) the stamp is
 invalidated; on the next cookie validation the cookie is rejected and
 the user is logged out.
 
-modgud uses that plus the `UserSession` documents:
+Modgud uses that plus the `UserSession` documents:
 "Log out everywhere" clears all `UserSession`s + invalidates the
 security stamp → all of the user's cookies are rejected on the next
 validation.

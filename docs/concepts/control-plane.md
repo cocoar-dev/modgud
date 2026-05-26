@@ -1,6 +1,6 @@
 # Control Plane / Data Plane
 
-modgud separates **cross-realm administration** (realm CRUD, the
+Modgud separates **cross-realm administration** (realm CRUD, the
 first-run setup wizard) from **tenant self-service** (everything else)
 on three independent layers. A request that hits a Control-Plane endpoint
 from a tenant host has to defeat all three to succeed — and they're
@@ -9,14 +9,14 @@ deliberately decoupled so a regression in one doesn't open the others.
 ## Why bother
 
 Every realm in modgud is a fully autonomous IdP — its own DB, users,
-OAuth clients, login providers (see [Realms](./realms.md)). But two
-operations are inherently cross-realm:
+OAuth clients, login providers (see [Realms](./realms.md)). But one
+operation is inherently cross-realm:
 
-- **Realm CRUD** — `POST /api/admin/realms` provisions a *new* tenant DB.
-- **First-run setup wizard** — `POST /api/setup/create-admin` creates the
-  very first global admin in a fresh deployment.
+- **Realm CRUD** — `POST /api/admin/realms` provisions a *new* tenant DB
+  and seeds the initial admin via an emailed bootstrap invite (see
+  "First-admin onboarding" below).
 
-Neither belongs on a tenant. A tenant should not even be able to
+It doesn't belong on a tenant. A tenant should not even be able to
 *discover* that a global admin surface exists at this hostname.
 
 ## Model
@@ -79,9 +79,9 @@ graph TD
 ### Layer 1 — Routing gate
 
 `ControlPlaneGateMiddleware` (in `Modgud.Api/Middleware`) runs
-**before** authentication. For paths under `/api/admin/realms` and
-`/api/setup`, it inspects the resolved `TenantInfo` and 404s the
-request when `IsControlPlane=false` (or when no tenant resolved at all
+**before** authentication. For paths under `/api/admin/realms`, it
+inspects the resolved `TenantInfo` and 404s the request when
+`IsControlPlane=false` (or when no tenant resolved at all
 — fail-closed).
 
 **404, not 403**: the existence of the endpoint must be invisible to
@@ -92,8 +92,8 @@ server that never had those endpoints.
 
 `RequireControlPlaneFilter` (in `Modgud.Infrastructure/Realms`) is
 attached to the route group of every Control-Plane-only endpoint —
-currently `/api/admin/realms/*` and `/api/setup/*`. It performs the
-same `IsControlPlane` check the routing gate does.
+currently `/api/admin/realms/*`. It performs the same `IsControlPlane`
+check the routing gate does.
 
 This is **belt and suspenders**: a future routing-table change can't
 quietly leak the surface, and a future endpoint added without the

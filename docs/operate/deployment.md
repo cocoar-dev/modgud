@@ -5,13 +5,13 @@
 | Dependency | Version | Purpose |
 |---|---|---|
 | .NET | 10.0+ | Backend runtime |
-| PostgreSQL | 16+ | DB (document + event store + per-tenant DBs) |
-| Node.js | 20+ | Frontend build |
+| PostgreSQL | 17+ | DB (document + event store + per-tenant DBs) |
+| Node.js | 22+ | Frontend build |
 | Docker | 20+ | Container runtime |
 
 ## Configuration
 
-modgud uses **Cocoar.Configuration v5** with layered binding.
+Modgud uses **Cocoar.Configuration v5** with layered binding.
 Settings are loaded from multiple sources, each overriding the previous:
 
 1. `data/configuration.json` (defaults, committed)
@@ -124,8 +124,8 @@ The official Docker image bundles backend (.NET) + the built Vue SPA
 (as static `wwwroot/` content).
 
 ```
-ghcr.io/cocoar/modgud:latest        # Latest production release
-ghcr.io/cocoar/modgud:1.0.0         # Specific version
+ghcr.io/cocoar-dev/modgud:latest        # Latest production release
+ghcr.io/cocoar-dev/modgud:1.0.0         # Specific version
 ```
 
 Multi-arch: **linux/amd64** + **linux/arm64**.
@@ -143,7 +143,7 @@ docker run -d \
   -e DbSettings__ConnectionString="Host=your-postgres;Database=<master-db>;Username=postgres;Password=..." \
   -e OpenIddict__Issuer="https://auth.example.com" \
   -e ProxyAllowedNetworks="10.0.0.0/24" \
-  ghcr.io/cocoar/modgud:latest
+  ghcr.io/cocoar-dev/modgud:latest
 ```
 
 What each one does:
@@ -229,7 +229,7 @@ services:
       retries: 10
 
   auth:
-    image: ghcr.io/cocoar/modgud:latest
+    image: ghcr.io/cocoar-dev/modgud:latest
     ports:
       - "80:8081"   # Kestrel listens on 8081 in the image; map to 80
     environment:
@@ -265,14 +265,14 @@ to appear in the Compose file unless you want to override them.
 
 ## TLS
 
-modgud can terminate TLS itself (Kestrel with a cert) or run
+Modgud can terminate TLS itself (Kestrel with a cert) or run
 behind a reverse proxy (Nginx, Sophos XG, ...).
 
 ### Own TLS termination
 
 ```yaml
 auth:
-  image: ghcr.io/cocoar/modgud:latest
+  image: ghcr.io/cocoar-dev/modgud:latest
   ports:
     - "443:443"
   environment:
@@ -343,7 +343,7 @@ Important:
 - **WebSocket upgrade** for `/signalr` — otherwise no live-update
   stream
 
-modgud respects forwarded headers via `UseForwardedHeaders` in
+Modgud respects forwarded headers via `UseForwardedHeaders` in
 `Program.cs`.
 
 ## Multi-realm deployment
@@ -404,14 +404,14 @@ routing required.
 
 ## SignalR
 
-modgud pushes live updates over `/signalr/ui` (typed RPC via
+Modgud pushes live updates over `/signalr/ui` (typed RPC via
 SignalARRR). Reverse proxies need upgrade headers (see above). The
 connection is auth-gated — the user must be logged in before it's
 established.
 
 ## Security headers
 
-modgud doesn't set its own security headers — that's the job of
+Modgud doesn't set its own security headers — that's the job of
 the reverse proxy or a fronting WAF. Recommendations:
 
 ```
@@ -424,7 +424,7 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 
 ## Email provider
 
-modgud ships two outbound providers — pick whichever your
+Modgud ships two outbound providers — pick whichever your
 infrastructure already gives you. Switch between them by flipping
 `Email__Provider`; the unused section is ignored.
 

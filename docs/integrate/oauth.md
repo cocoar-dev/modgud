@@ -1,6 +1,6 @@
 # OAuth / OpenIddict implementation
 
-modgud is a fully-featured OAuth 2.0 + OIDC server using
+Modgud is a fully-featured OAuth 2.0 + OIDC server using
 [OpenIddict 7](https://documentation.openiddict.com/). All four
 OpenIddict stores are built as Marten-based custom implementations —
 no EF Core dependency.
