@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
-import publicConfig from './config'
+import { baseConfig } from './config-base'
 
 // In-app docs build — same content as the public site, packaged
 // inside the Docker container under /docs/. The version-lock is the
@@ -10,16 +10,13 @@ import publicConfig from './config'
 // Public docs (docs.modgud.com or wherever) always reflect "latest";
 // in-app docs are always "this version". Same source tree, two
 // outputs.
-
-const base = publicConfig as ReturnType<typeof defineConfig>
-
-// `outDir` is set via the CLI flag in package.json's build:in-app
-// script (`--outDir .vitepress/dist-in-app`). VitePress 1.6 silently
-// ignores an inline `outDir` value when a custom --config is passed —
-// passing it on the CLI is the reliable hook.
+//
+// `outDir` is set on the CLI in package.json (`build:in-app` script)
+// because VitePress 1.6 ignores inline `outDir` when a custom
+// `--config` is passed. The CLI flag is the reliable hook.
 
 export default withMermaid(defineConfig({
-  ...base,
+  ...baseConfig,
   base: '/docs/',
 
   // Marketing landing page has no place inside the container — the
@@ -29,11 +26,10 @@ export default withMermaid(defineConfig({
     'admin/index.md': 'index.md',
   },
 
-  // The in-app build inherits the public site's themeConfig, but
-  // the marketing landing nav (Roadmap, LLM Docs, etc.) is noise
-  // in-app. Override the nav to the admin-facing subset.
   themeConfig: {
-    ...base.themeConfig,
+    ...baseConfig.themeConfig,
+    // Marketing landing nav (Roadmap, LLM Docs, etc.) is noise in-app —
+    // override to the admin-facing subset.
     nav: [
       { text: 'Admin', link: '/admin/' },
       { text: 'Plattform', link: '/plattform/' },

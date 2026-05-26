@@ -7,8 +7,8 @@
     "build": "vitepress build",
     "preview": "vitepress preview",
     "dev:in-app": "vitepress dev --config .vitepress/config.in-app.ts",
-    "build:in-app": "vitepress build --config .vitepress/config.in-app.ts --outDir .vitepress/dist-in-app",
-    "preview:in-app": "vitepress preview --config .vitepress/config.in-app.ts --outDir .vitepress/dist-in-app",
+    "build:in-app": "vitepress build --config .vitepress/config.in-app.ts --outDir .vitepress/dist-in-app --base /docs/",
+    "preview:in-app": "vitepress preview --config .vitepress/config.in-app.ts --outDir .vitepress/dist-in-app --base /docs/",
     "build:all": "pnpm build && pnpm build:in-app",
     "export:md": "node scripts/export-md.mjs",
     "export:pdf": "node scripts/export-pdf.mjs"
