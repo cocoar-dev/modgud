@@ -101,13 +101,15 @@ existierender Konsument, aber jederzeit additiv nachrüstbar.
 
 Five concrete items to make CI cheap to iterate on: `workflow_dispatch`
 + `dry_run` on `cd-release.yml` (so the release pipeline is testable
-without cutting releases), path-filter on `codeql.yml` (skip docs-only
-PRs), `act` local-runner setup doc, composite actions for repeated
-setup blocks, and a `ci/**` branch-trigger escape hatch. Stufe C
-(mandatory PRs on `develop`, no admin bypass) ships **only after**
-this wave — the gate is "trivial changes must remain cheap".
+without cutting releases), `paths-ignore` on `codeql.yml` (skip
+docs-only PRs), `act` local-runner setup doc, composite actions for
+repeated setup blocks, and a `ci/**` branch-trigger escape hatch.
+Stufe C (mandatory PRs on `develop`, no admin bypass) ships **only
+after** this wave — the gate was "trivial changes must remain cheap".
 
-**Status:** Plan captured 2026-05-26. First post-public-flip wave.
+**Status:** ✅ Shipped 2026-05-26 (`fd70785`). Stufe C activation
+unblocked. Live how-to in
+[docs/contribute/local-ci.md](../../docs/contribute/local-ci).
 
 ### [NodaTime migration — store intent, not math](./nodatime-migration)
 

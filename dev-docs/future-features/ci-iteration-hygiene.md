@@ -1,21 +1,21 @@
 # CI iteration hygiene — make workflow development cheap
 
-> **Status:** Plan captured 2026-05-26. Not started. First
-> post-public-flip wave.
-> **Why:** Workflow iteration today is painful for one specific
-> class of problem: the release pipeline (`cd-release.yml`)
-> triggers only on `release: published`, so testing a fix means
-> actually cutting a release. Combined with CodeQL running on
-> docs-only PRs, the iteration cost is too high to enforce
-> mandatory PRs (Stufe C) without making trivial changes
-> miserable. This wave clears the obstacles so Stufe C becomes
-> tolerable — and unlocks faster workflow iteration in general.
->
-> **Sequence:** this wave **must** ship before Stufe C is
-> activated. Stufe C means *every* commit, including a typo in
-> the README, goes through PR + CI. Acceptable only if CI is
-> fast on docs-only PRs and workflow-fix-iteration doesn't
-> require 20 commits to develop.
+> **Status:** ✅ Shipped 2026-05-26 (`fd70785`). All five items
+> landed in one commit, verified end-to-end on a `ci/**` branch
+> before fast-forwarding to develop. **Stufe C activation is now
+> unblocked.** Live reference for users:
+> [docs/contribute/local-ci.md](../../docs/contribute/local-ci).
+> This page is the design rationale + historical record; the
+> how-to lives in the public docs.
+> **Why this existed:** Workflow iteration was painful for one
+> specific class of problem: the release pipeline
+> (`cd-release.yml`) triggered only on `release: published`, so
+> testing a fix meant actually cutting a release. Combined with
+> CodeQL running on docs-only PRs, the iteration cost was too
+> high to enforce mandatory PRs (Stufe C) without making trivial
+> changes miserable. This wave cleared the obstacles so Stufe C
+> becomes tolerable — and unlocks faster workflow iteration in
+> general.
 
 ## What's already shipped
 
