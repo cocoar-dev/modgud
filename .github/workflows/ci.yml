@@ -151,3 +151,32 @@ jobs:
       - name: Build docs (public + in-app)
         run: pnpm build:all
         working-directory: ./docs
+
+  # Aggregator gate so branch protection can require a single check
+  # that resolves correctly even when path-gated jobs were `skipped`.
+  # `success` and `skipped` are both treated as OK; only `failure` /
+  # `cancelled` fail the gate.
+  ci-success:
+    name: CI Pass
+    needs: [changes, backend, frontend, docs]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify upstream jobs
+        run: |
+          fail=0
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "::error ::changes detector did not succeed (${{ needs.changes.result }})"
+            fail=1
+          fi
+          if [[ "${{ needs.backend.result }}" == "failure" || "${{ needs.backend.result }}" == "cancelled" ]]; then
+            echo "::error ::backend job ${{ needs.backend.result }}"; fail=1
+          fi
+          if [[ "${{ needs.frontend.result }}" == "failure" || "${{ needs.frontend.result }}" == "cancelled" ]]; then
+            echo "::error ::frontend job ${{ needs.frontend.result }}"; fail=1
+          fi
+          if [[ "${{ needs.docs.result }}" == "failure" || "${{ needs.docs.result }}" == "cancelled" ]]; then
+            echo "::error ::docs job ${{ needs.docs.result }}"; fail=1
+          fi
+          if [[ $fail -eq 1 ]]; then exit 1; fi
+          echo "All upstream jobs OK (success or correctly skipped)"
