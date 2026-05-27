@@ -14,19 +14,46 @@ Modgud federates user authentication via SAML 2.0 — your customer keeps using 
 
 ## Add a SAML provider
 
-1. **Admin → Login-Provider → Provider hinzufügen.**
-2. Pick a flavor:
-   - **Generic SAML 2.0** — vendor-neutral; admin fills in everything.
-   - **Microsoft Entra ID (SAML)** — pre-fills the Microsoft claim URIs (`http://schemas.xmlsoap.org/...`) in the attribute map. Use this when the IdP is an EntraID Enterprise Application.
-   - **Active Directory Federation Services (SAML)** — pre-fills AD claim URIs + UPN NameID conventions. Use for on-prem ADFS.
-3. Enter a Display Name (shown on the login page button).
-4. Click **Erstellen**. The provider is created **disabled** so you can finish configuring it before users see it.
-5. The detail modal opens. Switch to the **Verbindung** tab.
-6. Set either:
-   - **IdP Federation Metadata URL** — the URL where the customer IdP publishes its metadata. EntraID publishes this on the Enterprise App's Single sign-on page as "App Federation Metadata Url".
-   - **IdP Metadata XML** — paste the metadata XML directly. Use when the IdP isn't reachable from Modgud (firewalled on-prem ADFS).
-7. **Speichern.**
-8. Back in the list, right-click the row → **Aktivieren**. Modgud refuses to enable a SAML provider without metadata, so the previous step must succeed first.
+1. **Admin → Login-Provider → Provider hinzufügen.** A single modal opens
+   with the flavor picker in the header and all tabs visible.
+2. **Flavor** (header dropdown): pick one.
+   - **SAML · Generic SAML 2.0** — vendor-neutral; admin fills in everything.
+   - **SAML · Microsoft Entra ID (SAML)** — pre-fills the Microsoft claim
+     URIs (`http://schemas.xmlsoap.org/...`) in the attribute map. Use this
+     when the IdP is an EntraID Enterprise Application.
+   - **SAML · Active Directory Federation Services (SAML)** — pre-fills AD
+     claim URIs + UPN NameID conventions. Use for on-prem ADFS.
+
+   Switching flavor in this modal swaps the Verbindung-tab schema and
+   the pre-seeded attribute map; admin-typed Display Name / Description
+   stay intact across switches.
+3. **Allgemein** tab: enter Display Name (shown on the login page button)
+   + optional Beschreibung. The SP-Metadata-URL + ACS-URL fields appear
+   AFTER first save — Modgud needs to mint the provider id to derive them.
+4. **Verbindung** tab: set either
+   - **IdP Federation Metadata URL** — where the customer IdP publishes
+     its metadata. EntraID publishes this on the Enterprise App's
+     Single sign-on page as "App Federation Metadata Url".
+   - **IdP Metadata XML** — paste the metadata XML directly. Use when
+     the IdP isn't reachable from Modgud (firewalled on-prem ADFS).
+5. **Erstellen.** Provider lands **disabled** (security default — admin
+   enables explicitly after smoke-test). The modal stays open and
+   transitions into Edit mode; the URL fragment updates to the new
+   provider id and the SP-Metadata-URL + ACS-URL fields now show in the
+   Allgemein tab with copy buttons.
+6. Copy SP-Metadata-URL + ACS-URL from the Allgemein tab and paste them
+   into the customer IdP setup (see [Wire the customer IdP](#wire-the-customer-idp)).
+7. Once the IdP is wired and you've verified an SP-initiated login round
+   trip, click the **Deaktiviert** badge in the modal's header to flip
+   it to **Aktiviert**. Modgud refuses to enable a SAML provider without
+   IdP metadata in FlavorData, so step 4 must succeed first.
+
+::: tip You can enable on Create
+If you already have the IdP metadata URL ready when you open the modal,
+fill it in the Verbindung tab BEFORE clicking Erstellen and the provider
+can land enabled immediately. The readiness gate (no metadata → no
+Enabled) is enforced by the backend.
+:::
 
 ## Wire the customer IdP
 
@@ -55,7 +82,7 @@ When a user signs in via the SAML provider, Modgud:
 6. Links the external identity to an existing Modgud user (by email-domain match or auto-link rule) **or** creates a new user via JIT provisioning if enabled.
 7. Signs the user into the Modgud cookie.
 
-Group / role / permission membership stays under Modgud's control — see [Permission-Modell](../concepts/permissions) for the design rationale. Group-claim → Modgud-Group translation is handled by [auto-membership scripts](./membership-scripts).
+Group / role / permission membership stays under Modgud's control — see [Permission-Modell](../concepts/permissions) for the design rationale. Group-claim → Modgud-Group translation is handled by [auto-membership scripts on Groups](./groups#auto-membership-membership-scripts).
 
 ## Cert rotation
 
