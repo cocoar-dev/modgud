@@ -4,7 +4,10 @@ title: Login-Providers admin-UI refactor — single-modal + quick-map
 
 # Login-Providers admin-UI refactor — single-modal + quick-map
 
-> **Status:** Designed in detail during the SAML federation wave on 2026-05-27 (decisions captured in chat). Phase 1 (SAML provider support via the existing two-step UI) shipped with the SAML wave. Phase 2 (this refactor) deferred to its own wave.
+> **Status:**
+> - Phase 1 — SAML provider support via the existing two-step UI: shipped with the SAML wave (2026-05-27).
+> - Phase 2a — Single-modal Add + Edit (this page's first section), incl. flavor picker in header-actions slot, backend `CreateLoginProviderCommand` accepting full provider state, SAML-aware hiding of ClientId / Scopes / Client-Secret in the Verbindung tab: **shipped 2026-05-27** on `feat/saml-federation`.
+> - Phase 2b — Quick-Map UI for groups (the section further down): still deferred. Hidden cost is on the backend — today's `MembershipScript` is a per-Group `Expression<Func<TPrincipal, bool>>` over an already-projected Principal and has no access to raw IdP claims; the Quick-Map generator's `claims.groups?.includes(...) ? [...] : []` shape requires a new claims-aware mapping mechanism on the LoginProvider side. Tackle this as its own wave when there's customer signal that the manual UserUpdateScript path is too friction-heavy for typical "IdP-group X → Modgud-group Y" needs.
 > **Why:** The current "create with minimal fields → open detail modal → edit everything else" pattern is an outlier vs Auth0 / Keycloak / Okta which use a single modal that morphs based on the selected flavor. Plus the SAML config surface (metadata URL, attribute map, AMR mapping, refresh cadence) is larger than OIDC's and amplifies the friction of the current pattern.
 
 ## What changes
