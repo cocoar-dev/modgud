@@ -53,6 +53,12 @@ export interface FlavorDto {
   DefaultUserUpdateScript: string
   DefaultStoreRawClaims: boolean
   ConfigSchema: FlavorConfigFieldDto[]
+  /**
+   * Protocol family — 'Oidc' or 'Saml'. The admin UI uses this to pick
+   * which connection panel to render and to set the right LoginProviderType
+   * on Create.
+   */
+  Type: LoginProviderType
 }
 
 export interface CreateLoginProviderRequest {

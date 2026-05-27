@@ -56,6 +56,13 @@ public record FlavorDto
     public required string DefaultUserUpdateScript { get; init; }
     public required bool DefaultStoreRawClaims { get; init; }
     public required List<FlavorConfigFieldDto> ConfigSchema { get; init; }
+    /// <summary>
+    /// Protocol family this flavor implements — <c>"Oidc"</c> or <c>"Saml"</c>.
+    /// Admin UI uses this to dispatch the right tab layout (OIDC connection
+    /// fields vs SAML metadata / attribute map). The flavor key alone is
+    /// stable but the Type tells the UI which schema shape to render.
+    /// </summary>
+    public required string Type { get; init; }
 }
 
 public record FlavorConfigFieldDto(

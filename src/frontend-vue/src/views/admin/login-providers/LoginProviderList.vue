@@ -146,10 +146,15 @@ async function confirmAdd() {
   }
   addError.value = null
   try {
+    // Type comes from the chosen flavor — OIDC flavors land as Type=Oidc,
+    // SAML flavors as Type=Saml. The backend's create command branches on
+    // Type and validates against the corresponding flavor registry.
+    const flavor = store.flavors.find((f) => f.Key === addForm.value.Flavor)
+    const type: LoginProviderType = flavor?.Type ?? 'Oidc'
     const created = await store.create({
       Flavor: addForm.value.Flavor,
       DisplayName: addForm.value.DisplayName.trim(),
-      Type: 'Oidc',
+      Type: type,
       FlavorData: placeholderFlavorData(addForm.value.Flavor),
     })
     addOpen.value = false
@@ -159,10 +164,16 @@ async function confirmAdd() {
   }
 }
 
-function placeholderFlavorData(flavorKey: string): Record<string, unknown> {
-  // Minimum viable payload so flavor validation passes at Create time —
-  // real values are supplied on the details modal.
+function placeholderFlavorData(flavorKey: string): Record<string, unknown> | null {
+  // SAML flavors don't have Required ConfigSchema fields at create-time
+  // (MetadataUrl/Xml is supplied on the edit modal), so pass null — the
+  // backend's SAML branch tolerates a null FlavorData and seeds defaults
+  // from the flavor's ApplyDefaults.
   const flavor = store.flavors.find((f) => f.Key === flavorKey)
+  if (flavor?.Type === 'Saml') return null
+
+  // OIDC: minimum viable payload so endpoint derivation passes at Create
+  // time — real values land on the details modal.
   const result: Record<string, unknown> = {}
   for (const field of flavor?.ConfigSchema ?? []) {
     if (field.Required) result[field.Key] = '00000000-0000-0000-0000-000000000000'

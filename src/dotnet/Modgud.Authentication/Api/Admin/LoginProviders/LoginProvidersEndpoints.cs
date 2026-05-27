@@ -28,12 +28,15 @@ public static class LoginProvidersEndpoints
             .WithTags("Login Providers")
             .RequireAuthorization();
 
-        // List registered flavors so the admin UI can render the "Add provider"
-        // picker with the right schema + defaults for each.
+        // List registered flavors — OIDC + SAML, with a Type field on each
+        // so the admin UI can pick which protocol-specific connection panel
+        // to render. Unified list keeps the Add Provider picker simple
+        // (one dropdown sourced from a single endpoint).
         group.MapGet("flavors",
-            ([FromServices] LoginProviderFlavorRegistry flavors) =>
+            ([FromServices] LoginProviderFlavorRegistry oidcFlavors,
+             [FromServices] Modgud.Authentication.Identity.LoginProviders.Saml.SamlFlavorRegistry samlFlavors) =>
             {
-                var items = flavors.All.Select(f => new FlavorDto
+                var oidc = oidcFlavors.All.Select(f => new FlavorDto
                 {
                     Key = f.Key,
                     DisplayName = f.DisplayName,
@@ -43,8 +46,23 @@ public static class LoginProvidersEndpoints
                     DefaultStoreRawClaims = f.DefaultStoreRawClaims,
                     ConfigSchema = f.ConfigSchema.Select(c => new FlavorConfigFieldDto(
                         c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder)).ToList(),
-                }).ToArray();
-                return Results.Ok(items);
+                    Type = nameof(LoginProviderType.Oidc),
+                });
+
+                var saml = samlFlavors.All.Select(f => new FlavorDto
+                {
+                    Key = f.Key,
+                    DisplayName = f.DisplayName,
+                    DefaultIconName = f.DefaultIconName,
+                    DefaultScopes = [], // SAML has no scopes.
+                    DefaultUserUpdateScript = f.DefaultUserUpdateScript,
+                    DefaultStoreRawClaims = f.DefaultStoreRawClaims,
+                    ConfigSchema = f.ConfigSchema.Select(c => new FlavorConfigFieldDto(
+                        c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder)).ToList(),
+                    Type = nameof(LoginProviderType.Saml),
+                });
+
+                return Results.Ok(oidc.Concat(saml).ToArray());
             })
             .RequiresPermission("login-provider:read");
 

@@ -20,8 +20,16 @@ function update(key: string, value: unknown, current: Record<string, unknown>) {
   <div class="flex flex-col gap-2">
     <template v-for="field in schema" :key="field.Key">
       <CoarFormField :label="field.Label">
+        <textarea
+          v-if="field.Type === 'MultilineText'"
+          class="multiline-input"
+          rows="6"
+          :placeholder="field.Placeholder ?? ''"
+          :value="(modelValue[field.Key] as string) ?? ''"
+          @input="(e: Event) => update(field.Key, (e.target as HTMLTextAreaElement).value, modelValue)"
+        ></textarea>
         <CoarTextInput
-          v-if="field.Type === 'String' || field.Type === 'Url'"
+          v-else-if="field.Type === 'String' || field.Type === 'Url'"
           :model-value="(modelValue[field.Key] as string) ?? ''"
           :placeholder="field.Placeholder ?? ''"
           clearable
@@ -51,5 +59,17 @@ function update(key: string, value: unknown, current: Record<string, unknown>) {
   color: #6b7280;
   margin-top: -6px;
   margin-bottom: 4px;
+}
+
+.multiline-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-family: monospace;
+  font-size: 0.85rem;
+  border: 1px solid var(--coar-border-neutral-secondary, #d1d5db);
+  border-radius: 4px;
+  background: var(--coar-background-neutral-primary, #fff);
+  color: inherit;
+  resize: vertical;
 }
 </style>
