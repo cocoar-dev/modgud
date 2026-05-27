@@ -167,9 +167,17 @@ public sealed record SamlFlavorData
     // camelCase ("metadataUrl"). The frontend serialises the admin form using
     // the field Keys verbatim. Plus once an update goes through and we
     // re-persist via ToJson (camelCase), the document ends up carrying BOTH
-    // forms — camelCase as the canonical (possibly null) and PascalCase as
-    // the admin-set form (with the real value). Resolve both forms and
-    // prefer whichever has a non-null value.
+    // forms — camelCase as the canonical (possibly null or stale) and
+    // PascalCase as the admin-set form (with the freshly-updated value).
+    //
+    // Resolution rule: when BOTH forms are present AND both carry a real
+    // value, PascalCase wins because that's the path the admin's most recent
+    // UI input flows through. The camelCase value is whatever ToJson wrote
+    // last time, and on an Update event it represents the PRE-edit state
+    // that the frontend spread back into form.FlavorData via existing.FlavorData.
+    // If we preferred camelCase here we'd silently overwrite the admin's
+    // edit with the stale value — exactly the bug that hit the EntraID
+    // smoke setup on 2026-05-27.
     private static bool TryGetPropertyCaseInsensitive(JsonElement root, string camelName, out JsonElement value)
     {
         var pascal = camelName.Length > 0
@@ -180,16 +188,21 @@ public sealed record SamlFlavorData
         var hasPascal = !string.Equals(camelName, pascal, StringComparison.Ordinal)
             && root.TryGetProperty(pascal, out var pascalEl);
 
-        // If both exist, prefer the one that is not null/undefined.
+        // Both forms present — prefer the PascalCase one when it carries
+        // a real value (admin intent wins), else fall back to camelCase.
+        // (Re-fetch via GetProperty rather than reusing pascalEl from the
+        // short-circuited `&&` above — the compiler considers pascalEl
+        // not-definitely-assigned outside that conditional expression.)
         if (hasCamel && hasPascal)
         {
-            var camelIsValue = camelEl.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined;
-            if (camelIsValue)
+            var pascalValue = root.GetProperty(pascal);
+            var pascalIsValue = pascalValue.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined;
+            if (pascalIsValue)
             {
-                value = camelEl;
+                value = pascalValue;
                 return true;
             }
-            value = root.GetProperty(pascal);
+            value = camelEl;
             return true;
         }
 

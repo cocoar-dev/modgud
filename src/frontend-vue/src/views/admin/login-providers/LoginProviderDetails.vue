@@ -133,6 +133,7 @@ async function load() {
     }
     provider.value = existing
     flavorKey.value = existing.Flavor
+    const loadedFlavor = store.flavors.find((f) => f.Key === existing.Flavor) ?? null
     form.value = {
       DisplayName: existing.DisplayName,
       Description: existing.Description ?? '',
@@ -147,7 +148,7 @@ async function load() {
       AllowedEmailDomains: existing.AllowedEmailDomains ? [...existing.AllowedEmailDomains] : [],
       IconName: existing.IconName ?? '',
       ButtonColorHex: existing.ButtonColorHex ?? '',
-      FlavorData: existing.FlavorData ? { ...existing.FlavorData } : {},
+      FlavorData: normalizeFlavorData(existing.FlavorData, loadedFlavor?.ConfigSchema),
     }
   } catch (e: any) {
     error.value = e?.message ?? String(e)
@@ -343,6 +344,38 @@ onMounted(load)
 
 function parseList(s: string): string[] {
   return s.split(/[\s,]+/).map((p) => p.trim()).filter(Boolean)
+}
+
+// FlavorData casing reconciliation: ConfigSchema field Keys are PascalCase
+// (e.g. `MetadataUrl`) to match the OIDC convention surfaced in the admin UI,
+// but SamlFlavorData.ToJson serialises camelCase (e.g. `metadataUrl`). When
+// the modal reloads an existing provider, existing.FlavorData arrives in
+// camelCase form — if we just spread that into the form, FlavorConnectionPanel
+// (which reads modelValue[field.Key] = PascalCase) would render every field
+// empty, and the admin's edit would silently create a parallel PascalCase
+// key. Without the SamlFlavorData backend tie-breaker the camelCase stale
+// value would then overwrite the edit.
+//
+// Normalise on load: for every schema field that exists in the data under a
+// camelCase key, promote it to the PascalCase key (and drop the camelCase
+// variant). Schema-unknown keys are preserved as-is for forwards-compat.
+function normalizeFlavorData(
+  raw: Record<string, unknown> | null | undefined,
+  schema: FlavorConfigFieldDto[] | undefined,
+): Record<string, unknown> {
+  if (!raw) return {}
+  const out: Record<string, unknown> = { ...raw }
+  for (const field of schema ?? []) {
+    const pascal = field.Key
+    if (pascal.length === 0) continue
+    const camel = pascal[0].toLowerCase() + pascal.slice(1)
+    if (pascal === camel) continue
+    if (camel in out && !(pascal in out)) {
+      out[pascal] = out[camel]
+      delete out[camel]
+    }
+  }
+  return out
 }
 
 // Tab visibility — Internal-typed providers only show the General tab, since

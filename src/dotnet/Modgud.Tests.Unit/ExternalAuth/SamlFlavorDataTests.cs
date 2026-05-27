@@ -191,6 +191,44 @@ public class SamlFlavorDataTests
             Assert.True(data.WantAssertionsSigned);
             Assert.Equal(86_400, data.MetadataRefreshIntervalSeconds);
         }
+
+        [Fact]
+        public void When_both_camel_and_pascal_present_PascalCase_wins()
+        {
+            // The frontend's FlavorConnectionPanel writes admin input keyed by
+            // FlavorConfigField.Key (PascalCase) — e.g. `MetadataUrl`. The
+            // backend's ToJson canonical form is camelCase (`metadataUrl`).
+            // After an admin Update where the modal spread the prior camelCase
+            // FlavorData into form.FlavorData and then wrote a new value under
+            // the PascalCase key, the POST body carries BOTH forms with
+            // different values. The PascalCase one IS the admin's intent;
+            // the camelCase one is the stale pre-edit value the modal
+            // started from. Prefer PascalCase so the admin's edit is honored.
+            var data = SamlFlavorData.FromJson(Json("""
+                {
+                  "metadataUrl": "https://stale.invalid/metadata",
+                  "MetadataUrl": "https://login.microsoftonline.com/tenant/metadata.xml"
+                }
+                """));
+
+            Assert.Equal("https://login.microsoftonline.com/tenant/metadata.xml", data.MetadataUrl);
+        }
+
+        [Fact]
+        public void When_PascalCase_is_null_camel_wins()
+        {
+            // Inverse case: if PascalCase exists but carries null/undefined
+            // (which happens if a forwards-compat client cleared the field
+            // explicitly), the camelCase canonical value should win.
+            var data = SamlFlavorData.FromJson(Json("""
+                {
+                  "metadataUrl": "https://canonical.example/metadata.xml",
+                  "MetadataUrl": null
+                }
+                """));
+
+            Assert.Equal("https://canonical.example/metadata.xml", data.MetadataUrl);
+        }
     }
 
     public class RoundTrip
