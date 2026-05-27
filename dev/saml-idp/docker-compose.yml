@@ -1,0 +1,47 @@
+# Local SAML 2.0 IdP for testing the SAML federation slice without a
+# real EntraID / ADFS / Okta setup. Image: kristophjunge/test-saml-idp
+# — based on simplesamlphp, ships with pre-configured test users.
+#
+# Usage:
+#   cd dev/saml-idp
+#   docker compose up -d
+#
+# Endpoints (host):
+#   IdP UI            http://localhost:8080/simplesaml/
+#   IdP metadata      http://localhost:8080/simplesaml/saml2/idp/metadata.php
+#
+# Test credentials (baked into the image, no override):
+#   user1 / user1pass    -> mail=user1@example.com  uid=user1
+#   user2 / user2pass    -> mail=user2@example.com  uid=user2
+#
+# To wire this IdP to a Modgud LoginProvider:
+#   1. Create a SAML provider in Modgud admin UI (any flavor).
+#   2. Modgud assigns it a GUID — note it, e.g. <provider-id>.
+#   3. Update SIMPLESAMLPHP_SP_ASSERTION_CONSUMER_SERVICE below to
+#      http://localhost:9099/saml/<provider-id>/acs, then
+#      `docker compose up -d --force-recreate`.
+#   4. Paste http://localhost:8080/simplesaml/saml2/idp/metadata.php
+#      into Modgud's "IdP Metadata URL" field for the provider.
+
+services:
+  saml-idp:
+    image: kristophjunge/test-saml-idp:1.15
+    container_name: modgud-saml-idp
+    ports:
+      - "8080:8080"
+    environment:
+      # SP EntityID — what we (Modgud) identify ourselves as in the
+      # SAML metadata + AuthnRequest <Issuer>. Mirrors the planned SP
+      # metadata URL pattern from saml-federation.md.
+      SIMPLESAMLPHP_SP_ENTITY_ID: "http://localhost:9099/saml/sp-metadata"
+
+      # SP ACS URL — where the IdP POSTs the SAML Response after the
+      # user authenticates. Placeholder uses "devtest" as the provider-
+      # id segment; replace with the real LoginProvider GUID once a
+      # provider has been created in Modgud, then recreate the container.
+      SIMPLESAMLPHP_SP_ASSERTION_CONSUMER_SERVICE: "http://localhost:9099/saml/devtest/acs"
+
+      # SLO endpoint — front-channel SLO is deferred to v2 in Modgud
+      # (see saml-federation.md scope), so this stays unused for now.
+      # Set to the SP entity URL so the IdP's metadata is well-formed.
+      SIMPLESAMLPHP_SP_SINGLE_LOGOUT_SERVICE: "http://localhost:9099/saml/devtest/slo"
