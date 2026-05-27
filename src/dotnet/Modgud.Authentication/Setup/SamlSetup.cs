@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Modgud.Authentication.Api.ExternalAuth.Saml;
 using Modgud.Authentication.Identity.LoginProviders.Saml;
 using Modgud.Authentication.Identity.LoginProviders.Saml.Flavors;
 
@@ -28,10 +29,22 @@ public static class SamlSetup
         services.AddSingleton<ISamlFlavor, AdfsSamlFlavor>();
         services.AddSingleton<SamlFlavorRegistry>();
 
+        // Per-provider Saml2Configuration cache (mirror of
+        // DynamicOidcSchemeManager). Singleton because the cache state is
+        // process-wide and protected by ConcurrentDictionary.
+        services.AddSingleton<DynamicSamlSchemeManager>();
+
+        // Cold-start hosted service — walks active realms and seeds the
+        // cache with already-enabled SAML providers. Runtime config
+        // changes flow through the SAML event handlers in
+        // Api.ExternalAuth.Saml.SamlLoginProviderEventHandlers (Wolverine
+        // discovers them by `*Handler` convention).
+        services.AddHostedService<SamlSchemeBootstrap>();
+
         // Still to come in subsequent commits on feat/saml-federation:
-        //   - DynamicSamlSchemeManager
-        //   - SP cert generation / rotation services
-        //   - Metadata refresh hosted service
+        //   - SP cert generation / rotation services (task #13)
+        //   - Real ACS / login / metadata endpoint logic (task #14)
+        //   - Metadata refresh hosted service (task #15)
         return services;
     }
 }

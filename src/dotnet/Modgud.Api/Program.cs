@@ -27,6 +27,7 @@ using Modgud.Authentication.AuthLog;
 using Modgud.Authentication.Api.Admin;
 using Modgud.Authentication.Api.Admin.LoginProviders;
 using Modgud.Authentication.Api.ExternalAuth;
+using Modgud.Authentication.Api.ExternalAuth.Saml;
 using Modgud.Api.Features.Groups;
 using Modgud.Api.Features.Principals;
 using Modgud.Api.Features.Roles;
@@ -1053,6 +1054,7 @@ try
     app.MapSessionEndpoints("api");
     app.MapGdprEndpoints("api");
     app.MapExternalAuthEndpoints("api");
+    app.MapSamlEndpoints();
     app.MapProfileLinkEndpoints("api");
     app.MapLoginProvidersEndpoints("api");
     app.MapUserUpdateScriptTestEndpoint("api");
