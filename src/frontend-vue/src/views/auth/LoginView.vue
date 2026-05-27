@@ -94,8 +94,9 @@ const emailOtpCode = ref('')
 const submitting = ref(false)
 const error = ref('')
 
-// External auth (OIDC) — fetched anonymously, filtered to enabled providers
-interface ExternalLoginDto { Id: string; DisplayName: string; Flavor: string; IconName?: string | null; ButtonColorHex?: string | null }
+// External auth (OIDC + SAML) — fetched anonymously, enabled providers only.
+// Kind decides the entry-point URL (OIDC challenge vs SAML SP-initiated).
+interface ExternalLoginDto { Id: string; Kind: string; Slug: string; DisplayName: string; Flavor: string; IconName?: string | null; ButtonColorHex?: string | null }
 const externalLogins = ref<ExternalLoginDto[]>([])
 async function loadExternalLogins() {
   try {
@@ -117,9 +118,13 @@ async function loadSelfRegistrationInfo() {
 }
 loadSelfRegistrationInfo()
 
-function startExternalLogin(loginProviderId: string) {
+function startExternalLogin(idp: ExternalLoginDto) {
   const returnUrl = new URLSearchParams(window.location.search).get('returnUrl') ?? '/'
-  const target = `/api/account/external-login/${loginProviderId}/start?returnUrl=${encodeURIComponent(returnUrl)}`
+  // SAML is SP-initiated via its own slug-based route; OIDC goes through the
+  // challenge start endpoint keyed by provider id.
+  const target = idp.Kind === 'Saml'
+    ? `/saml/${encodeURIComponent(idp.Slug)}/login?returnUrl=${encodeURIComponent(returnUrl)}`
+    : `/api/account/external-login/${idp.Id}/start?returnUrl=${encodeURIComponent(returnUrl)}`
   window.location.href = target
 }
 loadExternalLogins()
@@ -502,7 +507,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
             {{ t('auth.login.magicLinkButton', {}, 'Login link via email') }}
           </CoarButton>
 
-          <!-- External identity providers (OIDC) -->
+          <!-- External identity providers (OIDC + SAML) -->
           <CoarButton
             v-for="idp in externalLogins"
             :key="idp.Id"
@@ -510,7 +515,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
             variant="secondary"
             full-width
             :style="idp.ButtonColorHex ? { borderColor: idp.ButtonColorHex, color: idp.ButtonColorHex } : {}"
-            @click="startExternalLogin(idp.Id)"
+            @click="startExternalLogin(idp)"
           >
             {{ t('auth.login.externalPrefix', {}, 'Sign in with') }} {{ idp.DisplayName }}
           </CoarButton>
