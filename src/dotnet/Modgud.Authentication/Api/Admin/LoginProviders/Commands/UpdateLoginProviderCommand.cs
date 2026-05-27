@@ -4,6 +4,7 @@ using Marten;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Domain.LoginProviders.Events;
 using Modgud.Authentication.Identity.LoginProviders;
+using Modgud.Authentication.Identity.LoginProviders.Saml;
 using Modgud.Authorization.Membership;
 
 namespace Modgud.Authentication.Api.Admin.LoginProviders.Commands;
@@ -36,7 +37,8 @@ public record UpdateLoginProviderCommand(
 
 public class UpdateLoginProviderHandler(
     IDocumentSession session,
-    LoginProviderFlavorRegistry flavors,
+    LoginProviderFlavorRegistry oidcFlavors,
+    SamlFlavorRegistry samlFlavors,
     TimeProvider clock)
 {
     public async Task<ErrorOr<LoginProvider>> Handle(UpdateLoginProviderCommand command, CancellationToken ct)
@@ -64,21 +66,31 @@ public class UpdateLoginProviderHandler(
         if (config.IsBuiltIn)
             return LoginProviderErrors.InternalNotEditable(config.DisplayName);
 
-        // Internal-typed providers skip the OIDC-shaped validation entirely.
-        // (Reachable today only if a non-built-in Internal entry exists, which
-        // CreateInternalAsync no longer permits — but kept for future proofing.)
-        if (config.Type != LoginProviderType.Internal)
+        // Per-type flavor validation. OIDC checks the OidcFlavorRegistry +
+        // DeriveEndpoints; SAML checks the SamlFlavorRegistry (FlavorData
+        // shape is validated lazily by the metadata-fetch path).
+        // Internal-typed providers skip flavor validation entirely.
+        if (config.Type == LoginProviderType.Oidc)
         {
-            if (!flavors.TryGet(config.Flavor, out var flavor))
+            if (!oidcFlavors.TryGet(config.Flavor, out var flavor))
                 return Error.Validation("LoginProvider.UnknownFlavor",
-                    $"Flavor '{config.Flavor}' is no longer registered.");
+                    $"OIDC flavor '{config.Flavor}' is no longer registered.");
 
-            // Validate the flavor-specific payload shape (e.g. Entra needs TenantId).
             try { flavor.DeriveEndpoints(command.FlavorData); }
             catch (ArgumentException ex)
             {
                 return Error.Validation("LoginProvider.FlavorDataInvalid", ex.Message);
             }
+        }
+        else if (config.Type == LoginProviderType.Saml)
+        {
+            if (!samlFlavors.TryGet(config.Flavor, out _))
+                return Error.Validation("LoginProvider.UnknownFlavor",
+                    $"SAML flavor '{config.Flavor}' is no longer registered.");
+
+            // SAML has no DeriveEndpoints equivalent at update-time —
+            // the metadata-fetch + parse happens when the manager re-
+            // registers after this Update event is replayed.
         }
 
         // Display-name uniqueness across active providers.

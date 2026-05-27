@@ -18,8 +18,15 @@ public class EnableLoginProviderHandler(IDocumentSession session, TimeProvider c
         if (config is null || config.IsDeleted)
             return Error.NotFound("LoginProvider.NotFound", "Login provider not found.");
 
-        // Internal-typed providers don't need ClientId/Secret. Everything else does.
-        if (config.Type != LoginProviderType.Internal)
+        // Per-type pre-flight checks:
+        //  - Internal: no readiness gate (it's the seeded built-in path).
+        //  - Oidc: must have ClientId + ClientSecret set — otherwise the
+        //    AuthnRequest the OIDC handler builds is unusable.
+        //  - Saml: must have either MetadataUrl or MetadataXml set, so the
+        //    SAML manager has IdP signing certs to validate Response
+        //    signatures against. SP cert is auto-generated on first use,
+        //    so no readiness gate there.
+        if (config.Type == LoginProviderType.Oidc)
         {
             if (string.IsNullOrWhiteSpace(config.ClientId))
                 return Error.Validation("LoginProvider.ClientIdRequired",
@@ -27,6 +34,16 @@ public class EnableLoginProviderHandler(IDocumentSession session, TimeProvider c
             if (config.ClientSecretEncrypted is null || config.ClientSecretEncrypted.Length == 0)
                 return Error.Validation("LoginProvider.SecretRequired",
                     "Cannot enable without a client secret — rotate it via Secret first.");
+        }
+        else if (config.Type == LoginProviderType.Saml)
+        {
+            var samlData = Modgud.Authentication.Identity.LoginProviders.Saml.SamlFlavorData.FromJson(config.FlavorData);
+            if (string.IsNullOrWhiteSpace(samlData.MetadataUrl)
+                && string.IsNullOrWhiteSpace(samlData.MetadataXml))
+            {
+                return Error.Validation("LoginProvider.SamlMetadataRequired",
+                    "Cannot enable a SAML provider without IdP metadata. Set either MetadataUrl or MetadataXml via Update first.");
+            }
         }
 
         if (!config.Enabled)

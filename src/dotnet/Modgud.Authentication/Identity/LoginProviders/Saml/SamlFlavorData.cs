@@ -162,24 +162,71 @@ public sealed record SamlFlavorData
         return JsonDocument.Parse(node.ToJsonString());
     }
 
+    // FlavorConfigField keys are PascalCase ("MetadataUrl") to match the OIDC
+    // convention surfaced in the admin UI, but the FromJson canonical form is
+    // camelCase ("metadataUrl"). The frontend serialises the admin form using
+    // the field Keys verbatim. Plus once an update goes through and we
+    // re-persist via ToJson (camelCase), the document ends up carrying BOTH
+    // forms — camelCase as the canonical (possibly null) and PascalCase as
+    // the admin-set form (with the real value). Resolve both forms and
+    // prefer whichever has a non-null value.
+    private static bool TryGetPropertyCaseInsensitive(JsonElement root, string camelName, out JsonElement value)
+    {
+        var pascal = camelName.Length > 0
+            ? char.ToUpperInvariant(camelName[0]) + camelName[1..]
+            : camelName;
+
+        var hasCamel = root.TryGetProperty(camelName, out var camelEl);
+        var hasPascal = !string.Equals(camelName, pascal, StringComparison.Ordinal)
+            && root.TryGetProperty(pascal, out var pascalEl);
+
+        // If both exist, prefer the one that is not null/undefined.
+        if (hasCamel && hasPascal)
+        {
+            var camelIsValue = camelEl.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined;
+            if (camelIsValue)
+            {
+                value = camelEl;
+                return true;
+            }
+            value = root.GetProperty(pascal);
+            return true;
+        }
+
+        if (hasCamel)
+        {
+            value = camelEl;
+            return true;
+        }
+
+        if (hasPascal)
+        {
+            value = root.GetProperty(pascal);
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
     private static string? TryGetString(JsonElement root, string name) =>
-        root.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.String
+        TryGetPropertyCaseInsensitive(root, name, out var el) && el.ValueKind == JsonValueKind.String
             ? el.GetString()
             : null;
 
     private static bool? TryGetBool(JsonElement root, string name) =>
-        root.TryGetProperty(name, out var el) && (el.ValueKind == JsonValueKind.True || el.ValueKind == JsonValueKind.False)
+        TryGetPropertyCaseInsensitive(root, name, out var el) && (el.ValueKind == JsonValueKind.True || el.ValueKind == JsonValueKind.False)
             ? el.GetBoolean()
             : null;
 
     private static int? TryGetInt32(JsonElement root, string name) =>
-        root.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out var n)
+        TryGetPropertyCaseInsensitive(root, name, out var el) && el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out var n)
             ? n
             : null;
 
     private static IReadOnlyList<string> TryGetStringArray(JsonElement root, string name)
     {
-        if (!root.TryGetProperty(name, out var el) || el.ValueKind != JsonValueKind.Array)
+        if (!TryGetPropertyCaseInsensitive(root, name, out var el) || el.ValueKind != JsonValueKind.Array)
             return [];
         return el.EnumerateArray()
             .Where(x => x.ValueKind == JsonValueKind.String)
@@ -189,7 +236,7 @@ public sealed record SamlFlavorData
 
     private static IReadOnlyDictionary<string, IReadOnlyList<string>> TryGetStringArrayMap(JsonElement root, string name)
     {
-        if (!root.TryGetProperty(name, out var el) || el.ValueKind != JsonValueKind.Object)
+        if (!TryGetPropertyCaseInsensitive(root, name, out var el) || el.ValueKind != JsonValueKind.Object)
             return FrozenDictionary<string, IReadOnlyList<string>>.Empty;
 
         var result = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);

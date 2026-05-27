@@ -1,6 +1,7 @@
 using Marten;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Domain.LoginProviders.Events;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 
@@ -81,6 +82,21 @@ internal static class SamlLoginProviderReRegister
         // shouldn't touch the SAML manager. Pre-filter keeps the manager's
         // defence-in-depth warn log out of the happy path.
         if (config.Type != LoginProviderType.Saml) return;
+
+        // Wolverine event handlers run in a background message pump where
+        // RealmMiddleware hasn't set the TenantContext for us. The session
+        // itself is tenant-scoped (via TenantedSessionFactory looking at
+        // the message envelope) — pull its TenantId and enter the context
+        // so manager.RegisterAsync can stamp the cache entry with the
+        // right realm slug.
+        var sessionTenantId = session.TenantId;
+        if (!string.IsNullOrEmpty(sessionTenantId)
+            && string.IsNullOrEmpty(TenantContext.CurrentOrNull))
+        {
+            using var _ = TenantContext.Enter(sessionTenantId);
+            await manager.RegisterAsync(config);
+            return;
+        }
 
         await manager.RegisterAsync(config);
     }
