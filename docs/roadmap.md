@@ -124,13 +124,29 @@ discriminates by `Type` with `Saml`, `Ldap`, and `Kerberos` values
 reserved; handlers come next. See
 [Enterprise SSO](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/enterprise-sso-saml-ldap.md).
 
-**Scheduled operations** — Admin-defined future actions: deactivate
-a user on a specific date, time-bounded group memberships, scheduled
-credential rotation, retention sweeps. Foundation work is captured —
-the domain model needs `LocalDateTime + IANA zone` (not UTC-only) so
-"18:00 Vienna" survives DST rule changes and re-reads correctly
-across timezones. See
-[NodaTime migration](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/nodatime-migration.md).
+**NodaTime-based time domain — foundation for scheduled operations**
+— Today every timestamp in Modgud is a UTC `DateTimeOffset`. That's
+correct for "expires N minutes from now" semantics (tokens, magic
+links, audit logs) but wrong for an admin-intended local time. If
+an admin says "deactivate this user on 2026-06-27 at 18:00", *18:00
+in which timezone?* A UTC instant cannot carry that intent: the
+moment EU adjusts DST rules, the stored UTC value re-derives to the
+wrong local clock reading. The migration moves the domain to
+NodaTime's `LocalDateTime + DateTimeZone` for scheduled-event
+fields (keeping `Instant` for "happens now" cases) and unlocks a
+family of features that share this foundation:
+
+- Scheduled user deactivation (the canonical "deactivate at date X")
+- Time-boxed group memberships ("membership ends 2026-12-31 17:00 Vienna")
+- Scheduled credential / password rotation
+- Scheduled GDPR retention sweeps
+- Password-expiry policies with calendar semantics
+  ("last Friday of the quarter at 17:00 organisation time")
+- Maintenance windows
+
+Plan + OpenIddict-boundary strategy + Marten/Postgres mapping
+captured in [NodaTime migration](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/nodatime-migration.md).
+Pre-1.0 is the cheapest moment for this — no user data to migrate.
 
 **Login alerts + manual IP blacklist** — Surfacing suspicious-login
 events to operators with an explicit allow/deny action — a NAT-safer
