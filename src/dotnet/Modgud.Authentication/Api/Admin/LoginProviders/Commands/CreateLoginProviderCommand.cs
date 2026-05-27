@@ -93,6 +93,16 @@ public class CreateLoginProviderHandler(
             return Error.Validation("LoginProvider.FlavorDataInvalid", ex.Message);
         }
 
+        // Readiness gate parity with EnableLoginProviderHandler: an OIDC
+        // provider needs ClientId + ClientSecret before it can authenticate
+        // anyone, and Create never carries a secret (RotateClientSecret is a
+        // separate command for audit reasons). So Enabled=true at Create is
+        // structurally unsafe — refuse it. The single-modal frontend already
+        // hardcodes Enabled=false; this gate catches stale/scripted callers.
+        if (command.Enabled == true)
+            return Error.Validation("LoginProvider.SecretRequired",
+                "Cannot create an OIDC provider as Enabled — set the client secret first via /secret, then enable explicitly.");
+
         var nameTaken = await session.Query<LoginProvider>()
             .Where(c => !c.IsDeleted && c.DisplayName == command.DisplayName)
             .AnyAsync(ct);
@@ -141,6 +151,24 @@ public class CreateLoginProviderHandler(
         if (!samlFlavors.TryGet(command.Flavor, out var flavor))
             return Error.Validation("LoginProvider.UnknownFlavor",
                 $"Unknown SAML flavor '{command.Flavor}'. Known flavors: {string.Join(", ", samlFlavors.All.Select(f => f.Key))}.");
+
+        // Readiness gate parity with EnableLoginProviderHandler: a SAML
+        // provider needs IdP metadata (URL or pasted XML) before the scheme
+        // manager can build a Saml2Configuration. If the admin asks for
+        // Enabled=true at Create, the metadata MUST already be in FlavorData
+        // — otherwise SamlSchemeBootstrap would register a half-broken scheme
+        // and clicking the provider on the login page would land users on
+        // /login?error=saml-no-metadata.
+        if (command.Enabled == true)
+        {
+            var samlData = SamlFlavorData.FromJson(command.FlavorData);
+            if (string.IsNullOrWhiteSpace(samlData.MetadataUrl)
+                && string.IsNullOrWhiteSpace(samlData.MetadataXml))
+            {
+                return Error.Validation("LoginProvider.SamlMetadataRequired",
+                    "Cannot create a SAML provider as Enabled without IdP metadata. Provide MetadataUrl or MetadataXml, or create disabled and enable explicitly after metadata is set.");
+            }
+        }
 
         // Unlike OIDC, SAML config doesn't need an endpoint-derivation
         // step at create time — the IdP metadata gets fetched / pasted

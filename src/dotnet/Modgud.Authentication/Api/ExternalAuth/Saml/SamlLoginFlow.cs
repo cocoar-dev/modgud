@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 using ITfoxtec.Identity.Saml2;
 using ITfoxtec.Identity.Saml2.MvcCore;
@@ -140,6 +141,22 @@ public class SamlLoginFlow(
                 saml2Response.Status, provider.LoginProviderId);
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
             return Results.Redirect($"/login?error=saml-{Uri.EscapeDataString(saml2Response.Status.ToString() ?? "status")}");
+        }
+
+        // ITfoxtec validates signatures that ARE present against
+        // SignatureValidationCertificates but does not require signatures to be
+        // present — an IdP could send an unsigned Response/Assertion and
+        // ReadSamlResponse would happily return. Enforce the admin-configured
+        // FlavorData toggles by post-checking the XML for Signature elements
+        // at the expected levels.
+        var sigError = CheckRequiredSignatures(saml2Response.XmlDocument, provider.FlavorData);
+        if (sigError is not null)
+        {
+            logger.LogWarning(
+                "Auth: SAML response failed required-signature check ({Reason}) for provider {Id}",
+                sigError, provider.LoginProviderId);
+            ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
+            return Results.Redirect($"/login?error=saml-{Uri.EscapeDataString(sigError)}");
         }
 
         // ITfoxtec's response builds its own ClaimsIdentity from the
@@ -284,6 +301,53 @@ public class SamlLoginFlow(
 
         var identity = new ClaimsIdentity(claims, "saml");
         return new ClaimsPrincipal(identity);
+    }
+
+    /// <summary>
+    /// Post-parse signature enforcement. ITfoxtec does NOT require signatures
+    /// to be present in the response — it only validates whatever is there
+    /// against <see cref="Saml2Configuration.SignatureValidationCertificates"/>.
+    /// So if the admin has configured WantResponseSigned / WantAssertionsSigned
+    /// we have to check the XML ourselves for the presence of the relevant
+    /// <c>ds:Signature</c> element. Returns a short error-tag suitable for the
+    /// redirect query string when enforcement fails; null when OK.
+    /// </summary>
+    private static string? CheckRequiredSignatures(XmlDocument? doc, SamlFlavorData flavor)
+    {
+        if (!flavor.WantResponseSigned && !flavor.WantAssertionsSigned) return null;
+        if (doc?.DocumentElement is null) return "missing-document";
+
+        var ns = new XmlNamespaceManager(doc.NameTable);
+        ns.AddNamespace("samlp", "urn:oasis:names:tc:SAML:2.0:protocol");
+        ns.AddNamespace("saml", "urn:oasis:names:tc:SAML:2.0:assertion");
+        ns.AddNamespace("ds", "http://www.w3.org/2000/09/xmldsig#");
+
+        if (flavor.WantResponseSigned)
+        {
+            // The Response-level signature must be a direct child of the
+            // <samlp:Response> root. A signature anywhere else (e.g. only on
+            // the Assertion) does NOT count — XML-signature-wrapping attacks
+            // hinge exactly on that distinction.
+            var responseSig = doc.DocumentElement.SelectSingleNode("ds:Signature", ns);
+            if (responseSig is null) return "response-unsigned";
+        }
+
+        if (flavor.WantAssertionsSigned)
+        {
+            // Every Assertion in the response (typically one, but the spec
+            // allows multiple) must carry its own ds:Signature element. The
+            // wrapping defense is: per-assertion signature blocks an attacker
+            // from gluing a stolen wrapper signature onto a fresh assertion.
+            var assertions = doc.DocumentElement.SelectNodes("saml:Assertion", ns);
+            if (assertions is null || assertions.Count == 0) return "assertion-missing";
+            foreach (XmlNode assertion in assertions)
+            {
+                var assertionSig = assertion.SelectSingleNode("ds:Signature", ns);
+                if (assertionSig is null) return "assertion-unsigned";
+            }
+        }
+
+        return null;
     }
 
     private static string? ExtractRelayStateReturnUrl(Saml2PostBinding binding)

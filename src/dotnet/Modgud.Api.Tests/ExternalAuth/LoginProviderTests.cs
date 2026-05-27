@@ -195,7 +195,9 @@ public class LoginProviderTests : IntegrationTestBase
             FlavorData: flavorData,
             Type: LoginProviderType.Oidc,
             Description: "single-modal full submit",
-            Enabled: true,
+            // Enabled stays at its default (false) — OIDC Create cannot enable
+            // because the client secret is set via the separate RotateSecret
+            // command. See Create_OidcEnabledTrue_Rejected for the gate.
             ClientId: "client-xyz",
             Scopes: ["openid", "profile", "email", "groups"],
             UserUpdateScript: "return { firstname: claims.given_name };",
@@ -210,7 +212,7 @@ public class LoginProviderTests : IntegrationTestBase
 
         Assert.False(result.IsError, result.IsError ? result.FirstError.Description : "");
         var c = result.Value;
-        Assert.True(c.Enabled);
+        Assert.False(c.Enabled, "OIDC Create should land disabled — secret must be rotated first");
         Assert.Equal("client-xyz", c.ClientId);
         Assert.Equal(["openid", "profile", "email", "groups"], c.Scopes);
         Assert.Equal("return { firstname: claims.given_name };", c.UserUpdateScript);
@@ -244,6 +246,71 @@ public class LoginProviderTests : IntegrationTestBase
 
         Assert.True(result.IsError);
         Assert.StartsWith("LoginProvider.UserUpdateScript", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task Create_OidcEnabledTrue_Rejected()
+    {
+        // Readiness-gate parity with EnableLoginProviderHandler: OIDC needs a
+        // ClientSecret to authenticate, and Create has no secret surface (it
+        // lives on a separate command for audit reasons), so Enabled=true at
+        // Create is structurally unsafe and the command refuses it.
+        using var scope = Factory.Services.CreateScope();
+        var bus = GetTenantedMessageBus(scope);
+
+        var flavorData = JsonDocument.Parse("""{"MetadataUri": "https://idp.test/.well-known/openid-configuration"}""");
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: LoginProviderFlavor.GenericOidc,
+            DisplayName: $"OidcEnabled-{Guid.NewGuid():N}"[..18],
+            FlavorData: flavorData,
+            Enabled: true,
+            ClientId: "client-xyz"));
+
+        Assert.True(result.IsError);
+        Assert.Equal("LoginProvider.SecretRequired", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task Create_SamlEnabledTrue_WithoutMetadata_Rejected()
+    {
+        // SAML readiness gate parity: a SAML provider needs IdP metadata
+        // before the scheme manager can build a Saml2Configuration. Creating
+        // it as Enabled=true with no MetadataUrl/Xml would register a half-
+        // broken scheme that users hit as /login?error=saml-no-metadata.
+        using var scope = Factory.Services.CreateScope();
+        var bus = GetTenantedMessageBus(scope);
+
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: LoginProviderFlavor.GenericSaml,
+            DisplayName: $"SamlEnabled-{Guid.NewGuid():N}"[..18],
+            FlavorData: null,
+            Type: LoginProviderType.Saml,
+            Enabled: true));
+
+        Assert.True(result.IsError);
+        Assert.Equal("LoginProvider.SamlMetadataRequired", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task Create_SamlEnabledTrue_WithMetadataUrl_Succeeds()
+    {
+        // Counter-test: if metadata IS present in FlavorData, Enabled=true at
+        // Create is allowed (admin opts in explicitly with a fully-configured
+        // provider). The single-modal Add flow always sends Enabled=false so
+        // this path is only reachable via direct API calls.
+        using var scope = Factory.Services.CreateScope();
+        var bus = GetTenantedMessageBus(scope);
+
+        var flavorData = JsonDocument.Parse("""{"metadataUrl": "https://idp.test/metadata.xml"}""");
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: LoginProviderFlavor.GenericSaml,
+            DisplayName: $"SamlOk-{Guid.NewGuid():N}"[..18],
+            FlavorData: flavorData,
+            Type: LoginProviderType.Saml,
+            Enabled: true));
+
+        Assert.False(result.IsError, result.IsError ? result.FirstError.Description : null);
+        Assert.True(result.Value.Enabled);
     }
 
     [Theory]

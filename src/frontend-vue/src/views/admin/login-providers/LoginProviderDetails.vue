@@ -188,6 +188,29 @@ async function createProvider() {
     error.value = t('admin.loginProviders.flavorRequired', {}, 'Flavor auswählen')
     return
   }
+
+  // Required-field check on the ConfigSchema BEFORE we hit the backend —
+  // the old two-step List dialog auto-seeded placeholder GUIDs for Required
+  // OIDC fields so Create couldn't fail validation; the single-modal Add
+  // path doesn't, so an admin who saves from the Allgemein tab without
+  // visiting Verbindung would get a cryptic backend FlavorDataInvalid.
+  // Auto-switch to Verbindung and point at the missing fields instead.
+  const missing = (flavor.value.ConfigSchema ?? [])
+    .filter((f) => f.Required)
+    .filter((f) => {
+      const v = form.value.FlavorData[f.Key]
+      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '')
+    })
+  if (missing.length > 0) {
+    activeTab.value = 'connection'
+    const names = missing.map((f) => f.Label).join(', ')
+    error.value = t(
+      'admin.loginProviders.requiredFieldsMissing', {},
+      `Pflichtfelder fehlen im Verbindung-Tab: ${names}`
+    )
+    return
+  }
+
   const created = await store.create({
     Flavor: flavorKey.value,
     DisplayName: form.value.DisplayName.trim(),
