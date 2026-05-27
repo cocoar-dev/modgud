@@ -505,7 +505,7 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
           :label="t('admin.loginProviders.slug', {}, 'Slug')"
           :required="isCreate"
           :hint="isCreate
-            ? t('admin.loginProviders.slugHintCreate', {}, 'Erscheint in den Provider-URLs (z. B. /signin-oidc/{slug}). Nach dem Anlegen nicht mehr änderbar.')
+            ? t('admin.loginProviders.slugHintCreate', {}, 'Erscheint in den Provider-URLs (z. B. /signin-oidc/<slug>). Nach dem Anlegen nicht mehr änderbar.')
             : t('admin.loginProviders.slugHintEdit', {}, 'Nicht änderbar — ein anderer Slug bedeutet löschen + neu anlegen.')">
           <CoarTextInput
             v-model="form.Slug"

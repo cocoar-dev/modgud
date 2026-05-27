@@ -873,7 +873,7 @@
       "displayName": "Display Name",
       "slug": "Slug",
       "slugPlaceholder": "z. B. acme-entra",
-      "slugHintCreate": "Erscheint in den Provider-URLs (z. B. /signin-oidc/{slug}). Nach dem Anlegen nicht mehr änderbar.",
+      "slugHintCreate": "Erscheint in den Provider-URLs (z. B. /signin-oidc/<slug>). Nach dem Anlegen nicht mehr änderbar.",
       "slugHintEdit": "Nicht änderbar — ein anderer Slug bedeutet löschen + neu anlegen.",
       "slugInvalid": "Slug muss 3-64 Zeichen lang sein: Kleinbuchstaben, Ziffern, Bindestriche; Beginn mit Buchstabe, Ende alphanumerisch.",
       "flavor": "Flavor",
