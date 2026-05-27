@@ -190,25 +190,34 @@ async function createProvider() {
   }
 
   // Required-field check on the ConfigSchema BEFORE we hit the backend —
-  // the old two-step List dialog auto-seeded placeholder GUIDs for Required
-  // OIDC fields so Create couldn't fail validation; the single-modal Add
-  // path doesn't, so an admin who saves from the Allgemein tab without
-  // visiting Verbindung would get a cryptic backend FlavorDataInvalid.
-  // Auto-switch to Verbindung and point at the missing fields instead.
-  const missing = (flavor.value.ConfigSchema ?? [])
-    .filter((f) => f.Required)
-    .filter((f) => {
-      const v = form.value.FlavorData[f.Key]
-      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '')
-    })
-  if (missing.length > 0) {
-    activeTab.value = 'connection'
-    const names = missing.map((f) => f.Label).join(', ')
-    error.value = t(
-      'admin.loginProviders.requiredFieldsMissing', {},
-      `Pflichtfelder fehlen im Verbindung-Tab: ${names}`
-    )
-    return
+  // only for OIDC, where the backend's flavor.DeriveEndpoints throws on
+  // empty Required fields. The old two-step List dialog auto-seeded
+  // placeholder GUIDs for that case so Create couldn't fail validation;
+  // the single-modal Add path doesn't, so an admin who saves from the
+  // Allgemein tab without visiting Verbindung would get a cryptic backend
+  // FlavorDataInvalid. Auto-switch to Verbindung and point at the missing
+  // fields instead.
+  //
+  // SAML is intentionally permissive at Create-time: CreateSamlAsync
+  // accepts an empty FlavorData and lands the provider disabled, so the
+  // admin can paste IdP metadata + enable later. Don't apply the gate
+  // there.
+  if (flavor.value.Type === 'Oidc') {
+    const missing = (flavor.value.ConfigSchema ?? [])
+      .filter((f) => f.Required)
+      .filter((f) => {
+        const v = form.value.FlavorData[f.Key]
+        return v === undefined || v === null || (typeof v === 'string' && v.trim() === '')
+      })
+    if (missing.length > 0) {
+      activeTab.value = 'connection'
+      const names = missing.map((f) => f.Label).join(', ')
+      error.value = t(
+        'admin.loginProviders.requiredFieldsMissing', {},
+        `Pflichtfelder fehlen im Verbindung-Tab: ${names}`
+      )
+      return
+    }
   }
 
   const created = await store.create({
