@@ -27,6 +27,7 @@ public class DynamicSamlSchemeManagerTests
                 new AdfsSamlFlavor(),
             }),
             new SamlMetadataFetcher(new NoNetworkHttpClientFactory(), NullLogger<SamlMetadataFetcher>.Instance),
+            TimeProvider.System,
             NullLogger<DynamicSamlSchemeManager>.Instance);
 
     /// <summary>

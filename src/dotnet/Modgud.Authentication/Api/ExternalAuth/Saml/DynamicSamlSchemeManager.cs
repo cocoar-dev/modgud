@@ -25,6 +25,7 @@ namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 public class DynamicSamlSchemeManager(
     SamlFlavorRegistry flavors,
     SamlMetadataFetcher metadataFetcher,
+    TimeProvider clock,
     ILogger<DynamicSamlSchemeManager> logger)
 {
     private readonly ConcurrentDictionary<Guid, RegisteredSamlProvider> _cache = new();
@@ -110,7 +111,8 @@ public class DynamicSamlSchemeManager(
             Flavor: config.Flavor,
             RealmSlug: realmSlug,
             FlavorData: flavorData,
-            IdpMetadata: idpMetadata);
+            IdpMetadata: idpMetadata,
+            MetadataFetchedAt: idpMetadata is null ? null : clock.GetUtcNow());
 
         _cache[config.Id] = entry;
 
@@ -170,4 +172,58 @@ public class DynamicSamlSchemeManager(
     /// </summary>
     public IReadOnlyList<RegisteredSamlProvider> GetAllRegistered() =>
         _cache.Values.ToArray();
+
+    /// <summary>
+    /// Re-fetches IdP metadata for an already-registered provider and
+    /// updates the cache entry in-place. Used by the periodic refresh
+    /// background service. Returns true on a successful fetch (whether or
+    /// not the certs actually changed), false on fetch failure (kept stale).
+    /// </summary>
+    public async Task<bool> RefreshMetadataAsync(Guid loginProviderId, CancellationToken ct = default)
+    {
+        if (!_cache.TryGetValue(loginProviderId, out var existing) || existing is null)
+            return false;
+
+        SamlIdpMetadata? fresh = null;
+        if (!string.IsNullOrWhiteSpace(existing.FlavorData.MetadataUrl))
+        {
+            fresh = await metadataFetcher.FetchAsync(existing.FlavorData.MetadataUrl, ct);
+        }
+        else if (!string.IsNullOrWhiteSpace(existing.FlavorData.MetadataXml))
+        {
+            fresh = metadataFetcher.Parse(existing.FlavorData.MetadataXml);
+        }
+
+        if (fresh is null) return false;
+
+        var updated = existing with
+        {
+            IdpMetadata = fresh,
+            MetadataFetchedAt = clock.GetUtcNow(),
+        };
+        _cache[loginProviderId] = updated;
+
+        // Log only when the cert set actually changes — refreshes that
+        // confirm the same certs are not interesting in steady state.
+        if (existing.IdpMetadata is null
+            || !SequenceEqual(existing.IdpMetadata.SigningCertificatesBase64, fresh.SigningCertificatesBase64))
+        {
+            logger.LogInformation(
+                "Auth: SAML metadata refresh for provider {Id} changed signing certs " +
+                "({OldCount} → {NewCount})",
+                loginProviderId,
+                existing.IdpMetadata?.SigningCertificatesBase64.Count ?? 0,
+                fresh.SigningCertificatesBase64.Count);
+        }
+
+        return true;
+    }
+
+    private static bool SequenceEqual(IReadOnlyList<string> a, IReadOnlyList<string> b)
+    {
+        if (a.Count != b.Count) return false;
+        for (var i = 0; i < a.Count; i++)
+            if (!string.Equals(a[i], b[i], StringComparison.Ordinal)) return false;
+        return true;
+    }
 }

@@ -66,6 +66,12 @@ public static class SamlSetup
         // discovers them by `*Handler` convention).
         services.AddHostedService<SamlSchemeBootstrap>();
 
+        // Periodic metadata refresh — wakes every 15 min, re-fetches IdP
+        // metadata for any provider whose per-provider cadence has elapsed.
+        // Picks up IdP cert rotations ahead of the activation date most
+        // IdPs advertise the new key from.
+        services.AddHostedService<SamlMetadataRefreshService>();
+
         // Still to come in subsequent commits on feat/saml-federation:
         //   - SP cert generation / rotation services (task #13)
         //   - Real ACS / login / metadata endpoint logic (task #14)

@@ -20,4 +20,5 @@ public sealed record RegisteredSamlProvider(
     string Flavor,
     string RealmSlug,
     SamlFlavorData FlavorData,
-    SamlIdpMetadata? IdpMetadata);
+    SamlIdpMetadata? IdpMetadata,
+    DateTimeOffset? MetadataFetchedAt);
