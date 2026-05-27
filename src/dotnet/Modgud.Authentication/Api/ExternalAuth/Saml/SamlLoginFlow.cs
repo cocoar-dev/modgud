@@ -72,11 +72,11 @@ public class SamlLoginFlow(
             return Results.Redirect("/login?error=saml-no-sso");
         }
 
-        var config = await contextBuilder.BuildAsync(provider, ct);
+        using var ctx = await contextBuilder.BuildAsync(provider, ct);
         var ssoUrl = provider.IdpMetadata.SsoRedirectUrl ?? provider.IdpMetadata.SsoPostUrl!;
         var acsUrl = contextBuilder.BuildAcsUrl(provider.LoginProviderId);
 
-        var authnRequest = new Saml2AuthnRequest(config)
+        var authnRequest = new Saml2AuthnRequest(ctx.Configuration)
         {
             ForceAuthn = false,
             IsPassive = false,
@@ -118,11 +118,28 @@ public class SamlLoginFlow(
 
         Saml2AuthnResponse saml2Response;
         Saml2PostBinding binding;
+        Saml2RequestContext ctx;
         try
         {
-            var config = await contextBuilder.BuildAsync(provider, ct);
+            ctx = await contextBuilder.BuildAsync(provider, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Auth: SAML context build failed for provider {Id}",
+                provider.LoginProviderId);
+            ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
+            return Results.Redirect("/login?error=saml-invalid");
+        }
+
+        // Take ownership of the disposable context for the rest of the
+        // request — every exit path below must dispose it to return the
+        // native cert handles to the OS.
+        using var _ctx = ctx;
+        try
+        {
             binding = new Saml2PostBinding();
-            saml2Response = new Saml2AuthnResponse(config);
+            saml2Response = new Saml2AuthnResponse(ctx.Configuration);
             binding.ReadSamlResponse(http.Request.ToGenericHttpRequest(), saml2Response);
         }
         catch (Exception ex)
@@ -218,43 +235,59 @@ public class SamlLoginFlow(
     {
         var spEntityId = contextBuilder.BuildSpEntityId(provider.LoginProviderId);
         var acsUrl = contextBuilder.BuildAcsUrl(provider.LoginProviderId);
+        // GetMetadataCertsAsync hands us X509Certificate2 instances with
+        // native key handles. The metadata XML only needs the public-cert
+        // bytes (via cert.Export), so dispose them as soon as we've exported
+        // — this endpoint is AllowAnonymous and a scraper hammering it could
+        // otherwise drain handles. try/finally guarantees disposal even when
+        // XDocument construction throws.
         var certs = await spCertService.GetMetadataCertsAsync(ct);
-
-        XNamespace md = "urn:oasis:names:tc:SAML:2.0:metadata";
-        XNamespace ds = "http://www.w3.org/2000/09/xmldsig#";
-
-        var keyDescriptors = new List<XElement>();
-        foreach (var cert in certs)
+        try
         {
-            foreach (var use in new[] { "signing", "encryption" })
+            XNamespace md = "urn:oasis:names:tc:SAML:2.0:metadata";
+            XNamespace ds = "http://www.w3.org/2000/09/xmldsig#";
+
+            var keyDescriptors = new List<XElement>();
+            foreach (var cert in certs)
             {
-                keyDescriptors.Add(new XElement(md + "KeyDescriptor",
-                    new XAttribute("use", use),
-                    new XElement(ds + "KeyInfo",
-                        new XElement(ds + "X509Data",
-                            new XElement(ds + "X509Certificate",
-                                Convert.ToBase64String(cert.Export(X509ContentType.Cert)))))));
+                foreach (var use in new[] { "signing", "encryption" })
+                {
+                    keyDescriptors.Add(new XElement(md + "KeyDescriptor",
+                        new XAttribute("use", use),
+                        new XElement(ds + "KeyInfo",
+                            new XElement(ds + "X509Data",
+                                new XElement(ds + "X509Certificate",
+                                    Convert.ToBase64String(cert.Export(X509ContentType.Cert)))))));
+                }
+            }
+
+            var doc = new XDocument(
+                new XElement(md + "EntityDescriptor",
+                    new XAttribute("entityID", spEntityId),
+                    new XAttribute(XNamespace.Xmlns + "md", md.NamespaceName),
+                    new XAttribute(XNamespace.Xmlns + "ds", ds.NamespaceName),
+                    new XElement(md + "SPSSODescriptor",
+                        new XAttribute("AuthnRequestsSigned", provider.FlavorData.SignAuthnRequest ? "true" : "false"),
+                        new XAttribute("WantAssertionsSigned", provider.FlavorData.WantAssertionsSigned ? "true" : "false"),
+                        new XAttribute("protocolSupportEnumeration", "urn:oasis:names:tc:SAML:2.0:protocol"),
+                        keyDescriptors,
+                        new XElement(md + "NameIDFormat", provider.FlavorData.NameIdFormat),
+                        new XElement(md + "AssertionConsumerService",
+                            new XAttribute("Binding", "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"),
+                            new XAttribute("Location", acsUrl),
+                            new XAttribute("index", "0"),
+                            new XAttribute("isDefault", "true")))));
+
+            return doc.ToString();
+        }
+        finally
+        {
+            foreach (var cert in certs)
+            {
+                try { cert.Dispose(); }
+                catch { /* defensive — disposal never throws */ }
             }
         }
-
-        var doc = new XDocument(
-            new XElement(md + "EntityDescriptor",
-                new XAttribute("entityID", spEntityId),
-                new XAttribute(XNamespace.Xmlns + "md", md.NamespaceName),
-                new XAttribute(XNamespace.Xmlns + "ds", ds.NamespaceName),
-                new XElement(md + "SPSSODescriptor",
-                    new XAttribute("AuthnRequestsSigned", provider.FlavorData.SignAuthnRequest ? "true" : "false"),
-                    new XAttribute("WantAssertionsSigned", provider.FlavorData.WantAssertionsSigned ? "true" : "false"),
-                    new XAttribute("protocolSupportEnumeration", "urn:oasis:names:tc:SAML:2.0:protocol"),
-                    keyDescriptors,
-                    new XElement(md + "NameIDFormat", provider.FlavorData.NameIdFormat),
-                    new XElement(md + "AssertionConsumerService",
-                        new XAttribute("Binding", "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"),
-                        new XAttribute("Location", acsUrl),
-                        new XAttribute("index", "0"),
-                        new XAttribute("isDefault", "true")))));
-
-        return doc.ToString();
     }
 
     private static ClaimsPrincipal BuildExternalPrincipal(

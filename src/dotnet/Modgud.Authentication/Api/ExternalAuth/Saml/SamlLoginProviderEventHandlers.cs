@@ -79,9 +79,16 @@ internal static class SamlLoginProviderReRegister
         }
 
         // Type-discriminator gate. OIDC / Internal / Ldap / Kerberos events
-        // shouldn't touch the SAML manager. Pre-filter keeps the manager's
-        // defence-in-depth warn log out of the happy path.
-        if (config.Type != LoginProviderType.Saml) return;
+        // shouldn't register against the SAML manager. But: if a stale SAML
+        // entry exists in the cache under this id (rare — only reachable via
+        // direct event-stream surgery or a future force-recreate code path
+        // that recycles the Guid with a different Type), evict it on the way
+        // out so subsequent SAML lookups don't hit the wrong-protocol entry.
+        if (config.Type != LoginProviderType.Saml)
+        {
+            await manager.UnregisterAsync(id);
+            return;
+        }
 
         // Wolverine event handlers run in a background message pump where
         // RealmMiddleware hasn't set the TenantContext for us. The session

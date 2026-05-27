@@ -156,6 +156,24 @@ public class SamlSpCertificateService
             ?? throw new InvalidOperationException(
                 "SamlSpCertificateService requires an ambient TenantContext.");
 
+        // Cooldown: refuse a second rotation while the previous cert is still
+        // in the overlap window. The second rotation would overwrite that
+        // previous slot — the cert IdPs are most likely still cached on —
+        // and break AuthnRequest signature validation for 24h+ until each
+        // IdP refreshes its cached metadata. Admin must either wait for
+        // RetireExpiredPreviousAsync to clear the slot or escalate via a
+        // future force-rotate path.
+        if (doc is not null
+            && doc.PreviousCertPfxEncrypted is { Length: > 0 }
+            && doc.PreviousRetiresAt is { } stillInOverlap
+            && stillInOverlap > _clock.GetUtcNow())
+        {
+            throw new InvalidOperationException(
+                $"SAML SP cert rotation refused for realm {realmSlug}: a previous " +
+                $"rotation is still in the overlap window until {stillInOverlap:o}. " +
+                "Wait until then before rotating again.");
+        }
+
         var (newCert, newPfxEncrypted) = GenerateAndEncrypt(realmSlug);
 
         if (doc is null)

@@ -101,12 +101,20 @@ public class UpdateLoginProviderHandler(
             return Error.Conflict("LoginProvider.DisplayNameTaken",
                 $"A login provider named '{command.DisplayName}' already exists.");
 
+        // Type-aware projection of the update payload. SAML providers don't
+        // have OIDC scopes — even if the client submits some (stale UI,
+        // scripted caller), force the persisted value back to empty so the
+        // aggregate stays internally consistent and admin grids / exports
+        // can't mis-classify a SAML provider as OIDC by counting Scopes.
+        var scopesForType = config.Type == LoginProviderType.Saml ? [] : command.Scopes;
+        var clientIdForType = config.Type == LoginProviderType.Saml ? string.Empty : command.ClientId;
+
         session.Events.Append(command.Id, new LoginProviderUpdatedEvent(
             Id: command.Id,
             DisplayName: command.DisplayName,
             Description: command.Description,
-            ClientId: command.ClientId,
-            Scopes: command.Scopes,
+            ClientId: clientIdForType,
+            Scopes: scopesForType,
             UserUpdateScript: command.UserUpdateScript,
             StoreRawClaims: command.StoreRawClaims,
             RawClaimsRetentionDays: command.RawClaimsRetentionDays,

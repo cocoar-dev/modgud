@@ -7,6 +7,38 @@ using Modgud.Authentication.Identity.LoginProviders.Saml;
 namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 
 /// <summary>
+/// Disposable wrapper around a per-request <see cref="Saml2Configuration"/>
+/// that owns the cert handles ITfoxtec consumes. <see cref="Saml2Configuration"/>
+/// is not <see cref="IDisposable"/> and the library doesn't dispose certs
+/// it borrowed via SigningCertificate / DecryptionCertificates /
+/// SignatureValidationCertificates, so under sustained SAML load the
+/// native CNG/CAPI key handles would otherwise leak until GC finalisers
+/// catch up. Call-sites use <c>using var ctx = await builder.BuildAsync(...)</c>
+/// so the cert handles are returned promptly.
+/// </summary>
+public sealed class Saml2RequestContext : IDisposable
+{
+    private readonly List<X509Certificate2> _ownedCerts;
+    public Saml2Configuration Configuration { get; }
+
+    public Saml2RequestContext(Saml2Configuration config, IEnumerable<X509Certificate2> ownedCerts)
+    {
+        Configuration = config;
+        _ownedCerts = ownedCerts.ToList();
+    }
+
+    public void Dispose()
+    {
+        foreach (var c in _ownedCerts)
+        {
+            try { c.Dispose(); }
+            catch { /* defensive — disposal never throws */ }
+        }
+        _ownedCerts.Clear();
+    }
+}
+
+/// <summary>
 /// Builds the per-request <see cref="Saml2Configuration"/> that ITfoxtec.
 /// Identity.Saml2 consumes for AuthnRequest signing + Response validation.
 /// Bridges the cached <see cref="RegisteredSamlProvider"/> + parsed IdP
@@ -22,13 +54,14 @@ public class SamlContextBuilder(
     IHttpContextAccessor httpContextAccessor)
 {
     /// <summary>
-    /// Constructs the Saml2Configuration. Throws if the provider has no
+    /// Constructs the SAML request context. Throws if the provider has no
     /// IdP metadata yet (no signing certs to validate against, no SSO URL
     /// to redirect to) — endpoint handlers should pre-check
     /// <see cref="RegisteredSamlProvider.IdpMetadata"/> and surface a 503
-    /// instead of letting this throw deep in the lib.
+    /// instead of letting this throw deep in the lib. The returned context
+    /// owns the cert handles — caller MUST dispose it (use <c>using</c>).
     /// </summary>
-    public async Task<Saml2Configuration> BuildAsync(
+    public async Task<Saml2RequestContext> BuildAsync(
         RegisteredSamlProvider provider,
         CancellationToken ct = default)
     {
@@ -64,12 +97,15 @@ public class SamlContextBuilder(
 
         config.AllowedAudienceUris.Add(spEntityId);
 
+        var ownedCerts = new List<X509Certificate2>(decryptionCerts);
+
         foreach (var b64 in idp.SigningCertificatesBase64)
         {
             try
             {
-                var cert = new X509Certificate2(Convert.FromBase64String(b64));
+                var cert = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(b64));
                 config.SignatureValidationCertificates.Add(cert);
+                ownedCerts.Add(cert);
             }
             catch
             {
@@ -78,7 +114,7 @@ public class SamlContextBuilder(
             }
         }
 
-        return config;
+        return new Saml2RequestContext(config, ownedCerts);
     }
 
     /// <summary>
