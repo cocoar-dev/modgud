@@ -622,6 +622,10 @@ try
     builder.Services.AddScoped<ExternalLoginProcessor>();
     builder.Services.AddHostedService<OidcSchemeBootstrap>();
 
+    // SAML SP federation (placeholder hook — incremental wiring lands
+    // in subsequent commits on feat/saml-federation).
+    builder.Services.AddModgudSaml();
+
     // SETUP-01 / Setup endpoint surface eliminated in C15d. First-admin
     // onboarding goes through CP-issued bootstrap-invites (POST
     // /api/account/bootstrap-admin) or the Recovery-CLI `bootstrap-admin`
