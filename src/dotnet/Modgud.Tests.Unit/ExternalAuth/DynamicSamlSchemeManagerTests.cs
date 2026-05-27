@@ -58,10 +58,12 @@ public class DynamicSamlSchemeManagerTests
         bool enabled = true,
         bool deleted = false,
         string displayName = "Test SAML",
+        string slug = "test-saml",
         JsonDocument? flavorData = null) =>
         new()
         {
             Id = id ?? Guid.NewGuid(),
+            Slug = slug,
             DisplayName = displayName,
             Type = LoginProviderType.Saml,
             Flavor = flavor,
@@ -208,6 +210,50 @@ public class DynamicSamlSchemeManagerTests
             var acmeOnly = manager.GetRegisteredForRealm("acme");
             Assert.Single(acmeOnly);
             Assert.Equal("acme-saml", acmeOnly[0].DisplayName);
+        }
+
+        [Fact]
+        public async Task TryGetBySlug_resolves_within_realm()
+        {
+            var manager = NewManager();
+            using var tenantScope = TenantContext.Enter("acme");
+            var provider = NewSamlProvider(slug: "acme-entra");
+            await manager.RegisterAsync(provider);
+
+            Assert.True(manager.TryGetBySlug("acme", "acme-entra", out var entry));
+            Assert.Equal(provider.Id, entry!.LoginProviderId);
+
+            // Wrong realm, right slug → miss (the host resolves the realm first).
+            Assert.False(manager.TryGetBySlug("globex", "acme-entra", out _));
+            // Right realm, unknown slug → miss.
+            Assert.False(manager.TryGetBySlug("acme", "nope", out _));
+        }
+
+        [Fact]
+        public async Task TryGetBySlug_disambiguates_same_slug_across_realms()
+        {
+            // The core reason the lookup is (realm, slug) and not slug alone:
+            // two realms may each register a provider with the same slug.
+            var manager = NewManager();
+            Guid acmeId, globexId;
+
+            using (TenantContext.Enter("acme"))
+            {
+                var p = NewSamlProvider(slug: "entra");
+                acmeId = p.Id;
+                await manager.RegisterAsync(p);
+            }
+            using (TenantContext.Enter("globex"))
+            {
+                var p = NewSamlProvider(slug: "entra");
+                globexId = p.Id;
+                await manager.RegisterAsync(p);
+            }
+
+            Assert.True(manager.TryGetBySlug("acme", "entra", out var acme));
+            Assert.Equal(acmeId, acme!.LoginProviderId);
+            Assert.True(manager.TryGetBySlug("globex", "entra", out var globex));
+            Assert.Equal(globexId, globex!.LoginProviderId);
         }
 
         [Fact]

@@ -28,6 +28,7 @@ public class LoginProviderTests : IntegrationTestBase
         var command = new CreateLoginProviderCommand(
             Flavor: LoginProviderFlavor.EntraId,
             DisplayName: "Acme Entra",
+            Slug: "acme-entra",
             FlavorData: flavorData);
 
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command);
@@ -59,6 +60,7 @@ public class LoginProviderTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: LoginProviderFlavor.GenericOidc,
             DisplayName: "Test OIDC",
+            Slug: "test-oidc",
             FlavorData: flavorData));
         Assert.False(result.IsError);
 
@@ -82,9 +84,11 @@ public class LoginProviderTests : IntegrationTestBase
         var bus = GetTenantedMessageBus(scope);
 
         var flavorData = JsonDocument.Parse("""{"MetadataUri": "https://idp.test/.well-known/openid-configuration"}""");
-        await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(LoginProviderFlavor.GenericOidc, "Duplicate", flavorData));
+        await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(LoginProviderFlavor.GenericOidc, "Duplicate", "dup-one", flavorData));
 
-        var second = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(LoginProviderFlavor.GenericOidc, "Duplicate", flavorData));
+        // Distinct slug so the slug-uniqueness gate passes and the duplicate
+        // DisplayName is what trips the conflict.
+        var second = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(LoginProviderFlavor.GenericOidc, "Duplicate", "dup-two", flavorData));
         Assert.True(second.IsError);
         Assert.Equal("LoginProvider.DisplayNameTaken", second.FirstError.Code);
     }
@@ -96,7 +100,7 @@ public class LoginProviderTests : IntegrationTestBase
         var bus = GetTenantedMessageBus(scope);
 
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(
-            new CreateLoginProviderCommand("NopeFlavor", "X", null));
+            new CreateLoginProviderCommand("NopeFlavor", "X", "nope-flavor", null));
 
         Assert.True(result.IsError);
         Assert.Equal("LoginProvider.UnknownFlavor", result.FirstError.Code);
@@ -110,7 +114,7 @@ public class LoginProviderTests : IntegrationTestBase
 
         // EntraId flavor requires TenantId — passing null FlavorData must fail.
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(
-            new CreateLoginProviderCommand(LoginProviderFlavor.EntraId, "NoTenant", null));
+            new CreateLoginProviderCommand(LoginProviderFlavor.EntraId, "NoTenant", "no-tenant", null));
 
         Assert.True(result.IsError);
         Assert.Equal("LoginProvider.FlavorDataInvalid", result.FirstError.Code);
@@ -128,6 +132,7 @@ public class LoginProviderTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: string.Empty,
             DisplayName: "My Internal " + Guid.NewGuid().ToString("N")[..6],
+            Slug: "my-internal",
             FlavorData: null,
             Type: LoginProviderType.Internal));
 
@@ -153,6 +158,7 @@ public class LoginProviderTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: LoginProviderFlavor.GenericSaml,
             DisplayName: $"Saml-Test-{Guid.NewGuid():N}"[..32],
+            Slug: "saml-known-flavor",
             FlavorData: null,
             Type: LoginProviderType.Saml));
 
@@ -171,6 +177,7 @@ public class LoginProviderTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: "NotARealSamlFlavor",
             DisplayName: $"Saml-Bad-{Guid.NewGuid():N}"[..32],
+            Slug: "saml-bad-flavor",
             FlavorData: null,
             Type: LoginProviderType.Saml));
 
@@ -192,6 +199,7 @@ public class LoginProviderTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: LoginProviderFlavor.GenericOidc,
             DisplayName: $"Full-{Guid.NewGuid():N}"[..16],
+            Slug: "full-form",
             FlavorData: flavorData,
             Type: LoginProviderType.Oidc,
             Description: "single-modal full submit",
@@ -241,6 +249,7 @@ public class LoginProviderTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: LoginProviderFlavor.GenericOidc,
             DisplayName: $"Oversize-{Guid.NewGuid():N}"[..20],
+            Slug: "oversize-script",
             FlavorData: flavorData,
             UserUpdateScript: oversized));
 
@@ -262,6 +271,7 @@ public class LoginProviderTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: LoginProviderFlavor.GenericOidc,
             DisplayName: $"OidcEnabled-{Guid.NewGuid():N}"[..18],
+            Slug: "oidc-enabled",
             FlavorData: flavorData,
             Enabled: true,
             ClientId: "client-xyz"));
@@ -283,6 +293,7 @@ public class LoginProviderTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: LoginProviderFlavor.GenericSaml,
             DisplayName: $"SamlEnabled-{Guid.NewGuid():N}"[..18],
+            Slug: "saml-enabled-nometa",
             FlavorData: null,
             Type: LoginProviderType.Saml,
             Enabled: true));
@@ -305,6 +316,7 @@ public class LoginProviderTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: LoginProviderFlavor.GenericSaml,
             DisplayName: $"SamlOk-{Guid.NewGuid():N}"[..18],
+            Slug: "saml-ok-meta",
             FlavorData: flavorData,
             Type: LoginProviderType.Saml,
             Enabled: true));
@@ -326,6 +338,7 @@ public class LoginProviderTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: "AnyFlavor",
             DisplayName: $"Attempt-{type}-{Guid.NewGuid():N}"[..32],
+            Slug: "unsupported-attempt",
             FlavorData: null,
             Type: type));
 
@@ -347,6 +360,7 @@ public class LoginProviderTests : IntegrationTestBase
                 Id: Guid.NewGuid(),
                 Type: LoginProviderType.Internal,
                 Flavor: LoginProviderFlavor.Internal,
+                Slug: LoginProviderSlugRules.InternalSlug,
                 DisplayName: "Internal Authentication",
                 Description: null,
                 IsBuiltIn: true,
@@ -374,11 +388,59 @@ public class LoginProviderTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: string.Empty,
             DisplayName: "Second Internal Attempt",
+            // Distinct slug from the seeded Internal ("internal") so the
+            // single-Internal rule — not slug-uniqueness — is what trips.
+            Slug: "second-internal",
             FlavorData: null,
             Type: LoginProviderType.Internal));
 
         Assert.True(result.IsError);
         Assert.Equal("LoginProvider.InternalAlreadyExists", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task Create_InvalidSlug_ValidationError()
+    {
+        // Slug grammar is enforced at command time before any type-specific
+        // handling. An uppercase / malformed slug is rejected with a stable code.
+        using var scope = Factory.Services.CreateScope();
+        var bus = GetTenantedMessageBus(scope);
+
+        var flavorData = JsonDocument.Parse("""{"MetadataUri": "https://idp.test/.well-known/openid-configuration"}""");
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: LoginProviderFlavor.GenericOidc,
+            DisplayName: "Bad Slug Provider",
+            Slug: "Not_A_Valid_Slug",
+            FlavorData: flavorData));
+
+        Assert.True(result.IsError);
+        Assert.Equal("LoginProvider.SlugInvalid", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task Create_DuplicateSlug_Conflicts()
+    {
+        // Slug is unique per realm. Two providers with distinct display names
+        // but the same slug: the second is rejected with SlugTaken.
+        using var scope = Factory.Services.CreateScope();
+        var bus = GetTenantedMessageBus(scope);
+
+        var flavorData = JsonDocument.Parse("""{"MetadataUri": "https://idp.test/.well-known/openid-configuration"}""");
+        var first = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: LoginProviderFlavor.GenericOidc,
+            DisplayName: "Slug Owner One",
+            Slug: "shared-slug",
+            FlavorData: flavorData));
+        Assert.False(first.IsError, first.IsError ? first.FirstError.Description : "");
+
+        var second = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: LoginProviderFlavor.GenericOidc,
+            DisplayName: "Slug Owner Two",
+            Slug: "shared-slug",
+            FlavorData: flavorData));
+
+        Assert.True(second.IsError);
+        Assert.Equal("LoginProvider.SlugTaken", second.FirstError.Code);
     }
 
     [Fact]
@@ -394,6 +456,7 @@ public class LoginProviderTests : IntegrationTestBase
                 Id: id,
                 Type: LoginProviderType.Internal,
                 Flavor: LoginProviderFlavor.Internal,
+                Slug: LoginProviderSlugRules.InternalSlug,
                 DisplayName: "Internal Authentication",
                 Description: null,
                 IsBuiltIn: true,

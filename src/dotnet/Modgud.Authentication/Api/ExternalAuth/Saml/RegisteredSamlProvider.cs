@@ -16,6 +16,7 @@ namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 /// </summary>
 public sealed record RegisteredSamlProvider(
     Guid LoginProviderId,
+    string Slug,
     string DisplayName,
     string Flavor,
     string RealmSlug,

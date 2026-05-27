@@ -22,6 +22,12 @@ public record LoginProviderDto
     public required string Id { get; init; }
     public required string Type { get; init; }
     public required string Flavor { get; init; }
+
+    /// <summary>
+    /// URL-stable, admin-chosen identifier used in the provider's public URLs
+    /// (OIDC callback, SAML SP surface). Set at creation, immutable thereafter.
+    /// </summary>
+    public required string Slug { get; init; }
     public required string DisplayName { get; init; }
     public string? Description { get; init; }
     public required bool IsBuiltIn { get; init; }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 
@@ -9,13 +10,20 @@ namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 /// Maps the SAML SP federation endpoint surface. Three routes, all per-realm-
 /// scoped via the ambient <c>RealmMiddleware</c>:
 /// <list type="bullet">
-///   <item><c>GET  /saml/sp-metadata</c> — our SP metadata XML, the customer
+///   <item><c>GET  /saml/{slug}/sp-metadata</c> — our SP metadata XML, the customer
 ///         pastes this URL into their IdP setup screen.</item>
-///   <item><c>POST /saml/{providerId}/login</c> — SP-initiated AuthnRequest;
+///   <item><c>GET  /saml/{slug}/login</c> — SP-initiated AuthnRequest;
 ///         redirects the browser to the IdP.</item>
-///   <item><c>POST /saml/{providerId}/acs</c> — AssertionConsumerService;
+///   <item><c>POST /saml/{slug}/acs</c> — AssertionConsumerService;
 ///         the IdP form-POSTs the SAML Response here via the user's browser.</item>
 /// </list>
+/// <para>
+/// The route carries the admin-chosen provider <c>slug</c> (not the aggregate
+/// Guid) so the SP EntityID + ACS URL stay stable across a delete + recreate.
+/// The slug is only unique per realm; the realm is resolved from the Host by
+/// <c>RealmMiddleware</c> before these handlers run, so the lookup is
+/// <c>(TenantContext.Current, slug)</c>.
+/// </para>
 /// <para>
 /// Single-Logout (SLO) is explicitly out of scope for v1 — see
 /// <c>dev-docs/future-features/saml-federation.md</c>. The handlers below are
@@ -25,9 +33,9 @@ namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 /// </summary>
 public static class SamlEndpoints
 {
-    public const string SpMetadataPathTemplate = "/saml/{providerId:guid}/sp-metadata";
-    public const string LoginPathTemplate = "/saml/{providerId:guid}/login";
-    public const string AcsPathTemplate = "/saml/{providerId:guid}/acs";
+    public const string SpMetadataPathTemplate = "/saml/{slug}/sp-metadata";
+    public const string LoginPathTemplate = "/saml/{slug}/login";
+    public const string AcsPathTemplate = "/saml/{slug}/acs";
 
     public static IEndpointRouteBuilder MapSamlEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -54,12 +62,12 @@ public static class SamlEndpoints
     }
 
     private static async Task<IResult> SpMetadataAsync(
-        Guid providerId,
+        string slug,
         [FromServices] DynamicSamlSchemeManager manager,
         [FromServices] SamlLoginFlow flow,
         CancellationToken ct)
     {
-        if (!manager.TryGet(providerId, out var provider) || provider is null)
+        if (!manager.TryGetBySlug(TenantContext.Current, slug, out var provider) || provider is null)
             return Results.NotFound();
 
         var xml = await flow.BuildSpMetadataAsync(provider, ct);
@@ -67,26 +75,26 @@ public static class SamlEndpoints
     }
 
     private static async Task<IResult> LoginAsync(
-        Guid providerId,
+        string slug,
         string? returnUrl,
         [FromServices] DynamicSamlSchemeManager manager,
         [FromServices] SamlLoginFlow flow,
         CancellationToken ct)
     {
-        if (!manager.TryGet(providerId, out var provider) || provider is null)
+        if (!manager.TryGetBySlug(TenantContext.Current, slug, out var provider) || provider is null)
             return Results.NotFound();
 
         return await flow.StartLoginAsync(provider, returnUrl, ct);
     }
 
     private static async Task<IResult> AcsAsync(
-        Guid providerId,
+        string slug,
         HttpContext http,
         [FromServices] DynamicSamlSchemeManager manager,
         [FromServices] SamlLoginFlow flow,
         CancellationToken ct)
     {
-        if (!manager.TryGet(providerId, out var provider) || provider is null)
+        if (!manager.TryGetBySlug(TenantContext.Current, slug, out var provider) || provider is null)
             return Results.NotFound();
 
         return await flow.HandleAcsAsync(provider, http, ct);

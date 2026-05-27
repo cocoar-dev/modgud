@@ -619,6 +619,7 @@ try
     builder.Services.AddScoped<Modgud.Authentication.Setup.IPendingAdminInviteService,
         Modgud.Authentication.Setup.PendingAdminInviteService>();
     builder.Services.AddSingleton<UserUpdateScriptRunner>();
+    builder.Services.AddSingleton<Modgud.Authentication.Api.ExternalAuth.OidcSchemeRealmRegistry>();
     builder.Services.AddSingleton<DynamicOidcSchemeManager>();
     builder.Services.AddScoped<ExternalLoginProcessor>();
     builder.Services.AddHostedService<OidcSchemeBootstrap>();

@@ -42,6 +42,7 @@ const isSaml = computed(() =>
 )
 
 interface FormState {
+  Slug: string
   DisplayName: string
   Description: string
   ClientId: string
@@ -60,6 +61,7 @@ interface FormState {
 
 function emptyForm(): FormState {
   return {
+    Slug: '',
     DisplayName: '',
     Description: '',
     ClientId: '',
@@ -79,6 +81,29 @@ function emptyForm(): FormState {
 
 const form = ref<FormState>(emptyForm())
 const newSecret = ref<string>('')
+
+// Slug grammar mirrors LoginProviderSlugRules on the backend: 3-64 chars,
+// lowercase letters/digits/hyphens, starts with a letter, ends alphanumeric.
+const SLUG_RE = /^[a-z][a-z0-9-]{1,62}[a-z0-9]$/
+
+// Derive a slug suggestion from a display name: lowercase, non-alphanumerics
+// to hyphens, collapse + trim hyphens, ensure it starts with a letter.
+function slugify(name: string): string {
+  let s = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  s = s.replace(/^[^a-z]+/, '') // first char must be a letter
+  return s.slice(0, 64).replace(/-+$/, '')
+}
+
+// Auto-fill the slug from DisplayName while the admin hasn't typed one (Add mode
+// only — the slug is immutable after create).
+function suggestSlug() {
+  if (!isCreate.value || form.value.Slug.trim()) return
+  form.value.Slug = slugify(form.value.DisplayName)
+}
 
 const modalTitle = computed(() => {
   if (isCreate.value) return t('admin.loginProviders.createTitle', {}, 'Login-Provider hinzufügen')
@@ -135,6 +160,7 @@ async function load() {
     flavorKey.value = existing.Flavor
     const loadedFlavor = store.flavors.find((f) => f.Key === existing.Flavor) ?? null
     form.value = {
+      Slug: existing.Slug,
       DisplayName: existing.DisplayName,
       Description: existing.Description ?? '',
       ClientId: existing.ClientId,
@@ -167,6 +193,12 @@ watch(flavorKey, (newKey, oldKey) => {
 async function save() {
   if (!form.value.DisplayName.trim()) {
     error.value = t('admin.loginProviders.nameRequired', {}, 'Name ist erforderlich')
+    return
+  }
+  // Slug is required + format-checked at create only (immutable afterwards).
+  if (isCreate.value && !SLUG_RE.test(form.value.Slug.trim())) {
+    error.value = t('admin.loginProviders.slugInvalid', {},
+      'Slug muss 3-64 Zeichen lang sein: Kleinbuchstaben, Ziffern, Bindestriche; Beginn mit Buchstabe, Ende alphanumerisch.')
     return
   }
   error.value = null
@@ -224,6 +256,7 @@ async function createProvider() {
   const created = await store.create({
     Flavor: flavorKey.value,
     DisplayName: form.value.DisplayName.trim(),
+    Slug: form.value.Slug.trim(),
     // Type follows the chosen flavor — OIDC flavors create OIDC providers,
     // SAML flavors create SAML providers. Backend re-validates.
     Type: flavor.value.Type,
@@ -462,7 +495,23 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
       <!-- General tab (always visible — also the only tab for Internal) -->
       <div v-show="!showProtocolTabs || activeTab === 'general'" class="tab-content">
         <CoarFormField :label="t('admin.loginProviders.displayName', {}, 'Display Name')">
-          <CoarTextInput v-model="form.DisplayName" :disabled="isBuiltIn" clearable />
+          <CoarTextInput v-model="form.DisplayName" :disabled="isBuiltIn" clearable @blur="suggestSlug" />
+        </CoarFormField>
+        <!-- Slug: URL-stable identifier, immutable after create. Hidden for the
+             built-in Internal provider (its slug is fixed). In Edit mode it is
+             shown read-only so the admin can see / copy it. -->
+        <CoarFormField
+          v-if="!isInternal"
+          :label="t('admin.loginProviders.slug', {}, 'Slug')"
+          :required="isCreate"
+          :hint="isCreate
+            ? t('admin.loginProviders.slugHintCreate', {}, 'Erscheint in den Provider-URLs (z. B. /signin-oidc/{slug}). Nach dem Anlegen nicht mehr änderbar.')
+            : t('admin.loginProviders.slugHintEdit', {}, 'Nicht änderbar — ein anderer Slug bedeutet löschen + neu anlegen.')">
+          <CoarTextInput
+            v-model="form.Slug"
+            :disabled="!isCreate"
+            :placeholder="t('admin.loginProviders.slugPlaceholder', {}, 'z. B. acme-entra')"
+            clearable />
         </CoarFormField>
         <CoarFormField :label="t('common.description', {}, 'Beschreibung')">
           <CoarTextInput v-model="form.Description" :disabled="isBuiltIn" clearable />

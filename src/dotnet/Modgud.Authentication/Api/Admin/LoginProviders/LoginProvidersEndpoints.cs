@@ -108,6 +108,7 @@ public static class LoginProvidersEndpoints
                 var command = new CreateLoginProviderCommand(
                     Flavor: request.Flavor,
                     DisplayName: request.DisplayName,
+                    Slug: request.Slug,
                     FlavorData: flavorData,
                     Type: request.Type ?? LoginProviderType.Oidc,
                     Description: request.Description,
@@ -225,6 +226,7 @@ public static class LoginProvidersEndpoints
         Id = new ShortGuid(c.Id).ToString(),
         Type = c.Type.ToString(),
         Flavor = c.Flavor,
+        Slug = c.Slug,
         DisplayName = c.DisplayName,
         Description = c.Description,
         IsBuiltIn = c.IsBuiltIn,
@@ -248,13 +250,13 @@ public static class LoginProvidersEndpoints
         // an empty string instead of inventing a meaningless URL. SAML carries its own pair
         // of URLs in SamlSpMetadataUrl + SamlAcsUrl below.
         RedirectUri = c.Type == LoginProviderType.Oidc
-            ? $"{publicUrl.TrimEnd('/')}/signin-oidc/{c.Id:N}"
+            ? $"{publicUrl.TrimEnd('/')}/signin-oidc/{c.Slug}"
             : string.Empty,
         SamlSpMetadataUrl = c.Type == LoginProviderType.Saml
-            ? $"{publicUrl.TrimEnd('/')}/saml/{c.Id:D}/sp-metadata"
+            ? $"{publicUrl.TrimEnd('/')}/saml/{c.Slug}/sp-metadata"
             : null,
         SamlAcsUrl = c.Type == LoginProviderType.Saml
-            ? $"{publicUrl.TrimEnd('/')}/saml/{c.Id:D}/acs"
+            ? $"{publicUrl.TrimEnd('/')}/saml/{c.Slug}/acs"
             : null,
     };
 
@@ -272,6 +274,7 @@ public static class LoginProvidersEndpoints
     public record CreateLoginProviderRequest(
         string Flavor,
         string DisplayName,
+        string Slug,
         JsonElement? FlavorData,
         LoginProviderType? Type = LoginProviderType.Oidc,
         string? Description = null,

@@ -107,6 +107,7 @@ public class DynamicSamlSchemeManager(
 
         var entry = new RegisteredSamlProvider(
             LoginProviderId: config.Id,
+            Slug: config.Slug,
             DisplayName: config.DisplayName,
             Flavor: config.Flavor,
             RealmSlug: realmSlug,
@@ -153,6 +154,21 @@ public class DynamicSamlSchemeManager(
     public bool TryGet(Guid loginProviderId, out RegisteredSamlProvider? entry)
     {
         return _cache.TryGetValue(loginProviderId, out entry);
+    }
+
+    /// <summary>
+    /// Lookup by (realm, slug) — the form the public SAML endpoints use, since
+    /// the route now carries the provider slug and the realm comes from the
+    /// ambient tenant context. Slugs are only unique per realm, so both parts
+    /// are required to disambiguate the global cache. Returns <c>false</c> for
+    /// unknown / disabled providers (handlers map that to 404).
+    /// </summary>
+    public bool TryGetBySlug(string realmSlug, string slug, out RegisteredSamlProvider? entry)
+    {
+        entry = _cache.Values.FirstOrDefault(e =>
+            string.Equals(e.RealmSlug, realmSlug, StringComparison.Ordinal)
+            && string.Equals(e.Slug, slug, StringComparison.Ordinal));
+        return entry is not null;
     }
 
     /// <summary>

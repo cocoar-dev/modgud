@@ -81,7 +81,7 @@ public class SamlContextBuilder(
             ?? throw new InvalidOperationException(
                 $"SAML SP active cert is missing for provider {provider.LoginProviderId}.");
 
-        var spEntityId = BuildSpEntityId(provider.LoginProviderId);
+        var spEntityId = BuildSpEntityId(provider.Slug);
 
         var config = new Saml2Configuration
         {
@@ -121,27 +121,28 @@ public class SamlContextBuilder(
     /// Our SP EntityID for a given provider — also used as the audience the
     /// IdP must address in the assertion. Form: scheme + host + SP-metadata
     /// path of the specific provider, matching what the SP metadata XML
-    /// publishes.
+    /// publishes. Keyed by the provider <paramref name="slug"/> so the
+    /// EntityID stays stable across a delete + recreate.
     /// </summary>
-    public string BuildSpEntityId(Guid providerId)
+    public string BuildSpEntityId(string slug)
     {
         var http = httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException(
                 "SamlContextBuilder requires an HttpContext to derive the SP EntityID.");
         var req = http.Request;
-        return $"{req.Scheme}://{req.Host}/saml/{providerId:D}/sp-metadata";
+        return $"{req.Scheme}://{req.Host}/saml/{slug}/sp-metadata";
     }
 
     /// <summary>
     /// Our ACS URL for a given provider — where the IdP form-POSTs the
     /// SAMLResponse. Must match what we advertise in SP metadata.
     /// </summary>
-    public string BuildAcsUrl(Guid providerId)
+    public string BuildAcsUrl(string slug)
     {
         var http = httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException(
                 "SamlContextBuilder requires an HttpContext to derive the ACS URL.");
         var req = http.Request;
-        return $"{req.Scheme}://{req.Host}/saml/{providerId:D}/acs";
+        return $"{req.Scheme}://{req.Host}/saml/{slug}/acs";
     }
 }

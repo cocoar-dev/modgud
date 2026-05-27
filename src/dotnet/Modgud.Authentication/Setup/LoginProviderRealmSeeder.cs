@@ -41,6 +41,7 @@ public class LoginProviderRealmSeeder : ILoginProviderRealmSeeder
             Id: id,
             Type: LoginProviderType.Internal,
             Flavor: LoginProviderFlavor.Internal,
+            Slug: LoginProviderSlugRules.InternalSlug,
             DisplayName: "Internal Authentication",
             Description: "Built-in password-based authentication",
             IsBuiltIn: true,

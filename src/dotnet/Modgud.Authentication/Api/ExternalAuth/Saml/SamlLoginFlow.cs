@@ -74,7 +74,7 @@ public class SamlLoginFlow(
 
         using var ctx = await contextBuilder.BuildAsync(provider, ct);
         var ssoUrl = provider.IdpMetadata.SsoRedirectUrl ?? provider.IdpMetadata.SsoPostUrl!;
-        var acsUrl = contextBuilder.BuildAcsUrl(provider.LoginProviderId);
+        var acsUrl = contextBuilder.BuildAcsUrl(provider.Slug);
 
         var authnRequest = new Saml2AuthnRequest(ctx.Configuration)
         {
@@ -233,8 +233,8 @@ public class SamlLoginFlow(
         RegisteredSamlProvider provider,
         CancellationToken ct)
     {
-        var spEntityId = contextBuilder.BuildSpEntityId(provider.LoginProviderId);
-        var acsUrl = contextBuilder.BuildAcsUrl(provider.LoginProviderId);
+        var spEntityId = contextBuilder.BuildSpEntityId(provider.Slug);
+        var acsUrl = contextBuilder.BuildAcsUrl(provider.Slug);
         // GetMetadataCertsAsync hands us X509Certificate2 instances with
         // native key handles. The metadata XML only needs the public-cert
         // bytes (via cert.Export), so dispose them as soon as we've exported

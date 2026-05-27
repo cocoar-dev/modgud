@@ -13,6 +13,8 @@ export interface LoginProviderDto {
   Id: string
   Type: LoginProviderType
   Flavor: string
+  /** URL-stable identifier used in the provider's public URLs. Set at create, immutable. */
+  Slug: string
   DisplayName: string
   Description?: string | null
   IsBuiltIn: boolean
@@ -68,6 +70,12 @@ export interface FlavorDto {
 export interface CreateLoginProviderRequest {
   Flavor: string
   DisplayName: string
+  /**
+   * URL-stable identifier (lowercase, 3-64, letters/digits/hyphens). Required at
+   * create, immutable after. Replaces the provider Guid in the OIDC callback +
+   * SAML SP URLs so they survive a delete + recreate.
+   */
+  Slug: string
   /** Optional — backend defaults to Oidc when omitted. */
   Type?: LoginProviderType
   Description?: string | null

@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Identity.LoginProviders;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Api.ExternalAuth;
 
@@ -38,6 +39,7 @@ public class DynamicOidcSchemeManager(
     IEnumerable<IPostConfigureOptions<OpenIdConnectOptions>> oidcPostConfigures,
     LoginProviderFlavorRegistry flavors,
     LoginProviderSecretStore secrets,
+    OidcSchemeRealmRegistry realmRegistry,
     IHostEnvironment env,
     ILogger<DynamicOidcSchemeManager> logger)
 {
@@ -92,9 +94,23 @@ public class DynamicOidcSchemeManager(
             return;
         }
 
+        // Realm the cached scheme belongs to — needed because the callback path
+        // is now the per-realm slug (host-blind matching, see
+        // HostAwareOpenIdConnectHandler). Mirrors the SAML manager's RealmSlug
+        // requirement; callers (bootstrap, event handlers) enter the realm's
+        // TenantContext first.
+        var realmSlug = TenantContext.CurrentOrNull
+            ?? throw new InvalidOperationException(
+                "DynamicOidcSchemeManager.RegisterAsync requires an ambient TenantContext " +
+                "so the registered scheme knows which realm it belongs to. " +
+                "Callers (bootstrap, event handlers) must enter the realm's TenantContext first.");
+
         var schemeName = SchemeNameFor(config.Id);
-        var callbackPath = $"/signin-oidc/{config.Id:N}";
-        var signoutCallbackPath = $"/signout-callback-oidc/{config.Id:N}";
+        // Callback path keyed by the admin-chosen slug (not the Guid) so the
+        // redirect URI stays stable across a delete + recreate. The slug is only
+        // unique per realm; HostAwareOpenIdConnectHandler disambiguates by realm.
+        var callbackPath = $"/signin-oidc/{config.Slug}";
+        var signoutCallbackPath = $"/signout-callback-oidc/{config.Slug}";
         var clientSecret = secrets.TryDecrypt(config.ClientSecretEncrypted);
 
         var options = new OpenIdConnectOptions
@@ -204,14 +220,18 @@ public class DynamicOidcSchemeManager(
         oidcOptionsCache.TryRemove(schemeName);
         oidcOptionsCache.TryAdd(schemeName, options);
 
+        // Record the scheme → realm mapping before adding the scheme so the
+        // host-aware handler can resolve it the instant a callback arrives.
+        realmRegistry.Set(schemeName, realmSlug);
+
         var scheme = new AuthenticationScheme(
             name: schemeName,
             displayName: config.DisplayName,
-            handlerType: typeof(OpenIdConnectHandler));
+            handlerType: typeof(HostAwareOpenIdConnectHandler));
         schemeProvider.AddScheme(scheme);
 
-        logger.LogInformation("Auth: Registered OIDC scheme {Scheme} (LoginProvider {Display} / {Flavor})",
-            schemeName, config.DisplayName, config.Flavor);
+        logger.LogInformation("Auth: Registered OIDC scheme {Scheme} (LoginProvider {Display} / {Flavor}) in realm {Realm}",
+            schemeName, config.DisplayName, config.Flavor, realmSlug);
     }
 
     public async Task UnregisterAsync(Guid loginProviderId)
@@ -219,6 +239,7 @@ public class DynamicOidcSchemeManager(
         var schemeName = SchemeNameFor(loginProviderId);
         schemeProvider.RemoveScheme(schemeName);
         oidcOptionsCache.TryRemove(schemeName);
+        realmRegistry.Remove(schemeName);
         logger.LogInformation("Auth: Unregistered OIDC scheme {Scheme}", schemeName);
         await Task.CompletedTask;
     }

@@ -8,7 +8,7 @@ Modgud federates user authentication via SAML 2.0 — your customer keeps using 
 - **Identity Provider (IdP)** — the side that authenticates the user. That's your customer's EntraID / ADFS / Okta tenant.
 - **AuthnRequest** — the message Modgud sends to the IdP saying "please authenticate this user."
 - **SAML Response (assertion)** — the message the IdP sends back, signed, with the user's identity + attributes.
-- **ACS URL** (Assertion Consumer Service) — Modgud's endpoint that receives the SAML Response. Each Modgud SAML provider has its own ACS URL with the provider's GUID in the path.
+- **ACS URL** (Assertion Consumer Service) — Modgud's endpoint that receives the SAML Response. Each Modgud SAML provider has its own ACS URL with the provider's **slug** in the path.
 - **SP metadata** — an XML document Modgud publishes that the IdP imports to establish trust. Contains our SP EntityID, ACS URL, and signing certificate.
 - **IdP metadata** — the corresponding document on the IdP side. Modgud imports it to know where to send AuthnRequests and which signature to trust.
 
@@ -27,9 +27,13 @@ Modgud federates user authentication via SAML 2.0 — your customer keeps using 
    Switching flavor in this modal swaps the Verbindung-tab schema and
    the pre-seeded attribute map; admin-typed Display Name / Description
    stay intact across switches.
-3. **Allgemein** tab: enter Display Name (shown on the login page button)
-   + optional Beschreibung. The SP-Metadata-URL + ACS-URL fields appear
-   AFTER first save — Modgud needs to mint the provider id to derive them.
+3. **Allgemein** tab: enter Display Name (shown on the login page button),
+   a **Slug**, + optional Beschreibung. The slug is a short, URL-safe
+   identifier (lowercase letters/digits/hyphens, 3-64 chars) that becomes
+   part of the provider's SP-Metadata-URL + ACS-URL. It is **immutable
+   after create** — pick a stable name (e.g. `acme-entra`); leaving it and
+   the Display Name lets Modgud suggest one. The SP-Metadata-URL + ACS-URL
+   fields appear AFTER first save.
 4. **Verbindung** tab: set either
    - **IdP Federation Metadata URL** — where the customer IdP publishes
      its metadata. EntraID publishes this on the Enterprise App's
@@ -59,12 +63,12 @@ Enabled) is enforced by the backend.
 
 The IdP needs to know about Modgud as an SP. Two URLs to give them:
 
-- **SP EntityID** = **SP metadata URL** — `https://<modgud-host>/saml/<provider-id>/sp-metadata`.
-- **ACS URL** — `https://<modgud-host>/saml/<provider-id>/acs`.
+- **SP EntityID** = **SP metadata URL** — `https://<modgud-host>/saml/<slug>/sp-metadata`.
+- **ACS URL** — `https://<modgud-host>/saml/<slug>/acs`.
 
 Most IdPs (EntraID, Okta, ADFS) accept "import SP metadata" via the URL — preferred path, because metadata also carries our signing cert. If the IdP wants the cert as a file, download it from the SP metadata XML's `<X509Certificate>` element.
 
-The `<provider-id>` is the GUID Modgud assigned when you created the provider — visible in the URL fragment when the detail modal is open. Each SAML provider has its own SP EntityID + ACS URL.
+The `<slug>` is the identifier you chose when you created the provider. Because it's stable and admin-chosen (not a generated GUID), deleting and recreating a provider with the same slug yields the **same** SP EntityID + ACS URL — so you don't have to re-paste the URLs into the IdP. Each SAML provider has its own SP EntityID + ACS URL. Copy the exact values from the Allgemein tab.
 
 ## Test users
 
@@ -101,6 +105,6 @@ Two halves:
 ## Troubleshooting
 
 - **"Cannot enable a SAML provider without IdP metadata"** — set either MetadataUrl or MetadataXml in the Verbindung tab + Speichern, then enable.
-- **IdP error: "Unable to locate metadata for ..."** — the IdP doesn't know about our SP EntityID. Re-import our SP metadata at `https://<modgud-host>/saml/<provider-id>/sp-metadata` into the IdP setup.
+- **IdP error: "Unable to locate metadata for ..."** — the IdP doesn't know about our SP EntityID. Re-import our SP metadata at `https://<modgud-host>/saml/<slug>/sp-metadata` into the IdP setup.
 - **Login redirects to error page** — check the backend log around the time of the failed login. Common causes: clock skew (assertion's NotBefore/NotOnOrAfter outside the validation window), wrong audience (SP EntityID mismatch), or signature validation failure (IdP rotated its key but Modgud's cache is stale — hit "Refresh metadata" or wait for the next scheduled refresh).
 - **User signed in but with wrong identity** — check the Verknüpfung & Richtlinien tab. Email-based auto-linking can bind an incoming SAML identity to an existing Modgud user whose email matches. Turn off "Email-basierte Auto-Verknüpfung" if you want SAML logins to JIT-create users instead.

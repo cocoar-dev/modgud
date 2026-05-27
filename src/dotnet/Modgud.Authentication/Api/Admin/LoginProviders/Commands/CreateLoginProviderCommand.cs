@@ -30,6 +30,7 @@ namespace Modgud.Authentication.Api.Admin.LoginProviders.Commands;
 public record CreateLoginProviderCommand(
     string Flavor,
     string DisplayName,
+    string Slug,
     JsonDocument? FlavorData,
     LoginProviderType Type = LoginProviderType.Oidc,
     string? Description = null,
@@ -56,6 +57,20 @@ public class CreateLoginProviderHandler(
     {
         if (string.IsNullOrWhiteSpace(command.DisplayName))
             return Error.Validation("LoginProvider.DisplayNameRequired", "Display name is required.");
+
+        // Slug is the URL-stable identifier (OIDC callback + SAML SP surface).
+        // Validate format + per-realm uniqueness up front so every type path
+        // below can trust it. Immutable after create — no Update equivalent.
+        if (!LoginProviderSlugRules.IsValidFormat(command.Slug))
+            return Error.Validation("LoginProvider.SlugInvalid",
+                "Slug must be 3-64 chars, lowercase letters/digits/hyphens, start with a letter and end with a letter or digit.");
+
+        var slugTaken = await session.Query<LoginProvider>()
+            .Where(c => !c.IsDeleted && c.Slug == command.Slug)
+            .AnyAsync(ct);
+        if (slugTaken)
+            return Error.Conflict("LoginProvider.SlugTaken",
+                $"A login provider with slug '{command.Slug}' already exists in this realm.");
 
         // Same input-cap as Update — if the admin shipped a user-update script
         // at Create time, validate length + nesting before it enters storage.
@@ -117,6 +132,7 @@ public class CreateLoginProviderHandler(
             Id: id,
             Type: LoginProviderType.Oidc,
             Flavor: flavor.Key,
+            Slug: command.Slug,
             DisplayName: command.DisplayName,
             Description: command.Description,
             IsBuiltIn: false,
@@ -196,6 +212,7 @@ public class CreateLoginProviderHandler(
             Id: id,
             Type: LoginProviderType.Saml,
             Flavor: flavor.Key,
+            Slug: command.Slug,
             DisplayName: command.DisplayName,
             Description: command.Description,
             IsBuiltIn: false,
@@ -250,6 +267,7 @@ public class CreateLoginProviderHandler(
             Id: id,
             Type: LoginProviderType.Internal,
             Flavor: LoginProviderFlavor.Internal,
+            Slug: command.Slug,
             DisplayName: command.DisplayName,
             Description: command.Description,
             IsBuiltIn: false,

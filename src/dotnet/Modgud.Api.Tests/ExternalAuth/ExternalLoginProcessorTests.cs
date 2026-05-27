@@ -199,6 +199,7 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
                 Id: id,
                 Type: LoginProviderType.Ldap,
                 Flavor: "ldap-future",
+                Slug: "ldap-future",
                 DisplayName: "LDAP Future",
                 Description: null,
                 IsBuiltIn: false,
@@ -262,6 +263,7 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: LoginProviderFlavor.EntraId,
             DisplayName: "Test Entra " + Guid.NewGuid().ToString("N")[..6],
+            Slug: $"s{Guid.NewGuid():N}"[..12],
             FlavorData: flavorData));
         Assert.False(result.IsError);
         var id = result.Value.Id;

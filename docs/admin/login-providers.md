@@ -109,9 +109,13 @@ on access.
    flavor in this modal re-seeds the flavor-derived defaults (Scopes,
    default User-Update-Script, button icon) without touching what you've
    already typed in Display Name / Description.
-3. **Allgemein** tab: enter **Display Name** (e.g. "Company SSO") +
-   optional Beschreibung. The Redirect-URI field appears AFTER first save —
-   Modgud needs to mint the provider id to derive the URL.
+3. **Allgemein** tab: enter **Display Name** (e.g. "Company SSO"), a
+   **Slug**, + optional Beschreibung. The slug is a short, URL-safe
+   identifier (lowercase letters/digits/hyphens, 3-64 chars) that becomes
+   part of the Redirect-URI (`/signin-oidc/<slug>`). It is **immutable
+   after create** — pick a stable name (e.g. `company-sso`); typing a
+   Display Name first lets Modgud suggest one. The Redirect-URI field
+   appears AFTER first save.
 4. **Verbindung** tab:
    - **Tenant ID** (Entra-specific): paste from Entra.
    - **Client ID**: from Entra.
@@ -141,7 +145,9 @@ on access.
    Allgemein tab with a copy button next to it.
 
 **Copy the Redirect URI** from the Allgemein tab — you'll paste it into
-Entra next.
+Entra next. Because the URI is built from your chosen slug (not a
+generated GUID), deleting and recreating the provider with the same slug
+keeps the **same** Redirect URI — no need to re-edit the Entra app.
 
 #### 3. Back in Entra: paste the redirect URI
 
