@@ -42,8 +42,20 @@ public record LoginProviderDto
     public required DateTimeOffset CreatedAt { get; init; }
     public required DateTimeOffset UpdatedAt { get; init; }
 
-    /// <summary>Full redirect URI that the admin copies into the IdP app registration. Empty for Internal-typed providers.</summary>
+    /// <summary>OIDC redirect URI the admin copies into the IdP app registration. Empty for non-OIDC providers (Internal, SAML).</summary>
     public required string RedirectUri { get; init; }
+
+    /// <summary>
+    /// SAML SP metadata URL — admin pastes this into the IdP's "App Federation Metadata URL"
+    /// (EntraID) / "metadata import" (ADFS) field. <c>null</c> for non-SAML providers.
+    /// </summary>
+    public string? SamlSpMetadataUrl { get; init; }
+
+    /// <summary>
+    /// SAML Assertion Consumer Service URL — admin pastes this into the IdP's "Reply URL" /
+    /// "AssertionConsumerService" field. <c>null</c> for non-SAML providers.
+    /// </summary>
+    public string? SamlAcsUrl { get; init; }
 }
 
 /// <summary>Flavor metadata for the "Add provider" picker.</summary>

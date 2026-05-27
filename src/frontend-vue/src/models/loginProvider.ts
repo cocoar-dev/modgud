@@ -32,8 +32,12 @@ export interface LoginProviderDto {
   FlavorData?: Record<string, unknown> | null
   CreatedAt: string
   UpdatedAt: string
-  /** Full redirect URI to copy into the IdP app registration. Empty for Internal-typed providers. */
+  /** OIDC redirect URI to copy into the IdP app registration. Empty for non-OIDC providers. */
   RedirectUri: string
+  /** SAML SP metadata URL — for the IdP's "App Federation Metadata URL" field. `null` for non-SAML. */
+  SamlSpMetadataUrl?: string | null
+  /** SAML Assertion Consumer Service URL — for the IdP's "Reply URL" / ACS field. `null` for non-SAML. */
+  SamlAcsUrl?: string | null
 }
 
 export interface FlavorConfigFieldDto {

@@ -29,6 +29,7 @@ const flavor = computed<FlavorDto | null>(() =>
 
 const isBuiltIn = computed(() => provider.value?.IsBuiltIn === true)
 const isInternal = computed(() => provider.value?.Type === 'Internal')
+const isSaml = computed(() => provider.value?.Type === 'Saml')
 
 interface FormState {
   DisplayName: string
@@ -75,6 +76,8 @@ const modalTitle = computed(() => {
 })
 
 const redirectUri = computed(() => provider.value?.RedirectUri ?? '')
+const samlSpMetadataUrl = computed(() => provider.value?.SamlSpMetadataUrl ?? '')
+const samlAcsUrl = computed(() => provider.value?.SamlAcsUrl ?? '')
 
 async function load() {
   loading.value = true
@@ -181,6 +184,10 @@ function copyRedirect() {
   if (redirectUri.value) navigator.clipboard?.writeText(redirectUri.value)
 }
 
+function copyText(s: string) {
+  if (s) navigator.clipboard?.writeText(s)
+}
+
 const footerButton = computed(() => ({
   // Save button only appears once we have a non-built-in provider loaded.
   // Create-flow happens via the picker on the list view; the details modal is
@@ -264,7 +271,27 @@ const showOidcTabs = computed(() => !isInternal.value)
           <CoarTextInput v-model="form.Description" :disabled="isBuiltIn" clearable />
         </CoarFormField>
         <template v-if="!isInternal">
-          <CoarFormField :label="t('admin.loginProviders.redirectUri', {}, 'Redirect URI (in die IdP-App-Registrierung eintragen)')">
+          <!-- SAML: two URLs the admin pastes into the IdP setup screen. -->
+          <template v-if="isSaml">
+            <CoarFormField :label="t('admin.loginProviders.samlSpMetadataUrl', {}, 'SP-Metadata-URL (in die IdP-Konfiguration eintragen)')">
+              <div class="flex gap-2 items-center">
+                <CoarTextInput :model-value="samlSpMetadataUrl" readonly class="flex-1" />
+                <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlSpMetadataUrl)">
+                  {{ t('common.copy', {}, 'Kopieren') }}
+                </CoarButton>
+              </div>
+            </CoarFormField>
+            <CoarFormField :label="t('admin.loginProviders.samlAcsUrl', {}, 'ACS-URL / Reply-URL (in die IdP-Konfiguration eintragen)')">
+              <div class="flex gap-2 items-center">
+                <CoarTextInput :model-value="samlAcsUrl" readonly class="flex-1" />
+                <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlAcsUrl)">
+                  {{ t('common.copy', {}, 'Kopieren') }}
+                </CoarButton>
+              </div>
+            </CoarFormField>
+          </template>
+          <!-- OIDC: single redirect URI. -->
+          <CoarFormField v-else :label="t('admin.loginProviders.redirectUri', {}, 'Redirect URI (in die IdP-App-Registrierung eintragen)')">
             <div class="flex gap-2 items-center">
               <CoarTextInput :model-value="redirectUri" readonly class="flex-1" />
               <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyRedirect">

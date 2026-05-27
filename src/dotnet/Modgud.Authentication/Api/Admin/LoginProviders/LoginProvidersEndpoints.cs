@@ -232,11 +232,18 @@ public static class LoginProvidersEndpoints
         FlavorData = c.FlavorData is null ? null : JsonDocument.Parse(c.FlavorData.RootElement.GetRawText()).RootElement,
         CreatedAt = c.CreatedAt,
         UpdatedAt = c.UpdatedAt,
-        // Internal providers have no callback — return an empty string instead
-        // of inventing a meaningless URL.
-        RedirectUri = c.Type == LoginProviderType.Internal
-            ? string.Empty
-            : $"{publicUrl.TrimEnd('/')}/signin-oidc/{c.Id:N}",
+        // OIDC-only callback. Internal/SAML providers have no /signin-oidc handler — return
+        // an empty string instead of inventing a meaningless URL. SAML carries its own pair
+        // of URLs in SamlSpMetadataUrl + SamlAcsUrl below.
+        RedirectUri = c.Type == LoginProviderType.Oidc
+            ? $"{publicUrl.TrimEnd('/')}/signin-oidc/{c.Id:N}"
+            : string.Empty,
+        SamlSpMetadataUrl = c.Type == LoginProviderType.Saml
+            ? $"{publicUrl.TrimEnd('/')}/saml/{c.Id:D}/sp-metadata"
+            : null,
+        SamlAcsUrl = c.Type == LoginProviderType.Saml
+            ? $"{publicUrl.TrimEnd('/')}/saml/{c.Id:D}/acs"
+            : null,
     };
 
     private static IResult ErrorResponse(List<Error> errors)

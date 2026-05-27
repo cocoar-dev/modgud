@@ -888,6 +888,8 @@
       "tabUserUpdate": "User-Update-Script",
       "tabLinking": "Verknüpfung & Richtlinien",
       "redirectUri": "Redirect-URI (in die IdP-App-Registrierung eintragen)",
+      "samlSpMetadataUrl": "SP-Metadata-URL (in die IdP-Konfiguration eintragen)",
+      "samlAcsUrl": "ACS-URL / Reply-URL (in die IdP-Konfiguration eintragen)",
       "iconName": "Button-Icon (Lucide-Name)",
       "buttonColorHex": "Button-Farbe (Hex, optional)",
       "scopes": "Scopes (leer- oder komma-getrennt)",
