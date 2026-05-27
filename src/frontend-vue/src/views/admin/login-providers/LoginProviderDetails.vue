@@ -98,12 +98,26 @@ function slugify(name: string): string {
   return s.slice(0, 64).replace(/-+$/, '')
 }
 
-// Auto-fill the slug from DisplayName while the admin hasn't typed one (Add mode
-// only — the slug is immutable after create).
-function suggestSlug() {
-  if (!isCreate.value || form.value.Slug.trim()) return
-  form.value.Slug = slugify(form.value.DisplayName)
+// Tracks whether the admin has hand-edited the slug. While false (and in Add
+// mode), the slug is kept in sync with the Display Name live as they type.
+// Clearing the slug field re-arms the auto-sync.
+const slugManuallyEdited = ref(false)
+
+// User typed in the slug field directly. Stop auto-deriving — unless they
+// cleared it, in which case re-arm so a further Display-Name edit refills it.
+function onSlugInput(value: string) {
+  form.value.Slug = value
+  slugManuallyEdited.value = value.trim().length > 0
 }
+
+// Live-derive the slug from the Display Name (Add mode, until hand-edited).
+watch(
+  () => form.value.DisplayName,
+  (name) => {
+    if (!isCreate.value || slugManuallyEdited.value) return
+    form.value.Slug = slugify(name)
+  },
+)
 
 const modalTitle = computed(() => {
   if (isCreate.value) return t('admin.loginProviders.createTitle', {}, 'Login-Provider hinzufügen')
@@ -494,25 +508,33 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
 
       <!-- General tab (always visible — also the only tab for Internal) -->
       <div v-show="!showProtocolTabs || activeTab === 'general'" class="tab-content">
-        <CoarFormField :label="t('admin.loginProviders.displayName', {}, 'Display Name')">
-          <CoarTextInput v-model="form.DisplayName" :disabled="isBuiltIn" clearable @blur="suggestSlug" />
-        </CoarFormField>
-        <!-- Slug: URL-stable identifier, immutable after create. Hidden for the
-             built-in Internal provider (its slug is fixed). In Edit mode it is
-             shown read-only so the admin can see / copy it. -->
-        <CoarFormField
-          v-if="!isInternal"
-          :label="t('admin.loginProviders.slug', {}, 'Slug')"
-          :required="isCreate"
-          :hint="isCreate
-            ? t('admin.loginProviders.slugHintCreate', {}, 'Erscheint in den Provider-URLs (z. B. /signin-oidc/<slug>). Nach dem Anlegen nicht mehr änderbar.')
-            : t('admin.loginProviders.slugHintEdit', {}, 'Nicht änderbar — ein anderer Slug bedeutet löschen + neu anlegen.')">
-          <CoarTextInput
-            v-model="form.Slug"
-            :disabled="!isCreate"
-            :placeholder="t('admin.loginProviders.slugPlaceholder', {}, 'z. B. acme-entra')"
-            clearable />
-        </CoarFormField>
+        <!-- Display Name (left) + Slug (right), side by side. The slug is
+             URL-stable + immutable after create; it's hidden for the built-in
+             Internal provider (fixed slug) and read-only in Edit mode. While
+             the admin hasn't hand-edited the slug, it tracks the Display Name
+             live (normalised: lowercase, non-alphanumerics → hyphens). -->
+        <div class="lp-name-row">
+          <CoarFormField
+            class="lp-name-col"
+            :label="t('admin.loginProviders.displayName', {}, 'Display Name')">
+            <CoarTextInput v-model="form.DisplayName" :disabled="isBuiltIn" clearable />
+          </CoarFormField>
+          <CoarFormField
+            v-if="!isInternal"
+            class="lp-name-col"
+            :label="t('admin.loginProviders.slug', {}, 'Slug')"
+            :required="isCreate"
+            :hint="isCreate
+              ? t('admin.loginProviders.slugHintCreate', {}, 'Erscheint in den Provider-URLs (z. B. /signin-oidc/<slug>). Nach dem Anlegen nicht mehr änderbar.')
+              : t('admin.loginProviders.slugHintEdit', {}, 'Nicht änderbar — ein anderer Slug bedeutet löschen + neu anlegen.')">
+            <CoarTextInput
+              :model-value="form.Slug"
+              :disabled="!isCreate"
+              :placeholder="t('admin.loginProviders.slugPlaceholder', {}, 'z. B. acme-entra')"
+              clearable
+              @update:model-value="onSlugInput" />
+          </CoarFormField>
+        </div>
         <CoarFormField :label="t('common.description', {}, 'Beschreibung')">
           <CoarTextInput v-model="form.Description" :disabled="isBuiltIn" clearable />
         </CoarFormField>
@@ -668,6 +690,17 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
   gap: 12px;
   padding: 8px 4px;
   overflow-y: auto;
+}
+/* Display Name + Slug share a row (DisplayName left, Slug right). Each takes
+   half; when the Slug field is hidden (Internal provider) DisplayName fills it. */
+.lp-name-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.lp-name-col {
+  flex: 1;
+  min-width: 0;
 }
 .tab-content.tab-claims {
   overflow: hidden;
