@@ -70,6 +70,43 @@ public class SamlSpCertificateService
     }
 
     /// <summary>
+    /// Decryption certs (WITH private key) — active first, then the previous
+    /// one if still within the rotation overlap window. The plural surface
+    /// lets ITfoxtec try each in turn against an encrypted assertion, which
+    /// is the only way an IdP that hasn't yet refreshed metadata (and so is
+    /// still encrypting to the old SP public key) can succeed during the
+    /// overlap window. Caller is responsible for disposing the returned
+    /// instances (they hold native key handles).
+    /// </summary>
+    public async Task<IReadOnlyList<X509Certificate2>> GetDecryptionCertsAsync(CancellationToken ct = default)
+    {
+        var doc = await LoadOrCreateAsync(ct);
+        var results = new List<X509Certificate2>(capacity: 2);
+
+        var activePfx = _store.TryDecrypt(doc.ActiveCertPfxEncrypted);
+        if (activePfx is not null)
+        {
+            var active = X509CertificateLoader.LoadPkcs12(activePfx, password: null, X509KeyStorageFlags.Exportable);
+            results.Add(active);
+        }
+
+        var now = _clock.GetUtcNow();
+        if (doc.PreviousCertPfxEncrypted is { Length: > 0 }
+            && doc.PreviousRetiresAt is { } retiresAt
+            && retiresAt > now)
+        {
+            var prevPfx = _store.TryDecrypt(doc.PreviousCertPfxEncrypted);
+            if (prevPfx is not null)
+            {
+                var prev = X509CertificateLoader.LoadPkcs12(prevPfx, password: null, X509KeyStorageFlags.Exportable);
+                results.Add(prev);
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
     /// All certs to advertise in SP metadata XML — active first, then the
     /// previous one if still within the rotation overlap window. Certs
     /// returned here are <b>without private key</b> — metadata only carries

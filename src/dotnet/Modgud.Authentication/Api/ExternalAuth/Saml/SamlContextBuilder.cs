@@ -38,15 +38,23 @@ public class SamlContextBuilder(
                 "Call the metadata refresh / paste XML before initiating SAML flows.");
 
         var idp = provider.IdpMetadata;
-        var spCert = await spCertService.GetActiveAsync(ct);
+        // Plural decryption-cert list spans the rotation-overlap window —
+        // an IdP that hasn't refreshed metadata yet may still encrypt to the
+        // PREVIOUS SP cert during overlap, so ITfoxtec must try both. We
+        // sign outgoing AuthnRequests with the active cert only (otherwise
+        // we'd send a confusing dual-signature mess).
+        var decryptionCerts = await spCertService.GetDecryptionCertsAsync(ct);
+        var signingCert = decryptionCerts.FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                $"SAML SP active cert is missing for provider {provider.LoginProviderId}.");
 
         var spEntityId = BuildSpEntityId(provider.LoginProviderId);
 
         var config = new Saml2Configuration
         {
             Issuer = spEntityId,
-            SigningCertificate = spCert,
-            DecryptionCertificate = spCert,
+            SigningCertificate = signingCert,
+            DecryptionCertificates = [.. decryptionCerts],
             SignAuthnRequest = provider.FlavorData.SignAuthnRequest,
             AllowedIssuer = idp.EntityId,
             CertificateValidationMode =

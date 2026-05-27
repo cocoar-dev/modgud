@@ -166,6 +166,14 @@ public class SamlLoginFlow(
         var external = BuildExternalPrincipal(provider, saml2Response);
 
         // Detect link-flow (user already authenticated via the app cookie).
+        //
+        // KNOWN LIMITATION: the Modgud.Auth cookie is set with SameSite=Lax
+        // (Program.cs ApplicationScheme config), and the IdP ACS POST is
+        // cross-site, so this AuthenticateAsync returns Failed even when the
+        // user is in fact logged in. The link-flow then degrades to JIT /
+        // email-auto-link. Fix needs server-side state — see
+        // dev-docs/future-features/saml-link-flow-samesite.md. Blocked on
+        // test-server + real-IdP verification.
         var existingAuth = await http.AuthenticateAsync(IdentityConstants.ApplicationScheme);
         Guid? authenticatedUserId = null;
         if (existingAuth.Succeeded && existingAuth.Principal is not null)

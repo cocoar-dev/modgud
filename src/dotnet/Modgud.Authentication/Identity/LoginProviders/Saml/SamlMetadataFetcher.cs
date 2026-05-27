@@ -97,6 +97,20 @@ public class SamlMetadataFetcher
                 .Where(s => s.Length > 0)
                 .ToArray();
 
+            // No signing certs = nothing to validate the IdP's assertion
+            // signatures against. ITfoxtec would happily build a Saml2Config
+            // with an empty SignatureValidationCertificates list and accept
+            // any unsigned response. Reject the metadata up front so the
+            // SAML scheme manager logs the failure rather than caching a
+            // structurally-broken provider.
+            if (signingCerts.Length == 0)
+            {
+                _logger.LogWarning(
+                    "Auth: SAML metadata for {EntityId} has no usable IdP signing certificates — rejecting",
+                    entityId);
+                return null;
+            }
+
             // SingleSignOnService — prefer Redirect binding (the SP-initiated
             // login redirect we'll generate). Fall back to POST if Redirect
             // isn't advertised (rare).
