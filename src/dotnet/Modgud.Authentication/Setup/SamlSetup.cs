@@ -34,6 +34,12 @@ public static class SamlSetup
         // process-wide and protected by ConcurrentDictionary.
         services.AddSingleton<DynamicSamlSchemeManager>();
 
+        // SP cert store + per-realm certificate service. Store is singleton
+        // (creates the DataProtection protector once); service is scoped
+        // because it consumes IDocumentSession which is scoped.
+        services.AddSingleton<SamlSpCertificateStore>();
+        services.AddScoped<SamlSpCertificateService>();
+
         // Cold-start hosted service — walks active realms and seeds the
         // cache with already-enabled SAML providers. Runtime config
         // changes flow through the SAML event handlers in
