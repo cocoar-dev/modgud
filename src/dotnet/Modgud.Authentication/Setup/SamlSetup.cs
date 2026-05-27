@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Modgud.Authentication.Identity.LoginProviders.Saml;
+using Modgud.Authentication.Identity.LoginProviders.Saml.Flavors;
 
 namespace Modgud.Authentication.Setup;
 
@@ -17,14 +19,19 @@ public static class SamlSetup
     /// </summary>
     public static IServiceCollection AddModgudSaml(this IServiceCollection services)
     {
-        // Wiring lands in subsequent commits on feat/saml-federation:
-        //   - SamlFlavorRegistry (Generic + EntraID + ADFS)
+        // SAML flavor registry — three concrete flavors, one parallel
+        // registry to the OIDC LoginProviderFlavorRegistry. Mirrors the
+        // OIDC DI shape exactly so admin UI and event-handler patterns
+        // stay symmetric across protocols.
+        services.AddSingleton<ISamlFlavor, GenericSamlFlavor>();
+        services.AddSingleton<ISamlFlavor, EntraIdSamlFlavor>();
+        services.AddSingleton<ISamlFlavor, AdfsSamlFlavor>();
+        services.AddSingleton<SamlFlavorRegistry>();
+
+        // Still to come in subsequent commits on feat/saml-federation:
         //   - DynamicSamlSchemeManager
         //   - SP cert generation / rotation services
         //   - Metadata refresh hosted service
-        //
-        // For now this is the placeholder hook so Program.cs can be wired
-        // once and incremental commits only touch this file.
         return services;
     }
 }
