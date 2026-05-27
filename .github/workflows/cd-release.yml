@@ -277,8 +277,18 @@ jobs:
       contents: read
 
     steps:
+      # Checkout is required so the local composite action below
+      # (`./.github/actions/setup-dotnet`) is on disk. Must happen
+      # before the artifact download — the default `clean: true`
+      # behavior of actions/checkout could otherwise wipe the
+      # artifacts/ directory we'd just populated.
+      - name: Checkout (for local composite action)
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
       - name: Download nupkg artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: nuget-packages-${{ needs.validate-version.outputs.version }}
           path: ${{ github.workspace }}/artifacts
@@ -374,7 +384,7 @@ jobs:
 
     steps:
       - name: Download docs artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: docs-${{ needs.validate-version.outputs.docs-version }}
           path: ${{ github.workspace }}
