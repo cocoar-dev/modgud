@@ -71,6 +71,17 @@ watch(
           {{ ui.header.subTitle }}
         </div>
       </div>
+
+      <!--
+        Header-actions slot — rendered between title and close button.
+        Use for context selectors that drive what the modal is editing
+        (e.g. the Flavor picker on the Login-Provider edit modal). Per-
+        instance scoped, so nested modals each get their own slot.
+      -->
+      <div v-if="$slots['header-actions']" class="modal-header-actions">
+        <slot name="header-actions" />
+      </div>
+
       <button
         class="modal-close"
         type="button"
@@ -161,6 +172,14 @@ watch(
   color: white;
   opacity: 0.8;
   flex-shrink: 0;
+}
+
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 8px;
 }
 
 .modal-title {
