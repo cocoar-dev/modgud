@@ -8,7 +8,6 @@
 # Deliberately excluded:
 #   - docs/             — VitePress build, not in production runtime
 #   - dev-docs/         — repo-only, never deployed
-#   - src/dotnet/package.json — only testcontainers (integration-test dev-dep)
 #
 # Out-of-scope vulnerabilities are documented in SECURITY.md.
 
