@@ -32,7 +32,7 @@ already covered.
 
 | # | Rule | Sev | Count | Bucket | Disposition |
 |---|---|---|---|---|---|
-| 1 | `cs/log-forging` | error | 10 | B2 | false positive |
+| 1 | `cs/log-forging` | error | 14 | B2 | false positive |
 | 2 | `cs/exposure-of-sensitive-information` | error | 9 | B2 | false positive |
 | 3 | `js/insecure-randomness` | warning | 5 | B1 | used in tests |
 | 4 | `cs/web/cookie-secure-not-set` | error | 2 | B1 | used in tests |
@@ -103,9 +103,9 @@ characters and routes the values through configured sinks with
 their own formatters. CodeQL's static analysis cannot
 distinguish this from `LogInformation($"... {tenantDbName} ...")`.
 
-### `cs/log-forging` (10)
+### `cs/log-forging` (14)
 
-All 10 instances are structured-logging calls. Files:
+All 14 instances are structured-logging calls. Files:
 
 - `Modgud.Infrastructure/Scheduling/JobsService.cs:167`
 - `Modgud.Infrastructure/Realms/RealmProvisioningService.cs:157`
@@ -116,6 +116,13 @@ All 10 instances are structured-logging calls. Files:
 - `Modgud.Infrastructure/Authorization/AppRealmSeeder.cs:162,192`
 - `Modgud.Authentication/Setup/PendingAdminInviteService.cs:166`
 - `Modgud.Authentication/Setup/LoginProviderRealmSeeder.cs:68`
+- `Modgud.Authentication/Api/ExternalAuth/Saml/DynamicSamlSchemeManager.cs:124,131`
+  (admin-provided `config.DisplayName`, `config.Flavor`, `idpMetadata.EntityId`
+  flow into the SAML provider registration log lines as structured properties;
+  added 2026-05-27 with the SAML federation wave)
+- `Modgud.Authentication/Identity/LoginProviders/Saml/SamlSpCertificateService.cs:215,281`
+  (admin-provided `realmSlug` flows into SAML SP cert rotation/generation
+  log lines as a structured property; added 2026-05-27)
 
 ### `cs/exposure-of-sensitive-information` (9)
 
