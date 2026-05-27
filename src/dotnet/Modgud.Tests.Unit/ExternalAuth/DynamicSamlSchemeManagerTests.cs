@@ -26,7 +26,30 @@ public class DynamicSamlSchemeManagerTests
                 new EntraIdSamlFlavor(),
                 new AdfsSamlFlavor(),
             }),
+            new SamlMetadataFetcher(new NoNetworkHttpClientFactory(), NullLogger<SamlMetadataFetcher>.Instance),
             NullLogger<DynamicSamlSchemeManager>.Instance);
+
+    /// <summary>
+    /// Test double — returns an HttpClient that fails every request. Sufficient
+    /// for the manager tests because none of them set FlavorData.MetadataUrl,
+    /// so the fetcher is never invoked. Defends the test setup against a
+    /// future refactor that DOES trigger the fetch: it would surface as a
+    /// clear failure instead of silently calling out to the internet.
+    /// </summary>
+    private sealed class NoNetworkHttpClientFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) =>
+            new(new FailingHandler()) { Timeout = TimeSpan.FromSeconds(1) };
+
+        private sealed class FailingHandler : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request, CancellationToken cancellationToken) =>
+                throw new InvalidOperationException(
+                    "Network access not allowed in unit tests — set FlavorData.MetadataUrl " +
+                    "only in tests that explicitly need to exercise the fetcher.");
+        }
+    }
 
     private static LoginProvider NewSamlProvider(
         Guid? id = null,

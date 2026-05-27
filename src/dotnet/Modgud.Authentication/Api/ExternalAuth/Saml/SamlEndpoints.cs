@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 
 namespace Modgud.Authentication.Api.ExternalAuth.Saml;
@@ -24,20 +25,27 @@ namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 /// </summary>
 public static class SamlEndpoints
 {
-    public const string SpMetadataPath = "/saml/sp-metadata";
+    public const string SpMetadataPathTemplate = "/saml/{providerId:guid}/sp-metadata";
     public const string LoginPathTemplate = "/saml/{providerId:guid}/login";
     public const string AcsPathTemplate = "/saml/{providerId:guid}/acs";
 
     public static IEndpointRouteBuilder MapSamlEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet(SpMetadataPath, SpMetadataAsync)
+        // Per-provider SP metadata XML — customer pastes this URL into
+        // their IdP's SP-config screen. GET for browser/curl visibility.
+        endpoints.MapGet(SpMetadataPathTemplate, SpMetadataAsync)
             .WithName("SamlSpMetadata")
             .AllowAnonymous();
 
-        endpoints.MapPost(LoginPathTemplate, LoginAsync)
+        // SP-initiated login. Browser GET → build AuthnRequest → redirect
+        // to IdP's SSO endpoint via HTTP-Redirect binding. returnUrl rides
+        // RelayState round-trip.
+        endpoints.MapGet(LoginPathTemplate, LoginAsync)
             .WithName("SamlSpInitiatedLogin")
             .AllowAnonymous();
 
+        // AssertionConsumerService. IdP form-POSTs the SAMLResponse here
+        // via the user's browser. POST only — GET would be a misuse.
         endpoints.MapPost(AcsPathTemplate, AcsAsync)
             .WithName("SamlAcsCallback")
             .AllowAnonymous();
@@ -45,39 +53,42 @@ public static class SamlEndpoints
         return endpoints;
     }
 
-    /// <summary>
-    /// Returns the realm-scoped SP metadata XML. Stub for task #14 — the real
-    /// generator builds the XML from the realm's SP signing cert (task #13)
-    /// and the registered provider list (task #14).
-    /// </summary>
-    private static IResult SpMetadataAsync(HttpContext http) =>
-        Results.StatusCode(StatusCodes.Status501NotImplemented);
-
-    /// <summary>
-    /// SP-initiated AuthnRequest. Looks up the provider config, generates a
-    /// signed AuthnRequest, redirects browser to the IdP's SSO endpoint.
-    /// Stub for task #14.
-    /// </summary>
-    private static IResult LoginAsync(Guid providerId, DynamicSamlSchemeManager manager, HttpContext http)
+    private static async Task<IResult> SpMetadataAsync(
+        Guid providerId,
+        [FromServices] DynamicSamlSchemeManager manager,
+        [FromServices] SamlLoginFlow flow,
+        CancellationToken ct)
     {
-        // Defensive 404 for unknown providers — avoid disclosing provider
-        // existence to anonymous callers via differential responses.
-        if (!manager.TryGet(providerId, out _))
+        if (!manager.TryGet(providerId, out var provider) || provider is null)
             return Results.NotFound();
 
-        return Results.StatusCode(StatusCodes.Status501NotImplemented);
+        var xml = await flow.BuildSpMetadataAsync(provider, ct);
+        return Results.Content(xml, "application/samlmetadata+xml", System.Text.Encoding.UTF8);
     }
 
-    /// <summary>
-    /// Assertion Consumer Service. Receives the IdP's SAML Response via
-    /// browser form-POST, validates signatures + audience, extracts claims,
-    /// hands off to <c>ExternalLoginProcessor</c>. Stub for task #14.
-    /// </summary>
-    private static IResult AcsAsync(Guid providerId, DynamicSamlSchemeManager manager, HttpContext http)
+    private static async Task<IResult> LoginAsync(
+        Guid providerId,
+        string? returnUrl,
+        [FromServices] DynamicSamlSchemeManager manager,
+        [FromServices] SamlLoginFlow flow,
+        CancellationToken ct)
     {
-        if (!manager.TryGet(providerId, out _))
+        if (!manager.TryGet(providerId, out var provider) || provider is null)
             return Results.NotFound();
 
-        return Results.StatusCode(StatusCodes.Status501NotImplemented);
+        return await flow.StartLoginAsync(provider, returnUrl, ct);
+    }
+
+    private static async Task<IResult> AcsAsync(
+        Guid providerId,
+        HttpContext http,
+        [FromServices] DynamicSamlSchemeManager manager,
+        [FromServices] SamlLoginFlow flow,
+        CancellationToken ct)
+    {
+        if (!manager.TryGet(providerId, out var provider) || provider is null)
+            return Results.NotFound();
+
+        return await flow.HandleAcsAsync(provider, http, ct);
     }
 }

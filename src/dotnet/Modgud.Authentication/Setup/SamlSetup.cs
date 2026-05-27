@@ -32,6 +32,13 @@ public static class SamlSetup
         // Per-provider Saml2Configuration cache (mirror of
         // DynamicOidcSchemeManager). Singleton because the cache state is
         // process-wide and protected by ConcurrentDictionary.
+        // IdP metadata fetcher — named HttpClient under IHttpClientFactory
+        // so the fetcher itself can stay singleton (matches the singleton-
+        // DynamicSamlSchemeManager that uses it) while still benefiting
+        // from the framework's connection pooling + handler rotation.
+        services.AddHttpClient(SamlMetadataFetcher.HttpClientName);
+        services.AddSingleton<SamlMetadataFetcher>();
+
         services.AddSingleton<DynamicSamlSchemeManager>();
 
         // SP cert store + per-realm certificate service. Store is singleton
@@ -39,6 +46,18 @@ public static class SamlSetup
         // because it consumes IDocumentSession which is scoped.
         services.AddSingleton<SamlSpCertificateStore>();
         services.AddScoped<SamlSpCertificateService>();
+
+        // Per-request SP config builder + protocol flow (AuthnRequest /
+        // ACS / SP metadata XML). Scoped because they consume scoped
+        // services (cert service, SignInManager, processor, session
+        // service) and run within an HTTP request.
+        services.AddScoped<SamlContextBuilder>();
+        services.AddScoped<SamlLoginFlow>();
+
+        // SamlContextBuilder needs IHttpContextAccessor to derive the SP
+        // EntityID + ACS URL from the current request — register if not
+        // already done elsewhere in the host setup (it's idempotent).
+        services.AddHttpContextAccessor();
 
         // Cold-start hosted service — walks active realms and seeds the
         // cache with already-enabled SAML providers. Runtime config

@@ -24,6 +24,7 @@ namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 /// </summary>
 public class DynamicSamlSchemeManager(
     SamlFlavorRegistry flavors,
+    SamlMetadataFetcher metadataFetcher,
     ILogger<DynamicSamlSchemeManager> logger)
 {
     private readonly ConcurrentDictionary<Guid, RegisteredSamlProvider> _cache = new();
@@ -40,11 +41,12 @@ public class DynamicSamlSchemeManager(
     /// removed.
     /// </para>
     /// </summary>
-    public Task RegisterAsync(LoginProvider config)
+    public async Task RegisterAsync(LoginProvider config)
     {
         if (config.IsDeleted || !config.Enabled)
         {
-            return UnregisterAsync(config.Id);
+            await UnregisterAsync(config.Id);
+            return;
         }
 
         if (config.Type != LoginProviderType.Saml)
@@ -56,7 +58,7 @@ public class DynamicSamlSchemeManager(
             logger.LogDebug(
                 "Auth: SAML manager called for non-SAML LoginProvider {Id} (type={Type}) — ignored",
                 config.Id, config.Type);
-            return Task.CompletedTask;
+            return;
         }
 
         if (!flavors.TryGet(config.Flavor, out var flavor))
@@ -64,7 +66,7 @@ public class DynamicSamlSchemeManager(
             logger.LogWarning(
                 "Cannot register SAML LoginProvider {Id}: unknown flavor {Flavor}",
                 config.Id, config.Flavor);
-            return Task.CompletedTask;
+            return;
         }
 
         SamlFlavorData flavorData;
@@ -77,7 +79,7 @@ public class DynamicSamlSchemeManager(
             logger.LogError(ex,
                 "Cannot register SAML LoginProvider {Id}: FlavorData parse / defaults-apply failed",
                 config.Id);
-            return Task.CompletedTask;
+            return;
         }
 
         var realmSlug = TenantContext.CurrentOrNull
@@ -86,20 +88,47 @@ public class DynamicSamlSchemeManager(
                 "so the cached entry knows which realm the provider belongs to. " +
                 "Callers (bootstrap, event handlers) must enter the realm's TenantContext first.");
 
+        // Fetch / parse IdP metadata. We prefer the URL form because it
+        // makes the metadata-refresh job (task #15) trivially periodic.
+        // Pasted XML is the fallback for firewalled IdPs (e.g. on-prem ADFS).
+        // Failure to populate IdpMetadata is non-fatal at register time —
+        // login attempts will surface a clear error until metadata is
+        // available.
+        SamlIdpMetadata? idpMetadata = null;
+        if (!string.IsNullOrWhiteSpace(flavorData.MetadataUrl))
+        {
+            idpMetadata = await metadataFetcher.FetchAsync(flavorData.MetadataUrl);
+        }
+        else if (!string.IsNullOrWhiteSpace(flavorData.MetadataXml))
+        {
+            idpMetadata = metadataFetcher.Parse(flavorData.MetadataXml);
+        }
+
         var entry = new RegisteredSamlProvider(
             LoginProviderId: config.Id,
             DisplayName: config.DisplayName,
             Flavor: config.Flavor,
             RealmSlug: realmSlug,
-            FlavorData: flavorData);
+            FlavorData: flavorData,
+            IdpMetadata: idpMetadata);
 
         _cache[config.Id] = entry;
 
-        logger.LogInformation(
-            "Auth: Registered SAML provider {Id} ({Display} / {Flavor}) in realm {Realm}",
-            config.Id, config.DisplayName, config.Flavor, realmSlug);
-
-        return Task.CompletedTask;
+        if (idpMetadata is null)
+        {
+            logger.LogWarning(
+                "Auth: Registered SAML provider {Id} ({Display}) in realm {Realm} WITHOUT IdP metadata — " +
+                "login attempts will fail until metadata is reachable",
+                config.Id, config.DisplayName, realmSlug);
+        }
+        else
+        {
+            logger.LogInformation(
+                "Auth: Registered SAML provider {Id} ({Display} / {Flavor}) in realm {Realm} " +
+                "with IdP {IdpEntity} and {CertCount} signing cert(s)",
+                config.Id, config.DisplayName, config.Flavor, realmSlug,
+                idpMetadata.EntityId, idpMetadata.SigningCertificatesBase64.Count);
+        }
     }
 
     /// <summary>Evict the cache entry for the given provider. Idempotent.</summary>

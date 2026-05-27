@@ -141,19 +141,41 @@ public class LoginProviderTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Create_SamlType_NotYetSupported()
+    public async Task Create_SamlType_With_KnownFlavor_Succeeds()
+    {
+        // SAML support landed on feat/saml-federation. The flavor key must
+        // match a registered ISamlFlavor (GenericSaml / EntraIdSaml / AdfsSaml).
+        // A bare "AnyFlavor" string is rejected with UnknownFlavor, mirroring
+        // the OIDC create gate.
+        using var scope = Factory.Services.CreateScope();
+        var bus = GetTenantedMessageBus(scope);
+
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: LoginProviderFlavor.GenericSaml,
+            DisplayName: $"Saml-Test-{Guid.NewGuid():N}"[..32],
+            FlavorData: null,
+            Type: LoginProviderType.Saml));
+
+        Assert.False(result.IsError, result.IsError ? result.FirstError.Description : null);
+        Assert.Equal(LoginProviderType.Saml, result.Value.Type);
+        Assert.Equal(LoginProviderFlavor.GenericSaml, result.Value.Flavor);
+        Assert.False(result.Value.Enabled); // SAML providers start disabled.
+    }
+
+    [Fact]
+    public async Task Create_SamlType_With_UnknownFlavor_Rejected()
     {
         using var scope = Factory.Services.CreateScope();
         var bus = GetTenantedMessageBus(scope);
 
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
-            Flavor: "AnyFlavor",
-            DisplayName: "SamlAttempt",
+            Flavor: "NotARealSamlFlavor",
+            DisplayName: $"Saml-Bad-{Guid.NewGuid():N}"[..32],
             FlavorData: null,
             Type: LoginProviderType.Saml));
 
         Assert.True(result.IsError);
-        Assert.Equal("LoginProvider.TypeNotSupported", result.FirstError.Code);
+        Assert.Equal("LoginProvider.UnknownFlavor", result.FirstError.Code);
     }
 
     [Theory]

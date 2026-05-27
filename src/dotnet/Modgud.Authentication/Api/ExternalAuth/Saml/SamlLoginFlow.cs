@@ -1,0 +1,306 @@
+using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Xml.Linq;
+using ITfoxtec.Identity.Saml2;
+using ITfoxtec.Identity.Saml2.MvcCore;
+using ITfoxtec.Identity.Saml2.Schemas;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
+using Modgud.Authentication.Domain;
+using Modgud.Authentication.Identity.LoginProviders.Saml;
+using Modgud.Authentication.Sessions;
+using Modgud.Infrastructure.Observability;
+
+namespace Modgud.Authentication.Api.ExternalAuth.Saml;
+
+/// <summary>
+/// Per-request SAML SP protocol implementation: builds + signs the
+/// outbound AuthnRequest, parses + validates the inbound SAMLResponse,
+/// extracts claims into the OIDC-shaped <see cref="ClaimsPrincipal"/>
+/// that <see cref="ExternalLoginProcessor"/> already knows how to handle,
+/// and renders the SP metadata XML.
+/// <para>
+/// One service centralises all three operations so endpoint handlers
+/// stay thin and the protocol concerns (signing, audience, RelayState,
+/// claim-map application, NameID-to-sub translation) live in one place.
+/// </para>
+/// </summary>
+public class SamlLoginFlow(
+    SamlContextBuilder contextBuilder,
+    SamlSpCertificateService spCertService,
+    ExternalLoginProcessor processor,
+    SignInManager<ApplicationUser> signInManager,
+    ISessionService sessionService,
+    ILogger<SamlLoginFlow> logger)
+{
+    /// <summary>
+    /// Subject value we stamp on the External principal's <c>iss</c> claim
+    /// when the IdP doesn't include an explicit Issuer (defensive — every
+    /// real SAML assertion has one, but the lib's ClaimsIdentity might
+    /// omit it depending on lib version).
+    /// </summary>
+    private const string MissingIssuer = "saml:unknown-issuer";
+
+    /// <summary>
+    /// SP-initiated login: build a (possibly signed) AuthnRequest, redirect
+    /// the browser to the IdP's SSO endpoint via HTTP-Redirect binding.
+    /// <paramref name="returnUrl"/> rides RelayState round-trip so the ACS
+    /// callback knows where to send the user after sign-in.
+    /// </summary>
+    public async Task<IResult> StartLoginAsync(
+        RegisteredSamlProvider provider,
+        string? returnUrl,
+        CancellationToken ct)
+    {
+        if (provider.IdpMetadata is null)
+        {
+            logger.LogWarning(
+                "Auth: SAML login refused for provider {Id} — no IdP metadata cached",
+                provider.LoginProviderId);
+            return Results.Redirect("/login?error=saml-no-metadata");
+        }
+
+        if (string.IsNullOrEmpty(provider.IdpMetadata.SsoRedirectUrl)
+            && string.IsNullOrEmpty(provider.IdpMetadata.SsoPostUrl))
+        {
+            logger.LogWarning(
+                "Auth: SAML login refused for provider {Id} — IdP metadata has no SSO endpoint",
+                provider.LoginProviderId);
+            return Results.Redirect("/login?error=saml-no-sso");
+        }
+
+        var config = await contextBuilder.BuildAsync(provider, ct);
+        var ssoUrl = provider.IdpMetadata.SsoRedirectUrl ?? provider.IdpMetadata.SsoPostUrl!;
+        var acsUrl = contextBuilder.BuildAcsUrl(provider.LoginProviderId);
+
+        var authnRequest = new Saml2AuthnRequest(config)
+        {
+            ForceAuthn = false,
+            IsPassive = false,
+            AssertionConsumerServiceUrl = new Uri(acsUrl),
+            Destination = new Uri(ssoUrl),
+            NameIdPolicy = new NameIdPolicy
+            {
+                AllowCreate = true,
+                Format = provider.FlavorData.NameIdFormat,
+            },
+        };
+
+        var binding = new Saml2RedirectBinding();
+        if (!string.IsNullOrEmpty(returnUrl))
+            binding.RelayState = returnUrl;
+
+        binding.Bind(authnRequest);
+
+        logger.LogInformation(
+            "Auth: SAML AuthnRequest built for provider {Id} → IdP {IdpEntity}",
+            provider.LoginProviderId, provider.IdpMetadata.EntityId);
+
+        return Results.Redirect(binding.RedirectLocation.OriginalString);
+    }
+
+    /// <summary>
+    /// AssertionConsumerService: receive the IdP's SAMLResponse via the
+    /// browser form-POST, validate it, extract claims, hand off to
+    /// <see cref="ExternalLoginProcessor"/>, sign in via SignInManager,
+    /// redirect to RelayState's <c>returnUrl</c>.
+    /// </summary>
+    public async Task<IResult> HandleAcsAsync(
+        RegisteredSamlProvider provider,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        if (provider.IdpMetadata is null)
+            return Results.Redirect("/login?error=saml-no-metadata");
+
+        Saml2AuthnResponse saml2Response;
+        Saml2PostBinding binding;
+        try
+        {
+            var config = await contextBuilder.BuildAsync(provider, ct);
+            binding = new Saml2PostBinding();
+            saml2Response = new Saml2AuthnResponse(config);
+            binding.ReadSamlResponse(http.Request.ToGenericHttpRequest(), saml2Response);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Auth: SAML response read/validate failed for provider {Id}",
+                provider.LoginProviderId);
+            ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
+            return Results.Redirect("/login?error=saml-invalid");
+        }
+
+        if (saml2Response.Status != Saml2StatusCodes.Success)
+        {
+            logger.LogWarning(
+                "Auth: SAML response non-success status {Status} for provider {Id}",
+                saml2Response.Status, provider.LoginProviderId);
+            ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
+            return Results.Redirect($"/login?error=saml-{Uri.EscapeDataString(saml2Response.Status.ToString() ?? "status")}");
+        }
+
+        // ITfoxtec's response builds its own ClaimsIdentity from the
+        // assertion. We translate that into the OIDC-shaped principal
+        // ExternalLoginProcessor expects (iss/sub + attribute claims under
+        // logical names per the configured AttributeMap).
+        var external = BuildExternalPrincipal(provider, saml2Response);
+
+        // Detect link-flow (user already authenticated via the app cookie).
+        var existingAuth = await http.AuthenticateAsync(IdentityConstants.ApplicationScheme);
+        Guid? authenticatedUserId = null;
+        if (existingAuth.Succeeded && existingAuth.Principal is not null)
+        {
+            var idClaim = existingAuth.Principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (Guid.TryParse(idClaim, out var parsed)) authenticatedUserId = parsed;
+        }
+
+        var result = await processor.ProcessAsync(external, provider.LoginProviderId, ct, authenticatedUserId);
+
+        if (!result.Succeeded)
+        {
+            ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
+            var code = Uri.EscapeDataString(result.ErrorCode ?? "unknown");
+            return Results.Redirect($"/login?error={code}");
+        }
+
+        await http.SignInAsync(
+            IdentityConstants.ApplicationScheme,
+            result.Principal!,
+            new AuthenticationProperties { IsPersistent = true });
+
+        ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Success);
+
+        var signedInIdClaim = result.Principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (Guid.TryParse(signedInIdClaim, out var signedInUserId))
+            await SessionTracker.RecordLoginAsync(sessionService, http, signedInUserId, ct);
+
+        var returnUrl = ExtractRelayStateReturnUrl(binding);
+        return Results.Redirect(string.IsNullOrWhiteSpace(returnUrl) ? "/" : returnUrl);
+    }
+
+    /// <summary>
+    /// SP metadata XML for the given provider. Customer pastes the URL to
+    /// this endpoint into their IdP's SP-config screen. Includes the active
+    /// SP cert (and previous-during-overlap) as both Signing and Encryption
+    /// key descriptors — most IdPs are happy with one cert serving both roles.
+    /// </summary>
+    public async Task<string> BuildSpMetadataAsync(
+        RegisteredSamlProvider provider,
+        CancellationToken ct)
+    {
+        var spEntityId = contextBuilder.BuildSpEntityId(provider.LoginProviderId);
+        var acsUrl = contextBuilder.BuildAcsUrl(provider.LoginProviderId);
+        var certs = await spCertService.GetMetadataCertsAsync(ct);
+
+        XNamespace md = "urn:oasis:names:tc:SAML:2.0:metadata";
+        XNamespace ds = "http://www.w3.org/2000/09/xmldsig#";
+
+        var keyDescriptors = new List<XElement>();
+        foreach (var cert in certs)
+        {
+            foreach (var use in new[] { "signing", "encryption" })
+            {
+                keyDescriptors.Add(new XElement(md + "KeyDescriptor",
+                    new XAttribute("use", use),
+                    new XElement(ds + "KeyInfo",
+                        new XElement(ds + "X509Data",
+                            new XElement(ds + "X509Certificate",
+                                Convert.ToBase64String(cert.Export(X509ContentType.Cert)))))));
+            }
+        }
+
+        var doc = new XDocument(
+            new XElement(md + "EntityDescriptor",
+                new XAttribute("entityID", spEntityId),
+                new XAttribute(XNamespace.Xmlns + "md", md.NamespaceName),
+                new XAttribute(XNamespace.Xmlns + "ds", ds.NamespaceName),
+                new XElement(md + "SPSSODescriptor",
+                    new XAttribute("AuthnRequestsSigned", provider.FlavorData.SignAuthnRequest ? "true" : "false"),
+                    new XAttribute("WantAssertionsSigned", provider.FlavorData.WantAssertionsSigned ? "true" : "false"),
+                    new XAttribute("protocolSupportEnumeration", "urn:oasis:names:tc:SAML:2.0:protocol"),
+                    keyDescriptors,
+                    new XElement(md + "NameIDFormat", provider.FlavorData.NameIdFormat),
+                    new XElement(md + "AssertionConsumerService",
+                        new XAttribute("Binding", "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"),
+                        new XAttribute("Location", acsUrl),
+                        new XAttribute("index", "0"),
+                        new XAttribute("isDefault", "true")))));
+
+        return doc.ToString();
+    }
+
+    private static ClaimsPrincipal BuildExternalPrincipal(
+        RegisteredSamlProvider provider,
+        Saml2AuthnResponse saml2Response)
+    {
+        var claims = new List<Claim>();
+
+        // Issuer = IdP EntityID from the cached metadata (the signature on
+        // the response already proved we're talking to the right IdP).
+        var idpIssuer = provider.IdpMetadata?.EntityId ?? MissingIssuer;
+        claims.Add(new Claim("iss", idpIssuer));
+
+        // Subject = NameID, surfaced as ClaimTypes.NameIdentifier on the
+        // ITfoxtec-built identity.
+        var nameId = saml2Response.ClaimsIdentity?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? string.Empty;
+        if (!string.IsNullOrEmpty(nameId))
+            claims.Add(new Claim("sub", nameId));
+
+        // Pull every assertion claim into the principal as-is; the
+        // ExternalLoginProcessor's ExtractRawClaims walks all claims into
+        // a dict for the user-update script (and the AttributeMap-keyed
+        // translation happens via the script).
+        if (saml2Response.ClaimsIdentity is { } id)
+        {
+            foreach (var c in id.Claims)
+                claims.Add(c);
+        }
+
+        // Plus the logical-name claims derived from FlavorData.AttributeMap.
+        // The IdP's wire-format claim URIs vary (Microsoft uses long URIs,
+        // some vendors short names); the AttributeMap normalises them so
+        // the user-update script sees stable names like `email`, `groups`.
+        var rawClaimMap = saml2Response.ClaimsIdentity?.Claims
+            .GroupBy(c => c.Type)
+            .ToDictionary(g => g.Key, g => g.Select(c => c.Value).ToArray())
+            ?? new Dictionary<string, string[]>();
+
+        foreach (var (logicalName, samlUris) in provider.FlavorData.AttributeMap)
+        {
+            foreach (var uri in samlUris)
+            {
+                if (rawClaimMap.TryGetValue(uri, out var values))
+                {
+                    foreach (var v in values)
+                        claims.Add(new Claim(logicalName, v));
+                    break; // First matching URI wins.
+                }
+            }
+        }
+
+        var identity = new ClaimsIdentity(claims, "saml");
+        return new ClaimsPrincipal(identity);
+    }
+
+    private static string? ExtractRelayStateReturnUrl(Saml2PostBinding binding)
+    {
+        // SAML 2.0 RelayState SHOULD be ≤80 bytes and is opaque to the IdP.
+        // We round-trip the returnUrl through it. If a malicious actor
+        // tampers (it's not signed in HTTP-Redirect binding for IdP-side
+        // signing), the worst they can do is redirect to a different
+        // path-within-our-host, which Results.Redirect already constrains
+        // when the value is relative. Reject absolute URLs to prevent
+        // open-redirect.
+        var raw = binding.RelayState;
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+
+        if (Uri.TryCreate(raw, UriKind.Absolute, out _)) return null;
+        if (!raw.StartsWith('/')) return null;
+
+        return raw;
+    }
+}
