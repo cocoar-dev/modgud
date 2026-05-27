@@ -27,7 +27,12 @@ Severity. Detail-Pages unten.
 - [SAML federation — implementation plan](./saml-federation) —
   konkreter Implementation-Plan für den SP-Use-Case (Modgud konsumiert
   Customer-IdP). Lib-Wahl: ITfoxtec.Identity.Saml2. Status:
-  Plan-Page captured 2026-05-27, nicht gestartet.
+  Decisions captured 2026-05-27, in active development on
+  `feat/saml-federation`.
+- [Multi-IdP login UX](./multi-idp-login-ux) — Picker vs Email-Routing
+  vs Hybrid für die Login-Page wenn ein Realm viele Provider hat.
+  Provider-protocol-agnostic, gilt für OIDC + SAML + alles was
+  künftig kommt. Eigene Welle nach SAML.
 
 ## Andere Future-Features
 

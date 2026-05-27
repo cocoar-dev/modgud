@@ -25,14 +25,14 @@ Supersedes the library recommendation in [enterprise-sso-saml-ldap](./enterprise
 - SP metadata endpoint (so customer admin can paste a URL into their IdP).
 - AMR-claim preservation for federated-MFA detection — same pattern as OIDC (`AuthnContextClassRef` → AMR).
 - Audit-event coverage parallel to OIDC (LoginAttempted/Succeeded/Failed with masked subject).
-- Single-Logout (SLO) — front-channel HTTP-Redirect binding only.
 
 ### Out (this wave)
 
-- **SAML IdP mode** — Modgud emitting SAML for legacy apps. Defer until a real customer asks; bridge pattern stays an option.
+- **Single-Logout (SLO)** — deferred to v2 (decision 2026-05-27). SLO is the most quirky-per-IdP part of SAML; defer reduces v1 effort by ~2-3 days and lets us land Login first. Logout in v1 clears Modgud's cookie only — Customer-IdP session stays alive. ITfoxtec supports SLO as an additive endpoint registration when we come back to it. Not refactor-pflichtig.
+- **SAML IdP mode** — Modgud emitting SAML for legacy apps. Defer indefinitely; concrete trigger is "first paying customer with a SAML-only app demands Modgud as IdP." Lib (ITfoxtec) already supports IdP mode, so no future lib migration needed when/if we add it.
+- **Multi-IdP login UX** — not a SAML-specific problem. Today's UI shows all login providers as equal buttons; doesn't scale to N>3. Same issue applies to OIDC providers (Apple, Microsoft, Google, GitHub, Facebook, …). Will be tackled as a separate post-SAML general-purpose wave covering all providers. See [multi-idp-login-ux](./multi-idp-login-ux). In this wave SAML providers render with the same UI pattern as OIDC providers today, accepting the known UX-limitation.
 - **Artifact binding** — almost no modern IdP defaults to it; add on demand.
 - **ECP** (Enhanced Client/Proxy, SOAP-based, for non-browser clients) — niche.
-- **SLO back-channel** — rare in practice, front-channel covers 95%.
 - **Just-in-Time provisioning** beyond what OIDC already does (create-on-first-login + attribute sync). Reuse the existing `ExternalLoginProcessor` plumbing.
 - **WS-Federation** — explicitly skipped, see [enterprise-sso-saml-ldap](./enterprise-sso-saml-ldap).
 
@@ -152,7 +152,8 @@ Per-realm, mirroring the OIDC ExternalAuth shape:
 | `GET  /saml/sp-metadata` | Modgud SP metadata XML (customer pastes into their IdP) |
 | `POST /saml/<provider-id>/login` | SP-initiated AuthnRequest |
 | `POST /saml/<provider-id>/acs` | AssertionConsumerService (the callback) |
-| `POST /saml/<provider-id>/slo` | Single-Logout endpoint (front-channel) |
+
+(SLO endpoint deferred to v2, see scope.)
 
 `<provider-id>` is the `LoginProvider.Id` (Guid). Per-realm routing via the existing `RealmMiddleware`.
 
@@ -162,8 +163,8 @@ Two halves:
 
 **IdP-side cert rotation** — customer's IdP rotates its signing cert. We need to either pull fresh metadata on a schedule, or trust the rollover advertised in metadata (`<KeyDescriptor>` can list multiple keys with `use="signing"`).
 
-- Default: periodic metadata refresh (every 24h, configurable per provider).
-- Manual trigger: admin endpoint `POST /admin/login-providers/<id>/refresh-metadata`.
+- Default: periodic metadata refresh **every 24h** (decision 2026-05-27). Per-provider override available: `1h`, `6h`, `24h`, `7d`.
+- Manual trigger: admin endpoint `POST /admin/login-providers/<id>/refresh-metadata` (always available regardless of cadence).
 - Audit event on cert-change so admins see when an IdP rolled their cert.
 
 **Our SP-side cert rotation** — we rotate our own signing/encryption cert.
@@ -202,26 +203,23 @@ Refines the older [enterprise-sso-saml-ldap](./enterprise-sso-saml-ldap) estimat
 - **Documentation (admin guide + per-IdP setup guides):** 1 day
 - **Buffer for SAML-spec edge cases (always happens):** 1.5 days
 
-**Total: ~13 days of focused work**, call it 3 weeks elapsed at normal pace. The "5 days" in the older designspace page was optimistic — SAML always eats edge-case time even when the lib is good.
+With **SLO deferred** to v2: −2 days. Adjusted estimate: **~11 days** focused work, ~2-3 weeks elapsed.
 
-## Open questions
+## Decisions captured 2026-05-27
 
-Decisions needed before code starts:
+The six open questions in earlier drafts of this plan are resolved as follows:
 
-1. **Single-Logout (SLO) — ship in v1 or defer?** Front-channel SLO is in the in-scope list above, but it's also the part of SAML most likely to be quirky per IdP. Defending the decision to defer to v2 is reasonable. Decide before starting.
+1. **Single-Logout (SLO) — deferred to v2.** Logout in v1 clears Modgud's cookie only; the Customer-IdP session stays alive. ITfoxtec supports SLO additively; adding it later is not a refactor.
 
-2. **IdP-mode trigger.** When (if ever) do we build SAML-IdP-mode? Concrete trigger: first customer that asks for "Modgud as our IdP for app X that only speaks SAML". Until then: stay SP-only.
+2. **IdP-mode trigger — on concrete customer demand.** Lib (ITfoxtec) covers both SP and IdP modes, so no future lib migration when/if we add IdP. Trigger is "first paying customer with a SAML-only app demands Modgud as IdP." Until then: SP-only.
 
-3. **`LoginProviderType` doc-comment fix.** The current XML doc on `LoginProviderType.Saml` says "SAML 2.0 IdP (not yet wired)" which is misleading — we mean "us as SP consuming a SAML IdP". Small code-doc fix unrelated to the implementation plan but should land in the same wave.
+3. **Code-doc fix to `LoginProviderType.cs` — in this wave.** The `Saml = 2` XML doc reads as "Modgud is the IdP", but the type means "Modgud as SP consuming an external SAML IdP". Fix: `External SAML 2.0 Identity Provider (Modgud acts as Service Provider)`. Also strip the now-stale `Phase 2+` markers from Ldap and Kerberos.
 
-4. **Metadata-refresh cadence default.** 24h sounds right but EntraID rotates keys every ~6 weeks with multi-key overlap. 24h is overkill in practice. Could go to 7d default with the multi-key overlap absorbing any drift. Decide during implementation.
+4. **Metadata-refresh cadence: 24h default, override 1h/6h/24h/7d per provider.** Manual trigger always available. Per-provider override is a 1-line field in `FlavorData`; no separate UI burden.
 
-5. **Group-claim → Modgud-group mapping.** Two options:
-   - **Mode A:** SAML `groups` attribute → matched against existing Modgud group `Name` (or external-id).
-   - **Mode B:** SAML `groups` attribute → opaque claim, JsEval auto-membership scripts ([app-resources-as-permissions](./app-resources-as-permissions) machinery) decide group membership.
-   - Mode B is the more powerful long-term answer because it composes with the existing membership-script story. Default to Mode B; offer Mode A only as a quick-config option if customer feedback demands it.
+5. **Group-claim mapping: Mode B (JsEval Membership Scripts) + Quick-Map UI.** Identity-Hub pattern stays — SAML claims are read into the rawClaims dict (same as OIDC today), the JsEval auto-membership engine decides Modgud Group membership. Quick-Map UI generates the simple `claims.groups.includes("X")` script for 80%-of-cases admins. **No pass-through of group claims to downstream tokens** (consistent with current OIDC behaviour — see [[project-identity-hub-vs-federation-proxy-open]] for the broader product-positioning question that this leaves explicitly open).
 
-6. **Multiple SAML providers per realm — UX implications.** OIDC UI today assumes "few providers per realm" (usually 1-2). SAML may push that count higher in big-enterprise multi-IdP scenarios. Sidebar / login-screen needs to handle N providers gracefully — review and possibly redesign before adding the SAML providers.
+6. **Multi-IdP login UX — not a SAML-specific problem.** Today's UI doesn't scale to many providers; same issue applies to OIDC (Apple, Microsoft, Google, GitHub, Facebook, …). Will be tackled as a separate post-SAML general-purpose wave that covers all provider protocols. See [multi-idp-login-ux](./multi-idp-login-ux). In this wave SAML providers render with the existing UI pattern.
 
 ## Out-of-scope follow-ups
 
@@ -229,4 +227,5 @@ Not in this plan but adjacent:
 
 - **SCIM 2.0 provisioning endpoint** — comes after SAML, see [enterprise-sso-saml-ldap](./enterprise-sso-saml-ldap).
 - **LDAP/AD direct-bind** — separate wave, lower urgency than SAML.
-- **Multi-IdP discovery UI** — the "which IdP do you log in with?" question for realms with N IdPs. Probably handled by email-domain-routing (`@customer1.com → IdP1`, `@customer2.com → IdP2`), but that's its own design question.
+- **Multi-IdP login UX** — see [multi-idp-login-ux](./multi-idp-login-ux).
+- **Federation-Proxy mode (claims pass-through)** — explicitly rejected for v1 (Modgud stays Identity-Hub). The broader product-positioning question stays open, see [[project-identity-hub-vs-federation-proxy-open]] in memory.

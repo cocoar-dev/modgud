@@ -81,6 +81,7 @@ export default withMermaid(defineConfig({
           { text: 'Realm Backup / Restore / DR', link: '/future-features/realm-backup-restore' },
           { text: 'Enterprise SSO — SAML + LDAP', link: '/future-features/enterprise-sso-saml-ldap' },
           { text: 'SAML federation — implementation plan', link: '/future-features/saml-federation' },
+          { text: 'Multi-IdP login UX', link: '/future-features/multi-idp-login-ux' },
           { text: 'White-label customization (Phase 2)', link: '/future-features/white-label-customization' },
           { text: 'Login alerts + IP blacklist', link: '/future-features/login-alerts-ip-blacklist' },
           { text: 'App as permission catalog; RS gets subset', link: '/future-features/app-resources-as-permissions' },
