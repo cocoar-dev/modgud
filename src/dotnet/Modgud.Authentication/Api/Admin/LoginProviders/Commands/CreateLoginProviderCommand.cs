@@ -5,19 +5,26 @@ using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Domain.LoginProviders.Events;
 using Modgud.Authentication.Identity.LoginProviders;
 using Modgud.Authentication.Identity.LoginProviders.Saml;
+using Modgud.Authorization.Membership;
 
 namespace Modgud.Authentication.Api.Admin.LoginProviders.Commands;
 
 /// <summary>
-/// Admin creates a new login provider. Only core fields here — most settings
-/// are applied via <c>UpdateLoginProviderCommand</c> (admin saves the full form
-/// in one go). Secret rotation has its own command so audit trails stay clean.
+/// Admin creates a new login provider. <see cref="Type"/> is set on creation
+/// and immutable thereafter. Secret rotation has its own command so audit
+/// trails stay clean — never set at Create.
 /// <para>
-/// <see cref="Type"/> is set on creation and immutable thereafter. For
-/// <c>Internal</c> the flavor + flavor-data are ignored (no callbacks, no
-/// secrets); for <c>Oidc</c> the flavor must be a registered
-/// <see cref="ILoginProviderFlavor"/>. <c>Saml</c>/<c>Ldap</c>/<c>Kerberos</c>
-/// are not yet wired and reject at command time.
+/// All fields after <see cref="Description"/> are optional: when omitted, the
+/// chosen flavor's defaults are used (legacy two-step flow). When the admin
+/// submits the single-modal form, the full provider state arrives here in one
+/// go and we skip the Update round-trip.
+/// </para>
+/// <para>
+/// For <c>Internal</c> the flavor + flavor-data + all extended fields are
+/// ignored (the Internal seed is fixed). For <c>Oidc</c> the flavor must be
+/// a registered <see cref="ILoginProviderFlavor"/>. <c>Saml</c> validates
+/// against <see cref="SamlFlavorRegistry"/>. <c>Ldap</c>/<c>Kerberos</c> are
+/// not wired and reject at command time.
 /// </para>
 /// </summary>
 public record CreateLoginProviderCommand(
@@ -25,7 +32,19 @@ public record CreateLoginProviderCommand(
     string DisplayName,
     JsonDocument? FlavorData,
     LoginProviderType Type = LoginProviderType.Oidc,
-    string? Description = null);
+    string? Description = null,
+    bool? Enabled = null,
+    string? ClientId = null,
+    List<string>? Scopes = null,
+    string? UserUpdateScript = null,
+    bool? StoreRawClaims = null,
+    int? RawClaimsRetentionDays = null,
+    bool? AutoCreateUsers = null,
+    bool? AllowLinking = null,
+    bool? TrustForEmailLink = null,
+    List<string>? AllowedEmailDomains = null,
+    string? IconName = null,
+    string? ButtonColorHex = null);
 
 public class CreateLoginProviderHandler(
     IDocumentSession session,
@@ -37,6 +56,15 @@ public class CreateLoginProviderHandler(
     {
         if (string.IsNullOrWhiteSpace(command.DisplayName))
             return Error.Validation("LoginProvider.DisplayNameRequired", "Display name is required.");
+
+        // Same input-cap as Update — if the admin shipped a user-update script
+        // at Create time, validate length + nesting before it enters storage.
+        if (command.UserUpdateScript is not null)
+        {
+            var scriptInputError = ScriptInputLimits.Validate(
+                command.UserUpdateScript, "LoginProvider.UserUpdateScript");
+            if (scriptInputError is not null) return scriptInputError.Value;
+        }
 
         // Internal handling: no flavor lookup, no flavor-data validation.
         if (command.Type == LoginProviderType.Internal)
@@ -82,19 +110,19 @@ public class CreateLoginProviderHandler(
             DisplayName: command.DisplayName,
             Description: command.Description,
             IsBuiltIn: false,
-            Enabled: false,
-            ClientId: string.Empty,
+            Enabled: command.Enabled ?? false,
+            ClientId: command.ClientId ?? string.Empty,
             ClientSecretEncrypted: null,
-            Scopes: [.. flavor.DefaultScopes],
-            UserUpdateScript: flavor.DefaultUserUpdateScript,
-            StoreRawClaims: flavor.DefaultStoreRawClaims,
-            RawClaimsRetentionDays: null,
-            AutoCreateUsers: false,
-            AllowLinking: true,
-            TrustForEmailLink: false,
-            AllowedEmailDomains: null,
-            IconName: flavor.DefaultIconName,
-            ButtonColorHex: null,
+            Scopes: command.Scopes ?? [.. flavor.DefaultScopes],
+            UserUpdateScript: command.UserUpdateScript ?? flavor.DefaultUserUpdateScript,
+            StoreRawClaims: command.StoreRawClaims ?? flavor.DefaultStoreRawClaims,
+            RawClaimsRetentionDays: command.RawClaimsRetentionDays,
+            AutoCreateUsers: command.AutoCreateUsers ?? false,
+            AllowLinking: command.AllowLinking ?? true,
+            TrustForEmailLink: command.TrustForEmailLink ?? false,
+            AllowedEmailDomains: command.AllowedEmailDomains,
+            IconName: command.IconName ?? flavor.DefaultIconName,
+            ButtonColorHex: command.ButtonColorHex,
             FlavorData: command.FlavorData,
             CreatedAt: now);
 
@@ -143,20 +171,22 @@ public class CreateLoginProviderHandler(
             DisplayName: command.DisplayName,
             Description: command.Description,
             IsBuiltIn: false,
-            Enabled: false, // SAML providers start disabled — admin enables
-                            // after metadata + smoke-test.
+            // SAML providers start disabled by default — admin enables
+            // after metadata + smoke-test. Single-modal flow may opt in
+            // via Enabled=true once the form is fully filled.
+            Enabled: command.Enabled ?? false,
             ClientId: string.Empty, // SAML has no ClientId; field stays empty.
             ClientSecretEncrypted: null,
             Scopes: [], // SAML has no scopes.
-            UserUpdateScript: flavor.DefaultUserUpdateScript,
-            StoreRawClaims: flavor.DefaultStoreRawClaims,
-            RawClaimsRetentionDays: null,
-            AutoCreateUsers: false,
-            AllowLinking: true,
-            TrustForEmailLink: false,
-            AllowedEmailDomains: null,
-            IconName: flavor.DefaultIconName,
-            ButtonColorHex: null,
+            UserUpdateScript: command.UserUpdateScript ?? flavor.DefaultUserUpdateScript,
+            StoreRawClaims: command.StoreRawClaims ?? flavor.DefaultStoreRawClaims,
+            RawClaimsRetentionDays: command.RawClaimsRetentionDays,
+            AutoCreateUsers: command.AutoCreateUsers ?? false,
+            AllowLinking: command.AllowLinking ?? true,
+            TrustForEmailLink: command.TrustForEmailLink ?? false,
+            AllowedEmailDomains: command.AllowedEmailDomains,
+            IconName: command.IconName ?? flavor.DefaultIconName,
+            ButtonColorHex: command.ButtonColorHex,
             FlavorData: flavorDataJson,
             CreatedAt: now);
 

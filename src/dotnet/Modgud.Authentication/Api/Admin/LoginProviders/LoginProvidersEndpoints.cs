@@ -110,7 +110,19 @@ public static class LoginProvidersEndpoints
                     DisplayName: request.DisplayName,
                     FlavorData: flavorData,
                     Type: request.Type ?? LoginProviderType.Oidc,
-                    Description: request.Description);
+                    Description: request.Description,
+                    Enabled: request.Enabled,
+                    ClientId: request.ClientId,
+                    Scopes: request.Scopes,
+                    UserUpdateScript: request.UserUpdateScript,
+                    StoreRawClaims: request.StoreRawClaims,
+                    RawClaimsRetentionDays: request.RawClaimsRetentionDays,
+                    AutoCreateUsers: request.AutoCreateUsers,
+                    AllowLinking: request.AllowLinking,
+                    TrustForEmailLink: request.TrustForEmailLink,
+                    AllowedEmailDomains: request.AllowedEmailDomains,
+                    IconName: request.IconName,
+                    ButtonColorHex: request.ButtonColorHex);
                 var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command, ct);
                 return result.Match<IResult>(
                     v => Results.Created($"/api/admin/login-providers/{v.Id:N}", ToDto(v, ResolvePublicUrl(conf))),
@@ -262,7 +274,22 @@ public static class LoginProvidersEndpoints
         string DisplayName,
         JsonElement? FlavorData,
         LoginProviderType? Type = LoginProviderType.Oidc,
-        string? Description = null);
+        string? Description = null,
+        // Optional full-form fields — null = flavor / type default. Lets the
+        // single-modal Add UI submit a complete provider state in one call;
+        // legacy two-step callers omit these and fall through unchanged.
+        bool? Enabled = null,
+        string? ClientId = null,
+        List<string>? Scopes = null,
+        string? UserUpdateScript = null,
+        bool? StoreRawClaims = null,
+        int? RawClaimsRetentionDays = null,
+        bool? AutoCreateUsers = null,
+        bool? AllowLinking = null,
+        bool? TrustForEmailLink = null,
+        List<string>? AllowedEmailDomains = null,
+        string? IconName = null,
+        string? ButtonColorHex = null);
 
     public record UpdateLoginProviderRequest(
         string DisplayName,

@@ -178,6 +178,74 @@ public class LoginProviderTests : IntegrationTestBase
         Assert.Equal("LoginProvider.UnknownFlavor", result.FirstError.Code);
     }
 
+    [Fact]
+    public async Task Create_FullForm_AppliesAllOptionalFields()
+    {
+        // Single-modal Add flow: admin submits everything in one Create call
+        // instead of Create-then-Update. All optional fields land on the
+        // resulting aggregate; nothing falls back to flavor defaults except
+        // what the admin actually omitted.
+        using var scope = Factory.Services.CreateScope();
+        var bus = GetTenantedMessageBus(scope);
+
+        var flavorData = JsonDocument.Parse("""{"MetadataUri": "https://idp.test/.well-known/openid-configuration"}""");
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: LoginProviderFlavor.GenericOidc,
+            DisplayName: $"Full-{Guid.NewGuid():N}"[..16],
+            FlavorData: flavorData,
+            Type: LoginProviderType.Oidc,
+            Description: "single-modal full submit",
+            Enabled: true,
+            ClientId: "client-xyz",
+            Scopes: ["openid", "profile", "email", "groups"],
+            UserUpdateScript: "return { firstname: claims.given_name };",
+            StoreRawClaims: true,
+            RawClaimsRetentionDays: 30,
+            AutoCreateUsers: true,
+            AllowLinking: false,
+            TrustForEmailLink: true,
+            AllowedEmailDomains: ["acme.com"],
+            IconName: "lucide-key",
+            ButtonColorHex: "#0078D4"));
+
+        Assert.False(result.IsError, result.IsError ? result.FirstError.Description : "");
+        var c = result.Value;
+        Assert.True(c.Enabled);
+        Assert.Equal("client-xyz", c.ClientId);
+        Assert.Equal(["openid", "profile", "email", "groups"], c.Scopes);
+        Assert.Equal("return { firstname: claims.given_name };", c.UserUpdateScript);
+        Assert.True(c.StoreRawClaims);
+        Assert.Equal(30, c.RawClaimsRetentionDays);
+        Assert.True(c.AutoCreateUsers);
+        Assert.False(c.AllowLinking);
+        Assert.True(c.TrustForEmailLink);
+        Assert.Equal(["acme.com"], c.AllowedEmailDomains);
+        Assert.Equal("lucide-key", c.IconName);
+        Assert.Equal("#0078D4", c.ButtonColorHex);
+        Assert.Equal("single-modal full submit", c.Description);
+    }
+
+    [Fact]
+    public async Task Create_FullForm_OverlongUserUpdateScript_Rejected()
+    {
+        // ScriptInputLimits guard applies at Create time too when the admin
+        // submits a UserUpdateScript via the single-modal flow — same defense
+        // as the Update path.
+        using var scope = Factory.Services.CreateScope();
+        var bus = GetTenantedMessageBus(scope);
+
+        var oversized = new string('x', 20 * 1024); // ScriptInputLimits caps at 16 KiB
+        var flavorData = JsonDocument.Parse("""{"MetadataUri": "https://idp.test/.well-known/openid-configuration"}""");
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: LoginProviderFlavor.GenericOidc,
+            DisplayName: $"Oversize-{Guid.NewGuid():N}"[..20],
+            FlavorData: flavorData,
+            UserUpdateScript: oversized));
+
+        Assert.True(result.IsError);
+        Assert.StartsWith("LoginProvider.UserUpdateScript", result.FirstError.Code);
+    }
+
     [Theory]
     [InlineData(LoginProviderType.Ldap)]
     [InlineData(LoginProviderType.Kerberos)]
