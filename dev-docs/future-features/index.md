@@ -24,6 +24,10 @@ Severity. Detail-Pages unten.
   N-Tenant-DB-Backup/Restore + WAL-Pattern + Realm-Migration.
 - [Enterprise SSO — SAML + LDAP](./enterprise-sso-saml-ldap) —
   customer-getrieben, Designspace captured.
+- [SAML federation — implementation plan](./saml-federation) —
+  konkreter Implementation-Plan für den SP-Use-Case (Modgud konsumiert
+  Customer-IdP). Lib-Wahl: ITfoxtec.Identity.Saml2. Status:
+  Plan-Page captured 2026-05-27, nicht gestartet.
 
 ## Andere Future-Features
 

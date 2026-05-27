@@ -2,6 +2,14 @@
 
 > **Status:** Roadmap-Item, **kontextabhängig**. Designspace captured
 > 2026-05-13.
+>
+> **For SAML specifically:** This page is the broad designspace. The
+> concrete implementation plan now lives at
+> [saml-federation](./saml-federation) (captured 2026-05-27, chosen as
+> the post-v0.5.0 feature wave). The library recommendation below
+> (Sustainsys) was re-eichted in the implementation plan — ITfoxtec is
+> the current pick. Read the implementation plan first for SAML-side
+> decisions; this page stays as the LDAP + SCIM + Bridge designspace.
 > **Why:** Modgud federiert heute nur über OIDC (Entra, Okta, …).
 > Enterprise-Kunden fordern oft SAML 2.0 (alte Identity-Provider,
 > Salesforce, ServiceNow) und/oder LDAP/AD-Direktanbindung. Beides
