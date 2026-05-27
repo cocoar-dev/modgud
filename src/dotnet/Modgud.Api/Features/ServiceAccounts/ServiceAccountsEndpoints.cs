@@ -79,7 +79,7 @@ public static class ServiceAccountsEndpoints
                 await session.SaveChangesAsync();
 
                 var created = ToDto(sa);
-                dispatcher.DispatchCreatedEvent("ServiceAccount", created);
+                dispatcher.DispatchCreatedEvent("ServiceAccount", created, session.TenantId);
                 return Results.Ok(created);
             })
             .WithName("V2_ServiceAccount_Create")
@@ -123,7 +123,7 @@ public static class ServiceAccountsEndpoints
                 session.Store(sa);
                 await session.SaveChangesAsync();
                 var updated = ToDto(sa);
-                dispatcher.DispatchUpdatedEvent("ServiceAccount", updated);
+                dispatcher.DispatchUpdatedEvent("ServiceAccount", updated, session.TenantId);
                 return Results.Ok(updated);
             })
             .WithName("V2_ServiceAccount_Update")
@@ -158,7 +158,7 @@ public static class ServiceAccountsEndpoints
                 sa.IsDeleted = true;
                 session.Update(sa);
                 await session.SaveChangesAsync(ct);
-                dispatcher.DispatchDeletedEvent("ServiceAccount", new ShortGuid(sa.Id).ToString());
+                dispatcher.DispatchDeletedEvent("ServiceAccount", new ShortGuid(sa.Id).ToString(), session.TenantId);
                 return Results.Ok(new { DeletedCredentialCount = deletedCredentialCount });
             })
             .WithName("V2_ServiceAccount_Delete")

@@ -7,6 +7,16 @@ public class DataEvent
     public DataEventAction Action { get; set; }
     public object[] Payload { get; set; }
 
+    /// <summary>
+    /// Originating tenant/partition of this event (realm slug in Modgud).
+    /// Stamped by the producer from its tenant-scoped session so consumers can
+    /// scope delivery to the matching connection. Transport-neutral metadata:
+    /// no SignalR concepts leak in here. Null means "untagged" — consumers that
+    /// scope by tenant treat null as non-matching (fail-closed: never delivered
+    /// across a tenant boundary).
+    /// </summary>
+    public string? Tenant { get; set; }
+
     public Dictionary<string, object> MetaData { get; set; } = new();
 
 
@@ -20,6 +30,12 @@ public class DataEvent
     public DataEvent AddMetaData(string key, object value)
     {
         MetaData[key] = value;
+        return this;
+    }
+
+    public DataEvent WithTenant(string? tenant)
+    {
+        Tenant = tenant;
         return this;
     }
 
