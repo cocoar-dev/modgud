@@ -368,7 +368,7 @@ function normalizeFlavorData(
   for (const field of schema ?? []) {
     const pascal = field.Key
     if (pascal.length === 0) continue
-    const camel = pascal[0].toLowerCase() + pascal.slice(1)
+    const camel = pascal.charAt(0).toLowerCase() + pascal.slice(1)
     if (pascal === camel) continue
     if (camel in out && !(pascal in out)) {
       out[pascal] = out[camel]
