@@ -49,6 +49,8 @@ export interface FlavorConfigFieldDto {
   Required: boolean
   HelpText?: string | null
   Placeholder?: string | null
+  /** Default value seeded into the form on create (e.g. Boolean toggle defaults). */
+  Default?: unknown
 }
 
 export interface FlavorDto {

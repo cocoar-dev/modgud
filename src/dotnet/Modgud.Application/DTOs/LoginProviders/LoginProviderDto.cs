@@ -89,4 +89,5 @@ public record FlavorConfigFieldDto(
     string Label,
     bool Required,
     string? HelpText,
-    string? Placeholder);
+    string? Placeholder,
+    object? Default = null);

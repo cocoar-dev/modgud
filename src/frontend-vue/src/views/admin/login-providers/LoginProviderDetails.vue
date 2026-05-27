@@ -150,7 +150,14 @@ function reseedFromFlavor(key: string) {
   form.value.UserUpdateScript = f.DefaultUserUpdateScript
   form.value.StoreRawClaims = f.DefaultStoreRawClaims
   form.value.IconName = f.DefaultIconName
-  form.value.FlavorData = {} // ConfigSchema differs per flavor — start clean.
+  // ConfigSchema differs per flavor — start clean, but seed any field defaults
+  // (e.g. SAML signing toggles) so checkboxes reflect the real default instead
+  // of rendering unchecked while the backend would apply a different default.
+  const seeded: Record<string, unknown> = {}
+  for (const field of f.ConfigSchema) {
+    if (field.Default !== undefined && field.Default !== null) seeded[field.Key] = field.Default
+  }
+  form.value.FlavorData = seeded
 }
 
 async function load() {

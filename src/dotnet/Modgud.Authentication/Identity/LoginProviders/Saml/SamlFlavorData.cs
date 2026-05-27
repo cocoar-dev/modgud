@@ -59,8 +59,15 @@ public sealed record SamlFlavorData
     /// <summary>If true, refuse responses whose assertions are unsigned.</summary>
     public bool WantAssertionsSigned { get; init; } = true;
 
-    /// <summary>If true, refuse responses whose <c>Response</c> wrapper is unsigned.</summary>
-    public bool WantResponseSigned { get; init; } = true;
+    /// <summary>
+    /// If true, refuse responses whose <c>Response</c> wrapper is unsigned.
+    /// Defaults to <c>false</c>: most IdPs (incl. Microsoft Entra ID and AD FS)
+    /// sign only the assertion, not the Response wrapper, so requiring it by
+    /// default yields <c>saml-response-unsigned</c>. Assertion signing
+    /// (<see cref="WantAssertionsSigned"/>) is the real wrapping defense; admins
+    /// whose IdP signs the Response can opt in via the Connection-tab toggle.
+    /// </summary>
+    public bool WantResponseSigned { get; init; }
 
     /// <summary>
     /// If true, require the assertion to be XML-encrypted (in addition to being
@@ -127,7 +134,7 @@ public sealed record SamlFlavorData
             SigningCertificates = TryGetStringArray(root, "signingCertificates"),
             NameIdFormat = TryGetString(root, "nameIdFormat") ?? SamlNameIdFormats.EmailAddress,
             WantAssertionsSigned = TryGetBool(root, "wantAssertionsSigned") ?? true,
-            WantResponseSigned = TryGetBool(root, "wantResponseSigned") ?? true,
+            WantResponseSigned = TryGetBool(root, "wantResponseSigned") ?? false,
             WantAssertionsEncrypted = TryGetBool(root, "wantAssertionsEncrypted") ?? false,
             SignAuthnRequest = TryGetBool(root, "signAuthnRequest") ?? true,
             AttributeMap = TryGetStringArrayMap(root, "attributeMap"),

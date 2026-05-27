@@ -45,7 +45,7 @@ public static class LoginProvidersEndpoints
                     DefaultUserUpdateScript = f.DefaultUserUpdateScript,
                     DefaultStoreRawClaims = f.DefaultStoreRawClaims,
                     ConfigSchema = f.ConfigSchema.Select(c => new FlavorConfigFieldDto(
-                        c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder)).ToList(),
+                        c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder, c.Default)).ToList(),
                     Type = nameof(LoginProviderType.Oidc),
                 });
 
@@ -58,7 +58,7 @@ public static class LoginProvidersEndpoints
                     DefaultUserUpdateScript = f.DefaultUserUpdateScript,
                     DefaultStoreRawClaims = f.DefaultStoreRawClaims,
                     ConfigSchema = f.ConfigSchema.Select(c => new FlavorConfigFieldDto(
-                        c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder)).ToList(),
+                        c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder, c.Default)).ToList(),
                     Type = nameof(LoginProviderType.Saml),
                 });
 

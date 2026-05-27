@@ -47,6 +47,7 @@ public class GenericSamlFlavor : ISamlFlavor
             Required: false,
             HelpText: "Paste the IdP metadata XML directly. Use when the IdP doesn't publish a reachable metadata URL.",
             Placeholder: "<EntityDescriptor xmlns=\"urn:oasis:names:tc:SAML:2.0:metadata\" ..."),
+        .. SamlSigningConfigFields.All,
     ];
 
     public SamlFlavorData ApplyDefaults(SamlFlavorData? data) =>

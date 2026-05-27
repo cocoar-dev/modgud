@@ -39,6 +39,7 @@ public class EntraIdSamlFlavor : ISamlFlavor
             Required: true,
             HelpText: "Copy from the Entra Enterprise App → Single sign-on → 'App Federation Metadata Url' field.",
             Placeholder: "https://login.microsoftonline.com/<tenant-id>/federationmetadata/2007-06/federationmetadata.xml"),
+        .. SamlSigningConfigFields.All,
     ];
 
     public SamlFlavorData ApplyDefaults(SamlFlavorData? data)

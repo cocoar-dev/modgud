@@ -11,7 +11,8 @@ public record FlavorConfigField(
     string Label,
     bool Required = false,
     string? HelpText = null,
-    string? Placeholder = null);
+    string? Placeholder = null,
+    object? Default = null);
 
 public enum FlavorConfigFieldType
 {

@@ -26,7 +26,7 @@ public class SamlFlavorDataTests
             Assert.Empty(data.SigningCertificates);
             Assert.Equal(SamlNameIdFormats.EmailAddress, data.NameIdFormat);
             Assert.True(data.WantAssertionsSigned);
-            Assert.True(data.WantResponseSigned);
+            Assert.False(data.WantResponseSigned);
             Assert.False(data.WantAssertionsEncrypted);
             Assert.True(data.SignAuthnRequest);
             Assert.Empty(data.AttributeMap);
@@ -40,7 +40,7 @@ public class SamlFlavorDataTests
             var data = SamlFlavorData.FromJson(Json("{}"));
 
             Assert.True(data.WantAssertionsSigned);
-            Assert.True(data.WantResponseSigned);
+            Assert.False(data.WantResponseSigned);
             Assert.True(data.SignAuthnRequest);
             Assert.False(data.WantAssertionsEncrypted);
             Assert.Equal(86_400, data.MetadataRefreshIntervalSeconds);
