@@ -8,7 +8,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation } from '@cocoar/vue-fragment-parser'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
-import type { FlavorDto, LoginProviderDto } from '@/models/loginProvider'
+import type { FlavorConfigFieldDto, FlavorDto, LoginProviderDto } from '@/models/loginProvider'
 import UserUpdateScriptEditor from './UserUpdateScriptEditor.vue'
 import FlavorConnectionPanel from './panels/FlavorConnectionPanel.vue'
 
