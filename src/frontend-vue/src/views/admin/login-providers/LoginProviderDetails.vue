@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import {
   CoarTextInput, CoarFormField, CoarCheckbox, CoarTabGroup, CoarTab,
-  CoarButton, CoarIcon, CoarNote,
+  CoarButton, CoarIcon, CoarNote, CoarSelect,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
+import { useFragmentNavigation } from '@cocoar/vue-fragment-parser'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import type { FlavorDto, LoginProviderDto } from '@/models/loginProvider'
@@ -13,6 +14,7 @@ import FlavorConnectionPanel from './panels/FlavorConnectionPanel.vue'
 
 const { t } = useI18n()
 const store = useLoginProviderStore()
+const { navigateToModal } = useFragmentNavigation()
 
 const props = defineProps<{ id: string; close: (result?: unknown) => void }>()
 const isCreate = computed(() => props.id === 'create')
@@ -23,13 +25,21 @@ const saving = ref(false)
 const error = ref<string | null>(null)
 
 const provider = ref<LoginProviderDto | null>(null)
+// Flavor selected in the picker — drives Type, defaults, and ConfigSchema. In
+// Edit mode it is locked to the existing provider's Flavor (Type/Flavor are
+// immutable post-create). In Add mode the admin can switch and the body morphs.
+const flavorKey = ref<string>('')
 const flavor = computed<FlavorDto | null>(() =>
-  store.flavors.find((f) => f.Key === provider.value?.Flavor) ?? null
+  store.flavors.find((f) => f.Key === flavorKey.value) ?? null
 )
 
 const isBuiltIn = computed(() => provider.value?.IsBuiltIn === true)
 const isInternal = computed(() => provider.value?.Type === 'Internal')
-const isSaml = computed(() => provider.value?.Type === 'Saml')
+const isSaml = computed(() =>
+  isCreate.value
+    ? flavor.value?.Type === 'Saml'
+    : provider.value?.Type === 'Saml'
+)
 
 interface FormState {
   DisplayName: string
@@ -71,7 +81,7 @@ const form = ref<FormState>(emptyForm())
 const newSecret = ref<string>('')
 
 const modalTitle = computed(() => {
-  if (isCreate.value) return t('admin.loginProviders.createTitle', {}, 'Login-Provider erstellen')
+  if (isCreate.value) return t('admin.loginProviders.createTitle', {}, 'Login-Provider hinzufügen')
   return provider.value?.DisplayName || ''
 })
 
@@ -79,11 +89,42 @@ const redirectUri = computed(() => provider.value?.RedirectUri ?? '')
 const samlSpMetadataUrl = computed(() => provider.value?.SamlSpMetadataUrl ?? '')
 const samlAcsUrl = computed(() => provider.value?.SamlAcsUrl ?? '')
 
+// Flavor picker options. Grouped header label keeps the dropdown scan-friendly
+// once both OIDC + SAML flavors are in the list (today: 2 OIDC + 3 SAML).
+const flavorOptions = computed(() => {
+  const oidc = store.flavors.filter((f) => f.Type === 'Oidc')
+  const saml = store.flavors.filter((f) => f.Type === 'Saml')
+  const opts: { value: string; label: string }[] = []
+  for (const f of oidc) opts.push({ value: f.Key, label: `OIDC · ${f.DisplayName}` })
+  for (const f of saml) opts.push({ value: f.Key, label: `SAML · ${f.DisplayName}` })
+  return opts
+})
+
+// Hydrate the form from the selected flavor's defaults. Called on Add-modal
+// open and whenever the admin switches flavor in Add mode. Only re-seeds the
+// flavor-derived fields; admin-typed identity (DisplayName/Description/ClientId/
+// ButtonColorHex/AllowedEmailDomains) is preserved across flavor switches.
+function reseedFromFlavor(key: string) {
+  const f = store.flavors.find((ff) => ff.Key === key)
+  if (!f) return
+  form.value.Scopes = [...f.DefaultScopes]
+  form.value.UserUpdateScript = f.DefaultUserUpdateScript
+  form.value.StoreRawClaims = f.DefaultStoreRawClaims
+  form.value.IconName = f.DefaultIconName
+  form.value.FlavorData = {} // ConfigSchema differs per flavor — start clean.
+}
+
 async function load() {
   loading.value = true
   try {
     await store.initialize()
-    if (isCreate.value) return
+    if (isCreate.value) {
+      flavorKey.value = store.flavors[0]?.Key ?? ''
+      provider.value = null
+      form.value = emptyForm()
+      reseedFromFlavor(flavorKey.value)
+      return
+    }
     const existing = store.providers.find((p) => p.Id === props.id)
       ?? await store.loadOne(props.id)
     if (!existing) {
@@ -91,6 +132,7 @@ async function load() {
       return
     }
     provider.value = existing
+    flavorKey.value = existing.Flavor
     form.value = {
       DisplayName: existing.DisplayName,
       Description: existing.Description ?? '',
@@ -114,9 +156,14 @@ async function load() {
   }
 }
 
+// Re-seed defaults on flavor switch in Add mode. Edit mode is locked (Flavor
+// immutable post-create) so the watch is a no-op there.
+watch(flavorKey, (newKey, oldKey) => {
+  if (!isCreate.value || !newKey || newKey === oldKey) return
+  reseedFromFlavor(newKey)
+})
+
 async function save() {
-  if (!provider.value) return
-  if (isBuiltIn.value) return // defensive — Save button is hidden, but never trust UI alone
   if (!form.value.DisplayName.trim()) {
     error.value = t('admin.loginProviders.nameRequired', {}, 'Name ist erforderlich')
     return
@@ -124,28 +171,89 @@ async function save() {
   error.value = null
   saving.value = true
   try {
-    await store.update(provider.value.Id, {
-      DisplayName: form.value.DisplayName.trim(),
-      Description: form.value.Description.trim() || null,
-      ClientId: form.value.ClientId.trim(),
-      Scopes: form.value.Scopes,
-      UserUpdateScript: form.value.UserUpdateScript,
-      StoreRawClaims: form.value.StoreRawClaims,
-      RawClaimsRetentionDays: form.value.RawClaimsRetentionDays,
-      AutoCreateUsers: form.value.AutoCreateUsers,
-      AllowLinking: form.value.AllowLinking,
-      TrustForEmailLink: form.value.TrustForEmailLink,
-      AllowedEmailDomains: form.value.AllowedEmailDomains.length > 0 ? form.value.AllowedEmailDomains : null,
-      IconName: form.value.IconName || null,
-      ButtonColorHex: form.value.ButtonColorHex || null,
-      FlavorData: form.value.FlavorData,
-    })
-    props.close()
+    if (isCreate.value) {
+      await createProvider()
+    } else {
+      await updateProvider()
+    }
   } catch (e: any) {
     error.value = e?.response?.data?.Message ?? e?.body?.Message ?? e?.message ?? String(e)
   } finally {
     saving.value = false
   }
+}
+
+async function createProvider() {
+  if (!flavor.value) {
+    error.value = t('admin.loginProviders.flavorRequired', {}, 'Flavor auswählen')
+    return
+  }
+  const created = await store.create({
+    Flavor: flavorKey.value,
+    DisplayName: form.value.DisplayName.trim(),
+    // Type follows the chosen flavor — OIDC flavors create OIDC providers,
+    // SAML flavors create SAML providers. Backend re-validates.
+    Type: flavor.value.Type,
+    Description: form.value.Description.trim() || null,
+    FlavorData: form.value.FlavorData,
+    // Security default — admin enables explicitly after smoke-test + (for OIDC)
+    // setting an initial secret via the field below.
+    Enabled: false,
+    ClientId: form.value.ClientId.trim() || null,
+    Scopes: form.value.Scopes,
+    UserUpdateScript: form.value.UserUpdateScript,
+    StoreRawClaims: form.value.StoreRawClaims,
+    RawClaimsRetentionDays: form.value.RawClaimsRetentionDays,
+    AutoCreateUsers: form.value.AutoCreateUsers,
+    AllowLinking: form.value.AllowLinking,
+    TrustForEmailLink: form.value.TrustForEmailLink,
+    AllowedEmailDomains: form.value.AllowedEmailDomains.length > 0 ? form.value.AllowedEmailDomains : null,
+    IconName: form.value.IconName || null,
+    ButtonColorHex: form.value.ButtonColorHex || null,
+  })
+
+  // OIDC initial secret: secret stays out of Create for audit-trail reasons.
+  // If the admin entered one in the picker, fire RotateClientSecret right after
+  // Create — same surface, separate audit event. Best-effort: a failed secret
+  // set does not bin the new provider; admin can retry from the now-Edit modal.
+  if (newSecret.value && flavor.value.Type === 'Oidc') {
+    try { await store.rotateSecret(created.Id, newSecret.value) }
+    catch (e: any) {
+      // Surface the warning but let the modal transition to Edit mode so the
+      // admin sees their saved provider and can retry the secret.
+      error.value = t('admin.loginProviders.secretRotationFailed', {},
+        'Provider angelegt, aber Secret konnte nicht gesetzt werden — bitte unter "Verbindung" erneut versuchen.')
+    }
+    newSecret.value = ''
+  }
+
+  // Transition Add → Edit in-place: re-route the modal's fragment so a refresh
+  // re-opens in the right mode, and let the regular load() pick up the new doc.
+  provider.value = created
+  flavorKey.value = created.Flavor
+  navigateToModal(created.Id)
+}
+
+async function updateProvider() {
+  if (!provider.value) return
+  if (isBuiltIn.value) return // defensive — Save button is hidden, but never trust UI alone
+  await store.update(provider.value.Id, {
+    DisplayName: form.value.DisplayName.trim(),
+    Description: form.value.Description.trim() || null,
+    ClientId: form.value.ClientId.trim(),
+    Scopes: form.value.Scopes,
+    UserUpdateScript: form.value.UserUpdateScript,
+    StoreRawClaims: form.value.StoreRawClaims,
+    RawClaimsRetentionDays: form.value.RawClaimsRetentionDays,
+    AutoCreateUsers: form.value.AutoCreateUsers,
+    AllowLinking: form.value.AllowLinking,
+    TrustForEmailLink: form.value.TrustForEmailLink,
+    AllowedEmailDomains: form.value.AllowedEmailDomains.length > 0 ? form.value.AllowedEmailDomains : null,
+    IconName: form.value.IconName || null,
+    ButtonColorHex: form.value.ButtonColorHex || null,
+    FlavorData: form.value.FlavorData,
+  })
+  props.close()
 }
 
 async function rotateSecret() {
@@ -189,11 +297,12 @@ function copyText(s: string) {
 }
 
 const footerButton = computed(() => ({
-  // Save button only appears once we have a non-built-in provider loaded.
-  // Create-flow happens via the picker on the list view; the details modal is
-  // edit-only.
-  visible: !isCreate.value && !isBuiltIn.value,
-  text: t('common.save', {}, 'Speichern'),
+  // Visible in Add mode (no provider yet) and in Edit mode for non-built-in
+  // providers. Built-in (Internal seed) stays read-only.
+  visible: isCreate.value || !isBuiltIn.value,
+  text: isCreate.value
+    ? t('common.create', {}, 'Erstellen')
+    : t('common.save', {}, 'Speichern'),
   disabled: saving.value || loading.value,
   onClick: save,
 }))
@@ -204,9 +313,14 @@ function parseList(s: string): string[] {
   return s.split(/[\s,]+/).map((p) => p.trim()).filter(Boolean)
 }
 
-// Tab visibility — Internal-typed providers only show the General tab,
-// since none of the OIDC concerns (connection, claims, linking) apply.
-const showOidcTabs = computed(() => !isInternal.value)
+// Tab visibility — Internal-typed providers only show the General tab, since
+// none of the OIDC/SAML concerns (connection, claims, linking) apply. Internal
+// is also not selectable in the Add picker (flavorOptions filters it), so this
+// only matters when editing the seeded Internal provider.
+const showProtocolTabs = computed(() => !isInternal.value)
+// SAML providers don't have ClientId / Scopes / Client-Secret — those live on
+// the OIDC side only. The Verbindung tab hides them when the flavor is SAML.
+const showOidcConnectionFields = computed(() => !isSaml.value)
 </script>
 
 <template>
@@ -215,13 +329,28 @@ const showOidcTabs = computed(() => !isInternal.value)
     :title="modalTitle"
     icon="log-in"
     :footer-button="footerButton"
-    width="min(1100px, 95vw)"
   >
+    <!--
+      Header-actions slot: flavor picker lives next to the title so switching
+      type in Add mode visibly morphs the modal. Disabled in Edit (Type/Flavor
+      are immutable after Create) so the admin can still see *which* flavor
+      the existing provider runs.
+    -->
+    <template #header-actions>
+      <CoarSelect
+        v-if="!isInternal && flavorOptions.length > 0"
+        v-model="flavorKey"
+        :options="flavorOptions"
+        :disabled="!isCreate"
+        :aria-label="t('admin.loginProviders.flavor', {}, 'Flavor')"
+      />
+    </template>
+
     <div v-if="loading" class="flex items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
     </div>
 
-    <div v-else-if="provider" class="flex flex-col flex-1 min-h-0 gap-3">
+    <div v-else class="flex flex-col flex-1 min-h-0 gap-3">
       <!-- Built-in banner — hard-block on edits via UI; backend rejects too. -->
       <CoarNote v-if="isBuiltIn" variant="info">
         {{ t('admin.loginProviders.builtIn.banner', {}, 'Dies ist der eingebaute interne Login-Provider — die Konfiguration wird vom System verwaltet und kann hier nicht geändert werden.') }}
@@ -231,17 +360,20 @@ const showOidcTabs = computed(() => !isInternal.value)
       <div class="flex items-center gap-3 flex-wrap">
         <div class="badge">
           <CoarIcon
-            :name="provider.IconName ?? flavor?.DefaultIconName ?? (isInternal ? 'lock' : 'key-round')"
+            :name="(provider?.IconName ?? flavor?.DefaultIconName) ?? (isInternal ? 'lock' : 'key-round')"
             size="s"
           />
           <span>
             {{ isInternal
               ? t('admin.loginProviders.type.values.internal', {}, 'Intern')
-              : (flavor?.DisplayName ?? provider.Flavor) }}
+              : (flavor?.DisplayName ?? provider?.Flavor) }}
           </span>
         </div>
+        <!-- Enabled toggle only on existing providers — in Add mode the
+             security default is Enabled=false (admin enables explicitly after
+             smoke-test). -->
         <CoarButton
-          v-if="!isBuiltIn"
+          v-if="provider && !isBuiltIn"
           size="s"
           :variant="provider.Enabled ? 'primary' : 'ghost'"
           :icon-start="provider.Enabled ? 'circle-check' : 'circle-off'"
@@ -255,7 +387,7 @@ const showOidcTabs = computed(() => !isInternal.value)
         <div v-if="error" class="error-banner flex-1">{{ error }}</div>
       </div>
 
-      <CoarTabGroup v-if="showOidcTabs" v-model="activeTab">
+      <CoarTabGroup v-if="showProtocolTabs" v-model="activeTab">
         <CoarTab id="general">{{ t('admin.loginProviders.tabGeneral', {}, 'Allgemein') }}</CoarTab>
         <CoarTab id="connection">{{ t('admin.loginProviders.tabConnection', {}, 'Verbindung') }}</CoarTab>
         <CoarTab id="claims">{{ t('admin.loginProviders.tabUserUpdate', {}, 'User-Update-Script') }}</CoarTab>
@@ -263,15 +395,16 @@ const showOidcTabs = computed(() => !isInternal.value)
       </CoarTabGroup>
 
       <!-- General tab (always visible — also the only tab for Internal) -->
-      <div v-show="!showOidcTabs || activeTab === 'general'" class="tab-content">
+      <div v-show="!showProtocolTabs || activeTab === 'general'" class="tab-content">
         <CoarFormField :label="t('admin.loginProviders.displayName', {}, 'Display Name')">
           <CoarTextInput v-model="form.DisplayName" :disabled="isBuiltIn" clearable />
         </CoarFormField>
         <CoarFormField :label="t('common.description', {}, 'Beschreibung')">
           <CoarTextInput v-model="form.Description" :disabled="isBuiltIn" clearable />
         </CoarFormField>
-        <template v-if="!isInternal">
-          <!-- SAML: two URLs the admin pastes into the IdP setup screen. -->
+        <template v-if="!isInternal && !isCreate">
+          <!-- URLs: only meaningful once the provider exists — in Add mode they
+               appear after Save when the modal transitions to Edit mode. -->
           <template v-if="isSaml">
             <CoarFormField :label="t('admin.loginProviders.samlSpMetadataUrl', {}, 'SP-Metadata-URL (in die IdP-Konfiguration eintragen)')">
               <div class="flex gap-2 items-center">
@@ -290,7 +423,6 @@ const showOidcTabs = computed(() => !isInternal.value)
               </div>
             </CoarFormField>
           </template>
-          <!-- OIDC: single redirect URI. -->
           <CoarFormField v-else :label="t('admin.loginProviders.redirectUri', {}, 'Redirect URI (in die IdP-App-Registrierung eintragen)')">
             <div class="flex gap-2 items-center">
               <CoarTextInput :model-value="redirectUri" readonly class="flex-1" />
@@ -299,6 +431,8 @@ const showOidcTabs = computed(() => !isInternal.value)
               </CoarButton>
             </div>
           </CoarFormField>
+        </template>
+        <template v-if="!isInternal">
           <CoarFormField :label="t('admin.loginProviders.iconName', {}, 'Button-Icon (Lucide-Name)')">
             <CoarTextInput v-model="form.IconName" :disabled="isBuiltIn" placeholder="microsoft" clearable />
           </CoarFormField>
@@ -308,8 +442,9 @@ const showOidcTabs = computed(() => !isInternal.value)
         </template>
       </div>
 
-      <!-- OIDC-only tabs -->
-      <template v-if="showOidcTabs">
+      <!-- Protocol-specific tabs — OIDC + SAML share the surface; per-flavor
+           specifics are gated below. Internal hides the whole block. -->
+      <template v-if="showProtocolTabs">
         <!-- Connection tab -->
         <div v-show="activeTab === 'connection'" class="tab-content">
           <FlavorConnectionPanel
@@ -317,43 +452,57 @@ const showOidcTabs = computed(() => !isInternal.value)
             :schema="flavor.ConfigSchema"
             v-model="form.FlavorData"
           />
-          <CoarFormField :label="t('admin.loginProviders.clientId', {}, 'Client ID')">
-            <CoarTextInput v-model="form.ClientId" :disabled="isBuiltIn" placeholder="application-client-id" clearable />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.loginProviders.scopes', {}, 'Scopes (leer- oder komma-getrennt)')">
-            <CoarTextInput
-              :model-value="form.Scopes.join(' ')"
-              :disabled="isBuiltIn"
-              placeholder="openid profile email"
-              clearable
-              @update:model-value="(v: string) => form.Scopes = parseList(v)"
-            />
-          </CoarFormField>
+          <template v-if="showOidcConnectionFields">
+            <CoarFormField :label="t('admin.loginProviders.clientId', {}, 'Client ID')">
+              <CoarTextInput v-model="form.ClientId" :disabled="isBuiltIn" placeholder="application-client-id" clearable />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.loginProviders.scopes', {}, 'Scopes (leer- oder komma-getrennt)')">
+              <CoarTextInput
+                :model-value="form.Scopes.join(' ')"
+                :disabled="isBuiltIn"
+                placeholder="openid profile email"
+                clearable
+                @update:model-value="(v: string) => form.Scopes = parseList(v)"
+              />
+            </CoarFormField>
 
-          <div class="secret-section">
-            <div class="section-heading">{{ t('admin.loginProviders.clientSecret', {}, 'Client-Secret') }}</div>
-            <div class="text-sm secret-status mb-2">
-              <CoarIcon :name="provider.HasClientSecret ? 'shield-check' : 'shield-alert'" size="s" />
-              <span v-if="provider.HasClientSecret">{{ t('admin.loginProviders.secretSet', {}, 'Secret ist konfiguriert. Neuen Wert eingeben, um zu rotieren.') }}</span>
-              <span v-else>{{ t('admin.loginProviders.secretMissing', {}, 'Kein Secret gesetzt — setze eines, bevor du den Provider aktivierst.') }}</span>
+            <div class="secret-section">
+              <div class="section-heading">{{ t('admin.loginProviders.clientSecret', {}, 'Client-Secret') }}</div>
+              <!-- Add mode: the secret is part of the initial submit. We fire
+                   RotateClientSecret right after Create so the audit event
+                   shape stays uniform. Edit mode: same rotation surface. -->
+              <template v-if="isCreate">
+                <div class="text-sm secret-status mb-2">
+                  <CoarIcon name="shield-alert" size="s" />
+                  <span>{{ t('admin.loginProviders.secretInitial', {}, 'Initiales Secret (optional; kann später unter Verbindung gesetzt werden).') }}</span>
+                </div>
+                <CoarTextInput v-model="newSecret" type="password" clearable placeholder="••••••••" />
+              </template>
+              <template v-else-if="provider">
+                <div class="text-sm secret-status mb-2">
+                  <CoarIcon :name="provider.HasClientSecret ? 'shield-check' : 'shield-alert'" size="s" />
+                  <span v-if="provider.HasClientSecret">{{ t('admin.loginProviders.secretSet', {}, 'Secret ist konfiguriert. Neuen Wert eingeben, um zu rotieren.') }}</span>
+                  <span v-else>{{ t('admin.loginProviders.secretMissing', {}, 'Kein Secret gesetzt — setze eines, bevor du den Provider aktivierst.') }}</span>
+                </div>
+                <div class="flex gap-2">
+                  <CoarTextInput v-model="newSecret" :disabled="isBuiltIn" type="password" class="flex-1" clearable placeholder="••••••••" />
+                  <CoarButton :disabled="!newSecret || saving || isBuiltIn" @click="rotateSecret">
+                    {{ provider.HasClientSecret
+                      ? t('admin.loginProviders.rotateSecret', {}, 'Rotieren')
+                      : t('admin.loginProviders.setSecret', {}, 'Setzen') }}
+                  </CoarButton>
+                </div>
+              </template>
             </div>
-            <div class="flex gap-2">
-              <CoarTextInput v-model="newSecret" :disabled="isBuiltIn" type="password" class="flex-1" clearable placeholder="••••••••" />
-              <CoarButton :disabled="!newSecret || saving || isBuiltIn" @click="rotateSecret">
-                {{ provider.HasClientSecret
-                  ? t('admin.loginProviders.rotateSecret', {}, 'Rotieren')
-                  : t('admin.loginProviders.setSecret', {}, 'Setzen') }}
-              </CoarButton>
-            </div>
-          </div>
+          </template>
         </div>
 
         <!-- User-update script tab -->
         <div v-show="activeTab === 'claims'" class="tab-content tab-claims">
           <UserUpdateScriptEditor
             v-model="form.UserUpdateScript"
-            :login-provider-id="provider.Id"
-            :is-new="false"
+            :login-provider-id="provider?.Id"
+            :is-new="isCreate || !provider"
           />
         </div>
 
@@ -393,8 +542,6 @@ const showOidcTabs = computed(() => !isInternal.value)
         </div>
       </template>
     </div>
-
-    <div v-else class="error-banner m-4">{{ error ?? t('admin.loginProviders.notFound', {}, 'Nicht gefunden') }}</div>
   </ModalLayout>
 </template>
 

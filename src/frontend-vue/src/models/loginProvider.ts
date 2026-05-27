@@ -72,6 +72,24 @@ export interface CreateLoginProviderRequest {
   Type?: LoginProviderType
   Description?: string | null
   FlavorData?: Record<string, unknown> | null
+  /**
+   * Optional full-form fields for the single-modal Add flow — when omitted,
+   * the backend falls back to the chosen flavor's defaults (legacy two-step
+   * shape). When the admin saves the unified modal these are populated and
+   * the provider lands fully configured in one call.
+   */
+  Enabled?: boolean | null
+  ClientId?: string | null
+  Scopes?: string[] | null
+  UserUpdateScript?: string | null
+  StoreRawClaims?: boolean | null
+  RawClaimsRetentionDays?: number | null
+  AutoCreateUsers?: boolean | null
+  AllowLinking?: boolean | null
+  TrustForEmailLink?: boolean | null
+  AllowedEmailDomains?: string[] | null
+  IconName?: string | null
+  ButtonColorHex?: string | null
 }
 
 export interface UpdateLoginProviderRequest {
