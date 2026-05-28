@@ -101,8 +101,9 @@ async function toggleEnabled() {
     return
   }
   try {
-    if (provider.Enabled) await store.disable(provider.Id)
-    else await store.enable(provider.Id)
+    // Inline grid toggle — immediate PATCH of just the Enabled property
+    // (this is the "übers Grid" quick path; the edit modal stages it instead).
+    await store.setEnabled(provider.Id, !provider.Enabled)
   } catch (e: any) {
     alert(e?.message ?? String(e))
   }

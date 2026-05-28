@@ -486,7 +486,7 @@ public class LoginProviderTests : IntegrationTestBase
             DisplayName: "Renamed",
             Description: null,
             ClientId: string.Empty,
-            Scopes: [],
+            Scopes: new List<string>(),
             UserUpdateScript: string.Empty,
             StoreRawClaims: false,
             RawClaimsRetentionDays: null,
@@ -496,7 +496,8 @@ public class LoginProviderTests : IntegrationTestBase
             AllowedEmailDomains: null,
             IconName: null,
             ButtonColorHex: null,
-            FlavorData: null));
+            FlavorData: null,
+            Enabled: default));
 
         Assert.True(result.IsError);
         Assert.Equal("LoginProvider.InternalNotEditable", result.FirstError.Code);

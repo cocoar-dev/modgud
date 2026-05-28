@@ -111,21 +111,25 @@ export interface CreateLoginProviderRequest {
   ButtonColorHex?: string | null
 }
 
+// PATCH semantics — every field optional. Omitted fields keep their current
+// value server-side (Optional<T> on the backend). The edit modal sends the
+// full set; the grid's inline toggle sends only { Enabled }.
 export interface UpdateLoginProviderRequest {
-  DisplayName: string
+  DisplayName?: string
   Description?: string | null
-  ClientId: string
-  Scopes: string[]
-  UserUpdateScript: string
-  StoreRawClaims: boolean
+  ClientId?: string
+  Scopes?: string[]
+  UserUpdateScript?: string
+  StoreRawClaims?: boolean
   RawClaimsRetentionDays?: number | null
-  AutoCreateUsers: boolean
-  AllowLinking: boolean
-  TrustForEmailLink: boolean
+  AutoCreateUsers?: boolean
+  AllowLinking?: boolean
+  TrustForEmailLink?: boolean
   AllowedEmailDomains?: string[] | null
   IconName?: string | null
   ButtonColorHex?: string | null
   FlavorData?: Record<string, unknown> | null
+  Enabled?: boolean
 }
 
 export interface TestUserUpdateRequest {

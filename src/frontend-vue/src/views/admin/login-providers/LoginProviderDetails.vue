@@ -58,6 +58,8 @@ interface FormState {
   IconName: string
   ButtonColorHex: string
   FlavorData: Record<string, unknown>
+  /** Staged enabled state — committed with Save (not sent on toggle). */
+  Enabled: boolean
 }
 
 function emptyForm(): FormState {
@@ -77,6 +79,7 @@ function emptyForm(): FormState {
     IconName: '',
     ButtonColorHex: '',
     FlavorData: {},
+    Enabled: false,
   }
 }
 
@@ -222,6 +225,7 @@ async function load() {
       IconName: existing.IconName ?? '',
       ButtonColorHex: existing.ButtonColorHex ?? '',
       FlavorData: normalizeFlavorData(existing.FlavorData, loadedFlavor?.ConfigSchema),
+      Enabled: existing.Enabled,
     }
   } catch (e: any) {
     error.value = e?.message ?? String(e)
@@ -365,6 +369,10 @@ async function updateProvider() {
     IconName: form.value.IconName || null,
     ButtonColorHex: form.value.ButtonColorHex || null,
     FlavorData: form.value.FlavorData,
+    // Staged enabled state commits here. The backend runs the readiness gate
+    // against the merged values, so enabling while setting metadata in the same
+    // save passes; a rejected enable surfaces as a save error.
+    Enabled: form.value.Enabled,
   })
   props.close()
 }
@@ -378,22 +386,6 @@ async function rotateSecret() {
     newSecret.value = ''
     const reloaded = await store.loadOne(provider.value.Id)
     if (reloaded) provider.value = reloaded
-  } catch (e: any) {
-    error.value = e?.response?.data?.Message ?? e?.body?.Message ?? e?.message ?? String(e)
-  } finally {
-    saving.value = false
-  }
-}
-
-async function toggleEnabled() {
-  if (!provider.value || isBuiltIn.value) return
-  saving.value = true
-  error.value = null
-  try {
-    const updated = provider.value.Enabled
-      ? await store.disable(provider.value.Id)
-      : await store.enable(provider.value.Id)
-    provider.value = updated
   } catch (e: any) {
     error.value = e?.response?.data?.Message ?? e?.body?.Message ?? e?.message ?? String(e)
   } finally {
@@ -516,18 +508,17 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
         </div>
         <!-- Enabled switch only on existing providers — in Add mode the
              security default is Enabled=false (admin enables explicitly after
-             smoke-test). Bound to provider.Enabled (source of truth, set only
-             on a successful enable/disable), so a failed enable — e.g. the SAML
-             readiness gate rejecting "no metadata" — snaps the switch back and
-             surfaces the error rather than leaving a lying UI state. -->
+             smoke-test). Staged into the form: flipping it does NOT hit the
+             backend, it commits with Save alongside every other change. The
+             backend runs the readiness gate against the merged save, so a
+             not-yet-ready enable surfaces as a save error. (The grid offers an
+             immediate inline toggle for the quick path.) -->
         <CoarSwitch
           v-if="provider && !isBuiltIn"
-          :model-value="provider.Enabled"
-          :disabled="saving"
-          :label="provider.Enabled
+          v-model="form.Enabled"
+          :label="form.Enabled
             ? t('admin.loginProviders.enabled', {}, 'Aktiviert')
             : t('admin.loginProviders.disabled', {}, 'Deaktiviert')"
-          @update:model-value="toggleEnabled"
         />
         <div v-if="error" class="error-banner flex-1">{{ error }}</div>
       </div>

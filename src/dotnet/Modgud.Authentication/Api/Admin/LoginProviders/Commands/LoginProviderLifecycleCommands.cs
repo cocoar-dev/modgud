@@ -1,84 +1,54 @@
+using System.Text.Json;
 using ErrorOr;
 using Marten;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Domain.LoginProviders.Events;
 using Modgud.Authentication.Identity.LoginProviders;
+using Modgud.Authentication.Identity.LoginProviders.Saml;
 
 namespace Modgud.Authentication.Api.Admin.LoginProviders.Commands;
 
-// ── Enable ────────────────────────────────────────────────────────
+// ── Enable readiness gate ─────────────────────────────────────────
+//
+// Enable/Disable used to be standalone commands + HTTP endpoints. They are now
+// folded into UpdateLoginProviderCommand (PATCH `Enabled`), so the grid can
+// toggle via the same endpoint and "set metadata + enable" works in one save.
+// The readiness gate lives here as a pure helper so the Update handler runs it
+// against the POST-merge values.
 
-public record EnableLoginProviderCommand(Guid Id);
-
-public class EnableLoginProviderHandler(IDocumentSession session, TimeProvider clock)
+public static class LoginProviderReadiness
 {
-    public async Task<ErrorOr<LoginProvider>> Handle(EnableLoginProviderCommand command, CancellationToken ct)
+    /// <summary>
+    /// Pre-flight for flipping a provider to Enabled. Returns an error when the
+    /// provider isn't ready, else null.
+    ///  - Internal: no gate (seeded built-in path).
+    ///  - OIDC: needs ClientId + a client secret, else the AuthnRequest is unusable.
+    ///  - SAML: needs MetadataUrl or MetadataXml, so the manager has IdP signing
+    ///    certs to validate against (SP cert is auto-generated on first use).
+    /// </summary>
+    public static Error? CheckCanEnable(LoginProviderType type, string clientId, bool hasSecret, JsonDocument? flavorData)
     {
-        var config = await session.LoadAsync<LoginProvider>(command.Id, ct);
-        if (config is null || config.IsDeleted)
-            return Error.NotFound("LoginProvider.NotFound", "Login provider not found.");
-
-        // Per-type pre-flight checks:
-        //  - Internal: no readiness gate (it's the seeded built-in path).
-        //  - Oidc: must have ClientId + ClientSecret set — otherwise the
-        //    AuthnRequest the OIDC handler builds is unusable.
-        //  - Saml: must have either MetadataUrl or MetadataXml set, so the
-        //    SAML manager has IdP signing certs to validate Response
-        //    signatures against. SP cert is auto-generated on first use,
-        //    so no readiness gate there.
-        if (config.Type == LoginProviderType.Oidc)
+        if (type == LoginProviderType.Oidc)
         {
-            if (string.IsNullOrWhiteSpace(config.ClientId))
+            if (string.IsNullOrWhiteSpace(clientId))
                 return Error.Validation("LoginProvider.ClientIdRequired",
-                    "Cannot enable without a ClientId — set it via Update first.");
-            if (config.ClientSecretEncrypted is null || config.ClientSecretEncrypted.Length == 0)
+                    "Cannot enable without a ClientId — set it first.");
+            if (!hasSecret)
                 return Error.Validation("LoginProvider.SecretRequired",
-                    "Cannot enable without a client secret — rotate it via Secret first.");
+                    "Cannot enable without a client secret — rotate it first.");
         }
-        else if (config.Type == LoginProviderType.Saml)
+        else if (type == LoginProviderType.Saml)
         {
-            var samlData = Modgud.Authentication.Identity.LoginProviders.Saml.SamlFlavorData.FromJson(config.FlavorData);
+            var samlData = SamlFlavorData.FromJson(flavorData);
             if (string.IsNullOrWhiteSpace(samlData.MetadataUrl)
                 && string.IsNullOrWhiteSpace(samlData.MetadataXml))
             {
                 return Error.Validation("LoginProvider.SamlMetadataRequired",
-                    "Cannot enable a SAML provider without IdP metadata. Set either MetadataUrl or MetadataXml via Update first.");
+                    "Cannot enable a SAML provider without IdP metadata. Set MetadataUrl or MetadataXml first.");
             }
         }
 
-        if (!config.Enabled)
-        {
-            session.Events.Append(command.Id, new LoginProviderEnabledEvent(command.Id, clock.GetUtcNow()));
-            await session.SaveChangesAsync(ct);
-        }
-        return (await session.LoadAsync<LoginProvider>(command.Id, ct))!;
-    }
-}
-
-// ── Disable ───────────────────────────────────────────────────────
-
-public record DisableLoginProviderCommand(Guid Id);
-
-public class DisableLoginProviderHandler(IDocumentSession session, TimeProvider clock)
-{
-    public async Task<ErrorOr<LoginProvider>> Handle(DisableLoginProviderCommand command, CancellationToken ct)
-    {
-        var config = await session.LoadAsync<LoginProvider>(command.Id, ct);
-        if (config is null || config.IsDeleted)
-            return Error.NotFound("LoginProvider.NotFound", "Login provider not found.");
-
-        // Built-in providers are not toggleable from the admin surface. The
-        // seeded Internal provider must remain enabled — disabling it would
-        // strip every realm of password/passkey login.
-        if (config.IsBuiltIn)
-            return LoginProviderErrors.InternalNotEditable(config.DisplayName);
-
-        if (config.Enabled)
-        {
-            session.Events.Append(command.Id, new LoginProviderDisabledEvent(command.Id, clock.GetUtcNow()));
-            await session.SaveChangesAsync(ct);
-        }
-        return (await session.LoadAsync<LoginProvider>(command.Id, ct))!;
+        return null;
     }
 }
 

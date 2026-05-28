@@ -63,14 +63,11 @@ export const useLoginProviderStore = defineStore('login-provider', () => {
     return updated
   }
 
-  async function enable(id: string): Promise<LoginProviderDto> {
-    const updated = await http.addPath(id).addPath('enable').post<LoginProviderDto>({})
-    providers.value = upsert(providers.value, updated)
-    return updated
-  }
-
-  async function disable(id: string): Promise<LoginProviderDto> {
-    const updated = await http.addPath(id).addPath('disable').post<LoginProviderDto>({})
+  // Enable/disable is a partial update (PATCH) of just the Enabled property —
+  // no dedicated endpoint. Used by the grid's inline toggle; the edit modal
+  // stages Enabled in its form and sends it with the full save instead.
+  async function setEnabled(id: string, enabled: boolean): Promise<LoginProviderDto> {
+    const updated = await http.addPath(id).put<LoginProviderDto>({ Enabled: enabled })
     providers.value = upsert(providers.value, updated)
     return updated
   }
@@ -113,8 +110,7 @@ export const useLoginProviderStore = defineStore('login-provider', () => {
     loadOne,
     create,
     update,
-    enable,
-    disable,
+    setEnabled,
     rotateSecret,
     remove,
     testUserUpdate,

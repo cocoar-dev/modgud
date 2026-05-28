@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Modgud.Domain.Common;
 using BuildingBlocks.Helper;
 using ErrorOr;
 using Marten;
@@ -143,9 +144,9 @@ public static class LoginProvidersEndpoints
                    [FromServices] IServerConfiguration conf,
                    CancellationToken ct) =>
             {
-                JsonDocument? flavorData = request.FlavorData.HasValue
-                    ? JsonDocument.Parse(request.FlavorData.Value.GetRawText())
-                    : null;
+                Optional<JsonDocument> flavorData = request.FlavorData.HasValue
+                    ? new Optional<JsonDocument>(JsonDocument.Parse(request.FlavorData.Value.GetRawText()))
+                    : Optional<JsonDocument>.None;
                 var command = new UpdateLoginProviderCommand(
                     Id: id.Guid,
                     DisplayName: request.DisplayName,
@@ -161,7 +162,8 @@ public static class LoginProvidersEndpoints
                     AllowedEmailDomains: request.AllowedEmailDomains,
                     IconName: request.IconName,
                     ButtonColorHex: request.ButtonColorHex,
-                    FlavorData: flavorData);
+                    FlavorData: flavorData,
+                    Enabled: request.Enabled);
                 var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command, ct);
                 return result.Match<IResult>(
                     v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
@@ -169,33 +171,8 @@ public static class LoginProvidersEndpoints
             })
             .RequiresPermission("login-provider:write");
 
-        // Enable / Disable / Delete.
-        group.MapPost("{id}/enable",
-            async (ShortGuid id,
-                   [FromServices] IMessageBus bus,
-                   [FromServices] IServerConfiguration conf,
-                   CancellationToken ct) =>
-            {
-                var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new EnableLoginProviderCommand(id.Guid), ct);
-                return result.Match<IResult>(
-                    v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
-                    ErrorResponse);
-            })
-            .RequiresPermission("login-provider:write");
-
-        group.MapPost("{id}/disable",
-            async (ShortGuid id,
-                   [FromServices] IMessageBus bus,
-                   [FromServices] IServerConfiguration conf,
-                   CancellationToken ct) =>
-            {
-                var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new DisableLoginProviderCommand(id.Guid), ct);
-                return result.Match<IResult>(
-                    v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
-                    ErrorResponse);
-            })
-            .RequiresPermission("login-provider:write");
-
+        // Enable / Disable are folded into the PATCH update above (send
+        // { "Enabled": true|false }). Delete stays a dedicated verb.
         group.MapDelete("{id}",
             async (ShortGuid id,
                    [FromServices] IMessageBus bus,
@@ -298,21 +275,25 @@ public static class LoginProvidersEndpoints
         string? IconName = null,
         string? ButtonColorHex = null);
 
+    // PATCH semantics: every field is Optional<T>, so a caller can send just
+    // the properties it wants to change (e.g. the grid sends only Enabled to
+    // toggle a provider). Absent fields keep their current persisted value.
     public record UpdateLoginProviderRequest(
-        string DisplayName,
-        string? Description,
-        string ClientId,
-        List<string> Scopes,
-        string UserUpdateScript,
-        bool StoreRawClaims,
-        int? RawClaimsRetentionDays,
-        bool AutoCreateUsers,
-        bool AllowLinking,
-        bool TrustForEmailLink,
-        List<string>? AllowedEmailDomains,
-        string? IconName,
-        string? ButtonColorHex,
-        JsonElement? FlavorData);
+        Optional<string> DisplayName,
+        Optional<string?> Description,
+        Optional<string> ClientId,
+        Optional<List<string>> Scopes,
+        Optional<string> UserUpdateScript,
+        Optional<bool> StoreRawClaims,
+        Optional<int?> RawClaimsRetentionDays,
+        Optional<bool> AutoCreateUsers,
+        Optional<bool> AllowLinking,
+        Optional<bool> TrustForEmailLink,
+        Optional<List<string>?> AllowedEmailDomains,
+        Optional<string?> IconName,
+        Optional<string?> ButtonColorHex,
+        Optional<JsonElement> FlavorData,
+        Optional<bool> Enabled);
 
     public record RotateSecretRequest(string Secret);
 }
