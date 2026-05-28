@@ -59,8 +59,11 @@ jobs:
             const untMs = Number(process.env.UNTAGGED_DAYS) * 86400000;
             const now = Date.now();
 
-            const isRelease = t => /^\d+\.\d+\.\d+$/.test(t);            // X.Y.Z
-            const isImmutablePre = t => /^\d+\.\d+\.\d+-/.test(t);        // X.Y.Z-...
+            const isRelease = t => /^\d+\.\d+\.\d+$/.test(t);            // X.Y.Z (stable)
+            // immutable per-build version: prerelease `X.Y.Z-label.N` OR the
+            // label-less fallback `X.Y.Z.N` (emitted for branches GitVersion
+            // gives no pre-release label, e.g. `other`-type branches).
+            const isImmutablePre = t => /^\d+\.\d+\.\d+[.-]/.test(t);
 
             const versions = await github.paginate(
               github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
