@@ -12,7 +12,23 @@ public record FlavorConfigField(
     bool Required = false,
     string? HelpText = null,
     string? Placeholder = null,
-    object? Default = null);
+    object? Default = null,
+    string Section = FlavorConfigSections.Connection,
+    IReadOnlyList<FlavorConfigFieldOption>? Options = null);
+
+/// <summary>One choice for a <see cref="FlavorConfigFieldType.Select"/> field.</summary>
+public record FlavorConfigFieldOption(string Value, string Label);
+
+/// <summary>
+/// Logical grouping a <see cref="FlavorConfigField"/> belongs to. The admin UI
+/// renders each section in its own tab so common setup stays simple while every
+/// advanced knob remains reachable for fine-tuning.
+/// </summary>
+public static class FlavorConfigSections
+{
+    public const string Connection = "connection";
+    public const string Advanced = "advanced";
+}
 
 public enum FlavorConfigFieldType
 {
@@ -22,4 +38,5 @@ public enum FlavorConfigFieldType
     Boolean,
     Secret,
     StringList,
+    Select,
 }

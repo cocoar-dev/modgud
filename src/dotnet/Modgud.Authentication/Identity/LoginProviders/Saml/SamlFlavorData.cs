@@ -239,10 +239,23 @@ public sealed record SamlFlavorData
             ? el.GetBoolean()
             : null;
 
-    private static int? TryGetInt32(JsonElement root, string name) =>
-        TryGetPropertyCaseInsensitive(root, name, out var el) && el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out var n)
-            ? n
-            : null;
+    private static int? TryGetInt32(JsonElement root, string name)
+    {
+        if (!TryGetPropertyCaseInsensitive(root, name, out var el))
+            return null;
+
+        // Number form (canonical, written by ToJson).
+        if (el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out var n))
+            return n;
+
+        // String form — the admin UI's Select field submits the value as a
+        // string (e.g. "86400"). Tolerate it so the toggle round-trips.
+        if (el.ValueKind == JsonValueKind.String
+            && int.TryParse(el.GetString(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+            return parsed;
+
+        return null;
+    }
 
     private static IReadOnlyList<string> TryGetStringArray(JsonElement root, string name)
     {

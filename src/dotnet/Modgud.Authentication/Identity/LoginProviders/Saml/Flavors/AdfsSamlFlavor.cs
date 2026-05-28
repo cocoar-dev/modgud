@@ -50,7 +50,7 @@ public class AdfsSamlFlavor : ISamlFlavor
             Required: false,
             HelpText: "Paste the FederationMetadata.xml content from the AD FS host. Use when the URL isn't reachable from Modgud.",
             Placeholder: "<EntityDescriptor ..."),
-        .. SamlSigningConfigFields.All,
+        .. SamlAdvancedConfigFields.All,
     ];
 
     public SamlFlavorData ApplyDefaults(SamlFlavorData? data)

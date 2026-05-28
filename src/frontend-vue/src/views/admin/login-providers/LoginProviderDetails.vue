@@ -11,6 +11,7 @@ import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import type { FlavorConfigFieldDto, FlavorDto, LoginProviderDto } from '@/models/loginProvider'
 import UserUpdateScriptEditor from './UserUpdateScriptEditor.vue'
 import FlavorConnectionPanel from './panels/FlavorConnectionPanel.vue'
+import ClaimMapEditor from './panels/ClaimMapEditor.vue'
 
 const { t } = useI18n()
 const store = useLoginProviderStore()
@@ -19,7 +20,7 @@ const { navigateToModal } = useFragmentNavigation()
 const props = defineProps<{ id: string; close: (result?: unknown) => void }>()
 const isCreate = computed(() => props.id === 'create')
 
-const activeTab = ref<'general' | 'connection' | 'claims' | 'linking'>('general')
+const activeTab = ref<'general' | 'connection' | 'advanced' | 'claim-mapping' | 'claims' | 'linking'>('general')
 const loading = ref(false)
 const saving = ref(false)
 const error = ref<string | null>(null)
@@ -125,8 +126,33 @@ const modalTitle = computed(() => {
 })
 
 const redirectUri = computed(() => provider.value?.RedirectUri ?? '')
-const samlSpMetadataUrl = computed(() => provider.value?.SamlSpMetadataUrl ?? '')
-const samlAcsUrl = computed(() => provider.value?.SamlAcsUrl ?? '')
+
+// SAML SP-Metadata + ACS URLs depend only on the slug — the rest is the host
+// the request comes in on (matches the runtime SamlContextBuilder, which uses
+// req.Host). So we can show them live from the slug field, before save, instead
+// of waiting for the backend DTO (which derives them from configured PublicUrl
+// and can show an internal/unreachable host). Only shown for a valid slug.
+const samlUrlSlug = computed(() => {
+  const s = form.value.Slug.trim()
+  return SLUG_RE.test(s) ? s : ''
+})
+const samlSpMetadataUrl = computed(() =>
+  samlUrlSlug.value ? `${window.location.origin}/saml/${samlUrlSlug.value}/sp-metadata` : '',
+)
+const samlAcsUrl = computed(() =>
+  samlUrlSlug.value ? `${window.location.origin}/saml/${samlUrlSlug.value}/acs` : '',
+)
+
+// True when the selected flavor exposes any advanced-section fields (all SAML
+// flavors do; OIDC flavors don't today) — gates the "Advanced" tab.
+const hasAdvancedFields = computed(() =>
+  (flavor.value?.ConfigSchema ?? []).some((f) => (f.Section ?? 'connection') === 'advanced'),
+)
+
+// Re-init the claim-map editors when the provider/flavor identity changes
+// (load / flavor switch), without looping on every keystroke.
+const claimReloadKey = computed(() => `${flavorKey.value}:${provider.value?.Id ?? 'new'}`)
+
 
 // Flavor picker options. Grouped header label keeps the dropdown scan-friendly
 // once both OIDC + SAML flavors are in the list (today: 2 OIDC + 3 SAML).
@@ -509,6 +535,8 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
       <CoarTabGroup v-if="showProtocolTabs" v-model="activeTab">
         <CoarTab id="general">{{ t('admin.loginProviders.tabGeneral', {}, 'Allgemein') }}</CoarTab>
         <CoarTab id="connection">{{ t('admin.loginProviders.tabConnection', {}, 'Verbindung') }}</CoarTab>
+        <CoarTab v-if="hasAdvancedFields" id="advanced">{{ t('admin.loginProviders.tabAdvanced', {}, 'Erweitert') }}</CoarTab>
+        <CoarTab v-if="isSaml" id="claim-mapping">{{ t('admin.loginProviders.tabClaimMapping', {}, 'Claim-Mapping') }}</CoarTab>
         <CoarTab id="claims">{{ t('admin.loginProviders.tabUserUpdate', {}, 'User-Update-Script') }}</CoarTab>
         <CoarTab id="linking">{{ t('admin.loginProviders.tabLinking', {}, 'Verknüpfung & Richtlinien') }}</CoarTab>
       </CoarTabGroup>
@@ -545,28 +573,32 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
         <CoarFormField :label="t('common.description', {}, 'Beschreibung')">
           <CoarTextInput v-model="form.Description" :disabled="isBuiltIn" clearable />
         </CoarFormField>
-        <template v-if="!isInternal && !isCreate">
-          <!-- URLs: only meaningful once the provider exists — in Add mode they
-               appear after Save when the modal transitions to Edit mode. -->
-          <template v-if="isSaml">
-            <CoarFormField :label="t('admin.loginProviders.samlSpMetadataUrl', {}, 'SP-Metadata-URL (in die IdP-Konfiguration eintragen)')">
-              <div class="flex gap-2 items-center">
-                <CoarTextInput :model-value="samlSpMetadataUrl" readonly class="flex-1" />
-                <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlSpMetadataUrl)">
-                  {{ t('common.copy', {}, 'Kopieren') }}
-                </CoarButton>
-              </div>
-            </CoarFormField>
-            <CoarFormField :label="t('admin.loginProviders.samlAcsUrl', {}, 'ACS-URL / Reply-URL (in die IdP-Konfiguration eintragen)')">
-              <div class="flex gap-2 items-center">
-                <CoarTextInput :model-value="samlAcsUrl" readonly class="flex-1" />
-                <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlAcsUrl)">
-                  {{ t('common.copy', {}, 'Kopieren') }}
-                </CoarButton>
-              </div>
-            </CoarFormField>
-          </template>
-          <CoarFormField v-else :label="t('admin.loginProviders.redirectUri', {}, 'Redirect URI (in die IdP-App-Registrierung eintragen)')">
+        <!-- SAML SP URLs are slug-derived (host + /saml/{slug}/...), so we show
+             them live as soon as the slug is valid — including at create, before
+             save — so the admin can paste them into the IdP and set up both
+             sides in parallel. -->
+        <template v-if="isSaml && samlSpMetadataUrl">
+          <CoarFormField :label="t('admin.loginProviders.samlSpMetadataUrl', {}, 'SP-Metadata-URL (in die IdP-Konfiguration eintragen)')">
+            <div class="flex gap-2 items-center">
+              <CoarTextInput :model-value="samlSpMetadataUrl" readonly class="flex-1" />
+              <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlSpMetadataUrl)">
+                {{ t('common.copy', {}, 'Kopieren') }}
+              </CoarButton>
+            </div>
+          </CoarFormField>
+          <CoarFormField :label="t('admin.loginProviders.samlAcsUrl', {}, 'ACS-URL / Reply-URL (in die IdP-Konfiguration eintragen)')">
+            <div class="flex gap-2 items-center">
+              <CoarTextInput :model-value="samlAcsUrl" readonly class="flex-1" />
+              <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlAcsUrl)">
+                {{ t('common.copy', {}, 'Kopieren') }}
+              </CoarButton>
+            </div>
+          </CoarFormField>
+        </template>
+        <!-- OIDC redirect URI is server-derived on the persisted provider, so it
+             stays Edit-only (appears after Save). -->
+        <template v-if="!isInternal && !isSaml && !isCreate">
+          <CoarFormField :label="t('admin.loginProviders.redirectUri', {}, 'Redirect URI (in die IdP-App-Registrierung eintragen)')">
             <div class="flex gap-2 items-center">
               <CoarTextInput :model-value="redirectUri" readonly class="flex-1" />
               <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyRedirect">
@@ -593,6 +625,7 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
           <FlavorConnectionPanel
             v-if="flavor"
             :schema="flavor.ConfigSchema"
+            section="connection"
             v-model="form.FlavorData"
           />
           <template v-if="showOidcConnectionFields">
@@ -638,6 +671,45 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
               </template>
             </div>
           </template>
+        </div>
+
+        <!-- Advanced tab — shared SAML signing / NameID / encryption / refresh
+             knobs. Same set across all SAML flavors; only defaults differ. -->
+        <div v-show="activeTab === 'advanced'" class="tab-content">
+          <FlavorConnectionPanel
+            v-if="flavor"
+            :schema="flavor.ConfigSchema"
+            section="advanced"
+            v-model="form.FlavorData"
+          />
+        </div>
+
+        <!-- Claim-Mapping tab (SAML) — logical claim names → IdP attribute URIs,
+             and AuthnContextClassRef → AMR values. Editable so admins can adapt
+             when the IdP changes a claim URI. -->
+        <div v-show="activeTab === 'claim-mapping'" class="tab-content">
+          <div class="section-heading">{{ t('admin.loginProviders.attributeMap', {}, 'Attribut-Mapping (Claim → IdP-Attribut-URIs)') }}</div>
+          <ClaimMapEditor
+            :model-value="(form.FlavorData.attributeMap as Record<string, string[]>) ?? {}"
+            :reload-key="claimReloadKey"
+            :key-label="t('admin.loginProviders.claimLogicalName', {}, 'Claim (z. B. email, given_name)')"
+            :value-label="t('admin.loginProviders.claimUris', {}, 'SAML-Attribut-URIs (komma-getrennt)')"
+            key-placeholder="email"
+            value-placeholder="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress, email"
+            :add-label="t('admin.loginProviders.addMapping', {}, 'Mapping hinzufügen')"
+            @update:model-value="(v) => form.FlavorData = { ...form.FlavorData, attributeMap: v }"
+          />
+          <div class="section-heading mt-4">{{ t('admin.loginProviders.amrMapping', {}, 'AMR-Mapping (AuthnContextClassRef → AMR)') }}</div>
+          <ClaimMapEditor
+            :model-value="(form.FlavorData.amrMapping as Record<string, string[]>) ?? {}"
+            :reload-key="claimReloadKey"
+            :key-label="t('admin.loginProviders.amrClassRef', {}, 'AuthnContextClassRef-URI')"
+            :value-label="t('admin.loginProviders.amrValues', {}, 'AMR-Werte (komma-getrennt)')"
+            key-placeholder="urn:oasis:names:tc:SAML:2.0:ac:classes:MultiFactor"
+            value-placeholder="mfa"
+            :add-label="t('admin.loginProviders.addMapping', {}, 'Mapping hinzufügen')"
+            @update:model-value="(v) => form.FlavorData = { ...form.FlavorData, amrMapping: v }"
+          />
         </div>
 
         <!-- User-update script tab -->

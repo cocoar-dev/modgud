@@ -90,4 +90,8 @@ public record FlavorConfigFieldDto(
     bool Required,
     string? HelpText,
     string? Placeholder,
-    object? Default = null);
+    object? Default = null,
+    string Section = "connection",
+    IReadOnlyList<FlavorConfigFieldOptionDto>? Options = null);
+
+public record FlavorConfigFieldOptionDto(string Value, string Label);

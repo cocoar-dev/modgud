@@ -42,6 +42,11 @@ export interface LoginProviderDto {
   SamlAcsUrl?: string | null
 }
 
+export interface FlavorConfigFieldOptionDto {
+  Value: string
+  Label: string
+}
+
 export interface FlavorConfigFieldDto {
   Key: string
   Type: string
@@ -51,6 +56,10 @@ export interface FlavorConfigFieldDto {
   Placeholder?: string | null
   /** Default value seeded into the form on create (e.g. Boolean toggle defaults). */
   Default?: unknown
+  /** Logical grouping — 'connection' (default) or 'advanced'. Drives which tab renders the field. */
+  Section?: string
+  /** Choices for Select-type fields. */
+  Options?: FlavorConfigFieldOptionDto[] | null
 }
 
 export interface FlavorDto {
