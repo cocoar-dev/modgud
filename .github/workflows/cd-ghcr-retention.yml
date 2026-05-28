@@ -1,0 +1,128 @@
+name: CD - GHCR Retention
+
+# Prunes old Modgud container images from GHCR so storage stays bounded.
+# There is NO automatic GHCR retention policy configured on the package —
+# this workflow IS the cleanup (see dev-docs/future-features/versioning-publishing-conventions.md).
+#
+# Keep / delete rules (by tag shape):
+#   - release semver  `X.Y.Z`            → keep forever
+#   - moving pointers  `beta` `rc` `latest` and bare feature slugs
+#     (any tag with NO leading `X.Y.Z-`) → keep (they just move; feature
+#     slugs are removed by the delete-event job below when their branch goes)
+#   - immutable prerelease `X.Y.Z-<label>.N` (leading `X.Y.Z-`)
+#                                        → delete when older than PRERELEASE_DAYS
+#   - untagged versions                  → delete when older than UNTAGGED_DAYS
+#
+# SAFETY: dry_run defaults to TRUE. The scheduled run is dry until the
+# default below is flipped to 'false' after a manual dry-run dispatch has
+# been reviewed. Flip deliberately.
+
+on:
+  schedule:
+    - cron: '17 4 * * 0'   # weekly, Sunday 04:17 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Log what would be deleted without deleting'
+        type: boolean
+        required: false
+        default: true
+  delete:   # branch deleted (incl. PR auto-delete-on-merge) → drop its slug pointer
+
+permissions:
+  packages: write
+
+env:
+  ORG: cocoar-dev
+  PACKAGE: modgud
+  PRERELEASE_DAYS: '30'
+  UNTAGGED_DAYS: '7'
+
+jobs:
+  prune:
+    name: Prune old container versions
+    if: github.event_name != 'delete'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prune
+        uses: actions/github-script@v7
+        env:
+          # schedule has no inputs → defaults to 'true' (dry). Flip to 'false'
+          # here (or pass dry_run=false on dispatch) once verified.
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
+        with:
+          script: |
+            const org = process.env.ORG;
+            const pkg = process.env.PACKAGE;
+            const dryRun = process.env.DRY_RUN !== 'false';
+            const preMs = Number(process.env.PRERELEASE_DAYS) * 86400000;
+            const untMs = Number(process.env.UNTAGGED_DAYS) * 86400000;
+            const now = Date.now();
+
+            const isRelease = t => /^\d+\.\d+\.\d+$/.test(t);            // X.Y.Z
+            const isImmutablePre = t => /^\d+\.\d+\.\d+-/.test(t);        // X.Y.Z-...
+
+            const versions = await github.paginate(
+              github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
+              { package_type: 'container', package_name: pkg, org, per_page: 100 }
+            );
+
+            let kept = 0, deleted = 0;
+            for (const v of versions) {
+              const tags = v.metadata?.container?.tags ?? [];
+              const ageMs = now - new Date(v.created_at).getTime();
+              let reason = null;
+
+              if (tags.length === 0) {
+                if (ageMs > untMs) reason = `untagged, age ${(ageMs/86400000|0)}d`;
+              } else if (tags.some(isRelease)) {
+                // release semver present → keep forever
+              } else if (tags.every(isImmutablePre)) {
+                if (ageMs > preMs) reason = `prerelease ${tags.join(',')}, age ${(ageMs/86400000|0)}d`;
+              }
+              // else: bare moving pointer (beta/rc/latest/<slug>) → keep
+
+              if (!reason) { kept++; continue; }
+
+              if (dryRun) {
+                core.info(`[dry-run] would delete #${v.id} (${reason})`);
+              } else {
+                await github.rest.packages.deletePackageVersionForOrg({
+                  package_type: 'container', package_name: pkg, org, package_version_id: v.id,
+                });
+                core.info(`deleted #${v.id} (${reason})`);
+              }
+              deleted++;
+            }
+            core.notice(`${dryRun ? '[dry-run] ' : ''}kept ${kept}, ${dryRun ? 'would delete' : 'deleted'} ${deleted} (total ${versions.length})`);
+
+  slug-pointer-cleanup:
+    name: Drop feature-slug pointer on branch delete
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the deleted branch's slug-tagged image
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const org = process.env.ORG;
+            const pkg = process.env.PACKAGE;
+            const ref = context.payload.ref;  // deleted branch name
+            // GitVersion label for feat|feature|fix|bugfix branches = the part
+            // after the prefix; mirror that to find the moving pointer tag.
+            const m = ref.match(/^(?:feature|feat|bugfix|fix)[\/-](.+)$/);
+            if (!m) { core.info(`'${ref}' is not a feature-type branch — nothing to prune`); return; }
+            const slug = m[1].replace(/[^A-Za-z0-9._-]+/g, '-');
+            core.info(`Looking for slug pointer tag '${slug}'`);
+
+            const versions = await github.paginate(
+              github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
+              { package_type: 'container', package_name: pkg, org, per_page: 100 }
+            );
+            const hit = versions.find(v => (v.metadata?.container?.tags ?? []).includes(slug));
+            if (!hit) { core.info(`No image tagged '${slug}'`); return; }
+            await github.rest.packages.deletePackageVersionForOrg({
+              package_type: 'container', package_name: pkg, org, package_version_id: hit.id,
+            });
+            core.notice(`Deleted slug-pointer image #${hit.id} ('${slug}')`);
