@@ -63,11 +63,19 @@ public class EntraIdFlavorTests
     public class ConfigSchemaShape
     {
         [Fact]
-        public void Exposes_only_the_TenantId_field()
+        public void Connection_field_is_TenantId_plus_shared_advanced()
         {
             var schema = new EntraIdFlavor().ConfigSchema;
-            Assert.Single(schema);
-            Assert.Equal("TenantId", schema[0].Key);
+
+            var connection = schema.Where(f => f.Section == FlavorConfigSections.Connection).ToList();
+            Assert.Single(connection);
+            Assert.Equal("TenantId", connection[0].Key);
+
+            var advanced = schema.Where(f => f.Section == FlavorConfigSections.Advanced).Select(f => f.Key).ToList();
+            Assert.Contains("UsePkce", advanced);
+            Assert.Contains("GetClaimsFromUserInfoEndpoint", advanced);
+            Assert.Contains("SaveTokens", advanced);
+            Assert.Contains("Prompt", advanced);
         }
 
         [Fact]

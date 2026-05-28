@@ -39,6 +39,7 @@ public class GenericOidcFlavor : ILoginProviderFlavor
             Required: true,
             HelpText: "OpenID Connect discovery endpoint (well-known config URL).",
             Placeholder: "https://your-idp.example.com/.well-known/openid-configuration"),
+        .. OidcAdvancedConfigFields.All,
     ];
 
     public OidcEndpoints DeriveEndpoints(JsonDocument? flavorData)

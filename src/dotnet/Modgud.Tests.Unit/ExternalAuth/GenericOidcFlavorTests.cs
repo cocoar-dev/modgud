@@ -63,11 +63,21 @@ public class GenericOidcFlavorTests
     public class ConfigSchemaShape
     {
         [Fact]
-        public void Exposes_only_the_MetadataUri_field()
+        public void Connection_field_is_MetadataUri_plus_shared_advanced()
         {
             var schema = new GenericOidcFlavor().ConfigSchema;
-            Assert.Single(schema);
-            Assert.Equal("MetadataUri", schema[0].Key);
+
+            // Connection section: just the discovery URL.
+            var connection = schema.Where(f => f.Section == FlavorConfigSections.Connection).ToList();
+            Assert.Single(connection);
+            Assert.Equal("MetadataUri", connection[0].Key);
+
+            // Advanced section: the shared OIDC knobs.
+            var advanced = schema.Where(f => f.Section == FlavorConfigSections.Advanced).Select(f => f.Key).ToList();
+            Assert.Contains("UsePkce", advanced);
+            Assert.Contains("GetClaimsFromUserInfoEndpoint", advanced);
+            Assert.Contains("SaveTokens", advanced);
+            Assert.Contains("Prompt", advanced);
         }
 
         [Fact]

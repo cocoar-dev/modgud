@@ -128,22 +128,25 @@ const modalTitle = computed(() => {
   return provider.value?.DisplayName || ''
 })
 
-const redirectUri = computed(() => provider.value?.RedirectUri ?? '')
-
-// SAML SP-Metadata + ACS URLs depend only on the slug — the rest is the host
-// the request comes in on (matches the runtime SamlContextBuilder, which uses
-// req.Host). So we can show them live from the slug field, before save, instead
-// of waiting for the backend DTO (which derives them from configured PublicUrl
-// and can show an internal/unreachable host). Only shown for a valid slug.
-const samlUrlSlug = computed(() => {
+// Provider callback URLs depend only on the slug — the rest is the host the
+// request comes in on (matches the runtime handlers, which use req.Host). So we
+// show them live from the slug field, before save, instead of waiting for the
+// backend DTO (which derives them from configured PublicUrl and can show an
+// internal/unreachable host). Only shown for a valid slug.
+const urlSlug = computed(() => {
   const s = form.value.Slug.trim()
   return SLUG_RE.test(s) ? s : ''
 })
+// OIDC callback (/signin-oidc/{slug}) — the value the admin pastes into the IdP
+// app registration's redirect-URI list.
+const redirectUri = computed(() =>
+  urlSlug.value ? `${window.location.origin}/signin-oidc/${urlSlug.value}` : '',
+)
 const samlSpMetadataUrl = computed(() =>
-  samlUrlSlug.value ? `${window.location.origin}/saml/${samlUrlSlug.value}/sp-metadata` : '',
+  urlSlug.value ? `${window.location.origin}/saml/${urlSlug.value}/sp-metadata` : '',
 )
 const samlAcsUrl = computed(() =>
-  samlUrlSlug.value ? `${window.location.origin}/saml/${samlUrlSlug.value}/acs` : '',
+  urlSlug.value ? `${window.location.origin}/saml/${urlSlug.value}/acs` : '',
 )
 
 // True when the selected flavor exposes any advanced-section fields (all SAML
@@ -586,9 +589,10 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
             </div>
           </CoarFormField>
         </template>
-        <!-- OIDC redirect URI is server-derived on the persisted provider, so it
-             stays Edit-only (appears after Save). -->
-        <template v-if="!isInternal && !isSaml && !isCreate">
+        <!-- OIDC redirect URI is slug-derived (host + /signin-oidc/{slug}), so we
+             show it live as soon as the slug is valid — create + edit — letting
+             the admin paste it into the IdP app registration before save. -->
+        <template v-if="!isInternal && !isSaml && redirectUri">
           <CoarFormField :label="t('admin.loginProviders.redirectUri', {}, 'Redirect URI (in die IdP-App-Registrierung eintragen)')">
             <div class="flex gap-2 items-center">
               <CoarTextInput :model-value="redirectUri" readonly class="flex-1" />

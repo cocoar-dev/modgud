@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -113,6 +114,14 @@ public class DynamicOidcSchemeManager(
         var signoutCallbackPath = $"/signout-callback-oidc/{config.Slug}";
         var clientSecret = secrets.TryDecrypt(config.ClientSecretEncrypted);
 
+        // Admin-configurable advanced settings (Connection → Advanced tab),
+        // stored in FlavorData. Defaults match the values previously hard-coded
+        // here, so providers that never touched them behave identically.
+        var usePkce = ReadBool(config.FlavorData, "UsePkce", true);
+        var getClaimsFromUserInfo = ReadBool(config.FlavorData, "GetClaimsFromUserInfoEndpoint", true);
+        var saveTokens = ReadBool(config.FlavorData, "SaveTokens", false);
+        var prompt = ReadString(config.FlavorData, "Prompt");
+
         var options = new OpenIdConnectOptions
         {
             ClientId = config.ClientId,
@@ -120,9 +129,9 @@ public class DynamicOidcSchemeManager(
             Authority = endpoints.Authority,
             MetadataAddress = endpoints.MetadataUri,
             ResponseType = OpenIdConnectResponseType.Code,
-            UsePkce = true,
-            SaveTokens = false,
-            GetClaimsFromUserInfoEndpoint = true,
+            UsePkce = usePkce,
+            SaveTokens = saveTokens,
+            GetClaimsFromUserInfoEndpoint = getClaimsFromUserInfo,
             CallbackPath = callbackPath,
             SignedOutCallbackPath = signoutCallbackPath,
             SignInScheme = IdentityConstants.ExternalScheme,
@@ -175,6 +184,11 @@ public class DynamicOidcSchemeManager(
 
         // RequireHttpsMetadata OFF in Development (localhost IdP, test OIDC server).
         options.RequireHttpsMetadata = env.IsProduction();
+
+        // Optional 'prompt' parameter — only when the admin picked one; empty
+        // means "don't send prompt" (the IdP decides).
+        if (!string.IsNullOrWhiteSpace(prompt))
+            options.Prompt = prompt;
 
         // Identity.External cookie is configured in Program.cs via AddCookie
         // — we must not touch IOptionsMonitorCache<CookieAuthenticationOptions>
@@ -257,4 +271,25 @@ public class DynamicOidcSchemeManager(
             .ToList();
     }
 
+    // OIDC FlavorData stores the admin form's ConfigSchema keys verbatim
+    // (PascalCase, e.g. "UsePkce") — there's no camelCase re-serialization on
+    // the OIDC side — so a direct PascalCase lookup is sufficient.
+    private static bool ReadBool(JsonDocument? doc, string name, bool fallback)
+    {
+        if (doc is null || doc.RootElement.ValueKind != JsonValueKind.Object)
+            return fallback;
+        return doc.RootElement.TryGetProperty(name, out var el)
+               && (el.ValueKind == JsonValueKind.True || el.ValueKind == JsonValueKind.False)
+            ? el.GetBoolean()
+            : fallback;
+    }
+
+    private static string? ReadString(JsonDocument? doc, string name)
+    {
+        if (doc is null || doc.RootElement.ValueKind != JsonValueKind.Object)
+            return null;
+        return doc.RootElement.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.String
+            ? el.GetString()
+            : null;
+    }
 }
