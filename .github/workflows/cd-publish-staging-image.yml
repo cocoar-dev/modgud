@@ -1,29 +1,22 @@
-name: CD - Publish Staging Image
+name: CD - Publish Image (GHCR)
 
-# Builds the Modgud Docker image and pushes it to GHCR with the
-# `:staging` tag. Auto-runs on every push to `develop` (post-merge),
-# and is also available as a manual workflow_dispatch for re-pushes
-# when develop hasn't moved (e.g. recovering from a staging-side
-# config reset).
+# Builds the Modgud Docker image and pushes it to GHCR. Auto-runs on
+# every push to `develop`; also available as a manual workflow_dispatch
+# (e.g. to publish a feature-branch image on demand for test-server use).
 #
-# This is a *publish*, not a deploy: the workflow's job ends with
-# `docker push` to ghcr.io/cocoar-dev/modgud:staging. Whatever pulls
-# that tag and runs it on a staging server (Watchtower, a cron, a
-# human) lives outside the workflow.
+# This is a *publish*, not a deploy: the job ends with `docker push`.
+# Whatever pulls + runs it (Watchtower, a cron, a human) lives outside.
 #
-# Tagging strategy: only `:staging`. Each push overwrites the
-# pointer; the previous image becomes untagged. The GHCR package
-# retention policy (configured on the package settings page on
-# GitHub.com) is expected to delete untagged versions older than
-# N days, which keeps storage bounded without workflow-side cleanup
-# code. The `cd-release.yml` candidate-<run-id> tags follow the
-# same cleanup model.
+# Tagging (see dev-docs/future-features/versioning-publishing-conventions.md):
+#   develop push     → :<version> + :beta    (e.g. :0.6.0-beta.5 + :beta)
+#   feature dispatch → :<version> + :<slug>  (e.g. :0.6.0-saml-federation.8 + :saml-federation)
+# `:<version>` is immutable per commit; the moving pointer (:beta / :<slug>)
+# follows the branch head. `:staging` is retired. Release tags (:X.Y.Z,
+# :latest) come from cd-release.yml. Exact commit is in the OCI `revision`
+# label. Storage is bounded by cd-ghcr-retention.yml — there is NO auto
+# GHCR retention policy configured, so cleanup is an explicit workflow.
 #
-# Path filtering: docs-only or markdown-only commits skip the build
-# (no need to rebuild the image for a typo fix). The full path
-# filter lives in the changes-detector job in `ci.yml`; here we use
-# a lighter `paths-ignore` because there's only one publishable
-# output and we don't gate per-component.
+# Path filtering: docs-only / markdown-only commits skip the build.
 
 on:
   push:
@@ -55,6 +48,7 @@ jobs:
     outputs:
       version: ${{ steps.build_version.outputs.VERSION }}
       semver: ${{ steps.gv.outputs.version }}
+      label: ${{ steps.gv.outputs.pre-release-label }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -142,13 +136,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push staging image
+      - name: Compute tags
+        id: tags
+        run: |
+          BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          VERSION="${{ needs.version.outputs.version }}"
+          LABEL="${{ needs.version.outputs.label }}"
+          {
+            echo "list<<EOF"
+            echo "$BASE:$VERSION"
+            if [ -n "$LABEL" ]; then echo "$BASE:$LABEL"; fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Tags: $VERSION${LABEL:+ + $LABEL}"
+
+      - name: Build and push image
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./docker/Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging
+          tags: ${{ steps.tags.outputs.list }}
           labels: |
             org.opencontainers.image.version=${{ needs.version.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -156,10 +164,10 @@ jobs:
       - name: Publish summary
         run: |
           {
-            echo "### Staging image published"
+            echo "### Image published to GHCR"
             echo ""
-            echo "**Version:** ${{ needs.version.outputs.version }}"
-            echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging\`"
+            echo "**Version (immutable):** \`${{ needs.version.outputs.version }}\`"
+            echo "**Moving tag:** \`${{ needs.version.outputs.label }}\`"
             echo "**Commit:** \`${{ github.sha }}\`"
-            echo "**Trigger:** ${{ github.event_name == 'push' && format('Auto-push from {0}', github.ref_name) || format('Manual: {0}', github.event.inputs.reason) }}"
+            echo "**Trigger:** ${{ github.event_name == 'push' && format('Auto-push from {0}', github.ref_name) || 'Manual dispatch' }}"
           } >> "$GITHUB_STEP_SUMMARY"
