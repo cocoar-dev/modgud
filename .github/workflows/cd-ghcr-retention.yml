@@ -4,18 +4,23 @@ name: CD - GHCR Retention
 # There is NO automatic GHCR retention policy configured on the package —
 # this workflow IS the cleanup (see dev-docs/future-features/versioning-publishing-conventions.md).
 #
-# Keep / delete rules (by tag shape):
-#   - release semver  `X.Y.Z`            → keep forever
-#   - moving pointers  `beta` `rc` `latest` and bare feature slugs
-#     (any tag with NO leading `X.Y.Z-`) → keep (they just move; feature
-#     slugs are removed by the delete-event job below when their branch goes)
-#   - immutable prerelease `X.Y.Z-<label>.N` (leading `X.Y.Z-`)
-#                                        → delete when older than PRERELEASE_DAYS
-#   - untagged versions                  → delete when older than UNTAGGED_DAYS
+# Keep / age model (everything is age-based; no per-event immediate deletes):
+#   KEEP forever — any version whose tags include:
+#     - a release semver `X.Y.Z`
+#     - a long-lived moving pointer: `latest`, `beta`, `rc`
+#   AGE OUT — every other version:
+#     - untagged layers            → delete when older than UNTAGGED_DAYS
+#     - anything else tagged        → delete when older than AGED_DAYS
+#       (immutable prereleases `X.Y.Z-…N` / `X.Y.Z.N`, AND feature-slug moving
+#        pointers like `:saml-federation`)
 #
-# SAFETY: dry_run defaults to TRUE. The scheduled run is dry until the
-# default below is flipped to 'false' after a manual dry-run dispatch has
-# been reviewed. Flip deliberately.
+# Grace period for feature branches: a `:slug` pointer sits on the branch's
+# latest build. While the branch is built it stays fresh; once it's merged /
+# abandoned and stops building, that build ages and is pruned after AGED_DAYS.
+# So a merged branch's image lingers ~AGED_DAYS, not deleted on the spot.
+#
+# SAFETY: dry_run defaults to TRUE, including the scheduled run, until the
+# default below is flipped to 'false' after a reviewed dry-run dispatch.
 
 on:
   schedule:
@@ -27,7 +32,6 @@ on:
         type: boolean
         required: false
         default: true
-  delete:   # branch deleted (incl. PR auto-delete-on-merge) → drop its slug pointer
 
 permissions:
   packages: write
@@ -35,13 +39,12 @@ permissions:
 env:
   ORG: cocoar-dev
   PACKAGE: modgud
-  PRERELEASE_DAYS: '30'
+  AGED_DAYS: '30'
   UNTAGGED_DAYS: '7'
 
 jobs:
   prune:
     name: Prune old container versions
-    if: github.event_name != 'delete'
     runs-on: ubuntu-latest
     steps:
       - name: Prune
@@ -55,15 +58,13 @@ jobs:
             const org = process.env.ORG;
             const pkg = process.env.PACKAGE;
             const dryRun = process.env.DRY_RUN !== 'false';
-            const preMs = Number(process.env.PRERELEASE_DAYS) * 86400000;
+            const agedMs = Number(process.env.AGED_DAYS) * 86400000;
             const untMs = Number(process.env.UNTAGGED_DAYS) * 86400000;
             const now = Date.now();
 
-            const isRelease = t => /^\d+\.\d+\.\d+$/.test(t);            // X.Y.Z (stable)
-            // immutable per-build version: prerelease `X.Y.Z-label.N` OR the
-            // label-less fallback `X.Y.Z.N` (emitted for branches GitVersion
-            // gives no pre-release label, e.g. `other`-type branches).
-            const isImmutablePre = t => /^\d+\.\d+\.\d+[.-]/.test(t);
+            const KEEP_LABELS = new Set(['latest', 'beta', 'rc']);
+            const isRelease = t => /^\d+\.\d+\.\d+$/.test(t);   // X.Y.Z (stable)
+            const isKeep = t => isRelease(t) || KEEP_LABELS.has(t);
 
             const versions = await github.paginate(
               github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
@@ -73,20 +74,19 @@ jobs:
             let kept = 0, deleted = 0;
             for (const v of versions) {
               const tags = v.metadata?.container?.tags ?? [];
-              const ageMs = now - new Date(v.created_at).getTime();
+              const ageDays = (now - new Date(v.created_at).getTime()) / 86400000;
               let reason = null;
 
-              if (tags.length === 0) {
-                if (ageMs > untMs) reason = `untagged, age ${(ageMs/86400000|0)}d`;
-              } else if (tags.some(isRelease)) {
-                // release semver present → keep forever
-              } else if (tags.every(isImmutablePre)) {
-                if (ageMs > preMs) reason = `prerelease ${tags.join(',')}, age ${(ageMs/86400000|0)}d`;
+              if (tags.some(isKeep)) {
+                // keep forever (release semver or a long-lived pointer)
+              } else if (tags.length === 0) {
+                if (ageDays * 86400000 > untMs) reason = `untagged, ${ageDays|0}d`;
+              } else {
+                // immutable prereleases + feature-slug pointers → age out
+                if (ageDays * 86400000 > agedMs) reason = `${tags.join(',')}, ${ageDays|0}d`;
               }
-              // else: bare moving pointer (beta/rc/latest/<slug>) → keep
 
               if (!reason) { kept++; continue; }
-
               if (dryRun) {
                 core.info(`[dry-run] would delete #${v.id} (${reason})`);
               } else {
@@ -98,34 +98,3 @@ jobs:
               deleted++;
             }
             core.notice(`${dryRun ? '[dry-run] ' : ''}kept ${kept}, ${dryRun ? 'would delete' : 'deleted'} ${deleted} (total ${versions.length})`);
-
-  slug-pointer-cleanup:
-    name: Drop feature-slug pointer on branch delete
-    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete the deleted branch's slug-tagged image
-        continue-on-error: true
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const org = process.env.ORG;
-            const pkg = process.env.PACKAGE;
-            const ref = context.payload.ref;  // deleted branch name
-            // GitVersion label for feat|feature|fix|bugfix branches = the part
-            // after the prefix; mirror that to find the moving pointer tag.
-            const m = ref.match(/^(?:feature|feat|bugfix|fix)[\/-](.+)$/);
-            if (!m) { core.info(`'${ref}' is not a feature-type branch — nothing to prune`); return; }
-            const slug = m[1].replace(/[^A-Za-z0-9._-]+/g, '-');
-            core.info(`Looking for slug pointer tag '${slug}'`);
-
-            const versions = await github.paginate(
-              github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
-              { package_type: 'container', package_name: pkg, org, per_page: 100 }
-            );
-            const hit = versions.find(v => (v.metadata?.container?.tags ?? []).includes(slug));
-            if (!hit) { core.info(`No image tagged '${slug}'`); return; }
-            await github.rest.packages.deletePackageVersionForOrg({
-              package_type: 'container', package_name: pkg, org, package_version_id: hit.id,
-            });
-            core.notice(`Deleted slug-pointer image #${hit.id} ('${slug}')`);

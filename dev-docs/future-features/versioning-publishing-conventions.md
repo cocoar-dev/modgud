@@ -77,19 +77,21 @@ Not applicable today — Modgud publishes no npm package. **If ever added → sa
 
 There is **nothing to clean on the NuGet side**: nuget.org is permanent-by-design (managed via gating + unlisting), and feature `.nupkg`s are workflow artifacts that auto-expire. So retention is a **single GHCR-Docker job** (`cd-ghcr-retention.yml`, cron weekly + dispatch).
 
+**Keep-or-age model** (everything age-based; no per-event immediate deletes):
+
 | Class | Lifecycle |
 |---|---|
-| Release `:X.Y.Z` + `:latest` | keep forever |
-| Moving pointers on long-lived branches: `:beta`, `:rc` | keep (they just move) |
-| **Feature-slug moving pointers `:saml-federation`** | **delete on branch-delete** (`pull_request: closed` / delete hook) — the branch is gone, the pointer is a tombstone. Distinct lifecycle from `:beta`/`:rc`. |
-| Immutable prerelease tags `:…-beta.N` / `:…-<slug>.N` | 30 days (feature maybe shorter, e.g. 14) |
-| untagged layers | 7 days |
+| Version tagged with a release semver `X.Y.Z`, or a long-lived pointer `:latest` / `:beta` / `:rc` | **keep forever** |
+| Everything else tagged — immutable prereleases (`X.Y.Z-…N` / `X.Y.Z.N`) **and** feature-slug pointers (`:saml-federation`) | delete when older than `AGED_DAYS` (30) |
+| untagged layers | delete when older than `UNTAGGED_DAYS` (7) |
 
-Use a maintained container-cleanup action (`dataaxiom/ghcr-cleanup-action` or `snok/container-retention-policy` — verify API at implementation). Also fix the misleading "GHCR retention policy is expected to delete untagged" comment in `cd-publish-staging-image.yml` — no such policy is configured today (that's the "nothing cleans up" symptom).
+**Feature-branch grace period:** a `:slug` pointer sits on the branch's latest build. While the branch keeps building, that build stays fresh; once the branch is merged/abandoned and stops building, the build ages and is pruned after `AGED_DAYS`. So a merged branch's image lingers ~30 days, **not deleted on the spot**. (Earlier draft used an immediate `delete`-event hook — dropped in favour of this gentler age-out.)
+
+Implemented directly against the GitHub Packages API in `github-script` (full control over keep/age rules; no third-party action). The `cd-publish-staging-image.yml` comment that claimed "GHCR retention policy is expected to delete untagged" was corrected — no such policy is configured (that was the "nothing cleans up" symptom).
 
 ## Implementation sequence
 
-1. **Retention workflow** (GHCR) first — bound storage before new tag classes appear. + the `pull_request: closed` feature-slug cleanup.
+1. **Retention workflow** (GHCR) first — bound storage before new tag classes appear (scheduled keep-or-age, dry-run by default).
 2. **Docker tag matrix** — compute-tags step, drop `:staging`, reach `pre-release-label` through to the publish job.
 3. **NuGet feed-gate** — `develop` → nuget.org (gated); feature dispatch → artifact only, no push.
 
