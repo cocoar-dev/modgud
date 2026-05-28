@@ -12,6 +12,7 @@ using Modgud.Api.Features.Users.Queries;
 using Modgud.Application.DTOs.User;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Events;
+using Modgud.Authentication.Sessions;
 using Modgud.Domain.ValueObjects;
 
 using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
@@ -91,7 +92,7 @@ public static class UsersEndpoints
             .RequiresPermission("user:write");
 
         userGroup.MapPut("{id}", async (ShortGuid id, IMessageBus bus, UserUpdateDto dto,
-            IDocumentSession session, HttpContext context) =>
+            IDocumentSession session, IUserAccessRevoker accessRevoker, HttpContext context) =>
             {
                 // 1. Update profile
                 var command = new UpdateUserCommand(
@@ -105,12 +106,14 @@ public static class UsersEndpoints
                 if (result.IsError) return result.ToResult();
 
                 // 2. Toggle active if changed
+                var deactivated = false;
                 if (dto.IsActive.HasValue)
                 {
                     var person = await session.LoadAsync<Person>(id.Guid);
                     if (person is not null && !person.IsDeleted)
                     {
                         var appUser = await session.LoadAsync<ApplicationUser>(id.Guid);
+                        var wasActive = appUser?.IsActive ?? true;
                         if (appUser is not null)
                         {
                             appUser.IsActive = dto.IsActive.Value;
@@ -119,7 +122,12 @@ public static class UsersEndpoints
                         if (dto.IsActive.Value)
                             session.Events.Append(id.Guid, new UserActivatedEvent(id.Guid));
                         else
+                        {
                             session.Events.Append(id.Guid, new UserDeactivatedEvent(id.Guid));
+                            // Only a real active→inactive transition needs the kill
+                            // switch — a no-op re-deactivate shouldn't churn the stamp.
+                            deactivated = wasActive;
+                        }
                     }
                 }
 
@@ -140,6 +148,14 @@ public static class UsersEndpoints
                 // Role management happens via Groups — no direct user→role assignments exist.
 
                 await session.SaveChangesAsync();
+
+                // Deactivation is a kill switch: revoke live access (OAuth grants +
+                // sessions + cookie) AFTER the IsActive flip is committed. Consent
+                // grants are kept (Deactivation reason) so reactivation is seamless.
+                // No ct passed: the revoke deliberately runs to completion even if
+                // the client disconnects (a kill switch must not be half-applied).
+                if (deactivated)
+                    await accessRevoker.RevokeAllAccessAsync(id.Guid, AccessRevocationReason.Deactivation);
 
                 // Return optimistic result — SignalR will push the real update
                 // after the async projection processes the events
@@ -215,13 +231,15 @@ public static class UsersEndpoints
             .RequiresPermission("user:write");
 
         // Toggle user active/inactive
-        userGroup.MapPut("{id}/active", async (ShortGuid id, SetActiveDto dto, IDocumentSession session) =>
+        userGroup.MapPut("{id}/active", async (ShortGuid id, SetActiveDto dto,
+            IDocumentSession session, IUserAccessRevoker accessRevoker) =>
             {
                 var person = await session.LoadAsync<Person>(id.Guid);
                 if (person is null || person.IsDeleted)
                     return Results.NotFound(new { Message = "User not found" });
 
                 var appUser = await session.LoadAsync<ApplicationUser>(id.Guid);
+                var wasActive = appUser?.IsActive ?? true;
                 if (appUser is not null)
                 {
                     appUser.IsActive = dto.IsActive;
@@ -234,6 +252,12 @@ public static class UsersEndpoints
                     session.Events.Append(id.Guid, new UserDeactivatedEvent(id.Guid));
 
                 await session.SaveChangesAsync();
+
+                // Deactivation kills live access (tokens + sessions + cookie),
+                // keeping consent grants so reactivation is seamless. Only on a real
+                // active→inactive transition; runs to completion (no ct) as a kill switch.
+                if (!dto.IsActive && wasActive)
+                    await accessRevoker.RevokeAllAccessAsync(id.Guid, AccessRevocationReason.Deactivation);
 
                 return Results.Ok(new { IsActive = dto.IsActive });
             })

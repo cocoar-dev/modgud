@@ -183,6 +183,17 @@ public static class MartenStoreOptionsExtensions
         options.Events.AddMaskingRuleForProtectedInformation<UserLoginFailedEvent>(e =>
             new UserLoginFailedEvent(e.UserId, IpAddress: null));
 
+        // External identity-link streams carry the same class of PII on their
+        // OWN streams: Email/DisplayName/Subject on the link event, and the raw
+        // IdP claim payload + script output (which can echo any upstream claim)
+        // on the per-login script-recorded event. A GDPR erase masks these
+        // alongside the user stream (see GdprService.PerformPermanentEraseAsync).
+        options.Events.AddMaskingRuleForProtectedInformation<ExternalIdentityLinkedEvent>(e =>
+            e with { Subject = "[DELETED]", Email = "[DELETED]", DisplayName = "[DELETED]" });
+
+        options.Events.AddMaskingRuleForProtectedInformation<ExternalIdentityScriptRecordedEvent>(e =>
+            e with { ScriptOutput = null, ScriptError = null, RawClaims = null, Email = "[DELETED]", DisplayName = "[DELETED]" });
+
         // External-auth projections — inline (login flow reads these synchronously)
         options.Projections.Add<LoginProviderProjection>(ProjectionLifecycle.Inline);
         options.Projections.Add<ExternalIdentityLinkProjection>(ProjectionLifecycle.Inline);

@@ -32,15 +32,19 @@ public static class AdminSessionEndpoints
         .WithName("Admin_Sessions_List")
         .RequiresPermission("session:read");
 
-        // DELETE /api/admin/users/{id}/sessions — force-logout a target user
+        // DELETE /api/admin/users/{id}/sessions — force-logout a target user.
+        // A real kill switch: revoke OAuth tokens + device sessions + rotate the
+        // security stamp (so the cookie dies at the next validation pass). Consent
+        // grants are kept (ForceSignOut) — the account stays active and the user
+        // can log back in.
         group.MapDelete("{id}/sessions", async (
             string id,
-            ISessionService svc,
+            IUserAccessRevoker accessRevoker,
             CancellationToken ct) =>
         {
             var userId = ShortGuid.Decode(id);
-            var result = await svc.RevokeAllSessionsAsync(userId, exceptSessionId: null, ct);
-            return result.IsError ? result.ToResult() : Results.NoContent();
+            await accessRevoker.RevokeAllAccessAsync(userId, AccessRevocationReason.ForceSignOut, ct);
+            return Results.NoContent();
         })
         .WithName("Admin_Sessions_RevokeAll")
         .RequiresPermission("session:write");
