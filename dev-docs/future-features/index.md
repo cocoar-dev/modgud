@@ -13,6 +13,16 @@ to re-derive the analysis from scratch.
 / Zitadel, Verdict, und Backlog-Tabelle mit allen offenen Punkten und
 Severity. Detail-Pages unten.
 
+⭐ **Aktive Architektur-Aufdröselung (2026-05-28):**
+[Identity-Lifecycle Untangle + Federation group-sync](./identity-lifecycle-untangle)
+— entwirrt das verkoppelte Cluster (external-login-Modell, unlink/tombstone,
+delete-Pfade, soft-delete/grace, email-unique, membership-scripts,
+hub-vs-broker). Enthält die web-recherchierte Prior-Art-Analyse
+(Keycloak/Okta/Entra/Auth0/Zitadel/Ping) + das empfohlene **fail-closed,
+lease-basierte, herkunfts-attribuierte** Membership-Modell für
+Federation-Broker-Mode. Bei Lifecycle-/Federation-/Membership-Arbeit
+zuerst lesen.
+
 ### Audit-Followups (in Severity-Reihenfolge)
 
 - Observability — OpenTelemetry / Metrics / Tracing — ✅ shipped (see
