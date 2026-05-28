@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import {
   CoarTextInput, CoarFormField, CoarCheckbox, CoarTabGroup, CoarTab,
-  CoarButton, CoarIcon, CoarNote, CoarSelect,
+  CoarButton, CoarIcon, CoarNote, CoarSelect, CoarSwitch,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation } from '@cocoar/vue-fragment-parser'
@@ -514,21 +514,21 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
               : (flavor?.DisplayName ?? provider?.Flavor) }}
           </span>
         </div>
-        <!-- Enabled toggle only on existing providers — in Add mode the
+        <!-- Enabled switch only on existing providers — in Add mode the
              security default is Enabled=false (admin enables explicitly after
-             smoke-test). -->
-        <CoarButton
+             smoke-test). Bound to provider.Enabled (source of truth, set only
+             on a successful enable/disable), so a failed enable — e.g. the SAML
+             readiness gate rejecting "no metadata" — snaps the switch back and
+             surfaces the error rather than leaving a lying UI state. -->
+        <CoarSwitch
           v-if="provider && !isBuiltIn"
-          size="s"
-          :variant="provider.Enabled ? 'primary' : 'ghost'"
-          :icon-start="provider.Enabled ? 'circle-check' : 'circle-off'"
+          :model-value="provider.Enabled"
           :disabled="saving"
-          @click="toggleEnabled"
-        >
-          {{ provider.Enabled
+          :label="provider.Enabled
             ? t('admin.loginProviders.enabled', {}, 'Aktiviert')
-            : t('admin.loginProviders.disabled', {}, 'Deaktiviert') }}
-        </CoarButton>
+            : t('admin.loginProviders.disabled', {}, 'Deaktiviert')"
+          @update:model-value="toggleEnabled"
+        />
         <div v-if="error" class="error-banner flex-1">{{ error }}</div>
       </div>
 

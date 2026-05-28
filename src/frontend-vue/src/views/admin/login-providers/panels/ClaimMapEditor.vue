@@ -1,16 +1,19 @@
 <script setup lang="ts">
 /**
- * Structured editor for a SAML `key → string[]` map (AttributeMap: logical
- * claim name → IdP attribute URIs; AmrMapping: AuthnContextClassRef → AMR
- * values). Lets admins fine-tune the mapping when an IdP changes a claim URI,
- * instead of being stuck with the flavor's seeded defaults.
+ * Inline-editable `key → string[]` map editor, built on the shared data-grid
+ * (same component the admin lists use, mirroring EditableStringList). Used for
+ * SAML AttributeMap (logical claim name → IdP attribute URIs) and AmrMapping
+ * (AuthnContextClassRef URI → AMR values) so admins can fine-tune the mapping
+ * when an IdP changes a claim URI instead of being stuck with seeded defaults.
  *
- * Rows are the local editing source of truth; they re-initialise from
- * `modelValue` only when `reloadKey` changes (provider/flavor switch), which
- * avoids an update→reinit feedback loop while typing.
+ * Each row's value list is edited as a comma-separated string and split on
+ * emit. Rows re-initialise from `modelValue` only when `reloadKey` changes
+ * (provider/flavor switch) to avoid clobbering an in-progress edit.
  */
 import { ref, watch } from 'vue'
-import { CoarTextInput, CoarButton } from '@cocoar/vue-ui'
+import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
+import { CoarButton } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 
 const props = withDefaults(defineProps<{
   modelValue: Record<string, string[]> | undefined
@@ -27,25 +30,31 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: Record<string, string[]>): void
 }>()
 
-interface Row { key: string; values: string }
+const { t } = useI18n()
+
+interface Row { id: string; key: string; values: string }
+
+let counter = 0
+const newId = () => `cm-${Date.now()}-${counter++}`
 
 const rows = ref<Row[]>([])
 
 function fromMap(m: Record<string, string[]> | undefined): Row[] {
   return Object.entries(m ?? {}).map(([key, values]) => ({
+    id: newId(),
     key,
     values: (Array.isArray(values) ? values : []).join(', '),
   }))
 }
 
-function toMap(): Record<string, string[]> {
+function emitChange() {
   const out: Record<string, string[]> = {}
   for (const r of rows.value) {
     const k = r.key.trim()
     if (!k) continue
     out[k] = r.values.split(',').map((s) => s.trim()).filter(Boolean)
   }
-  return out
+  emit('update:modelValue', out)
 }
 
 watch(
@@ -54,47 +63,56 @@ watch(
   { immediate: true },
 )
 
-function emitChange() {
-  emit('update:modelValue', toMap())
-}
-
 function addRow() {
-  rows.value.push({ key: '', values: '' })
+  rows.value = [...rows.value, { id: newId(), key: '', values: '' }]
+  // No emit — an empty row doesn't count until the user types + commits.
 }
 
-function removeRow(i: number) {
-  rows.value.splice(i, 1)
+function removeRow(id: string) {
+  rows.value = rows.value.filter((r) => r.id !== id)
   emitChange()
 }
+
+const builder = CoarGridBuilder.create<Row>()
+  .rowDataRef(rows)
+  .option('getRowId', (p: any) => p.data.id)
+  .stopEditingWhenCellsLoseFocus(true)
+  .columns([
+    (col) =>
+      col
+        .text('key', (c) => c.placeholder(props.keyPlaceholder))
+        .editable(true)
+        .header(props.keyLabel)
+        .flex(1),
+    (col) =>
+      col
+        .wrap(
+          col
+            .text('values', (c) => c.placeholder(props.valuePlaceholder))
+            .editable(true)
+            .header(props.valueLabel)
+            .flex(2),
+        )
+        .right({
+          icon: 'trash-2',
+          size: 's',
+          color: 'var(--coar-text-neutral-secondary, #9ca3af)',
+          tooltip: t('common.delete', {}, 'Löschen'),
+          onClick: (row) => removeRow(row.id),
+        }),
+  ])
+  .onCellValueChanged(() => emitChange())
 </script>
 
 <template>
   <div class="claim-map">
-    <div class="claim-map-head">
-      <span class="claim-map-col-label">{{ keyLabel }}</span>
-      <span class="claim-map-col-label">{{ valueLabel }}</span>
-      <span class="claim-map-col-action"></span>
-    </div>
-    <div v-for="(row, i) in rows" :key="i" class="claim-map-row">
-      <CoarTextInput
-        v-model="row.key"
-        :placeholder="keyPlaceholder"
-        clearable
-        @update:model-value="emitChange"
-      />
-      <CoarTextInput
-        v-model="row.values"
-        :placeholder="valuePlaceholder"
-        clearable
-        @update:model-value="emitChange"
-      />
-      <CoarButton size="s" variant="ghost" icon-start="trash-2" @click="removeRow(i)" />
-    </div>
-    <div>
-      <CoarButton size="s" variant="ghost" icon-start="plus" @click="addRow">
-        {{ addLabel }}
-      </CoarButton>
-    </div>
+    <CoarDataGrid :builder="builder" bordered>
+      <template #toolbar-left>
+        <CoarButton size="s" icon-start="plus" variant="ghost" @click="addRow">
+          {{ addLabel }}
+        </CoarButton>
+      </template>
+    </CoarDataGrid>
   </div>
 </template>
 
@@ -102,17 +120,6 @@ function removeRow(i: number) {
 .claim-map {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-.claim-map-head,
-.claim-map-row {
-  display: grid;
-  grid-template-columns: 1fr 1.5fr auto;
-  gap: 8px;
-  align-items: center;
-}
-.claim-map-col-label {
-  font-size: 0.8rem;
-  color: #6b7280;
+  min-height: 10rem;
 }
 </style>
