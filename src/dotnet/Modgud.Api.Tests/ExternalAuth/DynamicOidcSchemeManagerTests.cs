@@ -10,6 +10,7 @@ using Modgud.Authentication.Api.ExternalAuth;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Domain.LoginProviders.Events;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using Wolverine;
 
 namespace Modgud.Api.Tests.ExternalAuth;
@@ -28,12 +29,15 @@ public class DynamicOidcSchemeManagerTests : IntegrationTestBase
         var manager = scope.ServiceProvider.GetRequiredService<DynamicOidcSchemeManager>();
         var schemeProvider = scope.ServiceProvider.GetRequiredService<IAuthenticationSchemeProvider>();
 
-        await manager.RegisterAsync(config);
+        using (TenantContext.Enter("system"))
+            await manager.RegisterAsync(config);
 
         var expectedName = DynamicOidcSchemeManager.SchemeNameFor(config.Id);
         var scheme = await schemeProvider.GetSchemeAsync(expectedName);
         Assert.NotNull(scheme);
-        Assert.Equal(typeof(OpenIdConnectHandler), scheme!.HandlerType);
+        // Host-aware subclass: adds the per-tenant callback tiebreaker over the
+        // framework handler. See HostAwareOpenIdConnectHandler.
+        Assert.Equal(typeof(HostAwareOpenIdConnectHandler), scheme!.HandlerType);
         Assert.Equal(config.DisplayName, scheme.DisplayName);
     }
 
@@ -46,13 +50,15 @@ public class DynamicOidcSchemeManagerTests : IntegrationTestBase
         var manager = scope.ServiceProvider.GetRequiredService<DynamicOidcSchemeManager>();
         var schemeProvider = scope.ServiceProvider.GetRequiredService<IAuthenticationSchemeProvider>();
 
-        await manager.RegisterAsync(config);
+        using (TenantContext.Enter("system"))
+            await manager.RegisterAsync(config);
         var name = DynamicOidcSchemeManager.SchemeNameFor(config.Id);
         Assert.NotNull(await schemeProvider.GetSchemeAsync(name));
 
         var disabled = config;
         disabled.Enabled = false;
-        await manager.RegisterAsync(disabled);
+        using (TenantContext.Enter("system"))
+            await manager.RegisterAsync(disabled);
 
         Assert.Null(await schemeProvider.GetSchemeAsync(name));
     }
@@ -136,12 +142,14 @@ public class DynamicOidcSchemeManagerTests : IntegrationTestBase
         var manager = scope.ServiceProvider.GetRequiredService<DynamicOidcSchemeManager>();
         var optionsMonitor = scope.ServiceProvider.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>();
 
-        await manager.RegisterAsync(config);
+        using (TenantContext.Enter("system"))
+            await manager.RegisterAsync(config);
         var first = optionsMonitor.Get(DynamicOidcSchemeManager.SchemeNameFor(config.Id));
         Assert.Equal("client-id-1", first.ClientId);
 
         config.ClientId = "client-id-2";
-        await manager.RegisterAsync(config);
+        using (TenantContext.Enter("system"))
+            await manager.RegisterAsync(config);
         var second = optionsMonitor.Get(DynamicOidcSchemeManager.SchemeNameFor(config.Id));
         Assert.Equal("client-id-2", second.ClientId);
     }
@@ -191,6 +199,7 @@ public class DynamicOidcSchemeManagerTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: LoginProviderFlavor.EntraId,
             DisplayName: name,
+            Slug: $"s{Guid.NewGuid():N}"[..12],
             FlavorData: flavorData));
         Assert.False(result.IsError, result.IsError ? result.FirstError.Description : "");
 

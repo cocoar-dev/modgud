@@ -23,13 +23,23 @@ public sealed class RealmMiddleware
     private readonly RequestDelegate _next;
     private readonly IRealmCache _realmCache;
 
+    // Paths that bypass realm resolution entirely. These are realm-agnostic
+    // infra endpoints (probes, API docs, framework assets).
+    //
+    // NOTE: /signalr is deliberately NOT here. SignalR is realm-scoped: the hub
+    // is [Authorize], and the auth cookie is encrypted with the realm's own
+    // DataProtection keys (TenantedDataProtectionProvider). Skipping realm
+    // resolution leaves TenantContext at the "system" fallback, so a non-system
+    // realm's cookie can't be decrypted on /signalr/*/negotiate — the connection
+    // 401s and the whole realtime/CRUD layer dies for every tenant realm. The
+    // realm is host-resolvable here exactly like any other request, so we let
+    // it resolve normally.
     private static readonly string[] SkipPaths =
     [
         "/health",
         "/swagger",
         "/openapi",
         "/_framework",
-        "/signalr",
     ];
 
     public RealmMiddleware(RequestDelegate next, IRealmCache realmCache)

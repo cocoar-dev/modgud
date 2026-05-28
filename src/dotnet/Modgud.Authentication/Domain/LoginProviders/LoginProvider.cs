@@ -41,6 +41,16 @@ public class LoginProvider
     /// </summary>
     public string Flavor { get; set; } = LoginProviderFlavor.GenericOidc;
 
+    /// <summary>
+    /// URL-stable, admin-chosen identifier. Immutable after creation. Replaces the
+    /// aggregate <see cref="Id"/> in the user-facing provider URLs (OIDC callback
+    /// <c>/signin-oidc/{slug}</c>, SAML SP surface <c>/saml/{slug}/...</c>) so a
+    /// delete + recreate can keep the same URLs without re-pasting them upstream.
+    /// Format/grammar in <see cref="LoginProviderSlugRules"/>; uniqueness is
+    /// per-realm (the host resolves the realm before any provider URL is matched).
+    /// </summary>
+    public string Slug { get; set; } = string.Empty;
+
     /// <summary>Admin-facing name + login-page button label.</summary>
     public string DisplayName { get; set; } = string.Empty;
 

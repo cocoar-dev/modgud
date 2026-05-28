@@ -200,7 +200,7 @@ const passkeyError = ref('')
 
 // External-identity links state (Phase 7)
 import type { ExternalLinkDto } from '@/models/externalLink'
-interface AvailableIdp { Id: string; DisplayName: string; Flavor: string; IconName?: string | null; ButtonColorHex?: string | null }
+interface AvailableIdp { Id: string; Kind: string; Slug: string; DisplayName: string; Flavor: string; IconName?: string | null; ButtonColorHex?: string | null }
 const externalLinks = ref<ExternalLinkDto[]>([])
 const availableIdps = ref<AvailableIdp[]>([])
 const linksError = ref('')
@@ -229,10 +229,15 @@ async function loadAvailableIdps() {
   } catch { /* ignore */ }
 }
 
-function linkWith(loginProviderId: string) {
+function linkWith(idp: AvailableIdp) {
   // Same start-flow as login; the finish endpoint detects the active app
   // cookie and routes the external identity into "link to current user".
-  window.location.href = `/api/account/external-login/${loginProviderId}/start?returnUrl=/profile`
+  // SAML is SP-initiated via its slug route (link-to-current-user may degrade
+  // to JIT under SameSite=Lax — see saml-link-flow-samesite.md); OIDC goes
+  // through the challenge start endpoint.
+  window.location.href = idp.Kind === 'Saml'
+    ? `/saml/${encodeURIComponent(idp.Slug)}/login?returnUrl=/profile`
+    : `/api/account/external-login/${idp.Id}/start?returnUrl=/profile`
 }
 
 async function unlink(linkId: string, displayName: string) {
@@ -885,7 +890,7 @@ function onMfaSetupClose(enabled: boolean) {
               <div v-if="unlinkedIdps.length > 0" class="flex flex-wrap gap-2">
                 <CoarButton v-for="idp in unlinkedIdps" :key="idp.Id"
                             variant="secondary"
-                            @click="linkWith(idp.Id)">
+                            @click="linkWith(idp)">
                   <CoarIcon v-if="idp.IconName" :name="idp.IconName" size="s" class="mr-1" />
                   {{ t('profile.externalLinks.linkPrefix', {}, 'Link with') }} {{ idp.DisplayName }}
                 </CoarButton>

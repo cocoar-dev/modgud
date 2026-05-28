@@ -13,6 +13,8 @@ export interface LoginProviderDto {
   Id: string
   Type: LoginProviderType
   Flavor: string
+  /** URL-stable identifier used in the provider's public URLs. Set at create, immutable. */
+  Slug: string
   DisplayName: string
   Description?: string | null
   IsBuiltIn: boolean
@@ -32,8 +34,17 @@ export interface LoginProviderDto {
   FlavorData?: Record<string, unknown> | null
   CreatedAt: string
   UpdatedAt: string
-  /** Full redirect URI to copy into the IdP app registration. Empty for Internal-typed providers. */
+  /** OIDC redirect URI to copy into the IdP app registration. Empty for non-OIDC providers. */
   RedirectUri: string
+  /** SAML SP metadata URL — for the IdP's "App Federation Metadata URL" field. `null` for non-SAML. */
+  SamlSpMetadataUrl?: string | null
+  /** SAML Assertion Consumer Service URL — for the IdP's "Reply URL" / ACS field. `null` for non-SAML. */
+  SamlAcsUrl?: string | null
+}
+
+export interface FlavorConfigFieldOptionDto {
+  Value: string
+  Label: string
 }
 
 export interface FlavorConfigFieldDto {
@@ -43,6 +54,12 @@ export interface FlavorConfigFieldDto {
   Required: boolean
   HelpText?: string | null
   Placeholder?: string | null
+  /** Default value seeded into the form on create (e.g. Boolean toggle defaults). */
+  Default?: unknown
+  /** Logical grouping — 'connection' (default) or 'advanced'. Drives which tab renders the field. */
+  Section?: string
+  /** Choices for Select-type fields. */
+  Options?: FlavorConfigFieldOptionDto[] | null
 }
 
 export interface FlavorDto {
@@ -53,32 +70,66 @@ export interface FlavorDto {
   DefaultUserUpdateScript: string
   DefaultStoreRawClaims: boolean
   ConfigSchema: FlavorConfigFieldDto[]
+  /**
+   * Protocol family — 'Oidc' or 'Saml'. The admin UI uses this to pick
+   * which connection panel to render and to set the right LoginProviderType
+   * on Create.
+   */
+  Type: LoginProviderType
 }
 
 export interface CreateLoginProviderRequest {
   Flavor: string
   DisplayName: string
+  /**
+   * URL-stable identifier (lowercase, 3-64, letters/digits/hyphens). Required at
+   * create, immutable after. Replaces the provider Guid in the OIDC callback +
+   * SAML SP URLs so they survive a delete + recreate.
+   */
+  Slug: string
   /** Optional — backend defaults to Oidc when omitted. */
   Type?: LoginProviderType
   Description?: string | null
   FlavorData?: Record<string, unknown> | null
+  /**
+   * Optional full-form fields for the single-modal Add flow — when omitted,
+   * the backend falls back to the chosen flavor's defaults (legacy two-step
+   * shape). When the admin saves the unified modal these are populated and
+   * the provider lands fully configured in one call.
+   */
+  Enabled?: boolean | null
+  ClientId?: string | null
+  Scopes?: string[] | null
+  UserUpdateScript?: string | null
+  StoreRawClaims?: boolean | null
+  RawClaimsRetentionDays?: number | null
+  AutoCreateUsers?: boolean | null
+  AllowLinking?: boolean | null
+  TrustForEmailLink?: boolean | null
+  AllowedEmailDomains?: string[] | null
+  IconName?: string | null
+  ButtonColorHex?: string | null
 }
 
+// PATCH semantics — every field optional. Omitted fields keep their current
+// value server-side (Optional<T> on the backend). The edit modal sends the
+// full set; the grid's inline toggle sends only { Enabled }.
 export interface UpdateLoginProviderRequest {
-  DisplayName: string
+  DisplayName?: string
   Description?: string | null
-  ClientId: string
-  Scopes: string[]
-  UserUpdateScript: string
-  StoreRawClaims: boolean
+  ClientId?: string
+  Scopes?: string[]
+  UserUpdateScript?: string
+  StoreRawClaims?: boolean
   RawClaimsRetentionDays?: number | null
-  AutoCreateUsers: boolean
-  AllowLinking: boolean
-  TrustForEmailLink: boolean
+  AutoCreateUsers?: boolean
+  AllowLinking?: boolean
+  TrustForEmailLink?: boolean
   AllowedEmailDomains?: string[] | null
   IconName?: string | null
   ButtonColorHex?: string | null
   FlavorData?: Record<string, unknown> | null
+  Enabled?: boolean
 }
 
 export interface TestUserUpdateRequest {

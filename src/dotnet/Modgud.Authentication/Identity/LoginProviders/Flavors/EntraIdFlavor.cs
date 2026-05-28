@@ -50,6 +50,7 @@ public class EntraIdFlavor : ILoginProviderFlavor
             Required: true,
             HelpText: "Entra Directory (Tenant) ID, or 'common' for multi-tenant apps.",
             Placeholder: "00000000-0000-0000-0000-000000000000"),
+        .. OidcAdvancedConfigFields.All,
     ];
 
     public OidcEndpoints DeriveEndpoints(JsonDocument? flavorData)

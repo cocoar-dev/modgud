@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Modgud.Domain.Common;
 using BuildingBlocks.Helper;
 using ErrorOr;
 using Marten;
@@ -28,12 +29,15 @@ public static class LoginProvidersEndpoints
             .WithTags("Login Providers")
             .RequireAuthorization();
 
-        // List registered flavors so the admin UI can render the "Add provider"
-        // picker with the right schema + defaults for each.
+        // List registered flavors — OIDC + SAML, with a Type field on each
+        // so the admin UI can pick which protocol-specific connection panel
+        // to render. Unified list keeps the Add Provider picker simple
+        // (one dropdown sourced from a single endpoint).
         group.MapGet("flavors",
-            ([FromServices] LoginProviderFlavorRegistry flavors) =>
+            ([FromServices] LoginProviderFlavorRegistry oidcFlavors,
+             [FromServices] Modgud.Authentication.Identity.LoginProviders.Saml.SamlFlavorRegistry samlFlavors) =>
             {
-                var items = flavors.All.Select(f => new FlavorDto
+                var oidc = oidcFlavors.All.Select(f => new FlavorDto
                 {
                     Key = f.Key,
                     DisplayName = f.DisplayName,
@@ -42,9 +46,28 @@ public static class LoginProvidersEndpoints
                     DefaultUserUpdateScript = f.DefaultUserUpdateScript,
                     DefaultStoreRawClaims = f.DefaultStoreRawClaims,
                     ConfigSchema = f.ConfigSchema.Select(c => new FlavorConfigFieldDto(
-                        c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder)).ToList(),
-                }).ToArray();
-                return Results.Ok(items);
+                        c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder, c.Default,
+                        c.Section,
+                        c.Options?.Select(o => new FlavorConfigFieldOptionDto(o.Value, o.Label)).ToList())).ToList(),
+                    Type = nameof(LoginProviderType.Oidc),
+                });
+
+                var saml = samlFlavors.All.Select(f => new FlavorDto
+                {
+                    Key = f.Key,
+                    DisplayName = f.DisplayName,
+                    DefaultIconName = f.DefaultIconName,
+                    DefaultScopes = [], // SAML has no scopes.
+                    DefaultUserUpdateScript = f.DefaultUserUpdateScript,
+                    DefaultStoreRawClaims = f.DefaultStoreRawClaims,
+                    ConfigSchema = f.ConfigSchema.Select(c => new FlavorConfigFieldDto(
+                        c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder, c.Default,
+                        c.Section,
+                        c.Options?.Select(o => new FlavorConfigFieldOptionDto(o.Value, o.Label)).ToList())).ToList(),
+                    Type = nameof(LoginProviderType.Saml),
+                });
+
+                return Results.Ok(oidc.Concat(saml).ToArray());
             })
             .RequiresPermission("login-provider:read");
 
@@ -90,9 +113,22 @@ public static class LoginProvidersEndpoints
                 var command = new CreateLoginProviderCommand(
                     Flavor: request.Flavor,
                     DisplayName: request.DisplayName,
+                    Slug: request.Slug,
                     FlavorData: flavorData,
                     Type: request.Type ?? LoginProviderType.Oidc,
-                    Description: request.Description);
+                    Description: request.Description,
+                    Enabled: request.Enabled,
+                    ClientId: request.ClientId,
+                    Scopes: request.Scopes,
+                    UserUpdateScript: request.UserUpdateScript,
+                    StoreRawClaims: request.StoreRawClaims,
+                    RawClaimsRetentionDays: request.RawClaimsRetentionDays,
+                    AutoCreateUsers: request.AutoCreateUsers,
+                    AllowLinking: request.AllowLinking,
+                    TrustForEmailLink: request.TrustForEmailLink,
+                    AllowedEmailDomains: request.AllowedEmailDomains,
+                    IconName: request.IconName,
+                    ButtonColorHex: request.ButtonColorHex);
                 var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command, ct);
                 return result.Match<IResult>(
                     v => Results.Created($"/api/admin/login-providers/{v.Id:N}", ToDto(v, ResolvePublicUrl(conf))),
@@ -108,9 +144,9 @@ public static class LoginProvidersEndpoints
                    [FromServices] IServerConfiguration conf,
                    CancellationToken ct) =>
             {
-                JsonDocument? flavorData = request.FlavorData.HasValue
-                    ? JsonDocument.Parse(request.FlavorData.Value.GetRawText())
-                    : null;
+                Optional<JsonDocument> flavorData = request.FlavorData.HasValue
+                    ? new Optional<JsonDocument>(JsonDocument.Parse(request.FlavorData.Value.GetRawText()))
+                    : Optional<JsonDocument>.None;
                 var command = new UpdateLoginProviderCommand(
                     Id: id.Guid,
                     DisplayName: request.DisplayName,
@@ -126,7 +162,8 @@ public static class LoginProvidersEndpoints
                     AllowedEmailDomains: request.AllowedEmailDomains,
                     IconName: request.IconName,
                     ButtonColorHex: request.ButtonColorHex,
-                    FlavorData: flavorData);
+                    FlavorData: flavorData,
+                    Enabled: request.Enabled);
                 var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command, ct);
                 return result.Match<IResult>(
                     v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
@@ -134,33 +171,8 @@ public static class LoginProvidersEndpoints
             })
             .RequiresPermission("login-provider:write");
 
-        // Enable / Disable / Delete.
-        group.MapPost("{id}/enable",
-            async (ShortGuid id,
-                   [FromServices] IMessageBus bus,
-                   [FromServices] IServerConfiguration conf,
-                   CancellationToken ct) =>
-            {
-                var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new EnableLoginProviderCommand(id.Guid), ct);
-                return result.Match<IResult>(
-                    v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
-                    ErrorResponse);
-            })
-            .RequiresPermission("login-provider:write");
-
-        group.MapPost("{id}/disable",
-            async (ShortGuid id,
-                   [FromServices] IMessageBus bus,
-                   [FromServices] IServerConfiguration conf,
-                   CancellationToken ct) =>
-            {
-                var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new DisableLoginProviderCommand(id.Guid), ct);
-                return result.Match<IResult>(
-                    v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
-                    ErrorResponse);
-            })
-            .RequiresPermission("login-provider:write");
-
+        // Enable / Disable are folded into the PATCH update above (send
+        // { "Enabled": true|false }). Delete stays a dedicated verb.
         group.MapDelete("{id}",
             async (ShortGuid id,
                    [FromServices] IMessageBus bus,
@@ -195,6 +207,7 @@ public static class LoginProvidersEndpoints
         Id = new ShortGuid(c.Id).ToString(),
         Type = c.Type.ToString(),
         Flavor = c.Flavor,
+        Slug = c.Slug,
         DisplayName = c.DisplayName,
         Description = c.Description,
         IsBuiltIn = c.IsBuiltIn,
@@ -214,11 +227,18 @@ public static class LoginProvidersEndpoints
         FlavorData = c.FlavorData is null ? null : JsonDocument.Parse(c.FlavorData.RootElement.GetRawText()).RootElement,
         CreatedAt = c.CreatedAt,
         UpdatedAt = c.UpdatedAt,
-        // Internal providers have no callback — return an empty string instead
-        // of inventing a meaningless URL.
-        RedirectUri = c.Type == LoginProviderType.Internal
-            ? string.Empty
-            : $"{publicUrl.TrimEnd('/')}/signin-oidc/{c.Id:N}",
+        // OIDC-only callback. Internal/SAML providers have no /signin-oidc handler — return
+        // an empty string instead of inventing a meaningless URL. SAML carries its own pair
+        // of URLs in SamlSpMetadataUrl + SamlAcsUrl below.
+        RedirectUri = c.Type == LoginProviderType.Oidc
+            ? $"{publicUrl.TrimEnd('/')}/signin-oidc/{c.Slug}"
+            : string.Empty,
+        SamlSpMetadataUrl = c.Type == LoginProviderType.Saml
+            ? $"{publicUrl.TrimEnd('/')}/saml/{c.Slug}/sp-metadata"
+            : null,
+        SamlAcsUrl = c.Type == LoginProviderType.Saml
+            ? $"{publicUrl.TrimEnd('/')}/saml/{c.Slug}/acs"
+            : null,
     };
 
     private static IResult ErrorResponse(List<Error> errors)
@@ -235,25 +255,45 @@ public static class LoginProvidersEndpoints
     public record CreateLoginProviderRequest(
         string Flavor,
         string DisplayName,
+        string Slug,
         JsonElement? FlavorData,
         LoginProviderType? Type = LoginProviderType.Oidc,
-        string? Description = null);
+        string? Description = null,
+        // Optional full-form fields — null = flavor / type default. Lets the
+        // single-modal Add UI submit a complete provider state in one call;
+        // legacy two-step callers omit these and fall through unchanged.
+        bool? Enabled = null,
+        string? ClientId = null,
+        List<string>? Scopes = null,
+        string? UserUpdateScript = null,
+        bool? StoreRawClaims = null,
+        int? RawClaimsRetentionDays = null,
+        bool? AutoCreateUsers = null,
+        bool? AllowLinking = null,
+        bool? TrustForEmailLink = null,
+        List<string>? AllowedEmailDomains = null,
+        string? IconName = null,
+        string? ButtonColorHex = null);
 
+    // PATCH semantics: every field is Optional<T>, so a caller can send just
+    // the properties it wants to change (e.g. the grid sends only Enabled to
+    // toggle a provider). Absent fields keep their current persisted value.
     public record UpdateLoginProviderRequest(
-        string DisplayName,
-        string? Description,
-        string ClientId,
-        List<string> Scopes,
-        string UserUpdateScript,
-        bool StoreRawClaims,
-        int? RawClaimsRetentionDays,
-        bool AutoCreateUsers,
-        bool AllowLinking,
-        bool TrustForEmailLink,
-        List<string>? AllowedEmailDomains,
-        string? IconName,
-        string? ButtonColorHex,
-        JsonElement? FlavorData);
+        Optional<string> DisplayName,
+        Optional<string?> Description,
+        Optional<string> ClientId,
+        Optional<List<string>> Scopes,
+        Optional<string> UserUpdateScript,
+        Optional<bool> StoreRawClaims,
+        Optional<int?> RawClaimsRetentionDays,
+        Optional<bool> AutoCreateUsers,
+        Optional<bool> AllowLinking,
+        Optional<bool> TrustForEmailLink,
+        Optional<List<string>?> AllowedEmailDomains,
+        Optional<string?> IconName,
+        Optional<string?> ButtonColorHex,
+        Optional<JsonElement> FlavorData,
+        Optional<bool> Enabled);
 
     public record RotateSecretRequest(string Secret);
 }

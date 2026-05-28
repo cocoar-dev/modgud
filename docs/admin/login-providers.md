@@ -8,14 +8,17 @@ scheme registration, `UserUpdateScript` runtime, and
 :::
 
 A **login provider** is a way for users to authenticate with Modgud. Today
-two types are wired up:
+three types are wired up:
 
 - **Internal** — built-in username + password, auto-seeded once per realm
 - **OIDC** — external IdPs (Microsoft Entra ID, Google, Auth0, Keycloak, any
   OIDC-compliant provider)
+- **SAML 2.0** — enterprise IdPs (Microsoft Entra ID Enterprise Apps, ADFS,
+  Okta, any SAML-compliant provider). See [SAML federation](./saml-federation)
+  for the SAML-specific walkthrough.
 
-Future types — **SAML**, **LDAP**, **Kerberos** — are reserved at the API
-level and will surface in the picker once the backend handlers ship.
+Future types — **LDAP**, **Kerberos** — are reserved at the API level and
+will surface in the picker once the backend handlers ship.
 
 ![Login providers list](/screenshots/admin-login-provider.png)
 
@@ -99,41 +102,52 @@ on access.
 
 **Add the login provider**
 
-1. Admin → **Login Providers** → **Add provider**
-2. **Flavor**: *Microsoft Entra ID*
-3. **Display Name**: e.g. "Company SSO"
-4. **Tenant ID**: paste from Entra
-5. **Create**
+1. Admin → **Login-Provider** → **Provider hinzufügen.** A single modal
+   opens — flavor picker in the header, all tabs (Allgemein, Verbindung,
+   User-Update-Script, Verknüpfung & Richtlinien) visible.
+2. **Flavor** (header dropdown): *OIDC · Microsoft Entra ID*. Switching
+   flavor in this modal re-seeds the flavor-derived defaults (Scopes,
+   default User-Update-Script, button icon) without touching what you've
+   already typed in Display Name / Description.
+3. **Allgemein** tab: enter **Display Name** (e.g. "Company SSO"), a
+   **Slug**, + optional Beschreibung. The slug is a short, URL-safe
+   identifier (lowercase letters/digits/hyphens, 3-64 chars) that becomes
+   part of the Redirect-URI (`/signin-oidc/<slug>`). It is **immutable
+   after create** — pick a stable name (e.g. `company-sso`); typing a
+   Display Name first lets Modgud suggest one. The Redirect-URI field
+   appears AFTER first save.
+4. **Verbindung** tab:
+   - **Tenant ID** (Entra-specific): paste from Entra.
+   - **Client ID**: from Entra.
+   - **Scopes**: `openid profile email` (default is fine).
+   - **Initiales Secret** (optional): paste the Entra client secret here
+     so it's set in one step. You can also skip this and rotate via the
+     Verbindung tab after Save — same audit-event shape either way.
+5. **User-Update-Script** tab: default for Entra is
 
-The detail dialog opens.
+   ```js
+   (claims) => ({
+     firstname: claims.given_name?.trim(),
+     lastname:  claims.family_name?.trim(),
+     email:     claims.email ?? claims.preferred_username,
+     acronym:   (claims.given_name?.[0] ?? '') + (claims.family_name?.[0] ?? ''),
+   })
+   ```
 
-**General tab**
+   The **Run** button at the top of the test panel runs the script
+   against a sample claims object — instant feedback on what comes out.
+   After at least one successful login, **Letzter Login** loads the
+   actual claims that came through last.
+6. **Erstellen.** The provider is created **disabled** (security default;
+   enable explicitly after the smoke-test). The modal stays open and
+   transitions into Edit mode — the URL fragment updates to the new
+   provider id and the **Redirect-URI** field now appears in the
+   Allgemein tab with a copy button next to it.
 
-- **Redirect URI** — auto-generated, e.g. `https://auth.firma.at/signin-oidc/<id>`. **Copy this URI** (button next to it).
-
-**Connection tab**
-
-- **Client ID**: from Entra
-- **Client Secret**: from Entra
-- **Scopes**: `openid profile email` (default is fine)
-
-**User Update Script tab**
-
-Default for Entra:
-
-```js
-(claims) => ({
-  firstname: claims.given_name?.trim(),
-  lastname:  claims.family_name?.trim(),
-  email:     claims.email ?? claims.preferred_username,
-  acronym:   (claims.given_name?.[0] ?? '') + (claims.family_name?.[0] ?? ''),
-})
-```
-
-The **Run** button at the top of the test panel runs the script against a
-sample claims object — instant feedback on what comes out. After at least
-one successful login, **Letzter Login** loads the actual claims that came
-through last.
+**Copy the Redirect URI** from the Allgemein tab — you'll paste it into
+Entra next. Because the URI is built from your chosen slug (not a
+generated GUID), deleting and recreating the provider with the same slug
+keeps the **same** Redirect URI — no need to re-edit the Entra app.
 
 #### 3. Back in Entra: paste the redirect URI
 
@@ -141,12 +155,16 @@ through last.
 2. Paste the redirect URI you copied from Modgud
 3. **Configure**
 
-#### 4. Test
+#### 4. Enable + test
 
-1. Open Modgud's login page in incognito
-2. The new SSO button should appear
-3. Click → redirect to Microsoft → sign in → redirect back
-4. You're signed in. Check the user's IdP-Claims tab to verify the mapped fields
+1. Back in Modgud's provider modal, click the **Deaktiviert** badge to
+   flip it to **Aktiviert**. Modgud verifies ClientId + Client-Secret
+   are set before enabling.
+2. Open Modgud's login page in incognito.
+3. The new SSO button should appear.
+4. Click → redirect to Microsoft → sign in → redirect back.
+5. You're signed in. Check the user's IdP-Claims tab to verify the
+   mapped fields.
 
 ### Generic OIDC
 

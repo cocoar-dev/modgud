@@ -45,4 +45,23 @@ public class DataEventDispatcher
     {
         DispatchEvent(DataEvent.Deleted(subject, payload));
     }
+
+    // Tenant-scoped overloads. Stamp the originating tenant/partition onto the
+    // event so consumers can scope delivery to the matching connection. The
+    // payload-only methods above stay for tenant-agnostic / single-tenant use;
+    // anything that crosses a tenant boundary MUST go through these.
+    public void DispatchCreatedEvent(string subject, object? payload, string? tenant)
+    {
+        DispatchEvent(DataEvent.Created(subject, ArrayHelper.WrapInArray(payload)).WithTenant(tenant));
+    }
+
+    public void DispatchUpdatedEvent(string subject, object? payload, string? tenant)
+    {
+        DispatchEvent(DataEvent.Updated(subject, ArrayHelper.WrapInArray(payload)).WithTenant(tenant));
+    }
+
+    public void DispatchDeletedEvent(string subject, object? payload, string? tenant)
+    {
+        DispatchEvent(DataEvent.Deleted(subject, ArrayHelper.WrapInArray(payload)).WithTenant(tenant));
+    }
 }

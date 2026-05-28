@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.SignalR;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Infrastructure.Persistence.Marten.Mappers;
 using Modgud.Infrastructure.Persistence.Marten.Projections.Inbox;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Api.Features.Inbox;
 
@@ -23,13 +24,17 @@ public class InboxHub(DataEventDispatcher eventDispatcher)
         var httpContext = Context.GetHttpContext()!;
         var userId = httpContext.GetUserId();
 
+        // Realm of this connection (resolved at connect by RealmMiddleware).
+        // Inbox events are scoped first by realm, then by recipient user.
+        var realm = httpContext.Items[TenantConstants.HttpContextTenantIdKey] as string;
+
         // No userId → empty stream. The hub already requires authentication
         // via UIHub's [Authorize], so this is defensive only.
         if (userId is null)
             return Observable.Empty<DataEvent>();
 
         return eventDispatcher.Notifications
-            .Where(ev => ev.Subject == "InboxItem")
+            .Where(ev => ev.Subject == "InboxItem" && ev.Tenant == realm)
             .Select(de =>
             {
                 var newPayload = new List<object>();

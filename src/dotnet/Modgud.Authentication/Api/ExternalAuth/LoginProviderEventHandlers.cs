@@ -1,6 +1,7 @@
 using Marten;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Domain.LoginProviders.Events;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Api.ExternalAuth;
 
@@ -79,6 +80,21 @@ internal static class LoginProviderReRegister
         // deleted Oidc provider whose record vanished should still drop its
         // scheme.
         if (config.Type != LoginProviderType.Oidc) return;
+
+        // Wolverine event handlers run in a background message pump where
+        // RealmMiddleware hasn't set the TenantContext. The session itself is
+        // tenant-scoped (TenantedSessionFactory reads the message envelope), so
+        // pull its TenantId and enter the context — manager.RegisterAsync
+        // requires an ambient TenantContext to stamp the scheme with its realm.
+        // Mirrors SamlLoginProviderReRegister.Run.
+        var sessionTenantId = session.TenantId;
+        if (!string.IsNullOrEmpty(sessionTenantId)
+            && string.IsNullOrEmpty(TenantContext.CurrentOrNull))
+        {
+            using var _ = TenantContext.Enter(sessionTenantId);
+            await manager.RegisterAsync(config);
+            return;
+        }
 
         await manager.RegisterAsync(config);
     }

@@ -37,22 +37,28 @@ public class SignalRProjectionDispatchHandler(DataEventDispatcher eventDispatche
 
     private void Dispatch(string subject, SignalRDispatchAction action, object? view, Guid id)
     {
+        // The handler runs in the originating realm's context — the outboxed
+        // session is opened for the message's tenant — so session.TenantId is
+        // the authoritative realm. Stamp it so consumers scope delivery to the
+        // matching connection and never leak across realms.
+        var tenant = session.TenantId;
+
         switch (action)
         {
             case SignalRDispatchAction.Created:
-                eventDispatcher.DispatchCreatedEvent(subject, view);
+                eventDispatcher.DispatchCreatedEvent(subject, view, tenant);
                 break;
 
             case SignalRDispatchAction.Updated:
-                eventDispatcher.DispatchUpdatedEvent(subject, view);
+                eventDispatcher.DispatchUpdatedEvent(subject, view, tenant);
                 break;
 
             case SignalRDispatchAction.Deleted:
-                eventDispatcher.DispatchDeletedEvent(subject, new ShortGuid(id).ToString());
+                eventDispatcher.DispatchDeletedEvent(subject, new ShortGuid(id).ToString(), tenant);
                 break;
 
             default:
-                eventDispatcher.DispatchUpdatedEvent(subject, view);
+                eventDispatcher.DispatchUpdatedEvent(subject, view, tenant);
                 break;
         }
     }

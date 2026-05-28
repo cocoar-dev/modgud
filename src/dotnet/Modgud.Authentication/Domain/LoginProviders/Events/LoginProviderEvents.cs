@@ -16,6 +16,7 @@ public record LoginProviderAddedEvent(
     Guid Id,
     LoginProviderType Type,
     string Flavor,
+    string Slug,
     string DisplayName,
     string? Description,
     bool IsBuiltIn,

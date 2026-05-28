@@ -47,16 +47,17 @@ public class ExternalLoginProcessor(
         if (config is null || config.IsDeleted || !config.Enabled)
             return ExternalLoginResult.Failed("Idp.NotEnabled", "This identity provider is not available.");
 
-        // Type-discriminator gate. The callback flow is OIDC-shaped end-to-end —
-        // a non-Oidc provider id reaching this point is either a stale query
-        // string from before the provider was retyped, or a misconfigured
-        // /start with a manually-edited id. Surface the same error code the
-        // admin/runtime paths use so the frontend can render a single message.
-        if (config.Type != LoginProviderType.Oidc)
+        // Type-discriminator gate. Oidc + Saml are both supported here — both
+        // produce a ClaimsPrincipal with iss/sub claims plus arbitrary extra
+        // claims that the user-update script can pull from. Internal / Ldap /
+        // Kerberos types reaching this point are misconfigured callers
+        // (stale id, wrong endpoint) and get the same error code the admin
+        // and runtime paths use so the frontend renders one message.
+        if (config.Type != LoginProviderType.Oidc && config.Type != LoginProviderType.Saml)
         {
             var err = LoginProviderErrors.TypeNotSupported(config.Type);
             logger.LogWarning(
-                "Auth: External login rejected — LoginProvider {Id} has type {Type}, expected Oidc",
+                "Auth: External login rejected — LoginProvider {Id} has type {Type}, expected Oidc or Saml",
                 loginProviderId, config.Type);
             return ExternalLoginResult.Failed(err.Code, err.Description);
         }

@@ -24,6 +24,10 @@
     <!-- OIDC -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
 
+    <!-- SAML 2.0 SP federation (ITfoxtec, BSD-3-Clause) -->
+    <PackageReference Include="ITfoxtec.Identity.Saml2" />
+    <PackageReference Include="ITfoxtec.Identity.Saml2.MvcCore" />
+
     <!-- Script evaluation for IdP user-update scripts -->
     <PackageReference Include="Cocoar.JsEval.Engine" />
     <PackageReference Include="Cocoar.JsEval.TsDefinition" />

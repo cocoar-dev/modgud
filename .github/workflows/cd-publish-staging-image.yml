@@ -73,9 +73,26 @@ jobs:
       - name: Build version string
         id: build_version
         run: |
-          BASE="${{ steps.gv.outputs.major-minor-patch }}-${{ steps.gv.outputs.pre-release-label }}"
+          MMP="${{ steps.gv.outputs.major-minor-patch }}"
+          LABEL="${{ steps.gv.outputs.pre-release-label }}"
           N="${{ steps.gv.outputs.commits-since-version-source }}"
-          VERSION="$BASE.$N"
+          # Defensive: if GitVersion produced no pre-release label (branch
+          # didn't match any named config and the `other` fallback didn't
+          # supply one in this GitVersion version), fall back to the
+          # escaped branch name so we never emit a malformed
+          # `0.5.0-.N` string that breaks the NuGet-version validator
+          # downstream.
+          if [ -z "$LABEL" ]; then
+            LABEL="${{ steps.gv.outputs.escaped-branch-name }}"
+          fi
+          # If even that is empty (shouldn't happen, but…), drop the
+          # pre-release segment entirely — a release-shaped version is
+          # at least parseable.
+          if [ -z "$LABEL" ]; then
+            VERSION="$MMP.$N"
+          else
+            VERSION="$MMP-$LABEL.$N"
+          fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Calculated version: $VERSION"
 

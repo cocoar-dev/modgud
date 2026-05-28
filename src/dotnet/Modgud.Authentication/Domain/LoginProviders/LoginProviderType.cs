@@ -15,12 +15,12 @@ public enum LoginProviderType
     /// <summary>External OpenID Connect provider (Entra, Okta, Keycloak, …).</summary>
     Oidc = 1,
 
-    /// <summary>SAML 2.0 IdP (not yet wired — Phase 2+).</summary>
+    /// <summary>External SAML 2.0 Identity Provider (Modgud acts as Service Provider).</summary>
     Saml = 2,
 
-    /// <summary>LDAP directory bind (not yet wired — Phase 2+).</summary>
+    /// <summary>LDAP directory bind (not yet wired).</summary>
     Ldap = 3,
 
-    /// <summary>Kerberos/SPNEGO (not yet wired — Phase 2+).</summary>
+    /// <summary>Kerberos/SPNEGO (not yet wired).</summary>
     Kerberos = 4,
 }

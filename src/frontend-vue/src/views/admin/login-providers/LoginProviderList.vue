@@ -7,9 +7,6 @@ import {
   CoarContextMenu,
   CoarMenuItem,
   CoarMenuDivider,
-  CoarFormField,
-  CoarSelect,
-  CoarTextInput,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
@@ -104,8 +101,9 @@ async function toggleEnabled() {
     return
   }
   try {
-    if (provider.Enabled) await store.disable(provider.Id)
-    else await store.enable(provider.Id)
+    // Inline grid toggle — immediate PATCH of just the Enabled property
+    // (this is the "übers Grid" quick path; the edit modal stages it instead).
+    await store.setEnabled(provider.Id, !provider.Enabled)
   } catch (e: any) {
     alert(e?.message ?? String(e))
   }
@@ -122,52 +120,11 @@ async function deleteSelected() {
   try { await store.remove(provider.Id) } catch (e: any) { alert(e?.message ?? String(e)) }
 }
 
-// ─── "Add Provider" flow ──────────────────────────────────────────────
-// Today only Oidc providers are creatable from the UI. The picker therefore
-// only shows the registered OIDC flavors. When Saml/Ldap/Kerberos support
-// lands the type select returns and the flavor picker reacts to it.
-const addOpen = ref(false)
-const addForm = ref<{ Flavor: string; DisplayName: string }>({ Flavor: '', DisplayName: '' })
-const addError = ref<string | null>(null)
-const flavorOptions = computed(() =>
-  store.flavors.map((f) => ({ value: f.Key, label: f.DisplayName }))
-)
-
+// "Add Provider" routes straight into the unified modal in Add mode (id='create').
+// The modal hosts the flavor picker in its header-actions slot, so the admin
+// fills in Type/Flavor + all other fields in one place and one Save click.
 function openAddDialog() {
-  addForm.value = { Flavor: store.flavors[0]?.Key ?? '', DisplayName: '' }
-  addError.value = null
-  addOpen.value = true
-}
-
-async function confirmAdd() {
-  if (!addForm.value.DisplayName.trim()) {
-    addError.value = t('admin.loginProviders.nameRequired', {}, 'Name ist erforderlich')
-    return
-  }
-  addError.value = null
-  try {
-    const created = await store.create({
-      Flavor: addForm.value.Flavor,
-      DisplayName: addForm.value.DisplayName.trim(),
-      Type: 'Oidc',
-      FlavorData: placeholderFlavorData(addForm.value.Flavor),
-    })
-    addOpen.value = false
-    navigateToModal(created.Id)
-  } catch (e: any) {
-    addError.value = e?.response?.data?.Message ?? e?.body?.Message ?? e?.message ?? String(e)
-  }
-}
-
-function placeholderFlavorData(flavorKey: string): Record<string, unknown> {
-  // Minimum viable payload so flavor validation passes at Create time —
-  // real values are supplied on the details modal.
-  const flavor = store.flavors.find((f) => f.Key === flavorKey)
-  const result: Record<string, unknown> = {}
-  for (const field of flavor?.ConfigSchema ?? []) {
-    if (field.Required) result[field.Key] = '00000000-0000-0000-0000-000000000000'
-  }
-  return result
+  navigateToModal('create')
 }
 
 onMounted(() => store.initialize())
@@ -206,55 +163,5 @@ onMounted(() => store.initialize())
       <CoarMenuItem :label="t('admin.loginProviders.add', {}, 'Provider hinzufügen')" icon="plus"
         @clicked="openAddDialog" />
     </CoarContextMenu>
-
-    <!-- Add provider inline dialog — flips in above the grid -->
-    <Transition name="fade">
-      <div v-if="addOpen" class="add-overlay" @click.self="addOpen = false">
-        <div class="add-dialog">
-          <h3 class="add-title">{{ t('admin.loginProviders.addTitle', {}, 'Login-Provider hinzufügen') }}</h3>
-          <CoarFormField :label="t('admin.loginProviders.flavor', {}, 'Flavor')">
-            <CoarSelect v-model="addForm.Flavor" :options="flavorOptions" />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.loginProviders.displayName', {}, 'Name')">
-            <CoarTextInput v-model="addForm.DisplayName" placeholder="Acme Corp Entra" clearable />
-          </CoarFormField>
-          <div v-if="addError" class="text-sm text-red-600">{{ addError }}</div>
-          <div class="flex justify-end gap-2 mt-3">
-            <CoarButton variant="ghost" size="s" @click="addOpen = false">{{ t('common.cancel', {}, 'Abbrechen') }}</CoarButton>
-            <CoarButton size="s" @click="confirmAdd">{{ t('common.create', {}, 'Erstellen') }}</CoarButton>
-          </div>
-        </div>
-      </div>
-    </Transition>
   </div>
 </template>
-
-<style scoped>
-.add-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-}
-.add-dialog {
-  background: var(--coar-background-neutral-primary, #fff);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  padding: 20px;
-  width: 28rem;
-  max-width: 90vw;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.add-title {
-  margin: 0 0 4px;
-  font-size: 1rem;
-  font-weight: 600;
-}
-.fade-enter-active, .fade-leave-active { transition: opacity 0.15s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
-</style>

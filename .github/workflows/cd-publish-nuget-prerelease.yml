@@ -114,9 +114,21 @@ jobs:
       - name: Build prerelease version
         id: prerelease
         run: |
-          BASE="${{ steps.dotnet.outputs.major-minor-patch }}-${{ steps.dotnet.outputs.pre-release-label }}"
+          MMP="${{ steps.dotnet.outputs.major-minor-patch }}"
+          LABEL="${{ steps.dotnet.outputs.pre-release-label }}"
           N="${{ steps.dotnet.outputs.commits-since-version-source }}"
-          VERSION="$BASE.$N"
+          # Defensive: GitVersion can return an empty pre-release-label when
+          # the branch matches no named config. Fall back to the escaped
+          # branch name so we never emit a malformed `X.Y.Z-.N` NuGet
+          # version.
+          if [ -z "$LABEL" ]; then
+            LABEL="${{ steps.dotnet.outputs.escaped-branch-name }}"
+          fi
+          if [ -z "$LABEL" ]; then
+            VERSION="$MMP.$N"
+          else
+            VERSION="$MMP-$LABEL.$N"
+          fi
           echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_ENV
           echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Calculated prerelease version: $VERSION"

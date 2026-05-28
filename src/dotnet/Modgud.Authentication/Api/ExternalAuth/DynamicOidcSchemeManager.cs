@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -7,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Identity.LoginProviders;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Api.ExternalAuth;
 
@@ -38,6 +40,7 @@ public class DynamicOidcSchemeManager(
     IEnumerable<IPostConfigureOptions<OpenIdConnectOptions>> oidcPostConfigures,
     LoginProviderFlavorRegistry flavors,
     LoginProviderSecretStore secrets,
+    OidcSchemeRealmRegistry realmRegistry,
     IHostEnvironment env,
     ILogger<DynamicOidcSchemeManager> logger)
 {
@@ -92,10 +95,32 @@ public class DynamicOidcSchemeManager(
             return;
         }
 
+        // Realm the cached scheme belongs to — needed because the callback path
+        // is now the per-realm slug (host-blind matching, see
+        // HostAwareOpenIdConnectHandler). Mirrors the SAML manager's RealmSlug
+        // requirement; callers (bootstrap, event handlers) enter the realm's
+        // TenantContext first.
+        var realmSlug = TenantContext.CurrentOrNull
+            ?? throw new InvalidOperationException(
+                "DynamicOidcSchemeManager.RegisterAsync requires an ambient TenantContext " +
+                "so the registered scheme knows which realm it belongs to. " +
+                "Callers (bootstrap, event handlers) must enter the realm's TenantContext first.");
+
         var schemeName = SchemeNameFor(config.Id);
-        var callbackPath = $"/signin-oidc/{config.Id:N}";
-        var signoutCallbackPath = $"/signout-callback-oidc/{config.Id:N}";
+        // Callback path keyed by the admin-chosen slug (not the Guid) so the
+        // redirect URI stays stable across a delete + recreate. The slug is only
+        // unique per realm; HostAwareOpenIdConnectHandler disambiguates by realm.
+        var callbackPath = $"/signin-oidc/{config.Slug}";
+        var signoutCallbackPath = $"/signout-callback-oidc/{config.Slug}";
         var clientSecret = secrets.TryDecrypt(config.ClientSecretEncrypted);
+
+        // Admin-configurable advanced settings (Connection → Advanced tab),
+        // stored in FlavorData. Defaults match the values previously hard-coded
+        // here, so providers that never touched them behave identically.
+        var usePkce = ReadBool(config.FlavorData, "UsePkce", true);
+        var getClaimsFromUserInfo = ReadBool(config.FlavorData, "GetClaimsFromUserInfoEndpoint", true);
+        var saveTokens = ReadBool(config.FlavorData, "SaveTokens", false);
+        var prompt = ReadString(config.FlavorData, "Prompt");
 
         var options = new OpenIdConnectOptions
         {
@@ -104,9 +129,9 @@ public class DynamicOidcSchemeManager(
             Authority = endpoints.Authority,
             MetadataAddress = endpoints.MetadataUri,
             ResponseType = OpenIdConnectResponseType.Code,
-            UsePkce = true,
-            SaveTokens = false,
-            GetClaimsFromUserInfoEndpoint = true,
+            UsePkce = usePkce,
+            SaveTokens = saveTokens,
+            GetClaimsFromUserInfoEndpoint = getClaimsFromUserInfo,
             CallbackPath = callbackPath,
             SignedOutCallbackPath = signoutCallbackPath,
             SignInScheme = IdentityConstants.ExternalScheme,
@@ -160,6 +185,11 @@ public class DynamicOidcSchemeManager(
         // RequireHttpsMetadata OFF in Development (localhost IdP, test OIDC server).
         options.RequireHttpsMetadata = env.IsProduction();
 
+        // Optional 'prompt' parameter — only when the admin picked one; empty
+        // means "don't send prompt" (the IdP decides).
+        if (!string.IsNullOrWhiteSpace(prompt))
+            options.Prompt = prompt;
+
         // Identity.External cookie is configured in Program.cs via AddCookie
         // — we must not touch IOptionsMonitorCache<CookieAuthenticationOptions>
         // here, or we'd bypass the post-configure chain that wires
@@ -204,14 +234,18 @@ public class DynamicOidcSchemeManager(
         oidcOptionsCache.TryRemove(schemeName);
         oidcOptionsCache.TryAdd(schemeName, options);
 
+        // Record the scheme → realm mapping before adding the scheme so the
+        // host-aware handler can resolve it the instant a callback arrives.
+        realmRegistry.Set(schemeName, realmSlug);
+
         var scheme = new AuthenticationScheme(
             name: schemeName,
             displayName: config.DisplayName,
-            handlerType: typeof(OpenIdConnectHandler));
+            handlerType: typeof(HostAwareOpenIdConnectHandler));
         schemeProvider.AddScheme(scheme);
 
-        logger.LogInformation("Auth: Registered OIDC scheme {Scheme} (LoginProvider {Display} / {Flavor})",
-            schemeName, config.DisplayName, config.Flavor);
+        logger.LogInformation("Auth: Registered OIDC scheme {Scheme} (LoginProvider {Display} / {Flavor}) in realm {Realm}",
+            schemeName, config.DisplayName, config.Flavor, realmSlug);
     }
 
     public async Task UnregisterAsync(Guid loginProviderId)
@@ -219,6 +253,7 @@ public class DynamicOidcSchemeManager(
         var schemeName = SchemeNameFor(loginProviderId);
         schemeProvider.RemoveScheme(schemeName);
         oidcOptionsCache.TryRemove(schemeName);
+        realmRegistry.Remove(schemeName);
         logger.LogInformation("Auth: Unregistered OIDC scheme {Scheme}", schemeName);
         await Task.CompletedTask;
     }
@@ -236,4 +271,25 @@ public class DynamicOidcSchemeManager(
             .ToList();
     }
 
+    // OIDC FlavorData stores the admin form's ConfigSchema keys verbatim
+    // (PascalCase, e.g. "UsePkce") — there's no camelCase re-serialization on
+    // the OIDC side — so a direct PascalCase lookup is sufficient.
+    private static bool ReadBool(JsonDocument? doc, string name, bool fallback)
+    {
+        if (doc is null || doc.RootElement.ValueKind != JsonValueKind.Object)
+            return fallback;
+        return doc.RootElement.TryGetProperty(name, out var el)
+               && (el.ValueKind == JsonValueKind.True || el.ValueKind == JsonValueKind.False)
+            ? el.GetBoolean()
+            : fallback;
+    }
+
+    private static string? ReadString(JsonDocument? doc, string name)
+    {
+        if (doc is null || doc.RootElement.ValueKind != JsonValueKind.Object)
+            return null;
+        return doc.RootElement.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.String
+            ? el.GetString()
+            : null;
+    }
 }

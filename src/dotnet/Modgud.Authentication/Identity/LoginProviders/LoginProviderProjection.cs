@@ -16,6 +16,7 @@ public partial class LoginProviderProjection : SingleStreamProjection<LoginProvi
         Id = @event.Id,
         Type = @event.Type,
         Flavor = @event.Flavor,
+        Slug = @event.Slug,
         DisplayName = @event.DisplayName,
         Description = @event.Description,
         IsBuiltIn = @event.IsBuiltIn,

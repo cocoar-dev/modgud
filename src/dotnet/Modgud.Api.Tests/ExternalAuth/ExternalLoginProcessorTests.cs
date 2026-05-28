@@ -184,20 +184,23 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task NonOidcProvider_Returns_TypeNotSupportedError()
+    public async Task UnsupportedProtocolType_Returns_TypeNotSupportedError()
     {
-        // Phase 2: callback-flow type-discriminator gate. A LoginProvider whose
-        // Type is anything other than Oidc must surface the centralized
-        // "type not yet supported" error code — not an NPE on missing flavor.
+        // Callback-flow type-discriminator gate. A LoginProvider whose Type is
+        // neither Oidc nor Saml (the two protocols actually wired up) must
+        // surface the centralized "type not yet supported" error code — not an
+        // NPE on a missing flavor lookup. Saml/Oidc both flow through; Ldap +
+        // Kerberos are the remaining unsupported enum values today.
         var id = Guid.NewGuid();
         using (var scope = Factory.Services.CreateScope())
         {
             var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
             session.Events.StartStream<LoginProvider>(id, new LoginProviderAddedEvent(
                 Id: id,
-                Type: LoginProviderType.Saml,
-                Flavor: "saml-future",
-                DisplayName: "Saml Future",
+                Type: LoginProviderType.Ldap,
+                Flavor: "ldap-future",
+                Slug: "ldap-future",
+                DisplayName: "LDAP Future",
                 Description: null,
                 IsBuiltIn: false,
                 Enabled: true,
@@ -260,6 +263,7 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
         var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
             Flavor: LoginProviderFlavor.EntraId,
             DisplayName: "Test Entra " + Guid.NewGuid().ToString("N")[..6],
+            Slug: $"s{Guid.NewGuid():N}"[..12],
             FlavorData: flavorData));
         Assert.False(result.IsError);
         var id = result.Value.Id;

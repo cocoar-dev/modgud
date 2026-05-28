@@ -18,11 +18,17 @@ public static class ExternalAuthEndpoints
             async ([FromServices] IQuerySession session, CancellationToken ct) =>
             {
                 var providers = await session.Query<LoginProvider>()
-                    .Where(c => !c.IsDeleted && c.Enabled && c.Type == LoginProviderType.Oidc)
+                    .Where(c => !c.IsDeleted && c.Enabled
+                        && (c.Type == LoginProviderType.Oidc || c.Type == LoginProviderType.Saml))
                     .ToListAsync(ct);
 
+                // Kind tells the login page which entry-point to build:
+                //   Oidc → /api/account/external-login/{id}/start  (challenge)
+                //   Saml → /saml/{slug}/login                      (SP-initiated)
                 return Results.Ok(providers.Select(c => new ExternalLoginDto(
                     Id: c.Id,
+                    Kind: c.Type.ToString(),
+                    Slug: c.Slug,
                     DisplayName: c.DisplayName,
                     Flavor: c.Flavor,
                     IconName: c.IconName,
@@ -171,6 +177,8 @@ public static class ExternalAuthEndpoints
 
     public record ExternalLoginDto(
         Guid Id,
+        string Kind,
+        string Slug,
         string DisplayName,
         string Flavor,
         string? IconName,

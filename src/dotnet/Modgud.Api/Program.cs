@@ -27,6 +27,7 @@ using Modgud.Authentication.AuthLog;
 using Modgud.Authentication.Api.Admin;
 using Modgud.Authentication.Api.Admin.LoginProviders;
 using Modgud.Authentication.Api.ExternalAuth;
+using Modgud.Authentication.Api.ExternalAuth.Saml;
 using Modgud.Api.Features.Groups;
 using Modgud.Api.Features.Principals;
 using Modgud.Api.Features.Roles;
@@ -618,9 +619,14 @@ try
     builder.Services.AddScoped<Modgud.Authentication.Setup.IPendingAdminInviteService,
         Modgud.Authentication.Setup.PendingAdminInviteService>();
     builder.Services.AddSingleton<UserUpdateScriptRunner>();
+    builder.Services.AddSingleton<Modgud.Authentication.Api.ExternalAuth.OidcSchemeRealmRegistry>();
     builder.Services.AddSingleton<DynamicOidcSchemeManager>();
     builder.Services.AddScoped<ExternalLoginProcessor>();
     builder.Services.AddHostedService<OidcSchemeBootstrap>();
+
+    // SAML SP federation (placeholder hook — incremental wiring lands
+    // in subsequent commits on feat/saml-federation).
+    builder.Services.AddModgudSaml();
 
     // SETUP-01 / Setup endpoint surface eliminated in C15d. First-admin
     // onboarding goes through CP-issued bootstrap-invites (POST
@@ -1049,6 +1055,7 @@ try
     app.MapSessionEndpoints("api");
     app.MapGdprEndpoints("api");
     app.MapExternalAuthEndpoints("api");
+    app.MapSamlEndpoints();
     app.MapProfileLinkEndpoints("api");
     app.MapLoginProvidersEndpoints("api");
     app.MapUserUpdateScriptTestEndpoint("api");

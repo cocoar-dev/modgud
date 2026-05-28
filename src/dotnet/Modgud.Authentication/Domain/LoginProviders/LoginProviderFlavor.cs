@@ -16,7 +16,15 @@ namespace Modgud.Authentication.Domain.LoginProviders;
 public static class LoginProviderFlavor
 {
     public const string Internal = "internal";
+
+    // OIDC flavors
     public const string EntraId = "EntraId";
     public const string GenericOidc = "GenericOidc";
+
+    // SAML 2.0 flavors (Modgud as SP)
+    public const string EntraIdSaml = "EntraIdSaml";
+    public const string AdfsSaml = "AdfsSaml";
+    public const string GenericSaml = "GenericSaml";
+
     // Future: Okta, Keycloak, Google, GitHub, Facebook, ...
 }
