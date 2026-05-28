@@ -4,7 +4,7 @@ title: PR-scoped Docker image build via `/build-image` comment
 
 # PR-scoped Docker image build via `/build-image` comment
 
-> **Status:** Designed 2026-05-27 during the SAML-wave PR (#17) review session. Not started. Tightly coupled with the still-open **GHCR retention policy** item ([[project-v0-5-0-release-shipped-2026-05-27]]) — both decisions land together.
+> **Status:** Designed 2026-05-27 during the SAML-wave PR (#17) review session. **DEFERRED 2026-05-28** — manual `workflow_dispatch` is fine for now; the comment trigger is not needed yet. The **tag-strategy section below is superseded** by [[versioning-publishing-conventions]] (the tag/version/publishing rules were split out and decided there). This page now only covers the (deferred) comment-trigger mechanism itself.
 > **Why:** PR test-plan checkboxes ("EntraID Enterprise App smoke", "test-server deploy", …) imply a pulled Docker image, but `cd-publish-staging-image.yml` only fires on `push: develop`. Today the only way to test a feature branch on a real-server instance is to manually `workflow_dispatch` the staging build, which adds friction every iteration. Tasks like the SAML-wave EntraID smoke would benefit from a clean PR-scoped image that follows the branch HEAD.
 
 ## Decision: comment-triggered, not label-triggered or auto-on-CI-success
