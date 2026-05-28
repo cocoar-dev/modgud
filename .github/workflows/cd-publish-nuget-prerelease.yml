@@ -169,7 +169,14 @@ jobs:
           path: ${{ github.workspace }}/artifacts
           retention-days: 30
 
+      # Feed-gate: only develop betas land on the permanent public feed.
+      # Feature-branch dispatches produce the .nupkg artifact above for
+      # local/internal testing but are NOT pushed — nuget.org versions are
+      # permanent (only unlistable) and there is no anonymous-pullable
+      # alternative feed, so we keep the public feed to develop betas +
+      # stable releases only. See dev-docs/future-features/versioning-publishing-conventions.md.
       - name: Push prerelease to NuGet.org
+        if: github.ref == 'refs/heads/develop'
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
@@ -184,5 +191,10 @@ jobs:
           {
             echo "### Modgud.Client.AspNetCore — $PACKAGE_VERSION (prerelease)"
             echo ""
-            echo "**Pushed to:** https://www.nuget.org/packages/Modgud.Client.AspNetCore/$PACKAGE_VERSION"
+            if [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+              echo "**Pushed to:** https://www.nuget.org/packages/Modgud.Client.AspNetCore/$PACKAGE_VERSION"
+            else
+              echo "**Artifact only** (feature branch — not pushed to nuget.org)."
+              echo "Download the \`prerelease-packages-$PACKAGE_VERSION\` artifact and add it as a local source to test."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
