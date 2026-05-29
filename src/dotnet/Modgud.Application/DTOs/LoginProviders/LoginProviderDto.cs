@@ -41,6 +41,8 @@ public record LoginProviderDto
     public required bool AutoCreateUsers { get; init; }
     public required bool AllowLinking { get; init; }
     public required bool TrustForEmailLink { get; init; }
+    public required bool TrustForAuthorization { get; init; }
+    public required bool AuthoritativeForProfile { get; init; }
     public List<string>? AllowedEmailDomains { get; init; }
     public string? IconName { get; init; }
     public string? ButtonColorHex { get; init; }

@@ -16,7 +16,8 @@ public record CreateGroupCommand(
     string? MembershipScript = null,
     string? Email = null,
     EmailMode EmailMode = EmailMode.Shared,
-    List<string>? BoundTo = null);
+    List<string>? BoundTo = null,
+    bool ExternallyDrivable = false);
 
 public class CreateGroupHandler(
     IDocumentSession session,
@@ -37,6 +38,17 @@ public class CreateGroupHandler(
         if (nameTaken)
             return Error.Conflict("Group.NameTaken",
                 $"A group with the name '{normalized}' already exists.");
+
+        // Federation v1 (decision G): realm:admin is hard local-only. A group
+        // that confers realm:admin can never be externally drivable, because
+        // external claims are untrusted input. Enforced bidirectionally at the
+        // create/update seam where RoleIds and ExternallyDrivable are set together.
+        if (command.ExternallyDrivable)
+        {
+            var guardError = await GroupMembershipGuards.RejectIfConfersRealmAdminAsync(
+                session, command.RoleIds, ct);
+            if (guardError is not null) return guardError.Value;
+        }
 
         string? compiledMembership = null;
         List<string>? membershipDeps = null;
@@ -87,6 +99,7 @@ public class CreateGroupHandler(
             Email = command.Email,
             EmailMode = command.EmailMode,
             BoundTo = command.BoundTo?.ToList() ?? [],
+            ExternallyDrivable = command.ExternallyDrivable,
         };
 
         session.Events.StartStream(group.Id,
@@ -95,7 +108,7 @@ public class CreateGroupHandler(
                 group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
                 group.MembershipScriptDependencies,
                 group.Email, group.EmailMode,
-                group.BoundTo));
+                group.BoundTo, group.ExternallyDrivable));
 
         if (group.MembershipMode == MembershipMode.Auto)
             await recalculator.RecalculateForGroupAsync(group, session, ct);

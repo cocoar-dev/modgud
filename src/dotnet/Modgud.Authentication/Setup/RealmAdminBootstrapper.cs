@@ -246,7 +246,8 @@ public sealed class RealmAdminBootstrapper(
                     existingGroup.Id, existingGroup.Name, existingGroup.Description,
                     newMemberIds, existingGroup.RoleIds,
                     Email: existingGroup.Email,
-                    BoundTo: existingGroup.BoundTo));
+                    BoundTo: existingGroup.BoundTo,
+                    ExternallyDrivable: existingGroup.ExternallyDrivable));
         }
     }
 }

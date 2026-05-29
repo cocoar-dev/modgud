@@ -14,7 +14,10 @@ public record GroupCreatedEvent(
     List<string>? MembershipScriptDependencies = null,
     string? Email = null,
     EmailMode EmailMode = EmailMode.Shared,
-    List<string>? BoundTo = null);
+    List<string>? BoundTo = null,
+    // Federation v1 (decision G). Trailing optional param so existing positional
+    // construction sites are unaffected; old streams replay to default false.
+    bool ExternallyDrivable = false);
 
 public record GroupUpdatedEvent(
     Guid Id,
@@ -28,7 +31,10 @@ public record GroupUpdatedEvent(
     List<string>? MembershipScriptDependencies = null,
     string? Email = null,
     EmailMode EmailMode = EmailMode.Shared,
-    List<string>? BoundTo = null);
+    List<string>? BoundTo = null,
+    // Full-replace event: every producer MUST pass the current value or it resets
+    // to false. Trailing optional keeps positional callers compiling.
+    bool ExternallyDrivable = false);
 
 public record GroupMembershipRecomputedEvent(
     Guid Id,

@@ -128,7 +128,9 @@ public static class LoginProvidersEndpoints
                     TrustForEmailLink: request.TrustForEmailLink,
                     AllowedEmailDomains: request.AllowedEmailDomains,
                     IconName: request.IconName,
-                    ButtonColorHex: request.ButtonColorHex);
+                    ButtonColorHex: request.ButtonColorHex,
+                    TrustForAuthorization: request.TrustForAuthorization,
+                    AuthoritativeForProfile: request.AuthoritativeForProfile);
                 var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command, ct);
                 return result.Match<IResult>(
                     v => Results.Created($"/api/admin/login-providers/{v.Id:N}", ToDto(v, ResolvePublicUrl(conf))),
@@ -163,7 +165,9 @@ public static class LoginProvidersEndpoints
                     IconName: request.IconName,
                     ButtonColorHex: request.ButtonColorHex,
                     FlavorData: flavorData,
-                    Enabled: request.Enabled);
+                    Enabled: request.Enabled,
+                    TrustForAuthorization: request.TrustForAuthorization,
+                    AuthoritativeForProfile: request.AuthoritativeForProfile);
                 var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command, ct);
                 return result.Match<IResult>(
                     v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
@@ -221,6 +225,8 @@ public static class LoginProvidersEndpoints
         AutoCreateUsers = c.AutoCreateUsers,
         AllowLinking = c.AllowLinking,
         TrustForEmailLink = c.TrustForEmailLink,
+        TrustForAuthorization = c.TrustForAuthorization,
+        AuthoritativeForProfile = c.AuthoritativeForProfile,
         AllowedEmailDomains = c.AllowedEmailDomains,
         IconName = c.IconName,
         ButtonColorHex = c.ButtonColorHex,
@@ -273,7 +279,9 @@ public static class LoginProvidersEndpoints
         bool? TrustForEmailLink = null,
         List<string>? AllowedEmailDomains = null,
         string? IconName = null,
-        string? ButtonColorHex = null);
+        string? ButtonColorHex = null,
+        bool? TrustForAuthorization = null,
+        bool? AuthoritativeForProfile = null);
 
     // PATCH semantics: every field is Optional<T>, so a caller can send just
     // the properties it wants to change (e.g. the grid sends only Enabled to
@@ -293,7 +301,9 @@ public static class LoginProvidersEndpoints
         Optional<string?> IconName,
         Optional<string?> ButtonColorHex,
         Optional<JsonElement> FlavorData,
-        Optional<bool> Enabled);
+        Optional<bool> Enabled,
+        Optional<bool> TrustForAuthorization = default,
+        Optional<bool> AuthoritativeForProfile = default);
 
     public record RotateSecretRequest(string Secret);
 }

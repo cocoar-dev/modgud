@@ -401,7 +401,8 @@ public static class UsersEndpoints
                     group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
                     group.MembershipScriptDependencies,
                     group.Email, group.EmailMode,
-                    BoundTo: group.BoundTo));
+                    BoundTo: group.BoundTo,
+                    ExternallyDrivable: group.ExternallyDrivable));
                 await session.SaveChangesAsync();
                 return Results.NoContent();
             })
@@ -433,7 +434,8 @@ public static class UsersEndpoints
                     group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
                     group.MembershipScriptDependencies,
                     group.Email, group.EmailMode,
-                    BoundTo: group.BoundTo));
+                    BoundTo: group.BoundTo,
+                    ExternallyDrivable: group.ExternallyDrivable));
                 await session.SaveChangesAsync();
                 return Results.NoContent();
             })

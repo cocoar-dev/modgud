@@ -30,6 +30,8 @@ public partial class LoginProviderProjection : SingleStreamProjection<LoginProvi
         AutoCreateUsers = @event.AutoCreateUsers,
         AllowLinking = @event.AllowLinking,
         TrustForEmailLink = @event.TrustForEmailLink,
+        TrustForAuthorization = @event.TrustForAuthorization,
+        AuthoritativeForProfile = @event.AuthoritativeForProfile,
         AllowedEmailDomains = @event.AllowedEmailDomains,
         IconName = @event.IconName,
         ButtonColorHex = @event.ButtonColorHex,
@@ -51,6 +53,8 @@ public partial class LoginProviderProjection : SingleStreamProjection<LoginProvi
         current.AutoCreateUsers = @event.AutoCreateUsers;
         current.AllowLinking = @event.AllowLinking;
         current.TrustForEmailLink = @event.TrustForEmailLink;
+        current.TrustForAuthorization = @event.TrustForAuthorization;
+        current.AuthoritativeForProfile = @event.AuthoritativeForProfile;
         current.AllowedEmailDomains = @event.AllowedEmailDomains;
         current.IconName = @event.IconName;
         current.ButtonColorHex = @event.ButtonColorHex;

@@ -27,6 +27,7 @@ public abstract partial class PrincipalProjectionBase : SingleStreamProjection<P
         Email = @event.Email,
         EmailMode = @event.EmailMode,
         BoundTo = @event.BoundTo ?? [],
+        ExternallyDrivable = @event.ExternallyDrivable,
         IsActive = true,
         IsDeleted = false,
     };
@@ -45,6 +46,7 @@ public abstract partial class PrincipalProjectionBase : SingleStreamProjection<P
         group.Email = @event.Email;
         group.EmailMode = @event.EmailMode;
         group.BoundTo = @event.BoundTo ?? [];
+        group.ExternallyDrivable = @event.ExternallyDrivable;
         group.MembershipLastError = null;
         return group;
     }
