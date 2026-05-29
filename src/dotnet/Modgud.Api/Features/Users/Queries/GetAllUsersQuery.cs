@@ -1,6 +1,7 @@
 using ErrorOr;
 using Marten;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Gdpr;
 using Modgud.Infrastructure.Persistence.Marten.Mappers;
 using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
 using Modgud.Application.DTOs.User;
@@ -33,12 +34,32 @@ public class GetAllUsersHandler(IDocumentSession session)
         // flag for the page and merge into the DTOs.
         var confirmedById = await LoadEmailConfirmedAsync(page.Select(u => u.Id), ct);
 
+        // Pending-deletion state lives in a separate (non-event-sourced) doc —
+        // batch-load it for the page so the grid can badge + freeze pending users.
+        var deletionById = await LoadDeletionStateAsync(page.Select(u => u.Id), ct);
+
         return page.Select(u =>
         {
             var dto = u.ToDto();
             dto.EmailConfirmed = confirmedById.TryGetValue(u.Id, out var c) && c;
+            if (deletionById.TryGetValue(u.Id, out var del) && del.IsDeletionPending)
+            {
+                dto.IsDeletionPending = true;
+                dto.DeletionInitiator = del.DeletionInitiator?.ToString();
+                dto.DeletionDeadline = del.DeletionConfirmationDeadline;
+            }
             return dto;
         }).ToList();
+    }
+
+    private async Task<Dictionary<Guid, UserDeletionState>> LoadDeletionStateAsync(IEnumerable<Guid> ids, CancellationToken ct)
+    {
+        var idList = ids.ToList();
+        if (idList.Count == 0) return [];
+        var rows = await session.Query<UserDeletionState>()
+            .Where(s => idList.Contains(s.Id) && s.IsDeletionPending)
+            .ToListAsync(ct);
+        return rows.ToDictionary(r => r.Id);
     }
 
     private async Task<Dictionary<Guid, bool>> LoadEmailConfirmedAsync(IEnumerable<Guid> ids, CancellationToken ct)

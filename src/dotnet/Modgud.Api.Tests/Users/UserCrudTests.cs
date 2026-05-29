@@ -119,26 +119,29 @@ public class UserCrudTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Delete_SingleUser_RemovesFromDatabase()
+    public async Task Delete_SingleUser_MovesToRecycleBin()
     {
         // Arrange
         var user = await Factory.CreateTestUserAsync("To Delete", "User");
         var userId = new ShortGuid(user.Id).ToString();
 
-        // Act
+        // Act — admin "delete" is now a recycle-bin move (reversible), not an
+        // immediate erase. The user stays queryable, flagged pending.
         var response = await Client.DeleteAsync($"/api/user/{userId}", TestContext.Current.CancellationToken);
 
         // Assert
         response.EnsureSuccessStatusCode();
         await Factory.WaitForProjectionsAsync();
 
-        // Verify it's gone
         var getResponse = await Client.GetAsync($"/api/user/{userId}", TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
+        var dto = await getResponse.ReadSuccessJsonAsync<UserDto>(JsonOptions);
+        Assert.True(dto.IsDeletionPending);
+        Assert.Equal("Admin", dto.DeletionInitiator);
+        Assert.NotNull(dto.DeletionDeadline);
     }
 
     [Fact]
-    public async Task Delete_MultipleUsers_RemovesAllFromDatabase()
+    public async Task Delete_MultipleUsers_MovesAllToRecycleBin()
     {
         // Arrange (note: DefaultUser is already created by IntegrationTestBase)
         var user1 = await Factory.CreateTestUserAsync("User", "One");
@@ -161,11 +164,19 @@ public class UserCrudTests : IntegrationTestBase
         response.EnsureSuccessStatusCode();
         await Factory.WaitForProjectionsAsync();
 
-        // Verify user1 and user2 are gone (DefaultUser still remains)
+        // All three users remain queryable; the two deleted are now pending in
+        // the recycle bin, DefaultUser is untouched.
         var getResponse = await Client.GetAsync("/api/user", TestContext.Current.CancellationToken);
         var remaining = await getResponse.ReadSuccessJsonAsync<List<UserDto>>(JsonOptions);
-        Assert.Single(remaining); // Only DefaultUser remains
-        Assert.Equal("TU", remaining[0].Acronym);
+        Assert.Equal(3, remaining.Count);
+
+        var deletedIds = ids.ToHashSet();
+        Assert.All(
+            remaining.Where(u => deletedIds.Contains(u.Id)),
+            u => Assert.True(u.IsDeletionPending));
+
+        var defaultDto = remaining.Single(u => u.Id == new ShortGuid(DefaultUser!.Id).ToString());
+        Assert.False(defaultDto.IsDeletionPending);
     }
 
     [Fact]
