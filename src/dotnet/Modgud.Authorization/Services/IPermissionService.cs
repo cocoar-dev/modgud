@@ -51,4 +51,44 @@ public interface IPermissionService
     /// propagation logic.
     /// </summary>
     Task<HashSet<Guid>> GetDescendantGroupIdsAsync(Guid groupId, CancellationToken ct = default);
+
+    // ── Federation v1 union overloads (decision D) ────────────────────────
+    // These add the live-session, externally-derived group set on top of the
+    // durable membership. <paramref name="sessionGroupIds"/> are the
+    // ExternallyDrivable group IDs matched at login (carried on the sign-in
+    // cookie → OpenIddict grant as the no-destination "modgud:session-group"
+    // claim) and re-discovered at token/UserInfo time. They are unioned with
+    // the durable BFS result, their ancestors walked too (a session child still
+    // confers its parents' roles), and tagged with provenance so a
+    // session-sourced group can NEVER confer realm:admin (hard local-only,
+    // decision G). These are deliberately distinct OVERLOADS — not optional
+    // params on the methods above — so the non-OAuth call sites stay unchanged
+    // and the one union call site (BuildResourceAccessAsync) is greppable (I8).
+
+    /// <summary>
+    /// As <see cref="GetUserGroupsAsync(Guid, CancellationToken)"/>, plus the
+    /// session-derived <paramref name="sessionGroupIds"/> and their ancestors.
+    /// </summary>
+    Task<List<Group>> GetUserGroupsAsync(
+        Guid userId, IReadOnlyCollection<Guid> sessionGroupIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// As <see cref="GetUserPermissionsAsync(Guid, string, CancellationToken)"/>,
+    /// unioning the session-derived <paramref name="sessionGroupIds"/> (and their
+    /// ancestors). The synthetic <c>realm:admin</c> entry is added ONLY for roles
+    /// reached through a durable (source=local) group — never from a session
+    /// source. <c>&lt;app&gt;:admin</c> and below may be externally driven and are
+    /// emitted regardless of provenance.
+    /// </summary>
+    Task<List<string>> GetUserPermissionsAsync(
+        Guid userId, string appSlug, IReadOnlyCollection<Guid> sessionGroupIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// As <see cref="GetUserRolesAsync(Guid, string, CancellationToken)"/>,
+    /// unioning the session-derived <paramref name="sessionGroupIds"/> (and their
+    /// ancestors). A realm-admin role is returned ONLY when reached durably;
+    /// app-scoped roles are provenance-agnostic.
+    /// </summary>
+    Task<List<PermissionRole>> GetUserRolesAsync(
+        Guid userId, string appSlug, IReadOnlyCollection<Guid> sessionGroupIds, CancellationToken ct = default);
 }

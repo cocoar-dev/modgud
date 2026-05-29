@@ -5,6 +5,7 @@ using Modgud.Authorization.Principals;
 using Modgud.Authorization.Services;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Permissions;
+using Modgud.Permissions.Abstractions;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Consent;
 using Modgud.Domain.OAuth.Scopes;
@@ -159,7 +160,9 @@ public static class AuthorizationEndpoints
 
         if (consentType == ConsentTypes.Implicit || authorizations.Count != 0)
         {
-            var principal = await CreateClaimsPrincipalAsync(user, request, scopeManager, userManager: userManager);
+            var principal = await CreateClaimsPrincipalAsync(
+                user, request, scopeManager, userManager: userManager,
+                cookiePrincipal: authResult.Principal);
 
             var authorization = authorizations.LastOrDefault();
             authorization ??= await authorizationManager.CreateAsync(
@@ -297,7 +300,9 @@ public static class AuthorizationEndpoints
             }
 
             var originalScopes = result.Principal?.GetScopes();
-            var principal = await CreateClaimsPrincipalAsync(user, request, scopeManager, originalScopes, userManager);
+            var principal = await CreateClaimsPrincipalAsync(
+                user, request, scopeManager, originalScopes, userManager,
+                cookiePrincipal: result.Principal);
             principal.SetAuthorizationId(result.Principal?.GetAuthorizationId());
 
             return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
@@ -378,6 +383,11 @@ public static class AuthorizationEndpoints
             identity.SetDestinations(static claim => claim.Type switch
             {
                 Claims.Name or Claims.Subject => new[] { Destinations.AccessToken, Destinations.IdentityToken },
+                // Hub-boundary defense-in-depth (decision D): the cc-flow never
+                // copies the session-group carrier (fresh identity, no cookie), but
+                // pin it to NO destination here too so any future drift that adds
+                // it can't fall through to the access-token default and leak.
+                FederationClaimTypes.SessionGroup => Array.Empty<string>(),
                 _ => new[] { Destinations.AccessToken },
             });
 
@@ -534,8 +544,15 @@ public static class AuthorizationEndpoints
         var wantsPermissions = httpContext.User.HasScope("permissions");
         var audiences = httpContext.User.GetAudiences().ToList();
 
+        // Federation v1 (decision D): the no-destination session-group carrier was
+        // persisted with the reference access token, so it reconstructs onto
+        // httpContext.User here. Parse it back to group GUIDs and union it into the
+        // per-audience authz. (Absent for JWT-access clients — the documented v1
+        // boundary: those get durable-membership authz only.)
+        var sessionGroupIds = ReadSessionGroupIds(httpContext.User);
+
         var resourceAccess = await BuildResourceAccessAsync(
-            user.Id, audiences, wantsRoles, wantsPermissions, session, permissionService);
+            user.Id, audiences, wantsRoles, wantsPermissions, session, permissionService, sessionGroupIds);
         if (resourceAccess is not null)
             claims["resource_access"] = resourceAccess;
 
@@ -559,9 +576,16 @@ public static class AuthorizationEndpoints
         bool wantsRoles,
         bool wantsPermissions,
         IDocumentSession session,
-        IPermissionService permissionService)
+        IPermissionService permissionService,
+        IReadOnlyCollection<Guid>? sessionGroupIds = null)
     {
         if (!wantsRoles && !wantsPermissions) return null;
+
+        // Federation v1 (decision D): the single union call site. For human
+        // UserInfo this carries the session-derived group IDs read off the
+        // access-token principal; for the cc-flow + Service-Account paths it is
+        // empty, so the union overloads behave identically to the no-arg ones.
+        var sessionIds = sessionGroupIds ?? Array.Empty<Guid>();
 
         var resourceAccess = new Dictionary<string, object>(StringComparer.Ordinal);
         foreach (var audience in audiences)
@@ -577,7 +601,7 @@ public static class AuthorizationEndpoints
 
             if (wantsPermissions)
             {
-                var rawPermissions = await permissionService.GetUserPermissionsAsync(principalId, app.Slug);
+                var rawPermissions = await permissionService.GetUserPermissionsAsync(principalId, app.Slug, sessionIds);
                 var expandedPermissions = ExpandBypassTiers(rawPermissions, app);
                 var apiPermissions = NarrowToApiSubset(expandedPermissions, api, app);
                 block["permissions"] = apiPermissions;
@@ -585,7 +609,7 @@ public static class AuthorizationEndpoints
 
             if (wantsRoles)
             {
-                var rolesForApp = await permissionService.GetUserRolesAsync(principalId, app.Slug);
+                var rolesForApp = await permissionService.GetUserRolesAsync(principalId, app.Slug, sessionIds);
                 block["roles"] = rolesForApp.Select(r => r.Name).ToArray();
             }
 
@@ -623,6 +647,15 @@ public static class AuthorizationEndpoints
 
         var emit = new HashSet<string>(StringComparer.Ordinal);
 
+        // Federation v1 invariant (decision G): realm:admin is hard local-only.
+        // This expander receives flat permission strings with no source tag, so it
+        // CANNOT distinguish a local realm:admin from an externally-derived one —
+        // a session-sourced realm:admin would expand the whole catalog here. The
+        // provenance-aware strip therefore lives upstream in
+        // PermissionService.GetUserPermissionsAsync (the union overload only adds
+        // realm:admin for durable groups); by the time a realm:admin string
+        // reaches this method it is guaranteed local. Do NOT relax that.
+        //
         // realm:admin trumps everything — emit the whole catalog and stop.
         if (rawPermissions.Contains(PermissionEvaluator.RealmAdminPermission))
         {
@@ -838,7 +871,8 @@ public static class AuthorizationEndpoints
         OpenIddictRequest request,
         IOpenIddictScopeManager scopeManager,
         IEnumerable<string>? scopeOverrides = null,
-        UserManager<ApplicationUser>? userManager = null)
+        UserManager<ApplicationUser>? userManager = null,
+        ClaimsPrincipal? cookiePrincipal = null)
     {
         // Identity must use the OpenIddict default authentication type so it processes
         // the claims correctly (Identity's ApplicationScheme identity is filtered out).
@@ -889,6 +923,25 @@ public static class AuthorizationEndpoints
             if (!string.IsNullOrEmpty(user.Lastname)) identity.SetClaim(Claims.FamilyName, user.Lastname);
         }
 
+        // Federation v1 (decision D/E): copy the session-group carrier claim(s)
+        // from the cookie/grant principal onto this grant. One claim per matched
+        // ExternallyDrivable group GUID. GetDestinations yields nothing for this
+        // type, so SetDestinations below leaves it with NO destination — it is
+        // persisted in the server-side reference token (read back at UserInfo and
+        // re-baked at refresh) but never emitted on the wire (hub boundary).
+        //   • Authorize path passes the live cookie principal → reflects this
+        //     login's freshly-derived groups.
+        //   • Refresh/code/device path passes the rehydrated reference-token
+        //     principal → re-copies the FROZEN set, no recompute. The session is
+        //     the lease (decision E).
+        if (cookiePrincipal is not null)
+        {
+            foreach (var carrier in cookiePrincipal.FindAll(FederationClaimTypes.SessionGroup))
+            {
+                identity.AddClaim(new Claim(FederationClaimTypes.SessionGroup, carrier.Value));
+            }
+        }
+
         principal.SetDestinations(GetDestinations);
         return principal;
     }
@@ -898,6 +951,23 @@ public static class AuthorizationEndpoints
 
     private static IEnumerable<string> GetDestinations(Claim claim)
         => AuthorizationEndpointHelpers.GetDestinations(claim);
+
+    /// <summary>
+    /// Federation v1 (decision D) — reads the internal <c>modgud:session-group</c>
+    /// carrier off a principal and parses each value to a group GUID. One claim
+    /// per group; malformed values are skipped defensively. Returns an empty set
+    /// when none are present (password / JWT-access / non-federated logins).
+    /// </summary>
+    private static IReadOnlyCollection<Guid> ReadSessionGroupIds(ClaimsPrincipal principal)
+    {
+        List<Guid>? ids = null;
+        foreach (var claim in principal.FindAll(FederationClaimTypes.SessionGroup))
+        {
+            if (Guid.TryParse(claim.Value, out var id))
+                (ids ??= []).Add(id);
+        }
+        return ids is null ? Array.Empty<Guid>() : ids;
+    }
 
     /// <summary>
     /// OAUTH-14 — read the <c>cocoar:enabled</c> property off the OAuth
@@ -1178,6 +1248,13 @@ internal static class AuthorizationEndpointHelpers
                 yield break;
 
             case "AspNet.Identity.SecurityStamp":
+                yield break;
+
+            // Federation v1 (hub boundary, decision D): the session-group carrier
+            // is INTERNAL — it rides the server-side reference token and is unioned
+            // into resource_access at UserInfo/token time, but must NEVER reach the
+            // wire. Yield nothing for either token (exactly like SecurityStamp).
+            case FederationClaimTypes.SessionGroup:
                 yield break;
 
             default:

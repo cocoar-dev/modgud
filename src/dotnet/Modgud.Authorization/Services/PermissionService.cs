@@ -154,6 +154,205 @@ public class PermissionService(IQuerySession session) : IPermissionService
             .ToList();
     }
 
+    // ── Federation v1 union overloads (decision D) ────────────────────────
+
+    public async Task<List<Group>> GetUserGroupsAsync(
+        Guid userId, IReadOnlyCollection<Guid> sessionGroupIds, CancellationToken ct = default)
+    {
+        var resolved = await ResolveGroupsWithProvenanceAsync(userId, sessionGroupIds, ct);
+        return resolved.Select(r => r.Group).ToList();
+    }
+
+    public async Task<List<string>> GetUserPermissionsAsync(
+        Guid userId, string appSlug, IReadOnlyCollection<Guid> sessionGroupIds, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(appSlug);
+
+        var resolved = await ResolveGroupsWithProvenanceAsync(userId, sessionGroupIds, ct);
+        if (resolved.Count == 0) return [];
+
+        var activeGroups = resolved
+            .Where(r => r.Group.BoundTo.Contains(AllAppsWildcard) || r.Group.BoundTo.Contains(appSlug))
+            .ToList();
+        if (activeGroups.Count == 0) return [];
+
+        // Role IDs reachable through a DURABLE (source=local) active group — the
+        // only roles allowed to confer realm:admin. A session-sourced group, even
+        // one whose ancestor carries a realm-admin role, must never grant it:
+        // realm:admin is hard local-only (decision G). The write-time config guard
+        // (a realm:admin-conferring group cannot be ExternallyDrivable) is the
+        // first line; this provenance check is the second. <app>:admin and below
+        // MAY be externally driven, so the catalog-FK grants below stay
+        // provenance-agnostic.
+        var localRoleIds = activeGroups
+            .Where(r => r.IsLocal)
+            .SelectMany(r => r.Group.RoleIds)
+            .ToHashSet();
+
+        var roleIds = activeGroups.SelectMany(r => r.Group.RoleIds).Distinct().ToArray();
+        if (roleIds.Length == 0) return [];
+
+        var roles = await session.Query<PermissionRole>()
+            .Where(r => r.Id.IsOneOf(roleIds) && !r.IsDeleted)
+            .ToListAsync(ct);
+
+        var requestedApp = await session.Query<App>()
+            .FirstOrDefaultAsync(a => a.Slug == appSlug && !a.IsDeleted, ct);
+        var requestedAppId = requestedApp?.Id;
+        var requestedCatalog = requestedApp is null
+            ? new Dictionary<Guid, AppPermission>()
+            : requestedApp.Permissions.ToDictionary(p => p.Id);
+
+        var permissions = new HashSet<string>();
+        foreach (var role in roles)
+        {
+            // PROVENANCE-AWARE realm:admin strip (federation decision G): emit the
+            // synthetic realm:admin marker only when the realm-admin role is held
+            // through a durable group. localRoleIds == all roleIds when there are
+            // no session groups, so the non-federation path is unchanged.
+            if (role.IsRealmAdmin && localRoleIds.Contains(role.Id))
+            {
+                permissions.Add(PermissionEvaluator.RealmAdminPermission);
+            }
+
+            if (role.AppId.HasValue && role.AppId == requestedAppId)
+            {
+                foreach (var permissionId in role.PermissionIds)
+                {
+                    if (requestedCatalog.TryGetValue(permissionId, out var catalogEntry))
+                    {
+                        permissions.Add(catalogEntry.ToPermissionString());
+                    }
+                }
+            }
+        }
+        return permissions.ToList();
+    }
+
+    public async Task<List<PermissionRole>> GetUserRolesAsync(
+        Guid userId, string appSlug, IReadOnlyCollection<Guid> sessionGroupIds, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(appSlug);
+
+        var resolved = await ResolveGroupsWithProvenanceAsync(userId, sessionGroupIds, ct);
+        var activeGroups = resolved
+            .Where(r => r.Group.BoundTo.Contains(AllAppsWildcard) || r.Group.BoundTo.Contains(appSlug))
+            .ToList();
+        var roleIds = activeGroups.SelectMany(r => r.Group.RoleIds).Distinct().ToList();
+        if (roleIds.Count == 0)
+            return [];
+
+        var localRoleIds = activeGroups
+            .Where(r => r.IsLocal)
+            .SelectMany(r => r.Group.RoleIds)
+            .ToHashSet();
+
+        var requestedApp = await session.Query<App>()
+            .FirstOrDefaultAsync(a => a.Slug == appSlug && !a.IsDeleted, ct);
+        var requestedAppId = requestedApp?.Id;
+
+        var roles = await session.Query<PermissionRole>()
+            .Where(r => r.Id.IsOneOf(roleIds.ToArray()) && !r.IsDeleted)
+            .ToListAsync(ct);
+
+        // A realm-admin role travels everywhere — but only when reached durably
+        // (provenance guard, mirroring GetUserPermissionsAsync). App-scoped roles
+        // are provenance-agnostic (externally drivable below realm level).
+        return roles
+            .Where(r => r.IsRealmAdmin
+                ? localRoleIds.Contains(r.Id)
+                : (requestedAppId.HasValue && r.AppId == requestedAppId))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Federation v1 (decision D) — resolves the user's effective group set with
+    /// per-group provenance, unioning durable membership with the session-derived
+    /// <paramref name="sessionGroupIds"/>.
+    /// <list type="bullet">
+    ///   <item><b>Durable (source=local):</b> the BFS ancestors of
+    ///   <paramref name="userId"/> — identical to
+    ///   <see cref="GetUserGroupsAsync(Guid, CancellationToken)"/>.</item>
+    ///   <item><b>Session:</b> each supplied group id (the membership itself) PLUS
+    ///   its BFS ancestors — a session child still confers its parents' roles.</item>
+    /// </list>
+    /// A group reachable both ways is tagged <see cref="ResolvedGroup.IsLocal"/> =
+    /// <c>true</c> (durable wins), so a legitimately-held realm:admin is never
+    /// stripped. With an empty <paramref name="sessionGroupIds"/> the result is
+    /// exactly the durable set, all local — keeping the no-arg methods' behavior.
+    /// </summary>
+    private async Task<List<ResolvedGroup>> ResolveGroupsWithProvenanceAsync(
+        Guid userId, IReadOnlyCollection<Guid> sessionGroupIds, CancellationToken ct)
+    {
+        var allGroups = (await session.Query<Group>()
+            .Where(g => !g.IsDeleted)
+            .ToListAsync(ct)).ToList();
+
+        var byId = allGroups.ToDictionary(g => g.Id);
+        var parentMap = BuildParentMap(allGroups);
+
+        // Durable pass: the user is not itself a group, so the seed is not
+        // collected — only its ancestors (mirrors GetUserGroupsAsync(userId)).
+        var local = new Dictionary<Guid, Group>();
+        WalkAncestors([userId], includeSeeds: false, parentMap, byId, local);
+
+        // Session pass: each matched session group IS a membership, so collect the
+        // seed groups themselves and then walk their ancestors.
+        var sessionResolved = new Dictionary<Guid, Group>();
+        if (sessionGroupIds.Count > 0)
+            WalkAncestors(sessionGroupIds, includeSeeds: true, parentMap, byId, sessionResolved);
+
+        var resolved = new List<ResolvedGroup>(local.Count + sessionResolved.Count);
+        foreach (var g in local.Values)
+            resolved.Add(new ResolvedGroup(g, IsLocal: true));
+        foreach (var (id, g) in sessionResolved)
+            if (!local.ContainsKey(id))
+                resolved.Add(new ResolvedGroup(g, IsLocal: false));
+        return resolved;
+    }
+
+    /// <summary>
+    /// BFS up the member-of graph from <paramref name="seeds"/>, collecting each
+    /// reached group into <paramref name="into"/>. When
+    /// <paramref name="includeSeeds"/> is true the seed groups themselves are
+    /// collected (the user is a direct member of them); otherwise only their
+    /// ancestors are.
+    /// </summary>
+    private static void WalkAncestors(
+        IEnumerable<Guid> seeds,
+        bool includeSeeds,
+        Dictionary<Guid, List<Group>> parentMap,
+        Dictionary<Guid, Group> byId,
+        Dictionary<Guid, Group> into)
+    {
+        var visited = new HashSet<Guid>();
+        var queue = new Queue<Guid>();
+        foreach (var seed in seeds)
+        {
+            if (!visited.Add(seed)) continue;
+            queue.Enqueue(seed);
+            if (includeSeeds && byId.TryGetValue(seed, out var seedGroup))
+                into[seed] = seedGroup;
+        }
+
+        while (queue.Count > 0)
+        {
+            var currentId = queue.Dequeue();
+            if (!parentMap.TryGetValue(currentId, out var parents)) continue;
+
+            foreach (var parent in parents)
+            {
+                if (visited.Add(parent.Id))
+                {
+                    into[parent.Id] = parent;
+                    queue.Enqueue(parent.Id);
+                }
+            }
+        }
+    }
+
+    private readonly record struct ResolvedGroup(Group Group, bool IsLocal);
+
     public async Task<HashSet<Guid>> GetDescendantGroupIdsAsync(Guid groupId, CancellationToken ct = default)
     {
         var allGroups = (await session.Query<Group>()
