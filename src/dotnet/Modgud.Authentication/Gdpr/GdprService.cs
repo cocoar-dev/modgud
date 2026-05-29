@@ -1,4 +1,5 @@
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Domain.ExternalAuth;
 using Modgud.Authentication.Events;
 using Modgud.Authentication.Sessions;
 using Modgud.Authorization.Apps;
@@ -18,7 +19,9 @@ namespace Modgud.Authentication.Gdpr;
 /// cancel, plus the admin-facing permanent-erase. Uses Marten's
 /// <c>ApplyEventDataMasking</c> to scrub PII from existing event streams,
 /// then <c>ArchiveStream</c> to remove the user's stream from regular
-/// queries. Also deletes secondary documents (sessions, security data).
+/// queries. Also deletes secondary documents (sessions, security data,
+/// external identity links) and revokes the user's live access (OAuth grants
+/// + sessions + security stamp) via <see cref="IUserAccessRevoker"/>.
 /// </summary>
 public class GdprService(
     IDocumentStore store,
@@ -26,6 +29,7 @@ public class GdprService(
     UserManager<ApplicationUser> userManager,
     IPermissionService permissionService,
     IEmailService emailService,
+    IUserAccessRevoker accessRevoker,
     IHttpContextAccessor httpContextAccessor) : IGdprService
 {
     /// <summary>How long the user has to confirm a self-initiated
@@ -204,6 +208,12 @@ public class GdprService(
         var tenantId = httpContextAccessor.HttpContext?.Items[TenantConstants.HttpContextTenantIdKey] as string
                        ?? TenantConstants.SystemTenantId;
 
+        // 0) Revoke live access (OAuth grants + sessions + security stamp) BEFORE
+        //    the user document is masked/deleted: the stamp rotation must load
+        //    the not-yet-deleted user, and the stamp store (UserSecurityData) is
+        //    dropped below. Reason=Deletion so consent grants are revoked too.
+        await accessRevoker.RevokeAllAccessAsync(userId, AccessRevocationReason.Deletion, ct);
+
         // 1) Mark the user document as deleted + clear PII so any document-only
         //    consumers (Identity user store) immediately stop returning the user.
         var user = await session.LoadAsync<ApplicationUser>(userId, ct);
@@ -229,6 +239,21 @@ public class GdprService(
         session.DeleteWhere<UserSession>(s => s.UserId == userId);
         session.Delete<UserSecurityData>(userId);
 
+        //    External identity links carry Email, DisplayName, and the raw IdP
+        //    claim payload on their OWN streams (keyed by link id). Drop the
+        //    projection doc here; the PII-bearing events are masked + archived
+        //    below alongside the user stream (archiving alone only flags the
+        //    rows — the raw events must be masked to truly erase the PII).
+        //    Include already-unlinked tombstones, which still hold that PII
+        //    (so drop the !IsUnlinked filter).
+        var linkIds = (await session.Query<ExternalIdentityLink>()
+                .Where(l => l.UserId == userId)
+                .ToListAsync(ct))
+            .Select(l => l.Id)
+            .ToList();
+        foreach (var linkId in linkIds)
+            session.Delete<ExternalIdentityLink>(linkId);
+
         // 3) Update the deletion-state bookkeeping.
         var now = DateTimeOffset.UtcNow;
         var state = existingState ?? new UserDeletionState { Id = userId };
@@ -241,14 +266,17 @@ public class GdprService(
 
         await session.SaveChangesAsync(ct);
 
-        // 4) Apply Marten's PII masking to the existing event stream — replaces
-        //    name/email/IP fields in-place using the rules registered on the
-        //    StoreOptions. Followed by ArchiveStream to remove the stream from
-        //    regular query paths.
+        // 4) Apply Marten's PII masking to the user stream AND every external
+        //    identity-link stream — replaces name/email/IP/raw-claim fields
+        //    in-place using the rules registered on the StoreOptions. Masking
+        //    must precede ArchiveStream: archiving only flags rows, the raw
+        //    event data has to be rewritten for the PII to actually be gone.
         await store.Advanced.ApplyEventDataMasking(x =>
         {
             x.ForTenant(tenantId);
             x.IncludeStream(userId);
+            foreach (var linkId in linkIds)
+                x.IncludeStream(linkId);
             x.AddHeader("gdpr_masked", true);
             x.AddHeader("masked_at", now.ToString("O"));
             x.AddHeader("masked_by", adminUserId?.ToString() ?? "user_request");
@@ -259,6 +287,8 @@ public class GdprService(
         // already in the post-SaveChanges quiescent state above.
         await using var archiveSession = store.LightweightSession(tenantId);
         archiveSession.Events.ArchiveStream(userId);
+        foreach (var linkId in linkIds)
+            archiveSession.Events.ArchiveStream(linkId);
         await archiveSession.SaveChangesAsync(ct);
 
         ModgudMeters.RecordGdprRequest(ModgudMeters.GdprRequestType.Mask);

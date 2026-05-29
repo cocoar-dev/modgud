@@ -700,6 +700,14 @@ try
     builder.Services.AddScoped<Modgud.Authentication.Gdpr.IGdprService,
         Modgud.Authentication.Gdpr.GdprService>();
 
+    // User-lifecycle access "kill switch" — revokes OAuth grants + sessions +
+    // security stamp on delete/deactivate/force-logout. The OAuth half lives in
+    // Infrastructure so the Authentication slice stays OpenIddict-free.
+    builder.Services.AddScoped<Modgud.Infrastructure.OpenIddict.IOAuthGrantRevoker,
+        Modgud.Infrastructure.OpenIddict.OpenIddictGrantRevoker>();
+    builder.Services.AddScoped<Modgud.Authentication.Sessions.IUserAccessRevoker,
+        Modgud.Authentication.Sessions.UserAccessRevoker>();
+
     // Infrastructure (Marten + repositories + query services + event dispatcher)
     // Authentication Marten setup (documents + events + projections) is wired via
     // UseModgudAuthentication() so Infrastructure stays unaware of Authentication.
@@ -834,6 +842,12 @@ try
         // IAutoMembershipRecalculator) into a single one at the JsEngine's
         // module-builder seam.
         opts.CodeGeneration.AlwaysUseServiceLocationFor<Cocoar.JsEval.IJsModuleBuilder>();
+
+        // User-lifecycle access kill switch — its dependency chain reaches the
+        // OpenIddict managers (IOpenIddictTokenManager/AuthorizationManager),
+        // which OpenIddict registers as opaque scoped lambda factories Wolverine
+        // can't construct in generated code. DeleteUsersCommand injects it.
+        opts.CodeGeneration.AlwaysUseServiceLocationFor<Modgud.Authentication.Sessions.IUserAccessRevoker>();
 
         // Auto-register Event Forwarding subscriptions for all ReferenceSyncHandler<TEvent> implementations
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
