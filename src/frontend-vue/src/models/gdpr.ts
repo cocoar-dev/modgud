@@ -1,5 +1,8 @@
 // GDPR self-service models — mirror DTOs in
-// src/dotnet-next/Modgud.Authentication/Gdpr/GdprDtos.cs.
+// src/dotnet/Modgud.Authentication/Gdpr/GdprDtos.cs.
+
+/** Who initiated a pending deletion — mirrors the backend enum. */
+export type DeletionInitiator = 'SelfService' | 'Admin'
 
 export interface RequestDeletionDto {
   Password: string
@@ -10,7 +13,10 @@ export interface DeletionStatusDto {
   IsPending: boolean
   IsDeleted: boolean
   IsDataMasked: boolean
+  /** Who initiated the pending deletion; null when not pending. */
+  Initiator?: DeletionInitiator | null
   RequestedAt?: string | null
+  /** Grace / retention deadline (name kept for wire compatibility). */
   ConfirmationDeadline?: string | null
 }
 

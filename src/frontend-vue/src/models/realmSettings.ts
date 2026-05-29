@@ -7,6 +7,7 @@ export interface RealmSettingsDto {
   SelfRegistration: SelfRegistrationDto
   Dcr: DcrSettingsDto
   Branding: BrandingSettingsDto
+  Deletion: DeletionSettingsDto
   /** Page-builder schemas keyed by slug. Read-only here — writes use
    * the dedicated /api/admin/customization/pages/{slug} endpoints. */
   Pages: Record<string, string>
@@ -16,6 +17,25 @@ export interface UpdateRealmSettingsDto {
   SelfRegistration?: UpdateSelfRegistrationDto | null
   Dcr?: UpdateDcrSettingsDto | null
   Branding?: UpdateBrandingSettingsDto | null
+  Deletion?: UpdateDeletionSettingsDto | null
+}
+
+// Per-realm account-deletion policy. GraceDays drives the self-service
+// auto-erase window, ReminderLeadDays the "about to be deleted" reminder,
+// AdminRetentionDays the admin recycle-bin retention, AutoPurgeEnabled
+// whether the bin is emptied automatically at retention expiry.
+export interface DeletionSettingsDto {
+  GraceDays: number
+  ReminderLeadDays: number
+  AdminRetentionDays: number
+  AutoPurgeEnabled: boolean
+}
+
+export interface UpdateDeletionSettingsDto {
+  GraceDays?: number
+  ReminderLeadDays?: number
+  AdminRetentionDays?: number
+  AutoPurgeEnabled?: boolean
 }
 
 // Read shape for the Branding sub-section. LogoUrl/FaviconUrl are

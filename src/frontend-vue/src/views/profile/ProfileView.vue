@@ -142,7 +142,7 @@ async function requestDeletion() {
       Reason: deleteReason.value.trim() || null,
     })
     privacyMessage.value = t('profile.privacy.deleteRequested', {},
-      'Bestätigungs-Mail wurde gesendet. Bitte über den Link in der Mail bestätigen.')
+      'Your account is scheduled for deletion. Log in any time before the deadline to cancel.')
     deletePassword.value = ''
     deleteReason.value = ''
     showDeleteForm.value = false
@@ -990,12 +990,16 @@ function onMfaSetupClose(enabled: boolean) {
                   <h2 class="text-lg font-semibold">{{ t('profile.privacy.deleteTitle', {}, 'Konto löschen') }}</h2>
                 </div>
 
-                <CoarNote v-if="deletionStatus?.IsPending" variant="warning">
-                  {{ t('profile.privacy.statusPending', {}, 'Löschanfrage läuft.') }}
+                <CoarNote v-if="deletionStatus?.IsPending && deletionStatus.Initiator === 'Admin'" variant="error">
+                  {{ t('profile.privacy.statusAdminBin', {},
+                    'An administrator has scheduled your account for deletion. Contact your administrator if this is unexpected.') }}
+                </CoarNote>
+                <CoarNote v-else-if="deletionStatus?.IsPending" variant="warning">
+                  {{ t('profile.privacy.statusPending', {}, 'Your account is scheduled for deletion.') }}
                   <span v-if="deletionStatus.ConfirmationDeadline">
-                    {{ t('profile.privacy.confirmBy', {}, 'Bitte bis') }}
-                    {{ new Date(deletionStatus.ConfirmationDeadline).toLocaleString() }}
-                    {{ t('profile.privacy.confirmEmail', {}, 'über die zugesandte Mail bestätigen.') }}
+                    {{ t('profile.privacy.willDeleteOn', {}, 'It will be permanently erased on') }}
+                    {{ new Date(deletionStatus.ConfirmationDeadline).toLocaleString() }}.
+                    {{ t('profile.privacy.cancelHint', {}, 'Cancel below any time before then to keep your account.') }}
                   </span>
                 </CoarNote>
                 <CoarNote v-else-if="deletionStatus?.IsDataMasked" variant="info">
@@ -1003,12 +1007,14 @@ function onMfaSetupClose(enabled: boolean) {
                 </CoarNote>
                 <p v-else class="text-sm text-surface-600">
                   {{ t('profile.privacy.deleteDescription', {},
-                    'Persönliche Daten werden nach Bestätigung per E-Mail-Link gelöscht. Aus Audit-Gründen bleibt der Event-Stream maskiert erhalten.') }}
+                    'Requesting deletion schedules your account for permanent erasure after a grace period. You can log in and cancel any time during that window. For audit reasons the event stream is kept masked.') }}
                 </p>
 
-                <div v-if="deletionStatus?.IsPending" class="flex gap-2">
+                <!-- Only a self-service pending deletion is user-cancellable; an
+                     admin recycle-bin deletion is the admin's decision. -->
+                <div v-if="deletionStatus?.IsPending && deletionStatus.Initiator !== 'Admin'" class="flex gap-2">
                   <CoarButton variant="secondary" :loading="deleteCancelRunning" @click="cancelDeletion">
-                    {{ t('profile.privacy.cancelButton', {}, 'Anfrage zurückziehen') }}
+                    {{ t('profile.privacy.cancelButton', {}, 'Cancel deletion') }}
                   </CoarButton>
                 </div>
                 <div v-else-if="!deletionStatus?.IsDeleted">
@@ -1026,7 +1032,7 @@ function onMfaSetupClose(enabled: boolean) {
                     </CoarFormField>
                     <div class="flex gap-2">
                       <CoarButton variant="danger" :loading="deleteRequestRunning" @click="requestDeletion">
-                        {{ t('profile.privacy.confirmDelete', {}, 'Bestätigungs-Mail senden') }}
+                        {{ t('profile.privacy.confirmDelete', {}, 'Schedule deletion') }}
                       </CoarButton>
                       <CoarButton variant="ghost" @click="showDeleteForm = false; deletePassword = ''; deleteReason = ''">
                         {{ t('common.cancel', {}, 'Abbrechen') }}

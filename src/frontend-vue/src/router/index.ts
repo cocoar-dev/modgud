@@ -200,8 +200,11 @@ const routes = [
           component: () => import('@/views/profile/ProfileView.vue'),
         },
         {
-          path: 'confirm-deletion',
-          component: () => import('@/views/profile/ConfirmDeletionView.vue'),
+          // Self-service grace interstitial: shown right after a self-pending
+          // user logs in (LoginView routes here before the app redirect). The
+          // ?redirect= query carries where to continue once they decide.
+          path: 'deletion-pending',
+          component: () => import('@/views/profile/DeletionPendingView.vue'),
         },
         // Admin routes (permission check in route guard)
         {
