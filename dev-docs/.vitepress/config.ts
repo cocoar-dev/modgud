@@ -77,6 +77,7 @@ export default withMermaid(defineConfig({
         items: [
           { text: 'Overview', link: '/future-features/' },
           { text: '⭐ Identity-Lifecycle Untangle + Federation group-sync', link: '/future-features/identity-lifecycle-untangle' },
+          { text: '⭐ Federation v1 — Implementierungs-Spec', link: '/future-features/federation-v1-design' },
           { text: '⭐ Production-Readiness Audit 2026-05-13', link: '/future-features/production-readiness-audit-2026-05-13' },
           { text: 'HA / Multi-Instance Readiness', link: '/future-features/ha-multi-instance' },
           { text: 'Realm Backup / Restore / DR', link: '/future-features/realm-backup-restore' },

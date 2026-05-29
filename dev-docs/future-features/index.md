@@ -23,6 +23,15 @@ lease-basierte, herkunfts-attribuierte** Membership-Modell für
 Federation-Broker-Mode. Bei Lifecycle-/Federation-/Membership-Arbeit
 zuerst lesen.
 
+⭐ **Federation v1 — Implementierungs-Spec (2026-05-29):**
+[federation-v1-design](./federation-v1-design)
+— konkretisiert das beschlossene v1-Modell zu echten Code-Seams
+(ein Seam: `ExternalLoginProcessor.ProcessAsync`; Authz wird spät zur
+Token-Zeit aufgelöst). Enthält die 5-Schritt-Pipeline auf file:line,
+die login-only `externalGroups`-Fläche, die neuen Per-Provider-/
+Per-Gruppe-Flags — und eine **Liste „Entscheidungen für dich"** (A–G),
+die vor der Implementierung zu klären sind.
+
 ### Audit-Followups (in Severity-Reihenfolge)
 
 - Observability — OpenTelemetry / Metrics / Tracing — ✅ shipped (see
