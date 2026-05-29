@@ -63,6 +63,9 @@ const form = ref({
   MembershipMode: 'Manual' as MembershipMode,
   MembershipScript: '',
   MembershipLastError: null as string | null,
+  // Federation v1: only meaningful for Auto groups — opts the group into
+  // login-time externally-derived membership (session-scoped).
+  ExternallyDrivable: false,
   Email: '' as string | undefined,
   EmailMode: 'Shared' as EmailMode,
   // App slugs the group is active in. The synthetic "*" entry means
@@ -95,6 +98,23 @@ const modalTitle = computed(() => {
 })
 
 const isAutoMode = computed(() => form.value.MembershipMode === 'Auto')
+
+// Federation v1: a group whose selected roles confer realm:admin can NEVER be
+// externally drivable (realm:admin is hard local-only). Mirror the backend
+// GroupMembershipGuards check so the toggle disables before the API rejects.
+const hasRealmAdminRole = computed(() =>
+  roleStore.roles.some(r => form.value.RoleIds.includes(r.Id) && r.IsRealmAdmin))
+
+// ExternallyDrivable only has effect on Auto groups (the deriver evaluates only
+// Auto + drivable). Disable the toggle otherwise, and when a realm-admin role is
+// selected (the guarded case).
+const externallyDrivableDisabled = computed(() => !isAutoMode.value || hasRealmAdminRole.value)
+
+// Keep the persisted flag honest: if the group leaves Auto mode or gains a
+// realm-admin role, clear the toggle so a stale true can't linger.
+watch(externallyDrivableDisabled, (disabled) => {
+  if (disabled) form.value.ExternallyDrivable = false
+})
 
 const membershipModeOptions = computed(() => [
   { value: 'Manual', label: t('admin.groupDetails.membership.manual', {}, 'Manual') },
@@ -276,6 +296,7 @@ onMounted(async () => {
           MembershipMode: group.MembershipMode || 'Manual',
           MembershipScript: group.MembershipScript || '',
           MembershipLastError: group.MembershipLastError ?? null,
+          ExternallyDrivable: group.ExternallyDrivable ?? false,
           Email: group.Email || '',
           EmailMode: group.EmailMode || 'Shared',
           BoundTo: [...(group.BoundTo ?? [])],
@@ -300,6 +321,9 @@ async function save() {
       RoleIds: form.value.RoleIds,
       MembershipMode: form.value.MembershipMode,
       MembershipScript: isAutoMode.value ? form.value.MembershipScript : undefined,
+      // Only an Auto group can be externally driven; never send true for Manual
+      // (the deriver ignores non-Auto groups anyway, but keep the payload honest).
+      ExternallyDrivable: isAutoMode.value && form.value.ExternallyDrivable && !hasRealmAdminRole.value,
       Email: form.value.Email?.trim() || undefined,
       EmailMode: form.value.EmailMode,
       BoundTo: [...form.value.BoundTo],
@@ -392,6 +416,22 @@ async function save() {
                 {{ isAutoMode
                   ? t('admin.groupDetails.membership.autoHint', {}, 'Members are computed from the script in the Script tab.')
                   : t('admin.groupDetails.membership.manualHint', {}, 'Pick members directly in the Members tab.') }}
+              </p>
+            </CoarFormField>
+            <CoarFormField :label="t('admin.groupDetails.externallyDrivable.label', {}, 'Federation')">
+              <CoarCheckbox v-model="form.ExternallyDrivable" :disabled="externallyDrivableDisabled">
+                {{ t('admin.groupDetails.externallyDrivable.toggle', {}, 'Externally drivable (federation)') }}
+              </CoarCheckbox>
+              <p class="script-help">
+                <template v-if="hasRealmAdminRole">
+                  {{ t('admin.groupDetails.externallyDrivable.realmAdminBlocked', {}, 'Disabled: this group confers realm:admin, which can never be externally driven (realm:admin is hard local-only). Remove the realm-admin role to enable.') }}
+                </template>
+                <template v-else-if="!isAutoMode">
+                  {{ t('admin.groupDetails.externallyDrivable.autoOnly', {}, 'Only Automatic groups can be externally driven — switch the type to Automatic first.') }}
+                </template>
+                <template v-else>
+                  {{ t('admin.groupDetails.externallyDrivable.hint', {}, 'When on, a trusted federated login whose membership script matches confers this group for that session only (never written to durable members, never realm:admin).') }}
+                </template>
               </p>
             </CoarFormField>
             <CoarFormField :label="t('admin.groupDetails.boundTo', {}, 'Bound to apps')">

@@ -39,6 +39,11 @@ zuerst lesen.
   Customer-IdP). Lib-Wahl: ITfoxtec.Identity.Saml2. Status:
   Decisions captured 2026-05-27, in active development on
   `feat/saml-federation`.
+- [SAML AMR → `amr` wiring](./saml-amr-wiring) — `SamlFlavorData.AmrMapping`
+  is configured/seeded but parsed-but-not-consumed (federation v1 deferral
+  I15). Captures what the read-side wiring would do and why deferring is
+  safe (fail-closed, additive). Pick up when SAML federated-MFA / step-up
+  awareness is needed.
 - [Multi-IdP login UX](./multi-idp-login-ux) — Picker vs Email-Routing
   vs Hybrid für die Login-Page wenn ein Realm viele Provider hat.
   Provider-protocol-agnostic, gilt für OIDC + SAML + alles was

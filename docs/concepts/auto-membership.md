@@ -1,7 +1,6 @@
 # Auto-Membership
 
-A group is either `Manual` (admin maintains `MemberIds` directly) or
-`Auto` (a membership script determines the members dynamically).
+A group is either `Manual` (an admin maintains `MemberIds` directly) or `Auto` (a membership script decides the members dynamically). Orthogonally, an `Auto` group may also be marked **`ExternallyDrivable`**, which lets a federated login confer membership *for that session only* — see [Externally-driven membership](#externally-driven-membership-federation) below.
 
 ## Manual mode
 
@@ -11,84 +10,107 @@ Group "Backend Team"
   MemberIds: [<user-1>, <user-2>, <user-3>]
 ```
 
-Admins add and remove users via the UI. Nothing happens
-automatically.
+Admins add and remove members via the UI. Nothing happens automatically.
 
 ## Auto mode
 
 ```
-Group "Sales Department"
+Group "Active Staff"
   MembershipMode: Auto
-  MembershipScript: (p) => p.OrganizationalUnit === "sales" && p.IsActive
+  MembershipScript: (p) => Type.Is(p, 'person') && p.IsActive
   MemberIds: [<computed-from-script>]
 ```
 
-`MemberIds` is maintained by the system, not the admin. On every
-relevant event (user created/updated/deleted) the script is
-re-evaluated.
+`MemberIds` is maintained by the system, not the admin. On every relevant event (user created / updated / deleted) the script is re-evaluated.
 
 ## Membership script
 
-A TypeScript arrow function from a principal record to `boolean`:
+A TypeScript arrow function from a principal record to `boolean`. It is evaluated against each candidate principal; returning `true` means "is a member".
 
 ```typescript
-// Predicate form
-(p) => p.OrganizationalUnit === "engineering"
-    && p.AccountName !== "service-account-bot"
+(p) => Type.Is(p, 'person')
     && p.IsActive
-
-// With externalClaims (from the most recent OIDC login):
-(p) => p.externalClaims.department === "Finance"
+    && p.Email != null
+    && p.Email.endsWith('@acme.com')
+    && p.AccountName !== 'svc-bot'
 ```
 
-Translated by Cocoar.JsEval.Linq into an
-`Expression<Func<Person, bool>>` → SQL against
-`mt_doc_principal WHERE mt_doc_type = 'person'`. A single query
-returns the new `MemberIds`.
+`Type.Is(p, 'person')` is the type guard — it narrows `p` to a person principal (the same predicate works on groups and service accounts, so guard first). The fields a script can read on a person are the persisted `Person` columns:
 
-## Recompute triggers
+| Field | Type | Notes |
+|---|---|---|
+| `p.IsActive` / `p.IsDeleted` | `boolean` | lifecycle flags |
+| `p.AccountName` | `string?` | login name |
+| `p.Firstname` / `p.Lastname` | `string?` | display name parts |
+| `p.Acronym` | `string?` | short initials |
+| `p.Email` | `string?` | primary email |
+| `p.NormalizedUserName` / `p.NormalizedEmail` | `string?` | upper-cased, for case-insensitive compares |
 
-`AutoMembershipSyncHandlers` (Wolverine handlers) listen for person
-mutation events:
+> These are the **only** durable fields. There is no `OrganizationalUnit`, `Department`, or generic `externalClaims` dictionary on a person — scripts that reference them either fail to transpile or silently never match. To drive membership from an upstream IdP's groups, use an `ExternallyDrivable` group and `p.ExternalGroups` (below).
+
+The membership-script editor's IntelliSense is generated from the real CLR types, so the available members are always in sync — use it to discover the surface.
+
+### How it runs (the batch engine)
+
+`Cocoar.JsEval.Linq` translates the predicate into an `Expression<Func<Person, bool>>` → SQL against `mt_doc_principal WHERE mt_doc_type = 'person'`. A single query returns the new `MemberIds`. This is the durable path: it writes `MemberIds` and only ever sees the persisted `Person` fields (it cannot see the ephemeral federation surface, which has no SQL columns).
+
+## Externally-driven membership (federation)
+
+An `Auto` group can additionally be marked **`ExternallyDrivable`**. Such a group is **skipped by the batch engine** (it never writes durable `MemberIds`) and is instead evaluated **in memory, at login time**, by the federation deriver — but only when the login arrives through a provider the realm admin marked `TrustForAuthorization`. The match is **session-scoped**: it lives on the sign-in only, is unioned into the access decision while the session/grant is valid, and disappears when the session ends. The session is the lease — nothing is persisted, and the upstream group names never leave Modgud (they are expanded into Modgud roles/permissions before any token or UserInfo response, the hub boundary).
+
+On top of the durable `Person` fields, an `ExternallyDrivable` script may read the ephemeral federation surface:
+
+| Field | Type | Notes |
+|---|---|---|
+| `p.ExternalGroups` | `string[]` | the current provider's `groups` claim for this login (always an array — use `.includes(...)`) |
+| `p.Source` | `string` | the source tag of this login: `"local"` or `"provider:<slug>"` |
+
+```typescript
+// "Place this login into the group if the upstream IdP put them in 'entra-admins'."
+(p) => Type.Is(p, 'person')
+    && p.IsActive
+    && p.ExternalGroups.includes('entra-admins')
+
+// Scope a rule to one provider via p.Source (v1 has no declarative per-provider
+// binding yet — the script scopes itself):
+(p) => p.Source === 'provider:acme-entra'
+    && p.ExternalGroups.includes('finance')
+```
+
+Key rules:
+
+- **Live-only.** `p.ExternalGroups` reflects *this* login's provider only — a password (local) login carries an empty array, so it never picks up a previously-seen IdP's groups (no stale-admin trap).
+- **Never durable.** A match here is never written to `MemberIds`; it exists only for the session.
+- **`realm:admin` is local-only.** A group whose roles confer `realm:admin` **cannot** be marked `ExternallyDrivable` (the editor blocks it and the API rejects it), and even an inherited ancestor that confers `realm:admin` is stripped from a session-sourced grant. Manage realm-admin membership manually. `<app>:admin` and below may be externally driven.
+
+## Recompute triggers (durable groups)
+
+The durable engine listens for person-mutation events and re-evaluates the affected `Auto` (non-`ExternallyDrivable`) groups:
 
 | Event | Action |
 |---|---|
-| `UserCreated` | Check auto-groups whose script predicate matches → on match: add user |
-| `UserUpdated` | Check auto-groups → add or remove user based on the new state |
-| `UserDeleted` | Remove user from all auto-groups |
-| `GroupMembershipScriptChanged` | Full recompute pass for that one group |
+| user created | check auto-groups whose predicate matches → on match: add |
+| user updated | re-check auto-groups → add or remove based on the new state |
+| user deleted | remove from all auto-groups |
+| membership script changed | full recompute pass for that one group |
 
 ## Dependency tracking (selective recompute)
 
-Auto-membership recompute is expensive if you do it on every
-heartbeat update of the user. Solution: per script, when saving, a
-**dependency set** of the read properties is calculated:
+Recomputing every auto-group on every heartbeat update would be wasteful. So per script, the **set of read properties** is recorded when it is saved:
 
 ```typescript
 // Script
-(p) => p.OrganizationalUnit === "sales" && p.IsActive
+(p) => p.IsActive && p.Email != null && p.Email.endsWith('@acme.com')
 
 // Dependencies
-["OrganizationalUnit", "IsActive"]
+["IsActive", "Email"]
 ```
 
-On `UserUpdated`, we check whether any field in the dependency set
-changed. If not → skip the recompute for that group.
-
-Example: a user updates `LastLoginAt`. `IsActive` and
-`OrganizationalUnit` are unchanged → the Sales group isn't checked at
-all, even though the `UserUpdated` event fired.
+On a user update, only groups whose dependency set intersects the changed fields are re-checked. Example: a user updates `LastLoginAt` (not a person field a script reads) → `IsActive`/`Email` unchanged → the group above is not re-evaluated even though the update event fired.
 
 ## Failure handling
 
-If the script throws (translator error or runtime error during
-compile), a `GroupMembershipRecomputeFailedEvent` with the error
-message is fired. The Group projection sets `MembershipLastError` and
-keeps the previous `MemberIds`. The admin sees the error in the group
-detail view.
-
-A successful recompute → `GroupMembershipRecomputedEvent` with the
-new `MemberIds`. `MembershipLastError` is set to `null`.
+If the script throws (a translator error, or a runtime error during compile), the recompute fails closed: the Group projection records the error in `MembershipLastError` and keeps the previous `MemberIds`. The admin sees the error in the group detail view. A successful recompute clears `MembershipLastError` and writes the new `MemberIds`.
 
 ## Nested auto-groups
 
@@ -99,57 +121,39 @@ An auto-group can have another group (manual or auto) as a member:
   Members: ["Engineering", "Sales", "Support"]   ← three auto-groups
 
 "Engineering" (Auto)
-  Script: (p) => p.OrganizationalUnit === "engineering"
-
-"Sales" (Auto)
-  Script: (p) => p.OrganizationalUnit === "sales"
+  Script: (p) => Type.Is(p, 'person') && p.AccountName != null && p.AccountName.startsWith('eng-')
 ```
 
-The permission BFS expands this without special-casing —
-`IPrincipalWithMembers` is polymorphic. Cycle detection via a visited
-set.
+The permission BFS expands this without special-casing — `IPrincipalWithMembers` is polymorphic, with cycle detection via a visited set. Session-derived membership inherits the same way: a session-matched child group still confers its parent groups' roles for that session.
 
 ## Initial recompute
 
-When an admin creates a new auto-group (or changes the script), an
-initial full pass runs:
-
-```csharp
-// IAutoMembershipRecalculator
-await recalculator.RecomputeAllMembersAsync(group, ct);
-```
-
-→ a single SQL query against all person documents, with the script as
-a WHERE clause. Result → set `MemberIds` + fire event.
-
-At a million persons this could be slow — but modgud is
-currently sized for an order of magnitude well below that
-(mid-sized SaaS org charts, a few thousand users per realm).
+When an admin creates a new auto-group (or changes the script), an initial full pass runs — `IAutoMembershipRecalculator.RecalculateForGroupAsync` issues a single SQL query against all person documents with the script as the `WHERE` clause, sets `MemberIds`, and fires the recompute event. Modgud is sized for mid-sized org charts (a few thousand users per realm), where this is sub-second; it is not built for million-row tenants.
 
 ## Example setup
 
 ```
-Group "OU Sales" (Auto)
-  Script: (p) => p.OrganizationalUnit === "sales" && p.IsActive
-  Roles: ["Sales Read", "Customer Manager"]
-
 Group "Active Engineers" (Auto)
-  Script: (p) => p.Department === "engineering"
+  Script: (p) => Type.Is(p, 'person')
               && p.IsActive
-              && !p.AccountName.startsWith("svc-")
+              && p.AccountName != null
+              && p.AccountName.startsWith('eng-')
   Roles: ["Code Repo Reader", "CI Trigger"]
+
+Group "Entra Admins" (Auto, ExternallyDrivable)
+  Script: (p) => Type.Is(p, 'person') && p.ExternalGroups.includes('entra-admins')
+  Roles: ["Tenant Operator"]
 ```
 
-When a new sales user is provisioned via OIDC login:
+When a new engineer is provisioned (a person with `AccountName` `eng-…` is created):
 
-1. `UserCreated` with `OrganizationalUnit=sales` fires
-2. `AutoMembershipSyncHandlers` evaluates both auto-scripts:
-   - "OU Sales" matches → user is added to membership
-   - "Active Engineers" doesn't match → no effect
-3. `GroupMembershipRecomputedEvent` fires for "OU Sales"
-4. SignalR notification to all admin browsers → the group list in the
-   frontend updates automatically (via `useEntityService`
-   subscriptions)
-5. The user automatically inherits all permissions of "OU Sales" →
-   can see customer data immediately, without anyone clicking
-   anything
+1. The create event fires.
+2. The durable engine evaluates the non-drivable auto-scripts: "Active Engineers" matches → the user is added to `MemberIds`; a recompute event fires.
+3. SignalR pushes the change to admin browsers → the group list updates live (via `useEntityService` subscriptions).
+4. The user inherits "Active Engineers"' permissions immediately.
+
+When that same user later signs in through the trusted EntraID provider and the assertion carries `groups: ["entra-admins"]`:
+
+1. The federation deriver evaluates the `ExternallyDrivable` "Entra Admins" script in memory → match.
+2. "Tenant Operator" is unioned into **this session's** access — no `MemberIds` write.
+3. The grant carries it for the session's lifetime; the next password login (or a login through an untrusted provider) carries it no more.

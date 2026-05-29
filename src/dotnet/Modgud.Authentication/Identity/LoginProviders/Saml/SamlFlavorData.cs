@@ -91,10 +91,18 @@ public sealed record SamlFlavorData
 
     /// <summary>
     /// Map of SAML <c>AuthnContextClassRef</c> URIs to AMR (Authentication Method
-    /// Reference) values to stamp onto the Modgud session principal. Mirrors the
-    /// OIDC <c>amr</c>-claim preservation pattern — values flow into Modgud's
-    /// federated-MFA detection.
+    /// Reference) values, mirroring the OIDC <c>amr</c>-claim preservation pattern.
     /// </summary>
+    /// <remarks>
+    /// <b>Parsed but not yet consumed (federation v1, I15).</b> This map is
+    /// configured, serialized/round-tripped, and seeded by the EntraID/ADFS flavor
+    /// presets, but no code path currently reads it to stamp <c>amr</c> onto the
+    /// Modgud session principal — SAML AMR→<c>amr</c> wiring is deferred. The OIDC
+    /// side already preserves <c>amr</c> from the external ticket
+    /// (<c>ExternalLoginProcessor.Success</c>); the SAML equivalent that maps
+    /// <c>AuthnContextClassRef</c> through this dictionary is a follow-up. See
+    /// <c>dev-docs/future-features/saml-amr-wiring.md</c>.
+    /// </remarks>
     public IReadOnlyDictionary<string, IReadOnlyList<string>> AmrMapping { get; init; }
         = FrozenDictionary<string, IReadOnlyList<string>>.Empty;
 

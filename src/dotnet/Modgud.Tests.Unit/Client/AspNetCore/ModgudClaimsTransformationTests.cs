@@ -9,7 +9,8 @@ namespace Modgud.Tests.Unit.Client.AspNetCore;
 /// <c>resource_access</c> claim that the JWT-bearer middleware populated
 /// (from the JWT itself or via UserInfo) and projects the configured
 /// audience's block onto the principal as flat ClaimTypes.Role /
-/// "permission" / "group" claims.
+/// "permission" claims. Groups are NEVER flattened — the IdP never emits
+/// a <c>groups</c> block (hub boundary, federation v1).
 ///
 /// <para>The IdP pre-expands bypass tiers, so the lib is a pure
 /// claims-flattener — no HTTP, no cache, no evaluator.</para>
@@ -116,9 +117,12 @@ public class ModgudClaimsTransformationTests
     public class Groups
     {
         [Fact]
-        public async Task Flattens_audience_block_groups_into_group_claims()
+        public async Task Groups_block_is_never_flattened_hub_boundary()
         {
-            // Groups arrive as objects with id+name; we flatten the name.
+            // Federation v1 hub boundary: the Modgud IdP never emits a "groups"
+            // block in resource_access (membership is IdP-internal, expanded into
+            // roles/permissions before emission). Even if some upstream put one
+            // there, the transformer must NOT surface "group" claims.
             var resourceAccess = $$"""
                 {
                   "{{Audience}}": {
@@ -135,39 +139,9 @@ public class ModgudClaimsTransformationTests
 
             var transformed = await NewSubject().TransformAsync(principal);
 
-            var groups = transformed
-                .FindAll(ModgudClaimsTransformation.GroupClaimType)
-                .Select(c => c.Value)
-                .ToList();
-            Assert.Equal(2, groups.Count);
-            Assert.Contains("DevOps", groups);
-            Assert.Contains("Mitarbeiter", groups);
-        }
-
-        [Fact]
-        public async Task Group_objects_without_name_are_skipped()
-        {
-            // Defensive: malformed entries don't crash mid-request.
-            var resourceAccess = $$"""
-                {
-                  "{{Audience}}": {
-                    "groups": [
-                      { "id": "g-1" },
-                      { "id": "g-2", "name": "OK" }
-                    ]
-                  }
-                }
-                """;
-            var principal = NewAuthenticatedPrincipal(ResourceAccessClaim(resourceAccess));
-
-            var transformed = await NewSubject().TransformAsync(principal);
-
-            var groups = transformed
-                .FindAll(ModgudClaimsTransformation.GroupClaimType)
-                .Select(c => c.Value)
-                .ToList();
-            Assert.Single(groups);
-            Assert.Contains("OK", groups);
+            // "group" is the quarantined GroupClaimType value — assert via the
+            // literal so the test itself doesn't reference the [Obsolete] symbol.
+            Assert.Empty(transformed.FindAll("group"));
         }
     }
 

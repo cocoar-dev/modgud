@@ -551,6 +551,13 @@
         "noMembersYet": "Noch keine Mitglieder — werden nach dem Speichern berechnet.",
         "lastError": "Script-Fehler bei letzter Ausführung"
       },
+      "externallyDrivable": {
+        "label": "Föderation",
+        "toggle": "Extern treibbar (Föderation)",
+        "hint": "Wenn aktiv, verleiht ein vertrauenswürdiger föderierter Login, dessen Membership-Script matcht, diese Gruppe nur für die jeweilige Session (nie in die dauerhaften Mitglieder geschrieben, nie realm:admin).",
+        "autoOnly": "Nur automatische Gruppen können extern getrieben werden — stelle den Typ zuerst auf Automatisch.",
+        "realmAdminBlocked": "Deaktiviert: diese Gruppe verleiht realm:admin, das niemals extern getrieben werden kann (realm:admin ist strikt lokal). Entferne die realm-admin-Rolle, um zu aktivieren."
+      },
       "emailMode": {
         "ownAddress": "Eigene Adresse",
         "sharedHelp": "Benachrichtigungen gehen an diese Adresse.",
@@ -906,6 +913,8 @@
       "autoCreate": "Neue User beim ersten Login automatisch anlegen (JIT)",
       "allowLinking": "User dürfen diesen Provider im Profil verknüpfen",
       "trustForEmailLink": "Email-basierte Auto-Verknüpfung — bei gleicher Email an bestehenden lokalen User binden (GEFÄHRLICH: nur bei tenant-eigenen Providern)",
+      "trustForAuthorization": "Für Autorisierung vertrauen — Logins über diesen Provider dürfen session-weise Gruppenzugehörigkeit ableiten (nur „extern treibbare\" Gruppen; niemals realm:admin). Standard: aus.",
+      "authoritativeForProfile": "Profil-autoritativ — dieser Provider darf die Profilfelder (Vorname/Nachname/Email/Kürzel) bei jedem Login schreiben. Standard: aus (der anlegende Provider ist per Default autoritativ).",
       "allowedEmailDomains": "Erlaubte Email-Domänen (komma-getrennt, leer = kein Filter)",
       "storeRawClaims": "Roh-Claim-Snapshots pro Login speichern (für Debugging)",
       "rawRetentionDays": "Aufbewahrung der Rohclaims (Tage, leer = unbegrenzt)",

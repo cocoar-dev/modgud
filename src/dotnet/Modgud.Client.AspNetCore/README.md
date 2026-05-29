@@ -69,8 +69,7 @@ The IdP emits permissions per audience in Keycloak shape:
 "resource_access": {
   "event-tree-api": {
     "roles":       ["Editor", "Viewer"],
-    "permissions": ["calendar:read", "calendar:write"],
-    "group":       ["Calendar Team"]
+    "permissions": ["calendar:read", "calendar:write"]
   }
 }
 ```
@@ -81,7 +80,11 @@ The IdP emits permissions per audience in Keycloak shape:
 | --- | --- |
 | `roles` | `ClaimTypes.Role` |
 | `permissions` | `"permission"` |
-| `group` | `"group"` |
+
+> Groups are deliberately **not** emitted by the IdP (hub boundary): group
+> membership is IdP-internal and is expanded into roles/permissions before
+> emission. The `GroupClaimType` constant and the old `groups` flattener are
+> retained only for binary compatibility and are `[Obsolete]`.
 
 Read them with standard claims APIs:
 

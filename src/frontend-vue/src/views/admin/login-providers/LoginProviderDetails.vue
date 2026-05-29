@@ -54,6 +54,8 @@ interface FormState {
   AutoCreateUsers: boolean
   AllowLinking: boolean
   TrustForEmailLink: boolean
+  TrustForAuthorization: boolean
+  AuthoritativeForProfile: boolean
   AllowedEmailDomains: string[]
   IconName: string
   ButtonColorHex: string
@@ -75,6 +77,8 @@ function emptyForm(): FormState {
     AutoCreateUsers: false,
     AllowLinking: true,
     TrustForEmailLink: false,
+    TrustForAuthorization: false,
+    AuthoritativeForProfile: false,
     AllowedEmailDomains: [],
     IconName: '',
     ButtonColorHex: '',
@@ -224,6 +228,8 @@ async function load() {
       AutoCreateUsers: existing.AutoCreateUsers,
       AllowLinking: existing.AllowLinking,
       TrustForEmailLink: existing.TrustForEmailLink,
+      TrustForAuthorization: existing.TrustForAuthorization,
+      AuthoritativeForProfile: existing.AuthoritativeForProfile,
       AllowedEmailDomains: existing.AllowedEmailDomains ? [...existing.AllowedEmailDomains] : [],
       IconName: existing.IconName ?? '',
       ButtonColorHex: existing.ButtonColorHex ?? '',
@@ -327,6 +333,8 @@ async function createProvider() {
     AutoCreateUsers: form.value.AutoCreateUsers,
     AllowLinking: form.value.AllowLinking,
     TrustForEmailLink: form.value.TrustForEmailLink,
+    TrustForAuthorization: form.value.TrustForAuthorization,
+    AuthoritativeForProfile: form.value.AuthoritativeForProfile,
     AllowedEmailDomains: form.value.AllowedEmailDomains.length > 0 ? form.value.AllowedEmailDomains : null,
     IconName: form.value.IconName || null,
     ButtonColorHex: form.value.ButtonColorHex || null,
@@ -368,6 +376,8 @@ async function updateProvider() {
     AutoCreateUsers: form.value.AutoCreateUsers,
     AllowLinking: form.value.AllowLinking,
     TrustForEmailLink: form.value.TrustForEmailLink,
+    TrustForAuthorization: form.value.TrustForAuthorization,
+    AuthoritativeForProfile: form.value.AuthoritativeForProfile,
     AllowedEmailDomains: form.value.AllowedEmailDomains.length > 0 ? form.value.AllowedEmailDomains : null,
     IconName: form.value.IconName || null,
     ButtonColorHex: form.value.ButtonColorHex || null,
@@ -724,6 +734,13 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
             :label="t('admin.loginProviders.allowLinking', {}, 'User dürfen diesen Provider im Profil verknüpfen')" />
           <CoarCheckbox v-model="form.TrustForEmailLink" :disabled="isBuiltIn"
             :label="t('admin.loginProviders.trustForEmailLink', {}, 'Email-basierte Auto-Verknüpfung — bei gleicher Email an bestehenden lokalen User binden (GEFÄHRLICH: nur bei tenant-eigenen Providern)')" />
+
+          <div class="divider"></div>
+
+          <CoarCheckbox v-model="form.TrustForAuthorization" :disabled="isBuiltIn"
+            :label="t('admin.loginProviders.trustForAuthorization', {}, 'Trust for authorization — logins through this provider may derive group membership for the session (only “externally drivable” groups; never realm:admin). Default: off.')" />
+          <CoarCheckbox v-model="form.AuthoritativeForProfile" :disabled="isBuiltIn"
+            :label="t('admin.loginProviders.authoritativeForProfile', {}, 'Authoritative for profile — this provider may write the profile fields (first/last name, email, acronym) on every login. Default: off (the creating provider is authoritative by default).')" />
 
           <CoarFormField :label="t('admin.loginProviders.allowedEmailDomains', {}, 'Erlaubte Email-Domänen (komma-getrennt, leer = kein Filter)')">
             <CoarTextInput

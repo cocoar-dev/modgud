@@ -11,6 +11,12 @@ export interface GroupDto {
   MembershipMode: MembershipMode
   MembershipScript?: string
   MembershipLastError?: string | null
+  /**
+   * Federation v1: when true, an Auto group may receive externally-derived
+   * membership at login time (session-scoped, never written to MemberIds).
+   * A group whose roles confer realm:admin cannot be marked drivable.
+   */
+  ExternallyDrivable?: boolean
   Email?: string
   EmailMode: EmailMode
   /**
