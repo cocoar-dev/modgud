@@ -1,5 +1,7 @@
 # Account Lifecycle — Email Invariant + Deletion Model (Implementation Plan)
 
+> **Status: ✅ IMPLEMENTED (2026-05-29).** All workstreams below are shipped on branch `feat/lifecycle-email-deletion` (PR A = WS1+WS2+WS6, PR B backend = WS3+WS4+WS5+jobs, PR B frontend, German i18n, and a SignalR-enrichment fix). 216 integration + 1039 unit tests green; live-smoke-verified against DB `modgud`. Not yet pushed at time of writing. The only deliberate follow-up: remove the temporary `EmailUniquenessMigration` once every realm reports the index present (the per-boot nag WARNING is the forcing function), then move the partial-unique index into declarative Marten config. UX decision taken: the admin grid uses an inline lifecycle badge + a "Show recycle bin" toggle (not a separate recycle-bin view).
+
 Phase 1+2 of the Identity-Lifecycle Untangle (`identity-lifecycle-untangle.md`), merged into one coherent change because they are inseparable: the email-uniqueness index can only be correct once both deletion paths agree on when an email is released. Builds on Hotfix C (#21 — token revocation + GDPR link-PII scrub) and the federation v1 work (#24). Design ratified in the 2026-05-29 session dialog.
 
 ## The problem (three findings, two hit live)

@@ -1,6 +1,53 @@
 # Identity-Lifecycle Untangle
 
-Status: **analysis / decision-gate** (no code yet — this is the "untangle before we touch anything" pass from 2026-05-28).
+Status: **partially implemented** — original analysis/decision-gate pass from 2026-05-28; phases 0–2 shipped 2026-05-29 (see status section below), phases 3–4 still open.
+
+## Implementation status (updated 2026-05-29)
+
+4 of the 7 themes are resolved; the remaining 3 (`UNLINK`, `EXTLOGIN`, `MEMBERSHIP`) are still open. Branch `feat/lifecycle-email-deletion` (6 commits, not yet pushed at time of writing) plus the already-merged Hotfix C (#21) and Federation v1 (#23/#24) cover the closed themes.
+
+| Theme | Status | Where |
+|---|---|---|
+| `HUBPROXY` | ✅ pinned "hub-by-default + broker-opt-in" | Federation v1 (#23/#24) encodes the positioning; product-level re-discussion deliberately deferred (see `project_identity_hub_vs_federation_proxy_open`) |
+| `EMAIL` | ✅ shipped | PR A — partial-unique index `WHERE NOT is_deleted` + self-removing `EmailUniquenessMigration` |
+| `DELETE` | ✅ shipped | Hotfix C (#21) token/link-PII scrub + PR B recycle-bin/grace/GDPR-scrub convergence |
+| `SOFTDELETE` | ✅ shipped | Hotfix C (#21) access revocation + PR B grace/recycle-bin model |
+| `UNLINK` | ❌ open | Phase 3 below |
+| `EXTLOGIN` | ⚠️ partial | session-derived authz shipped (Federation v1); the unlink/re-link + passkey/last-method hardening of Phase 3 is open |
+| `MEMBERSHIP` | ⚠️ partial | session-scoped derivation shipped (Federation v1); durable leased external-membership (Phase 4) is open |
+
+**Phase status:**
+
+- **Phase 0 — Ratify positioning** ✅ — pinned hub-by-default + broker-opt-in; realised through Federation v1.
+- **Phase 1 — Email as a real invariant** ✅ — PR A. Follow-up: remove `EmailUniquenessMigration` once every realm reports the index present (the per-boot nag WARNING is the forcing function), then move the index to declarative Marten config.
+- **Phase 2 — Converge delete paths + close the access-survival gap** ✅ — Hotfix C (#21) closed the two standalone security/compliance bugs (no token revoke on delete/deactivate; GDPR left PII on `ExternalIdentityLink`); PR B converged admin-delete onto a recoverable recycle-bin + grace + GDPR-scrub, with the per-realm sweep job. The "recoverable grace/restore" product question was answered **yes** (built).
+- **Phase 3 — Variant-C unlink re-link + EXTLOGIN hardening** ❌ NOT STARTED — see the open-items list below.
+- **Phase 4 — Close the membership contract (durable federated membership)** ❌ NOT STARTED (largest remaining piece) — see the open-items list below.
+
+**Still open — Phase 3 (`UNLINK`, `EXTLOGIN`):**
+
+- Re-link after unlink (Variant C = forget + rematch): add `&& !l.IsUnlinked` to the `ExternalLoginProcessor` link lookup and free the `(iss,sub)` slot via hard-delete + `ArchiveStream` on unlink (today an unlinked link still returns `Idp.Unlinked` "disconnected" and blocks re-link).
+- Admin force-unlink endpoint + tombstone visibility + `AuthLog` entries for link/unlink.
+- Harden the last-auth-method guard to count passkeys (today approximated via `HasPasswordAsync`, so a passkey-only user can be left with zero factors).
+- **`StoredPasskeyCredential` is not registered in `MartenStoreOptionsExtensions` and no delete path removes it** → a deleted user's passkey public keys + user handles survive as orphans. Standalone GDPR/ops bug, shippable independently.
+- Document multi-IdP precedence and the SAML `SameSite=Lax` link-flow degradation.
+
+**Still open — Phase 4 (`MEMBERSHIP`):**
+
+- Replace the flat `Group.MemberIds: List<Guid>` with a source-attributed external-membership class `(groupId, principalId, source = provider:<slug>, grantedAt, leaseExpiresAt, lastReconfirmedAt)`; effective members = union of { manual } + { local-JsEval } + { per-provider external WHERE leaseExpiresAt > now }. Federation v1 shipped only the *session-scoped* derivation ("the session is the lease"); this is the durable, login-independent version.
+- Wire `AutoMembershipSyncHandlers` to link/unlink events + a one-time backfill recompute (link/unlink triggers nothing today — confirmed gap).
+- Refresh triggers: login-FORCE SET-reconcile (idempotent remove-what's-absent), lease-expiry sweep (Quartz, fail-closed authority of last resort), optional out-of-band inbound SCIM / scheduled LDAP-or-Graph pull (net-new surface — no SCIM server / LDAP client exists today).
+- Privilege guardrail: federated/JsEval auto-membership must never confer `realm:admin` / `app:admin`.
+- Resolve the doc-vs-code contradiction: `docs/concepts/auto-membership.md` uses `externalClaims` / `OrganizationalUnit` / `Department` which do not exist in `Person.cs` — these are the **spec of this wanted feature**, not drift to delete (per the superseded-root note below).
+- Decide the inert `MembershipScriptDependencies` optimization (wire it or delete it + fix docs) and add a test reconciling the two evaluation engines (in-memory delegate vs Postgres-JSONB) on null / case / collation.
+
+**Still open — strategic (deliberately deferred):**
+
+- `HUBPROXY` as a *product* decision (can Modgud also run as a thin federation proxy?) stays open by design — pinned hub-by-default for this cycle only. See `project_identity_hub_vs_federation_proxy_open`.
+
+---
+
+> _Everything below is the original 2026-05-28 analysis pass, kept verbatim for the rationale + `file:line` evidence. Where it says "no code yet" or "decide", read it through the status section above._
 
 > **⚠️ Root decision PARTIALLY SUPERSEDED (same-day clarification).** The reconciliation below recommends "ratify hub-only and delete the `externalClaims`/`OrganizationalUnit`/`Department` examples from `auto-membership.md`". The user then clarified that Modgud **must also work as a federation broker**: an app integrates only Modgud, which brokers to the tenant's EntraID/Okta/SAML/LDAP — and in *one* realm **both modes coexist** (internal users via EntraID SSO with EntraID-group-driven membership, external users as local password accounts). So hub-only is **rejected**; the real positioning is **"hub by default, broker as a per-login-provider opt-in"**, and those doc examples are the **spec of a wanted-but-unbuilt feature**, not drift to delete. The hard design work is the **source-of-truth + lifecycle of externally-derived group memberships**, not hub-vs-proxy as a binary. The core danger is the **stale-admin trap** (group removed upstream but the user never logs in via that IdP again → unrevocable privilege). User addition: **SCIM is NOT a sufficient safety net** — push-based, missed events are not re-synced, can be disabled or break — so the model must be **fail-closed**: externally-derived grants must *decay* if not actively reconfirmed, instead of *persisting* by default. **See the new section [Federation group-sync: prior art + recommended model](#federation-prior-art) at the end of this page** for the researched conclusion. See memory [[project-identity-lifecycle-untangle-2026-05-28]].
 
@@ -85,6 +132,8 @@ Crucially: the actual lifecycle *fixes* are already pre-decided in memory (Varia
 - **[ops] `StoredPasskeyCredential` is not registered and never cleaned up.** Not registered in `MartenStoreOptionsExtensions` (no unique index on `CredentialId`); no delete path (admin, identity-store, GDPR) removes passkey docs — so a deleted user's passkey public keys + user handles survive as orphans. Compounded by the last-auth-method guard not counting passkeys (`ProfileLinkEndpoints.cs:113-114`, approximated via `HasPasswordAsync`).
 
 ## Recommended sequence
+
+> _Phases 0–2 ✅ shipped, phases 3–4 ❌ open — see the [Implementation status](#implementation-status-updated-2026-05-29) section at the top for the current state. The descriptions below are the original scoping._
 
 - **Phase 0 — Ratify positioning** (decide only): write the "hub-only, cycle-scoped" affirmation; as the first concrete act, delete the `externalClaims`/`OrganizationalUnit`/`Department` examples from `auto-membership.md` and quarantine the dead groups-flattening in `ModgudClaimsTransformation.cs` (the client parses a groups array the server never emits). Removes the user's biggest fear by pinning it. *Gated by: nothing.* — **⚠️ Note: the federation section below supersedes the "delete the examples" — they are the spec of a wanted feature.**
 - **Phase 1 — Email as a real invariant** (`EMAIL`): unify all five write paths on `NormalizedEmail==UPPER`; run a per-realm dedup migration (mandatory before indexing); add a partial-unique index `WHERE is_deleted=false` (+ `NOT NULL`), deciding which table(s). *Gated by: `HUBPROXY`.*
