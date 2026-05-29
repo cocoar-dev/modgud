@@ -27,6 +27,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<IEffectiveGroupsResolver, EffectiveGroupsResolver>();
+        services.AddScoped<ILoginTimeMembershipDeriver, LoginTimeMembershipDeriver>();
         services.AddScoped<IMembershipEvaluator, MembershipEvaluator>();
         services.AddScoped<IPrincipalEmailResolver, PrincipalEmailResolver>();
         services.AddScoped<IPrincipalLookupService, PrincipalLookupService>();
