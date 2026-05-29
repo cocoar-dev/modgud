@@ -16,7 +16,10 @@ public record ExternalIdentityLinkedEvent(
     string Subject,
     string? Email,
     string? DisplayName,
-    DateTimeOffset LinkedAt);
+    DateTimeOffset LinkedAt,
+    // Federation v1 (decision A). Trailing optional so existing construction
+    // sites + old streams default to false (a non-creator link).
+    bool IsCreator = false);
 
 /// <summary>
 /// Recorded on every successful login via this link: a snapshot of the raw

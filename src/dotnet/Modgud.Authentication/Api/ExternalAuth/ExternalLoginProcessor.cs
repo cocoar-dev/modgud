@@ -10,8 +10,10 @@ using Modgud.Authentication.Domain.ExternalAuth;
 using Modgud.Authentication.Domain.ExternalAuth.Events;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authorization.Principals;
+using Modgud.Authorization.Services;
 using Modgud.Domain.Users.Events;
 using Modgud.Authentication.Identity.ExternalAuth;
+using Modgud.Permissions.Abstractions;
 
 
 namespace Modgud.Authentication.Api.ExternalAuth;
@@ -34,6 +36,7 @@ public class ExternalLoginProcessor(
     IDocumentSession session,
     UserManager<ApplicationUser> userManager,
     UserUpdateScriptRunner scriptRunner,
+    ILoginTimeMembershipDeriver membershipDeriver,
     ILogger<ExternalLoginProcessor> logger,
     TimeProvider clock)
 {
@@ -86,6 +89,10 @@ public class ExternalLoginProcessor(
 
         var capturedAt = clock.GetUtcNow();
 
+        // Federation v1: the current provider's groups claim drives the in-memory
+        // session membership derivation in Success() (always an array post-capture).
+        var externalGroups = ClaimValues(rawClaims, "groups");
+
         // 1. Existing link → happy path
         var link = await session.Query<ExternalIdentityLink>()
             .Where(l => l.Issuer == issuer && l.Subject == subject)
@@ -132,14 +139,20 @@ public class ExternalLoginProcessor(
             }
             else
             {
-                // Apply user-update-script patches. Email-conflict is a hard reject.
-                var applyResult = await ApplyUserUpdatesAsync(user, scriptResult, ct);
-                if (applyResult is not null)
-                    return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
+                // Apply user-update-script patches only when this provider is
+                // authoritative for the profile (decision A) — the existing link's
+                // IsCreator covers the JIT-creator default so a JIT-created user's
+                // profile isn't frozen. Email-conflict is a hard reject.
+                if (ShouldPatchProfile(config, link))
+                {
+                    var applyResult = await ApplyUserUpdatesAsync(user, scriptResult, ct);
+                    if (applyResult is not null)
+                        return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
+                }
 
                 await RecordScriptRunAsync(link, config, scriptResult, rawClaims, capturedAt, ct);
                 logger.LogInformation("Auth: External login (returning) user {UserId} via IdP {IdpId}", user.Id, loginProviderId);
-                return Success(user, link, externalPrincipal, loginProviderId, issuer);
+                return await Success(user, link, externalPrincipal, loginProviderId, issuer, config, externalGroups, ct);
             }
         }
 
@@ -152,17 +165,22 @@ public class ExternalLoginProcessor(
             if (existing is null)
                 return ExternalLoginResult.Failed("Idp.UserMissing", "Your account could not be loaded.");
 
-            var applyResult = await ApplyUserUpdatesAsync(existing, scriptResult, ct);
-            if (applyResult is not null)
-                return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
+            // New link to an existing account — this provider did not create the
+            // user, so it patches the profile only if explicitly authoritative.
+            if (ShouldPatchProfile(config, link: null))
+            {
+                var applyResult = await ApplyUserUpdatesAsync(existing, scriptResult, ct);
+                if (applyResult is not null)
+                    return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
+            }
 
             var addedLink = await CreateLinkAsync(
                 existing.Id, loginProviderId, issuer, subject, scriptResult, rawClaims,
-                config.StoreRawClaims, config.Slug, capturedAt, ct);
+                config.StoreRawClaims, config.Slug, isCreator: false, capturedAt, ct);
             logger.LogInformation(
                 "Auth: External identity linked to existing user {UserId} via IdP {IdpId}",
                 existing.Id, loginProviderId);
-            return Success(existing, addedLink, externalPrincipal, loginProviderId, issuer);
+            return await Success(existing, addedLink, externalPrincipal, loginProviderId, issuer, config, externalGroups, ct);
         }
 
         // 2. No link — domain allowlist gate (use email from script output)
@@ -188,14 +206,19 @@ public class ExternalLoginProcessor(
                 var user = await userManager.FindByIdAsync(existing.Id.ToString());
                 if (user is not null)
                 {
-                    var applyResult = await ApplyUserUpdatesAsync(user, scriptResult, ct);
-                    if (applyResult is not null)
-                        return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
+                    // New email-matched link to an existing account — not the
+                    // creator, so patch the profile only if explicitly authoritative.
+                    if (ShouldPatchProfile(config, link: null))
+                    {
+                        var applyResult = await ApplyUserUpdatesAsync(user, scriptResult, ct);
+                        if (applyResult is not null)
+                            return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
+                    }
 
-                    var newLink = await CreateLinkAsync(user.Id, loginProviderId, issuer, subject, scriptResult, rawClaims, config.StoreRawClaims, config.Slug, capturedAt, ct);
+                    var newLink = await CreateLinkAsync(user.Id, loginProviderId, issuer, subject, scriptResult, rawClaims, config.StoreRawClaims, config.Slug, isCreator: false, capturedAt, ct);
                     logger.LogInformation(
                         "Auth: External login (email-linked) user {UserId} via IdP {IdpId}", user.Id, loginProviderId);
-                    return Success(user, newLink, externalPrincipal, loginProviderId, issuer);
+                    return await Success(user, newLink, externalPrincipal, loginProviderId, issuer, config, externalGroups, ct);
                 }
             }
         }
@@ -231,9 +254,11 @@ public class ExternalLoginProcessor(
         if (created is null)
             return ExternalLoginResult.Failed("Idp.JitCreationFailed", "Could not create a new user account.");
 
-        var jitLink = await CreateLinkAsync(created.Id, loginProviderId, issuer, subject, scriptResult, rawClaims, config.StoreRawClaims, config.Slug, capturedAt, ct);
+        // This provider created the user — mark the link as the creator so it
+        // stays profile-authoritative by default (decision A).
+        var jitLink = await CreateLinkAsync(created.Id, loginProviderId, issuer, subject, scriptResult, rawClaims, config.StoreRawClaims, config.Slug, isCreator: true, capturedAt, ct);
         logger.LogInformation("Auth: External login (JIT-created) user {UserId} via IdP {IdpId}", created.Id, loginProviderId);
-        return Success(created, jitLink, externalPrincipal, loginProviderId, issuer);
+        return await Success(created, jitLink, externalPrincipal, loginProviderId, issuer, config, externalGroups, ct);
     }
 
     /// <summary>
@@ -331,18 +356,24 @@ public class ExternalLoginProcessor(
         return null;
     }
 
-    private ExternalLoginResult Success(
+    private async Task<ExternalLoginResult> Success(
         ApplicationUser user,
         ExternalIdentityLink link,
         ClaimsPrincipal external,
         Guid loginProviderId,
-        string issuer)
+        string issuer,
+        LoginProvider config,
+        IReadOnlyList<string> externalGroups,
+        CancellationToken ct)
     {
-        // Build the sign-in ClaimsPrincipal. Post-refactor we carry only the
-        // minimum needed for session mechanics — link id + issuer for logout
-        // routing, amr for TwoFactorFederated. Groups/roles/email etc. are
-        // **not** on the session: persistent membership is the sole source of
-        // truth (see the IdP-authentication-only design note).
+        // Build the sign-in ClaimsPrincipal. It carries session mechanics — link
+        // id + issuer for logout routing, amr for TwoFactorFederated — PLUS, for a
+        // provider trusted for authorization, the federation v1 "session group"
+        // claims: one INTERNAL no-destination claim per ExternallyDrivable group
+        // this login matched. That claim is copied into the OpenIddict grant and
+        // unioned into resource_access at token time, but is NEVER emitted to the
+        // wire (the hub boundary). The session is the lease (decision D/E). Durable
+        // roles/permissions still resolve from persistent membership at token time.
         var identity = new ClaimsIdentity(IdentityConstants.ApplicationScheme);
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()));
         if (!string.IsNullOrWhiteSpace(user.UserName))
@@ -355,6 +386,23 @@ public class ExternalLoginProcessor(
         foreach (var amr in external.FindAll("amr"))
             identity.AddClaim(new Claim("modgud.external.amr", amr.Value));
 
+        // Federation v1: derive ExternallyDrivable group membership in-memory from
+        // (local ∪ this provider's claims), gated on the per-provider
+        // TrustForAuthorization opt-in. A password / untrusted-provider login
+        // carries none. realm:admin is never externally derivable (guarded both at
+        // config-write time and defensively inside the deriver).
+        if (config.TrustForAuthorization)
+        {
+            var derived = await membershipDeriver.DeriveAsync(
+                user.Id, externalGroups, $"provider:{config.Slug}", ct);
+            foreach (var groupId in derived.MatchedGroupIds)
+                identity.AddClaim(new Claim(FederationClaimTypes.SessionGroup, groupId.ToString()));
+            if (derived.MatchedGroupIds.Count > 0)
+                logger.LogInformation(
+                    "Auth: external-derived grant — user {UserId} via IdP {IdpId} ({Slug}) matched {Count} session group(s)",
+                    user.Id, loginProviderId, config.Slug, derived.MatchedGroupIds.Count);
+        }
+
         return new ExternalLoginResult(
             Succeeded: true,
             UserId: user.Id,
@@ -363,6 +411,23 @@ public class ExternalLoginProcessor(
             ErrorCode: null,
             ErrorMessage: null);
     }
+
+    /// <summary>
+    /// Federation v1 (decision A): does THIS provider write the four profile
+    /// fields on this login? True if it is explicitly authoritative, or — for the
+    /// returning-link path — if its link is the JIT creator's (the default
+    /// authority until an admin promotes another provider). New links (link-to-
+    /// authed / email-match) are not creators, so they patch only when explicitly
+    /// authoritative. Replaces the old every-provider-patches-every-login flapping.
+    /// </summary>
+    private static bool ShouldPatchProfile(LoginProvider config, ExternalIdentityLink? link)
+        => config.AuthoritativeForProfile || link is { IsCreator: true };
+
+    /// <summary>Reads a claim's values as a string array (scalar → one element, absent → empty).</summary>
+    private static string[] ClaimValues(IReadOnlyDictionary<string, object?> rawClaims, string type)
+        => rawClaims.TryGetValue(type, out var v)
+            ? v switch { string[] arr => arr, string s => [s], _ => [] }
+            : [];
 
     private static bool IsEmailAllowed(LoginProvider config, string? email)
     {
@@ -383,6 +448,7 @@ public class ExternalLoginProcessor(
         IReadOnlyDictionary<string, object?> rawClaims,
         bool storeRawClaims,
         string providerSlug,
+        bool isCreator,
         DateTimeOffset capturedAt,
         CancellationToken ct)
     {
@@ -398,7 +464,8 @@ public class ExternalLoginProcessor(
             Subject: subject,
             Email: email,
             DisplayName: displayName,
-            LinkedAt: capturedAt);
+            LinkedAt: capturedAt,
+            IsCreator: isCreator);
 
         session.Events.StartStream<ExternalIdentityLink>(linkId, linkedEvent);
 

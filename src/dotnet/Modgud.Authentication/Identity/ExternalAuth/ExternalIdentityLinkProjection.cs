@@ -22,6 +22,7 @@ public partial class ExternalIdentityLinkProjection : SingleStreamProjection<Ext
         DisplayName = @event.DisplayName,
         LinkedAt = @event.LinkedAt,
         LastLoginAt = @event.LinkedAt,
+        IsCreator = @event.IsCreator,
         IsUnlinked = false,
     };
 
