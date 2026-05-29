@@ -192,6 +192,124 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task JwtClient_Bakes_ResourceAccess_Into_AccessToken_And_UserInfo_Echoes()
+    {
+        // Federation v1.1: a JWT-access client has no server-side token payload for
+        // UserInfo to read the session-group carrier back from, so the per-audience
+        // resource_access (durable ∪ session-derived, computed via the same
+        // BuildResourceAccessAsync as the reference path) is baked into the
+        // self-contained access token at issuance. This pins the wiring end-to-end:
+        // (1) the block is present IN the JWT payload (no UserInfo round-trip
+        // needed), and (2) UserInfo echoes that block verbatim rather than silently
+        // recomputing a narrower set. (The session-derived union itself is pinned at
+        // the service level by FederationV1Phase4Tests; the bake path is identical
+        // for durable vs session membership.)
+        var slug = "jwtfed-" + Guid.NewGuid().ToString("N")[..8];
+        var audience = $"https://{slug}-api.example.com";
+        var scopeName = slug + "-api";
+
+        var app = await CreateAppAsync(slug, "Jwt Fed App",
+            permissions: [("policy", "read"), ("policy", "write"), ("policy", "admin")]);
+        await CreateOAuthApiAsync(audience, app.Id);
+        await CreateScopeAsync(name: scopeName, resources: [audience], appId: app.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-jwt-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [app.Id], scopes: ["openid", "roles", "permissions", scopeName],
+            accessTokenType: AccessTokenType.Jwt);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Jwt", lastname: "Fed", acronym: "jf", email: "jf@test.com", password: "TestPass1234");
+        await GrantAsync(user.Id, roleAppSlug: slug, resourceType: "policy",
+            actions: ["write"], groupBoundTo: [slug]);
+
+        var accessToken = await DriveAuthCodeFlowAsync(
+            username: "jf", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri, scope: $"openid roles permissions {scopeName}", resources: [audience]);
+
+        // (1) resource_access is baked into the self-contained JWT.
+        var payload = DecodeJwtPayload(accessToken);
+        Assert.True(payload.TryGetProperty("resource_access", out var ra),
+            $"resource_access missing from JWT payload:\n{payload}");
+        Assert.True(ra.TryGetProperty(audience, out var block),
+            $"resource_access['{audience}'] missing from JWT. keys: {string.Join(",", ra.EnumerateObject().Select(p => p.Name))}");
+        var permsInToken = block.GetProperty("permissions").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains("policy:write", permsInToken);
+        Assert.DoesNotContain("policy:read", permsInToken);
+
+        // (2) UserInfo echoes the same block.
+        var userinfoClient = Factory.CreateClient();
+        userinfoClient.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        var resp = await userinfoClient.GetAsync("/connect/userinfo", TestContext.Current.CancellationToken);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(resp.IsSuccessStatusCode, $"/connect/userinfo failed ({(int)resp.StatusCode}): {body}");
+        using var doc = JsonDocument.Parse(body);
+        var uiPerms = doc.RootElement.GetProperty("resource_access").GetProperty(audience)
+            .GetProperty("permissions").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains("policy:write", uiPerms);
+        Assert.DoesNotContain("policy:read", uiPerms);
+    }
+
+    [Fact]
+    public async Task JwtClient_BakedResourceAccess_Honours_Requested_Audience_Only()
+    {
+        // The baked block must match the token's narrowed aud (RFC 8707 resource
+        // indicators), never the broader scope-derived set — otherwise a block for
+        // an audience the client didn't request would ride along in the token.
+        var aSlug = "jwtaud-a-" + Guid.NewGuid().ToString("N")[..8];
+        var bSlug = "jwtaud-b-" + Guid.NewGuid().ToString("N")[..8];
+        var aAud = $"https://{aSlug}.example.com";
+        var bAud = $"https://{bSlug}.example.com";
+
+        var appA = await CreateAppAsync(aSlug, "App A", permissions: [("policy", "write")]);
+        var appB = await CreateAppAsync(bSlug, "App B", permissions: [("widget", "write")]);
+        await CreateOAuthApiAsync(aAud, appA.Id);
+        await CreateOAuthApiAsync(bAud, appB.Id);
+        await CreateScopeAsync(name: aSlug + "-api", resources: [aAud], appId: appA.Id);
+        await CreateScopeAsync(name: bSlug + "-api", resources: [bAud], appId: appB.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-jwt-2aud-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [appA.Id, appB.Id],
+            scopes: ["openid", "roles", "permissions", aSlug + "-api", bSlug + "-api"],
+            accessTokenType: AccessTokenType.Jwt);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Two", lastname: "Aud", acronym: "ta", email: "ta@test.com", password: "TestPass1234");
+        await GrantAsync(user.Id, roleAppSlug: aSlug, resourceType: "policy", actions: ["write"], groupBoundTo: [aSlug]);
+        await GrantAsync(user.Id, roleAppSlug: bSlug, resourceType: "widget", actions: ["write"], groupBoundTo: [bSlug]);
+
+        // Request ONLY audience A as the resource indicator.
+        var accessToken = await DriveAuthCodeFlowAsync(
+            username: "ta", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri,
+            scope: $"openid roles permissions {aSlug}-api {bSlug}-api", resources: [aAud]);
+
+        var payload = DecodeJwtPayload(accessToken);
+        Assert.True(payload.TryGetProperty("resource_access", out var ra),
+            $"resource_access missing from JWT payload:\n{payload}");
+        Assert.True(ra.TryGetProperty(aAud, out _), "audience A block expected (it was requested).");
+        Assert.False(ra.TryGetProperty(bAud, out _),
+            "audience B block must NOT appear — it was not in the requested resource set.");
+    }
+
+    private static JsonElement DecodeJwtPayload(string jwt)
+    {
+        var parts = jwt.Split('.');
+        Assert.True(parts.Length >= 2, $"not a JWT (reference token?): {jwt[..Math.Min(16, jwt.Length)]}…");
+        var payload = parts[1].Replace('-', '+').Replace('_', '/');
+        payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+        return JsonDocument.Parse(Convert.FromBase64String(payload)).RootElement.Clone();
+    }
+
+    [Fact]
     public async Task UserInfo_ResourceAdmin_Expands_To_All_Resource_Actions()
     {
         // policy:admin grants every action on the policy resource within

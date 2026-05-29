@@ -7,6 +7,7 @@ using Modgud.Domain.OAuth.Apis;
 using Modgud.Permissions;
 using Modgud.Permissions.Abstractions;
 using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.OAuth.Consent;
 using Modgud.Domain.OAuth.Scopes;
 using Marten;
@@ -305,6 +306,15 @@ public static class AuthorizationEndpoints
                 cookiePrincipal: result.Principal);
             principal.SetAuthorizationId(result.Principal?.GetAuthorizationId());
 
+            // Federation v1.1: JWT-access clients have no server-side token payload
+            // for UserInfo to read the session-group carrier back from, so the
+            // federated resource_access (durable ∪ session-derived) is baked into
+            // the self-contained access token HERE, while the carrier is still on
+            // the principal. Reference clients skip this — their UserInfo reads the
+            // carrier from the reference-token store (lazy, server-authoritative).
+            await BakeFederatedResourceAccessForJwtAsync(
+                principal, user.Id, request, session, permissionService);
+
             return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         }
 
@@ -544,17 +554,30 @@ public static class AuthorizationEndpoints
         var wantsPermissions = httpContext.User.HasScope("permissions");
         var audiences = httpContext.User.GetAudiences().ToList();
 
-        // Federation v1 (decision D): the no-destination session-group carrier was
-        // persisted with the reference access token, so it reconstructs onto
-        // httpContext.User here. Parse it back to group GUIDs and union it into the
-        // per-audience authz. (Absent for JWT-access clients — the documented v1
-        // boundary: those get durable-membership authz only.)
-        var sessionGroupIds = ReadSessionGroupIds(httpContext.User);
-
-        var resourceAccess = await BuildResourceAccessAsync(
-            user.Id, audiences, wantsRoles, wantsPermissions, session, permissionService, sessionGroupIds);
-        if (resourceAccess is not null)
-            claims["resource_access"] = resourceAccess;
+        // Federation — where does resource_access come from?
+        //   • Reference clients: the no-destination session-group carrier was
+        //     persisted with the reference access token and reconstructs onto
+        //     httpContext.User here, so we recompute the per-audience union
+        //     server-authoritatively (decision D).
+        //   • JWT clients (v1.1): the federated block was baked into the access
+        //     token at issuance (see BakeFederatedResourceAccessForJwtAsync); the
+        //     carrier never rode the wire, so it can't be recomputed here. Echo the
+        //     token's own block verbatim so UserInfo and the token agree (and the
+        //     federated overlay isn't silently dropped to a durable-only set).
+        var bakedResourceAccess = httpContext.User.GetClaim("resource_access");
+        if (!string.IsNullOrEmpty(bakedResourceAccess))
+        {
+            claims["resource_access"] =
+                System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(bakedResourceAccess);
+        }
+        else
+        {
+            var sessionGroupIds = ReadSessionGroupIds(httpContext.User);
+            var resourceAccess = await BuildResourceAccessAsync(
+                user.Id, audiences, wantsRoles, wantsPermissions, session, permissionService, sessionGroupIds);
+            if (resourceAccess is not null)
+                claims["resource_access"] = resourceAccess;
+        }
 
         return Results.Ok(claims);
     }
@@ -948,6 +971,67 @@ public static class AuthorizationEndpoints
 
     private static string GetDisplayName(ApplicationUser user)
         => AuthorizationEndpointHelpers.GetDisplayName(user);
+
+    /// <summary>
+    /// Federation v1.1 — bake the per-audience <c>resource_access</c> block into
+    /// the access token for <see cref="AccessTokenType.Jwt"/> clients.
+    ///
+    /// <para>Reference clients render <c>resource_access</c> lazily at UserInfo by
+    /// reading the no-destination session-group carrier back off the server-side
+    /// reference token (server-authoritative). A JWT access token has no
+    /// server-side payload, so the carrier — which never reaches the wire — is
+    /// invisible at UserInfo. We therefore compute the union HERE, while the
+    /// carrier is still on the issuance principal, and embed only the RESULT (the
+    /// permissions/roles the RS is entitled to anyway) into the self-contained
+    /// token. The carrier itself stays no-destination (the hub boundary holds).</para>
+    ///
+    /// <para>Audiences come from the requested <c>resource=</c> indicators when
+    /// present — exactly what <see cref="ResourceIndicatorHandler"/> narrows the
+    /// token's <c>aud</c> to — so the baked blocks match the token's audience set
+    /// and never over-share. Freeze-on-refresh is automatic: the refresh token is a
+    /// reference token carrying the frozen carrier, so each refresh re-bakes the
+    /// same set (decision E — the session is the lease; for JWT clients the lease
+    /// is enforced at the refresh boundary rather than instantly).</para>
+    /// </summary>
+    private static async Task BakeFederatedResourceAccessForJwtAsync(
+        ClaimsPrincipal principal,
+        Guid userId,
+        OpenIddictRequest request,
+        IDocumentSession session,
+        IPermissionService permissionService)
+    {
+        if (string.IsNullOrEmpty(request.ClientId)) return;
+
+        var app = await session.Query<OAuthApplicationState>()
+            .FirstOrDefaultAsync(a => a.ClientId == request.ClientId && !a.IsDeleted);
+        if (app is null || app.AccessTokenType != AccessTokenType.Jwt) return;
+
+        var wantsRoles = principal.HasScope(Scopes.Roles);
+        var wantsPermissions = principal.HasScope("permissions");
+        if (!wantsRoles && !wantsPermissions) return;
+
+        // The token's aud after ResourceIndicatorHandler == the requested
+        // resource= set (validated to be a subset of the granted resources); fall
+        // back to the scope-derived set when no indicator was sent. Either way this
+        // equals what lands on the token's aud, so the blocks won't over-share.
+        var requested = request.GetResources().ToList();
+        var audiences = requested.Count > 0 ? requested : principal.GetResources().ToList();
+
+        var resourceAccess = await BuildResourceAccessAsync(
+            userId, audiences, wantsRoles, wantsPermissions, session, permissionService,
+            ReadSessionGroupIds(principal));
+        if (resourceAccess is null) return;
+
+        var identity = (ClaimsIdentity)principal.Identity!;
+        identity.SetClaim("resource_access",
+            System.Text.Json.JsonSerializer.SerializeToElement(resourceAccess));
+
+        // Re-stamp destinations so the freshly-added claim routes to the access
+        // token (GetDestinations default case). SetDestinations only stamps the
+        // claims present when it runs, and CreateClaimsPrincipalAsync already ran
+        // it before this claim existed.
+        principal.SetDestinations(GetDestinations);
+    }
 
     private static IEnumerable<string> GetDestinations(Claim claim)
         => AuthorizationEndpointHelpers.GetDestinations(claim);
