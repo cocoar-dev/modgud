@@ -13,24 +13,13 @@ to re-derive the analysis from scratch.
 / Zitadel, Verdict, und Backlog-Tabelle mit allen offenen Punkten und
 Severity. Detail-Pages unten.
 
-⭐ **Aktive Architektur-Aufdröselung (2026-05-28):**
+⭐ **Active architecture untangle (2026-05-28):**
 [Identity-Lifecycle Untangle + Federation group-sync](./identity-lifecycle-untangle)
-— entwirrt das verkoppelte Cluster (external-login-Modell, unlink/tombstone,
-delete-Pfade, soft-delete/grace, email-unique, membership-scripts,
-hub-vs-broker). Enthält die web-recherchierte Prior-Art-Analyse
-(Keycloak/Okta/Entra/Auth0/Zitadel/Ping) + das empfohlene **fail-closed,
-lease-basierte, herkunfts-attribuierte** Membership-Modell für
-Federation-Broker-Mode. Bei Lifecycle-/Federation-/Membership-Arbeit
-zuerst lesen.
+— untangles the coupled cluster (external-login model, unlink/tombstone, delete paths, soft-delete/grace, email-unique, membership scripts, hub-vs-broker). Contains the web-researched prior-art analysis (Keycloak/Okta/Entra/Auth0/Zitadel/Ping) and the resulting federation membership model. Read first for any lifecycle/federation/membership work.
 
-⭐ **Federation v1 — Implementierungs-Spec (2026-05-29):**
+⭐ **Federation v1 — implementation spec (2026-05-29):**
 [federation-v1-design](./federation-v1-design)
-— konkretisiert das beschlossene v1-Modell zu echten Code-Seams
-(ein Seam: `ExternalLoginProcessor.ProcessAsync`; Authz wird spät zur
-Token-Zeit aufgelöst). Enthält die 5-Schritt-Pipeline auf file:line,
-die login-only `externalGroups`-Fläche, die neuen Per-Provider-/
-Per-Gruppe-Flags — und eine **Liste „Entscheidungen für dich"** (A–G),
-die vor der Implementierung zu klären sind.
+— concretizes the agreed v1 model into real code seams (one seam: `ExternalLoginProcessor.ProcessAsync`; authz resolved late at token time): the unified claims-per-source store, the two-layer source filter, "session = lease" (mid-session timer rejected), the new per-provider/per-group flags. All design decisions A–G are settled; the doc is the build template.
 
 ### Audit-Followups (in Severity-Reihenfolge)
 
