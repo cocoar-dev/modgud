@@ -70,6 +70,13 @@ public sealed class RealmSettingsService(
             doc.Branding = branding.Value;
         }
 
+        if (dto.Deletion is not null)
+        {
+            var deletion = ApplyDeletionPatch(doc.Deletion, dto.Deletion);
+            if (deletion.IsError) return deletion.FirstError;
+            doc.Deletion = deletion.Value;
+        }
+
         if (!isCreate) doc.UpdatedAt = DateTimeOffset.UtcNow;
 
         session.Store(doc);
@@ -108,6 +115,7 @@ public sealed class RealmSettingsService(
         SelfRegistration = MapSelfRegistrationToDto(doc.SelfRegistration),
         Dcr = MapDcrToDto(doc.Dcr),
         Branding = MapBrandingToDto(doc.Branding),
+        Deletion = MapDeletionToDto(doc.Deletion),
         Pages = doc.Pages is null
             ? new Dictionary<string, string>()
             : new Dictionary<string, string>(doc.Pages),
@@ -208,6 +216,42 @@ public sealed class RealmSettingsService(
             PerIpRateLimitPerHour = patch.PerIpRateLimitPerHour ?? s.PerIpRateLimitPerHour,
             PerRealmRateLimitPerDay = patch.PerRealmRateLimitPerDay ?? s.PerRealmRateLimitPerDay,
             ReservedNames = patch.ReservedNames ?? s.ReservedNames,
+        };
+    }
+
+    private static ErrorOr<DeletionSettings> ApplyDeletionPatch(DeletionSettings? current, UpdateDeletionSettingsDto patch)
+    {
+        var s = current ?? new DeletionSettings();
+        var merged = s with
+        {
+            GraceDays = patch.GraceDays ?? s.GraceDays,
+            ReminderLeadDays = patch.ReminderLeadDays ?? s.ReminderLeadDays,
+            AdminRetentionDays = patch.AdminRetentionDays ?? s.AdminRetentionDays,
+            AutoPurgeEnabled = patch.AutoPurgeEnabled ?? s.AutoPurgeEnabled,
+        };
+
+        if (merged.GraceDays < 1)
+            return Error.Validation("Deletion.InvalidGraceDays", "GraceDays must be at least 1.");
+        if (merged.ReminderLeadDays < 0)
+            return Error.Validation("Deletion.InvalidReminderLeadDays", "ReminderLeadDays cannot be negative.");
+        if (merged.ReminderLeadDays >= merged.GraceDays)
+            return Error.Validation("Deletion.ReminderLeadTooLong",
+                "ReminderLeadDays must be less than GraceDays, otherwise the reminder can never fire.");
+        if (merged.AdminRetentionDays < 0)
+            return Error.Validation("Deletion.InvalidAdminRetentionDays", "AdminRetentionDays cannot be negative.");
+
+        return merged;
+    }
+
+    internal static DeletionSettingsDto MapDeletionToDto(DeletionSettings? s)
+    {
+        s ??= DeletionSettings.Defaults;
+        return new DeletionSettingsDto
+        {
+            GraceDays = s.GraceDays,
+            ReminderLeadDays = s.ReminderLeadDays,
+            AdminRetentionDays = s.AdminRetentionDays,
+            AutoPurgeEnabled = s.AutoPurgeEnabled,
         };
     }
 
