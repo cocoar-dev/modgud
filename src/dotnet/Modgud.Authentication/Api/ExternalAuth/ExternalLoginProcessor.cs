@@ -158,7 +158,7 @@ public class ExternalLoginProcessor(
 
             var addedLink = await CreateLinkAsync(
                 existing.Id, loginProviderId, issuer, subject, scriptResult, rawClaims,
-                config.StoreRawClaims, capturedAt, ct);
+                config.StoreRawClaims, config.Slug, capturedAt, ct);
             logger.LogInformation(
                 "Auth: External identity linked to existing user {UserId} via IdP {IdpId}",
                 existing.Id, loginProviderId);
@@ -192,7 +192,7 @@ public class ExternalLoginProcessor(
                     if (applyResult is not null)
                         return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
 
-                    var newLink = await CreateLinkAsync(user.Id, loginProviderId, issuer, subject, scriptResult, rawClaims, config.StoreRawClaims, capturedAt, ct);
+                    var newLink = await CreateLinkAsync(user.Id, loginProviderId, issuer, subject, scriptResult, rawClaims, config.StoreRawClaims, config.Slug, capturedAt, ct);
                     logger.LogInformation(
                         "Auth: External login (email-linked) user {UserId} via IdP {IdpId}", user.Id, loginProviderId);
                     return Success(user, newLink, externalPrincipal, loginProviderId, issuer);
@@ -231,7 +231,7 @@ public class ExternalLoginProcessor(
         if (created is null)
             return ExternalLoginResult.Failed("Idp.JitCreationFailed", "Could not create a new user account.");
 
-        var jitLink = await CreateLinkAsync(created.Id, loginProviderId, issuer, subject, scriptResult, rawClaims, config.StoreRawClaims, capturedAt, ct);
+        var jitLink = await CreateLinkAsync(created.Id, loginProviderId, issuer, subject, scriptResult, rawClaims, config.StoreRawClaims, config.Slug, capturedAt, ct);
         logger.LogInformation("Auth: External login (JIT-created) user {UserId} via IdP {IdpId}", created.Id, loginProviderId);
         return Success(created, jitLink, externalPrincipal, loginProviderId, issuer);
     }
@@ -382,6 +382,7 @@ public class ExternalLoginProcessor(
         UserUpdateResult script,
         IReadOnlyDictionary<string, object?> rawClaims,
         bool storeRawClaims,
+        string providerSlug,
         DateTimeOffset capturedAt,
         CancellationToken ct)
     {
@@ -422,6 +423,10 @@ public class ExternalLoginProcessor(
 
         session.Events.Append(userId, new UserLoggedInEvent(userId, IpAddress: null));
 
+        // Federation v1: refresh this provider's claims snapshot in the same
+        // transaction as the link write.
+        await StageClaimsStoreRefreshAsync(userId, providerSlug, rawClaims, capturedAt, ct);
+
         await session.SaveChangesAsync(ct);
 
         // Reload the materialized link so the caller gets back the projected form.
@@ -450,6 +455,10 @@ public class ExternalLoginProcessor(
             DisplayName: displayName));
 
         session.Events.Append(link.UserId, new UserLoggedInEvent(link.UserId, IpAddress: null));
+
+        // Federation v1: refresh this provider's claims snapshot in the same
+        // transaction as the login write.
+        await StageClaimsStoreRefreshAsync(link.UserId, config.Slug, rawClaims, capturedAt, ct);
 
         await session.SaveChangesAsync(ct);
     }
@@ -503,6 +512,50 @@ public class ExternalLoginProcessor(
         return JsonDocument.Parse(json);
     }
 
+    /// <summary>
+    /// Federation v1 — refreshes the current provider's slice of the per-user
+    /// <see cref="ExternalClaimsStore"/> (decision B): delete every entry tagged
+    /// <c>provider:&lt;slug&gt;</c>, then write the freshly-captured claims. Local
+    /// and other-provider entries are left untouched (SET/FORCE reconcile, one
+    /// provider only). Stages onto the session WITHOUT saving — the caller's
+    /// single <c>SaveChangesAsync</c> commits it atomically with the login write.
+    /// </summary>
+    private async Task StageClaimsStoreRefreshAsync(
+        Guid userId,
+        string providerSlug,
+        IReadOnlyDictionary<string, object?> rawClaims,
+        DateTimeOffset capturedAt,
+        CancellationToken ct)
+    {
+        var source = $"provider:{providerSlug}";
+        var store = await session.LoadAsync<ExternalClaimsStore>(userId, ct)
+                    ?? new ExternalClaimsStore { Id = userId };
+
+        store.Claims.RemoveAll(e => e.Source == source);
+        foreach (var (type, value) in rawClaims)
+        {
+            switch (value)
+            {
+                case string s:
+                    store.Claims.Add(new ClaimEntry(source, type, s, capturedAt));
+                    break;
+                case string[] arr:
+                    foreach (var v in arr)
+                        store.Claims.Add(new ClaimEntry(source, type, v, capturedAt));
+                    break;
+            }
+        }
+
+        session.Store(store);
+    }
+
+    // Claim types that are semantically multi-valued and MUST stay arrays even
+    // when the IdP emits exactly one value — otherwise a single-group/role user
+    // collapses to a scalar string and a script doing `claims.groups.includes(...)`
+    // breaks (string.includes is substring-match). Federation v1, decision F/I15.
+    private static readonly HashSet<string> AlwaysArrayClaims =
+        new(StringComparer.OrdinalIgnoreCase) { "groups", "roles", "amr" };
+
     private static IReadOnlyDictionary<string, object?> ExtractRawClaims(ClaimsPrincipal principal)
     {
         var dict = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -515,11 +568,13 @@ public class ExternalLoginProcessor(
             }
             list.Add(c.Value);
         }
-        // Collapse single-value claims to scalar for ergonomic access in scripts:
-        // claims.email is a string, claims.groups is an array.
+        // Collapse single-value claims to scalar for ergonomic access in scripts
+        // (claims.email is a string), EXCEPT known multi-valued claims which stay
+        // arrays regardless of count so membership scripts can always use array
+        // semantics (claims.groups is always an array).
         var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var (k, v) in dict)
-            result[k] = v.Count == 1 ? v[0] : v.ToArray();
+            result[k] = v.Count == 1 && !AlwaysArrayClaims.Contains(k) ? v[0] : v.ToArray();
         return result;
     }
 
