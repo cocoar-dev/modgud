@@ -45,7 +45,9 @@ public record CreateLoginProviderCommand(
     bool? TrustForEmailLink = null,
     List<string>? AllowedEmailDomains = null,
     string? IconName = null,
-    string? ButtonColorHex = null);
+    string? ButtonColorHex = null,
+    bool? TrustForAuthorization = null,
+    bool? AuthoritativeForProfile = null);
 
 public class CreateLoginProviderHandler(
     IDocumentSession session,
@@ -146,6 +148,8 @@ public class CreateLoginProviderHandler(
             AutoCreateUsers: command.AutoCreateUsers ?? false,
             AllowLinking: command.AllowLinking ?? true,
             TrustForEmailLink: command.TrustForEmailLink ?? false,
+            TrustForAuthorization: command.TrustForAuthorization ?? false,
+            AuthoritativeForProfile: command.AuthoritativeForProfile ?? false,
             AllowedEmailDomains: command.AllowedEmailDomains,
             IconName: command.IconName ?? flavor.DefaultIconName,
             ButtonColorHex: command.ButtonColorHex,
@@ -229,6 +233,8 @@ public class CreateLoginProviderHandler(
             AutoCreateUsers: command.AutoCreateUsers ?? false,
             AllowLinking: command.AllowLinking ?? true,
             TrustForEmailLink: command.TrustForEmailLink ?? false,
+            TrustForAuthorization: command.TrustForAuthorization ?? false,
+            AuthoritativeForProfile: command.AuthoritativeForProfile ?? false,
             AllowedEmailDomains: command.AllowedEmailDomains,
             IconName: command.IconName ?? flavor.DefaultIconName,
             ButtonColorHex: command.ButtonColorHex,
@@ -281,6 +287,10 @@ public class CreateLoginProviderHandler(
             AutoCreateUsers: false,
             AllowLinking: false,
             TrustForEmailLink: false,
+            // Internal provider is strictly local — never trusted for external
+            // authorization, never authoritative for profile.
+            TrustForAuthorization: false,
+            AuthoritativeForProfile: false,
             AllowedEmailDomains: null,
             IconName: null,
             ButtonColorHex: null,

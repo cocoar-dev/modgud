@@ -239,6 +239,11 @@ public class GdprService(
         session.DeleteWhere<UserSession>(s => s.UserId == userId);
         session.Delete<UserSecurityData>(userId);
 
+        //    Federation v1: the per-user external-claims snapshot is a plain
+        //    (non-event-sourced) doc keyed on the user id — a straight Delete
+        //    fully erases its PII (no stream to mask). Rides this same batch.
+        session.Delete<ExternalClaimsStore>(userId);
+
         //    External identity links carry Email, DisplayName, and the raw IdP
         //    claim payload on their OWN streams (keyed by link id). Drop the
         //    projection doc here; the PII-bearing events are masked + archived

@@ -53,6 +53,20 @@ public class Group : Principal, IPrincipalWithMembers, IPrincipalEmailAddressabl
     public string? CompiledMembershipScript { get; set; }
 
     /// <summary>
+    /// Federation v1 (decision G): opt-in marking this group eligible to receive
+    /// <i>externally-derived</i> membership at login time, computed in-memory from
+    /// the current provider's claims (never written to <see cref="MemberIds"/>).
+    /// Orthogonal to <see cref="MembershipMode"/> — a group can carry durable
+    /// local/auto members AND accept live-session external additions.
+    /// <para>
+    /// A group whose roles confer <c>realm:admin</c> can NEVER be set
+    /// <see cref="ExternallyDrivable"/> (bidirectional config guard) — external
+    /// claims are untrusted input. Default <c>false</c>.
+    /// </para>
+    /// </summary>
+    public bool ExternallyDrivable { get; set; }
+
+    /// <summary>
     /// Dotted property paths the membership script reads from the principal
     /// directory (e.g. <c>"Person.Firstname"</c>, <c>"Email"</c>). The auto-membership
     /// pipeline uses this to skip groups whose scripts don't touch a changed field.

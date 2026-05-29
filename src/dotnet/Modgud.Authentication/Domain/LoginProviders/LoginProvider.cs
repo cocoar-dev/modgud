@@ -116,6 +116,24 @@ public class LoginProvider
     /// </summary>
     public bool TrustForEmailLink { get; set; }
 
+    /// <summary>
+    /// Federation v1 (decision G): when <c>true</c>, this provider's claims may
+    /// drive <c>app:admin</c>-and-below group membership at login (gated further
+    /// by per-group <see cref="Principals.Group.ExternallyDrivable"/>). Mirror of
+    /// <see cref="TrustForEmailLink"/>. <c>realm:admin</c> is never externally
+    /// drivable regardless of this flag. Default <c>false</c>.
+    /// </summary>
+    public bool TrustForAuthorization { get; set; }
+
+    /// <summary>
+    /// Federation v1 (decision A): only providers flagged authoritative write the
+    /// four profile fields (Firstname/Lastname/Email/Acronym) on login, ending
+    /// today's every-provider-patches-every-login flapping. Default <c>false</c>;
+    /// the JIT-creating provider stays authoritative for its users until an admin
+    /// promotes another (resolved at profile-patch time, not on this document).
+    /// </summary>
+    public bool AuthoritativeForProfile { get; set; }
+
     /// <summary>Optional email-domain allowlist (e.g. <c>["acme.com"]</c>). <c>null</c> = no filter.</summary>
     public List<string>? AllowedEmailDomains { get; set; }
 

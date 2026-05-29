@@ -19,7 +19,8 @@ public record CreateGroupDto(
     string? MembershipScript = null,
     string? Email = null,
     EmailMode EmailMode = EmailMode.Shared,
-    List<string>? BoundTo = null);
+    List<string>? BoundTo = null,
+    bool ExternallyDrivable = false);
 
 public static class GroupEndpoints
 {
@@ -151,7 +152,7 @@ public static class GroupEndpoints
                     dto.RoleIds.Select(r => new ShortGuid(r).Guid).ToList(),
                     dto.MembershipMode, dto.MembershipScript,
                     dto.Email, dto.EmailMode,
-                    boundTo);
+                    boundTo, dto.ExternallyDrivable);
                 var result = await bus.InvokeAsync<ErrorOr<Group>>(command);
                 return result.Match<IResult>(
                     group => Results.Ok(MapToResponse(group)),
@@ -170,7 +171,7 @@ public static class GroupEndpoints
                     dto.RoleIds.Select(r => new ShortGuid(r).Guid).ToList(),
                     dto.MembershipMode, dto.MembershipScript,
                     dto.Email, dto.EmailMode,
-                    dto.BoundTo);
+                    dto.BoundTo, dto.ExternallyDrivable);
                 var result = await bus.InvokeAsync<ErrorOr<Group>>(command);
                 return result.Match<IResult>(
                     group => Results.Ok(MapToResponse(group)),
@@ -209,5 +210,6 @@ public static class GroupEndpoints
         g.Email,
         EmailMode = g.EmailMode.ToString(),
         g.BoundTo,
+        g.ExternallyDrivable,
     };
 }

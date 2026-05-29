@@ -8,9 +8,9 @@ namespace Modgud.Client.AspNetCore;
 /// <summary>
 /// Pre-request claims-transformation that flattens
 /// <c>resource_access[<see cref="ModgudOptions.Audience"/>]</c> from
-/// the principal's claims into flat <see cref="ClaimTypes.Role"/>,
-/// <c>"permission"</c> and <c>"group"</c> claims so downstream gates work
-/// without per-endpoint plumbing.
+/// the principal's claims into flat <see cref="ClaimTypes.Role"/> and
+/// <c>"permission"</c> claims so downstream gates work without per-endpoint
+/// plumbing.
 ///
 /// <para>Source of the data: the JWT-bearer middleware populates
 /// <c>resource_access</c> as a string-typed claim when configured with
@@ -32,7 +32,20 @@ public sealed class ModgudClaimsTransformation : IClaimsTransformation
     /// <summary>Claim type for permission strings (<c>"&lt;resource&gt;:&lt;action&gt;"</c>).</summary>
     public const string PermissionClaimType = "permission";
 
-    /// <summary>Claim type for group names.</summary>
+    /// <summary>
+    /// Claim type that USED to carry flattened group names.
+    /// </summary>
+    /// <remarks>
+    /// Quarantined in federation v1 (hub boundary): the Modgud IdP never emits a
+    /// <c>groups</c> block in <c>resource_access</c> — group membership is purely
+    /// IdP-internal and is expanded into roles/permissions before emission. This
+    /// transformer therefore never produces a claim of this type. The constant is
+    /// retained for binary compatibility and will be removed in a future major
+    /// version. Gate on roles/permissions instead.
+    /// </remarks>
+    [Obsolete("Hub boundary: the Modgud IdP never emits groups in resource_access, " +
+        "so no claim of this type is ever produced. Gate on roles/permissions instead. " +
+        "Retained for binary compatibility; removed in a future major version.")]
     public const string GroupClaimType = "group";
 
     /// <summary>The standard OIDC/Keycloak UserInfo claim that nests per-RS authz info.</summary>
@@ -68,7 +81,10 @@ public sealed class ModgudClaimsTransformation : IClaimsTransformation
 
         FlattenStringArray(identity, audienceBlock, "roles", ClaimTypes.Role);
         FlattenStringArray(identity, audienceBlock, "permissions", PermissionClaimType);
-        FlattenGroupObjectArray(identity, audienceBlock);
+        // Federation v1 hub boundary: the IdP never emits a "groups" block here
+        // (group membership is IdP-internal, expanded into roles/permissions before
+        // emission), so there is nothing to flatten. The legacy group flattener was
+        // removed; GroupClaimType is retained [Obsolete] for binary compatibility.
 
         return Task.FromResult(principal);
     }
@@ -94,33 +110,6 @@ public sealed class ModgudClaimsTransformation : IClaimsTransformation
             var value = element.GetString();
             if (string.IsNullOrEmpty(value) || !existing.Add(value)) continue;
             identity.AddClaim(new Claim(claimType, value));
-        }
-    }
-
-    /// <summary>
-    /// Groups arrive as <c>[{ "id": "...", "name": "..." }]</c> objects.
-    /// Flatten the <c>name</c> field into <c>"group"</c> claims (the id is
-    /// kept on the original <c>resource_access</c> string claim if a
-    /// caller needs it — flattening just one field per object is the
-    /// standard pattern).
-    /// </summary>
-    private static void FlattenGroupObjectArray(ClaimsIdentity identity, JsonElement audienceBlock)
-    {
-        if (!audienceBlock.TryGetProperty("groups", out var array) ||
-            array.ValueKind != JsonValueKind.Array)
-            return;
-
-        var existing = new HashSet<string>(
-            identity.FindAll(GroupClaimType).Select(c => c.Value),
-            StringComparer.Ordinal);
-
-        foreach (var element in array.EnumerateArray())
-        {
-            if (element.ValueKind != JsonValueKind.Object) continue;
-            if (!element.TryGetProperty("name", out var nameElement)) continue;
-            var name = nameElement.GetString();
-            if (string.IsNullOrEmpty(name) || !existing.Add(name)) continue;
-            identity.AddClaim(new Claim(GroupClaimType, name));
         }
     }
 

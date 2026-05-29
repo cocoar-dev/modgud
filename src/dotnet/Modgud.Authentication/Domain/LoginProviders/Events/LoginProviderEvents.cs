@@ -34,7 +34,13 @@ public record LoginProviderAddedEvent(
     string? IconName,
     string? ButtonColorHex,
     JsonDocument? FlavorData,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    // Federation v1 (decisions G + A). Trailing optional params so existing
+    // construction sites + old event streams default to false (un-trusted,
+    // non-authoritative). Marten serializes by property name, so placement
+    // after CreatedAt is irrelevant for replay.
+    bool TrustForAuthorization = false,
+    bool AuthoritativeForProfile = false);
 
 /// <summary>
 /// Admin updates a login provider. Does NOT carry secret bytes — rotations
@@ -58,7 +64,12 @@ public record LoginProviderUpdatedEvent(
     string? IconName,
     string? ButtonColorHex,
     JsonDocument? FlavorData,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    // Federation v1 (decisions G + A). Full-replace event: the one production
+    // producer (UpdateLoginProviderCommand) passes the merged values; trailing
+    // defaults keep test/other callers compiling and replay fail-closed to false.
+    bool TrustForAuthorization = false,
+    bool AuthoritativeForProfile = false);
 
 /// <summary>
 /// Client-secret rotation. Encrypted bytes ride the event only because the

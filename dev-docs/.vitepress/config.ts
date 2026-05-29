@@ -83,6 +83,7 @@ export default withMermaid(defineConfig({
           { text: 'Realm Backup / Restore / DR', link: '/future-features/realm-backup-restore' },
           { text: 'Enterprise SSO — SAML + LDAP', link: '/future-features/enterprise-sso-saml-ldap' },
           { text: 'SAML federation — implementation plan', link: '/future-features/saml-federation' },
+          { text: 'SAML AMR → amr wiring (deferred I15)', link: '/future-features/saml-amr-wiring' },
           { text: 'Multi-IdP login UX', link: '/future-features/multi-idp-login-ux' },
           { text: 'Login-Providers UI refactor (single-modal)', link: '/future-features/login-providers-ui-refactor' },
           { text: 'White-label customization (Phase 2)', link: '/future-features/white-label-customization' },

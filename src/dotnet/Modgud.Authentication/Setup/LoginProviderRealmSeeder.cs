@@ -55,6 +55,8 @@ public class LoginProviderRealmSeeder : ILoginProviderRealmSeeder
             AutoCreateUsers: false,
             AllowLinking: false,
             TrustForEmailLink: false,
+            TrustForAuthorization: false,
+            AuthoritativeForProfile: false,
             AllowedEmailDomains: null,
             IconName: null,
             ButtonColorHex: null,

@@ -1,17 +1,25 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
+using Modgud.Authentication.Domain;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Common;
+using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Permissions.Abstractions;
 using Marten;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
 
 namespace Modgud.Api.Tests.Authorization;
@@ -85,6 +93,375 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             "groups must not appear in the public RS-block.");
         Assert.False(alphaBlock.TryGetProperty("app", out _),
             "app must not appear in the public RS-block.");
+    }
+
+    [Fact]
+    public async Task UserInfo_ReferenceToken_Client_Emits_Concrete_Permission()
+    {
+        // Same assertion as the JWT-client case above, but the client is
+        // configured for OPAQUE REFERENCE access tokens (the federation-v1
+        // default — decision I14). The reference token's stored payload is a
+        // realm-signed JWT; /connect/userinfo must resolve the reference,
+        // load the payload, and validate its signature against the REALM key.
+        // Regression guard for the RealmTokenValidationHandler bug where the
+        // IsReferenceToken early-return left the global key pool in place →
+        // 401 invalid_token (ID2090, "signing key not found").
+        var appAlpha = await CreateAppAsync("app-alpha", "App Alpha",
+            permissions: [("policy", "read"), ("policy", "write"), ("policy", "admin")]);
+        const string alphaAudience = "https://alpha-api.example.com";
+        await CreateOAuthApiAsync(alphaAudience, appAlpha.Id);
+
+        const string alphaScopeName = "alpha-api";
+        await CreateScopeAsync(name: alphaScopeName, resources: [alphaAudience], appId: appAlpha.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-ref-spa-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [appAlpha.Id], scopes: ["openid", "roles", "permissions", alphaScopeName],
+            accessTokenType: AccessTokenType.Reference);
+
+        var testUser = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Reference", lastname: "Token", acronym: "rt",
+            email: "rt@test.com", password: "TestPass1234");
+
+        await GrantAsync(testUser.Id, roleAppSlug: "app-alpha", resourceType: "policy",
+            actions: ["write"], groupBoundTo: ["app-alpha"]);
+
+        var alphaBlock = await DriveFlowAndReadAlphaBlockAsync(
+            "rt", clientId, clientSecret, redirectUri, alphaScopeName, alphaAudience);
+
+        var permissions = ReadStringArray(alphaBlock, "permissions");
+        Assert.Contains("policy:write", permissions);
+        Assert.DoesNotContain("policy:read", permissions);
+        Assert.DoesNotContain("policy:admin", permissions);
+    }
+
+    [Fact]
+    public async Task ReferenceToken_RefreshRedemption_Then_UserInfo_Succeeds()
+    {
+        // Reference REFRESH tokens are signed with the GLOBAL pool (not the
+        // realm key — see RealmSigningKeyHandler), so the realm-key install in
+        // RealmTokenValidationHandler must NOT break their redemption at
+        // /connect/token. This drives a reference client through
+        // authorize → token (with offline_access) → refresh-redeem → userinfo,
+        // proving both the refresh path and the (newly fixed) reference-access
+        // userinfo path work together.
+        var appAlpha = await CreateAppAsync("app-alpha", "App Alpha",
+            permissions: [("policy", "read"), ("policy", "write")]);
+        const string alphaAudience = "https://alpha-api.example.com";
+        await CreateOAuthApiAsync(alphaAudience, appAlpha.Id);
+
+        const string alphaScopeName = "alpha-api";
+        await CreateScopeAsync(name: alphaScopeName, resources: [alphaAudience], appId: appAlpha.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-ref-refresh-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [appAlpha.Id],
+            scopes: ["openid", "offline_access", "roles", "permissions", alphaScopeName],
+            accessTokenType: AccessTokenType.Reference);
+
+        var testUser = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Refresh", lastname: "Reference", acronym: "rr",
+            email: "rr@test.com", password: "TestPass1234");
+        await GrantAsync(testUser.Id, roleAppSlug: "app-alpha", resourceType: "policy",
+            actions: ["write"], groupBoundTo: ["app-alpha"]);
+
+        // authorize → token (with offline_access so a refresh token is issued)
+        using var tokens = await DriveAuthCodeFlowForTokensAsync(
+            username: "rr", password: "TestPass1234",
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            scope: $"openid offline_access roles permissions {alphaScopeName}",
+            resources: [alphaAudience]);
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
+
+        // redeem the refresh token → fresh reference access token
+        var newAccessToken = await RedeemRefreshTokenAsync(
+            refreshToken, clientId, clientSecret, [alphaAudience]);
+
+        // the fresh access token must still resolve at /connect/userinfo
+        var userinfoClient = Factory.CreateClient();
+        userinfoClient.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", newAccessToken);
+        var response = await userinfoClient.GetAsync("/connect/userinfo",
+            TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(response.IsSuccessStatusCode,
+            $"/connect/userinfo after refresh failed ({(int)response.StatusCode}): {body}");
+
+        using var doc = JsonDocument.Parse(body);
+        Assert.True(doc.RootElement.TryGetProperty("resource_access", out var ra)
+            && ra.TryGetProperty(alphaAudience, out _),
+            $"resource_access['{alphaAudience}'] missing after refresh.\nBody:\n{body}");
+    }
+
+    [Fact]
+    public async Task JwtClient_Bakes_ResourceAccess_Into_AccessToken_And_UserInfo_Echoes()
+    {
+        // Federation v1.1: a JWT-access client has no server-side token payload for
+        // UserInfo to read the session-group carrier back from, so the per-audience
+        // resource_access (durable ∪ session-derived, computed via the same
+        // BuildResourceAccessAsync as the reference path) is baked into the
+        // self-contained access token at issuance. This pins the wiring end-to-end:
+        // (1) the block is present IN the JWT payload (no UserInfo round-trip
+        // needed), and (2) UserInfo echoes that block verbatim rather than silently
+        // recomputing a narrower set. (The session-derived union itself is pinned at
+        // the service level by FederationV1Phase4Tests; the bake path is identical
+        // for durable vs session membership.)
+        var slug = "jwtfed-" + Guid.NewGuid().ToString("N")[..8];
+        var audience = $"https://{slug}-api.example.com";
+        var scopeName = slug + "-api";
+
+        var app = await CreateAppAsync(slug, "Jwt Fed App",
+            permissions: [("policy", "read"), ("policy", "write"), ("policy", "admin")]);
+        await CreateOAuthApiAsync(audience, app.Id);
+        await CreateScopeAsync(name: scopeName, resources: [audience], appId: app.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-jwt-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [app.Id], scopes: ["openid", "roles", "permissions", scopeName],
+            accessTokenType: AccessTokenType.Jwt);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Jwt", lastname: "Fed", acronym: "jf", email: "jf@test.com", password: "TestPass1234");
+        await GrantAsync(user.Id, roleAppSlug: slug, resourceType: "policy",
+            actions: ["write"], groupBoundTo: [slug]);
+
+        var accessToken = await DriveAuthCodeFlowAsync(
+            username: "jf", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri, scope: $"openid roles permissions {scopeName}", resources: [audience]);
+
+        // (1) resource_access is baked into the self-contained JWT.
+        var payload = DecodeJwtPayload(accessToken);
+        Assert.True(payload.TryGetProperty("resource_access", out var ra),
+            $"resource_access missing from JWT payload:\n{payload}");
+        Assert.True(ra.TryGetProperty(audience, out var block),
+            $"resource_access['{audience}'] missing from JWT. keys: {string.Join(",", ra.EnumerateObject().Select(p => p.Name))}");
+        var permsInToken = block.GetProperty("permissions").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains("policy:write", permsInToken);
+        Assert.DoesNotContain("policy:read", permsInToken);
+
+        // (2) UserInfo echoes the same block.
+        var userinfoClient = Factory.CreateClient();
+        userinfoClient.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        var resp = await userinfoClient.GetAsync("/connect/userinfo", TestContext.Current.CancellationToken);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(resp.IsSuccessStatusCode, $"/connect/userinfo failed ({(int)resp.StatusCode}): {body}");
+        using var doc = JsonDocument.Parse(body);
+        var uiPerms = doc.RootElement.GetProperty("resource_access").GetProperty(audience)
+            .GetProperty("permissions").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains("policy:write", uiPerms);
+        Assert.DoesNotContain("policy:read", uiPerms);
+    }
+
+    [Fact]
+    public async Task JwtClient_BakedResourceAccess_Honours_Requested_Audience_Only()
+    {
+        // The baked block must match the token's narrowed aud (RFC 8707 resource
+        // indicators), never the broader scope-derived set — otherwise a block for
+        // an audience the client didn't request would ride along in the token.
+        var aSlug = "jwtaud-a-" + Guid.NewGuid().ToString("N")[..8];
+        var bSlug = "jwtaud-b-" + Guid.NewGuid().ToString("N")[..8];
+        var aAud = $"https://{aSlug}.example.com";
+        var bAud = $"https://{bSlug}.example.com";
+
+        var appA = await CreateAppAsync(aSlug, "App A", permissions: [("policy", "write")]);
+        var appB = await CreateAppAsync(bSlug, "App B", permissions: [("widget", "write")]);
+        await CreateOAuthApiAsync(aAud, appA.Id);
+        await CreateOAuthApiAsync(bAud, appB.Id);
+        await CreateScopeAsync(name: aSlug + "-api", resources: [aAud], appId: appA.Id);
+        await CreateScopeAsync(name: bSlug + "-api", resources: [bAud], appId: appB.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-jwt-2aud-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [appA.Id, appB.Id],
+            scopes: ["openid", "roles", "permissions", aSlug + "-api", bSlug + "-api"],
+            accessTokenType: AccessTokenType.Jwt);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Two", lastname: "Aud", acronym: "ta", email: "ta@test.com", password: "TestPass1234");
+        await GrantAsync(user.Id, roleAppSlug: aSlug, resourceType: "policy", actions: ["write"], groupBoundTo: [aSlug]);
+        await GrantAsync(user.Id, roleAppSlug: bSlug, resourceType: "widget", actions: ["write"], groupBoundTo: [bSlug]);
+
+        // Request ONLY audience A as the resource indicator.
+        var accessToken = await DriveAuthCodeFlowAsync(
+            username: "ta", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri,
+            scope: $"openid roles permissions {aSlug}-api {bSlug}-api", resources: [aAud]);
+
+        var payload = DecodeJwtPayload(accessToken);
+        Assert.True(payload.TryGetProperty("resource_access", out var ra),
+            $"resource_access missing from JWT payload:\n{payload}");
+        Assert.True(ra.TryGetProperty(aAud, out _), "audience A block expected (it was requested).");
+        Assert.False(ra.TryGetProperty(bAud, out _),
+            "audience B block must NOT appear — it was not in the requested resource set.");
+    }
+
+    private static JsonElement DecodeJwtPayload(string jwt)
+    {
+        var parts = jwt.Split('.');
+        Assert.True(parts.Length >= 2, $"not a JWT (reference token?): {jwt[..Math.Min(16, jwt.Length)]}…");
+        var payload = parts[1].Replace('-', '+').Replace('_', '/');
+        payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+        return JsonDocument.Parse(Convert.FromBase64String(payload)).RootElement.Clone();
+    }
+
+    [Fact]
+    public async Task JwtClient_Federated_SessionGroup_Lands_In_AccessToken()
+    {
+        // The user is NOT a durable member of the group — it enters authz ONLY via
+        // the session-group carrier on the (federated) cookie. Proves the full
+        // carrier path cookie → /connect/authorize grant → JWT bake, end-to-end
+        // through the real HTTP pipeline (not just durable authz, and not just the
+        // service-level union pinned by FederationV1Phase4Tests).
+        var slug = "fedjwt-" + Guid.NewGuid().ToString("N")[..8];
+        var audience = $"https://{slug}-api.example.com";
+        var scopeName = slug + "-api";
+
+        var app = await CreateAppAsync(slug, "Fed JWT App", permissions: [("policy", "read"), ("policy", "write")]);
+        await CreateOAuthApiAsync(audience, app.Id);
+        await CreateScopeAsync(name: scopeName, resources: [audience], appId: app.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-fedjwt-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [app.Id], scopes: ["openid", "roles", "permissions", scopeName],
+            accessTokenType: AccessTokenType.Jwt);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Fed", lastname: "Jwt", acronym: "fj", email: "fj@test.com", password: "TestPass1234");
+        var role = await Factory.CreateTestRoleAsync($"R_{Guid.NewGuid():N}", [("policy", "write")], appSlug: slug);
+        var sessionGroup = await Factory.CreateTestGroupAsync(
+            $"SG_{Guid.NewGuid():N}", memberIds: [], roleIds: [role.Id], boundTo: [slug]);
+
+        // Control: a plain (password) login carries no carrier → durable-only →
+        // the session group's permission must be absent.
+        var plainToken = await DriveAuthCodeFlowAsync(
+            username: "fj", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri, scope: $"openid roles permissions {scopeName}", resources: [audience]);
+        var plain = DecodeJwtPayload(plainToken);
+        var plainHasWrite =
+            plain.TryGetProperty("resource_access", out var pra)
+            && pra.TryGetProperty(audience, out var pb)
+            && pb.TryGetProperty("permissions", out var pp)
+            && pp.EnumerateArray().Any(e => e.GetString() == "policy:write");
+        Assert.False(plainHasWrite, "without the carrier, policy:write must NOT appear (durable membership is empty).");
+
+        // Federated: the forged cookie carries the session group → policy:write appears.
+        var fedClient = await CreateFederatedCookieClientAsync("fj", sessionGroup.Id);
+        var fedToken = await DriveAuthCodeFlowAsync(
+            username: "fj", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri, scope: $"openid roles permissions {scopeName}", resources: [audience],
+            cookieClient: fedClient);
+
+        var perms = DecodeJwtPayload(fedToken).GetProperty("resource_access").GetProperty(audience)
+            .GetProperty("permissions").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains("policy:write", perms);   // came ONLY from the session-group carrier
+    }
+
+    [Fact]
+    public async Task ReferenceClient_Federated_SessionGroup_Surfaces_At_UserInfo()
+    {
+        // Reference client: the carrier rides the server-side reference token and
+        // the session-derived permission surfaces at /connect/userinfo (the path
+        // the ID2090 hotfix repaired). User is NOT a durable member.
+        var slug = "fedref-" + Guid.NewGuid().ToString("N")[..8];
+        var audience = $"https://{slug}-api.example.com";
+        var scopeName = slug + "-api";
+
+        var app = await CreateAppAsync(slug, "Fed Ref App", permissions: [("policy", "read"), ("policy", "write")]);
+        await CreateOAuthApiAsync(audience, app.Id);
+        await CreateScopeAsync(name: scopeName, resources: [audience], appId: app.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-fedref-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [app.Id], scopes: ["openid", "roles", "permissions", scopeName],
+            accessTokenType: AccessTokenType.Reference);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Fed", lastname: "Ref", acronym: "fr", email: "fr@test.com", password: "TestPass1234");
+        var role = await Factory.CreateTestRoleAsync($"R_{Guid.NewGuid():N}", [("policy", "write")], appSlug: slug);
+        var sessionGroup = await Factory.CreateTestGroupAsync(
+            $"SG_{Guid.NewGuid():N}", memberIds: [], roleIds: [role.Id], boundTo: [slug]);
+
+        var fedClient = await CreateFederatedCookieClientAsync("fr", sessionGroup.Id);
+        var accessToken = await DriveAuthCodeFlowAsync(
+            username: "fr", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri, scope: $"openid roles permissions {scopeName}", resources: [audience],
+            cookieClient: fedClient);
+
+        var userinfoClient = Factory.CreateClient();
+        userinfoClient.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        var resp = await userinfoClient.GetAsync("/connect/userinfo", TestContext.Current.CancellationToken);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(resp.IsSuccessStatusCode, $"/connect/userinfo failed ({(int)resp.StatusCode}): {body}");
+        using var doc = JsonDocument.Parse(body);
+        var perms = doc.RootElement.GetProperty("resource_access").GetProperty(audience)
+            .GetProperty("permissions").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains("policy:write", perms);   // session-group permission via the server-side carrier
+    }
+
+    /// <summary>
+    /// Forges a valid ApplicationScheme auth cookie carrying the federation
+    /// session-group carrier claim(s), without a real upstream-IdP round-trip.
+    /// Uses the app's own <see cref="SignInManager{T}"/> principal (valid security
+    /// stamp) + the real <c>TicketDataFormat</c>, protected under the system tenant
+    /// so the request pipeline (also system tenant) accepts it. This stubs only the
+    /// deriver→cookie link (covered by FederationV1Phase3Tests); everything
+    /// downstream — cookie→grant→token/UserInfo — runs for real.
+    /// </summary>
+    private async Task<HttpClient> CreateFederatedCookieClientAsync(string userName, params Guid[] sessionGroupIds)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var signInManager = scope.ServiceProvider.GetRequiredService<SignInManager<ApplicationUser>>();
+
+        var user = await userManager.FindByNameAsync(userName)
+            ?? throw new InvalidOperationException($"user '{userName}' not found");
+        var principal = await signInManager.CreateUserPrincipalAsync(user);
+        var identity = (ClaimsIdentity)principal.Identity!;
+        foreach (var gid in sessionGroupIds)
+            identity.AddClaim(new Claim(FederationClaimTypes.SessionGroup, gid.ToString()));
+
+        var cookieOptions = scope.ServiceProvider
+            .GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(IdentityConstants.ApplicationScheme);
+        var ticket = new AuthenticationTicket(
+            principal,
+            new AuthenticationProperties
+            {
+                IsPersistent = true,
+                IssuedUtc = DateTimeOffset.UtcNow,
+                ExpiresUtc = DateTimeOffset.UtcNow.AddHours(1),
+            },
+            IdentityConstants.ApplicationScheme);
+
+        // Protect under the system tenant so the request pipeline (system tenant
+        // by default in tests) resolves the same per-tenant DataProtection keys.
+        string cookieValue;
+        using (TenantContext.Enter(TenantConstants.SystemTenantId))
+            cookieValue = cookieOptions.TicketDataFormat.Protect(ticket);
+
+        var handler = new CookieContainerHandler();
+        handler.Seed(new Uri("http://localhost"), cookieOptions.Cookie.Name!, cookieValue);
+        return Factory.CreateDefaultClient(handler);
     }
 
     [Fact]
@@ -215,10 +592,30 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         string clientId, string clientSecret,
         string redirectUri,
         string scope,
-        IReadOnlyList<string> resources)
+        IReadOnlyList<string> resources,
+        HttpClient? cookieClient = null)
+    {
+        using var json = await DriveAuthCodeFlowForTokensAsync(
+            username, password, clientId, clientSecret, redirectUri, scope, resources, cookieClient);
+        return json.RootElement.GetProperty("access_token").GetString()!;
+    }
+
+    /// <summary>Same as <see cref="DriveAuthCodeFlowAsync"/> but returns the full
+    /// token-endpoint JSON response (so callers can read the refresh_token too).
+    /// When <paramref name="cookieClient"/> is supplied it is used for the
+    /// /connect/authorize step instead of a fresh password login — the federated
+    /// tests pass a client carrying a hand-forged cookie with the session-group
+    /// carrier.</summary>
+    private async Task<JsonDocument> DriveAuthCodeFlowForTokensAsync(
+        string username, string password,
+        string clientId, string clientSecret,
+        string redirectUri,
+        string scope,
+        IReadOnlyList<string> resources,
+        HttpClient? cookieClient = null)
     {
         // 1. Cookie-login first so /connect/authorize sees an authenticated principal.
-        var cookieClient = await CreateAuthenticatedClientAsync(username, password);
+        cookieClient ??= await CreateAuthenticatedClientAsync(username, password);
 
         // 2. PKCE pair.
         var verifier = GeneratePkceVerifier();
@@ -278,8 +675,32 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         Assert.True(tokenResponse.IsSuccessStatusCode,
             $"/connect/token failed ({(int)tokenResponse.StatusCode}): {tokenBody}");
 
-        using var tokenJson = JsonDocument.Parse(tokenBody);
-        return tokenJson.RootElement.GetProperty("access_token").GetString()!;
+        return JsonDocument.Parse(tokenBody);
+    }
+
+    /// <summary>Redeems a refresh token at /connect/token and returns the new access token.</summary>
+    private async Task<string> RedeemRefreshTokenAsync(
+        string refreshToken, string clientId, string clientSecret, IReadOnlyList<string> resources)
+    {
+        var tokenClient = Factory.CreateClient();
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("grant_type", "refresh_token"),
+            new("refresh_token", refreshToken),
+            new("client_id", clientId),
+            new("client_secret", clientSecret),
+        };
+        foreach (var r in resources)
+            form.Add(new KeyValuePair<string, string>("resource", r));
+
+        var resp = await tokenClient.PostAsync(
+            "/connect/token", new FormUrlEncodedContent(form), TestContext.Current.CancellationToken);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(resp.IsSuccessStatusCode,
+            $"refresh_token redemption failed ({(int)resp.StatusCode}): {body}");
+
+        using var json = JsonDocument.Parse(body);
+        return json.RootElement.GetProperty("access_token").GetString()!;
     }
 
     private static string GeneratePkceVerifier()
@@ -351,7 +772,7 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
 
     private async Task CreateOAuthClientAsync(
         string clientId, string clientSecret, string redirectUri, List<Guid> appIds,
-        List<string> scopes)
+        List<string> scopes, AccessTokenType accessTokenType = AccessTokenType.Jwt)
     {
         using var scope = Factory.Services.CreateScope();
         var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
@@ -368,7 +789,7 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             Scopes = scopes,
             AllowedGrantTypes = ["authorization_code", "refresh_token"],
             RequireConsent = false,
-            AccessTokenType = AccessTokenType.Jwt,
+            AccessTokenType = accessTokenType,
             AppIds = [.. appIds.Select(g => new BuildingBlocks.Helper.ShortGuid(g).ToString())],
         };
 

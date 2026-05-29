@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Modgud.Api.Features.Auth.OAuth;
 using Modgud.Authentication.Domain;
+using Modgud.Permissions.Abstractions;
 using OpenIddict.Abstractions;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -202,6 +203,20 @@ public class AuthorizationEndpointHelpersTests
             // ASP.NET Identity attaches an internal "AspNet.Identity.SecurityStamp"
             // claim that must never reach a relying party.
             var c = ClaimWithScopes("AspNet.Identity.SecurityStamp", "stamp",
+                Scopes.OpenId, Scopes.Profile, Scopes.Email, Scopes.Roles);
+            Assert.Empty(AuthorizationEndpointHelpers.GetDestinations(c));
+        }
+
+        [Fact]
+        public void SessionGroup_carrier_claim_is_suppressed_from_both_tokens()
+        {
+            // Federation v1 hub boundary (decision D): the internal
+            // "modgud:session-group" carrier rides the server-side reference token
+            // and is unioned into resource_access at UserInfo/token time, but must
+            // NEVER reach the wire — like SecurityStamp, it yields no destination
+            // even with every scope granted. Without this case it would fall to the
+            // default branch and leak a group GUID into the access token.
+            var c = ClaimWithScopes(FederationClaimTypes.SessionGroup, Guid.NewGuid().ToString(),
                 Scopes.OpenId, Scopes.Profile, Scopes.Email, Scopes.Roles);
             Assert.Empty(AuthorizationEndpointHelpers.GetDestinations(c));
         }

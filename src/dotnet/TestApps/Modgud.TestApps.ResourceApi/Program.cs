@@ -92,15 +92,14 @@ app.MapGet("/me", (ClaimsPrincipal user) => Results.Ok(new
     scopes = user.FindAll("scope").Select(c => c.Value)
                   .Concat(user.FindAll("scp").Select(c => c.Value))
                   .ToArray(),
-    // Roles + permissions + groups come from the lib's claims-transformation,
-    // which read resource_access[<audience>] off the principal. They will
-    // be empty if the IdP hasn't emitted a block for this audience (e.g.
-    // because the user has no grants in the linked App).
+    // Roles + permissions come from the lib's claims-transformation, which
+    // reads resource_access[<audience>] off the principal. They will be empty
+    // if the IdP hasn't emitted a block for this audience (e.g. because the
+    // user has no grants in the linked App). Groups are never emitted by the
+    // IdP (hub boundary, federation v1) — there is no "groups" key to read.
     roles = user.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
     permissions = user.FindAll(ModgudClaimsTransformation.PermissionClaimType)
                        .Select(c => c.Value).ToArray(),
-    groups = user.FindAll(ModgudClaimsTransformation.GroupClaimType)
-                  .Select(c => c.Value).ToArray(),
     claims = user.Claims.Select(c => new { c.Type, c.Value }).ToArray()
 })).RequireAuthorization();
 

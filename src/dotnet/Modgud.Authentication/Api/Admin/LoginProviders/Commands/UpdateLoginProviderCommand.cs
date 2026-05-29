@@ -40,7 +40,11 @@ public record UpdateLoginProviderCommand(
     Optional<string?> IconName,
     Optional<string?> ButtonColorHex,
     Optional<JsonDocument> FlavorData,
-    Optional<bool> Enabled);
+    Optional<bool> Enabled,
+    // Federation v1. Defaulted to None so existing callers / tests are unchanged
+    // and an omitted field preserves the persisted value (PATCH semantics).
+    Optional<bool> TrustForAuthorization = default,
+    Optional<bool> AuthoritativeForProfile = default);
 
 public class UpdateLoginProviderHandler(
     IDocumentSession session,
@@ -74,6 +78,8 @@ public class UpdateLoginProviderHandler(
         var autoCreate = command.AutoCreateUsers.OrDefault(config.AutoCreateUsers);
         var allowLinking = command.AllowLinking.OrDefault(config.AllowLinking);
         var trustForEmailLink = command.TrustForEmailLink.OrDefault(config.TrustForEmailLink);
+        var trustForAuthorization = command.TrustForAuthorization.OrDefault(config.TrustForAuthorization);
+        var authoritativeForProfile = command.AuthoritativeForProfile.OrDefault(config.AuthoritativeForProfile);
         var allowedEmailDomains = command.AllowedEmailDomains.HasValue ? command.AllowedEmailDomains.Value : config.AllowedEmailDomains;
         var iconName = command.IconName.HasValue ? command.IconName.Value : config.IconName;
         var buttonColorHex = command.ButtonColorHex.HasValue ? command.ButtonColorHex.Value : config.ButtonColorHex;
@@ -133,6 +139,7 @@ public class UpdateLoginProviderHandler(
             || command.Scopes.HasValue || command.UserUpdateScript.HasValue || command.StoreRawClaims.HasValue
             || command.RawClaimsRetentionDays.HasValue || command.AutoCreateUsers.HasValue
             || command.AllowLinking.HasValue || command.TrustForEmailLink.HasValue
+            || command.TrustForAuthorization.HasValue || command.AuthoritativeForProfile.HasValue
             || command.AllowedEmailDomains.HasValue || command.IconName.HasValue
             || command.ButtonColorHex.HasValue || command.FlavorData.HasValue;
 
@@ -150,6 +157,8 @@ public class UpdateLoginProviderHandler(
                 AutoCreateUsers: autoCreate,
                 AllowLinking: allowLinking,
                 TrustForEmailLink: trustForEmailLink,
+                TrustForAuthorization: trustForAuthorization,
+                AuthoritativeForProfile: authoritativeForProfile,
                 AllowedEmailDomains: allowedEmailDomains,
                 IconName: iconName,
                 ButtonColorHex: buttonColorHex,

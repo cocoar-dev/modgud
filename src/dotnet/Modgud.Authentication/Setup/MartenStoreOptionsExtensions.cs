@@ -81,6 +81,13 @@ public static class MartenStoreOptionsExtensions
         options.Schema.For<UserDeletionState>()
             .Identity(x => x.Id);
 
+        // Federation v1: per-user claims-per-source snapshot (refreshable, NOT
+        // event-sourced). Keyed on the user id like UserDeletionState so it can
+        // be Loaded/Deleted directly. Scrubbed by a plain Delete on user delete
+        // / GDPR erase — there is no stream to mask, so NO event-masking rule.
+        options.Schema.For<ExternalClaimsStore>()
+            .Identity(x => x.Id);
+
         options.Schema.For<LoginProvider>()
             .Identity(x => x.Id)
             .Index(x => x.Type)

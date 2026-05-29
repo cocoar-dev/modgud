@@ -14,10 +14,25 @@ namespace Modgud.Infrastructure.OpenIddict;
 /// point of having per-realm keys in the first place.
 ///
 /// <para>
-/// Runs only for JWT-format tokens (access tokens for clients with
-/// <c>AccessTokenType.Jwt</c>). Reference tokens go through a separate
-/// store-lookup path that's already realm-isolated by virtue of the
-/// per-tenant Marten store.
+/// The discriminator is the token TYPE, mirroring
+/// <see cref="RealmSigningKeyHandler"/>: only <c>access_token</c> and
+/// <c>id_token</c> are signed with the realm key, so only their signatures
+/// must be validated against it. Authorization codes, refresh tokens and
+/// device codes are signed with the global pool and validated by the IdP
+/// itself — we leave their key set untouched.
+/// </para>
+///
+/// <para>
+/// This is NOT a reference-vs-JWT distinction. With
+/// <c>UseReferenceAccessTokens()</c> an access token is delivered to the
+/// client as an opaque reference, but its payload is still persisted as a
+/// realm-signed JWT and re-validated on the way through
+/// <c>/connect/userinfo</c> + <c>/connect/introspect</c>. An earlier version
+/// keyed off <c>IsReferenceToken</c> and skipped exactly this case, leaving
+/// the global keys in place → <c>invalid_token</c> (OpenIddict ID2090,
+/// "signing key not found"). Reference REFRESH tokens, by contrast, stay
+/// global-signed, so their <c>access_token</c>-free <c>ValidTokenTypes</c>
+/// correctly falls through the guard.
 /// </para>
 ///
 /// <para>
@@ -46,14 +61,39 @@ public sealed class RealmTokenValidationHandler : IOpenIddictServerHandler<Valid
         _keyStore = keyStore;
     }
 
+    // RFC 8693 token-type URIs OpenIddict stamps on tokens it issues. Only
+    // these two are signed with the realm key (see RealmSigningKeyHandler),
+    // so only their validation may install realm-only verification keys.
+    private const string AccessTokenType = "urn:ietf:params:oauth:token-type:access_token";
+    private const string IdTokenType = "urn:ietf:params:oauth:token-type:id_token";
+
     public async ValueTask HandleAsync(ValidateTokenContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        // Skip non-JWT formats (reference tokens, etc.) — the JWT signature
-        // pipeline doesn't run for them.
         if (context.TokenValidationParameters is null) return;
-        if (context.IsReferenceToken) return;
+
+        // Install realm-only verification keys ONLY when an access token or
+        // id token is among the acceptable types for this validation:
+        //  - /connect/userinfo accepts {access_token}
+        //  - /connect/introspect, /connect/token, /connect/revoke accept the
+        //    full generic set (which includes access_token)
+        //  - identity-token validation accepts {id_token}
+        // Endpoints that accept NEITHER (e.g. a {client_assertion}-only
+        // validation, whose JWS is signed by the CLIENT's key — not the realm
+        // key) are left with their stock key set.
+        //
+        // This is deliberately keyed on token TYPE, not on IsReferenceToken.
+        // With UseReferenceAccessTokens the access token is delivered as an
+        // opaque reference, but ValidateReferenceTokenIdentifier swaps in its
+        // realm-signed JWT payload, which ValidateIdentityModelToken then
+        // verifies against these keys. The previous IsReferenceToken guard
+        // skipped that case → ID2090 at userinfo + introspect.
+        if (!context.ValidTokenTypes.Contains(AccessTokenType) &&
+            !context.ValidTokenTypes.Contains(IdTokenType))
+        {
+            return;
+        }
 
         var slug = TenantContext.Current;
         var keys = await _keyStore.GetVerificationKeysAsync(slug);

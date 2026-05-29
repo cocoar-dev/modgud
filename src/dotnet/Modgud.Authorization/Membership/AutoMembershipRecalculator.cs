@@ -44,8 +44,12 @@ public class AutoMembershipRecalculator(
     {
         var principal = await session.LoadAsync<Principal>(principalId, ct);
 
+        // Federation v1: ExternallyDrivable groups are computed in-memory at login
+        // only (their scripts read ExternalGroups, which has no JSONB column).
+        // Exclude them from the durable per-principal recompute so external claims
+        // never drive persisted MemberIds (the two-layer source filter).
         var groups = await session.Query<Group>()
-            .Where(g => !g.IsDeleted && g.MembershipMode == MembershipMode.Auto)
+            .Where(g => !g.IsDeleted && g.MembershipMode == MembershipMode.Auto && !g.ExternallyDrivable)
             .ToListAsync(ct);
 
         foreach (var group in groups)
@@ -87,6 +91,12 @@ public class AutoMembershipRecalculator(
     public async Task RecalculateForGroupAsync(Group group, IDocumentSession session, CancellationToken ct = default)
     {
         if (group.MembershipMode != MembershipMode.Auto) return;
+
+        // Federation v1: never run an ExternallyDrivable group's script through the
+        // JSONB batch — it reads ExternalGroups (no persisted column) and would
+        // translate to a non-existent path. Its membership is session-only,
+        // computed in-memory by LoginTimeMembershipDeriver.
+        if (group.ExternallyDrivable) return;
 
         if (string.IsNullOrWhiteSpace(group.CompiledMembershipScript))
         {
@@ -162,20 +172,8 @@ public class AutoMembershipRecalculator(
     }
 
     private bool EvaluateSafe(string compiledScript, Principal principal, CancellationToken ct)
-    {
-        try
-        {
-            var compiled = evaluator.BuildPredicate<Principal>(compiledScript, ct).Compile();
-            return compiled(principal);
-        }
-        catch (Exception ex)
-        {
-            // NullReferenceException (e.g. `p.Email.endsWith(...)` when Email is null)
-            // treated as "not a member" — the safe default.
-            logger.LogWarning(ex, "Membership predicate threw for principal {PrincipalId}", principal.Id);
-            return false;
-        }
-    }
+        => MembershipPredicateEvaluation.EvaluateSafe(
+            evaluator, compiledScript, principal, logger, principal.Id, ct);
 
     private static bool SameSet(List<Guid> a, List<Guid> b)
         => a.Count == b.Count && a.ToHashSet().SetEquals(b);

@@ -63,6 +63,11 @@ public class DeleteUsersHandler(
                 session.Store(appUser);
             }
 
+            // Federation v1: drop the per-user external-claims snapshot (plain
+            // doc, not event-sourced) so externally-derived authz can never
+            // outlive the user. Rides this same batched SaveChanges.
+            session.Delete<ExternalClaimsStore>(id);
+
             // Hard-delete any external identity links owned by this user. Soft-
             // unlinking would leave tombstones occupying the (Issuer, Subject)
             // unique-index slot, blocking the same external identity from ever

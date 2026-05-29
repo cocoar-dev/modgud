@@ -18,7 +18,8 @@ public record UpdateGroupCommand(
     string? MembershipScript = null,
     string? Email = null,
     EmailMode EmailMode = EmailMode.Shared,
-    List<string>? BoundTo = null);
+    List<string>? BoundTo = null,
+    bool ExternallyDrivable = false);
 
 public class UpdateGroupHandler(
     IDocumentSession session,
@@ -64,6 +65,17 @@ public class UpdateGroupHandler(
                     $"Adding group {cycleMembers[0]} as a member would create a cycle.");
         }
 
+        // Federation v1 (decision G): realm:admin is hard local-only. Block
+        // marking a realm:admin-conferring group ExternallyDrivable. Bidirectional
+        // by construction — RoleIds and ExternallyDrivable arrive together here,
+        // so this also rejects adding a realm:admin role to a drivable group.
+        if (command.ExternallyDrivable)
+        {
+            var guardError = await GroupMembershipGuards.RejectIfConfersRealmAdminAsync(
+                session, command.RoleIds, ct);
+            if (guardError is not null) return guardError.Value;
+        }
+
         string? compiledMembership = null;
         List<string>? membershipDeps = null;
         if (command.MembershipMode == MembershipMode.Auto)
@@ -102,7 +114,7 @@ public class UpdateGroupHandler(
             command.MembershipMode, command.MembershipScript, compiledMembership,
             membershipDeps,
             command.Email, command.EmailMode,
-            boundTo));
+            boundTo, command.ExternallyDrivable));
 
         if (command.MembershipMode == MembershipMode.Auto)
         {
@@ -120,6 +132,7 @@ public class UpdateGroupHandler(
                 Email = command.Email,
                 EmailMode = command.EmailMode,
                 BoundTo = boundTo,
+                ExternallyDrivable = command.ExternallyDrivable,
             };
             await recalculator.RecalculateForGroupAsync(updatedGroup, session, ct);
         }

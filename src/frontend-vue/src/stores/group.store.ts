@@ -29,6 +29,8 @@ interface GroupPayload {
   RoleIds: string[]
   MembershipMode: MembershipMode
   MembershipScript?: string
+  /** Federation v1: opt this Auto group into login-time externally-derived membership. */
+  ExternallyDrivable?: boolean
   Email?: string
   EmailMode?: 'Shared' | 'ExpandToMembers'
   /**

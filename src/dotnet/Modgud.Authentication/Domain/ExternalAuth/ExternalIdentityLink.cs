@@ -36,6 +36,14 @@ public class ExternalIdentityLink
     public DateTimeOffset LinkedAt { get; set; }
     public DateTimeOffset LastLoginAt { get; set; }
 
+    /// <summary>
+    /// True when this link's provider JIT-created the Modgud user (federation v1,
+    /// decision A). Used to resolve the "JIT creator is profile-authoritative by
+    /// default" fallback at profile-patch time, so a JIT-created user's profile is
+    /// not silently frozen when no provider is explicitly authoritative.
+    /// </summary>
+    public bool IsCreator { get; set; }
+
     // ── Debugging snapshot of the last script run ─────────────────────
     // Exists purely for admin visibility (IdP-claims modal) and post-hoc
     // debugging. Not authoritative for anything — overwritten on every login.
