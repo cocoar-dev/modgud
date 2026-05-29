@@ -63,6 +63,9 @@ public class AccountLifecycleTests(SharedPostgresFixture fixture) : IntegrationT
 
         var del = await Client.DeleteAsync($"/api/user/{id}", ct);
         del.EnsureSuccessStatusCode();
+        // IsActive comes from UserView (async projection of UserDeactivatedEvent) —
+        // wait for the daemon before asserting on it.
+        await Factory.WaitForProjectionsAsync();
 
         var binned = await Client.GetFromJsonAsync<UserDto>($"/api/user/{id}", JsonOptions, ct);
         Assert.True(binned!.IsDeletionPending);
@@ -71,6 +74,7 @@ public class AccountLifecycleTests(SharedPostgresFixture fixture) : IntegrationT
 
         var restore = await Client.PostAsync($"/api/user/{id}/restore", null, ct);
         restore.EnsureSuccessStatusCode();
+        await Factory.WaitForProjectionsAsync(); // UserActivatedEvent → UserView
 
         var restored = await Client.GetFromJsonAsync<UserDto>($"/api/user/{id}", JsonOptions, ct);
         Assert.False(restored!.IsDeletionPending);
