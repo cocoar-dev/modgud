@@ -88,6 +88,110 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task UserInfo_ReferenceToken_Client_Emits_Concrete_Permission()
+    {
+        // Same assertion as the JWT-client case above, but the client is
+        // configured for OPAQUE REFERENCE access tokens (the federation-v1
+        // default — decision I14). The reference token's stored payload is a
+        // realm-signed JWT; /connect/userinfo must resolve the reference,
+        // load the payload, and validate its signature against the REALM key.
+        // Regression guard for the RealmTokenValidationHandler bug where the
+        // IsReferenceToken early-return left the global key pool in place →
+        // 401 invalid_token (ID2090, "signing key not found").
+        var appAlpha = await CreateAppAsync("app-alpha", "App Alpha",
+            permissions: [("policy", "read"), ("policy", "write"), ("policy", "admin")]);
+        const string alphaAudience = "https://alpha-api.example.com";
+        await CreateOAuthApiAsync(alphaAudience, appAlpha.Id);
+
+        const string alphaScopeName = "alpha-api";
+        await CreateScopeAsync(name: alphaScopeName, resources: [alphaAudience], appId: appAlpha.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-ref-spa-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [appAlpha.Id], scopes: ["openid", "roles", "permissions", alphaScopeName],
+            accessTokenType: AccessTokenType.Reference);
+
+        var testUser = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Reference", lastname: "Token", acronym: "rt",
+            email: "rt@test.com", password: "TestPass1234");
+
+        await GrantAsync(testUser.Id, roleAppSlug: "app-alpha", resourceType: "policy",
+            actions: ["write"], groupBoundTo: ["app-alpha"]);
+
+        var alphaBlock = await DriveFlowAndReadAlphaBlockAsync(
+            "rt", clientId, clientSecret, redirectUri, alphaScopeName, alphaAudience);
+
+        var permissions = ReadStringArray(alphaBlock, "permissions");
+        Assert.Contains("policy:write", permissions);
+        Assert.DoesNotContain("policy:read", permissions);
+        Assert.DoesNotContain("policy:admin", permissions);
+    }
+
+    [Fact]
+    public async Task ReferenceToken_RefreshRedemption_Then_UserInfo_Succeeds()
+    {
+        // Reference REFRESH tokens are signed with the GLOBAL pool (not the
+        // realm key — see RealmSigningKeyHandler), so the realm-key install in
+        // RealmTokenValidationHandler must NOT break their redemption at
+        // /connect/token. This drives a reference client through
+        // authorize → token (with offline_access) → refresh-redeem → userinfo,
+        // proving both the refresh path and the (newly fixed) reference-access
+        // userinfo path work together.
+        var appAlpha = await CreateAppAsync("app-alpha", "App Alpha",
+            permissions: [("policy", "read"), ("policy", "write")]);
+        const string alphaAudience = "https://alpha-api.example.com";
+        await CreateOAuthApiAsync(alphaAudience, appAlpha.Id);
+
+        const string alphaScopeName = "alpha-api";
+        await CreateScopeAsync(name: alphaScopeName, resources: [alphaAudience], appId: appAlpha.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-ref-refresh-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [appAlpha.Id],
+            scopes: ["openid", "offline_access", "roles", "permissions", alphaScopeName],
+            accessTokenType: AccessTokenType.Reference);
+
+        var testUser = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Refresh", lastname: "Reference", acronym: "rr",
+            email: "rr@test.com", password: "TestPass1234");
+        await GrantAsync(testUser.Id, roleAppSlug: "app-alpha", resourceType: "policy",
+            actions: ["write"], groupBoundTo: ["app-alpha"]);
+
+        // authorize → token (with offline_access so a refresh token is issued)
+        using var tokens = await DriveAuthCodeFlowForTokensAsync(
+            username: "rr", password: "TestPass1234",
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            scope: $"openid offline_access roles permissions {alphaScopeName}",
+            resources: [alphaAudience]);
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
+
+        // redeem the refresh token → fresh reference access token
+        var newAccessToken = await RedeemRefreshTokenAsync(
+            refreshToken, clientId, clientSecret, [alphaAudience]);
+
+        // the fresh access token must still resolve at /connect/userinfo
+        var userinfoClient = Factory.CreateClient();
+        userinfoClient.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", newAccessToken);
+        var response = await userinfoClient.GetAsync("/connect/userinfo",
+            TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(response.IsSuccessStatusCode,
+            $"/connect/userinfo after refresh failed ({(int)response.StatusCode}): {body}");
+
+        using var doc = JsonDocument.Parse(body);
+        Assert.True(doc.RootElement.TryGetProperty("resource_access", out var ra)
+            && ra.TryGetProperty(alphaAudience, out _),
+            $"resource_access['{alphaAudience}'] missing after refresh.\nBody:\n{body}");
+    }
+
+    [Fact]
     public async Task UserInfo_ResourceAdmin_Expands_To_All_Resource_Actions()
     {
         // policy:admin grants every action on the policy resource within
@@ -217,6 +321,20 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         string scope,
         IReadOnlyList<string> resources)
     {
+        using var json = await DriveAuthCodeFlowForTokensAsync(
+            username, password, clientId, clientSecret, redirectUri, scope, resources);
+        return json.RootElement.GetProperty("access_token").GetString()!;
+    }
+
+    /// <summary>Same as <see cref="DriveAuthCodeFlowAsync"/> but returns the full
+    /// token-endpoint JSON response (so callers can read the refresh_token too).</summary>
+    private async Task<JsonDocument> DriveAuthCodeFlowForTokensAsync(
+        string username, string password,
+        string clientId, string clientSecret,
+        string redirectUri,
+        string scope,
+        IReadOnlyList<string> resources)
+    {
         // 1. Cookie-login first so /connect/authorize sees an authenticated principal.
         var cookieClient = await CreateAuthenticatedClientAsync(username, password);
 
@@ -278,8 +396,32 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         Assert.True(tokenResponse.IsSuccessStatusCode,
             $"/connect/token failed ({(int)tokenResponse.StatusCode}): {tokenBody}");
 
-        using var tokenJson = JsonDocument.Parse(tokenBody);
-        return tokenJson.RootElement.GetProperty("access_token").GetString()!;
+        return JsonDocument.Parse(tokenBody);
+    }
+
+    /// <summary>Redeems a refresh token at /connect/token and returns the new access token.</summary>
+    private async Task<string> RedeemRefreshTokenAsync(
+        string refreshToken, string clientId, string clientSecret, IReadOnlyList<string> resources)
+    {
+        var tokenClient = Factory.CreateClient();
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("grant_type", "refresh_token"),
+            new("refresh_token", refreshToken),
+            new("client_id", clientId),
+            new("client_secret", clientSecret),
+        };
+        foreach (var r in resources)
+            form.Add(new KeyValuePair<string, string>("resource", r));
+
+        var resp = await tokenClient.PostAsync(
+            "/connect/token", new FormUrlEncodedContent(form), TestContext.Current.CancellationToken);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(resp.IsSuccessStatusCode,
+            $"refresh_token redemption failed ({(int)resp.StatusCode}): {body}");
+
+        using var json = JsonDocument.Parse(body);
+        return json.RootElement.GetProperty("access_token").GetString()!;
     }
 
     private static string GeneratePkceVerifier()
@@ -351,7 +493,7 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
 
     private async Task CreateOAuthClientAsync(
         string clientId, string clientSecret, string redirectUri, List<Guid> appIds,
-        List<string> scopes)
+        List<string> scopes, AccessTokenType accessTokenType = AccessTokenType.Jwt)
     {
         using var scope = Factory.Services.CreateScope();
         var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
@@ -368,7 +510,7 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             Scopes = scopes,
             AllowedGrantTypes = ["authorization_code", "refresh_token"],
             RequireConsent = false,
-            AccessTokenType = AccessTokenType.Jwt,
+            AccessTokenType = accessTokenType,
             AppIds = [.. appIds.Select(g => new BuildingBlocks.Helper.ShortGuid(g).ToString())],
         };
 
