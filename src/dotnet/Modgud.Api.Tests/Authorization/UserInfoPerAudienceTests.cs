@@ -1,17 +1,25 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
+using Modgud.Authentication.Domain;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Common;
+using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Permissions.Abstractions;
 using Marten;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
 
 namespace Modgud.Api.Tests.Authorization;
@@ -310,6 +318,153 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task JwtClient_Federated_SessionGroup_Lands_In_AccessToken()
+    {
+        // The user is NOT a durable member of the group — it enters authz ONLY via
+        // the session-group carrier on the (federated) cookie. Proves the full
+        // carrier path cookie → /connect/authorize grant → JWT bake, end-to-end
+        // through the real HTTP pipeline (not just durable authz, and not just the
+        // service-level union pinned by FederationV1Phase4Tests).
+        var slug = "fedjwt-" + Guid.NewGuid().ToString("N")[..8];
+        var audience = $"https://{slug}-api.example.com";
+        var scopeName = slug + "-api";
+
+        var app = await CreateAppAsync(slug, "Fed JWT App", permissions: [("policy", "read"), ("policy", "write")]);
+        await CreateOAuthApiAsync(audience, app.Id);
+        await CreateScopeAsync(name: scopeName, resources: [audience], appId: app.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-fedjwt-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [app.Id], scopes: ["openid", "roles", "permissions", scopeName],
+            accessTokenType: AccessTokenType.Jwt);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Fed", lastname: "Jwt", acronym: "fj", email: "fj@test.com", password: "TestPass1234");
+        var role = await Factory.CreateTestRoleAsync($"R_{Guid.NewGuid():N}", [("policy", "write")], appSlug: slug);
+        var sessionGroup = await Factory.CreateTestGroupAsync(
+            $"SG_{Guid.NewGuid():N}", memberIds: [], roleIds: [role.Id], boundTo: [slug]);
+
+        // Control: a plain (password) login carries no carrier → durable-only →
+        // the session group's permission must be absent.
+        var plainToken = await DriveAuthCodeFlowAsync(
+            username: "fj", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri, scope: $"openid roles permissions {scopeName}", resources: [audience]);
+        var plain = DecodeJwtPayload(plainToken);
+        var plainHasWrite =
+            plain.TryGetProperty("resource_access", out var pra)
+            && pra.TryGetProperty(audience, out var pb)
+            && pb.TryGetProperty("permissions", out var pp)
+            && pp.EnumerateArray().Any(e => e.GetString() == "policy:write");
+        Assert.False(plainHasWrite, "without the carrier, policy:write must NOT appear (durable membership is empty).");
+
+        // Federated: the forged cookie carries the session group → policy:write appears.
+        var fedClient = await CreateFederatedCookieClientAsync("fj", sessionGroup.Id);
+        var fedToken = await DriveAuthCodeFlowAsync(
+            username: "fj", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri, scope: $"openid roles permissions {scopeName}", resources: [audience],
+            cookieClient: fedClient);
+
+        var perms = DecodeJwtPayload(fedToken).GetProperty("resource_access").GetProperty(audience)
+            .GetProperty("permissions").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains("policy:write", perms);   // came ONLY from the session-group carrier
+    }
+
+    [Fact]
+    public async Task ReferenceClient_Federated_SessionGroup_Surfaces_At_UserInfo()
+    {
+        // Reference client: the carrier rides the server-side reference token and
+        // the session-derived permission surfaces at /connect/userinfo (the path
+        // the ID2090 hotfix repaired). User is NOT a durable member.
+        var slug = "fedref-" + Guid.NewGuid().ToString("N")[..8];
+        var audience = $"https://{slug}-api.example.com";
+        var scopeName = slug + "-api";
+
+        var app = await CreateAppAsync(slug, "Fed Ref App", permissions: [("policy", "read"), ("policy", "write")]);
+        await CreateOAuthApiAsync(audience, app.Id);
+        await CreateScopeAsync(name: scopeName, resources: [audience], appId: app.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-fedref-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [app.Id], scopes: ["openid", "roles", "permissions", scopeName],
+            accessTokenType: AccessTokenType.Reference);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Fed", lastname: "Ref", acronym: "fr", email: "fr@test.com", password: "TestPass1234");
+        var role = await Factory.CreateTestRoleAsync($"R_{Guid.NewGuid():N}", [("policy", "write")], appSlug: slug);
+        var sessionGroup = await Factory.CreateTestGroupAsync(
+            $"SG_{Guid.NewGuid():N}", memberIds: [], roleIds: [role.Id], boundTo: [slug]);
+
+        var fedClient = await CreateFederatedCookieClientAsync("fr", sessionGroup.Id);
+        var accessToken = await DriveAuthCodeFlowAsync(
+            username: "fr", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri, scope: $"openid roles permissions {scopeName}", resources: [audience],
+            cookieClient: fedClient);
+
+        var userinfoClient = Factory.CreateClient();
+        userinfoClient.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        var resp = await userinfoClient.GetAsync("/connect/userinfo", TestContext.Current.CancellationToken);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(resp.IsSuccessStatusCode, $"/connect/userinfo failed ({(int)resp.StatusCode}): {body}");
+        using var doc = JsonDocument.Parse(body);
+        var perms = doc.RootElement.GetProperty("resource_access").GetProperty(audience)
+            .GetProperty("permissions").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains("policy:write", perms);   // session-group permission via the server-side carrier
+    }
+
+    /// <summary>
+    /// Forges a valid ApplicationScheme auth cookie carrying the federation
+    /// session-group carrier claim(s), without a real upstream-IdP round-trip.
+    /// Uses the app's own <see cref="SignInManager{T}"/> principal (valid security
+    /// stamp) + the real <c>TicketDataFormat</c>, protected under the system tenant
+    /// so the request pipeline (also system tenant) accepts it. This stubs only the
+    /// deriver→cookie link (covered by FederationV1Phase3Tests); everything
+    /// downstream — cookie→grant→token/UserInfo — runs for real.
+    /// </summary>
+    private async Task<HttpClient> CreateFederatedCookieClientAsync(string userName, params Guid[] sessionGroupIds)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var signInManager = scope.ServiceProvider.GetRequiredService<SignInManager<ApplicationUser>>();
+
+        var user = await userManager.FindByNameAsync(userName)
+            ?? throw new InvalidOperationException($"user '{userName}' not found");
+        var principal = await signInManager.CreateUserPrincipalAsync(user);
+        var identity = (ClaimsIdentity)principal.Identity!;
+        foreach (var gid in sessionGroupIds)
+            identity.AddClaim(new Claim(FederationClaimTypes.SessionGroup, gid.ToString()));
+
+        var cookieOptions = scope.ServiceProvider
+            .GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(IdentityConstants.ApplicationScheme);
+        var ticket = new AuthenticationTicket(
+            principal,
+            new AuthenticationProperties
+            {
+                IsPersistent = true,
+                IssuedUtc = DateTimeOffset.UtcNow,
+                ExpiresUtc = DateTimeOffset.UtcNow.AddHours(1),
+            },
+            IdentityConstants.ApplicationScheme);
+
+        // Protect under the system tenant so the request pipeline (system tenant
+        // by default in tests) resolves the same per-tenant DataProtection keys.
+        string cookieValue;
+        using (TenantContext.Enter(TenantConstants.SystemTenantId))
+            cookieValue = cookieOptions.TicketDataFormat.Protect(ticket);
+
+        var handler = new CookieContainerHandler();
+        handler.Seed(new Uri("http://localhost"), cookieOptions.Cookie.Name!, cookieValue);
+        return Factory.CreateDefaultClient(handler);
+    }
+
+    [Fact]
     public async Task UserInfo_ResourceAdmin_Expands_To_All_Resource_Actions()
     {
         // policy:admin grants every action on the policy resource within
@@ -437,24 +592,30 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         string clientId, string clientSecret,
         string redirectUri,
         string scope,
-        IReadOnlyList<string> resources)
+        IReadOnlyList<string> resources,
+        HttpClient? cookieClient = null)
     {
         using var json = await DriveAuthCodeFlowForTokensAsync(
-            username, password, clientId, clientSecret, redirectUri, scope, resources);
+            username, password, clientId, clientSecret, redirectUri, scope, resources, cookieClient);
         return json.RootElement.GetProperty("access_token").GetString()!;
     }
 
     /// <summary>Same as <see cref="DriveAuthCodeFlowAsync"/> but returns the full
-    /// token-endpoint JSON response (so callers can read the refresh_token too).</summary>
+    /// token-endpoint JSON response (so callers can read the refresh_token too).
+    /// When <paramref name="cookieClient"/> is supplied it is used for the
+    /// /connect/authorize step instead of a fresh password login — the federated
+    /// tests pass a client carrying a hand-forged cookie with the session-group
+    /// carrier.</summary>
     private async Task<JsonDocument> DriveAuthCodeFlowForTokensAsync(
         string username, string password,
         string clientId, string clientSecret,
         string redirectUri,
         string scope,
-        IReadOnlyList<string> resources)
+        IReadOnlyList<string> resources,
+        HttpClient? cookieClient = null)
     {
         // 1. Cookie-login first so /connect/authorize sees an authenticated principal.
-        var cookieClient = await CreateAuthenticatedClientAsync(username, password);
+        cookieClient ??= await CreateAuthenticatedClientAsync(username, password);
 
         // 2. PKCE pair.
         var verifier = GeneratePkceVerifier();

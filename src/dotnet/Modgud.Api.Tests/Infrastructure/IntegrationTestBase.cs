@@ -147,6 +147,15 @@ internal class CookieContainerHandler : DelegatingHandler
 {
     private readonly CookieContainer _cookies = new();
 
+    /// <summary>
+    /// Pre-seed a cookie (e.g. a hand-forged auth cookie) so the very first
+    /// request already carries it. Used by federated-login tests that build the
+    /// ApplicationScheme cookie out-of-band instead of going through a real
+    /// upstream IdP round-trip.
+    /// </summary>
+    public void Seed(Uri uri, string name, string value)
+        => _cookies.Add(uri, new Cookie(name, value) { Path = "/" });
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         // Add stored cookies to outgoing request
