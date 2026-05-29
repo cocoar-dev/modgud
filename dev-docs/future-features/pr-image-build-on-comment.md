@@ -147,7 +147,7 @@ The version goes into an OCI manifest label, not as a pullable image tag. So a `
 - `:<branch-slug>` — e.g. `:feat-saml-federation`, moving pointer per branch (admin pulls "give me the latest of that branch")
 - `:<version>` — e.g. `:0.6.0-saml-federation.28`, immutable per build (admin pins "the image I tested")
 
-Branch-slug derivation: `${{ steps.gv.outputs.escaped-branch-name }}` already gives `feat-saml-federation` and is what the GitVersion-defensive fallback uses today. Same source of truth.
+Branch-slug derivation: <span v-pre>`${{ steps.gv.outputs.escaped-branch-name }}`</span> already gives `feat-saml-federation` and is what the GitVersion-defensive fallback uses today. Same source of truth.
 
 ### Test-server pull contract
 
