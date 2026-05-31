@@ -31,6 +31,19 @@ You land on the page that brought you here:
 - Direct sign-in: the dashboard / your last visited page
 - OAuth flow from another app: redirected back with an auth code so the other app can complete its sign-in
 
+## Scheduled for deletion
+
+If you've [requested deletion of your own account](./profile#privacy), the next time you sign in during the grace period Modgud stops at a reminder screen **before** taking you into the app:
+
+> *Your account is scheduled for deletion on \<date\>.*
+
+with two choices:
+
+- **Cancel deletion — keep my account** — aborts the pending deletion and continues to the app. Your account is safe.
+- **Continue anyway** — proceeds to the app and leaves the deletion scheduled; it will still be erased at the deadline.
+
+You can also cancel later from **Profile → Privacy** at any point before the deadline. (If an *administrator* scheduled the deletion, you can't sign in to reach this screen — that case is the admin's to reverse.)
+
 ## Troubleshooting
 
 ::: details "Username or password is incorrect"

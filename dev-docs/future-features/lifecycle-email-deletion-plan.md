@@ -27,8 +27,8 @@ Partial unique index `WHERE is_deleted = false` therefore reserves the email for
 
 Industry-standard model (Google/GitHub/Facebook): request → grace window → user can log in and cancel → otherwise auto-deleted at expiry. Replaces the current confirm-token-within-7-days flow (which keeps the account on inaction). Consistent with the "no restore" rule: *cancelling during grace* aborts a pending deletion (before it happens); there is still **no restore after** the account is erased.
 
-- Request (in-app, password re-auth) → `IsDeletionPending=true`, `Initiator=Self`, deadline = now + grace. User stays `IsActive=true` (must be able to log in to cancel). Notification email "scheduled for deletion on <date>, log in to cancel".
-- During grace: login shows an **interstitial before the app redirect** — "your account will be deleted on <date> — [Cancel deletion] / [Continue]".
+- Request (in-app, password re-auth) → `IsDeletionPending=true`, `Initiator=Self`, deadline = now + grace. User stays `IsActive=true` (must be able to log in to cancel). Notification email "scheduled for deletion on `<date>`, log in to cancel".
+- During grace: login shows an **interstitial before the app redirect** — "your account will be deleted on `<date>` — [Cancel deletion] / [Continue]".
 - Reminder email N days before the deadline.
 - At the deadline: auto-erase (scheduled job).
 - The user can self-cancel; **an admin can also cancel** any self-service pending deletion (support escape hatch) → optional info email to the user.
