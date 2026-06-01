@@ -94,6 +94,6 @@
     <!-- Health-checks: Npgsql probe for /health/ready. -->
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
     <!-- OpenTelemetry Phase 3: Postgres-query tracing via Npgsql's own ActivitySource. -->
-    <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.2" />
+    <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.3" />
   </ItemGroup>
 </Project>
