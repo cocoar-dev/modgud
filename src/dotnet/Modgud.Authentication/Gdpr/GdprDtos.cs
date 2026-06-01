@@ -11,14 +11,12 @@ public record RequestDeletionDto
     public string? Reason { get; init; }
 }
 
-public record ConfirmDeletionDto
-{
-    public required string Token { get; init; }
-}
-
 public record DeletionRequestResponseDto
 {
     public DateTimeOffset RequestedAt { get; init; }
+
+    /// <summary>The grace deadline — when the account is auto-erased unless the
+    /// user cancels. (Name kept for wire compatibility with existing clients.)</summary>
     public DateTimeOffset ConfirmationDeadline { get; init; }
     public required string Message { get; init; }
 }
@@ -28,7 +26,14 @@ public record DeletionStatusDto
     public bool IsPending { get; init; }
     public bool IsDeleted { get; init; }
     public bool IsDataMasked { get; init; }
+
+    /// <summary>Who initiated the pending deletion — drives the SPA: a
+    /// SelfService pending user sees the cancel interstitial, an Admin
+    /// recycle-bin user cannot self-cancel. Null when not pending.</summary>
+    public DeletionInitiator? Initiator { get; init; }
     public DateTimeOffset? RequestedAt { get; init; }
+
+    /// <summary>The grace / retention deadline. (Name kept for wire compatibility.)</summary>
     public DateTimeOffset? ConfirmationDeadline { get; init; }
 }
 

@@ -66,8 +66,24 @@ function isSameOriginPath(value: string): boolean {
 // (which would silently drop it as an unknown route).
 const NON_SPA_PREFIXES = ['/docs/', '/docs', '/connect/', '/connect']
 
-function finishLogin() {
+const gdprHttp = useHttpClient('/api/auth')
+
+async function finishLogin() {
   const target = redirectTarget.value
+
+  // Self-service grace interstitial: a user who scheduled their own deletion
+  // stays able to log in precisely so they can cancel. Divert them to the
+  // interstitial (which continues to `target` on cancel/continue) before the
+  // normal redirect. Admin recycle-bin users can't log in, so never land here.
+  try {
+    const status = await gdprHttp.addPath('deletion-status')
+      .get<{ IsPending: boolean; Initiator?: string | null }>()
+    if (status?.IsPending && status.Initiator === 'SelfService') {
+      router.push({ path: '/deletion-pending', query: { redirect: target } })
+      return
+    }
+  } catch { /* status unavailable — never block the login on it */ }
+
   if (NON_SPA_PREFIXES.some((p) => target === p || target.startsWith(p + '/') || target.startsWith(p + '?'))) {
     window.location.assign(target)
   } else {

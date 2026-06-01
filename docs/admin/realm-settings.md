@@ -9,12 +9,13 @@
 
 ## Tabs
 
-The page currently has two tabs:
+The page currently has three tabs:
 
 - [Self-Registration](#self-registration) — public sign-up policy
 - [Dynamic Client Registration](#dynamic-client-registration) —
   anonymous OAuth-client registration policy (linked detail page:
   [Dynamic Client Registration](./dynamic-client-registration))
+- [Account Deletion](#account-deletion) — grace period and recycle-bin retention policy
 
 Per-realm **branding** is configured on a separate page under
 Plattform — see [Customization → Branding](../plattform/branding).
@@ -99,6 +100,23 @@ Anonymous OAuth-client registration policy: master toggle, token lifetimes, GC T
 Off by default. See the full feature page for when to enable it, what gets accepted, and the consent-screen `[unverified]` marker:
 
 → **[Dynamic Client Registration](./dynamic-client-registration)** (full feature page)
+
+## Account Deletion
+
+Controls the account-deletion lifecycle for this realm — the self-service grace period and the admin recycle-bin retention. These replace the old hardcoded 7-day confirm-token window. The mechanics of both flows are documented under [Users → recycle bin & permanent erase](./users#recycle-bin-permanent-erase) and [Profile → Privacy](../end-user/profile#privacy).
+
+### Fields
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| **Grace period (days)** | 30 | Self-service window: after a user requests deletion they stay able to sign in and cancel for this many days, then the account is auto-erased. |
+| **Reminder lead (days)** | 2 | How many days before the grace deadline the "your account is about to be deleted" reminder email is sent. Must be **less than** the grace period to ever fire. |
+| **Admin retention (days)** | 30 | Recycle-bin window: how long an admin-deleted (deactivated) account is kept before it becomes eligible for auto-purge. An admin can restore or permanently delete it at any point during this window. |
+| **Auto-purge** | on | When on, a scheduled job permanently erases recycle-bin accounts once their retention window elapses. When off, the bin is only emptied by explicit admin action (*Delete permanently*). |
+
+::: info One job drives all three
+A single scheduled sweep (`account-lifecycle-sweep`) does the work for the whole realm: it sends reminders, auto-erases self-service accounts past their grace deadline, and (when auto-purge is on) empties the admin recycle bin past retention. Changing these values takes effect on its next run.
+:::
 
 ## Branding (separate page)
 

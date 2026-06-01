@@ -93,6 +93,28 @@ export const useUserStore = defineStore('user', () => {
     await http.addPath(userId, 'active').put({ IsActive: isActive })
   }
 
+  /**
+   * Admin "delete" → recycle bin (reversible). Wraps the base delete and
+   * reloads the list so the joined pending-deletion fields populate — those
+   * do NOT ride the live SignalR snapshot (UserView only).
+   */
+  async function binUsers(ids: string[]): Promise<void> {
+    await service.deleteEntities(ids)
+    await service.loadAll()
+  }
+
+  /** Restore users from the recycle bin (clear pending + reactivate), then reload. */
+  async function restoreUsers(ids: string[]): Promise<void> {
+    await http.addPath('restore').post(ids)
+    await service.loadAll()
+  }
+
+  /** Permanently erase a binned user ("empty bin" / ForceDelete). Irreversible. */
+  async function forceDelete(userId: string, reason: string): Promise<void> {
+    await adminHttp.addPath(userId, 'permanent').delete({ Reason: reason })
+    await service.loadAll()
+  }
+
   async function getGroups(userId: string): Promise<UserGroupsDto> {
     return await http.addPath(userId, 'groups').get<UserGroupsDto>()
   }
@@ -157,6 +179,9 @@ export const useUserStore = defineStore('user', () => {
     getUserByAcronym,
     setPassword,
     setActive,
+    binUsers,
+    restoreUsers,
+    forceDelete,
     getGroups,
     getEffectiveGroups,
     addGroup,

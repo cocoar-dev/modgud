@@ -11,7 +11,8 @@ Columns: *Username*, *First name*, *Last name*, *Email*, *Active*, *2FA*, *Last 
 Filters:
 
 - **Search** across username, email, first/last name
-- **Status filter** — active / disabled / soft-deleted
+- **Status filter** — active / disabled
+- **Show recycle bin** — a toggle (with a count badge) that reveals users pending deletion. Those rows carry a **Lifecycle** badge — *Recycle bin* (an admin scheduled it) or *Self-deletion* (the user did) — plus the deletion deadline. See [recycle bin & permanent erase](#recycle-bin-permanent-erase) below.
 
 Double-click a row to open the detail dialog.
 
@@ -26,7 +27,7 @@ Required:
 Optional but recommended:
 
 - **First name**, **Last name**
-- **Email** (without it, magic links and reset emails are impossible)
+- **Email** — **unique per realm**; without it, magic links and reset emails are impossible. An address is freed for reuse only once its previous owner is permanently erased (see [recycle bin & permanent erase](#recycle-bin-permanent-erase)).
 - **Phone number**
 
 ::: tip Initial password vs. magic link
@@ -97,48 +98,62 @@ Raw and mapped claims from the user's most recent external login. Useful for deb
 
 After too many failed attempts, Modgud temporarily locks the account. List → right-click → **Lift lockout**, or in the security tab → **Unlock**.
 
-## Soft delete vs. permanent erase
+## Recycle bin & permanent erase
 
-Modgud uses **soft delete** by default — deleted users are flagged as deleted, but the records stay (for audit trail, projection rebuild safety, …).
+Deleting a user is **reversible until it isn't.** Instead of an immediate hard delete, Modgud moves the account to a **recycle bin**: it is deactivated and scheduled for permanent erasure after a retention window, during which you can restore it. Only the final erase is irreversible. The retention window and auto-purge behaviour are configured per realm under [Realm Settings → Account Deletion](./realm-settings#account-deletion).
 
-### Soft delete
+This is the same lifecycle a user enters when they [delete their own account](../end-user/profile#privacy) — the difference is the initiator (and that a self-deleting user stays able to sign in to cancel, whereas an admin-binned user is deactivated).
 
-List → right-click → **Delete**.
+### Move to the recycle bin
+
+List → right-click an active user → **Delete (recycle bin)**.
 
 Effect:
 
-- Account can no longer sign in
-- Marked as "deleted" in every UI
-- Data remains in the database
-- The auth log keeps the username — you can still tell who did what after deletion
+- The account is **deactivated** — it can no longer sign in.
+- It is scheduled for permanent erasure at the end of the realm's admin-retention window.
+- Live access is revoked and external links are archived (same as before), but the record and its email are **kept** so a clean restore is possible.
+- Its profile is **frozen** (read-only) while pending — restore it first to edit again.
+- The email address stays reserved (no one else can register it) until the account is permanently erased.
+
+Reveal pending users with the **Show recycle bin** toggle on the list. Their **Lifecycle** badge reads *Recycle bin* (admin-initiated) or *Self-deletion* (the user requested it), with the deadline.
 
 ### Restore
 
-List → filter "Show deleted" → right-click the deleted user → **Restore**.
+Show recycle bin → right-click the pending user → **Restore**.
 
-::: warning Username must still be free
-If someone registered the same username in the meantime, the restore fails — restore them under a different name, or rename the conflict first.
+The pending deletion is cancelled and the account is reactivated. An admin can restore **either** kind of pending deletion — including cancelling a user's own self-service deletion as a support escape hatch.
+
+::: warning Username & email must still be free
+If someone registered the same username or email in the meantime, the restore fails — resolve the conflict first.
 :::
 
-### GDPR permanent erase
+### Delete permanently (force-delete)
+
+Show recycle bin → right-click the pending user → **Delete permanently**. You're asked for a reason (recorded in the [auth log](./auth-log)) and a final confirmation. This empties the recycle bin for that user **now**, ahead of the retention deadline.
+
+If **auto-purge** is enabled for the realm (default), a scheduled job erases recycle-bin accounts automatically once their retention window elapses — so you don't have to empty the bin by hand.
 
 ::: warning Final — no restore
-Permanent erase is the actual deletion under GDPR Article 17 ("right to be forgotten"). Personally identifiable data is **masked** in events, the user record itself is **archived** and hidden from every list. There is no going back.
+Permanent erase is the actual deletion under GDPR Article 17 ("right to be forgotten"). There is no going back.
 :::
-
-List → right-click on a (preferably already soft-deleted) user → **Permanent erase (GDPR)** → confirmation dialog → confirm.
 
 What happens technically:
 
-- All PII fields (name, email, phone, profile name) are replaced by markers (`***ERASED***`) in events — Marten's built-in GDPR mechanism
-- The event stream is archived so derived views no longer see the user
-- The auth log keeps the user ID for correlation but no cleartext PII
+- All PII fields (name, email, phone, profile name) are replaced by markers (`***ERASED***`) in events — Marten's built-in GDPR mechanism.
+- The event stream is archived so derived views no longer see the user.
+- The user record is flagged deleted and its email is nulled — which **releases the email** for reuse.
+- The auth log keeps the user ID for correlation but no cleartext PII.
 
-When to use:
+When to use force-delete instead of letting auto-purge run:
 
-- A GDPR delete request (usually the user does this via self-service "Delete account"; an admin only if the user can no longer sign in)
-- Compliance after employee departure + retention period
-- Data cleanup after test or demo setups
+- A GDPR erasure request that must be honoured immediately.
+- Freeing a reserved username or email address right away.
+- Data cleanup after test or demo setups.
+
+::: tip Deactivate is a separate action
+**Deactivate** (Security tab / *Active* flag) suspends an account indefinitely with no deletion intent and no timer — fully reversible, email kept. **Delete** is the stronger action that *includes* deactivation plus a countdown to erasure.
+:::
 
 ## Editing a user's profile on their behalf
 

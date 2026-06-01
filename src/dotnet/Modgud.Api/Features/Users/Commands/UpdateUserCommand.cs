@@ -6,6 +6,7 @@ using Modgud.Domain.Common;
 using Modgud.Domain.Errors;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Events;
+using Modgud.Authentication.Gdpr;
 using Modgud.Authentication.Api.Users;
 using Modgud.Domain.Users.Events;
 using Modgud.Infrastructure.Persistence.Marten.Mappers;
@@ -22,6 +23,14 @@ public class UpdateUserHandler(IDocumentSession session)
         var person = await session.LoadAsync<Person>(command.UserId, ct);
         if (person is null || person.IsDeleted)
             return Error.NotFound("User.NotFound", "User not found");
+
+        // Freeze edits while a deletion is pending (self-service grace OR admin
+        // recycle bin). The account is read-only until it is restored/cancelled
+        // or permanently erased — the only valid mutation is restore.
+        var deletionState = await session.LoadAsync<UserDeletionState>(command.UserId, ct);
+        if (deletionState?.IsDeletionPending == true)
+            return Error.Conflict("User.DeletionPending",
+                "This user has a pending deletion and is read-only. Restore the user before editing.");
 
         // Check UserName uniqueness (humans only, exclude current user)
         string? normalizedUserName = null;

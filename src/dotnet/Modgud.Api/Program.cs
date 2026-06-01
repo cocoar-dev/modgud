@@ -879,6 +879,11 @@ try
         name: Modgud.Api.Features.Inbox.InboxRetentionJob.Name,
         defaultCron: Modgud.Api.Features.Inbox.InboxRetentionJob.DefaultCron,
         description: Modgud.Api.Features.Inbox.InboxRetentionJob.Description);
+    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob>(
+        key: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.Description);
 
     // Inbox — per-recipient notifications with SignalR live push. Both
     // services are scoped (tenant-aware IDocumentSession). The InboxHub
@@ -1196,6 +1201,17 @@ try
         // Warm the realm cache (used by RealmMiddleware for fast Host → tenant resolution)
         var realmCache = realmScope.ServiceProvider.GetRequiredService<IRealmCache>();
         await realmCache.InitializeAsync();
+
+        // TEMPORARY self-removing migration (Account-Lifecycle plan, WS2):
+        // establish the per-realm email-uniqueness index. Runs here — after the
+        // tenant schema has been applied (ApplyAllConfiguredChangesToDatabaseAsync
+        // above) — so the ApplicationUser table exists in every realm DB. It
+        // scrubs legacy deleted-user PII, refuses on active duplicates, and
+        // builds the partial unique index otherwise. Remove once all realms are
+        // confirmed clean (it nags on every boot until then).
+        await realmScope.ServiceProvider
+            .GetRequiredService<Modgud.Infrastructure.Migrations.EmailUniquenessMigration>()
+            .RunAsync();
 
         // Marten compiles each distinct LINQ shape lazily on first use.
         // Without a warmup the very first request that triggers a given

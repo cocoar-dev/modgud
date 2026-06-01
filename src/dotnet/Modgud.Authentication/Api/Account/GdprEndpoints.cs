@@ -33,7 +33,8 @@ public static class GdprEndpoints
         })
         .WithName("Auth_ExportData");
 
-        // POST /api/auth/delete-account — Request a self-service deletion (sends token email)
+        // POST /api/auth/delete-account — Schedule a self-service deletion. The
+        // account is erased at the grace deadline unless the user cancels first.
         group.MapPost("delete-account", [Authorize] async (
             RequestDeletionDto dto,
             HttpContext context,
@@ -48,22 +49,7 @@ public static class GdprEndpoints
         })
         .WithName("Auth_RequestDeletion");
 
-        // POST /api/auth/confirm-deletion — Confirm the deletion with the token from the email
-        group.MapPost("confirm-deletion", [Authorize] async (
-            ConfirmDeletionDto dto,
-            HttpContext context,
-            IGdprService svc,
-            CancellationToken ct) =>
-        {
-            var userId = context.GetUserId();
-            if (userId is null) return Results.Unauthorized();
-
-            var result = await svc.ConfirmDeletionAsync(userId.Value, dto.Token, ct);
-            return result.IsError ? result.ToResult() : Results.NoContent();
-        })
-        .WithName("Auth_ConfirmDeletion");
-
-        // POST /api/auth/cancel-deletion — Cancel a pending deletion request
+        // POST /api/auth/cancel-deletion — Cancel the caller's own pending deletion
         group.MapPost("cancel-deletion", [Authorize] async (
             HttpContext context,
             IGdprService svc,
@@ -72,7 +58,7 @@ public static class GdprEndpoints
             var userId = context.GetUserId();
             if (userId is null) return Results.Unauthorized();
 
-            var result = await svc.CancelDeletionAsync(userId.Value, ct);
+            var result = await svc.CancelDeletionAsync(userId.Value, cancelledByAdminUserId: null, ct);
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
         .WithName("Auth_CancelDeletion");

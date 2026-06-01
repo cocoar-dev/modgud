@@ -25,4 +25,18 @@ public class UserDto
     /// </summary>
     public List<string> ExternalLoginProviderIds { get; set; } = [];
     public EntityStatus Status { get; set; } = EntityStatus.Active;
+
+    /// <summary>True when the user is in a pending deletion (self-service grace
+    /// or admin recycle bin). Sourced from the UserDeletionState document and
+    /// joined in at query time. Drives the grid badge + frozen-edit state and
+    /// the restore-vs-delete action set.</summary>
+    public bool IsDeletionPending { get; set; }
+
+    /// <summary>Who initiated the pending deletion — "SelfService" or "Admin".
+    /// Null when not pending.</summary>
+    public string? DeletionInitiator { get; set; }
+
+    /// <summary>Grace / retention deadline of the pending deletion. Null when
+    /// not pending.</summary>
+    public DateTimeOffset? DeletionDeadline { get; set; }
 }

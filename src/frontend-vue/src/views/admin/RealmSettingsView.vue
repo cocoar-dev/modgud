@@ -21,6 +21,8 @@ import type {
   UpdateSelfRegistrationDto,
   DcrSettingsDto,
   UpdateDcrSettingsDto,
+  DeletionSettingsDto,
+  UpdateDeletionSettingsDto,
 } from '@/models/realmSettings'
 
 const { t, language } = useI18n()
@@ -36,7 +38,7 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.hasSubNav = true
 }), { immediate: true })
 
-type TabId = 'self-registration' | 'dcr'
+type TabId = 'self-registration' | 'dcr' | 'deletion'
 const activeTab = ref<TabId>('self-registration')
 
 // ── Self-Registration form state ─────────────────────────────────────
@@ -97,6 +99,30 @@ function emptyDcr(): DcrFormState {
 const dcrForm = ref<DcrFormState>(emptyDcr())
 const originalDcr = ref<DcrSettingsDto | null>(null)
 
+// ── Deletion-policy form state ───────────────────────────────────────
+interface DeletionFormState {
+  GraceDays: number
+  ReminderLeadDays: number
+  AdminRetentionDays: number
+  AutoPurgeEnabled: boolean
+}
+
+function emptyDeletion(): DeletionFormState {
+  return { GraceDays: 30, ReminderLeadDays: 2, AdminRetentionDays: 30, AutoPurgeEnabled: true }
+}
+
+const deletionForm = ref<DeletionFormState>(emptyDeletion())
+const originalDeletion = ref<DeletionSettingsDto | null>(null)
+
+function deletionFromDto(d: DeletionSettingsDto): DeletionFormState {
+  return {
+    GraceDays: d.GraceDays,
+    ReminderLeadDays: d.ReminderLeadDays,
+    AdminRetentionDays: d.AdminRetentionDays,
+    AutoPurgeEnabled: d.AutoPurgeEnabled,
+  }
+}
+
 function dcrFromDto(d: DcrSettingsDto): DcrFormState {
   return {
     Enabled: d.Enabled,
@@ -145,6 +171,8 @@ onMounted(async () => {
     form.value = fromDto(dto.SelfRegistration)
     originalDcr.value = dto.Dcr
     dcrForm.value = dcrFromDto(dto.Dcr)
+    originalDeletion.value = dto.Deletion
+    deletionForm.value = deletionFromDto(dto.Deletion)
   } catch (e: any) {
     error.value = e?.body?.detail ?? e?.message ?? String(e)
   } finally {
@@ -211,10 +239,25 @@ function buildDcrPatch(): UpdateDcrSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildDeletionPatch(): UpdateDeletionSettingsDto | undefined {
+  const orig = originalDeletion.value
+  if (!orig) return undefined
+  const cur = deletionForm.value
+  const patch: UpdateDeletionSettingsDto = {}
+
+  if (cur.GraceDays !== orig.GraceDays) patch.GraceDays = cur.GraceDays
+  if (cur.ReminderLeadDays !== orig.ReminderLeadDays) patch.ReminderLeadDays = cur.ReminderLeadDays
+  if (cur.AdminRetentionDays !== orig.AdminRetentionDays) patch.AdminRetentionDays = cur.AdminRetentionDays
+  if (cur.AutoPurgeEnabled !== orig.AutoPurgeEnabled) patch.AutoPurgeEnabled = cur.AutoPurgeEnabled
+
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
 async function save() {
   const selfRegPatch = buildSelfRegPatch()
   const dcrPatch = buildDcrPatch()
-  if (!selfRegPatch && !dcrPatch) {
+  const deletionPatch = buildDeletionPatch()
+  if (!selfRegPatch && !dcrPatch && !deletionPatch) {
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1200)
     return
@@ -225,14 +268,18 @@ async function save() {
     const payload: {
       SelfRegistration?: UpdateSelfRegistrationDto
       Dcr?: UpdateDcrSettingsDto
+      Deletion?: UpdateDeletionSettingsDto
     } = {}
     if (selfRegPatch) payload.SelfRegistration = selfRegPatch
     if (dcrPatch) payload.Dcr = dcrPatch
+    if (deletionPatch) payload.Deletion = deletionPatch
     const updated = await settingsStore.patch(payload)
     originalSelfReg.value = updated.SelfRegistration
     form.value = fromDto(updated.SelfRegistration)
     originalDcr.value = updated.Dcr
     dcrForm.value = dcrFromDto(updated.Dcr)
+    originalDeletion.value = updated.Deletion
+    deletionForm.value = deletionFromDto(updated.Deletion)
     editingSecret.value = false
     secretInput.value = ''
     savedFlash.value = true
@@ -253,6 +300,9 @@ async function save() {
       </CoarTab>
       <CoarTab id="dcr">
         {{ t('admin.realmSettings.tabs.dcr', {}, 'Dynamic Client Registration') }}
+      </CoarTab>
+      <CoarTab id="deletion">
+        {{ t('admin.realmSettings.tabs.deletion', {}, 'Account Deletion') }}
       </CoarTab>
     </CoarTabGroup>
 
@@ -415,6 +465,54 @@ async function save() {
             </template>
           </CoarFormField>
         </template>
+
+        <div class="flex justify-end mt-2">
+          <CoarButton :loading="saving" @click="save">
+            {{ t('common.save', {}, 'Save') }}
+          </CoarButton>
+        </div>
+      </div>
+    </CoarCard>
+
+    <CoarCard v-else-if="activeTab === 'deletion'" class="p-4">
+      <div class="flex flex-col gap-3">
+        <p class="text-xs text-gray-500">
+          {{ t('admin.realmSettings.deletion.hint', {}, 'Controls the account-deletion lifecycle for this realm. Self-service deletions get a grace window the user can cancel during; admin deletions go to a recycle bin that is auto-purged after retention.') }}
+        </p>
+
+        <div class="grid grid-cols-2 gap-3">
+          <CoarFormField :label="t('admin.realmSettings.deletion.graceDays', {}, 'Self-service grace period (days)')">
+            <CoarTextInput
+              :model-value="String(deletionForm.GraceDays)"
+              @update:model-value="(v) => (deletionForm.GraceDays = Math.max(1, parseInt(v) || 30))" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.realmSettings.deletion.reminderLeadDays', {}, 'Reminder lead time (days before deadline)')">
+            <CoarTextInput
+              :model-value="String(deletionForm.ReminderLeadDays)"
+              @update:model-value="(v) => (deletionForm.ReminderLeadDays = Math.max(0, parseInt(v) || 0))" />
+          </CoarFormField>
+        </div>
+
+        <CoarNote v-if="deletionForm.ReminderLeadDays >= deletionForm.GraceDays" variant="warning">
+          {{ t('admin.realmSettings.deletion.reminderTooLong', {}, 'Reminder lead time must be shorter than the grace period, otherwise the reminder never fires.') }}
+        </CoarNote>
+
+        <div class="grid grid-cols-2 gap-3">
+          <CoarFormField :label="t('admin.realmSettings.deletion.adminRetentionDays', {}, 'Admin recycle-bin retention (days)')">
+            <CoarTextInput
+              :model-value="String(deletionForm.AdminRetentionDays)"
+              @update:model-value="(v) => (deletionForm.AdminRetentionDays = Math.max(0, parseInt(v) || 30))" />
+          </CoarFormField>
+          <div class="flex items-end">
+            <CoarCheckbox
+              v-model="deletionForm.AutoPurgeEnabled"
+              :label="t('admin.realmSettings.deletion.autoPurge', {}, 'Auto-purge recycle bin after retention')" />
+          </div>
+        </div>
+
+        <CoarNote v-if="!deletionForm.AutoPurgeEnabled" variant="info">
+          {{ t('admin.realmSettings.deletion.autoPurgeOff', {}, 'Auto-purge is off — admin-binned accounts are kept until an admin force-deletes them manually.') }}
+        </CoarNote>
 
         <div class="flex justify-end mt-2">
           <CoarButton :loading="saving" @click="save">

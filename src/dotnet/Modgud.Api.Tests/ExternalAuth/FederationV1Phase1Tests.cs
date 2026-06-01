@@ -117,8 +117,23 @@ public class FederationV1Phase1Tests : IntegrationTestBase
 
         await SeedClaimsStoreAsync(user.Id);
 
-        var response = await Client.DeleteAsync($"/api/user/{new ShortGuid(user.Id)}", ct);
-        response.EnsureSuccessStatusCode();
+        // Admin "delete" is now a reversible recycle-bin move — the claims
+        // snapshot is KEPT so a restore stays clean (live access is revoked, so
+        // a stale snapshot is harmless in the meantime).
+        var binResponse = await Client.DeleteAsync($"/api/user/{new ShortGuid(user.Id)}", ct);
+        binResponse.EnsureSuccessStatusCode();
+
+        await using (var afterBin = GetTenantedSession())
+            Assert.NotNull(await afterBin.LoadAsync<ExternalClaimsStore>(user.Id, ct));
+
+        // Permanent erase (ForceDelete / empty-bin) is what scrubs the snapshot —
+        // externally-derived authz can never outlive the user.
+        var eraseResponse = await Client.SendAsync(new HttpRequestMessage(
+            HttpMethod.Delete, $"/api/admin/users/{new ShortGuid(user.Id)}/permanent")
+        {
+            Content = JsonContent.Create(new { Reason = "test-erase" }, options: JsonOptions),
+        }, ct);
+        eraseResponse.EnsureSuccessStatusCode();
 
         await using var read = GetTenantedSession();
         Assert.Null(await read.LoadAsync<ExternalClaimsStore>(user.Id, ct));

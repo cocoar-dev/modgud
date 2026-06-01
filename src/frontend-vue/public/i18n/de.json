@@ -222,19 +222,20 @@
       "exportDescription": "Alle Daten, die wir über dich gespeichert haben (Profil, Sicherheit, Sitzungen, Login-Historie), als JSON-Download.",
       "exportButton": "Export herunterladen",
       "deleteTitle": "Konto löschen",
-      "deleteDescription": "Persönliche Daten werden nach Bestätigung per E-Mail-Link gelöscht. Aus Audit-Gründen bleibt der Event-Stream maskiert erhalten.",
+      "deleteDescription": "Mit der Löschanfrage wird dein Konto nach einer Karenzzeit endgültig gelöscht. Du kannst dich während dieser Zeit jederzeit anmelden und abbrechen. Aus Audit-Gründen bleibt der Event-Stream maskiert erhalten.",
       "deleteButton": "Konto löschen anfragen",
-      "confirmDelete": "Bestätigungs-Mail senden",
-      "cancelButton": "Anfrage zurückziehen",
+      "confirmDelete": "Löschung planen",
+      "cancelButton": "Löschung abbrechen",
       "confirmCancel": "Löschanfrage zurückziehen?",
       "password": "Aktuelles Passwort",
       "passwordRequired": "Passwort ist erforderlich.",
       "reason": "Grund (optional)",
-      "deleteRequested": "Bestätigungs-Mail wurde gesendet. Bitte über den Link in der Mail bestätigen.",
+      "deleteRequested": "Dein Konto ist zur Löschung vorgemerkt. Melde dich vor dem Stichtag an, um die Löschung abzubrechen.",
       "cancelled": "Löschanfrage zurückgezogen.",
-      "statusPending": "Löschanfrage läuft.",
-      "confirmBy": "Bitte bis",
-      "confirmEmail": "über die zugesandte Mail bestätigen.",
+      "statusPending": "Dein Konto ist zur Löschung vorgemerkt.",
+      "willDeleteOn": "Es wird endgültig gelöscht am",
+      "cancelHint": "Brich unten jederzeit vor dem Stichtag ab, um dein Konto zu behalten.",
+      "statusAdminBin": "Ein Administrator hat dein Konto zur Löschung vorgemerkt. Wende dich an deinen Administrator, falls das unerwartet ist.",
       "statusMasked": "Personenbezogene Daten wurden bereits maskiert."
     },
     "changePassword": {
@@ -348,7 +349,19 @@
       "sendMagicLink": "Magic Link senden",
       "magicLinkSent": "Magic Link wurde gesendet.",
       "magicLinkFailed": "Magic Link konnte nicht gesendet werden.",
-      "showIdpClaims": "IdP-Claims anzeigen"
+      "showIdpClaims": "IdP-Claims anzeigen",
+      "lifecycle": "Lebenszyklus",
+      "binAdmin": "Papierkorb",
+      "binSelf": "Selbst-Löschung",
+      "showRecycleBin": "Papierkorb anzeigen",
+      "showRecycleBinHint": "Zur Löschung vorgemerkte Benutzer einblenden",
+      "bin": "Löschen (Papierkorb)",
+      "restore": "Wiederherstellen",
+      "forceDelete": "Endgültig löschen",
+      "confirmBin": "In den Papierkorb verschieben? Der Benutzer wird deaktiviert und zur Löschung vorgemerkt, kann aber bis zur endgültigen Löschung wiederhergestellt werden.",
+      "confirmRestore": "Aus dem Papierkorb wiederherstellen? Die vorgemerkte Löschung wird abgebrochen und der Benutzer reaktiviert.",
+      "forceDeleteReason": "Grund für die endgültige Löschung (wird im Audit-Log festgehalten):",
+      "confirmForceDelete": "Diesen Benutzer jetzt endgültig löschen? Damit wird der Papierkorb für ihn geleert und kann NICHT rückgängig gemacht werden."
     },
     "idpClaims": {
       "type": "Typ",
@@ -969,7 +982,17 @@
       "tabs": {
         "selfRegistration": "Self-Registration",
         "dcr": "Dynamic Client Registration",
-        "branding": "Branding"
+        "branding": "Branding",
+        "deletion": "Konto-Löschung"
+      },
+      "deletion": {
+        "hint": "Steuert den Konto-Löschungs-Lebenszyklus dieses Realms. Selbst-Löschungen erhalten eine Karenzzeit, in der der Benutzer abbrechen kann; Admin-Löschungen landen im Papierkorb, der nach Ablauf der Aufbewahrung automatisch geleert wird.",
+        "graceDays": "Karenzzeit Selbst-Löschung (Tage)",
+        "reminderLeadDays": "Vorlauf für Erinnerung (Tage vor Stichtag)",
+        "adminRetentionDays": "Aufbewahrung Admin-Papierkorb (Tage)",
+        "autoPurge": "Papierkorb nach Aufbewahrung automatisch leeren",
+        "reminderTooLong": "Der Erinnerungs-Vorlauf muss kürzer als die Karenzzeit sein, sonst wird die Erinnerung nie ausgelöst.",
+        "autoPurgeOff": "Auto-Leerung ist aus — vorgemerkte Konten bleiben, bis ein Admin sie manuell endgültig löscht."
       },
       "branding": {
         "hint": "Pro-Realm-Branding für die SPA. Alle Felder optional — leer lassen für die Cocoar-Defaults. Logo + Favicon werden aus der Asset-Library gewählt. Änderungen wirken beim nächsten SPA-Load.",
@@ -1046,15 +1069,12 @@
       }
     }
   },
-  "confirmDeletion": {
-    "missing": "Bestätigungs-Link unvollständig.",
-    "invalid": "Link ist ungültig oder abgelaufen.",
-    "error": "Bestätigung fehlgeschlagen.",
-    "processing": "Wird verarbeitet…",
-    "successTitle": "Löschung bestätigt",
-    "successBody": "Dein Konto wird in den nächsten Minuten gelöscht. Aus Audit-Gründen bleibt der Event-Stream maskiert erhalten.",
-    "errorTitle": "Bestätigung fehlgeschlagen",
-    "toProfile": "Zum Profil"
+  "deletionPending": {
+    "title": "Dein Konto ist zur Löschung vorgemerkt",
+    "body": "Dein Konto wird endgültig gelöscht am",
+    "bodyHint": "Brich jetzt ab, um dein Konto zu behalten, oder fahre fort, wenn du es weiterhin löschen möchtest.",
+    "cancel": "Löschung abbrechen — Konto behalten",
+    "continue": "Trotzdem fortfahren"
   },
   "consent": {
     "title": "{client} autorisieren",

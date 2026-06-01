@@ -165,24 +165,46 @@ public static class UsersEndpoints
             .WithName("V2_User_Update")
             .RequiresPermission("user:write");
 
-        userGroup.MapDelete("{id}", async (string id, IMessageBus bus) =>
+        userGroup.MapDelete("{id}", async (string id, IMessageBus bus, HttpContext context) =>
             {
                 var guid = new ShortGuid(id).Guid;
-                var command = new DeleteUsersCommand(new List<Guid> { guid });
+                var command = new DeleteUsersCommand([guid], context.GetUserId());
                 var result = await bus.InvokeAsync<ErrorOr.ErrorOr<ErrorOr.Success>>(command);
                 return result.ToNoContentResult();
             })
             .WithName("V2_User_DeleteSingle")
             .RequiresPermission("user:write");
 
-        userGroup.MapDelete("", async ([FromBody] List<string> ids, IMessageBus bus) =>
+        userGroup.MapDelete("", async ([FromBody] List<string> ids, IMessageBus bus, HttpContext context) =>
             {
                 var guids = ids.Select(id => new ShortGuid(id).Guid).ToList();
-                var command = new DeleteUsersCommand(guids);
+                var command = new DeleteUsersCommand(guids, context.GetUserId());
                 var result = await bus.InvokeAsync<ErrorOr.ErrorOr<ErrorOr.Success>>(command);
                 return result.ToNoContentResult();
             })
             .WithName("V2_User_Delete")
+            .RequiresPermission("user:write");
+
+        // Restore one user from the recycle bin (clear pending + reactivate).
+        userGroup.MapPost("{id}/restore", async (string id, IMessageBus bus, HttpContext context) =>
+            {
+                var guid = new ShortGuid(id).Guid;
+                var command = new RestoreUsersCommand([guid], context.GetUserId());
+                var result = await bus.InvokeAsync<ErrorOr.ErrorOr<ErrorOr.Success>>(command);
+                return result.ToNoContentResult();
+            })
+            .WithName("V2_User_RestoreSingle")
+            .RequiresPermission("user:write");
+
+        // Bulk restore from the recycle bin.
+        userGroup.MapPost("restore", async ([FromBody] List<string> ids, IMessageBus bus, HttpContext context) =>
+            {
+                var guids = ids.Select(id => new ShortGuid(id).Guid).ToList();
+                var command = new RestoreUsersCommand(guids, context.GetUserId());
+                var result = await bus.InvokeAsync<ErrorOr.ErrorOr<ErrorOr.Success>>(command);
+                return result.ToNoContentResult();
+            })
+            .WithName("V2_User_Restore")
             .RequiresPermission("user:write");
 
         // Set/Reset password for a user

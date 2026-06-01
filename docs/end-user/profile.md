@@ -49,11 +49,15 @@ Actions:
 Self-service GDPR operations:
 
 - **Export my data** — download everything Modgud knows about you (profile, sessions, login history, OAuth consents) as JSON. Article 20 export.
-- **Delete my account** — initiates the deletion flow. You receive a confirmation email; once confirmed, you have a grace period (default 7 days) during which you can cancel. After that, your account is permanently erased — see [admin docs on permanent erase](../admin/users#gdpr-permanent-erase) for the technical details.
-- **Cancel deletion** — visible while a deletion request is pending. Click to abort.
+- **Delete my account** — schedules your account for permanent erasure after a **grace period** (default 30 days, configurable per realm). You stay able to sign in the whole time — log in any moment before the deadline and cancel to keep your account. A reminder email goes out a few days before the deadline, and your next sign-in during the window shows an [interstitial reminder](./sign-in#scheduled-for-deletion) with a one-click cancel. When the grace period expires, the account is auto-erased — see [admin docs on permanent erase](../admin/users#recycle-bin-permanent-erase) for the technical details.
+- **Cancel deletion** — visible while your own deletion request is pending. Click to abort it.
+
+::: info An admin scheduled my deletion
+If an **administrator** moved your account to the deletion queue (recycle bin), you'll see a notice here but **no cancel button** — that's the admin's decision to reverse. Contact them if it's unexpected.
+:::
 
 ::: warning Permanent erase is final
-Once the grace period expires, the deletion is irrevocable. Modgud replaces your PII with `***ERASED***` markers and archives the account. There is no restore.
+Cancelling during the grace period aborts the deletion *before* it happens. Once the grace period expires and the account is erased, it is irrevocable: Modgud replaces your PII with `***ERASED***` markers and archives the account. There is **no restore after erasure**.
 :::
 
 ## Tips

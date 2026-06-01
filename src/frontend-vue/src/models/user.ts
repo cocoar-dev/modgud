@@ -13,6 +13,14 @@ export interface UserDto {
   /** LoginProvider ShortGuids of active external-identity links. Empty = local-only. */
   ExternalLoginProviderIds: string[]
   Status: EntityStatus
+  /** True when the user is in the recycle bin / self-service grace window.
+   *  Joined in by the list + by-id queries (not carried on live SignalR
+   *  snapshots — correct on full load, may lag on a pushed update). */
+  IsDeletionPending?: boolean
+  /** "SelfService" | "Admin" — who initiated the pending deletion. */
+  DeletionInitiator?: string | null
+  /** Grace / retention deadline of the pending deletion (ISO string). */
+  DeletionDeadline?: string | null
 }
 
 export interface UserCreateDto {

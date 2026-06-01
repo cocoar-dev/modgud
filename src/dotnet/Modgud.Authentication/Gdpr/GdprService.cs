@@ -4,6 +4,8 @@ using Modgud.Authentication.Events;
 using Modgud.Authentication.Sessions;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Services;
+using Modgud.Authentication.RealmSettings;
+using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Email;
 using Modgud.Infrastructure.Observability;
 using Modgud.Infrastructure.Persistence.Tenancy;
@@ -30,12 +32,9 @@ public class GdprService(
     IPermissionService permissionService,
     IEmailService emailService,
     IUserAccessRevoker accessRevoker,
+    IRealmSettingsService realmSettings,
     IHttpContextAccessor httpContextAccessor) : IGdprService
 {
-    /// <summary>How long the user has to confirm a self-initiated
-    /// deletion before the request is automatically cancelled.</summary>
-    private static readonly TimeSpan DeletionConfirmationPeriod = TimeSpan.FromDays(7);
-
     public async Task<ErrorOr<UserDataExportDto>> ExportUserDataAsync(Guid userId, CancellationToken ct = default)
     {
         var user = await userManager.FindByIdAsync(userId.ToString());
@@ -105,29 +104,36 @@ public class GdprService(
         if (state?.IsDataMasked == true) return Error.Conflict("Gdpr.AlreadyDeleted", "User data has already been erased.");
         if (state?.IsDeletionPending == true) return Error.Conflict("Gdpr.AlreadyRequested", "A deletion request is already pending.");
 
+        var deletionSettings = (await realmSettings.LoadAsync(ct)).Deletion ?? DeletionSettings.Defaults;
         var requestedAt = DateTimeOffset.UtcNow;
-        var deadline = requestedAt.Add(DeletionConfirmationPeriod);
+        var deadline = requestedAt.AddDays(deletionSettings.GraceDays);
 
+        // Self-service grace model: the request schedules an auto-erase at the
+        // grace deadline. The user STAYS active so they can log in and cancel
+        // any time before the deadline (handled by CancelDeletionAsync + the
+        // login interstitial). No confirm token — inaction now means deletion
+        // proceeds, the inverse of the old confirm-within-7-days flow.
         state ??= new UserDeletionState { Id = userId };
         state.IsDeletionPending = true;
+        state.DeletionInitiator = DeletionInitiator.SelfService;
+        state.DeletionRequestedByUserId = null;
         state.DeletionRequestedAt = requestedAt;
         state.DeletionConfirmationDeadline = deadline;
+        state.ReminderSentAt = null;
         state.DeletionReason = reason;
         session.Store(state);
         await session.SaveChangesAsync(ct);
 
-        var token = await userManager.GenerateUserTokenAsync(user, "Default", "DeleteAccount");
-
         if (!string.IsNullOrWhiteSpace(user.Email))
         {
             var body = $"""
-                <p>You have requested to permanently delete your Modgud account.</p>
-                <p>To confirm, submit this token in the app within 7 days:</p>
-                <pre>{token}</pre>
-                <p>If you did not request this, you can ignore this email — your account
-                stays untouched. The request will expire automatically on {deadline:f} (UTC).</p>
+                <p>Your Modgud account is scheduled for permanent deletion on {deadline:f} (UTC).</p>
+                <p>If you change your mind, log in any time before then and cancel the
+                deletion — your account will be kept and nothing is lost.</p>
+                <p>If you take no action, the account and its data are permanently erased
+                on that date and cannot be recovered.</p>
                 """;
-            await emailService.SendEmailAsync(user.Email, "Confirm account deletion", body, ct);
+            await emailService.SendEmailAsync(user.Email, "Your account is scheduled for deletion", body, ct);
         }
 
         ModgudMeters.RecordGdprRequest(ModgudMeters.GdprRequestType.Delete);
@@ -136,46 +142,42 @@ public class GdprService(
         {
             RequestedAt = requestedAt,
             ConfirmationDeadline = deadline,
-            Message = "A confirmation email has been sent. Please confirm within 7 days.",
+            Message = $"Your account is scheduled for deletion on {deadline:D}. Log in before then to cancel.",
         };
     }
 
-    public async Task<ErrorOr<bool>> ConfirmDeletionAsync(Guid userId, string token, CancellationToken ct = default)
-    {
-        var user = await userManager.FindByIdAsync(userId.ToString());
-        if (user is null) return Error.NotFound("User.NotFound", $"User {userId} not found.");
-
-        var state = await session.LoadAsync<UserDeletionState>(userId, ct);
-        if (state is null || !state.IsDeletionPending)
-            return Error.Validation("Gdpr.NoPending", "No deletion request is pending.");
-
-        if (state.DeletionConfirmationDeadline is { } deadline && deadline < DateTimeOffset.UtcNow)
-        {
-            // Auto-cancel an expired pending request — same outcome the user would get
-            // if they hit /cancel-deletion at this point.
-            state.IsDeletionPending = false;
-            session.Store(state);
-            await session.SaveChangesAsync(ct);
-            return Error.Validation("Gdpr.Expired", "Deletion request has expired.");
-        }
-
-        if (!await userManager.VerifyUserTokenAsync(user, "Default", "DeleteAccount", token))
-            return Error.Validation("Gdpr.InvalidToken", "Confirmation token is invalid.");
-
-        return await PerformPermanentEraseAsync(userId, adminUserId: null, "User-confirmed deletion", state, ct);
-    }
-
-    public async Task<ErrorOr<bool>> CancelDeletionAsync(Guid userId, CancellationToken ct = default)
+    public async Task<ErrorOr<bool>> CancelDeletionAsync(Guid userId, Guid? cancelledByAdminUserId = null, CancellationToken ct = default)
     {
         var state = await session.LoadAsync<UserDeletionState>(userId, ct);
         if (state is null || !state.IsDeletionPending)
             return Error.Validation("Gdpr.NoPending", "No deletion request is pending.");
+
+        // Admin cancel is the support escape hatch — it works on ANY pending
+        // deletion regardless of initiator, and reactivates a user that was
+        // deactivated into the admin recycle bin. A self-service cancel (no
+        // admin id) only ever reaches self-pending users, who stay active.
+        var wasAdminBin = state.DeletionInitiator == DeletionInitiator.Admin;
 
         state.IsDeletionPending = false;
+        state.DeletionInitiator = null;
+        state.DeletionRequestedByUserId = null;
         state.DeletionRequestedAt = null;
         state.DeletionConfirmationDeadline = null;
+        state.ReminderSentAt = null;
         state.DeletionReason = null;
         session.Store(state);
+
+        if (cancelledByAdminUserId is not null && wasAdminBin)
+        {
+            var appUser = await session.LoadAsync<ApplicationUser>(userId, ct);
+            if (appUser is not null && !appUser.IsActive)
+            {
+                appUser.IsActive = true;
+                session.Store(appUser);
+                session.Events.Append(userId, new UserActivatedEvent(userId));
+            }
+        }
+
         await session.SaveChangesAsync(ct);
         return true;
     }
@@ -190,6 +192,7 @@ public class GdprService(
             IsPending = state?.IsDeletionPending ?? false,
             IsDeleted = user?.IsDeleted ?? false,
             IsDataMasked = state?.IsDataMasked ?? false,
+            Initiator = state?.IsDeletionPending == true ? state.DeletionInitiator : null,
             RequestedAt = state?.DeletionRequestedAt,
             ConfirmationDeadline = state?.DeletionConfirmationDeadline,
         };
@@ -205,7 +208,11 @@ public class GdprService(
 
     private async Task<ErrorOr<bool>> PerformPermanentEraseAsync(Guid userId, Guid? adminUserId, string reason, UserDeletionState? existingState, CancellationToken ct)
     {
-        var tenantId = httpContextAccessor.HttpContext?.Items[TenantConstants.HttpContextTenantIdKey] as string
+        // Prefer the AsyncLocal tenant (set by RealmMiddleware on requests AND by
+        // the deletion sweep jobs via TenantContext.Enter) so a background erase
+        // masks/archives in the correct realm DB — HttpContext is null there.
+        var tenantId = TenantContext.CurrentOrNull
+                       ?? httpContextAccessor.HttpContext?.Items[TenantConstants.HttpContextTenantIdKey] as string
                        ?? TenantConstants.SystemTenantId;
 
         // 0) Revoke live access (OAuth grants + sessions + security stamp) BEFORE
@@ -263,6 +270,10 @@ public class GdprService(
         var now = DateTimeOffset.UtcNow;
         var state = existingState ?? new UserDeletionState { Id = userId };
         state.IsDeletionPending = false;
+        state.DeletionInitiator = null;
+        state.DeletionRequestedByUserId = null;
+        state.DeletionConfirmationDeadline = null;
+        state.ReminderSentAt = null;
         state.IsDataMasked = true;
         state.DataMaskedAt = now;
         state.DataMaskedReason = reason;
@@ -299,6 +310,97 @@ public class GdprService(
         ModgudMeters.RecordGdprRequest(ModgudMeters.GdprRequestType.Mask);
 
         return true;
+    }
+
+    /// <summary>
+    /// Per-realm self-service sweep, run by the scheduled job inside the realm's
+    /// tenant context: sends the "about to be deleted" reminder once per request
+    /// (ReminderLeadDays before the deadline) and permanently erases self-service
+    /// requests whose grace deadline has passed. Operates on the injected
+    /// (tenant-scoped) session — the caller enters the tenant before resolving.
+    /// </summary>
+    public async Task<(int Reminded, int Erased)> RunSelfServiceSweepAsync(CancellationToken ct = default)
+    {
+        var deletionSettings = (await realmSettings.LoadAsync(ct)).Deletion ?? DeletionSettings.Defaults;
+        var now = DateTimeOffset.UtcNow;
+        var reminderWindow = TimeSpan.FromDays(deletionSettings.ReminderLeadDays);
+
+        // Small set (only users mid-grace); filter the initiator in memory to
+        // avoid LINQ translation of the nullable enum comparison.
+        var pending = (await session.Query<UserDeletionState>()
+                .Where(s => s.IsDeletionPending)
+                .ToListAsync(ct))
+            .Where(s => s.DeletionInitiator == DeletionInitiator.SelfService
+                        && s.DeletionConfirmationDeadline is not null)
+            .ToList();
+
+        var reminded = 0;
+        var erased = 0;
+        foreach (var state in pending)
+        {
+            var deadline = state.DeletionConfirmationDeadline!.Value;
+            if (deadline <= now)
+            {
+                var result = await PerformPermanentEraseAsync(
+                    state.Id, adminUserId: null, "Self-service grace period expired", state, ct);
+                if (!result.IsError) erased++;
+            }
+            else if (state.ReminderSentAt is null && deadline - now <= reminderWindow)
+            {
+                await SendDeletionReminderAsync(state.Id, deadline, ct);
+                state.ReminderSentAt = now;
+                session.Store(state);
+                await session.SaveChangesAsync(ct);
+                reminded++;
+            }
+        }
+
+        return (reminded, erased);
+    }
+
+    /// <summary>
+    /// Per-realm admin recycle-bin auto-purge, run by the scheduled job inside
+    /// the realm's tenant context: permanently erases admin-initiated pending
+    /// deletions whose retention deadline has passed — but only when the realm
+    /// has <see cref="DeletionSettings.AutoPurgeEnabled"/>. Manual ForceDelete
+    /// (the permanent-erase endpoint) is unaffected by that toggle.
+    /// </summary>
+    public async Task<int> RunAdminRetentionPurgeAsync(CancellationToken ct = default)
+    {
+        var deletionSettings = (await realmSettings.LoadAsync(ct)).Deletion ?? DeletionSettings.Defaults;
+        if (!deletionSettings.AutoPurgeEnabled) return 0;
+
+        var now = DateTimeOffset.UtcNow;
+        var due = (await session.Query<UserDeletionState>()
+                .Where(s => s.IsDeletionPending)
+                .ToListAsync(ct))
+            .Where(s => s.DeletionInitiator == DeletionInitiator.Admin
+                        && s.DeletionConfirmationDeadline is not null
+                        && s.DeletionConfirmationDeadline.Value <= now)
+            .ToList();
+
+        var purged = 0;
+        foreach (var state in due)
+        {
+            var result = await PerformPermanentEraseAsync(
+                state.Id, state.DeletionRequestedByUserId, "Admin recycle-bin retention expired", state, ct);
+            if (!result.IsError) purged++;
+        }
+
+        return purged;
+    }
+
+    private async Task SendDeletionReminderAsync(Guid userId, DateTimeOffset deadline, CancellationToken ct)
+    {
+        var user = await session.LoadAsync<ApplicationUser>(userId, ct);
+        if (string.IsNullOrWhiteSpace(user?.Email)) return;
+
+        var body = $"""
+            <p>Reminder: your Modgud account is scheduled for permanent deletion on {deadline:f} (UTC).</p>
+            <p>Log in before then and cancel the deletion if you want to keep your account.
+            After that date the account and its data are erased and cannot be recovered.</p>
+            """;
+        await emailService.SendEmailAsync(user.Email, "Reminder: your account is about to be deleted", body, ct);
     }
 
     /// <summary>

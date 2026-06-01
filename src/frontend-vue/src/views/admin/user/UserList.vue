@@ -32,6 +32,14 @@ watch(language, () => ui.set((ctx) => {
 
 const users = computed(() => userStore.entities)
 
+// Recycle-bin reveal: pending-deletion users (self-service grace OR admin
+// bin) are hidden by default to keep the active roster clean; the toolbar
+// toggle reveals them inline with a lifecycle badge.
+const showRecycleBin = ref(false)
+const filteredUsers = computed(() =>
+  showRecycleBin.value ? users.value : users.value.filter(u => !u.IsDeletionPending))
+const pendingCount = computed(() => users.value.filter(u => u.IsDeletionPending).length)
+
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
@@ -45,7 +53,7 @@ const selectedUser = computed(() => {
 const builder = CoarGridBuilder.create<UserDto>()
   .persistColumnState('admin-users')
   .option('getRowId', (p: any) => p.data.Id)
-  .rowDataRef(users)
+  .rowDataRef(filteredUsers)
   .searchHighlight()
   .rowSelection('single')
   .onCellDoubleClicked((event) => {
@@ -78,6 +86,20 @@ const builder = CoarGridBuilder.create<UserDto>()
     (col) => col.icon('IsActive', { color: '#16a34a', size: 's' })
       .option('valueGetter', (p: any) => p.data?.IsActive ? 'check' : '')
       .header('Active', 'admin.users.active').width(80),
+    // Lifecycle badge — only meaningful for pending-deletion rows (visible
+    // when the recycle bin is revealed). Empty for normal active users.
+    (col) => col.field('DeletionInitiator').header('Lifecycle', 'admin.users.lifecycle')
+      .valueGetter((p: any) => {
+        const d = p.data
+        if (!d?.IsDeletionPending) return ''
+        const who = d.DeletionInitiator === 'Admin'
+          ? t('admin.users.binAdmin', {}, 'Recycle bin')
+          : t('admin.users.binSelf', {}, 'Self-deletion')
+        const when = d.DeletionDeadline ? new Date(d.DeletionDeadline).toLocaleDateString() : ''
+        return when ? `${who} · ${when}` : who
+      })
+      .flex(1)
+      .classRule('deletion-pending-cell', (p: any) => !!p.data?.IsDeletionPending),
     // Email — visually de-emphasized when Identity-side EmailConfirmed=false
     // so unverified addresses don't read like authoritative contact info.
     (col) => col.field('Email').header('Email', 'admin.users.email').flex(1)
@@ -85,9 +107,28 @@ const builder = CoarGridBuilder.create<UserDto>()
   ])
 
 async function deleteUsers() {
-  if (selectedIds.value.length > 0 && confirm(t('common.confirmDelete', {}, 'Really delete?'))) {
-    await userStore.deleteEntities(selectedIds.value)
+  if (selectedIds.value.length > 0 && confirm(t('admin.users.confirmBin', {},
+      'Move to the recycle bin? The user is deactivated and scheduled for deletion, but can be restored until it is permanently erased.'))) {
+    await userStore.binUsers(selectedIds.value)
   }
+}
+
+async function restoreSelected() {
+  if (selectedIds.value.length > 0 && confirm(t('admin.users.confirmRestore', {},
+      'Restore from the recycle bin? The pending deletion is cancelled and the user is reactivated.'))) {
+    await userStore.restoreUsers(selectedIds.value)
+  }
+}
+
+async function forceDeleteSelected() {
+  const id = selectedIds.value[0]
+  if (!id) return
+  const reason = window.prompt(t('admin.users.forceDeleteReason', {},
+    'Reason for permanent deletion (recorded in the audit log):'), '')
+  if (reason === null) return
+  if (!confirm(t('admin.users.confirmForceDelete', {},
+      'Permanently erase this user now? This empties the recycle bin for them and CANNOT be undone.'))) return
+  await userStore.forceDelete(id, reason.trim() || 'Admin force-delete from recycle bin')
 }
 
 const magicLinkSending = ref(false)
@@ -118,6 +159,11 @@ onMounted(() => {
   <div class="flex flex-1 flex-col min-w-0 p-4">
     <CoarDataGrid :builder="builder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
+        <label class="recycle-bin-toggle" :title="t('admin.users.showRecycleBinHint', {}, 'Reveal users pending deletion')">
+          <input type="checkbox" v-model="showRecycleBin" />
+          <span>{{ t('admin.users.showRecycleBin', {}, 'Show recycle bin') }}</span>
+          <span v-if="pendingCount > 0" class="recycle-bin-count">{{ pendingCount }}</span>
+        </label>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">{{ t('common.create', {}, 'Create') }}</CoarButton>
       </template>
     </CoarDataGrid>
@@ -146,7 +192,13 @@ onMounted(() => {
         @clicked="selectedIds[0] && navigateToModal(`claims/${selectedIds[0]}`)"
       />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteUsers" />
+      <!-- Active users → bin them; pending users → restore or permanently erase. -->
+      <CoarMenuItem v-if="!selectedUser?.IsDeletionPending"
+        :label="t('admin.users.bin', {}, 'Delete (recycle bin)')" icon="trash-2" @clicked="deleteUsers" />
+      <template v-else>
+        <CoarMenuItem :label="t('admin.users.restore', {}, 'Restore')" icon="rotate-ccw" @clicked="restoreSelected" />
+        <CoarMenuItem :label="t('admin.users.forceDelete', {}, 'Delete permanently')" icon="trash-2" @clicked="forceDeleteSelected" />
+      </template>
     </CoarContextMenu>
 
     <!-- Viewport context menu (empty area) -->
@@ -183,5 +235,35 @@ onMounted(() => {
 :deep(.email-unverified) {
   color: var(--coar-text-neutral-secondary, #6b7280);
   font-style: italic;
+}
+
+/* Lifecycle badge cell — amber, to read as "scheduled for deletion". */
+:deep(.deletion-pending-cell) {
+  color: #92400e;
+  font-weight: 600;
+}
+
+.recycle-bin-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+  font-size: 0.8rem;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  cursor: pointer;
+  user-select: none;
+}
+.recycle-bin-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 </style>

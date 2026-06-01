@@ -48,6 +48,11 @@ public class RealmSettings
     /// before the user authenticates.</summary>
     public BrandingSettings? Branding { get; set; }
 
+    /// <summary>Per-realm account-deletion policy (self-service grace +
+    /// admin recycle-bin retention). Null = never configured; callers read
+    /// it as <see cref="DeletionSettings.Defaults"/>.</summary>
+    public DeletionSettings? Deletion { get; set; }
+
     /// <summary>Page-builder schemas keyed by SPA-page-slug
     /// (<c>login</c>, <c>logout</c>, <c>password-forgot</c>, …). Each
     /// value is the serialised <c>PageNode</c> tree as JSON. Missing key

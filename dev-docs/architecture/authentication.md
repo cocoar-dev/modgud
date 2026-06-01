@@ -308,32 +308,40 @@ are captured because the CLI uses the same Serilog pipeline.
 Retention is realm-uniform — not configurable per realm; tracked as
 a follow-up.
 
-## GDPR data masking + ArchiveStream
+## Account deletion lifecycle (grace + recycle bin)
 
-GDPR delete is a three-step flow with cooling-off:
+Deletion is **reversible until the final, irreversible permanent erase**. Two entry paths share one terminal state, distinguished by `UserDeletionState.DeletionInitiator`:
+
+- **Self-service** (`POST /api/auth/delete-account`) — the user is left `IsActive=true` so they can still sign in and cancel during a **grace window**. The next sign-in hits a login interstitial: `LoginView` polls `GET /api/auth/deletion-status` and, if a self-service deletion is pending, routes to `/deletion-pending` before the app redirect. `POST /api/auth/cancel-deletion` aborts (callable by the user — and by an admin, as a support escape hatch).
+- **Admin recycle bin** (`DELETE .../user/{id}`, bulk `DELETE .../user`) — the user is **deactivated** (`IsActive=false`, cannot sign in). `POST .../user/{id}/restore` (bulk `POST .../user/restore`) clears the pending deletion and reactivates; force-delete (`DELETE .../user/{id}/permanent`) erases immediately, ahead of retention.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> NotRequested
-    NotRequested --> ConfirmationPending : POST /gdpr/delete-request
-    ConfirmationPending --> NotRequested : POST /gdpr/delete-cancel
-    ConfirmationPending --> Confirmed : POST /gdpr/delete-confirm?token=...
-    Confirmed --> [*] : Stream archived, PII masked
+    [*] --> Active
+    Active --> SelfPending : POST /api/auth/delete-account (grace, IsActive stays true)
+    Active --> AdminBin : admin delete (deactivated)
+    SelfPending --> Active : cancel-deletion (self or admin)
+    AdminBin --> Active : restore (admin)
+    SelfPending --> Erased : grace deadline (sweep)
+    AdminBin --> Erased : retention deadline (auto-purge) / force-delete
+    Erased --> [*] : IsDeleted=true, email nulled, stream archived, PII masked
 ```
 
-On confirm:
+Both pending states keep `IsDeleted=false`, so the **email stays reserved** for the whole restorable window (see the email invariant below). `AccountLifecycleSweepJob` (Quartz, `account-lifecycle-sweep`) is the timer: it sends grace reminders, erases expired self-service pending users, and — when `AutoPurgeEnabled` — auto-purges admin recycle-bin users past `AdminRetentionDays`. All windows are per-realm `DeletionSettings` (`GraceDays` / `ReminderLeadDays` / `AdminRetentionDays` / `AutoPurgeEnabled`), replacing the old hardcoded 7-day confirm-token deadline. Because admin delete is reversible (and auto-purge can be disabled), a compromised admin binning users en masse is recoverable until retention elapses or someone force-deletes — replacing the old "confirmation email always lands at the user" safeguard.
 
-- `ArchiveStream(userId)` — Marten archives the stream. Live
-  read-model queries (`Query<T>`) no longer surface archived events.
-  Only `OpenSession().Events.QueryAllRawEvents()` still sees them.
-- Marten **data masking** rewrites PII fields in the archived events.
-  Live events are never touched — masking applies on archive only.
-  Rationale: while the user is active, events are fresh and correct;
-  once deleted, they are made unreadable but not removed (audit
-  requirement).
-- `ApplicationUser`, `UserSecurityData`, `UserSession`,
-  `ExternalIdentityLink` documents are deleted outright.
-- The user is signed out.
+Live access is revoked on **entry** into either pending state (`AccessRevocationReason.Deletion`, from Hotfix C / #21) — a binned user's OAuth tokens stop working immediately while the record stays restorable — not only at erase.
+
+### Email invariant
+
+`NormalizedEmail` carries a **partial unique index `WHERE is_deleted = false`** per realm DB (`MartenStoreOptionsExtensions`), so the address is reserved across active + both pending states and released only at permanent erase. A self-removing `EmailUniquenessMigration` builds it live per realm: it nulls the email of any legacy `IsDeleted=true` user (clears pre-grace admin-delete PII), **refuses to build (loud WARNING)** if active duplicates exist (they need human resolution), and logs a per-boot nag while it is still wired in — the forcing function to remove the temporary migration and move the index into declarative Marten config once every realm reports it present.
+
+### Permanent erase
+
+`PerformPermanentEraseAsync` is the **single point** that flips `IsDeleted=true` and nulls the email; it resolves the tenant via `TenantContext.CurrentOrNull` first, so the sweep job erases in the correct realm DB. On erase:
+
+- `ArchiveStream(userId)` — Marten archives the stream. Live read-model queries (`Query<T>`) no longer surface archived events. Only `OpenSession().Events.QueryAllRawEvents()` still sees them.
+- Marten **data masking** rewrites PII fields in the archived events. Live events are never touched — masking applies on archive only. Rationale: while the user is active, events are fresh and correct; once deleted, they are made unreadable but not removed (audit requirement).
+- `ApplicationUser`, `UserSecurityData`, `UserSession`, `ExternalIdentityLink` documents are deleted outright (the external-link PII scrub from Hotfix C / #21).
 
 ```csharp
 options.Events.AddMaskingRuleForProtectedInformation<UserCreated>(x =>
@@ -343,14 +351,7 @@ options.Events.AddMaskingRuleForProtectedInformation<UserLoggedIn>(x =>
     new UserLoggedIn(x.UserId, "[DELETED-IP]", x.OccurredAt));
 ```
 
-`AuthLogDocument` rows are masked in place (PII fields → `***ERASED***`)
-but kept; the stable user id remains so the audit chain is still
-walkable without revealing personal data.
-
-Admin-initiated delete (`POST /api/admin/users/{id}/gdpr/...`) goes
-through the same flow — confirmation email always lands at the user
-even when an admin started it. This blocks compromised-admin mass
-deletes.
+`AuthLogDocument` rows are masked in place (PII fields → `***ERASED***`) but kept; the stable user id remains so the audit chain is still walkable without revealing personal data.
 
 ## Recovery CLI
 
