@@ -3,7 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Cocoar.Json.Mutable" Version="1.0.1" />
+    <PackageVersion Include="Cocoar.Json.Mutable" Version="1.2.0" />
     <!-- SAST analyzer; injected by Directory.Build.props as
          analyzer-only PackageReference (PrivateAssets=all). -->
     <PackageVersion Include="SecurityCodeScan.VS2019" Version="5.6.7" />
