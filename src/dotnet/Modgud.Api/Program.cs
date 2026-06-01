@@ -129,7 +129,7 @@ try
     builder.Services.AddSingleton<IMagicLinkConfiguration>(sp => sp.GetRequiredService<MagicLinkConfiguration>());
 
     var configManager = builder.GetCocoarConfigManager();
-    var conf = configManager.GetRequiredConfig<StartUpConfiguration>();
+    var conf = configManager.GetConfig<StartUpConfiguration>();
 
     if (!string.IsNullOrWhiteSpace(conf.CertPath))
     {
@@ -643,7 +643,7 @@ try
             {
                 EmailProvider.Postmark => new PostmarkEmailService(() =>
                 {
-                    var c = configManager.GetRequiredConfig<EmailConfiguration>();
+                    var c = configManager.GetConfig<EmailConfiguration>();
                     return new PostmarkEmailServiceOptions
                     {
                         ServerToken = c.Postmark.ServerToken,
@@ -654,7 +654,7 @@ try
                 }),
                 _ => new SmtpEmailService(() =>
                 {
-                    var c = configManager.GetRequiredConfig<EmailConfiguration>();
+                    var c = configManager.GetConfig<EmailConfiguration>();
                     return new SmtpEmailServiceOptions
                     {
                         Host = c.Smtp.Host, Port = c.Smtp.Port, UseSsl = c.Smtp.UseSsl,
@@ -722,7 +722,7 @@ try
 
     // OpenTelemetry foundation (Phase 1). See
     // dev-docs/future-features/observability-opentelemetry.md.
-    var observabilitySettings = configManager.GetRequiredConfig<ObservabilitySettings>();
+    var observabilitySettings = configManager.GetConfig<ObservabilitySettings>();
     builder.Services.AddModgudObservability(
         observabilitySettings,
         conf.DbSettings.ConnectionString);
@@ -739,7 +739,7 @@ try
     // OpenIddict OAuth 2.0 / OIDC server — uses our custom Marten stores. Settings are
     // captured at config time so signing certs / lifetimes can be pinned before the
     // host is built. Per-realm issuer is applied at request time via RealmIssuerHandler.
-    var openIddictSettings = configManager.GetRequiredConfig<OpenIddictSettings>();
+    var openIddictSettings = configManager.GetConfig<OpenIddictSettings>();
 
     // CERT-01 / OAUTH-05: ensure signing + encryption certs exist on disk
     // before OpenIddict tries to load them. Convention: passwordless PFX
