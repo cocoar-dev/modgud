@@ -10,12 +10,15 @@ import {
   CoarMultiSelect,
   CoarTabGroup,
   CoarTab,
+  CoarPopconfirm,
+  useToast,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import EditableStringList from '@/components/EditableStringList.vue'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
 import { useGroupStore } from '@/stores/group.store'
+import { useAuthStore } from '@/stores/auth.store'
 import type {
   SelfRegistrationDto,
   UpdateSelfRegistrationDto,
@@ -29,6 +32,8 @@ const { t, language } = useI18n()
 const ui = useUI()
 const settingsStore = useRealmSettingsStore()
 const groupStore = useGroupStore()
+const authStore = useAuthStore()
+const toast = useToast()
 
 watch(language, () => ui.set((ctx) => {
   ctx.header.title = t('nav.administration', {}, 'Administration')
@@ -38,8 +43,11 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.hasSubNav = true
 }), { immediate: true })
 
-type TabId = 'self-registration' | 'dcr' | 'deletion'
+type TabId = 'self-registration' | 'dcr' | 'deletion' | 'signing-keys'
 const activeTab = ref<TabId>('self-registration')
+
+const canRotateSigningKey = computed(() => authStore.hasPermission('realm-settings:write'))
+const rotating = ref(false)
 
 // ── Self-Registration form state ─────────────────────────────────────
 interface SelfRegFormState {
@@ -290,6 +298,22 @@ async function save() {
     saving.value = false
   }
 }
+
+async function rotateSigningKey() {
+  try {
+    rotating.value = true
+    error.value = null
+    const kid = await settingsStore.rotateSigningKey()
+    const shortKid = kid ? kid.slice(0, 12) + '…' : ''
+    toast.success(t('admin.realmSettings.signingKeys.rotated', { kid: shortKid }, 'Signing key rotated (new kid {kid}). The previous key stays valid for in-flight tokens during the overlap window.'))
+  } catch (e: any) {
+    const msg = e?.body?.detail ?? e?.body?.error ?? e?.message ?? String(e)
+    error.value = msg
+    toast.error(msg)
+  } finally {
+    rotating.value = false
+  }
+}
 </script>
 
 <template>
@@ -303,6 +327,9 @@ async function save() {
       </CoarTab>
       <CoarTab id="deletion">
         {{ t('admin.realmSettings.tabs.deletion', {}, 'Account Deletion') }}
+      </CoarTab>
+      <CoarTab v-if="canRotateSigningKey" id="signing-keys">
+        {{ t('admin.realmSettings.tabs.signingKeys', {}, 'Signing Keys') }}
       </CoarTab>
     </CoarTabGroup>
 
@@ -518,6 +545,29 @@ async function save() {
           <CoarButton :loading="saving" @click="save">
             {{ t('common.save', {}, 'Save') }}
           </CoarButton>
+        </div>
+      </div>
+    </CoarCard>
+
+    <CoarCard v-else-if="activeTab === 'signing-keys'" class="p-4">
+      <div class="flex flex-col gap-3">
+        <p class="text-xs text-gray-500">
+          {{ t('admin.realmSettings.signingKeys.hint', {}, 'This realm signs its OpenIddict access and id tokens with a per-realm RSA key. Rotating generates a fresh key for new tokens; the previous key is retired but kept in the JWKS for a 30-day overlap so tokens already issued stay valid. Expired retired keys are purged automatically.') }}
+        </p>
+
+        <CoarNote variant="warning">
+          {{ t('admin.realmSettings.signingKeys.warning', {}, 'Rotate only when you have reason to (suspected key exposure, scheduled hygiene). Resource servers that cache the JWKS aggressively may briefly reject new tokens until they refresh.') }}
+        </CoarNote>
+
+        <div class="flex justify-end mt-2">
+          <CoarPopconfirm
+            :title="t('admin.realmSettings.signingKeys.rotateConfirmTitle', {}, 'Rotate signing key?')"
+            :message="t('admin.realmSettings.signingKeys.rotateConfirmMessage', {}, 'A fresh key becomes active immediately. The current key is retired into the 30-day overlap window. This cannot be undone.')"
+            @confirmed="rotateSigningKey">
+            <CoarButton :loading="rotating" variant="danger" icon-start="rotate-ccw">
+              {{ t('admin.realmSettings.signingKeys.rotateButton', {}, 'Rotate signing key') }}
+            </CoarButton>
+          </CoarPopconfirm>
         </div>
       </div>
     </CoarCard>

@@ -73,6 +73,7 @@ public static class RecoveryCli
             "realm-list" => await RealmListAsync(scope.ServiceProvider),
             "control-plane" => await ControlPlaneAsync(scope.ServiceProvider, args),
             "adopt-tenant" => await AdoptTenantAsync(scope.ServiceProvider, args),
+            "rotate-signing-key" => await RotateSigningKeyAsync(scope.ServiceProvider, realmSlug),
             _ => Error($"Unknown command: {command}. Try 'help'.")
         };
     }
@@ -136,6 +137,10 @@ public static class RecoveryCli
                                              Register an ALREADY-EXISTING tenant database
                                              ({master}_{slug}) as a realm — no CREATE DATABASE.
                                              Migration counterpart to creating a realm via the API.
+              rotate-signing-key             Rotate the realm's OpenIddict signing key. Generates a
+                                             fresh RSA keypair and retires the previous active key
+                                             into a 30-day verification overlap window so in-flight
+                                             tokens stay valid. Honors --realm (defaults to "system").
               help                           Show this message.
 
             Global flag:
@@ -843,6 +848,27 @@ public static class RecoveryCli
         Console.WriteLine();
         Console.WriteLine("    docker compose restart auth   # or your Compose service name");
         Console.WriteLine();
+    }
+
+    // ── rotate-signing-key ──────────────────────────────────────────────
+
+    private static async Task<int> RotateSigningKeyAsync(IServiceProvider services, string tenantId)
+    {
+        var keyStore = services.GetRequiredService<Modgud.Infrastructure.Realms.IRealmKeyStore>();
+
+        Console.WriteLine($"Rotating signing key for realm '{tenantId}'...");
+        var creds = await keyStore.RotateAsync(tenantId);
+        var kid = creds.Key.KeyId;
+
+        Serilog.Log.Warning("Auth: Recovery rotate-signing-key. Realm={Realm} NewKid={Kid}", tenantId, kid);
+        Console.WriteLine($"  OK new active kid: {kid}");
+        Console.WriteLine("  Previous key retired into the 30-day verification overlap window.");
+        // The CLI is a separate process — it only mutates its OWN in-memory key
+        // cache. A running API instance reconciles its cache against the DB within
+        // RealmKeyStore.CacheRevalidateInterval (~60s), so no restart is needed;
+        // the new key just isn't used for signing on live instances until then.
+        Console.WriteLine("  Running API instances pick up the new key within ~60 seconds.");
+        return 0;
     }
 
     private static int Error(string message)

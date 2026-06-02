@@ -30,5 +30,15 @@ export const useRealmSettingsStore = defineStore('realmSettings', () => {
     return updated
   }
 
-  return { settings, loaded, load, patch }
+  /**
+   * Rotate the realm's OpenIddict signing key. The previous active key is
+   * retired into a ~30-day verification overlap window so in-flight tokens
+   * stay valid. Requires `realm-settings:write`. Returns the new active key id.
+   */
+  async function rotateSigningKey(): Promise<string> {
+    const res = await http.addPath('rotate-signing-key').post<{ Kid: string }>()
+    return res?.Kid ?? ''
+  }
+
+  return { settings, loaded, load, patch, rotateSigningKey }
 })

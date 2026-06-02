@@ -2,10 +2,10 @@ namespace Modgud.Domain.Realms;
 
 /// <summary>
 /// Per-realm RSA signing key used by OpenIddict to sign access / id tokens
-/// issued for that realm. Stored as a Marten document in the master (global)
-/// database alongside <see cref="Realm"/> — these are infrastructure /
-/// crypto-metadata records, not tenant data, so they live outside the
-/// per-tenant DBs.
+/// issued for that realm. Stored as a Marten document in the realm's OWN
+/// tenant database — the private signing material never leaves the per-tenant
+/// DB, so a master-DB or Realm-registry compromise cannot expose another
+/// realm's key.
 ///
 /// <para>
 /// Cryptographic isolation: a token signed by realm A's key cannot be
@@ -20,7 +20,7 @@ namespace Modgud.Domain.Realms;
 /// <list type="bullet">
 ///   <item><description>Each realm has exactly one <see cref="IsActive"/>=true key at any time — the active signing key.</description></item>
 ///   <item><description>On rotation, the previous active key flips to <see cref="IsActive"/>=false and stays in the JWKS for an overlap window so already-issued tokens remain validatable.</description></item>
-///   <item><description>After <see cref="RetiredAt"/>+overlap, retired keys can be hard-deleted by a janitor process (not implemented yet).</description></item>
+///   <item><description>After <see cref="RetiredAt"/>+overlap, retired keys are hard-deleted by the <c>SigningKeyJanitorJob</c> (via <c>IRealmKeyStore.PurgeExpiredRetiredKeysAsync</c>).</description></item>
 /// </list>
 /// </summary>
 public class RealmSigningKey
