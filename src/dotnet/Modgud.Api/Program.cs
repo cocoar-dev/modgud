@@ -1114,14 +1114,20 @@ try
     //  hosted services see a fully provisioned master + system tenant)
     //
     //  Order matters:
-    //   1. Make sure the master DB physically exists (raw SQL — Marten cannot
+    //   1. Make sure BOTH the master DB and the system tenant's own DB
+    //      ({master}_system) physically exist (raw SQL — Marten cannot
     //      `CREATE DATABASE` on a connection that already targets it).
     //   2. Apply Marten storage to the master DB so `realms.mt_tenant_databases`
     //      is created — required before any tenant can be registered.
-    //   3. Register the "system" tenant pointing back at the master DB. This is
-    //      the default tenant used when no HttpContext is available (background
-    //      services, hosted services) and during single-realm dev boots.
-    //   4. Apply schema again so the system tenant gets all per-tenant tables.
+    //   3. Register the "system" tenant pointing at its OWN DB {master}_system
+    //      (NOT the master DB). The master DB stays pure control-plane infra
+    //      (tenant registry + global Realm store + Wolverine durability), so the
+    //      system realm is an equal, deletable peer and the control plane can be
+    //      transferred off it. "system" is also the fallback tenant when no
+    //      HttpContext is available (background/hosted services, CLI) and during
+    //      single-realm dev boots.
+    //   4. Apply schema again so the system tenant gets all per-tenant tables
+    //      inside {master}_system.
     //   5. Ensure the system Realm document exists in IGlobalStore.
     //   6. Warm the realm cache so middleware never blocks on first request.
     // ────────────────────────────────────────────────────────────────────────
@@ -1129,28 +1135,36 @@ try
     var bootstrapBuilder = new NpgsqlConnectionStringBuilder(mainCs);
     var baseDbName = bootstrapBuilder.Database
         ?? throw new InvalidOperationException("DbSettings.ConnectionString is missing 'Database='");
-    bootstrapBuilder.Database = "postgres";
 
+    // The system tenant gets its OWN physical database `{master}_system`,
+    // following the same `{master}_{slug}` convention every realm uses. The
+    // master DB is then pure control-plane infrastructure (tenant registry +
+    // global Realm store + Wolverine durability), never tenant content.
+    var systemDbName = $"{baseDbName}_{TenantConstants.SystemTenantId}";
+    var systemCs = new NpgsqlConnectionStringBuilder(mainCs) { Database = systemDbName }.ConnectionString;
+
+    bootstrapBuilder.Database = "postgres";
     await using (var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString))
     {
         await bootstrapConn.OpenAsync();
-        await using var checkCmd = new NpgsqlCommand(
-            "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
-        checkCmd.Parameters.AddWithValue("@dbName", baseDbName);
-        if (await checkCmd.ExecuteScalarAsync() is null)
+        // Create the master DB and the system tenant's DB if missing. Both names
+        // originate from the operator-supplied connection string (parsed by
+        // NpgsqlConnectionStringBuilder), never from an HTTP request path; the
+        // quoted-identifier escaping below is defense-in-depth (CA2100).
+        foreach (var dbName in new[] { baseDbName, systemDbName })
         {
-            var quotedName = "\"" + baseDbName.Replace("\"", "\"\"") + "\"";
-            // CA2100: PostgreSQL DDL doesn't accept parameter binding for
-            // object names. baseDbName originates from the operator-supplied
-            // connection string (DbSettings.ConnectionString), parsed by
-            // NpgsqlConnectionStringBuilder, not from any HTTP request path.
-            // The quoted-identifier escaping above is defense-in-depth.
+            await using var checkCmd = new NpgsqlCommand(
+                "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
+            checkCmd.Parameters.AddWithValue("@dbName", dbName);
+            if (await checkCmd.ExecuteScalarAsync() is not null) continue;
+
+            var quotedName = "\"" + dbName.Replace("\"", "\"\"") + "\"";
 #pragma warning disable CA2100
             await using var createCmd = new NpgsqlCommand(
                 $"CREATE DATABASE {quotedName}", bootstrapConn);
 #pragma warning restore CA2100
             await createCmd.ExecuteNonQueryAsync();
-            Log.Information("Created master database {DbName}", baseDbName);
+            Log.Information("Created database {DbName}", dbName);
         }
     }
 
@@ -1159,14 +1173,15 @@ try
     var tenancy = (MasterTableTenancy)store.Options.Tenancy;
     await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
 
-    // Register the "system" tenant pointing back at the master DB.
-    // MasterTableTenancy has no "default tenant" concept — every session needs
-    // a tenant id, so we explicitly point "system" at the master DB.
-    await tenancy.AddDatabaseRecordAsync(TenantConstants.SystemTenantId, mainCs);
+    // Register the "system" tenant pointing at its OWN DB {master}_system (NOT
+    // the master DB). MasterTableTenancy has no "default tenant" concept — every
+    // session needs a tenant id; "system" is the fallback when no HttpContext is
+    // available (background/hosted services, CLI).
+    await tenancy.AddDatabaseRecordAsync(TenantConstants.SystemTenantId, systemCs);
 
-    // Apply schema again now that the system tenant is registered (no-op the
-    // second time around for objects that already exist; populates per-tenant
-    // documents/events/projections for the system DB).
+    // Apply schema again now that the system tenant is registered — this
+    // materializes the per-tenant documents/events/projections inside the
+    // system tenant's own database ({master}_system).
     await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
 
     // Ensure the system Realm document exists in the global store
