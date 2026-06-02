@@ -16,11 +16,17 @@ Pinned in `src/dotnet/Directory.Packages.props`:
 
 | Package | Version |
 | --- | --- |
-| `Marten` | 9.0.0 |
-| `Marten.AspNetCore` | 9.0.0 |
-| `WolverineFx.Marten` | 6.0.0 |
-| `JasperFx.Events.SourceGenerator` | 2.0.0 |
-| `WolverineFx.RuntimeCompilation` | 6.0.0 |
+| `Marten` | 9.3.5 |
+| `Marten.AspNetCore` | 9.3.5 |
+| `WolverineFx.Marten` | 6.3.2 |
+| `JasperFx.Events.SourceGenerator` | 2.4.1 |
+| `WolverineFx.RuntimeCompilation` | 6.3.2 |
+
+> **JasperFx.Events.SourceGenerator pin lifted (2026-06).** It was held at
+> `2.0.0` because `2.1.x` source-generated an extra `Evolve(...)` overload that
+> collided with `PrincipalProjectionBase`. That collision is gone as of `2.4.x`
+> — verified by a clean build + green test suite — so the pin (and its
+> `dependabot.yml` ignore) were removed.
 
 The two V8 event-store defaults Modgud still pins (and the reasoning for
 each) are in
