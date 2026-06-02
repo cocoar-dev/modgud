@@ -173,10 +173,11 @@ public sealed class EmailUniquenessMigration(
     private string ConnectionStringFor(string slug)
     {
         var builder = new NpgsqlConnectionStringBuilder(masterCs.Value);
-        // The system realm maps to the master DB itself; tenant realms live in
-        // a per-slug database named {master}_{slug} (see RealmProvisioningService).
-        if (!string.Equals(slug, TenantConstants.SystemTenantId, StringComparison.Ordinal))
-            builder.Database = $"{builder.Database}_{slug}";
+        // Every realm — including the system realm — lives in its own
+        // {master}_{slug} database (see RealmProvisioningService + the boot
+        // block's system-tenant registration). The master DB itself is pure
+        // control-plane infrastructure and holds no ApplicationUser table.
+        builder.Database = $"{builder.Database}_{slug}";
         return builder.ConnectionString;
     }
 }
