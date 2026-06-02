@@ -187,6 +187,24 @@ public static class RealmsEndpoints
         .WithName("Realms_Delete")
         .RequiresPermission("realm:write", AppSlugs.ControlPlane);
 
+        // Transfer the control-plane role to {slug}. POST to the realm that
+        // should BECOME the control plane, from the current control-plane host
+        // (the group's RequireControlPlaneFilter enforces the latter). After
+        // the move the OLD host loses this surface (its realm is no longer the
+        // control plane) and the NEW host's realm:admins gain it — authority is
+        // realm:admin within whichever realm holds the flag, so no permission
+        // migration is needed.
+        group.MapPost("{slug}/transfer-control-plane", async (
+            string slug,
+            IRealmProvisioningService svc,
+            CancellationToken ct) =>
+        {
+            var result = await svc.TransferControlPlaneAsync(slug, ct);
+            return result.ToResult(realm => Results.Ok(MapToDto(realm)));
+        })
+        .WithName("Realms_TransferControlPlane")
+        .RequiresPermission("realm:write", AppSlugs.ControlPlane);
+
         return application;
     }
 

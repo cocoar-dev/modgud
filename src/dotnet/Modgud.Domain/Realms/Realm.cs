@@ -27,19 +27,30 @@ public class Realm
 
     /// <summary>
     /// True for the single Control-Plane realm of the deployment — the
-    /// architectural anchor for cross-realm administration. Computed from
-    /// <see cref="Slug"/>: the realm with slug <see cref="RealmSlugRules.SystemSlug"/>
-    /// (currently <c>"system"</c>) is the Control Plane, every other
-    /// realm is data-plane. The slug is reserved (no tenant can claim it)
-    /// and immutable — so this property is also immutable, and there's
-    /// nothing to enforce or persist alongside it.
+    /// architectural anchor for cross-realm administration. STORED, not
+    /// computed: exactly one realm carries the flag, and it is transferable
+    /// to any active realm via
+    /// <c>IRealmProvisioningService.TransferControlPlaneAsync</c> (in-app,
+    /// control-plane-gated) or <c>recover control-plane transfer</c>
+    /// (operator break-glass CLI). The bootstrap realm (slug
+    /// <see cref="RealmSlugRules.SystemSlug"/>) is stamped with the flag at
+    /// first boot, but the slug is only the default anchor name — it no
+    /// longer determines control-plane status, so the bootstrap realm can
+    /// become an equal, deletable peer once the flag moves elsewhere.
     ///
     /// <para>The Control Plane hosts the <c>/api/admin/realms/*</c>
     /// endpoints (gated by <c>ControlPlaneGateMiddleware</c>) and carries
     /// the <c>control-plane:*</c> permission namespace; tenant realms
-    /// don't.</para>
+    /// don't. Authority within it is the ordinary <c>realm:admin</c>
+    /// permission, so moving the flag hands cross-realm administration to
+    /// the target realm's existing admins with no permission migration.</para>
+    ///
+    /// <para>The "exactly one holder" invariant is enforced defensively by
+    /// <c>TransferControlPlaneAsync</c> (it clears every other holder), not
+    /// by a DB constraint — direct doc writes outside that path can break it,
+    /// and a transfer self-heals it.</para>
     /// </summary>
-    public bool IsControlPlane => Slug == RealmSlugRules.SystemSlug;
+    public bool IsControlPlane { get; set; }
 
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; }

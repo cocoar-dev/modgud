@@ -22,11 +22,13 @@ namespace Modgud.Domain.Realms;
 public static partial class RealmSlugRules
 {
     /// <summary>
-    /// The slug of the deployment's single Control-Plane realm. Reserved
-    /// in <see cref="ReservedSlugs"/>, immutable, and the architectural
-    /// anchor for cross-realm administration: <c>/api/admin/realms/*</c>
-    /// endpoints, the <c>control-plane:*</c> permission namespace, and
-    /// the routing-gate that hides those surfaces from tenant realms.
+    /// The slug of the deployment's bootstrap realm — created and stamped as
+    /// the Control Plane at first boot (see
+    /// <c>RealmProvisioningService.EnsureSystemRealmExistsAsync</c>). Reserved
+    /// in <see cref="ReservedSlugs"/> and immutable. Note: this is only the
+    /// default anchor <em>name</em>; control-plane status is the stored
+    /// <c>Realm.IsControlPlane</c> flag and is transferable, so a realm with
+    /// a different slug can become the Control Plane.
     /// </summary>
     public const string SystemSlug = "system";
 
