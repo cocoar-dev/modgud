@@ -57,14 +57,15 @@ public class UpdateUserHandler(IDocumentSession session)
         if (command.Email.HasValue && !string.IsNullOrWhiteSpace(command.Email.Value))
         {
             var email = command.Email.Value;
+            var normalizedEmail = email.ToUpperInvariant();
             var personEmailTaken = await session.Query<Person>()
-                .Where(p => p.Email == email && p.Id != command.UserId && !p.IsDeleted)
+                .Where(p => p.NormalizedEmail == normalizedEmail && p.Id != command.UserId && !p.IsDeleted)
                 .AnyAsync(ct);
             if (personEmailTaken)
                 return DomainErrors.User.EmailTaken(email);
 
             var groupEmailTaken = await session.Query<Group>()
-                .Where(g => g.Email == email && !g.IsDeleted)
+                .Where(g => g.Email != null && g.Email.ToUpper() == normalizedEmail && !g.IsDeleted)
                 .AnyAsync(ct);
             if (groupEmailTaken)
                 return DomainErrors.User.EmailTaken(email);

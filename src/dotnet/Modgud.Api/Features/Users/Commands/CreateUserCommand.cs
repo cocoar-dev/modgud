@@ -41,14 +41,15 @@ public class CreateUserHandler(IDocumentSession session, UserManager<Application
         // their own Email field but we care about collisions across both.
         if (!string.IsNullOrWhiteSpace(command.Email))
         {
+            var normalizedEmail = command.Email.ToUpperInvariant();
             var personEmailTaken = await session.Query<Person>()
-                .Where(p => p.Email == command.Email && !p.IsDeleted)
+                .Where(p => p.NormalizedEmail == normalizedEmail && !p.IsDeleted)
                 .AnyAsync(ct);
             if (personEmailTaken)
                 return DomainErrors.User.EmailTaken(command.Email);
 
             var groupEmailTaken = await session.Query<Group>()
-                .Where(g => g.Email == command.Email && !g.IsDeleted)
+                .Where(g => g.Email != null && g.Email.ToUpper() == normalizedEmail && !g.IsDeleted)
                 .AnyAsync(ct);
             if (groupEmailTaken)
                 return DomainErrors.User.EmailTaken(command.Email);

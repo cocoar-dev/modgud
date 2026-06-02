@@ -306,7 +306,10 @@ public static class PasskeyEndpoints
 
             // Sign in
             var user = await session.LoadAsync<ApplicationUser>(storedCredential.UserId);
-            if (user is null || !user.IsActive)
+            // Defense-in-depth: passkey login loads the user directly (bypassing
+            // the Identity store's filters), so reject deleted users explicitly —
+            // not just inactive ones — closing the soft-delete auth-bypass.
+            if (user is null || !user.IsActive || user.IsDeleted)
             {
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Passkey, ModgudMeters.LoginOutcome.Failure);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);

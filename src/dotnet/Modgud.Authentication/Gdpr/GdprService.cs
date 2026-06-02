@@ -251,6 +251,20 @@ public class GdprService(
         //    fully erases its PII (no stream to mask). Rides this same batch.
         session.Delete<ExternalClaimsStore>(userId);
 
+        //    WebAuthn passkeys are raw-crypto docs keyed on the user id — drop
+        //    them so a permanently-erased user leaves no orphaned credentials.
+        //    (Recycle-bin / deactivate must NOT do this — that path is reversible.)
+        session.DeleteWhere<StoredPasskeyCredential>(c => c.UserId == userId);
+
+        //    Terminal profile change-requests are retained for audit, but their
+        //    payload carries the user's name/email — drop them so no plaintext
+        //    PII survives the erase (the section comment above promised this).
+        session.DeleteWhere<UserChangeRequest>(r => r.UserId == userId);
+
+        //    Email-OTP challenge is a 1:1 doc (Id = userId) holding a plaintext
+        //    email — drop it too.
+        session.Delete<EmailOtpChallenge>(userId);
+
         //    External identity links carry Email, DisplayName, and the raw IdP
         //    claim payload on their OWN streams (keyed by link id). Drop the
         //    projection doc here; the PII-bearing events are masked + archived

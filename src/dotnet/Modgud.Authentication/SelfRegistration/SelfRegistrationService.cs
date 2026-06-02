@@ -145,7 +145,7 @@ public sealed class SelfRegistrationService(
         // STILL return the same success message — no email is sent so
         // the original account holder isn't bothered.
         var emailTaken = await session.Query<Person>()
-            .AnyAsync(p => p.Email == normalizedEmail && !p.IsDeleted, ct);
+            .AnyAsync(p => p.NormalizedEmail == normalizedEmail.ToUpperInvariant() && !p.IsDeleted, ct);
         if (emailTaken) return GenericSuccess;
 
         // Username collision IS surfaced — usernames are public-shape
