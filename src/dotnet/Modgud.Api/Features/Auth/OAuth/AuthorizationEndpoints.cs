@@ -24,11 +24,10 @@ namespace Modgud.Api.Features.Auth.OAuth;
 
 /// <summary>
 /// Minimal-API endpoints for the OpenIddict server: authorize, token, userinfo,
-/// logout. This is the porting baseline for stage 3b — it carries enough to
-/// satisfy the OpenIddict pipeline (discovery + JWKS work, sign-in/sign-out flow
-/// compiles end-to-end), but role + custom-claim injection is intentionally
-/// deferred (legacy <c>IRoleRepository</c> / <c>IEffectiveRolesService</c> don't
-/// exist in the new authorization model — that bridging is a follow-up phase).
+/// logout. Role + permission and custom-claim injection are fully wired:
+/// <see cref="CreateClaimsPrincipalAsync"/> builds the principal and per-audience
+/// <c>resource_access</c> block via <see cref="IPermissionService"/>, then stamps
+/// claim destinations with <c>SetDestinations</c>.
 /// </summary>
 public static class AuthorizationEndpoints
 {

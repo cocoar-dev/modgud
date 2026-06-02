@@ -1,6 +1,6 @@
 # Federation v1 — Implementation Plan
 
-Status: **Build-ready.** Concretizes [federation-v1-design](./federation-v1-design) (decisions A–G settled 2026-05-29) into an ordered, file:line-accurate build sequence. Every seam below was re-verified against the working tree at `dev-docs/federation-v1-design` HEAD `a57ee04` (which includes Hotfix C, PR #21, `766c9f8`) by a 7-agent read-only verification pass (`wf_5ba83c8c-b9e`, raw findings in `.local/`). The design is decided; this document is the **how and in what order**, not a re-litigation of A–G.
+Status: **Shipped (Phases 0–5 + v1.1).** Implemented and merged to develop via PR #24 (squash `0b70b31`, 2026-05-29) — the phase breakdown below is the as-built record. Only Phase 6 (per-realm session TTL, decision E) and the v2 slice (durable leased external-membership) remain. Concretizes [federation-v1-design](./federation-v1-design) (decisions A–G settled 2026-05-29) into an ordered, file:line-accurate build sequence. Every seam below was re-verified against the working tree at `dev-docs/federation-v1-design` HEAD `a57ee04` (which includes Hotfix C, PR #21, `766c9f8`) by a 7-agent read-only verification pass (`wf_5ba83c8c-b9e`, raw findings in `.local/`). The design is decided; this document is the **how and in what order**, not a re-litigation of A–G.
 
 > Read the [design spec](./federation-v1-design) first for the *why*. This plan assumes the model in one paragraph, the two-layer source filter, and decisions A–G as given.
 

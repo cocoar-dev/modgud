@@ -4,7 +4,7 @@ title: Versioning & Publishing Conventions
 
 # Versioning & Publishing Conventions
 
-> **Status:** Designed 2026-05-28 (split out of [[pr-image-build-on-comment]] when the `/build-image` comment-trigger was deferred but the tag/version rules became a must). Reviewed + revised 2026-05-28. Not yet implemented.
+> **Status:** Designed 2026-05-28 (split out of [[pr-image-build-on-comment]] when the `/build-image` comment-trigger was deferred but the tag/version rules became a must). Reviewed + revised 2026-05-28. **Shipped** — GHCR retention (`cd-ghcr-retention.yml`, weekly cron + real prune), moving Docker tags (`cd-publish-staging-image.yml`) and the NuGet prerelease feed-gate to develop (`cd-publish-nuget-prerelease.yml`) are all live workflows.
 > **Goal:** One version string across the artifact surfaces that *can* carry it (Docker tag, NuGet PackageVersion, AssemblyInformationalVersion), so "which image goes with which package?" is trivial — and clear rules for *where* each build is published, given that some surfaces are permanent and some are cleanable, and that anonymous pull is only possible from some.
 
 ## The single version string

@@ -14,9 +14,11 @@
 > Jede **App** deklariert ihre vollständige **Permission-Liste** als
 > Catalog im strikten Format `<resource>:<action>`; jeder **Resource
 > Server** kriegt davon ein Subset zugewiesen; **`/connect/userinfo`
-> emittiert per-Audience-nested Blocks mit Roles, Permissions und
-> Groups** (Bypass-Tiers vom IdP vor-expandiert); Konsumenten lesen
-> ihren Block über den Audience-Key und machen stumpfes exact-match.
+> emittiert per-Audience-nested Blocks mit Roles und Permissions**
+> (Bypass-Tiers vom IdP vor-expandiert; **Groups bleiben heute
+> IdP-internal und werden nicht emittiert** — siehe §5); Konsumenten
+> lesen ihren Block über den Audience-Key und machen stumpfes
+> exact-match.
 
 Ab hier alles im Detail.
 

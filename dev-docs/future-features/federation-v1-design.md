@@ -1,6 +1,6 @@
 # Federation v1 — Implementation Spec
 
-Status: **Design decided (A–G settled, 2026-05-29), ready for an implementation plan. No code yet.** Concretizes the federation model decided in [identity-lifecycle-untangle](./identity-lifecycle-untangle#federation-prior-art) into real code seams. Based on integration map `wf_63933d9f-149`. Depends on Hotfix C (PR #21, `766c9f8`).
+Status: **Shipped (spec PR #23 `4fa3af0`, implementation PR #24 `0b70b31`); durable leased-membership = deferred v2.** Login-time in-memory membership derivation, EvalPrincipal/ExternalGroups, the external claims store, and baking federated `resource_access` into the access token (hub-by-default + broker-opt-in) are all live with passing tests. The remaining v1↔v2 gap is the durable enumerable filter (see [v1 vs v2](#v1-vs-v2)). Concretizes the federation model decided in [identity-lifecycle-untangle](./identity-lifecycle-untangle#federation-prior-art) into real code seams. Based on integration map `wf_63933d9f-149`. Depends on Hotfix C (PR #21, `766c9f8`).
 
 > **Background** (prior art, the stale-admin trap, the hub-vs-broker spectrum): see the [untangle doc](./identity-lifecycle-untangle). This doc is the build template.
 

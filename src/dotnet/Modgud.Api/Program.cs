@@ -624,8 +624,8 @@ try
     builder.Services.AddScoped<ExternalLoginProcessor>();
     builder.Services.AddHostedService<OidcSchemeBootstrap>();
 
-    // SAML SP federation (placeholder hook — incremental wiring lands
-    // in subsequent commits on feat/saml-federation).
+    // SAML SP federation (cert services, login flow, scheme manager,
+    // bootstrap + metadata-refresh hosted services).
     builder.Services.AddModgudSaml();
 
     // SETUP-01 / Setup endpoint surface eliminated in C15d. First-admin

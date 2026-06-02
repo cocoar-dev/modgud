@@ -4,7 +4,7 @@ title: SAML federation — implementation plan
 
 # SAML federation — implementation plan
 
-> **Status:** Plan captured 2026-05-27. Not started. Chosen as the post-v0.5.0 feature wave.
+> **Status:** Shipped (PR #17, commit 8fc3df0). SAML 2.0 SP is live in develop — SamlLoginFlow, DynamicSamlSchemeManager, fully-wired SamlEndpoints (metadata/login/ACS), flavor presets, cert service, metadata refresh, frontend SAML tabs. Single-Logout (SLO) and SAML IdP-mode remain explicitly out of v1 scope (deferred — see [Out](#out-this-wave) / [open questions](#open-questions)). Plan captured 2026-05-27; chosen as the post-v0.5.0 feature wave.
 > **Why:** Enterprise customers (especially anyone with ADFS or pre-cloud Salesforce/ServiceNow) need SAML 2.0 to even put Modgud on their evaluation list. Today Modgud federates only over OIDC. SAML is the gating capability for the next class of customer conversations.
 > **Scope of *this* plan:** SAML SP only — Modgud accepts SAML assertions *from* a customer IdP. SAML IdP mode (Modgud emits SAML to legacy apps) is parked, see [open questions](#open-questions).
 

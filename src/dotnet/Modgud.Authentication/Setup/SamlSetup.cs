@@ -72,10 +72,6 @@ public static class SamlSetup
         // IdPs advertise the new key from.
         services.AddHostedService<SamlMetadataRefreshService>();
 
-        // Still to come in subsequent commits on feat/saml-federation:
-        //   - SP cert generation / rotation services (task #13)
-        //   - Real ACS / login / metadata endpoint logic (task #14)
-        //   - Metadata refresh hosted service (task #15)
         return services;
     }
 }

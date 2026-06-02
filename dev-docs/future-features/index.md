@@ -19,7 +19,7 @@ Severity. Detail-Pages unten.
 
 ⭐ **Federation v1 — implementation spec (2026-05-29):**
 [federation-v1-design](./federation-v1-design)
-— concretizes the agreed v1 model into real code seams (one seam: `ExternalLoginProcessor.ProcessAsync`; authz resolved late at token time): the unified claims-per-source store, the two-layer source filter, "session = lease" (mid-session timer rejected), the new per-provider/per-group flags. All design decisions A–G are settled; the doc is the build template.
+— concretizes the agreed v1 model into real code seams (one seam: `ExternalLoginProcessor.ProcessAsync`; authz resolved late at token time): the unified claims-per-source store, the two-layer source filter, "session = lease" (mid-session timer rejected), the new per-provider/per-group flags. All design decisions A–G are settled; the doc is the build template. **✅ Shipped (PR #23 spec, PR #24 `0b70b31` broker → session-derived authz + v1.1 token layer).**
 
 ### Audit-Followups (in Severity-Reihenfolge)
 
@@ -35,8 +35,8 @@ Severity. Detail-Pages unten.
 - [SAML federation — implementation plan](./saml-federation) —
   konkreter Implementation-Plan für den SP-Use-Case (Modgud konsumiert
   Customer-IdP). Lib-Wahl: ITfoxtec.Identity.Saml2. Status:
-  Decisions captured 2026-05-27, in active development on
-  `feat/saml-federation`.
+  ✅ Shipped (PR #17, `8fc3df0`) — SAML 2.0 SP federation +
+  login-provider single-modal Add+Edit.
 - [SAML AMR → `amr` wiring](./saml-amr-wiring) — `SamlFlavorData.AmrMapping`
   is configured/seeded but parsed-but-not-consumed (federation v1 deferral
   I15). Captures what the read-side wiring would do and why deferring is
@@ -61,7 +61,11 @@ Per-realm theming: logo, colors, brand copy, optional custom CSS.
 custom copy → custom CSS), with a phased rollout plan that ships
 the 80%-coverage version first.
 
-**Status:** Design captured 2026-05-07. Not started.
+**Status:** ✅ Phase 1 shipped — per-realm token-based branding
+(`BrandingSettings`), asset library (BYTEA store, anonymous
+`/api/assets/{id}` read), Branding/Pages/PageEditor admin views
+(`8c8dea5`, `2ec0e58`, `ae2f9ca`). Page-builder runtime rendering still
+deferred; custom-CSS tier not started.
 
 ### [Service Account credentials — link to OAuth Clients](./service-account-credentials)
 
@@ -180,7 +184,9 @@ Emission verworfen (UserInfo-Emission stattdessen), Bypass-Tiers
 auf 2 reduziert, Slug-tagged-Format auf bare reduziert. Diese Note
 bleibt als Designexploration — Detail-Banner oben in der Note.
 
-**Status:** Note 2026-05-07, teilweise revidiert 2026-05-08.
+**Status:** Note 2026-05-07, teilweise revidiert 2026-05-08. ✅ Das
+ID-anchored Permission-Modell ist implementiert (siehe
+[Permission-Modell](./permission-modell)).
 
 ### DCR for MCP clients — ✅ shipped
 
