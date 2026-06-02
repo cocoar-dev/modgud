@@ -64,6 +64,9 @@ jobs:
           # is even broader but adds non-security findings — we have
           # NetAnalyzers + SecurityCodeScan for that.
           queries: security-extended
+          # Result-level query filters (e.g. the cs/log-forging structured-
+          # logging false-positive exclusion). See the file for rationale.
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Setup .NET
         if: matrix.language == 'csharp'
