@@ -81,6 +81,13 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.UserId)
             .Index(x => x.ExpiresAt);
 
+        // WebAuthn/passkey credentials (raw crypto, not event-sourced). One per
+        // enrolled authenticator; indexed by UserId for the per-user list/login
+        // lookup and the cascade-delete on permanent erase.
+        options.Schema.For<StoredPasskeyCredential>()
+            .Identity(x => x.Id)
+            .Index(x => x.UserId);
+
         // GDPR: per-user deletion bookkeeping (pending request + masked flag).
         // Keyed on the user id so we can simply Load it.
         options.Schema.For<UserDeletionState>()
@@ -107,8 +114,10 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.LoginProviderId)
             .Index(x => x.IsUnlinked);
 
+        // AuthLogDocument lives in the default (public) schema like every other
+        // auth doc — dropped the gratuitous solo "marten" schema (one schema
+        // fewer per tenant DB; aligns with AppBase v4).
         options.Schema.For<AuthLogDocument>()
-            .DatabaseSchemaName("marten")
             .Identity(x => x.Id)
             .Index(x => x.Timestamp);
 

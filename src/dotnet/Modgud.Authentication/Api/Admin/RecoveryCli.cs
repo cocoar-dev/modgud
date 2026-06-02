@@ -64,7 +64,7 @@ public static class RecoveryCli
             "reset-2fa" => await Reset2FaAsync(session, userManager, args),
             "set-email" => await SetEmailAsync(session, userManager, args),
             "magic-link" => await MagicLinkAsync(session, scope.ServiceProvider, args, conf, env),
-            "rebuild-projections" => await RebuildProjectionsAsync(scope.ServiceProvider),
+            "rebuild-projections" => await RebuildProjectionsAsync(scope.ServiceProvider, realmSlug),
             "bootstrap-admin" => await BootstrapAdminAsync(scope.ServiceProvider, args, realmSlug),
             "migrate-cc-credentials" => await MigrateClientCredentialsAsync(scope.ServiceProvider, args, realmSlug),
             "realm-add-domain" => await RealmAddDomainAsync(scope.ServiceProvider, args),
@@ -248,11 +248,12 @@ public static class RecoveryCli
 
         // Uniqueness guard — same check UpdateUserCommand runs. The polymorphic
         // Principal projection is inline, so this is strongly consistent.
+        var normalizedEmail = newEmail.ToUpperInvariant();
         var personConflict = await session.Query<Modgud.Authorization.Principals.Person>()
-            .Where(p => p.Email == newEmail && p.Id != user.Id && !p.IsDeleted)
+            .Where(p => p.NormalizedEmail == normalizedEmail && p.Id != user.Id && !p.IsDeleted)
             .AnyAsync();
         var groupConflict = await session.Query<Group>()
-            .Where(g => g.Email == newEmail && !g.IsDeleted)
+            .Where(g => g.Email != null && g.Email.ToUpper() == normalizedEmail && !g.IsDeleted)
             .AnyAsync();
         if (personConflict || groupConflict)
             return Error($"Email already in use by another principal: {newEmail}");
@@ -346,7 +347,7 @@ public static class RecoveryCli
     /// change leaves <c>mt_doc_principal</c> empty so no user can claim
     /// <c>app:admin</c> until the principal projection is replayed.
     /// </summary>
-    private static async Task<int> RebuildProjectionsAsync(IServiceProvider services)
+    private static async Task<int> RebuildProjectionsAsync(IServiceProvider services, string tenantId)
     {
         var store = services.GetRequiredService<IDocumentStore>();
         var timeout = TimeSpan.FromMinutes(10);
@@ -354,7 +355,10 @@ public static class RecoveryCli
         Console.WriteLine("Rebuilding Marten projections...");
         Serilog.Log.Warning("Auth: Recovery rebuild-projections initiated");
 
-        using var daemon = await store.BuildProjectionDaemonAsync();
+        // MasterTableTenancy disables Marten's default tenant, so the no-arg
+        // overload throws DefaultTenantUsageDisabledException — build the daemon
+        // for the resolved realm's DB explicitly (honors --realm; default system).
+        using var daemon = await store.BuildProjectionDaemonAsync(tenantId);
         await daemon.RebuildProjectionAsync("ViewProjections", timeout, CancellationToken.None);
         Console.WriteLine("  OK ViewProjections");
 

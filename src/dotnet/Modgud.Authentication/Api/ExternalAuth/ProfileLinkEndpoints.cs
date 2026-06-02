@@ -110,9 +110,9 @@ public static class ProfileLinkEndpoints
                     .Where(l => l.UserId == userId.Value && !l.IsUnlinked && l.Id != link.Id)
                     .AnyAsync(ct);
                 var hasPassword = await userManager.HasPasswordAsync(user);
-                // Passkey count check would require a dedicated store query — approximate
-                // by trusting local auth fallback when a password is set.
-                if (!otherLinks && !hasPassword)
+                var hasPasskey = await writeSession.Query<StoredPasskeyCredential>()
+                    .AnyAsync(c => c.UserId == userId.Value, ct);
+                if (!otherLinks && !hasPassword && !hasPasskey)
                 {
                     return Results.BadRequest(new
                     {
