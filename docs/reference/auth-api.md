@@ -34,7 +34,7 @@ Full endpoint source in
 | `PUT` | `/api/account/profile` | Edit profile (creates a UserChangeRequest for non-email fields) |
 | `POST` | `/api/account/change-password` | Change password |
 | `GET` | `/api/account/external-links` | Linked OIDC identities for the signed-in user |
-| `DELETE` | `/api/account/external-links/{linkId}` | Remove a link |
+| `DELETE` | `/api/account/external-links/{linkId}` | Disconnect a link — frees the `(issuer, subject)` so the identity can be re-linked later. Refused (`Idp.LastAuthMethod`) if it is the only remaining auth method (no password, no passkey, no other link). |
 
 ## Two-factor authentication
 

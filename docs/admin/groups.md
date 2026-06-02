@@ -73,12 +73,12 @@ Sub-group memberships **are transitive**. If `Vienna Office` contains `Sales-Vie
 
 Switch the mode to **Auto** to enable the **Script** tab. There you write a JsEval expression that returns `true`/`false` per principal:
 
-```javascript
-// Example: "all users with @cocoar.io email"
-return p.Type === "person" && p.Email && p.Email.endsWith("@cocoar.io");
+```typescript
+// Example: "all users with an @acme.com email"
+(p) => Type.Is(p, 'person') && p.Email != null && p.Email.endsWith('@acme.com')
 ```
 
-The script is recompiled and re-evaluated whenever a principal is created or changed. The membership script only sees the fields the IAM itself owns (display name, email, IsActive, external identities, …) — never any app-specific data, since that would couple the IAM to every app's schema. See [Concepts → ABAC](../concepts/abac) for why row-level ABAC stays out of the IAM.
+The script is recompiled and re-evaluated whenever a principal is created or changed (including on external-identity link/unlink). The membership script only sees the fields the IAM itself owns (display name, email, IsActive, linked external identities via `p.ExternalIdentities`, account name, …) — never any app-specific data, since that would couple the IAM to every app's schema. See [Concepts → Auto-Membership](../concepts/auto-membership) for the full field surface (and why sub-collections use `.some(...)`, not `.length`), and [Concepts → ABAC](../concepts/abac) for why row-level ABAC stays out of the IAM.
 
 ## Assigning roles
 
