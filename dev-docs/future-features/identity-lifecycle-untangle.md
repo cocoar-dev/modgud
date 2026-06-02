@@ -2,9 +2,9 @@
 
 Status: **partially implemented** — original analysis/decision-gate pass from 2026-05-28; phases 0–2 shipped 2026-05-29 (see status section below), phases 3–4 still open.
 
-## Implementation status (updated 2026-05-29)
+## Implementation status (updated 2026-06-02)
 
-4 of the 7 themes are resolved; the remaining 3 (`UNLINK`, `EXTLOGIN`, `MEMBERSHIP`) are still open. Branch `feat/lifecycle-email-deletion` (6 commits, not yet pushed at time of writing) plus the already-merged Hotfix C (#21) and Federation v1 (#23/#24) cover the closed themes.
+6 of the 7 themes are resolved; only the *durable leased external-membership* slice of `MEMBERSHIP` (Phase-4 large) remains. Phase 3 + the contained Phase-4 wiring shipped on branch `feat/lifecycle-phase3-4-unlink-rematch` (not yet pushed at time of writing), on top of the already-merged Hotfix C (#21), Federation v1 (#23/#24), and the email/deletion wave.
 
 | Theme | Status | Where |
 |---|---|---|
@@ -12,34 +12,40 @@ Status: **partially implemented** — original analysis/decision-gate pass from 
 | `EMAIL` | ✅ shipped | PR A — partial-unique index `WHERE NOT is_deleted` (declarative in Marten config since 2026-06-02; the temporary `EmailUniquenessMigration` was removed) |
 | `DELETE` | ✅ shipped | Hotfix C (#21) token/link-PII scrub + PR B recycle-bin/grace/GDPR-scrub convergence |
 | `SOFTDELETE` | ✅ shipped | Hotfix C (#21) access revocation + PR B grace/recycle-bin model |
-| `UNLINK` | ❌ open | Phase 3 below |
-| `EXTLOGIN` | ⚠️ partial | session-derived authz shipped (Federation v1); the unlink/re-link + passkey/last-method hardening of Phase 3 is open |
-| `MEMBERSHIP` | ⚠️ partial | session-scoped derivation shipped (Federation v1); durable leased external-membership (Phase 4) is open |
+| `UNLINK` | ✅ shipped | Phase 3 — Variant-C "unlink forgets the binding" (projection `ShouldDelete`), admin force-unlink, AuthLog |
+| `EXTLOGIN` | ✅ shipped | Phase 3 hardening complete (passkey registration + last-auth-method guard already landed in #42) |
+| `MEMBERSHIP` | ⚠️ partial | session-scoped derivation (Federation v1) + Phase-4 link/unlink recompute wiring shipped; durable leased external-membership (Phase-4 large) still open |
 
 **Phase status:**
 
 - **Phase 0 — Ratify positioning** ✅ — pinned hub-by-default + broker-opt-in; realised through Federation v1.
 - **Phase 1 — Email as a real invariant** ✅ — PR A. Follow-up ✅ DONE (2026-06-02): `EmailUniquenessMigration` removed, partial-unique index now declarative in the Marten config.
 - **Phase 2 — Converge delete paths + close the access-survival gap** ✅ — Hotfix C (#21) closed the two standalone security/compliance bugs (no token revoke on delete/deactivate; GDPR left PII on `ExternalIdentityLink`); PR B converged admin-delete onto a recoverable recycle-bin + grace + GDPR-scrub, with the per-realm sweep job. The "recoverable grace/restore" product question was answered **yes** (built).
-- **Phase 3 — Variant-C unlink re-link + EXTLOGIN hardening** ❌ NOT STARTED — see the open-items list below.
-- **Phase 4 — Close the membership contract (durable federated membership)** ❌ NOT STARTED (largest remaining piece) — see the open-items list below.
+- **Phase 3 — Variant-C unlink re-link + EXTLOGIN hardening** ✅ SHIPPED (2026-06-02) — see the closed-items list below.
+- **Phase 4 — Close the membership contract** ⚠️ PARTIAL — the contained link/unlink-recompute slice shipped (2026-06-02); the *durable leased external-membership* feature (the largest remaining piece) is deliberately deferred as a separate multi-PR effort — see the still-open list below.
 
-**Still open — Phase 3 (`UNLINK`, `EXTLOGIN`):**
+**Phase 3 (`UNLINK`, `EXTLOGIN`) — ✅ shipped 2026-06-02:**
 
-- Re-link after unlink (Variant C = forget + rematch): add `&& !l.IsUnlinked` to the `ExternalLoginProcessor` link lookup and free the `(iss,sub)` slot via hard-delete + `ArchiveStream` on unlink (today an unlinked link still returns `Idp.Unlinked` "disconnected" and blocks re-link).
-- Admin force-unlink endpoint + tombstone visibility + `AuthLog` entries for link/unlink.
-- Harden the last-auth-method guard to count passkeys (today approximated via `HasPasswordAsync`, so a passkey-only user can be left with zero factors).
-- **`StoredPasskeyCredential` is not registered in `MartenStoreOptionsExtensions` and no delete path removes it** → a deleted user's passkey public keys + user handles survive as orphans. Standalone GDPR/ops bug, shippable independently.
-- Document multi-IdP precedence and the SAML `SameSite=Lax` link-flow degradation.
+- ✅ Re-link after unlink (Variant C = forget + rematch). Implemented NOT via `!IsUnlinked` + partial index, but via the projection convention: `ExternalIdentityUnlinkedEvent` → `ExternalIdentityLinkProjection.ShouldDelete` **deletes the projection doc**. This frees the `(iss,sub)` unique slot, leaves no blocking tombstone, is rebuild-safe (replay `Linked→Unlinked` nets to "no doc" — empirically pinned by `ProjectionRebuildTests`, incl. a re-link of the same `(iss,sub)` rebuilding without a unique-index violation), and — crucially — keeps the link stream **live + maskable** (no `ArchiveStream`). `ExternalLoginProcessor` loads the user first, forgets (emits the terminal event) when `linkedUser is null || link.IsUnlinked` (legacy/orphan), and only runs the cross-user hijack guard on a **live** link — a released `(iss,sub)` re-homes by policy, a live one cannot be stolen.
+- ✅ Admin force-unlink endpoint (`DELETE /api/admin/users/{id}/external-links/{linkId}`, gated `user:write`) + `AuthLog` for unlink (link was already logged). Both self-service + admin share an `UnlinkAsync` helper with the last-auth-method guard.
+- ✅ Last-auth-method guard already counts passkeys, and `StoredPasskeyCredential` is registered + cleaned up — both landed in #42 (the original list above was stale).
+- ⚠️ **`ArchiveStream`-vs-GDPR gotcha (load-bearing):** Marten's `ApplyEventDataMasking` does **not** rewrite already-archived streams (verified empirically). So unlink must NOT `ArchiveStream` the link stream — it relies on `ShouldDelete` instead. `GdprService.PerformPermanentEraseAsync` now discovers link ids two ways and unions them: the projection-doc query (live links) **plus** the user stream's `UserExternalIdentityLinkedEvent` mirrors (each carries `LinkId`) — so a forgotten (doc-less) link's still-live stream is masked + archived during the erase. Regression-guarded by `UserLifecycleRevocationTests.GdprErase_scrubs_external_identity_links_including_forgotten_streams`.
+- ✅ Docs written (2026-06-02): multi-IdP precedence + profile-authority (`docs/admin/login-providers.md`) and the SAML `SameSite=Lax` link-flow degradation (`docs/admin/saml-federation.md`). "Tombstone visibility" is obviated — unlink leaves no tombstone.
 
-**Still open — Phase 4 (`MEMBERSHIP`):**
+**Phase 4 (`MEMBERSHIP`) — contained slice ✅ shipped 2026-06-02; durable-lease ❌ still open:**
 
-- Replace the flat `Group.MemberIds: List<Guid>` with a source-attributed external-membership class `(groupId, principalId, source = provider:<slug>, grantedAt, leaseExpiresAt, lastReconfirmedAt)`; effective members = union of { manual } + { local-JsEval } + { per-provider external WHERE leaseExpiresAt > now }. Federation v1 shipped only the *session-scoped* derivation ("the session is the lease"); this is the durable, login-independent version.
-- Wire `AutoMembershipSyncHandlers` to link/unlink events + a one-time backfill recompute (link/unlink triggers nothing today — confirmed gap).
-- Refresh triggers: login-FORCE SET-reconcile (idempotent remove-what's-absent), lease-expiry sweep (Quartz, fail-closed authority of last resort), optional out-of-band inbound SCIM / scheduled LDAP-or-Graph pull (net-new surface — no SCIM server / LDAP client exists today).
-- Privilege guardrail: federated/JsEval auto-membership must never confer `realm:admin` / `app:admin`.
-- Resolve the doc-vs-code contradiction: `docs/concepts/auto-membership.md` uses `externalClaims` / `OrganizationalUnit` / `Department` which do not exist in `Person.cs` — these are the **spec of this wanted feature**, not drift to delete (per the superseded-root note below).
-- Decide the inert `MembershipScriptDependencies` optimization (wire it or delete it + fix docs) and add a test reconciling the two evaluation engines (in-memory delegate vs Postgres-JSONB) on null / case / collation.
+- ✅ Wired `AutoMembershipSyncHandlers` to link/unlink: `AutoMembershipOnExternalIdentityLinked/UnlinkedHandler` recompute on `UserExternalIdentityLinked/UnlinkedEvent` (auto-discovered via `ReferenceSyncRegistration` + `UseFastEventForwarding`), passing `changedPaths=[Person.ExternalIdentities]`. Closes the confirmed stale gap for scripts keying on `p.ExternalIdentities`.
+- ✅ `MembershipScriptDependencies` optimization decision: **leave as-is** (it is genuinely inert — both `CreateGroupCommand` + `UpdateGroupCommand` leave `membershipDeps` null, so `DepsIntersect` never skips → safe evaluate-all). Not worth wiring/deleting in this slice; link/unlink + profile updates are infrequent.
+- ✅ Two-engine reconciliation test added (`ExternalLinkLifecycleTests.ExternalIdentities_Script_Agrees_Across_Both_Engines`). **Finding:** a membership script reads `Person.ExternalIdentities` via `.some(x => x.Prop === ...)` in BOTH engines, but `p.ExternalIdentities.length` does **not** translate (in-memory evaluates it to false; the JSONB batch would fail-closed). ✅ Documented publicly (`docs/concepts/auto-membership.md`): added `p.ExternalIdentities` to the durable-fields table + the "use `.some(x => ...)`, not `.length`" guidance + the link/unlink recompute trigger. *(Backfill recompute for pre-existing users is deferred — the `p.ExternalIdentities` surface is new, so no stale durable membership exists to backfill yet.)*
+- ✅ Handler wiring guarded by `ExternalLinkLifecycleTests.Phase4_Recompute_Handlers_Match_The_ReferenceSync_Registration_Pattern` (deterministic — asserts both handlers are concrete `ReferenceSyncHandler<TEvent>` subclasses, the predicate `ReferenceSyncRegistration` discovers on). The async durable-queue *delivery* is not exercised e2e — the reference-sync queue does not drain inside `WebApplicationFactory`; it is the same forwarding path the existing AutoMembership handlers use in production.
+- ❌ STILL OPEN (durable-lease, the large piece): replace the flat `Group.MemberIds: List<Guid>` with a source-attributed external-membership class `(groupId, principalId, source = provider:<slug>, grantedAt, leaseExpiresAt, lastReconfirmedAt)`; effective members = union of { manual } + { local-JsEval } + { per-provider external WHERE leaseExpiresAt > now }. Federation v1 shipped only the *session-scoped* derivation ("the session is the lease"); this is the durable, login-independent version.
+- ❌ STILL OPEN: refresh triggers — login-FORCE SET-reconcile, lease-expiry sweep (Quartz, fail-closed), optional inbound SCIM / scheduled LDAP-or-Graph pull (net-new surface).
+- ✅ Privilege guardrail (federated/JsEval auto-membership must never confer `realm:admin`) is already enforced by Federation v1 decision G (bidirectional config guard + `ExpandBypassTiers` strip).
+- ❌ STILL OPEN: resolve the `docs/concepts/auto-membership.md` `externalClaims`/`OrganizationalUnit`/`Department` doc-vs-code contradiction (the spec of the wanted, unbuilt durable-claims surface).
+
+**Known low-pri follow-up (surfaced by the Phase-3 adversarial review):**
+
+- `UserViewProjection.Apply(UserExternalIdentityUnlinkedEvent)` removes `ExternalLoginProviderIds` keyed on `LoginProviderId` only, not `LinkId`. A user holding two links from the **same** provider (two subjects from one tenant — supported, uniqueness is `(Issuer,Subject)`) loses the provider's admin-list "IdP-connected" indicator after unlinking one. Pre-existing; cosmetic (UserView is not consulted for authz — `Person.ExternalIdentities`, keyed on `LinkId`, stays correct). **Resolved as a documented assumption (2026-06-02)** — a per-link fix would need a rebuild migration to reconstruct history from the deduped column, not worth it for a non-rendered admin badge; the limitation is now documented in the `UserView.ExternalLoginProviderIds` XML doc + a projection comment.
 
 **Still open — strategic (deliberately deferred):**
 

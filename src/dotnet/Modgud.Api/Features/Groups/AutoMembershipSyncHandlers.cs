@@ -5,6 +5,7 @@ using Marten;
 using Modgud.Api.Features.Shared;
 using Modgud.Domain.Users.Events;
 using Modgud.Authentication.Events;
+using Modgud.Authentication.Domain.ExternalAuth.Events;
 
 namespace Modgud.Api.Features.Groups;
 
@@ -27,6 +28,7 @@ internal static class PrincipalPaths
     public const string PersonLastname = PersonPrefix + "Lastname";
     public const string PersonAcronym = PersonPrefix + "Acronym";
     public const string PersonUserName = PersonPrefix + "AccountName";
+    public const string PersonExternalIdentities = PersonPrefix + "ExternalIdentities";
 
     // Group paths (for group-as-principal scripts)
     public const string GroupEmail = GroupPrefix + "Email";
@@ -127,6 +129,49 @@ public class AutoMembershipOnUserDeletedHandler(
 
     protected override Task SyncAsync(UserDeletedEvent @event, IDocumentSession session)
         => recalculator.RecalculateForPrincipalAsync(@event.Id, session, changedPaths: null);
+}
+
+/// <summary>
+/// Reacts to UserExternalIdentityLinkedEvent / ...UnlinkedEvent — linking or
+/// unlinking an external identity mutates <c>Person.ExternalIdentities</c>, which
+/// a membership script may read (e.g. "is a member of any federated IdP", or a
+/// specific-provider gate). Without these handlers the durable auto-group
+/// membership goes stale until an unrelated profile event happens to fire — the
+/// confirmed Phase-4 gap (link/unlink triggered no recompute today).
+/// <para>
+/// Scoped to the <c>Person.ExternalIdentities</c> changed-path so the dependency
+/// filter can skip scripts that don't read it once that optimization is live
+/// (it is inert today — deps are never collected — so this currently evaluates
+/// every auto-group, which is correct and cheap at link/unlink frequency).
+/// </para>
+/// </summary>
+public class AutoMembershipOnExternalIdentityLinkedHandler(
+    IAutoMembershipRecalculator recalculator,
+    ILogger<AutoMembershipOnExternalIdentityLinkedHandler> logger)
+    : ReferenceSyncHandler<UserExternalIdentityLinkedEvent>(logger)
+{
+    protected override bool ShouldSync(UserExternalIdentityLinkedEvent @event) => true;
+
+    protected override Task SyncAsync(UserExternalIdentityLinkedEvent @event, IDocumentSession session)
+        => recalculator.RecalculateForPrincipalAsync(@event.UserId, session,
+            new[] { PrincipalPaths.PersonExternalIdentities });
+}
+
+/// <summary>
+/// Symmetric to <see cref="AutoMembershipOnExternalIdentityLinkedHandler"/> — an
+/// unlink (now a hard-delete) removes a ref from <c>Person.ExternalIdentities</c>,
+/// so any script keyed on it must re-evaluate.
+/// </summary>
+public class AutoMembershipOnExternalIdentityUnlinkedHandler(
+    IAutoMembershipRecalculator recalculator,
+    ILogger<AutoMembershipOnExternalIdentityUnlinkedHandler> logger)
+    : ReferenceSyncHandler<UserExternalIdentityUnlinkedEvent>(logger)
+{
+    protected override bool ShouldSync(UserExternalIdentityUnlinkedEvent @event) => true;
+
+    protected override Task SyncAsync(UserExternalIdentityUnlinkedEvent @event, IDocumentSession session)
+        => recalculator.RecalculateForPrincipalAsync(@event.UserId, session,
+            new[] { PrincipalPaths.PersonExternalIdentities });
 }
 
 /// <summary>

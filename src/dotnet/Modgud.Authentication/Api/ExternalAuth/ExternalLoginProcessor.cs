@@ -93,66 +93,65 @@ public class ExternalLoginProcessor(
         // session membership derivation in Success() (always an array post-capture).
         var externalGroups = ClaimValues(rawClaims, "groups");
 
-        // 1. Existing link → happy path
+        // 1. Existing link → happy path (or "forget + rematch" for a dead link)
         var link = await session.Query<ExternalIdentityLink>()
             .Where(l => l.Issuer == issuer && l.Subject == subject)
             .FirstOrDefaultAsync(ct);
 
         if (link is not null)
         {
-            // Cross-user hijack guard: if the caller is already authenticated as
-            // a different user, refuse regardless of link state.
-            if (authenticatedUserId is { } authId && authId != link.UserId)
-            {
-                logger.LogWarning(
-                    "Auth: Link-attempt rejected — external subject already linked to different user (authUser={AuthId}, linkUser={LinkId})",
-                    authId, link.UserId);
-                return ExternalLoginResult.Failed("Idp.LinkedToOtherUser",
-                    "This identity is already linked to another Modgud account.");
-            }
+            var linkedUser = await userManager.FindByIdAsync(link.UserId.ToString());
 
-            var user = await userManager.FindByIdAsync(link.UserId.ToString());
-
-            if (user is null)
+            // Variant C — "unlink forgets the binding". A link is dead when its
+            // user no longer exists (stale/orphaned) OR it carries a legacy
+            // IsUnlinked tombstone (pre-ShouldDelete data). A dead link must never
+            // block a fresh login: append the terminal ExternalIdentityUnlinkedEvent
+            // so the inline projection's ShouldDelete drops the doc — freeing the
+            // (Issuer, Subject) slot — then fall through to the no-link matching
+            // chain (authed-link / email-trust / JIT) which re-binds by policy.
+            // (Driving the delete via the event rather than session.Delete keeps the
+            // stream live + maskable for a later GDPR erase and is rebuild-safe.)
+            // The match key is (Issuer, Subject), not the old link id — so the
+            // identity can re-home to a different user once it has been released.
+            if (linkedUser is null || link.IsUnlinked)
             {
-                // Stale link — the referred user no longer exists. Whether it
-                // was soft-unlinked (legacy code path) or just orphaned, the
-                // right action is the same: hard-delete + archive the stream
-                // so the (Issuer, Subject) slot frees up for the fresh
-                // matched/JIT user below. Soft-unlink is not enough — the
-                // unique index on (Issuer, Subject) is not partial on
-                // IsUnlinked, so a tombstone still blocks a new link.
-                logger.LogWarning(
-                    "Auth: Stale link {LinkId} → missing user {UserId}; hard-deleting and falling through",
-                    link.Id, link.UserId);
-                session.Delete<ExternalIdentityLink>(link.Id);
-                session.Events.ArchiveStream(link.Id);
+                logger.LogInformation(
+                    "Auth: External identity {State} link {LinkId} forgotten (was user {UserId}) — re-matching by policy",
+                    link.IsUnlinked ? "unlinked" : "stale", link.Id, link.UserId);
+                session.Events.Append(link.Id,
+                    new ExternalIdentityUnlinkedEvent(link.Id, capturedAt, link.UserId));
                 await session.SaveChangesAsync(ct);
                 link = null;  // drop through to the no-link branches below
             }
-            else if (link.IsUnlinked)
-            {
-                // User still exists but has explicitly unlinked this IdP from
-                // their profile. Don't silently re-link — require them to go
-                // through Profile → Security again.
-                return ExternalLoginResult.Failed("Idp.Unlinked", "This external identity has been disconnected.");
-            }
             else
             {
+                // Live link. Cross-user hijack guard: a live link cannot be
+                // stolen by a different authenticated user. (A forgotten /
+                // unlinked (iss,sub) is fair game for re-homing above — but a
+                // live one is not.)
+                if (authenticatedUserId is { } authId && authId != link.UserId)
+                {
+                    logger.LogWarning(
+                        "Auth: Link-attempt rejected — external subject already linked to different user (authUser={AuthId}, linkUser={LinkId})",
+                        authId, link.UserId);
+                    return ExternalLoginResult.Failed("Idp.LinkedToOtherUser",
+                        "This identity is already linked to another Modgud account.");
+                }
+
                 // Apply user-update-script patches only when this provider is
                 // authoritative for the profile (decision A) — the existing link's
                 // IsCreator covers the JIT-creator default so a JIT-created user's
                 // profile isn't frozen. Email-conflict is a hard reject.
                 if (ShouldPatchProfile(config, link))
                 {
-                    var applyResult = await ApplyUserUpdatesAsync(user, scriptResult, ct);
+                    var applyResult = await ApplyUserUpdatesAsync(linkedUser, scriptResult, ct);
                     if (applyResult is not null)
                         return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
                 }
 
                 await RecordScriptRunAsync(link, config, scriptResult, rawClaims, capturedAt, ct);
-                logger.LogInformation("Auth: External login (returning) user {UserId} via IdP {IdpId}", user.Id, loginProviderId);
-                return await Success(user, link, externalPrincipal, loginProviderId, issuer, config, externalGroups, ct);
+                logger.LogInformation("Auth: External login (returning) user {UserId} via IdP {IdpId}", linkedUser.Id, loginProviderId);
+                return await Success(linkedUser, link, externalPrincipal, loginProviderId, issuer, config, externalGroups, ct);
             }
         }
 

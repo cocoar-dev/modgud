@@ -20,6 +20,16 @@ public record UserView
     /// Empty = local-only user. Multi-entry = linked to several providers.
     /// Drives the admin user list's "IdP-connected" indicator; frontend
     /// resolves ids to display names via the LoginProvider store.
+    /// <para>
+    /// KNOWN LIMITATION (accepted): this is a deduplicated provider-id set, not
+    /// per-link, so it cannot distinguish one link from two links to the SAME
+    /// provider. A user holding two links from one provider who unlinks one will
+    /// drop that provider from the indicator until their next link event or a
+    /// projection rebuild. Cosmetic only — this field is never consulted for any
+    /// authorization decision (durable membership reads `Person.ExternalIdentities`,
+    /// which IS keyed per-link). A per-link fix would need a rebuild migration to
+    /// reconstruct the history, which is not worth it for an admin-list badge.
+    /// </para>
     /// </summary>
     public List<Guid> ExternalLoginProviderIds { get; init; } = [];
 

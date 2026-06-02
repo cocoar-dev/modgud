@@ -3,6 +3,7 @@ using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Domain;
@@ -84,14 +85,16 @@ public static class ProfileLinkEndpoints
         .RequireAuthorization()
         .RequiresPermission("user:read");
 
-        // Disconnect a link. Soft-delete (IsUnlinked=true) so the same external
-        // identity can be re-added to a different user later if needed.
+        // Self-service disconnect. Variant C — "unlink forgets the binding":
+        // hard-deletes + archives the link so the same external identity can be
+        // re-linked on a later login (to this or, once released, another user).
         group.MapDelete("{linkId}", async (
             ShortGuid linkId,
             HttpContext http,
             TimeProvider clock,
             [FromServices] IDocumentSession writeSession,
             [FromServices] UserManager<ApplicationUser> userManager,
+            [FromServices] ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
             var userId = http.GetUserId();
@@ -101,36 +104,92 @@ public static class ProfileLinkEndpoints
             if (link is null || link.IsUnlinked) return Results.NotFound();
             if (link.UserId != userId.Value) return Results.Forbid();
 
-            // Self-lockout guard: if this is the last auth method (no local
-            // password AND no passkey AND no other external links), refuse.
-            var user = await userManager.FindByIdAsync(userId.Value.ToString());
-            if (user is not null)
-            {
-                var otherLinks = await writeSession.Query<ExternalIdentityLink>()
-                    .Where(l => l.UserId == userId.Value && !l.IsUnlinked && l.Id != link.Id)
-                    .AnyAsync(ct);
-                var hasPassword = await userManager.HasPasswordAsync(user);
-                var hasPasskey = await writeSession.Query<StoredPasskeyCredential>()
-                    .AnyAsync(c => c.UserId == userId.Value, ct);
-                if (!otherLinks && !hasPassword && !hasPasskey)
-                {
-                    return Results.BadRequest(new
-                    {
-                        Code = "Idp.LastAuthMethod",
-                        Message = "Cannot remove the only remaining authentication method. Set a password or add another provider first.",
-                    });
-                }
-            }
-
-            var now = clock.GetUtcNow();
-            writeSession.Events.Append(link.Id,
-                new ExternalIdentityUnlinkedEvent(link.Id, now, userId));
-            writeSession.Events.Append(link.UserId,
-                new UserExternalIdentityUnlinkedEvent(link.UserId, link.Id, link.LoginProviderId, now));
-            await writeSession.SaveChangesAsync(ct);
-
-            return Results.NoContent();
+            return await UnlinkAsync(writeSession, userManager,
+                loggerFactory.CreateLogger(UnlinkLogCategory), clock, link, isAdmin: false, ct);
         });
+
+        // Admin force-unlink: disconnect any user's external link. Same
+        // hard-delete + last-auth-method guard as self-service; gated on
+        // user:write. (An admin who wants the account gone deletes the user —
+        // force-unlink must not silently strip a user's last remaining factor.)
+        endpoints.MapDelete($"{path}/admin/users/{{userId}}/external-links/{{linkId}}", async (
+            ShortGuid userId,
+            ShortGuid linkId,
+            TimeProvider clock,
+            [FromServices] IDocumentSession writeSession,
+            [FromServices] UserManager<ApplicationUser> userManager,
+            [FromServices] ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            var link = await writeSession.LoadAsync<ExternalIdentityLink>(linkId.Guid, ct);
+            if (link is null || link.IsUnlinked || link.UserId != userId.Guid) return Results.NotFound();
+
+            return await UnlinkAsync(writeSession, userManager,
+                loggerFactory.CreateLogger(UnlinkLogCategory), clock, link, isAdmin: true, ct);
+        })
+        .RequireAuthorization()
+        .RequiresPermission("user:write");
+    }
+
+    private const string UnlinkLogCategory = "Modgud.Authentication.ExternalAuth.Unlink";
+
+    /// <summary>
+    /// Shared unlink core for the self-service and admin force-unlink endpoints.
+    /// Enforces the last-auth-method guard, then "forgets the binding" (Variant C):
+    /// appends the terminal <see cref="ExternalIdentityUnlinkedEvent"/> on the link
+    /// stream — the inline projection's <c>ShouldDelete</c> drops the projection doc,
+    /// freeing the <c>(Issuer, Subject)</c> slot for a later re-link without leaving a
+    /// blocking tombstone and without archiving (so a later GDPR erase can still mask
+    /// the stream's PII) — plus the user-stream
+    /// <see cref="UserExternalIdentityUnlinkedEvent"/> (which keeps
+    /// <c>Person.ExternalIdentities</c> + <c>UserView</c> in sync and drives the
+    /// auto-membership recompute).
+    /// </summary>
+    private static async Task<IResult> UnlinkAsync(
+        IDocumentSession writeSession,
+        UserManager<ApplicationUser> userManager,
+        ILogger logger,
+        TimeProvider clock,
+        ExternalIdentityLink link,
+        bool isAdmin,
+        CancellationToken ct)
+    {
+        var user = await userManager.FindByIdAsync(link.UserId.ToString());
+
+        // Self-lockout guard: refuse to remove the last remaining auth method
+        // (no local password AND no passkey AND no other live external link).
+        if (user is not null)
+        {
+            var otherLinks = await writeSession.Query<ExternalIdentityLink>()
+                .Where(l => l.UserId == link.UserId && !l.IsUnlinked && l.Id != link.Id)
+                .AnyAsync(ct);
+            var hasPassword = await userManager.HasPasswordAsync(user);
+            var hasPasskey = await writeSession.Query<StoredPasskeyCredential>()
+                .AnyAsync(c => c.UserId == link.UserId, ct);
+            if (!otherLinks && !hasPassword && !hasPasskey)
+            {
+                return Results.BadRequest(new
+                {
+                    Code = "Idp.LastAuthMethod",
+                    Message = "Cannot remove the only remaining authentication method. Set a password or add another provider first.",
+                });
+            }
+        }
+
+        var now = clock.GetUtcNow();
+        // Terminal event on the link stream → ShouldDelete drops the projection doc
+        // (frees the unique slot, rebuild-safe, stream stays maskable).
+        writeSession.Events.Append(link.Id,
+            new ExternalIdentityUnlinkedEvent(link.Id, now, link.UserId));
+        writeSession.Events.Append(link.UserId,
+            new UserExternalIdentityUnlinkedEvent(link.UserId, link.Id, link.LoginProviderId, now));
+        await writeSession.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "Auth: External identity disconnected{AdminTag} — {UserName} unlinked provider {ProviderId} (link {LinkId})",
+            isAdmin ? " by admin" : "", user?.UserName, link.LoginProviderId, link.Id);
+
+        return Results.NoContent();
     }
 
     private static LinkDto ToDto(ExternalIdentityLink l, Dictionary<Guid, string> providerByName)
