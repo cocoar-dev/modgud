@@ -79,7 +79,7 @@ over plain HTTP — production cookie configuration is set in
 `Modgud.Api/Program.cs` and applies the `Secure` flag via
 `CookieSecurePolicy.Always`.
 
-## Bucket 2 — false positive, structured logging (19 alerts)
+## Bucket 2 — false positive, structured logging (21 alerts)
 
 CodeQL's `cs/log-forging` and
 `cs/exposure-of-sensitive-information` rules fire when log
@@ -103,9 +103,9 @@ characters and routes the values through configured sinks with
 their own formatters. CodeQL's static analysis cannot
 distinguish this from `LogInformation($"... {tenantDbName} ...")`.
 
-### `cs/log-forging` (15)
+### `cs/log-forging` (17)
 
-All 15 instances are structured-logging calls. Files:
+All 17 instances are structured-logging calls. Files:
 
 - `Modgud.Infrastructure/Scheduling/JobsService.cs:167`
 - `Modgud.Infrastructure/Realms/RealmProvisioningService.cs:157`
@@ -132,6 +132,11 @@ All 15 instances are structured-logging calls. Files:
   with the login-provider slug refactor. Audited on its own merits: the only
   free-text value is the admin-only `DisplayName` (privileged
   `login-provider:write` path); the rest are identifiers / validated slugs.)
+- `Modgud.Infrastructure/Realms/RealmProvisioningService.cs:426,431`
+  (alerts 38+39, flagged in the PR #44 review. `TransferControlPlaneAsync`'s two
+  log lines — the `RealmSlugRules`-validated `targetSlug` flows in as a
+  structured `{Slug}` property (no interpolation, no injection vector). Added
+  2026-06-02 with Phase B / transferable control-plane. Dismissed as FP.)
 
 ### `cs/exposure-of-sensitive-information` (9)
 
