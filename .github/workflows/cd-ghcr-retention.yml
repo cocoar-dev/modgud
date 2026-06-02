@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Prune
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           # schedule has no inputs → defaults to 'false' (live prune). Manual
           # dispatch still defaults to dry_run=true; pass dry_run=false to prune.
