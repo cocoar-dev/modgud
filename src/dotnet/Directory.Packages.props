@@ -39,7 +39,7 @@
     <!-- Marten 9 source-generates projection apply-dispatchers; every
          `.csproj` that declares a partial Projection class needs this as
          analyzer-style PackageReference. -->
-    <PackageVersion Include="JasperFx.Events.SourceGenerator" Version="2.4.1" />
+    <PackageVersion Include="JasperFx.Events.SourceGenerator" Version="2.5.0" />
     <!-- Wolverine 6 decoupled the Roslyn runtime codegen from core;
          IMessageBus.InvokeAsync<T> needs it in the host project. -->
     <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.3.2" />
