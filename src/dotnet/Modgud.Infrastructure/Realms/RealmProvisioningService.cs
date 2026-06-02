@@ -400,17 +400,31 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
 
         await session.SaveChangesAsync(ct);
 
+        // The flag move is committed. Invalidate the cache NOW (load-bearing —
+        // the routing gate must follow the new flag) BEFORE the best-effort
+        // re-seed below, so a seed failure can't leave the gate stale.
+        _realmCache.Invalidate();
+
         // Make the target a fully-equal control plane: seed the control-plane
         // app catalog into its tenant DB so scoped control-plane:realm:* roles
         // can be granted there. The realm's existing realm:admin already passes
         // the gate via the realm-wide bypass tier, so this is for delegation
-        // completeness, not lockout avoidance. Idempotent. (The demoted realm
-        // keeps its now-inert control-plane app — the routing-gate 404s its
-        // host anyway; cleaning it up is optional and not load-bearing.)
-        await AppRealmSeeder.SeedAsync(
-            _serviceProvider, targetSlug, isControlPlane: true, _logger, ct);
-
-        _realmCache.Invalidate();
+        // completeness, not lockout avoidance — hence best-effort: a failure
+        // here must NOT surface as a 500/throw from this already-committed
+        // mutation (it self-heals on the next boot or transfer). Idempotent.
+        // (The demoted realm keeps its now-inert control-plane app — the gate
+        // 404s its host anyway; cleaning it up is optional, not load-bearing.)
+        try
+        {
+            await AppRealmSeeder.SeedAsync(
+                _serviceProvider, targetSlug, isControlPlane: true, _logger, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Control plane moved to realm {Slug}, but seeding the control-plane app into its DB failed — it self-heals on the next boot or transfer.",
+                targetSlug);
+        }
 
         _logger.LogWarning(
             "Control plane transferred to realm {Slug} (cleared {Count} previous holder(s))",

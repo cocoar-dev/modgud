@@ -5,6 +5,7 @@ using Modgud.Authentication.Domain;
 using Modgud.Authentication.Setup;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.AspNetCore;
+using Modgud.Authorization.Services;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Observability;
 using Modgud.Infrastructure.Persistence.Tenancy;
@@ -197,8 +198,28 @@ public static class RealmsEndpoints
         group.MapPost("{slug}/transfer-control-plane", async (
             string slug,
             IRealmProvisioningService svc,
+            IServiceProvider sp,
             CancellationToken ct) =>
         {
+            var target = await svc.GetRealmBySlugAsync(slug, ct);
+            if (target is null) return Results.NotFound();
+
+            // Fail-closed lockout guard (the operator break-glass CLI bypasses
+            // this by calling the service directly): refuse an in-app transfer
+            // to an ACTIVE realm that has no usable cross-realm admin. Without
+            // it, a single UI/API action would move the control plane off this
+            // host (which then 404s realm management) onto a realm where nobody
+            // can pass control-plane:realm:write — bricking web-based admin with
+            // only a filesystem/CLI recovery left. (Inactive targets fall through
+            // to the service's TargetInactive guard.)
+            if (target.IsActive && !await TargetHasUsableAdminAsync(sp, slug, ct))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Realm.TargetHasNoAdmin",
+                    detail: $"Realm '{slug}' has no active admin (realm:admin) — transferring the control plane to it would lock everyone out of realm management. Bootstrap an admin in '{slug}' first, or use the recovery CLI (which bypasses this check).");
+            }
+
             var result = await svc.TransferControlPlaneAsync(slug, ct);
             return result.ToResult(realm => Results.Ok(MapToDto(realm)));
         })
@@ -206,6 +227,37 @@ public static class RealmsEndpoints
         .RequiresPermission("realm:write", AppSlugs.ControlPlane);
 
         return application;
+    }
+
+    /// <summary>
+    /// True when <paramref name="targetSlug"/> has at least one active,
+    /// non-deleted user with effective control-plane authority
+    /// (<c>control-plane:realm:write</c> — i.e. a realm:admin or a scoped
+    /// grant). The fail-closed pre-transfer guard so a UI/API transfer can't
+    /// strand the deployment with no one able to manage realms. Enters the
+    /// target realm's tenant context so the permission check resolves against
+    /// its own DB.
+    /// </summary>
+    private static async Task<bool> TargetHasUsableAdminAsync(
+        IServiceProvider sp, string targetSlug, CancellationToken ct)
+    {
+        using var scope = sp.CreateScope();
+        using (TenantContext.Enter(targetSlug))
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            var permissions = scope.ServiceProvider.GetRequiredService<IPermissionService>();
+
+            var users = await session.Query<ApplicationUser>()
+                .Where(u => u.IsActive && !u.IsDeleted)
+                .ToListAsync(ct);
+
+            foreach (var user in users)
+            {
+                if (await permissions.HasPermissionAsync(user.Id, AppSlugs.ControlPlane, "realm:write", ct))
+                    return true;
+            }
+            return false;
+        }
     }
 
     internal static RealmDto MapToDto(Realm realm) => new()

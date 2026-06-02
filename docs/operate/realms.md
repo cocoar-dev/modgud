@@ -78,10 +78,13 @@ Modgud uses Marten's `MasterTableTenancy`:
 
 ```mermaid
 graph TD
-    subgraph Master["Master DB (<master-db>)"]
+    subgraph Master["Master DB (<master-db>) — pure control-plane infra"]
         Tenancy["Schema: realms<br/>realms.mt_tenant_databases"]
         GlobalSchema["Schema: global<br/>(Realm documents)"]
-        SystemTenant["System tenant data<br/>(physically here)"]
+    end
+
+    subgraph System["<master-db>_system"]
+        SystemData["System realm data"]
     end
 
     subgraph Acme["<master-db>_acme"]
@@ -92,6 +95,7 @@ graph TD
         FinanceData["Finance tenant data"]
     end
 
+    Tenancy -.->|Lookup| System
     Tenancy -.->|Lookup| Acme
     Tenancy -.->|Lookup| Finance
 ```

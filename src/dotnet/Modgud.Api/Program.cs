@@ -1173,6 +1173,37 @@ try
     var tenancy = (MasterTableTenancy)store.Options.Tenancy;
     await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
 
+    // Fail-closed upgrade guard. On a pre-split deployment the "system" tenant
+    // was registered against the MASTER DB, where all its data physically lived.
+    // Silently re-pointing it to a fresh {master}_system below would strand that
+    // data (and invalidate signing/DataProtection keys → all live cookies). If
+    // the registry already has a "system" row pointing anywhere other than
+    // {master}_system, refuse to boot until the operator relocates the data (see
+    // the "Upgrading across the system-DB split" runbook) or recreates it.
+    await using (var registryConn = new NpgsqlConnection(mainCs))
+    {
+        await registryConn.OpenAsync();
+        await using var tableCmd = new NpgsqlCommand(
+            "SELECT to_regclass('realms.mt_tenant_databases')::text", registryConn);
+        if (await tableCmd.ExecuteScalarAsync() is not (null or DBNull))
+        {
+            await using var rowCmd = new NpgsqlCommand(
+                "SELECT connection_string FROM realms.mt_tenant_databases WHERE tenant_id = @id", registryConn);
+            rowCmd.Parameters.AddWithValue("@id", TenantConstants.SystemTenantId);
+            if (await rowCmd.ExecuteScalarAsync() is string existingSystemCs)
+            {
+                var existingDb = new NpgsqlConnectionStringBuilder(existingSystemCs).Database;
+                if (!string.Equals(existingDb, systemDbName, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"Refusing to boot: the 'system' tenant is registered against database '{existingDb}', but this version expects its own '{systemDbName}' database (the master/system DB split). " +
+                        "Relocate the system realm's data before first boot — see the 'Upgrading across the system-DB split' runbook in docs/operate/realms.md — " +
+                        "or, if this deployment's data is disposable, drop the databases and let a fresh boot provision the new layout.");
+                }
+            }
+        }
+    }
+
     // Register the "system" tenant pointing at its OWN DB {master}_system (NOT
     // the master DB). MasterTableTenancy has no "default tenant" concept — every
     // session needs a tenant id; "system" is the fallback when no HttpContext is
@@ -1294,14 +1325,12 @@ try
             Log.Warning(ex, "Marten LINQ warmup failed (non-fatal).");
         }
 
-        // No Control-Plane hostname validation needed: IsControlPlane is
-        // computed from `Slug == RealmSlugRules.SystemSlug`, the system
-        // realm is seeded once with reserved slug "system", and the
-        // ControlPlaneGateMiddleware reads `tenant.IsControlPlane` (which
-        // resolves to the slug check) at request time. The DB data is
-        // the single source of truth — there's no ENV var to keep in
-        // sync, no chicken-and-egg between operator config and seeded
-        // realm Domains.
+        // No Control-Plane hostname validation needed: the gate reads the
+        // stored `Realm.IsControlPlane` flag (transferable; stamped on the
+        // system realm at first boot) off `tenant.IsControlPlane` at request
+        // time. The DB data is the single source of truth — there's no ENV var
+        // to keep in sync, no chicken-and-egg between operator config and
+        // seeded realm Domains.
         //
         // Operators add their public hostname(s) to the system realm's
         // Domains via the Recovery CLI:

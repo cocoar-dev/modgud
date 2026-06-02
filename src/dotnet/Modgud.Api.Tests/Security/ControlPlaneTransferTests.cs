@@ -213,4 +213,113 @@ public class ControlPlaneTransferTests : IntegrationTestBase
             await RestoreControlPlaneToSystemAsync();
         }
     }
+
+    [Fact]
+    public async Task Transfer_endpoint_refuses_a_target_without_a_usable_admin()
+    {
+        // The in-app endpoint is fail-closed: it must refuse a transfer to a
+        // realm that has no realm:admin (cptarget's bootstrap invite is never
+        // consumed, so it has zero admins). The service itself does NOT guard
+        // this — that is the operator break-glass CLI's bypass (the
+        // service-level transfer tests above intentionally green-path it).
+        var ct = TestContext.Current.CancellationToken;
+        await EnsureTargetRealmAsync();
+
+        using var resp = await Client.SendAsync(
+            Request(HttpMethod.Post, $"/api/admin/realms/{TargetSlug}/transfer-control-plane", "localhost"), ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        Assert.Contains("Realm.TargetHasNoAdmin", body);
+
+        // The control plane must NOT have moved.
+        Assert.Equal(TenantConstants.SystemTenantId,
+            (await Svc.GetControlPlaneRealmAsync(ct))!.Slug);
+    }
+
+    [Fact]
+    public async Task Transfer_endpoint_from_non_control_plane_host_returns_404()
+    {
+        // The POST route lives under the CP-gated /api/admin/realms group, so a
+        // request from a non-CP host is 404-hidden by the gate (before auth).
+        var ct = TestContext.Current.CancellationToken;
+        await EnsureTargetRealmAsync();
+
+        using var anon = Factory.CreateClient();
+        using var resp = await anon.SendAsync(
+            Request(HttpMethod.Post, $"/api/admin/realms/{TargetSlug}/transfer-control-plane", TargetHost), ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task TransferControlPlane_collapses_an_accidental_multi_holder_state_to_one()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await EnsureTargetRealmAsync();
+
+        var globalStore = Factory.Services.GetRequiredService<IGlobalStore>();
+        try
+        {
+            // Force a SECOND holder via a raw write (the service never produces
+            // >1). system is already a holder, so now there are two.
+            await using (var session = globalStore.LightweightSession())
+            {
+                var ghost = await session.Query<Realm>()
+                    .FirstOrDefaultAsync(r => r.Slug == "ghost-cp", ct);
+                if (ghost is null)
+                {
+                    session.Store(new Realm
+                    {
+                        Id = Guid.NewGuid(),
+                        Slug = "ghost-cp",
+                        DisplayName = "Ghost",
+                        Domains = ["ghost-cp.localhost"],
+                        IsControlPlane = true,
+                        IsActive = true,
+                        CreatedAt = DateTimeOffset.UtcNow,
+                    });
+                }
+                else
+                {
+                    ghost.IsControlPlane = true;
+                    session.Store(ghost);
+                }
+                await session.SaveChangesAsync(ct);
+            }
+
+            var result = await Svc.TransferControlPlaneAsync(TargetSlug, ct);
+            Assert.False(result.IsError);
+
+            // The transfer self-healed to exactly one holder — the target.
+            await using var verify = globalStore.QuerySession();
+            var holders = await verify.Query<Realm>().Where(r => r.IsControlPlane).ToListAsync(ct);
+            Assert.Single(holders);
+            Assert.Equal(TargetSlug, holders[0].Slug);
+        }
+        finally
+        {
+            await RestoreControlPlaneToSystemAsync();
+        }
+    }
+
+    [Fact]
+    public async Task AdoptExistingDatabase_rejects_reserved_duplicate_and_missing_db()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await EnsureTargetRealmAsync();
+
+        var reserved = await Svc.AdoptExistingDatabaseAsync(
+            TenantConstants.SystemTenantId, "System", null, ct);
+        Assert.True(reserved.IsError);
+        Assert.Equal("Realm.ReservedSlug", reserved.FirstError.Code);
+
+        var duplicate = await Svc.AdoptExistingDatabaseAsync(TargetSlug, "Dup", null, ct);
+        Assert.True(duplicate.IsError);
+        Assert.Equal("Realm.DuplicateSlug", duplicate.FirstError.Code);
+
+        var missing = await Svc.AdoptExistingDatabaseAsync("never-existed", "Nope", null, ct);
+        Assert.True(missing.IsError);
+        Assert.Equal("Realm.DatabaseMissing", missing.FirstError.Code);
+    }
 }

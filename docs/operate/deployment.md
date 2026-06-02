@@ -112,10 +112,14 @@ password-protected PFX from elsewhere:
 :::
 
 ::: info Database naming
-`DbSettings.ConnectionString` points at the master DB — pick any name
-you like. When additional realms are created, modgud appends
-`_<slug>` to that name for each tenant DB (e.g. for a master DB called
-`auth`: `auth_acme`, `auth_finance`).
+`DbSettings.ConnectionString` points at the master DB — pick any name you like.
+The master DB holds only control-plane infrastructure (the tenant registry +
+the global Realm store + Wolverine durability); it is **not** a tenant. Every
+realm lives in its own `<master-db>_<slug>` DB, including the bootstrap system
+realm (`<master-db>_system`, created at first boot). So for a master DB called
+`auth` you get `auth_system`, `auth_acme`, `auth_finance`. Back up the master DB
+**and** every `auth_<slug>` DB (system included — that's where system-realm
+users and keys live).
 :::
 
 ## Docker image
@@ -374,11 +378,14 @@ correct tenant DB.
 
 On first start (or after every image update):
 
-1. Master DB is created if missing (`CREATE DATABASE`)
-2. Marten schema is applied (idempotent)
-3. System tenant is registered in `realms.mt_tenant_databases`
-4. Marten schema is applied again (per-tenant tables for the system tenant)
-5. System realm document is seeded
+1. The master DB **and** the `<master-db>_system` DB are created if missing
+   (`CREATE DATABASE`)
+2. Marten schema is applied (idempotent) → the tenant registry table
+3. System tenant is registered in `realms.mt_tenant_databases`, pointing at its
+   own `<master-db>_system` DB (the master DB is pure control-plane infra)
+4. Marten schema is applied again (per-tenant tables for the system realm, in
+   its own DB)
+5. System realm document is seeded (stamped as the control plane)
 6. Default scopes + internal LoginProvider are seeded
 7. RealmCache is warmed up
 
