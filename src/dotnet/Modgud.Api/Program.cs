@@ -1308,12 +1308,38 @@ try
         //   recover realm-add-domain --slug system --domain auth.example.com
     }
 
-    // Break-glass recovery CLI — run inside the container instead of starting Kestrel.
-    //   dotnet Modgud.Api.dll recover <command> [args...]
-    if (args.Length > 0 && args[0].Equals("recover", StringComparison.OrdinalIgnoreCase))
+    // Headless command dispatch — run a recovery command instead of starting
+    // Kestrel. Two ways in, both run AFTER the full bootstrap block above so the
+    // command sees a provisioned master + system tenant:
+    //   1. CLI args:  dotnet Modgud.Api.dll recover <command> [args...]
+    //                 → runs the command, returns its exit code (process exits).
+    //   2. STARTUP_COMMAND env var (Portainer/Compose-friendly, no entrypoint
+    //      override): the value is split into argv and run; the process then
+    //      IDLES (no Kestrel, never exits) so a container restart-policy can't
+    //      crash-loop it. The operator removes the variable and redeploys to
+    //      resume normal web serving. Only consulted when no CLI command args
+    //      are present. STARTUP_COMMAND is a raw env var (not a
+    //      Cocoar.Configuration key), matching the Docker convention.
+    var startupCommand = Environment.GetEnvironmentVariable("STARTUP_COMMAND");
+    var hasCliCommand = args.Length > 0;
+    var fromEnv = !hasCliCommand && !string.IsNullOrWhiteSpace(startupCommand);
+    var cliArgs = hasCliCommand
+        ? args
+        : (fromEnv ? SplitCommandLine(startupCommand!) : []);
+
+    if (cliArgs.Length > 0 && cliArgs[0].Equals("recover", StringComparison.OrdinalIgnoreCase))
     {
-        return await Modgud.Authentication.Api.Admin.RecoveryCli.RunAsync(
-            app.Services, args[1..], conf, app.Environment);
+        var exitCode = await Modgud.Authentication.Api.Admin.RecoveryCli.RunAsync(
+            app.Services, cliArgs[1..], conf, app.Environment);
+
+        if (fromEnv)
+        {
+            Log.Information(
+                "STARTUP_COMMAND finished (exit {ExitCode}). Idling — remove the STARTUP_COMMAND env var and redeploy to serve normally.",
+                exitCode);
+            await Task.Delay(Timeout.Infinite);
+        }
+        return exitCode;
     }
 
     app.Run(conf.AppUrl);
@@ -1327,6 +1353,43 @@ catch (Exception ex)
 finally
 {
     Log.CloseAndFlush();
+}
+
+// Quote-aware command-line splitter for STARTUP_COMMAND. Splits on whitespace
+// but keeps "double-quoted segments" together so a multi-word arg (e.g. a realm
+// display name) survives as one token. Deliberately minimal — not a full POSIX
+// shell parser (no escape sequences, no single quotes) — which is enough for
+// the recover CLI's argv.
+static string[] SplitCommandLine(string commandLine)
+{
+    var tokens = new List<string>();
+    var current = new System.Text.StringBuilder();
+    var inQuotes = false;
+
+    foreach (var ch in commandLine)
+    {
+        if (ch == '"')
+        {
+            inQuotes = !inQuotes;
+        }
+        else if (char.IsWhiteSpace(ch) && !inQuotes)
+        {
+            if (current.Length > 0)
+            {
+                tokens.Add(current.ToString());
+                current.Clear();
+            }
+        }
+        else
+        {
+            current.Append(ch);
+        }
+    }
+
+    if (current.Length > 0)
+        tokens.Add(current.ToString());
+
+    return tokens.ToArray();
 }
 
 /// <summary>
