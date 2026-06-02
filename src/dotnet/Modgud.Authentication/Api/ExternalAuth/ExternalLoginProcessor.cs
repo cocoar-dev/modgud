@@ -366,6 +366,20 @@ public class ExternalLoginProcessor(
         IReadOnlyList<string> externalGroups,
         CancellationToken ct)
     {
+        // A deactivated or deleted user must never receive a fresh app cookie via
+        // federation. Password / magic-link / passkey login all gate this, and the
+        // admin recycle-bin relies on IsActive as its ONLY lockout — so a binned
+        // user holding an external IdP link could otherwise re-authenticate through
+        // that provider and bypass the bin. RevokeAllAccessAsync only kills EXISTING
+        // sessions/tokens; it does not stop a fresh login. JIT-created users are
+        // IsActive=true, so the JIT path passes this gate unaffected.
+        if (user.IsDeleted || !user.IsActive)
+        {
+            logger.LogWarning(
+                "Auth: External login rejected — user {UserId} is inactive or deleted", user.Id);
+            return ExternalLoginResult.Failed("Idp.UserInactive", "This account is not active.");
+        }
+
         // Build the sign-in ClaimsPrincipal. It carries session mechanics — link
         // id + issuer for logout routing, amr for TwoFactorFederated — PLUS, for a
         // provider trusted for authorization, the federation v1 "session group"
