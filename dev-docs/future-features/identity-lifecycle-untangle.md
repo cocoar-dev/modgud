@@ -9,7 +9,7 @@ Status: **partially implemented** — original analysis/decision-gate pass from 
 | Theme | Status | Where |
 |---|---|---|
 | `HUBPROXY` | ✅ pinned "hub-by-default + broker-opt-in" | Federation v1 (#23/#24) encodes the positioning; product-level re-discussion deliberately deferred (see `project_identity_hub_vs_federation_proxy_open`) |
-| `EMAIL` | ✅ shipped | PR A — partial-unique index `WHERE NOT is_deleted` + self-removing `EmailUniquenessMigration` |
+| `EMAIL` | ✅ shipped | PR A — partial-unique index `WHERE NOT is_deleted` (declarative in Marten config since 2026-06-02; the temporary `EmailUniquenessMigration` was removed) |
 | `DELETE` | ✅ shipped | Hotfix C (#21) token/link-PII scrub + PR B recycle-bin/grace/GDPR-scrub convergence |
 | `SOFTDELETE` | ✅ shipped | Hotfix C (#21) access revocation + PR B grace/recycle-bin model |
 | `UNLINK` | ❌ open | Phase 3 below |
@@ -19,7 +19,7 @@ Status: **partially implemented** — original analysis/decision-gate pass from 
 **Phase status:**
 
 - **Phase 0 — Ratify positioning** ✅ — pinned hub-by-default + broker-opt-in; realised through Federation v1.
-- **Phase 1 — Email as a real invariant** ✅ — PR A. Follow-up: remove `EmailUniquenessMigration` once every realm reports the index present (the per-boot nag WARNING is the forcing function), then move the index to declarative Marten config.
+- **Phase 1 — Email as a real invariant** ✅ — PR A. Follow-up ✅ DONE (2026-06-02): `EmailUniquenessMigration` removed, partial-unique index now declarative in the Marten config.
 - **Phase 2 — Converge delete paths + close the access-survival gap** ✅ — Hotfix C (#21) closed the two standalone security/compliance bugs (no token revoke on delete/deactivate; GDPR left PII on `ExternalIdentityLink`); PR B converged admin-delete onto a recoverable recycle-bin + grace + GDPR-scrub, with the per-realm sweep job. The "recoverable grace/restore" product question was answered **yes** (built).
 - **Phase 3 — Variant-C unlink re-link + EXTLOGIN hardening** ❌ NOT STARTED — see the open-items list below.
 - **Phase 4 — Close the membership contract (durable federated membership)** ❌ NOT STARTED (largest remaining piece) — see the open-items list below.

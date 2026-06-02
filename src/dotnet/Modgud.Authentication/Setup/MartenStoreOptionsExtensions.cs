@@ -42,13 +42,23 @@ public static class MartenStoreOptionsExtensions
         // Identity documents
         options.Schema.For<ApplicationUser>()
             .Identity(x => x.Id)
-            .UniqueIndex(x => x.NormalizedUserName);
-        // The NormalizedEmail index is a partial UNIQUE index
-        // (WHERE NOT is_deleted) owned during the transition by
-        // EmailUniquenessMigration — built out-of-band so it can refuse on
-        // active duplicates rather than crash boot. Once every realm is clean
-        // and the migration is removed, declare it here as a partial unique
-        // computed index. See the Account-Lifecycle plan (WS2).
+            .UniqueIndex(x => x.NormalizedUserName)
+            // Partial UNIQUE index on NormalizedEmail — the email-uniqueness
+            // invariant, DB-enforced. Partial (WHERE NOT is_deleted) so the
+            // email is reserved across the active + both pending-deletion states
+            // and released only at permanent erase (where it is nulled and
+            // IsDeleted flips true). Declared declaratively now that there are no
+            // legacy instances with pre-index duplicate/PII data to retrofit —
+            // the temporary EmailUniquenessMigration that previously owned this
+            // index (out-of-band, so it could refuse on active duplicates rather
+            // than crash boot) has been removed.
+            .Index(x => x.NormalizedEmail, idx =>
+            {
+                idx.IsUnique = true;
+                idx.Predicate =
+                    "(data ->> 'NormalizedEmail') IS NOT NULL " +
+                    "AND COALESCE((data ->> 'IsDeleted')::boolean, false) = false";
+            });
 
         options.Schema.For<UserSecurityData>()
             .Identity(x => x.Id);

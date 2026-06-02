@@ -119,12 +119,6 @@ public static class DependencyInjection
         services.AddSingleton<IRealmCache, RealmCache>();
         services.AddScoped<IRealmProvisioningService, RealmProvisioningService>();
 
-        // TEMPORARY self-removing migration (Account-Lifecycle plan, WS2):
-        // establishes the per-realm email-uniqueness index. Invoked from the
-        // Program.cs bootstrap block after the tenant schema is applied. Remove
-        // once every realm reports the index present.
-        services.AddScoped<Modgud.Infrastructure.Migrations.EmailUniquenessMigration>();
-
         // Required for Marten projection side effects to publish messages via Wolverine
         // EventForwardingToWolverine: forwards domain events as Wolverine messages on commit
         martenBuilder.IntegrateWithWolverine(options =>

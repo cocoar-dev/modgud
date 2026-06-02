@@ -333,7 +333,7 @@ Live access is revoked on **entry** into either pending state (`AccessRevocation
 
 ### Email invariant
 
-`NormalizedEmail` carries a **partial unique index `WHERE is_deleted = false`** per realm DB (`MartenStoreOptionsExtensions`), so the address is reserved across active + both pending states and released only at permanent erase. A self-removing `EmailUniquenessMigration` builds it live per realm: it nulls the email of any legacy `IsDeleted=true` user (clears pre-grace admin-delete PII), **refuses to build (loud WARNING)** if active duplicates exist (they need human resolution), and logs a per-boot nag while it is still wired in — the forcing function to remove the temporary migration and move the index into declarative Marten config once every realm reports it present.
+`NormalizedEmail` carries a **declarative partial unique index `WHERE is_deleted = false`** per realm DB (`MartenStoreOptionsExtensions`), so the address is reserved across active + both pending states and released only at permanent erase. (Historically a self-removing `EmailUniquenessMigration` built this index out-of-band so it could scrub legacy deleted-user PII and refuse on active duplicates rather than crash boot on a non-unique dataset; it was removed 2026-06-02 once no pre-index instances remained, and the index is now declared directly in the Marten config.)
 
 ### Permanent erase
 

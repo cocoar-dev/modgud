@@ -1,6 +1,6 @@
 # Account Lifecycle — Email Invariant + Deletion Model (Implementation Plan)
 
-> **Status: ✅ IMPLEMENTED (2026-05-29).** All workstreams below are shipped on branch `feat/lifecycle-email-deletion` (PR A = WS1+WS2+WS6, PR B backend = WS3+WS4+WS5+jobs, PR B frontend, German i18n, and a SignalR-enrichment fix). 216 integration + 1039 unit tests green; live-smoke-verified against DB `modgud`. Not yet pushed at time of writing. The only deliberate follow-up: remove the temporary `EmailUniquenessMigration` once every realm reports the index present (the per-boot nag WARNING is the forcing function), then move the partial-unique index into declarative Marten config. UX decision taken: the admin grid uses an inline lifecycle badge + a "Show recycle bin" toggle (not a separate recycle-bin view).
+> **Status: ✅ IMPLEMENTED (2026-05-29).** All workstreams below are shipped on branch `feat/lifecycle-email-deletion` (PR A = WS1+WS2+WS6, PR B backend = WS3+WS4+WS5+jobs, PR B frontend, German i18n, and a SignalR-enrichment fix). 216 integration + 1039 unit tests green; live-smoke-verified against DB `modgud`. Not yet pushed at time of writing. Deliberate follow-up ✅ DONE (2026-06-02): the temporary `EmailUniquenessMigration` was removed and the partial-unique index moved into declarative Marten config (no pre-index instances remained to retrofit). UX decision taken: the admin grid uses an inline lifecycle badge + a "Show recycle bin" toggle (not a separate recycle-bin view).
 
 Phase 1+2 of the Identity-Lifecycle Untangle (`identity-lifecycle-untangle.md`), merged into one coherent change because they are inseparable: the email-uniqueness index can only be correct once both deletion paths agree on when an email is released. Builds on Hotfix C (#21 — token revocation + GDPR link-PII scrub) and the federation v1 work (#24). Design ratified in the 2026-05-29 session dialog.
 
@@ -86,4 +86,4 @@ Too large for one commit. One feature branch (`feat/lifecycle-email-deletion`), 
 
 - Exact GDPR deadline semantics are being changed from confirm-to-delete to grace-then-auto-delete — confirm no other caller depends on the old `ConfirmDeletionAsync` token flow.
 - Whether the admin grid gets a dedicated "recycle bin" view or an inline badge+filter is a UI detail to settle in WS5.
-- Removal of the WS2 migration task once all realms are confirmed clean (the nag warning is the forcing function).
+- ✅ DONE (2026-06-02) — the WS2 migration was removed and the partial-unique index made declarative in the Marten config (no legacy instances remained).
