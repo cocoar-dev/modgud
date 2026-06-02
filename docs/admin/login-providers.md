@@ -198,6 +198,20 @@ user id) and survives email changes on either side.
 To deny self-service linking for a particular provider, untick **User dürfen
 diesen Provider im Profil verknüpfen** in the linking tab.
 
+### Multiple linked providers & profile precedence
+
+A user may hold links to several IdPs at once (e.g. EntraID *and* Google). Identity matching is always by the IdP's stable **`(issuer, subject)`** — never by email (email is only a fallback for the opt-in auto-link / JIT paths). So a returning login resolves to the right account regardless of how many providers are linked.
+
+On every external login the provider's user-update script *can* patch the four profile fields (first name / last name / email / acronym). To stop two providers fighting over them on alternating logins, only **one provider is authoritative for the profile** at a time:
+
+- The provider whose login **JIT-created** the user is authoritative by default.
+- Any provider can be made authoritative explicitly via the **Authoritative for profile** toggle in the **Verknüpfung & Richtlinien** tab.
+- A non-authoritative provider still authenticates the user (and may confer session membership), but does **not** overwrite their profile fields.
+
+The net effect: a user's display name / email stays stable no matter which linked IdP they signed in with, and there is no per-login flapping.
+
+> **Unlinking forgets the binding.** Disconnecting a provider in **Profile → Linked accounts** (or via admin force-unlink) frees the `(issuer, subject)` slot, so the same external identity can later be re-linked — to the same user, or, once released, to a different one. The last remaining authentication method (the only password / passkey / link) cannot be removed.
+
 ## Disabling without deleting
 
 For OIDC providers, toggle the **Aktiviert** flag in the detail dialog. The

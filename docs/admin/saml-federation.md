@@ -88,6 +88,12 @@ When a user signs in via the SAML provider, Modgud:
 
 Group / role / permission membership stays under Modgud's control — see [Permission-Modell](../concepts/permissions) for the design rationale. Group-claim → Modgud-Group translation is handled by [auto-membership scripts on Groups](./groups#auto-membership-membership-scripts).
 
+## Linking a SAML identity to an existing account
+
+OIDC providers can be attached to an already-signed-in account via **Profile → Linked accounts**. For **SAML** this self-service link flow has a **known limitation**: the IdP returns its assertion via a *cross-site POST* to Modgud's ACS endpoint, and Modgud's app session cookie is `SameSite=Lax`, so the browser does not send it on that cross-site POST. Modgud therefore cannot tell that you are already logged in, and the SAML sign-in **falls back to the normal login path** — it resolves by the IdP's `(issuer, subject)`, or by email auto-link / JIT if configured, instead of attaching to the account you started the link from.
+
+In practice: to associate a SAML identity with a user, sign in *with the SAML provider* on an account whose email matches (with email auto-link enabled on the provider), or let JIT create/resolve the account — don't rely on the **Profile → link** button for SAML. Once a `(issuer, subject)` is bound to a Modgud user it always resolves back to that user on subsequent SAML logins. (A server-side-state fix to make the Profile-link flow work for SAML is tracked as a follow-up.)
+
 ## Cert rotation
 
 Two halves:

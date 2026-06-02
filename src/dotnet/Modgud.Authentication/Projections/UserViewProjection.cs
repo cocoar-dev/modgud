@@ -134,6 +134,10 @@ public partial class UserViewProjection : MultiStreamProjection<UserView, Guid>
 
     public UserView Apply(UserExternalIdentityUnlinkedEvent @event, UserView current)
     {
+        // Deduplicated provider-id set (not per-link): unlinking one of two links
+        // from the SAME provider drops the provider from this indicator. Accepted
+        // cosmetic limitation — see UserView.ExternalLoginProviderIds docs. Authz
+        // never reads this; Person.ExternalIdentities is the per-link source.
         if (!current.ExternalLoginProviderIds.Contains(@event.LoginProviderId)) return current;
         return current with
         {

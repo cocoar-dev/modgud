@@ -1,5 +1,6 @@
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Domain.ExternalAuth;
+using Modgud.Authentication.Domain.ExternalAuth.Events;
 using Modgud.Authentication.Events;
 using Modgud.Authentication.Sessions;
 using Modgud.Authorization.Apps;
@@ -270,13 +271,26 @@ public class GdprService(
         //    projection doc here; the PII-bearing events are masked + archived
         //    below alongside the user stream (archiving alone only flags the
         //    rows — the raw events must be masked to truly erase the PII).
-        //    Include already-unlinked tombstones, which still hold that PII
-        //    (so drop the !IsUnlinked filter).
-        var linkIds = (await session.Query<ExternalIdentityLink>()
+        //    Discover the link ids two ways and union them:
+        //      • live links via the projection-doc query, and
+        //      • EVERY link the user ever held via the user stream's
+        //        UserExternalIdentityLinkedEvent mirrors (each carries the
+        //        LinkId). When a link is unlinked/re-homed (Variant C) the
+        //        projection doc is dropped via ShouldDelete — but the stream is
+        //        deliberately LEFT LIVE (un-archived), because Marten's masking
+        //        does NOT rewrite already-archived streams. So the doc query
+        //        alone misses the forgotten link, yet its still-live stream holds
+        //        the PII; the user-stream mirror is the durable index back to it,
+        //        and the mask + archive loops below scrub it during the erase.
+        var liveLinkIds = (await session.Query<ExternalIdentityLink>()
                 .Where(l => l.UserId == userId)
                 .ToListAsync(ct))
-            .Select(l => l.Id)
-            .ToList();
+            .Select(l => l.Id);
+        var historicalLinkIds = (await session.Events.FetchStreamAsync(userId, token: ct))
+            .Select(e => e.Data)
+            .OfType<UserExternalIdentityLinkedEvent>()
+            .Select(e => e.LinkId);
+        var linkIds = liveLinkIds.Concat(historicalLinkIds).Distinct().ToList();
         foreach (var linkId in linkIds)
             session.Delete<ExternalIdentityLink>(linkId);
 

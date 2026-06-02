@@ -159,13 +159,18 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task UnlinkedLink_Fails()
+    public async Task UnlinkedLink_IsForgotten_AndRematchesByEmailPolicy()
     {
-        var config = await CreateEnabledEntraConfig();
-        var user = await Factory.CreateTestUserWithIdentityAsync("U", "Nlink", "UN", "un@acme.com");
-        var linkId = await LinkUserAsync(user.Id, config.Id, subject: "sub-un-1");
+        // Variant C — "unlink forgets the binding". A disconnected IdP (here a
+        // legacy IsUnlinked tombstone) is no longer hard-blocked with Idp.Unlinked;
+        // the tombstone is forgotten and the login re-matches by policy. With
+        // TrustForEmailLink on, the same email re-binds to the same account via a
+        // fresh link.
+        var config = await CreateEnabledEntraConfig(trustForEmailLink: true);
+        var user = await Factory.CreateTestUserWithIdentityAsync("Re", "Link", "RL", "relink@acme.com");
+        var linkId = await LinkUserAsync(user.Id, config.Id, subject: "sub-relink-1");
 
-        // Unlink
+        // Legacy tombstone: the old soft-unlink path set IsUnlinked=true.
         using (var scope = Factory.Services.CreateScope())
         {
             var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
@@ -176,10 +181,129 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
         using (var scope = Factory.Services.CreateScope())
         {
             var processor = scope.ServiceProvider.GetRequiredService<ExternalLoginProcessor>();
-            var external = BuildExternalPrincipal("sub-un-1", "un@acme.com", "U Nlink");
+            var external = BuildExternalPrincipal("sub-relink-1", "relink@acme.com", "Re Link");
+            var result = await processor.ProcessAsync(external, config.Id, default);
+            Assert.True(result.Succeeded);
+            Assert.Equal(user.Id, result.UserId);
+        }
+
+        // The tombstone is gone (hard-deleted) and a fresh live link owns the slot.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            Assert.Null(await session.LoadAsync<ExternalIdentityLink>(linkId, TestContext.Current.CancellationToken));
+            var live = await session.Query<ExternalIdentityLink>()
+                .Where(l => l.Subject == "sub-relink-1" && !l.IsUnlinked)
+                .FirstOrDefaultAsync();
+            Assert.NotNull(live);
+            Assert.Equal(user.Id, live!.UserId);
+            Assert.NotEqual(linkId, live.Id);
+        }
+    }
+
+    [Fact]
+    public async Task UnlinkedLink_NoRematchPolicy_FallsThrough_NotIdpUnlinked()
+    {
+        // Without a re-match policy (AutoCreate off, no TrustForEmailLink), a
+        // forgotten/unlinked identity falls through to the normal no-link gate —
+        // proving it is genuinely re-evaluated by policy rather than hard-blocked
+        // with the old Idp.Unlinked "disconnected" error. The slot is freed either way.
+        var config = await CreateEnabledEntraConfig(autoCreate: false);
+        var user = await Factory.CreateTestUserWithIdentityAsync("No", "Match", "NM", "nomatch@acme.com");
+        var linkId = await LinkUserAsync(user.Id, config.Id, subject: "sub-nomatch-1");
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            session.Events.Append(linkId, new ExternalIdentityUnlinkedEvent(linkId, DateTimeOffset.UtcNow, user.Id));
+            await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var processor = scope.ServiceProvider.GetRequiredService<ExternalLoginProcessor>();
+            var external = BuildExternalPrincipal("sub-nomatch-1", "nomatch@acme.com", "No Match");
             var result = await processor.ProcessAsync(external, config.Id, default);
             Assert.False(result.Succeeded);
-            Assert.Equal("Idp.Unlinked", result.ErrorCode);
+            Assert.NotEqual("Idp.Unlinked", result.ErrorCode);
+            Assert.Equal("Idp.NoUserAndAutoCreateOff", result.ErrorCode);
+        }
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            Assert.Null(await session.LoadAsync<ExternalIdentityLink>(linkId, TestContext.Current.CancellationToken));
+        }
+    }
+
+    [Fact]
+    public async Task LiveLink_DifferentAuthenticatedUser_IsRejected()
+    {
+        // The cross-user hijack guard: a LIVE link can never be stolen by a
+        // different authenticated user (it is only re-homable once released).
+        var config = await CreateEnabledEntraConfig();
+        var userA = await Factory.CreateTestUserWithIdentityAsync("Owner", "Live", "OL", "ownerlive@acme.com");
+        var userB = await Factory.CreateTestUserWithIdentityAsync("Other", "User", "OU", "otheruser@acme.com");
+        var linkId = await LinkUserAsync(userA.Id, config.Id, subject: "sub-live-1");
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var processor = scope.ServiceProvider.GetRequiredService<ExternalLoginProcessor>();
+            var external = BuildExternalPrincipal("sub-live-1", "ownerlive@acme.com", "Owner Live");
+            var result = await processor.ProcessAsync(external, config.Id, default, authenticatedUserId: userB.Id);
+            Assert.False(result.Succeeded);
+            Assert.Equal("Idp.LinkedToOtherUser", result.ErrorCode);
+        }
+
+        // The live link is untouched — still owned by A, still live.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            var link = await session.LoadAsync<ExternalIdentityLink>(linkId, TestContext.Current.CancellationToken);
+            Assert.NotNull(link);
+            Assert.Equal(userA.Id, link!.UserId);
+            Assert.False(link.IsUnlinked);
+        }
+    }
+
+    [Fact]
+    public async Task ForgottenLink_ReHomes_To_Different_Authenticated_User()
+    {
+        // Once A releases the identity (unlink → doc deleted), a DIFFERENT
+        // authenticated user B may claim the same (iss,sub) — "unlink forgets the
+        // binding", match key is (iss,sub), not the old link id.
+        var config = await CreateEnabledEntraConfig();
+        var userA = await Factory.CreateTestUserWithIdentityAsync("Owner", "Aaa", "OA", "ownera@acme.com");
+        var userB = await Factory.CreateTestUserWithIdentityAsync("Claim", "Bbb", "CB", "claimb@acme.com");
+        var linkId = await LinkUserAsync(userA.Id, config.Id, subject: "sub-rehome-1");
+
+        // A unlinks → the terminal event makes the projection drop the doc.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            session.Events.Append(linkId, new ExternalIdentityUnlinkedEvent(linkId, DateTimeOffset.UtcNow, userA.Id));
+            session.Events.Append(userA.Id, new UserExternalIdentityUnlinkedEvent(userA.Id, linkId, config.Id, DateTimeOffset.UtcNow));
+            await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var processor = scope.ServiceProvider.GetRequiredService<ExternalLoginProcessor>();
+            var external = BuildExternalPrincipal("sub-rehome-1", "claimb@acme.com", "Claim Bbb");
+            var result = await processor.ProcessAsync(external, config.Id, default, authenticatedUserId: userB.Id);
+            Assert.True(result.Succeeded);
+            Assert.Equal(userB.Id, result.UserId);
+        }
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            var live = await session.Query<ExternalIdentityLink>()
+                .Where(l => l.Subject == "sub-rehome-1" && !l.IsUnlinked)
+                .FirstOrDefaultAsync();
+            Assert.NotNull(live);
+            Assert.Equal(userB.Id, live!.UserId);
+            Assert.NotEqual(linkId, live.Id);
         }
     }
 

@@ -1,5 +1,6 @@
 using Modgud.Api.Features.Groups;
 using Modgud.Authentication.Events;
+using Modgud.Authentication.Domain.ExternalAuth.Events;
 using Modgud.Authorization.Events;
 using Modgud.Authorization.Membership;
 using Modgud.Authorization.Principals;
@@ -57,6 +58,7 @@ public class AutoMembershipSyncHandlersTests
         [InlineData("Person.Lastname")]
         [InlineData("Person.Acronym")]
         [InlineData("Person.AccountName")]
+        [InlineData("Person.ExternalIdentities")]
         public void Person_paths_match_dotted_prefix_format(string expected)
         {
             var values = new[]
@@ -64,7 +66,7 @@ public class AutoMembershipSyncHandlersTests
                 PrincipalPaths.IsActive, PrincipalPaths.IsDeleted, PrincipalPaths.Email,
                 PrincipalPaths.NormalizedEmail, PrincipalPaths.PersonFirstname,
                 PrincipalPaths.PersonLastname, PrincipalPaths.PersonAcronym,
-                PrincipalPaths.PersonUserName,
+                PrincipalPaths.PersonUserName, PrincipalPaths.PersonExternalIdentities,
             };
             Assert.Contains(expected, values);
         }
@@ -205,6 +207,18 @@ public class AutoMembershipSyncHandlersTests
             public new bool ShouldSync(GroupDeletedEvent @event) => base.ShouldSync(@event);
         }
 
+        private sealed class TestableExternalLinked : AutoMembershipOnExternalIdentityLinkedHandler
+        {
+            public TestableExternalLinked() : base(new ThrowingRecalculator(), NullLogger<AutoMembershipOnExternalIdentityLinkedHandler>.Instance) { }
+            public new bool ShouldSync(UserExternalIdentityLinkedEvent @event) => base.ShouldSync(@event);
+        }
+
+        private sealed class TestableExternalUnlinked : AutoMembershipOnExternalIdentityUnlinkedHandler
+        {
+            public TestableExternalUnlinked() : base(new ThrowingRecalculator(), NullLogger<AutoMembershipOnExternalIdentityUnlinkedHandler>.Instance) { }
+            public new bool ShouldSync(UserExternalIdentityUnlinkedEvent @event) => base.ShouldSync(@event);
+        }
+
         [Fact]
         public void UserCreated_always_syncs() =>
             Assert.True(new TestableCreated().ShouldSync(
@@ -246,5 +260,15 @@ public class AutoMembershipSyncHandlersTests
         [Fact]
         public void GroupDeleted_always_syncs() =>
             Assert.True(new TestableGroupDeleted().ShouldSync(new GroupDeletedEvent(Guid.NewGuid())));
+
+        [Fact]
+        public void ExternalIdentityLinked_always_syncs() =>
+            Assert.True(new TestableExternalLinked().ShouldSync(
+                new UserExternalIdentityLinkedEvent(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "https://idp.test", DateTimeOffset.UtcNow)));
+
+        [Fact]
+        public void ExternalIdentityUnlinked_always_syncs() =>
+            Assert.True(new TestableExternalUnlinked().ShouldSync(
+                new UserExternalIdentityUnlinkedEvent(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), DateTimeOffset.UtcNow)));
     }
 }

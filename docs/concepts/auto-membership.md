@@ -45,8 +45,23 @@ A TypeScript arrow function from a principal record to `boolean`. It is evaluate
 | `p.Acronym` | `string?` | short initials |
 | `p.Email` | `string?` | primary email |
 | `p.NormalizedUserName` / `p.NormalizedEmail` | `string?` | upper-cased, for case-insensitive compares |
+| `p.ExternalIdentities` | `{ LinkId, LoginProviderId, Issuer }[]` | the IdP links the user holds — query with `.some(...)`, see below |
 
 > These are the **only** durable fields. There is no `OrganizationalUnit`, `Department`, or generic `externalClaims` dictionary on a person — scripts that reference them either fail to transpile or silently never match. To drive membership from an upstream IdP's groups, use an `ExternallyDrivable` group and `p.ExternalGroups` (below).
+
+### Reading `p.ExternalIdentities` (durable IdP links)
+
+`p.ExternalIdentities` is the durable list of external-identity links on the person — one entry per linked IdP, each `{ LinkId, LoginProviderId, Issuer }`. Unlike `p.ExternalGroups` (the *ephemeral, session-only* group surface for `ExternallyDrivable` groups), `ExternalIdentities` is a **persisted** field, so a normal `Auto` group (not `ExternallyDrivable`) can key on it — e.g. "everyone federated through a given IdP":
+
+```typescript
+// "Member if linked to the Entra tenant IdP."
+(p) => Type.Is(p, 'person')
+    && p.ExternalIdentities.some(x => x.Issuer === 'https://login.microsoftonline.com/<tenant>/v2.0')
+```
+
+> **Use `.some(x => ...)`, not `.length`.** Membership on a sub-collection must be expressed as `.some(predicate)` — that is what translates to SQL in the durable batch engine. A count form like `p.ExternalIdentities.length > 0` does **not** translate and silently never matches in the batch engine, so avoid it. The membership-script editor's IntelliSense exposes the element fields (`LinkId` / `LoginProviderId` / `Issuer`).
+
+Linking or unlinking an external identity re-evaluates `p.ExternalIdentities` scripts (see [Recompute triggers](#recompute-triggers-durable-groups)).
 
 The membership-script editor's IntelliSense is generated from the real CLR types, so the available members are always in sync — use it to discover the surface.
 
@@ -92,6 +107,7 @@ The durable engine listens for person-mutation events and re-evaluates the affec
 | user created | check auto-groups whose predicate matches → on match: add |
 | user updated | re-check auto-groups → add or remove based on the new state |
 | user deleted | remove from all auto-groups |
+| external identity linked / unlinked | re-check auto-groups (e.g. `p.ExternalIdentities` scripts) → add or remove |
 | membership script changed | full recompute pass for that one group |
 
 ## Dependency tracking (selective recompute)

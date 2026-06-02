@@ -41,11 +41,16 @@ public partial class ExternalIdentityLinkProjection : SingleStreamProjection<Ext
         return current;
     }
 
-    public ExternalIdentityLink Apply(
-        ExternalIdentityUnlinkedEvent @event,
-        ExternalIdentityLink current)
-    {
-        current.IsUnlinked = true;
-        return current;
-    }
+    /// <summary>
+    /// Variant C — "unlink forgets the binding". Unlinking DELETES the projection
+    /// doc rather than leaving a soft <c>IsUnlinked</c> tombstone, which (a) frees
+    /// the <c>(Issuer, Subject)</c> unique slot so the same identity can be
+    /// re-linked, and (b) — because the delete is driven by a terminal event, not
+    /// a <c>session.Delete</c> + <c>ArchiveStream</c> — a full projection rebuild
+    /// replays <c>Linked → Unlinked</c> and nets to "no doc", so the slot stays
+    /// free without archiving. Keeping the stream live (un-archived) is what lets a
+    /// later GDPR erase still reach + mask the PII the link events carry (Marten's
+    /// data-masking does not rewrite already-archived streams).
+    /// </summary>
+    public bool ShouldDelete(ExternalIdentityUnlinkedEvent @event) => true;
 }

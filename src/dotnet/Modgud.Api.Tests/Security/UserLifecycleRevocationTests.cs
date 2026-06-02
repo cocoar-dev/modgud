@@ -109,47 +109,80 @@ public class UserLifecycleRevocationTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task GdprErase_scrubs_external_identity_links()
+    public async Task GdprErase_scrubs_external_identity_links_including_forgotten_streams()
     {
+        var ct = TestContext.Current.CancellationToken;
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Gdpr", lastname: "Erase", acronym: "GE", email: "gdpr-erase@test.com");
 
         var activeLinkId = Guid.NewGuid();
-        var unlinkedLinkId = Guid.NewGuid();
+        var forgottenLinkId = Guid.NewGuid();
         var providerId = Guid.NewGuid();
 
         using (var scope = Factory.Services.CreateScope())
         {
             var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-            // An active link…
+            // An active link (projection doc present) — discovered the normal way.
             session.Events.StartStream<ExternalIdentityLink>(activeLinkId,
                 new ExternalIdentityLinkedEvent(
                     Id: activeLinkId, UserId: user.Id, LoginProviderId: providerId,
                     Issuer: "https://idp.test", Subject: "sub-active",
                     Email: "gdpr-erase@test.com", DisplayName: "Gdpr Erase",
                     LinkedAt: DateTimeOffset.UtcNow));
-            // …and an already-unlinked tombstone, which still carries PII.
-            session.Events.StartStream<ExternalIdentityLink>(unlinkedLinkId,
+            session.Events.Append(user.Id, new UserExternalIdentityLinkedEvent(
+                user.Id, activeLinkId, providerId, "https://idp.test", DateTimeOffset.UtcNow));
+
+            // A link that carries PII on its stream — including the raw IdP claims.
+            session.Events.StartStream<ExternalIdentityLink>(forgottenLinkId,
                 new ExternalIdentityLinkedEvent(
-                    Id: unlinkedLinkId, UserId: user.Id, LoginProviderId: providerId,
-                    Issuer: "https://idp.test", Subject: "sub-old",
+                    Id: forgottenLinkId, UserId: user.Id, LoginProviderId: providerId,
+                    Issuer: "https://idp.test", Subject: "sub-forgotten",
                     Email: "gdpr-erase@test.com", DisplayName: "Gdpr Erase",
                     LinkedAt: DateTimeOffset.UtcNow));
-            session.Events.Append(unlinkedLinkId,
-                new ExternalIdentityUnlinkedEvent(unlinkedLinkId, DateTimeOffset.UtcNow, null));
-            await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+            session.Events.Append(user.Id, new UserExternalIdentityLinkedEvent(
+                user.Id, forgottenLinkId, providerId, "https://idp.test", DateTimeOffset.UtcNow));
+            await session.SaveChangesAsync(ct);
+        }
+
+        // Variant-C unlink representation: the terminal ExternalIdentityUnlinkedEvent
+        // makes the projection ShouldDelete drop the doc + the user-stream mirror is
+        // appended. The PII-bearing events now live ONLY on the orphaned (doc-less)
+        // link stream — the projection-doc query can no longer find them, so GDPR
+        // must recover the id from the user stream.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            session.Events.Append(forgottenLinkId,
+                new ExternalIdentityUnlinkedEvent(forgottenLinkId, DateTimeOffset.UtcNow, user.Id));
+            session.Events.Append(user.Id, new UserExternalIdentityUnlinkedEvent(
+                user.Id, forgottenLinkId, providerId, DateTimeOffset.UtcNow));
+            await session.SaveChangesAsync(ct);
         }
 
         using (var scope = Factory.Services.CreateScope())
         {
             var gdpr = scope.ServiceProvider.GetRequiredService<IGdprService>();
             var result = await gdpr.PermanentlyEraseAsync(
-                user.Id, adminUserId: null, reason: "test-erase", TestContext.Current.CancellationToken);
+                user.Id, adminUserId: null, reason: "test-erase", ct);
             Assert.False(result.IsError, result.IsError ? result.FirstError.Description : null);
         }
 
         await using var read = GetTenantedSession();
-        Assert.Null(await read.LoadAsync<ExternalIdentityLink>(activeLinkId, TestContext.Current.CancellationToken));
-        Assert.Null(await read.LoadAsync<ExternalIdentityLink>(unlinkedLinkId, TestContext.Current.CancellationToken));
+        Assert.Null(await read.LoadAsync<ExternalIdentityLink>(activeLinkId, ct));
+        Assert.Null(await read.LoadAsync<ExternalIdentityLink>(forgottenLinkId, ct));
+
+        // The forgotten link's archived stream must have its PII masked in place —
+        // not left verbatim (archiving alone only flags rows). This is the
+        // regression guard for the hard-delete erase gap.
+        var archived = await read.Events.QueryAllRawEvents()
+            .Where(e => e.IsArchived)
+            .ToListAsync(ct);
+        var forgottenLinked = archived
+            .Where(e => e.StreamId == forgottenLinkId)
+            .Select(e => e.Data)
+            .OfType<ExternalIdentityLinkedEvent>()
+            .Single();
+        Assert.Equal("[DELETED]", forgottenLinked.Subject);
+        Assert.Equal("[DELETED]", forgottenLinked.Email);
     }
 }
