@@ -250,6 +250,35 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
         Assert.Equal("Idp.InvalidToken", result.ErrorCode);
     }
 
+    [Fact]
+    public async Task DeactivatedUser_WithExternalLink_CannotSignIn()
+    {
+        // Regression: the admin recycle-bin deactivates a user (IsActive=false) but
+        // deliberately keeps their external identity links. External login must
+        // refuse a deactivated/deleted user, exactly like password/magic-link/
+        // passkey do — otherwise a binned user could re-authenticate via their IdP
+        // and bypass the bin.
+        var config = await CreateEnabledEntraConfig();
+        var user = await Factory.CreateTestUserWithIdentityAsync("Ban", "Ned", "BN", "banned@acme.com");
+        await LinkUserAsync(user.Id, config.Id, subject: "sub-banned-1");
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var appUser = await userManager.FindByIdAsync(user.Id.ToString());
+            appUser!.IsActive = false;
+            await userManager.UpdateAsync(appUser);
+        }
+
+        using var scope2 = Factory.Services.CreateScope();
+        var processor = scope2.ServiceProvider.GetRequiredService<ExternalLoginProcessor>();
+        var external = BuildExternalPrincipal(subject: "sub-banned-1", email: "banned@acme.com", name: "Ban Ned");
+        var result = await processor.ProcessAsync(external, config.Id, default);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("Idp.UserInactive", result.ErrorCode);
+    }
+
     private async Task<LoginProvider> CreateEnabledEntraConfig(
         bool autoCreate = false,
         bool trustForEmailLink = false,
