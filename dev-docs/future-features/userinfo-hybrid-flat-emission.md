@@ -1,10 +1,13 @@
 # UserInfo Hybrid-Emission — integriert in das Hauptmodell
 
-> **Status:** Integriert. Siehe [Permission-Modell](./permission-modell)
-> §5 für die finale Architektur. UserInfo emittiert **immer**
-> per-Audience-nested Blocks mit `permissions`/`roles`/`groups`,
-> Bypass-Tiers vom IdP vor-expandiert. Diese Note bleibt nur als
-> Designgeschichte bestehen.
+> **Status:** Die hier skizzierte **flache Single-Audience-Emission
+> wurde verworfen**, nicht gebaut. Geshipped ist die **nested
+> per-Audience**-Variante: UserInfo emittiert
+> `resource_access[<aud>]`-Blocks mit `permissions`/`roles`,
+> per-Scope gegated, Bypass-Tiers vom IdP vor-expandiert. `groups`
+> wird **nicht** emittiert (IdP-internal). Siehe
+> [Permission-Modell](./permission-modell) §5 für die finale
+> Architektur. Diese Note bleibt nur als Designgeschichte bestehen.
 
 ## Ursprüngliche Idee (überholt)
 
@@ -15,8 +18,9 @@ emittieren könnte für Lib-less-Konsumenten — als opt-in-Optimierung.
 
 ## Was am Ende gilt
 
-UserInfo trägt **standardmäßig** Roles + Permissions + Groups, nicht
-nur als optionale Hybrid-Emission. Der Audience-Key macht
+UserInfo trägt **standardmäßig** Roles + Permissions (Groups bleiben
+IdP-internal und werden nicht emittiert), nicht nur als optionale
+Hybrid-Emission. Der Audience-Key macht
 RS-Filterung sauber, die Bypass-Pre-Expansion macht
 Lib-less-Konsumenten zur First-Class-Option. Die Annahme dass
 „Distribution-API der einzige Authz-Kanal" sein müsse hat sich nicht

@@ -29,8 +29,8 @@ name: CD - Release
 # value — set a GHCR retention rule on `candidate-*` if cleanup matters.
 #
 # Sibling workflows for staging / prerelease / editorial doc paths:
-#   - cd-publish-staging-image.yml    — pushes `:staging` Docker tag
-#                                       (auto on develop push + manual)
+#   - cd-publish-staging-image.yml    — pushes `:beta` / `:<slug>` moving
+#                                       Docker tags (auto on develop push + manual)
 #   - cd-publish-nuget-prerelease.yml — prerelease NuGet for client-lib
 #                                       (manual workflow_dispatch)
 #   - cd-deploy-docs.yml              — editorial doc deploy to Shelf

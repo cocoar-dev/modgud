@@ -26,7 +26,7 @@ Use-Case**, nicht auf „Drop-in-Replacement für Keycloak".
 
 - Multi-Instance / HA (DataProtection + Caches + Rate-Limiter alle
   In-Memory)
-- Enterprise-SSO (kein SAML, kein LDAP/AD)
+- Enterprise-SSO (SAML 2.0 SP ✅ seit 2026-05-28 / PR #17; LDAP/AD weiter offen)
 - Fremde Kunden mit Compliance-Audit (kein SOC2/ISO27001)
 - Mehr als ~10 aktive Realms ohne eigenes Backup-Tooling
 
@@ -55,7 +55,7 @@ Produkte.
 | 2a | Deployment-Hygiene (DataProtection persistent + Wolverine-Mode-Toggle) | HIGH | [ha-multi-instance](./ha-multi-instance) | ✅ **DONE 2026-05-13** |
 | 2b | Echte HA / Multi-Instance (Cross-Instance Pub/Sub, Distributed Caches) | HIGH | [ha-multi-instance](./ha-multi-instance) | ⏸ Deferred — braucht echtes Multi-Box-Setup zum Testen |
 | 3 | Realm-Backup / Restore / DR-Tooling (N Tenant-DBs) | MEDIUM | [realm-backup-restore](./realm-backup-restore) | Captured |
-| 4 | Enterprise-SSO: SAML 2.0 + LDAP/AD-Federation | MEDIUM | [enterprise-sso-saml-ldap](./enterprise-sso-saml-ldap) | Captured |
+| 4 | Enterprise-SSO: SAML 2.0 + LDAP/AD-Federation | MEDIUM | [enterprise-sso-saml-ldap](./enterprise-sso-saml-ldap) | SAML 2.0 SP ✅ **DONE 2026-05-28** (PR #17 `8fc3df0`) · LDAP/AD weiter Captured |
 | 5 | Brute-Force Visibility (Login-Alerts + manuelle IP-Blacklist) | MEDIUM | [login-alerts-ip-blacklist](./login-alerts-ip-blacklist) | Captured (2026-05-07) |
 | 6 | Per-Realm Branding / Theming | LOW | [white-label-customization](./white-label-customization) | ✅ **DONE Phase 1 2026-05-13** ([Branding](/plattform/branding), [Asset Library](/plattform/assets), [Pages Beta](/plattform/pages)) |
 | 7 | HSM / KMS Integration für Signing-Keys | LOW | (offen — siehe Audit-Note unten) | Captured-here |
@@ -108,7 +108,7 @@ ein Enterprise-Kunde es fordert. Aufwand: Mannmonate, nicht Tage.
 | Password + Lockout | 4 | 4 | 5 | 4 |
 | 2FA Breadth | **5** | 4 | 5 | 5 |
 | External IdP Federation (OIDC) | 3 | 5 | 5 | 5 |
-| SAML / LDAP / AD | **1** | 5 | 5 | 4 |
+| SAML / LDAP / AD | **3** (SAML 2.0 SP ✅ seit 2026-05-28, PR #17; LDAP/AD weiter offen) | 5 | 5 | 4 |
 | RBAC Granularity | 4 | 4 | 4 | 5 |
 | ABAC / Policy-Engine | 2 (extern) | 3 | 4 | 4 |
 | Multi-Tenancy-Modell | 4 (DB-per-Realm) | 4 | 5 | 5 |

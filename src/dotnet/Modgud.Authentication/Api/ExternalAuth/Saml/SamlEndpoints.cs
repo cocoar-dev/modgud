@@ -26,9 +26,8 @@ namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 /// </para>
 /// <para>
 /// Single-Logout (SLO) is explicitly out of scope for v1 — see
-/// <c>dev-docs/future-features/saml-federation.md</c>. The handlers below are
-/// stubs returning 501 NotImplemented; the actual SAML protocol flow lands in
-/// the ACS-integration commit (task #14 on feat/saml-federation).
+/// <c>dev-docs/future-features/saml-federation.md</c>. The handlers below
+/// (SpMetadata / Login / Acs) delegate to the live <c>SamlLoginFlow</c>.
 /// </para>
 /// </summary>
 public static class SamlEndpoints

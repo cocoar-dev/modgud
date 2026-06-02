@@ -48,7 +48,11 @@
 > **Status der ursprünglichen Note:** Idea — captured 2026-05-07,
 > refined 2026-05-08 with ID-anchored design (string-keyed
 > `List<string>` rejected because RS-subsets and role-grants would
-> drift on rename/delete). Not started.
+> drift on rename/delete). **Shipped** — das ID-anchored Modell ist
+> umgesetzt (`App.Permissions`-Catalog, `AppPermission.Id`,
+> `PermissionRole.PermissionIds`, per-RS-Subset-Filterung,
+> Claims-Flattening). Single-Source-of-Truth ist
+> [`permission-modell.md`](./permission-modell).
 > **Why:** While walking a user through OAuth-API setup we hit a
 > conceptual cliff: the IdP's `App.Resources` field stores only the
 > middle segment of a permission (`policy`, `knowledge`, `mcp`),

@@ -41,7 +41,7 @@ Status: **mostly implemented** — original analysis/decision-gate pass from 202
 - ❌ STILL OPEN (durable-lease, the large piece): replace the flat `Group.MemberIds: List<Guid>` with a source-attributed external-membership class `(groupId, principalId, source = provider:<slug>, grantedAt, leaseExpiresAt, lastReconfirmedAt)`; effective members = union of { manual } + { local-JsEval } + { per-provider external WHERE leaseExpiresAt > now }. Federation v1 shipped only the *session-scoped* derivation ("the session is the lease"); this is the durable, login-independent version.
 - ❌ STILL OPEN: refresh triggers — login-FORCE SET-reconcile, lease-expiry sweep (Quartz, fail-closed), optional inbound SCIM / scheduled LDAP-or-Graph pull (net-new surface).
 - ✅ Privilege guardrail (federated/JsEval auto-membership must never confer `realm:admin`) is already enforced by Federation v1 decision G (bidirectional config guard + `ExpandBypassTiers` strip).
-- ❌ STILL OPEN: resolve the `docs/concepts/auto-membership.md` `externalClaims`/`OrganizationalUnit`/`Department` doc-vs-code contradiction (the spec of the wanted, unbuilt durable-claims surface).
+- ✅ RESOLVED (PR #24): the `docs/concepts/auto-membership.md` `externalClaims`/`OrganizationalUnit`/`Department` doc-vs-code contradiction is closed — the misleading examples were replaced by the shipped `ExternallyDrivable`-group + `p.ExternalGroups` surface (session-scoped federation deriver), and the durable-fields table now explicitly states there is no `OrganizationalUnit`/`Department`/`externalClaims`. (The *durable, login-independent* claims surface remains the Phase-4-large durable-lease piece above.)
 
 **Known low-pri follow-up (surfaced by the Phase-3 adversarial review):**
 
