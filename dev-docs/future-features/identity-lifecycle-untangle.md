@@ -1,6 +1,6 @@
 # Identity-Lifecycle Untangle
 
-Status: **partially implemented** — original analysis/decision-gate pass from 2026-05-28; phases 0–2 shipped 2026-05-29 (see status section below), phases 3–4 still open.
+Status: **mostly implemented** — original analysis/decision-gate pass from 2026-05-28; phases 0–3 shipped (Phase 3 on 2026-06-02, PR #46), Phase 4 partially shipped (link/unlink-recompute wiring is in; the durable-lease external-membership piece is still open). See the status section below.
 
 ## Implementation status (updated 2026-06-02)
 

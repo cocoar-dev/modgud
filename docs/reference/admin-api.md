@@ -50,6 +50,19 @@ Endpoint definitions in
 | `GET` | `/api/admin/users/{id}/grace` | `user:read` |
 | `PATCH` | `/api/admin/users/{id}/grace` | `user:write` |
 
+### Admin external links
+
+Definitions in `Modgud.Authentication/Api/ExternalAuth/ProfileLinkEndpoints.cs`.
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/admin/users/{id}/external-links` | `user:read` |
+| `DELETE` | `/api/admin/users/{id}/external-links/{linkId}` | `user:write` (force-unlink) |
+
+Force-unlink shares the self-service unlink semantics: it hard-removes the link
+(freeing the `(issuer, subject)` slot for re-linking) and is refused if it would
+strip the user's only remaining authentication method.
+
 ### Admin profile change requests
 
 | Method | Path | Permission |

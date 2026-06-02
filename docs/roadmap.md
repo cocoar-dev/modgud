@@ -15,9 +15,10 @@ in a changelog that ages between releases.
 
 - Password + TOTP + Email OTP + Passkey (FIDO2/WebAuthn) + Magic Link,
   combinable per user
-- OIDC federated login — Microsoft Entra ID, Google, GitHub, any OIDC
-  IdP — with JIT user provisioning and a JavaScript claim-mapping
-  script
+- OIDC + SAML 2.0 federated login — Microsoft Entra ID, Google, GitHub,
+  ADFS, any OIDC/SAML IdP — with JIT user provisioning and a JavaScript
+  claim-mapping script; self-service account linking (Profile → Linked
+  accounts) + admin force-unlink, with re-link after disconnect
 - Configurable authentication levels (password-only, secure-login
   with 2FA enrolment, passwordless-only) with a grace-period workflow
   for migrating existing users
@@ -86,10 +87,12 @@ in a changelog that ages between releases.
 
 **Compliance + safety**
 
-- GDPR self-service — Article-20 data export, three-step account
-  deletion with confirmation token, Marten data-masking +
-  `ArchiveStream` for irreversible erase while preserving
-  audit-chain integrity
+- GDPR self-service — Article-20 data export; account deletion with a
+  **grace/cancel window** (self-service — sign in to cancel before the
+  deadline) and an **admin recycle bin** (deactivate + restore until the
+  retention window elapses), both converging on an irreversible permanent
+  erase: Marten data-masking + `ArchiveStream` (incl. external-identity
+  links) while preserving audit-chain integrity. Windows are per-realm.
 - Profile change-request flow with admin approval + email-ownership
   double-opt-in (configurable per realm)
 - Hardening track record — dependency audit, CodeQL, SAST in CI;
@@ -119,9 +122,10 @@ recovery). See
 
 ### Medium
 
-**SAML + LDAP federation** — The `LoginProvider` aggregate already
-discriminates by `Type` with `Saml`, `Ldap`, and `Kerberos` values
-reserved; handlers come next. See
+**LDAP + Kerberos federation** — SAML 2.0 federation now **ships**
+(see [SAML federation](./admin/saml-federation)). The `LoginProvider`
+aggregate also reserves the `Ldap` and `Kerberos` `Type` values;
+those handlers come next. See
 [Enterprise SSO](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/enterprise-sso-saml-ldap.md).
 
 **NodaTime-based time domain — foundation for scheduled operations**
