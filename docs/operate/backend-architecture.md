@@ -184,13 +184,18 @@ Plus two pipeline hooks:
 `Program.cs` runs an explicit bootstrap path at startup
 (before `app.Run()`):
 
-1. **Create master DB** (raw SQL, because Marten can't do this while
-   the connection hangs on a missing DB)
+1. **Create the master DB and the `<master-db>_system` DB** (raw SQL, because
+   Marten can't `CREATE DATABASE` on its own connection)
 2. **Apply Marten schema** (`Storage.ApplyAllConfiguredChangesToDatabaseAsync`)
    → `realms.mt_tenant_databases` is created
-3. **Register system tenant** (`tenancy.AddDatabaseRecordAsync("system", masterCs)`)
-4. **Apply Marten schema again** → per-tenant tables for the system tenant
-5. **Seed system realm document** (`EnsureSystemRealmExistsAsync`)
+3. **Register system tenant** (`tenancy.AddDatabaseRecordAsync("system", systemCs)`)
+   pointing at its own `<master-db>_system` DB — the master DB is pure
+   control-plane infra (registry + global Realm store + Wolverine durability)
+   and holds no tenant content
+4. **Apply Marten schema again** → per-tenant tables for the system realm, in
+   its own DB
+5. **Seed system realm document** (`EnsureSystemRealmExistsAsync`), stamped as
+   the control plane
 6. **Seed default OAuth scopes + internal login provider**
    (`OAuthRealmSeeder.SeedAsync`)
 7. **Warm up RealmCache**
@@ -209,6 +214,8 @@ dotnet Modgud.Api.dll recover reset-2fa <username>
 dotnet Modgud.Api.dll recover set-email <username> <email>
 dotnet Modgud.Api.dll recover magic-link <username>
 dotnet Modgud.Api.dll recover rebuild-projections
+dotnet Modgud.Api.dll recover control-plane list
+dotnet Modgud.Api.dll recover adopt-tenant <slug> <name> [domain]
 ```
 
 Helps with lockouts: all 2FA lost, no admin left, projection

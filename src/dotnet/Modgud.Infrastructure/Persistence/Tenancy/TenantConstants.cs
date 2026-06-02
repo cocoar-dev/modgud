@@ -3,9 +3,12 @@ namespace Modgud.Infrastructure.Persistence.Tenancy;
 public static class TenantConstants
 {
     /// <summary>
-    /// Tenant ID used for the system (master) realm — points to the master DB.
-    /// Used as fallback when no <c>HttpContext</c> is available (background
-    /// services, hosted services, tests without a request scope).
+    /// Tenant ID of the bootstrap/system realm. It has its OWN physical
+    /// database <c>{master}_system</c> (registered at boot in Program.cs) —
+    /// the master DB itself is pure control-plane infrastructure (tenant
+    /// registry + global Realm store) and is never a tenant. Used as the
+    /// fallback tenant when no <c>HttpContext</c> is available (background
+    /// services, hosted services, CLI, tests without a request scope).
     /// </summary>
     public const string SystemTenantId = "system";
 

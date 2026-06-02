@@ -974,7 +974,16 @@
       "domains": "Domains (eine pro Zeile)",
       "canManageTenants": "Kann andere Realms verwalten (System-Realm)",
       "confirmDelete": "Realm \"{slug}\" wirklich löschen?",
-      "loadFailed": "Realm konnte nicht geladen werden."
+      "loadFailed": "Realm konnte nicht geladen werden.",
+      "isControlPlane": "Control Plane",
+      "controlPlaneBadge": "Control Plane",
+      "controlPlaneTitle": "Control Plane",
+      "isControlPlaneNote": "Dieser Realm ist die Control Plane — er hostet die realm-übergreifende Administration. Um die Rolle zu verschieben, öffne den Ziel-Realm und mache ihn zur Control Plane.",
+      "transferControlPlaneHint": "Diesen Realm zur Control Plane machen. Die realm-übergreifende Administration zieht hierher um, der aktuelle Host verliert die Realm-Verwaltungsoberfläche. Die realm:admin-Administratoren des Ziel-Realms erhalten sie automatisch.",
+      "transferControlPlane": "Diesen Realm zur Control Plane machen",
+      "confirmTransferControlPlane": "\"{slug}\" zur Control Plane machen? Die realm-übergreifende Administration zieht zu diesem Realm um und der aktuelle Host verliert die Realm-Verwaltungsoberfläche.",
+      "transferDoneTitle": "Control Plane zu \"{slug}\" verschoben.",
+      "transferDoneHint": "Dieser Host ist nicht mehr die Control Plane — die Realm-Verwaltung liegt jetzt auf der/den unten genannten Domain(s) des Ziel-Realms. Setze die Administration dort fort."
     },
     "realmSettings": {
       "title": "Realm-Einstellungen",

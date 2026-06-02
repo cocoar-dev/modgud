@@ -11,9 +11,10 @@ namespace Modgud.Infrastructure.Persistence.Tenancy;
 /// <para>
 /// When no <see cref="HttpContext"/> is available (background services, hosted
 /// services, tests without a request scope), it falls back to the
-/// <see cref="TenantConstants.SystemTenantId"/> tenant. The system tenant
-/// always points to the master DB so single-tenant boots and infrastructure
-/// jobs work out of the box.
+/// <see cref="TenantConstants.SystemTenantId"/> tenant, which is registered
+/// against its own <c>{master}_system</c> database (the master DB itself is
+/// pure control-plane infrastructure and holds no tenant content). So
+/// single-tenant boots and infrastructure jobs work out of the box.
 /// </para>
 ///
 /// <para>

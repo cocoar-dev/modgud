@@ -78,10 +78,13 @@ Modgud uses Marten's `MasterTableTenancy`:
 
 ```mermaid
 graph TD
-    subgraph Master["Master DB (<master-db>)"]
+    subgraph Master["Master DB (<master-db>) — pure control-plane infra"]
         Tenancy["Schema: realms<br/>realms.mt_tenant_databases"]
         GlobalSchema["Schema: global<br/>(Realm documents)"]
-        SystemTenant["System tenant data<br/>(physically here)"]
+    end
+
+    subgraph System["<master-db>_system"]
+        SystemData["System realm data"]
     end
 
     subgraph Acme["<master-db>_acme"]
@@ -92,18 +95,20 @@ graph TD
         FinanceData["Finance tenant data"]
     end
 
+    Tenancy -.->|Lookup| System
     Tenancy -.->|Lookup| Acme
     Tenancy -.->|Lookup| Finance
 ```
 
 | Database | Contents |
 |---|---|
-| `<master-db>` (master) | `realms.mt_tenant_databases` (tenant registry) + schema `global` (Realm documents) + system tenant data |
-| `<master-db>_<slug>` | A dedicated physical DB per additional realm |
+| `<master-db>` (master) | `realms.mt_tenant_databases` (tenant registry) + schema `global` (Realm documents) + Wolverine durability — pure control-plane infra, **not** a tenant |
+| `<master-db>_<slug>` | A dedicated physical DB per realm, including the bootstrap `system` realm (`<master-db>_system`) |
 
-The **system tenant intentionally points at the master DB**. This way
-a single-realm installation only needs one DB. Multi-realm setups add
-more tenant DBs without migrating the system tenant.
+The master DB holds **no** tenant data. Every realm — including the
+bootstrap `system` realm — lives in its own `<master-db>_<slug>` database,
+so the system realm is an equal, deletable peer and the
+[control plane](../concepts/control-plane) can be transferred off it.
 
 ## TenantedSessionFactory
 
@@ -151,10 +156,10 @@ public class Realm
     public string DisplayName { get; set; }
     public string? Description { get; set; }
     public string[] Domains { get; set; }       // ["acme.example.com", ...]
-    // Computed: the deployment's single Control Plane is the realm with
-    // slug "system". The slug is reserved + immutable, so the property
-    // is too — there's no separately persisted flag.
-    public bool IsControlPlane => Slug == RealmSlugRules.SystemSlug;
+    // Stored, transferable: exactly one realm carries the flag. The
+    // bootstrap "system" realm is stamped at first boot, but the role
+    // can be moved to any active realm.
+    public bool IsControlPlane { get; set; }
     public bool IsActive { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
@@ -167,12 +172,13 @@ public class Realm
 
 In `Program.cs` (before `app.Run`):
 
-1. **Create master DB** (raw SQL)
+1. **Create the master DB and `<master-db>_system`** (raw SQL)
 2. **Apply Marten storage** → `realms.mt_tenant_databases` is created
 3. **Register the system tenant in the tenancy table**
-   (`tenancy.AddDatabaseRecordAsync("system", masterCs)`)
+   (`tenancy.AddDatabaseRecordAsync("system", systemCs)` — pointing at
+   `<master-db>_system`, not the master DB)
 4. **Apply Marten storage again** → the system tenant gets per-tenant
-   tables
+   tables in its own DB
 5. **Seed system realm document** (`EnsureSystemRealmExistsAsync`)
 6. **OAuthRealmSeeder** seeds 6 default scopes
    (`openid`, `email`, `profile`, `roles`, `offline_access`,
@@ -180,12 +186,30 @@ In `Program.cs` (before `app.Run`):
 7. **Warm up RealmCache**
 8. **Check the recovery-CLI path** or start Kestrel
 
+::: warning Upgrading across the system-DB split
+Older deployments ran the system realm **inside** the master DB. This version
+moves it to its own `<master-db>_system` database. On a fresh install — or when
+you can recreate data — nothing is needed; the boot block provisions the new
+layout. For an existing deployment with data you must relocate the system
+realm's data **before** first boot:
+
+1. Stop the app and terminate open connections, then
+   `CREATE DATABASE "<master-db>_system" TEMPLATE "<master-db>";`
+2. Repoint the registry **before** the first boot (a boot-time self-correction
+   is not single-boot-safe — writes in the stale window strand in the master
+   DB): `UPDATE realms.mt_tenant_databases SET connection_string = replace(connection_string, 'Database=<master-db>;', 'Database=<master-db>_system;') WHERE tenant_id = 'system';`
+3. Deploy the new code; verify the system realm resolves and data is intact.
+4. Optionally clean the now-duplicated `mt_*` tables out of the master DB
+   (table-precise — do **not** `DROP SCHEMA public`, it is shared with
+   Wolverine infra).
+:::
+
 ## Realm CRUD
 
 Endpoints under `/api/admin/realms` — gated by `realm:read` /
 `realm:write` (catalog entries in the `control-plane` App, which is
 only seeded on the Control-Plane realm). Only reachable on the
-**Control-Plane realm** (the realm with slug `system`). On any other
+**Control-Plane realm** (the realm holding the control-plane flag). On any other
 host: 404 (the existence of the surface is hidden from tenant realms
 — see [Concepts: Control Plane](../concepts/control-plane)).
 
@@ -207,8 +231,9 @@ POST /api/admin/realms
 }
 ```
 
-`IsControlPlane` is **not** in the request body — it's a computed
-read-only property derived from `Slug == "system"`.
+`IsControlPlane` is **not** in the request body — new realms are never the
+control plane. The role only moves via
+[transfer](../concepts/control-plane#transferring-the-control-plane).
 
 Backend:
 

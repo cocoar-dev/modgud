@@ -35,6 +35,34 @@ public interface IRealmProvisioningService
         CancellationToken ct = default);
     Task<ErrorOr<bool>> DeleteRealmAsync(string slug, CancellationToken ct = default);
     Task EnsureSystemRealmExistsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the realm that currently holds the stored
+    /// <see cref="Realm.IsControlPlane"/> flag, or <c>null</c> if none does.
+    /// </summary>
+    Task<Realm?> GetControlPlaneRealmAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Moves the control-plane role to <paramref name="targetSlug"/> in one
+    /// transaction: clears the flag on every other holder (self-healing any
+    /// accidental &gt;1-holder state) and sets it on the target. The target
+    /// must exist and be active. Idempotent when the target is already the
+    /// sole control plane. After a successful move the control-plane app
+    /// catalog is (idempotently) seeded into the target realm's DB and the
+    /// realm cache is invalidated so the routing-gate re-reads the new flag.
+    /// </summary>
+    Task<ErrorOr<Realm>> TransferControlPlaneAsync(string targetSlug, CancellationToken ct = default);
+
+    /// <summary>
+    /// Registers an ALREADY-EXISTING tenant database (<c>{master}_{slug}</c>)
+    /// as a realm without issuing <c>CREATE DATABASE</c> — the migration
+    /// counterpart to <see cref="CreateRealmAsync"/>. Errors if the database
+    /// is missing or a realm with the slug already exists. Schema is applied
+    /// idempotently (existing data is kept) and the app/OAuth catalogs are
+    /// seeded if missing.
+    /// </summary>
+    Task<ErrorOr<Realm>> AdoptExistingDatabaseAsync(
+        string slug, string displayName, string[]? domains, CancellationToken ct = default);
 }
 
 public sealed class RealmProvisioningService : IRealmProvisioningService
@@ -117,13 +145,11 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 $"A realm with slug '{dto.Slug}' already exists.");
         }
 
-        // No Control-Plane validation needed: IsControlPlane is computed
-        // from `Slug == RealmSlugRules.SystemSlug`, the slug "system" is
-        // reserved (no caller can claim it via CreateRealm), and the
-        // system realm is seeded once in EnsureSystemRealmExistsAsync.
-        // Therefore "exactly one Control Plane per deployment" is a
-        // consequence of the slug being immutable + reserved, not a
-        // separately-enforced invariant.
+        // New realms are never the control plane: the IsControlPlane flag is
+        // stored and defaults to false, and there is no create-time switch to
+        // request it (CreateRealmDto carries none). The control-plane role is
+        // only moved via TransferControlPlaneAsync. The bootstrap realm is
+        // stamped once in EnsureSystemRealmExistsAsync.
 
         // Build the tenant database connection string
         var csBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value);
@@ -177,6 +203,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             DisplayName = dto.DisplayName,
             Description = dto.Description,
             Domains = domains,
+            IsControlPlane = false,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
@@ -288,7 +315,25 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var existing = await session.Query<Realm>()
             .FirstOrDefaultAsync(r => r.Slug == TenantConstants.SystemTenantId, ct);
 
-        if (existing is not null) return;
+        if (existing is not null)
+        {
+            // Adopt the control-plane flag onto the bootstrap realm ONLY when
+            // no realm currently holds it. This guard is load-bearing: it makes
+            // a TransferControlPlaneAsync durable across reboots — without it
+            // every boot would steal the flag back to the system realm and
+            // silently undo the transfer. (On a fresh upgrade from the old
+            // computed-flag model the system doc already deserializes with
+            // IsControlPlane=true, so this is a no-op there too.)
+            if (!existing.IsControlPlane
+                && !await session.Query<Realm>().AnyAsync(r => r.IsControlPlane, ct))
+            {
+                existing.IsControlPlane = true;
+                existing.UpdatedAt = DateTimeOffset.UtcNow;
+                session.Store(existing);
+                await session.SaveChangesAsync(ct);
+            }
+            return;
+        }
 
         var systemRealm = new Realm
         {
@@ -300,11 +345,172 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             // Production deploys must add their public hostname via the Recovery CLI:
             //   recover realm-add-domain --slug system --domain auth.example.com
             Domains = ["system.localhost", "localhost", "127.0.0.1"],
+            // The bootstrap realm is the control plane at first boot. The flag
+            // is transferable thereafter (see TransferControlPlaneAsync).
+            IsControlPlane = true,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
         session.Store(systemRealm);
         await session.SaveChangesAsync(ct);
+    }
+
+    public async Task<Realm?> GetControlPlaneRealmAsync(CancellationToken ct = default)
+    {
+        await using var session = _globalStore.QuerySession();
+        return await session.Query<Realm>()
+            .FirstOrDefaultAsync(r => r.IsControlPlane, ct);
+    }
+
+    public async Task<ErrorOr<Realm>> TransferControlPlaneAsync(
+        string targetSlug, CancellationToken ct = default)
+    {
+        await using var session = _globalStore.LightweightSession();
+
+        var target = await session.Query<Realm>()
+            .FirstOrDefaultAsync(r => r.Slug == targetSlug, ct);
+        if (target is null)
+            return Error.NotFound("Realm.NotFound", $"Realm '{targetSlug}' not found.");
+
+        if (!target.IsActive)
+            return Error.Validation("Realm.TargetInactive",
+                "Cannot transfer the control plane to an inactive realm.");
+
+        // Load EVERY other holder (not just "the one") so an accidental
+        // multi-holder state self-heals down to exactly the target.
+        var otherHolders = await session.Query<Realm>()
+            .Where(r => r.IsControlPlane && r.Slug != targetSlug)
+            .ToListAsync(ct);
+
+        // True no-op: target is already the sole control plane.
+        if (otherHolders.Count == 0 && target.IsControlPlane)
+            return target;
+
+        foreach (var holder in otherHolders)
+        {
+            holder.IsControlPlane = false;
+            holder.UpdatedAt = DateTimeOffset.UtcNow;
+            session.Store(holder);
+        }
+
+        target.IsControlPlane = true;
+        target.UpdatedAt = DateTimeOffset.UtcNow;
+        session.Store(target);
+
+        await session.SaveChangesAsync(ct);
+
+        // The flag move is committed. Invalidate the cache NOW (load-bearing —
+        // the routing gate must follow the new flag) BEFORE the best-effort
+        // re-seed below, so a seed failure can't leave the gate stale.
+        _realmCache.Invalidate();
+
+        // Make the target a fully-equal control plane: seed the control-plane
+        // app catalog into its tenant DB so scoped control-plane:realm:* roles
+        // can be granted there. The realm's existing realm:admin already passes
+        // the gate via the realm-wide bypass tier, so this is for delegation
+        // completeness, not lockout avoidance — hence best-effort: a failure
+        // here must NOT surface as a 500/throw from this already-committed
+        // mutation (it self-heals on the next boot or transfer). Idempotent.
+        // (The demoted realm keeps its now-inert control-plane app — the gate
+        // 404s its host anyway; cleaning it up is optional, not load-bearing.)
+        try
+        {
+            await AppRealmSeeder.SeedAsync(
+                _serviceProvider, targetSlug, isControlPlane: true, _logger, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Control plane moved to realm {Slug}, but seeding the control-plane app into its DB failed — it self-heals on the next boot or transfer.",
+                targetSlug);
+        }
+
+        _logger.LogWarning(
+            "Control plane transferred to realm {Slug} (cleared {Count} previous holder(s))",
+            targetSlug, otherHolders.Count);
+
+        return target;
+    }
+
+    public async Task<ErrorOr<Realm>> AdoptExistingDatabaseAsync(
+        string slug, string displayName, string[]? domains, CancellationToken ct = default)
+    {
+        if (!RealmSlugRules.IsValidFormat(slug))
+        {
+            return Error.Validation("Realm.InvalidSlug",
+                "Slug must be 3-63 characters, start with a letter, end with a letter or digit, and contain only lowercase letters, digits, and hyphens.");
+        }
+
+        if (RealmSlugRules.IsReserved(slug))
+        {
+            return Error.Validation("Realm.ReservedSlug",
+                $"The slug '{slug}' is reserved and cannot be used.");
+        }
+
+        await using var session = _globalStore.LightweightSession();
+        var existing = await session.Query<Realm>()
+            .FirstOrDefaultAsync(r => r.Slug == slug, ct);
+        if (existing is not null)
+        {
+            return Error.Conflict("Realm.DuplicateSlug",
+                $"A realm with slug '{slug}' already exists.");
+        }
+
+        var csBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value);
+        var mainDbName = csBuilder.Database!;
+        var tenantDbName = $"{mainDbName}_{slug}";
+        csBuilder.Database = tenantDbName;
+        var tenantCs = csBuilder.ConnectionString;
+
+        // adopt does NOT create the database — it registers an existing one.
+        var bootstrapBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value) { Database = "postgres" };
+        await using (var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString))
+        {
+            await bootstrapConn.OpenAsync(ct);
+            await using var checkDbCmd = new NpgsqlCommand(
+                "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
+            checkDbCmd.Parameters.AddWithValue("@dbName", tenantDbName);
+            if (await checkDbCmd.ExecuteScalarAsync(ct) is null)
+            {
+                return Error.NotFound("Realm.DatabaseMissing",
+                    $"Database '{tenantDbName}' does not exist. adopt-tenant registers an EXISTING database — create and restore it first.");
+            }
+        }
+
+        // Register in Marten's tenant registry + apply schema idempotently
+        // (existing data is preserved; this only adds missing tables/indexes).
+        var tenancy = (Marten.Storage.MasterTableTenancy)_tenantedStore.Options.Tenancy;
+        await tenancy.AddDatabaseRecordAsync(slug, tenantCs);
+        var adoptedDb = await tenancy.FindOrCreateDatabase(slug);
+        await adoptedDb.ApplyAllConfiguredChangesToDatabaseAsync();
+
+        var realm = new Realm
+        {
+            Id = Guid.NewGuid(),
+            Slug = slug,
+            DisplayName = displayName,
+            Domains = domains is { Length: > 0 } ? domains : [$"{slug}.localhost"],
+            IsControlPlane = false,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        session.Store(realm);
+        await session.SaveChangesAsync(ct);
+
+        // Idempotent catalog seeding — won't clobber existing rows in the
+        // adopted DB; only fills in what the schema-apply doesn't cover.
+        await OAuthRealmSeeder.SeedAsync(_serviceProvider, slug, _logger, ct);
+        using (var seederScope = _serviceProvider.CreateScope())
+        {
+            await seederScope.ServiceProvider
+                .GetRequiredService<ILoginProviderRealmSeeder>()
+                .SeedAsync(slug, _logger, ct);
+        }
+        await AppRealmSeeder.SeedAsync(_serviceProvider, slug, isControlPlane: false, _logger, ct);
+
+        _realmCache.Invalidate();
+        _logger.LogInformation("Adopted existing database {DbName} as realm {Slug}", tenantDbName, slug);
+        return realm;
     }
 }

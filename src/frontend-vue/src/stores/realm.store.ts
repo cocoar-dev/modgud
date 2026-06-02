@@ -65,6 +65,14 @@ export const useRealmStore = defineStore('realm', () => {
     realms.value = realms.value.filter((r) => r.Slug !== slug)
   }
 
+  async function transferControlPlane(slug: string): Promise<RealmDto> {
+    // POST to the realm that should BECOME the control plane. The current host
+    // (the present control plane) loses the realm-management surface afterwards,
+    // so we deliberately do NOT reload the list here — a follow-up call would
+    // 404. The caller shows a terminal "moved" state instead.
+    return await http.addPath(slug).addPath('transfer-control-plane').post<RealmDto>({})
+  }
+
   return {
     realms,
     loaded,
@@ -75,6 +83,7 @@ export const useRealmStore = defineStore('realm', () => {
     resendBootstrapInvite,
     update,
     remove,
+    transferControlPlane,
   }
 })
 

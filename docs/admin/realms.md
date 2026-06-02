@@ -30,9 +30,10 @@ isn't seeded there). See
 [Concepts: Control Plane / Data Plane](../concepts/control-plane) for
 the full three-layer defence.
 
-The Control-Plane flag is **computed from the slug**: the realm whose
-slug equals `system` is the CP. It's not a togglable field — there's
-exactly one CP per deployment, fixed at deployment time.
+The Control-Plane flag is a **stored, transferable** field. The `system`
+realm is stamped as the CP at first boot, but the role can be moved to any
+active realm (see [Transferring the control plane](#transferring-the-control-plane)).
+There is always exactly one CP per deployment.
 
 The system realm's default domains are `system.localhost`,
 `localhost`, `127.0.0.1` — anything resolving to those lands on the
@@ -46,7 +47,7 @@ system realm.
 | Display Name | UI label |
 | Description | Optional |
 | Domains | List of hostnames that route to this realm |
-| IsControlPlane | Read-only flag, derived from `Slug == "system"`. |
+| IsControlPlane | Stored flag — exactly one realm holds it. Moved via the transfer action, not edited inline. |
 | IsActive | Disabled realms reject login attempts |
 
 ## Permissions
@@ -114,8 +115,25 @@ issued for the same recipient and the previous one is revoked.
 ## Editing a realm
 
 Most fields are live-editable; the **slug is immutable** (it's baked
-into the database name). The Control-Plane flag isn't editable — it's
-computed from the slug.
+into the database name). The Control-Plane flag isn't a checkbox — it
+moves via the dedicated transfer action (below).
+
+## Transferring the control plane
+
+To hand cross-realm administration to another realm, open the **target**
+realm (the one that should become the CP) in the admin UI and click
+**Make this realm the control plane** (a danger action shown in edit mode for
+active, non-CP realms). After you confirm:
+
+- the target realm's `realm:admin` users gain the realm-management surface;
+- **this** host stops being the control plane — `/api/admin/realms` 404s here
+  and the realm grid disappears. Continue administration on the target realm's
+  domain.
+
+Make sure the target realm already has a `realm:admin` user before
+transferring, or recover one afterwards via the
+[Recovery CLI](../operate/recovery-cli) (`control-plane transfer` /
+`bootstrap-admin`).
 
 ## Deactivating vs. deleting
 

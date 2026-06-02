@@ -60,10 +60,10 @@ const builder = CoarGridBuilder.create<RealmDto>()
       .option('valueGetter', (p: any) => p.data?.IsActive
         ? t('common.yes', {}, 'Ja')
         : t('common.no', {}, 'Nein')),
-    (col) => col.field('IsControlPlane').header('Control Plane', 'admin.realms.isControlPlane').width(130)
+    (col) => col.field('IsControlPlane').header('Control Plane', 'admin.realms.isControlPlane').width(150)
       .option('valueGetter', (p: any) => p.data?.IsControlPlane
-        ? t('common.yes', {}, 'Ja')
-        : t('common.no', {}, 'Nein')),
+        ? t('admin.realms.controlPlaneBadge', {}, 'Control Plane')
+        : ''),
   ])
 
 async function deleteSelected() {

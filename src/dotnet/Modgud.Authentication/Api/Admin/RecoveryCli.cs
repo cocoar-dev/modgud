@@ -11,6 +11,7 @@ using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.Realms;
 using Modgud.Permissions;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Infrastructure.Realms;
 using Marten;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.Domain;
@@ -70,6 +71,8 @@ public static class RecoveryCli
             "realm-add-domain" => await RealmAddDomainAsync(scope.ServiceProvider, args),
             "realm-remove-domain" => await RealmRemoveDomainAsync(scope.ServiceProvider, args),
             "realm-list" => await RealmListAsync(scope.ServiceProvider),
+            "control-plane" => await ControlPlaneAsync(scope.ServiceProvider, args),
+            "adopt-tenant" => await AdoptTenantAsync(scope.ServiceProvider, args),
             _ => Error($"Unknown command: {command}. Try 'help'.")
         };
     }
@@ -123,6 +126,16 @@ public static class RecoveryCli
               realm-remove-domain            Remove a domain from an active realm's Domains list.
                   --slug <slug>              Required.
                   --domain <hostname>        Required. No-op if not present.
+              control-plane list             Show which realm currently holds the control-plane role.
+              control-plane transfer <slug>  Move the control-plane role to another realm. Break-glass
+                                             for when the control-plane realm has no usable admin —
+                                             the target realm's existing realm:admin gains cross-realm
+                                             administration. Restart the running container afterwards
+                                             (in-process realm cache).
+              adopt-tenant <slug> <name> [domain]
+                                             Register an ALREADY-EXISTING tenant database
+                                             ({master}_{slug}) as a realm — no CREATE DATABASE.
+                                             Migration counterpart to creating a realm via the API.
               help                           Show this message.
 
             Global flag:
@@ -734,6 +747,84 @@ public static class RecoveryCli
         Console.WriteLine($"✓ Removed '{domain}' from realm '{slug}'. Now: [{string.Join(", ", remaining)}]");
         PrintRestartHint();
         Serilog.Log.Warning("Auth: Recovery realm-remove-domain — Realm={Slug} Domain={Domain}", slug, domain);
+        return 0;
+    }
+
+    // ── control-plane ───────────────────────────────────────────────────
+    //
+    // Break-glass to inspect or relocate the control-plane role. Operates on
+    // the global store (Realm docs are global metadata) via the provisioning
+    // service. There is deliberately no `grant` subcommand: control-plane
+    // authority is the ordinary realm:admin permission within whichever realm
+    // holds the stored flag, so there is no permission to grant — only the
+    // flag to move.
+
+    private static async Task<int> ControlPlaneAsync(IServiceProvider services, string[] args)
+    {
+        var svc = services.GetRequiredService<IRealmProvisioningService>();
+        var sub = (args.Length > 1 ? args[1] : "list").ToLowerInvariant();
+
+        switch (sub)
+        {
+            case "list":
+            {
+                var cp = await svc.GetControlPlaneRealmAsync();
+                if (cp is null)
+                {
+                    Console.WriteLine("No control-plane realm is currently set.");
+                    return 0;
+                }
+                Console.WriteLine($"Control-plane realm: {cp.Slug}  ({cp.DisplayName})");
+                Console.WriteLine($"  Domains: {string.Join(", ", cp.Domains)}");
+                return 0;
+            }
+            case "transfer":
+            {
+                if (args.Length < 3)
+                    return Error("Usage: recover control-plane transfer <slug>");
+                var targetSlug = args[2].Trim().ToLowerInvariant();
+
+                var result = await svc.TransferControlPlaneAsync(targetSlug);
+                if (result.IsError)
+                    return Error($"{result.FirstError.Code}: {result.FirstError.Description}");
+
+                Serilog.Log.Warning("Auth: Recovery control-plane transfer. Target={Slug}", targetSlug);
+                Console.WriteLine($"✓ Control plane transferred to realm '{targetSlug}'.");
+                PrintRestartHint();
+                return 0;
+            }
+            default:
+                return Error($"Unknown control-plane subcommand: '{sub}'. Use 'list' or 'transfer <slug>'.");
+        }
+    }
+
+    // ── adopt-tenant ──────────────────────────────────────────────────────
+    //
+    // Register an already-existing {master}_{slug} database as a realm without
+    // CREATE DATABASE — the migration counterpart to creating a realm via the
+    // API. The operator restores a dump into the target DB first, then runs
+    // this to wire it into the tenant registry + global Realm store.
+
+    private static async Task<int> AdoptTenantAsync(IServiceProvider services, string[] args)
+    {
+        // recover adopt-tenant <slug> <displayName> [domain]
+        if (args.Length < 3)
+            return Error("Usage: recover adopt-tenant <slug> <displayName> [domain]");
+
+        var slug = args[1].Trim().ToLowerInvariant();
+        var displayName = args[2];
+        var domain = args.Length > 3 ? args[3] : null;
+
+        var svc = services.GetRequiredService<IRealmProvisioningService>();
+        var result = await svc.AdoptExistingDatabaseAsync(
+            slug, displayName, domain is null ? null : [domain]);
+        if (result.IsError)
+            return Error($"{result.FirstError.Code}: {result.FirstError.Description}");
+
+        Serilog.Log.Warning("Auth: Recovery adopt-tenant. Slug={Slug}", slug);
+        Console.WriteLine($"✓ Adopted existing database as realm '{slug}'.");
+        Console.WriteLine($"  Domains: {string.Join(", ", result.Value.Domains)}");
+        PrintRestartHint();
         return 0;
     }
 

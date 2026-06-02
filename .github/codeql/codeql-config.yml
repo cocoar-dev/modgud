@@ -1,0 +1,20 @@
+name: "Modgud CodeQL config"
+
+# query-filters tune the security-extended suite (configured in the workflow's
+# codeql-action/init step) at the result level.
+query-filters:
+  # cs/log-forging — excluded repo-wide. Every instance ever flagged in this
+  # codebase is the same false positive: Microsoft.Extensions.Logging
+  # *structured* logging — `logger.LogX("... {Prop}", value)` — where the value
+  # is captured as a property (NOT string-interpolated into the message line)
+  # and is a validated identifier/slug. CodeQL cannot distinguish this from
+  # `$"...{userInput}"` concatenation, so it fired on ~17 provably-safe call
+  # sites over a year with 0 true positives (full audit trail:
+  # dev-docs/codeql-triage.md, Bucket 2).
+  #
+  # TRADE-OFF: this also suppresses a genuine string-interpolated log-forge if
+  # one were ever introduced. The codebase convention is structured logging
+  # throughout (message template + args), which is not vulnerable; keep it that
+  # way. Re-enable this query if that convention is ever relaxed.
+  - exclude:
+      id: cs/log-forging
