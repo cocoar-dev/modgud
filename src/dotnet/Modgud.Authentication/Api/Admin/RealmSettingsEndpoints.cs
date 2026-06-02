@@ -1,6 +1,10 @@
+using System.Security.Claims;
+using Microsoft.Extensions.Logging;
 using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Authorization.AspNetCore;
+using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Authentication.Api.Admin;
 
@@ -62,6 +66,36 @@ public static class RealmSettingsEndpoints
         .WithName("RealmSettings_Patch")
         .RequiresPermission("realm-settings:write");
 
+        // Manual signing-key rotation for the calling realm. Generates a fresh
+        // RSA keypair, retires the previous active key into the verification
+        // overlap window (so in-flight tokens stay valid for ~30 days), and
+        // returns the new key id. Operator action — gated behind the same
+        // realm-settings:write permission as the rest of this surface.
+        group.MapPost("rotate-signing-key", async (
+            IRealmKeyStore keyStore,
+            ClaimsPrincipal user,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            var slug = TenantContext.Current;
+            var creds = await keyStore.RotateAsync(slug, ct);
+            var kid = creds.Key.KeyId;
+
+            // "Auth:"-prefixed → captured by the AuthLogSink into the admin
+            // Auth-Log. UserName is surfaced as its own audit column.
+            loggerFactory.CreateLogger("Modgud.Authentication.Api.Admin.RealmSettings")
+                .LogWarning(
+                    "Auth: signing key rotated for realm {Realm} by {UserName} — new kid {Kid}",
+                    slug, user.Identity?.Name ?? "(unknown)", kid);
+
+            return Results.Ok(new RotateSigningKeyResponseDto(kid));
+        })
+        .WithName("RealmSettings_RotateSigningKey")
+        .RequiresPermission("realm-settings:write");
+
         return app;
     }
 }
+
+/// <summary>Response of <c>POST /admin/realm-settings/rotate-signing-key</c> — the new active key id.</summary>
+public sealed record RotateSigningKeyResponseDto(string Kid);

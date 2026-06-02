@@ -9,13 +9,14 @@
 
 ## Tabs
 
-The page currently has three tabs:
+The page currently has four tabs:
 
 - [Self-Registration](#self-registration) — public sign-up policy
 - [Dynamic Client Registration](#dynamic-client-registration) —
   anonymous OAuth-client registration policy (linked detail page:
   [Dynamic Client Registration](./dynamic-client-registration))
 - [Account Deletion](#account-deletion) — grace period and recycle-bin retention policy
+- [Signing Keys](#signing-keys) — rotate the realm's OAuth/OIDC token-signing key
 
 Per-realm **branding** is configured on a separate page under
 Plattform — see [Customization → Branding](../plattform/branding).
@@ -117,6 +118,48 @@ Controls the account-deletion lifecycle for this realm — the self-service grac
 ::: info One job drives all three
 A single scheduled sweep (`account-lifecycle-sweep`) does the work for the whole realm: it sends reminders, auto-erases self-service accounts past their grace deadline, and (when auto-purge is on) empties the admin recycle bin past retention. Changing these values takes effect on its next run.
 :::
+
+## Signing Keys
+
+Every realm signs its OpenIddict **access tokens and id tokens** with its own
+RSA-2048 key — a token signed for realm A cannot validate against realm B's
+JWKS, so the keys are the cryptographic core of realm isolation. The key is
+generated lazily on first token issuance; this tab lets a realm admin **rotate**
+it on demand.
+
+### Rotating the key
+
+1. Open Administration → **Realm Settings** → tab **Signing Keys**.
+2. Click **Rotate signing key** and confirm.
+
+On rotation:
+
+- A fresh RSA keypair is generated and becomes the **active** signing key — all
+  *new* tokens are signed with it immediately.
+- The previous key is **retired** but kept in the realm's JWKS and verification
+  set for a **30-day overlap window**, so tokens issued just before the rotation
+  (and resource servers that cache the JWKS) keep validating until they
+  naturally expire / refresh.
+- Once the overlap window elapses, the retired key is **hard-deleted** by the
+  `signing-key-janitor` scheduled job (see [Scheduled Jobs](./scheduled-jobs)).
+  The in-memory verification set drops it on its own as soon as the window
+  passes, even before the janitor runs.
+
+::: warning When to rotate
+Rotate on **suspected key exposure** or as scheduled hygiene — not casually.
+Resource servers that cache the JWKS very aggressively (longer than typical)
+may briefly reject freshly-signed tokens until they refresh their key set. The
+30-day overlap is sized so a normally-behaving RS (which refreshes its JWKS far
+more often) never sees an interruption.
+:::
+
+::: info Operator alternative
+Rotation can also be triggered from the recovery CLI without UI access:
+`recover rotate-signing-key --realm <slug>`. Both paths write an entry to the
+[Auth Log](./auth-log).
+:::
+
+Permission: `realm-settings:write` (the `realm:admin` bypass grants it).
 
 ## Branding (separate page)
 

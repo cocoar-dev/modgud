@@ -15,6 +15,7 @@ using JasperFx.Events.Daemon;
 using Marten;
 using Marten.Events.Daemon;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Modgud.Application.Contracts;
 using Modgud.Infrastructure.Events;
 using Modgud.Infrastructure.Persistence.Marten.Configuration;
@@ -111,6 +112,11 @@ public static class DependencyInjection
         // TenantedSessionFactory has been registered".
         services.AddSingleton<TenantedSessionFactory>();
         services.AddSingleton<ITenantSessionFactory>(sp => sp.GetRequiredService<TenantedSessionFactory>());
+
+        // RealmKeyStore (and the SAML SP cert service) depend on TimeProvider
+        // for rotation-overlap timing. TryAdd so we defer to any framework- or
+        // host-supplied registration and only fall back to the system clock.
+        services.TryAddSingleton(TimeProvider.System);
 
         // Per-realm signing keys (C3b — multi-tenancy crypto isolation).
         // Singleton so the in-memory cache survives across requests; reads of

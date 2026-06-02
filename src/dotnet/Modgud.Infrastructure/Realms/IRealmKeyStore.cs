@@ -37,9 +37,23 @@ public interface IRealmKeyStore
     /// <summary>
     /// Rotates the realm's signing key: generates a new RSA-2048 keypair,
     /// marks the previous active key as retired (kept for the overlap
-    /// window), and returns the new active credentials. Manual operator
-    /// action — there is no scheduled auto-rotation.
+    /// window so in-flight tokens stay validatable), and returns the new
+    /// active credentials. Manual operator action — there is no scheduled
+    /// auto-rotation; it is triggered via the admin endpoint
+    /// (<c>POST /api/admin/realm-settings/rotate-signing-key</c>) or the
+    /// recovery CLI (<c>recover rotate-signing-key --realm</c>).
     /// </summary>
     Task<SigningCredentials> RotateAsync(
+        string realmSlug, CancellationToken ct = default);
+
+    /// <summary>
+    /// Hard-deletes retired keys whose rotation overlap window has elapsed
+    /// (<c>RetiredAt + RotationOverlap &lt; now</c>) for the given realm, and
+    /// drops the cached verification set so it rebuilds without them. Active
+    /// and still-in-overlap keys are left untouched. Returns the number of
+    /// keys purged. Idempotent — a no-op when nothing is due. Driven per-realm
+    /// by the background <c>SigningKeyJanitorJob</c>.
+    /// </summary>
+    Task<int> PurgeExpiredRetiredKeysAsync(
         string realmSlug, CancellationToken ct = default);
 }

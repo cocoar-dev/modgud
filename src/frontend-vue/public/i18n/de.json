@@ -992,7 +992,16 @@
         "selfRegistration": "Self-Registration",
         "dcr": "Dynamic Client Registration",
         "branding": "Branding",
-        "deletion": "Konto-Löschung"
+        "deletion": "Konto-Löschung",
+        "signingKeys": "Signing-Schlüssel"
+      },
+      "signingKeys": {
+        "hint": "Dieser Realm signiert seine OpenIddict Access- und ID-Tokens mit einem realm-eigenen RSA-Schlüssel. Beim Rotieren wird ein frischer Schlüssel für neue Tokens erzeugt; der bisherige wird stillgelegt, bleibt aber 30 Tage lang im JWKS, damit bereits ausgestellte Tokens gültig bleiben. Abgelaufene stillgelegte Schlüssel werden automatisch entfernt.",
+        "warning": "Nur rotieren, wenn es einen Grund gibt (Verdacht auf Schlüssel-Kompromittierung, geplante Hygiene). Resource-Server, die das JWKS aggressiv cachen, können neue Tokens kurzzeitig ablehnen, bis sie aktualisieren.",
+        "rotateButton": "Signing-Schlüssel rotieren",
+        "rotateConfirmTitle": "Signing-Schlüssel rotieren?",
+        "rotateConfirmMessage": "Ein frischer Schlüssel wird sofort aktiv. Der aktuelle Schlüssel wird in das 30-Tage-Overlap-Fenster stillgelegt. Das kann nicht rückgängig gemacht werden.",
+        "rotated": "Signing-Schlüssel rotiert (neuer kid {kid}). Der bisherige Schlüssel bleibt während des Overlap-Fensters für laufende Tokens gültig."
       },
       "deletion": {
         "hint": "Steuert den Konto-Löschungs-Lebenszyklus dieses Realms. Selbst-Löschungen erhalten eine Karenzzeit, in der der Benutzer abbrechen kann; Admin-Löschungen landen im Papierkorb, der nach Ablauf der Aufbewahrung automatisch geleert wird.",

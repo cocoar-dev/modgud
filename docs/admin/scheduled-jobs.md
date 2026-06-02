@@ -22,7 +22,7 @@ Run history (`JobRunHistoryEntry`) and per-job overrides (`JobConfig`) live in t
 
 ## Registered jobs
 
-Three jobs ship with Modgud today. All three iterate every active realm internally — you see one row per job, not one row per (job, realm).
+Four jobs ship with Modgud today. All of them iterate every active realm internally — you see one row per job, not one row per (job, realm).
 
 ### `inbox-retention` — Inbox Retention
 
@@ -57,6 +57,15 @@ Soft-deletes [Dynamic Client Registration](./dynamic-client-registration) client
 - **What it does:** for every realm with DCR enabled, finds DCR-registered clients whose last-used timestamp is older than `now − GcTtlDays` and soft-deletes them via the OAuth application aggregate. Realms with DCR disabled are skipped after a single indexed lookup.
 - **On failure:** logged + inbox-notified. Soft delete means client_id history stays intact for forensics.
 
+### `signing-key-janitor` — Signing Key Janitor
+
+Hard-deletes per-realm OAuth/OIDC signing keys whose rotation overlap window has elapsed.
+
+- **Default cron:** `0 0 5 * * ?` (05:00 UTC daily — after the GC + retention jobs)
+- **Parameters:** none — the overlap window is a fixed 30 days.
+- **What it does:** for every realm (including deactivated ones, whose retired keys still hold private signing material), deletes signing keys where `RetiredAt + 30 days < now`. Active keys and keys still inside their overlap window are left untouched. Realms with nothing expired finish after a single indexed lookup. See [Realm Settings → Signing Keys](./realm-settings#signing-keys) for the rotation that produces these retired keys.
+- **On failure:** logged + inbox-notified.
+
 ## Job-detail modal
 
 Double-click any row (or open `/admin/scheduled-jobs#<job-key>`) to get a three-tab modal.
@@ -64,7 +73,7 @@ Double-click any row (or open `/admin/scheduled-jobs#<job-key>`) to get a three-
 | Tab | What it shows |
 | --- | --- |
 | **Schedule** | Cron expression input (placeholder shows the registration default), enabled toggle, **Run now** button, and the computed **Next run** timestamp. |
-| **Configuration** | One field per `JobParameterField` declared by the job, grouped by `Section` when set. Empty value = fall back to the schema's `Default`. Tab is hidden for jobs with no tunable parameters (currently `inbox-retention` and `dcr-gc`). |
+| **Configuration** | One field per `JobParameterField` declared by the job, grouped by `Section` when set. Empty value = fall back to the schema's `Default`. Tab is hidden for jobs with no tunable parameters (currently `inbox-retention`, `dcr-gc`, and `signing-key-janitor`). |
 | **History** | Last 50 runs, newest first. Success runs show duration + optional one-line summary. Failed runs show the first-line error message and an expandable stack trace. Manual triggers carry a `manual` tag. |
 
 The modal's footer **Save** button persists Schedule + Configuration in one shot; the trigger button on the Schedule tab is independent.
