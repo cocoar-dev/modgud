@@ -56,8 +56,9 @@ public class ControlPlaneSeparationTests : IntegrationTestBase
                 Slug = slug,
                 DisplayName = "Acme",
                 Domains = [host],
-                // IsControlPlane is computed from `Slug == "system"`, so a
-                // tenant slug like "acme" is automatically not the CP.
+                // IsControlPlane is a stored flag; a tenant realm is never the
+                // control plane (defaults false, set explicitly for clarity).
+                IsControlPlane = false,
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow,
             };
@@ -111,24 +112,13 @@ public class ControlPlaneSeparationTests : IntegrationTestBase
     // POST /api/account/bootstrap-admin on the tenant host (consume an
     // invite issued from the CP-side or the recovery CLI).
 
-    // Removed: UpdateRealm_promoting_second_realm_to_ControlPlane_is_blocked,
-    // CreateRealm_with_IsControlPlane_when_one_exists_is_blocked, and
-    // UpdateRealm_demoting_last_ControlPlane_is_blocked.
-    //
-    // The "exactly one Control Plane per deployment" invariant is now a
-    // structural consequence of the architecture:
-    //   - IsControlPlane is computed from `Slug == RealmSlugRules.SystemSlug`
-    //     (the constant is `"system"`).
-    //   - "system" is in `RealmSlugRules.ReservedSlugs` — no CreateRealm
-    //     call can claim it.
-    //   - Slug is immutable after creation.
-    // Therefore a second control-plane realm is impossible by construction;
-    // there's no transition to test.
-    //
-    // The DEACTIVATE-system / DELETE-system guards that ARE still needed
-    // (deployment must keep its admin surface) are pinned by:
-    //   - UpdateRealm_deactivating_ControlPlane_is_blocked (below)
-    //   - DeleteRealm_ControlPlane_is_blocked (below)
+    // The control plane is now a STORED, transferable Realm.IsControlPlane flag
+    // (no longer computed from the slug). The "exactly one holder" invariant,
+    // the move semantics, the boot-time durability guard, and the
+    // gate-follows-the-flag behaviour are pinned in ControlPlaneTransferTests.
+    // The DEACTIVATE/DELETE-control-plane guards (the deployment must keep its
+    // admin surface) are pinned below — they still target the system realm,
+    // which is the control plane at boot.
 
     [Fact]
     public async Task UpdateRealm_deactivating_ControlPlane_is_blocked()

@@ -21,33 +21,48 @@ It doesn't belong on a tenant. A tenant should not even be able to
 
 ## Model
 
-Exactly **one** realm per deployment is the Control Plane —
-**structurally**, not as a separately-stored flag.
-`Realm.IsControlPlane` is computed:
+Exactly **one** realm per deployment is the Control Plane — the realm that
+carries the **stored** `Realm.IsControlPlane` flag:
 
 ```csharp
-public bool IsControlPlane => Slug == RealmSlugRules.SystemSlug;
-// SystemSlug = "system"
+public bool IsControlPlane { get; set; } // stored, transferable
 ```
 
-Three structural facts make this an "exactly one" guarantee without
-any runtime validation:
+The bootstrap (`system`) realm is stamped with the flag at first boot
+(`EnsureSystemRealmExistsAsync`), but the slug is only the default anchor
+*name* — it no longer determines control-plane status. The flag is
+**transferable** to any active realm, so a deployment that starts
+single-tenant can later hand cross-realm administration to a different realm
+and let the original system realm become an equal, deletable peer.
 
-1. The slug `"system"` is in `RealmSlugRules.ReservedSlugs` — no
-   `CreateRealm` call can claim it.
-2. The system realm is seeded once at first boot
-   (`EnsureSystemRealmExistsAsync`).
-3. `Slug` is immutable after creation — the realm document carries
-   the slug for life.
+### Authority = realm:admin in the flag-holding realm
 
-So no `Update` can promote a tenant realm to Control Plane, no `Create`
-can spawn a second one, no flag can be flipped off. The Control Plane
-is wherever the slug is — and that's always exactly the system realm.
+There is deliberately **no** `controlplane:admin` permission. Cross-realm
+authority is the ordinary `realm:admin` permission *within whichever realm
+holds the flag*. That removes a privilege-escalation vector: a delegable
+cross-tenant permission could be self-granted by a tenant admin through
+normal role assignment, whereas a flag that only a control-plane-gated
+operation (or the operator CLI) can move cannot. As a consequence,
+transferring the flag hands cross-realm administration to the target realm's
+existing `realm:admin` users with no permission migration. (The transfer
+also re-seeds the `control-plane` app catalog into the target realm so
+*scoped* `control-plane:realm:*` roles can be granted there too.)
 
-`RealmProvisioningService` does still block deactivating or deleting
-the system realm — losing the Control Plane would lock the deployment
-out of cross-realm administration — but those are the only two
-remaining guards.
+### The "exactly one" invariant
+
+It is enforced defensively, not by a DB constraint:
+
+- `TransferControlPlaneAsync` clears the flag on every other holder in the
+  same transaction — self-healing an accidental multi-holder state down to
+  exactly the target.
+- At boot, `EnsureSystemRealmExistsAsync` adopts the flag onto the system
+  realm **only when no realm currently holds it**. This is the load-bearing
+  guard that makes a transfer durable across reboots — without it every boot
+  would steal the flag back to `system`.
+
+`RealmProvisioningService` still blocks deactivating or deleting the realm
+that currently holds the flag — losing it would lock the deployment out of
+cross-realm administration.
 
 ::: tip Naming
 The permission namespace is `control-plane:*`, deliberately decoupled
@@ -119,6 +134,26 @@ A tenant realm doesn't have the app registered. A `Group` or `Role` in
 a tenant DB can't grant `control-plane:realm:write` because the
 `PermissionService` validates against the tenant's own resource
 registry — and that registry doesn't list the `control-plane` app.
+
+## Transferring the control plane
+
+The flag moves via two paths, both of which clear every other holder in one
+transaction:
+
+- **In-app:** `POST /api/admin/realms/{slug}/transfer-control-plane` — POST to
+  the realm that should *become* the control plane, from the current
+  control-plane host (the route group's `RequireControlPlaneFilter` enforces
+  the latter). Gated by `control-plane:realm:write`.
+- **Operator break-glass:** `recover control-plane transfer <slug>` (and
+  `recover control-plane list` to see the current holder) — for when the
+  control-plane realm has no usable admin. See
+  [Recovery CLI](../operate/recovery-cli).
+
+After a transfer the **old** host 404s `/api/admin/realms` (its realm is no
+longer the control plane) and the **new** host's `realm:admin` users gain the
+surface. Plan the move so the target realm already has at least one
+`realm:admin`, otherwise the new control plane is management-empty until you
+recover one via the CLI.
 
 ## Hostname routing — DB is source of truth
 
@@ -236,7 +271,7 @@ The SPA reads `IsControlPlane: bool` from the anonymous
 |---|---|---|
 | Routing gate | `ControlPlaneGateMiddlewareTests` | `Modgud.Tests.Unit/Api/Middleware/` |
 | Endpoint filter | `RealmsEndpointsTests.RequireControlPlaneFilterTests` | `Modgud.Tests.Unit/Api/Features/Admin/` |
-| End-to-end | `ControlPlaneSeparationTests` (tenant→404, CP→OK, exactly-one-CP invariant on create + promote + demote, app-info IsControlPlane) | `Modgud.Api.Tests/Security/` |
+| End-to-end | `ControlPlaneSeparationTests` (tenant→404, CP→OK, deactivate/delete-CP blocked, app-info IsControlPlane) + `ControlPlaneTransferTests` (flag move + clear-others, missing/inactive-target guards, boot durability guard, gate-follows-the-flag) | `Modgud.Api.Tests/Security/` |
 | Realm-cache resolution | `RealmCacheLookupTests` | `Modgud.Tests.Unit/Realms/` |
 
 A regression in any one layer is caught by the layer's tests; a

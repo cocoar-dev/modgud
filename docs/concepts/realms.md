@@ -69,14 +69,16 @@ graph TD
 | Database | Contents |
 |---|---|
 | `<master-db>` (Master) | Schema `realms.mt_tenant_databases` (tenant registry) + schema `global` (Realm documents) |
-| `<master-db>_system` | System realm data (users, groups, ...) — physically the same DB as the master |
+| `<master-db>_system` | System realm data (users, groups, ...) — its own physical DB, like every other realm |
 | `<master-db>_<slug>` | A separate physical DB per additional realm |
 
-::: info System realm and master DB
-The system realm intentionally points at the master DB. That way a
-single-realm installation needs only one DB. Multi-realm installations
-add separate tenant DBs for the other realms without the system realm
-needing to move away from the master.
+::: info Master DB vs. system realm
+The master DB is pure control-plane infrastructure — the tenant registry
+(`realms.mt_tenant_databases`) + the global Realm store (schema `global`) +
+Wolverine durability. It is **not** a tenant. Every realm, including the
+bootstrap `system` realm, lives in its own `<master-db>_<slug>` database.
+That makes the system realm an equal, deletable peer so the
+[control plane](./control-plane.md) can be transferred off it.
 :::
 
 ### Tenant resolution in code
@@ -112,12 +114,12 @@ of the master DB.
 
 On first start:
 
-1. **Create the master DB** (raw SQL, because Marten cannot
-   `CREATE DATABASE` on an active connection)
+1. **Create the master DB and the `<master-db>_system` DB** (raw SQL, because
+   Marten cannot `CREATE DATABASE` on an active connection)
 2. **Apply the Marten schema** → `realms.mt_tenant_databases` is created
-3. **Register the system tenant** → `tenancy.AddDatabaseRecordAsync("system", masterCs)`
-4. **Apply the Marten schema again** → per-tenant tables for system
-5. **Seed the system realm document** in `IGlobalStore`, flagged `IsControlPlane = true`
+3. **Register the system tenant** → `tenancy.AddDatabaseRecordAsync("system", systemCs)` (pointing at `<master-db>_system`, not the master DB)
+4. **Apply the Marten schema again** → per-tenant tables for the system realm, in its own DB
+5. **Seed the system realm document** in `IGlobalStore`, stamped `IsControlPlane = true`
 6. **Seed default OAuth scopes + the Internal login provider**
 7. **Seed the `modgud` and `control-plane` apps** into the system tenant DB
 8. **Warm `RealmCache`**
@@ -137,7 +139,6 @@ POST /api/admin/realms
   "Slug": "acme",
   "DisplayName": "Acme Corp",
   "Domains": ["acme.example.com"],
-  "IsControlPlane": false,
   "InitialAdmin": {
     "UserName": "max",
     "Email": "max@acme.com"
@@ -147,7 +148,9 @@ POST /api/admin/realms
 
 Backend:
 
-1. Validates `slug` (regex, no reserved word) and the exactly-one-CP invariant.
+1. Validates `slug` (regex, no reserved word). New realms are never the
+   control plane — the flag defaults to false and there is no create-time
+   switch; the role only moves via [transfer](./control-plane.md#transferring-the-control-plane).
 2. `CREATE DATABASE <master-db>_acme` (raw SQL).
 3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`.
 4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`.

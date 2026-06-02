@@ -9,7 +9,8 @@ namespace Modgud.Api.Tests.Users;
 /// <summary>
 /// WS2 of the Account-Lifecycle plan: the self-removing per-realm migration
 /// that establishes the email-uniqueness invariant. Exercises the three
-/// behaviours against the system tenant DB (= the master DB in tests):
+/// behaviours against the system tenant DB (its own <c>{master}_system</c> DB
+/// since the master/system split):
 /// builds the partial unique index + enforces it, scrubs legacy deleted-user
 /// PII, and refuses to build the index when active duplicates exist.
 ///
@@ -107,8 +108,12 @@ public class EmailUniquenessMigrationTests(SharedPostgresFixture fixture) : Inte
 
     private async Task<NpgsqlConnection> OpenSystemDbAsync()
     {
-        var cs = Factory.Services.GetRequiredService<IMasterConnectionString>().Value;
-        var conn = new NpgsqlConnection(cs);
+        var masterCs = Factory.Services.GetRequiredService<IMasterConnectionString>().Value;
+        // Since the master/system DB split the system tenant lives in its own
+        // {master}_system database — the migration runs there, not the master DB.
+        var builder = new NpgsqlConnectionStringBuilder(masterCs);
+        builder.Database = $"{builder.Database}_{TenantConstants.SystemTenantId}";
+        var conn = new NpgsqlConnection(builder.ConnectionString);
         await conn.OpenAsync(TestContext.Current.CancellationToken);
         return conn;
     }

@@ -144,12 +144,61 @@ dotnet Modgud.Api.dll recover realm-remove-domain \
   --domain old.example.com
 ```
 
+### `control-plane list` / `control-plane transfer <slug>`
+Inspect or relocate the [control-plane](../concepts/control-plane) role
+(the realm that hosts cross-realm administration). `list` prints the current
+holder; `transfer` moves the stored `IsControlPlane` flag to another realm,
+clearing every other holder in one transaction.
+
+```bash
+dotnet Modgud.Api.dll recover control-plane list
+dotnet Modgud.Api.dll recover control-plane transfer acme
+```
+
+Break-glass for when the control-plane realm has no usable admin: the target
+realm's existing `realm:admin` users gain cross-realm administration. There is
+deliberately **no** `grant` subcommand — authority is `realm:admin` within the
+flag-holding realm, so there is nothing to grant, only the flag to move.
+Restart the running container afterwards so its in-process realm cache picks up
+the change.
+
+### `adopt-tenant <slug> <displayName> [domain]`
+Register an **already-existing** tenant database (`<master-db>_<slug>`) as a
+realm — the migration counterpart to creating a realm via the API. It does
+**not** `CREATE DATABASE`; restore the dump into the target DB first, then
+adopt it. Errors if the database is missing or a realm with the slug already
+exists. Schema is applied idempotently (existing data is kept).
+
+```bash
+dotnet Modgud.Api.dll recover adopt-tenant acme "Acme Corp" acme.example.com
+```
+
 ### `help`
 Show the usage summary.
 
 ```bash
 dotnet Modgud.Api.dll recover help
 ```
+
+## Running a command at container startup (`STARTUP_COMMAND`)
+
+For orchestrators where overriding the container's command/entrypoint is
+awkward (Portainer, some Compose setups), set the `STARTUP_COMMAND` environment
+variable to a recover command. On boot — **after** the master + system tenant
+are provisioned — the value is split into argv and run; the process then
+**idles** (it never starts Kestrel and never exits) so a restart policy can't
+crash-loop it.
+
+```yaml
+# docker-compose.yml (excerpt)
+environment:
+  STARTUP_COMMAND: 'recover control-plane transfer acme'
+```
+
+Check the logs, then **remove the variable and redeploy** to resume normal web
+serving. `STARTUP_COMMAND` is only consulted when no CLI command args are
+present, and is a raw environment variable (not a `Cocoar.Configuration` key).
+Multi-word arguments work when double-quoted (e.g. a realm display name).
 
 ## Audit trail
 

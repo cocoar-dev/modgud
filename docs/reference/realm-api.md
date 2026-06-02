@@ -30,8 +30,9 @@ in the `modgud` App's catalog would be a different permission. The
 
 `POST` requires an `InitialAdmin` payload. A realm without a recipient
 on file would have no admin path; the endpoint refuses to create one.
-The Control-Plane flag is computed from the slug (`system` is the CP
-realm); you cannot send it.
+The Control-Plane flag is a stored, transferable field; you cannot set it on
+create (new realms are never the control plane). See
+[Transfer the control plane](#transfer-the-control-plane).
 
 ```http
 POST /api/admin/realms HTTP/1.1
@@ -158,6 +159,31 @@ domain land at 404. Data is preserved.
 The Control-Plane realm cannot be deactivated
 (`Realm.CannotDeactivateControlPlane`).
 
+## Transfer the control plane
+
+```http
+POST /api/admin/realms/{slug}/transfer-control-plane HTTP/1.1
+Host: auth.example.com   # must be the current control-plane host
+```
+
+Moves the stored `IsControlPlane` flag to `{slug}` (the realm that should
+*become* the control plane) and clears it on every other holder, in one
+transaction. Gated by `control-plane:realm:write` **and** the control-plane
+routing gate (the caller's host must currently be the control plane). The
+target must exist and be active.
+
+| Response | Meaning |
+|---|---|
+| `200 OK` (the updated realm) | Flag moved (or already the sole holder — idempotent). |
+| `404 Not Found` | Target doesn't exist, **or** the caller's host isn't the control plane (the gate hides the surface). |
+| `400` `Realm.TargetInactive` | Target realm is deactivated. |
+
+After the move the calling host stops being the control plane — subsequent
+`/api/admin/realms` requests there return `404`. The target realm's existing
+`realm:admin` users gain cross-realm administration (authority is `realm:admin`
+within the flag-holding realm; no permission migration). See
+[Control Plane](../concepts/control-plane#transferring-the-control-plane).
+
 ## Hard-delete a realm
 
 ::: warning Not implemented
@@ -179,7 +205,7 @@ public class Realm
     public string DisplayName { get; set; }
     public string? Description { get; set; }
     public string[] Domains { get; set; }         // Host-header matches
-    public bool IsControlPlane { get; set; }      // computed from Slug == "system"
+    public bool IsControlPlane { get; set; }      // stored, transferable; exactly one holder
     public bool IsActive { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
