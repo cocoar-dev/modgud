@@ -39,7 +39,7 @@
     <!-- Marten 9 source-generates projection apply-dispatchers; every
          `.csproj` that declares a partial Projection class needs this as
          analyzer-style PackageReference. -->
-    <PackageVersion Include="JasperFx.Events.SourceGenerator" Version="2.4.1" />
+    <PackageVersion Include="JasperFx.Events.SourceGenerator" Version="2.5.0" />
     <!-- Wolverine 6 decoupled the Roslyn runtime codegen from core;
          IMessageBus.InvokeAsync<T> needs it in the host project. -->
     <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.3.2" />
@@ -63,7 +63,7 @@
     <PackageVersion Include="OpenIddict.Server" Version="7.5.0" />
     <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.5.0" />
     <PackageVersion Include="OpenIddict.Validation" Version="7.5.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.18.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.0" />
     <!-- Testing -->
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />

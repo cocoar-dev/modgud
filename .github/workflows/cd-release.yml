@@ -288,7 +288,7 @@ jobs:
           ref: ${{ github.event.release.tag_name || github.ref }}
 
       - name: Download nupkg artifact
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: nuget-packages-${{ needs.validate-version.outputs.version }}
           path: ${{ github.workspace }}/artifacts
@@ -384,7 +384,7 @@ jobs:
 
     steps:
       - name: Download docs artifact
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: docs-${{ needs.validate-version.outputs.docs-version }}
           path: ${{ github.workspace }}
