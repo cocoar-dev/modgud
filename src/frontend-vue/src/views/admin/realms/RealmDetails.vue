@@ -26,7 +26,6 @@ interface FormState {
   DisplayName: string
   Description: string
   Domains: string[]
-  IsControlPlane: boolean
   IsActive: boolean
   InitialAdminUserName: string
   InitialAdminEmail: string
@@ -40,7 +39,6 @@ function emptyForm(): FormState {
     DisplayName: '',
     Description: '',
     Domains: [],
-    IsControlPlane: false,
     IsActive: true,
     InitialAdminUserName: '',
     InitialAdminEmail: '',
@@ -59,6 +57,11 @@ const issuedInvite = ref<InitialAdminInviteDto | null>(null)
 const inviteSource = ref<'created' | 'resent' | null>(null)
 const linkCopied = ref(false)
 
+// Control-plane transfer: terminal state after a successful move (the current
+// host loses the realm-management surface, so we don't return to the form).
+const transferring = ref(false)
+const transferResult = ref<RealmDto | null>(null)
+
 function fromDto(dto: RealmDto): FormState {
   return {
     ...emptyForm(),
@@ -66,7 +69,6 @@ function fromDto(dto: RealmDto): FormState {
     DisplayName: dto.DisplayName,
     Description: dto.Description ?? '',
     Domains: [...(dto.Domains ?? [])],
-    IsControlPlane: dto.IsControlPlane,
     IsActive: dto.IsActive,
   }
 }
@@ -89,7 +91,7 @@ const canSubmit = computed(() => {
   return true
 })
 
-const footerButton = computed(() => issuedInvite.value
+const footerButton = computed(() => (issuedInvite.value || transferResult.value)
   ? {
       visible: true,
       text: t('common.close', {}, 'Schließen'),
@@ -129,7 +131,6 @@ async function save() {
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
         Domains: [...form.value.Domains],
-        IsControlPlane: form.value.IsControlPlane,
         InitialAdmin: {
           UserName: form.value.InitialAdminUserName.trim(),
           Email: form.value.InitialAdminEmail.trim(),
@@ -146,7 +147,6 @@ async function save() {
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
         Domains: [...form.value.Domains],
-        IsControlPlane: form.value.IsControlPlane,
         IsActive: form.value.IsActive,
       })
       props.close()
@@ -169,6 +169,27 @@ async function resendInvite() {
     error.value = e?.body?.detail ?? e?.body?.Message ?? e?.message ?? String(e)
   } finally {
     loading.value = false
+  }
+}
+
+async function transferControlPlane() {
+  const target = dto.value
+  if (!target || target.IsControlPlane || !target.IsActive) return
+  const confirmMsg = t(
+    'admin.realms.confirmTransferControlPlane',
+    { slug: target.Slug },
+    `Make "${target.Slug}" the control plane? Cross-realm administration moves to that realm and this current host loses the realm-management surface.`,
+  )
+  if (!confirm(confirmMsg)) return
+
+  transferring.value = true
+  error.value = null
+  try {
+    transferResult.value = await store.transferControlPlane(target.Slug)
+  } catch (e: any) {
+    error.value = e?.body?.detail ?? e?.body?.Message ?? e?.message ?? String(e)
+  } finally {
+    transferring.value = false
   }
 }
 
@@ -219,6 +240,22 @@ async function copyLink() {
       </CoarFormField>
     </div>
 
+    <!-- Control-plane transfer result — terminal state (this host is no longer the CP). -->
+    <div v-else-if="transferResult" class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
+      <CoarNote variant="success">
+        {{ t('admin.realms.transferDoneTitle', { slug: transferResult.Slug }, `Control plane moved to "${transferResult.Slug}".`) }}
+      </CoarNote>
+      <CoarNote variant="warning">
+        {{ t('admin.realms.transferDoneHint', {}, 'This host is no longer the control plane — realm management now lives on the target realm domain(s) below. Continue administration there.') }}
+      </CoarNote>
+      <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+        <span class="text-gray-500">{{ t('admin.realms.displayName', {}, 'Display Name') }}</span>
+        <span class="font-medium">{{ transferResult.DisplayName }}</span>
+        <span class="text-gray-500">{{ t('admin.realms.domains', {}, 'Domains') }}</span>
+        <span>{{ (transferResult.Domains ?? []).join(', ') }}</span>
+      </div>
+    </div>
+
     <!-- Edit/Create form -->
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
       <CoarNote v-if="isCreate" variant="info">
@@ -245,10 +282,8 @@ async function copyLink() {
           :placeholder="t('admin.realms.domain.placeholder', {}, 'auth.example.com')" />
       </CoarFormField>
 
-      <div class="flex flex-wrap gap-x-6 gap-y-2 mt-1">
-        <CoarCheckbox v-model="form.IsControlPlane"
-          :label="t('admin.realms.isControlPlane', {}, 'Control Plane (cross-realm Admin-Oberfläche)')" />
-        <CoarCheckbox v-if="!isCreate" v-model="form.IsActive"
+      <div v-if="!isCreate" class="flex flex-wrap gap-x-6 gap-y-2 mt-1">
+        <CoarCheckbox v-model="form.IsActive"
           :label="t('common.active', {}, 'Aktiv')" />
       </div>
 
@@ -284,6 +319,29 @@ async function copyLink() {
         <CoarButton variant="secondary" :loading="loading" @click="resendInvite">
           {{ t('admin.realms.resendInvite', {}, 'Invite erneut senden') }}
         </CoarButton>
+      </div>
+
+      <!-- Control plane (edit-only) -->
+      <div v-if="!isCreate && dto" class="mt-2 border-t pt-3 flex flex-col gap-2">
+        <h4 class="text-sm font-medium text-gray-700">
+          {{ t('admin.realms.controlPlaneTitle', {}, 'Control Plane') }}
+        </h4>
+
+        <CoarNote v-if="dto.IsControlPlane" variant="info">
+          {{ t('admin.realms.isControlPlaneNote', {}, 'This realm is the control plane — it hosts cross-realm administration. To move the role, open the target realm and make it the control plane.') }}
+        </CoarNote>
+
+        <template v-else>
+          <p class="text-xs text-gray-500">
+            {{ t('admin.realms.transferControlPlaneHint', {}, 'Make this realm the control plane. Cross-realm administration moves here and the current host loses the realm-management surface. The target realm admins (realm:admin) gain it automatically.') }}
+          </p>
+          <div>
+            <CoarButton variant="danger" :loading="transferring" :disabled="!dto.IsActive"
+              @click="transferControlPlane">
+              {{ t('admin.realms.transferControlPlane', {}, 'Make this realm the control plane') }}
+            </CoarButton>
+          </div>
+        </template>
       </div>
 
       <p v-if="error" class="text-sm text-red-600">{{ error }}</p>

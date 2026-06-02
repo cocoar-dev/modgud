@@ -35,7 +35,6 @@ export interface CreateRealmDto {
   DisplayName: string
   Description?: string | null
   Domains?: string[] | null
-  IsControlPlane?: boolean
   InitialAdmin: InitialAdminDto
 }
 
@@ -48,7 +47,6 @@ export interface UpdateRealmDto {
   DisplayName?: string | null
   Description?: string | null
   Domains?: string[] | null
-  IsControlPlane?: boolean | null
   IsActive?: boolean | null
 }
 
