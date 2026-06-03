@@ -245,10 +245,10 @@ public static class RecoveryCli
             EventType = AuditEvents.RecoveryCliInvoked,
             Level = "Warning",
             Realm = realmSlug,
-            Actor = user.UserName,
+            Actor = user.Id.ToString(),
             Status = "succeeded",
-            Reason = $"reset-2fa: User={user.UserName} TOTP={wasTotpEnabled} EmailOtp={wasEmailOtpEnabled} PasskeysDeleted={passkeys.Count}",
-            Message = $"Recovery reset-2fa. User={user.UserName} TOTP={wasTotpEnabled} EmailOtp={wasEmailOtpEnabled} PasskeysDeleted={passkeys.Count}",
+            Reason = $"reset-2fa: UserId={user.Id} TOTP={wasTotpEnabled} EmailOtp={wasEmailOtpEnabled} PasskeysDeleted={passkeys.Count}",
+            Message = $"Recovery reset-2fa. UserId={user.Id} TOTP={wasTotpEnabled} EmailOtp={wasEmailOtpEnabled} PasskeysDeleted={passkeys.Count}",
         });
 
         Console.WriteLine($"✓ 2FA reset for {user.UserName}:");
@@ -313,10 +313,10 @@ public static class RecoveryCli
             EventType = AuditEvents.RecoveryCliInvoked,
             Level = "Warning",
             Realm = realmSlug,
-            Actor = user.UserName,
+            Actor = user.Id.ToString(),
             Status = "succeeded",
-            Reason = $"set-email: User={user.UserName} Old={LogPiiMasking.MaskEmail(oldEmail)} New={LogPiiMasking.MaskEmail(newEmail)}",
-            Message = $"Recovery set-email. User={user.UserName} Old={LogPiiMasking.MaskEmail(oldEmail)} New={LogPiiMasking.MaskEmail(newEmail)}",
+            Reason = $"set-email: UserId={user.Id} Old={LogPiiMasking.MaskEmail(oldEmail)} New={LogPiiMasking.MaskEmail(newEmail)}",
+            Message = $"Recovery set-email. UserId={user.Id} Old={LogPiiMasking.MaskEmail(oldEmail)} New={LogPiiMasking.MaskEmail(newEmail)}",
         });
 
         Console.WriteLine($"✓ Email updated for {user.UserName}:");
@@ -372,10 +372,10 @@ public static class RecoveryCli
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Level = "Warning",
-            Actor = user.UserName,
+            Actor = user.Id.ToString(),
             Status = "succeeded",
-            Reason = $"magic-link: User={user.UserName} ExpiresAt={challenge.ExpiresAt:O}",
-            Message = $"Recovery magic-link generated. User={user.UserName} ExpiresAt={challenge.ExpiresAt:O}",
+            Reason = $"magic-link: UserId={user.Id} ExpiresAt={challenge.ExpiresAt:O}",
+            Message = $"Recovery magic-link generated. UserId={user.Id} ExpiresAt={challenge.ExpiresAt:O}",
         });
 
         Console.WriteLine($"✓ Magic link for {user.UserName} (expires in {expirationMinutes} min):");
@@ -495,10 +495,10 @@ public static class RecoveryCli
                 EventType = AuditEvents.RecoveryCliInvoked,
                 Level = "Warning",
                 Realm = realmSlug,
-                Actor = userName,
+                Actor = LogPiiMasking.MaskUsername(userName),
                 Status = "failed",
-                Reason = $"bootstrap-admin: UserName={userName} Code={result.FirstError.Code} Detail={result.FirstError.Description}",
-                Message = $"Recovery bootstrap-admin failed. Realm={realmSlug} UserName={userName} Code={result.FirstError.Code} Detail={result.FirstError.Description}",
+                Reason = $"bootstrap-admin: UserName={LogPiiMasking.MaskUsername(userName)} Code={result.FirstError.Code} Detail={result.FirstError.Description}",
+                Message = $"Recovery bootstrap-admin failed. Realm={realmSlug} UserName={LogPiiMasking.MaskUsername(userName)} Code={result.FirstError.Code} Detail={result.FirstError.Description}",
             });
             return Error($"{result.FirstError.Code}: {result.FirstError.Description}");
         }
@@ -509,10 +509,10 @@ public static class RecoveryCli
             EventType = AuditEvents.RecoveryCliInvoked,
             Level = "Warning",
             Realm = realmSlug,
-            Actor = admin.UserName,
+            Actor = admin.UserId.ToString(),
             Status = "succeeded",
-            Reason = $"bootstrap-admin: UserName={admin.UserName} Mode=Direct",
-            Message = $"Recovery bootstrap-admin succeeded. Realm={realmSlug} UserName={admin.UserName} Mode=Direct",
+            Reason = $"bootstrap-admin: UserId={admin.UserId} Mode=Direct",
+            Message = $"Recovery bootstrap-admin succeeded. Realm={realmSlug} UserId={admin.UserId} Mode=Direct",
         });
 
         Console.WriteLine($"✓ Admin created in realm '{realmSlug}':");
@@ -555,10 +555,10 @@ public static class RecoveryCli
             EventType = AuditEvents.RecoveryCliInvoked,
             Level = "Warning",
             Realm = realmSlug,
-            Actor = userName,
+            Actor = LogPiiMasking.MaskUsername(userName),
             Status = "initiated",
-            Reason = $"bootstrap-admin invite: UserName={userName} Email={LogPiiMasking.MaskEmail(email)} ExpiresAt={invite.ExpiresAt:O}",
-            Message = $"Recovery bootstrap-admin issued invite. Realm={realmSlug} UserName={userName} Email={LogPiiMasking.MaskEmail(email)} ExpiresAt={invite.ExpiresAt:O}",
+            Reason = $"bootstrap-admin invite: UserName={LogPiiMasking.MaskUsername(userName)} Email={LogPiiMasking.MaskEmail(email)} ExpiresAt={invite.ExpiresAt:O}",
+            Message = $"Recovery bootstrap-admin issued invite. Realm={realmSlug} UserName={LogPiiMasking.MaskUsername(userName)} Email={LogPiiMasking.MaskEmail(email)} ExpiresAt={invite.ExpiresAt:O}",
         });
 
         Console.WriteLine($"✓ Bootstrap-invite issued for realm '{realmSlug}':");

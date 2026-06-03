@@ -219,7 +219,7 @@ public static class MagicLinkEndpoints
 
             await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
 
-            Serilog.Log.Information("Magic link login successful. User={UserName} IP={IP}", user.UserName, ip);
+            Serilog.Log.Information("Magic link login successful. UserId={UserId} IP={IP}", user.Id, ip);
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.MagicLink, ModgudMeters.LoginOutcome.Success);
             return Results.Ok(new { Message = "Login successful" });
         })

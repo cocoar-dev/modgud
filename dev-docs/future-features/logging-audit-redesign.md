@@ -665,12 +665,16 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
   `LogPiiMasking.MaskEmail` kept as belt. The block went v1→v2 after an adversarial
   diff review (usernames have no value shape: the `UserName`/`Actor` attributes are
   dropped and the `User=` body form masked; IPv6 leading-`::` added).
-  **Deferred follow-up (not Phase 4):** a source-side belt — log `user.Id` instead
-  of the raw login identifier across the ~18 operational `User={UserName}` sites,
-  add `LogPiiMasking.MaskUsername`, and mask the attacker-supplied `Actor`/`Message`
-  on the unknown-user failed-login path before it persists to the *streamless
-  security store* (that DB sink does not pass through the collector). This closes
-  the username gap at the source for prose forms the collector cannot shape-match.
+  **Source-side belt (shipped alongside):** the operational log sites no longer emit
+  raw login identifiers — an identified user is logged as `user.Id` (a GUID that
+  erasure tombstones), and an unidentified actor's attempted handle is masked via the
+  new `LogPiiMasking.MaskUsername` (email-aware). This covers ~27 sites across the
+  Account / Profile / Admin-grace / passkey / magic-link / 2FA-enforcement / external-
+  unlink / bootstrap surfaces, **and** the streamless **security store** writes (the
+  unknown-user failed-login `Actor`/`Message`, the bootstrap-invite, and the six
+  Recovery-CLI break-glass emits — that DB sink does not pass through the collector,
+  so masking there is the only control; CLI console output stays human-readable).
+  Collector v2's `User=`/`UserName` rules remain as belt for any future call site.
 - **Phase 5 — In-app per-realm error feed** (§B.3): per-realm-bounded buffers (NOT
   a global ring), `ObservabilityHub.LogsSubscribe()`, the `AdminObservabilityView.vue`
   error panel. Plus the carried-forward per-method SignalR-auth hardening.

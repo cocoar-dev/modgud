@@ -78,8 +78,8 @@ public static class BootstrapEndpoints
             }
 
             Serilog.Log.Warning(
-                "Bootstrap admin created via invite. IP={IP} UserName={UserName}",
-                ip, result.Value.UserName);
+                "Bootstrap admin created via invite. IP={IP} UserId={UserId}",
+                ip, result.Value.UserId);
 
             return Results.Ok(new { Message = "Bootstrap successful", UserName = result.Value.UserName });
         })

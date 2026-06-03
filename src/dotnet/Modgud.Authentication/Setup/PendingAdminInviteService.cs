@@ -170,7 +170,7 @@ public sealed class PendingAdminInviteService(
             Actor = LogPiiMasking.MaskEmail(normalizedEmail),
             Status = "issued",
             Reason = $"expires {invite.ExpiresAt}, issued by {issuedBy ?? "(self/CLI)"}",
-            Message = $"Bootstrap invite issued for {normalizedUserName}",
+            Message = "Bootstrap invite issued",
         });
 
         return new IssuedInvite(invite.Id, token, url, invite.ExpiresAt, normalizedEmail, normalizedUserName);
@@ -213,8 +213,8 @@ public sealed class PendingAdminInviteService(
         await session.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "Bootstrap-invite consumed. UserName={UserName} Email={MaskedEmail}",
-            invite.UserName, LogPiiMasking.MaskEmail(invite.Email));
+            "Bootstrap-invite consumed. UserId={UserId} Email={MaskedEmail}",
+            bootstrapResult.Value.UserId, LogPiiMasking.MaskEmail(invite.Email));
 
         return bootstrapResult.Value;
     }

@@ -33,4 +33,23 @@ public static class LogPiiMasking
         var firstChar = local[0];
         return $"{firstChar}***@{domain}";
     }
+
+    /// <summary>
+    /// Mask a login identifier for log/audit lines about an <em>unidentified</em>
+    /// actor — e.g. a failed login for a user that does not exist, where the
+    /// attempted handle is attacker-supplied and may itself be a real person's
+    /// email or username. Email-shaped input is masked via <see cref="MaskEmail"/>;
+    /// anything else keeps only its first character. Empty/null returns a neutral
+    /// placeholder.
+    ///
+    /// <para>For an <em>identified</em> user, do NOT mask — log <c>user.Id</c>
+    /// (a GUID that erasure tombstones) instead of the username; that keeps the
+    /// log PII-free without losing the ability to correlate.</para>
+    /// </summary>
+    public static string MaskUsername(string? identifier)
+    {
+        if (string.IsNullOrWhiteSpace(identifier)) return "(none)";
+        var s = identifier.Trim();
+        return s.Contains('@') ? MaskEmail(s) : $"{s[0]}***";
+    }
 }

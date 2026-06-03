@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authentication;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Identity;
 using Modgud.Infrastructure.Email;
 
 namespace Modgud.Authentication.Api.Admin;
@@ -78,7 +79,7 @@ public static class AdminMagicLinkEndpoints
                     ["ExpirationMinutes"] = config.ExpirationMinutes.ToString(),
                 });
 
-            Serilog.Log.Information("Admin: Magic link sent to {UserName} ({Email})", user.UserName, user.Email);
+            Serilog.Log.Information("Admin: Magic link sent to {UserId} ({MaskedEmail})", user.Id, LogPiiMasking.MaskEmail(user.Email));
             return Results.Ok(new { Message = "Magic link sent" });
         })
         .WithName("Admin_SendMagicLink");

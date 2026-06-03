@@ -106,11 +106,11 @@ public static class AccountEndpoints
                 {
                     EventType = AuditEvents.LoginFailedUnknownUser,
                     Level = "Warning",
-                    Actor = request.UserName,
+                    Actor = LogPiiMasking.MaskUsername(request.UserName),
                     Ip = ip,
                     Status = "rejected",
                     Reason = "user not found or inactive",
-                    Message = $"Login failed for {request.UserName} — user not found or inactive",
+                    Message = $"Login failed for {LogPiiMasking.MaskUsername(request.UserName)} — user not found or inactive",
                 });
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Failure);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
@@ -121,7 +121,7 @@ public static class AccountEndpoints
 
             if (result.Succeeded)
             {
-                Log.Information("Login successful. User={UserName} IP={IP}", user.UserName, ip);
+                Log.Information("Login successful. UserId={UserId} IP={IP}", user.Id, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Success);
 
                 // Track per-user device session (best-effort).
@@ -156,14 +156,14 @@ public static class AccountEndpoints
                             // EventSourcedUserStore creates UserSecurityData on first password change.
                             // Fall back to blocking setup if the document is missing — caller can
                             // set up 2FA which will create the document.
-                            Log.Information("User requires secure setup (no security data). User={UserName} IP={IP}", user.UserName, ip);
+                            Log.Information("User requires secure setup (no security data). UserId={UserId} IP={IP}", user.Id, ip);
                             return Results.Ok(new { RequiresSecureSetup = true, GracePeriod = false });
                         }
 
                         // Hard opt-out: treat as if 2FA is set up. Audit-log every occurrence.
                         if (securityData.TwoFactorExempt)
                         {
-                            Log.Warning("2FA-exempt login. User={UserName} IP={IP}", user.UserName, ip);
+                            Log.Warning("2FA-exempt login. UserId={UserId} IP={IP}", user.Id, ip);
                             return Results.Ok(new { Message = "Login successful" });
                         }
 
@@ -177,13 +177,13 @@ public static class AccountEndpoints
                             securityData.SecureSetupDueAt = DateTime.UtcNow.AddDays(graceDays);
                             docSession.Store(securityData);
                             await docSession.SaveChangesAsync();
-                            Log.Information("Grace period started. User={UserName} DueAt={DueAt} IP={IP}",
-                                user.UserName, securityData.SecureSetupDueAt, ip);
+                            Log.Information("Grace period started. UserId={UserId} DueAt={DueAt} IP={IP}",
+                                user.Id, securityData.SecureSetupDueAt, ip);
                         }
 
                         var inGrace = securityData.SecureSetupDueAt is { } due && due > DateTime.UtcNow;
-                        Log.Information("User requires secure setup. User={UserName} InGrace={InGrace} DueAt={DueAt} IP={IP}",
-                            user.UserName, inGrace, securityData.SecureSetupDueAt, ip);
+                        Log.Information("User requires secure setup. UserId={UserId} InGrace={InGrace} DueAt={DueAt} IP={IP}",
+                            user.Id, inGrace, securityData.SecureSetupDueAt, ip);
                         return Results.Ok(new
                         {
                             RequiresSecureSetup = true,
@@ -198,7 +198,7 @@ public static class AccountEndpoints
 
             if (result.RequiresTwoFactor)
             {
-                Log.Information("Login requires MFA. User={UserName} IP={IP}", user.UserName, ip);
+                Log.Information("Login requires MFA. UserId={UserId} IP={IP}", user.Id, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.TwoFactorRequired);
                 var mfaMethods = new List<string>();
                 if (user.TwoFactorEnabled) mfaMethods.Add("totp");
@@ -208,12 +208,12 @@ public static class AccountEndpoints
 
             if (result.IsLockedOut)
             {
-                Log.Warning("Login failed — account locked. User={UserName} IP={IP}", user.UserName, ip);
+                Log.Warning("Login failed — account locked. UserId={UserId} IP={IP}", user.Id, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Locked);
             }
             else
             {
-                Log.Warning("Login failed — wrong password. User={UserName} IP={IP}", user.UserName, ip);
+                Log.Warning("Login failed — wrong password. UserId={UserId} IP={IP}", user.Id, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Failure);
             }
 
@@ -324,12 +324,12 @@ public static class AccountEndpoints
             var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
             if (!result.Succeeded)
             {
-                Log.Warning("Change password failed. User={UserName} IP={IP}", user.UserName, ip);
+                Log.Warning("Change password failed. UserId={UserId} IP={IP}", user.Id, ip);
                 var errors = result.Errors.Select(e => e.Description).ToList();
                 return Results.Json(new { Message = string.Join(" ", errors) }, statusCode: 400);
             }
 
-            Log.Information("Password changed. User={UserName} IP={IP}", user.UserName, ip);
+            Log.Information("Password changed. UserId={UserId} IP={IP}", user.Id, ip);
             return Results.Ok(new { Message = "Password changed successfully" });
         })
         .WithName("Account_ChangePassword");
