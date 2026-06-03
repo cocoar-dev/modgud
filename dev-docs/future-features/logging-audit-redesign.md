@@ -131,7 +131,8 @@ and a diagnostic log, and is the only thing resembling either. It serves two
   the streamless part.
 - **Track B — Operational logging** (platform-facing): OTel **Logs** → OTLP → an
   **OTel Collector** (redaction processor = the guarantee) → **OpenObserve**, plus
-  a slim in-app **per-realm** live error feed. Best-effort, bounded, centralized.
+  a slim in-app **per-realm** live error feed. Best-effort, bounded, centralized,
+  and **opt-in / off by default** (§B.0) — the IdP runs fully without it.
 
 ---
 
@@ -414,6 +415,22 @@ Warning/Error/Info mapping) and an `EventVersion` for schema evolution.
 
 ## Track B — Platform operational logging
 
+> **B.0 — Optional by design (opt-in).** All of Track B is toggleable, and the IdP
+> — including the entire Track A audit — runs fully with it **off**. Two sub-parts,
+> different dependency profiles:
+> - **Export** (OTel Logs → collector → OpenObserve) is gated on the **existing**
+>   `Observability__Otlp__Enabled` flag and is **off by default** (verified:
+>   `ObservabilitySettings.cs:58`, `configuration.json`). With it off, Serilog stays
+>   Console + File, no OTLP — **no external infra required**; the collector and
+>   OpenObserve are needed only once an operator turns export on.
+> - **In-app per-realm error feed** (§B.3) is **local-only** (a bounded buffer + the
+>   existing SignalR hub), no external dependency, so it can run independently of the
+>   export behind its own flag.
+>
+> Track A must **never** hard-depend on Track B: disabling operational logging does
+> not weaken the audit (Principle 3). This is a requirement, not a nice-to-have —
+> many deployments (single-instance, dev) will run with Track B off.
+
 ### B.1 OTel Logs — the missing third signal
 
 Add `.WithLogs()` to the OpenTelemetry builder (`ObservabilityExtensions.cs:46-103`,
@@ -482,8 +499,9 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
    basis + tight retention rather than per-subject erasure.
 3. **Separation of pipelines.** Audit = projection over committed events (durable,
    exactly-once, GDPR inherited). Operational = OTel Logs → collector → OpenObserve
-   (best-effort, lossy-by-design). Crossing is one-directional; audit never depends
-   on logging.
+   (best-effort, lossy-by-design, **opt-in / off by default** — §B.0). Crossing is
+   one-directional; audit never depends on logging, and **disabling Track B never
+   weakens the audit**.
 4. **Redaction guarantee at the collector** for operational logs; **masking
    inherited at source** for the tenant audit. Neither relies on per-call-site
    discipline for correctness.
@@ -553,7 +571,9 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
   `"Auth:"`-prefix-as-audit convention.
 - **Phase 4 — OTel Logs → collector → OpenObserve** (§B.1–B.2): `.WithLogs()` (+
   the OTel logging bridge package), the collector redaction processor (with the
-  end-to-end redaction test), realm-tagged + trace-correlated.
+  end-to-end redaction test), realm-tagged + trace-correlated — all behind the
+  existing `Observability__Otlp__Enabled` gate (off by default; §B.0), so a
+  deployment without OpenObserve/collector is unaffected.
 - **Phase 5 — In-app per-realm error feed** (§B.3): per-realm-bounded buffers (NOT
   a global ring), `ObservabilityHub.LogsSubscribe()`, the `AdminObservabilityView.vue`
   error panel. Plus the carried-forward per-method SignalR-auth hardening.
