@@ -129,7 +129,10 @@ public static class MartenStoreOptionsExtensions
         // fewer per tenant DB; aligns with AppBase v4).
         options.Schema.For<AuthLogDocument>()
             .Identity(x => x.Id)
-            .Index(x => x.Timestamp);
+            .Index(x => x.Timestamp)
+            // All realms' entries share the system DB, so the admin read/clear
+            // filters by Realm — index it so the tenant-scoped path isn't a scan.
+            .Index(x => x.Realm);
 
         // Tenant-scoped singleton config doc. One row per tenant DB,
         // addressed by the fixed `RealmSettings.SingletonId`. Owned by

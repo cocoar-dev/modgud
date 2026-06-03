@@ -665,6 +665,7 @@
       "event": "Ereignis",
       "user": "Benutzer",
       "ip": "IP-Adresse",
+      "realm": "Realm",
       "refresh": "Aktualisieren",
       "clear": "Leeren"
     },

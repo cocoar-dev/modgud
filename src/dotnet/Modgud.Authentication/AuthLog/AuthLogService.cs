@@ -22,11 +22,16 @@ public class AuthLogSink : ILogEventSink
 
         string? userName = null;
         string? ip = null;
+        string? realm = null;
 
         if (logEvent.Properties.TryGetValue("UserName", out var userProp))
             userName = userProp.ToString().Trim('"');
         if (logEvent.Properties.TryGetValue("IP", out var ipProp))
             ip = ipProp.ToString().Trim('"');
+        // Realm is stamped by RealmLogEnricher from the ambient TenantContext at
+        // emit time (the sink itself runs tenant-less in a BackgroundService).
+        if (logEvent.Properties.TryGetValue("Realm", out var realmProp))
+            realm = realmProp.ToString().Trim('"');
 
         // Render the message with placeholder values substituted in
         // (`User={UserName}` → `User=admin`) instead of persisting the raw
@@ -53,6 +58,7 @@ public class AuthLogSink : ILogEventSink
             Message = message,
             UserName = userName,
             Ip = ip,
+            Realm = realm,
         });
     }
 }
