@@ -901,6 +901,11 @@ try
         name: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Description);
+    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob>(
+        key: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Description);
 
     // Inbox — per-recipient notifications with SignalR live push. Both
     // services are scoped (tenant-aware IDocumentSession). The InboxHub
