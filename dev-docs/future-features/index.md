@@ -21,6 +21,10 @@ Severity. Detail-Pages unten.
 [federation-v1-design](./federation-v1-design)
 — concretizes the agreed v1 model into real code seams (one seam: `ExternalLoginProcessor.ProcessAsync`; authz resolved late at token time): the unified claims-per-source store, the two-layer source filter, "session = lease" (mid-session timer rejected), the new per-provider/per-group flags. All design decisions A–G are settled; the doc is the build template. **✅ Shipped (PR #23 spec, PR #24 `0b70b31` broker → session-derived authz + v1.1 token layer).**
 
+⭐ **Logging & Audit Redesign (2026-06-03):**
+[logging-audit-redesign](./logging-audit-redesign)
+— split today's `AuthLog` (a fragile Serilog "Auth:"-magic-prefix sink that also silently fails GDPR) into two tracks: (A) a typed, **durable** (Wolverine outbox), GDPR-erasable per-realm **audit** trail (event-sourced), and (B) a centralized **operational** logging track (OTel Logs → OTLP + a slim in-app platform live-tail). Grounded in existing conventions (outbox, GdprService masking, Inbox slice, RealmSettings). Has 7 open decisions + a 6-phase plan. Read before any audit/logging work.
+
 ### Audit-Followups (in Severity-Reihenfolge)
 
 - Observability — OpenTelemetry / Metrics / Tracing — ✅ shipped (see
