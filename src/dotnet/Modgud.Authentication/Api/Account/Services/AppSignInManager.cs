@@ -46,7 +46,7 @@ public class AppSignInManager(
         if (securityData?.TwoFactorExempt == true)
         {
             Serilog.Log.Warning(
-                "Auth: 2FA-exempt user signed in. User={UserName}",
+                "2FA-exempt user signed in. User={UserName}",
                 user.UserName);
         }
 

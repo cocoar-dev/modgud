@@ -84,8 +84,16 @@ public static class AuditEvents
 
     /// <summary>An external/federation login was rejected before any user link —
     /// domain allowlist, JIT disabled, inactive user, malformed token, or a
-    /// misconfigured provider. <c>Reason</c> disambiguates.</summary>
+    /// misconfigured provider. <c>Reason</c> disambiguates. Covers the SAML
+    /// protocol gates (no metadata, no SSO endpoint, context-build / response-read
+    /// failure, non-success status) as well as the OIDC/processor rejections.</summary>
     public const string ExternalLoginRejected = "security.external_login_rejected";
+
+    /// <summary>A SAML response failed the admin-required signature check
+    /// (response/assertion unsigned). A distinct <b>tamper / signature-wrapping</b>
+    /// attack signal — not a config/transport problem — so it gets its own code.
+    /// <c>Reason</c> carries the failing tag (response-unsigned / assertion-unsigned / …).</summary>
+    public const string SamlSignatureRejected = "security.saml_signature_rejected";
 
     /// <summary>A link attempt was rejected because the external subject is already
     /// linked to a DIFFERENT user (attempted account takeover).</summary>
@@ -158,6 +166,10 @@ public static class AuditEvents
 
     /// <summary>A DCR client was registered (tenant-visible).</summary>
     public const string DcrClientRegistered = "ops.dcr_client_registered";
+
+    /// <summary>A registered DCR client was used for the first time — a clean signal
+    /// the registration was real, not bot noise (tenant-visible).</summary>
+    public const string DcrClientFirstUsed = "ops.dcr_client_first_used";
 
     /// <summary>A DCR client was garbage-collected for inactivity (tenant-visible).</summary>
     public const string DcrClientGarbageCollected = "ops.dcr_client_garbage_collected";

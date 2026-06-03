@@ -135,7 +135,7 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
             session.Store(securityData);
             await session.SaveChangesAsync();
             Serilog.Log.Information(
-                "Auth: Grace period lazy-stamped from middleware. User={UserName} DueAt={DueAt}",
+                "Grace period lazy-stamped from middleware. User={UserName} DueAt={DueAt}",
                 user.UserName, securityData.SecureSetupDueAt);
             await next(context);
             return;
@@ -150,7 +150,7 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
 
         // No grace left — block.
         Serilog.Log.Warning(
-            "Auth: 2FA enforcement blocked request. User={UserName} Path={Path}",
+            "2FA enforcement blocked request. User={UserName} Path={Path}",
             user.UserName, path);
         ModgudMeters.RecordTwoFactorBlocked();
         context.Response.StatusCode = StatusCodes.Status403Forbidden;

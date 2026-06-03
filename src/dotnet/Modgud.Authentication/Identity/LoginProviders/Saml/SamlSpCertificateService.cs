@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Marten;
 using Modgud.Authentication.Domain.Saml;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Identity.LoginProviders.Saml;
@@ -36,17 +37,20 @@ public class SamlSpCertificateService
     private readonly IDocumentSession _session;
     private readonly SamlSpCertificateStore _store;
     private readonly TimeProvider _clock;
+    private readonly ISecurityAuditLog _securityAudit;
     private readonly ILogger<SamlSpCertificateService> _logger;
 
     public SamlSpCertificateService(
         IDocumentSession session,
         SamlSpCertificateStore store,
         TimeProvider clock,
+        ISecurityAuditLog securityAudit,
         ILogger<SamlSpCertificateService> logger)
     {
         _session = session;
         _store = store;
         _clock = clock;
+        _securityAudit = securityAudit;
         _logger = logger;
     }
 
@@ -210,9 +214,15 @@ public class SamlSpCertificateService
         _session.Store(doc);
         await _session.SaveChangesAsync(ct);
 
-        _logger.LogInformation(
-            "Auth: Rotated SAML SP cert for realm {Realm} — new thumbprint {Thumbprint}, valid until {NotAfter:o}",
-            realmSlug, doc.ActiveCertThumbprint, doc.ActiveCertNotAfter);
+        _securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.SamlCertRotated,
+            Realm = realmSlug,
+            Level = "Info",
+            Status = "rotated",
+            Reason = $"thumbprint {doc.ActiveCertThumbprint}, notAfter {doc.ActiveCertNotAfter:o}",
+            Message = $"Rotated SAML SP cert — new thumbprint {doc.ActiveCertThumbprint}, valid until {doc.ActiveCertNotAfter:o}",
+        });
 
         return newCert;
     }
@@ -240,7 +250,7 @@ public class SamlSpCertificateService
         await _session.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Auth: Retired previous SAML SP cert (thumbprint {Thumbprint})", oldThumb);
+            "Retired previous SAML SP cert (thumbprint {Thumbprint})", oldThumb);
 
         return true;
     }
@@ -276,9 +286,15 @@ public class SamlSpCertificateService
         _session.Store(doc);
         await _session.SaveChangesAsync(ct);
 
-        _logger.LogInformation(
-            "Auth: Generated initial SAML SP cert for realm {Realm} — thumbprint {Thumbprint}, valid until {NotAfter:o}",
-            realmSlug, doc.ActiveCertThumbprint, doc.ActiveCertNotAfter);
+        _securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.SamlCertRotated,
+            Realm = realmSlug,
+            Level = "Info",
+            Status = "generated",
+            Reason = $"initial cert, thumbprint {doc.ActiveCertThumbprint}",
+            Message = $"Generated initial SAML SP cert — thumbprint {doc.ActiveCertThumbprint}, valid until {doc.ActiveCertNotAfter:o}",
+        });
 
         return doc;
     }

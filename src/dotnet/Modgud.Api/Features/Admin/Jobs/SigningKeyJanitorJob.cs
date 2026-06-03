@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Quartz;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Api.Features.Admin.Jobs;
@@ -27,6 +28,7 @@ namespace Modgud.Api.Features.Admin.Jobs;
 public class SigningKeyJanitorJob(
     IServiceScopeFactory scopeFactory,
     IRealmKeyStore keyStore,
+    ISecurityAuditLog securityAudit,
     ILogger<SigningKeyJanitorJob> logger) : IJob
 {
     public const string Key = "signing-key-janitor";
@@ -69,9 +71,16 @@ public class SigningKeyJanitorJob(
                 {
                     realmsTouched++;
                     totalPurged += purged;
-                    logger.LogInformation(
-                        "Auth: signing-key janitor purged {Count} expired retired key(s) for realm {Realm}",
-                        purged, realm.Slug);
+                    // Realm-iterating job: bind the explicit iterated slug.
+                    securityAudit.Record(new SecurityAuditRecord
+                    {
+                        EventType = AuditEvents.SigningKeyPurged,
+                        Realm = realm.Slug,
+                        Level = "Info",
+                        Status = "purged",
+                        Reason = $"purged {purged} expired retired key(s)",
+                        Message = $"signing-key janitor purged {purged} expired retired key(s)",
+                    });
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

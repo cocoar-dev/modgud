@@ -2,6 +2,7 @@ using Modgud.Application.Dcr;
 using Modgud.Application.Services;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Observability;
 using Microsoft.AspNetCore.Mvc;
 
@@ -50,6 +51,7 @@ public static class DcrRegistrationEndpoints
         IDcrRegistrationValidator validator,
         DcrRateLimiter rateLimiter,
         Serilog.ILogger logger,
+        ISecurityAuditLog securityAudit,
         CancellationToken ct)
     {
         if (request is null)
@@ -71,7 +73,7 @@ public static class DcrRegistrationEndpoints
         var settings = (await realmSettingsService.LoadAsync(ct)).Dcr ?? new DcrSettings();
         if (!settings.Enabled)
         {
-            LogRejected(logger, sourceIp, request.ClientName, DcrRejectionReason.RealmDisabled);
+            LogRejected(securityAudit, sourceIp, request.ClientName, DcrRejectionReason.RealmDisabled);
             ModgudMeters.RecordDcrRegistration(ModgudMeters.DcrOutcome.PolicyDenied);
             return Results.NotFound();
         }
@@ -84,7 +86,7 @@ public static class DcrRegistrationEndpoints
             var reason = verdict == DcrRateLimitVerdict.PerIpExceeded
                 ? DcrRejectionReason.PerIpRateLimit
                 : DcrRejectionReason.PerRealmRateLimit;
-            LogRateLimit(logger, sourceIp, reason);
+            LogRateLimit(securityAudit, sourceIp, reason);
             ModgudMeters.RecordDcrRegistration(ModgudMeters.DcrOutcome.RateLimited);
             ModgudMeters.RecordDcrRateLimitHit(
                 verdict == DcrRateLimitVerdict.PerIpExceeded
@@ -100,7 +102,7 @@ public static class DcrRegistrationEndpoints
         var validation = validator.Validate(request, settings, sourceIp);
         if (validation is DcrValidationResult.Reject reject)
         {
-            LogRejected(logger, sourceIp, request.ClientName, reject.Reason);
+            LogRejected(securityAudit, sourceIp, request.ClientName, reject.Reason);
             ModgudMeters.RecordDcrRegistration(ModgudMeters.DcrOutcome.InvalidRequest);
             return Results.BadRequest(new DcrErrorResponse
             {
@@ -130,7 +132,7 @@ public static class DcrRegistrationEndpoints
             // hint instead of a server-error opacity.
             logger
                 .ForContext("IP", sourceIp)
-                .Warning("Auth: DCR persist failed — {Reason}",
+                .Warning("DCR persist failed — {Reason}",
                     createResult.FirstError.Description);
             ModgudMeters.RecordDcrRegistration(ModgudMeters.DcrOutcome.InvalidRequest);
             return Results.BadRequest(new DcrErrorResponse
@@ -141,12 +143,16 @@ public static class DcrRegistrationEndpoints
         }
 
         var created = createResult.Value.Client;
-        logger
-            .ForContext("IP", sourceIp)
-            .Information(
-                "Auth: " + DcrAuditEvents.ClientRegistered +
-                " ClientId={ClientId} Name={ClientName} Realm={Realm}",
-                created.ClientId, created.DisplayName ?? "(none)", realmSlug);
+        securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.DcrClientRegistered,
+            Level = "Info",
+            Actor = created.DisplayName,
+            Ip = sourceIp,
+            Status = "registered",
+            Reason = $"clientId {created.ClientId}",
+            Message = $"DCR client registered: {created.DisplayName ?? "(none)"} ({created.ClientId})",
+        });
         ModgudMeters.RecordDcrRegistration(ModgudMeters.DcrOutcome.Success);
 
         // ───────── Response ─────────
@@ -194,23 +200,29 @@ public static class DcrRegistrationEndpoints
         return "(unresolved)";
     }
 
-    private static void LogRejected(Serilog.ILogger logger, string ip, string? clientName, DcrRejectionReason reason)
+    private static void LogRejected(ISecurityAuditLog securityAudit, string ip, string? clientName, DcrRejectionReason reason)
     {
-        // Audit-log envelope: prefix "Auth: DCR" so the SPA filter chip
-        // can scope the auth-log grid. Reason is enum-named for stable
-        // machine parseability ("DcrRegistrationRejected reason=…").
-        logger
-            .ForContext("IP", ip)
-            .Warning(
-                "Auth: " + DcrAuditEvents.RegistrationRejected +
-                " Reason={Reason} ClientName={ClientName}",
-                reason, clientName ?? "(none)");
+        securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.DcrRegistrationRejected,
+            Level = "Warning",
+            Ip = ip,
+            Status = "rejected",
+            Reason = $"{reason} clientName={clientName ?? "(none)"}",
+            Message = $"DCR registration rejected: {reason}",
+        });
     }
 
-    private static void LogRateLimit(Serilog.ILogger logger, string ip, DcrRejectionReason reason)
+    private static void LogRateLimit(ISecurityAuditLog securityAudit, string ip, DcrRejectionReason reason)
     {
-        logger
-            .ForContext("IP", ip)
-            .Warning("Auth: " + DcrAuditEvents.RateLimitTriggered + " Reason={Reason}", reason);
+        securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RateLimitTriggered,
+            Level = "Warning",
+            Ip = ip,
+            Status = "rate_limited",
+            Reason = reason.ToString(),
+            Message = $"DCR rate limit triggered: {reason}",
+        });
     }
 }

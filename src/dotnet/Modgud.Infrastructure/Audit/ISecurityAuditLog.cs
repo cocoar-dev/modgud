@@ -16,6 +16,15 @@ public sealed record SecurityAuditRecord
     /// ops.* / audit.*</c>).</summary>
     public required string EventType { get; init; }
 
+    /// <summary>Explicit realm slug, overriding the ambient
+    /// <c>TenantContext.Current</c>. Set this from <b>realm-iterating background
+    /// jobs</b> (the signing-key janitor, DCR GC, lifecycle sweep, realm
+    /// provisioning) which run in the <c>system</c> session but emit per-realm
+    /// rows — exactly the case the legacy <c>RealmLogEnricher</c>'s explicit
+    /// <c>{Realm}</c> binding handled. Leave null on the request path (the ambient
+    /// realm is correct there).</summary>
+    public string? Realm { get; init; }
+
     /// <summary>"Info" | "Warning" | "Error" — the legacy level mapping.</summary>
     public string Level { get; init; } = "Info";
 

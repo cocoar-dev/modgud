@@ -37,7 +37,9 @@ public interface ILoginTimeMembershipDeriver
         CancellationToken ct = default);
 }
 
-public sealed record DerivedMembershipResult(IReadOnlyList<Guid> MatchedGroupIds)
+public sealed record DerivedMembershipResult(
+    IReadOnlyList<Guid> MatchedGroupIds,
+    int DroppedRealmAdminCount = 0)
 {
     public static readonly DerivedMembershipResult Empty = new([]);
 }
@@ -96,29 +98,34 @@ public sealed class LoginTimeMembershipDeriver(
         // write-time config guard should already forbid an ExternallyDrivable
         // group from conferring realm:admin — defensively drop any that slipped
         // through (e.g. a role flipped IsRealmAdmin after the group was marked).
-        var safe = await StripRealmAdminConferringAsync(matched, ct);
-        return new DerivedMembershipResult([.. safe.Select(g => g.Id)]);
+        var (safe, dropped) = await StripRealmAdminConferringAsync(matched, ct);
+        return new DerivedMembershipResult([.. safe.Select(g => g.Id)], dropped);
     }
 
-    private async Task<IReadOnlyList<Group>> StripRealmAdminConferringAsync(
+    // Returns the surviving groups plus the count of realm:admin-conferring groups
+    // that were defensively dropped. The caller (which can reach the audit store —
+    // this Authorization layer cannot) turns a non-zero count into a
+    // security.privilege_escalation_blocked audit record; here it stays a plain
+    // diagnostic log.
+    private async Task<(IReadOnlyList<Group> Safe, int Dropped)> StripRealmAdminConferringAsync(
         List<Group> groups, CancellationToken ct)
     {
         var roleIds = groups.SelectMany(g => g.RoleIds).Distinct().ToList();
-        if (roleIds.Count == 0) return groups;
+        if (roleIds.Count == 0) return (groups, 0);
 
         var realmAdminRoleIds = (await session.Query<PermissionRole>()
                 .Where(r => roleIds.Contains(r.Id) && r.IsRealmAdmin)
                 .ToListAsync(ct))
             .Select(r => r.Id)
             .ToHashSet();
-        if (realmAdminRoleIds.Count == 0) return groups;
+        if (realmAdminRoleIds.Count == 0) return (groups, 0);
 
         var safe = groups.Where(g => !g.RoleIds.Any(realmAdminRoleIds.Contains)).ToList();
         var dropped = groups.Count - safe.Count;
         if (dropped > 0)
             logger.LogWarning(
-                "Auth: dropped {Count} externally-derived group(s) conferring realm:admin (config guard should have prevented this)",
+                "dropped {Count} externally-derived group(s) conferring realm:admin (config guard should have prevented this)",
                 dropped);
-        return safe;
+        return (safe, dropped);
     }
 }

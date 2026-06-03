@@ -49,11 +49,11 @@ public sealed class UserAccessRevoker(
             await userManager.UpdateSecurityStampAsync(user!);
         else
             logger.LogWarning(
-                "Auth: security-stamp rotation skipped for user {UserId} (reason={Reason}) — no loadable ApplicationUser; existing auth cookies are not force-expired by this revoke (tokens + sessions were still revoked)",
+                "security-stamp rotation skipped for user {UserId} (reason={Reason}) — no loadable ApplicationUser; existing auth cookies are not force-expired by this revoke (tokens + sessions were still revoked)",
                 userId, reason);
 
         logger.LogInformation(
-            "Auth: revoked access for user {UserId} (reason={Reason}, tokens={TokenCount}, authorizations={AuthorizationCount}, stampRotated={StampRotated})",
+            "revoked access for user {UserId} (reason={Reason}, tokens={TokenCount}, authorizations={AuthorizationCount}, stampRotated={StampRotated})",
             userId, reason, tokens, authorizations, stampRotated);
     }
 }

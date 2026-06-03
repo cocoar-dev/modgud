@@ -63,16 +63,16 @@ public class OidcSchemeBootstrap(
                 try { await manager.RegisterAsync(config); }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "Auth: Bootstrap registration failed for LoginProvider {Id} in realm {Realm}", config.Id, realm.Slug);
+                    logger.LogError(ex, "Bootstrap registration failed for LoginProvider {Id} in realm {Realm}", config.Id, realm.Slug);
                 }
             }
 
             totalRegistered += enabled.Count;
             if (enabled.Count > 0)
-                logger.LogDebug("Auth: OidcSchemeBootstrap registered {Count} schemes in realm {Realm}", enabled.Count, realm.Slug);
+                logger.LogDebug("OidcSchemeBootstrap registered {Count} schemes in realm {Realm}", enabled.Count, realm.Slug);
         }
 
-        logger.LogInformation("Auth: OidcSchemeBootstrap registered {Count} external auth schemes across {Realms} realm(s)",
+        logger.LogInformation("OidcSchemeBootstrap registered {Count} external auth schemes across {Realms} realm(s)",
             totalRegistered, realms.Count);
     }
 

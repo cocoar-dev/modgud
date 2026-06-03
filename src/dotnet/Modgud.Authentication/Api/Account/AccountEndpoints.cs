@@ -13,6 +13,7 @@ using Modgud.Authentication.Identity;
 using Modgud.Authentication.Sessions;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Services;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Observability;
 
 namespace Modgud.Authentication.Api.Account;
@@ -74,6 +75,7 @@ public static class AccountEndpoints
             IDocumentSession docSession,
             IQuerySession session,
             ISessionService sessionService,
+            ISecurityAuditLog securityAudit,
             HttpContext context) =>
         {
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -100,7 +102,16 @@ public static class AccountEndpoints
             // Never reveal whether a username exists, is deactivated, or is locked.
             if (user is null || !user.IsActive)
             {
-                Log.Warning("Auth: Login failed — user not found or inactive. UserName={UserName} IP={IP}", request.UserName, ip);
+                securityAudit.Record(new SecurityAuditRecord
+                {
+                    EventType = AuditEvents.LoginFailedUnknownUser,
+                    Level = "Warning",
+                    Actor = request.UserName,
+                    Ip = ip,
+                    Status = "rejected",
+                    Reason = "user not found or inactive",
+                    Message = $"Login failed for {request.UserName} — user not found or inactive",
+                });
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Failure);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
             }
@@ -110,7 +121,7 @@ public static class AccountEndpoints
 
             if (result.Succeeded)
             {
-                Log.Information("Auth: Login successful. User={UserName} IP={IP}", user.UserName, ip);
+                Log.Information("Login successful. User={UserName} IP={IP}", user.UserName, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Success);
 
                 // Track per-user device session (best-effort).
@@ -130,7 +141,7 @@ public static class AccountEndpoints
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning(ex, "Auth: failed to persist login audit marker for user {UserId}", user.Id);
+                    Log.Warning(ex, "failed to persist login audit marker for user {UserId}", user.Id);
                 }
 
                 // Level >= 1: check if user needs to set up a secure login method
@@ -145,14 +156,14 @@ public static class AccountEndpoints
                             // EventSourcedUserStore creates UserSecurityData on first password change.
                             // Fall back to blocking setup if the document is missing — caller can
                             // set up 2FA which will create the document.
-                            Log.Information("Auth: User requires secure setup (no security data). User={UserName} IP={IP}", user.UserName, ip);
+                            Log.Information("User requires secure setup (no security data). User={UserName} IP={IP}", user.UserName, ip);
                             return Results.Ok(new { RequiresSecureSetup = true, GracePeriod = false });
                         }
 
                         // Hard opt-out: treat as if 2FA is set up. Audit-log every occurrence.
                         if (securityData.TwoFactorExempt)
                         {
-                            Log.Warning("Auth: 2FA-exempt login. User={UserName} IP={IP}", user.UserName, ip);
+                            Log.Warning("2FA-exempt login. User={UserName} IP={IP}", user.UserName, ip);
                             return Results.Ok(new { Message = "Login successful" });
                         }
 
@@ -166,12 +177,12 @@ public static class AccountEndpoints
                             securityData.SecureSetupDueAt = DateTime.UtcNow.AddDays(graceDays);
                             docSession.Store(securityData);
                             await docSession.SaveChangesAsync();
-                            Log.Information("Auth: Grace period started. User={UserName} DueAt={DueAt} IP={IP}",
+                            Log.Information("Grace period started. User={UserName} DueAt={DueAt} IP={IP}",
                                 user.UserName, securityData.SecureSetupDueAt, ip);
                         }
 
                         var inGrace = securityData.SecureSetupDueAt is { } due && due > DateTime.UtcNow;
-                        Log.Information("Auth: User requires secure setup. User={UserName} InGrace={InGrace} DueAt={DueAt} IP={IP}",
+                        Log.Information("User requires secure setup. User={UserName} InGrace={InGrace} DueAt={DueAt} IP={IP}",
                             user.UserName, inGrace, securityData.SecureSetupDueAt, ip);
                         return Results.Ok(new
                         {
@@ -187,7 +198,7 @@ public static class AccountEndpoints
 
             if (result.RequiresTwoFactor)
             {
-                Log.Information("Auth: Login requires MFA. User={UserName} IP={IP}", user.UserName, ip);
+                Log.Information("Login requires MFA. User={UserName} IP={IP}", user.UserName, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.TwoFactorRequired);
                 var mfaMethods = new List<string>();
                 if (user.TwoFactorEnabled) mfaMethods.Add("totp");
@@ -197,12 +208,12 @@ public static class AccountEndpoints
 
             if (result.IsLockedOut)
             {
-                Log.Warning("Auth: Login failed — account locked. User={UserName} IP={IP}", user.UserName, ip);
+                Log.Warning("Login failed — account locked. User={UserName} IP={IP}", user.UserName, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Locked);
             }
             else
             {
-                Log.Warning("Auth: Login failed — wrong password. User={UserName} IP={IP}", user.UserName, ip);
+                Log.Warning("Login failed — wrong password. User={UserName} IP={IP}", user.UserName, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Failure);
             }
 
@@ -313,12 +324,12 @@ public static class AccountEndpoints
             var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
             if (!result.Succeeded)
             {
-                Log.Warning("Auth: Change password failed. User={UserName} IP={IP}", user.UserName, ip);
+                Log.Warning("Change password failed. User={UserName} IP={IP}", user.UserName, ip);
                 var errors = result.Errors.Select(e => e.Description).ToList();
                 return Results.Json(new { Message = string.Join(" ", errors) }, statusCode: 400);
             }
 
-            Log.Information("Auth: Password changed. User={UserName} IP={IP}", user.UserName, ip);
+            Log.Information("Password changed. User={UserName} IP={IP}", user.UserName, ip);
             return Results.Ok(new { Message = "Password changed successfully" });
         })
         .WithName("Account_ChangePassword");

@@ -103,7 +103,7 @@ public sealed class RealmSigningKeyHandler : IOpenIddictServerHandler<GenerateTo
             }
         }
 
-        _logger.LogDebug("Auth: signed {TokenType} for realm '{Slug}' with kid '{Kid}', issuer '{Issuer}'",
+        _logger.LogDebug("signed {TokenType} for realm '{Slug}' with kid '{Kid}', issuer '{Issuer}'",
             context.TokenType, slug, creds.Key.KeyId,
             context.SecurityTokenDescriptor?.Issuer);
     }

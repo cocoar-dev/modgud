@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity.LoginProviders.Saml;
 using Modgud.Authentication.Sessions;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Observability;
 
 namespace Modgud.Authentication.Api.ExternalAuth.Saml;
@@ -34,6 +35,7 @@ public class SamlLoginFlow(
     ExternalLoginProcessor processor,
     SignInManager<ApplicationUser> signInManager,
     ISessionService sessionService,
+    ISecurityAuditLog securityAudit,
     ILogger<SamlLoginFlow> logger)
 {
     /// <summary>
@@ -57,18 +59,28 @@ public class SamlLoginFlow(
     {
         if (provider.IdpMetadata is null)
         {
-            logger.LogWarning(
-                "Auth: SAML login refused for provider {Id} — no IdP metadata cached",
-                provider.LoginProviderId);
+            securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.ExternalLoginRejected,
+                Level = "Warning",
+                Status = "rejected",
+                Reason = $"SAML: no IdP metadata cached (provider {provider.LoginProviderId})",
+                Message = $"SAML login refused for provider {provider.Slug} — no IdP metadata cached",
+            });
             return Results.Redirect("/login?error=saml-no-metadata");
         }
 
         if (string.IsNullOrEmpty(provider.IdpMetadata.SsoRedirectUrl)
             && string.IsNullOrEmpty(provider.IdpMetadata.SsoPostUrl))
         {
-            logger.LogWarning(
-                "Auth: SAML login refused for provider {Id} — IdP metadata has no SSO endpoint",
-                provider.LoginProviderId);
+            securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.ExternalLoginRejected,
+                Level = "Warning",
+                Status = "rejected",
+                Reason = $"SAML: IdP metadata has no SSO endpoint (provider {provider.LoginProviderId})",
+                Message = $"SAML login refused for provider {provider.Slug} — IdP metadata has no SSO endpoint",
+            });
             return Results.Redirect("/login?error=saml-no-sso");
         }
 
@@ -96,7 +108,7 @@ public class SamlLoginFlow(
         binding.Bind(authnRequest);
 
         logger.LogInformation(
-            "Auth: SAML AuthnRequest built for provider {Id} → IdP {IdpEntity}",
+            "SAML AuthnRequest built for provider {Id} → IdP {IdpEntity}",
             provider.LoginProviderId, provider.IdpMetadata.EntityId);
 
         return Results.Redirect(binding.RedirectLocation.OriginalString);
@@ -116,6 +128,8 @@ public class SamlLoginFlow(
         if (provider.IdpMetadata is null)
             return Results.Redirect("/login?error=saml-no-metadata");
 
+        var ip = http.Connection.RemoteIpAddress?.ToString();
+
         Saml2AuthnResponse saml2Response;
         Saml2PostBinding binding;
         Saml2RequestContext ctx;
@@ -126,8 +140,17 @@ public class SamlLoginFlow(
         catch (Exception ex)
         {
             logger.LogWarning(ex,
-                "Auth: SAML context build failed for provider {Id}",
+                "SAML context build failed for provider {Id}",
                 provider.LoginProviderId);
+            securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.ExternalLoginRejected,
+                Level = "Warning",
+                Ip = ip,
+                Status = "rejected",
+                Reason = $"SAML: context build failed (provider {provider.LoginProviderId})",
+                Message = $"SAML login refused for provider {provider.Slug} — context build failed",
+            });
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
             return Results.Redirect("/login?error=saml-invalid");
         }
@@ -145,17 +168,32 @@ public class SamlLoginFlow(
         catch (Exception ex)
         {
             logger.LogWarning(ex,
-                "Auth: SAML response read/validate failed for provider {Id}",
+                "SAML response read/validate failed for provider {Id}",
                 provider.LoginProviderId);
+            securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.ExternalLoginRejected,
+                Level = "Warning",
+                Ip = ip,
+                Status = "rejected",
+                Reason = $"SAML: response read/validate failed (provider {provider.LoginProviderId})",
+                Message = $"SAML login refused for provider {provider.Slug} — response read/validate failed",
+            });
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
             return Results.Redirect("/login?error=saml-invalid");
         }
 
         if (saml2Response.Status != Saml2StatusCodes.Success)
         {
-            logger.LogWarning(
-                "Auth: SAML response non-success status {Status} for provider {Id}",
-                saml2Response.Status, provider.LoginProviderId);
+            securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.ExternalLoginRejected,
+                Level = "Warning",
+                Ip = ip,
+                Status = "rejected",
+                Reason = $"SAML: non-success status {saml2Response.Status} (provider {provider.LoginProviderId})",
+                Message = $"SAML login refused for provider {provider.Slug} — non-success status {saml2Response.Status}",
+            });
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
             return Results.Redirect($"/login?error=saml-{Uri.EscapeDataString(saml2Response.Status.ToString() ?? "status")}");
         }
@@ -169,9 +207,15 @@ public class SamlLoginFlow(
         var sigError = CheckRequiredSignatures(saml2Response.XmlDocument, provider.FlavorData);
         if (sigError is not null)
         {
-            logger.LogWarning(
-                "Auth: SAML response failed required-signature check ({Reason}) for provider {Id}",
-                sigError, provider.LoginProviderId);
+            securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.SamlSignatureRejected,
+                Level = "Warning",
+                Ip = ip,
+                Status = "rejected",
+                Reason = $"SAML: required-signature check failed ({sigError}) for provider {provider.LoginProviderId}",
+                Message = $"SAML response failed required-signature check ({sigError}) for provider {provider.Slug}",
+            });
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
             return Results.Redirect($"/login?error=saml-{Uri.EscapeDataString(sigError)}");
         }

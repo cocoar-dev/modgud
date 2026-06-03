@@ -1375,6 +1375,13 @@ try
         var exitCode = await Modgud.Authentication.Api.Admin.RecoveryCli.RunAsync(
             app.Services, cliArgs[1..], conf, app.Environment);
 
+        // This path never starts the host, so the SecurityAuditWriter background
+        // drain never runs — flush the recovery CLI's enqueued security-audit
+        // records to the system DB synchronously before the process exits, or the
+        // break-glass forensic trail would be lost.
+        await app.Services.GetRequiredService<Modgud.Infrastructure.Audit.SecurityAuditLog>()
+            .FlushAsync(app.Services.GetRequiredService<Marten.IDocumentStore>());
+
         if (fromEnv)
         {
             Log.Information(
@@ -1510,7 +1517,7 @@ static void EnsureCertificateExists(
     GenerateSelfSignedPfx(path, subject, keyUsage, validYears: 2, keySize: 2048);
 
     Log.Warning(
-        "Auth: auto-generated self-signed {Purpose} certificate at {Path}. " +
+        "auto-generated self-signed {Purpose} certificate at {Path}. " +
         "This is fine for self-hosted Beta; replace with a managed cert " +
         "(Key Vault / Secrets Manager / cocoar-secrets generate-cert) before " +
         "going to public production.",

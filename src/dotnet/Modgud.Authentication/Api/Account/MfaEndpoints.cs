@@ -155,12 +155,12 @@ public static class MfaEndpoints
                 if (twoFactorUser is not null)
                     await SessionTracker.RecordLoginAsync(sessionService, context, twoFactorUser.Id);
 
-                Serilog.Log.Information("Auth: MFA login successful. IP={IP}", ip);
+                Serilog.Log.Information("MFA login successful. IP={IP}", ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Mfa, ModgudMeters.LoginOutcome.Success);
                 return Results.Ok(new { Message = "Login successful" });
             }
 
-            Serilog.Log.Warning("Auth: MFA login failed — invalid code. IP={IP} Locked={Locked}", ip, result.IsLockedOut);
+            Serilog.Log.Warning("MFA login failed — invalid code. IP={IP} Locked={Locked}", ip, result.IsLockedOut);
 
             if (result.IsLockedOut)
             {

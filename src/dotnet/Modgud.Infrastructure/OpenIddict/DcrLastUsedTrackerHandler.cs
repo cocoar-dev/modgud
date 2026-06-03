@@ -1,8 +1,7 @@
 using System.Text.Json;
-using Modgud.Application.Dcr;
 using Modgud.Domain.OAuth.Applications;
+using Modgud.Infrastructure.Audit;
 using Marten;
-using Microsoft.Extensions.Logging;
 using OpenIddict.Server;
 
 namespace Modgud.Infrastructure.OpenIddict;
@@ -36,12 +35,12 @@ public sealed class DcrLastUsedTrackerHandler
             .Build();
 
     private readonly IDocumentSession _session;
-    private readonly ILogger<DcrLastUsedTrackerHandler> _logger;
+    private readonly ISecurityAuditLog _securityAudit;
 
-    public DcrLastUsedTrackerHandler(IDocumentSession session, ILogger<DcrLastUsedTrackerHandler> logger)
+    public DcrLastUsedTrackerHandler(IDocumentSession session, ISecurityAuditLog securityAudit)
     {
         _session = session;
-        _logger = logger;
+        _securityAudit = securityAudit;
     }
 
     public async ValueTask HandleAsync(OpenIddictServerEvents.ProcessSignInContext context)
@@ -79,10 +78,15 @@ public sealed class DcrLastUsedTrackerHandler
 
         if (isFirstUse)
         {
-            _logger.LogInformation(
-                "Auth: " + DcrAuditEvents.ClientFirstUsed +
-                " ClientId={ClientId} RegisteredAt={RegisteredAt}",
-                clientId, registeredAt ?? "(unknown)");
+            _securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.DcrClientFirstUsed,
+                Level = "Info",
+                Actor = clientId,
+                Status = "first_used",
+                Reason = $"registeredAt {registeredAt ?? "(unknown)"}",
+                Message = $"DCR client {clientId} used for the first time",
+            });
         }
     }
 

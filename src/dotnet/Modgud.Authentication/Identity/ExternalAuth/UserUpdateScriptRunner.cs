@@ -44,7 +44,7 @@ public class UserUpdateScriptRunner
     {
         if (string.IsNullOrWhiteSpace(script))
         {
-            _logger.LogWarning("Auth: UserUpdateScript called with empty script — no patch produced");
+            _logger.LogWarning("UserUpdateScript called with empty script — no patch produced");
             return UserUpdateResult.Failed("script is empty");
         }
 
@@ -66,17 +66,17 @@ public class UserUpdateScriptRunner
         }
         catch (JavaScriptException jsEx)
         {
-            _logger.LogWarning(jsEx, "Auth: UserUpdateScript error: {Message}", jsEx.Message);
+            _logger.LogWarning(jsEx, "UserUpdateScript error: {Message}", jsEx.Message);
             return UserUpdateResult.Failed(jsEx.Message);
         }
         catch (TimeoutException)
         {
-            _logger.LogWarning("Auth: UserUpdateScript timed out after {Ms}ms", ScriptTimeout.TotalMilliseconds);
+            _logger.LogWarning("UserUpdateScript timed out after {Ms}ms", ScriptTimeout.TotalMilliseconds);
             return UserUpdateResult.Failed("script timed out");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Auth: UserUpdateScript unexpected error");
+            _logger.LogError(ex, "UserUpdateScript unexpected error");
             return UserUpdateResult.Failed(ex.Message);
         }
     }

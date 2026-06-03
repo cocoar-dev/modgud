@@ -4,6 +4,7 @@ using Modgud.Authentication;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Email;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using ErrorOr;
@@ -82,6 +83,7 @@ public sealed class PendingAdminInviteService(
     IRealmAdminBootstrapper bootstrapper,
     IEmailService emailService,
     IWebHostEnvironment env,
+    ISecurityAuditLog securityAudit,
     ILogger<PendingAdminInviteService> logger) : IPendingAdminInviteService
 {
     public async Task<IssuedInvite> IssueAsync(
@@ -157,13 +159,19 @@ public sealed class PendingAdminInviteService(
         catch (Exception ex)
         {
             logger.LogWarning(ex,
-                "Auth: Bootstrap-invite issued but email delivery failed. Realm={Realm} Email={MaskedEmail}. The plaintext URL is still on the issuer's side.",
+                "Bootstrap-invite issued but email delivery failed. Realm={Realm} Email={MaskedEmail}. The plaintext URL is still on the issuer's side.",
                 realm.Slug, LogPiiMasking.MaskEmail(normalizedEmail));
         }
 
-        logger.LogInformation(
-            "Auth: Bootstrap-invite issued. Realm={Realm} UserName={UserName} Email={MaskedEmail} ExpiresAt={ExpiresAt} IssuedBy={IssuedBy}",
-            realm.Slug, normalizedUserName, LogPiiMasking.MaskEmail(normalizedEmail), invite.ExpiresAt, issuedBy ?? "(self/CLI)");
+        securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.BootstrapInviteIssued,
+            Level = "Info",
+            Actor = LogPiiMasking.MaskEmail(normalizedEmail),
+            Status = "issued",
+            Reason = $"expires {invite.ExpiresAt}, issued by {issuedBy ?? "(self/CLI)"}",
+            Message = $"Bootstrap invite issued for {normalizedUserName}",
+        });
 
         return new IssuedInvite(invite.Id, token, url, invite.ExpiresAt, normalizedEmail, normalizedUserName);
     }
@@ -205,8 +213,8 @@ public sealed class PendingAdminInviteService(
         await session.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "Auth: Bootstrap-invite consumed. UserName={UserName} Email={Email}",
-            invite.UserName, invite.Email);
+            "Bootstrap-invite consumed. UserName={UserName} Email={MaskedEmail}",
+            invite.UserName, LogPiiMasking.MaskEmail(invite.Email));
 
         return bootstrapResult.Value;
     }

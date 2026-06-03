@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication;
 using Modgud.Authentication.Sessions;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Email;
 using Modgud.Infrastructure.Observability;
 
@@ -131,6 +132,7 @@ public static class MagicLinkEndpoints
             IDocumentSession session,
             SignInManager<ApplicationUser> signInManager,
             ISessionService sessionService,
+            ISecurityAuditLog securityAudit,
             HttpContext context) =>
         {
             if (string.IsNullOrWhiteSpace(request.Token))
@@ -146,7 +148,15 @@ public static class MagicLinkEndpoints
 
             if (challenge is null || challenge.IsExpired)
             {
-                Serilog.Log.Warning("Auth: Magic link login failed — invalid/expired token. IP={IP}", ip);
+                securityAudit.Record(new SecurityAuditRecord
+                {
+                    EventType = AuditEvents.MagicLinkInvalid,
+                    Level = "Warning",
+                    Ip = ip,
+                    Status = "rejected",
+                    Reason = "invalid or expired token",
+                    Message = "Magic-link login failed — invalid or expired token",
+                });
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.MagicLink, ModgudMeters.LoginOutcome.Failure);
                 if (challenge is not null) { session.Delete(challenge); await session.SaveChangesAsync(); }
                 return Results.Json(new { Message = "Invalid or expired link" }, statusCode: 401);
@@ -156,7 +166,15 @@ public static class MagicLinkEndpoints
             var user = await session.LoadAsync<ApplicationUser>(request.UserId);
             if (user is null || user.IsDeleted || !user.IsActive)
             {
-                Serilog.Log.Warning("Auth: Magic link login failed — user not found/inactive. IP={IP}", ip);
+                securityAudit.Record(new SecurityAuditRecord
+                {
+                    EventType = AuditEvents.LoginFailedUnknownUser,
+                    Level = "Warning",
+                    Ip = ip,
+                    Status = "rejected",
+                    Reason = "user not found or inactive",
+                    Message = "Magic-link login failed — user not found or inactive",
+                });
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.MagicLink, ModgudMeters.LoginOutcome.Failure);
                 session.Delete(challenge);
                 await session.SaveChangesAsync();
@@ -201,7 +219,7 @@ public static class MagicLinkEndpoints
 
             await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
 
-            Serilog.Log.Information("Auth: Magic link login successful. User={UserName} IP={IP}", user.UserName, ip);
+            Serilog.Log.Information("Magic link login successful. User={UserName} IP={IP}", user.UserName, ip);
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.MagicLink, ModgudMeters.LoginOutcome.Success);
             return Results.Ok(new { Message = "Login successful" });
         })

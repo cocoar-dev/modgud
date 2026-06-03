@@ -46,7 +46,9 @@ public sealed class SecurityAuditLog : ISecurityAuditLog
         var entry = new SecurityAuditEntry
         {
             Timestamp = DateTimeOffset.UtcNow,
-            Realm = TenantContext.Current,
+            // Explicit override wins (realm-iterating background jobs), else the
+            // ambient realm — mirrors the legacy RealmLogEnricher dual-sourcing.
+            Realm = record.Realm ?? TenantContext.Current,
             EventType = record.EventType,
             Category = AuditEvents.CategoryOf(record.EventType),
             PlatformOnly = AuditEvents.IsPlatformOnly(record.EventType),
@@ -60,6 +62,29 @@ public sealed class SecurityAuditLog : ISecurityAuditLog
 
         if (!_channel.Writer.TryWrite(entry))
             Interlocked.Increment(ref _dropped);
+    }
+
+    /// <summary>
+    /// Synchronously drain everything currently queued to the system DB. For
+    /// SHORT-LIVED process paths that never start the host (so
+    /// <see cref="SecurityAuditWriter"/> never runs) — notably the recovery CLI and
+    /// STARTUP_COMMAND. Without this, records those paths enqueue would be lost on
+    /// exit, which is exactly the high-value break-glass forensic trail we must keep.
+    /// Safe to call when the channel is empty (no-op). NOT used on the normal web
+    /// path, where the background writer owns the drain.
+    /// </summary>
+    public async Task FlushAsync(IDocumentStore store, CancellationToken ct = default)
+    {
+        var batch = new List<SecurityAuditEntry>();
+        while (_channel.Reader.TryRead(out var entry))
+            batch.Add(entry);
+
+        if (batch.Count == 0)
+            return;
+
+        await using var session = store.LightweightSession(TenantConstants.SystemTenantId);
+        session.Store(batch.ToArray());
+        await session.SaveChangesAsync(ct);
     }
 }
 

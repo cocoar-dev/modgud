@@ -321,7 +321,7 @@ public static class PasskeyEndpoints
             await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
 
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-            Serilog.Log.Information("Auth: Passkey login successful. User={UserName} IP={IP}", user.UserName, ip);
+            Serilog.Log.Information("Passkey login successful. User={UserName} IP={IP}", user.UserName, ip);
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Passkey, ModgudMeters.LoginOutcome.Success);
 
             return Results.Ok(new { Message = "Login successful" });
