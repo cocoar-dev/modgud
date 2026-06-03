@@ -80,6 +80,7 @@ const sections = computed<SectionDef[]>(() => [
       { label: 'admin.realms.title', icon: 'globe', to: '/admin/realms', requirePermissions: ['realm:read'] },
       { label: 'admin.realmSettings.title', icon: 'sliders-horizontal', to: '/admin/realm-settings', requirePermissions: ['realm-settings:read'] },
       { label: 'admin.authLog.title', icon: 'scroll-text', to: '/admin/auth-log', requirePermissions: ['auth-log:read'] },
+      { label: 'admin.auditLog.title', icon: 'history', to: '/admin/audit', requirePermissions: ['auth-log:read'] },
       { label: 'admin.scheduledJobs.title', icon: 'clock', to: '/admin/scheduled-jobs', requirePermissions: ['scheduled-job:read'] },
       { label: 'admin.changeRequests.title', icon: 'inbox', to: '/admin/change-requests', requirePermissions: ['user:write'] },
     ],

@@ -669,6 +669,18 @@
       "refresh": "Aktualisieren",
       "clear": "Leeren"
     },
+    "auditLog": {
+      "title": "Audit-Log",
+      "time": "Zeit",
+      "category": "Kategorie",
+      "event": "Ereignis",
+      "method": "Methode",
+      "ip": "IP-Adresse",
+      "level": "Level",
+      "realm": "Realm",
+      "refresh": "Aktualisieren",
+      "allCategories": "Alle"
+    },
     "assets": {
       "title": "Asset-Library",
       "empty": "Noch keine Assets hochgeladen.",

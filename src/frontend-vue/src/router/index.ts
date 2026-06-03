@@ -279,6 +279,10 @@ const routes = [
               component: () => import('@/views/admin/AuthLogView.vue'),
             },
             {
+              path: 'audit',
+              component: () => import('@/views/admin/AuditLogView.vue'),
+            },
+            {
               path: 'change-requests',
               component: () => import('@/views/admin/ChangeRequestsView.vue'),
             },
