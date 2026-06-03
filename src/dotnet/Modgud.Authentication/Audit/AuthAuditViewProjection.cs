@@ -28,6 +28,17 @@ namespace Modgud.Authentication.Audit;
 /// </summary>
 public partial class AuthAuditViewProjection : EventProjection
 {
+    public AuthAuditViewProjection()
+    {
+        // A GDPR-erased user is masked, not deleted: their events are masked in
+        // place and then ARCHIVED (kept, hidden from active queries). Include
+        // archived events so a full rebuild regenerates the erased user's rows
+        // FROM the masked events (Ip already null) — the masked archived events are
+        // the durable, de-identified audit record, so no separate store is needed.
+        // See dev-docs/future-features/logging-audit-redesign.md §A.4.2.
+        IncludeArchivedEvents = true;
+    }
+
     private static AuthAuditView Row(
         IEvent e,
         string category,

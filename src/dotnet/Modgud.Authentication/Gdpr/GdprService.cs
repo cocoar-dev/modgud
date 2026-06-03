@@ -335,6 +335,24 @@ public class GdprService(
             archiveSession.Events.ArchiveStream(linkId);
         await archiveSession.SaveChangesAsync(ct);
 
+        // 5) Audit trail — mask-and-keep, NOT delete. The tenant audit is retained
+        //    de-identified (Art-17(3)): the source events are now masked + archived,
+        //    and AuthAuditViewProjection.IncludeArchivedEvents makes a rebuild
+        //    regenerate these rows from the masked events. But masking appends no new
+        //    event, so the LIVE (already-projected) rows still hold the pre-mask IP —
+        //    null it here so the live view is immediately de-identified and identical
+        //    to what an archived-inclusive rebuild produces. (Ip is the only PII
+        //    column today; UserName is null, UserId is a pseudonymous tombstone key.)
+        await using (var auditSession = store.LightweightSession(tenantId))
+        {
+            var auditRows = await auditSession.Query<Modgud.Authentication.Audit.AuthAuditView>()
+                .Where(r => r.UserId == userId && r.Ip != null)
+                .ToListAsync(ct);
+            foreach (var row in auditRows)
+                auditSession.Store(row with { Ip = null });
+            await auditSession.SaveChangesAsync(ct);
+        }
+
         ModgudMeters.RecordGdprRequest(ModgudMeters.GdprRequestType.Mask);
 
         return true;
