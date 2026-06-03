@@ -1,0 +1,85 @@
+# Test-only OTel Collector config for OtelLogsRedactionTests.
+#
+# Identical to the shipped docker/otel-collector/otel-collector-config.yaml in
+# its redaction processor (the block between the redaction-ruleset sentinels is
+# asserted byte-for-byte equal by RedactionRuleset_TestConfig_MatchesShipped),
+# so the rules under test never drift from the ones that ship. The ONLY
+# difference is the exporter: a local file (+ debug) the test can read back,
+# instead of OpenObserve.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # >>> redaction-ruleset: v1 — BUMP THE VERSION IF YOU EDIT THIS BLOCK <<<
+  #
+  # The exact PII field set the guarantee targets. Versioned because the
+  # guarantee is only as good as this block (§B.2): the end-to-end test
+  # (Modgud.Api.Tests/Observability/OtelLogsRedactionTests) pins it against a
+  # real collector, and this version string is what an operator audits. The
+  # test also asserts this block matches the test collector's copy verbatim, so
+  # the rules under test never drift from the ones that ship.
+  #
+  # Scope: the log BODY (rendered message) and every string ATTRIBUTE VALUE
+  # (Serilog properties land here). Resource attributes (service.version, ...)
+  # are deliberately NOT touched — e.g. service.version "1.0.0.0" must not be
+  # mistaken for an IPv4 address.
+  #
+  # Escaping: statements are single-quoted YAML (backslashes literal), so the
+  # backslashes below reach OTTL as written; OTTL needs "\\" for a regex "\".
+  #
+  # v1 targets:
+  #   - email addresses    -> [REDACTED_EMAIL]
+  #   - JWTs (eyJ.x.y)      -> [REDACTED_TOKEN]
+  #   - Bearer/Basic creds  -> [REDACTED_AUTHORIZATION]
+  #   - IPv4 addresses      -> [REDACTED_IP]
+  #   - IPv6 addresses      -> [REDACTED_IP]  (full + ::-compressed; best-effort,
+  #                                            leading-"::" forms not covered v1)
+  transform/redaction:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          # --- log body (rendered message), only when it is a string ---
+          - 'replace_pattern(log.body, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[REDACTED_EMAIL]") where IsString(log.body)'
+          - 'replace_pattern(log.body, "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", "[REDACTED_TOKEN]") where IsString(log.body)'
+          - 'replace_pattern(log.body, "(?i)(?:bearer|basic)\\s+[A-Za-z0-9._~+/-]+=*", "[REDACTED_AUTHORIZATION]") where IsString(log.body)'
+          - 'replace_pattern(log.body, "\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b", "[REDACTED_IP]") where IsString(log.body)'
+          - 'replace_pattern(log.body, "(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}", "[REDACTED_IP]") where IsString(log.body)'
+          - 'replace_pattern(log.body, "(?:[0-9A-Fa-f]{1,4}:){1,7}:[0-9A-Fa-f]{0,4}", "[REDACTED_IP]") where IsString(log.body)'
+          # --- all string attribute values (Serilog properties) ---
+          - 'replace_all_patterns(log.attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[REDACTED_EMAIL]")'
+          - 'replace_all_patterns(log.attributes, "value", "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", "[REDACTED_TOKEN]")'
+          - 'replace_all_patterns(log.attributes, "value", "(?i)(?:bearer|basic)\\s+[A-Za-z0-9._~+/-]+=*", "[REDACTED_AUTHORIZATION]")'
+          - 'replace_all_patterns(log.attributes, "value", "\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b", "[REDACTED_IP]")'
+          - 'replace_all_patterns(log.attributes, "value", "(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}", "[REDACTED_IP]")'
+          - 'replace_all_patterns(log.attributes, "value", "(?:[0-9A-Fa-f]{1,4}:){1,7}:[0-9A-Fa-f]{0,4}", "[REDACTED_IP]")'
+  # >>> end redaction-ruleset: v1 <<<
+
+  batch:
+    timeout: 1s
+    send_batch_size: 1
+    send_batch_max_size: 1
+
+exporters:
+  # Readback for the test: the post-redaction records are printed to the
+  # collector's stdout (verbosity: detailed), which the test reads back via
+  # GetLogsAsync. No bind mount / writable volume needed (the distroless image
+  # has no /tmp and Windows host bind mounts are unreliable under Testcontainers).
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [transform/redaction, batch]
+      exporters: [debug]
+  telemetry:
+    logs:
+      level: info
