@@ -23,6 +23,7 @@ interface AuthLogEntry {
   Message: string
   UserName: string | null
   Ip: string | null
+  Realm: string | null
 }
 
 const entries = ref<AuthLogEntry[]>([])
@@ -82,6 +83,9 @@ const gridBuilder = CoarGridBuilder.create<AuthLogEntry>()
     (col) => col.field('Message').header('Event', 'admin.authLog.event').flex(1),
     (col) => col.field('UserName').header('User', 'admin.authLog.user').width(120),
     (col) => col.field('Ip').header('IP', 'admin.authLog.ip').width(140),
+    // Realm attribution — constant for a tenant admin (their own realm), varies
+    // for the control-plane (system) realm which sees the full cross-realm log.
+    (col) => col.field('Realm').header('Realm', 'admin.authLog.realm').width(120),
   ])
 </script>
 

@@ -38,4 +38,15 @@ public class AuthLogDocument
     public string Message { get; init; } = "";
     public string? UserName { get; init; }
     public string? Ip { get; init; }
+
+    /// <summary>
+    /// The realm slug the event was emitted in (captured from the ambient
+    /// <c>TenantContext</c> by <see cref="RealmLogEnricher"/> at log time;
+    /// background / no-tenant work is attributed to <c>system</c>). All entries
+    /// live in the system DB; this column is what scopes the admin read so a
+    /// tenant realm-admin sees only their own realm's events while the
+    /// control-plane realm sees the full cross-realm log. Null only on legacy
+    /// rows written before this column existed.
+    /// </summary>
+    public string? Realm { get; init; }
 }

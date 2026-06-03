@@ -930,6 +930,11 @@ try
         logConfig.MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning);
         logConfig.MinimumLevel.Override("Microsoft.Hosting.Lifetime", Serilog.Events.LogEventLevel.Information);
 
+        // Stamp every event with the ambient realm slug so the AuthLogSink can
+        // attribute each persisted "Auth:" entry to its realm (the sink runs
+        // tenant-less in a BackgroundService, so it must be captured at emit time).
+        logConfig.Enrich.With(new Modgud.Authentication.AuthLog.RealmLogEnricher());
+
         // Auth log sink — captures ALL "Auth:" events (including Info)
         logConfig.WriteTo.Sink(authLogSink);
 

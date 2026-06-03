@@ -21,6 +21,7 @@ Each row in the grid surfaces:
 | **Event** | Human-readable message — e.g. `Login successful`, `User requires secure setup`, `Initial admin created`, `OidcSchemeBootstrap registered N external auth schemes` |
 | **User** | The acting principal's username (or empty for system events) |
 | **IP** | Client IP, taken from `X-Forwarded-For` if a known proxy chain is configured, else the direct `RemoteIpAddress` |
+| **Realm** | The realm the event was emitted in. Constant (your own realm) for a tenant admin; varies for the control-plane admin who sees the full cross-realm log — see [Per-realm scoping](#per-realm-scoping) |
 
 The persisted document carries more than the grid renders — Serilog's
 structured fields (`UserName`, `IP`, plus event-specific properties
@@ -45,6 +46,24 @@ every realm in a deployment.
 
 Reads (`GET /api/admin/auth-log`) require `auth-log:read`; clearing
 the entire log (`DELETE /api/admin/auth-log`) requires `realm:admin`.
+
+## Per-realm scoping
+
+All auth-log entries are persisted to a single cross-realm store (the
+system database) but tagged with the realm they were emitted in. The
+read and clear are scoped by the **caller's** realm:
+
+- A **tenant realm-admin** sees — and can clear — only their own
+  realm's entries.
+- The **control-plane realm** (the cross-realm operator, by
+  `Realm.IsControlPlane`) sees the full cross-realm log and can clear
+  everything; this is the deployment-wide audit view. This follows the
+  control-plane **role**, not a fixed slug — if the role is transferred
+  to another realm, the global view moves with it.
+
+Background / no-tenant work (scheduled jobs, bootstrap) is attributed to
+the `system` realm, so those operational events show up in the system
+realm's view and in the control-plane view.
 
 ## GDPR
 
