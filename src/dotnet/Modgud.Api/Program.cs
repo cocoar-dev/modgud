@@ -23,7 +23,6 @@ using Modgud.Authentication.Api.Account;
 using Modgud.Authentication.Api.Account.Services;
 using Modgud.Api.Features.Admin;
 using Modgud.Api.Features.Admin.OAuth;
-using Modgud.Authentication.AuthLog;
 using Modgud.Authentication.Api.Admin;
 using Modgud.Authentication.Api.Admin.LoginProviders;
 using Modgud.Authentication.Api.ExternalAuth;
@@ -853,17 +852,10 @@ try
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
     });
 
-    // LEGACY auth log: Serilog sink → Channel → BackgroundService → Marten (7-day
-    // retention). Phase 3 of the logging/audit redesign retires this in favour of
-    // the typed streamless security store below; kept running until every "Auth:"
-    // call site is migrated (no record falls on the floor in the interim).
-    var authLogSink = new AuthLogSink();
-    builder.Services.AddSingleton(authLogSink);
-    builder.Services.AddHostedService<AuthLogPersistenceService>();
-
     // Streamless security/ops audit store (logging/audit redesign Track A, Phase 3).
-    // Typed best-effort sink (bounded channel) + background writer to the system DB,
-    // replacing the "Auth:"-message-prefix Serilog sink. The realm is captured from
+    // Typed best-effort sink (bounded channel) + background writer to the system DB.
+    // Replaced the legacy "Auth:"-message-prefix Serilog sink (AuthLogSink +
+    // AuthLogPersistenceService, now deleted). The realm is captured from
     // TenantContext.Current at emit; the retention prune is a Quartz job (below).
     builder.Services.AddSingleton<Modgud.Infrastructure.Audit.SecurityAuditLog>();
     builder.Services.AddSingleton<Modgud.Infrastructure.Audit.ISecurityAuditLog>(
@@ -947,13 +939,10 @@ try
         logConfig.MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning);
         logConfig.MinimumLevel.Override("Microsoft.Hosting.Lifetime", Serilog.Events.LogEventLevel.Information);
 
-        // Stamp every event with the ambient realm slug so the AuthLogSink can
-        // attribute each persisted "Auth:" entry to its realm (the sink runs
-        // tenant-less in a BackgroundService, so it must be captured at emit time).
+        // Stamp every event with the ambient realm slug (RealmLogEnricher). Kept
+        // after the "Auth:" sink was retired: it is how operational logs carry their
+        // realm tag for Console/File today and for the Phase-4 OTel logs export.
         logConfig.Enrich.With(new Modgud.Authentication.AuthLog.RealmLogEnricher());
-
-        // Auth log sink — captures ALL "Auth:" events (including Info)
-        logConfig.WriteTo.Sink(authLogSink);
 
         // Console + File
         logConfig.WriteTo.Console(theme: AnsiConsoleTheme.Code);
@@ -1318,8 +1307,6 @@ try
                     .Where(g => !g.IsDeleted).Take(1).ToListAsync();
                 await session.Query<Modgud.Authentication.Domain.LoginProviders.LoginProvider>()
                     .Where(p => !p.IsDeleted).Take(1).ToListAsync();
-                await session.Query<Modgud.Authentication.AuthLog.AuthLogDocument>()
-                    .OrderByDescending(l => l.Timestamp).Take(1).ToListAsync();
                 await session.Query<Modgud.Infrastructure.Audit.SecurityAuditEntry>()
                     .OrderByDescending(l => l.Timestamp).Take(1).ToListAsync();
                 await session.Query<Modgud.Authentication.Domain.UserChangeRequest>()

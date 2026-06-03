@@ -5,8 +5,10 @@ description: Stop treating the "AuthLog" as a store to build. Derive the tenant 
 
 # Logging & Audit Redesign
 
-> **Status:** Design — captured 2026-06-03, converged 2026-06-03 after a
-> cross-review, a code-fact verification pass, and an adversarial review.
+> **Status:** Design converged 2026-06-03 (cross-review + code-fact verification +
+> adversarial review). **Track A implemented: Phases 0–3 shipped** (see
+> [Phasing](#phasing)); Track B (Phases 4–5, OTel logs + per-realm error feed) is
+> still design-only.
 > Supersedes the interim tenant-visibility patch
 > ([PR #50](https://github.com/cocoar-dev/modgud/pull/50), which added per-realm
 > scoping to today's `AuthLog`) **and** the first draft of this doc (which
@@ -405,11 +407,13 @@ the query audit below). This is a production prerequisite, not part of this doc.
 
 ### A.7 Taxonomy and explicit scope
 
-A new `AuditEvents.cs` (+ `AuditCategories`) in **`Modgud.Authentication.Audit`**
-(alongside `AuthAuditView` + the projection; a sibling-in-spirit of
-`Modgud.Application/Dcr/DcrAuditEvents.cs:20-46`, but in `Authentication` because
-that's where the consuming projection lives and `Authentication` does not reference
-`Application`): const-string event-type codes + categories, with XML docs declaring
+A `AuditEvents.cs` (+ `AuditCategories`) in **`Modgud.Infrastructure.Audit`**
+(*Phase-3 correction:* the Phase-0 scaffold put it in `Modgud.Authentication.Audit`,
+but the streamless emit call sites live in lower layers — notably
+`RealmProvisioningService` in `Modgud.Infrastructure` — so the taxonomy had to move
+down to the lowest layer every call site can reach without a magic string;
+`AuthAuditView` + the projection stay in `Authentication.Audit` and reference it):
+const-string event-type codes + categories, with XML docs declaring
 each event's fields **and which are PII** (the PII annotation is what tells you
 whether an event belongs on a user stream or in the streamless store). The ~50
 mapped `"Auth:"` sites group into Authentication, Account, Federation, Admin/Realm,
@@ -551,17 +555,20 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
 3. **External-login IP** — now that success is a no-IP marker (§A.2), keep external
    login's `UserLoggedInEvent` IP `null` too (consistency, IP via Sessions) or let
    federation logins carry it. *Recommendation: null, for consistency.*
-4. **Streamless pre-registration PII** (§A.5) — time-expiry only vs purge-on-
-   registration. Feeds the LIA + privacy policy.
+4. **Streamless pre-registration PII** (§A.5) — **DECIDED: time-expiry only.** No
+   scan-and-purge on registration/erase; the short retention window is the control.
+   Disclosed in the LIA + (operator's) privacy policy. (Phase 3.)
 5. **Collector deployment** — sidecar vs shared collector; the redaction processor
    ruleset (the PII field set). (Ops decision.)
 6. **OpenObserve multi-tenancy** — one stream per realm vs realm-tag + RBAC inside
    OpenObserve.
 7. **In-app error feed floor** — which severity (ERROR-only vs WARN+) and which
    infra namespaces (Marten, Npgsql, Wolverine) feed the per-realm buffers.
-8. **Permission naming** — keep `modgud:auth-log:read`, or split into
-   `audit-log:read` (tenant GDPR-audit) + `security-log:read` (streamless security)
-   now that there are two read surfaces. Affects the seeded help-desk role.
+8. **Permission naming** — **DECIDED: split.** A new `audit-log:read` gates the
+   tenant GDPR-audit (`/admin/audit`); `auth-log:read` is kept (not renamed) for the
+   streamless Security store (`/admin/auth-log`). Registered in the runtime catalog +
+   the (evolving) per-realm seeder + the seeded User Manager bootstrap role, so
+   existing realms gain `audit-log:read` on next boot. (Phase 3.)
 9. **Migration** — strangler (typed path alongside the legacy sink, retire the
    magic-prefix last) vs big-bang. *Recommendation: strangler, login telemetry
    first (Phase 1), then drain the streamless `"Auth:"` sites.*
@@ -608,13 +615,24 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
   so erased users de-identify in the displayed audit too; config rows show no
   actor). **Pending:** only the control-plane cross-realm fan-out (deferred —
   platform-wide is the Phase-3 streamless store).
-- **Phase 3 — Streamless security/ops store** (§A.5): migrate unknown-user
-  attempts + the operational `"Auth:"` sites (incl. the prefix-less realm
-  provisioning logs) into the typed system-DB security store; carry #50's
-  `ScopeToCallerRealm`; add the tenant-visible Security view for realm-admins; a
-  short-retention Quartz prune; audit-of-the-audit; **the Legitimate-Interest
-  Assessment**. **Delete** `AuthLogSink` + `AuthLogPersistenceService` + the
-  `"Auth:"`-prefix-as-audit convention.
+- **Phase 3 — Streamless security/ops store** (§A.5) ✅ *shipped*: the typed
+  `SecurityAuditEntry` store (system DB) + `ISecurityAuditLog`/`SecurityAuditWriter`
+  (bounded best-effort channel; realm captured from `TenantContext.Current` at emit,
+  with an explicit override for realm-iterating jobs). All streamless `"Auth:"` sites
+  migrated to typed `Record(...)` — incl. the prefix-less realm-provisioning logs and
+  (caught by adversarial review) the SAML login-flow rejections + a new
+  `security.saml_signature_rejected` tamper code, and the DCR `ops.dcr_client_first_used`.
+  The `"Auth:"`-prefix convention is gone from every call site. Read surface carried
+  forward (`/api/admin/auth-log` → `SecurityAuditEntry`) with #50's `ScopeToCallerRealm`
+  + a `PlatformOnly` visibility split; the SPA `AuthLogView` repurposed as the tenant
+  **Security** view (category chips). Audit-of-the-audit (`audit.log_cleared`); a fixed
+  short-retention Quartz prune (`SecurityAuditPruneJob`); the **permission split**
+  (`audit-log:read` for the GDPR-audit, `auth-log:read` for the Security store, Open
+  Decision #8); and the [Legitimate-Interest Assessment](../compliance/legitimate-interest-assessment-security-store.md)
+  (Open Decision #4 = time-expiry only). **Deleted** `AuthLogSink`,
+  `AuthLogPersistenceService`, `AuthLogDocument`, and the orphaned `DcrAuditEvents`
+  vocabulary. (`RealmLogEnricher` kept — it tags operational logs for Phase 4.)
+  DevTools-verified end-to-end (failed login → Security row; clear → `audit.log_cleared`).
 - **Phase 4 — OTel Logs → collector → OpenObserve** (§B.1–B.2): `.WithLogs()` (+
   the OTel logging bridge package), the collector redaction processor (with the
   end-to-end redaction test), realm-tagged + trace-correlated — all behind the

@@ -2,8 +2,7 @@ namespace Modgud.Infrastructure.Audit;
 
 /// <summary>
 /// Canonical, stable event-type codes for the tenant audit trail. The successor
-/// to the <c>"Auth:"</c>-message-prefix vocabulary (and a sibling of
-/// <c>Modgud.Application.Dcr.DcrAuditEvents</c>): both the projection that writes
+/// to the <c>"Auth:"</c>-message-prefix vocabulary: both the projection that writes
 /// <c>AuthAuditView</c> rows and the streamless security/ops store reference these
 /// constants, so a rename can't silently desync a writer from a reader.
 ///

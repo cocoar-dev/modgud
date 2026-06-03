@@ -1,6 +1,5 @@
 using JasperFx.Events.Projections;
 using Marten;
-using Modgud.Authentication.AuthLog;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Domain.ExternalAuth;
 using Modgud.Authentication.Domain.ExternalAuth.Events;
@@ -123,18 +122,6 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.UserId)
             .Index(x => x.LoginProviderId)
             .Index(x => x.IsUnlinked);
-
-        // AuthLogDocument lives in the default (public) schema like every other
-        // auth doc — dropped the gratuitous solo "marten" schema (one schema
-        // fewer per tenant DB; aligns with AppBase v4).
-        // NOTE: legacy. Phase 3 replaces it with SecurityAuditEntry (below); kept
-        // running alongside until the call sites are migrated, then deleted.
-        options.Schema.For<AuthLogDocument>()
-            .Identity(x => x.Id)
-            .Index(x => x.Timestamp)
-            // All realms' entries share the system DB, so the admin read/clear
-            // filters by Realm — index it so the tenant-scoped path isn't a scan.
-            .Index(x => x.Realm);
 
         // Streamless security/ops store (logging/audit redesign Track A, Phase 3).
         // Cross-realm in the system DB; the typed successor to the personal-data-

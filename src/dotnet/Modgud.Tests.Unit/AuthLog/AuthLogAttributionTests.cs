@@ -9,11 +9,12 @@ using Serilog.Parsing;
 namespace Modgud.Tests.Unit.AuthLog;
 
 /// <summary>
-/// The realm attribution that scopes the admin auth-log read: the enricher
-/// captures the ambient realm at log time, and the sink reads it off the event
-/// onto the persisted document. These are the two deterministic seams of the
-/// AuthLog tenant-visibility fix (the realm filtering in the read endpoint is a
-/// trivial Where over this column).
+/// Two deterministic seams of the security/audit logging:
+/// (1) <see cref="RealmLogEnricher"/> stamps the ambient realm on Serilog events at
+/// emit time (kept after the "Auth:" sink was retired — it tags operational logs +
+/// the Phase-4 OTel export); and (2) the realm + tenant-visibility scoping the admin
+/// Security-log read applies (<see cref="AuthLogEndpoints.ScopeToCallerRealm"/> over
+/// the streamless <see cref="SecurityAuditEntry"/> store).
 /// </summary>
 public class AuthLogAttributionTests
 {
@@ -53,44 +54,6 @@ public class AuthLogAttributionTests
 
         Assert.True(evt.Properties.TryGetValue("Realm", out var v));
         Assert.Equal("system", ((ScalarValue)v).Value);
-    }
-
-    // ── Sink ────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Sink_CapturesRealmProperty_OntoDocument()
-    {
-        var sink = new AuthLogSink();
-
-        sink.Emit(AuthEvent("Auth: login successful {UserName}",
-            new LogEventProperty("UserName", new ScalarValue("bob")),
-            new LogEventProperty("Realm", new ScalarValue("acme"))));
-
-        Assert.True(sink.Reader.TryRead(out var doc));
-        Assert.Equal("acme", doc!.Realm);
-        Assert.Equal("bob", doc.UserName);
-    }
-
-    [Fact]
-    public void Sink_NoRealmProperty_LeavesRealmNull()
-    {
-        var sink = new AuthLogSink();
-
-        sink.Emit(AuthEvent("Auth: background event"));
-
-        Assert.True(sink.Reader.TryRead(out var doc));
-        Assert.Null(doc!.Realm);
-    }
-
-    [Fact]
-    public void Sink_IgnoresNonAuthEvents()
-    {
-        var sink = new AuthLogSink();
-
-        sink.Emit(AuthEvent("Some unrelated log {Realm}",
-            new LogEventProperty("Realm", new ScalarValue("acme"))));
-
-        Assert.False(sink.Reader.TryRead(out _)); // only "Auth:"-prefixed events are persisted
     }
 
     // ── Read scoping (AuthLogEndpoints.ScopeToCallerRealm over the streamless store) ──
