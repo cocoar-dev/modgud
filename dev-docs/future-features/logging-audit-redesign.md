@@ -590,8 +590,11 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
   rebuild. The per-realm **`AuditSettings.VisibilityWindowDays`** window (default 90,
   on `RealmSettings`, via `GET/PATCH /admin/realm-settings`) is applied at read —
   named a *visibility* window, not "retention", so it can't read as a deletion
-  promise (§A.6). **Pending:** the SPA taxonomy-chip UI (frontend), and the
-  control-plane cross-realm fan-out (deferred — platform-wide is the Phase-3 store).
+  promise (§A.6). The **SPA `AuditLogView`** (sidebar `/admin/audit`, category-chip
+  filter over the grid) is shipped and verified live with Chrome DevTools — a real
+  admin password login surfaced an `auth.login_succeeded`/`password` row end-to-end
+  (Phase 1 → projection → endpoint → view). **Pending:** only the control-plane
+  cross-realm fan-out (deferred — platform-wide is the Phase-3 streamless store).
 - **Phase 3 — Streamless security/ops store** (§A.5): migrate unknown-user
   attempts + the operational `"Auth:"` sites (incl. the prefix-less realm
   provisioning logs) into the typed system-DB security store; carry #50's
