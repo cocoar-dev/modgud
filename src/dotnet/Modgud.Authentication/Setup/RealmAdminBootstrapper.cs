@@ -170,6 +170,7 @@ public sealed class RealmAdminBootstrapper(
                 CatalogId("authorization-group", "read"),
                 CatalogId("permission-role", "read"),
                 CatalogId("auth-log", "read"),
+                CatalogId("audit-log", "read"),
             };
             var userManagerRole = new PermissionRole
             {

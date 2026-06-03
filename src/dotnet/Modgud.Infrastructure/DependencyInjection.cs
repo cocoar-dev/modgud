@@ -169,9 +169,15 @@ public static class DependencyInjection
             opt.RegisterResource(app, "authorization-group", "read", "write");
             opt.RegisterResource(app, "permission-role", "read", "write");
 
-            // Sessions + audit
+            // Sessions + audit. Two distinct read surfaces (logging/audit redesign):
+            //   auth-log:read  — the streamless security/ops store (failed logins on
+            //                    unknown actors, probes, rate-limits, operational
+            //                    actions). Cross-realm in the system DB.
+            //   audit-log:read — the per-realm GDPR-audit (event-sourced account /
+            //                    login history projected from the user streams).
             opt.RegisterResource(app, "session", "read", "write");
             opt.RegisterResource(app, "auth-log", "read");
+            opt.RegisterResource(app, "audit-log", "read");
 
             // In-app live observability view (Phase 5 of the OpenTelemetry
             // followup). Read-only; the granular Prometheus scrape is gated

@@ -72,7 +72,7 @@ public static class AuditEndpoints
             return Results.Ok(dtos);
         })
         .WithName("AdminAudit_Get")
-        .RequiresPermission("auth-log:read");
+        .RequiresPermission("audit-log:read");
 
         return application;
     }

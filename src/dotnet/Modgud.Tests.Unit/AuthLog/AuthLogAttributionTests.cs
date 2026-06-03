@@ -1,5 +1,6 @@
 using Modgud.Authentication.Api.Admin;
 using Modgud.Authentication.AuthLog;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Serilog.Core;
 using Serilog.Events;
@@ -92,29 +93,38 @@ public class AuthLogAttributionTests
         Assert.False(sink.Reader.TryRead(out _)); // only "Auth:"-prefixed events are persisted
     }
 
-    // ── Read scoping (AuthLogEndpoints.ScopeToCallerRealm) ──────────────
+    // ── Read scoping (AuthLogEndpoints.ScopeToCallerRealm over the streamless store) ──
 
-    private static IQueryable<AuthLogDocument> Rows() => new[]
+    private static IQueryable<SecurityAuditEntry> Rows() => new[]
     {
-        new AuthLogDocument { Message = "a", Realm = "system" },
-        new AuthLogDocument { Message = "b", Realm = "acme" },
-        new AuthLogDocument { Message = "c", Realm = "globex" },
-        new AuthLogDocument { Message = "d", Realm = null },
+        new SecurityAuditEntry { Message = "a", Realm = "system", PlatformOnly = false },
+        new SecurityAuditEntry { Message = "b", Realm = "acme", PlatformOnly = false },
+        new SecurityAuditEntry { Message = "c", Realm = "globex", PlatformOnly = false },
+        new SecurityAuditEntry { Message = "p", Realm = "acme", PlatformOnly = true },
     }.AsQueryable();
 
     [Fact]
-    public void Scope_ControlPlane_SeesEveryRealm()
+    public void Scope_ControlPlane_SeesEveryRealm_IncludingPlatformOnly()
     {
         var result = AuthLogEndpoints.ScopeToCallerRealm(Rows(), "system", callerIsControlPlane: true).ToList();
-        Assert.Equal(4, result.Count); // the control-plane realm sees the full cross-realm log
+        Assert.Equal(4, result.Count); // the control-plane realm sees the full cross-realm log, platform-only included
     }
 
     [Fact]
-    public void Scope_TenantRealm_SeesOnlyOwnRealm()
+    public void Scope_TenantRealm_SeesOnlyOwnRealm_TenantVisibleOnly()
     {
         var result = AuthLogEndpoints.ScopeToCallerRealm(Rows(), "acme", callerIsControlPlane: false).ToList();
         Assert.Single(result);
-        Assert.Equal("acme", result[0].Realm); // a tenant realm-admin never sees other realms' events
+        Assert.Equal("b", result[0].Message); // own realm, tenant-visible — NOT the platform-only "p" row
+    }
+
+    [Fact]
+    public void Scope_TenantRealm_NeverSeesPlatformOnly()
+    {
+        // A control-plane-only operational row in the caller's OWN realm must still
+        // be hidden from a tenant realm-admin.
+        var result = AuthLogEndpoints.ScopeToCallerRealm(Rows(), "acme", callerIsControlPlane: false).ToList();
+        Assert.DoesNotContain(result, r => r.PlatformOnly);
     }
 
     [Fact]
