@@ -965,8 +965,9 @@ try
         // requires. The sink emits every Serilog property (incl. Realm) as a
         // log-record attribute and reads Activity.Current for trace/span
         // correlation automatically. The redaction GUARANTEE lives at the collector,
-        // not here; LogPiiMasking stays as belt. For HttpProtobuf the endpoint must
-        // carry the /v1/logs path (the gRPC default needs only the base host:port).
+        // not here; LogPiiMasking stays as belt. Endpoint is a bare base host:port
+        // for both protocols — the sink derives the per-signal path itself (and
+        // trims any /v1/logs an operator appends).
         // See dev-docs/future-features/logging-audit-redesign.md §B.1-B.2.
         if (observabilitySettings.Otlp.Enabled)
         {

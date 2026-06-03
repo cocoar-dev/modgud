@@ -651,17 +651,26 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
   `.WithLogs()` — see the §B.1 shipped note), behind the existing
   `Observability__Otlp__Enabled` gate (off by default; §B.0), realm-tagged
   (`RealmLogEnricher`) + trace-correlated. The redaction **guarantee** is a
-  versioned transform/OTTL processor (`redaction-ruleset: v1`) in
+  versioned transform/OTTL processor (`redaction-ruleset: v2`) in
   `docker/otel-collector/otel-collector-config.yaml` that strips emails / JWTs /
-  Bearer-Basic creds / IPv4 / IPv6 from the log body **and** attribute values
-  (resource attributes left intact), proven by an **end-to-end test against a real
-  collector** (`Modgud.Api.Tests/Observability/OtelLogsRedactionTests`) plus an
-  anti-drift check pinning the test ruleset to the shipped one. Failure modes +
-  realm=system fallback + a local `docker-compose.observability.yml` (Collector +
-  OpenObserve) documented in `docs/operate/observability.md`; verified end-to-end
-  against the real stack (PII scrubbed, realm-filterable in OpenObserve). A
-  deployment without OpenObserve/collector is unaffected (gate off → Serilog stays
-  Console + File). `LogPiiMasking.MaskEmail` kept as belt.
+  Bearer-Basic creds / IPv4 / IPv6 / usernames from the log body **and** top-level
+  attribute values (resource attributes left intact), proven by an **end-to-end
+  test against a real collector** (`Modgud.Api.Tests/Observability/OtelLogsRedactionTests`)
+  plus anti-drift checks pinning the test ruleset to the shipped one **and** that the
+  shipped pipeline wires the processor before export. Failure modes + realm=system
+  fallback + a local `docker-compose.observability.yml` (Collector + OpenObserve)
+  documented in `docs/operate/observability.md`; verified end-to-end against the
+  real stack (PII scrubbed, realm-filterable in OpenObserve). A deployment without
+  OpenObserve/collector is unaffected (gate off → Serilog stays Console + File).
+  `LogPiiMasking.MaskEmail` kept as belt. The block went v1→v2 after an adversarial
+  diff review (usernames have no value shape: the `UserName`/`Actor` attributes are
+  dropped and the `User=` body form masked; IPv6 leading-`::` added).
+  **Deferred follow-up (not Phase 4):** a source-side belt — log `user.Id` instead
+  of the raw login identifier across the ~18 operational `User={UserName}` sites,
+  add `LogPiiMasking.MaskUsername`, and mask the attacker-supplied `Actor`/`Message`
+  on the unknown-user failed-login path before it persists to the *streamless
+  security store* (that DB sink does not pass through the collector). This closes
+  the username gap at the source for prose forms the collector cannot shape-match.
 - **Phase 5 — In-app per-realm error feed** (§B.3): per-realm-bounded buffers (NOT
   a global ring), `ObservabilityHub.LogsSubscribe()`, the `AdminObservabilityView.vue`
   error panel. Plus the carried-forward per-method SignalR-auth hardening.

@@ -21,7 +21,7 @@ services:
       ZO_ROOT_USER_EMAIL: root@example.com
       ZO_ROOT_USER_PASSWORD: Complexpass#123
     ports:
-      - "5080:5080"
+      - "127.0.0.1:5080:5080"
     volumes:
       - openobserve-data:/data
     restart: unless-stopped
@@ -37,8 +37,10 @@ services:
       OPENOBSERVE_LOGS_ENDPOINT: http://openobserve:5080/api/default/v1/logs
       OPENOBSERVE_AUTHORIZATION: "Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4cGFzcyMxMjM="
     ports:
-      - "4317:4317"   # OTLP gRPC
-      - "4318:4318"   # OTLP HTTP
+      # Loopback-only: the OTLP receiver is unauthenticated and this stack is a
+      # local/dev convenience, not a deployable topology.
+      - "127.0.0.1:4317:4317"   # OTLP gRPC
+      - "127.0.0.1:4318:4318"   # OTLP HTTP
     depends_on:
       - openobserve
     restart: unless-stopped

@@ -42,7 +42,7 @@ Permissions for the in-app live view: `observability:read`. The `realm:admin` by
 ```
 
 ::: tip One gate for all three signals
-`Otlp.Enabled` turns on metrics, traces **and** log export together — there is no separate logs flag by design. With it off, Serilog stays Console + File and nothing leaves the box; no collector / OpenObserve is required. For `HttpProtobuf`, the log signal needs the full `/v1/logs` path on the endpoint (gRPC needs only the host:port).
+`Otlp.Enabled` turns on metrics, traces **and** log export together — there is no separate logs flag by design. With it off, Serilog stays Console + File and nothing leaves the box; no collector / OpenObserve is required. Use a bare base `host:port` endpoint for either protocol — the log sink derives the per-signal path itself (and trims a `/v1/logs` suffix if you add one).
 :::
 
 ::: tip Set the bearer in env, not in the JSON
@@ -118,16 +118,18 @@ When `Otlp.Enabled = true`, OpenIddict-token-issuance, ASP.NET request handling,
 
 `SamplingRatio` controls how much survives. Default 1.0 is fine for dev; production with traffic should drop it to keep trace volume sane (0.1 is a reasonable starting point).
 
-## Logs — export & redaction
+## Logs — export & redaction {#logs-export-redaction}
 
 Logs are the third OTel signal. Serilog stays the in-process logger (Console + File); when `Otlp.Enabled = true` an OTLP sink **also** ships every log record to the OTLP endpoint. Records are **realm-tagged** (the `Realm` property from the realm enricher, `system` for background work) and **trace-correlated** (the active `trace_id`/`span_id` ride along), so a log line in the backend links straight to its request span and is filterable per realm.
 
 The destination is **[OpenObserve](https://openobserve.ai/)**, reached through an **OpenTelemetry Collector** that sits between the app and the backend.
 
 ::: danger The redaction guarantee lives at the collector
-PII (emails, JWTs, `Bearer`/`Basic` credentials, IPv4/IPv6 addresses) is stripped by a **transform/OTTL processor in the collector**, not by the app. This is deliberate: it is a *pipeline guarantee* that holds even if a call site forgets to mask. The app-side `LogPiiMasking.MaskEmail` stays as a **belt** (defense in depth) but is no longer the thing correctness depends on.
+PII (emails, JWTs, `Bearer`/`Basic` credentials, IPv4/IPv6 addresses, and usernames) is stripped by a **transform/OTTL processor in the collector**, not by the app. This is deliberate: it is a *pipeline guarantee* that holds even if a call site forgets to mask. The app-side `LogPiiMasking.MaskEmail` stays as a **belt** (defense in depth) but is no longer the thing correctness depends on.
 
-The processor only redacts the log **body** and **attribute values** — resource attributes (`service.version`, …) are left alone so e.g. a version `1.0.0.0` isn't mistaken for an IP. The exact field set is **versioned** (`redaction-ruleset: v1`) in [`docker/otel-collector/otel-collector-config.yaml`](https://github.com/cocoar-dev/modgud/blob/develop/docker/otel-collector/otel-collector-config.yaml) and pinned by an end-to-end test (`OtelLogsRedactionTests`) that runs a real collector and asserts PII is gone before export. **If you fork the ruleset, bump the version and re-run that test.**
+The processor only redacts the log **body** and top-level string **attribute values** — resource attributes (`service.version`, …) are left alone so e.g. a version `1.0.0.0` isn't mistaken for an IP. The exact field set is **versioned** (`redaction-ruleset: v2`) in [`docker/otel-collector/otel-collector-config.yaml`](https://github.com/cocoar-dev/modgud/blob/develop/docker/otel-collector/otel-collector-config.yaml) and pinned by an end-to-end test (`OtelLogsRedactionTests`) that runs a real collector and asserts PII is gone before export. **If you fork the ruleset, bump the version and re-run that test.**
+
+Two limits worth knowing, both because the targeted values have no machine-recognisable shape: a **username inlined into free-text prose** other than the `User=` form, and a **nested/destructured (`{@…}`) attribute value**, are out of the collector's reach — log `user.Id` (a GUID) instead of the login identifier, and don't destructure objects that may carry PII. The username **attribute** (`UserName`/`Actor`) and the `User=` body form *are* covered.
 :::
 
 ### Failure modes
@@ -139,7 +141,7 @@ The export is **best-effort and lossy by design** (Track B). It must never be lo
 | Gate off (default) | No export. Serilog Console + File only. No collector needed. | Nothing — this is the safe default. |
 | Gate on, collector unreachable | The OTLP sink retries with backoff and drops on overflow. **The app keeps running**; local Console + File still have everything. | Alert on the collector being down; logs are not lost locally. |
 | Gate on, collector up but **redaction processor removed/misconfigured** | Logs reach OpenObserve **unredacted** — a silent PII leak. | This is the one to guard. Run the **shipped** config; treat the ruleset version as an audited artifact; keep the e2e redaction test green in CI; monitor collector pipeline health. |
-| Gate on, `OPENOBSERVE_*` env unset | The collector **fails fast at start-up** (deliberate misconfiguration guard). | Set `OPENOBSERVE_LOGS_ENDPOINT` + `OPENOBSERVE_AUTHORIZATION`. |
+| Gate on, `OPENOBSERVE_*` env unset | An unset value expands to empty: the collector still starts **and still redacts**, but export then fails and records are dropped (app + local Console/File unaffected). | Set `OPENOBSERVE_LOGS_ENDPOINT` + `OPENOBSERVE_AUTHORIZATION`; smoke-check that records land. |
 | Background / startup logs | Carry `realm=system` (no tenant context yet). | Expected — `system` is the infrastructure catch-all, not a tenant. |
 
 ### Local stack (for trying it out)
