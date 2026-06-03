@@ -580,12 +580,15 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
   legacy `AuthLogSink` keeps carrying the streamless-bound records (unknown-user
   attempts, operational `"Auth:"` sites) — the strangler retires it only once the
   typed store stands up. No record falls on the floor in the interim.
-- **Phase 2 — Tenant GDPR-audit read surface**: the per-realm `AuthAuditView`
-  endpoint + taxonomy chips + the **mask-and-keep erase handling** (§A.4.2:
-  `IncludeArchivedEvents = true` on the projection + null the user's `Ip` in the
-  erase call) with a regression test proving an erased user's rows **survive,
-  de-identified** (`Ip == null`), across a rebuild. Add the `AuditSettings`
-  visibility window.
+- **Phase 2 — Tenant GDPR-audit read surface** ✅ *(read endpoint + erase handling
+  shipped; `AuditSettings` window pending)*: `GET /api/admin/audit` over the
+  per-realm `AuthAuditView` — a **tenant-scoped session → physical realm isolation**
+  (no `WHERE Realm =`; a filter bug can't leak cross-realm), `category`/`eventType`
+  filters, gated on `auth-log:read`. Plus the **mask-and-keep erase handling**
+  (§A.4.2: `IncludeArchivedEvents = true` + null the user's `Ip` in the erase call) —
+  tested: an erased user's rows **survive de-identified** (`Ip == null`) across a
+  rebuild. **Pending:** the `AuditSettings` per-realm visibility window, the
+  control-plane cross-realm fan-out, and the SPA taxonomy-chip UI.
 - **Phase 3 — Streamless security/ops store** (§A.5): migrate unknown-user
   attempts + the operational `"Auth:"` sites (incl. the prefix-less realm
   provisioning logs) into the typed system-DB security store; carry #50's
