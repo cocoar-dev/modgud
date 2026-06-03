@@ -53,6 +53,14 @@ public class RealmSettings
     /// it as <see cref="DeletionSettings.Defaults"/>.</summary>
     public DeletionSettings? Deletion { get; set; }
 
+    /// <summary>Per-realm tenant-audit visibility window (audit redesign §A.6).
+    /// Null = never configured; callers read it as
+    /// <see cref="AuditSettings.Defaults"/>. A *visibility* window over the
+    /// rebuildable <c>AuthAuditView</c> — it bounds what the read surface shows, it
+    /// does NOT delete history (the source events live with the aggregate, masked on
+    /// erase).</summary>
+    public AuditSettings? Audit { get; set; }
+
     /// <summary>Page-builder schemas keyed by SPA-page-slug
     /// (<c>login</c>, <c>logout</c>, <c>password-forgot</c>, …). Each
     /// value is the serialised <c>PageNode</c> tree as JSON. Missing key

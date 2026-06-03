@@ -54,4 +54,40 @@ public class AuditEndpointTests : IntegrationTestBase
         Assert.NotEmpty(auth!);
         Assert.All(auth!, r => Assert.Equal(AuditCategories.Authentication, r.Category));
     }
+
+    [Fact]
+    public async Task Get_hides_rows_older_than_the_visibility_window()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var uid = Guid.NewGuid();
+
+        // Store one recent + one 100-day-old row directly (the visibility window is
+        // about Timestamp, which the projection can't backdate).
+        using (var doc = GetTenantedDocumentSession())
+        {
+            doc.Store(new AuthAuditView
+            {
+                Id = Guid.NewGuid(),
+                Timestamp = DateTimeOffset.UtcNow,
+                Category = AuditCategories.Account,
+                EventType = AuditEvents.AccountActivated,
+                UserId = uid,
+            });
+            doc.Store(new AuthAuditView
+            {
+                Id = Guid.NewGuid(),
+                Timestamp = DateTimeOffset.UtcNow.AddDays(-100),
+                Category = AuditCategories.Account,
+                EventType = AuditEvents.AccountDeactivated,
+                UserId = uid,
+            });
+            await doc.SaveChangesAsync(ct);
+        }
+
+        // Default window is 90 days: the recent row shows, the 100-day-old one is hidden.
+        var rows = await Client.GetFromJsonAsync<List<AuditRowDto>>("/api/admin/audit?limit=1000", JsonOptions, ct);
+        Assert.NotNull(rows);
+        Assert.Contains(rows!, r => r.EventType == AuditEvents.AccountActivated);
+        Assert.DoesNotContain(rows!, r => r.EventType == AuditEvents.AccountDeactivated);
+    }
 }

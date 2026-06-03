@@ -1,6 +1,8 @@
 using Marten;
 using Modgud.Authentication.Audit;
+using Modgud.Authentication.RealmSettings;
 using Modgud.Authorization.AspNetCore;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Authentication.Api.Admin;
 
@@ -25,13 +27,20 @@ public static class AuditEndpoints
 
         group.MapGet("", async (
             IDocumentSession session,
+            IRealmSettingsService realmSettings,
             string? category,
             string? eventType,
             int? limit,
             CancellationToken ct) =>
         {
+            // Visibility window (§A.6): show only the last N days. A *view* bound,
+            // not a deletion — older rows stay on the (masked-on-erase) streams.
+            var window = (await realmSettings.LoadAsync(ct)).Audit ?? AuditSettings.Defaults;
+            var cutoff = DateTimeOffset.UtcNow.AddDays(-window.VisibilityWindowDays);
+
             // Tenant-scoped session → only the caller's realm (per-realm DB).
-            IQueryable<AuthAuditView> query = session.Query<AuthAuditView>();
+            IQueryable<AuthAuditView> query = session.Query<AuthAuditView>()
+                .Where(x => x.Timestamp >= cutoff);
             if (!string.IsNullOrWhiteSpace(category))
                 query = query.Where(x => x.Category == category);
             if (!string.IsNullOrWhiteSpace(eventType))

@@ -16,6 +16,7 @@ public record RealmSettingsDto
     public DcrSettingsDto Dcr { get; init; } = new();
     public BrandingSettingsDto Branding { get; init; } = new();
     public DeletionSettingsDto Deletion { get; init; } = new();
+    public AuditSettingsDto Audit { get; init; } = new();
 
     /// <summary>Page-builder schemas keyed by slug. Read-only via the bulk
     /// GET; writes go through the dedicated <c>/api/admin/customization/pages/{slug}</c>
@@ -34,4 +35,5 @@ public record UpdateRealmSettingsDto
     public UpdateDcrSettingsDto? Dcr { get; init; }
     public UpdateBrandingSettingsDto? Branding { get; init; }
     public UpdateDeletionSettingsDto? Deletion { get; init; }
+    public UpdateAuditSettingsDto? Audit { get; init; }
 }
