@@ -237,9 +237,19 @@ do), whereas an audit trail is a *list of occurrences*. Each `Create(IEvent<T>)`
 method maps one event type to a row, taking metadata from the `IEvent` envelope
 (`Id` keys the row, `Timestamp`, `TenantId` → `Realm`, and for user-stream events
 `StreamId` → `UserId`). No PII payload is copied in — see [§A.4](#a4-gdpr-masking-inherited-at-source-view-scrubbed-on-erase).
-Use a `[DocumentAlias]` for schema stability. Keep `UserName`/`Ip`/`Level` as
-**first-class columns** (not a JSON blob — that breaks the grid). `EventType` +
-`Category` drive taxonomy-chip filtering in the SPA.
+Use a `[DocumentAlias]` for schema stability. Keep `Ip`/`Level` as **first-class
+columns** (not a JSON blob — that breaks the grid). `EventType` + `Category` drive
+taxonomy-chip filtering in the SPA.
+
+**Actor identity is resolved at read time, not stored on the row** — and the
+*source* of the name is a load-bearing GDPR choice. The view holds only `UserId`
+(a pseudonymous GUID); the read endpoint joins it to the **`ApplicationUser`** doc
+to show a username. It must be `ApplicationUser`, **not** the `UserView`
+projection: `GdprService` masks the `ApplicationUser` doc *in place* on erase
+(`UserName → "deleted-{guid}"`, name/email nulled, `GdprService.cs:230-243`), so an
+erased user reads as `deleted-{guid}` — de-identified for free — whereas `UserView`
+keeps the stale real name until a rebuild and would leak it. Config-stream rows
+(no `UserId`) simply show no actor.
 
 > **Decision (locked): `AuthAuditView` lives PER-REALM in each tenant DB — not the
 > system DB.** The user/config aggregate streams already live in the per-realm
@@ -593,8 +603,11 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
   promise (§A.6). The **SPA `AuditLogView`** (sidebar `/admin/audit`, category-chip
   filter over the grid) is shipped and verified live with Chrome DevTools — a real
   admin password login surfaced an `auth.login_succeeded`/`password` row end-to-end
-  (Phase 1 → projection → endpoint → view). **Pending:** only the control-plane
-  cross-realm fan-out (deferred — platform-wide is the Phase-3 streamless store).
+  (Phase 1 → projection → endpoint → view), with the actor's **`Benutzer`/User
+  column resolved at read time from the erasure-masked `ApplicationUser`** (§A.3 —
+  so erased users de-identify in the displayed audit too; config rows show no
+  actor). **Pending:** only the control-plane cross-realm fan-out (deferred —
+  platform-wide is the Phase-3 streamless store).
 - **Phase 3 — Streamless security/ops store** (§A.5): migrate unknown-user
   attempts + the operational `"Auth:"` sites (incl. the prefix-less realm
   provisioning logs) into the typed system-DB security store; carry #50's
