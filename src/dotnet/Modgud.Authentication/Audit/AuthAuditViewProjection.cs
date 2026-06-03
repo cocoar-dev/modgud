@@ -4,6 +4,7 @@ using Modgud.Authentication.Domain.ExternalAuth.Events;
 using Modgud.Authentication.Domain.LoginProviders.Events;
 using Modgud.Authentication.Events;
 using Modgud.Domain.Users.Events;
+using Modgud.Infrastructure.Audit;
 
 namespace Modgud.Authentication.Audit;
 

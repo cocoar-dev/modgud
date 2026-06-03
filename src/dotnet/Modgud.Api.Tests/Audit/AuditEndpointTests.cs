@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authentication.Audit;
 using Modgud.Authentication.Events;
+using Modgud.Infrastructure.Audit;
 
 namespace Modgud.Api.Tests.Audit;
 

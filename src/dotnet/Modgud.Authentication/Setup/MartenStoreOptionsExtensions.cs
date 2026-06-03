@@ -127,12 +127,24 @@ public static class MartenStoreOptionsExtensions
         // AuthLogDocument lives in the default (public) schema like every other
         // auth doc — dropped the gratuitous solo "marten" schema (one schema
         // fewer per tenant DB; aligns with AppBase v4).
+        // NOTE: legacy. Phase 3 replaces it with SecurityAuditEntry (below); kept
+        // running alongside until the call sites are migrated, then deleted.
         options.Schema.For<AuthLogDocument>()
             .Identity(x => x.Id)
             .Index(x => x.Timestamp)
             // All realms' entries share the system DB, so the admin read/clear
             // filters by Realm — index it so the tenant-scoped path isn't a scan.
             .Index(x => x.Realm);
+
+        // Streamless security/ops store (logging/audit redesign Track A, Phase 3).
+        // Cross-realm in the system DB; the typed successor to the personal-data-
+        // bearing-but-streamless portion of AuthLogDocument. Indexed for the admin
+        // read (Realm scope + EventType chip filter) and the retention prune.
+        options.Schema.For<Modgud.Infrastructure.Audit.SecurityAuditEntry>()
+            .Identity(x => x.Id)
+            .Index(x => x.Timestamp)
+            .Index(x => x.Realm)
+            .Index(x => x.EventType);
 
         // Tenant-scoped singleton config doc. One row per tenant DB,
         // addressed by the fixed `RealmSettings.SingletonId`. Owned by

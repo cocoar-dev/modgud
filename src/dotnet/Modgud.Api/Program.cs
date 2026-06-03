@@ -853,10 +853,22 @@ try
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
     });
 
-    // Auth log: Serilog sink → Channel → BackgroundService → Marten (7-day retention)
+    // LEGACY auth log: Serilog sink → Channel → BackgroundService → Marten (7-day
+    // retention). Phase 3 of the logging/audit redesign retires this in favour of
+    // the typed streamless security store below; kept running until every "Auth:"
+    // call site is migrated (no record falls on the floor in the interim).
     var authLogSink = new AuthLogSink();
     builder.Services.AddSingleton(authLogSink);
     builder.Services.AddHostedService<AuthLogPersistenceService>();
+
+    // Streamless security/ops audit store (logging/audit redesign Track A, Phase 3).
+    // Typed best-effort sink (bounded channel) + background writer to the system DB,
+    // replacing the "Auth:"-message-prefix Serilog sink. The realm is captured from
+    // TenantContext.Current at emit; the retention prune is a Quartz job (below).
+    builder.Services.AddSingleton<Modgud.Infrastructure.Audit.SecurityAuditLog>();
+    builder.Services.AddSingleton<Modgud.Infrastructure.Audit.ISecurityAuditLog>(
+        sp => sp.GetRequiredService<Modgud.Infrastructure.Audit.SecurityAuditLog>());
+    builder.Services.AddHostedService<Modgud.Infrastructure.Audit.SecurityAuditWriter>();
 
     // Quartz-based scheduling framework + the system jobs we host. The DCR
     // garbage collector was a hand-rolled BackgroundService before Phase 1A;
@@ -1302,6 +1314,8 @@ try
                 await session.Query<Modgud.Authentication.Domain.LoginProviders.LoginProvider>()
                     .Where(p => !p.IsDeleted).Take(1).ToListAsync();
                 await session.Query<Modgud.Authentication.AuthLog.AuthLogDocument>()
+                    .OrderByDescending(l => l.Timestamp).Take(1).ToListAsync();
+                await session.Query<Modgud.Infrastructure.Audit.SecurityAuditEntry>()
                     .OrderByDescending(l => l.Timestamp).Take(1).ToListAsync();
                 await session.Query<Modgud.Authentication.Domain.UserChangeRequest>()
                     .Take(1).ToListAsync();

@@ -1,4 +1,5 @@
 using Marten.Schema;
+using Modgud.Infrastructure.Audit;
 
 namespace Modgud.Authentication.Audit;
 
