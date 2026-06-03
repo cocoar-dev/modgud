@@ -275,20 +275,21 @@ new wiring task that applies regardless of projection lifecycle.
    This is the load-bearing GDPR wiring — needed for **both** inline and async
    projections; inline vs async differ only in *steady-state* write latency, not in
    the erase-scrub requirement.
-   - **Mechanism — re-project, not a hand-rolled `UPDATE` (with a caveat).** The
-     clean answer is to re-project the user's streams (now reading masked bytes),
-     so the view stays a *purely derived* read model with no second write path that
-     could drift from the events. A direct masking `UPDATE … WHERE UserId =` on the
-     view (we keep `UserId` as a column) is the obvious shortcut — and the doc must
-     say *why we don't reach for it first*: it bypasses the projection and
-     reintroduces exactly the kind of out-of-band mutation this redesign removes.
-     **Caveat to verify in Phase 2:** Marten rebuilds are typically
-     projection-*wide*, not per-stream, and a full `AuthAuditView` rebuild on every
-     erase would be far too expensive. Confirm whether the Marten version supports a
-     cheap *targeted* (single-user / per-stream) re-projection; **if it does not,
-     the documented fallback is the direct masking `UPDATE WHERE UserId =`**
-     (acceptable because the view columns mirror the now-masked event fields
-     one-to-one).
+   - **Mechanism — `DeleteWhere` the user's view rows (verified).** Marten 9.3.5's
+     `RebuildProjectionAsync` is **projection-*wide* only** — there is no cheap
+     targeted single-user / per-stream re-projection (confirmed against the package
+     version + codebase), and a full `AuthAuditView` rebuild on every erase would be
+     far too expensive. So the mechanism is: right after `ApplyEventDataMasking` +
+     `ArchiveStream`, call `session.DeleteWhere<AuthAuditView>(x => x.UserId ==
+     userId)` in the same erase transaction. This is correct *because* the user's
+     source streams are archived in the same flow, so the async projection won't
+     re-emit those rows — deleting them is permanent, not a race. It is also the
+     established pattern: `GdprService` already scrubs read models exactly this way
+     (`GdprService.cs:247-268` — `DeleteWhere`/`Delete`/`Store` in one batch), and
+     `AuthLogEndpoints.cs:54-64` is the template. *(A masking `UPDATE` to leave a
+     `[DELETED]` tombstone row is the alternative if the tenant audit should still
+     *show* that an erased user once acted — a Phase-2 call; outright delete is the
+     simpler default.)*
    - Do the scrub **synchronously within the erase call** (or with a published,
      bounded max-lag), so PII cannot linger in a readable view after an erasure
      request. Add a regression test: after erase, querying `AuthAuditView` for the
@@ -540,9 +541,9 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
   attempts, operational `"Auth:"` sites) — the strangler retires it only once the
   typed store stands up. No record falls on the floor in the interim.
 - **Phase 2 — Tenant GDPR-audit read surface**: the per-realm `AuthAuditView`
-  endpoint + taxonomy chips + the **erase-triggered view scrub** (§A.4.2) with a
-  regression test proving an erased user's rows return masked/null. Add the
-  `AuditSettings` retention window.
+  endpoint + taxonomy chips + the **erase-triggered view scrub**
+  (§A.4.2: `DeleteWhere<AuthAuditView>(UserId)`) with a regression test proving an
+  erased user's rows are gone. Add the `AuditSettings` retention window.
 - **Phase 3 — Streamless security/ops store** (§A.5): migrate unknown-user
   attempts + the operational `"Auth:"` sites (incl. the prefix-less realm
   provisioning logs) into the typed system-DB security store; carry #50's
@@ -605,7 +606,7 @@ A second cross-review round then sharpened the refinements: the failure-routing
 fork is **erasability vs. a unified brute-force signal** (not spam-vs-simple),
 resolved to **(b)** — aggregated on the user's stream, keeping it erasable (Open
 Decision #1, the one call made before Phase 1); the success marker carries the
-non-PII auth `method` (§A.2); the erase-scrub is re-project-not-`UPDATE` *with* a
-Marten-targeted-rebuild caveat (§A.4.2); and "retention" is named a **visibility
-window** so it can't become a softer reprise of the very false promise this
-redesign removes (§A.6).
+non-PII auth `method` (§A.2); the erase-scrub is a `DeleteWhere` on the view —
+verified that Marten 9 has no targeted rebuild, so re-project isn't an option
+(§A.4.2); and "retention" is named a **visibility window** so it can't become a
+softer reprise of the very false promise this redesign removes (§A.6).
