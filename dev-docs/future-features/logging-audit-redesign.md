@@ -562,11 +562,17 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
   to flat typed rows (`Modgud.Authentication/Audit/*`, `Modgud.Api.Tests/Audit/`).
   *(OAuth application/scope/API config events are the next mechanical addition — same
   `Create(IEvent<T>)` pattern.)*
-- **Phase 1 — Close the event-sourcing gap** (§A.2): append the
-  `UserLoggedInEvent` marker (with `method`, IP via Sessions) on password +
-  magic-link login; implement the known-user-failure routing per Open Decision #1
-  (b: aggregated `UserLoginFailuresObservedEvent` on the user's stream). This is
-  where the load-bearing boundary starts being *enforced*. **Note:** the
+- **Phase 1 — Close the event-sourcing gap** (§A.2) ✅ *shipped*: the
+  `UserLoggedInEvent` marker (with `method`, IP via Sessions, best-effort so it
+  never breaks a login) now appends on password + magic-link + external login;
+  known-user failures emit the aggregated `UserLoginFailuresObservedEvent`
+  (Open Decision #1 (b)) from `EventSourcedUserStore.AppendSecurityChangeEvents`
+  when a failure streak resolves (counter `>0 → 0`). This is where the load-bearing
+  boundary starts being *enforced*. **Known limitation:** streak-resolution
+  emission rides ASP.NET Identity's failed-count reset, which only the *password*
+  path performs — a magic-link / external login does not reset the count, so a
+  streak there resolves on the next password success (or is reflected by lockout).
+  Aligning all methods is deferred (it touches lockout semantics). **Note:** the
   streamless store doesn't exist until Phase 3, so between Phase 1 and Phase 3 the
   legacy `AuthLogSink` keeps carrying the streamless-bound records (unknown-user
   attempts, operational `"Auth:"` sites) — the strangler retires it only once the
