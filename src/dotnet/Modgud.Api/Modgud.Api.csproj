@@ -39,6 +39,8 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
     <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <!-- Phase 4: Serilog → OTLP log export (off by default; Observability__Otlp__Enabled). -->
+    <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
     <PackageReference Include="Npgsql.OpenTelemetry" />
   </ItemGroup>

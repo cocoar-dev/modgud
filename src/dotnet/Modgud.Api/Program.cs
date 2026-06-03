@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.ResponseCompression;
 using Serilog;
+using Serilog.Sinks.OpenTelemetry;
 using Serilog.Sinks.SystemConsole.Themes;
 using BuildingBlocks.EventDispatcher;
 using Fido2NetLib;
@@ -941,7 +942,7 @@ try
 
         // Stamp every event with the ambient realm slug (RealmLogEnricher). Kept
         // after the "Auth:" sink was retired: it is how operational logs carry their
-        // realm tag for Console/File today and for the Phase-4 OTel logs export.
+        // realm tag for Console/File and for the OTLP log export (Phase 4) below.
         logConfig.Enrich.With(new Modgud.Authentication.AuthLog.RealmLogEnricher());
 
         // Console + File
@@ -953,6 +954,37 @@ try
             path = Path.Combine(path, "log.log");
             logConfig.WriteTo.File(path, rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 31);
+        }
+
+        // Phase 4 — OTLP log export. Off by default; shares the metrics/tracing
+        // OTLP gate + endpoint (Observability__Otlp__Enabled / OtlpSettings), so a
+        // deployment without a collector/OpenObserve is unaffected (§B.0). Wired as
+        // a Serilog sink rather than OTel .WithLogs(): AddSerilog runs with
+        // writeToProviders:false, so an OTel ILoggerProvider would never see the
+        // Serilog enrichers — in particular the RealmLogEnricher tag that §B.1
+        // requires. The sink emits every Serilog property (incl. Realm) as a
+        // log-record attribute and reads Activity.Current for trace/span
+        // correlation automatically. The redaction GUARANTEE lives at the collector,
+        // not here; LogPiiMasking stays as belt. For HttpProtobuf the endpoint must
+        // carry the /v1/logs path (the gRPC default needs only the base host:port).
+        // See dev-docs/future-features/logging-audit-redesign.md §B.1-B.2.
+        if (observabilitySettings.Otlp.Enabled)
+        {
+            var otlp = observabilitySettings.Otlp;
+            logConfig.WriteTo.OpenTelemetry(o =>
+            {
+                o.Endpoint = otlp.Endpoint;
+                o.Protocol = otlp.Protocol.Equals("HttpProtobuf", StringComparison.OrdinalIgnoreCase)
+                    ? OtlpProtocol.HttpProtobuf
+                    : OtlpProtocol.Grpc;
+                o.ResourceAttributes = new Dictionary<string, object>
+                {
+                    ["service.name"] = observabilitySettings.ServiceName,
+                    ["service.version"] = System.Reflection.Assembly.GetExecutingAssembly()
+                        .GetName().Version?.ToString() ?? "unknown",
+                    ["service.instance.id"] = Environment.MachineName,
+                };
+            });
         }
     });
 

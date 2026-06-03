@@ -88,6 +88,12 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
     <PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.15.3-beta.1" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <!-- OpenTelemetry Phase 4: Serilog → OTLP log export. The sink owns its own
+         OTLP client (gRPC/HTTP), so it is independent of the OTel SDK exporter
+         version line above; it is wired as a Serilog sink because the app uses
+         AddSerilog (writeToProviders:false), where an OTel ILoggerProvider would
+         miss the Serilog enrichers (the RealmLogEnricher tag). -->
+    <PackageVersion Include="Serilog.Sinks.OpenTelemetry" Version="4.2.0" />
     <!-- Health-checks: Npgsql probe for /health/ready. -->
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
     <!-- OpenTelemetry Phase 3: Postgres-query tracing via Npgsql's own ActivitySource. -->
