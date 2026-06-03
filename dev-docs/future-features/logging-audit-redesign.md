@@ -271,34 +271,37 @@ new wiring task that applies regardless of projection lifecycle.
    already masked-then-archived per subject by `GdprService`
    (`GdprService.cs:318-336`; ordering constraint: mask **before** archive,
    `:316`). `ApplyEventDataMasking` rewrites the stored event **bytes in place**.
-2. **The one new task: scrub the projected view on erase.** Rewriting the event
-   bytes does **not** retroactively update `AuthAuditView` rows that were already
-   projected from those events — no new event is appended, the projection
-   high-water mark doesn't move, so neither an inline nor an async projection
-   re-derives them on its own. Therefore `PerformPermanentEraseAsync` must, right
-   after `ApplyEventDataMasking`, **scrub the erased user's `AuthAuditView` rows**.
-   This is the load-bearing GDPR wiring — needed for **both** inline and async
-   projections; inline vs async differ only in *steady-state* write latency, not in
-   the erase-scrub requirement.
-   - **Mechanism — `DeleteWhere` the user's view rows (verified).** Marten 9.3.5's
-     `RebuildProjectionAsync` is **projection-*wide* only** — there is no cheap
-     targeted single-user / per-stream re-projection (confirmed against the package
-     version + codebase), and a full `AuthAuditView` rebuild on every erase would be
-     far too expensive. So the mechanism is: right after `ApplyEventDataMasking` +
-     `ArchiveStream`, call `session.DeleteWhere<AuthAuditView>(x => x.UserId ==
-     userId)` in the same erase transaction. This is correct *because* the user's
-     source streams are archived in the same flow, so the async projection won't
-     re-emit those rows — deleting them is permanent, not a race. It is also the
-     established pattern: `GdprService` already scrubs read models exactly this way
-     (`GdprService.cs:247-268` — `DeleteWhere`/`Delete`/`Store` in one batch), and
-     `AuthLogEndpoints.cs:54-64` is the template. *(A masking `UPDATE` to leave a
-     `[DELETED]` tombstone row is the alternative if the tenant audit should still
-     *show* that an erased user once acted — a Phase-2 call; outright delete is the
-     simpler default.)*
-   - Do the scrub **synchronously within the erase call** (or with a published,
-     bounded max-lag), so PII cannot linger in a readable view after an erasure
-     request. Add a regression test: after erase, querying `AuthAuditView` for the
-     erased user returns only masked/null values.
+2. **The one new task: keep the rows, masked — and make them rebuild-durable.**
+   A GDPR erasure does **not** delete the user; it **masks** them (verified
+   `GdprService.PerformPermanentEraseAsync`): the `ApplicationUser` doc becomes a
+   `deleted-{guid}` tombstone (`:230-243`), the event stream's PII is rewritten
+   in place (`ApplyEventDataMasking`) and the stream is **archived** — *kept*,
+   hidden from active queries (`:313-336`) — and only the streamless secondary
+   docs (sessions, security data, links, passkeys, …) are hard-deleted
+   (`:246-295`). So the audit must **mask-and-keep**, never delete: Art-17(3) lets
+   a de-identified security record be retained. (Today the only PII column in
+   `AuthAuditView` is `Ip`; `UserName` is left null and `UserId` is a pseudonymous
+   GUID that resolves only to the tombstone — so de-identifying a row is just
+   nulling `Ip`.) Two pieces, no separate store:
+   - **Durable across rebuilds — `IncludeArchivedEvents = true` on the projection**
+     (verified API: `JasperFx.Events.Projections.IEventFilterable`, default false).
+     Because the masked events are *archived, not deleted*, this makes the daemon
+     **and** a full rebuild include them, so a rebuild regenerates the erased
+     user's rows **from the masked events** (`Ip` already null). The masked
+     archived events *are* the durable de-identified record — no second store, no
+     duplication. (This supersedes the earlier "delete the rows" / "separate
+     durable store" options: deleting is wrong for an audit trail, and a separate
+     store would just duplicate the masked events.)
+   - **Live freshness — refresh the rows in the erase call.** Masking rewrites
+     event bytes but appends no new event, so the live projection won't re-derive
+     the already-projected rows on its own (Marten has no cheap targeted
+     re-projection). So `PerformPermanentEraseAsync`, right after
+     `ApplyEventDataMasking` + `ArchiveStream`, sets `Ip = null` on the user's
+     `AuthAuditView` rows (a small load-modify-store on the per-tenant view, keyed
+     by `UserId`) — **synchronously**, so PII can't linger, and so the live view is
+     immediately identical to what an archived-inclusive rebuild would produce.
+     Regression test: after erase the user's rows **survive with `Ip == null`** (not
+     deleted), and survive a rebuild.
 3. **Streamless security store — lawful, not erased-in-place.** Records about
    unidentified actors (and operational records) stay out of the per-subject erase
    path *because there is no subject stream to attach them to* — **not** because
@@ -531,10 +534,10 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
    failures unioned at read time). (a) streamless and (c) lockout-only rejected —
    (a) would hold an identified subject's `UserId` outside her erasable stream.
 2. **Projection lifecycle** — inline vs async `AuthAuditView`. Either way the
-   erase-triggered scrub (§A.4.2) is mandatory; inline gives instant steady-state
-   freshness, async is eventually-consistent. *Recommendation: match the
-   `UserViewProjection` lifecycle, plus the synchronous (or bounded-lag)
-   erase-scrub hook.*
+   erase-time row refresh (§A.4.2: set `Ip = null`, keep the row) is mandatory, and
+   `IncludeArchivedEvents = true` makes a rebuild regenerate erased rows from the
+   masked events. Inline gives instant steady-state freshness, async is
+   eventually-consistent. *Recommendation: match the `UserViewProjection` lifecycle.*
 3. **External-login IP** — now that success is a no-IP marker (§A.2), keep external
    login's `UserLoggedInEvent` IP `null` too (consistency, IP via Sessions) or let
    federation logins carry it. *Recommendation: null, for consistency.*
@@ -578,9 +581,11 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
   attempts, operational `"Auth:"` sites) — the strangler retires it only once the
   typed store stands up. No record falls on the floor in the interim.
 - **Phase 2 — Tenant GDPR-audit read surface**: the per-realm `AuthAuditView`
-  endpoint + taxonomy chips + the **erase-triggered view scrub**
-  (§A.4.2: `DeleteWhere<AuthAuditView>(UserId)`) with a regression test proving an
-  erased user's rows are gone. Add the `AuditSettings` retention window.
+  endpoint + taxonomy chips + the **mask-and-keep erase handling** (§A.4.2:
+  `IncludeArchivedEvents = true` on the projection + null the user's `Ip` in the
+  erase call) with a regression test proving an erased user's rows **survive,
+  de-identified** (`Ip == null`), across a rebuild. Add the `AuditSettings`
+  visibility window.
 - **Phase 3 — Streamless security/ops store** (§A.5): migrate unknown-user
   attempts + the operational `"Auth:"` sites (incl. the prefix-less realm
   provisioning logs) into the typed system-DB security store; carry #50's
@@ -645,8 +650,9 @@ A second cross-review round then sharpened the refinements: the failure-routing
 fork is **erasability vs. a unified brute-force signal** (not spam-vs-simple),
 resolved to **(b)** — aggregated on the user's stream, keeping it erasable (Open
 Decision #1, the one call made before Phase 1); the success marker carries the
-non-PII auth `method` (§A.2); the erase-scrub is a `DeleteWhere` on the view —
-verified that Marten 9 has no targeted rebuild, so re-project isn't an option
+non-PII auth `method` (§A.2); erasure **masks-and-keeps** the audit rather than
+deleting — a GDPR-erased user is *masked, not deleted*, so `IncludeArchivedEvents`
+makes the masked archived events the durable, rebuild-safe de-identified record
 (§A.4.2); and "retention" is named a **visibility window** so it can't become a
 softer reprise of the very false promise this redesign removes (§A.6).
 
