@@ -470,6 +470,19 @@ records at emit (`RealmLogEnricher`), so even system-tenant background/admin err
 carry `realm=system` and stay filterable, and logs become **correlated with
 traces** (same trace-id) in the backend.
 
+> **Shipped note (deviation from "`.WithLogs()`").** The app wires log export as a
+> **Serilog sink** (`Serilog.Sinks.OpenTelemetry`, `WriteTo.OpenTelemetry` in the
+> `AddSerilog` block in `Program.cs`), **not** OTel `.WithLogs()`. Reason: `AddSerilog`
+> runs with `writeToProviders:false`, so an OTel `ILoggerProvider` (what `.WithLogs()`
+> registers) would either receive nothing or — with `writeToProviders:true` — receive
+> MEL records *without the Serilog enrichers*, i.e. **without the `Realm` tag** §B.1
+> requires. The Serilog sink emits every property (incl. `Realm`) as a log-record
+> attribute and reads `Activity.Current` for trace correlation. The intent is honoured:
+> same `Observability__Otlp__Enabled` gate + `OtlpSettings.Endpoint/Protocol`, no new
+> config section. (`ConfigureOtlp` itself is metrics/tracing-specific —
+> `Action<OtlpExporterOptions>` — so it isn't literally reused; the sink maps the same
+> `OtlpSettings` fields to its own options type.)
+
 ### B.2 The backend: OpenObserve behind an OTel Collector (CONFIRMED)
 
 The destination is **OpenObserve**, reached through an **OTel Collector** sitting
@@ -633,11 +646,22 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
   `AuthLogPersistenceService`, `AuthLogDocument`, and the orphaned `DcrAuditEvents`
   vocabulary. (`RealmLogEnricher` kept — it tags operational logs for Phase 4.)
   DevTools-verified end-to-end (failed login → Security row; clear → `audit.log_cleared`).
-- **Phase 4 — OTel Logs → collector → OpenObserve** (§B.1–B.2): `.WithLogs()` (+
-  the OTel logging bridge package), the collector redaction processor (with the
-  end-to-end redaction test), realm-tagged + trace-correlated — all behind the
-  existing `Observability__Otlp__Enabled` gate (off by default; §B.0), so a
-  deployment without OpenObserve/collector is unaffected.
+- **Phase 4 — OTel Logs → collector → OpenObserve** (§B.1–B.2) ✅ *shipped*: log
+  export wired as a **Serilog OTLP sink** (`Serilog.Sinks.OpenTelemetry`, not
+  `.WithLogs()` — see the §B.1 shipped note), behind the existing
+  `Observability__Otlp__Enabled` gate (off by default; §B.0), realm-tagged
+  (`RealmLogEnricher`) + trace-correlated. The redaction **guarantee** is a
+  versioned transform/OTTL processor (`redaction-ruleset: v1`) in
+  `docker/otel-collector/otel-collector-config.yaml` that strips emails / JWTs /
+  Bearer-Basic creds / IPv4 / IPv6 from the log body **and** attribute values
+  (resource attributes left intact), proven by an **end-to-end test against a real
+  collector** (`Modgud.Api.Tests/Observability/OtelLogsRedactionTests`) plus an
+  anti-drift check pinning the test ruleset to the shipped one. Failure modes +
+  realm=system fallback + a local `docker-compose.observability.yml` (Collector +
+  OpenObserve) documented in `docs/operate/observability.md`; verified end-to-end
+  against the real stack (PII scrubbed, realm-filterable in OpenObserve). A
+  deployment without OpenObserve/collector is unaffected (gate off → Serilog stays
+  Console + File). `LogPiiMasking.MaskEmail` kept as belt.
 - **Phase 5 — In-app per-realm error feed** (§B.3): per-realm-bounded buffers (NOT
   a global ring), `ObservabilityHub.LogsSubscribe()`, the `AdminObservabilityView.vue`
   error panel. Plus the carried-forward per-method SignalR-auth hardening.
