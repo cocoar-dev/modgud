@@ -14,6 +14,7 @@ Permissions for the in-app live view: `observability:read`. The `realm:admin` by
 | --- | --- | --- |
 | Prometheus scrape | `/metrics` (default) | Static **bearer token** — set via `Observability__Prometheus__BearerToken`. Mismatch returns 404 (not 401) so the endpoint's existence stays unconfirmed. Constant-time compare. |
 | OTLP push (metrics + traces) | configurable endpoint (default `http://localhost:4317`) | Whatever the collector requires. Off by default; turn on when you actually have a collector (Tempo, Honeycomb, …). |
+| OTLP **log** export | same OTLP endpoint | Off by default — **same** `Observability__Otlp__Enabled` gate. Logs go through an OTel Collector whose redaction processor strips PII before OpenObserve. See [Logs — export & redaction](#logs-export-redaction). |
 | In-app live view | `/operate/observability` (Admin SPA) | Cookie auth + `observability:read`. Realm-scoped — each admin sees only their own realm. |
 | REST snapshot | `GET /api/admin/observability/snapshot?windowMinutes=15` | Same as in-app view. Returns event-type counts, login outcome breakdown, per-minute sparkline. |
 | REST activity feed | `GET /api/admin/observability/activity?limit=50` | Same. Most-recent first, last 60 min, capped at 200. |
@@ -33,12 +34,16 @@ Permissions for the in-app live view: `observability:read`. The `realm:admin` by
     "BearerToken": ""                    // REQUIRED outside Development; empty = boot fails
   },
   "Otlp": {
-    "Enabled": false,                    // default off
+    "Enabled": false,                    // default off — gates metrics, traces AND logs
     "Endpoint": "http://localhost:4317", // gRPC by default
     "Protocol": "Grpc"                   // or "HttpProtobuf"
   }
 }
 ```
+
+::: tip One gate for all three signals
+`Otlp.Enabled` turns on metrics, traces **and** log export together — there is no separate logs flag by design. With it off, Serilog stays Console + File and nothing leaves the box; no collector / OpenObserve is required. For `HttpProtobuf`, the log signal needs the full `/v1/logs` path on the endpoint (gRPC needs only the host:port).
+:::
 
 ::: tip Set the bearer in env, not in the JSON
 The committed `configuration.json` ships with an empty `BearerToken` on purpose — so secrets don't land in source control. Production deployments must set `Observability__Prometheus__BearerToken=<random-32-bytes-base64>` in the container's environment.
@@ -112,3 +117,41 @@ Each realm-admin sees only their own realm. The cross-realm aggregate ("global-o
 When `Otlp.Enabled = true`, OpenIddict-token-issuance, ASP.NET request handling, and HTTP-client outbound calls each emit spans with the `service.name` resource attribute. Trace context propagates standard W3C `traceparent` headers, so spans from your downstream APIs (resource servers, MCP servers) reconnect to the auth-server span automatically.
 
 `SamplingRatio` controls how much survives. Default 1.0 is fine for dev; production with traffic should drop it to keep trace volume sane (0.1 is a reasonable starting point).
+
+## Logs — export & redaction
+
+Logs are the third OTel signal. Serilog stays the in-process logger (Console + File); when `Otlp.Enabled = true` an OTLP sink **also** ships every log record to the OTLP endpoint. Records are **realm-tagged** (the `Realm` property from the realm enricher, `system` for background work) and **trace-correlated** (the active `trace_id`/`span_id` ride along), so a log line in the backend links straight to its request span and is filterable per realm.
+
+The destination is **[OpenObserve](https://openobserve.ai/)**, reached through an **OpenTelemetry Collector** that sits between the app and the backend.
+
+::: danger The redaction guarantee lives at the collector
+PII (emails, JWTs, `Bearer`/`Basic` credentials, IPv4/IPv6 addresses) is stripped by a **transform/OTTL processor in the collector**, not by the app. This is deliberate: it is a *pipeline guarantee* that holds even if a call site forgets to mask. The app-side `LogPiiMasking.MaskEmail` stays as a **belt** (defense in depth) but is no longer the thing correctness depends on.
+
+The processor only redacts the log **body** and **attribute values** — resource attributes (`service.version`, …) are left alone so e.g. a version `1.0.0.0` isn't mistaken for an IP. The exact field set is **versioned** (`redaction-ruleset: v1`) in [`docker/otel-collector/otel-collector-config.yaml`](https://github.com/cocoar-dev/modgud/blob/develop/docker/otel-collector/otel-collector-config.yaml) and pinned by an end-to-end test (`OtelLogsRedactionTests`) that runs a real collector and asserts PII is gone before export. **If you fork the ruleset, bump the version and re-run that test.**
+:::
+
+### Failure modes
+
+The export is **best-effort and lossy by design** (Track B). It must never be load-bearing — the tenant audit (`/admin/audit`, `/admin/auth-log`) is a separate, durable pipeline and is unaffected whether export is on or off.
+
+| Situation | What happens | What to do |
+| --- | --- | --- |
+| Gate off (default) | No export. Serilog Console + File only. No collector needed. | Nothing — this is the safe default. |
+| Gate on, collector unreachable | The OTLP sink retries with backoff and drops on overflow. **The app keeps running**; local Console + File still have everything. | Alert on the collector being down; logs are not lost locally. |
+| Gate on, collector up but **redaction processor removed/misconfigured** | Logs reach OpenObserve **unredacted** — a silent PII leak. | This is the one to guard. Run the **shipped** config; treat the ruleset version as an audited artifact; keep the e2e redaction test green in CI; monitor collector pipeline health. |
+| Gate on, `OPENOBSERVE_*` env unset | The collector **fails fast at start-up** (deliberate misconfiguration guard). | Set `OPENOBSERVE_LOGS_ENDPOINT` + `OPENOBSERVE_AUTHORIZATION`. |
+| Background / startup logs | Carry `realm=system` (no tenant context yet). | Expected — `system` is the infrastructure catch-all, not a tenant. |
+
+### Local stack (for trying it out)
+
+[`docker/docker-compose.observability.yml`](https://github.com/cocoar-dev/modgud/blob/develop/docker/docker-compose.observability.yml) brings up the Collector + OpenObserve so you can watch redacted logs land:
+
+```bash
+docker compose -f docker/docker-compose.observability.yml up -d
+# then run the API with export on, pointed at the collector:
+#   Observability__Otlp__Enabled=true
+#   Observability__Otlp__Endpoint=http://localhost:4317
+# OpenObserve UI: http://localhost:5080  (dev creds are in the compose file)
+```
+
+The collector deployment topology in production (sidecar vs shared, the OpenObserve org/RBAC layout, retention) is an ops decision — the shipped collector config is the redaction contract, not a deployment prescription.

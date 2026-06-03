@@ -81,6 +81,9 @@ exporters:
   # from the environment so no secret is committed; the collector fails fast at
   # start-up if they are unset (a deliberate misconfiguration guard). See
   # docs/operate/observability.md for the OpenObserve setup.
+  #
+  # Kept as "otlphttp" (not the newer "otlp_http" alias) for compatibility with
+  # older collector builds; recent contrib builds log a harmless deprecation note.
   otlphttp/openobserve:
     logs_endpoint: ${env:OPENOBSERVE_LOGS_ENDPOINT}
     headers:
