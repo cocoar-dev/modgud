@@ -658,14 +658,17 @@
         "auto-group-drift":   { "title": "Auto-Gruppen-Drift" }
       }
     },
-    "authLog": {
-      "title": "Auth Log",
+    "securityLog": {
+      "title": "Sicherheit",
       "time": "Zeit",
-      "level": "Level",
+      "category": "Kategorie",
       "event": "Ereignis",
-      "user": "Benutzer",
+      "detail": "Detail",
+      "actor": "Akteur",
       "ip": "IP-Adresse",
+      "level": "Level",
       "realm": "Realm",
+      "allCategories": "Alle",
       "refresh": "Aktualisieren",
       "clear": "Leeren"
     },

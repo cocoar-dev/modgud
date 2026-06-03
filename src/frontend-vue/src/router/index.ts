@@ -492,7 +492,7 @@ router.beforeEach(async (to) => {
       'oauth-api:read',
       'login-provider:read',
       'realm:read', 'realm-settings:read',
-      'auth-log:read', 'session:read', 'observability:read', 'asset:read',
+      'auth-log:read', 'audit-log:read', 'session:read', 'observability:read', 'asset:read',
       'app:read',
     ]
     if (!ADMIN_PERMS.some((p) => authStore.hasPermission(p))) {
