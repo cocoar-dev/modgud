@@ -1048,6 +1048,7 @@ try
 
     app.MapStatusEndpoints();
     app.MapAuthLogEndpoints("api");
+    app.MapAuditEndpoints("api");
     app.MapAppSettingsEndpoints("api");
     app.MapProjectionEndpoints("api");
     app.MapRealmsEndpoints("api");
