@@ -227,15 +227,19 @@ a unified brute-force signal**, resolved in favour of erasability:
 
 ### A.3 The view: `AuthAuditView`
 
-A Marten **`MultiStreamProjection`** (like `UserViewProjection`, **not** the
-single-stream Inbox projection) folds events from *both* source families —
-user-aggregate and config-aggregate types — into one flat read doc:
-`Timestamp`, `Realm`, `Category`, `EventType`, `UserId`, `UserName`, `Ip`, `Level`,
-plus a small set of typed summary fields. No side-effects (unlike Inbox's SignalR
-dispatch — this is a pure read model). Use a `@DocumentAlias` for schema stability,
-and `Identity<T>()` to map each contributing event type onto the view.
-Keep `UserName`/`Ip`/`Level` as **first-class columns** (not a JSON blob — that
-breaks the grid). `EventType` + `Category` drive taxonomy-chip filtering in the SPA.
+A Marten **`EventProjection`** folds events from *both* source families —
+user-aggregate and config-aggregate types — into one flat read doc, **one row per
+event**: `Timestamp`, `Realm`, `Category`, `EventType`, `UserId`, `TargetId`,
+`UserName`, `Ip`, `Level`. **It is an `EventProjection`, NOT a Single/MultiStream
+aggregation** (verified building Phase 0): an aggregation collapses a stream into a
+single snapshot doc per identity (what `UserViewProjection`/`InboxItemProjection`
+do), whereas an audit trail is a *list of occurrences*. Each `Create(IEvent<T>)`
+method maps one event type to a row, taking metadata from the `IEvent` envelope
+(`Id` keys the row, `Timestamp`, `TenantId` → `Realm`, and for user-stream events
+`StreamId` → `UserId`). No PII payload is copied in — see [§A.4](#a4-gdpr-masking-inherited-at-source-view-scrubbed-on-erase).
+Use a `[DocumentAlias]` for schema stability. Keep `UserName`/`Ip`/`Level` as
+**first-class columns** (not a JSON blob — that breaks the grid). `EventType` +
+`Category` drive taxonomy-chip filtering in the SPA.
 
 > **Decision (locked): `AuthAuditView` lives PER-REALM in each tenant DB — not the
 > system DB.** The user/config aggregate streams already live in the per-realm
@@ -388,13 +392,18 @@ the query audit below). This is a production prerequisite, not part of this doc.
 
 ### A.7 Taxonomy and explicit scope
 
-A new `AuditEvents.cs` in `Modgud.Application` (sibling to the existing precedent
-`DcrAuditEvents.cs:20-46`): const-string event names + XML docs declaring each
-event's fields **and which are PII** (the PII annotation is what tells you whether
-an event belongs on a user stream or in the streamless store). The ~50 mapped
-`"Auth:"` sites group into Authentication, Account, Federation, Admin/Realm,
-DCR/OAuth, and Security-Ops. Each event carries `Level` (preserve the existing
-Warning/Error/Info mapping) and an `EventVersion` for schema evolution.
+A new `AuditEvents.cs` (+ `AuditCategories`) in **`Modgud.Authentication.Audit`**
+(alongside `AuthAuditView` + the projection; a sibling-in-spirit of
+`Modgud.Application/Dcr/DcrAuditEvents.cs:20-46`, but in `Authentication` because
+that's where the consuming projection lives and `Authentication` does not reference
+`Application`): const-string event-type codes + categories, with XML docs declaring
+each event's fields **and which are PII** (the PII annotation is what tells you
+whether an event belongs on a user stream or in the streamless store). The ~50
+mapped `"Auth:"` sites group into Authentication, Account, Federation, Admin/Realm,
+DCR/OAuth, and Security-Ops. Each row carries a `Level` (preserve the existing
+Warning/Error/Info mapping). Schema evolution needs **no `EventVersion`
+machinery** — the codebase has none; events evolve via tolerant System.Text.Json
+deserialization + `MapEventType` aliases (verified Phase 0).
 
 **Out of scope (stated so it isn't ambiguous):**
 
@@ -546,9 +555,13 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
 
 ## Phasing
 
-- **Phase 0 — Catalog + projection scaffold** (no behavior change): `AuditEvents`
-  taxonomy with PII annotations, the `AuthAuditView` `MultiStreamProjection` over
-  the existing user + config streams, unit tests on the projection.
+- **Phase 0 — Catalog + projection scaffold** ✅ *shipped* (no behavior change):
+  `AuditEvents`/`AuditCategories` taxonomy with PII annotations, the `AuthAuditView`
+  **`EventProjection`** (one row per event) over the existing user-aggregate + login-
+  provider streams, registered async, with an integration test proving events project
+  to flat typed rows (`Modgud.Authentication/Audit/*`, `Modgud.Api.Tests/Audit/`).
+  *(OAuth application/scope/API config events are the next mechanical addition — same
+  `Create(IEvent<T>)` pattern.)*
 - **Phase 1 — Close the event-sourcing gap** (§A.2): append the
   `UserLoggedInEvent` marker (with `method`, IP via Sessions) on password +
   magic-link login; implement the known-user-failure routing per Open Decision #1
@@ -618,9 +631,9 @@ correct GDPR framing (streamless records **are** personal data, lawful under
 legitimate interest — not "outside GDPR"); the corrected Marten masking semantics
 (masking rewrites bytes at rest, but the *projected view* must be explicitly
 scrubbed on erase — §A.4.2); the locked per-tenant-DB placement; that
-`AuthAuditView` is a `MultiStreamProjection`, not the Inbox pattern; and the
-confirmation that today's live buffer is a global ring that starves quiet realms
-(§B.3).
+`AuthAuditView` reads from *multiple* stream families (later refined in Phase 0 to
+an `EventProjection`, not an aggregation); and the confirmation that today's live
+buffer is a global ring that starves quiet realms (§B.3).
 
 A second cross-review round then sharpened the refinements: the failure-routing
 fork is **erasability vs. a unified brute-force signal** (not spam-vs-simple),
@@ -630,3 +643,10 @@ non-PII auth `method` (§A.2); the erase-scrub is a `DeleteWhere` on the view �
 verified that Marten 9 has no targeted rebuild, so re-project isn't an option
 (§A.4.2); and "retention" is named a **visibility window** so it can't become a
 softer reprise of the very false promise this redesign removes (§A.6).
+
+Then **building Phase 0** corrected one more thing the design (and both reviews)
+got wrong: `AuthAuditView` is an **`EventProjection`** — one row per event — not a
+Single/MultiStream aggregation. An aggregation collapses a stream into one snapshot
+doc per identity; an audit log is a *list of occurrences*. The build is the
+arbiter: the framing only revealed itself as wrong once the code had to compile
+against the real Marten API.
