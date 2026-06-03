@@ -674,6 +674,7 @@
       "time": "Zeit",
       "category": "Kategorie",
       "event": "Ereignis",
+      "user": "Benutzer",
       "method": "Methode",
       "ip": "IP-Adresse",
       "level": "Level",

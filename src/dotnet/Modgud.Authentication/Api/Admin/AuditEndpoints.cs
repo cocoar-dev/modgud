@@ -1,5 +1,6 @@
 using Marten;
 using Modgud.Authentication.Audit;
+using Modgud.Authentication.Domain;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Domain.Realms;
@@ -51,7 +52,24 @@ public static class AuditEndpoints
                 .Take(Math.Clamp(limit ?? 200, 1, 1000))
                 .ToListAsync(ct);
 
-            return Results.Ok(rows);
+            // Resolve the actor's identity at read time by joining to ApplicationUser
+            // (NOT the UserView projection) on purpose: GdprService masks the
+            // ApplicationUser doc IN PLACE on erase (UserName -> "deleted-{guid}",
+            // name/email nulled, GdprService.cs:230-243), so an erased user shows up
+            // de-identified here for free. UserView keeps the stale real name until a
+            // rebuild and would leak it.
+            var userIds = rows.Where(r => r.UserId.HasValue).Select(r => r.UserId!.Value).Distinct().ToList();
+            var names = userIds.Count == 0
+                ? new Dictionary<Guid, string?>()
+                : (await session.Query<ApplicationUser>().Where(u => userIds.Contains(u.Id)).ToListAsync(ct))
+                    .ToDictionary(u => u.Id, u => (string?)u.UserName);
+
+            var dtos = rows.Select(r => new AuditLogEntryDto(
+                r.Timestamp, r.Realm, r.Category, r.EventType,
+                r.UserId is { } uid && names.TryGetValue(uid, out var name) ? name : null,
+                r.Ip, r.Method, r.Count, r.Level));
+
+            return Results.Ok(dtos);
         })
         .WithName("AdminAudit_Get")
         .RequiresPermission("auth-log:read");
@@ -59,3 +77,18 @@ public static class AuditEndpoints
         return application;
     }
 }
+
+/// <summary>Read DTO for the tenant audit grid: the <see cref="AuthAuditView"/> row
+/// plus the actor's display identity (<see cref="User"/>) resolved at read time from
+/// the erasure-masked <c>ApplicationUser</c> doc — so an erased user reads as
+/// <c>deleted-{guid}</c>, never their real name.</summary>
+public sealed record AuditLogEntryDto(
+    DateTimeOffset Timestamp,
+    string? Realm,
+    string Category,
+    string EventType,
+    string? User,
+    string? Ip,
+    string? Method,
+    int? Count,
+    string Level);

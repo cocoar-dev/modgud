@@ -25,7 +25,7 @@ interface AuditEntry {
   Realm: string | null
   Category: string
   EventType: string
-  UserId: string | null
+  User: string | null
   Ip: string | null
   Method: string | null
   Count: number | null
@@ -74,6 +74,7 @@ const gridBuilder = CoarGridBuilder.create<AuditEntry>()
     (col) => col.date('Timestamp', { includeTime: true }).header('Time', 'admin.auditLog.time').width(180),
     (col) => col.field('Category').header('Category', 'admin.auditLog.category').width(150),
     (col) => col.field('EventType').header('Event', 'admin.auditLog.event').flex(1),
+    (col) => col.field('User').header('User', 'admin.auditLog.user').width(160),
     (col) => col.field('Method').header('Method', 'admin.auditLog.method').width(120),
     (col) => col.field('Ip').header('IP', 'admin.auditLog.ip').width(140),
     (col) => col.tag('Level', {

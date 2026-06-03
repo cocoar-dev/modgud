@@ -19,7 +19,7 @@ public class AuditEndpointTests : IntegrationTestBase
 {
     public AuditEndpointTests(SharedPostgresFixture fixture) : base(fixture) { }
 
-    private sealed record AuditRowDto(string EventType, string Category, string? Ip);
+    private sealed record AuditRowDto(string EventType, string Category, string? Ip, string? User);
 
     [Fact]
     public async Task Get_returns_realm_audit_rows_and_honours_category_filter()
@@ -46,6 +46,8 @@ public class AuditEndpointTests : IntegrationTestBase
         Assert.NotNull(all);
         Assert.Contains(all!, r => r.EventType == AuditEvents.LoginSucceeded);
         Assert.Contains(all!, r => r.EventType == AuditEvents.AccountPasswordChanged);
+        // the actor's identity is resolved at read time (joined from ApplicationUser)
+        Assert.Contains(all!, r => !string.IsNullOrEmpty(r.User));
 
         // Category filter narrows to authentication only.
         var auth = await Client.GetFromJsonAsync<List<AuditRowDto>>(
