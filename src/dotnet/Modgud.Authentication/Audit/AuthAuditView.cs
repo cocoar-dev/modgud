@@ -51,6 +51,14 @@ public record AuthAuditView
     /// the source event's GDPR masking, and the row is deleted on permanent erase.</summary>
     public string? Ip { get; init; }
 
+    /// <summary>Login method code for login events ("password" | "magic_link" |
+    /// "external" | …), null otherwise. Non-PII — a method switch is a security signal.</summary>
+    public string? Method { get; init; }
+
+    /// <summary>Aggregate count for summary events (e.g. the failed-attempt count on
+    /// an <c>auth.login_failures_observed</c> row). Null for single-occurrence rows.</summary>
+    public int? Count { get; init; }
+
     /// <summary>"Info" | "Warning" | "Error" — preserves the legacy level mapping.</summary>
     public string Level { get; init; } = "Info";
 }

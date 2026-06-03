@@ -28,9 +28,11 @@ public class AuthAuditViewProjectionTests : IntegrationTestBase
         using (var scope = Factory.Services.CreateScope())
         {
             var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-            // A login marker (carries an IP) + a password change on the user's stream.
-            session.Events.Append(user.Id, new UserLoggedInEvent(user.Id, ip));
+            // A login marker (carries method + ip) + a password change, plus an
+            // aggregated failure-streak record — all on the user's stream.
+            session.Events.Append(user.Id, new UserLoggedInEvent(user.Id, ip, "password"));
             session.Events.Append(user.Id, new UserPasswordChangedEvent(user.Id, null));
+            session.Events.Append(user.Id, new UserLoginFailuresObservedEvent(user.Id, 3, DateTimeOffset.UtcNow));
             await session.SaveChangesAsync(ct);
         }
 
@@ -41,12 +43,19 @@ public class AuthAuditViewProjectionTests : IntegrationTestBase
 
         Assert.NotEmpty(rows);
 
-        // The login marker projects to an authentication row that keeps the IP.
+        // The login marker projects to an authentication row that keeps the method + IP.
         Assert.Contains(rows, r =>
             r.EventType == AuditEvents.LoginSucceeded &&
             r.Category == AuditCategories.Authentication &&
             r.Ip == ip &&
+            r.Method == "password" &&
             r.UserId == user.Id);
+
+        // The aggregated failure streak projects with its count (Decision (b)).
+        Assert.Contains(rows, r =>
+            r.EventType == AuditEvents.LoginFailuresObserved &&
+            r.Category == AuditCategories.Authentication &&
+            r.Count == 3);
 
         // The password change projects to an account-category row.
         Assert.Contains(rows, r =>

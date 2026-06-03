@@ -35,6 +35,8 @@ public partial class AuthAuditViewProjection : EventProjection
         Guid? userId = null,
         Guid? targetId = null,
         string? ip = null,
+        string? method = null,
+        int? count = null,
         string level = "Info") =>
         new()
         {
@@ -46,15 +48,20 @@ public partial class AuthAuditViewProjection : EventProjection
             UserId = userId,
             TargetId = targetId,
             Ip = ip,
+            Method = method,
+            Count = count,
             Level = level,
         };
 
     // ── Authentication (user stream — StreamId == userId) ────────────
     public AuthAuditView Create(IEvent<UserLoggedInEvent> e) =>
-        Row(e, AuditCategories.Authentication, AuditEvents.LoginSucceeded, userId: e.StreamId, ip: e.Data.IpAddress);
+        Row(e, AuditCategories.Authentication, AuditEvents.LoginSucceeded, userId: e.StreamId, ip: e.Data.IpAddress, method: e.Data.Method);
 
     public AuthAuditView Create(IEvent<UserLoginFailedEvent> e) =>
         Row(e, AuditCategories.Authentication, AuditEvents.LoginFailed, userId: e.StreamId, ip: e.Data.IpAddress, level: "Warning");
+
+    public AuthAuditView Create(IEvent<UserLoginFailuresObservedEvent> e) =>
+        Row(e, AuditCategories.Authentication, AuditEvents.LoginFailuresObserved, userId: e.StreamId, count: e.Data.FailedCount, level: "Warning");
 
     public AuthAuditView Create(IEvent<UserLockedOutEvent> e) =>
         Row(e, AuditCategories.Authentication, AuditEvents.AccountLockedOut, userId: e.StreamId, level: "Warning");

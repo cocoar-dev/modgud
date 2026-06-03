@@ -152,6 +152,7 @@ public static class MartenStoreOptionsExtensions
         options.Events.MapEventType<UserPasswordChangedEvent>("user_password_changed");
         options.Events.MapEventType<UserLoggedInEvent>("user_logged_in");
         options.Events.MapEventType<UserLoginFailedEvent>("user_login_failed");
+        options.Events.MapEventType<UserLoginFailuresObservedEvent>("user_login_failures_observed");
         options.Events.MapEventType<UserLockedOutEvent>("user_locked_out");
         options.Events.MapEventType<UserUnlockedEvent>("user_unlocked");
         options.Events.MapEventType<UserActivatedEvent>("user_activated");
@@ -210,9 +211,10 @@ public static class MartenStoreOptionsExtensions
         options.Events.AddMaskingRuleForProtectedInformation<UserIdentitySetupEvent>(e =>
             new UserIdentitySetupEvent(e.UserId, "[DELETED]", e.IsActive));
 
-        // IP addresses are PII under GDPR — strip them from login records.
+        // IP addresses are PII under GDPR — strip them from login records. The
+        // login method is non-PII (a bounded code), so it passes through the mask.
         options.Events.AddMaskingRuleForProtectedInformation<UserLoggedInEvent>(e =>
-            new UserLoggedInEvent(e.UserId, IpAddress: null));
+            new UserLoggedInEvent(e.UserId, IpAddress: null, e.Method));
 
         options.Events.AddMaskingRuleForProtectedInformation<UserLoginFailedEvent>(e =>
             new UserLoginFailedEvent(e.UserId, IpAddress: null));

@@ -377,6 +377,17 @@ public class EventSourcedUserStore(IDocumentSession session)
             }
         }
 
+        // A failure streak just resolved — the access-failed counter went from >0
+        // back to 0 (a successful sign-in or an unlock reset it). Record it as ONE
+        // aggregated audit event (Decision (b)), not one per attempt: no stream spam,
+        // and an attacker spraying a victim can't inflate that victim's stream. No IP
+        // (the aggregate has no single source); erasable with the user's stream.
+        if (securityData.AccessFailedCount > 0 && user.AccessFailedCount == 0)
+        {
+            events.Add(new UserLoginFailuresObservedEvent(
+                user.Id, securityData.AccessFailedCount, DateTimeOffset.UtcNow));
+        }
+
         if (events.Count > 0)
         {
             session.Events.Append(user.Id, events.ToArray());

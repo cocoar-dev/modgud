@@ -116,6 +116,23 @@ public static class AccountEndpoints
                 // Track per-user device session (best-effort).
                 await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
 
+                // Audit marker on the user's stream (Phase 1): the "when + by what
+                // method" of a successful login. No IP on the event — IP/device live
+                // in the Sessions feature (RecordLoginAsync above). Erasable with the
+                // user. Best-effort: PasswordSignInAsync has already issued the auth
+                // cookie, so a failed marker write must NOT turn a successful login
+                // into a 500 — log and continue (mirrors SessionTracker's contract).
+                try
+                {
+                    docSession.Events.Append(user.Id, new Modgud.Authentication.Events.UserLoggedInEvent(
+                        user.Id, IpAddress: null, Method: ModgudMeters.LoginMethod.Password));
+                    await docSession.SaveChangesAsync(context.RequestAborted);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Auth: failed to persist login audit marker for user {UserId}", user.Id);
+                }
+
                 // Level >= 1: check if user needs to set up a secure login method
                 if (appSettings.AuthenticationMinimumLevel >= 1)
                 {

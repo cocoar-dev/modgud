@@ -186,6 +186,11 @@ public static class MagicLinkEndpoints
                     Email: default));
             }
 
+            // Audit marker — magic-link login success (Phase 1). No IP on the event
+            // (the Sessions feature owns IP/device); rides the same transaction.
+            session.Events.Append(user.Id, new Modgud.Authentication.Events.UserLoggedInEvent(
+                user.Id, IpAddress: null, Method: ModgudMeters.LoginMethod.MagicLink));
+
             // Delete challenge (one-time use)
             session.Delete(challenge);
             await session.SaveChangesAsync();

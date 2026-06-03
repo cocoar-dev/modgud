@@ -501,7 +501,8 @@ public class ExternalLoginProcessor(
             Issuer: issuer,
             LinkedAt: capturedAt));
 
-        session.Events.Append(userId, new UserLoggedInEvent(userId, IpAddress: null));
+        session.Events.Append(userId, new UserLoggedInEvent(userId, IpAddress: null,
+            Method: Modgud.Infrastructure.Observability.ModgudMeters.LoginMethod.External));
 
         // Federation v1: refresh this provider's claims snapshot in the same
         // transaction as the link write.
@@ -534,7 +535,8 @@ public class ExternalLoginProcessor(
             Email: email,
             DisplayName: displayName));
 
-        session.Events.Append(link.UserId, new UserLoggedInEvent(link.UserId, IpAddress: null));
+        session.Events.Append(link.UserId, new UserLoggedInEvent(link.UserId, IpAddress: null,
+            Method: Modgud.Infrastructure.Observability.ModgudMeters.LoginMethod.External));
 
         // Federation v1: refresh this provider's claims snapshot in the same
         // transaction as the login write.

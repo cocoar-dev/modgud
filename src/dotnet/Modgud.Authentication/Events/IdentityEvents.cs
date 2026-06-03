@@ -41,11 +41,28 @@ public record UserPasswordChangedEvent(
 
 public record UserLoggedInEvent(
     Guid UserId,
-    string? IpAddress);
+    string? IpAddress,
+    // Non-PII login-method code (ModgudMeters.LoginMethod.* — "password",
+    // "magic_link", "external", …). Trailing optional so old event streams and
+    // existing construction sites default to null ("not recorded"). A method
+    // switch / first login via a new provider is itself a security signal, so
+    // the audit view surfaces it.
+    string? Method = null);
 
 public record UserLoginFailedEvent(
     Guid UserId,
     string? IpAddress);
+
+// Aggregated known-user login-failure record (audit redesign Decision (b)): ONE
+// event per resolved failure streak — emitted when the access-failed counter
+// resets to 0 (successful sign-in / unlock) — NOT one per attempt. Avoids stream
+// spam and the amplification vector (an attacker spraying a victim can't inflate
+// that victim's stream per attempt). No PII (count + timestamp); lives on the
+// user stream, so it erases with the subject.
+public record UserLoginFailuresObservedEvent(
+    Guid UserId,
+    int FailedCount,
+    DateTimeOffset ObservedAt);
 
 public record UserLockedOutEvent(
     Guid UserId,

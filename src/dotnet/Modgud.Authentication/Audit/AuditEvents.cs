@@ -40,6 +40,11 @@ public static class AuditEvents
     /// holds unknown-actor attempts). Fields: UserId, Ip.</summary>
     public const string LoginFailed = "auth.login_failed";
 
+    /// <summary>An aggregated known-user failure streak (Decision (b)) — one row
+    /// per resolved streak, carrying the count, not one per attempt. Fields:
+    /// UserId, Count.</summary>
+    public const string LoginFailuresObserved = "auth.login_failures_observed";
+
     /// <summary>Account crossed the lockout threshold. Fields: UserId.</summary>
     public const string AccountLockedOut = "auth.locked_out";
 
