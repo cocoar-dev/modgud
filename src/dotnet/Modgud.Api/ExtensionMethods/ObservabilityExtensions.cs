@@ -63,7 +63,7 @@ internal static class ObservabilityExtensions
 
                 if (settings.Otlp.Enabled)
                 {
-                    metrics.AddOtlpExporter(ConfigureOtlp(settings.Otlp));
+                    metrics.AddOtlpExporter(ConfigureOtlp(settings.Otlp, "v1/metrics"));
                 }
             })
             .WithTracing(tracing =>
@@ -98,7 +98,7 @@ internal static class ObservabilityExtensions
 
                 if (settings.Otlp.Enabled)
                 {
-                    tracing.AddOtlpExporter(ConfigureOtlp(settings.Otlp));
+                    tracing.AddOtlpExporter(ConfigureOtlp(settings.Otlp, "v1/traces"));
                 }
             });
 
@@ -131,14 +131,22 @@ internal static class ObservabilityExtensions
         return services;
     }
 
-    private static Action<OtlpExporterOptions> ConfigureOtlp(ObservabilitySettings.OtlpSettings otlp)
+    private static Action<OtlpExporterOptions> ConfigureOtlp(
+        ObservabilitySettings.OtlpSettings otlp, string signalPath)
     {
+        var isHttp = otlp.Protocol.Equals("HttpProtobuf", StringComparison.OrdinalIgnoreCase);
         return options =>
         {
-            options.Endpoint = new Uri(otlp.Endpoint);
-            options.Protocol = otlp.Protocol.Equals("HttpProtobuf", StringComparison.OrdinalIgnoreCase)
-                ? OtlpExportProtocol.HttpProtobuf
-                : OtlpExportProtocol.Grpc;
+            options.Protocol = isHttp ? OtlpExportProtocol.HttpProtobuf : OtlpExportProtocol.Grpc;
+
+            // Setting Endpoint explicitly disables the SDK's automatic per-signal
+            // path append (AppendSignalPathToEndpoint), so under HttpProtobuf we must
+            // include /v1/<signal> ourselves or the exporter POSTs to the bare host
+            // and gets a 404. gRPC ignores the path (fixed service method), so the
+            // bare endpoint is correct there.
+            options.Endpoint = isHttp
+                ? new Uri($"{otlp.Endpoint.TrimEnd('/')}/{signalPath}")
+                : new Uri(otlp.Endpoint);
         };
     }
 
