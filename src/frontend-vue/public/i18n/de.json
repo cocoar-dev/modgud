@@ -784,7 +784,10 @@
       "peak": "Peak",
       "activityFeed": "Letzte Ereignisse",
       "updated": "Aktualisiert",
-      "empty": "Keine Ereignisse im aktuellen Fenster."
+      "empty": "Keine Ereignisse im aktuellen Fenster.",
+      "errorFeed": "Letzte Fehler",
+      "errorFeedHint": "Anwendungsfehler in diesem Realm",
+      "errorsEmpty": "Keine Fehler erfasst."
     },
     "section": {
       "authorization": "Autorisierung",

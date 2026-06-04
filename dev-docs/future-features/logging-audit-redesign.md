@@ -6,9 +6,10 @@ description: Stop treating the "AuthLog" as a store to build. Derive the tenant 
 # Logging & Audit Redesign
 
 > **Status:** Design converged 2026-06-03 (cross-review + code-fact verification +
-> adversarial review). **Track A implemented: Phases 0–3 shipped** (see
-> [Phasing](#phasing)); Track B (Phases 4–5, OTel logs + per-realm error feed) is
-> still design-only.
+> adversarial review). **Fully implemented: Phases 0–5 shipped** (see
+> [Phasing](#phasing)) — Track A (audit projection + streamless security store) and
+> Track B (OTel log export + in-app per-realm error feed), each adversarially
+> reviewed before commit.
 > Supersedes the interim tenant-visibility patch
 > ([PR #50](https://github.com/cocoar-dev/modgud/pull/50), which added per-realm
 > scoping to today's `AuthLog`) **and** the first draft of this doc (which
@@ -520,9 +521,12 @@ question, deliberately out of scope — `ObservabilityActivityBuffer.cs:17-20`.)
 
 ### B.4 Access
 
-Gate on the existing `observability:read` (operator-scoped). Control-plane sees
-cross-realm; per-realm admins see their realm's tagged errors. *(Carry-forward:
-per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
+Gate on the existing `observability:read` (operator-scoped). Per-realm admins see
+their realm's tagged errors. *(Shipped: per-method SignalR auth on `ObservabilityHub`
+is now wired — both stream methods imperatively check `observability:read` against
+the caller's realm, since SignalARR has no per-method authorisation attribute.
+Control-plane cross-realm aggregation stays deferred — the whole observability
+surface, REST included, is realm-scoped today.)*
 
 ---
 
@@ -675,9 +679,38 @@ per-method SignalR auth on `ObservabilityHub` isn't wired yet — hardening.)*
   Recovery-CLI break-glass emits — that DB sink does not pass through the collector,
   so masking there is the only control; CLI console output stays human-readable).
   Collector v2's `User=`/`UserName` rules remain as belt for any future call site.
-- **Phase 5 — In-app per-realm error feed** (§B.3): per-realm-bounded buffers (NOT
-  a global ring), `ObservabilityHub.LogsSubscribe()`, the `AdminObservabilityView.vue`
-  error panel. Plus the carried-forward per-method SignalR-auth hardening.
+- **Phase 5 — In-app per-realm error feed** (§B.3) ✅ *shipped*: a new
+  `RealmErrorBuffer` (`Modgud.Infrastructure.Observability`) keeps an
+  independently-capped ring **per realm** (keyed by realm slug) — **not** the global
+  ring of `ObservabilityActivityBuffer`, so a noisy realm can never evict a quiet
+  realm's errors (the §B.3 guarantee, unit-tested). A Serilog `ErrorFeedSink`
+  (`Modgud.Authentication/AuthLog`, beside `RealmLogEnricher` since Infrastructure has
+  no Serilog ref) captures qualifying events into it, reading the realm from the
+  enricher-stamped `Realm` property. `ObservabilityHub.LogsSubscribe()` streams a
+  realm's entries; `GET /api/admin/observability/errors` is the REST snapshot; an
+  error panel was added to `AdminObservabilityView.vue` (i18n `errorFeed*`). Local-only
+  behind its own `Observability__ErrorFeed__Enabled` flag (default on; independent of
+  the OTLP export gate — §B.0), with configurable `MinimumLevel`/`SourcePrefix`/
+  `CapacityPerRealm`. **Open Decision #7 answered: Error+ from `Modgud.*` loggers only**
+  (framework failures surface in Console/File/OpenObserve, not the in-app panel) —
+  configurable, and the settings docs note the effective floor is `max(this, Serilog's
+  global+namespace pipeline floors)`. The redaction collector does **not** cover this
+  in-app path — the call-site PII belt + per-realm read scoping are the controls
+  (mirrors the streamless security store). **Carried-forward hardening shipped:**
+  per-method `observability:read` auth on the hub — SignalARR has no per-method
+  authorisation attribute, so both stream methods check it imperatively via
+  `IPermissionService`. **⭐ Load-bearing gotcha (adversarial-review catch):**
+  `TenantContext.Current` is **not** set during SignalARR hub dispatch (it unwinds
+  after the negotiate request → falls back to `system`), so the realm filter AND the
+  permission query must read the caller's realm from `HttpContext.Items` (like the
+  sibling hubs), and the permission check must run inside `TenantContext.Enter(realm)`
+  on a fresh DI scope so the tenant-scoped `IQuerySession` binds to the right realm DB.
+  The original draft used `TenantContext.Current` for both — which would have wrongly
+  denied non-system realm-admins and leaked system-realm errors to every tenant admin
+  (masked in single-realm dev); the fix also corrected the same latent bug in the
+  pre-existing metrics `Subscribe()`. DevTools-verified end-to-end (panel renders,
+  `/errors` 200, SignalR streams subscribe clean, a live login event pushed to the feed
+  via the shared async-`Observable.Create` helper).
 
 ## What gets deleted at the end
 

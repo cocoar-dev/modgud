@@ -914,6 +914,16 @@ try
     builder.Services.AddScoped<Modgud.Infrastructure.Scheduling.IJobRunNotifier,
         Modgud.Api.Features.Inbox.JobRunNotifier>();
 
+    // Phase 5 — in-app per-realm live error feed (§B.3). One process-local
+    // buffer with an independently-capped ring PER realm (not a global ring —
+    // a noisy realm must not be able to evict a quiet realm's errors). The
+    // hub (ObservabilityHub.LogsSubscribe) and the /observability/errors
+    // endpoint read this same singleton; the ErrorFeedSink below feeds it.
+    var errorFeed = observabilitySettings.ErrorFeed;
+    var errorFeedBuffer = new Modgud.Infrastructure.Observability.RealmErrorBuffer(
+        errorFeed.CapacityPerRealm);
+    builder.Services.AddSingleton(errorFeedBuffer);
+
     builder.Services.AddSerilog(logConfig =>
     {
         // Global minimum: Information (so Auth: Info events are generated)
@@ -986,6 +996,24 @@ try
                     ["service.instance.id"] = Environment.MachineName,
                 };
             });
+        }
+
+        // Phase 5 — in-app per-realm error feed sink (§B.3). Local-only, behind
+        // its own flag (default on; no external dependency). Captures Error+
+        // events from Modgud.* loggers (configurable level/prefix — Open
+        // Decision #7) into the per-realm RealmErrorBuffer. Sits AFTER the
+        // RealmLogEnricher above, so each entry carries its realm tag. The
+        // collector redaction does NOT cover this in-app path — the call-site
+        // PII belt + per-realm read scoping are the controls (mirrors the
+        // streamless security store).
+        if (errorFeed.Enabled)
+        {
+            var minimumLevel =
+                Enum.TryParse<Serilog.Events.LogEventLevel>(errorFeed.MinimumLevel, ignoreCase: true, out var lvl)
+                    ? lvl
+                    : Serilog.Events.LogEventLevel.Error;
+            logConfig.WriteTo.Sink(new Modgud.Authentication.AuthLog.ErrorFeedSink(
+                errorFeedBuffer, minimumLevel, errorFeed.SourcePrefix));
         }
     });
 

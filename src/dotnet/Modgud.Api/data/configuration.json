@@ -59,6 +59,12 @@
             "Enabled": false,
             "Endpoint": "http://127.0.0.1:4317",
             "Protocol": "Grpc"
+        },
+        "ErrorFeed": {
+            "Enabled": true,
+            "MinimumLevel": "Error",
+            "SourcePrefix": "Modgud",
+            "CapacityPerRealm": 100
         }
     }
 }

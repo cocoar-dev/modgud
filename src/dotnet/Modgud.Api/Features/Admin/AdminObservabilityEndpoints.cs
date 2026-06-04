@@ -88,6 +88,33 @@ public static class AdminObservabilityEndpoints
         })
         .WithName("Admin_Observability_Activity");
 
+        // GET /api/admin/observability/errors?limit=50
+        // Phase 5 (§B.3) — recent operational errors for the caller's realm,
+        // newest-first, from the per-realm bounded ring. The initial snapshot
+        // for the live error panel; the SignalR LogsSubscribe stream pushes
+        // subsequent entries. Realm-scoped via TenantContext (physical scope —
+        // each realm reads only its own ring).
+        group.MapGet("errors", (
+            RealmErrorBuffer errorBuffer,
+            int? limit) =>
+        {
+            var realm = TenantContext.Current;
+            var take = Math.Clamp(limit ?? 50, 1, 200);
+            var entries = errorBuffer.GetRecent(realm, take); // already newest-first
+            var ordered = entries.Select(e => new
+            {
+                Timestamp = e.Timestamp,
+                Realm = e.Realm,
+                Level = e.Level,
+                Message = e.Message,
+                Exception = e.Exception,
+                SourceContext = e.SourceContext,
+                TraceId = e.TraceId,
+            });
+            return Results.Ok(ordered);
+        })
+        .WithName("Admin_Observability_Errors");
+
         return app;
     }
 }
