@@ -614,8 +614,7 @@ surface, REST included, is realm-scoped today.)*
   legacy `AuthLogSink` keeps carrying the streamless-bound records (unknown-user
   attempts, operational `"Auth:"` sites) — the strangler retires it only once the
   typed store stands up. No record falls on the floor in the interim.
-- **Phase 2 — Tenant GDPR-audit read surface** ✅ *(read endpoint + erase handling
-  shipped; `AuditSettings` window pending)*: `GET /api/admin/audit` over the
+- **Phase 2 — Tenant GDPR-audit read surface** ✅ *shipped*: `GET /api/admin/audit` over the
   per-realm `AuthAuditView` — a **tenant-scoped session → physical realm isolation**
   (no `WHERE Realm =`; a filter bug can't leak cross-realm), `category`/`eventType`
   filters, gated on `auth-log:read`. Plus the **mask-and-keep erase handling**
