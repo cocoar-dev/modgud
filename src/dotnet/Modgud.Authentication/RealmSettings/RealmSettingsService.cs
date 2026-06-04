@@ -77,6 +77,13 @@ public sealed class RealmSettingsService(
             doc.Deletion = deletion.Value;
         }
 
+        if (dto.Audit is not null)
+        {
+            var audit = ApplyAuditPatch(doc.Audit, dto.Audit);
+            if (audit.IsError) return audit.FirstError;
+            doc.Audit = audit.Value;
+        }
+
         if (!isCreate) doc.UpdatedAt = DateTimeOffset.UtcNow;
 
         session.Store(doc);
@@ -116,6 +123,7 @@ public sealed class RealmSettingsService(
         Dcr = MapDcrToDto(doc.Dcr),
         Branding = MapBrandingToDto(doc.Branding),
         Deletion = MapDeletionToDto(doc.Deletion),
+        Audit = MapAuditToDto(doc.Audit),
         Pages = doc.Pages is null
             ? new Dictionary<string, string>()
             : new Dictionary<string, string>(doc.Pages),
@@ -253,6 +261,22 @@ public sealed class RealmSettingsService(
             AdminRetentionDays = s.AdminRetentionDays,
             AutoPurgeEnabled = s.AutoPurgeEnabled,
         };
+    }
+
+    private static ErrorOr<AuditSettings> ApplyAuditPatch(AuditSettings? current, UpdateAuditSettingsDto patch)
+    {
+        var s = current ?? new AuditSettings();
+        var merged = s with { VisibilityWindowDays = patch.VisibilityWindowDays ?? s.VisibilityWindowDays };
+        if (merged.VisibilityWindowDays < 1)
+            return Error.Validation("Audit.InvalidVisibilityWindowDays",
+                "VisibilityWindowDays must be at least 1.");
+        return merged;
+    }
+
+    internal static AuditSettingsDto MapAuditToDto(AuditSettings? s)
+    {
+        s ??= AuditSettings.Defaults;
+        return new AuditSettingsDto { VisibilityWindowDays = s.VisibilityWindowDays };
     }
 
     internal static DcrSettingsDto MapDcrToDto(DcrSettings? s)

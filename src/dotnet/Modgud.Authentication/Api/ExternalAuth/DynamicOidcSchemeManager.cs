@@ -70,7 +70,7 @@ public class DynamicOidcSchemeManager(
         if (config.Type != LoginProviderType.Oidc)
         {
             logger.LogInformation(
-                "Auth: skipping non-Oidc LoginProvider {Id} of type {Type}",
+                "skipping non-Oidc LoginProvider {Id} of type {Type}",
                 config.Id, config.Type);
             return;
         }
@@ -203,7 +203,7 @@ public class DynamicOidcSchemeManager(
             OnTokenValidated = ctx =>
             {
                 logger.LogInformation(
-                    "Auth: External OIDC token validated for scheme {Scheme} — sub={Subject}, iss={Issuer}",
+                    "External OIDC token validated for scheme {Scheme} — sub={Subject}, iss={Issuer}",
                     ctx.Scheme.Name,
                     ctx.Principal?.FindFirst("sub")?.Value,
                     ctx.Principal?.FindFirst("iss")?.Value);
@@ -212,7 +212,7 @@ public class DynamicOidcSchemeManager(
             OnRemoteFailure = ctx =>
             {
                 logger.LogWarning(ctx.Failure,
-                    "Auth: OIDC remote failure for scheme {Scheme}: {Error}",
+                    "OIDC remote failure for scheme {Scheme}: {Error}",
                     ctx.Scheme.Name, ctx.Failure?.Message ?? "(no detail)");
                 ctx.HandleResponse();
                 var detail = ctx.Failure is null ? "oidc"
@@ -244,7 +244,7 @@ public class DynamicOidcSchemeManager(
             handlerType: typeof(HostAwareOpenIdConnectHandler));
         schemeProvider.AddScheme(scheme);
 
-        logger.LogInformation("Auth: Registered OIDC scheme {Scheme} (LoginProvider {Display} / {Flavor}) in realm {Realm}",
+        logger.LogInformation("Registered OIDC scheme {Scheme} (LoginProvider {Display} / {Flavor}) in realm {Realm}",
             schemeName, config.DisplayName, config.Flavor, realmSlug);
     }
 
@@ -254,7 +254,7 @@ public class DynamicOidcSchemeManager(
         schemeProvider.RemoveScheme(schemeName);
         oidcOptionsCache.TryRemove(schemeName);
         realmRegistry.Remove(schemeName);
-        logger.LogInformation("Auth: Unregistered OIDC scheme {Scheme}", schemeName);
+        logger.LogInformation("Unregistered OIDC scheme {Scheme}", schemeName);
         await Task.CompletedTask;
     }
 

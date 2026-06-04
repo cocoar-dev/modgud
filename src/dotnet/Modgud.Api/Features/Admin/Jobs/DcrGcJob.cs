@@ -7,6 +7,7 @@ using Modgud.Application.Dcr;
 using Modgud.Application.Scheduling;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Audit;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Api.Features.Admin.Jobs;
@@ -29,7 +30,7 @@ namespace Modgud.Api.Features.Admin.Jobs;
 [DisallowConcurrentExecution]
 public class DcrGcJob(
     IServiceScopeFactory scopeFactory,
-    ILogger<DcrGcJob> logger) : IJob
+    ISecurityAuditLog securityAudit) : IJob
 {
     public const string Key = "dcr-gc";
     public const string Name = "DCR Garbage Collector";
@@ -108,11 +109,15 @@ public class DcrGcJob(
             session.Events.Append(state.Id, aggregate.Delete());
             swept++;
 
-            var registeredAt = ParseTimestamp(state.Properties, OAuthApplicationPropertyKeys.DcrRegisteredAt);
-            logger.LogInformation(
-                "Auth: " + DcrAuditEvents.ClientGarbageCollected +
-                " ClientId={ClientId} RegisteredAt={RegisteredAt} LastUsedAt={LastUsedAt} TtlDays={TtlDays} Realm={Realm}",
-                state.ClientId, registeredAt, lastUsedAt, dcr.GcTtlDays, tenantId);
+            securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.DcrClientGarbageCollected,
+                Realm = tenantId,
+                Level = "Info",
+                Status = "collected",
+                Reason = $"clientId {state.ClientId}, ttl {dcr.GcTtlDays}d",
+                Message = $"DCR client garbage-collected: {state.ClientId}",
+            });
         }
 
         if (swept > 0)

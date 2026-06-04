@@ -59,7 +59,7 @@ public class SamlMetadataFetcher
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
-                "Auth: SAML metadata fetch failed for {Url}", metadataUrl);
+                "SAML metadata fetch failed for {Url}", metadataUrl);
             return null;
         }
     }
@@ -106,7 +106,7 @@ public class SamlMetadataFetcher
             if (signingCerts.Length == 0)
             {
                 _logger.LogWarning(
-                    "Auth: SAML metadata for {EntityId} has no usable IdP signing certificates — rejecting",
+                    "SAML metadata for {EntityId} has no usable IdP signing certificates — rejecting",
                     entityId);
                 return null;
             }
@@ -134,7 +134,7 @@ public class SamlMetadataFetcher
         }
         catch (XmlException ex)
         {
-            _logger.LogWarning(ex, "Auth: SAML metadata XML parse failed");
+            _logger.LogWarning(ex, "SAML metadata XML parse failed");
             return null;
         }
     }

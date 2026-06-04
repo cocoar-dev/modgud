@@ -293,3 +293,21 @@ a valid reason — each finding gets its own audit.
   document if the exact invocation matters.
 - The post-flip `codeql.yml` change that triggered this:
   commit `ebcdb2c`.
+
+## Addendum 2026-06-04 — Bucket 3: `cs/exposure-of-sensitive-information` (masked-PII logging)
+
+The logging/audit-redesign PR (#51) surfaced three new `cs/exposure-of-sensitive-information` alerts (medium). All false positives. **Resolved by dismissal**, not config — see the "why not a config fix" finding below, which is the load-bearing part of this entry (it stops the next maintainer re-investigating).
+
+- **#42 `PendingAdminInviteService.cs:217` (prod):** `logger.LogInformation("… Email={MaskedEmail}", …, LogPiiMasking.MaskEmail(invite.Email))`. The email *is* masked before logging — but `MaskEmail` keeps the first local-part char + the full domain (deliberate, for ops triage), so CodeQL follows the method body, sees the return derived from the input, and flags it. Dismissed **false positive** (the value is masked per policy).
+- **#40/#41 `OtelLogsRedactionTests.cs:122/131` (test):** the OTel-redaction E2E test logs a *synthetic* email/IP/JWT through the real collector and then asserts they are absent from the export — it deliberately handles fake PII to prove redaction works. Dismissed **used in test** (the "Tests" bucket this triage already normalises).
+
+### Why not a config fix (verified locally with `gh codeql`, 2026-06-04)
+
+Both "durable" routes were built and tested against a local C# DB before being rejected — record this so it isn't re-attempted:
+
+1. **Models-as-Data (neutral/barrier/summary) does NOT work for this query.** `ExposureOfPrivateInformationQuery.qll` defines its barrier as `isBarrier(node) { node instanceof Sanitizer }` with `Sanitizer` a hardcoded abstract QL class — it never consults MaD. A `neutralModel` for `LogPiiMasking.MaskEmail`/`MaskUsername` loaded as **"unused"** and changed nothing. So you cannot teach this query a sanitizer via a data-extension pack.
+2. **A custom query (thin wrapper adding `MaskEmail`/`MaskUsername` as a `Sanitizer` subclass) works but is operationally worse.** It correctly cleared #42 + the other masked sites locally. But it needs a new rule id (`cs/exposure-of-sensitive-information-modgud`) and excluding the built-in to avoid double-reporting — and code-scanning dismissals are keyed to the rule id, so the **~19 already-dismissed** findings (the local DB shows 26 total; CI shows 3 because 23 are dismissed) would re-appear under the new id. The one-time re-dismissal churn + maintaining a forked security query outweighs the benefit for an advisory FP.
+
+**Consequence / standing guidance:** a *future* masked-PII log site (`LogPiiMasking.Mask*` whose result is logged) will flag `cs/exposure-of-sensitive-information` again — dismiss it **false positive** with a one-line "masked via LogPiiMasking; query can't model the sanitizer (Bucket 3)". Only revisit the custom-query route if these become frequent enough that re-dismissing each one is more pain than a one-time 19-alert re-dismissal + a forked query.
+
+If `MaskEmail` is ever changed to leak more (e.g. keep the whole local-part), revisit the model: the point of the neutral model is that the masking is *sufficient*, not that the method name is magic.

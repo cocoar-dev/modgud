@@ -247,8 +247,9 @@ Treat that as inspiration, not a drop-in.
   links, OIDC. Lives in the `Modgud.Authentication` slice.
 - **User profile management** — display fields, change-requests, profile
   self-service. Lives in `Modgud.Api/Features/Account` + `Admin`.
-- **Auth log / audit** — `AuthLogDocument` + `AuthLogSink` are
-  Modgud-internal, not part of the slice.
+- **Auth log / audit** — the `AuthAuditView` projection (GDPR-audit) and the
+  `SecurityAuditEntry` streamless security store are Modgud-internal, not part
+  of the slice.
 - **Frontend** — see Step 6 above.
 
 The split is intentional: this slice owns "**who has what permission, who's

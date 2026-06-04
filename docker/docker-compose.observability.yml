@@ -1,0 +1,49 @@
+# Local observability stack for trying out Phase 4 log export end-to-end:
+#   Modgud (OTLP) -> OTel Collector (redaction) -> OpenObserve.
+#
+# This is a DEV CONVENIENCE, not a production deployment. The credentials below
+# are throwaway; the production collector topology + OpenObserve org/RBAC layout
+# are an ops decision. See docs/operate/observability.md.
+#
+#   docker compose -f docker/docker-compose.observability.yml up -d
+#
+# Then run the API with export on:
+#   Observability__Otlp__Enabled=true
+#   Observability__Otlp__Endpoint=http://127.0.0.1:4317   # 127.0.0.1, not localhost (see observability.md)
+#
+# OpenObserve UI: http://localhost:5080  (root@example.com / Complexpass#123)
+
+services:
+  openobserve:
+    # Pin a concrete tag for reproducibility in your own setup.
+    image: public.ecr.aws/zinclabs/openobserve:latest
+    environment:
+      ZO_ROOT_USER_EMAIL: root@example.com
+      ZO_ROOT_USER_PASSWORD: Complexpass#123
+    ports:
+      - "127.0.0.1:5080:5080"
+    volumes:
+      - openobserve-data:/data
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.153.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./otel-collector/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    environment:
+      # OpenObserve's OTLP/HTTP logs ingest for the "default" org, with the root
+      # user's Basic-auth header (base64 of "<email>:<password>" above).
+      OPENOBSERVE_LOGS_ENDPOINT: http://openobserve:5080/api/default/v1/logs
+      OPENOBSERVE_AUTHORIZATION: "Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4cGFzcyMxMjM="
+    ports:
+      # Loopback-only: the OTLP receiver is unauthenticated and this stack is a
+      # local/dev convenience, not a deployable topology.
+      - "127.0.0.1:4317:4317"   # OTLP gRPC
+      - "127.0.0.1:4318:4318"   # OTLP HTTP
+    depends_on:
+      - openobserve
+    restart: unless-stopped
+
+volumes:
+  openobserve-data:

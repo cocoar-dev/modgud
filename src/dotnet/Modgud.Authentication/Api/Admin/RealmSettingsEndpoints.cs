@@ -1,8 +1,8 @@
 using System.Security.Claims;
-using Microsoft.Extensions.Logging;
 using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Authorization.AspNetCore;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 
@@ -74,19 +74,24 @@ public static class RealmSettingsEndpoints
         group.MapPost("rotate-signing-key", async (
             IRealmKeyStore keyStore,
             ClaimsPrincipal user,
-            ILoggerFactory loggerFactory,
+            ISecurityAuditLog securityAudit,
             CancellationToken ct) =>
         {
             var slug = TenantContext.Current;
             var creds = await keyStore.RotateAsync(slug, ct);
             var kid = creds.Key.KeyId;
 
-            // "Auth:"-prefixed → captured by the AuthLogSink into the admin
-            // Auth-Log. UserName is surfaced as its own audit column.
-            loggerFactory.CreateLogger("Modgud.Authentication.Api.Admin.RealmSettings")
-                .LogWarning(
-                    "Auth: signing key rotated for realm {Realm} by {UserName} — new kid {Kid}",
-                    slug, user.Identity?.Name ?? "(unknown)", kid);
+            var userName = user.Identity?.Name ?? "(unknown)";
+            // Request context — leave Realm unset (ambient TenantContext is correct).
+            securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.SigningKeyRotated,
+                Level = "Warning",
+                Actor = userName,
+                Status = "rotated",
+                Reason = $"kid {kid}",
+                Message = $"signing key rotated by {userName} — new kid {kid}",
+            });
 
             return Results.Ok(new RotateSigningKeyResponseDto(kid));
         })

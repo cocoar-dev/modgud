@@ -2,6 +2,7 @@ using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
 using Modgud.Authentication.Sessions;
 using Modgud.Authentication.Setup;
+using Modgud.Infrastructure.Audit;
 using Microsoft.AspNetCore.Identity;
 
 namespace Modgud.Authentication.Api.Account;
@@ -42,16 +43,23 @@ public static class BootstrapEndpoints
             IPendingAdminInviteService inviteService,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
-            ISessionService sessionService) =>
+            ISessionService sessionService,
+            ISecurityAuditLog securityAudit) =>
         {
             var ip = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
             var result = await inviteService.ConsumeAsync(request.Token, request.Password);
             if (result.IsError)
             {
-                Serilog.Log.Information(
-                    "Auth: Bootstrap-invite consume rejected. IP={IP} Code={Code}",
-                    ip, result.FirstError.Code);
+                securityAudit.Record(new SecurityAuditRecord
+                {
+                    EventType = AuditEvents.BootstrapInviteRejected,
+                    Level = "Warning",
+                    Ip = ip,
+                    Status = "rejected",
+                    Reason = "invalid or expired invite",
+                    Message = "Bootstrap invite consume rejected",
+                });
                 return Results.Problem(
                     statusCode: StatusCodes.Status400BadRequest,
                     title: result.FirstError.Code,
@@ -70,8 +78,8 @@ public static class BootstrapEndpoints
             }
 
             Serilog.Log.Warning(
-                "Auth: Bootstrap admin created via invite. IP={IP} UserName={UserName}",
-                ip, result.Value.UserName);
+                "Bootstrap admin created via invite. IP={IP} UserId={UserId}",
+                ip, result.Value.UserId);
 
             return Results.Ok(new { Message = "Bootstrap successful", UserName = result.Value.UserName });
         })

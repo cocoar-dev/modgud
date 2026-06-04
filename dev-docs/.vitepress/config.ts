@@ -80,6 +80,7 @@ export default withMermaid(defineConfig({
           { text: '⭐ Federation v1 — Implementation Spec', link: '/future-features/federation-v1-design' },
           { text: '⭐ Account Lifecycle — Email + Deletion Plan', link: '/future-features/lifecycle-email-deletion-plan' },
           { text: '⭐ Production-Readiness Audit 2026-05-13', link: '/future-features/production-readiness-audit-2026-05-13' },
+          { text: '⭐ Logging & Audit Redesign', link: '/future-features/logging-audit-redesign' },
           { text: 'HA / Multi-Instance Readiness', link: '/future-features/ha-multi-instance' },
           { text: 'Realm Backup / Restore / DR', link: '/future-features/realm-backup-restore' },
           { text: 'Enterprise SSO — SAML + LDAP', link: '/future-features/enterprise-sso-saml-ldap' },
@@ -113,6 +114,7 @@ export default withMermaid(defineConfig({
           { text: 'Overview', link: '/architecture/' },
           { text: 'Authentication slice', link: '/architecture/authentication' },
           { text: 'Authorization slice', link: '/architecture/authorization' },
+          { text: 'Persistence model (ES vs. flat docs)', link: '/architecture/persistence-model' },
         ],
       },
       {

@@ -1,6 +1,7 @@
 using Modgud.Application.DTOs.Realms;
 using Modgud.Application.Services;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Authorization;
 using Modgud.Infrastructure.OAuth;
 using Modgud.Infrastructure.Persistence.Tenancy;
@@ -72,6 +73,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
     private readonly IMasterConnectionString _masterCs;
     private readonly IRealmCache _realmCache;
     private readonly IServiceProvider _serviceProvider;
+    private readonly ISecurityAuditLog _securityAudit;
     private readonly ILogger<RealmProvisioningService> _logger;
 
     public RealmProvisioningService(
@@ -80,6 +82,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         IMasterConnectionString masterCs,
         IRealmCache realmCache,
         IServiceProvider serviceProvider,
+        ISecurityAuditLog securityAudit,
         ILogger<RealmProvisioningService> logger)
     {
         _globalStore = globalStore;
@@ -87,6 +90,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         _masterCs = masterCs;
         _realmCache = realmCache;
         _serviceProvider = serviceProvider;
+        _securityAudit = securityAudit;
         _logger = logger;
     }
 
@@ -181,6 +185,15 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
 #pragma warning restore CA2100
                 await createDbCmd.ExecuteNonQueryAsync(ct);
                 _logger.LogInformation("Created database {DbName} for realm {Slug}", tenantDbName, dto.Slug);
+                _securityAudit.Record(new SecurityAuditRecord
+                {
+                    EventType = AuditEvents.RealmProvisioned,
+                    Level = "Info",
+                    Realm = dto.Slug,
+                    Status = "provisioned",
+                    Reason = $"database {tenantDbName}",
+                    Message = $"Created database {tenantDbName} for realm {dto.Slug}",
+                });
             }
         }
 
@@ -429,6 +442,15 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         _logger.LogWarning(
             "Control plane transferred to realm {Slug} (cleared {Count} previous holder(s))",
             targetSlug, otherHolders.Count);
+        _securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.ControlPlaneTransferred,
+            Level = "Warning",
+            Realm = targetSlug,
+            Status = "transferred",
+            Reason = $"to realm {targetSlug}, {otherHolders.Count} previous holder(s)",
+            Message = $"Control plane transferred to realm {targetSlug} (cleared {otherHolders.Count} previous holder(s))",
+        });
 
         return target;
     }
@@ -511,6 +533,15 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
 
         _realmCache.Invalidate();
         _logger.LogInformation("Adopted existing database {DbName} as realm {Slug}", tenantDbName, slug);
+        _securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RealmAdopted,
+            Level = "Info",
+            Realm = slug,
+            Status = "adopted",
+            Reason = $"database {tenantDbName}",
+            Message = $"Adopted existing database {tenantDbName} as realm {slug}",
+        });
         return realm;
     }
 }

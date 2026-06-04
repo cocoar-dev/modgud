@@ -275,8 +275,19 @@ const routes = [
               },
             },
             {
+              // Combined logs home — Audit + Security as tabs.
+              path: 'logs',
+              component: () => import('@/views/admin/AdminLogsView.vue'),
+            },
+            // Back-compat: the two surfaces used to be separate routes. Keep the
+            // links working by redirecting onto the matching tab.
+            {
               path: 'auth-log',
-              component: () => import('@/views/admin/AuthLogView.vue'),
+              redirect: { path: '/admin/logs', query: { tab: 'security' } },
+            },
+            {
+              path: 'audit',
+              redirect: { path: '/admin/logs', query: { tab: 'audit' } },
             },
             {
               path: 'change-requests',
@@ -488,7 +499,7 @@ router.beforeEach(async (to) => {
       'oauth-api:read',
       'login-provider:read',
       'realm:read', 'realm-settings:read',
-      'auth-log:read', 'session:read', 'observability:read', 'asset:read',
+      'auth-log:read', 'audit-log:read', 'session:read', 'observability:read', 'asset:read',
       'app:read',
     ]
     if (!ADMIN_PERMS.some((p) => authStore.hasPermission(p))) {

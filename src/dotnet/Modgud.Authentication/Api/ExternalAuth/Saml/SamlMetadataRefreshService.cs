@@ -1,3 +1,5 @@
+using Modgud.Infrastructure.Audit;
+
 namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 
 /// <summary>
@@ -17,6 +19,7 @@ namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 public class SamlMetadataRefreshService(
     DynamicSamlSchemeManager manager,
     TimeProvider clock,
+    ISecurityAuditLog securityAudit,
     ILogger<SamlMetadataRefreshService> logger) : BackgroundService
 {
     /// <summary>
@@ -44,7 +47,7 @@ public class SamlMetadataRefreshService(
             catch (Exception ex)
             {
                 logger.LogError(ex,
-                    "Auth: SAML metadata refresh tick failed unexpectedly — continuing");
+                    "SAML metadata refresh tick failed unexpectedly — continuing");
             }
 
             try { await Task.Delay(PollInterval, clock, stoppingToken); }
@@ -74,16 +77,22 @@ public class SamlMetadataRefreshService(
             {
                 failed++;
                 logger.LogWarning(ex,
-                    "Auth: SAML metadata refresh failed for provider {Id}",
+                    "SAML metadata refresh failed for provider {Id}",
                     entry.LoginProviderId);
             }
         }
 
         if (refreshed > 0 || failed > 0)
         {
-            logger.LogInformation(
-                "Auth: SAML metadata refresh tick — refreshed={Refreshed} failed={Failed} (scanned={Total})",
-                refreshed, failed, snapshot.Count);
+            // Platform-wide control-plane tick — leave Realm unset.
+            securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.SamlMetadataRefreshed,
+                Level = "Info",
+                Status = "refreshed",
+                Reason = $"refreshed={refreshed} failed={failed}",
+                Message = $"SAML metadata refresh tick — refreshed={refreshed} failed={failed} (scanned={snapshot.Count})",
+            });
         }
     }
 

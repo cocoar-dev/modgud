@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Modgud.Authentication.Gdpr;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Quartz;
 
@@ -30,6 +31,7 @@ namespace Modgud.Api.Features.Admin.Jobs;
 public class AccountLifecycleSweepJob(
     IServiceScopeFactory scopeFactory,
     IDocumentStore store,
+    ISecurityAuditLog securityAudit,
     ILogger<AccountLifecycleSweepJob> logger) : IJob
 {
     public const string Key = "account-lifecycle-sweep";
@@ -70,16 +72,22 @@ public class AccountLifecycleSweepJob(
                     totalErased += erased;
                     totalPurged += purged;
                     if (reminded + erased + purged > 0)
-                        logger.LogInformation(
-                            "Auth: Account-lifecycle sweep — Realm={Realm} Reminded={Reminded} SelfErased={Erased} AutoPurged={Purged}",
-                            realm.Slug, reminded, erased, purged);
+                        securityAudit.Record(new SecurityAuditRecord
+                        {
+                            EventType = AuditEvents.AccountLifecycleSwept,
+                            Level = "Info",
+                            Realm = realm.Slug,
+                            Status = "swept",
+                            Reason = $"reminded={reminded} selfErased={erased} autoPurged={purged}",
+                            Message = $"Account-lifecycle sweep — Realm={realm.Slug} Reminded={reminded} SelfErased={erased} AutoPurged={purged}",
+                        });
                 }
                 realmsTouched++;
             }
             catch (Exception ex)
             {
                 logger.LogError(ex,
-                    "Auth: Account-lifecycle sweep failed for realm {Realm}", realm.Slug);
+                    "Account-lifecycle sweep failed for realm {Realm}", realm.Slug);
             }
         }
 

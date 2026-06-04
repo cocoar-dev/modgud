@@ -1,6 +1,5 @@
 using JasperFx.Events.Projections;
 using Marten;
-using Modgud.Authentication.AuthLog;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Domain.ExternalAuth;
 using Modgud.Authentication.Domain.ExternalAuth.Events;
@@ -124,15 +123,15 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.LoginProviderId)
             .Index(x => x.IsUnlinked);
 
-        // AuthLogDocument lives in the default (public) schema like every other
-        // auth doc — dropped the gratuitous solo "marten" schema (one schema
-        // fewer per tenant DB; aligns with AppBase v4).
-        options.Schema.For<AuthLogDocument>()
+        // Streamless security/ops store (logging/audit redesign Track A, Phase 3).
+        // Cross-realm in the system DB; the typed successor to the personal-data-
+        // bearing-but-streamless portion of AuthLogDocument. Indexed for the admin
+        // read (Realm scope + EventType chip filter) and the retention prune.
+        options.Schema.For<Modgud.Infrastructure.Audit.SecurityAuditEntry>()
             .Identity(x => x.Id)
             .Index(x => x.Timestamp)
-            // All realms' entries share the system DB, so the admin read/clear
-            // filters by Realm — index it so the tenant-scoped path isn't a scan.
-            .Index(x => x.Realm);
+            .Index(x => x.Realm)
+            .Index(x => x.EventType);
 
         // Tenant-scoped singleton config doc. One row per tenant DB,
         // addressed by the fixed `RealmSettings.SingletonId`. Owned by
@@ -152,6 +151,7 @@ public static class MartenStoreOptionsExtensions
         options.Events.MapEventType<UserPasswordChangedEvent>("user_password_changed");
         options.Events.MapEventType<UserLoggedInEvent>("user_logged_in");
         options.Events.MapEventType<UserLoginFailedEvent>("user_login_failed");
+        options.Events.MapEventType<UserLoginFailuresObservedEvent>("user_login_failures_observed");
         options.Events.MapEventType<UserLockedOutEvent>("user_locked_out");
         options.Events.MapEventType<UserUnlockedEvent>("user_unlocked");
         options.Events.MapEventType<UserActivatedEvent>("user_activated");
@@ -210,9 +210,10 @@ public static class MartenStoreOptionsExtensions
         options.Events.AddMaskingRuleForProtectedInformation<UserIdentitySetupEvent>(e =>
             new UserIdentitySetupEvent(e.UserId, "[DELETED]", e.IsActive));
 
-        // IP addresses are PII under GDPR — strip them from login records.
+        // IP addresses are PII under GDPR — strip them from login records. The
+        // login method is non-PII (a bounded code), so it passes through the mask.
         options.Events.AddMaskingRuleForProtectedInformation<UserLoggedInEvent>(e =>
-            new UserLoggedInEvent(e.UserId, IpAddress: null));
+            new UserLoggedInEvent(e.UserId, IpAddress: null, e.Method));
 
         options.Events.AddMaskingRuleForProtectedInformation<UserLoginFailedEvent>(e =>
             new UserLoginFailedEvent(e.UserId, IpAddress: null));
@@ -244,6 +245,13 @@ public static class MartenStoreOptionsExtensions
             projection.Add<UserViewProjection>();
             projection.Add<Modgud.Infrastructure.Persistence.Marten.Projections.Inbox.InboxItemProjection>();
         });
+
+        // Tenant audit read model — a flat, per-event projection (one row per
+        // audited event) over the user + config streams; queried per realm by the
+        // GDPR-audit read surface (Phase 2). Deliberately an EventProjection, not an
+        // aggregation: an audit log is a list of occurrences, not a per-aggregate
+        // snapshot. See dev-docs/future-features/logging-audit-redesign.md §A.3.
+        options.Projections.Add<Modgud.Authentication.Audit.AuthAuditViewProjection>(ProjectionLifecycle.Async);
 
         return options;
     }

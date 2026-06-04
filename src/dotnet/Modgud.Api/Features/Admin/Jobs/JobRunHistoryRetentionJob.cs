@@ -80,7 +80,7 @@ public class JobRunHistoryRetentionJob(
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 Serilog.Log.Error(ex,
-                    "Auth: job-run-history-retention failed for realm {Slug}",
+                    "job-run-history-retention failed for realm {Slug}",
                     realm.Slug);
             }
         }

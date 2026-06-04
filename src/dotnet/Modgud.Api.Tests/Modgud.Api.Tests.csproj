@@ -19,6 +19,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <!-- Generic container builder for the OTel Collector in OtelLogsRedactionTests. -->
+    <PackageReference Include="Testcontainers" />
     <!-- Quartz.Extensions.Hosting is a transitive dep of Modgud.Infrastructure
          but its runtime assembly (Quartz.Extensions.DependencyInjection.dll)
          doesn't propagate to test bin output reliably (FrameworkReference
@@ -42,6 +44,15 @@
 
   <ItemGroup>
     <Content Include="wwwroot\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- OtelLogsRedactionTests: the test collector config, plus the shipped one
+         (linked) so the test can assert their redaction blocks match verbatim. -->
+    <Content Include="Observability\otel-collector-test-config.yaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\..\docker\otel-collector\otel-collector-config.yaml"
+             Link="Observability\otel-collector-config.shipped.yaml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

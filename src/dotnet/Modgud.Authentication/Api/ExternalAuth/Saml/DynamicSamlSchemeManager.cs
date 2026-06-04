@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Identity.LoginProviders.Saml;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Api.ExternalAuth.Saml;
@@ -26,6 +27,7 @@ public class DynamicSamlSchemeManager(
     SamlFlavorRegistry flavors,
     SamlMetadataFetcher metadataFetcher,
     TimeProvider clock,
+    ISecurityAuditLog securityAudit,
     ILogger<DynamicSamlSchemeManager> logger)
 {
     private readonly ConcurrentDictionary<Guid, RegisteredSamlProvider> _cache = new();
@@ -57,7 +59,7 @@ public class DynamicSamlSchemeManager(
             // because being called with the wrong type is a code bug we want
             // to notice during development without crying wolf in production.
             logger.LogDebug(
-                "Auth: SAML manager called for non-SAML LoginProvider {Id} (type={Type}) — ignored",
+                "SAML manager called for non-SAML LoginProvider {Id} (type={Type}) — ignored",
                 config.Id, config.Type);
             return;
         }
@@ -120,14 +122,14 @@ public class DynamicSamlSchemeManager(
         if (idpMetadata is null)
         {
             logger.LogWarning(
-                "Auth: Registered SAML provider {Id} ({Display}) in realm {Realm} WITHOUT IdP metadata — " +
+                "Registered SAML provider {Id} ({Display}) in realm {Realm} WITHOUT IdP metadata — " +
                 "login attempts will fail until metadata is reachable",
                 config.Id, config.DisplayName, realmSlug);
         }
         else
         {
             logger.LogInformation(
-                "Auth: Registered SAML provider {Id} ({Display} / {Flavor}) in realm {Realm} " +
+                "Registered SAML provider {Id} ({Display} / {Flavor}) in realm {Realm} " +
                 "with IdP {IdpEntity} and {CertCount} signing cert(s)",
                 config.Id, config.DisplayName, config.Flavor, realmSlug,
                 idpMetadata.EntityId, idpMetadata.SigningCertificatesBase64.Count);
@@ -140,7 +142,7 @@ public class DynamicSamlSchemeManager(
         if (_cache.TryRemove(loginProviderId, out var entry))
         {
             logger.LogInformation(
-                "Auth: Unregistered SAML provider {Id} ({Display})",
+                "Unregistered SAML provider {Id} ({Display})",
                 loginProviderId, entry.DisplayName);
         }
         return Task.CompletedTask;
@@ -224,12 +226,17 @@ public class DynamicSamlSchemeManager(
         if (existing.IdpMetadata is null
             || !SequenceEqual(existing.IdpMetadata.SigningCertificatesBase64, fresh.SigningCertificatesBase64))
         {
-            logger.LogInformation(
-                "Auth: SAML metadata refresh for provider {Id} changed signing certs " +
-                "({OldCount} → {NewCount})",
-                loginProviderId,
-                existing.IdpMetadata?.SigningCertificatesBase64.Count ?? 0,
-                fresh.SigningCertificatesBase64.Count);
+            var oldCount = existing.IdpMetadata?.SigningCertificatesBase64.Count ?? 0;
+            var newCount = fresh.SigningCertificatesBase64.Count;
+            securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.SamlMetadataRefreshed,
+                Realm = existing.RealmSlug,
+                Level = "Info",
+                Status = "cert_changed",
+                Reason = $"signing certs {oldCount}->{newCount}",
+                Message = $"SAML metadata refresh for provider {loginProviderId} changed signing certs ({oldCount} -> {newCount})",
+            });
         }
 
         return true;

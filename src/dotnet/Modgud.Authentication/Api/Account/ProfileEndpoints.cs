@@ -209,8 +209,8 @@ public static class ProfileEndpoints
                 }
             }
 
-            Log.Information("Profile: Change request upserted. User={UserName} Status={Status}",
-                user.UserName, request.Status);
+            Log.Information("Profile: Change request upserted. UserId={UserId} Status={Status}",
+                user.Id, request.Status);
 
             return Results.Ok(new { Open = MapForApi(request, user) });
         });
@@ -311,7 +311,7 @@ public static class ProfileEndpoints
             if (adminItemIds.Count > 0)
                 await inboxNotifier.DismissByIdsAsync(adminItemIds);
 
-            Log.Information("Profile: Change request cancelled. User={UserName}", user.UserName);
+            Log.Information("Profile: Change request cancelled. UserId={UserId}", user.Id);
             return Results.NoContent();
         });
 

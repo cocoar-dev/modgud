@@ -68,6 +68,7 @@
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="Testcontainers" Version="4.12.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.12.0" />
     <!-- Slice-boundary tests under Modgud.Tests.Unit/Architecture/. -->
     <PackageVersion Include="NetArchTest.Rules" Version="1.3.2" />
@@ -88,6 +89,12 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
     <PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.15.3-beta.1" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <!-- OpenTelemetry Phase 4: Serilog → OTLP log export. The sink owns its own
+         OTLP client (gRPC/HTTP), so it is independent of the OTel SDK exporter
+         version line above; it is wired as a Serilog sink because the app uses
+         AddSerilog (writeToProviders:false), where an OTel ILoggerProvider would
+         miss the Serilog enrichers (the RealmLogEnricher tag). -->
+    <PackageVersion Include="Serilog.Sinks.OpenTelemetry" Version="4.2.0" />
     <!-- Health-checks: Npgsql probe for /health/ready. -->
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
     <!-- OpenTelemetry Phase 3: Postgres-query tracing via Npgsql's own ActivitySource. -->

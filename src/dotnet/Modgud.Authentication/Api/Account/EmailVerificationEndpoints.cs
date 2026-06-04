@@ -165,7 +165,7 @@ public static class EmailVerificationEndpoints
             session.Delete(challenge);
             await session.SaveChangesAsync();
 
-            Serilog.Log.Information("EmailVerification: confirmed user {UserName}", user.UserName);
+            Serilog.Log.Information("EmailVerification: confirmed user {UserId}", user.Id);
             return Results.Ok(new { Message = "Email verified" });
         })
         .WithName("EmailVerification_Consume");

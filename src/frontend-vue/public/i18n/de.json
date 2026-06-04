@@ -658,16 +658,39 @@
         "auto-group-drift":   { "title": "Auto-Gruppen-Drift" }
       }
     },
-    "authLog": {
-      "title": "Auth Log",
+    "securityLog": {
+      "title": "Sicherheit",
       "time": "Zeit",
-      "level": "Level",
+      "category": "Kategorie",
       "event": "Ereignis",
-      "user": "Benutzer",
+      "detail": "Detail",
+      "actor": "Akteur",
       "ip": "IP-Adresse",
+      "level": "Level",
       "realm": "Realm",
+      "allCategories": "Alle",
       "refresh": "Aktualisieren",
       "clear": "Leeren"
+    },
+    "auditLog": {
+      "title": "Audit-Log",
+      "time": "Zeit",
+      "category": "Kategorie",
+      "event": "Ereignis",
+      "user": "Benutzer",
+      "method": "Methode",
+      "ip": "IP-Adresse",
+      "level": "Level",
+      "realm": "Realm",
+      "refresh": "Aktualisieren",
+      "allCategories": "Alle"
+    },
+    "logs": {
+      "title": "Protokolle",
+      "tabs": {
+        "audit": "Audit",
+        "security": "Sicherheit"
+      }
     },
     "assets": {
       "title": "Asset-Library",
@@ -768,7 +791,10 @@
       "peak": "Peak",
       "activityFeed": "Letzte Ereignisse",
       "updated": "Aktualisiert",
-      "empty": "Keine Ereignisse im aktuellen Fenster."
+      "empty": "Keine Ereignisse im aktuellen Fenster.",
+      "errorFeed": "Letzte Fehler",
+      "errorFeedHint": "Anwendungsfehler in diesem Realm",
+      "errorsEmpty": "Keine Fehler erfasst."
     },
     "section": {
       "authorization": "Autorisierung",

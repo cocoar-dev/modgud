@@ -34,8 +34,19 @@ interface ActivityItem {
   Tags: Record<string, string>
 }
 
+interface ErrorItem {
+  Timestamp: string
+  Realm: string
+  Level: string
+  Message: string
+  Exception: string | null
+  SourceContext: string | null
+  TraceId: string | null
+}
+
 const snapshot = ref<Snapshot | null>(null)
 const activity = ref<ActivityItem[]>([])
+const errors = ref<ErrorItem[]>([])
 const lastUpdate = ref<Date | null>(null)
 let driftRefreshHandle: ReturnType<typeof setInterval> | null = null
 
@@ -47,14 +58,21 @@ let driftRefreshHandle: ReturnType<typeof setInterval> | null = null
 // correctly aligned; counts are kept fresh by live events in between.
 async function refreshSnapshot() {
   try {
-    const [snap, act] = await Promise.all([
+    const [snap, act, errs] = await Promise.all([
       http.addPath('snapshot').get<Snapshot>(),
       http.addPath('activity').setQueryParameter('limit', '50').get<ActivityItem[]>(),
+      http.addPath('errors').setQueryParameter('limit', '50').get<ErrorItem[]>(),
     ])
     snapshot.value = snap
     activity.value = act
+    errors.value = errs
     lastUpdate.value = new Date()
   } catch { /* swallow — keep previous values rather than blink */ }
+}
+
+function applyLiveError(ev: ErrorItem) {
+  // Prepend to the error feed (cap at 50). Bounded server-side per realm too.
+  errors.value = [ev, ...errors.value].slice(0, 50)
 }
 
 function applyLiveEvent(ev: ActivityItem) {
@@ -87,6 +105,13 @@ onMounted(() => {
       error: (err) => console.error('[observability] stream error', err),
     })
   }, 'AdminObservabilityView.Observability.Subscribe')
+
+  signalr.runOnEveryReconnect(() => {
+    signalr.stream<ErrorItem>('Observability.LogsSubscribe').subscribe({
+      next: applyLiveError,
+      error: (err) => console.error('[observability] logs stream error', err),
+    })
+  }, 'AdminObservabilityView.Observability.LogsSubscribe')
 })
 
 onUnmounted(() => {
@@ -184,6 +209,12 @@ function formatTime(iso: string): string {
   return d.toLocaleTimeString(language.value, { hour12: false })
 }
 
+function errorLevelVariant(level: string): 'error' | 'warning' | 'neutral' {
+  if (level === 'Error' || level === 'Fatal') return 'error'
+  if (level === 'Warning') return 'warning'
+  return 'neutral'
+}
+
 const toneClasses: Record<string, string> = {
   positive: 'kpi-positive',
   warning: 'kpi-warning',
@@ -251,6 +282,30 @@ const toneClasses: Record<string, string> = {
       </ul>
       <div v-else class="feed-empty">
         {{ t('admin.observability.empty', {}, 'No events in the rolling window.') }}
+      </div>
+    </CoarCard>
+
+    <!-- Error feed (Phase 5) — per-realm live operational errors -->
+    <CoarCard class="feed-card error-card">
+      <div class="feed-header">
+        <div class="feed-title">{{ t('admin.observability.errorFeed', {}, 'Recent errors') }}</div>
+        <div class="feed-meta">
+          {{ t('admin.observability.errorFeedHint', {}, 'Application errors on this realm') }}
+        </div>
+      </div>
+      <ul class="feed-list" v-if="errors.length > 0">
+        <li v-for="(item, i) in errors" :key="i" class="error-item">
+          <span class="feed-time">{{ formatTime(item.Timestamp) }}</span>
+          <CoarTag :variant="errorLevelVariant(item.Level)">{{ item.Level }}</CoarTag>
+          <div class="error-body">
+            <div class="error-message">{{ item.Message }}</div>
+            <div v-if="item.Exception" class="error-exception">{{ item.Exception }}</div>
+            <div v-if="item.SourceContext" class="error-source">{{ item.SourceContext }}</div>
+          </div>
+        </li>
+      </ul>
+      <div v-else class="feed-empty">
+        {{ t('admin.observability.errorsEmpty', {}, 'No errors captured.') }}
       </div>
     </CoarCard>
   </div>
@@ -385,5 +440,49 @@ const toneClasses: Record<string, string> = {
   padding: 1.5rem;
   text-align: center;
   color: var(--coar-text-neutral-secondary);
+}
+
+.error-card {
+  flex: 0 0 auto;
+  max-height: 16rem;
+}
+
+.error-item {
+  display: grid;
+  grid-template-columns: 80px auto 1fr;
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--coar-border-neutral-secondary);
+  font-size: 0.85rem;
+}
+
+.error-item:last-child {
+  border-bottom: 0;
+}
+
+.error-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.error-message {
+  color: var(--coar-text-neutral-primary);
+  word-break: break-word;
+}
+
+.error-exception {
+  color: var(--coar-text-semantic-error, #dc2626);
+  font-family: var(--coar-font-mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  word-break: break-word;
+}
+
+.error-source {
+  color: var(--coar-text-neutral-secondary);
+  font-family: var(--coar-font-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
 }
 </style>

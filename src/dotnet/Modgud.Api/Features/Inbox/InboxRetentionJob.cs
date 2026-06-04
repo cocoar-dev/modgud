@@ -58,7 +58,7 @@ public class InboxRetentionJob(
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 Serilog.Log.Error(ex,
-                    "Auth: inbox-retention failed for realm {Slug}",
+                    "inbox-retention failed for realm {Slug}",
                     realm.Slug);
             }
         }

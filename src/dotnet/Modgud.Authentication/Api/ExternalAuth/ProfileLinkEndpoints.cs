@@ -186,8 +186,8 @@ public static class ProfileLinkEndpoints
         await writeSession.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "Auth: External identity disconnected{AdminTag} — {UserName} unlinked provider {ProviderId} (link {LinkId})",
-            isAdmin ? " by admin" : "", user?.UserName, link.LoginProviderId, link.Id);
+            "External identity disconnected{AdminTag} — {UserId} unlinked provider {ProviderId} (link {LinkId})",
+            isAdmin ? " by admin" : "", user?.Id, link.LoginProviderId, link.Id);
 
         return Results.NoContent();
     }

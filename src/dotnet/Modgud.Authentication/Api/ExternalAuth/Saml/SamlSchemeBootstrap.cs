@@ -45,7 +45,7 @@ public class SamlSchemeBootstrap(
                 catch (Exception ex)
                 {
                     logger.LogError(ex,
-                        "Auth: SAML bootstrap registration failed for LoginProvider {Id} in realm {Realm}",
+                        "SAML bootstrap registration failed for LoginProvider {Id} in realm {Realm}",
                         config.Id, realm.Slug);
                 }
             }
@@ -54,13 +54,13 @@ public class SamlSchemeBootstrap(
             if (enabled.Count > 0)
             {
                 logger.LogDebug(
-                    "Auth: SamlSchemeBootstrap registered {Count} providers in realm {Realm}",
+                    "SamlSchemeBootstrap registered {Count} providers in realm {Realm}",
                     enabled.Count, realm.Slug);
             }
         }
 
         logger.LogInformation(
-            "Auth: SamlSchemeBootstrap registered {Count} SAML providers across {Realms} realm(s)",
+            "SamlSchemeBootstrap registered {Count} SAML providers across {Realms} realm(s)",
             totalRegistered, realms.Count);
     }
 

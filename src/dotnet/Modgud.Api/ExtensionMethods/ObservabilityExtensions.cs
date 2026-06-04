@@ -37,6 +37,19 @@ internal static class ObservabilityExtensions
         ObservabilitySettings settings,
         string? postgresConnectionString)
     {
+        // OTLP exporters speak HTTP/2 (gRPC always; HttpProtobuf negotiates it).
+        // Against a plaintext http:// collector that means HTTP/2 cleartext (h2c),
+        // which .NET disables by default — without this switch the metrics/traces
+        // exporter hangs on connection setup and every export times out after 10s
+        // (the log sink is unaffected: it uses its own HTTP/1.1 client). A TLS
+        // (https) endpoint negotiates HTTP/2 natively and needs no switch. This is
+        // the documented OTel-on-.NET requirement for insecure OTLP endpoints.
+        if (settings.Otlp.Enabled &&
+            settings.Otlp.Endpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
+        }
+
         var resourceBuilder = ResourceBuilder.CreateDefault()
             .AddService(
                 serviceName: settings.ServiceName,
@@ -63,7 +76,7 @@ internal static class ObservabilityExtensions
 
                 if (settings.Otlp.Enabled)
                 {
-                    metrics.AddOtlpExporter(ConfigureOtlp(settings.Otlp));
+                    metrics.AddOtlpExporter(ConfigureOtlp(settings.Otlp, "v1/metrics"));
                 }
             })
             .WithTracing(tracing =>
@@ -98,7 +111,7 @@ internal static class ObservabilityExtensions
 
                 if (settings.Otlp.Enabled)
                 {
-                    tracing.AddOtlpExporter(ConfigureOtlp(settings.Otlp));
+                    tracing.AddOtlpExporter(ConfigureOtlp(settings.Otlp, "v1/traces"));
                 }
             });
 
@@ -131,14 +144,22 @@ internal static class ObservabilityExtensions
         return services;
     }
 
-    private static Action<OtlpExporterOptions> ConfigureOtlp(ObservabilitySettings.OtlpSettings otlp)
+    private static Action<OtlpExporterOptions> ConfigureOtlp(
+        ObservabilitySettings.OtlpSettings otlp, string signalPath)
     {
+        var isHttp = otlp.Protocol.Equals("HttpProtobuf", StringComparison.OrdinalIgnoreCase);
         return options =>
         {
-            options.Endpoint = new Uri(otlp.Endpoint);
-            options.Protocol = otlp.Protocol.Equals("HttpProtobuf", StringComparison.OrdinalIgnoreCase)
-                ? OtlpExportProtocol.HttpProtobuf
-                : OtlpExportProtocol.Grpc;
+            options.Protocol = isHttp ? OtlpExportProtocol.HttpProtobuf : OtlpExportProtocol.Grpc;
+
+            // Setting Endpoint explicitly disables the SDK's automatic per-signal
+            // path append (AppendSignalPathToEndpoint), so under HttpProtobuf we must
+            // include /v1/<signal> ourselves or the exporter POSTs to the bare host
+            // and gets a 404. gRPC ignores the path (fixed service method), so the
+            // bare endpoint is correct there.
+            options.Endpoint = isHttp
+                ? new Uri($"{otlp.Endpoint.TrimEnd('/')}/{signalPath}")
+                : new Uri(otlp.Endpoint);
         };
     }
 

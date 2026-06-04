@@ -1,0 +1,104 @@
+# Test-only OTel Collector config for OtelLogsRedactionTests.
+#
+# Identical to the shipped docker/otel-collector/otel-collector-config.yaml in
+# its redaction processor (the block between the redaction-ruleset sentinels is
+# asserted byte-for-byte equal by RedactionRuleset_TestConfig_MatchesShipped),
+# so the rules under test never drift from the ones that ship. The ONLY
+# difference is the exporter: a debug exporter the test reads back from stdout,
+# instead of OpenObserve.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # >>> redaction-ruleset: v2 — BUMP THE VERSION IF YOU EDIT THIS BLOCK <<<
+  #
+  # The exact PII field set the guarantee targets. Versioned because the
+  # guarantee is only as good as this block (§B.2): the end-to-end test
+  # (Modgud.Api.Tests/Observability/OtelLogsRedactionTests) pins it against a
+  # real collector, and this version string is what an operator audits. The test
+  # also asserts this block matches the test collector's copy verbatim AND that
+  # the shipped pipeline actually wires this processor before export, so the rules
+  # under test never drift from the ones that ship.
+  #
+  # Scope: the log BODY (rendered message) and every top-level string ATTRIBUTE
+  # value (Serilog properties land here). Resource attributes (service.version,
+  # ...) are deliberately NOT touched — e.g. service.version "1.0.0.0" must not be
+  # mistaken for an IPv4 address.
+  #
+  # Known limits (must be masked at the call site if they can carry PII):
+  #   - replace_all_patterns(value) does NOT recurse into nested Map/Slice
+  #     attribute values, so destructured objects ({@...}) / logged collections
+  #     are out of scope here — mask those at the source.
+  #   - a bare secret with no adjacent bearer/basic keyword has no value shape;
+  #     it is caught in the body only via the scheme, not as an attribute value.
+  #   - usernames have no value shape: the known UserName/Actor carrier attributes
+  #     are dropped and the "User=" body form is masked, but a login identifier
+  #     inlined into other free-text prose relies on the call site not logging it
+  #     raw (log user.Id instead).
+  #   - error_mode: ignore -> a per-statement runtime error skips THAT statement
+  #     (best-effort, Track B). The statements are simple guarded regex replaces,
+  #     so the leak surface is narrow; do NOT switch to propagate without analysis
+  #     (propagate drops the whole payload on any error).
+  #
+  # v2 targets (regexes are single-quoted YAML so backslashes are literal):
+  #   - email addresses    -> [REDACTED_EMAIL]
+  #   - JWTs (eyJ.x.y)      -> [REDACTED_TOKEN]
+  #   - Bearer/Basic creds  -> [REDACTED_AUTHORIZATION]
+  #   - IPv4 addresses      -> [REDACTED_IP]
+  #   - IPv6 addresses      -> [REDACTED_IP]  (full, ::-compressed, and leading-::)
+  #   - usernames           -> UserName/Actor attrs dropped; "User=" body masked
+  transform/redaction:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          # --- log body (rendered message), only when it is a string ---
+          - 'replace_pattern(log.body, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[REDACTED_EMAIL]") where IsString(log.body)'
+          - 'replace_pattern(log.body, "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", "[REDACTED_TOKEN]") where IsString(log.body)'
+          - 'replace_pattern(log.body, "(?i)(?:bearer|basic)\\s+[A-Za-z0-9._~+/-]+=*", "[REDACTED_AUTHORIZATION]") where IsString(log.body)'
+          - 'replace_pattern(log.body, "\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b", "[REDACTED_IP]") where IsString(log.body)'
+          - 'replace_pattern(log.body, "(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}", "[REDACTED_IP]") where IsString(log.body)'
+          - 'replace_pattern(log.body, "(?:[0-9A-Fa-f]{1,4}:){1,7}:[0-9A-Fa-f]{0,4}", "[REDACTED_IP]") where IsString(log.body)'
+          - 'replace_pattern(log.body, "::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*", "[REDACTED_IP]") where IsString(log.body)'
+          - 'replace_pattern(log.body, "(?i)\\bUser=[^\\s,;]+", "User=[REDACTED_USER]") where IsString(log.body)'
+          # --- all top-level string attribute values (Serilog properties) ---
+          - 'replace_all_patterns(log.attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[REDACTED_EMAIL]")'
+          - 'replace_all_patterns(log.attributes, "value", "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", "[REDACTED_TOKEN]")'
+          - 'replace_all_patterns(log.attributes, "value", "(?i)(?:bearer|basic)\\s+[A-Za-z0-9._~+/-]+=*", "[REDACTED_AUTHORIZATION]")'
+          - 'replace_all_patterns(log.attributes, "value", "\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b", "[REDACTED_IP]")'
+          - 'replace_all_patterns(log.attributes, "value", "(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}", "[REDACTED_IP]")'
+          - 'replace_all_patterns(log.attributes, "value", "(?:[0-9A-Fa-f]{1,4}:){1,7}:[0-9A-Fa-f]{0,4}", "[REDACTED_IP]")'
+          - 'replace_all_patterns(log.attributes, "value", "::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*", "[REDACTED_IP]")'
+          # usernames have no value shape -> drop the known carrier attributes.
+          - 'delete_key(log.attributes, "UserName")'
+          - 'delete_key(log.attributes, "Actor")'
+  # >>> end redaction-ruleset: v2 <<<
+
+  batch:
+    timeout: 1s
+    send_batch_size: 1
+    send_batch_max_size: 1
+
+exporters:
+  # Readback for the test: the post-redaction records are printed to the
+  # collector's stdout (verbosity: detailed), which the test reads back via
+  # GetLogsAsync. No bind mount / writable volume needed (the distroless image
+  # has no /tmp and Windows host bind mounts are unreliable under Testcontainers).
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [transform/redaction, batch]
+      exporters: [debug]
+  telemetry:
+    logs:
+      level: info

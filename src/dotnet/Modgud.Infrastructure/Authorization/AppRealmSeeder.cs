@@ -41,9 +41,11 @@ public static class AppRealmSeeder
         ("authorization-group", ["read", "write"]),
         ("permission-role", ["read", "write"]),
 
-        // Sessions + audit
+        // Sessions + audit. auth-log:read = the streamless security/ops store;
+        // audit-log:read = the per-realm GDPR-audit (event-sourced) — two surfaces.
         ("session", ["read", "write"]),
         ("auth-log", ["read"]),
+        ("audit-log", ["read"]),
 
         // GDPR (permanent-erase only — self-service is implicit on the caller)
         ("gdpr", ["admin"]),

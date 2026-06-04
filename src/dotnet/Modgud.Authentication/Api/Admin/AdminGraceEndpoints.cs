@@ -85,8 +85,8 @@ public static class AdminGraceEndpoints
             await session.SaveChangesAsync();
 
             Serilog.Log.Information(
-                "Admin: Grace policy updated. User={UserName} Override={Override} Exempt={Exempt}",
-                user.UserName, securityData.GracePeriodDaysOverride, securityData.TwoFactorExempt);
+                "Admin: Grace policy updated. UserId={UserId} Override={Override} Exempt={Exempt}",
+                user.Id, securityData.GracePeriodDaysOverride, securityData.TwoFactorExempt);
             return Results.Ok(new
             {
                 securityData.GracePeriodDaysOverride,
@@ -120,8 +120,8 @@ public static class AdminGraceEndpoints
             session.Store(securityData);
             await session.SaveChangesAsync();
 
-            Serilog.Log.Information("Admin: Grace period reset. User={UserName} DueAt={DueAt}",
-                user.UserName, securityData.SecureSetupDueAt);
+            Serilog.Log.Information("Admin: Grace period reset. UserId={UserId} DueAt={DueAt}",
+                user.Id, securityData.SecureSetupDueAt);
             return Results.Ok(new { SecureSetupDueAt = securityData.SecureSetupDueAt });
         })
         .WithName("Admin_ResetGracePeriod");
@@ -145,7 +145,7 @@ public static class AdminGraceEndpoints
             session.Store(securityData);
             await session.SaveChangesAsync();
 
-            Serilog.Log.Information("Admin: Grace period expired immediately. User={UserName}", user.UserName);
+            Serilog.Log.Information("Admin: Grace period expired immediately. UserId={UserId}", user.Id);
             return Results.NoContent();
         })
         .WithName("Admin_ClearGracePeriod");

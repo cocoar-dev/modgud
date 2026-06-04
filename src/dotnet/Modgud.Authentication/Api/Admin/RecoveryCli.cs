@@ -10,6 +10,7 @@ using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.Realms;
 using Modgud.Permissions;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using Marten;
@@ -33,8 +34,9 @@ namespace Modgud.Authentication.Api.Admin;
 ///
 /// Requires shell access to the host — anyone who can <c>docker exec</c> already has
 /// DB access, so this doesn't open a new privilege-escalation path. Every invocation
-/// is written to the standard auth log ("Auth:" prefix) with a <c>Recovery:</c>
-/// subprefix so admins can audit usage after the fact.
+/// emits an <c>ops.recovery_cli_invoked</c> record to the streamless security/ops
+/// store (flushed synchronously before the process exits, since this path never
+/// starts the host) so admins can audit usage after the fact.
 /// </summary>
 public static class RecoveryCli
 {
@@ -58,12 +60,13 @@ public static class RecoveryCli
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var permissions = scope.ServiceProvider.GetRequiredService<IPermissionService>();
+        var securityAudit = scope.ServiceProvider.GetRequiredService<ISecurityAuditLog>();
 
         return command switch
         {
             "list" => await ListUsersAsync(session, permissions),
-            "reset-2fa" => await Reset2FaAsync(session, userManager, args),
-            "set-email" => await SetEmailAsync(session, userManager, args),
+            "reset-2fa" => await Reset2FaAsync(session, userManager, args, securityAudit, realmSlug),
+            "set-email" => await SetEmailAsync(session, userManager, args, securityAudit, realmSlug),
             "magic-link" => await MagicLinkAsync(session, scope.ServiceProvider, args, conf, env),
             "rebuild-projections" => await RebuildProjectionsAsync(scope.ServiceProvider, realmSlug),
             "bootstrap-admin" => await BootstrapAdminAsync(scope.ServiceProvider, args, realmSlug),
@@ -193,7 +196,9 @@ public static class RecoveryCli
     private static async Task<int> Reset2FaAsync(
         IDocumentSession session,
         UserManager<ApplicationUser> userManager,
-        string[] args)
+        string[] args,
+        ISecurityAuditLog securityAudit,
+        string realmSlug)
     {
         if (args.Length < 2) return Error("Usage: recover reset-2fa <username>");
         var userName = args[1].Trim().ToLowerInvariant();
@@ -235,9 +240,16 @@ public static class RecoveryCli
 
         await session.SaveChangesAsync();
 
-        Serilog.Log.Warning(
-            "Auth: Recovery reset-2fa. User={UserName} TOTP={WasTotp} EmailOtp={WasEmailOtp} PasskeysDeleted={Passkeys}",
-            user.UserName, wasTotpEnabled, wasEmailOtpEnabled, passkeys.Count);
+        securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Realm = realmSlug,
+            Actor = user.Id.ToString(),
+            Status = "succeeded",
+            Reason = $"reset-2fa: UserId={user.Id} TOTP={wasTotpEnabled} EmailOtp={wasEmailOtpEnabled} PasskeysDeleted={passkeys.Count}",
+            Message = $"Recovery reset-2fa. UserId={user.Id} TOTP={wasTotpEnabled} EmailOtp={wasEmailOtpEnabled} PasskeysDeleted={passkeys.Count}",
+        });
 
         Console.WriteLine($"✓ 2FA reset for {user.UserName}:");
         Console.WriteLine($"  TOTP disabled:    {(wasTotpEnabled ? "yes" : "was already off")}");
@@ -252,7 +264,9 @@ public static class RecoveryCli
     private static async Task<int> SetEmailAsync(
         IDocumentSession session,
         UserManager<ApplicationUser> userManager,
-        string[] args)
+        string[] args,
+        ISecurityAuditLog securityAudit,
+        string realmSlug)
     {
         if (args.Length < 3) return Error("Usage: recover set-email <username> <new-email>");
         var userName = args[1].Trim().ToLowerInvariant();
@@ -294,8 +308,16 @@ public static class RecoveryCli
 
         await session.SaveChangesAsync();
 
-        Serilog.Log.Warning("Auth: Recovery set-email. User={UserName} Old={Old} New={New}",
-            user.UserName, oldEmail, newEmail);
+        securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Realm = realmSlug,
+            Actor = user.Id.ToString(),
+            Status = "succeeded",
+            Reason = $"set-email: UserId={user.Id} Old={LogPiiMasking.MaskEmail(oldEmail)} New={LogPiiMasking.MaskEmail(newEmail)}",
+            Message = $"Recovery set-email. UserId={user.Id} Old={LogPiiMasking.MaskEmail(oldEmail)} New={LogPiiMasking.MaskEmail(newEmail)}",
+        });
 
         Console.WriteLine($"✓ Email updated for {user.UserName}:");
         Console.WriteLine($"  Old: {oldEmail ?? "(none)"}");
@@ -346,8 +368,15 @@ public static class RecoveryCli
         var appUrl = (conf.PublicUrl ?? (env.IsDevelopment() ? "http://localhost:4300" : conf.AppUrl)).TrimEnd('/');
         var url = $"{appUrl}/magic-login?userId={user.Id}&token={Uri.EscapeDataString(token)}";
 
-        Serilog.Log.Warning("Auth: Recovery magic-link generated. User={UserName} ExpiresAt={ExpiresAt}",
-            user.UserName, challenge.ExpiresAt);
+        scopedServices.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Actor = user.Id.ToString(),
+            Status = "succeeded",
+            Reason = $"magic-link: UserId={user.Id} ExpiresAt={challenge.ExpiresAt:O}",
+            Message = $"Recovery magic-link generated. UserId={user.Id} ExpiresAt={challenge.ExpiresAt:O}",
+        });
 
         Console.WriteLine($"✓ Magic link for {user.UserName} (expires in {expirationMinutes} min):");
         Console.WriteLine();
@@ -371,7 +400,16 @@ public static class RecoveryCli
         var timeout = TimeSpan.FromMinutes(10);
 
         Console.WriteLine("Rebuilding Marten projections...");
-        Serilog.Log.Warning("Auth: Recovery rebuild-projections initiated");
+        var securityAudit = services.GetRequiredService<ISecurityAuditLog>();
+        securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Realm = tenantId,
+            Status = "initiated",
+            Reason = "rebuild-projections",
+            Message = "Recovery rebuild-projections initiated",
+        });
 
         // MasterTableTenancy disables Marten's default tenant, so the no-arg
         // overload throws DefaultTenantUsageDisabledException — build the daemon
@@ -386,7 +424,15 @@ public static class RecoveryCli
         await daemon.RebuildProjectionAsync<PermissionRoleProjection>(timeout, CancellationToken.None);
         Console.WriteLine("  OK PermissionRoleProjection (mt_doc_permissionrole)");
 
-        Serilog.Log.Warning("Auth: Recovery rebuild-projections completed");
+        securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Realm = tenantId,
+            Status = "succeeded",
+            Reason = "rebuild-projections",
+            Message = "Recovery rebuild-projections completed",
+        });
         return 0;
     }
 
@@ -441,18 +487,33 @@ public static class RecoveryCli
         var bootstrapper = scopedServices.GetRequiredService<IRealmAdminBootstrapper>();
         var result = await bootstrapper.BootstrapDirectAsync(userName, password, email, firstname, lastname);
 
+        var securityAudit = scopedServices.GetRequiredService<ISecurityAuditLog>();
         if (result.IsError)
         {
-            Serilog.Log.Warning(
-                "Auth: Recovery bootstrap-admin failed. Realm={Realm} UserName={UserName} Code={Code} Detail={Detail}",
-                realmSlug, userName, result.FirstError.Code, result.FirstError.Description);
+            securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.RecoveryCliInvoked,
+                Level = "Warning",
+                Realm = realmSlug,
+                Actor = LogPiiMasking.MaskUsername(userName),
+                Status = "failed",
+                Reason = $"bootstrap-admin: UserName={LogPiiMasking.MaskUsername(userName)} Code={result.FirstError.Code} Detail={result.FirstError.Description}",
+                Message = $"Recovery bootstrap-admin failed. Realm={realmSlug} UserName={LogPiiMasking.MaskUsername(userName)} Code={result.FirstError.Code} Detail={result.FirstError.Description}",
+            });
             return Error($"{result.FirstError.Code}: {result.FirstError.Description}");
         }
 
         var admin = result.Value;
-        Serilog.Log.Warning(
-            "Auth: Recovery bootstrap-admin succeeded. Realm={Realm} UserName={UserName} Mode=Direct",
-            realmSlug, admin.UserName);
+        securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Realm = realmSlug,
+            Actor = admin.UserId.ToString(),
+            Status = "succeeded",
+            Reason = $"bootstrap-admin: UserId={admin.UserId} Mode=Direct",
+            Message = $"Recovery bootstrap-admin succeeded. Realm={realmSlug} UserId={admin.UserId} Mode=Direct",
+        });
 
         Console.WriteLine($"✓ Admin created in realm '{realmSlug}':");
         Console.WriteLine($"  UserName: {admin.UserName}");
@@ -489,9 +550,16 @@ public static class RecoveryCli
             issuedBy: null, // CLI invocation — no authenticated CP-admin
             realm);
 
-        Serilog.Log.Warning(
-            "Auth: Recovery bootstrap-admin issued invite. Realm={Realm} UserName={UserName} Email={Email} ExpiresAt={ExpiresAt}",
-            realmSlug, userName, email, invite.ExpiresAt);
+        scopedServices.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Realm = realmSlug,
+            Actor = LogPiiMasking.MaskUsername(userName),
+            Status = "initiated",
+            Reason = $"bootstrap-admin invite: UserName={LogPiiMasking.MaskUsername(userName)} Email={LogPiiMasking.MaskEmail(email)} ExpiresAt={invite.ExpiresAt:O}",
+            Message = $"Recovery bootstrap-admin issued invite. Realm={realmSlug} UserName={LogPiiMasking.MaskUsername(userName)} Email={LogPiiMasking.MaskEmail(email)} ExpiresAt={invite.ExpiresAt:O}",
+        });
 
         Console.WriteLine($"✓ Bootstrap-invite issued for realm '{realmSlug}':");
         Console.WriteLine($"  UserName:  {invite.UserName}");
@@ -643,9 +711,15 @@ public static class RecoveryCli
 
         await session.SaveChangesAsync();
 
-        Serilog.Log.Warning(
-            "Auth: Recovery migrate-cc-credentials completed. Realm={Realm} Migrated={Migrated} SaCreated={SaCreated} SaReused={SaReused}",
-            realmSlug, migrated, saCreated, saReused);
+        scopedServices.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Realm = realmSlug,
+            Status = "succeeded",
+            Reason = $"migrate-cc-credentials: Migrated={migrated} SaCreated={saCreated} SaReused={saReused}",
+            Message = $"Recovery migrate-cc-credentials completed. Realm={realmSlug} Migrated={migrated} SaCreated={saCreated} SaReused={saReused}",
+        });
 
         Console.WriteLine();
         Console.WriteLine($"✓ Done. Migrated={migrated}  ServiceAccounts created={saCreated}  re-used={saReused}");
@@ -719,7 +793,15 @@ public static class RecoveryCli
 
         Console.WriteLine($"✓ Added '{domain}' to realm '{slug}'. Now: [{string.Join(", ", realm.Domains)}]");
         PrintRestartHint();
-        Serilog.Log.Warning("Auth: Recovery realm-add-domain — Realm={Slug} Domain={Domain}", slug, domain);
+        services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Realm = slug,
+            Status = "succeeded",
+            Reason = $"realm-add-domain: Realm={slug} Domain={domain}",
+            Message = $"Recovery realm-add-domain — Realm={slug} Domain={domain}",
+        });
         return 0;
     }
 
@@ -751,7 +833,15 @@ public static class RecoveryCli
 
         Console.WriteLine($"✓ Removed '{domain}' from realm '{slug}'. Now: [{string.Join(", ", remaining)}]");
         PrintRestartHint();
-        Serilog.Log.Warning("Auth: Recovery realm-remove-domain — Realm={Slug} Domain={Domain}", slug, domain);
+        services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Realm = slug,
+            Status = "succeeded",
+            Reason = $"realm-remove-domain: Realm={slug} Domain={domain}",
+            Message = $"Recovery realm-remove-domain — Realm={slug} Domain={domain}",
+        });
         return 0;
     }
 
@@ -793,7 +883,15 @@ public static class RecoveryCli
                 if (result.IsError)
                     return Error($"{result.FirstError.Code}: {result.FirstError.Description}");
 
-                Serilog.Log.Warning("Auth: Recovery control-plane transfer. Target={Slug}", targetSlug);
+                services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+                {
+                    EventType = AuditEvents.RecoveryCliInvoked,
+                    Level = "Warning",
+                    Realm = targetSlug,
+                    Status = "succeeded",
+                    Reason = $"control-plane transfer: Target={targetSlug}",
+                    Message = $"Recovery control-plane transfer. Target={targetSlug}",
+                });
                 Console.WriteLine($"✓ Control plane transferred to realm '{targetSlug}'.");
                 PrintRestartHint();
                 return 0;
@@ -826,7 +924,15 @@ public static class RecoveryCli
         if (result.IsError)
             return Error($"{result.FirstError.Code}: {result.FirstError.Description}");
 
-        Serilog.Log.Warning("Auth: Recovery adopt-tenant. Slug={Slug}", slug);
+        services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Realm = slug,
+            Status = "succeeded",
+            Reason = $"adopt-tenant: Slug={slug}",
+            Message = $"Recovery adopt-tenant. Slug={slug}",
+        });
         Console.WriteLine($"✓ Adopted existing database as realm '{slug}'.");
         Console.WriteLine($"  Domains: {string.Join(", ", result.Value.Domains)}");
         PrintRestartHint();
@@ -860,7 +966,15 @@ public static class RecoveryCli
         var creds = await keyStore.RotateAsync(tenantId);
         var kid = creds.Key.KeyId;
 
-        Serilog.Log.Warning("Auth: Recovery rotate-signing-key. Realm={Realm} NewKid={Kid}", tenantId, kid);
+        services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Realm = tenantId,
+            Status = "rotated",
+            Reason = $"rotate-signing-key: Realm={tenantId} NewKid={kid}",
+            Message = $"Recovery rotate-signing-key. Realm={tenantId} NewKid={kid}",
+        });
         Console.WriteLine($"  OK new active kid: {kid}");
         Console.WriteLine("  Previous key retired into the 30-day verification overlap window.");
         // The CLI is a separate process — it only mutates its OWN in-memory key

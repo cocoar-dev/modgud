@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.ResponseCompression;
 using Serilog;
+using Serilog.Sinks.OpenTelemetry;
 using Serilog.Sinks.SystemConsole.Themes;
 using BuildingBlocks.EventDispatcher;
 using Fido2NetLib;
@@ -23,7 +24,6 @@ using Modgud.Authentication.Api.Account;
 using Modgud.Authentication.Api.Account.Services;
 using Modgud.Api.Features.Admin;
 using Modgud.Api.Features.Admin.OAuth;
-using Modgud.Authentication.AuthLog;
 using Modgud.Authentication.Api.Admin;
 using Modgud.Authentication.Api.Admin.LoginProviders;
 using Modgud.Authentication.Api.ExternalAuth;
@@ -853,10 +853,15 @@ try
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
     });
 
-    // Auth log: Serilog sink → Channel → BackgroundService → Marten (7-day retention)
-    var authLogSink = new AuthLogSink();
-    builder.Services.AddSingleton(authLogSink);
-    builder.Services.AddHostedService<AuthLogPersistenceService>();
+    // Streamless security/ops audit store (logging/audit redesign Track A, Phase 3).
+    // Typed best-effort sink (bounded channel) + background writer to the system DB.
+    // Replaced the legacy "Auth:"-message-prefix Serilog sink (AuthLogSink +
+    // AuthLogPersistenceService, now deleted). The realm is captured from
+    // TenantContext.Current at emit; the retention prune is a Quartz job (below).
+    builder.Services.AddSingleton<Modgud.Infrastructure.Audit.SecurityAuditLog>();
+    builder.Services.AddSingleton<Modgud.Infrastructure.Audit.ISecurityAuditLog>(
+        sp => sp.GetRequiredService<Modgud.Infrastructure.Audit.SecurityAuditLog>());
+    builder.Services.AddHostedService<Modgud.Infrastructure.Audit.SecurityAuditWriter>();
 
     // Quartz-based scheduling framework + the system jobs we host. The DCR
     // garbage collector was a hand-rolled BackgroundService before Phase 1A;
@@ -889,6 +894,11 @@ try
         name: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Description);
+    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob>(
+        key: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Description);
 
     // Inbox — per-recipient notifications with SignalR live push. Both
     // services are scoped (tenant-aware IDocumentSession). The InboxHub
@@ -903,6 +913,16 @@ try
     // completions notify the triggering user.
     builder.Services.AddScoped<Modgud.Infrastructure.Scheduling.IJobRunNotifier,
         Modgud.Api.Features.Inbox.JobRunNotifier>();
+
+    // Phase 5 — in-app per-realm live error feed (§B.3). One process-local
+    // buffer with an independently-capped ring PER realm (not a global ring —
+    // a noisy realm must not be able to evict a quiet realm's errors). The
+    // hub (ObservabilityHub.LogsSubscribe) and the /observability/errors
+    // endpoint read this same singleton; the ErrorFeedSink below feeds it.
+    var errorFeed = observabilitySettings.ErrorFeed;
+    var errorFeedBuffer = new Modgud.Infrastructure.Observability.RealmErrorBuffer(
+        errorFeed.CapacityPerRealm);
+    builder.Services.AddSingleton(errorFeedBuffer);
 
     builder.Services.AddSerilog(logConfig =>
     {
@@ -930,13 +950,10 @@ try
         logConfig.MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning);
         logConfig.MinimumLevel.Override("Microsoft.Hosting.Lifetime", Serilog.Events.LogEventLevel.Information);
 
-        // Stamp every event with the ambient realm slug so the AuthLogSink can
-        // attribute each persisted "Auth:" entry to its realm (the sink runs
-        // tenant-less in a BackgroundService, so it must be captured at emit time).
+        // Stamp every event with the ambient realm slug (RealmLogEnricher). Kept
+        // after the "Auth:" sink was retired: it is how operational logs carry their
+        // realm tag for Console/File and for the OTLP log export (Phase 4) below.
         logConfig.Enrich.With(new Modgud.Authentication.AuthLog.RealmLogEnricher());
-
-        // Auth log sink — captures ALL "Auth:" events (including Info)
-        logConfig.WriteTo.Sink(authLogSink);
 
         // Console + File
         logConfig.WriteTo.Console(theme: AnsiConsoleTheme.Code);
@@ -947,6 +964,56 @@ try
             path = Path.Combine(path, "log.log");
             logConfig.WriteTo.File(path, rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 31);
+        }
+
+        // Phase 4 — OTLP log export. Off by default; shares the metrics/tracing
+        // OTLP gate + endpoint (Observability__Otlp__Enabled / OtlpSettings), so a
+        // deployment without a collector/OpenObserve is unaffected (§B.0). Wired as
+        // a Serilog sink rather than OTel .WithLogs(): AddSerilog runs with
+        // writeToProviders:false, so an OTel ILoggerProvider would never see the
+        // Serilog enrichers — in particular the RealmLogEnricher tag that §B.1
+        // requires. The sink emits every Serilog property (incl. Realm) as a
+        // log-record attribute and reads Activity.Current for trace/span
+        // correlation automatically. The redaction GUARANTEE lives at the collector,
+        // not here; LogPiiMasking stays as belt. Endpoint is a bare base host:port
+        // for both protocols — the sink derives the per-signal path itself (and
+        // trims any /v1/logs an operator appends).
+        // See dev-docs/future-features/logging-audit-redesign.md §B.1-B.2.
+        if (observabilitySettings.Otlp.Enabled)
+        {
+            var otlp = observabilitySettings.Otlp;
+            logConfig.WriteTo.OpenTelemetry(o =>
+            {
+                o.Endpoint = otlp.Endpoint;
+                o.Protocol = otlp.Protocol.Equals("HttpProtobuf", StringComparison.OrdinalIgnoreCase)
+                    ? OtlpProtocol.HttpProtobuf
+                    : OtlpProtocol.Grpc;
+                o.ResourceAttributes = new Dictionary<string, object>
+                {
+                    ["service.name"] = observabilitySettings.ServiceName,
+                    ["service.version"] = System.Reflection.Assembly.GetExecutingAssembly()
+                        .GetName().Version?.ToString() ?? "unknown",
+                    ["service.instance.id"] = Environment.MachineName,
+                };
+            });
+        }
+
+        // Phase 5 — in-app per-realm error feed sink (§B.3). Local-only, behind
+        // its own flag (default on; no external dependency). Captures Error+
+        // events from Modgud.* loggers (configurable level/prefix — Open
+        // Decision #7) into the per-realm RealmErrorBuffer. Sits AFTER the
+        // RealmLogEnricher above, so each entry carries its realm tag. The
+        // collector redaction does NOT cover this in-app path — the call-site
+        // PII belt + per-realm read scoping are the controls (mirrors the
+        // streamless security store).
+        if (errorFeed.Enabled)
+        {
+            var minimumLevel =
+                Enum.TryParse<Serilog.Events.LogEventLevel>(errorFeed.MinimumLevel, ignoreCase: true, out var lvl)
+                    ? lvl
+                    : Serilog.Events.LogEventLevel.Error;
+            logConfig.WriteTo.Sink(new Modgud.Authentication.AuthLog.ErrorFeedSink(
+                errorFeedBuffer, minimumLevel, errorFeed.SourcePrefix));
         }
     });
 
@@ -1048,6 +1115,7 @@ try
 
     app.MapStatusEndpoints();
     app.MapAuthLogEndpoints("api");
+    app.MapAuditEndpoints("api");
     app.MapAppSettingsEndpoints("api");
     app.MapProjectionEndpoints("api");
     app.MapRealmsEndpoints("api");
@@ -1300,7 +1368,7 @@ try
                     .Where(g => !g.IsDeleted).Take(1).ToListAsync();
                 await session.Query<Modgud.Authentication.Domain.LoginProviders.LoginProvider>()
                     .Where(p => !p.IsDeleted).Take(1).ToListAsync();
-                await session.Query<Modgud.Authentication.AuthLog.AuthLogDocument>()
+                await session.Query<Modgud.Infrastructure.Audit.SecurityAuditEntry>()
                     .OrderByDescending(l => l.Timestamp).Take(1).ToListAsync();
                 await session.Query<Modgud.Authentication.Domain.UserChangeRequest>()
                     .Take(1).ToListAsync();
@@ -1359,6 +1427,13 @@ try
     {
         var exitCode = await Modgud.Authentication.Api.Admin.RecoveryCli.RunAsync(
             app.Services, cliArgs[1..], conf, app.Environment);
+
+        // This path never starts the host, so the SecurityAuditWriter background
+        // drain never runs — flush the recovery CLI's enqueued security-audit
+        // records to the system DB synchronously before the process exits, or the
+        // break-glass forensic trail would be lost.
+        await app.Services.GetRequiredService<Modgud.Infrastructure.Audit.SecurityAuditLog>()
+            .FlushAsync(app.Services.GetRequiredService<Marten.IDocumentStore>());
 
         if (fromEnv)
         {
@@ -1495,7 +1570,7 @@ static void EnsureCertificateExists(
     GenerateSelfSignedPfx(path, subject, keyUsage, validYears: 2, keySize: 2048);
 
     Log.Warning(
-        "Auth: auto-generated self-signed {Purpose} certificate at {Path}. " +
+        "auto-generated self-signed {Purpose} certificate at {Path}. " +
         "This is fine for self-hosted Beta; replace with a managed cert " +
         "(Key Vault / Secrets Manager / cocoar-secrets generate-cert) before " +
         "going to public production.",

@@ -4,6 +4,7 @@ using Modgud.Authentication.Api.ExternalAuth.Saml;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Identity.LoginProviders.Saml;
 using Modgud.Authentication.Identity.LoginProviders.Saml.Flavors;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Tests.Unit.ExternalAuth;
@@ -28,7 +29,15 @@ public class DynamicSamlSchemeManagerTests
             }),
             new SamlMetadataFetcher(new NoNetworkHttpClientFactory(), NullLogger<SamlMetadataFetcher>.Instance),
             TimeProvider.System,
+            new NoOpSecurityAuditLog(),
             NullLogger<DynamicSamlSchemeManager>.Instance);
+
+    /// <summary>No-op audit sink — these are pure-construction tests; the manager's
+    /// metadata-refresh audit record is exercised by the integration suite.</summary>
+    private sealed class NoOpSecurityAuditLog : ISecurityAuditLog
+    {
+        public void Record(SecurityAuditRecord record) { }
+    }
 
     /// <summary>
     /// Test double — returns an HttpClient that fails every request. Sufficient
