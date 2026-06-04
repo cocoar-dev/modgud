@@ -1,21 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, watch, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
-import { useUI } from '@/composables/useUI'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { CoarButton } from '@cocoar/vue-ui'
 
-const { t, language } = useI18n()
+// Embedded as the "Security" tab of AdminLogsView — the header/sub-nav is owned
+// by that wrapper, so this view is pure grid content.
+const { t } = useI18n()
 const http = useHttpClient('/api/admin/auth-log')
-
-const ui = useUI()
-watch(language, () => ui.set((ctx) => {
-  ctx.header.title = t('nav.administration', {}, 'Administration')
-  ctx.header.subTitle = t('admin.securityLog.title', {}, 'Security')
-  ctx.header.icon = 'shield-alert'
-  ctx.content.container = false
-}), { immediate: true })
 
 // Streamless security/ops store (logging/audit redesign Track A — the half with no
 // aggregate stream): unknown-actor login attempts, probes, rate-limits, policy

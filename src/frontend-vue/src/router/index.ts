@@ -275,12 +275,19 @@ const routes = [
               },
             },
             {
+              // Combined logs home — Audit + Security as tabs.
+              path: 'logs',
+              component: () => import('@/views/admin/AdminLogsView.vue'),
+            },
+            // Back-compat: the two surfaces used to be separate routes. Keep the
+            // links working by redirecting onto the matching tab.
+            {
               path: 'auth-log',
-              component: () => import('@/views/admin/AuthLogView.vue'),
+              redirect: { path: '/admin/logs', query: { tab: 'security' } },
             },
             {
               path: 'audit',
-              component: () => import('@/views/admin/AuditLogView.vue'),
+              redirect: { path: '/admin/logs', query: { tab: 'audit' } },
             },
             {
               path: 'change-requests',
