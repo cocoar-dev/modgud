@@ -114,6 +114,7 @@ export default withMermaid(defineConfig({
           { text: 'Overview', link: '/architecture/' },
           { text: 'Authentication slice', link: '/architecture/authentication' },
           { text: 'Authorization slice', link: '/architecture/authorization' },
+          { text: 'Persistence model (ES vs. flat docs)', link: '/architecture/persistence-model' },
         ],
       },
       {
