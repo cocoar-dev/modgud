@@ -67,12 +67,13 @@ public static class RecoveryCli
             "list" => await ListUsersAsync(session, permissions),
             "reset-2fa" => await Reset2FaAsync(session, userManager, args, securityAudit, realmSlug),
             "set-email" => await SetEmailAsync(session, userManager, args, securityAudit, realmSlug),
-            "magic-link" => await MagicLinkAsync(session, scope.ServiceProvider, args, conf, env),
+            "magic-link" => await MagicLinkAsync(session, scope.ServiceProvider, args, env, realmSlug),
             "rebuild-projections" => await RebuildProjectionsAsync(scope.ServiceProvider, realmSlug),
             "bootstrap-admin" => await BootstrapAdminAsync(scope.ServiceProvider, args, realmSlug),
             "migrate-cc-credentials" => await MigrateClientCredentialsAsync(scope.ServiceProvider, args, realmSlug),
             "realm-add-domain" => await RealmAddDomainAsync(scope.ServiceProvider, args),
             "realm-remove-domain" => await RealmRemoveDomainAsync(scope.ServiceProvider, args),
+            "realm-set-primary-domain" => await RealmSetPrimaryDomainAsync(scope.ServiceProvider, args),
             "realm-list" => await RealmListAsync(scope.ServiceProvider),
             "control-plane" => await ControlPlaneAsync(scope.ServiceProvider, args),
             "adopt-tenant" => await AdoptTenantAsync(scope.ServiceProvider, args),
@@ -129,7 +130,16 @@ public static class RecoveryCli
                                              match at request time.
               realm-remove-domain            Remove a domain from an active realm's Domains list.
                   --slug <slug>              Required.
-                  --domain <hostname>        Required. No-op if not present.
+                  --domain <hostname>        Required. No-op if not present. Cannot remove the
+                                             realm's PrimaryDomain or its last remaining domain.
+              realm-set-primary-domain       Set the realm's canonical public host (PrimaryDomain).
+                  --slug <slug>              Required.
+                  --domain <hostname>        Required. Must already be in the realm's Domains.
+                                             The PrimaryDomain is the host used for ALL outbound
+                                             links (magic-link, password-reset, email-verify,
+                                             bootstrap-invite, login-provider callbacks) AND as the
+                                             WebAuthn RP ID. ⚠ Changing it INVALIDATES every existing
+                                             passkey registered for the realm.
               control-plane list             Show which realm currently holds the control-plane role.
               control-plane transfer <slug>  Move the control-plane role to another realm. Break-glass
                                              for when the control-plane realm has no usable admin —
@@ -331,8 +341,8 @@ public static class RecoveryCli
         IDocumentSession session,
         IServiceProvider scopedServices,
         string[] args,
-        IServerConfiguration conf,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        string realmSlug)
     {
         if (args.Length < 2) return Error("Usage: recover magic-link <username>");
         var userName = args[1].Trim().ToLowerInvariant();
@@ -341,6 +351,15 @@ public static class RecoveryCli
         var user = await userManager.FindByNameAsync(userName);
         if (user is null) return Error($"User not found: {userName}");
         if (!user.IsActive) return Error($"User is inactive: {userName}");
+
+        // The link host is the realm's canonical public domain — the Realm
+        // doc lives in the global store; the --realm flag (default "system")
+        // names which realm we're acting in.
+        var globalStore = scopedServices.GetRequiredService<IGlobalStore>();
+        await using var globalSession = globalStore.QuerySession();
+        var realm = await globalSession.Query<Realm>()
+            .FirstOrDefaultAsync(r => r.Slug == realmSlug);
+        if (realm is null) return Error($"Realm '{realmSlug}' not found.");
 
         // Clear old challenges + create a fresh one (same pattern as AdminMagicLinkEndpoints).
         var existing = await session.Query<MagicLinkChallenge>()
@@ -365,13 +384,14 @@ public static class RecoveryCli
         session.Store(challenge);
         await session.SaveChangesAsync();
 
-        var appUrl = (conf.PublicUrl ?? (env.IsDevelopment() ? "http://localhost:4300" : conf.AppUrl)).TrimEnd('/');
+        var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
         var url = $"{appUrl}/magic-login?userId={user.Id}&token={Uri.EscapeDataString(token)}";
 
         scopedServices.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Level = "Warning",
+            Realm = realmSlug,
             Actor = user.Id.ToString(),
             Status = "succeeded",
             Reason = $"magic-link: UserId={user.Id} ExpiresAt={challenge.ExpiresAt:O}",
@@ -757,12 +777,12 @@ public static class RecoveryCli
             .OrderBy(r => r.Slug)
             .ToListAsync();
 
-        Console.WriteLine($"{"Slug",-20} {"DisplayName",-30} {"Domains"}");
-        Console.WriteLine(new string('─', 90));
+        Console.WriteLine($"{"Slug",-20} {"DisplayName",-30} {"PrimaryDomain",-25} {"Domains"}");
+        Console.WriteLine(new string('─', 115));
         foreach (var r in realms)
         {
             var cpMarker = r.IsControlPlane ? " [CP]" : "";
-            Console.WriteLine($"{r.Slug + cpMarker,-20} {r.DisplayName,-30} {string.Join(", ", r.Domains)}");
+            Console.WriteLine($"{r.Slug + cpMarker,-20} {r.DisplayName,-30} {r.PrimaryDomain,-25} {string.Join(", ", r.Domains)}");
         }
         return 0;
     }
@@ -817,6 +837,13 @@ public static class RecoveryCli
         var realm = await session.Query<Realm>().FirstOrDefaultAsync(r => r.Slug == slug);
         if (realm is null) return Error($"Realm '{slug}' not found.");
 
+        // Guard: never strip a realm down to zero domains, and never remove the
+        // canonical PrimaryDomain out from under the outbound-link + WebAuthn-RP
+        // invariant — the operator must re-point the primary first
+        // (realm-set-primary-domain) before removing the old one.
+        if (string.Equals(realm.PrimaryDomain, domain, StringComparison.OrdinalIgnoreCase))
+            return Error($"Cannot remove '{domain}' — it is the realm's PrimaryDomain. Set a different primary first (realm-set-primary-domain).");
+
         var remaining = realm.Domains
             .Where(d => !string.Equals(d, domain, StringComparison.OrdinalIgnoreCase))
             .ToArray();
@@ -825,6 +852,8 @@ public static class RecoveryCli
             Console.WriteLine($"Realm '{slug}' did not have domain '{domain}'. No change.");
             return 0;
         }
+        if (remaining.Length == 0)
+            return Error($"Cannot remove '{domain}' — it is the realm's last domain. A realm must keep at least one.");
 
         realm.Domains = remaining;
         realm.UpdatedAt = DateTimeOffset.UtcNow;
@@ -841,6 +870,63 @@ public static class RecoveryCli
             Status = "succeeded",
             Reason = $"realm-remove-domain: Realm={slug} Domain={domain}",
             Message = $"Recovery realm-remove-domain — Realm={slug} Domain={domain}",
+        });
+        return 0;
+    }
+
+    // ── realm-set-primary-domain ────────────────────────────────────────
+    //
+    // Re-point a realm's canonical public host. The new primary must already
+    // be in the realm's Domains (add it first with realm-add-domain). The
+    // PrimaryDomain is the WebAuthn RP ID, so changing it invalidates every
+    // existing passkey in the realm — the audit record and the printed warning
+    // call this out.
+
+    private static async Task<int> RealmSetPrimaryDomainAsync(IServiceProvider services, string[] args)
+    {
+        var slug = ParseFlag(args, "--slug");
+        var domain = ParseFlag(args, "--domain");
+        if (string.IsNullOrWhiteSpace(slug) || string.IsNullOrWhiteSpace(domain))
+            return Error("realm-set-primary-domain requires --slug <slug> and --domain <hostname>.");
+
+        var globalStore = services.GetRequiredService<Modgud.Infrastructure.Persistence.Tenancy.IGlobalStore>();
+        await using var session = globalStore.LightweightSession();
+        var realm = await session.Query<Realm>().FirstOrDefaultAsync(r => r.Slug == slug);
+        if (realm is null) return Error($"Realm '{slug}' not found.");
+
+        // The primary must be one of the realm's domains — the invariant the
+        // whole feature rests on. No silent add: name it via realm-add-domain
+        // first if it isn't there yet.
+        if (!realm.Domains.Any(d => string.Equals(d, domain, StringComparison.OrdinalIgnoreCase)))
+            return Error($"Domain '{domain}' is not in realm '{slug}' (Domains: [{string.Join(", ", realm.Domains)}]). Add it first with realm-add-domain.");
+
+        if (string.Equals(realm.PrimaryDomain, domain, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"Realm '{slug}' already has PrimaryDomain '{domain}'. No change.");
+            return 0;
+        }
+
+        var oldPrimary = realm.PrimaryDomain;
+        realm.PrimaryDomain = domain;
+        realm.UpdatedAt = DateTimeOffset.UtcNow;
+        session.Store(realm);
+        await session.SaveChangesAsync();
+
+        Console.WriteLine($"✓ Set PrimaryDomain for realm '{slug}': '{oldPrimary}' → '{domain}'.");
+        Console.WriteLine();
+        Console.WriteLine("⚠ The PrimaryDomain is the WebAuthn relying-party ID. Changing it");
+        Console.WriteLine("  INVALIDATES every existing passkey registered for this realm —");
+        Console.WriteLine("  affected users must re-register their passkeys (other login");
+        Console.WriteLine("  methods are unaffected).");
+        PrintRestartHint();
+        services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Level = "Warning",
+            Realm = slug,
+            Status = "succeeded",
+            Reason = $"realm-set-primary-domain: Realm={slug} Old={oldPrimary} New={domain} (passkeys invalidated)",
+            Message = $"Recovery realm-set-primary-domain — Realm={slug} Old={oldPrimary} New={domain}. WebAuthn RP changed; existing passkeys invalidated.",
         });
         return 0;
     }

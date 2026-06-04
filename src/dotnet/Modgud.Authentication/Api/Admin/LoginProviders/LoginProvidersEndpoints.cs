@@ -3,6 +3,7 @@ using Modgud.Domain.Common;
 using BuildingBlocks.Helper;
 using ErrorOr;
 using Marten;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authentication;
@@ -11,6 +12,7 @@ using Modgud.Authentication.Api.Admin.LoginProviders.Commands;
 using Modgud.Application.DTOs.LoginProviders;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Identity.LoginProviders;
+using Modgud.Infrastructure.Realms;
 using Wolverine;
 
 namespace Modgud.Authentication.Api.Admin.LoginProviders;
@@ -74,14 +76,17 @@ public static class LoginProvidersEndpoints
         // List all non-deleted providers for the admin grid.
         group.MapGet("",
             async ([FromServices] IQuerySession session,
-                   [FromServices] IServerConfiguration conf,
+                   [FromServices] IRealmProvisioningService realmSvc,
+                   [FromServices] IWebHostEnvironment env,
+                   HttpContext http,
                    CancellationToken ct) =>
             {
                 var items = await session.Query<LoginProvider>()
                     .Where(c => !c.IsDeleted)
                     .OrderBy(c => c.DisplayName)
                     .ToListAsync(ct);
-                var publicUrl = ResolvePublicUrl(conf);
+                var publicUrl = await ResolveRealmBaseUrlAsync(http, realmSvc, env, ct);
+                if (publicUrl is null) return RealmUnresolved();
                 return Results.Ok(items.Select(c => ToDto(c, publicUrl)).ToArray());
             })
             .RequiresPermission("login-provider:read");
@@ -90,13 +95,15 @@ public static class LoginProvidersEndpoints
         group.MapGet("{id}",
             async (ShortGuid id,
                    [FromServices] IQuerySession session,
-                   [FromServices] IServerConfiguration conf,
+                   [FromServices] IRealmProvisioningService realmSvc,
+                   [FromServices] IWebHostEnvironment env,
+                   HttpContext http,
                    CancellationToken ct) =>
             {
                 var c = await session.LoadAsync<LoginProvider>(id.Guid, ct);
-                return c is null || c.IsDeleted
-                    ? Results.NotFound()
-                    : Results.Ok(ToDto(c, ResolvePublicUrl(conf)));
+                if (c is null || c.IsDeleted) return Results.NotFound();
+                var publicUrl = await ResolveRealmBaseUrlAsync(http, realmSvc, env, ct);
+                return publicUrl is null ? RealmUnresolved() : Results.Ok(ToDto(c, publicUrl));
             })
             .RequiresPermission("login-provider:read");
 
@@ -104,9 +111,13 @@ public static class LoginProvidersEndpoints
         group.MapPost("",
             async ([FromBody] CreateLoginProviderRequest request,
                    [FromServices] IMessageBus bus,
-                   [FromServices] IServerConfiguration conf,
+                   [FromServices] IRealmProvisioningService realmSvc,
+                   [FromServices] IWebHostEnvironment env,
+                   HttpContext http,
                    CancellationToken ct) =>
             {
+                var publicUrl = await ResolveRealmBaseUrlAsync(http, realmSvc, env, ct);
+                if (publicUrl is null) return RealmUnresolved();
                 JsonDocument? flavorData = request.FlavorData.HasValue
                     ? JsonDocument.Parse(request.FlavorData.Value.GetRawText())
                     : null;
@@ -133,7 +144,7 @@ public static class LoginProvidersEndpoints
                     AuthoritativeForProfile: request.AuthoritativeForProfile);
                 var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command, ct);
                 return result.Match<IResult>(
-                    v => Results.Created($"/api/admin/login-providers/{v.Id:N}", ToDto(v, ResolvePublicUrl(conf))),
+                    v => Results.Created($"/api/admin/login-providers/{v.Id:N}", ToDto(v, publicUrl)),
                     ErrorResponse);
             })
             .RequiresPermission("login-provider:write");
@@ -143,9 +154,13 @@ public static class LoginProvidersEndpoints
             async (ShortGuid id,
                    [FromBody] UpdateLoginProviderRequest request,
                    [FromServices] IMessageBus bus,
-                   [FromServices] IServerConfiguration conf,
+                   [FromServices] IRealmProvisioningService realmSvc,
+                   [FromServices] IWebHostEnvironment env,
+                   HttpContext http,
                    CancellationToken ct) =>
             {
+                var publicUrl = await ResolveRealmBaseUrlAsync(http, realmSvc, env, ct);
+                if (publicUrl is null) return RealmUnresolved();
                 Optional<JsonDocument> flavorData = request.FlavorData.HasValue
                     ? new Optional<JsonDocument>(JsonDocument.Parse(request.FlavorData.Value.GetRawText()))
                     : Optional<JsonDocument>.None;
@@ -170,7 +185,7 @@ public static class LoginProvidersEndpoints
                     AuthoritativeForProfile: request.AuthoritativeForProfile);
                 var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command, ct);
                 return result.Match<IResult>(
-                    v => Results.Ok(ToDto(v, ResolvePublicUrl(conf))),
+                    v => Results.Ok(ToDto(v, publicUrl)),
                     ErrorResponse);
             })
             .RequiresPermission("login-provider:write");
@@ -203,8 +218,25 @@ public static class LoginProvidersEndpoints
             .RequiresPermission("login-provider:write");
     }
 
-    private static string ResolvePublicUrl(IServerConfiguration conf)
-        => conf.PublicUrl ?? conf.AppUrl ?? "http://localhost:8081";
+    /// <summary>
+    /// Resolves the public base URL the OIDC <c>redirect_uri</c> / SAML ACS +
+    /// SP-metadata URLs are built against — the current realm's primary
+    /// domain. Returns <c>null</c> when the realm can't be resolved (the
+    /// caller surfaces a 500 rather than emitting a wrong-host callback that
+    /// would silently break federation).
+    /// </summary>
+    private static async Task<string?> ResolveRealmBaseUrlAsync(
+        HttpContext http,
+        IRealmProvisioningService realmSvc,
+        IWebHostEnvironment env,
+        CancellationToken ct)
+    {
+        var realm = await http.ResolveCurrentRealmAsync(realmSvc, ct);
+        return realm is null ? null : RealmPublicUrl.RealmPublicBaseUrl(realm, env);
+    }
+
+    private static IResult RealmUnresolved()
+        => Results.Json(new { Message = "Could not resolve the current realm." }, statusCode: 500);
 
     private static LoginProviderDto ToDto(LoginProvider c, string publicUrl) => new()
     {

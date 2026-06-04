@@ -56,6 +56,7 @@ public class ControlPlaneSeparationTests : IntegrationTestBase
                 Slug = slug,
                 DisplayName = "Acme",
                 Domains = [host],
+                PrimaryDomain = host,
                 // IsControlPlane is a stored flag; a tenant realm is never the
                 // control plane (defaults false, set explicitly for clarity).
                 IsControlPlane = false,

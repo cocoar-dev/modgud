@@ -16,12 +16,6 @@ public class StartUpConfiguration : IServerConfiguration
     /// </summary>
     public string AppUrl { get; set; } = "http://0.0.0.0:80";
 
-    /// <summary>
-    /// Public-facing URL (used in email links, FIDO2 origins).
-    /// Falls back to AppUrl if not set.
-    /// </summary>
-    public string? PublicUrl { get; set; }
-
     public string? CertPath { get; set; } = null;
 
     public string? CertPassword { get; set; } = null;

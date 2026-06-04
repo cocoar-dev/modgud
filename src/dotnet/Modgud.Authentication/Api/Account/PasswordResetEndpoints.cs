@@ -3,7 +3,9 @@ using System.Web;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.ExtensionMethods;
 using Modgud.Infrastructure.Email;
+using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -23,9 +25,11 @@ public static class PasswordResetEndpoints
             ForgotPasswordRequest request,
             UserManager<ApplicationUser> userManager,
             IEmailService emailService,
-            IServerConfiguration conf,
+            IRealmProvisioningService realmSvc,
             IAuthSettings appSettings,
-            IWebHostEnvironment env) =>
+            IWebHostEnvironment env,
+            HttpContext context,
+            CancellationToken ct) =>
         {
             if (appSettings.AuthenticationMinimumLevel >= 2)
                 return Results.Json(new { Message = "Password operations are disabled" }, statusCode: 403);
@@ -34,18 +38,23 @@ public static class PasswordResetEndpoints
             var user = await userManager.FindByNameAsync(request.UserName)
                     ?? await userManager.FindByEmailAsync(request.UserName);
 
+            // Resolve the realm whose primary domain hosts the reset link. A
+            // missing realm is exotic (RealmMiddleware would have 404'd) — fall
+            // through to the constant generic response to keep enumeration silent.
+            var realm = await context.ResolveCurrentRealmAsync(realmSvc, ct);
+
             // Gate on EmailConfirmed: sending a reset link to an unverified
             // address would route the credential-reset path to a mailbox we
             // haven't established the user controls. Generic response holds
             // either way to keep enumeration silent.
-            if (user is not null && !string.IsNullOrEmpty(user.Email) && user.EmailConfirmed)
+            if (realm is not null && user is not null && !string.IsNullOrEmpty(user.Email) && user.EmailConfirmed)
             {
                 var token = await userManager.GeneratePasswordResetTokenAsync(user);
                 var encodedToken = HttpUtility.UrlEncode(token);
                 var userId = user.Id.ToString();
 
                 // Build reset URL — Vue frontend handles /reset-password route
-                var appUrl = (conf.PublicUrl ?? (env.IsDevelopment() ? "http://localhost:4300" : conf.AppUrl)).TrimEnd('/');
+                var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
                 var resetUrl = $"{appUrl}/reset-password?userId={userId}&token={encodedToken}";
 
                 await emailService.SendTemplatedEmailAsync(

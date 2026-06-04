@@ -5,10 +5,12 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication;
+using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Sessions;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Email;
 using Modgud.Infrastructure.Observability;
+using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -29,10 +31,11 @@ public static class MagicLinkEndpoints
             IDocumentSession session,
             IEmailService emailService,
             IMagicLinkConfiguration config,
-            IServerConfiguration conf,
+            IRealmProvisioningService realmSvc,
             IAuthSettings appSettings,
             IWebHostEnvironment env,
-            HttpContext context) =>
+            HttpContext context,
+            CancellationToken ct) =>
         {
             const string genericMessage = "If your email is registered, you will receive a login link.";
 
@@ -44,6 +47,14 @@ public static class MagicLinkEndpoints
             }
 
             if (string.IsNullOrWhiteSpace(request.Email))
+            {
+                await AntiTimingDelayAsync();
+                return Results.Ok(new { Message = genericMessage });
+            }
+
+            // Resolve the current realm — its primary domain is the link host.
+            var realm = await context.ResolveCurrentRealmAsync(realmSvc, ct);
+            if (realm is null)
             {
                 await AntiTimingDelayAsync();
                 return Results.Ok(new { Message = genericMessage });
@@ -103,7 +114,7 @@ public static class MagicLinkEndpoints
             await session.SaveChangesAsync();
 
             // Build magic link URL — Vue frontend handles /magic-login route
-            var appUrl = (conf.PublicUrl ?? (env.IsDevelopment() ? "http://localhost:4300" : conf.AppUrl)).TrimEnd('/');
+            var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
             var encodedToken = Uri.EscapeDataString(token);
             var magicUrl = $"{appUrl}/magic-login?userId={user.Id}&token={encodedToken}";
 

@@ -140,6 +140,26 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 "InitialAdmin.Email is required and must be a valid address.");
         }
 
+        // Domains are mandatory: a realm with no domain can neither route
+        // requests nor build outbound links / WebAuthn RP IDs. There is no
+        // silent fallback domain anymore — the caller must name at least one.
+        if (dto.Domains is not { Length: > 0 })
+        {
+            return Error.Validation("Realm.DomainRequired",
+                "At least one domain is required.");
+        }
+
+        // The primary domain (canonical public host) must be one of Domains.
+        // When the caller doesn't name one, default to the first domain.
+        var primaryDomain = !string.IsNullOrWhiteSpace(dto.PrimaryDomain)
+            ? dto.PrimaryDomain
+            : dto.Domains[0];
+        if (!dto.Domains.Any(d => string.Equals(d, primaryDomain, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Error.Validation("Realm.PrimaryDomainNotInDomains",
+                $"PrimaryDomain '{primaryDomain}' must be one of the realm's domains.");
+        }
+
         await using var session = _globalStore.LightweightSession();
         var existing = await session.Query<Realm>()
             .FirstOrDefaultAsync(r => r.Slug == dto.Slug, ct);
@@ -205,17 +225,14 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var newTenantDb = await tenancy.FindOrCreateDatabase(dto.Slug);
         await newTenantDb.ApplyAllConfiguredChangesToDatabaseAsync();
 
-        var domains = dto.Domains is { Length: > 0 }
-            ? dto.Domains
-            : [$"{dto.Slug}.localhost"];
-
         var realm = new Realm
         {
             Id = Guid.NewGuid(),
             Slug = dto.Slug,
             DisplayName = dto.DisplayName,
             Description = dto.Description,
-            Domains = domains,
+            Domains = dto.Domains,
+            PrimaryDomain = primaryDomain,
             IsControlPlane = false,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
@@ -278,9 +295,41 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 "Cannot deactivate the Control-Plane realm — the deployment would lose its global administration surface.");
         }
 
+        // When a new domain set is supplied it must be non-empty — a realm
+        // can never end up with zero domains.
+        if (dto.Domains is not null && dto.Domains.Length == 0)
+        {
+            return Error.Validation("Realm.DomainRequired",
+                "At least one domain is required.");
+        }
+
         if (dto.DisplayName is not null) realm.DisplayName = dto.DisplayName;
         if (dto.Description is not null) realm.Description = dto.Description;
         if (dto.Domains is not null) realm.Domains = dto.Domains;
+
+        // The domain set after applying the patch — the basis for the
+        // primary-domain invariant below.
+        var resultingDomains = realm.Domains;
+
+        if (dto.PrimaryDomain is not null)
+        {
+            // Explicit primary change: it must be one of the resulting domains.
+            if (!resultingDomains.Any(d => string.Equals(d, dto.PrimaryDomain, StringComparison.OrdinalIgnoreCase)))
+            {
+                return Error.Validation("Realm.PrimaryDomainNotInDomains",
+                    $"PrimaryDomain '{dto.PrimaryDomain}' must be one of the realm's domains.");
+            }
+            realm.PrimaryDomain = dto.PrimaryDomain;
+        }
+        else if (!resultingDomains.Any(d => string.Equals(d, realm.PrimaryDomain, StringComparison.OrdinalIgnoreCase)))
+        {
+            // The domain set changed and dropped the old primary without a
+            // replacement given — refuse rather than silently re-pointing the
+            // canonical host (and silently invalidating passkeys).
+            return Error.Validation("Realm.PrimaryDomainDropped",
+                $"The new domain set no longer contains the current PrimaryDomain '{realm.PrimaryDomain}'. Provide a new PrimaryDomain that is in the domain set.");
+        }
+
         if (dto.IsActive.HasValue) realm.IsActive = dto.IsActive.Value;
         realm.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -330,6 +379,8 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
 
         if (existing is not null)
         {
+            var dirty = false;
+
             // Adopt the control-plane flag onto the bootstrap realm ONLY when
             // no realm currently holds it. This guard is load-bearing: it makes
             // a TransferControlPlaneAsync durable across reboots — without it
@@ -341,32 +392,67 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 && !await session.Query<Realm>().AnyAsync(r => r.IsControlPlane, ct))
             {
                 existing.IsControlPlane = true;
+                dirty = true;
+            }
+
+            if (dirty)
+            {
                 existing.UpdatedAt = DateTimeOffset.UtcNow;
                 session.Store(existing);
                 await session.SaveChangesAsync(ct);
             }
-            return;
+        }
+        else
+        {
+            var systemRealm = new Realm
+            {
+                Id = Guid.Parse("00000000-0000-0000-0000-000000000001"),
+                Slug = TenantConstants.SystemTenantId,
+                DisplayName = "System",
+                Description = "System realm for global administration",
+                // Include localhost variants so dev boots work without hosts-file entries.
+                // Production deploys must add their public hostname via the Recovery CLI:
+                //   recover realm-add-domain --slug system --domain auth.example.com
+                Domains = ["system.localhost", "localhost", "127.0.0.1"],
+                // Canonical public host for the system realm. "localhost" is a
+                // browser secure-context, so passkeys + outbound links work in dev
+                // without a hosts-file entry. Production deploys add their public
+                // hostname (recover realm-add-domain) and point the primary at it
+                // (recover realm-set-primary-domain).
+                PrimaryDomain = "localhost",
+                // The bootstrap realm is the control plane at first boot. The flag
+                // is transferable thereafter (see TransferControlPlaneAsync).
+                IsControlPlane = true,
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+            };
+
+            session.Store(systemRealm);
+            await session.SaveChangesAsync(ct);
         }
 
-        var systemRealm = new Realm
+        // Upgrade backfill for EVERY realm (not just system): a realm doc
+        // persisted before the PrimaryDomain field existed deserializes with an
+        // empty value, which would break its outbound links + WebAuthn RP. Set
+        // it to the first domain so the "PrimaryDomain ∈ Domains, non-empty"
+        // invariant holds deployment-wide — not only for the control-plane
+        // realm. Loaded + filtered in memory (realm count is tiny) to be robust
+        // against a missing JSON key vs an empty string. Idempotent — a no-op
+        // once every realm has a primary.
+        var allRealms = await session.Query<Realm>().ToListAsync(ct);
+        var backfilled = false;
+        foreach (var r in allRealms)
         {
-            Id = Guid.Parse("00000000-0000-0000-0000-000000000001"),
-            Slug = TenantConstants.SystemTenantId,
-            DisplayName = "System",
-            Description = "System realm for global administration",
-            // Include localhost variants so dev boots work without hosts-file entries.
-            // Production deploys must add their public hostname via the Recovery CLI:
-            //   recover realm-add-domain --slug system --domain auth.example.com
-            Domains = ["system.localhost", "localhost", "127.0.0.1"],
-            // The bootstrap realm is the control plane at first boot. The flag
-            // is transferable thereafter (see TransferControlPlaneAsync).
-            IsControlPlane = true,
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-
-        session.Store(systemRealm);
-        await session.SaveChangesAsync(ct);
+            if (string.IsNullOrWhiteSpace(r.PrimaryDomain) && r.Domains is { Length: > 0 })
+            {
+                r.PrimaryDomain = r.Domains[0];
+                r.UpdatedAt = DateTimeOffset.UtcNow;
+                session.Store(r);
+                backfilled = true;
+            }
+        }
+        if (backfilled)
+            await session.SaveChangesAsync(ct);
     }
 
     public async Task<Realm?> GetControlPlaneRealmAsync(CancellationToken ct = default)
@@ -470,6 +556,15 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 $"The slug '{slug}' is reserved and cannot be used.");
         }
 
+        // Domains are mandatory — same reasoning as CreateRealmAsync. No
+        // silent `.localhost` fallback: the operator names the host(s) that
+        // route to the adopted database.
+        if (domains is not { Length: > 0 })
+        {
+            return Error.Validation("Realm.DomainRequired",
+                "At least one domain is required.");
+        }
+
         await using var session = _globalStore.LightweightSession();
         var existing = await session.Query<Realm>()
             .FirstOrDefaultAsync(r => r.Slug == slug, ct);
@@ -512,7 +607,8 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             Id = Guid.NewGuid(),
             Slug = slug,
             DisplayName = displayName,
-            Domains = domains is { Length: > 0 } ? domains : [$"{slug}.localhost"],
+            Domains = domains,
+            PrimaryDomain = domains[0],
             IsControlPlane = false,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,

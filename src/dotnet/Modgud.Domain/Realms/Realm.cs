@@ -26,6 +26,20 @@ public class Realm
     public string[] Domains { get; set; } = [];
 
     /// <summary>
+    /// The realm's canonical public host — the designated primary among
+    /// <see cref="Domains"/>. It is used for ALL outbound user-facing links
+    /// (magic-link, password-reset, email-verify, bootstrap-invite,
+    /// login-provider callbacks / redirect URIs) AND as the WebAuthn RP ID
+    /// (relying-party identifier) for passkeys in this realm.
+    ///
+    /// <para>Invariant: it MUST be one of <see cref="Domains"/>. Changing it
+    /// invalidates every existing passkey registered for the realm, because a
+    /// passkey is cryptographically bound to the RP ID it was created
+    /// against.</para>
+    /// </summary>
+    public string PrimaryDomain { get; set; } = string.Empty;
+
+    /// <summary>
     /// True for the single Control-Plane realm of the deployment — the
     /// architectural anchor for cross-realm administration. STORED, not
     /// computed: exactly one realm carries the flag, and it is transferable

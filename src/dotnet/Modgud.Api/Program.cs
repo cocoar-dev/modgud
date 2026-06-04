@@ -282,21 +282,13 @@ try
     builder.Services.AddOpenApi();
 
 
-    // FIDO2 / Passkey — domain + origins derived from PublicUrl config
-    var publicUri = new Uri(conf.PublicUrl ?? conf.AppUrl ?? "https://localhost");
-    var fido2Origins = new HashSet<string> { $"{publicUri.Scheme}://{publicUri.Authority}" };
-    if (builder.Environment.IsDevelopment())
-    {
-        fido2Origins.Add("http://localhost:4300");  // Vue dev server
-        fido2Origins.Add("https://localhost");
-        fido2Origins.Add("https://localhost:443");
-    }
-    builder.Services.AddFido2(options =>
-    {
-        options.ServerDomain = publicUri.Host;
-        options.ServerName = "Modgud";
-        options.Origins = fido2Origins;
-    });
+    // FIDO2 / Passkey — the relying party is PER REALM, not global. There is
+    // no single ServerDomain/Origins: each WebAuthn ceremony builds an IFido2
+    // whose RP ID is the CURRENT realm's PrimaryDomain (see
+    // RealmScopedFido2Factory). A passkey is bound to the realm it was
+    // registered on, and the same RP is resolved for both registration and
+    // assertion. Scoped: one per request, keyed off the request's tenant.
+    builder.Services.AddScoped<Modgud.Authentication.Identity.RealmScopedFido2Factory>();
 
     // Identity + Cookie Authentication
     builder.Services.AddIdentityCore<ApplicationUser>(options =>

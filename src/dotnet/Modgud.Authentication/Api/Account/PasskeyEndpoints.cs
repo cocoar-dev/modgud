@@ -10,6 +10,7 @@ using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Api.Account.Services;
 using Modgud.Authentication;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Identity;
 using Modgud.Authentication.Sessions;
 using Modgud.Infrastructure.Observability;
 
@@ -49,12 +50,17 @@ public static class PasskeyEndpoints
         // POST /api/account/passkey/register-options — Generate attestation options
         group.MapPost("register-options", [Authorize] async (
             HttpContext context,
-            IFido2 fido2,
+            RealmScopedFido2Factory fido2Factory,
             IDocumentSession session,
-            UserManager<ApplicationUser> userManager) =>
+            UserManager<ApplicationUser> userManager,
+            CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
+
+            // RP = current realm's primary domain. Built per request so the
+            // same RP is used to create and (later) verify the credential.
+            var fido2 = await fido2Factory.CreateAsync(ct);
 
             var existingCredentials = await session.Query<StoredPasskeyCredential>()
                 .Where(c => c.UserId == user.Id)
@@ -91,12 +97,15 @@ public static class PasskeyEndpoints
         // POST /api/account/passkey/register — Verify attestation and store credential
         group.MapPost("register", [Authorize] async (
             HttpContext context,
-            IFido2 fido2,
+            RealmScopedFido2Factory fido2Factory,
             IDocumentSession session,
-            JsonElement body) =>
+            JsonElement body,
+            CancellationToken ct) =>
         {
             var userId = context.GetUserId();
             if (userId is null) return Results.Unauthorized();
+
+            var fido2 = await fido2Factory.CreateAsync(ct);
 
             var optionsJson = context.Session.GetString(RegistrationCacheKey);
             if (string.IsNullOrEmpty(optionsJson))
@@ -190,10 +199,13 @@ public static class PasskeyEndpoints
         // POST /api/account/passkey/login-options — Generate assertion options
         group.MapPost("login-options", async (
             HttpContext context,
-            IFido2 fido2,
+            RealmScopedFido2Factory fido2Factory,
             IDocumentSession session,
-            PasskeyLoginOptionsRequest? request) =>
+            PasskeyLoginOptionsRequest? request,
+            CancellationToken ct) =>
         {
+            var fido2 = await fido2Factory.CreateAsync(ct);
+
             List<PublicKeyCredentialDescriptor>? allowedCredentials = null;
 
             if (!string.IsNullOrEmpty(request?.UserName))
@@ -246,12 +258,15 @@ public static class PasskeyEndpoints
         // POST /api/account/passkey/login — Verify assertion and sign in
         group.MapPost("login", async (
             HttpContext context,
-            IFido2 fido2,
+            RealmScopedFido2Factory fido2Factory,
             IDocumentSession session,
             SignInManager<ApplicationUser> signInManager,
             ISessionService sessionService,
-            JsonElement body) =>
+            JsonElement body,
+            CancellationToken ct) =>
         {
+            var fido2 = await fido2Factory.CreateAsync(ct);
+
             // Retrieve challenge from cookie
             var challengeCookie = context.Request.Cookies["Modgud.Passkey.Challenge"];
             if (string.IsNullOrEmpty(challengeCookie))
