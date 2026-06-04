@@ -37,6 +37,19 @@ internal static class ObservabilityExtensions
         ObservabilitySettings settings,
         string? postgresConnectionString)
     {
+        // OTLP exporters speak HTTP/2 (gRPC always; HttpProtobuf negotiates it).
+        // Against a plaintext http:// collector that means HTTP/2 cleartext (h2c),
+        // which .NET disables by default — without this switch the metrics/traces
+        // exporter hangs on connection setup and every export times out after 10s
+        // (the log sink is unaffected: it uses its own HTTP/1.1 client). A TLS
+        // (https) endpoint negotiates HTTP/2 natively and needs no switch. This is
+        // the documented OTel-on-.NET requirement for insecure OTLP endpoints.
+        if (settings.Otlp.Enabled &&
+            settings.Otlp.Endpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
+        }
+
         var resourceBuilder = ResourceBuilder.CreateDefault()
             .AddService(
                 serviceName: settings.ServiceName,

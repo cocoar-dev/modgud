@@ -13,7 +13,7 @@ Permissions for the in-app live view: `observability:read`. The `realm:admin` by
 | Surface | Path | Auth |
 | --- | --- | --- |
 | Prometheus scrape | `/metrics` (default) | Static **bearer token** — set via `Observability__Prometheus__BearerToken`. Mismatch returns 404 (not 401) so the endpoint's existence stays unconfirmed. Constant-time compare. |
-| OTLP push (metrics + traces) | configurable endpoint (default `http://localhost:4317`) | Whatever the collector requires. Off by default; turn on when you actually have a collector (Tempo, Honeycomb, …). |
+| OTLP push (metrics + traces) | configurable endpoint (default `http://127.0.0.1:4317`) | Whatever the collector requires. Off by default; turn on when you actually have a collector (Tempo, Honeycomb, …). |
 | OTLP **log** export | same OTLP endpoint | Off by default — **same** `Observability__Otlp__Enabled` gate. Logs go through an OTel Collector whose redaction processor strips PII before OpenObserve. See [Logs — export & redaction](#logs-export-redaction). |
 | In-app live view | `/operate/observability` (Admin SPA) | Cookie auth + `observability:read`. Realm-scoped — each admin sees only their own realm. |
 | REST snapshot | `GET /api/admin/observability/snapshot?windowMinutes=15` | Same as in-app view. Returns event-type counts, login outcome breakdown, per-minute sparkline. |
@@ -35,7 +35,7 @@ Permissions for the in-app live view: `observability:read`. The `realm:admin` by
   },
   "Otlp": {
     "Enabled": false,                    // default off — gates metrics, traces AND logs
-    "Endpoint": "http://localhost:4317", // gRPC by default
+    "Endpoint": "http://127.0.0.1:4317", // gRPC by default (127.0.0.1, not localhost — see note)
     "Protocol": "Grpc"                   // or "HttpProtobuf"
   }
 }
@@ -43,6 +43,10 @@ Permissions for the in-app live view: `observability:read`. The `realm:admin` by
 
 ::: tip One gate for all three signals
 `Otlp.Enabled` turns on metrics, traces **and** log export together — there is no separate logs flag by design. With it off, Serilog stays Console + File and nothing leaves the box; no collector / OpenObserve is required. Use a bare base `host:port` endpoint for either protocol — the log sink derives the per-signal path itself (and trims a `/v1/logs` suffix if you add one).
+:::
+
+::: warning Plaintext / local collectors
+Against a **plaintext `http://`** collector the metrics/traces exporters speak HTTP/2 cleartext (h2c), which the app enables automatically for `http://` endpoints (`Http2UnencryptedSupport`). Two gotchas for a **local** collector: prefer **`127.0.0.1`** over `localhost` (a `localhost` → IPv6 `::1` resolution can hang the exporter against an IPv4-only Docker port map until the 10 s export timeout), and remember the export is best-effort — a wrong endpoint drops telemetry silently. A production collector should use **TLS (`https://`)**, which negotiates HTTP/2 natively and needs none of this.
 :::
 
 ::: tip Set the bearer in env, not in the JSON
@@ -152,7 +156,7 @@ The export is **best-effort and lossy by design** (Track B). It must never be lo
 docker compose -f docker/docker-compose.observability.yml up -d
 # then run the API with export on, pointed at the collector:
 #   Observability__Otlp__Enabled=true
-#   Observability__Otlp__Endpoint=http://localhost:4317
+#   Observability__Otlp__Endpoint=http://127.0.0.1:4317
 # OpenObserve UI: http://localhost:5080  (dev creds are in the compose file)
 ```
 

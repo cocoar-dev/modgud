@@ -59,8 +59,13 @@ public class ObservabilitySettings
 
         /// <summary>
         /// OTLP endpoint. Default points at a local collector on the gRPC port.
+        /// Uses <c>127.0.0.1</c> rather than <c>localhost</c> on purpose: against a
+        /// plaintext, IPv4-only local collector (e.g. a Docker port map) the SDK
+        /// exporter can resolve <c>localhost</c> to IPv6 <c>::1</c> and hang on
+        /// connect until the export times out. A real deployment sets its own
+        /// endpoint (and uses TLS).
         /// </summary>
-        public string Endpoint { get; set; } = "http://localhost:4317";
+        public string Endpoint { get; set; } = "http://127.0.0.1:4317";
 
         /// <summary>
         /// "Grpc" or "HttpProtobuf". Grpc is the canonical OTLP transport.

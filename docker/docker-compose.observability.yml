@@ -9,7 +9,7 @@
 #
 # Then run the API with export on:
 #   Observability__Otlp__Enabled=true
-#   Observability__Otlp__Endpoint=http://localhost:4317
+#   Observability__Otlp__Endpoint=http://127.0.0.1:4317   # 127.0.0.1, not localhost (see observability.md)
 #
 # OpenObserve UI: http://localhost:5080  (root@example.com / Complexpass#123)
 
