@@ -41,7 +41,14 @@ public class PermissionEndpointFilter(string permission, string appSlug) : IEndp
 
         var permissionService = httpContext.RequestServices.GetRequiredService<IPermissionService>();
         if (!await permissionService.HasPermissionAsync(userId, appSlug, permission))
-            return Results.Forbid();
+            // Not a bare bodyless 403 (cold-start ladder, Stage 6 "no silent
+            // failures"): name the missing permission so the caller — operator,
+            // UI, or integrator — knows exactly what grant they lack, the same
+            // way OAuth scope rejections carry an actionable description.
+            return Results.Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Permission denied",
+                detail: $"Missing the required permission '{permission}' (app '{appSlug}').");
 
         return await next(context);
     }
