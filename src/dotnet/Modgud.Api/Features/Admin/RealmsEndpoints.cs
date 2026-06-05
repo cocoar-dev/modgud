@@ -12,6 +12,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Modgud.Api.Features.Admin;
 
@@ -55,6 +56,7 @@ public static class RealmsEndpoints
             IRealmProvisioningService svc,
             IServiceProvider sp,
             HttpContext http,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
             var result = await svc.CreateRealmAsync(dto, ct);
@@ -71,19 +73,45 @@ public static class RealmsEndpoints
             // resolves a session against the just-provisioned tenant DB.
             // Living in the API layer (not Infrastructure) avoids the
             // Authentication ↔ Infrastructure circular reference.
+            //
+            // Atomicity: CreateRealmAsync already committed the realm + its
+            // tenant DB. If issuing the invite throws, the operator would
+            // otherwise be stranded — an adminless realm exists, a retry of
+            // this call 409s, and recovery is filesystem-CLI-only. Compensate
+            // by rolling the realm back so the create is all-or-nothing from
+            // the caller's view and a retry is clean.
             IssuedInvite issued;
-            using (var inviteScope = sp.CreateScope())
-            using (TenantContext.Enter(realm.Slug))
+            try
             {
-                var inviteService = inviteScope.ServiceProvider.GetRequiredService<IPendingAdminInviteService>();
-                issued = await inviteService.IssueAsync(
-                    dto.InitialAdmin.UserName,
-                    dto.InitialAdmin.Email,
-                    dto.InitialAdmin.Firstname,
-                    dto.InitialAdmin.Lastname,
-                    issuedBy,
-                    realm,
-                    ct);
+                using var inviteScope = sp.CreateScope();
+                using (TenantContext.Enter(realm.Slug))
+                {
+                    var inviteService = inviteScope.ServiceProvider.GetRequiredService<IPendingAdminInviteService>();
+                    issued = await inviteService.IssueAsync(
+                        dto.InitialAdmin.UserName,
+                        dto.InitialAdmin.Email,
+                        dto.InitialAdmin.Firstname,
+                        dto.InitialAdmin.Lastname,
+                        issuedBy,
+                        realm,
+                        ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                var log = loggerFactory.CreateLogger("Modgud.Api.Features.Admin.RealmsEndpoints");
+                log.LogError(ex,
+                    "Bootstrap-invite issuance failed for realm {Slug}; rolling back the partially-provisioned realm.",
+                    realm.Slug);
+
+                await svc.RollbackProvisionedRealmAsync(realm.Slug, ct);
+
+                return Results.Problem(
+                    statusCode: StatusCodes.Status500InternalServerError,
+                    title: "Realm.Provisioning.InviteFailed",
+                    detail: $"Realm '{realm.Slug}' was provisioned but issuing the initial-admin invite failed. "
+                          + "The partially-provisioned realm has been rolled back — it is safe to retry. "
+                          + "See the server logs / the realm error feed for the underlying cause.");
             }
 
             return Results.Created(
