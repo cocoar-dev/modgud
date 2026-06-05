@@ -221,9 +221,12 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var tenancy = (Marten.Storage.MasterTableTenancy)_tenantedStore.Options.Tenancy;
         await tenancy.AddDatabaseRecordAsync(dto.Slug, tenantCs);
 
-        // Apply Marten schema to the new tenant database (tables, functions, indexes)
+        // Apply Marten schema to the new tenant database (tables, functions, indexes).
+        // Resilient against the Solo async daemon racing this eager apply — see
+        // ApplyTenantSchemaResilientlyAsync.
         var newTenantDb = await tenancy.FindOrCreateDatabase(dto.Slug);
-        await newTenantDb.ApplyAllConfiguredChangesToDatabaseAsync();
+        await ApplyTenantSchemaResilientlyAsync(
+            () => newTenantDb.ApplyAllConfiguredChangesToDatabaseAsync(), dto.Slug, ct);
 
         var realm = new Realm
         {
@@ -271,6 +274,20 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         _realmCache.Invalidate();
         return realm;
     }
+
+    // Resilient tenant-schema apply lives in TenantSchemaProvisioning (public +
+    // unit-tested). This thin wrapper binds the retry policy + warning log; the
+    // call sites pass the actual apply delegate.
+    private Task ApplyTenantSchemaResilientlyAsync(Func<Task> applySchema, string slug, CancellationToken ct) =>
+        TenantSchemaProvisioning.ApplyWithRetryAsync(
+            applySchema,
+            maxAttempts: 5,
+            backoff: attempt => TimeSpan.FromMilliseconds(200 * (1 << (attempt - 1))),
+            onRetry: (conflict, attempt) => _logger.LogWarning(
+                "Concurrent schema-apply conflict ({SqlState}) provisioning realm {Slug} " +
+                "(attempt {Attempt}); the async daemon likely raced the apply — retrying",
+                conflict.SqlState, slug, attempt),
+            ct);
 
     public async Task<ErrorOr<Realm>> UpdateRealmAsync(
         string slug,
@@ -600,7 +617,8 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var tenancy = (Marten.Storage.MasterTableTenancy)_tenantedStore.Options.Tenancy;
         await tenancy.AddDatabaseRecordAsync(slug, tenantCs);
         var adoptedDb = await tenancy.FindOrCreateDatabase(slug);
-        await adoptedDb.ApplyAllConfiguredChangesToDatabaseAsync();
+        await ApplyTenantSchemaResilientlyAsync(
+            () => adoptedDb.ApplyAllConfiguredChangesToDatabaseAsync(), slug, ct);
 
         var realm = new Realm
         {
