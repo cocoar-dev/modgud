@@ -45,9 +45,9 @@ test.describe('Stage 3 — password login golden path', () => {
     // a human would dismiss it to reach the dashboard.
     await Promise.race([
       page.waitForURL(/\/dashboard/, { timeout: 15_000 }),
-      page.getByRole('button', { name: /Später|Later|Skip/i }).first().waitFor({ timeout: 15_000 }),
+      page.getByRole('button', { name: /Später|Postpone|Later|Skip/i }).first().waitFor({ timeout: 15_000 }),
     ])
-    const skip = page.getByRole('button', { name: /Später|Later|Skip/i }).first()
+    const skip = page.getByRole('button', { name: /Später|Postpone|Later|Skip/i }).first()
     if (await skip.isVisible().catch(() => false)) {
       await skip.click()
       await page.waitForURL(/\/dashboard/, { timeout: 15_000 })

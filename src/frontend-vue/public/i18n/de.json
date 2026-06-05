@@ -103,7 +103,8 @@
       "passkeyDescription": "Verwenden Sie Fingerabdruck, Gesichtserkennung oder einen Sicherheitsschlüssel.",
       "registerPasskey": "Passkey registrieren",
       "passkeyCard": "Passkey",
-      "passkeyCardDescription": "Fingerabdruck, Face ID oder Sicherheitsschlüssel."
+      "passkeyCardDescription": "Fingerabdruck, Face ID oder Sicherheitsschlüssel.",
+      "graceWarning": "Sie haben noch {days} Tag(e), um Ihren Account zu sichern."
     },
     "mfa": {
       "chooseMethod": "Wählen Sie eine Verifizierungsmethode.",

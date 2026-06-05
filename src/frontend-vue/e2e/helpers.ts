@@ -18,7 +18,7 @@ export async function login(page: Page, userName: string, password: string) {
   //   (b) the secure-setup grace-period modal pops up on top of /login.
   await Promise.race([
     page.waitForURL(/\/dashboard/, { timeout: 15_000 }),
-    page.getByRole('button', { name: /Später|Later|Skip/i }).first().waitFor({ timeout: 15_000 }),
+    page.getByRole('button', { name: /Später|Postpone|Later|Skip/i }).first().waitFor({ timeout: 15_000 }),
   ])
 }
 
@@ -34,6 +34,20 @@ export async function apiLogin(page: Page, userName: string, password: string) {
   if (!res.ok()) {
     throw new Error(`Login failed for ${userName}: ${res.status()} ${await res.text()}`)
   }
+}
+
+/**
+ * Type a code into a `CoarOtpInput` the way a human would. The component
+ * (@cocoar/vue-ui) renders one `<input>` cell per digit inside a
+ * `.coar-otp-input` wrapper and auto-focuses the first cell; each keystroke
+ * fills a cell and advances focus to the next. We click the first cell to be
+ * sure focus is there, then send real keystrokes (Principle 5 — real input,
+ * never a programmatic value set) so the per-key handler runs exactly as it
+ * does for a user. A small delay lets the focus-advance settle between cells.
+ */
+export async function fillOtpCode(page: Page, code: string) {
+  await page.locator('.coar-otp-input input').first().click()
+  await page.keyboard.type(code, { delay: 40 })
 }
 
 /**

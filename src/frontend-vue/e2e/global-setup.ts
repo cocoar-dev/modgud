@@ -170,13 +170,21 @@ export default async function globalSetup(_config: FullConfig) {
   // ("DevelopmentMode must be false in Production"). Staging uses the same
   // production build + production behaviour (it is NOT Development) while
   // skipping those deploy-only guards, so the rig can actually start.
-  // The image binds the port from its own `AppUrl=http://0.0.0.0:8081` env var
-  // (PascalCase). The previous all-caps `APPURL=…:80` override never took —
-  // Cocoar.Configuration reads env vars case-sensitively, so the image's
-  // PascalCase value won and the app listened on 8081 while the rig mapped :80,
-  // so /api/health was never reachable. Map the port the app actually binds.
+  // Bind port: pin it explicitly with the `AppUrl` env var (PascalCase!) and
+  // map that port. The freshly-published image ships NO data/configuration.json
+  // (the thin Dockerfile COPYs the publish output, and `dotnet publish` does not
+  // emit data/ there), so StartUpConfiguration.AppUrl falls back to its class
+  // default `http://0.0.0.0:80` and the app binds :80 — not :8081. We do not
+  // rely on that default: `app.Run(conf.AppUrl)` lets config override the bind,
+  // and Cocoar.Configuration reads env vars case-sensitively, so the PascalCase
+  // `AppUrl` binds while an all-caps `APPURL` would silently miss (the env-var
+  // casing rule). Pin :8081 and map the same port so /api/health is reachable
+  // regardless of the image's compiled-in default. A previously-tagged stand-in
+  // image happened to bake AppUrl=:8081, which masked this — a fresh build does
+  // not, and binds :80.
   docker(`run -d --name ${APP_NAME} --network ${NETWORK} -p ${APP_HOST_PORT}:8081 ` +
     `-e ASPNETCORE_ENVIRONMENT=Staging ` +
+    `-e AppUrl=http://0.0.0.0:8081 ` +
     `-e PUBLICURL=${publicUrl} ` +
     `-e DBSETTINGS__CONNECTIONSTRING="${connStr}" ` +
     `-e OPENIDDICT__ISSUER=${publicUrl} ` +
