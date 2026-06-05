@@ -58,6 +58,10 @@ If only **one** realm is active AND the host is a localhost variant
 realm — even if it doesn't list the localhost domain. This way a
 single-realm dev boot works without a hosts-file entry.
 
+### Primary domain
+
+While a realm may route from several domains, exactly one of them is its **PrimaryDomain** — the canonical public host. Any host in `Domains` resolves the realm for *inbound* requests, but the PrimaryDomain is what Modgud uses whenever it has to *emit* a host: magic-link and bootstrap-invite URLs, and the **WebAuthn relying-party ID** that binds passkeys. A realm always has a PrimaryDomain (it defaults to the first domain at creation) and it must be one of `Domains`. Re-point it from the admin UI's domain picker or via the [Recovery CLI](recovery-cli) `realm-set-primary-domain`; because it is the passkey RP ID, changing it invalidates every passkey in the realm.
+
 ## RealmCache
 
 `RealmCache` (`Modgud.Infrastructure/Realms/RealmCache.cs`) holds
