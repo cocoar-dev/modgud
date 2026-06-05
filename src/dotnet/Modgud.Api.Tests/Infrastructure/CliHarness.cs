@@ -18,10 +18,8 @@ public sealed record CliResult(int ExitCode, string StdOut, string StdErr)
 /// container — the same execution model production uses (Program.cs boots the
 /// host, then dispatches <c>recover &lt;cmd&gt;</c>) — and captures stdout, stderr,
 /// and the exit code. Resulting events/documents are asserted by the test
-/// against the same host's stores.
-///
-/// <para>Console redirection is process-global; CLI tests therefore run in the
-/// non-parallel cold-start collection.</para>
+/// against the same host's stores. Output is captured via the CLI's writer
+/// overload, so there is no process-global Console redirection.
 /// </summary>
 public static class CliHarness
 {
@@ -30,23 +28,11 @@ public static class CliHarness
         var conf = services.GetRequiredService<IServerConfiguration>();
         var env = services.GetRequiredService<IWebHostEnvironment>();
 
-        var originalOut = Console.Out;
-        var originalError = Console.Error;
         using var outWriter = new StringWriter();
         using var errWriter = new StringWriter();
-        try
-        {
-            Console.SetOut(outWriter);
-            Console.SetError(errWriter);
 
-            var exitCode = await RecoveryCli.RunAsync(services, args, conf, env);
+        var exitCode = await RecoveryCli.RunAsync(services, args, conf, env, outWriter, errWriter);
 
-            return new CliResult(exitCode, outWriter.ToString(), errWriter.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            Console.SetError(originalError);
-        }
+        return new CliResult(exitCode, outWriter.ToString(), errWriter.ToString());
     }
 }
