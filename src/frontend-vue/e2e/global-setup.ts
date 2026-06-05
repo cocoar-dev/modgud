@@ -94,10 +94,11 @@ function buildImage(): void {
     execSync('pnpm build', { cwd: frontendDir, stdio: 'inherit' })
   }
 
-  // Stage frontend into wwwroot
+  // Stage frontend into wwwroot. fs.cpSync (not `cp -r`) so the build works on
+  // Windows dev machines too, not just Unix CI.
   fs.rmSync(wwwroot, { recursive: true, force: true })
   fs.mkdirSync(wwwroot, { recursive: true })
-  execSync(`cp -r "${distDir}/." "${wwwroot}/"`, { stdio: 'inherit' })
+  fs.cpSync(distDir, wwwroot, { recursive: true })
 
   // Backend publish
   fs.rmSync(publishOut, { recursive: true, force: true })
@@ -161,9 +162,21 @@ export default async function globalSetup(_config: FullConfig) {
   // don't need a real cert in the test image.
   const connStr = `Host=postgres;Database=modgud_e2e;Username=postgres;Password=postgres;Keepalive=30`
   const publicUrl = `http://localhost:${APP_HOST_PORT}`
-  docker(`run -d --name ${APP_NAME} --network ${NETWORK} -p ${APP_HOST_PORT}:80 ` +
-    `-e ASPNETCORE_ENVIRONMENT=Production ` +
-    `-e APPURL=http://0.0.0.0:80 ` +
+  // Environment = Staging, NOT Production. The rig deliberately runs with
+  // ephemeral OpenIddict signing keys (OPENIDDICT__DEVELOPMENTMODE=true) and a
+  // localhost issuer so it needs no real certificate or public hostname — but
+  // the app's hard production guards (Program.cs, gated on IsProduction())
+  // reject exactly that combination, so a Production container crashes on boot
+  // ("DevelopmentMode must be false in Production"). Staging uses the same
+  // production build + production behaviour (it is NOT Development) while
+  // skipping those deploy-only guards, so the rig can actually start.
+  // The image binds the port from its own `AppUrl=http://0.0.0.0:8081` env var
+  // (PascalCase). The previous all-caps `APPURL=…:80` override never took —
+  // Cocoar.Configuration reads env vars case-sensitively, so the image's
+  // PascalCase value won and the app listened on 8081 while the rig mapped :80,
+  // so /api/health was never reachable. Map the port the app actually binds.
+  docker(`run -d --name ${APP_NAME} --network ${NETWORK} -p ${APP_HOST_PORT}:8081 ` +
+    `-e ASPNETCORE_ENVIRONMENT=Staging ` +
     `-e PUBLICURL=${publicUrl} ` +
     `-e DBSETTINGS__CONNECTIONSTRING="${connStr}" ` +
     `-e OPENIDDICT__ISSUER=${publicUrl} ` +
