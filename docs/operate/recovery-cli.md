@@ -16,7 +16,22 @@ dotnet Modgud.Api.dll recover <command> [args...] [--realm <slug>]
 ```
 
 The `--realm` flag defaults to `system`. Commands that don't need a
-tenant context ignore it.
+tenant context (the `realm-*`, `control-plane`, and `adopt-tenant`
+commands carry their own `--slug`) ignore it.
+
+For tenant-scoped commands the named realm is resolved up front:
+
+- A misspelled or unknown `--realm` **fails fast** with
+  `error: Realm '<slug>' not found.` and a non-zero exit code — it never
+  silently acts on the wrong tenant.
+- When `--realm` is omitted **and more than one realm exists**, the CLI
+  prints a `note:` to stderr naming the realm it defaulted to, so a
+  multi-realm operator is never surprised. With a single realm the
+  default is unambiguous and stays quiet.
+
+Every command exits `0` on success and a non-zero code on failure (a
+validation error, an unknown realm, or an unknown command); error text
+is written to stderr.
 
 ## Commands
 

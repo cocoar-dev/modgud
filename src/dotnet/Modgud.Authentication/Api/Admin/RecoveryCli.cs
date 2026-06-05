@@ -40,6 +40,15 @@ namespace Modgud.Authentication.Api.Admin;
 /// </summary>
 public static class RecoveryCli
 {
+    // Commands that act INSIDE the --realm tenant. The global realm-management
+    // commands (realm-*, control-plane, adopt-tenant) carry their own --slug and
+    // ignore the global --realm, so they are NOT validated against it.
+    private static readonly HashSet<string> TenantScopedCommands = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "list", "reset-2fa", "set-email", "magic-link", "rebuild-projections",
+        "bootstrap-admin", "migrate-cc-credentials", "rotate-signing-key",
+    };
+
     public static async Task<int> RunAsync(IServiceProvider services, string[] args, IServerConfiguration conf, IWebHostEnvironment env)
     {
         if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
@@ -50,10 +59,19 @@ public static class RecoveryCli
 
         var command = args[0].ToLowerInvariant();
 
-        // bootstrap-admin runs against a chosen realm (default: system).
-        // The CLI's filesystem-trust boundary lets the operator name the
-        // tenant; everything else uses TenantContext fallback ("system").
-        var realmSlug = ParseFlag(args, "--realm") ?? TenantConstants.SystemTenantId;
+        // Resolve the global --realm for tenant-scoped commands. It defaults to
+        // "system", but a misspelled --realm must fail with a clear message (not
+        // a deep Marten "tenant not found" crash once it enters a non-existent
+        // tenant), and an implicit default is announced when more than one realm
+        // exists so the operator never silently acts on the wrong tenant — the
+        // same silent-tenant class the HTTP path was hardened against.
+        var explicitRealm = ParseFlag(args, "--realm");
+        var realmSlug = explicitRealm ?? TenantConstants.SystemTenantId;
+        if (TenantScopedCommands.Contains(command))
+        {
+            var realmError = await ResolveRealmAsync(services, explicitRealm, realmSlug);
+            if (realmError is not null) return realmError.Value;
+        }
         using var _tenant = TenantContext.Enter(realmSlug);
 
         await using var scope = services.CreateAsyncScope();
@@ -614,6 +632,45 @@ public static class RecoveryCli
                 return a[prefix.Length..];
             }
         }
+        return null;
+    }
+
+    /// <summary>
+    /// Validates the global <c>--realm</c> for tenant-scoped commands. Returns a
+    /// non-null exit code to short-circuit <see cref="RunAsync"/> when the named
+    /// realm doesn't exist — a misspelled <c>--realm</c> must fail loudly with a
+    /// clear message instead of entering a tenant that doesn't exist (which would
+    /// surface as a deep Marten error). Announces the implicit <c>system</c>
+    /// default only when more than one active realm exists, so single-tenant
+    /// operators aren't nagged but a multi-realm operator can never silently act
+    /// on the wrong tenant.
+    /// </summary>
+    private static async Task<int?> ResolveRealmAsync(
+        IServiceProvider services, string? explicitRealm, string realmSlug)
+    {
+        var globalStore = services.GetRequiredService<IGlobalStore>();
+        await using var globalSession = globalStore.QuerySession();
+        var activeRealms = await globalSession.Query<Realm>()
+            .Where(r => r.IsActive)
+            .ToListAsync();
+
+        // Case-sensitive match: the tenant registry is keyed by the exact slug,
+        // so "System" is genuinely not a realm and must error rather than enter a
+        // tenant that doesn't exist.
+        if (!activeRealms.Any(r => string.Equals(r.Slug, realmSlug, StringComparison.Ordinal)))
+        {
+            return Error(explicitRealm is not null
+                ? $"Realm '{realmSlug}' not found. Run 'recover realm-list' to see available realms."
+                : $"The '{realmSlug}' realm does not exist yet — has the deployment been bootstrapped? Run 'recover realm-list'.");
+        }
+
+        if (explicitRealm is null && activeRealms.Count > 1)
+        {
+            Console.Error.WriteLine(
+                $"note: no --realm specified; acting on the '{realmSlug}' realm " +
+                $"({activeRealms.Count} active realms exist — pass --realm <slug> to target another).");
+        }
+
         return null;
     }
 
