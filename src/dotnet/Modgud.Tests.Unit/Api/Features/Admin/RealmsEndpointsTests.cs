@@ -32,6 +32,7 @@ public class RealmsEndpointsTests
                 DisplayName = "Acme Inc",
                 Description = "Tenant A",
                 Domains = new[] { "acme.localhost", "auth.acme.com" },
+                PrimaryDomain = "auth.acme.com",
                 IsActive = true,
                 CreatedAt = created,
             };
@@ -43,6 +44,7 @@ public class RealmsEndpointsTests
             Assert.Equal("Acme Inc", dto.DisplayName);
             Assert.Equal("Tenant A", dto.Description);
             Assert.Equal(new[] { "acme.localhost", "auth.acme.com" }, dto.Domains);
+            Assert.Equal("auth.acme.com", dto.PrimaryDomain);
             Assert.False(dto.IsControlPlane);
             Assert.True(dto.IsActive);
             Assert.Equal(created, dto.CreatedAt);

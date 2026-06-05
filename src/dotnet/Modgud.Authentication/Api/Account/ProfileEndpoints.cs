@@ -11,7 +11,9 @@ using Modgud.Domain.Common;
 using Modgud.Application.Inbox;
 using Modgud.Authentication;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.ExtensionMethods;
 using Modgud.Infrastructure.Email;
+using Modgud.Infrastructure.Realms;
 using Modgud.Authentication.Identity;
 
 namespace Modgud.Authentication.Api.Account;
@@ -58,12 +60,13 @@ public static class ProfileEndpoints
             ProfileChangeRequestDto body,
             UserManager<ApplicationUser> userManager,
             IDocumentSession session,
-            IServerConfiguration conf,
+            IRealmProvisioningService realmSvc,
             IEmailService emailService,
             IAdminNotifier adminNotifier,
             IInboxNotifier inboxNotifier,
             IWebHostEnvironment env,
-            HttpContext context) =>
+            HttpContext context,
+            CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
@@ -180,9 +183,10 @@ public static class ProfileEndpoints
             session.Store(request);
             await session.SaveChangesAsync();
 
-            if (rawToken is not null && pending.Email.HasValue && !string.IsNullOrEmpty(pending.Email.Value))
+            var realm = await context.ResolveCurrentRealmAsync(realmSvc, ct);
+            if (realm is not null && rawToken is not null && pending.Email.HasValue && !string.IsNullOrEmpty(pending.Email.Value))
             {
-                var appUrl = (conf.PublicUrl ?? (env.IsDevelopment() ? "http://localhost:4300" : conf.AppUrl)).TrimEnd('/');
+                var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
                 var verifyUrl = $"{appUrl}/verify-email?id={new ShortGuid(request.Id)}&token={Uri.EscapeDataString(rawToken)}";
                 await emailService.SendTemplatedEmailAsync(pending.Email.Value!, EmailTemplate.EmailVerification,
                     new Dictionary<string, string>
@@ -221,8 +225,10 @@ public static class ProfileEndpoints
             IEmailService emailService,
             IAdminNotifier adminNotifier,
             IInboxNotifier inboxNotifier,
-            IServerConfiguration conf,
-            IWebHostEnvironment env) =>
+            IRealmProvisioningService realmSvc,
+            IWebHostEnvironment env,
+            HttpContext context,
+            CancellationToken ct) =>
         {
             if (!ShortGuid.TryParse(body.RequestId, out Guid requestGuid))
                 return Results.BadRequest(new { Message = "Invalid request id" });
@@ -247,9 +253,10 @@ public static class ProfileEndpoints
 
             var user = await session.LoadAsync<ApplicationUser>(cr.UserId);
             var recipients = await adminNotifier.GetAdminRecipientsAsync();
-            if (recipients.Count > 0 && user is not null)
+            var realm = await context.ResolveCurrentRealmAsync(realmSvc, ct);
+            if (recipients.Count > 0 && user is not null && realm is not null)
             {
-                var appUrl = (conf.PublicUrl ?? (env.IsDevelopment() ? "http://localhost:4300" : conf.AppUrl)).TrimEnd('/');
+                var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
                 var changes = EnumerateProfileChanges(cr.Payload, user).ToList();
                 await emailService.SendTemplatedEmailAsync(recipients,
                     EmailTemplate.AdminChangeRequestNotification,

@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { CoarTextInput, CoarFormField, CoarCheckbox, CoarNote, CoarButton } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
-import EditableStringList from '@/components/EditableStringList.vue'
+import RealmDomainsField from '@/components/RealmDomainsField.vue'
 import { useRealmStore } from '@/stores/realm.store'
 import type { RealmDto, InitialAdminInviteDto } from '@/models/realm'
 
@@ -26,6 +26,7 @@ interface FormState {
   DisplayName: string
   Description: string
   Domains: string[]
+  PrimaryDomain: string
   IsActive: boolean
   InitialAdminUserName: string
   InitialAdminEmail: string
@@ -39,6 +40,7 @@ function emptyForm(): FormState {
     DisplayName: '',
     Description: '',
     Domains: [],
+    PrimaryDomain: '',
     IsActive: true,
     InitialAdminUserName: '',
     InitialAdminEmail: '',
@@ -69,6 +71,7 @@ function fromDto(dto: RealmDto): FormState {
     DisplayName: dto.DisplayName,
     Description: dto.Description ?? '',
     Domains: [...(dto.Domains ?? [])],
+    PrimaryDomain: dto.PrimaryDomain ?? '',
     IsActive: dto.IsActive,
   }
 }
@@ -83,6 +86,10 @@ const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Slu
 const canSubmit = computed(() => {
   if (loading.value) return false
   if (!form.value.DisplayName.trim()) return false
+  // A realm must have at least one domain — it can't route or build outbound
+  // links otherwise. The backend rejects empty domains on both create and
+  // update (update can't clear them), so gate the button here too.
+  if (form.value.Domains.length < 1) return false
   if (isCreate.value) {
     if (!form.value.Slug.trim()) return false
     if (!form.value.InitialAdminUserName.trim()) return false
@@ -90,6 +97,15 @@ const canSubmit = computed(() => {
   }
   return true
 })
+
+// Edit-only: the admin picked a different primary than the realm currently has.
+// Changing it re-keys the WebAuthn RP, so existing passkeys stop working.
+const primaryChanged = computed(() =>
+  !isCreate.value &&
+  !!dto.value &&
+  !!form.value.PrimaryDomain &&
+  form.value.PrimaryDomain !== dto.value.PrimaryDomain,
+)
 
 const footerButton = computed(() => (issuedInvite.value || transferResult.value)
   ? {
@@ -131,6 +147,7 @@ async function save() {
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
         Domains: [...form.value.Domains],
+        PrimaryDomain: form.value.PrimaryDomain.trim() || null,
         InitialAdmin: {
           UserName: form.value.InitialAdminUserName.trim(),
           Email: form.value.InitialAdminEmail.trim(),
@@ -147,6 +164,7 @@ async function save() {
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
         Domains: [...form.value.Domains],
+        PrimaryDomain: form.value.PrimaryDomain.trim() || null,
         IsActive: form.value.IsActive,
       })
       props.close()
@@ -253,6 +271,8 @@ async function copyLink() {
         <span class="font-medium">{{ transferResult.DisplayName }}</span>
         <span class="text-gray-500">{{ t('admin.realms.domains', {}, 'Domains') }}</span>
         <span>{{ (transferResult.Domains ?? []).join(', ') }}</span>
+        <span class="text-gray-500">{{ t('admin.realms.primaryDomain', {}, 'Primary domain') }}</span>
+        <span class="font-medium">{{ transferResult.PrimaryDomain }}</span>
       </div>
     </div>
 
@@ -277,9 +297,16 @@ async function copyLink() {
       </CoarFormField>
 
       <CoarFormField :label="t('admin.realms.domains', {}, 'Domains')">
-        <EditableStringList
-          v-model="form.Domains"
+        <RealmDomainsField
+          v-model:domains="form.Domains"
+          v-model:primary="form.PrimaryDomain"
           :placeholder="t('admin.realms.domain.placeholder', {}, 'auth.example.com')" />
+        <p class="text-xs text-gray-500 mt-1">
+          {{ t('admin.realms.primaryDomainHint', {}, 'The realm routes on any domain, but the one marked Primary is its canonical public host: all invite / magic-link / reset mails use it, and passkeys (WebAuthn) only work on it.') }}
+        </p>
+        <CoarNote v-if="primaryChanged" variant="warning" class="mt-2">
+          {{ t('admin.realms.primaryChangedWarning', {}, 'Changing the primary domain invalidates this realm\'s existing passkeys — they are bound to the previous host. Affected users must re-register their passkeys on the new primary domain.') }}
+        </CoarNote>
       </CoarFormField>
 
       <div v-if="!isCreate" class="flex flex-wrap gap-x-6 gap-y-2 mt-1">

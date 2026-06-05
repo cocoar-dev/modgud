@@ -47,6 +47,7 @@ system realm.
 | Display Name | UI label |
 | Description | Optional |
 | Domains | List of hostnames that route to this realm |
+| Primary Domain | The realm's canonical public host — one of `Domains`. Used for every outbound link (magic-links, bootstrap-invites) and as the WebAuthn relying-party ID for passkeys. Changing it invalidates existing passkeys. |
 | IsControlPlane | Stored flag — exactly one realm holds it. Moved via the transfer action, not edited inline. |
 | IsActive | Disabled realms reject login attempts |
 
@@ -80,6 +81,7 @@ Admin → **Realms** → **Create**.
 | Display Name | `Acme Corp` |
 | Description | `Production tenant for Acme` |
 | Domains | `acme.auth.example.com` |
+| Primary Domain | `acme.auth.example.com` — defaults to the first domain; pick which one is canonical when a realm has several |
 | **Initial admin** | **required** — UserName + Email of the recipient who'll bootstrap the realm |
 
 The Initial-Admin block is mandatory. A realm with no admin path
@@ -117,6 +119,10 @@ issued for the same recipient and the previous one is revoked.
 Most fields are live-editable; the **slug is immutable** (it's baked
 into the database name). The Control-Plane flag isn't a checkbox — it
 moves via the dedicated transfer action (below).
+
+::: warning Changing the Primary Domain invalidates passkeys
+The Primary Domain is the WebAuthn relying-party ID. Re-pointing it (in the domain picker, or via the [Recovery CLI](../operate/recovery-cli) `realm-set-primary-domain`) **invalidates every passkey registered in the realm** — affected users must re-register theirs on next sign-in. Password, TOTP, Email OTP, and magic-link logins are unaffected.
+:::
 
 ## Transferring the control plane
 

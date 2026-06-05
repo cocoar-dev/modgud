@@ -143,6 +143,7 @@ public class ControlPlaneTransferTests : IntegrationTestBase
                     Slug = "inactive-target",
                     DisplayName = "Inactive",
                     Domains = ["inactive-target.localhost"],
+                    PrimaryDomain = "inactive-target.localhost",
                     IsControlPlane = false,
                     IsActive = false,
                     CreatedAt = DateTimeOffset.UtcNow,
@@ -275,6 +276,7 @@ public class ControlPlaneTransferTests : IntegrationTestBase
                         Slug = "ghost-cp",
                         DisplayName = "Ghost",
                         Domains = ["ghost-cp.localhost"],
+                        PrimaryDomain = "ghost-cp.localhost",
                         IsControlPlane = true,
                         IsActive = true,
                         CreatedAt = DateTimeOffset.UtcNow,
@@ -309,16 +311,22 @@ public class ControlPlaneTransferTests : IntegrationTestBase
         var ct = TestContext.Current.CancellationToken;
         await EnsureTargetRealmAsync();
 
+        // Reserved-slug is rejected before the domain check, so it still trips
+        // with no domains supplied.
         var reserved = await Svc.AdoptExistingDatabaseAsync(
             TenantConstants.SystemTenantId, "System", null, ct);
         Assert.True(reserved.IsError);
         Assert.Equal("Realm.ReservedSlug", reserved.FirstError.Code);
 
-        var duplicate = await Svc.AdoptExistingDatabaseAsync(TargetSlug, "Dup", null, ct);
+        // Domains are mandatory for adopt (no silent fallback). The duplicate
+        // and missing-db cases must supply a domain to get past the
+        // DomainRequired gate and reach the check they actually exercise.
+        var duplicate = await Svc.AdoptExistingDatabaseAsync(TargetSlug, "Dup", [TargetHost], ct);
         Assert.True(duplicate.IsError);
         Assert.Equal("Realm.DuplicateSlug", duplicate.FirstError.Code);
 
-        var missing = await Svc.AdoptExistingDatabaseAsync("never-existed", "Nope", null, ct);
+        var missing = await Svc.AdoptExistingDatabaseAsync(
+            "never-existed", "Nope", ["never-existed.localhost"], ct);
         Assert.True(missing.IsError);
         Assert.Equal("Realm.DatabaseMissing", missing.FirstError.Code);
     }

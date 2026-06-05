@@ -61,7 +61,6 @@ public sealed class SelfRegistrationService(
     TurnstileVerifier captchaVerifier,
     RegistrationRateLimiter rateLimiter,
     IEmailService emailService,
-    IServerConfiguration serverConf,
     IHostEnvironment env,
     ILogger<SelfRegistrationService> logger) : ISelfRegistrationService
 {
@@ -300,7 +299,7 @@ public sealed class SelfRegistrationService(
         string plaintextToken,
         CancellationToken ct)
     {
-        var appUrl = (serverConf.PublicUrl ?? (env.IsDevelopment() ? "http://localhost:4300" : serverConf.AppUrl)).TrimEnd('/');
+        var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
         var url = $"{appUrl}/verify-email?token={Uri.EscapeDataString(plaintextToken)}";
 
         var displayName = !string.IsNullOrWhiteSpace(user.Firstname)

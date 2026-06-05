@@ -7,6 +7,10 @@ public record RealmDto
     public string DisplayName { get; init; } = string.Empty;
     public string? Description { get; init; }
     public string[] Domains { get; init; } = [];
+
+    /// <summary>The realm's canonical public host — one of <see cref="Domains"/>.
+    /// Used for all outbound links and as the WebAuthn RP ID.</summary>
+    public string PrimaryDomain { get; init; } = string.Empty;
     public bool IsControlPlane { get; init; }
     public bool IsActive { get; init; }
     public bool NeedsSetup { get; init; }
@@ -73,7 +77,19 @@ public record CreateRealmDto
     public string Slug { get; init; } = string.Empty;
     public string DisplayName { get; init; } = string.Empty;
     public string? Description { get; init; }
+
+    /// <summary>
+    /// Routing domains for the realm. REQUIRED — a realm with no domain
+    /// cannot route requests or build outbound links. Provide at least one.
+    /// </summary>
     public string[]? Domains { get; init; }
+
+    /// <summary>
+    /// Optional. The canonical public host for outbound links + WebAuthn RP.
+    /// When set it must be one of <see cref="Domains"/>; when omitted the
+    /// first entry of <see cref="Domains"/> is used.
+    /// </summary>
+    public string? PrimaryDomain { get; init; }
 
     /// <summary>
     /// First-admin invite issued atomically with the realm (C15c).
@@ -122,6 +138,13 @@ public record UpdateRealmDto
     public string? DisplayName { get; init; }
     public string? Description { get; init; }
     public string[]? Domains { get; init; }
+
+    /// <summary>
+    /// Optional. When set it must be one of the resulting domain set (the
+    /// new <see cref="Domains"/> if provided, otherwise the realm's current
+    /// domains). Changing it invalidates the realm's existing passkeys.
+    /// </summary>
+    public string? PrimaryDomain { get; init; }
     public bool? IsActive { get; init; }
 }
 

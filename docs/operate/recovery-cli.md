@@ -110,9 +110,7 @@ dotnet Modgud.Api.dll recover migrate-cc-credentials --realm system
 ```
 
 ### `realm-list`
-List every active realm with its slug and configured domains.
-Useful first probe after a fresh deploy — shows the system realm's
-seeded localhost domains so you know which Host header to use.
+List every active realm with its slug, primary domain, and configured domains (the control-plane realm is marked `[CP]`). Useful first probe after a fresh deploy — shows the system realm's seeded localhost domains so you know which Host header to use.
 
 ```bash
 dotnet Modgud.Api.dll recover realm-list
@@ -135,14 +133,30 @@ Flags:
   match at request time.
 
 ### `realm-remove-domain`
-Remove a domain from an active realm's `Domains` list. No-op if not
-present.
+Remove a domain from an active realm's `Domains` list. No-op if not present. Guarded: you cannot remove a realm's **last** domain, nor its **PrimaryDomain** — re-point the primary with `realm-set-primary-domain` first.
 
 ```bash
 dotnet Modgud.Api.dll recover realm-remove-domain \
   --slug system \
   --domain old.example.com
 ```
+
+### `realm-set-primary-domain`
+Re-point a realm's **PrimaryDomain** — its canonical public host. The PrimaryDomain is the single domain (out of the realm's `Domains`) that Modgud uses for every outbound link (magic-links, bootstrap-invites) and as the **WebAuthn relying-party ID**. The new primary must already be in the realm's `Domains`; add it with `realm-add-domain` first (there is no silent add).
+
+```bash
+dotnet Modgud.Api.dll recover realm-set-primary-domain \
+  --slug system \
+  --domain auth.example.com
+```
+
+Flags:
+- `--slug <slug>` — required.
+- `--domain <hostname>` — required. Must already be one of the realm's domains.
+
+::: danger Changing the primary invalidates passkeys
+Because the PrimaryDomain is the WebAuthn relying-party ID, changing it **invalidates every passkey registered for the realm** — affected users must re-register their passkeys on next sign-in. Other login methods (password, TOTP, Email OTP, magic-link) are unaffected. The CLI prints this warning and writes it to the audit log.
+:::
 
 ### `control-plane list` / `control-plane transfer <slug>`
 Inspect or relocate the [control-plane](../concepts/control-plane) role
@@ -213,9 +227,7 @@ level (to make them stand out in the log stream); failures log at
   a fresh admin in one shot.
 - **A user lost their 2FA device** → `reset-2fa <username>` then
   `magic-link <username>` so they can log in and re-enrol.
-- **Production hostname doesn't route to a realm** → `realm-list` to
-  confirm what's configured, then `realm-add-domain` to bind the new
-  hostname.
+- **Production hostname doesn't route to a realm** → `realm-list` to confirm what's configured, then `realm-add-domain` to bind the new hostname, then `realm-set-primary-domain` to make it the realm's canonical primary.
 - **Marten projections out of sync after a schema change** →
   `rebuild-projections`.
 - **Legacy `client_credentials` clients fail mutation guard** →

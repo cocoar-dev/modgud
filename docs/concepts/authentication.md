@@ -110,6 +110,10 @@ Three independent 2FA methods, freely combinable:
 
 Plus **recovery codes** as a last-resort backup.
 
+::: warning Passkeys are bound to the realm's primary domain
+A passkey is registered against a WebAuthn relying-party ID, and Modgud uses the realm's **PrimaryDomain** as that ID. A passkey therefore only works when the user reaches the realm on its primary domain — not via a secondary domain in the realm's `Domains` list — and changing the realm's PrimaryDomain invalidates every existing passkey (affected users must re-register). See [Realms — primary domain](/operate/realms#primary-domain).
+:::
+
 ## External login (OIDC IdPs)
 
 Users can sign in via external OIDC providers (Entra ID, Google,

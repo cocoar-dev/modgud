@@ -5,7 +5,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.ExtensionMethods;
 using Modgud.Infrastructure.Email;
+using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -48,15 +50,26 @@ public static class EmailVerificationEndpoints
             IDocumentSession session,
             IEmailService emailService,
             UserManager<ApplicationUser> userManager,
-            IServerConfiguration conf,
+            IRealmProvisioningService realmSvc,
             IWebHostEnvironment env,
-            HttpContext context) =>
+            HttpContext context,
+            CancellationToken ct) =>
         {
             const string genericMessage = "If the account exists and the email matches, a verification link was sent.";
 
             var user = await userManager.GetUserAsync(context.User);
 
             if (user is null || !user.IsActive || user.IsDeleted || string.IsNullOrEmpty(user.Email))
+            {
+                await AntiTimingDelayAsync();
+                return Results.Ok(new { Message = genericMessage });
+            }
+
+            // Outbound link is built against the current realm's primary
+            // domain. A missing realm here is exotic (RealmMiddleware would
+            // have 404'd) — keep the anti-enumeration generic response.
+            var realm = await context.ResolveCurrentRealmAsync(realmSvc, ct);
+            if (realm is null)
             {
                 await AntiTimingDelayAsync();
                 return Results.Ok(new { Message = genericMessage });
@@ -91,7 +104,7 @@ public static class EmailVerificationEndpoints
             session.Store(challenge);
             await session.SaveChangesAsync();
 
-            var appUrl = (conf.PublicUrl ?? (env.IsDevelopment() ? "http://localhost:4300" : conf.AppUrl)).TrimEnd('/');
+            var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
             var encodedToken = Uri.EscapeDataString(token);
             // type=account discriminates from the existing profile-change
             // and self-registration verify flows that share /verify-email.

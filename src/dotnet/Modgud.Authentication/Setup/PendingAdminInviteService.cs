@@ -221,43 +221,11 @@ public sealed class PendingAdminInviteService(
 
     private string BuildMagicLinkUrl(Realm realm, string plaintextToken)
     {
-        // Pick the realm's primary domain — first entry in Domains[]. In Dev
-        // we fall back to localhost for the system realm so the link
-        // actually opens in the developer's browser; for tenant realms in
-        // Dev the operator is expected to point Host=… at the right realm
-        // (acme.localhost etc.).
-        string host;
-        if (realm.Domains is { Length: > 0 })
-        {
-            host = realm.Domains[0];
-        }
-        else if (env.IsDevelopment())
-        {
-            host = "localhost";
-        }
-        else
-        {
-            host = realm.Slug + ".invalid";
-        }
-
-        // Public-facing URL: in Dev we use the SPA dev-server port (4300),
-        // in Prod we trust IServerConfiguration.PublicUrl / AppUrl. Dev-port
-        // detection: if AppUrl points at the API (9099), swap to 4300 because
-        // that's where /bootstrap is served.
-        string scheme;
-        string? portSuffix = null;
-        if (env.IsDevelopment())
-        {
-            scheme = "http";
-            portSuffix = ":4300";
-        }
-        else
-        {
-            scheme = "https";
-            // In prod the reverse-proxy fronts the same host on 443 — no
-            // port suffix needed.
-        }
-
-        return $"{scheme}://{host}{portSuffix}/bootstrap?token={Uri.EscapeDataString(plaintextToken)}";
+        // The link is built against the realm's canonical public host
+        // (PrimaryDomain) — the same origin used for every other outbound
+        // link in the realm. In Dev that's http://{host}:4300 (the SPA dev
+        // server, where /bootstrap is served), in Prod https://{host}.
+        var baseUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
+        return $"{baseUrl}/bootstrap?token={Uri.EscapeDataString(plaintextToken)}";
     }
 }

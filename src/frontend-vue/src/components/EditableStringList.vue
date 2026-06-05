@@ -84,6 +84,12 @@ function removeRow(id: string) {
 
 const builder = CoarGridBuilder.create<Row>()
   .rowDataRef(rows)
+  // Size the grid to its rows. Without this the grid sits in a flex/min-height
+  // wrapper that it does not fill, so AG Grid's root+viewport collapse to 0px
+  // height and pre-loaded rows render into the DOM but are clipped to nothing
+  // (e.g. a realm's existing domains showed in the list grid but not in the
+  // edit modal). autoHeight makes the grid grow with its content instead.
+  .option('domLayout', 'autoHeight')
   .option('getRowId', (p: any) => p.data.id)
   .stopEditingWhenCellsLoseFocus(true)
   .columns([

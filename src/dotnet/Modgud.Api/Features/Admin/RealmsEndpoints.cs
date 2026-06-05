@@ -267,6 +267,7 @@ public static class RealmsEndpoints
         DisplayName = realm.DisplayName,
         Description = realm.Description,
         Domains = realm.Domains,
+        PrimaryDomain = realm.PrimaryDomain,
         IsControlPlane = realm.IsControlPlane,
         IsActive = realm.IsActive,
         NeedsSetup = false, // per-realm setup detection comes in a later etappe

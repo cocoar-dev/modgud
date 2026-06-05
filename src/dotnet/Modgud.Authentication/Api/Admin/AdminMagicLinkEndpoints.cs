@@ -5,8 +5,10 @@ using Microsoft.AspNetCore.Identity;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authentication;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Identity;
 using Modgud.Infrastructure.Email;
+using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Authentication.Api.Admin;
 
@@ -29,8 +31,10 @@ public static class AdminMagicLinkEndpoints
             IDocumentSession session,
             IEmailService emailService,
             IMagicLinkConfiguration config,
-            IServerConfiguration conf,
-            IWebHostEnvironment env) =>
+            IRealmProvisioningService realmSvc,
+            IWebHostEnvironment env,
+            HttpContext context,
+            CancellationToken ct) =>
         {
             var userId = BuildingBlocks.Helper.ShortGuid.Decode(id);
             var user = await session.LoadAsync<ApplicationUser>(userId);
@@ -40,6 +44,14 @@ public static class AdminMagicLinkEndpoints
 
             if (string.IsNullOrEmpty(user.Email))
                 return Results.Json(new { Message = "User has no email address" }, statusCode: 400);
+
+            // The link host is the current realm's primary domain. Unlike the
+            // anti-enumeration self-service path, this is an authenticated admin
+            // action — surface a clear error if the realm can't be resolved
+            // rather than silently sending a broken link.
+            var realm = await context.ResolveCurrentRealmAsync(realmSvc, ct);
+            if (realm is null)
+                return Results.Json(new { Message = "Could not resolve the current realm." }, statusCode: 500);
 
             // Clean up old challenges for this user
             var existingChallenges = await session.Query<MagicLinkChallenge>()
@@ -64,7 +76,7 @@ public static class AdminMagicLinkEndpoints
             await session.SaveChangesAsync();
 
             // Build magic link URL
-            var appUrl = (conf.PublicUrl ?? (env.IsDevelopment() ? "http://localhost:4300" : conf.AppUrl)).TrimEnd('/');
+            var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
             var encodedToken = Uri.EscapeDataString(token);
             var magicUrl = $"{appUrl}/magic-login?userId={user.Id}&token={encodedToken}";
 
