@@ -795,6 +795,14 @@ try
 
     builder.Services.AddOpenIddictWithMarten(openIddictSettings);
 
+    // CORS for browser-only SPA clients (Authorization Code + PKCE in the
+    // browser, no BFF). OAuthCorsMiddleware emits headers on the OIDC endpoints,
+    // echoing only origins registered on a client in the active realm. See
+    // Modgud.Api.Cors.
+    builder.Services.AddCors();
+    builder.Services.AddMemoryCache();
+    builder.Services.AddScoped<Modgud.Api.Cors.IClientCorsOriginProvider, Modgud.Api.Cors.ClientCorsOriginProvider>();
+
     // Migration services for legacy Modgud data have been removed in the
     // IdP-only baseline — no historical documents to upgrade to event streams.
 
@@ -1070,6 +1078,13 @@ try
     // opened during authentication / authorization (e.g. Identity user lookup).
     app.UseMiddleware<RealmMiddleware>();
     app.UseMiddleware<TenantContextMiddleware>();
+
+    // CORS for the browser-reachable OIDC endpoints (token / userinfo /
+    // revocation + the public discovery/JWKS metadata). Runs after the tenant
+    // is resolved (so the per-realm Allowed-CORS-Origins lookup works) and
+    // before the control-plane gate / auth so a preflight OPTIONS is answered
+    // with 204 without authentication. See Modgud.Api.Cors.OAuthCorsMiddleware.
+    app.UseMiddleware<Modgud.Api.Cors.OAuthCorsMiddleware>();
 
     // C14 — Control-Plane / Data-Plane separation. Runs after RealmMiddleware
     // (so TenantInfo is on HttpContext) and before authentication so that
