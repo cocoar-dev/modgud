@@ -33,6 +33,14 @@ RUN pnpm build:in-app
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
+# Npgsql probes for GSSAPI/Kerberos when opening a connection; without the
+# library present it logs a noisy "Cannot load libgssapi_krb5.so.2" error
+# before falling back to password auth. Install it so the boot / recovery-CLI
+# logs stay clean. (Kept above the app COPYs so the apt layer caches.)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy the published .NET app
 COPY --from=backend-build /app ./
 

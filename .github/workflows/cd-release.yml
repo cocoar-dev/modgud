@@ -185,13 +185,27 @@ jobs:
           path: ${{ github.workspace }}/artifacts
           retention-days: 7
 
+  # Multi-arch (amd64 + arm64) via native runners — each arch builds on its
+  # own native runner and pushes by digest; assemble-candidate stitches them
+  # into the :candidate manifest list. publish-docker later promotes that whole
+  # manifest to the release tags (preserving both arches).
   build-docker:
-    name: Build Docker (push :candidate)
+    name: Build Docker (${{ matrix.arch }})
     needs: validate-version
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: ${{ github.repository }}
@@ -202,6 +216,9 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name || github.ref }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Login to GHCR
         uses: docker/login-action@v4
         with:
@@ -209,16 +226,71 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push candidate
+      # Real release / non-dry dispatch: push each arch by digest.
+      # Dry-run dispatch: build only (validates the Dockerfile per arch),
+      # no push — assemble-candidate + publish-docker are skipped anyway.
+      - name: Build (and push by digest unless dry-run)
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./docker/Dockerfile
-          # In dry-run dispatch: build locally on the runner, don't push.
-          # The candidate tag is never pulled because publish-docker
-          # is also skipped under dry-run, so a local-only build is fine.
-          push: ${{ github.event_name == 'release' || !inputs.dry_run }}
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+          platforms: ${{ matrix.platform }}
+          outputs: ${{ (github.event_name == 'release' || !inputs.dry_run) && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.IMAGE_NAME) || '' }}
+
+      - name: Export digest
+        if: github.event_name == 'release' || !inputs.dry_run
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name == 'release' || !inputs.dry_run
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  assemble-candidate:
+    name: Assemble :candidate manifest (multi-arch)
+    if: github.event_name == 'release' || !inputs.dry_run
+    needs: [validate-version, build-docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create :candidate manifest list
+        working-directory: /tmp/digests
+        run: |
+          BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          docker buildx imagetools create -t "${BASE}:${{ env.CANDIDATE_TAG }}" \
+            $(printf "${BASE}@sha256:%s " *)
+          docker buildx imagetools inspect "${BASE}:${{ env.CANDIDATE_TAG }}"
 
   build-docs:
     name: Build Docs (VitePress)
@@ -314,11 +386,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   publish-docker:
-    name: Publish Docker (retag candidate → release tags)
+    name: Publish Docker (promote candidate → release tags)
     # Real releases always publish. Manual dispatch publishes only if
     # explicitly opted out of dry-run.
     if: github.event_name == 'release' || !inputs.dry_run
-    needs: [validate-version, release-gate]
+    needs: [validate-version, release-gate, assemble-candidate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -347,18 +419,24 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate-version.outputs.version }}
             type=semver,pattern={{major}},value=${{ needs.validate-version.outputs.version }}
 
-      - name: Retag candidate as release tags and push
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Promote candidate to release tags (multi-arch)
         env:
           CAND: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          docker pull "$CAND"
+          # imagetools create copies the candidate's full manifest list
+          # (amd64 + arm64) onto every release tag in one shot — docker
+          # tag/push would flatten it to the runner's single arch.
+          TAGARGS=""
           while IFS= read -r tag; do
-            [[ -z "$tag" ]] && continue
-            echo "Tagging $CAND → $tag"
-            docker tag "$CAND" "$tag"
-            docker push "$tag"
+            [ -z "$tag" ] && continue
+            TAGARGS="$TAGARGS -t $tag"
           done <<< "$TAGS"
+          echo "Promoting $CAND → $TAGS"
+          docker buildx imagetools create $TAGARGS "$CAND"
 
       - name: Summary
         run: |

@@ -114,9 +114,74 @@ jobs:
         run: dotnet test Modgud.slnx -c Release --no-build --verbosity normal
         working-directory: ./src/dotnet
 
-  publish:
-    name: Build Image & Push to GHCR
+  # Multi-arch (amd64 + arm64) via native runners: each arch builds on its
+  # own native runner (free arm64 runners for public repos), pushes by digest,
+  # and the `merge` job assembles a manifest list under the real tags. No QEMU
+  # — the .NET + pnpm builds run natively, so no emulation slowdown/flakiness.
+  build:
+    name: Build Image (${{ matrix.arch }})
     needs: [version, test]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Merge manifest & push tags
+    needs: [version, build]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -126,8 +191,15 @@ jobs:
       IMAGE_NAME: ${{ github.repository }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4
@@ -136,35 +208,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute tags
-        id: tags
+      - name: Create manifest list and push tags
+        working-directory: /tmp/digests
         run: |
           BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           VERSION="${{ needs.version.outputs.version }}"
           LABEL="${{ needs.version.outputs.label }}"
-          {
-            echo "list<<EOF"
-            echo "$BASE:$VERSION"
-            if [ -n "$LABEL" ]; then echo "$BASE:$LABEL"; fi
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-          echo "Tags: $VERSION${LABEL:+ + $LABEL}"
+          TAGS="-t ${BASE}:${VERSION}"
+          if [ -n "$LABEL" ]; then TAGS="$TAGS -t ${BASE}:${LABEL}"; fi
+          docker buildx imagetools create $TAGS \
+            $(printf "${BASE}@sha256:%s " *)
 
-      - name: Build and push image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./docker/Dockerfile
-          push: true
-          tags: ${{ steps.tags.outputs.list }}
-          labels: |
-            org.opencontainers.image.version=${{ needs.version.outputs.version }}
-            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Inspect
+        run: |
+          BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          docker buildx imagetools inspect "${BASE}:${{ needs.version.outputs.label || needs.version.outputs.version }}"
 
       - name: Publish summary
         run: |
           {
-            echo "### Image published to GHCR"
+            echo "### Image published to GHCR (multi-arch: amd64 + arm64)"
             echo ""
             echo "**Version (immutable):** \`${{ needs.version.outputs.version }}\`"
             echo "**Moving tag:** \`${{ needs.version.outputs.label }}\`"
