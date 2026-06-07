@@ -21,7 +21,10 @@ services:
       retries: 10
 
   auth:
-    image: ghcr.io/cocoar-dev/modgud:staging
+    # :beta follows the develop HEAD (published by CD - Publish Image on every
+    # develop merge). The old :staging tag is retired. Pin to a :X.Y.Z release
+    # tag for anything beyond local contributor use — see docs/operate/deployment.
+    image: ghcr.io/cocoar-dev/modgud:beta
     container_name: modgud
     # Container listens on 8081 (non-privileged — the .NET aspnet image runs
     # as a non-root user and can't bind <1024 without USER root). The host
