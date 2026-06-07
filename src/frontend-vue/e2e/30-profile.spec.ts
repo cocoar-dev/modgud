@@ -44,10 +44,13 @@ test.beforeAll(async ({ request }) => {
   })
   if (!adminLogin.ok()) throw new Error('admin login failed')
 
+  // EmailConfirmed: true — the profile change-request endpoint refuses callers
+  // with an unverified email (403 Account.EmailNotVerified). Admin-provisioned
+  // users start unverified, so confirm at creation to model a settled account.
   const created = await (await request.post('/api/user', {
     data: {
       Firstname: 'Old', Lastname: 'Name', Acronym: userName,
-      Email: initialEmail,
+      Email: initialEmail, EmailConfirmed: true,
     },
   })).json()
 
@@ -65,7 +68,7 @@ test('non-email field change creates an AdminApprovalPending request', async ({ 
   const res = await page.request.put('/api/account/profile/request', {
     data: { Firstname: 'BrandNew' },
   })
-  expect(res.ok()).toBeTruthy()
+  if (!res.ok()) throw new Error(`profile-request: ${res.status()} ${await res.text()}`)
   const body = await res.json()
   expect(body.Open.Status).toBe('AdminApprovalPending')
 })
