@@ -92,7 +92,12 @@ public static class MagicLinkEndpoints
                     (DateTimeOffset.UtcNow - c.CreatedAt).TotalMinutes < config.RateLimitMinutes);
 
             if (recentChallenge is not null)
-                return Results.Ok(new { Message = "If your email is registered, you will receive a login link." });
+            {
+                // Same jitter as every other branch — a rate-limited (hence known)
+                // address must not return measurably faster than a fresh request.
+                await AntiTimingDelayAsync();
+                return Results.Ok(new { Message = genericMessage });
+            }
 
             // Clean up old challenges for this user
             foreach (var old in existingChallenges)
@@ -129,7 +134,14 @@ public static class MagicLinkEndpoints
                     ["ExpirationMinutes"] = config.ExpirationMinutes.ToString(),
                 });
 
-            return Results.Ok(new { Message = "If your email is registered, you will receive a login link." });
+            // Anti-timing: the success path does real work (DB writes + email send)
+            // but used to skip the jitter every failure branch applies — so a
+            // registered, confirmed, active address returned on a different timing
+            // profile than an unknown one, leaking which emails exist. Apply the
+            // same jitter here so the timing carries no enumeration signal.
+            await AntiTimingDelayAsync();
+
+            return Results.Ok(new { Message = genericMessage });
         })
         .WithName("MagicLink_Request")
         // RATE-01 — 5 requests per hour per IP. Per-user rate limit lives

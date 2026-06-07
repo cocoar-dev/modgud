@@ -32,7 +32,7 @@ namespace Modgud.Api.Tests.Infrastructure;
 /// Created once in SharedPostgresFixture and reused across all tests.
 /// Test configuration is applied via CocoarTestConfiguration.Apply() before creation.
 /// </summary>
-public sealed class ModgudWebApplicationFactory : WebApplicationFactory<Program>
+public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 {
     private IHost? _host;
 
@@ -40,6 +40,15 @@ public sealed class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     {
         // No configuration needed here - CocoarTestConfiguration.Apply()
         // was already called in the fixture
+    }
+
+    /// <summary>
+    /// Parameterless ctor for derived factories (e.g. the cold-start harness)
+    /// that drive their own configuration context instead of binding to the
+    /// shared <see cref="SharedPostgresFixture"/>.
+    /// </summary>
+    protected ModgudWebApplicationFactory()
+    {
     }
 
     public JsonSerializerOptions JsonOptions { get; } = new JsonSerializerOptions

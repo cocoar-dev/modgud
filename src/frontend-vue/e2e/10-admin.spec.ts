@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { apiLogin } from './helpers'
+import { apiLogin, uniqueSuffix } from './helpers'
 
 /**
  * Phase B of the manual-checklist port. Admin CRUD coverage for §6 + §7 +
@@ -26,7 +26,7 @@ const ADMIN_PASSWORD = 'ABC12abc!'
 
 // Random suffix per run — protects against collisions between this spec's
 // CRUD operations on a database the smoke spec already touched.
-const SUFFIX = Math.random().toString(36).slice(2, 8)
+const SUFFIX = uniqueSuffix()
 
 // Tests share the same authenticated request context — `apiLogin` sets the
 // cookie on the test's page context, but page.request inherits from there.
@@ -93,30 +93,48 @@ test.describe('§7 Roles (admin CRUD)', () => {
     expect(names).toEqual(expect.arrayContaining(['System Admin', 'User Manager', 'Viewer']))
   })
 
-  test('POST /api/role creates a role with 3-segment shape', async ({ page }) => {
+  test('POST /api/role creates a role linked to an app catalog permission', async ({ page }) => {
+    // Catalog-FK role model: a role links to an App by AppId (ShortGuid) and
+    // grants concrete permissions by PermissionIds (ShortGuid FKs into that
+    // App's Permissions[]). Resolve the modgud app + its user:read permission
+    // id from the catalog, then create the role against them.
+    const apps = await (await page.request.get('/api/app')).json() as {
+      Id: string; Slug: string; Permissions: { Id: string; Resource: string; Action: string }[]
+    }[]
+    const modgud = apps.find(a => a.Slug === 'modgud')
+    expect(modgud, 'modgud system app present in catalog').toBeDefined()
+    const userRead = modgud!.Permissions.find(p => p.Resource === 'user' && p.Action === 'read')
+    expect(userRead, 'user:read present in modgud catalog').toBeDefined()
+
     const name = `Crud Role ${SUFFIX}`
     const res = await page.request.post('/api/role', {
       data: {
         Name: name,
-        AppSlug: 'modgud',
-        ResourceType: 'user',
-        Permissions: ['read'],
+        AppId: modgud!.Id,
+        IsRealmAdmin: false,
+        PermissionIds: [userRead!.Id],
       },
     })
-    expect(res.ok()).toBeTruthy()
+    if (!res.ok()) throw new Error(`create role failed: ${res.status()} ${await res.text()}`)
     const body = await res.json()
     expect(body.Name).toBe(name)
-    expect(body.AppSlug).toBe('modgud')
-    // Permissions are stored as bare actions and expanded at resolution
-    // time; the wire shape preserves the bare form.
-    expect(body.Permissions).toContain('read')
+    expect(body.AppId).toBe(modgud!.Id)
+    expect(body.IsRealmAdmin).toBe(false)
+    expect(body.PermissionIds).toContain(userRead!.Id)
   })
 
-  test('System Admin default role carries realm:admin (post-Phase-1 model)', async ({ page }) => {
-    const roles = await (await page.request.get('/api/role')).json() as { Name: string; Permissions: string[] }[]
+  test('System Admin default role is a realm-admin role (catalog-FK model)', async ({ page }) => {
+    // realm:admin is no longer a permission string on the role — it's the
+    // IsRealmAdmin flag, synthesized into "realm:admin" at resolution time.
+    const roles = await (await page.request.get('/api/role')).json() as {
+      Name: string; IsRealmAdmin: boolean; AppId: string | null; PermissionIds: string[]
+    }[]
     const sysAdmin = roles.find(r => r.Name === 'System Admin')
     expect(sysAdmin).toBeDefined()
-    expect(sysAdmin!.Permissions).toContain('realm:admin')
+    expect(sysAdmin!.IsRealmAdmin).toBe(true)
+    // A realm-admin role has no app link. A null AppId is omitted from the JSON
+    // (STJ WhenWritingNull), so it arrives as undefined — assert nullish.
+    expect(sysAdmin!.AppId ?? null).toBeNull()
   })
 })
 

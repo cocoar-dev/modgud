@@ -13,6 +13,8 @@ using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
 using Modgud.Authentication.Sessions;
 using Modgud.Infrastructure.Observability;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -27,6 +29,33 @@ public static class PasskeyEndpoints
     {
         var group = application.MapGroup($"{path}/account/passkey")
             .WithTags("Passkey / WebAuthn");
+
+        // A WebAuthn ceremony needs the realm's PrimaryDomain as the relying-party
+        // ID. If the realm has none (a deployment misconfiguration / migration gap
+        // the create/update/boot invariants normally prevent), building the RP
+        // throws — without this filter every passkey endpoint would surface that
+        // as an opaque 500. Map it to a clear, actionable response and log it so
+        // it shows up in the per-realm error feed.
+        group.AddEndpointFilter(async (invocationContext, next) =>
+        {
+            try
+            {
+                return await next(invocationContext);
+            }
+            catch (RelyingPartyUnavailableException ex)
+            {
+                var http = invocationContext.HttpContext;
+                http.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Modgud.Authentication.Api.Account.PasskeyEndpoints")
+                    .LogError(ex, "Passkey ceremony unavailable for this realm: {Reason}", ex.Message);
+
+                return Results.Problem(
+                    statusCode: StatusCodes.Status503ServiceUnavailable,
+                    title: "Passkey.Unavailable",
+                    detail: "Passkey sign-in is not available for this realm because its primary domain "
+                          + "is not configured. Contact an administrator.");
+            }
+        });
 
         // ═══ Registration (requires authentication) ═══
 

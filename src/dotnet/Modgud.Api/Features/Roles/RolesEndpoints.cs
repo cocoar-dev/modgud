@@ -153,6 +153,13 @@ public static class RolesEndpoints
             }));
         }
 
+        // A client may omit PermissionIds entirely (or send a stale/renamed
+        // field); System.Text.Json then binds the record param to null. Coalesce
+        // to empty so a malformed/partial payload yields a clean 400 below
+        // (Role.GrantsNothing / Role.PermissionIdsRequireAppLink) instead of a
+        // 500 NullReferenceException.
+        var permissionIdsInput = dto.PermissionIds ?? new List<string>();
+
         // Resolve AppId (ShortGuid → Guid). Null payload = pure realm-admin role.
         Guid? appId = null;
         App? linkedApp = null;
@@ -179,7 +186,7 @@ public static class RolesEndpoints
         }
 
         // PermissionIds without an App = invalid.
-        if (appId is null && dto.PermissionIds.Count > 0)
+        if (appId is null && permissionIdsInput.Count > 0)
         {
             return (new PermissionRole(), Results.BadRequest(new
             {
@@ -190,9 +197,9 @@ public static class RolesEndpoints
 
         // Validate each permission id resolves to an entry in the linked App's catalog.
         var catalogIds = linkedApp?.Permissions.Select(p => p.Id).ToHashSet() ?? new HashSet<Guid>();
-        var permissionIds = new List<Guid>(dto.PermissionIds.Count);
+        var permissionIds = new List<Guid>(permissionIdsInput.Count);
         var seen = new HashSet<Guid>();
-        foreach (var raw in dto.PermissionIds)
+        foreach (var raw in permissionIdsInput)
         {
             if (!ShortGuid.TryParse(raw, out Guid permId))
             {

@@ -174,19 +174,8 @@ Everything else has sensible defaults:
 - `OpenIddict__DevelopmentMode` defaults to `false` (production
   shape — real signing keys, transport-security required).
 
-::: warning ENV variable casing
-Cocoar.Configuration's environment-variable provider serializes ENV
-keys 1:1 into the JSON map that's deserialized into the config types,
-and the deserializer is **case-sensitive** on the property side. ENV
-keys must match the C# property casing exactly:
-
-- ✅ `DbSettings__ConnectionString`, `OpenIddict__Issuer`, `Email__Smtp__Host`
-- ❌ `DBSETTINGS__CONNECTIONSTRING` — silently fails to bind, the
-  property stays at its class default
-
-Two underscores (`__`) are the section separator. Single underscore is
-literal. The full list of bindable settings is in the Settings classes
-table above.
+::: tip ENV variable casing
+Cocoar.Configuration v6 binds environment variables **case-insensitively**, so the section and property names need not match the C# casing exactly — `DbSettings__ConnectionString` and `DBSETTINGS__CONNECTIONSTRING` bind to the same setting, as do `AppUrl` and `APPURL`. Two underscores (`__`) are the section separator; a single underscore is literal. The full list of bindable settings is in the Settings classes table above.
 :::
 
 ### First-time bootstrap

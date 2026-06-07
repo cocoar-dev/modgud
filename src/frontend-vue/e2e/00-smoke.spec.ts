@@ -62,8 +62,12 @@ test.describe('§2 Login & sign-out', () => {
     await apiLogin(page, ADMIN_USER, ADMIN_PASSWORD)
     await page.goto('/dashboard')
 
-    // Open the user-menu in the header and trigger sign-out.
-    await page.getByRole('button', { name: /^AD$|admin/i }).first().click()
+    // Open the user-menu in the header and trigger sign-out. The avatar button
+    // carries the signed-in user's display name as its title (its visible label
+    // is just the initials — 'EA' for "E2E Admin" — which vary per account), so
+    // match the title, scoped to the header banner. The previous initials-based
+    // selector (/^AD$|admin/i) misfired onto an "Administration" nav element.
+    await page.getByRole('banner').getByTitle(/admin/i).click()
     await page.getByRole('menuitem', { name: /Abmelden|Sign out|Logout/i }).click()
     await page.waitForURL(/\/login/, { timeout: 10_000 })
 

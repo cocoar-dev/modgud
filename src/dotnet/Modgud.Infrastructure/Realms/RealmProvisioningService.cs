@@ -35,6 +35,24 @@ public interface IRealmProvisioningService
         UpdateRealmDto dto,
         CancellationToken ct = default);
     Task<ErrorOr<bool>> DeleteRealmAsync(string slug, CancellationToken ct = default);
+
+    /// <summary>
+    /// Compensation for a realm whose <see cref="CreateRealmAsync"/> succeeded
+    /// but whose post-create bootstrap (issuing the initial-admin invite) then
+    /// failed. Hard-removes the global <see cref="Realm"/> record so the
+    /// partially-provisioned realm is no longer orphaned (no adminless realm
+    /// left behind, no 409 on retry) and a re-run of <see cref="CreateRealmAsync"/>
+    /// is clean: the tenant database and its Marten tenant-registry record are
+    /// left in place and reused idempotently (CREATE DATABASE is skipped when it
+    /// already exists, schema-apply and the catalog seeders are idempotent).
+    ///
+    /// <para>Unlike <see cref="DeleteRealmAsync"/> (a soft-delete that is
+    /// deliberately blocked for the control plane) this is a hard delete. It
+    /// no-ops defensively on a control-plane realm — provisioning never creates
+    /// one, so reaching that branch would indicate a logic error.</para>
+    /// </summary>
+    Task RollbackProvisionedRealmAsync(string slug, CancellationToken ct = default);
+
     Task EnsureSystemRealmExistsAsync(CancellationToken ct = default);
 
     /// <summary>
@@ -385,6 +403,48 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
 
         _realmCache.Invalidate();
         return true;
+    }
+
+    public async Task RollbackProvisionedRealmAsync(string slug, CancellationToken ct = default)
+    {
+        await using var session = _globalStore.LightweightSession();
+
+        var realm = await session.Query<Realm>()
+            .FirstOrDefaultAsync(r => r.Slug == slug, ct);
+
+        if (realm is null)
+            return;
+
+        if (realm.IsControlPlane)
+        {
+            // Provisioning never creates a control-plane realm, so this branch
+            // means something is badly wrong — refuse to hard-delete the
+            // deployment's administration anchor.
+            _logger.LogError(
+                "Refusing to roll back realm {Slug}: it holds the control-plane flag. " +
+                "Provisioning never creates a control-plane realm, so this indicates a logic error.",
+                slug);
+            return;
+        }
+
+        session.Delete(realm);
+        await session.SaveChangesAsync(ct);
+
+        _realmCache.Invalidate();
+
+        _logger.LogWarning(
+            "Rolled back partially-provisioned realm {Slug} after a post-create bootstrap failure. " +
+            "The tenant database is left in place for idempotent reuse on retry.",
+            slug);
+        _securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RealmProvisioned,
+            Level = "Warning",
+            Realm = slug,
+            Status = "rolled-back",
+            Reason = "bootstrap-invite issuance failed after realm creation",
+            Message = $"Rolled back partially-provisioned realm {slug} (tenant DB retained for retry)",
+        });
     }
 
     public async Task EnsureSystemRealmExistsAsync(CancellationToken ct = default)

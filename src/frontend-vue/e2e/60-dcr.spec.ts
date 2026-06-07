@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test'
-import { apiLogin } from './helpers'
+import { test, expect, request as pwRequest } from '@playwright/test'
+import { apiLogin, uniqueSuffix } from './helpers'
 import { createHash, randomBytes } from 'node:crypto'
 
 /**
@@ -20,7 +20,7 @@ const ADMIN_USER = process.env.E2E_ADMIN_USER ?? 'admin'
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'ABC12abc!'
 
 // Unique-per-run names so re-runs against the same DB don't collide.
-const SUFFIX = Math.random().toString(36).slice(2, 8)
+const SUFFIX = uniqueSuffix()
 const API_NAME = `https://dcr-pw-${SUFFIX}.modgud.test/`
 const SCOPE_NAME = `dcr-pw-scope-${SUFFIX}`
 const CLIENT_NAME = `Playwright DCR ${SUFFIX}`
@@ -35,13 +35,20 @@ test.beforeEach(async ({ page }) => {
 })
 
 test.describe('DCR — end-to-end', () => {
-  test('admin enables DCR via UI, agent registers, consent shows [unverified] marker', async ({ page, request }) => {
+  test('admin enables DCR via UI, agent registers, consent shows [unverified] marker', async ({ page, baseURL }) => {
     // ── §1: enable DCR via the realm-settings UI ─────────────────────
     await page.goto('/admin/realm-settings')
-    await page.getByRole('button', { name: /Dynamic Client Registration/i }).click()
+    // The DCR settings live behind a <CoarTab>, not a button. Click it by text
+    // scoped to the tab bar so the selector is robust to the tab's ARIA role.
+    await page.locator('.tab-bar').getByText(/Dynamic Client Registration/i).click()
     const dcrEnable = page.getByRole('checkbox',
       { name: /Enable Dynamic Client Registration/i })
-    if (!(await dcrEnable.isChecked())) await dcrEnable.check()
+    // The real <input> is visually replaced by its CoarCheckbox label, which
+    // intercepts pointer events — click the label (the human path) to toggle.
+    if (!(await dcrEnable.isChecked())) {
+      await page.getByText(/Enable Dynamic Client Registration/i).click()
+    }
+    await expect(dcrEnable).toBeChecked()
 
     // Generous: production rate-limits would trip mid-suite once
     // re-runs accumulate. The fields are plain numeric inputs.
@@ -58,7 +65,7 @@ test.describe('DCR — end-to-end', () => {
     // The OAuth-Apis admin UI is covered by 10-admin.spec.ts; here we
     // just create the resource so the DCR client has something legal
     // to ask for.
-    const apiCreate = await page.request.post('/api/oauth-api', {
+    const apiCreate = await page.request.post('/api/admin/oauth/apis', {
       data: {
         Name: API_NAME,
         DisplayName: API_NAME,
@@ -69,7 +76,7 @@ test.describe('DCR — end-to-end', () => {
     expect(apiCreate.ok()).toBeTruthy()
 
     // ── §3: seed an OAuthScope with AllowDCRClients=true ─────────────
-    const scopeCreate = await page.request.post('/api/oauth-scope', {
+    const scopeCreate = await page.request.post('/api/admin/oauth/scopes', {
       data: {
         Name: SCOPE_NAME,
         DisplayName: SCOPE_NAME,
@@ -83,7 +90,7 @@ test.describe('DCR — end-to-end', () => {
     // ── §4: anonymous DCR registration (no UI — it's HTTP) ───────────
     // Use a fresh request context (no auth cookie) so the endpoint sees
     // an anonymous caller, the way an agent actually hits it.
-    const anonContext = await request.newContext()
+    const anonContext = await pwRequest.newContext({ baseURL })
     const regResp = await anonContext.post(`/connect/register`, {
       data: {
         client_name: CLIENT_NAME,
@@ -99,10 +106,13 @@ test.describe('DCR — end-to-end', () => {
     await anonContext.dispose()
 
     // ── §5: admin grid surfaces the DCR client ───────────────────────
-    await page.goto('/admin/oauth-clients')
+    await page.goto('/admin/oauth/clients')
     // The DCR-only filter should hide all admin-created clients and
     // leave just our new one visible.
-    await page.getByRole('checkbox', { name: /DCR only/i }).check()
+    // Same CoarCheckbox label-intercept caveat as the DCR-enable toggle above.
+    const dcrOnly = page.getByRole('checkbox', { name: /DCR only/i })
+    if (!(await dcrOnly.isChecked())) await page.getByText(/DCR only/i).click()
+    await expect(dcrOnly).toBeChecked()
     await expect(page.getByRole('gridcell', { name: clientId })).toBeVisible({ timeout: 10_000 })
 
     // ── §6: drive the OAuth dance through the consent screen ─────────
@@ -133,16 +143,17 @@ test.describe('DCR — end-to-end', () => {
     await expect(page.getByText(/registered itself|hat sich selbst registriert/i)).toBeVisible()
 
     // ── §8: click Allow, capture code from redirect ──────────────────
-    const navPromise = page.waitForURL(new RegExp(`^${escapeRegex(REDIRECT_URI)}`),
-      { waitUntil: 'commit', timeout: 10_000 })
-    await page.getByRole('button', { name: /^Allow$|^Zulassen$|^Allow.*/i }).click()
-    await navPromise
-    const finalUrl = page.url()
-    const code = new URL(finalUrl).searchParams.get('code')
-    expect(code, `Expected ?code= in final URL: ${finalUrl}`).toBeTruthy()
+    // The redirect URI is a dead loopback (nothing listening), so the
+    // navigation never commits — wait for the request to be *issued*
+    // instead, which fires before the connection is refused.
+    const redirectReq = page.waitForRequest(
+      req => req.url().startsWith(REDIRECT_URI), { timeout: 10_000 })
+    await page.getByRole('button', { name: /^Erlauben$|^Allow$/i }).click()
+    const code = new URL((await redirectReq).url()).searchParams.get('code')
+    expect(code, 'Expected ?code= in the redirect request URL').toBeTruthy()
 
     // ── §9: token exchange — anonymous (public PKCE client) ──────────
-    const tokenContext = await request.newContext()
+    const tokenContext = await pwRequest.newContext({ baseURL })
     const tokenResp = await tokenContext.post('/connect/token', {
       form: {
         grant_type: 'authorization_code',
@@ -176,8 +187,4 @@ function base64Url(buf: Buffer): string {
     .replace(/=/g, '')
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

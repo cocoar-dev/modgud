@@ -76,6 +76,7 @@ export default withMermaid(defineConfig({
         text: 'Future Features',
         items: [
           { text: 'Overview', link: '/future-features/' },
+          { text: '⭐ Human-path testing — the cold-start ladder', link: '/future-features/human-path-testing-ladder' },
           { text: '⭐ Identity-Lifecycle Untangle + Federation group-sync', link: '/future-features/identity-lifecycle-untangle' },
           { text: '⭐ Federation v1 — Implementation Spec', link: '/future-features/federation-v1-design' },
           { text: '⭐ Account Lifecycle — Email + Deletion Plan', link: '/future-features/lifecycle-email-deletion-plan' },

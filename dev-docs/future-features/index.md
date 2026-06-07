@@ -13,6 +13,10 @@ to re-derive the analysis from scratch.
 / Zitadel, Verdict, und Backlog-Tabelle mit allen offenen Punkten und
 Severity. Detail-Pages unten.
 
+⭐ **Testing strategy — start here for any test work (2026-06-05):**
+[Human-path testing — the cold-start ladder](./human-path-testing-ladder)
+— the diagnosis (the suite is structurally blind to cold-start / human-path bugs because every test pre-seeds a realm + admin and logs in) plus the agreed fix: decompose the app into an ordered ladder of individually-testable stages from cold metal upward (CLI first), with a cross-cutting "no silent failures" invariant. Settles the in-process execution model, the layered (.NET cold-start harness + thin Playwright golden-path) approach, the CLI modularization, the "zero to running" runbook, and a findings backlog (proven vs inferred). Read before writing or planning any test.
+
 ⭐ **Active architecture untangle (2026-05-28):**
 [Identity-Lifecycle Untangle + Federation group-sync](./identity-lifecycle-untangle)
 — untangles the coupled cluster (external-login model, unlink/tombstone, delete paths, soft-delete/grace, email-unique, membership scripts, hub-vs-broker). Contains the web-researched prior-art analysis (Keycloak/Okta/Entra/Auth0/Zitadel/Ping) and the resulting federation membership model. Read first for any lifecycle/federation/membership work.

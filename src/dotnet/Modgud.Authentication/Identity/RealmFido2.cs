@@ -8,6 +8,14 @@ using Modgud.Infrastructure.Realms;
 namespace Modgud.Authentication.Identity;
 
 /// <summary>
+/// Thrown when a WebAuthn relying party cannot be built for the current realm —
+/// e.g. the realm has no <see cref="Realm.PrimaryDomain"/> (the RP ID). It is a
+/// realm-misconfiguration condition, not a server bug, so the passkey endpoints
+/// map it to a clear, actionable response instead of a bare 500.
+/// </summary>
+public sealed class RelyingPartyUnavailableException(string message) : Exception(message);
+
+/// <summary>
 /// Builds the WebAuthn relying party (<see cref="IFido2"/>) for the CURRENT
 /// realm. The RP ID is the realm's <see cref="Realm.PrimaryDomain"/>, so a
 /// passkey is bound to the realm it was registered on — never to a single
@@ -38,9 +46,11 @@ public static class RealmFido2
         // A passkey's RP ID IS the primary domain — an empty one would mint
         // unverifiable credentials. Every realm must have a primary domain
         // (enforced at create/update/adopt + backfilled at boot); fail loudly
-        // if that invariant was somehow violated rather than build a bad RP.
+        // if that invariant was somehow violated rather than build a bad RP. A
+        // dedicated exception lets the passkey endpoints surface this as a clear
+        // "passkeys unavailable for this realm" response instead of a bare 500.
         if (string.IsNullOrWhiteSpace(host))
-            throw new InvalidOperationException(
+            throw new RelyingPartyUnavailableException(
                 $"Realm '{realm.Slug}' has no PrimaryDomain — cannot build a WebAuthn relying party.");
         var origins = new HashSet<string>(StringComparer.Ordinal);
         if (env.IsDevelopment())

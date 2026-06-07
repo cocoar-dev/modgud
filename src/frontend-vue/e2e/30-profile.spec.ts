@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { apiLogin } from './helpers'
+import { apiLogin, uniqueSuffix } from './helpers'
 import { clearMailpit, extractQueryParam, waitForMail } from './mailpit'
 
 /**
@@ -28,7 +28,7 @@ const ADMIN_USER = 'admin'
 const ADMIN_PASSWORD = 'ABC12abc!'
 const TEST_PASSWORD = 'TestPass1234!'
 
-const SUFFIX = Math.random().toString(36).slice(2, 8)
+const SUFFIX = uniqueSuffix()
 const userName = `profile-${SUFFIX}`
 const initialEmail = `${userName}-old@modgud.test`
 const newEmail = `${userName}-new@modgud.test`
@@ -44,10 +44,13 @@ test.beforeAll(async ({ request }) => {
   })
   if (!adminLogin.ok()) throw new Error('admin login failed')
 
+  // EmailConfirmed: true — the profile change-request endpoint refuses callers
+  // with an unverified email (403 Account.EmailNotVerified). Admin-provisioned
+  // users start unverified, so confirm at creation to model a settled account.
   const created = await (await request.post('/api/user', {
     data: {
       Firstname: 'Old', Lastname: 'Name', Acronym: userName,
-      Email: initialEmail,
+      Email: initialEmail, EmailConfirmed: true,
     },
   })).json()
 
@@ -65,7 +68,7 @@ test('non-email field change creates an AdminApprovalPending request', async ({ 
   const res = await page.request.put('/api/account/profile/request', {
     data: { Firstname: 'BrandNew' },
   })
-  expect(res.ok()).toBeTruthy()
+  if (!res.ok()) throw new Error(`profile-request: ${res.status()} ${await res.text()}`)
   const body = await res.json()
   expect(body.Open.Status).toBe('AdminApprovalPending')
 })
