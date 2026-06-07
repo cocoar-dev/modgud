@@ -116,7 +116,7 @@ In `Program.cs`:
 
 ```csharp
 app.MapAuthorizationEndpoints();   // /connect/authorize
-app.MapConsentEndpoints();         // /consent
+app.MapConsentEndpoints();         // GET + POST /connect/consent
 ```
 
 OpenIddict's discovery and JWKS endpoints (`.well-known/...`) are
@@ -140,9 +140,14 @@ Simplified pseudo-code (full implementation in
    - existing permanent authorization for (User, Client, Scopes)? → through
    - else:
      - ConsentType=implicit → through without prompt
-     - ConsentType=explicit → redirect /consent?returnUrl=...
-7. ConsentController shows the scope list, user clicks Approve
-8. Permanent authorization is stored
+     - ConsentType=explicit → a server-side ConsentTicket is created
+       (bound to the user, with ClientId + requested scopes + the original
+       authorize query locked in) → redirect /consent?ticket={id}
+7. The consent UI (GET /connect/consent?ticket=…) shows the scope list,
+   user clicks Approve → POST /connect/consent with the ticket + approved scopes
+8. Server intersects approved scopes with the locked-in requested scopes
+   (no expansion possible), stores the permanent authorization, marks the
+   ticket consumed, and reconstructs the redirect from the locked-in query
 9. Authorization code is returned to the redirect URI
 ```
 
@@ -160,6 +165,12 @@ For authorization-code exchange:
    - Reference: OpenIddictTokenDocument(s) created, reference IDs returned
    - JWT: signed JWTs returned, no DB entry
 ```
+
+## Browser-only SPAs (no BFF)
+
+A pure single-page app running entirely in the browser — Authorization Code + PKCE with no backend-for-frontend — is supported. PKCE is required (S256 only; `plain` is removed) and there is no implicit or ROPC grant, so the browser-only flow is the Authorization Code flow with a public (no-secret) client.
+
+The one extra step is CORS. The browser-reachable credentialed OIDC endpoints (token, userinfo, revocation) now enforce per-client origin allow-listing: register the SPA's exact origin (e.g. `https://app.example.com`) under the client's **Allowed CORS Origins** field. The request `Origin` is echoed back only if it is registered on a client in the current realm — otherwise no CORS headers are emitted and the browser blocks the call. The public discovery and JWKS documents (`/.well-known/openid-configuration`, `/.well-known/jwks`) are readable from any origin since they carry no secrets. No `Access-Control-Allow-Credentials` is sent: these endpoints authenticate via PKCE / a bearer header, never a cross-site cookie. See `OAuthCorsMiddleware` + `ClientCorsOriginProvider` in `Modgud.Api/Cors/`.
 
 ## Introspection (for reference tokens)
 
@@ -199,11 +210,13 @@ Each realm has its own:
 - Token records (`OpenIddictTokenDocument`)
 
 Everything lives in the relevant tenant store. On realm provisioning,
-5 default scopes are seeded:
+6 default scopes are seeded (`OAuthRealmSeeder`):
 
 ```csharp
-"openid", "email", "profile", "roles", "offline_access"
+"openid", "email", "profile", "roles", "permissions", "offline_access"
 ```
+
+`roles` and `permissions` are the two functionally important ones for authorization: `roles` gates the per-resource-server `roles` array, and `permissions` gates the per-resource-server `permissions` array — both nested inside the `resource_access` claim. A client that needs the user's permission grants for an API must request the `permissions` scope (and the user must consent to it for explicit-consent clients); without it the `permissions` array is omitted.
 
 Plus the internal LoginProvider as the default login method.
 
@@ -219,12 +232,9 @@ Endpoints in `Modgud.Api/Features/Admin/OAuth/`. Gating (permissions
 in the `modgud` App's catalog; the resource-wide bypass
 `<resource>:admin` grants all actions on the resource):
 
-- `oauth-client:read`, `oauth-client:write`, `oauth-client:delete`
-  (+ `oauth-client:admin` bypass)
-- `oauth-scope:read`, `oauth-scope:write`, `oauth-scope:delete`
-  (+ `oauth-scope:admin` bypass)
-- `oauth-api:read`, `oauth-api:write`, `oauth-api:delete`
-  (+ `oauth-api:admin` bypass)
+- `oauth-client:read`, `oauth-client:write` (+ `oauth-client:admin` bypass) — deletes are gated by `oauth-client:write`; there is no `:delete` tier
+- `oauth-scope:read`, `oauth-scope:write` (+ `oauth-scope:admin` bypass)
+- `oauth-api:read`, `oauth-api:write` (+ `oauth-api:admin` bypass)
 
 ## Token lifetimes
 

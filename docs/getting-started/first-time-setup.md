@@ -36,15 +36,36 @@ The system realm is auto-created on first boot with a hardcoded dev-friendly dom
 Add your real public hostname first:
 
 ```bash
+# 1. Register the public hostname on the system realm
 docker exec modgud \
   dotnet Modgud.Api.dll recover realm-add-domain \
     --slug system \
     --domain auth.example.com
+
+# 2. Make it the realm's primary so outbound email links (magic-link,
+#    password reset, invites) resolve to the public host, not localhost
+docker exec modgud \
+  dotnet Modgud.Api.dll recover realm-set-primary-domain \
+    --slug system \
+    --domain auth.example.com
+
+# 3. Restart the container to pick up the change
+docker restart modgud
 ```
 
-The command is idempotent — re-running with the same domain is a no-op. List the current domains with `recover realm-list`. Remove with `recover realm-remove-domain --slug system --domain auth.example.com`.
+`realm-add-domain` is idempotent — re-running with the same domain is a no-op. `realm-set-primary-domain` requires the domain to already be on the realm (run `realm-add-domain` first); it also re-points the WebAuthn relying-party ID, so existing passkeys are invalidated by a primary-domain change. List the current domains with `recover realm-list`. Remove with `recover realm-remove-domain --slug system --domain auth.example.com` (you cannot remove the current primary — re-point it first).
 
-Skip this section if you're on the default `localhost:4300` dev setup — the seeded domains already cover that.
+Skip this section if you're on the default `localhost` Docker quickstart — the seeded domains already cover `localhost`, `127.0.0.1`, and `system.localhost`.
+:::
+
+::: warning Production boot guards (fail-closed)
+The published image runs as **Production** and refuses to boot on a dev-shaped config. Before the container will start in production you must satisfy all of these:
+
+- `OpenIddict__Issuer` is a non-`localhost`, non-`127.0.0.1` **HTTPS** URL.
+- `OpenIddict__DevelopmentMode` is `false` (the default) — ephemeral keys are rejected.
+- If Prometheus scraping stays enabled (the default), `Observability__Prometheus__BearerToken` is set to a strong random string. Otherwise set `Observability__Prometheus__Enabled=false`. An unauthenticated `/metrics` endpoint on a public host leaks realm-labelled telemetry, so the guard blocks boot until you pick one.
+
+A misconfigured value throws at startup with a descriptive message rather than silently yielding an insecure IdP. See [Deployment](../operate/deployment) for the full env-var reference.
 :::
 
 ## Path A — Recovery CLI, direct mode
@@ -71,7 +92,7 @@ Output:
   Mode:     Direct (password set on creation)
 ```
 
-Sign in immediately at the realm's host — `http://localhost:4300/` for a default dev setup.
+Sign in immediately at the realm's host — `http://localhost/` for the default Docker quickstart.
 
 ::: tip Password rules apply
 The CLI enforces the same Identity password policy the SPA uses (length ≥ 8, mixed case, at least one digit). A weak password is rejected with a clear error — no privileged bypass. See [Settings](../plattform/settings) to relax the policy if your operational needs require it.
@@ -97,7 +118,7 @@ Output:
   Email:     max@acme.com
   Expires:   2026-05-12 10:26:51 +00:00
 
-  Link:      http://localhost:4300/bootstrap?token=…
+  Link:      http://localhost/bootstrap?token=…
 ```
 
 The CLI:
@@ -185,8 +206,8 @@ You're now signed in. The admin SPA dashboard shows:
 Recommended next steps:
 
 1. **Enable 2FA on your admin account** — Profile → Security → TOTP or Passkey.
-2. **Configure SMTP** — Settings → SMTP, then send a test email. Without real SMTP, magic-link / password-reset emails only land in the API logs and `data/dev-emails/`.
-3. **Seed demo data** (optional, dev/test only) — run `node scripts/seed-demo.mjs` to fill the realm with users, groups, OAuth clients and a sample external IdP.
+2. **Configure SMTP** — Settings → SMTP, then send a test email. Without real SMTP, outbound email is silently dropped (there is no on-disk dev mailbox); the recovery CLI and realm-creation API still surface invite / magic-link URLs directly. For local capture, point Modgud at a dev SMTP catcher such as Mailpit or smtp4dev.
+3. **Seed demo data** (optional, dev/test only, repo checkout required) — run `node scripts/seed-demo.mjs` to fill the realm with users, groups, OAuth clients and a sample external IdP. Not in the published image.
 4. **Bind your first SaaS app** — [SaaS Integration Walkthrough](../integrate/saas-walkthrough).
 5. **Configure external SSO** (optional) — [Login Providers](../admin/login-providers).
 6. **Plan additional realms** — [Realms admin](../admin/realms).
@@ -202,5 +223,5 @@ Without an email address you have no recovery channel — no magic link, no pass
 :::
 
 ::: tip One Control-Plane realm per deployment
-Exactly one realm in a deployment is the Control Plane: the realm with the reserved slug `system`. The slug is in `RealmSlugRules.ReservedSlugs` (no tenant can claim it) and immutable after creation, so the "exactly one" invariant is structural — there's no separately persisted flag to flip. You cannot transfer Control-Plane status to another realm; you can only deactivate or delete the system realm (both are blocked by service-level guards because they'd lock the deployment out of cross-realm administration). See [Concepts: Control Plane / Data Plane](../concepts/control-plane).
+Exactly one realm in a deployment is the Control Plane — the realm carrying the persisted `Realm.IsControlPlane` flag. The `system` realm is stamped with it at first boot, so it's the default anchor, but the flag is **transferable**: a deployment that starts single-tenant can later hand cross-realm administration to a different realm via `recover control-plane transfer <slug>` or `POST /api/admin/realms/{slug}/transfer-control-plane`. Once moved, the original system realm becomes an equal, deletable peer. The "exactly one" invariant is enforced on create and transfer. See [Concepts: Control Plane / Data Plane](../concepts/control-plane).
 :::

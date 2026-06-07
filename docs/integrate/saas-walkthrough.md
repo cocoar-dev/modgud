@@ -26,7 +26,7 @@ When you bind a new SaaS app you traverse **five stations**:
 
 1. Register the app
 2. Create an OAuth client for the app's frontend
-3. Create the resource server (OAuth API) and link it to the app
+3. Create the resource server (OAuth API), link it to the app, and mint its resource-bearing scope
 4. Optional: create roles + assign to a group
 5. Configure the resource-server code in the SaaS app's backend
 
@@ -69,23 +69,28 @@ The OAuth client is the identity your app's **frontend** uses when
 requesting tokens from the IDP. An SPA, a mobile app, a desktop tool
 — they're all clients.
 
-Navigate to **Administration → OAuth Clients**. Click **Create**.
+Navigate to **Administration → OAuth Clients**. Click **Create**. The Create modal exposes the full set of fields — Grant Types, Redirect URIs, Allowed Scopes, Access Token Type, Applications, CORS Origins — so you set everything in one pass; there's no second "edit after create" step required.
 
 | Field | Example | Explanation |
 | --- | --- | --- |
 | Client ID | `acme-web` | Stable identifier used in the OAuth flow |
 | Display Name | `Acme Web` | UI label |
-| Client type | `confidential` | `confidential` for server-side / backend clients, `public` for SPA / mobile |
+| Client type | `confidential` | `confidential` for server-side / backend (BFF) clients, `public` for browser-only SPA / mobile |
 | Consent type | `implicit` | for trusted first-party apps; `explicit` shows a consent screen |
 | **Applications** | pick `acme` | **Important** — binds the client to the app. Multi-select is allowed (multi-app frontends). |
 | Client Secret | leave empty = generate | Auto-generated for `confidential`, **shown only once** — copy it! |
 | Redirect URIs | `https://acme.dev.local/auth/callback` | One per line |
 | Post-Logout Redirect URIs | `https://acme.dev.local/` | One per line |
-| Allowed Grant Types | `authorization_code, refresh_token` | Comma-separated |
-| Allowed Scopes | `openid email profile roles permissions` | Request `permissions` if your backend gates on `<resource>:<action>` |
+| Allowed Grant Types | `authorization_code` + `refresh_token` | For a web app pick `authorization_code` and `refresh_token`. There are no silent defaults — a client with no grant types cannot mint tokens. |
+| Allowed Scopes | `openid email profile roles permissions acme` | The OIDC scopes plus the resource-bearing `acme` scope you create in Station 3. Request `roles` to get the per-audience role list, `permissions` for the `<resource>:<action>` list. |
+| **Access Token Type** | `JWT` | **Required for local JWKS validation.** The default is `Reference` (opaque — the resource server would have to call `/connect/introspect` on every request). `AddJwtBearer` validates JWTs by signature, so choose **JWT** here. |
 
 Click **Create**. The client secret is shown — copy it and store it
 safely; you'll never see it again.
+
+::: tip Browser-only SPA (PKCE, no backend)
+If your frontend is a pure SPA that talks to the IDP directly (PKCE, no server-side BFF), set **Client type** to `public`, leave the secret empty, and add the SPA's origin (e.g. `https://acme.dev.local`) to the client's **Allowed CORS Origins**. The OIDC endpoints (`/connect/authorize`, `/connect/token`, `/connect/userinfo`) only echo CORS headers for origins registered on a client in the active realm, so a missing origin makes the browser block the cross-origin call. A confidential / BFF web app (the primary path above) makes its token calls server-side and doesn't need a CORS origin.
+:::
 
 ::: info What does the apps choice change?
 On `/connect/userinfo` the access token's principal gets a
@@ -112,11 +117,25 @@ Go to **Administration → OAuth → APIs** and click **Create**:
 Save. The OAuth API now exists and the IdP knows which catalog to
 resolve against when a token targets `aud=acme`.
 
+### 3a. Create the resource-bearing scope (don't skip this)
+
+The six default scopes seeded into every realm (`openid`, `email`, `profile`, `roles`, `permissions`, `offline_access`) all have **empty Resources**. A token only gets `aud=acme` when one of the **requested** scopes carries `Resources=[acme]` — and without that audience the IdP never emits a `resource_access[acme]` block, so your resource server's audience check 401s. The default scopes alone are not enough.
+
+On the API's detail view click **Create implicit scope** (this calls `POST /api/admin/oauth/apis/{id}/create-implicit-scope`). It mints a scope named `acme` with `Resources=[acme]`, hidden from the discovery document by default (clients learn their scopes from your docs, not from `.well-known`). This is the scope that puts `aud=acme` on the token.
+
+Then make sure the `acme` scope is actually requested end-to-end:
+
+1. Add `acme` to the client's **Allowed Scopes** (Station 2 — it's already in the example list above).
+2. Include `acme` in the `scope` parameter of the authorize request, e.g. `scope=openid email profile roles permissions acme`.
+
+Only then does the access token carry `aud=acme` and the principal a `resource_access[acme]` block. Inside that block, the `roles` array appears only if the request also included the `roles` scope, and the `permissions` array only if it included the `permissions` scope.
+
 ::: tip Microservice apps
 Multi-service apps create one OAuthApi per microservice, each with a
-narrower `PermissionIds` subset. The user's `resource_access[acme]`
-block for that specific microservice is then narrowed to its
-declared subset — sibling microservices' permissions don't leak.
+narrower `PermissionIds` subset (and its own implicit scope). The user's
+`resource_access[<service>]` block for that specific microservice is
+then narrowed to its declared subset — sibling microservices'
+permissions don't leak.
 :::
 
 ## Station 4: roles and groups
@@ -164,6 +183,8 @@ the `acme` app context.
 
 Now the backend configuration of your SaaS app. ASP.NET Core example:
 
+A complete, runnable version of everything below ships in the repo at `src/dotnet/TestApps/Modgud.TestApps.ResourceApi/Program.cs` — that's the canonical example the integration tests run against. The snippets here are trimmed for the walkthrough.
+
 ### Packages
 
 ```bash
@@ -175,47 +196,71 @@ dotnet add reference ../modgud/src/dotnet/Modgud.Client.AspNetCore/Modgud.Client
 ### `Program.cs`
 
 ```csharp
-services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Modgud.Client.AspNetCore;
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        // Your realm issuer — adjust the host + realm slug to your instance.
-        options.Authority = "https://auth.example.com/system";
-        options.Audience  = "acme";
-        options.GetClaimsFromUserInfoEndpoint = true;
+        // Authority is the realm's HOST ROOT — realms resolve by Host
+        // header, so the issuer has NO realm path. Never append "/system"
+        // or any "/<realm>" segment: a path-suffixed Authority makes the
+        // discovery fetch 404 and fails issuer validation.
+        options.Authority = "https://auth.example.com";
+        options.Audience  = "acme";   // matches the OAuthApi name / aud claim
     });
 
-// Wires the Modgud ClaimsTransformation that reads the per-Audience
-// resource_access block and flattens it onto the principal:
-//   - resource_access["acme"].roles → ClaimTypes.Role
-//     so [Authorize(Roles = "Acme Editor")] just works.
-//   - resource_access["acme"].permissions → ModgudClaimTypes.Permission
-//     so user.HasClaim(ModgudClaimTypes.Permission, "todo:write") works.
-services.AddModgudClient(o =>
+// AddModgudClient does the /connect/userinfo round-trip (hooks
+// JwtBearerEvents.OnTokenValidated) and registers the ClaimsTransformation
+// that flattens resource_access["acme"] onto the principal:
+//   - resource_access["acme"].roles       → ClaimTypes.Role
+//   - resource_access["acme"].permissions → "permission" claims
+// The IdP pre-expands bypass tiers (realm:admin, <resource>:admin) before
+// emission, so the RS only ever does exact-match — no evaluator on this side.
+// Do NOT set GetClaimsFromUserInfoEndpoint on AddJwtBearer; AddModgudClient
+// owns the UserInfo fetch.
+builder.Services.AddModgudClient(o =>
 {
-    o.AppSlug = "acme";
+    o.Authority = "https://auth.example.com";
+    o.Audience  = "acme";   // must equal JwtBearerOptions.Audience above
 });
 
-services.AddAuthorization();
+builder.Services.AddAuthorization();
 ```
 
 ### Coarse role check
 
 ```csharp
 app.MapGet("/admin", () => "Admin only")
-   .RequireAuthorization()
    .RequireAuthorization(p => p.RequireRole("Acme Editor"));
 ```
 
+`[Authorize(Roles = "Acme Editor")]` works the same way — the
+transformation surfaces `resource_access["acme"].roles` as
+`ClaimTypes.Role` claims.
+
 ### Granular permission check
 
+Gate endpoints with `.RequiresCocoarPermission(...)` — the filter reads
+the flattened `permission` claims and does a straight exact-match:
+
 ```csharp
-app.MapPost("/todos", (ClaimsPrincipal user, TodoDto dto) =>
+app.MapPost("/todos", () => Results.Ok())
+   .RequireAuthorization()
+   .RequiresCocoarPermission("todo:write");
+```
+
+If you need to read permissions imperatively, they live under
+`ModgudClaimsTransformation.PermissionClaimType`:
+
+```csharp
+app.MapGet("/whoami", (ClaimsPrincipal user) => Results.Ok(new
 {
-    if (!user.HasClaim(ModgudClaimTypes.Permission, "todo:write"))
-        return Results.Forbid();
-    // … create todo
-    return Results.Ok();
-});
+    permissions = user
+        .FindAll(ModgudClaimsTransformation.PermissionClaimType)
+        .Select(c => c.Value),
+})).RequireAuthorization();
 ```
 
 Full integration patterns (authorization policies, dynamic checks,
@@ -225,7 +270,7 @@ common pitfalls) live in
 ## End-to-end test
 
 1. Open `https://acme.dev.local`
-2. The frontend redirects you to the Modgud login page
+2. The frontend redirects you to the Modgud login page with `scope=openid email profile roles permissions acme` (the `acme` scope is what puts `aud=acme` on the token)
 3. Log in as a user from station 4
 4. Consent screen (if `explicit` consent type)
 5. Redirect back to the app with an auth code
@@ -233,9 +278,10 @@ common pitfalls) live in
 7. The app calls `/connect/userinfo`, sees `sub`, `email`, `name`,
    and `resource_access.acme.roles = ["Acme Editor"]` plus
    `resource_access.acme.permissions = ["todo:read", "todo:write"]`
-8. `[Authorize(Roles = "Acme Editor")]` lets you in;
-   `user.HasClaim(ModgudClaimTypes.Permission, "todo:write")` returns
-   true
+8. `[Authorize(Roles = "Acme Editor")]` lets you in, and
+   `.RequiresCocoarPermission("todo:write")` passes — the resource
+   server validated the JWT against the realm's JWKS (because the client's
+   Access Token Type is JWT) and matched the flattened `permission` claims
 
 Made it through? **Done. First SaaS app integrated.**
 
@@ -270,8 +316,20 @@ Made it through? **Done. First SaaS app integrated.**
   pull you back in — see [Recovery CLI](../operate/recovery-cli).
 - **Lost a secret.** Client secrets are shown exactly once. If you've
   lost one: **regenerate** in the corresponding detail modal.
-- **`scope=permissions` not requested.** Without it, the
-  `permissions` array in the UserInfo `resource_access` block is
-  omitted — your `HasClaim(…)` check sees nothing. Add the scope to
-  the client's allowed-scopes list and to every authorization
+- **No `aud=acme`, no `resource_access`.** The default scopes carry
+  empty Resources, so the token gets no audience and the block is never
+  emitted (your RS then 401s on its audience check). Create the API's
+  implicit scope (Station 3a) and request `acme` in the authorize
   request.
+- **`scope=permissions` not requested.** Without it, the
+  `permissions` array in the `resource_access` block is omitted — your
+  `RequiresCocoarPermission(…)` check sees nothing. Same for `roles`
+  and the role list. Add the scope to the client's allowed-scopes list
+  and to every authorization request.
+- **Access Token Type left as Reference.** `AddJwtBearer` can only
+  validate JWTs locally. A Reference (opaque) token has nothing to
+  validate by signature — switch the client to **JWT** (Station 2).
+- **Authority has a realm path.** `Authority` must be the host root
+  (`https://auth.example.com`), never `…/system` or `…/<realm>`. Realms
+  resolve by Host header; a path-suffixed Authority breaks discovery and
+  issuer validation.

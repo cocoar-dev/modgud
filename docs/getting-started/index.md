@@ -1,12 +1,12 @@
 # Getting Started
 
-Modgud is an OpenID-Connect-shaped identity provider that puts a multi-app permission model at its core. This section gets you from "downloaded the repo" to "first SaaS app integrated" in a small number of pages.
+Modgud is an OpenID-Connect-shaped identity provider that puts a multi-app permission model at its core. This section gets you from "nothing running" to "first SaaS app integrated" in a small number of pages — using the published Docker image, no source checkout required.
 
 ## Three angles to start from
 
 Pick the one that matches what you're trying to do right now:
 
-- **Run it locally** — [Quickstart (Docker)](./quickstart). Spins up Postgres + Modgud, creates the first admin via the recovery CLI, leaves you with a logged-in admin SPA.
+- **Run it locally** — [Quickstart (Docker)](./quickstart). Copy a compose file, `docker compose up`, create the first admin via the recovery CLI, and you land in a logged-in admin SPA on `http://localhost`.
 - **Integrate a SaaS app you already have** — go straight to the [SaaS Integration Walkthrough](../integrate/saas-walkthrough). It links into the relevant admin docs as you go.
 - **Embed Modgud into your own deployment** — [Requirements](./requirements) and [Features](./features) explain what you're getting and what infrastructure you'll need.
 
@@ -23,7 +23,7 @@ A self-hostable IdP. OAuth 2.0 + OpenID Connect server, runs on .NET 10, persist
 
 ## Sections
 
-- [**Quickstart (Docker)**](./quickstart) — `docker compose up`, bootstrap the first admin, sign in — in 10 minutes
+- [**Quickstart (Docker)**](./quickstart) — copy the compose file, `docker compose up`, bootstrap the first admin, sign in — in 10 minutes
 - [**Requirements**](./requirements) — runtime and infra checklist
 - [**Features**](./features) — point-by-point list of what the box delivers
 - [**First-time setup**](./first-time-setup) — the three bootstrap paths and when to use which

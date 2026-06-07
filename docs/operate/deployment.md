@@ -2,16 +2,16 @@
 
 ## Prerequisites
 
+You deploy the **published image** `ghcr.io/cocoar-dev/modgud` (pull a pinned tag like `:1.0.0`, or `:latest`). You do **not** build from source to run Modgud — the only external dependency you provision is PostgreSQL.
+
 | Dependency | Version | Purpose |
 |---|---|---|
-| .NET | 10.0+ | Backend runtime |
 | PostgreSQL | 17+ | DB (document + event store + per-tenant DBs) |
-| Node.js | 22+ | Frontend build |
 | Docker | 20+ | Container runtime |
 
 ## Configuration
 
-Modgud uses **Cocoar.Configuration v5** with layered binding.
+Modgud uses **Cocoar.Configuration v6** with layered binding.
 Settings are loaded from multiple sources, each overriding the previous:
 
 1. `data/configuration.json` (defaults, committed)
@@ -40,21 +40,23 @@ settings, the OpenIddict issuer, the magic-link rate limit, the
 
 | Class | JSON section / ENV prefix |
 |---|---|
-| `StartUpConfiguration` | Top-level (no prefix) — `AppUrl`, `PublicUrl`, `DbSettings.ConnectionString`, `Logging`, `CertPath`, ... |
+| `StartUpConfiguration` | Top-level (no prefix) — `AppUrl`, `DbSettings.ConnectionString`, `Logging`, `CertPath`, ... |
 | `EmailConfiguration` | `Email:` — `Provider` (Postmark/Smtp), `Postmark.*`, `Smtp.*` |
 | `MagicLinkConfiguration` | `MagicLink:` — `Enabled`, `ExpirationMinutes`, `RateLimitMinutes` |
 | `EmailOtpConfiguration` | `EmailOtp:` — `ExpirationMinutes`, `RateLimitMinutes` |
 | `AppSettings` | `AppSettings:` — `AuthenticationMinimumLevel`, `MagicLinkSelfService`, `TwoFactorGracePeriodDays` |
 | `OpenIddictSettings` | `OpenIddict:` — `Issuer`, `*LifetimeMinutes`, `DevelopmentMode`, `SigningCertificatePath` |
+| `ObservabilitySettings` | `Observability:` — `Prometheus.Enabled`, `Prometheus.BearerToken`, `Otlp.*`, `ErrorFeed.*` |
+
+The token-issuer origin is **not** a global setting. There is no `PublicUrl` key — each realm carries its own `PrimaryDomain` (managed in the admin UI or the Recovery CLI), and the issuer origin is derived per request from that domain / the request host. `OpenIddict.Issuer` only fixes the canonical issuer string advertised in the discovery document.
 
 ### Example `configuration.json`
 
 ```json
 {
-  "AppUrl": "http://0.0.0.0:80",
-  "PublicUrl": "https://auth.example.com",
+  "AppUrl": "http://0.0.0.0:8081",
   "DbSettings": {
-    "ConnectionString": "Host=postgres;Port=5432;Database=<master-db>;Username=postgres;Password=postgres"
+    "ConnectionString": "Host=postgres;Port=5432;Database=modgud;Username=postgres;Password=postgres"
   },
   "AppSettings": {
     "AuthenticationMinimumLevel": 1,
@@ -81,6 +83,9 @@ settings, the OpenIddict issuer, the magic-link rate limit, the
     "RefreshTokenLifetimeDays": 14,
     "AuthorizationCodeLifetimeMinutes": 5,
     "DevelopmentMode": false
+  },
+  "Observability": {
+    "Prometheus": { "Enabled": true, "BearerToken": "<strong-random-string>" }
   }
 }
 ```
@@ -112,70 +117,90 @@ password-protected PFX from elsewhere:
 :::
 
 ::: info Database naming
-`DbSettings.ConnectionString` points at the master DB — pick any name you like.
+`DbSettings.ConnectionString` points at the master DB — pick any name you like (the convention is `modgud`).
 The master DB holds only control-plane infrastructure (the tenant registry +
 the global Realm store + Wolverine durability); it is **not** a tenant. Every
 realm lives in its own `<master-db>_<slug>` DB, including the bootstrap system
 realm (`<master-db>_system`, created at first boot). So for a master DB called
-`auth` you get `auth_system`, `auth_acme`, `auth_finance`. Back up the master DB
-**and** every `auth_<slug>` DB (system included — that's where system-realm
+`modgud` you get `modgud_system`, `modgud_acme`, `modgud_finance`. Back up the master DB
+**and** every `modgud_<slug>` DB (system included — that's where system-realm
 users and keys live).
 :::
 
 ## Docker image
 
-The official Docker image bundles backend (.NET) + the built Vue SPA
-(as static `wwwroot/` content).
+You run the official published image — it bundles backend (.NET) + the built Vue SPA (as static `wwwroot/` content). Pull it; don't build it.
 
 ```
-ghcr.io/cocoar-dev/modgud:latest        # Latest production release
-ghcr.io/cocoar-dev/modgud:1.0.0         # Specific version
+ghcr.io/cocoar-dev/modgud:1.0.0         # Pinned version — recommended for production
+ghcr.io/cocoar-dev/modgud:latest        # Latest release — convenient for evaluation
 ```
 
-Multi-arch: **linux/amd64** + **linux/arm64**.
+Multi-arch: **linux/amd64** + **linux/arm64**. Pin a specific tag in production so an `:latest` re-pull can't move the runtime under you.
 
-### Quick start
+::: tip Production runs fail-closed
+The published image ships `ASPNETCORE_ENVIRONMENT=Production`, and Production **refuses to boot** if any of the following is true (the boot validator throws with an actionable message):
 
-The minimum production-shape config is **three environment
-variables** plus a persistent volume for auto-generated certs:
+- `OpenIddict.Issuer` is `http://`, `localhost`, or empty;
+- `OpenIddict.DevelopmentMode` is `true`;
+- the Prometheus scrape endpoint is enabled (the default) but no `Observability.Prometheus.BearerToken` is set.
 
-```bash
-docker run -d \
-  --name modgud \
-  -p 80:8081 \
-  -v cocoar-keys:/app/data/keys \
-  -e DbSettings__ConnectionString="Host=your-postgres;Database=<master-db>;Username=postgres;Password=..." \
-  -e OpenIddict__Issuer="https://auth.example.com" \
-  -e ProxyAllowedNetworks="10.0.0.0/24" \
-  ghcr.io/cocoar-dev/modgud:latest
-```
+So every production recipe **must** make a choice on Prometheus: either set `Observability__Prometheus__BearerToken=<strong-random>` or set `Observability__Prometheus__Enabled=false`. The recipes below set the bearer token.
+:::
 
-What each one does:
+### Minimum env vars
+
+For a production run you must supply, at minimum:
 
 - **`DbSettings__ConnectionString`** — Postgres master DB. Realms get
   per-tenant DBs auto-provisioned with the slug appended.
-- **`OpenIddict__Issuer`** — public HTTPS URL of the IdP. C2 boot
-  validation rejects `http://` or `localhost` here in Production.
+- **`OpenIddict__Issuer`** — public **HTTPS** URL of the IdP. Boot
+  validation rejects `http://`, `localhost`, or empty here in Production.
 - **`ProxyAllowedNetworks`** — comma-separated CIDR list of reverse-
   proxy IPs. Required so `X-Forwarded-Proto` is honoured for
   cookie-Secure decisions; everything else is rejected.
+- **`Observability__Prometheus__BearerToken`** — a strong random string
+  protecting the `/metrics` scrape endpoint (or set
+  `Observability__Prometheus__Enabled=false` to drop the endpoint
+  entirely; one of the two is mandatory in Production).
 
 Everything else has sensible defaults:
 
 - `ASPNETCORE_ENVIRONMENT` defaults to `Production` (set in the
   image).
-- `AppUrl` defaults to `http://0.0.0.0:8081`.
+- `AppUrl` defaults to `http://0.0.0.0:8081` (Kestrel listens on **8081**).
 - `OpenIddict__SigningCertificatePath` and
   `OpenIddict__EncryptionCertificatePath` default to
   `data/keys/{signing,encryption}.pfx` and are **auto-generated** as
-  passwordless self-signed PFXes on first boot when missing. The
-  `cocoar-keys` volume mount above persists them across container
-  restarts so issued tokens stay valid.
+  passwordless self-signed PFXes on first boot when missing. Mount a
+  volume at `/app/data/keys` so they persist across container restarts —
+  otherwise every restart regenerates the OpenIddict cert and **invalidates
+  all live refresh tokens and authorization codes** (per-realm RSA signing
+  keys and DataProtection keys live in Postgres and already survive restarts;
+  the static OpenIddict cert is the one that needs the volume).
 - `OpenIddict__DevelopmentMode` defaults to `false` (production
   shape — real signing keys, transport-security required).
 
+### Local evaluation quickstart
+
+For a throwaway local trial against a non-public host you can keep it minimal — but note Production still enforces an HTTPS issuer and a Prometheus token, so set them here too (or disable Prometheus):
+
+```bash
+docker run -d \
+  --name modgud \
+  -p 8081:8081 \
+  -v cocoar-keys:/app/data/keys \
+  -e DbSettings__ConnectionString="Host=your-postgres;Database=modgud;Username=postgres;Password=..." \
+  -e OpenIddict__Issuer="https://auth.example.com" \
+  -e ProxyAllowedNetworks="10.0.0.0/24" \
+  -e Observability__Prometheus__Enabled="false" \
+  ghcr.io/cocoar-dev/modgud:latest
+```
+
+The [Docker Compose recipe](#docker-compose-canonical-production-reference) below is the canonical production shape — prefer it over this one-liner for anything beyond a quick look.
+
 ::: tip ENV variable casing
-Cocoar.Configuration v6 binds environment variables **case-insensitively**, so the section and property names need not match the C# casing exactly — `DbSettings__ConnectionString` and `DBSETTINGS__CONNECTIONSTRING` bind to the same setting, as do `AppUrl` and `APPURL`. Two underscores (`__`) are the section separator; a single underscore is literal. The full list of bindable settings is in the Settings classes table above.
+Cocoar.Configuration v6 binds environment variables **case-insensitively**, so the section and property names need not match the C# casing exactly — `DbSettings__ConnectionString` and `DBSETTINGS__CONNECTIONSTRING` bind to the same setting, as do `AppUrl` and `APPURL`. Two underscores (`__`) are the section separator; a single underscore is literal. PascalCase is a readability convention, not a correctness requirement. The full list of bindable settings is in the Settings classes table above.
 :::
 
 ### First-time bootstrap
@@ -189,6 +214,11 @@ up the change:
 ```bash
 docker exec modgud dotnet Modgud.Api.dll \
     recover realm-add-domain --slug system --domain auth.example.com
+
+# Make it the realm's primary domain so outbound email links
+# (magic-link, invite, password-reset) resolve to the public host:
+docker exec modgud dotnet Modgud.Api.dll \
+    recover realm-set-primary-domain --slug system --domain auth.example.com
 
 # The CLI runs as a separate process; the running server's realm
 # cache doesn't see the change until restart:
@@ -206,7 +236,9 @@ docker exec modgud dotnet Modgud.Api.dll \
 
 Open `https://auth.example.com/` in the browser and sign in.
 
-### Docker Compose (full stack)
+### Docker Compose (canonical production reference)
+
+This is the recommended production shape: a pinned image tag, an HTTPS issuer, a persisted keys volume, and a Prometheus bearer token. It expects TLS to be terminated by the reverse proxy in front of it (see [Reverse proxy](#reverse-proxy-nginx)); the container itself serves plain HTTP on 8081.
 
 ```yaml
 services:
@@ -222,21 +254,24 @@ services:
       retries: 10
 
   auth:
-    image: ghcr.io/cocoar-dev/modgud:latest
-    ports:
-      - "80:8081"   # Kestrel listens on 8081 in the image; map to 80
+    image: ghcr.io/cocoar-dev/modgud:1.0.0   # pin a version in production
+    expose:
+      - "8081"   # Kestrel listens on 8081; the reverse proxy talks to it on this port
     environment:
-      DbSettings__ConnectionString: "Host=postgres;Database=<master-db>;Username=postgres;Password=postgres"
-      OpenIddict__Issuer: "https://auth.example.com"
+      DbSettings__ConnectionString: "Host=postgres;Database=modgud;Username=postgres;Password=postgres"
+      OpenIddict__Issuer: "https://auth.example.com"   # must be HTTPS — Production refuses http/localhost
       ProxyAllowedNetworks: "10.0.0.0/24"   # adjust to your reverse proxy CIDR
+      # Mandatory in Production: protect the /metrics scrape endpoint, or set
+      # Observability__Prometheus__Enabled=false to drop it. Boot fails otherwise.
+      Observability__Prometheus__BearerToken: "${PROMETHEUS_TOKEN}"   # strong random string
       # Email is optional but recommended — magic-link, forgot-password,
       # invite, email-OTP all need a working SMTP relay. mailpit is fine
-      # for Beta; switch to a real relay before going live.
+      # for a trial; switch to a real relay before going live.
       Email__Provider: "Smtp"
       Email__Smtp__Host: "mailpit"
       Email__Smtp__Port: "1025"
     volumes:
-      - cocoar-keys:/app/data/keys     # persists auto-generated certs
+      - cocoar-keys:/app/data/keys     # persists the auto-generated OpenIddict cert across restarts
     depends_on:
       postgres:
         condition: service_healthy
@@ -310,7 +345,7 @@ server {
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
     location / {
-        proxy_pass http://auth:80;
+        proxy_pass http://auth:8081;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For  $proxy_add_x_forwarded_for;
@@ -318,7 +353,7 @@ server {
     }
 
     location /signalr {
-        proxy_pass http://auth:80;
+        proxy_pass http://auth:8081;
         proxy_set_header Host $host;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -332,7 +367,7 @@ Important:
 - **`X-Forwarded-Proto`** — otherwise Kestrel thinks the request is
   HTTP and OpenIddict builds HTTP URLs into the discovery document
 - **`X-Forwarded-For`** — the backend uses this for session IP
-  tracking + AuthLog
+  tracking + security-audit attribution
 - **WebSocket upgrade** for `/signalr` — otherwise no live-update
   stream
 
@@ -389,14 +424,17 @@ phase is preferable: `AutoCreate.None` in the pods + a `migrate`
 sidecar/job that applies the schema once before the pod rollout.
 :::
 
-## Health check
+## Health checks
+
+There are two probe endpoints (both anonymous, no realm routing required). There is **no** `/health` endpoint — point your orchestrator at these:
 
 ```bash
-curl http://localhost/health
+curl http://localhost:8081/health/live    # liveness — "the process answers"
+curl http://localhost:8081/health/ready   # readiness — DB connection + OpenIddict cert ready
 ```
 
-Returns `200` if the master DB connection is OK. Skip path — no realm
-routing required.
+- **`/health/live`** runs no dependency checks; it returns `200` as long as the process is up. Use it as the liveness probe.
+- **`/health/ready`** returns `200` only when the master DB connection and the OpenIddict signing/encryption certificate are both ready. Use it as the readiness probe (gate traffic on it).
 
 ## SignalR
 
@@ -487,7 +525,10 @@ prints the same):
 | `bootstrap-admin --email --username [--password]` | Create the first admin in a realm. With `--password` direct mode; without, invite mode (prints magic-link URL). |
 | `realm-list` | Show every active realm with its slug and domains. |
 | `realm-add-domain --slug --domain` | Add a domain to a realm's `Domains` list. After running, restart the container so the in-process realm cache picks up the change. |
-| `realm-remove-domain --slug --domain` | Remove a domain. Same restart requirement. |
+| `realm-remove-domain --slug --domain` | Remove a domain. Same restart requirement. Refuses to remove the realm's primary domain — re-point it first. |
+| `realm-set-primary-domain --slug --domain` | Set the realm's primary domain (the origin outbound email links resolve to). The domain must already be in the realm's `Domains` list (add it with `realm-add-domain` first). Changes the WebAuthn RP — existing passkeys are invalidated. Restart to refresh the realm cache. |
+| `control-plane transfer <slug>` | Relocate the control-plane role to another realm (`control-plane list` shows the current holder). |
+| `rotate-signing-key` | Rotate the realm's per-realm RSA signing key (global flag `--realm`). |
 | `rebuild-projections` | Rebuild all Marten projections. |
 
 Global flag `--realm <slug>` for the user-management verbs (defaults
@@ -499,5 +540,7 @@ docker exec modgud dotnet Modgud.Api.dll recover list
 docker exec modgud dotnet Modgud.Api.dll recover realm-list
 docker exec modgud dotnet Modgud.Api.dll recover \
     realm-add-domain --slug system --domain auth.example.com
+docker exec modgud dotnet Modgud.Api.dll recover \
+    realm-set-primary-domain --slug system --domain auth.example.com
 docker exec modgud dotnet Modgud.Api.dll recover reset-2fa admin
 ```

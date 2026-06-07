@@ -27,7 +27,7 @@ After `RequiresMfa` the client must send a second request:
 
 - TOTP: `POST /api/account/mfa/login`
 - Email OTP: `POST /api/account/email-otp/login`
-- Passkey: `POST /api/account/passkey/login/complete`
+- Passkey: `POST /api/account/passkey/login`
 
 After a successful second step the session is fully established — the
 `Modgud.Auth` cookie is set, and all following requests run
@@ -46,16 +46,16 @@ Content-Type: application/json
 }
 ```
 
-Possible responses:
+Possible responses. The backend serializes with `PropertyNamingPolicy = null`, so every field is **PascalCase** on the wire (not camelCase):
 
 | Response | Meaning |
 |---|---|
-| `200 { authenticated: true }` | Login complete — cookie set |
-| `200 { requiresTwoFactor: true, mfaMethods: [...] }` | Level ≥ 1, user has 2FA — second step needed |
-| `200 { requiresSecureSetup: true, gracePeriod: true, secureSetupDueAt }` | User still has to set up 2FA, time runs until `DueAt` |
-| `200 { requiresSecureSetup: true, gracePeriod: false }` | Grace period over, blocking |
-| `401 Invalid credentials` | Username/password wrong or user locked |
-| `403 Passwordless required` | Level = 2, password login disabled |
+| `200 { "Message": "Login successful" }` | Login complete — cookie set |
+| `200 { "RequiresMfa": true, "MfaMethods": ["totp", "email"] }` | Level ≥ 1, user has 2FA — second step needed |
+| `200 { "RequiresSecureSetup": true, "GracePeriod": true, "SecureSetupDueAt": "..." }` | User still has to set up 2FA, time runs until `SecureSetupDueAt` |
+| `200 { "RequiresSecureSetup": true, "GracePeriod": false }` | Grace period over, blocking |
+| `401 { "Message": "Invalid credentials" }` | Username/password wrong, user inactive, or account locked |
+| `403 { "Message": "Password login is disabled" }` | Level = 2 (passwordless), password login disabled |
 
 ## TOTP login
 
@@ -101,22 +101,24 @@ must be requested.
 Two-step ceremony. First fetch options:
 
 ```http
-POST /api/account/passkey/login/options
+POST /api/account/passkey/login-options
 Content-Type: application/json
 
 { "userName": "alice" }
 ```
 
 The response contains the `AssertionOptions` (challenge, RpId,
-allowCredentials). The browser calls
+allowCredentials). The challenge is also stashed in a short-lived
+`Modgud.Passkey.Challenge` cookie so anonymous users (no session yet)
+can complete the ceremony. The browser calls
 `navigator.credentials.get(...)`, the user touches their passkey. The
-response is sent to:
+assertion response is posted to:
 
 ```http
-POST /api/account/passkey/login/complete
+POST /api/account/passkey/login
 Content-Type: application/json
 
-{ "assertion": { ... } }
+{ ... assertion ... }
 ```
 
 The server verifies the assertion, checks the sign count against
@@ -125,7 +127,7 @@ persistent cookie (30 days).
 
 ## Passwordless via Passkey (without `userName`)
 
-When `POST /api/account/passkey/login/options` is called without
+When `POST /api/account/passkey/login-options` is called without
 `userName`, the server generates `AssertionOptions` with an empty
 `AllowedCredentials` list. The browser uses **discoverable
 credentials** (resident keys) — the user picks a stored identity from

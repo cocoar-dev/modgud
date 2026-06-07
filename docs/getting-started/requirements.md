@@ -21,8 +21,8 @@ What you need to run Modgud in development, and what to plan for in production.
 
 ### Ports
 
-- **9099** — Modgud API
-- **4300** — Vue admin SPA (only when running the dev frontend separately; in production it's served from the API container)
+- **80** (or whatever you map to the container's **8081**) — the published Docker image serves both the OAuth/OIDC API and the admin SPA same-origin from one container; sign in, discovery (`/.well-known/openid-configuration`) and JWKS (`/.well-known/jwks`) are all on this port
+- **9099 / 4300** — API / Vue admin SPA, **from-source dev only** (running the .NET host and the Vite frontend separately). These do not exist in the Docker flow
 - **5432** — PostgreSQL (host-side; container's internal port)
 
 ## Production
@@ -59,9 +59,9 @@ Required for:
 - Email-OTP 2FA
 - GDPR notifications
 
-Without SMTP these flows degrade gracefully (password sign-in still works, TOTP / Passkey 2FA work) but you lose recovery capability.
+Without SMTP these flows degrade gracefully (password sign-in still works, TOTP / Passkey 2FA work) but you lose recovery capability. With no SMTP host configured, outbound email is silently dropped; the recovery CLI and the realm-creation API still print/return invite and magic-link URLs directly. For local capture, point Modgud at a dev SMTP catcher (Mailpit, smtp4dev).
 
-Configure via [Settings](../plattform/settings) per realm or instance-wide via `configuration.json`.
+Configure SMTP via [Settings](../plattform/settings) per realm, or instance-wide through env vars (the published image takes all config as env vars — `Section__Property`, case-insensitive — since `configuration.json` is not shipped in the image).
 
 ### Optional: external Identity Providers
 
@@ -100,8 +100,8 @@ For deployments with **>50 active realms**, look at:
 The realm domain must reach the browser end-to-end via HTTPS. Common pitfalls:
 
 - **Mixed-content blocking** — admin SPA on HTTPS, API on HTTP behind a misconfigured proxy
-- **Cookie SameSite policies** — Modgud uses `SameSite=Strict` by default; cross-domain integrations may need to relax this in `configuration.local.json`
-- **CORS** — for SPA-style clients consuming the OAuth flow, add their origin to the OAuth client's allowed CORS origins
+- **Cookie SameSite policies** — Modgud uses `SameSite=Strict` by default; cross-domain integrations may need to relax this via configuration
+- **CORS** — per-client **Allowed CORS Origins** are enforced on the OIDC endpoints. A browser-only SPA (Authorization Code + PKCE in the browser, no BFF) completes the flow as long as its exact origin is registered on its OAuth client. Omit the origin and the browser's preflight is rejected
 
 ### Server-to-server endpoints
 

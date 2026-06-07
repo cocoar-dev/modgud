@@ -30,19 +30,19 @@ Signed-in users see, under `/profile/sessions`:
 Endpoints:
 
 ```http
-GET    /api/account/sessions
-DELETE /api/account/sessions/{id}
-DELETE /api/account/sessions
+GET    /api/auth/sessions
+DELETE /api/auth/sessions/{id}
+DELETE /api/auth/sessions
 ```
 
 ### Admin variant
 
 ```http
-GET    /api/admin/users/{id}/sessions
-DELETE /api/admin/users/{id}/sessions   # Force logout
+GET    /api/admin/users/{id}/sessions   # gated on session:read
+DELETE /api/admin/users/{id}/sessions   # force logout, gated on session:write
 ```
 
-Admin needs `modgud:user:read` or `modgud:user:write` (or the `:admin` bypass).
+Admin needs `modgud:session:read` (list) or `modgud:session:write` (force logout), or the matching `:admin` bypass tier. The granular split lets a help-desk role read sessions without being able to terminate them.
 
 ## OAuth tokens
 

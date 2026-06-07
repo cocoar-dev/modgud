@@ -28,6 +28,12 @@ Use the [SaaS App Integration Walkthrough](../integrate/saas-walkthrough) for th
 
 Administration → **OAuth → Clients** → **Create**.
 
+The create modal exposes the full configuration up front — identity on the left, and tabs for **Grants**, **Scopes**, **Redirect URIs** and **Apps** on the right. (These used to be edit-only, so a freshly created client was born non-functional.) Set them at create time and the client is usable immediately.
+
+::: tip authorization_code clients: two create-time requirements
+For an `authorization_code` client the Create button stays disabled until you have both: at least one **Redirect URI** (URLs tab) and the **`authorization_code`** grant (Grants tab). This stops you from silently producing a client that can't complete a login.
+:::
+
 ### Required fields
 
 - **Client ID** — unique technical identifier (`web-app-prod`, `mobile-ios`, …). Sent in every OAuth request.
@@ -36,11 +42,16 @@ Administration → **OAuth → Clients** → **Create**.
 
 ### Client types
 
+There are exactly two client types — `public` and `confidential`:
+
 | Type | For | Secret? |
 | --- | --- | --- |
-| **Confidential (web)** | Server-side web apps (ASP.NET, Node, Rails) — can store secrets | Yes |
-| **Public (SPA / mobile)** | SPAs and mobile apps — can't safely store secrets | No, PKCE only |
-| **Service (machine-to-machine)** | Server-to-server, no user involved | Yes, client-credentials flow |
+| **Confidential** | Server-side web apps (ASP.NET, Node, Rails) — can store secrets | Yes |
+| **Public** | SPAs and mobile apps — can't safely store secrets | No, PKCE only |
+
+::: tip Machine-to-machine? Use a Service Account
+There is no separate "service" client type. For server-to-server flows with no user involved, create a [Service Account](./service-accounts) — it owns a confidential client wired to the `client_credentials` grant. The standard create-client form deliberately can't produce a client-credentials client on its own (see the grant-type rules below).
+:::
 
 ### Consent type
 
@@ -62,25 +73,56 @@ One per line. Modgud strictly checks that the redirect URI presented in the auth
 
 For SPAs and mobile use a deep link (`com.example.app:/oauth/callback`) or a HTTPS callback page on your domain.
 
+### Access Token Type
+
+New clients default to **JWT**. Two options:
+
+| Type | What it is | Validation |
+| --- | --- | --- |
+| **JWT** (default) | Self-contained signed token — the claims are inside the token | The resource server validates it locally against the realm's signing key (JWKS); no callback to Modgud |
+| **Reference** | Opaque random string — carries no claims | The resource server must call `/connect/introspect` on every request to resolve it |
+
+A resource server built with ASP.NET Core's `AddJwtBearer` expects a **JWT** — that's the right pick for the common case. Use **Reference** only when you specifically want every token resolvable/revocable at the introspection endpoint and you've wired the RS to call it.
+
+### Allowed CORS Origins
+
+One origin per line (e.g. `https://app.acme.example.com`). This field is **enforced** — it's not decorative. For a browser-only SPA doing Authorization Code + PKCE with no backend-for-frontend, Modgud emits the CORS headers on the credentialed OIDC endpoints (`/connect/token`, `/connect/userinfo`, `/connect/revoke`) **only** when the request's `Origin` is one of these registered values, so the flow can complete cross-origin. (The public metadata endpoints — `/.well-known/openid-configuration` and `/.well-known/jwks` — are readable from any origin regardless.)
+
+::: tip Changes take effect within ~60 s
+The allowed-origins set is cached per realm for about a minute, so after adding an origin give it up to ~60 s before the browser flow starts succeeding.
+:::
+
 ### Allowed grant types
 
-Comma-separated list. Common combinations:
+Pick the grants the client actually needs (multi-select). There are **no silent defaults** — a client created with zero grants can't mint any token, so the Create button stays blocked until at least one grant is picked. Common combinations:
 
 | Combo | Use case |
 | --- | --- |
-| `authorization_code, refresh_token` | Web SPA / mobile (with PKCE on public clients) |
-| `client_credentials` | Pure machine-to-machine |
-| `authorization_code, refresh_token, client_credentials` | Hybrid: user-acting most of the time, occasional service-token needs |
+| `authorization_code, refresh_token` | Web app / SPA / mobile (with PKCE on public clients) |
+| `client_credentials` | Machine-to-machine — but only via a [Service Account](./service-accounts) (see below) |
+
+::: warning No hybrid user-flow + client-credentials clients
+A client is **either** a user-flow client (`authorization_code` / `refresh_token` / `device_code` / …) **or** a machine-to-machine client (`client_credentials`) — never both. The split is structural, enforced at the create/update endpoint:
+
+- `client_credentials` requires the client to be linked to a [Service Account](./service-accounts); the standard create-client form has no such link field, so it rejects a bare `client_credentials` selection.
+- A Service-Account-linked client may carry **only** `client_credentials` — adding any user-flow grant alongside it is rejected.
+
+To get machine-to-machine tokens, create a Service Account; it provisions the confidential client + `client_credentials` grant for you.
+:::
 
 ### Lifetimes
 
-Optional fields override the realm defaults:
+The **Token Lifetimes** tab is edit-only (it appears once a client exists, not on the create form). Each field is **entered in seconds**; leaving it empty falls back to the IdP default. The defaults are:
 
-- **Identity Token Lifetime** — default ~5 min
-- **Access Token Lifetime** — default ~1 h
-- **Authorization Code Lifetime** — default ~30 s
-- **Absolute Refresh Token Lifetime** — default ~30 d
-- **Sliding Refresh Token Lifetime** — default ~7 d
+| Field | Default | In seconds |
+| --- | --- | --- |
+| **Access Token Lifetime** | 60 min | `3600` |
+| **Authorization Code Lifetime** | 5 min | `300` |
+| **Absolute Refresh Token Lifetime** | 14 days | `1209600` |
+| **Identity Token Lifetime** | OpenIddict default (no Modgud override) | — |
+| **Sliding Refresh Token Lifetime** | OpenIddict default (no Modgud override) | — |
+
+Access-token, authorization-code and refresh-token defaults are set globally on the IdP (`AccessTokenLifetimeMinutes`, `AuthorizationCodeLifetimeMinutes`, `RefreshTokenLifetimeDays`). The identity-token and sliding-refresh fields have no Modgud-level default — leave them blank unless you have a specific reason to override OpenIddict's built-in value.
 
 ## Editing / regenerating
 

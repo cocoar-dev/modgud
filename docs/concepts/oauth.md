@@ -133,11 +133,10 @@ Configurable per client:
 
 For `explicit`:
 
-1. `AuthorizationController` checks for existing permanent
-   authorizations
-2. If none → redirect to `/consent?returnUrl=...`
-3. `ConsentController` shows scope details and processes the decision
-4. Approved scopes are stored as a permanent authorization
+1. `/connect/authorize` checks for existing permanent authorizations
+2. If none → it mints a server-side `ConsentTicket` (bound to the current subject, with the requested scopes and the original authorize query locked in) and redirects to `/consent?ticket=...`
+3. `ConsentEndpoints` (`GET /connect/consent?ticket=…` then `POST /connect/consent`) resolves the ticket, shows scope details, and processes the decision — the SPA never sees the raw authorize URL
+4. Approved scopes are intersected with the locked-in requested set (no scope expansion possible) and stored as a permanent authorization
 5. With `prompt=none` and no existing consent → `consent_required` error
 
 ## Scopes & API resources
@@ -165,7 +164,7 @@ token.
 
 ## Discovery privacy
 
-`scopes_supported` in `/.well-known/openid-configuration` lists **only the scopes a realm has explicitly published**. Standard OIDC scopes default to public; custom App and API scopes default to private. Background:
+`scopes_supported` in `/.well-known/openid-configuration` lists **only the scopes a realm has explicitly published**. Privacy is opt-in, not opt-out: standard OIDC scopes are public, and admin-created scopes also default to `ShowInDiscoveryDocument = true` (visible). The one exception is the implicit-scope-per-API bootstrap path, which seeds its scope with `ShowInDiscoveryDocument = false` so a one-click API setup doesn't leak the resource-server name into public metadata. Background:
 
 - RFC 8414 §3 declares `scopes_supported` as `RECOMMENDED`, not `MUST` — publishing every scope is allowed but not required.
 - In multi-tenant SaaS, leaking which APIs a tenant operates is information disclosure with no upside: clients learn the scopes they need from the resource server's integration docs, not from discovery.
@@ -204,7 +203,8 @@ The admin area (`/admin/oauth/...`) has list and detail views for:
   UserClaim mappings
 - **APIs** — protected API resources with scopes and UserClaims
 
-Gating: `modgud:oauth-client:read/write/delete`,
-`modgud:oauth-scope:read/write/delete`,
-`modgud:oauth-api:read/write/delete`. Per-resource admin bypass
-via `modgud:oauth-client:admin` etc.
+Gating: `modgud:oauth-client:read/write`,
+`modgud:oauth-scope:read/write`,
+`modgud:oauth-api:read/write` (deletes are gated by `:write`, there is
+no separate `:delete` tier). Per-resource admin bypass via
+`modgud:oauth-client:admin` etc.
