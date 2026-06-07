@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { apiLogin } from './helpers'
+import { apiLogin, uniqueSuffix } from './helpers'
 
 /**
  * Stage 7 (OAuth / OIDC) — the operator door, tested like a human.
@@ -17,7 +17,7 @@ import { apiLogin } from './helpers'
 
 const ADMIN_USER = process.env.E2E_ADMIN_USER ?? 'admin'
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'ABC12abc!'
-const SUFFIX = Math.random().toString(36).slice(2, 8)
+const SUFFIX = uniqueSuffix()
 
 test.describe('Stage 7 — admin registers an OAuth client through the real UI', () => {
   test('admin creates a client, sees the one-time secret, and the client lands in the list', async ({ page }, testInfo) => {

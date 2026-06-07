@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { generateSync } from 'otplib'
-import { apiLogin } from './helpers'
+import { apiLogin, uniqueSuffix } from './helpers'
 
 // otplib v13 is a TypeScript-first rewrite — `generateSync({ secret })`
 // returns the current TOTP code with the same defaults ASP.NET Identity
@@ -25,7 +25,7 @@ const ADMIN_USER = 'admin'
 const ADMIN_PASSWORD = 'ABC12abc!'
 const TEST_PASSWORD = 'TestPass1234!'
 
-const SUFFIX = Math.random().toString(36).slice(2, 8)
+const SUFFIX = uniqueSuffix()
 const userName = `totp-${SUFFIX}`
 
 test.describe.configure({ mode: 'serial' })

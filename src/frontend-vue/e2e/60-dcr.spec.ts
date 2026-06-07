@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { apiLogin } from './helpers'
+import { apiLogin, uniqueSuffix } from './helpers'
 import { createHash, randomBytes } from 'node:crypto'
 
 /**
@@ -20,7 +20,7 @@ const ADMIN_USER = process.env.E2E_ADMIN_USER ?? 'admin'
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'ABC12abc!'
 
 // Unique-per-run names so re-runs against the same DB don't collide.
-const SUFFIX = Math.random().toString(36).slice(2, 8)
+const SUFFIX = uniqueSuffix()
 const API_NAME = `https://dcr-pw-${SUFFIX}.modgud.test/`
 const SCOPE_NAME = `dcr-pw-scope-${SUFFIX}`
 const CLIENT_NAME = `Playwright DCR ${SUFFIX}`

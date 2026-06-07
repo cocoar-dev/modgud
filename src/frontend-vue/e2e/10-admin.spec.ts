@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { apiLogin } from './helpers'
+import { apiLogin, uniqueSuffix } from './helpers'
 
 /**
  * Phase B of the manual-checklist port. Admin CRUD coverage for §6 + §7 +
@@ -26,7 +26,7 @@ const ADMIN_PASSWORD = 'ABC12abc!'
 
 // Random suffix per run — protects against collisions between this spec's
 // CRUD operations on a database the smoke spec already touched.
-const SUFFIX = Math.random().toString(36).slice(2, 8)
+const SUFFIX = uniqueSuffix()
 
 // Tests share the same authenticated request context — `apiLogin` sets the
 // cookie on the test's page context, but page.request inherits from there.

@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext, type BrowserContext } from '@playwright/test'
-import { apiLogin } from './helpers'
+import { apiLogin, uniqueSuffix } from './helpers'
 
 /**
  * §21 of the manual checklist — permission gating end-to-end.
@@ -26,7 +26,7 @@ const TEST_PASSWORD = 'TestPass1234!'
 // Each run builds fresh users/roles/groups with a random suffix so tests
 // don't collide on a re-used DB. Phase A's smoke spec creates the admin
 // once; we just authenticate as that admin to drive the setup work here.
-const SUFFIX = Math.random().toString(36).slice(2, 8)
+const SUFFIX = uniqueSuffix()
 
 test.describe.configure({ mode: 'serial' })
 

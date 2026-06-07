@@ -1,4 +1,16 @@
 import { type Page } from '@playwright/test'
+import { randomBytes } from 'node:crypto'
+
+/**
+ * A short, collision-resistant suffix for test data (usernames, client names,
+ * scopes, domains) so re-runs against a re-used database never collide. Backed
+ * by a CSPRNG (`node:crypto`) rather than `Math.random()`: the uniqueness is
+ * equivalent for our purposes, and it keeps CodeQL's "insecure randomness" rule
+ * quiet because the value sometimes flows into login-relevant identifiers.
+ */
+export function uniqueSuffix(): string {
+  return randomBytes(4).toString('hex')
+}
 
 /**
  * Login via the UI — fills username + password and submits, waits until the

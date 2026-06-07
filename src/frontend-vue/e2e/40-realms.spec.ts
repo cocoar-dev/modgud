@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { apiLogin } from './helpers'
+import { apiLogin, uniqueSuffix } from './helpers'
 
 /**
  * §14 of the manual checklist — realm CRUD via the admin API. Multi-tenancy
@@ -20,7 +20,7 @@ import { apiLogin } from './helpers'
 
 const ADMIN_USER = 'admin'
 const ADMIN_PASSWORD = 'ABC12abc!'
-const SUFFIX = Math.random().toString(36).slice(2, 8)
+const SUFFIX = uniqueSuffix()
 
 test.describe.configure({ mode: 'serial' })
 

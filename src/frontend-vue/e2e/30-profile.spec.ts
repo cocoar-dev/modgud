@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { apiLogin } from './helpers'
+import { apiLogin, uniqueSuffix } from './helpers'
 import { clearMailpit, extractQueryParam, waitForMail } from './mailpit'
 
 /**
@@ -28,7 +28,7 @@ const ADMIN_USER = 'admin'
 const ADMIN_PASSWORD = 'ABC12abc!'
 const TEST_PASSWORD = 'TestPass1234!'
 
-const SUFFIX = Math.random().toString(36).slice(2, 8)
+const SUFFIX = uniqueSuffix()
 const userName = `profile-${SUFFIX}`
 const initialEmail = `${userName}-old@modgud.test`
 const newEmail = `${userName}-new@modgud.test`

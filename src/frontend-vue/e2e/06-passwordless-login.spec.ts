@@ -1,6 +1,6 @@
 import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test'
 import { generateSync } from 'otplib'
-import { fillOtpCode } from './helpers'
+import { fillOtpCode, uniqueSuffix } from './helpers'
 import { clearMailpit, extractOtpCodeFromHtml, waitForMail } from './mailpit'
 
 /**
@@ -31,7 +31,7 @@ const TEST_PASSWORD = 'TestPass1234!'
 
 // Per-spec unique suffix so re-runs against a reused container never collide.
 function uniqueName(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`
+  return `${prefix}-${uniqueSuffix()}`
 }
 
 /** Admin-authenticated API context — used only to provision test users. */

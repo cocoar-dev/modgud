@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test'
-import { apiLogin } from './helpers'
+import { apiLogin, uniqueSuffix } from './helpers'
 
 /**
  * Stage 5 (user & account management) — the human door, tested like a human.
@@ -21,7 +21,7 @@ const ADMIN_USER = process.env.E2E_ADMIN_USER ?? 'admin'
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'ABC12abc!'
 const NEW_USER_PASSWORD = 'NewMember1234!'
 
-const SUFFIX = Math.random().toString(36).slice(2, 8)
+const SUFFIX = uniqueSuffix()
 
 let baseURL: string
 test.beforeAll(({ baseURL: b }) => { baseURL = b! })
