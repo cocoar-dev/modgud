@@ -1,210 +1,166 @@
 # Integrating a Resource Server
 
-This guide walks through wiring an ASP.NET Core resource server to
-Modgud so it can:
+This guide walks through wiring an ASP.NET Core resource server to Modgud so it can:
 
-1. Validate access tokens that Modgud issued
-2. Pick up role claims via UserInfo so `[Authorize(Roles = "…")]` works
-3. Read fine-grained permission strings from the per-Audience
-   `resource_access` block so it can gate on
-   `<resource>:<action>` checks
+1. Validate access tokens that Modgud issued (JWT signature + issuer + audience, against the realm's JWKS)
+2. Pick up role claims so `[Authorize(Roles = "…")]` works
+3. Read fine-grained permission strings from the per-audience `resource_access` block so it can gate on `<resource>:<action>` checks
 
-The reference scenario is a fictional `acme` app — replace the slug
-with yours throughout.
+The reference scenario is a fictional `acme` app with a `todo` resource — replace the slugs with yours throughout.
+
+A runnable end-to-end sample lives in the Modgud source tree at `src/dotnet/TestApps/Modgud.TestApps.ResourceApi/Program.cs` (the protected API) and `src/dotnet/TestApps/Modgud.TestApps.Bff/Program.cs` (a cookie-based BFF that obtains and forwards the token). The code below mirrors those samples; when in doubt, read them — they are exercised by the integration test rig.
 
 ## Prerequisites
 
-Before wiring code, finish the admin setup in Modgud:
+Before wiring code, finish the admin setup in Modgud. The full admin walkthrough lives at [SaaS App Integration Walkthrough](./saas-walkthrough); the essentials are:
 
-1. Create the app `acme` with its permission catalog
-   (`<resource>:<action>` entries)
-2. Create an OAuth client (e.g. `acme-web`) and link it to `acme`
-3. Create an OAuth API (resource server) named after the app's slug
-   under **OAuth → APIs**, link it to `acme`, and pick the catalog
-   subset its `PermissionIds` cover
-4. Set up at least one role + group with `BoundTo: ["acme"]` and
-   assign your test user
+1. Create the app `acme` with its permission catalog (`<resource>:<action>` entries such as `todo:read`, `todo:write`)
+2. Create an OAuth API (resource server) named `acme` under **OAuth → APIs**, link it to the `acme` app, and pick the catalog subset its `PermissionIds` cover. Linking an API to an app creates an implicit scope whose `Resources` include `acme` — that is what stamps `aud=acme` onto tokens requested with that scope.
+3. Create an OAuth client (e.g. `acme-web`) for the app's frontend. Set its **Access Token Type** to **JWT (self-contained)** — see the prerequisite below.
+4. Set up at least one role + group with `BoundTo: ["acme"]` and assign your test user.
 
-The full admin walkthrough lives at
-[Admin → SaaS App Integration Walkthrough](../integrate/saas-walkthrough).
+### Prerequisite: the client must issue JWT access tokens
+
+Modgud's default access-token format is **Reference** (opaque) — an opaque handle the resource server would have to resolve via `/connect/introspect`. The integration in this guide is **JWKS-based**: `AddJwtBearer` validates the token's signature locally and never calls introspection. Opaque reference tokens cannot be validated that way.
+
+So the OAuth client must have its **Access Token Type** set to **JWT (self-contained)** (the **Access Token Type** field in the OAuth client editor, default `Reference`). With JWT selected, the access token is a signed bearer JWT carrying `aud`, `scope`, and the standard claims, which `AddJwtBearer` validates against the realm's JWKS.
+
+### Prerequisite: request the right scopes
+
+The token only carries what was requested:
+
+- `aud=acme` is present only when a requested scope carries `Resources=[acme]` — i.e. the implicit scope created when you linked the `acme` API to the `acme` app (step 2). Without it the token has no `acme` audience and `AddJwtBearer` rejects it with an audience mismatch.
+- The `permissions` array inside `resource_access[acme]` appears only when the client requested the `permissions` scope.
+- The `roles` array inside `resource_access[acme]` appears only when the client requested the `roles` scope.
+
+Both `roles` and `permissions` are standard scopes seeded into every realm. Add them (plus the API's implicit scope) to the client's allowed scopes and to the authorization request. The [SaaS App Integration Walkthrough](./saas-walkthrough) covers this end to end.
+
+## Host-based realm routing — get the `Authority` right
+
+Modgud resolves realms by the **Host header only**. The issuer carries **no** realm path segment. Each realm answers on its own host (or hostname), and the OIDC discovery document, JWKS, token issuer, and UserInfo endpoint all live at the host root.
+
+That means `Authority` MUST be the realm's **host root**:
+
+- Correct: `https://auth.example.com`
+- Wrong: `https://auth.example.com/system` or any `https://auth.example.com/<realm>` path
+
+A path-suffixed authority makes `AddJwtBearer` fetch discovery from `https://auth.example.com/system/.well-known/openid-configuration` (404) and validate the issuer against `https://auth.example.com/system` — both fail. Use the bare host root and let the Host header select the realm.
 
 ## ASP.NET Core integration
 
-### 1. Add the package reference
+### 1. Add the package
 
-Until the NuGet package ships, reference the project from the Modgud
-source tree:
-
-```xml
-<ItemGroup>
-  <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
-  <ProjectReference Include="..\..\modgud\src\dotnet\Modgud.Client.AspNetCore\Modgud.Client.AspNetCore.csproj" />
-</ItemGroup>
+```bash
+dotnet add package Modgud.Client.AspNetCore
+dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
 ```
 
-### 2. Configure authentication
+### 2. Configure authentication and the Modgud client
+
+`AddJwtBearer` validates the JWT. `AddModgudClient` adds the two pieces vanilla `AddJwtBearer` lacks: it fetches `/connect/userinfo` and merges the `resource_access` block onto the principal (via a post-configure on the JwtBearer scheme — you do **not** set `GetClaimsFromUserInfoEndpoint`, that property is for `AddOpenIdConnect`), and it registers a claims transformation that flattens the per-audience block into native role/permission claims plus the `RequiresCocoarPermission` endpoint filter.
 
 ```csharp
-using Modgud.Client.AspNetCore;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Modgud.Client.AspNetCore;
 
-services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        // Your realm's issuer — the segment after /<host>/ is the realm slug.
-        options.Authority = "https://auth.example.com/system";
-
-        // Your app's slug. Modgud uses the app slug as the audience
-        // claim, so all microservices under one app share the same `aud`.
-        options.Audience = "acme";
-
-        // CRITICAL: pulls UserInfo on every token validation and merges its
-        // claims into the principal. Without this, role + resource_access
-        // claims sit on the IdP and your endpoints don't see them.
-        options.GetClaimsFromUserInfoEndpoint = true;
+        options.Authority = "https://auth.example.com"; // realm host root — NO realm path segment
+        options.Audience  = "acme";                     // matches the OAuthApi name registered in Modgud
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters.NameClaimType = "name";
+        options.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
     });
 
-// Wires the Modgud ClaimsTransformation:
-//   - flattens resource_access[<AppSlug>].roles into ClaimTypes.Role
-//     so [Authorize(Roles = "Editor")] just works.
-//   - flattens resource_access[<AppSlug>].permissions onto an exposed
-//     IModgudPrincipal so you can call user.HasPermission("todo:write").
-services.AddModgudClient(o =>
+builder.Services.AddModgudClient(o =>
 {
-    o.AppSlug = "acme";
+    o.Authority = "https://auth.example.com";  // same as JwtBearer Authority
+    o.Audience  = "acme";                      // same as JwtBearer Audience
 });
 
-services.AddAuthorization();
-```
+builder.Services.AddAuthorization();
 
-### 3. Use it
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
 
-```csharp
-// Any authenticated user.
 app.MapGet("/me", (ClaimsPrincipal user) => new
 {
-    Sub   = user.FindFirstValue(ClaimTypes.NameIdentifier),
-    Email = user.FindFirstValue(ClaimTypes.Email),
-    Roles = user.FindAll(ClaimTypes.Role).Select(c => c.Value),
+    sub = user.FindFirstValue("sub"),
+    name = user.Identity?.Name,
+    roles = user.FindAll(ClaimTypes.Role).Select(c => c.Value),
+    permissions = user.FindAll(ModgudClaimsTransformation.PermissionClaimType).Select(c => c.Value),
 }).RequireAuthorization();
 
-// Role-only check (coarse).
-app.MapDelete("/admin/wipe", () => Results.Ok())
+app.MapGet("/todos", () => Results.Ok(new[] { "buy milk" }))
+   .RequireAuthorization()
+   .RequiresCocoarPermission("todo:read");
+
+app.MapPost("/todos", () => Results.Ok())
+   .RequireAuthorization()
+   .RequiresCocoarPermission("todo:write");
+
+app.Run();
+```
+
+`ModgudOptions` has exactly two required properties — `Authority` and `Audience` — plus an optional `JwtBearerScheme` (default `"Bearer"`) if you registered JwtBearer under a custom scheme name. Both `Authority` and `Audience` must match the values you passed to `AddJwtBearer`.
+
+## Reading roles and permissions
+
+The claims transformation projects the per-audience block onto flat claims:
+
+- Roles land on `ClaimTypes.Role`, so `[Authorize(Roles = "Editor")]`, `RequireRole(...)`, and `user.FindAll(ClaimTypes.Role)` all work.
+- Permissions land on the claim type `ModgudClaimsTransformation.PermissionClaimType` (value `"permission"`). Read them with `user.FindAll(ModgudClaimsTransformation.PermissionClaimType)`.
+
+```csharp
+// Coarse role gate.
+app.MapGet("/admin/reports", () => Results.Ok())
    .RequireAuthorization(p => p.RequireRole("Editor"));
+
+// Granular permission gate — the canonical way.
+app.MapPost("/todos", () => Results.Ok())
+   .RequireAuthorization()
+   .RequiresCocoarPermission("todo:write");
 ```
 
-## Granular permission checks
+`RequiresCocoarPermission("<resource>:<action>")` is an extension on both `RouteHandlerBuilder` (per-endpoint) and `RouteGroupBuilder` (whole group). It does a straight exact-match against the principal's `"permission"` claims: `401` when anonymous, `403` when authenticated but lacking the permission. The permission string is bare 2-segment (`todo:write`) — the app context is implicit from the audience you configured.
 
-For checks finer than role names, read the permissions array out of
-the principal. The ClaimsTransformation exposes it as plain claims
-under the canonical permission claim type:
+::: tip Roles and permissions compose
+The same user can be `Roles = "Editor"` **and** hold `todo:write`. Pick role gates for coarse buckets (`Admin` / `Editor` / `Viewer`) and `RequiresCocoarPermission` for per-action checks. Both flavours read from the same UserInfo-sourced `resource_access` block — there is no separate server-to-server call to wire up.
+:::
 
-```csharp
-public static class PrincipalExtensions
-{
-    public static bool HasPermission(this ClaimsPrincipal user, string permission)
-        => user.HasClaim(ModgudClaimTypes.Permission, permission);
-}
+::: warning Groups are not emitted
+The IdP never emits a `groups` block in `resource_access` (hub boundary). Group membership is resolved IdP-side and expanded into roles/permissions before emission. Gate on roles or permissions only — there is no group claim to read.
+:::
 
-app.MapPost("/invoices", (ClaimsPrincipal user, InvoiceDto dto) =>
-{
-    if (!user.HasPermission("invoice:write"))
-        return Results.Forbid();
+## What's in the permissions array
 
-    // … create invoice
-    return Results.Ok();
-});
-```
+The IdP does two transformations before emitting the per-audience block, so your resource server never needs an evaluator:
 
-### Or: an authorization policy
-
-```csharp
-public sealed class HasPermissionRequirement(string permission) : IAuthorizationRequirement
-{
-    public string Permission { get; } = permission;
-}
-
-public sealed class HasPermissionHandler : AuthorizationHandler<HasPermissionRequirement>
-{
-    protected override Task HandleRequirementAsync(
-        AuthorizationHandlerContext ctx, HasPermissionRequirement req)
-    {
-        if (ctx.User.HasClaim(ModgudClaimTypes.Permission, req.Permission))
-            ctx.Succeed(req);
-        return Task.CompletedTask;
-    }
-}
-
-services.AddSingleton<IAuthorizationHandler, HasPermissionHandler>();
-services.AddAuthorization(o =>
-    o.AddPolicy("CanWriteInvoices", p =>
-        p.AddRequirements(new HasPermissionRequirement("invoice:write"))));
-
-app.MapPost("/invoices", (InvoiceDto dto) => Results.Ok())
-   .RequireAuthorization("CanWriteInvoices");
-```
-
-### What's in the permissions array
-
-The IdP server-side does two transformations before emitting:
-
-- **Bypass-pre-expansion**: if the user holds `realm:admin`, the
-  block lists every concrete catalog entry of every reachable App; a
-  `<r>:admin` grant is expanded into every `<r>:*` entry in the
-  current App's catalog. Your check is always exact-match — no
-  evaluator port required.
-- **Per-RS subset narrowing**: each Audience block is narrowed to
-  the calling OAuthApi's declared `PermissionIds`. A microservice
-  within a multi-RS App sees only its own permissions, never a
-  sibling's.
-
-## Two gating flavours, when to pick which
-
-| You need | Use |
-| --- | --- |
-| Coarse role gating (`Admin`, `Editor`, `Viewer`) | `[Authorize(Roles = "…")]` via UserInfo + claims-transformation. |
-| Granular per-action permissions (`invoice:write`, `report:export`) | `user.HasPermission(…)` against the per-Audience `resource_access.permissions` block. |
-| Both | Both — they compose. The same user can be `Roles="Editor"` *and* hold permission `invoice:write`. |
-
-Both flavours use the same UserInfo call — there's no separate
-server-to-server endpoint to wire up.
-
-## Requesting the right scopes
-
-The `resource_access` block is gated by scope:
-
-- Request `scope=roles` to receive the `roles` array per Audience.
-- Request `scope=permissions` to receive the `permissions` array per
-  Audience (bypass-pre-expanded + RS-subset-narrowed).
-- Both standard scopes are seeded into every realm.
-
-Without those scopes, the corresponding arrays are omitted (or
-empty) and your gating will deny everyone — make sure the OAuth
-client requests them.
+- **Bypass pre-expansion**: bypass tiers are resolved to concrete catalog strings before emission. `realm:admin` expands to every concrete catalog entry of every reachable app; an `<app>:admin` grant expands to every entry in that app's catalog; a `<resource>:admin` grant expands to every `<resource>:<action>` in the app's catalog. Your check is always exact-match.
+- **Per-RS subset narrowing**: each audience block is narrowed to the calling OAuth API's declared `PermissionIds`. A resource server within a multi-RS app sees only its own permissions, never a sibling's.
 
 ## Common pitfalls
 
-- **`GetClaimsFromUserInfoEndpoint = false`** (default in some
-  templates) — UserInfo is never called, so `resource_access` never
-  reaches the principal, so role/permission claims are missing, so
-  `[Authorize(Roles)]` denies everyone. Always opt in.
-- **Wrong `AppSlug` in `AddModgudClient`** — the transformation
-  reads `resource_access[<wrong-slug>]`, finds nothing, doesn't add
-  roles/permissions. Symptoms: authenticated user, no roles, no
-  permissions. Double-check the slug matches the App in Modgud.
-- **Resource server not linked to an App** — without a linked App
-  there's no `PermissionIds` subset, so the `resource_access` block
-  for this Audience is empty. Open the OAuth API in Modgud admin
-  and assign the App.
-- **Token's `aud` doesn't match `JwtBearerOptions.Audience`** — JWT
-  validation rejects with audience mismatch. The convention is
-  `aud == app-slug`; align both sides.
-- **`scope=permissions` not requested** — `resource_access` carries
-  roles but the permissions array stays empty. Add the scope to
-  your client's allowed scopes and to the authorization request.
+- **`Authority` has a realm path segment** — e.g. `https://auth.example.com/system`. Discovery fetch 404s and issuer validation fails. Realms route by Host header; `Authority` is the bare host root.
+- **Client issues Reference (opaque) tokens** — `AddJwtBearer` cannot validate them. Set the OAuth client's **Access Token Type** to **JWT (self-contained)**.
+- **Token's `aud` doesn't match `Audience`** — JWT validation rejects with an audience mismatch. `aud=acme` only appears when a requested scope carries `Resources=[acme]` (the implicit scope from linking the API to the app). Align the API name, the requested scope, and `options.Audience`.
+- **`Authority` / `Audience` differ between `AddJwtBearer` and `AddModgudClient`** — UserInfo is fetched from the wrong host or the transformation reads the wrong `resource_access[…]` key, so roles/permissions silently go missing. Keep both pairs identical.
+- **`permissions` scope not requested** — `resource_access[acme]` has no `permissions` array, so every `RequiresCocoarPermission` gate denies. Add the `permissions` scope to the client's allowed scopes and to the authorization request (same for `roles`).
+- **Resource server not linked to an app** — without a linked app there is no `PermissionIds` subset, so the audience block is empty. Open the OAuth API in Modgud admin and assign the app.
 
 ## Reference
 
+- Working sample: `src/dotnet/TestApps/Modgud.TestApps.ResourceApi/Program.cs` (+ BFF at `src/dotnet/TestApps/Modgud.TestApps.Bff/Program.cs`)
+- Admin walkthrough: [SaaS App Integration Walkthrough](./saas-walkthrough)
 - Concept overview: [Apps and resource_access](../concepts/apps-and-resource-access.md)
 - Permissions reference: [Permissions & gating](../concepts/permissions.md)
 - OAuth endpoints: [reference/oauth-api](../reference/oauth-api.md)

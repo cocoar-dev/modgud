@@ -39,22 +39,30 @@ single-tenant deployment — they just sit there unused.
 
 ## Setup
 
-Same recipe as the [Quickstart](quickstart) without any extra steps:
+For a quick local eval, use the [Quickstart](quickstart) compose as-is — the system realm is all you get out of the box. For a real single-tenant **production** deployment, run the published image with every env var the Production boot guards require:
 
 ```bash
 docker run -d \
   --name modgud \
   -p 80:8081 \
   -v cocoar-keys:/app/data/keys \
-  -e DbSettings__ConnectionString="Host=...;Database=modgud;..." \
+  -e DbSettings__ConnectionString="Host=db.internal;Database=modgud;Username=modgud;Password=…;Keepalive=30" \
   -e OpenIddict__Issuer="https://auth.example.com" \
-  -e ProxyAllowedNetworks="<reverse-proxy-CIDR>" \
+  -e ProxyAllowedNetworks="10.0.0.0/8" \
+  -e Observability__Prometheus__BearerToken="$(openssl rand -hex 32)" \
   ghcr.io/cocoar-dev/modgud:latest
+```
 
-# Add the public hostname to the system realm and restart
+Every env var above is mandatory in Production: the issuer must be a non-localhost **HTTPS** URL, `ProxyAllowedNetworks` must trust your reverse-proxy CIDR so forwarded headers are honoured, and Prometheus must either carry a strong `BearerToken` or be turned off entirely with `-e Observability__Prometheus__Enabled=false`. The `-v cocoar-keys:/app/data/keys` volume persists the signing keys across restarts. Configuration is by env var only — `configuration.json` is not shipped in the published image, and Cocoar.Configuration v6 binds `Section__Property` case-insensitively. See [Deployment](../operate/deployment) for the full guard list.
+
+```bash
+# Add the public hostname to the system realm, make it the primary
+# (so outbound email links resolve), then restart to pick it up
 docker exec modgud dotnet Modgud.Api.dll \
     recover realm-add-domain --slug system --domain auth.example.com
-docker compose restart auth
+docker exec modgud dotnet Modgud.Api.dll \
+    recover realm-set-primary-domain --slug system --domain auth.example.com
+docker restart modgud
 
 # Bootstrap the first admin into the system realm (default)
 docker exec modgud dotnet Modgud.Api.dll \
@@ -79,10 +87,7 @@ That's it. From the browser:
   you create yourself shouldn't list `control-plane:realm:read` or
   `control-plane:realm:write` unless the user genuinely is a
   deployment-level admin.
-- **Don't deactivate or delete the system realm.** Both are blocked
-  by service-level guards (the deployment would lose its admin
-  surface), but they're a configuration footgun if you're scripting
-  realm CRUD.
+- **Don't deactivate or delete the realm that currently holds the Control-Plane flag.** While a realm is the Control Plane, deactivating or deleting it is blocked by service-level guards (the deployment would lose its cross-realm admin surface). In a single-tenant deployment that's the system realm. The Control-Plane flag is transferable to another active realm first (`recover control-plane transfer <slug>`) if you genuinely need to retire the original — see [Concepts: Control Plane](../concepts/control-plane).
 
 ## Growing into multi-tenant later
 

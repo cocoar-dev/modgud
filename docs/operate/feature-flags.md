@@ -8,7 +8,7 @@ Some features ship with the editor side functional but the runtime side still mi
 
 ## Setting flags
 
-Configure via `configuration.local.json` (gitignored) or an environment variable. **Casing is case-sensitive** — see [the convention note below](#env-var-casing).
+Configure via `configuration.local.json` (gitignored) or an environment variable. Env-var binding is **case-insensitive** — see [the convention note below](#env-var-casing).
 
 ```jsonc
 // configuration.local.json
@@ -22,7 +22,7 @@ Configure via `configuration.local.json` (gitignored) or an environment variable
 ```
 
 ```bash
-# or via env (PascalCase, double-underscore as section separator):
+# or via env (double-underscore as section separator; casing is not significant):
 AppSettings__Features__PageBuilder=true
 ```
 
@@ -47,7 +47,7 @@ The stored data itself persists across flips — turning a flag off doesn't dele
 
 ## ENV-var casing
 
-Cocoar.Configuration v5 (the binding layer Modgud uses) reads environment variables **case-sensitively** with the same shape as the JSON keys. PascalCase only — `AppSettings__Features__PageBuilder=true`, **never** `APPSETTINGS__FEATURES__PAGEBUILDER`. The latter is silently ignored.
+Cocoar.Configuration v6 (the binding layer Modgud uses) binds environment variables **case-insensitively**. The section/property names need not match the JSON or C# casing — `AppSettings__Features__PageBuilder=true` and `APPSETTINGS__FEATURES__PAGEBUILDER=true` bind to the same flag. Two underscores (`__`) are the section separator; a single underscore is literal. PascalCase is a readability convention only, not a correctness requirement.
 
 This applies to every config-bound type, not just feature flags. The same rule covers `DbSettings__ConnectionString`, `Observability__Prometheus__BearerToken`, etc.
 

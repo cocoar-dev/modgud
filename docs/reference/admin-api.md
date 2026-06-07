@@ -4,38 +4,48 @@ Endpoints under `/api/admin/...` (or `/api/...` for resource reads
 without the `admin/` prefix). The realm is resolved via the Host
 header.
 
-Every endpoint is gated through
-`.RequiresPermission("<resource>:<action>")`. The strings are exactly
-the same as in the frontend sidebar.
+Most endpoints are gated through
+`.RequiresPermission("<resource>:<action>")`, and those permission
+strings are exactly the same as in the frontend sidebar. A few
+endpoints are gated by authentication only (e.g. the principal/lookup
+pickers) or are public (the anonymous SPA-bootstrap reads); these are
+called out per-row below.
 
 ## Users
 
 Endpoint definitions in
-`Modgud.Api/Features/Users/UsersEndpoints.cs`.
+`Modgud.Api/Features/Users/UsersEndpoints.cs`. The resource path is
+singular (`/api/user`). Deletes are gated by `user:write` — there is no
+separate `user:delete` tier. There is no `unlock` endpoint.
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/users` | `user:read` |
-| `GET` | `/api/users/{id}` | `user:read` |
-| `POST` | `/api/users` | `user:write` |
-| `PATCH` | `/api/users/{id}` | `user:write` |
-| `DELETE` | `/api/users/{id}` | `user:delete` |
-| `POST` | `/api/users/{id}/unlock` | `user:write` |
+| `GET` | `/api/user` | `user:read` |
+| `GET` | `/api/user/{id}` | `user:read` |
+| `POST` | `/api/user` | `user:write` |
+| `PUT` | `/api/user/{id}` | `user:write` |
+| `DELETE` | `/api/user/{id}` | `user:write` |
+| `DELETE` | `/api/user` | `user:write` (bulk delete, ids in body) |
+| `POST` | `/api/user/{id}/restore` | `user:write` |
+| `PUT` | `/api/user/{id}/password` | `user:write` |
+| `PUT` | `/api/user/{id}/active` | `user:write` |
 
 ### Admin GDPR
 
+Permanent (irreversible) PII erasure. Soft-delete goes through the
+regular user CRUD path above; this is the masking flow, gated on the
+dedicated `gdpr:admin` permission and requires a `Reason` in the body.
+
 | Method | Path | Permission |
 |---|---|---|
-| `POST` | `/api/admin/users/{id}/gdpr/delete-request` | `user:delete` |
-| `POST` | `/api/admin/users/{id}/gdpr/delete-confirm` | `user:delete` |
-| `DELETE` | `/api/admin/users/{id}/gdpr/delete-cancel` | `user:delete` |
+| `DELETE` | `/api/admin/users/{id}/permanent` | `gdpr:admin` |
 
 ### Admin sessions
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/users/{id}/sessions` | `user:read` |
-| `DELETE` | `/api/admin/users/{id}/sessions` | `user:write` (force logout) |
+| `GET` | `/api/admin/users/{id}/sessions` | `session:read` |
+| `DELETE` | `/api/admin/users/{id}/sessions` | `session:write` (force logout) |
 
 ### Admin magic link
 
@@ -45,10 +55,14 @@ Endpoint definitions in
 
 ### Admin 2FA grace period
 
+All gated on `user:write` (the whole group shares the gate).
+
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/users/{id}/grace` | `user:read` |
-| `PATCH` | `/api/admin/users/{id}/grace` | `user:write` |
+| `GET` | `/api/admin/users/{id}/security-info` | `user:write` |
+| `PUT` | `/api/admin/users/{id}/grace/policy` | `user:write` |
+| `POST` | `/api/admin/users/{id}/grace/reset` | `user:write` |
+| `DELETE` | `/api/admin/users/{id}/grace` | `user:write` |
 
 ### Admin external links
 
@@ -65,71 +79,94 @@ strip the user's only remaining authentication method.
 
 ### Admin profile change requests
 
+All gated on `user:write` (the whole group shares the gate).
+
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/change-requests` | `user:read` |
+| `GET` | `/api/admin/change-requests` | `user:write` |
 | `POST` | `/api/admin/change-requests/{id}/approve` | `user:write` |
 | `POST` | `/api/admin/change-requests/{id}/reject` | `user:write` |
 
 ## Roles
 
+Singular path (`/api/role`). Deletes are gated by `permission-role:write` —
+there is no `permission-role:delete` tier.
+
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/roles` | `permission-role:read` |
-| `GET` | `/api/roles/{id}` | `permission-role:read` |
-| `POST` | `/api/roles` | `permission-role:write` |
-| `PATCH` | `/api/roles/{id}` | `permission-role:write` |
-| `DELETE` | `/api/roles/{id}` | `permission-role:delete` |
+| `GET` | `/api/role` | `permission-role:read` |
+| `GET` | `/api/role/{id}` | `permission-role:read` |
+| `POST` | `/api/role` | `permission-role:write` |
+| `PUT` | `/api/role/{id}` | `permission-role:write` |
+| `DELETE` | `/api/role/{id}` | `permission-role:write` |
 
 ## Groups
 
-| Method | Path | Permission |
-|---|---|---|
-| `GET` | `/api/groups` | `authorization-group:read` |
-| `GET` | `/api/groups/{id}` | `authorization-group:read` |
-| `POST` | `/api/groups` | `authorization-group:write` |
-| `PATCH` | `/api/groups/{id}` | `authorization-group:write` |
-| `DELETE` | `/api/groups/{id}` | `authorization-group:delete` |
-
-## Principals (polymorphic read API)
-
-Returns users, groups, and service accounts mixed — used by search and
-the member picker in the frontend.
+Singular path (`/api/group`). Deletes are gated by `authorization-group:write` —
+there is no `authorization-group:delete` tier.
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/principals?search=...` | `user:read` (for persons) and/or `authorization-group:read` |
+| `GET` | `/api/group` | `authorization-group:read` |
+| `GET` | `/api/group/{id}` | `authorization-group:read` |
+| `POST` | `/api/group` | `authorization-group:write` |
+| `PUT` | `/api/group/{id}` | `authorization-group:write` |
+| `DELETE` | `/api/group/{id}` | `authorization-group:write` |
+
+## Principals (polymorphic lookup API)
+
+Returns active persons, groups, and service accounts mixed — used by
+the member picker in the frontend. The single endpoint is a lookup
+(`/api/principal/lookup`) that returns all active, non-deleted
+principals; it has no `search` query parameter and is gated by
+authentication only (any signed-in user), not a specific permission.
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/principal/lookup` | Authenticated (no specific permission) |
 
 ## OAuth clients
+
+Deletes are gated by `oauth-client:write` — there is no
+`oauth-client:delete` tier.
 
 | Method | Path | Permission |
 |---|---|---|
 | `GET` | `/api/admin/oauth/clients` | `oauth-client:read` |
 | `GET` | `/api/admin/oauth/clients/{id}` | `oauth-client:read` |
 | `POST` | `/api/admin/oauth/clients` | `oauth-client:write` |
-| `PATCH` | `/api/admin/oauth/clients/{id}` | `oauth-client:write` |
-| `DELETE` | `/api/admin/oauth/clients/{id}` | `oauth-client:delete` |
-| `POST` | `/api/admin/oauth/clients/{id}/rotate-secret` | `oauth-client:write` |
+| `PUT` | `/api/admin/oauth/clients/{id}` | `oauth-client:write` |
+| `DELETE` | `/api/admin/oauth/clients/{id}` | `oauth-client:write` |
+| `POST` | `/api/admin/oauth/clients/{id}/regenerate-secret` | `oauth-client:write` |
 
 ## OAuth scopes
+
+Deletes are gated by `oauth-scope:write` — there is no
+`oauth-scope:delete` tier.
 
 | Method | Path | Permission |
 |---|---|---|
 | `GET` | `/api/admin/oauth/scopes` | `oauth-scope:read` |
 | `GET` | `/api/admin/oauth/scopes/{id}` | `oauth-scope:read` |
 | `POST` | `/api/admin/oauth/scopes` | `oauth-scope:write` |
-| `PATCH` | `/api/admin/oauth/scopes/{id}` | `oauth-scope:write` |
-| `DELETE` | `/api/admin/oauth/scopes/{id}` | `oauth-scope:delete` |
+| `PUT` | `/api/admin/oauth/scopes/{id}` | `oauth-scope:write` |
+| `DELETE` | `/api/admin/oauth/scopes/{id}` | `oauth-scope:write` |
 
 ## OAuth APIs
+
+Deletes are gated by `oauth-api:write` — there is no `oauth-api:delete`
+tier. The `create-implicit-scope` convenience endpoint is gated on
+`oauth-scope:write` (the side-effect being authorised is the scope
+creation, not the API edit).
 
 | Method | Path | Permission |
 |---|---|---|
 | `GET` | `/api/admin/oauth/apis` | `oauth-api:read` |
 | `GET` | `/api/admin/oauth/apis/{id}` | `oauth-api:read` |
 | `POST` | `/api/admin/oauth/apis` | `oauth-api:write` |
-| `PATCH` | `/api/admin/oauth/apis/{id}` | `oauth-api:write` |
-| `DELETE` | `/api/admin/oauth/apis/{id}` | `oauth-api:delete` |
+| `PUT` | `/api/admin/oauth/apis/{id}` | `oauth-api:write` |
+| `DELETE` | `/api/admin/oauth/apis/{id}` | `oauth-api:write` |
+| `POST` | `/api/admin/oauth/apis/{id}/create-implicit-scope` | `oauth-scope:write` |
 
 ## Login providers
 
@@ -140,17 +177,13 @@ once per realm and rejects edits / deletes — clients identify it by
 
 | Method | Path | Permission |
 |---|---|---|
+| `GET` | `/api/admin/login-providers/flavors` | `login-provider:read` |
 | `GET` | `/api/admin/login-providers` | `login-provider:read` |
 | `GET` | `/api/admin/login-providers/{id}` | `login-provider:read` |
-| `GET` | `/api/admin/login-providers/flavors` | `login-provider:read` |
 | `POST` | `/api/admin/login-providers` | `login-provider:write` |
 | `PUT` | `/api/admin/login-providers/{id}` | `login-provider:write` |
 | `DELETE` | `/api/admin/login-providers/{id}` | `login-provider:write` |
-| `POST` | `/api/admin/login-providers/{id}/enable` | `login-provider:write` |
-| `POST` | `/api/admin/login-providers/{id}/disable` | `login-provider:write` |
 | `POST` | `/api/admin/login-providers/{id}/secret` | `login-provider:write` |
-| `POST` | `/api/admin/login-providers/{id}/test-user-update` | `login-provider:read` |
-| `GET` | `/api/admin/login-providers/{id}/last-raw-claims` | `login-provider:read` |
 
 ## Realms
 
@@ -161,25 +194,33 @@ app slug (`realm:read|write`), not under `modgud`. See
 [Realm API](/reference/realm-api) for the request/response shapes and the
 `InitialAdmin` requirement on `POST /api/admin/realms`.
 
-## Auth log
+## Security log
+
+The security/audit log. Reads are filtered by `category`, `eventType`,
+and `limit` query parameters. Clearing the log is destructive and gated
+behind the `realm:admin` bypass.
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/auth-log?from=...&to=...` | `auth-log:read` |
+| `GET` | `/api/admin/auth-log?category=...&eventType=...&limit=...` | `auth-log:read` |
+| `DELETE` | `/api/admin/auth-log` | `realm:admin` |
 
-## App settings
+## App info
+
+There is no editable `app-settings` endpoint. The SPA bootstrap reads
+public realm/branding metadata anonymously; realm-admin-owned config
+lives under `/api/realm-settings`.
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/app-settings` | `realm:admin` |
-| `PATCH` | `/api/admin/app-settings` | `realm:admin` |
+| `GET` | `/api/app-info` | Anonymous |
 
 ## Projection endpoints (maintenance)
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/admin/projections` | `realm:admin` |
-| `POST` | `/api/admin/projections/{name}/rebuild` | `realm:admin` |
+| `POST` | `/api/admin/projections/rebuild` | `realm:admin` |
+| `GET` | `/api/admin/projections/consistency-check` | `realm:admin` |
 
 ## Permission checks in detail
 

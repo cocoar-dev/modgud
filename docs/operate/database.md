@@ -6,8 +6,7 @@ manual EF Core migrations.
 
 ## Multi-tenant setup
 
-Marten `MasterTableTenancy` with database-per-tenant. Details:
-[Multi-tenancy / Realms](/operate/realms).
+Marten `MasterTableTenancy` with database-per-tenant. The master DB (convention: `modgud`) holds only control-plane infrastructure; each realm gets its own physical database named `<master-db>_<slug>` — so `modgud_system` for the bootstrap system realm, then `modgud_<slug>` per realm. Details: [Multi-tenancy / Realms](/operate/realms).
 
 ## Schema management
 
@@ -48,7 +47,7 @@ data — no event sourcing.
 | `IdpSecret` | OIDC client secret (separate) | Per IdpConfig |
 | `OpenIddictAuthorizationDocument` | OAuth consent records | `ApplicationId`, `Subject` |
 | `OpenIddictTokenDocument` | Reference tokens, refresh tokens | `ApplicationId`, `Subject`, `ReferenceId` |
-| `AuthLogDocument` | Auth events (login, logout, failures) | TTL 7 days |
+| `SecurityAuditEntry` | Streamless security / ops events (unknown-actor logins, probes, rate-limit hits, recovery-CLI actions). Lives in the **system DB**, attributed to a realm via `Realm`; short hard-retention prune (no per-subject erase) | `Realm`, `Timestamp` |
 | `UserDeletionState` | GDPR delete workflow state | `UserId` |
 | `UserChangeRequest` | Profile self-service pending changes | Per `(UserId, Type)` |
 | `Principal` (polymorphic) | Person + Group + ServiceAccount | `mt_doc_type` discriminator |
@@ -84,6 +83,7 @@ they run inline for deterministic behaviour.
 | `UserDetailsReadModel` | Admin user details |
 | `GroupListReadModel`, `GroupDetailsReadModel` | Admin group views |
 | `RoleListReadModel` | Admin role grid |
+| `AuthAuditViewProjection` → `AuthAuditView` | Per-realm tenant audit feed — one metadata-only row per audited event, projected from the user- and config-aggregate streams. Rebuildable; inherits GDPR masking from the source events |
 
 ## Event-stream example
 
@@ -208,7 +208,7 @@ Enums are stored as strings (readable in the DB inspector).
 | `mt_doc_openiddicttokendocument` | Reference tokens, refresh tokens |
 | `mt_doc_openiddictauthorizationdocument` | OAuth authorizations (consent records) |
 | `mt_doc_idpconfig` | OIDC IdP configurations |
-| `mt_doc_authlogdocument` | Auth events (7-day retention) |
+| `mt_doc_auth_audit_view` | Per-realm tenant audit feed (`AuthAuditView` projection — metadata only) |
 | `mt_doc_usersession` | Active sessions |
 
 In the master DB additionally:
@@ -217,3 +217,9 @@ In the master DB additionally:
 |---|---|
 | `realms.mt_tenant_databases` | Marten tenant registry |
 | `global.mt_doc_realm` | Realm documents |
+
+In the system DB (`<master-db>_system`) additionally:
+
+| Table | Contents |
+|---|---|
+| `mt_doc_security_audit_entry` | Cross-realm streamless security / ops audit (`SecurityAuditEntry` — short hard-retention prune) |

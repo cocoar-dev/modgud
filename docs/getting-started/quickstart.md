@@ -5,21 +5,59 @@ Get a local Modgud running, sign in for the first time, and verify the OAuth/OID
 ## Prerequisites
 
 - Docker Desktop (or Docker Engine + Compose)
-- A free port 9099 (Modgud API) and 4300 (Vue admin SPA, if you run the dev frontend separately)
-- About 200 MB of disk for the container + the tenant DB
-- Node 20+ on your machine if you want to run the optional demo-data seed script
+- A free host port 80 (the Modgud container serves both the API and the admin SPA same-origin)
+- About 200 MB of disk for the container + the system-realm DB
 
-For requirements beyond a quick local run, see [Requirements](./requirements).
+This quickstart uses the **published image** `ghcr.io/cocoar-dev/modgud` — you do not clone the repo or build anything. You copy the compose file below, save it, and start it.
+
+For requirements beyond a quick local run, see [Requirements](./requirements). For a production deployment (HTTPS issuer, reverse proxy, Prometheus token), see [First-time setup](./first-time-setup) and [Deployment](../operate/deployment).
 
 ## 1. Bring up the stack
 
+Save the following as `compose.yml` in an empty directory:
+
+```yaml
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  modgud:
+    image: ghcr.io/cocoar-dev/modgud:latest
+    container_name: modgud
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development            # local eval only — see Deployment for production
+      DbSettings__ConnectionString: "Host=postgres;Database=modgud;Username=postgres;Password=postgres;Keepalive=30"
+      AppUrl: "http://0.0.0.0:8081"
+      OpenIddict__Issuer: "http://localhost"
+      OpenIddict__DevelopmentMode: "true"
+    ports:
+      - "80:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+volumes:
+  pgdata:
+```
+
+Then start it:
+
 ```bash
-git clone https://github.com/cocoar-dev/modgud.git
-cd modgud
 docker compose up -d
 ```
 
 This starts PostgreSQL + Modgud in the background. First boot takes ~15 seconds while Marten provisions the master DB and seeds the system realm.
+
+::: tip Why `ASPNETCORE_ENVIRONMENT: Development`
+The published image runs as **Production** by default, which fail-closes on a dev-shaped config: it refuses to boot with an `http`/`localhost` issuer, with `OpenIddict__DevelopmentMode=true`, or with Prometheus enabled but no bearer token. Those guards are exactly what you want in production and exactly what gets in the way of a 10-minute local eval. Setting `Development` legitimately allows the `http://localhost` issuer and ephemeral signing keys used here. Do **not** ship this compose to production — see [Deployment](../operate/deployment).
+:::
 
 ## 2. Create your first admin
 
@@ -53,13 +91,14 @@ The CLI enforces the same Identity password policy the SPA uses (length, mixed c
 ::: details Other ways to create the first admin
 Two more paths are available — they trade off CLI convenience against email verification:
 
-**Invite mode** (CLI, no `--password`) — the CLI writes a magic-link invite and prints the URL on stdout. You click the link, set the password yourself in the SPA. Useful when you want the recipient to own their credentials end-to-end.
+**Invite mode** (CLI, no `--password`) — the CLI writes a magic-link invite and prints the URL on stdout. You click the link, set the password yourself in the SPA. Useful when you want the recipient to own their credentials end-to-end. With no SMTP configured the email is silently dropped, but the printed URL is all you need locally.
 
 ```bash
 docker exec modgud \
   dotnet Modgud.Api.dll recover bootstrap-admin \
-    --email admin@example.com
-# → magic-link printed; open it in your browser
+    --email admin@example.com \
+    --username admin
+# → magic-link printed on stdout; open it in your browser
 ```
 
 **HTTP path** — once you already have one admin, additional realms (and their initial admins) are created through `POST /api/admin/realms` with an `InitialAdmin` payload. See [First-time setup](./first-time-setup) for the full decision tree.
@@ -67,7 +106,7 @@ docker exec modgud \
 
 ## 3. Sign in
 
-Open <http://localhost:4300> and sign in with `admin` + your password. You land in the admin SPA's dashboard.
+Open <http://localhost> and sign in with `admin` + your password. The admin SPA is served same-origin by the Modgud container on port 80 — there is no separate frontend port in the Docker flow. You land in the admin SPA's dashboard.
 
 The sidebar shows everything because you hold `realm:admin`:
 
@@ -83,45 +122,45 @@ In a separate terminal:
 
 ```bash
 # Discovery document
-curl http://localhost:9099/.well-known/openid-configuration | jq
+curl http://localhost/.well-known/openid-configuration | jq
 ```
 
-You should see `issuer`, `authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, etc. The endpoints are rooted at `http://localhost:9099/` — Modgud resolves the realm from the **Host header**, not from a URL path segment. For `localhost` requests that's the system realm.
+You should see `issuer`, `authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, etc. The endpoints are rooted at `http://localhost/` — Modgud resolves the realm from the **Host header**, not from a URL path segment. For `localhost` requests that's the system realm.
 
 ```bash
 # JWKS (signing keys)
-curl http://localhost:9099/.well-known/jwks | jq '.keys[0].kid'
+curl http://localhost/.well-known/jwks | jq '.keys[0].kid'
 ```
 
 ::: tip JWKS path
 The discovery document advertises the JWKS endpoint at `jwks_uri`. Modgud serves it at `/.well-known/jwks` (no `.json` suffix) — use the path from the discovery document if you want to be format-agnostic.
 :::
 
-You should get a key ID — that's the public key resource servers use to validate tokens.
+You should get a key ID — that's the public key resource servers use to validate **JWT** access tokens. Note that Modgud's default token format is **Reference** (opaque); JWKS validation only applies to clients you switch to JWT (see step 6).
 
-## 5. Seed demo data (optional)
+## 5. Try a real OAuth flow
 
-The repo ships a Node script that POSTs a complete demo dataset (extra users, granular roles, auto-membership groups, OAuth clients, scopes, an API and a sample external login provider) through the regular admin API:
+Register a client in the admin SPA: **OAuth & OIDC → Clients → Create**. The create modal lets you set grants, scopes, redirect URIs, and the app at create time, so the client is functional immediately. For a quick test:
+
+1. Set **Access Token Type = JWT** if you want a decodable token (otherwise you get an opaque reference token).
+2. Add a redirect URI — e.g. the test redirect on [oidcdebugger.com](https://oidcdebugger.com).
+3. Copy the discovery URL from step 4 and the client ID into oidcdebugger.
+
+Click **Send Request** in oidcdebugger → log in as `admin` → consent → you'll see an access token. If you chose JWT, decode it at [jwt.io](https://jwt.io) — `sub`, `email`, `aud`, plus a `resource_access` block once you request the `roles` scope.
+
+## 6. Bind your first SaaS app
+
+You're now ready for the linear walkthrough that turns Modgud into the IdP for a real app of yours: [SaaS Integration Walkthrough](../integrate/saas-walkthrough).
+
+## Optional: seed demo data (requires the repo)
+
+If you have cloned the repository (contributors only — not part of this Docker quickstart), it ships a Node script that POSTs a complete demo dataset (extra users, granular roles, auto-membership groups, OAuth clients, scopes, an API and a sample external login provider) through the regular admin API:
 
 ```bash
 node scripts/seed-demo.mjs
 ```
 
-The script uses your admin login (defaults: `admin` / `ABC12abc!`; pass `--user=` and `--password=` to change). It is idempotent — re-running only creates what's missing. At the end it prints any generated OAuth client secrets — capture them, those values are not retrievable from the API later.
-
-::: tip Why a script and not a backend service
-The seed runs as a regular API client. There's no second write path that could drift from the admin endpoints, no production-disabled DI registration, and the script itself doubles as an end-to-end smoke test. See `scripts/README.md` for details.
-:::
-
-## 6. Try a real OAuth flow
-
-If you ran the seed in step 5, an OAuth client `demo-spa` is pre-configured. Open it in the admin SPA → copy the test redirect URI → paste it into [oidcdebugger.com](https://oidcdebugger.com) along with the discovery URL from step 4.
-
-Click **Send Request** in oidcdebugger → log in as `admin` → consent → you'll see an access token. Decode it at [jwt.io](https://jwt.io) — `sub`, `email`, `aud`, plus a `resource_access` block once you request the `roles` scope.
-
-## 7. Bind your first SaaS app
-
-You're now ready for the linear walkthrough that turns Modgud into the IdP for a real app of yours: [SaaS Integration Walkthrough](../integrate/saas-walkthrough).
+The script uses your admin login (defaults: `admin` / `ABC12abc!`; pass `--user=` and `--password=` to change). It is idempotent — re-running only creates what's missing. At the end it prints any generated OAuth client secrets — capture them, those values are not retrievable from the API later. This step is **optional and secondary** to the core path above, and it needs the repo checked out (it is not in the published image).
 
 ## Troubleshooting
 
@@ -130,27 +169,43 @@ The bootstrap-admin command writes the user immediately. If login still fails, c
 :::
 
 ::: details Magic-link emails don't arrive
-Default `configuration.json` ships with an in-memory mail service for dev. Magic-link emails appear in the API logs (`docker logs modgud -f`) and in `data/dev-emails/` — they aren't actually sent. To use real SMTP, edit `configuration.local.json` (gitignored) and set the SMTP block — see [Settings](../plattform/settings).
+With no SMTP configured, Modgud silently drops outbound email — there is no on-disk dev mailbox. For the bootstrap flow this is fine: the recovery CLI prints the invite / magic-link URL straight to stdout, and `POST /api/admin/realms` returns it in the response. To actually capture emails locally, point Modgud at a dev SMTP catcher such as [Mailpit](https://github.com/axllent/mailpit) or [smtp4dev](https://github.com/rnwood/smtp4dev) via the SMTP settings — see [Settings](../plattform/settings). For real delivery, configure your production SMTP host.
 :::
 
 ::: details OIDC discovery returns 404
-Modgud resolves the realm from the host header. For `localhost`, that's the system realm if its `Domains` list contains `localhost`. The single-realm dev fallback also kicks in: if there's only one active realm, localhost variants resolve to it. Check `docker logs modgud` for `RealmMiddleware` warnings if you suspect a host-resolution problem.
+Modgud resolves the realm from the Host header. For `localhost`, that's the system realm (its seeded domain list includes `localhost`). Check `docker logs modgud` for `RealmMiddleware` warnings if you suspect a host-resolution problem.
+:::
+
+::: details Is the container healthy?
+The container exposes `/health/ready` (DB + signing-cert readiness) and `/health/live` (liveness). There is no plain `/health` endpoint.
+
+```bash
+curl http://localhost/health/ready
+curl http://localhost/health/live
+```
 :::
 
 ::: details I want to start over
-Drop the master DB and any tenant DBs, then bring the stack back up:
+Bring the stack down and drop **all** Modgud databases — the master infra DB `modgud`, the system-realm DB `modgud_system`, and any per-tenant DBs `modgud_<slug>` you created — then bring it back up:
 
 ```bash
-docker exec cocoar-postgres \
-  psql -U postgres -c "DROP DATABASE modgud;"
-docker compose restart modgud
+docker compose down
+docker compose up -d postgres
+# wait for postgres to be healthy, then drop every Modgud DB:
+docker exec modgud-postgres-1 \
+  psql -U postgres -c "DROP DATABASE IF EXISTS modgud; DROP DATABASE IF EXISTS modgud_system;"
+# drop any tenant DBs you provisioned, e.g.:
+#   DROP DATABASE IF EXISTS modgud_acme;
+docker compose up -d
 # then re-run step 2
 ```
+
+(The Postgres container name follows Compose's `<project>-postgres-1` convention — adjust if you renamed the project. List databases with `psql -U postgres -l`.)
 :::
 
 ## Next steps
 
-- [First-time setup](./first-time-setup) — the three bootstrap paths explained, when to use which
+- [First-time setup](./first-time-setup) — the bootstrap paths explained, when to use which, and the production hostname / Prometheus steps
 - [Concepts: Apps & resource_access](../concepts/apps-and-resource-access) — the mental model behind the permission system
 - [Integrating a Resource Server](../integrate/resource-server) — wire your own ASP.NET Core backend to validate tokens
 - [Recovery CLI](../operate/recovery-cli) — break-glass operations beyond bootstrap

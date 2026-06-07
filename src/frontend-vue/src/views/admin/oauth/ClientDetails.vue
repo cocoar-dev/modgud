@@ -29,16 +29,27 @@ const props = defineProps<{
 const store = useOAuthClientStore()
 const scopeStore = useOAuthScopeStore()
 const applicationsStore = useApplicationsStore()
-const isCreate = computed(() => props.id === 'create')
+const isCreate = computed(() => props.id === 'create' && !justCreated.value)
+// Genuinely-existing client opened from the list (drives the regenerate-secret
+// affordance) — distinct from the transient just-created state where props.id
+// is still 'create' but the client now exists.
+const isExistingClient = computed(() => props.id !== 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
 // "General" lives in the persistent left column (identity always visible)
 // — tabs only host the multi-item editors that benefit from full width.
 type ClientTab = 'apps' | 'scopes' | 'grants' | 'urls' | 'lifetimes' | 'dcr'
-const activeTab = ref<ClientTab>('apps')
+// Default to the Grants tab on create so the (now mandatory) grant choice is
+// the first thing the admin sees.
+const activeTab = ref<ClientTab>(props.id === 'create' ? 'grants' : 'apps')
 
 // Cleartext secret returned once at creation / regeneration — surfaced for copy.
 const newSecret = ref<string | null>(null)
+// Flips true after a successful create so the modal switches from the create
+// form to a read-context view of the just-created client (tabs + locked
+// identity), letting the admin copy the one-time secret instead of being stuck
+// in create shape.
+const justCreated = ref(false)
 
 const clientTypeOptions = [
   { value: 'public', label: 'Public' },
@@ -236,13 +247,39 @@ const modalTitle = computed(() => {
 
 const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.ClientId)
 
-const footerButton = computed(() => ({
-  visible: true,
-  text: isCreate.value ? t('common.create', {}, 'Erstellen') : t('common.save', {}, 'Speichern'),
-  disabled: !form.value.ClientId.trim() || loading.value,
-  loading: loading.value,
-  onClick: save,
-}))
+// Create-time guard rails: a client with no grants can't mint any token, and an
+// authorization_code client with no redirect URI can't complete the flow. Block
+// Create until these are satisfied so the admin can't silently produce a dead
+// client (the original bug: create only exposed identity fields).
+const createBlockers = computed<string[]>(() => {
+  if (!isCreate.value) return []
+  const errs: string[] = []
+  if (form.value.AllowedGrantTypes.length === 0)
+    errs.push(t('admin.oauthClients.validation.noGrants', {}, 'Select at least one grant type (Grants tab) — without one the client cannot issue any tokens.'))
+  if (form.value.AllowedGrantTypes.includes('authorization_code') && form.value.RedirectUris.length === 0)
+    errs.push(t('admin.oauthClients.validation.noRedirect', {}, 'authorization_code needs at least one redirect URI (URLs tab).'))
+  return errs
+})
+
+const footerButton = computed(() => {
+  // After a successful create we only offer "Done" (copy-the-secret then close)
+  // — the client already exists, and saving again would target the wrong id.
+  if (justCreated.value)
+    return {
+      visible: true,
+      text: t('common.done', {}, 'Done'),
+      disabled: false,
+      loading: false,
+      onClick: () => props.close(),
+    }
+  return {
+    visible: true,
+    text: isCreate.value ? t('common.create', {}, 'Erstellen') : t('common.save', {}, 'Speichern'),
+    disabled: !form.value.ClientId.trim() || loading.value || createBlockers.value.length > 0,
+    loading: loading.value,
+    onClick: save,
+  }
+})
 
 onMounted(async () => {
   // Apps for the App-link dropdown + scopes for the Allowed-Scopes
@@ -273,9 +310,12 @@ async function save() {
       const created = await store.create(buildCreateDto())
       newSecret.value = created.ClientSecret ?? null
       if (newSecret.value) {
-        // Keep the modal open so the admin can copy the cleartext secret.
+        // Keep the modal open so the admin can copy the cleartext secret, and
+        // flip to the read-context view (tabs + locked identity) of the
+        // just-created client instead of staying in create shape.
         original.value = created.Client
         form.value = fromDto(created.Client)
+        justCreated.value = true
       } else {
         props.close()
       }
@@ -378,56 +418,48 @@ async function copySecret() {
         </div>
       </CoarNote>
 
-      <!-- CREATE MODE: single-column compact form (no tabs yet, no Id to associate). -->
-      <div v-if="isCreate" class="create-form">
-        <CoarFormField :label="t('admin.oauthClients.clientId', {}, 'Client ID')">
-          <CoarTextInput v-model="form.ClientId" clearable class="input-id" />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.oauthClients.displayName', {}, 'Display Name')">
-          <CoarTextInput v-model="form.DisplayName" clearable class="input-name" />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.oauthClients.type', {}, 'Client-Typ')">
-          <CoarSelect v-model="form.ClientType" :options="clientTypeOptions" class="input-enum" />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent-Typ')">
-          <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" class="input-enum" />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (leer = generieren)')">
-          <CoarTextInput v-model="form.ClientSecret" type="password" clearable class="input-name" />
-        </CoarFormField>
-        <div class="checkbox-stack">
-          <CoarCheckbox v-model="form.Enabled" :label="t('admin.oauthClients.enabled', {}, 'Aktiv')" />
-          <CoarCheckbox v-model="form.RequireClientSecret" :label="t('admin.oauthClients.requireSecret', {}, 'Secret erforderlich')" />
-        </div>
-      </div>
+      <!-- Create-mode guard rails — a client with no grants / no redirect URI
+           can't complete a flow. Surface the blockers so the admin knows to
+           visit the Grants / URLs tabs before clicking Create. -->
+      <CoarNote v-if="isCreate && createBlockers.length" variant="info" class="secret-banner">
+        <ul class="blocker-list">
+          <li v-for="msg in createBlockers" :key="msg">{{ msg }}</li>
+        </ul>
+      </CoarNote>
 
-      <!-- EDIT MODE: two-column master-detail.
+      <!-- Unified master-detail for both create + edit.
            Left = identity + status (always visible, never lost on tab switch).
-           Right = the multi-item tabs that benefit from full width. -->
-      <div v-else class="two-col">
+           Right = the multi-item tabs that benefit from full width.
+           In create mode the identity fields are editable and the tabs let the
+           admin set grants / scopes / redirect-URIs up front, so the new client
+           is born functional (the create form used to hide them entirely). -->
+      <div class="two-col">
         <aside class="col-identity">
           <h3 class="col-heading">{{ t('admin.oauthClients.tabs.general', {}, 'Allgemein') }}</h3>
           <CoarFormField :label="t('admin.oauthClients.clientId', {}, 'Client ID')">
-            <CoarTextInput v-model="form.ClientId" disabled class="input-id" />
+            <CoarTextInput v-model="form.ClientId" :disabled="!isCreate" :clearable="isCreate" class="input-id" />
           </CoarFormField>
           <CoarFormField :label="t('admin.oauthClients.displayName', {}, 'Display Name')">
             <CoarTextInput v-model="form.DisplayName" clearable class="input-name" />
           </CoarFormField>
           <CoarFormField :label="t('admin.oauthClients.type', {}, 'Client-Typ')">
-            <CoarSelect v-model="form.ClientType" :options="clientTypeOptions" disabled class="input-enum" />
+            <CoarSelect v-model="form.ClientType" :options="clientTypeOptions" :disabled="!isCreate" class="input-enum" />
           </CoarFormField>
           <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent-Typ')">
             <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" class="input-enum" />
+          </CoarFormField>
+          <CoarFormField v-if="isCreate" :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (leer = generieren)')">
+            <CoarTextInput v-model="form.ClientSecret" type="password" clearable class="input-name" />
           </CoarFormField>
           <div class="checkbox-stack">
             <CoarCheckbox v-model="form.Enabled" :label="t('admin.oauthClients.enabled', {}, 'Aktiv')" />
             <CoarCheckbox v-model="form.RequireClientSecret" :label="t('admin.oauthClients.requireSecret', {}, 'Secret erforderlich')" />
             <CoarCheckbox v-model="form.RequireConsent" :label="t('admin.oauthClients.requireConsent', {}, 'Zustimmung erforderlich')" />
-            <CoarCheckbox v-model="form.AllowRememberConsent" :label="t('admin.oauthClients.rememberConsent', {}, 'Zustimmung speichern')" />
-            <CoarCheckbox v-model="form.AllowAccessTokensViaBrowser" :label="t('admin.oauthClients.tokensInBrowser', {}, 'Token im Browser erlaubt')" />
-            <CoarCheckbox v-model="form.EnableLocalLogin" :label="t('admin.oauthClients.localLogin', {}, 'Lokaler Login erlaubt')" />
+            <CoarCheckbox v-if="!isCreate" v-model="form.AllowRememberConsent" :label="t('admin.oauthClients.rememberConsent', {}, 'Zustimmung speichern')" />
+            <CoarCheckbox v-if="!isCreate" v-model="form.AllowAccessTokensViaBrowser" :label="t('admin.oauthClients.tokensInBrowser', {}, 'Token im Browser erlaubt')" />
+            <CoarCheckbox v-if="!isCreate" v-model="form.EnableLocalLogin" :label="t('admin.oauthClients.localLogin', {}, 'Lokaler Login erlaubt')" />
           </div>
-          <CoarButton size="s" variant="secondary" icon-start="rotate-ccw" :loading="loading" @click="regenerateSecret" class="regen-btn">
+          <CoarButton v-if="isExistingClient" size="s" variant="secondary" icon-start="rotate-ccw" :loading="loading" @click="regenerateSecret" class="regen-btn">
             {{ t('admin.oauthClients.regenerate', {}, 'Client Secret neu generieren') }}
           </CoarButton>
         </aside>
@@ -438,7 +470,7 @@ async function copySecret() {
             <CoarTab id="scopes">{{ t('admin.oauthClients.tabs.scopes', {}, 'Scopes') }}</CoarTab>
             <CoarTab id="grants">{{ t('admin.oauthClients.tabs.grants', {}, 'Grants') }}</CoarTab>
             <CoarTab id="urls">{{ t('admin.oauthClients.tabs.urls', {}, 'URLs') }}</CoarTab>
-            <CoarTab id="lifetimes">{{ t('admin.oauthClients.tabs.lifetimes', {}, 'Token-Laufzeiten') }}</CoarTab>
+            <CoarTab v-if="!isCreate" id="lifetimes">{{ t('admin.oauthClients.tabs.lifetimes', {}, 'Token-Laufzeiten') }}</CoarTab>
             <CoarTab v-if="original?.IsDynamicallyRegistered" id="dcr">
               {{ t('admin.oauthClients.tabs.dcr', {}, 'Registration Info') }}
             </CoarTab>
@@ -603,12 +635,12 @@ async function copySecret() {
   flex-shrink: 0;
 }
 
-/* CREATE mode — single column compact form. No tabs (Id not yet associated). */
-.create-form {
+.blocker-list {
+  margin: 0;
+  padding-left: 1.1rem;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 36rem;
+  gap: 0.25rem;
 }
 .checkbox-stack {
   display: flex;

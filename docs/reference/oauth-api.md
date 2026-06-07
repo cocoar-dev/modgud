@@ -49,17 +49,16 @@ All under `/connect/...`, all realm-scoped via the domain:
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/connect/authorize` | `GET` | Authorization endpoint (Code + PKCE) |
+| `/connect/authorize` | `GET`/`POST` | Authorization endpoint (Code + PKCE) |
 | `/connect/token` | `POST` | Token endpoint (code exchange, client credentials, refresh, device) |
-| `/connect/userinfo` | `GET` | UserInfo endpoint (claims + per-Audience `resource_access`) |
+| `/connect/userinfo` | `GET`/`POST` | UserInfo endpoint (claims + per-Audience `resource_access`) |
 | `/connect/introspect` | `POST` | Token introspection |
 | `/connect/revoke` | `POST` | Token revocation |
-| `/connect/logout` | `GET` | End-session endpoint (RP-initiated logout) |
+| `/connect/logout` | `GET`/`POST` | End-session endpoint (RP-initiated logout) |
 | `/connect/device` | `POST` | Device-authorization endpoint (CLI / TV / set-top boxes) |
 | `/connect/verify` | `GET` | User-verification endpoint for the device flow |
-| `/connect/register` | `POST` | Dynamic Client Registration (RFC 7591) |
-| `/connect/register/{client_id}` | `GET`/`PUT`/`DELETE` | DCR management (RFC 7592) — Bearer-protected with the registration access token |
-| `/consent` | `GET`/`POST` | Consent page (app-specific) |
+| `/connect/register` | `POST` | Dynamic Client Registration (RFC 7591). Registration only — there is no RFC 7592 management surface. |
+| `/connect/consent` | `GET`/`POST` | Consent ticket resolve + decision (the SPA calls these after `/connect/authorize` redirects it to `/consent?ticket=…`) |
 
 ## Supported flows
 
@@ -202,6 +201,8 @@ normal token response.
 
 ## UserInfo
 
+Accepts both `GET` and `POST` (per the OIDC spec):
+
 ```http
 GET /connect/userinfo
 Authorization: Bearer <access_token>
@@ -265,9 +266,12 @@ working.
 
 ## Dynamic Client Registration (DCR)
 
-RFC 7591/7592 subset, scoped to the realm. Disabled by default;
+RFC 7591 registration only, scoped to the realm. Disabled by default;
 enabled per-realm in
 [Realm Settings → Dynamic Client Registration](../admin/dynamic-client-registration).
+There is no RFC 7592 management surface — `GET`/`PUT`/`DELETE` on a
+per-client registration URL is **not** implemented. The endpoint mints
+a client and is done; later changes go through the admin UI.
 
 ### Register a new client
 
@@ -285,33 +289,28 @@ Content-Type: application/json
 }
 ```
 
-Response:
+Response (`201 Created` — RFC 7591 §3.2.1):
 
 ```json
 {
   "client_id": "dcr_…",
-  "client_secret": null,
-  "client_name": "[unverified] Some MCP Server",
-  "registration_access_token": "…",
-  "registration_client_uri": "https://acme.example.com/connect/register/dcr_…",
-  …
+  "client_id_issued_at": 1735689600,
+  "token_endpoint_auth_method": "none",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "redirect_uris": ["https://mcp.example.com/callback"],
+  "client_name": "Some MCP Server",
+  "scope": "openid profile"
 }
 ```
 
-DCR-registered clients are marked `[unverified]` in their display
-name to flag them in admin grids. The `registration_access_token` is
-the **only** way to read/update/delete the registration afterwards;
-store it.
-
-### Manage a DCR registration (RFC 7592)
-
-```http
-GET /connect/register/{client_id}
-Authorization: Bearer <registration_access_token>
-```
-
-Same with `PUT` (update) and `DELETE`. Without the registration
-access token: 401.
+The response echoes the sanitized registration plus the assigned
+`client_id` and `client_id_issued_at`. No `client_secret` is issued
+(public PKCE clients only), and there is no
+`registration_access_token` / `registration_client_uri` — RFC 7592
+management is out of scope. DCR-registered clients are marked
+`[unverified]` in their display name to flag them in admin grids (the
+consent page renders the same marker).
 
 ### DCR constraints
 

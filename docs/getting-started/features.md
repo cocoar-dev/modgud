@@ -5,8 +5,8 @@ A point-by-point list of what Modgud delivers out of the box.
 ## Authentication
 
 ### Local authentication
-- Username + password sign-in with bcrypt-hashed credentials
-- Configurable account lockout (default: 5 failed attempts → 5 minute lock)
+- Username + password sign-in; passwords hashed by ASP.NET Core Identity (PBKDF2). OAuth client and API secrets are BCrypt-hashed (work factor 12).
+- Configurable account lockout (default: 5 failed attempts → 1 minute lock)
 - Password reset via emailed magic link
 - Email confirmation with double-opt-in for self-service email changes
 
@@ -66,8 +66,8 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 - Realm-aware issuer URLs — every realm is its own OIDC provider
 
 ### Token formats
-- **JWT** (default) — self-validating with JWKS rotation
-- **Reference tokens** — server-side opaque, validated via introspection. Useful when you need short-circuit revocation across many resource servers.
+- **Reference tokens** (default) — server-side opaque, validated via introspection. Short-circuit revocation across many resource servers, and no token contents on the wire.
+- **JWT** — per-client opt-in (set the client's **Access Token Type = JWT**). Self-validating against JWKS. A resource server that validates locally via the JWKS endpoint needs its clients issuing JWTs.
 
 ### Standard scopes
 - `openid`, `profile`, `email`, `offline_access`, `roles`, `permissions` (seeded into every realm)
@@ -86,9 +86,9 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 - Cross-realm leakage is impossible at the database level
 
 ### Realm management
-- Realm-management UI on the Control-Plane realm (the realm with slug `system` — Control Plane is determined by the reserved slug, not by a separate persisted flag)
+- Realm-management UI on the Control-Plane realm (the realm holding the persisted `Realm.IsControlPlane` flag — `system` by default, but the flag is **transferable** to any active realm via `recover control-plane transfer <slug>` or `POST /api/admin/realms/{slug}/transfer-control-plane`)
 - Per-realm bootstrap via Control-Plane-issued magic-link invite or recovery CLI
-- Exactly one Control Plane per deployment, enforced on create / promote / demote
+- Exactly one Control Plane per deployment, enforced on create / transfer
 
 ### Per-realm configuration
 - Domains, display name, description
@@ -122,15 +122,15 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 
 ### Recovery CLI
 - Inside-container tool for breaking out of "no admin can sign in" situations
-- `bootstrap-admin`, `set-email`, `magic-link`, `reset-2fa`, `list`, `realm-add-domain`, `rebuild-projections`, `migrate-cc-credentials` — all bypass the UI. See [Recovery CLI reference](../operate/recovery-cli).
+- `bootstrap-admin`, `set-email`, `magic-link`, `reset-2fa`, `list`, `realm-add-domain`, `realm-set-primary-domain`, `control-plane transfer`, `rebuild-projections`, `migrate-cc-credentials` — all bypass the UI. See [Recovery CLI reference](../operate/recovery-cli).
 
 ### SignalR push
 - All admin lists update live across browser sessions
 - Cuts down on accidental write conflicts and "is my view stale?" doubt
 
-### Demo seed
-- One-click sample data on first setup
-- Roles, groups, OAuth client, sample external provider — realistic playground without setup tax
+### Demo seed (repo-only, optional)
+- A Node script (`scripts/seed-demo.mjs`, available when you have cloned the repository — not in the published image) that POSTs sample data through the regular admin API
+- Roles, groups, OAuth client, sample external provider — a realistic playground for dev/test
 
 ## Developer integration
 

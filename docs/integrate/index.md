@@ -21,7 +21,9 @@ protocol-specific pages.
 ## Protocol pages
 
 - [OAuth / OpenIddict](./oauth) — supported grant types, scopes,
-  the discovery document, JWT vs reference tokens.
+  the discovery document, JWT vs reference tokens. Browser-only SPAs
+  (Authorization Code + PKCE, no BFF) are supported — register the
+  SPA's origin under the client's Allowed CORS Origins.
 - [Login providers (OIDC federation)](./login-providers) — federate
   external IdPs (Entra ID, Google, Okta, any OIDC source) so users
   sign in with their existing accounts.

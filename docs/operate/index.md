@@ -23,9 +23,10 @@ when something breaks.
 
 - [Observability](./observability) — OpenTelemetry traces + metrics,
   Prometheus scrape, the in-app live activity feed.
-- [Recovery CLI](./recovery-cli) — break-glass operations:
-  `bootstrap-admin`, `set-email`, `magic-link`, `reset-2fa`,
-  `rebuild-projections`.
+- [Recovery CLI](./recovery-cli) — first-time bootstrap and break-glass
+  operations: `bootstrap-admin`, `realm-add-domain`,
+  `realm-set-primary-domain`, `set-email`, `magic-link`, `reset-2fa`,
+  `rotate-signing-key`, `control-plane transfer`, `rebuild-projections`.
 
 ## Architecture
 

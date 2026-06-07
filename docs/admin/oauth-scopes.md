@@ -59,8 +59,13 @@ If the resource URI here is spelled differently from how the API checks during v
 
 Every scope has a **`Show in discovery document`** flag. When `true`, the scope's name is listed in the realm's `/.well-known/openid-configuration` under `scopes_supported`. When `false`, the scope still works for normal client requests, but is not advertised publicly.
 
-- **OIDC standard scopes** (`openid`, `profile`, `email`, `offline_access`, `roles`, `permissions`) default to `true` — clients commonly read these from discovery.
-- **App / API scopes** (and implicit scopes auto-created from an [OAuth API](./oauth-apis)) default to `false` — clients learn these from the resource server's integration docs, not from discovery. Hiding them is a privacy-by-default measure that prevents drive-by enumeration of which APIs a tenant operates.
+Discovery visibility is **opt-out, not opt-in** — anything you create normally is visible:
+
+- **OIDC standard scopes** (`openid`, `profile`, `email`, `offline_access`, `roles`, `permissions`) default to `true`.
+- **Scopes you create in the admin UI** (including app- / API-scoped ones) also default to `true`. Untick the flag if you'd rather keep a scope name out of public metadata.
+- **Implicit scopes auto-created from an [OAuth API](./oauth-apis)** (the one-click "Create implicit scope" path) are the only exception — they default to `false`, so a one-click bootstrap doesn't leak the resource server's name into public discovery. You can flip the flag on them afterwards if you want them advertised.
+
+Hiding a scope from discovery is privacy-by-default that prevents drive-by enumeration of which APIs a tenant operates; it is not access control (see the tip below).
 
 ::: tip Hiding is tenant isolation, not security
 Hiding scopes from discovery is defense-in-depth. An attacker can still try arbitrary `scope=` values at the token endpoint — they'll just have to guess instead of reading the list. The realm-DB validation is the actual access control.

@@ -861,6 +861,10 @@
       "confirmRegen": "Wirklich neu generieren? Das alte Secret wird sofort ungültig.",
       "secretOnce": "Bitte Client Secret jetzt kopieren — es wird nicht wieder angezeigt.",
       "loadFailed": "Client konnte nicht geladen werden.",
+      "validation": {
+        "noGrants": "Mindestens einen Grant Type wählen (Tab „Grants“) — ohne Grant kann der Client keine Tokens ausstellen.",
+        "noRedirect": "authorization_code braucht mindestens eine Redirect-URI (Tab „URLs“)."
+      },
       "tabs": {
         "general": "Allgemein",
         "apps": "Apps",

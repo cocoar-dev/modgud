@@ -73,8 +73,9 @@ OIDC discovery and resource indication.
 #### One-click implicit scope
 
 In the API detail modal there is a **Create implicit scope** button
-when the API has no scope with the same name yet. Clicking it creates
-a real `OAuthScope` row with:
+when the API has no scope with the same name yet (it hits
+`POST /api/admin/oauth/apis/{id}/create-implicit-scope`). Clicking it
+creates a real `OAuthScope` row with:
 
 - `Name` = API name
 - `Resources` = `[<api-name>]` (so the audience matches the API)
@@ -82,11 +83,17 @@ a real `OAuthScope` row with:
   default, see below)
 - Linked to the same App as the API
 
-This is the fast path for the common 1:1 case: an API and a scope
-that always go together. After creation the button disappears
-(re-check via API list reload). The implicit scope is otherwise a
-normal scope row — editable, deletable, can be requested by clients
-via `scope=<api-name>`.
+Why you usually want this: without a scope whose `Resources` lists the
+API name, a token requested for this API carries no matching `aud`
+claim, and the IdP emits no `resource_access` block for the API. The
+implicit scope is what couples the two — once a client requests
+`scope=<api-name>`, the issued token gets `aud=<api-name>` and the
+RS's `resource_access` block is populated. It is the fast path for the
+common 1:1 case: an API and a scope that always go together.
+
+After creation the button disappears (re-check via API list reload).
+The implicit scope is otherwise a normal scope row — editable,
+deletable, and requestable by clients via `scope=<api-name>`.
 
 ::: tip When to keep things separate
 Two situations warrant a manually-created additional scope on top of
