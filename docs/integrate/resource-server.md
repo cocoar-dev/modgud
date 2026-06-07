@@ -165,5 +165,3 @@ The IdP does two transformations before emitting the per-audience block, so your
 - Permissions reference: [Permissions & gating](../concepts/permissions.md)
 - OAuth endpoints: [reference/oauth-api](../reference/oauth-api.md)
 - Library source: `src/dotnet/Modgud.Client.AspNetCore/`
-</content>
-</invoke>
