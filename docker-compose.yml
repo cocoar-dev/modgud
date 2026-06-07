@@ -1,3 +1,9 @@
+# Local-development / contributor convenience: brings up Postgres + the
+# published staging image with a dev-shaped configuration (http://localhost,
+# ephemeral keys). This is NOT the onboarding path — getting started never
+# requires cloning the repo. New operators follow the self-contained recipe in
+# docs/getting-started/quickstart.md (a copy-paste compose that pulls the
+# published image), and production deployments follow docs/operate/deployment.md.
 services:
   postgres:
     image: postgres:17-alpine
@@ -25,11 +31,16 @@ services:
     ports:
       - "80:8081"
     environment:
-      # Cocoar.Configuration v5 binds env vars by `<Section>__<Property>`
-      # (double underscore = section boundary). The casing has to match
-      # the C# property names exactly — env var keys are serialized 1:1
-      # into the JSON map that gets deserialized into the config types,
-      # and the deserializer is case-sensitive on the property side.
+      # Dev-shaped on purpose: the published image defaults to
+      # ASPNETCORE_ENVIRONMENT=Production, whose boot guards reject a
+      # localhost / http issuer and DevelopmentMode. This convenience stack
+      # runs in Development so http://localhost + ephemeral keys are allowed.
+      # For a production-shaped run see docs/operate/deployment.md.
+      ASPNETCORE_ENVIRONMENT: Development
+      # Cocoar.Configuration v6 binds env vars by `<Section>__<Property>`
+      # (double underscore = section boundary) and is case-insensitive on the
+      # property side — ALL_CAPS and PascalCase both bind. PascalCase here is a
+      # readability convention, not a correctness requirement.
       #
       # Marten connection string. Keepalive=30 keeps idle pooled
       # connections healthy through the docker-network NAT.

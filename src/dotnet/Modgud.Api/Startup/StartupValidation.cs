@@ -7,11 +7,12 @@ namespace Modgud.Api.Startup;
 /// with a cryptic message far from the cause.
 ///
 /// <para>The canonical trigger is an environment-variable override that didn't
-/// bind (a casing or separator mismatch — Cocoar.Configuration binds env
-/// overrides by exact property name): the property keeps its compiled-in default
-/// and the app boots in a half-configured shape. For the DB connection string
-/// that default is empty, which today only surfaces deep in the cold-boot
-/// DB-creation path as <c>"...missing 'Database='"</c> — confusing and late.</para>
+/// bind (a separator or property-name mismatch — Cocoar.Configuration v6 binds
+/// env overrides case-insensitively by <c>Section__Property</c>, so casing is
+/// not the culprit): the property keeps its compiled-in default and the app
+/// boots in a half-configured shape. For the DB connection string that default
+/// is empty, which today only surfaces deep in the cold-boot DB-creation path
+/// as <c>"...missing 'Database='"</c> — confusing and late.</para>
 /// </summary>
 public static class StartupValidation
 {
@@ -33,6 +34,6 @@ public static class StartupValidation
                 "\"DbSettings\": { \"ConnectionString\": ... } key) or via the " +
                 "'DbSettings__ConnectionString' environment variable — and if you set it " +
                 "via the environment but it isn't picked up, re-check the variable's name " +
-                "and casing, which must match the config key exactly.");
+                "and the '__' section separator (binding is case-insensitive).");
     }
 }
