@@ -132,7 +132,7 @@ async function save() {
 <template>
   <ModalLayout :close="close" :title="modalTitle" icon="shield" :footer-button="footerButton">
     <div v-if="!loading" class="flex flex-col min-w-0 min-h-0 flex-1">
-      <CoarTabGroup v-if="!isCreate" v-model="activeTab" class="tab-bar">
+      <CoarTabGroup v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.roleDetails.tabs.general', {}, 'Allgemein') }}</CoarTab>
         <CoarTab id="permissions">{{ t('admin.roleDetails.tabs.permissions', {}, 'Permissions') }}</CoarTab>
       </CoarTabGroup>
@@ -140,7 +140,7 @@ async function save() {
       <!-- Tab: Allgemein — identity + the App-link + IsRealmAdmin flag.
            The permission picker moves to its own tab so the role's
            grant surface gets full breathing room. -->
-      <div v-show="isCreate || activeTab === 'general'" class="tab-content">
+      <div v-show="activeTab === 'general'" class="tab-content">
         <CoarFormField :label="t('admin.roleDetails.name', {}, 'Name')">
           <CoarTextInput v-model="form.Name" clearable />
         </CoarFormField>
@@ -171,7 +171,7 @@ async function save() {
       <!-- Tab: Permissions — App-Catalog-Subset picker. Empty state
            covers both "no App linked" and "linked App's catalog empty"
            because they're admin-functionally the same: nothing to pick. -->
-      <div v-show="!isCreate && activeTab === 'permissions'" class="tab-content">
+      <div v-show="activeTab === 'permissions'" class="tab-content">
         <p v-if="!form.AppId" class="text-sm text-gray-500">
           {{ t('admin.roleDetails.permissions.noApp', {}, 'Diese Rolle ist an keine Application gebunden — es gibt nichts zum Vergeben. Im Allgemein-Tab eine App wählen, dann erscheint hier deren Catalog.') }}
         </p>

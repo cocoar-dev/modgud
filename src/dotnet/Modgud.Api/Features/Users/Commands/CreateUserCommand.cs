@@ -28,6 +28,9 @@ public class CreateUserHandler(IDocumentSession session, UserManager<Application
         if (string.IsNullOrWhiteSpace(command.Email))
             return DomainErrors.User.EmailRequired;
 
+        if (!IsValidEmail(command.Email))
+            return DomainErrors.User.EmailInvalid;
+
         var normalizedUserName = command.UserName.Trim().ToLowerInvariant();
 
         // Check UserName uniqueness (humans only)
@@ -100,4 +103,12 @@ public class CreateUserHandler(IDocumentSession session, UserManager<Application
             EmailConfirmed = command.EmailConfirmed,
         };
     }
+
+    // Email format guard — mirrors the SPA's client-side check. Deliberately
+    // simple (non-empty local part, "@", non-empty domain containing a dot):
+    // enough to reject the obvious garbage (e.g. "notanemail") that previously
+    // persisted unchallenged, without over-fitting RFC 5322 edge cases.
+    private static bool IsValidEmail(string email) =>
+        System.Text.RegularExpressions.Regex.IsMatch(
+            email.Trim(), @"^[^@\s]+@[^@\s]+\.[^@\s]+$");
 }

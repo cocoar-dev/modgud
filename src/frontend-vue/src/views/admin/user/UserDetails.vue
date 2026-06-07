@@ -193,6 +193,15 @@ const originalEmailConfirmed = ref(false)
 
 const userNameError = ref('')
 
+// Client-side email-format guard. Presence is handled separately (required);
+// this only fires for a non-empty, malformed address so the admin gets an
+// inline cue instead of silently persisting an unusable address (email drives
+// forgot-password / magic-link). The server enforces the same rule.
+const emailInvalid = computed(() => {
+  const e = form.value.Email.trim()
+  return e.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)
+})
+
 // Account state
 const isActive = ref(true)
 const originalActive = ref(true)
@@ -213,6 +222,7 @@ const footerButton = computed(() => ({
     || !form.value.Lastname.trim()
     || !form.value.UserName.trim()
     || !form.value.Email.trim()
+    || emailInvalid.value
     || loading.value
     || graceBusy.value,
   onClick: save,
@@ -254,7 +264,8 @@ async function save() {
   if (!form.value.Firstname.trim()
       || !form.value.Lastname.trim()
       || !form.value.UserName.trim()
-      || !form.value.Email.trim()) return
+      || !form.value.Email.trim()
+      || emailInvalid.value) return
   loading.value = true
   try {
     if (isCreate.value) {
@@ -350,6 +361,7 @@ watch(() => form.value.UserName, () => {
             </div>
             <CoarFormField :label="t('admin.users.email', {}, 'Email')" required>
               <CoarTextInput v-model="form.Email" clearable />
+              <span v-if="emailInvalid" class="text-xs text-red-600">{{ t('admin.userDetails.emailInvalid', {}, 'Bitte eine gültige E-Mail-Adresse eingeben.') }}</span>
               <div v-if="form.Email" class="email-verify-status">
                 <CoarCheckbox v-model="emailConfirmed"
                   :label="t('admin.userDetails.emailVerifiedToggle', {}, 'Mark email address as verified')" />

@@ -35,7 +35,10 @@
     "dismiss": "Schließen",
     "done": "Fertig",
     "issue": "Ausstellen",
-    "edit": "Bearbeiten"
+    "edit": "Bearbeiten",
+    "closeModal": "Dialog schließen",
+    "copied": "Kopiert!",
+    "readOnly": "Nur Lesen"
   },
   "asset": {
     "picker": {
@@ -59,7 +62,8 @@
       "rememberMe": "Angemeldet bleiben",
       "passwordDisabled": "Passwort-Anmeldung ist deaktiviert.",
       "passwordlessMode": "Diese Anwendung verwendet passwortlose Anmeldung.",
-      "registerLink": "Noch kein Konto? Registrieren →"
+      "registerLink": "Noch kein Konto? Registrieren →",
+      "externalPrefix": "Anmelden mit"
     },
     "register": {
       "subtitle": "Konto erstellen.",
@@ -195,6 +199,19 @@
       "updateFailed": "Das Benutzerprofil konnte nicht aus den IdP-Claims aktualisiert werden.",
       "correlationFailed": "Die Login-Session ist abgelaufen. Bitte erneut versuchen.",
       "genericError": "Login über Identity Provider fehlgeschlagen ({code})."
+    },
+    "bootstrap": {
+      "backToLogin": "Zurück zur Anmeldung",
+      "confirmPassword": "Passwort bestätigen",
+      "confirmPlaceholder": "Passwort wiederholen",
+      "failed": "Bootstrap fehlgeschlagen.",
+      "intro": "Setze ein Passwort, um dein Admin-Konto zu aktivieren. Dieser Link ist einmalig verwendbar und läuft in 7 Tagen ab.",
+      "invalidLink": "Ungültiger Bootstrap-Link. Bitte deinen Administrator um einen neuen Invite.",
+      "newPassword": "Neues Passwort",
+      "passwordMismatch": "Passwörter stimmen nicht überein.",
+      "submit": "Passwort setzen & anmelden",
+      "success": "Dein Admin-Konto wurde erstellt. Weiterleitung zum Dashboard…",
+      "title": "Admin-Zugang einrichten"
     }
   },
   "profile": {
@@ -309,7 +326,8 @@
       "confirmCancel": "Anfrage zurückziehen?",
       "conflict": "Diese E-Mail-Adresse wird bereits verwendet.",
       "submitFailed": "Anfrage konnte nicht gesendet werden.",
-      "rejectedNote": "Begründung:"
+      "rejectedNote": "Begründung:",
+      "label": "E-Mail"
     },
     "request": {
       "withdrawAll": "Anfrage zurückziehen",
@@ -317,7 +335,24 @@
     },
     "disable": {
       "lastMethodWarning": "Dies ist deine letzte 2FA-Methode. Nach dem Deaktivieren wirst du beim nächsten Login sofort zur Einrichtung aufgefordert (ohne Gnadenfrist). Wirklich fortfahren?"
-    }
+    },
+    "externalLinks": {
+      "capturedAt": "Zuletzt erfasst",
+      "confirmUnlink": "Trennen ",
+      "description": "Melde dich bei Modgud über diese Identity Provider an.",
+      "email": "E-Mail",
+      "issuer": "Issuer",
+      "lastLogin": "Letzte Anmeldung: ",
+      "linkPrefix": "Verknüpfen mit",
+      "linkedAt": "Verknüpft",
+      "scriptFailed": "User-Update-Skript ist bei der letzten Anmeldung fehlgeschlagen",
+      "title": "Verknüpfte Konten"
+    },
+    "firstname": "Vorname",
+    "lastname": "Nachname",
+    "pending": "Angefragt: {value}",
+    "pendingEmailVerify": "Bestätigung an {email} ausstehend — bitte Posteingang prüfen",
+    "saved": "Gespeichert"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -432,7 +467,7 @@
       "notFound": "Credential nicht gefunden."
     },
     "userDetails": {
-      "createTitle": "Erstelle Benutzer",
+      "createTitle": "Benutzer erstellen",
       "profileSection": "Profil",
       "accountSection": "Konto",
       "rolesSection": "Rollen",
@@ -445,7 +480,8 @@
       "tabs": {
         "general": "Allgemein",
         "groups": "Gruppen",
-        "security": "Sicherheit"
+        "security": "Sicherheit",
+        "effective": "Effektiv"
       },
       "twoFactorHeading": "Zwei-Faktor-Authentifizierung",
       "twoFactor": "2FA:",
@@ -479,8 +515,12 @@
         "sourceAuto": "Auto-Skript",
         "driftBadge": "Drift — neu berechnen?",
         "diagnosticsHeading": "Skripte mit Fehlern",
-        "diagnosticLine": "Skript für Gruppe {group} konnte nicht ausgewertet werden: {error}"
-      }
+        "diagnosticLine": "Skript für Gruppe {group} konnte nicht ausgewertet werden: {error}",
+        "empty": "Dieser User ist aktuell in keiner Gruppe — weder direkt noch geerbt noch über Auto-Skripte.",
+        "hint": "Materialisierte Sicht aller Gruppen, die diesem User aktuell zugewiesen sind — direkt, geerbt über verschachtelte Gruppen oder per Auto-Skript."
+      },
+      "emailInvalid": "Bitte eine gültige E-Mail-Adresse eingeben.",
+      "inheritedGroups.hint": "Diese Gruppen sind nicht direkt zugewiesen, aber der User ist über eine andere Gruppe (die diese als Mitglied hat) darin enthalten."
     },
     "setPassword": {
       "title": "Passwort setzen",
@@ -496,12 +536,25 @@
       "permissions": "Berechtigungen"
     },
     "roleDetails": {
-      "createTitle": "Erstelle Rolle",
+      "createTitle": "Rolle erstellen",
       "general": "Allgemein",
       "name": "Name",
       "description": "Beschreibung",
       "resourceType": "Resource-Typ",
-      "permissions": "Berechtigungen"
+      "permissions": "Berechtigungen",
+      "app": "Application",
+      "app.linkedHint": "Die Rolle vergibt die ausgewählten Catalog-Einträge innerhalb dieser App.",
+      "app.none": "— Keine (realm-admin-Rolle)",
+      "app.noneHint": "Keine App-Verknüpfung — nur das realm-admin-Flag unten vergibt etwas. Reserviert für die System-Admin-Rolle.",
+      "isRealmAdmin": "Realm Admin (umgeht jede Berechtigungsprüfung, in jedem Realm)",
+      "isRealmAdmin.warning": "Dieses Flag vergibt realm:admin — den globalen Bypass. Gib es nur der System-Admin-Rolle.",
+      "permissions.empty": "Die ausgewählte Application hat keine Einträge in ihrem Catalog. Lege zuerst über die App-Verwaltung Einträge an.",
+      "permissions.hint": "Subset des App-Catalogs. Diese Rolle vergibt jede angekreuzte Permission an User, die sie zugewiesen bekommen (über Direkt- oder Gruppen-Mitgliedschaft).",
+      "permissions.noApp": "Diese Rolle ist an keine Application gebunden — es gibt nichts zu vergeben. Wähle im Allgemein-Tab eine App, dann erscheint hier deren Catalog.",
+      "tabs": {
+        "general": "Allgemein",
+        "permissions": "Berechtigungen"
+      }
     },
     "groups": {
       "title": "Gruppen",
@@ -517,7 +570,7 @@
       }
     },
     "groupDetails": {
-      "createTitle": "Erstelle Gruppe",
+      "createTitle": "Gruppe erstellen",
       "groupsLabel": "Gruppen",
       "usersLabel": "Benutzer",
       "serviceAccountsLabel": "Service Accounts",
@@ -576,7 +629,14 @@
         "ownAddress": "Eigene Adresse",
         "sharedHelp": "Benachrichtigungen gehen an diese Adresse.",
         "expandHelp": "Benachrichtigungen gehen an jedes Mitglied einzeln (rekursiv über verschachtelte Gruppen)."
-      }
+      },
+      "boundTo": "An Apps gebunden",
+      "boundTo.dormantHint": "Keine Apps ausgewählt — die Gruppe ist für Berechtigungszwecke inaktiv (z. B. reine Organisations-Gruppe / Verteiler). Sie erhält weiterhin E-Mails und erscheint in Mitglieder-Ansichten, aber ihre Rollen vergeben nichts.",
+      "boundTo.placeholder": "Apps wählen…",
+      "boundTo.scopedHint": "Trägt nur zur Permission-Resolution bei, wenn die anfragende App hier ausgewählt ist. An diese Gruppe gebundene Rollen greifen nur in diesen Apps.",
+      "boundTo.wildcardHint": "★ „Alle Apps“ ausgewählt — diese Gruppe ist in jeder App des Realms aktiv. Typisch für die realm-admin-Gruppe.",
+      "boundTo.wildcardOption": "★ Alle Apps (*) — realm-weit",
+      "email": "E-Mail"
     },
     "changeRequests": {
       "title": "Änderungsanfragen",
@@ -585,7 +645,21 @@
       "verifiedAt": "E-Mail bestätigt",
       "reviewerNote": "Begründung",
       "changes": "Änderungen",
-      "waitingForVerify": "Der Benutzer hat die neue Adresse noch nicht via E-Mail bestätigt. Freigabe erst möglich, wenn der Eigentümer-Nachweis erbracht ist."
+      "waitingForVerify": "Der Benutzer hat die neue Adresse noch nicht via E-Mail bestätigt. Freigabe erst möglich, wenn der Eigentümer-Nachweis erbracht ist.",
+      "approve": "Freigeben",
+      "approveFailed": "Freigabe fehlgeschlagen.",
+      "includeTerminal": "Auch erledigte anzeigen",
+      "notifyUser": "Benutzer per E-Mail benachrichtigen",
+      "reject": "Ablehnen",
+      "rejectFailed": "Ablehnung fehlgeschlagen.",
+      "rejectReason": "Ablehnungsgrund (optional)",
+      "rejectReasonPlaceholder": "z. B. Adresse passt nicht zur Firma",
+      "status": "Status",
+      "statusAdmin": "Wartet auf Freigabe",
+      "statusApproved": "Genehmigt",
+      "statusRejected": "Abgelehnt",
+      "type": "Typ",
+      "user": "Benutzer"
     },
     "settings": {
       "general": "Allgemein",
@@ -652,11 +726,21 @@
         "shouldNotBe": "Sollten keine Mitglieder sein"
       },
       "checks": {
-        "principal-sync":     { "title": "Principal-Projektions-Sync" },
-        "dangling-members":   { "title": "Verwaiste Mitglieds-Referenzen" },
-        "dangling-roles":     { "title": "Verwaiste Rollen-Referenzen" },
-        "group-cycles":       { "title": "Verschachtelte Gruppen-Zyklen" },
-        "auto-group-drift":   { "title": "Auto-Gruppen-Drift" }
+        "principal-sync": {
+          "title": "Principal-Projektions-Sync"
+        },
+        "dangling-members": {
+          "title": "Verwaiste Mitglieds-Referenzen"
+        },
+        "dangling-roles": {
+          "title": "Verwaiste Rollen-Referenzen"
+        },
+        "group-cycles": {
+          "title": "Verschachtelte Gruppen-Zyklen"
+        },
+        "auto-group-drift": {
+          "title": "Auto-Gruppen-Drift"
+        }
       }
     },
     "securityLog": {
@@ -848,10 +932,10 @@
       "enabled": "Aktiv",
       "redirectCount": "Redirects",
       "grantCount": "Grants",
-      "redirectUris": "Redirect-URIs (eine pro Zeile)",
-      "postLogoutRedirectUris": "Post-Logout Redirect-URIs (eine pro Zeile)",
-      "grantTypes": "Allowed Grant Types",
-      "corsOrigins": "CORS Origins (eine pro Zeile)",
+      "redirectUris": "Redirect-URIs",
+      "postLogoutRedirectUris": "Post-Logout Redirect-URIs",
+      "grantTypes": "Erlaubte Grant-Types",
+      "corsOrigins": "CORS-Origins",
       "requireSecret": "Secret erforderlich",
       "requireConsent": "Zustimmung erforderlich",
       "rememberConsent": "Zustimmung speichern",
@@ -871,14 +955,50 @@
         "scopes": "Scopes",
         "grants": "Grants",
         "urls": "URLs",
-        "lifetimes": "Token-Laufzeiten"
+        "lifetimes": "Token-Laufzeiten",
+        "dcr": "Registrierungs-Info"
       },
       "lifetimesHint": "Werte in Sekunden. Leer = Default des IdP.",
       "identityTokenLifetime": "Identity-Token",
       "accessTokenLifetime": "Access-Token",
       "authCodeLifetime": "Authorization-Code",
       "absRefreshLifetime": "Absolute Refresh-Token",
-      "slidingRefreshLifetime": "Sliding Refresh-Token"
+      "slidingRefreshLifetime": "Sliding Refresh-Token",
+      "accessTokenType": "Access-Token-Typ",
+      "accessTokenType.hint": "JWT: Das Token ist selbsttragend, der Resource Server validiert es lokal über die Signatur. Reference: Das Token ist opak, der RS muss bei jeder Anfrage /connect/introspect aufrufen. JWT ist die richtige Wahl für RS auf Basis von AddJwtBearer.",
+      "apps": {
+        "available": "Verfügbare Apps",
+        "hint": "Apps, in denen dieser Client agieren darf. Leer = realm-weit (nur Standard-OIDC-Scopes). Mehrere Apps = App-übergreifender Client.",
+        "searchPlaceholder": "Apps suchen…",
+        "selected": "Verknüpft"
+      },
+      "corsOrigin": {
+        "placeholder": "https://app.example.com"
+      },
+      "dcr": {
+        "lastUsedAt": "Letzte erfolgreiche Token-Ausstellung",
+        "registeredAt": "Registriert am (UTC)",
+        "registeredFromIp": "Registriert von IP"
+      },
+      "dcrInfoHint": "Dieser Client wurde anonym über POST /connect/register registriert. Die Felder unten sind der bei der Registrierung und bei jeder erfolgreichen Token-Ausstellung erfasste Audit-Trail.",
+      "dcrOnly": "Nur DCR",
+      "dcrOnly.help": "Nur Clients anzeigen, die über /connect/register (RFC 7591) erzeugt wurden. Nützlich, um von Agents registrierte Clients von admin-erstellten zu unterscheiden.",
+      "grantTypes.available": "Verfügbare Grant-Types",
+      "grantTypes.hint": "Keine stillen Defaults: Bleibt dies leer, entsteht ein Client, der keine Tokens ausstellen kann. SPAs / Mobile-Apps: authorization_code + refresh_token. Server-zu-Server: client_credentials. Wähle, was der Client tatsächlich braucht.",
+      "grantTypes.searchPlaceholder": "Suchen…",
+      "grantTypes.selected": "Aktiviert",
+      "postLogoutRedirectUri": {
+        "placeholder": "https://app.example.com/signout-callback-oidc"
+      },
+      "redirectUri": {
+        "placeholder": "https://app.example.com/signin-oidc"
+      },
+      "scopes": {
+        "available": "Verfügbare Scopes",
+        "hint": "OpenIddict weist /connect/authorize- und /connect/token-Anfragen für jeden hier nicht gelisteten Scope ab. Füge für OIDC-Clients mindestens openid + roles hinzu.",
+        "searchPlaceholder": "Scopes suchen…",
+        "selected": "Erlaubt"
+      }
     },
     "oauthScopes": {
       "title": "OAuth-Scopes",
@@ -886,12 +1006,24 @@
       "name": "Name",
       "displayName": "Display Name",
       "description": "Beschreibung",
-      "resources": "Resources (eine pro Zeile, z.B. API-Audiences)",
-      "userClaims": "User Claims (eine pro Zeile)",
+      "resources": "Resources (API-Audiences)",
+      "userClaims": "User Claims",
       "required": "Pflicht",
       "emphasize": "Hervorheben",
       "showInDiscovery": "In Discovery anzeigen",
-      "loadFailed": "Scope konnte nicht geladen werden."
+      "loadFailed": "Scope konnte nicht geladen werden.",
+      "allowDcr": "DCR-Clients dürfen diesen Scope anfordern",
+      "allowDcr.help": "Capability-Eingrenzung für die Dynamic Client Registration. Standardmäßig aus: per DCR registrierte Clients können diesen Scope nicht anfordern, solange es hier nicht ausdrücklich erlaubt ist.",
+      "app": "Application",
+      "app.global": "— Global (app-übergreifend, OIDC-Standard)",
+      "app.globalHint": "App-übergreifender Scope (z. B. Standard-OIDC-Scopes). Jeder Client darf ihn anfordern.",
+      "app.scopedHint": "Nur OAuth-Clients, die mit dieser App verknüpft sind, dürfen diesen Scope anfordern.",
+      "resource": {
+        "placeholder": "event-tree-api"
+      },
+      "userClaim": {
+        "placeholder": "email"
+      }
     },
     "oauthApis": {
       "title": "OAuth-APIs",
@@ -899,8 +1031,8 @@
       "name": "Name (Audience)",
       "displayName": "Display Name",
       "description": "Beschreibung",
-      "scopes": "Scopes (eine pro Zeile)",
-      "userClaims": "User-Claims (eine pro Zeile)",
+      "scopes": "Scopes",
+      "userClaims": "User-Claims",
       "secretCount": "Secrets",
       "tabs": {
         "general": "Allgemein",
@@ -915,7 +1047,27 @@
       "noSecrets": "Keine Secrets vorhanden.",
       "created": "Erstellt:",
       "expires": "Läuft ab:",
-      "loadFailed": "API konnte nicht geladen werden."
+      "loadFailed": "API konnte nicht geladen werden.",
+      "allowDcr": "DCR-Clients dürfen diese API ansprechen",
+      "allowDcr.help": "Resource-Target-Eingrenzung für die Dynamic Client Registration. Standardmäßig aus: per DCR registrierte Clients können keine Tokens für diesen Resource Server anfordern, solange es hier nicht ausdrücklich erlaubt ist.",
+      "app": "Application",
+      "app.linkedHint": "Wenn der IdP ein Token ausstellt, dessen aud zu diesem Resource Server passt, gibt /connect/userinfo einen resource_access-Block aus, der die Berechtigungen des Benutzers über den Catalog der verknüpften App auflöst.",
+      "app.unassigned": "— Nicht zugewiesen (keine UserInfo-Ausgabe)",
+      "app.unassignedHint": "Ohne App-Verknüpfung hat der IdP keinen Catalog zum Auflösen, daher gibt /connect/userinfo für diese Audience keinen resource_access-Block aus. Nur für Legacy-/Standalone-Setups verwenden.",
+      "implicitScope": {
+        "button": "Scope anlegen",
+        "hint": "Clients brauchen einen Scope, um diese API anzufragen. Erstellt einen Scope mit gleichem Namen (Resources = Audience, nicht im Discovery sichtbar).",
+        "title": "Kein passender OAuth-Scope angelegt"
+      },
+      "permissions": "Permission-Subset (Catalog der Application)",
+      "permissions.empty": "Die Application hat noch keine Permissions im Catalog. Lege zuerst dort Einträge an, dann kannst du sie hier auswählen.",
+      "permissionsHint": "Welche Permissions des App-Catalogs dieser Resource Server gated. UserInfo grenzt den Block pro Audience auf die Schnittmenge aus diesem Subset und den User-Grants ein (Bypass-Tiers bereits vorab expandiert).",
+      "scope": {
+        "placeholder": "event-tree.api"
+      },
+      "userClaim": {
+        "placeholder": "email"
+      }
     },
     "loginProviders": {
       "title": "Login-Provider",
@@ -991,10 +1143,53 @@
         "typeNotSupported": "Login-Provider-Typ {type} wird derzeit nicht unterstützt.",
         "internalAlreadyExists": "Es existiert bereits ein interner Login-Provider in diesem Realm.",
         "internalNotEditable": "Der eingebaute interne Login-Provider kann nicht bearbeitet werden."
-      }
+      },
+      "addMapping": "Mapping hinzufügen",
+      "amrClassRef": "AuthnContextClassRef-URI",
+      "amrMapping": "AMR-Mapping (AuthnContextClassRef → AMR)",
+      "amrValues": "AMR-Werte (komma-getrennt)",
+      "attributeMap": "Attribut-Mapping (Claim → IdP-Attribut-URIs)",
+      "claimLogicalName": "Claim (z. B. email, given_name)",
+      "claimUris": "SAML-Attribut-URIs (komma-getrennt)",
+      "flavorRequired": "Flavor auswählen",
+      "secretInitial": "Initiales Secret (optional; kann später unter Verbindung gesetzt werden).",
+      "secretRotationFailed": "Provider angelegt, aber Secret konnte nicht gesetzt werden — bitte unter „Verbindung“ erneut versuchen.",
+      "tabAdvanced": "Erweitert",
+      "tabClaimMapping": "Claim-Mapping"
     },
     "apps": {
-      "title": "Anwendungen"
+      "title": "Anwendungen",
+      "cannotDeleteSystem": "Die System-App kann nicht gelöscht werden.",
+      "cat": {
+        "action": "Action",
+        "add": "Eintrag hinzufügen",
+        "blockedTitle": "Diese Einträge sind noch in Verwendung:",
+        "description": "Beschreibung",
+        "descriptionPlaceholder": "optional",
+        "duplicate": "Doppelte Einträge: ",
+        "incomplete": "Resource und Action sind beide erforderlich.",
+        "invalidSegment": "Format: ^[a-z0-9-]+$ je Segment.",
+        "refRSes": "Resource Server:",
+        "refRoles": "Rollen:",
+        "removeTitle": "Eintrag entfernen",
+        "renamedTitle": "Umbenannt — Id bleibt stabil",
+        "resource": "Resource"
+      },
+      "catalogBlocked": "Einige Catalog-Einträge sind noch in Verwendung.",
+      "confirmDelete": "App wirklich löschen?",
+      "createHint": "Eine neue App registriert sich für die Permission-Resolution. Der Slug ist nach dem Erstellen unveränderbar.",
+      "createTitle": "Application erstellen",
+      "displayName": "Display Name",
+      "loadFailed": "Application konnte nicht geladen werden.",
+      "permissionsHint": "Resource und Action je 1+ Kleinbuchstaben/Ziffern/Bindestriche. Ids bleiben über Umbenennungen stabil — Role-Grants und RS-Subsets folgen automatisch.",
+      "permissionsHintSystem": "Permission-Catalog der System-App — schreibgeschützt. Diese Einträge entsprechen 1:1 den RequiresPermission-Aufrufen im Backend-Code.",
+      "slug": "Slug (unveränderbar)",
+      "slugPlaceholder": "kebab-case-slug",
+      "systemHint": "Dies ist eine System-App des IdP. Slug, Display Name und Permission-Catalog sind im Backend fest hinterlegt — der Catalog hier ist schreibgeschützt und dient nur zur Einsicht. Änderungen an den Strings würden die RequiresPermission-Aufrufe im Backend brechen.",
+      "tabs": {
+        "catalog": "Permission-Catalog",
+        "general": "Allgemein"
+      }
     },
     "realms": {
       "title": "Realms",
@@ -1022,7 +1217,25 @@
       "transferControlPlane": "Diesen Realm zur Control Plane machen",
       "confirmTransferControlPlane": "\"{slug}\" zur Control Plane machen? Die realm-übergreifende Administration zieht zu diesem Realm um und der aktuelle Host verliert die Realm-Verwaltungsoberfläche.",
       "transferDoneTitle": "Control Plane zu \"{slug}\" verschoben.",
-      "transferDoneHint": "Dieser Host ist nicht mehr die Control Plane — die Realm-Verwaltung liegt jetzt auf der/den unten genannten Domain(s) des Ziel-Realms. Setze die Administration dort fort."
+      "transferDoneHint": "Dieser Host ist nicht mehr die Control Plane — die Realm-Verwaltung liegt jetzt auf der/den unten genannten Domain(s) des Ziel-Realms. Setze die Administration dort fort.",
+      "domain": {
+        "placeholder": "auth.example.com"
+      },
+      "initialAdminEmail": "E-Mail",
+      "initialAdminFirstname": "Vorname (optional)",
+      "initialAdminHint": "Wird per Magic-Link zum Aktivieren eingeladen — die empfangende Person setzt ihr Passwort selbst. Pflichtfelder: Benutzername und E-Mail.",
+      "initialAdminLastname": "Nachname (optional)",
+      "initialAdminTitle": "Erster Admin",
+      "initialAdminUserName": "Benutzername",
+      "inviteEmail": "E-Mail",
+      "inviteExpiresAt": "Gültig bis",
+      "inviteIssuedHint": "Diese Magic-Link-URL wird genau einmal angezeigt. Falls die E-Mail nicht zugestellt wird (z. B. lokale Entwicklung ohne SMTP), kopieren Sie sie jetzt — danach geht es nur noch über „Resend“.",
+      "inviteIssuedTitle": "Realm angelegt — Bootstrap-Invite ausgestellt.",
+      "inviteLink": "Magic-Link",
+      "inviteResentTitle": "Bootstrap-Invite neu ausgestellt — der alte Token wurde widerrufen.",
+      "inviteUserName": "Benutzername",
+      "resendHint": "Bootstrap-Invite erneut ausstellen (z. B. wenn der Token abgelaufen ist oder die E-Mail nie zugestellt wurde).",
+      "resendInvite": "Invite erneut senden"
     },
     "realmSettings": {
       "title": "Realm-Einstellungen",
@@ -1081,7 +1294,26 @@
         "captchaSecret.replace": "Ersetzen",
         "captchaSecret.inputPlaceholder": "Neuer Secret (leer = clear/Default)",
         "captchaSecret.help": "Beim Speichern angewandt. Leer-Feld + Speichern = Secret löschen (zurück auf Cocoar-Default)."
+      },
+      "dcr": {
+        "accessTokenMinutes": "Access-Token-Lebensdauer (Minuten)",
+        "enabled": "Dynamic Client Registration aktivieren",
+        "gcTtlDays": "Aufräumen nach Inaktivität (Tage)",
+        "hint": "Wenn aktiviert, können KI-Agents und andere Software OAuth-Clients selbst über POST /connect/register (RFC 7591) registrieren. Nur öffentliche PKCE-Clients, es wird kein client_secret ausgestellt. Standardmäßig aus.",
+        "rateLimitIp": "Rate-Limit pro Quell-IP (pro Stunde)",
+        "rateLimitRealm": "Rate-Limit pro Realm (pro Tag)",
+        "refreshTokenDays": "Refresh-Token-Lebensdauer (Tage)",
+        "reservedNames": "Reservierte Client-Namen (Teilstring-Match, NFKC + Groß-/Kleinschreibung egal)",
+        "reservedNames.help": "Verhindert client_name-Impersonation. Alles, was einen dieser Strings enthält, wird bei der Registrierung abgewiesen. Jeder Eintrag wird vor dem Vergleich NFKC-normalisiert und in Kleinbuchstaben umgewandelt.",
+        "reservedNames.placeholder": "Cocoar",
+        "tripleOptInWarning": "Dreifaches Opt-in: Hier registrierte Clients können Access-Tokens nur für OAuth-APIs mit aktiviertem AllowDynamicRegistration UND für Scopes mit aktiviertem AllowDynamicRegistrationClients anfordern. Solange du nicht mindestens eine API und einen Scope freigibst, können DCR-Clients keine nutzbaren Tokens ausstellen."
       }
+    },
+    "dualListbox": {
+      "multiSelectHint": "Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten."
+    },
+    "system": {
+      "lockedHint": "System-Eintrag — vom IdP verwaltet, schreibgeschützt"
     }
   },
   "permissions": {
@@ -1174,7 +1406,9 @@
         "label": "Berechtigungen",
         "description": "Lässt die App sehen welche granulären Berechtigungen du hast."
       }
-    }
+    },
+    "dcrWarning": "Diese App hat sich selbst beim Identity Provider registriert — ihr Name wurde nicht von einem Administrator überprüft. Stelle sicher, dass der oben angezeigte Name zu der App passt, die du tatsächlich autorisieren wolltest, bevor du fortfährst.",
+    "unverified": "nicht überprüft"
   },
   "verifyEmail": {
     "missing": "Ungültiger Bestätigungs-Link.",
@@ -1262,5 +1496,18 @@
       "system": "System",
       "cta": "Verwalten →"
     }
+  },
+  "grid": {
+    "noRowsToShow": "Keine Einträge vorhanden",
+    "search": "Suchen…"
+  },
+  "logout": {
+    "everywhere": "Überall abmelden",
+    "everywhereHint": "Beendet auch deine Sitzung bei",
+    "federatedPrompt": "Du hast dich angemeldet über",
+    "federatedQuestion": "Möchtest du deine Sitzung überall beenden oder nur in dieser App?",
+    "localOnly": "Nur von Modgud",
+    "localOnlyHint": "Deine {idp}-Sitzung bleibt aktiv",
+    "title": "Abmelden"
   }
 }

@@ -13,10 +13,12 @@ import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-par
 import { useUserStore } from '@/stores/user.store'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
+import { useGridLocale } from '@/composables/useGridLocale'
 import type { UserDto } from '@/models/user'
 import SetPasswordModal from './SetPasswordModal.vue'
 
 const { t, language } = useI18n()
+const { searchPlaceholder, gridLocaleText } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const userStore = useUserStore()
@@ -51,6 +53,7 @@ const selectedUser = computed(() => {
 })
 
 const builder = CoarGridBuilder.create<UserDto>()
+  .option('localeText', gridLocaleText)
   .persistColumnState('admin-users')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(filteredUsers)
@@ -157,7 +160,7 @@ onMounted(() => {
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
-    <CoarDataGrid :builder="builder" show-search class="flex-1 min-h-0" bordered elevated>
+    <CoarDataGrid :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <label class="recycle-bin-toggle" :title="t('admin.users.showRecycleBinHint', {}, 'Reveal users pending deletion')">
           <input type="checkbox" v-model="showRecycleBin" />

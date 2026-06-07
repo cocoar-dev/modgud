@@ -14,9 +14,11 @@ import { useGroupStore } from '@/stores/group.store'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useUI } from '@/composables/useUI'
+import { useGridLocale } from '@/composables/useGridLocale'
 import type { GroupDto } from '@/models/group'
 
 const { t, language } = useI18n()
+const { searchPlaceholder, gridLocaleText } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const groupStore = useGroupStore()
@@ -48,6 +50,7 @@ const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 
 const builder = CoarGridBuilder.create<GroupDto>()
+  .option('localeText', gridLocaleText)
   .persistColumnState('admin-groups')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(groups)
@@ -94,7 +97,7 @@ onMounted(() => groupStore.initialize())
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
-    <CoarDataGrid :builder="builder" show-search class="flex-1 min-h-0" bordered elevated>
+    <CoarDataGrid :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">{{ t('common.create', {}, 'Create') }}</CoarButton>
       </template>

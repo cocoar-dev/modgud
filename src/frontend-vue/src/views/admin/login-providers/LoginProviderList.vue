@@ -12,9 +12,11 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import { useUI } from '@/composables/useUI'
+import { useGridLocale } from '@/composables/useGridLocale'
 import type { LoginProviderDto, LoginProviderType } from '@/models/loginProvider'
 
 const { t, language } = useI18n()
+const { searchPlaceholder, gridLocaleText } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const store = useLoginProviderStore()
@@ -45,6 +47,7 @@ function typeLabel(type: LoginProviderType): string {
 }
 
 const builder = CoarGridBuilder.create<LoginProviderDto>()
+  .option('localeText', gridLocaleText)
   .persistColumnState('admin-login-providers')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -132,7 +135,7 @@ onMounted(() => store.initialize())
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
-    <CoarDataGrid :builder="builder" show-search class="flex-1 min-h-0" bordered elevated>
+    <CoarDataGrid :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="openAddDialog">
           {{ t('admin.loginProviders.add', {}, 'Provider hinzufügen') }}

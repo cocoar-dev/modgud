@@ -6,10 +6,12 @@ import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { CoarButton } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
+import { useGridLocale } from '@/composables/useGridLocale'
 import { useScheduledJobStore } from '@/stores/scheduledJob.store'
 import type { ScheduledJobDto } from '@/models/ScheduledJob'
 
 const { t, language } = useI18n()
+const { searchPlaceholder, gridLocaleText } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 
@@ -35,6 +37,7 @@ function lastRunVariant(job: ScheduledJobDto): 'success' | 'error' | 'neutral' {
 }
 
 const builder = CoarGridBuilder.create<ScheduledJobDto>()
+  .option('localeText', gridLocaleText)
   .option('getRowId', (p: any) => p.data.Key)
   .rowDataRef(jobs)
   .searchHighlight()
@@ -69,6 +72,7 @@ const builder = CoarGridBuilder.create<ScheduledJobDto>()
   <div class="flex flex-col flex-1 min-h-0 p-4">
     <CoarDataGrid
       :builder="builder"
+      :search-placeholder="searchPlaceholder"
       show-search
       class="h-full"
       bordered
