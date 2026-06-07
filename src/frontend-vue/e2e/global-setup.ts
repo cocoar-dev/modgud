@@ -155,7 +155,7 @@ export default async function globalSetup(_config: FullConfig) {
     } catch { return false }
   }, 30_000, 'Mailpit ready')
 
-  // App — Production mode, env vars in the v5 `<section>__<property>` shape.
+  // App — Production mode, env vars in the `<section>__<property>` shape.
   // SMTP points at mailpit on the shared network; mails land in mailpit's
   // store and become readable via http://localhost:18025/api/v1/messages.
   // OPENIDDICT__DEVELOPMENTMODE=true keeps signing keys ephemeral so we
@@ -175,11 +175,11 @@ export default async function globalSetup(_config: FullConfig) {
   // (the thin Dockerfile COPYs the publish output, and `dotnet publish` does not
   // emit data/ there), so StartUpConfiguration.AppUrl falls back to its class
   // default `http://0.0.0.0:80` and the app binds :80 — not :8081. We do not
-  // rely on that default: `app.Run(conf.AppUrl)` lets config override the bind,
-  // and Cocoar.Configuration reads env vars case-sensitively, so the PascalCase
-  // `AppUrl` binds while an all-caps `APPURL` would silently miss (the env-var
-  // casing rule). Pin :8081 and map the same port so /api/health is reachable
-  // regardless of the image's compiled-in default. A previously-tagged stand-in
+  // rely on that default: `app.Run(conf.AppUrl)` lets config override the bind.
+  // (Cocoar.Configuration v6 binds env vars case-insensitively, so `AppUrl` and
+  // `APPURL` are equivalent — we use PascalCase here for readability.) Pin :8081
+  // and map the same port so /api/health is reachable regardless of the image's
+  // compiled-in default. A previously-tagged stand-in
   // image happened to bake AppUrl=:8081, which masked this — a fresh build does
   // not, and binds :80.
   docker(`run -d --name ${APP_NAME} --network ${NETWORK} -p ${APP_HOST_PORT}:8081 ` +
