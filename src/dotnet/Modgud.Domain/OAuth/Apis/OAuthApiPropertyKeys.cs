@@ -12,5 +12,5 @@ public static class OAuthApiPropertyKeys
     /// opt-in (realm master + per-Api flag + per-Scope flag). Read by
     /// the resource-indicator handler at token-issue time to enforce
     /// DCR audience containment.</summary>
-    public const string AllowDynamicRegistration = "cocoar:allow_dynamic_registration";
+    public const string AllowDynamicRegistration = "modgud:allow_dynamic_registration";
 }

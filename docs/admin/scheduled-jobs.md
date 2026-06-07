@@ -50,7 +50,7 @@ The age sweep and the per-job count cap run independently. Use one, the other, o
 
 ### `dcr-gc` — DCR Garbage Collector
 
-Soft-deletes [Dynamic Client Registration](./dynamic-client-registration) clients whose `cocoar:dcr:last_used_at` has aged past the realm's configured TTL.
+Soft-deletes [Dynamic Client Registration](./dynamic-client-registration) clients whose `modgud:dcr:last_used_at` has aged past the realm's configured TTL.
 
 - **Default cron:** `0 0 4 * * ?` (04:00 UTC daily — after the two retention jobs)
 - **Parameters:** none — TTL lives on [Realm Settings → Dynamic Client Registration](./realm-settings#dynamic-client-registration) (`GcTtlDays`, default 90).
