@@ -3,11 +3,11 @@ namespace Modgud.Domain.OAuth.Scopes;
 /// <summary>Custom property keys stored on scope Properties (JSON-element values).</summary>
 public static class ScopePropertyKeys
 {
-    public const string Enabled = "cocoar:enabled";
-    public const string Required = "cocoar:required";
-    public const string Emphasize = "cocoar:emphasize";
-    public const string ShowInDiscoveryDocument = "cocoar:show_in_discovery_document";
-    public const string UserClaims = "cocoar:user_claims";
+    public const string Enabled = "modgud:enabled";
+    public const string Required = "modgud:required";
+    public const string Emphasize = "modgud:emphasize";
+    public const string ShowInDiscoveryDocument = "modgud:show_in_discovery_document";
+    public const string UserClaims = "modgud:user_claims";
 
     /// <summary>Boolean — when <c>true</c>, this scope is requestable by
     /// clients minted via Dynamic Client Registration. Off by default.
@@ -15,7 +15,7 @@ public static class ScopePropertyKeys
     /// clients can ever ask for, regardless of their resource target.
     /// Stops a DCR client from requesting <c>tenant.admin.*</c> and
     /// relying on a habit-click consent.</summary>
-    public const string AllowDynamicRegistrationClients = "cocoar:allow_dynamic_registration_clients";
+    public const string AllowDynamicRegistrationClients = "modgud:allow_dynamic_registration_clients";
 }
 
 /// <summary>

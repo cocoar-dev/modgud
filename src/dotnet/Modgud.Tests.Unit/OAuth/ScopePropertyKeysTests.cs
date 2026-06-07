@@ -13,29 +13,29 @@ public class ScopePropertyKeysTests
 {
     [Fact]
     public void Enabled_value_is_pinned() =>
-        Assert.Equal("cocoar:enabled", ScopePropertyKeys.Enabled);
+        Assert.Equal("modgud:enabled", ScopePropertyKeys.Enabled);
 
     [Fact]
     public void Required_value_is_pinned() =>
-        Assert.Equal("cocoar:required", ScopePropertyKeys.Required);
+        Assert.Equal("modgud:required", ScopePropertyKeys.Required);
 
     [Fact]
     public void Emphasize_value_is_pinned() =>
-        Assert.Equal("cocoar:emphasize", ScopePropertyKeys.Emphasize);
+        Assert.Equal("modgud:emphasize", ScopePropertyKeys.Emphasize);
 
     [Fact]
     public void ShowInDiscoveryDocument_value_is_pinned() =>
-        Assert.Equal("cocoar:show_in_discovery_document", ScopePropertyKeys.ShowInDiscoveryDocument);
+        Assert.Equal("modgud:show_in_discovery_document", ScopePropertyKeys.ShowInDiscoveryDocument);
 
     [Fact]
     public void UserClaims_value_is_pinned() =>
-        Assert.Equal("cocoar:user_claims", ScopePropertyKeys.UserClaims);
+        Assert.Equal("modgud:user_claims", ScopePropertyKeys.UserClaims);
 
     [Fact]
-    public void All_keys_use_the_cocoar_prefix()
+    public void All_keys_use_the_modgud_prefix()
     {
         // Scope properties live next to OpenIddict's own ones in the same dictionary —
-        // the "cocoar:" namespace is the only thing keeping them apart.
+        // the "modgud:" namespace is the only thing keeping them apart.
         var keys = new[]
         {
             ScopePropertyKeys.Enabled,
@@ -46,7 +46,7 @@ public class ScopePropertyKeysTests
         };
 
         foreach (var k in keys)
-            Assert.StartsWith("cocoar:", k);
+            Assert.StartsWith("modgud:", k);
     }
 
     [Fact]

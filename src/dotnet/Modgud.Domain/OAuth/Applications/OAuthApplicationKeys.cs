@@ -3,30 +3,30 @@ namespace Modgud.Domain.OAuth.Applications;
 /// <summary>Custom OAuth application setting keys (simple string values).</summary>
 public static class OAuthApplicationSettingKeys
 {
-    public const string AccessTokenType = "cocoar:access_token_type";
-    public const string RefreshTokenUsage = "cocoar:refresh_token_usage";
-    public const string IdentityTokenLifetime = "cocoar:identity_token_lifetime";
-    public const string AccessTokenLifetime = "cocoar:access_token_lifetime";
-    public const string AuthorizationCodeLifetime = "cocoar:authorization_code_lifetime";
-    public const string AbsoluteRefreshTokenLifetime = "cocoar:absolute_refresh_token_lifetime";
-    public const string SlidingRefreshTokenLifetime = "cocoar:sliding_refresh_token_lifetime";
-    public const string ClientClaimsPrefix = "cocoar:client_claims_prefix";
+    public const string AccessTokenType = "modgud:access_token_type";
+    public const string RefreshTokenUsage = "modgud:refresh_token_usage";
+    public const string IdentityTokenLifetime = "modgud:identity_token_lifetime";
+    public const string AccessTokenLifetime = "modgud:access_token_lifetime";
+    public const string AuthorizationCodeLifetime = "modgud:authorization_code_lifetime";
+    public const string AbsoluteRefreshTokenLifetime = "modgud:absolute_refresh_token_lifetime";
+    public const string SlidingRefreshTokenLifetime = "modgud:sliding_refresh_token_lifetime";
+    public const string ClientClaimsPrefix = "modgud:client_claims_prefix";
 }
 
 /// <summary>Custom OAuth application property keys (JSON-element values for complex types).</summary>
 public static class OAuthApplicationPropertyKeys
 {
-    public const string Enabled = "cocoar:enabled";
-    public const string AllowAccessTokensViaBrowser = "cocoar:allow_access_tokens_via_browser";
-    public const string RequireClientSecret = "cocoar:require_client_secret";
-    public const string EnableLocalLogin = "cocoar:enable_local_login";
-    public const string RequireConsent = "cocoar:require_consent";
-    public const string AllowRememberConsent = "cocoar:allow_remember_consent";
-    public const string AllowedCorsOrigins = "cocoar:allowed_cors_origins";
-    public const string AlwaysSendClientClaims = "cocoar:always_send_client_claims";
-    public const string UpdateAccessTokenClaimsOnRefresh = "cocoar:update_access_token_claims_on_refresh";
-    public const string ClientClaims = "cocoar:client_claims";
-    public const string Roles = "cocoar:roles";
+    public const string Enabled = "modgud:enabled";
+    public const string AllowAccessTokensViaBrowser = "modgud:allow_access_tokens_via_browser";
+    public const string RequireClientSecret = "modgud:require_client_secret";
+    public const string EnableLocalLogin = "modgud:enable_local_login";
+    public const string RequireConsent = "modgud:require_consent";
+    public const string AllowRememberConsent = "modgud:allow_remember_consent";
+    public const string AllowedCorsOrigins = "modgud:allowed_cors_origins";
+    public const string AlwaysSendClientClaims = "modgud:always_send_client_claims";
+    public const string UpdateAccessTokenClaimsOnRefresh = "modgud:update_access_token_claims_on_refresh";
+    public const string ClientClaims = "modgud:client_claims";
+    public const string Roles = "modgud:roles";
 
     // ─────── Dynamic Client Registration (RFC 7591) ────────
     // Set on creation by the /connect/register handler — admin-created
@@ -37,20 +37,20 @@ public static class OAuthApplicationPropertyKeys
     /// <summary>Boolean — <c>true</c> for clients minted via the public
     /// <c>/connect/register</c> endpoint. Single source of truth for
     /// "is this a DCR client".</summary>
-    public const string DcrIsDynamicallyRegistered = "cocoar:dcr:is_dynamically_registered";
+    public const string DcrIsDynamicallyRegistered = "modgud:dcr:is_dynamically_registered";
 
     /// <summary>ISO-8601 timestamp string of when the DCR registration
     /// happened. Stable for the lifetime of the client.</summary>
-    public const string DcrRegisteredAt = "cocoar:dcr:registered_at";
+    public const string DcrRegisteredAt = "modgud:dcr:registered_at";
 
     /// <summary>Source IP that submitted the registration request. Stored
     /// for audit-log correlation; not used for any policy decision after
     /// the registration completes.</summary>
-    public const string DcrRegisteredFromIp = "cocoar:dcr:registered_from_ip";
+    public const string DcrRegisteredFromIp = "modgud:dcr:registered_from_ip";
 
     /// <summary>ISO-8601 timestamp string updated on each successful token
     /// issuance for this client. Drives the GC sweep — clients with
     /// <c>LastUsedAt</c> older than the per-realm DCR TTL get
     /// soft-deleted.</summary>
-    public const string DcrLastUsedAt = "cocoar:dcr:last_used_at";
+    public const string DcrLastUsedAt = "modgud:dcr:last_used_at";
 }

@@ -390,7 +390,7 @@ den ersten Admin "klauen" (oder zumindest ein Reset erzwingen). Stattdessen:
 |---|---|---|---|---|
 | OAUTH-10 | 🟠 High | `AuthorizationEndpoints.cs ExchangeAsync` + `DetectRefreshTokenReuseAsync` | RFC 6749 §10.4 Reuse-Detection: redeemed Refresh-Token erneut präsentiert → komplette Chain (alle Sibling-Tokens + Authorization) revoked via `IOpenIddictTokenManager.TryRevokeAsync` | ✅ |
 | OAUTH-13 | 🟡 Medium | `MartenAuthorizationStore.cs` | OpenIddict-Interface-Verträge: `FindByApplicationIdAsync`/`FindBySubjectAsync` MÜSSEN status-agnostisch sein (Admin braucht den vollen View). Status-explizite Filter sind in den `FindAsync`-Overloads die der Auth-Pipeline nutzt bereits da. `PruneAsync` deckt Inactive+Revoked. | ⏸ accepted (interface-contract-konform) |
-| OAUTH-14 | 🟡 Medium | `AuthorizationEndpoints.cs:101-130` + `ExchangeAsync` | `/authorize` und `/token` lesen `cocoar:enabled` Property der Application + `Enabled` Flag der Scopes; disabled → `unauthorized_client` / `invalid_scope` | ✅ |
+| OAUTH-14 | 🟡 Medium | `AuthorizationEndpoints.cs:101-130` + `ExchangeAsync` | `/authorize` und `/token` lesen `modgud:enabled` Property der Application + `Enabled` Flag der Scopes; disabled → `unauthorized_client` / `invalid_scope` | ✅ |
 
 **Implementierte Fixes:**
 
@@ -402,7 +402,7 @@ den ersten Admin "klauen" (oder zumindest ein Reset erzwingen). Stattdessen:
 - VOR der OpenIddict-Validierung: `DetectRefreshTokenReuseAsync` peeked das Token via `tokenManager.FindByReferenceIdAsync`. Wenn `Status == Redeemed`: alle Tokens unter dem `AuthorizationId` werden via `TryRevokeAsync` revoked, dann auch die Authorization selbst — best-effort, swallow per-item exceptions, weil OpenIddict die Request anschließend ohnehin mit `invalid_grant` ablehnt.
 
 `AuthorizationEndpoints.cs AuthorizeAsync`:
-- Nach `applicationManager.FindByClientIdAsync`: `IsApplicationEnabledAsync` checkt `OAuthApplicationPropertyKeys.Enabled` (`cocoar:enabled`); disabled → `unauthorized_client`
+- Nach `applicationManager.FindByClientIdAsync`: `IsApplicationEnabledAsync` checkt `OAuthApplicationPropertyKeys.Enabled` (`modgud:enabled`); disabled → `unauthorized_client`
 - `ValidateScopesEnabledAsync` queryt `mt_doc_oauthscopestate` auf nicht-deleted Scopes mit `Enabled == false` die in der Request-Scope-Liste sind; treffer → `invalid_scope`
 
 `AuthorizationEndpoints.cs ExchangeAsync`:
