@@ -14,9 +14,10 @@ import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import type { LoginProviderDto, LoginProviderType } from '@/models/loginProvider'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 
 const { t, language } = useI18n()
-const { searchPlaceholder, gridLocaleText } = useGridLocale()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const store = useLoginProviderStore()
@@ -46,8 +47,9 @@ function typeLabel(type: LoginProviderType): string {
   }
 }
 
-const builder = CoarGridBuilder.create<LoginProviderDto>()
-  .option('localeText', gridLocaleText)
+const showEmpty = computed(() => store.loaded && store.providers.length === 0)
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<LoginProviderDto>(), { openable: true })
   .persistColumnState('admin-login-providers')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -73,6 +75,7 @@ const builder = CoarGridBuilder.create<LoginProviderDto>()
   .columns([
     (col) => col.icon('IconName', { size: 's' })
       .option('valueGetter', (p: any) => p.data?.IconName ?? (p.data?.Type === 'Internal' ? 'lock' : 'key-round'))
+      .option('tooltipValueGetter', () => null)
       .header('').width(48).resizable(false),
     (col) => col.field('DisplayName').header('Name', 'admin.loginProviders.displayName').flex(2),
     (col) => col.field('Type').header('Typ', 'admin.loginProviders.type.label').width(120)
@@ -135,13 +138,22 @@ onMounted(() => store.initialize())
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
-    <CoarDataGrid :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
+    <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="openAddDialog">
           {{ t('admin.loginProviders.add', {}, 'Provider hinzufügen') }}
         </CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="log-in"
+      :title="t('admin.loginProviders.title', {}, 'Login-Provider')"
+      :description="t('admin.loginProviders.emptyHint', {}, 'Login providers are the ways users can sign in — the built-in password login plus external identity providers via OIDC, SAML, LDAP or Kerberos.')"
+      :cta-label="t('admin.loginProviders.add', {}, 'Provider hinzufügen')"
+      @cta="openAddDialog"
+    />
 
     <!-- Row context menu -->
     <CoarContextMenu :menu="cellMenu">

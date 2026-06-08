@@ -4,10 +4,13 @@ import { useHttpClient } from '@/composables/useHttpClient'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { CoarButton } from '@cocoar/vue-ui'
+import { useGridLocale } from '@/composables/useGridLocale'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 
 // Embedded as the "Audit" tab of AdminLogsView — the header/sub-nav is owned by
 // that wrapper, so this view is pure grid content.
 const { t } = useI18n()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 const http = useHttpClient('/api/admin/audit')
 
 // Tenant GDPR-audit rows (logging/audit redesign Track A). Projected from the
@@ -56,7 +59,11 @@ onUnmounted(() => {
   if (pollInterval) clearInterval(pollInterval)
 })
 
-const gridBuilder = CoarGridBuilder.create<AuditEntry>()
+// Read-only log → no row-open affordance. Empty-state keys off the raw row
+// count so a category-filtered-to-empty grid keeps its chips + "no rows" overlay.
+const showEmpty = computed(() => !loading.value && entries.value.length === 0)
+
+const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<AuditEntry>(), { openable: false })
   .rowDataRef(filteredEntries)
   .searchHighlight()
   .rowClassRules({
@@ -80,7 +87,9 @@ const gridBuilder = CoarGridBuilder.create<AuditEntry>()
 <template>
   <div class="flex flex-col flex-1 min-h-0 p-4">
     <CoarDataGrid
+      v-show="!showEmpty"
       :builder="gridBuilder"
+      :search-placeholder="searchPlaceholder"
       show-search
       class="h-full"
       bordered
@@ -103,6 +112,13 @@ const gridBuilder = CoarGridBuilder.create<AuditEntry>()
         </CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="file-clock"
+      :title="t('admin.auditLog.emptyTitle', {}, 'No audit entries yet')"
+      :description="t('admin.auditLog.emptyHint', {}, 'Changes to users and configuration are recorded here for compliance as they occur.')"
+    />
   </div>
 </template>
 

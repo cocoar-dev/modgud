@@ -14,9 +14,10 @@ import { useApplicationsStore } from '@/stores/applications.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import type { ApplicationDto } from '@/models/application'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 
 const { t, language } = useI18n()
-const { searchPlaceholder, gridLocaleText } = useGridLocale()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const store = useApplicationsStore()
@@ -35,8 +36,9 @@ const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 const selectedIsSystem = ref(false)
 
-const builder = CoarGridBuilder.create<ApplicationDto>()
-  .option('localeText', gridLocaleText)
+const showEmpty = computed(() => store.loaded && store.apps.length === 0)
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<ApplicationDto>(), { openable: true })
   .persistColumnState('admin-apps')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -98,13 +100,22 @@ onMounted(() => store.initialize())
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
-    <CoarDataGrid :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
+    <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">
           {{ t('common.create', {}, 'Erstellen') }}
         </CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="layout-grid"
+      :title="t('admin.apps.title', {}, 'Applications')"
+      :description="t('admin.apps.emptyHint', {}, 'An application groups the resources, roles and OAuth clients that belong to one product, so permissions can be scoped per app.')"
+      :cta-label="t('common.create', {}, 'Erstellen')"
+      @cta="navigateToModal('create')"
+    />
 
     <CoarContextMenu :menu="cellMenu">
       <CoarMenuItem :label="t('common.open', {}, 'Öffnen')" icon="pencil"

@@ -374,6 +374,7 @@
   "admin": {
     "users": {
       "title": "Benutzer",
+      "emptyHint": "Benutzer sind die Personen, die sich an diesem Realm anmelden können. Lege den ersten Account an, um zu starten.",
       "firstname": "Vorname",
       "lastname": "Nachname",
       "acronym": "Kürzel",
@@ -419,6 +420,7 @@
     },
     "serviceAccounts": {
       "title": "Service Accounts",
+      "emptyHint": "Ein Service Account ist eine nicht-menschliche Identität für Maschine-zu-Maschine-Zugriff – die nötige Verknüpfung für client_credentials-OAuth-Clients. Lege einen an, damit sich ein Backend authentifizieren kann.",
       "accountName": "Account-Name",
       "accountNamePlaceholder": "ci.build-agent, integrations.acme, …",
       "accountNameHint": "Kleinbuchstaben, Ziffern, Punkte, Bindestriche oder Unterstriche. Wird im Audit-Log als Handle für diesen Account verwendet.",
@@ -530,6 +532,7 @@
     },
     "roles": {
       "title": "Rollen",
+      "emptyHint": "Eine Rolle bündelt Berechtigungen zu einer Funktion, die du Benutzern oder Gruppen zuweist. Lege die erste Rolle an, um festzulegen, was Personen dürfen.",
       "name": "Name",
       "resourceType": "Resource",
       "description": "Beschreibung",
@@ -558,6 +561,7 @@
     },
     "groups": {
       "title": "Gruppen",
+      "emptyHint": "Gruppen bündeln Benutzer, damit Rollen und Berechtigungen vielen Personen auf einmal zugewiesen werden können – manuell oder per Auto-Mitgliedschafts-Skript.",
       "name": "Name",
       "description": "Beschreibung",
       "members": "Mitglieder",
@@ -640,6 +644,7 @@
     },
     "changeRequests": {
       "title": "Änderungsanfragen",
+      "emptyHint": "Wenn Benutzer Profiländerungen anfordern, die eine Freigabe brauchen, sammeln sie sich hier zur Prüfung. Aktuell wartet nichts.",
       "statusVerify": "Wartet auf E-Mail-Bestätigung",
       "reviewTitle": "Anfrage prüfen",
       "verifiedAt": "E-Mail bestätigt",
@@ -745,6 +750,8 @@
     },
     "securityLog": {
       "title": "Sicherheit",
+      "emptyTitle": "Noch keine Sicherheitsereignisse",
+      "emptyHint": "Anmeldeversuche, Sperren, Rate-Limits und sicherheitsrelevante Aktionen erscheinen hier, sobald sie auftreten.",
       "time": "Zeit",
       "category": "Kategorie",
       "event": "Ereignis",
@@ -759,6 +766,8 @@
     },
     "auditLog": {
       "title": "Audit-Log",
+      "emptyTitle": "Noch keine Audit-Einträge",
+      "emptyHint": "Änderungen an Benutzern und Konfiguration werden hier zur Nachvollziehbarkeit protokolliert, sobald sie auftreten.",
       "time": "Zeit",
       "category": "Kategorie",
       "event": "Ereignis",
@@ -788,6 +797,7 @@
     },
     "scheduledJobs": {
       "title": "Scheduled Jobs",
+      "emptyHint": "Scheduled Jobs sind Hintergrundaufgaben, die der Server nach einem Cron-Zeitplan ausführt (Aufräumen, Sweeps, Benachrichtigungen). Sie werden im Code registriert und erscheinen hier, sobald sie geladen sind.",
       "name": "Job",
       "description": "Beschreibung",
       "cron": "Cron",
@@ -923,6 +933,7 @@
     },
     "oauthClients": {
       "title": "OAuth-Clients",
+      "emptyHint": "Ein OAuth-Client ist eine Anwendung, die Benutzer über diesen IdP anmeldet oder dessen APIs aufruft. Registriere deine erste App, um Client-ID und Secret zu erhalten.",
       "createTitle": "OAuth-Client erstellen",
       "clientId": "Client ID",
       "displayName": "Display Name",
@@ -1002,6 +1013,7 @@
     },
     "oauthScopes": {
       "title": "OAuth-Scopes",
+      "emptyHint": "Ein Scope ist eine benannte Berechtigung, die ein Client beim Login anfordern kann (z. B. Lesezugriff auf eine API). Definiere hier eigene Scopes über die Standard-OIDC-Scopes hinaus.",
       "createTitle": "Scope erstellen",
       "name": "Name",
       "displayName": "Display Name",
@@ -1027,6 +1039,7 @@
     },
     "oauthApis": {
       "title": "OAuth-APIs",
+      "emptyHint": "Eine API ist eine geschützte Backend-Ressource, für die Clients Tokens anfordern. Sie besitzt die Scopes, die ein Client für den Zugriff anfragen darf. Definiere hier deine erste API.",
       "createTitle": "API erstellen",
       "name": "Name (Audience)",
       "displayName": "Display Name",
@@ -1071,6 +1084,7 @@
     },
     "loginProviders": {
       "title": "Login-Provider",
+      "emptyHint": "Login-Provider sind die Wege, über die sich Benutzer anmelden – die eingebaute Passwort-Anmeldung plus externe Identitätsanbieter via OIDC, SAML, LDAP oder Kerberos.",
       "createTitle": "Login-Provider erstellen",
       "addTitle": "Login-Provider hinzufügen",
       "add": "Provider hinzufügen",
@@ -1159,6 +1173,7 @@
     },
     "apps": {
       "title": "Anwendungen",
+      "emptyHint": "Eine Anwendung bündelt die Ressourcen, Rollen und OAuth-Clients eines Produkts, sodass Berechtigungen pro App abgegrenzt werden können.",
       "cannotDeleteSystem": "Die System-App kann nicht gelöscht werden.",
       "cat": {
         "action": "Action",
@@ -1193,6 +1208,7 @@
     },
     "realms": {
       "title": "Realms",
+      "emptyHint": "Ein Realm ist ein isolierter Mandant mit eigenen Benutzern, Clients und eigener Datenbank. Lege einen an, um eine separate Organisation oder Umgebung zu hosten.",
       "createTitle": "Realm erstellen",
       "createHint": "Beim Anlegen wird automatisch eine eigene Datenbank provisioniert und mit Default-OAuth-Scopes geseedet.",
       "slug": "Slug (immutable)",

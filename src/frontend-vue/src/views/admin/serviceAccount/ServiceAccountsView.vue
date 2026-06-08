@@ -6,9 +6,12 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useServiceAccountStore } from '@/stores/serviceAccount.store'
 import { useUI } from '@/composables/useUI'
+import { useGridLocale } from '@/composables/useGridLocale'
 import type { ServiceAccountDto } from '@/models/serviceAccount'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 
 const { t, language } = useI18n()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const store = useServiceAccountStore()
@@ -27,7 +30,9 @@ const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 
-const builder = CoarGridBuilder.create<ServiceAccountDto>()
+const showEmpty = computed(() => store.allLoaded && rows.value.length === 0)
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<ServiceAccountDto>(), { openable: true })
   .persistColumnState('admin-service-accounts')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -52,6 +57,7 @@ const builder = CoarGridBuilder.create<ServiceAccountDto>()
     (col) => col.field('Purpose').header('Purpose', 'admin.serviceAccounts.purpose').flex(1),
     (col) => col.icon('IsActive', { color: '#16a34a', size: 's' })
       .option('valueGetter', (p: any) => p.data?.IsActive ? 'check' : '')
+      .option('tooltipValueGetter', () => null)
       .header('Active', 'admin.users.active').width(80),
   ])
 
@@ -68,11 +74,20 @@ onMounted(() => {
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
-    <CoarDataGrid :builder="builder" show-search class="flex-1 min-h-0" bordered elevated>
+    <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">{{ t('common.create', {}, 'Create') }}</CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="cpu"
+      :title="t('admin.serviceAccounts.title', {}, 'Service Accounts')"
+      :description="t('admin.serviceAccounts.emptyHint', {}, 'A service account is a non-human identity for machine-to-machine access — the required link for client_credentials OAuth clients. Create one to let a backend authenticate.')"
+      :cta-label="t('common.create', {}, 'Create')"
+      @cta="navigateToModal('create')"
+    />
 
     <CoarContextMenu :menu="cellMenu">
       <CoarMenuItem :label="t('common.open', {}, 'Open')" icon="pencil" @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />

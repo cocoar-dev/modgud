@@ -54,6 +54,20 @@ body {
   --ag-column-border: 1px solid transparent;
 }
 
+/*
+ * Discoverable row-open cue for admin list grids whose rows open a detail on
+ * double-click (UI/UX wave 2, finding F6 — the gesture had no visual
+ * affordance). Applied via the `admin-grid-row--openable` row class set by
+ * useGridLocale().applyListGridDefaults({ openable: true }); read-only log
+ * grids opt out so the pointer is not shown where double-click does nothing.
+ */
+.ag-row.admin-grid-row--openable {
+  cursor: pointer;
+}
+.ag-row.admin-grid-row--openable:hover {
+  background-color: var(--coar-background-neutral-tertiary);
+}
+
 /* AG Grid Status Row Colors */
 .ag-row.status-done {
   background-color: var(--color-row-done);

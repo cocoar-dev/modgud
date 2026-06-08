@@ -15,9 +15,10 @@ import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import type { RoleDto } from '@/models/role'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 
 const { t, language } = useI18n()
-const { searchPlaceholder, gridLocaleText } = useGridLocale()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const roleStore = useRoleStore()
@@ -42,8 +43,9 @@ const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 
-const builder = CoarGridBuilder.create<RoleDto>()
-  .option('localeText', gridLocaleText)
+const showEmpty = computed(() => roleStore.loaded && roleStore.roles.length === 0)
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<RoleDto>(), { openable: true })
   .persistColumnState('admin-roles')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(roles)
@@ -64,7 +66,7 @@ const builder = CoarGridBuilder.create<RoleDto>()
     viewportMenu.open($event)
   })
   .columns([
-    (col) => col.field('Name').header('Name', 'admin.roles.name').flex(1),
+    (col) => col.field('Name').header('Name', 'admin.roles.name').flex(2).minWidth(180),
     (col) => col.field('IsRealmAdmin').header('Realm Admin', 'admin.roles.isRealmAdmin').width(120)
       .option('valueGetter', (p: any) => p.data?.IsRealmAdmin ? '✓' : ''),
     (col) => col.field('Description').header('Description', 'admin.roles.description').flex(1),
@@ -90,11 +92,20 @@ onMounted(() => roleStore.initialize())
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
-    <CoarDataGrid :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
+    <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">{{ t('common.create', {}, 'Create') }}</CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="shield"
+      :title="t('admin.roles.title', {}, 'Roles')"
+      :description="t('admin.roles.emptyHint', {}, 'A role bundles permissions into a job function you can grant to users or groups. Create the first role to define what people may do.')"
+      :cta-label="t('common.create', {}, 'Create')"
+      @cta="navigateToModal('create')"
+    />
 
     <!-- Row context menu -->
     <CoarContextMenu :menu="cellMenu">

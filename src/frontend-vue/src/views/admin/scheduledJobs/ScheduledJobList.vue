@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
@@ -8,10 +8,11 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useScheduledJobStore } from '@/stores/scheduledJob.store'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 import type { ScheduledJobDto } from '@/models/ScheduledJob'
 
 const { t, language } = useI18n()
-const { searchPlaceholder, gridLocaleText } = useGridLocale()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 
@@ -27,7 +28,11 @@ watch(language, () => ui.set((ctx) => {
 }), { immediate: true })
 
 const store = useScheduledJobStore()
-const { jobs } = storeToRefs(store)
+const { jobs, loading } = storeToRefs(store)
+
+// Jobs are compile-time registered, so an empty grid means the registry has
+// not loaded rather than "nothing to create" — no CTA, just an explanation.
+const showEmpty = computed(() => !loading.value && jobs.value.length === 0)
 
 onMounted(() => store.loadAll())
 
@@ -36,8 +41,7 @@ function lastRunVariant(job: ScheduledJobDto): 'success' | 'error' | 'neutral' {
   return job.LastRun.Success ? 'success' : 'error'
 }
 
-const builder = CoarGridBuilder.create<ScheduledJobDto>()
-  .option('localeText', gridLocaleText)
+const builder = applyListGridDefaults(CoarGridBuilder.create<ScheduledJobDto>(), { openable: true })
   .option('getRowId', (p: any) => p.data.Key)
   .rowDataRef(jobs)
   .searchHighlight()
@@ -71,6 +75,7 @@ const builder = CoarGridBuilder.create<ScheduledJobDto>()
 <template>
   <div class="flex flex-col flex-1 min-h-0 p-4">
     <CoarDataGrid
+      v-show="!showEmpty"
       :builder="builder"
       :search-placeholder="searchPlaceholder"
       show-search
@@ -84,5 +89,12 @@ const builder = CoarGridBuilder.create<ScheduledJobDto>()
         </CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="clock"
+      :title="t('admin.scheduledJobs.title', {}, 'Scheduled Jobs')"
+      :description="t('admin.scheduledJobs.emptyHint', {}, 'Scheduled jobs are background tasks the server runs on a cron schedule (cleanup, sweeps, notifications). They are registered in code and appear here once loaded.')"
+    />
   </div>
 </template>
