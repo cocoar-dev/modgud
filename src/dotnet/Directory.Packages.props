@@ -33,16 +33,16 @@
     <!-- Marten & Wolverine — Critter Stack 2026 (Marten 9 + Wolverine 6 +
          JasperFx 2). Migrated from 8.37 / 5.32 in chore/critter-stack-2026.
          Gotchas: dev-docs/engineering-gotchas/critter-stack-2026.md -->
-    <PackageVersion Include="Marten" Version="9.3.5" />
-    <PackageVersion Include="Marten.AspNetCore" Version="9.3.5" />
-    <PackageVersion Include="WolverineFx.Marten" Version="6.3.2" />
+    <PackageVersion Include="Marten" Version="9.6.0" />
+    <PackageVersion Include="Marten.AspNetCore" Version="9.6.0" />
+    <PackageVersion Include="WolverineFx.Marten" Version="6.5.1" />
     <!-- Marten 9 source-generates projection apply-dispatchers; every
          `.csproj` that declares a partial Projection class needs this as
          analyzer-style PackageReference. -->
-    <PackageVersion Include="JasperFx.Events.SourceGenerator" Version="2.5.0" />
+    <PackageVersion Include="JasperFx.Events.SourceGenerator" Version="2.8.2" />
     <!-- Wolverine 6 decoupled the Roslyn runtime codegen from core;
          IMessageBus.InvokeAsync<T> needs it in the host project. -->
-    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.3.2" />
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.5.1" />
     <!-- Other packages -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="System.Reactive" Version="6.1.0" />
