@@ -63,7 +63,7 @@
     <PackageVersion Include="OpenIddict.Server" Version="7.5.0" />
     <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.5.0" />
     <PackageVersion Include="OpenIddict.Validation" Version="7.5.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
     <!-- Testing -->
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
