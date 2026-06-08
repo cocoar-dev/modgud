@@ -118,6 +118,33 @@ body {
   min-height: 0;
 }
 
+/*
+ * Modal form layout (UI/UX wave 3, findings #4/#9).
+ *
+ * vue-ui form controls fill 100% of their container with no intrinsic max
+ * width, so in a wide modal a single-line input stretches absurdly (names
+ * ~850px, hex ~830px). These app-level classes cap the form WITHOUT forking
+ * vue-ui — the control obeys its parent, so capping the CoarFormField parent
+ * (or a wrapping column) is enough.
+ *
+ *  • .modal-form-col — a max ~720px form column. Wrap a form body in it so the
+ *    fields don't stretch even when the modal must be wide for other tabs
+ *    (Login-Provider, etc.). align-self:flex-start because .modal-content is a
+ *    flex column (a max-width child would otherwise still stretch full-width).
+ *  • .field-* — per-field width caps keyed to expected content, applied AS A
+ *    CLASS ON THE CoarFormField (the block the input fills). Multi-line
+ *    descriptions / list editors stay full-width (no class).
+ */
+.modal-form-col {
+  width: 100%;
+  max-width: 45rem;
+  align-self: flex-start;
+}
+.field-enum { max-width: 18rem; }
+.field-name { max-width: 24rem; }
+.field-email { max-width: 30rem; }
+.field-num { max-width: 10rem; }
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

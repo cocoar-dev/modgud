@@ -47,91 +47,81 @@ const pageBuilderFeatureGate: NavigationGuard = () => {
  * decision is the route's, the inner component just fills.</para>
  */
 
-// Compact forms — fixed rem widths, no flex.
-const SCOPE_MODAL_SIZE = {
-  width: '44rem', minWidth: '44rem', maxWidth: '44rem',
-  height: '70vh', minHeight: '70vh', maxHeight: '70vh',
-} as const
-
-const REALM_MODAL_SIZE = {
-  width: '50rem', minWidth: '50rem', maxWidth: '50rem',
-  height: '72vh', minHeight: '72vh', maxHeight: '72vh',
-} as const
-
-const ROLE_MODAL_SIZE = {
-  width: '56rem', minWidth: '56rem', maxWidth: '56rem',
-  height: '72vh', minHeight: '72vh', maxHeight: '72vh',
-} as const
-
-const IDP_CLAIMS_MODAL_SIZE = {
-  width: '60rem', minWidth: '60rem', maxWidth: '60rem',
-  height: '72vh', minHeight: '72vh', maxHeight: '72vh',
-} as const
-
-const SERVICE_ACCOUNT_MODAL_SIZE = {
-  width: '52rem', minWidth: '52rem', maxWidth: '52rem',
-  height: 'auto', minHeight: 'auto', maxHeight: '80vh',
-} as const
-
-const API_MODAL_SIZE = {
-  width: '64rem', minWidth: '64rem', maxWidth: '64rem',
-  height: '78vh', minHeight: '78vh', maxHeight: '78vh',
-} as const
-
-// Big modals — pure vw/vh with a maxWidth cap, NO minWidth floor.
+// ── Named modal sizes (UI/UX wave 3) ────────────────────────────────────────
 //
-// A minWidth floor wins over the vw computation as soon as the viewport
-// is smaller than the floor — the modal then overflows the viewport
-// horizontally. Tested 2026-05-15 with ClientDetails: an 84rem floor
-// (1344px) broke at 1280px viewport (the right edge cut off, including
-// the close button). The vw-only approach scales naturally to any
-// viewport size: 92vw on 1920px = 1766px; 92vw on 1280px = 1178px;
-// 92vw on 4K (3840px) = 3533px — and the maxWidth cap stops it from
-// becoming silly on ultrawides.
+// A single named-size contract replaces the per-modal one-offs. Two height
+// strategies, chosen by content:
 //
-// vw isn't capped against viewport overflow by definition, so on
-// every viewport the modal sits comfortably with a backdrop margin on
-// each side. No need for a floor; if content is genuinely too wide
-// for a tiny viewport, the content scrolls inside its tab panel — the
-// modal frame stays correctly sized.
-const LOGIN_PROVIDER_MODAL_SIZE = {
-  width: '80vw', maxWidth: '90rem',
+//  • cap-to-content (height:auto + minHeight:auto + maxHeight) — the panel
+//    sizes to its content and scrolls past the cap. No dead lower half. Use
+//    for single-form modals. Proven by the old SERVICE_ACCOUNT size.
+//  • stable frame (height==minHeight==maxHeight in vh) — a definite ancestor
+//    height for tabbed / grid / editor modals whose flex:1 children
+//    (CoarDualListbox, AG-Grid, Monaco, read-only JSON panes) collapse to 0
+//    without one. Sized for the heaviest tab.
+//
+// Big (vw) sizes carry NO minWidth rem floor: a floor wins over the vw
+// computation once the viewport is narrower than the floor, overflowing the
+// viewport horizontally (tested 2026-05-15 — an 84rem floor cut off the close
+// button at 1280px). vw + a maxWidth cap scales to any viewport. SM/MD keep a
+// rem min==max because 32/42rem are always below a real admin viewport.
+
+// Cap-to-content single forms. (A 32rem MODAL_SM can be added when a modal of
+// ≤4 short fields needs it — none do today.)
+const MODAL_MD = {
+  width: '42rem', minWidth: '42rem', maxWidth: '42rem',
+  height: 'auto', minHeight: 'auto', maxHeight: '85vh',
+} as const
+
+// Stable tall frames for tabbed / grid / editor modals.
+const MODAL_LG = {
+  width: '78vw', maxWidth: '80rem',
   height: '82vh', minHeight: '82vh', maxHeight: '82vh',
 } as const
 
-const SCHEDULED_JOB_MODAL_SIZE = {
-  width: '70vw', maxWidth: '80rem',
-  height: '80vh', minHeight: '80vh', maxHeight: '80vh',
+const MODAL_FULL = {
+  width: '92vw', maxWidth: '112rem',
+  height: '90vh', minHeight: '90vh', maxHeight: '90vh',
 } as const
 
-const APP_MODAL_SIZE = {
-  width: '85vw', maxWidth: '100rem',
-  height: '88vh', minHeight: '88vh', maxHeight: '88vh',
+// ── Per-modal assignments ───────────────────────────────────────────────────
+// Single forms → cap-to-content (MD); drive the family toward ScopeDetails.
+const SCOPE_MODAL_SIZE = MODAL_MD
+const REALM_MODAL_SIZE = MODAL_MD
+const ROLE_MODAL_SIZE = MODAL_MD // tabbed but both tabs short — cap-to-content, not a tall frame.
+const SERVICE_ACCOUNT_MODAL_SIZE = MODAL_MD
+
+// API is a single form, but selecting an Application injects a ~14rem permission
+// checklist. A minHeight floor reserves that space so the checklist fills it
+// instead of jumping the whole modal frame taller (the defect-#10 class).
+const API_MODAL_SIZE = {
+  width: '42rem', minWidth: '42rem', maxWidth: '42rem',
+  height: 'auto', minHeight: '30rem', maxHeight: '85vh',
 } as const
 
+// Tabbed editors / read-only multi-pane → stable tall frame.
+const IDP_CLAIMS_MODAL_SIZE = MODAL_LG
+const LOGIN_PROVIDER_MODAL_SIZE = MODAL_LG
+const SCHEDULED_JOB_MODAL_SIZE = MODAL_LG
+const CONSISTENCY_CHECK_MODAL_SIZE = MODAL_LG
+// User: cap-to-content at a moderate fluid width — so the create form is
+// compact (no dead lower half, the owner's #1 complaint) yet edit mode fits the
+// Groups dual-listbox, which carries its OWN explicit height (the CoarDualListbox
+// `height` prop) so it works without a fixed modal frame. vw width + maxWidth
+// cap, no minWidth rem floor (viewport-overflow gotcha).
 const USER_MODAL_SIZE = {
-  width: '90vw', maxWidth: '110rem',
-  height: '90vh', minHeight: '90vh', maxHeight: '90vh',
+  width: '64vw', maxWidth: '58rem',
+  height: 'auto', minHeight: 'auto', maxHeight: '85vh',
 } as const
+// Group keeps a stable tall frame: it has 5 tabs with two dual-listboxes, a
+// Monaco membership-script editor and effective lists, all flex:1 — they need a
+// definite ancestor height to scroll against, so cap-to-content would collapse
+// them.
+const GROUP_MODAL_SIZE = MODAL_LG
 
-const GROUP_MODAL_SIZE = {
-  width: '90vw', maxWidth: '110rem',
-  height: '90vh', minHeight: '90vh', maxHeight: '90vh',
-} as const
-
-// Read-only diagnostic modal — a bit smaller than the editor modals
-// because there are no nested tabs, no script editor, no big grids.
-// Tall enough to show the per-check accordion without forcing the
-// outer scrollbar in typical (1080p) viewports.
-const CONSISTENCY_CHECK_MODAL_SIZE = {
-  width: '60rem', minWidth: '60rem', maxWidth: '60rem',
-  height: '80vh', minHeight: '80vh', maxHeight: '80vh',
-} as const
-
-const CLIENT_MODAL_SIZE = {
-  width: '92vw', maxWidth: '120rem',
-  height: '92vh', minHeight: '92vh', maxHeight: '92vh',
-} as const
+// Heaviest builders (wide AG-Grid catalog / 6-tab client builder) → full.
+const APP_MODAL_SIZE = MODAL_FULL
+const CLIENT_MODAL_SIZE = MODAL_FULL
 
 const routes = [
     {

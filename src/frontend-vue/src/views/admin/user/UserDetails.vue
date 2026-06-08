@@ -347,7 +347,7 @@ watch(() => form.value.UserName, () => {
       <!-- Tab: General -->
       <div v-show="isCreate || activeTab === 'general'" class="tab-content">
         <section>
-          <div class="flex flex-col gap-2">
+          <div class="flex flex-col gap-2 modal-form-col">
             <div class="flex items-end gap-2">
               <CoarFormField :label="t('admin.users.firstname', {}, 'First Name')" required class="flex-1">
                 <CoarTextInput v-model="form.Firstname" clearable />
@@ -359,26 +359,29 @@ watch(() => form.value.UserName, () => {
                 <CoarTextInput v-model="form.Acronym" clearable />
               </CoarFormField>
             </div>
-            <CoarFormField :label="t('admin.users.email', {}, 'Email')" required>
+            <CoarFormField :label="t('admin.users.email', {}, 'Email')" required class="field-email">
               <CoarTextInput v-model="form.Email" clearable />
               <span v-if="emailInvalid" class="text-xs text-red-600">{{ t('admin.userDetails.emailInvalid', {}, 'Bitte eine gültige E-Mail-Adresse eingeben.') }}</span>
-              <div v-if="form.Email" class="email-verify-status">
-                <CoarCheckbox v-model="emailConfirmed"
-                  :label="t('admin.userDetails.emailVerifiedToggle', {}, 'Mark email address as verified')" />
-                <p class="email-verify-hint">
-                  {{ emailConfirmed
-                      ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
-                      : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.') }}
-                </p>
-              </div>
             </CoarFormField>
-            <CoarFormField :label="t('admin.users.username', {}, 'Username')" required>
+            <CoarFormField :label="t('admin.users.username', {}, 'Username')" required class="field-email">
               <CoarTextInput v-model="form.UserName" clearable />
               <span v-if="userNameError" class="text-xs text-red-600">{{ userNameError }}</span>
             </CoarFormField>
             <div v-if="!isCreate" class="mt-1">
               <CoarCheckbox v-model="isActive"
                 :label="t('admin.userDetails.activeCheckbox', {}, 'Benutzer aktiv')" />
+            </div>
+            <!-- Email-verified toggle lives at the END of the form (not inside the
+                 Email field) so it appears/disappears with the email value without
+                 pushing the Username field down — the create-user layout-jump (#10). -->
+            <div v-if="form.Email" class="email-verify-status">
+              <CoarCheckbox v-model="emailConfirmed"
+                :label="t('admin.userDetails.emailVerifiedToggle', {}, 'Mark email address as verified')" />
+              <p class="email-verify-hint">
+                {{ emailConfirmed
+                    ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
+                    : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.') }}
+              </p>
             </div>
           </div>
         </section>
@@ -457,7 +460,10 @@ watch(() => form.value.UserName, () => {
            the user is a direct member of; everything else (inheritance,
            auto-script matches) is shown on the Effektiv tab. -->
       <div v-show="!isCreate && activeTab === 'groups'" class="tab-content">
-        <section class="flex-section flex-1">
+        <!-- Explicit height: the modal is cap-to-content (so the create form is
+             compact), which means no definite height propagates down — the
+             dual-listbox needs its own to not collapse. -->
+        <section class="flex-section groups-editor">
           <CoarDualListbox
             v-model="directGroupIds"
             :options="allGroupsOptions"
@@ -649,6 +655,12 @@ watch(() => form.value.UserName, () => {
   flex-direction: column;
   min-height: 0;
   gap: 6px;
+}
+
+/* The Groups dual-listbox tab gets an explicit height so it stays usable
+   inside the cap-to-content modal (which has no definite height to inherit). */
+.groups-editor {
+  height: 50vh;
 }
 
 .effective-list {

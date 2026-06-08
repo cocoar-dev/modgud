@@ -7,6 +7,7 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation } from '@cocoar/vue-fragment-parser'
 import ModalLayout from '@/components/ModalLayout.vue'
+import ColorField from '@/components/ColorField.vue'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import type { FlavorConfigFieldDto, FlavorDto, LoginProviderDto } from '@/models/loginProvider'
 import UserUpdateScriptEditor from './UserUpdateScriptEditor.vue'
@@ -546,7 +547,7 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
       </CoarTabGroup>
 
       <!-- General tab (always visible — also the only tab for Internal) -->
-      <div v-show="!showProtocolTabs || activeTab === 'general'" class="tab-content">
+      <div v-show="!showProtocolTabs || activeTab === 'general'" class="tab-content modal-form-col">
         <!-- Display Name (left) + Slug (right), side by side. The slug is
              URL-stable + immutable after create; it's hidden for the built-in
              Internal provider (fixed slug) and read-only in Edit mode. While
@@ -617,7 +618,7 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
             <CoarTextInput v-model="form.IconName" :disabled="isBuiltIn" placeholder="microsoft" clearable />
           </CoarFormField>
           <CoarFormField :label="t('admin.loginProviders.buttonColorHex', {}, 'Button-Farbe (Hex, optional)')">
-            <CoarTextInput v-model="form.ButtonColorHex" :disabled="isBuiltIn" placeholder="#0078D4" clearable />
+            <ColorField v-model="form.ButtonColorHex" :disabled="isBuiltIn" placeholder="#0078D4" />
           </CoarFormField>
         </template>
       </div>

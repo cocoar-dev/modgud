@@ -1,6 +1,8 @@
 {
   "common": {
     "loading": "Laden...",
+    "colorPicker": "Farbe wählen",
+    "colorInvalid": "Bitte eine gültige Farbe eingeben, z. B. #5A6478.",
     "create": "Erstellen",
     "save": "Speichern",
     "refresh": "Aktualisieren",
