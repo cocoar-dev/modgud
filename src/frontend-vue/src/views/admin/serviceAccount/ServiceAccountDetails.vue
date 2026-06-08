@@ -198,9 +198,9 @@ function extractScopes(cred: OAuthClientDto): string[] {
 </script>
 
 <template>
-  <ModalLayout :close="close" :title="modalTitle" icon="cpu" :footer-button="footerButton" width="48rem">
+  <ModalLayout :close="close" :title="modalTitle" icon="cpu" :footer-button="footerButton">
     <div v-if="!loading || isCreate" class="flex flex-col gap-4 p-1">
-      <CoarFormField :label="t('admin.serviceAccounts.accountName', {}, 'Account name')" required>
+      <CoarFormField :label="t('admin.serviceAccounts.accountName', {}, 'Account name')" required class="field-name">
         <CoarTextInput v-model="form.AccountName" clearable :disabled="!isCreate"
           :placeholder="t('admin.serviceAccounts.accountNamePlaceholder', {}, 'ci.build-agent, integrations.acme, …')" />
       </CoarFormField>
@@ -208,7 +208,7 @@ function extractScopes(cred: OAuthClientDto): string[] {
         {{ t('admin.serviceAccounts.accountNameHint', {}, 'Lowercase letters, digits, dots, hyphens or underscores. Becomes the audit-log handle for this account.') }}
       </p>
 
-      <CoarFormField :label="t('admin.serviceAccounts.purpose', {}, 'Purpose')">
+      <CoarFormField :label="t('admin.serviceAccounts.purpose', {}, 'Purpose')" class="field-name">
         <CoarTextInput v-model="form.Purpose" clearable
           :placeholder="t('admin.serviceAccounts.purposePlaceholder', {}, 'CI deployment, nightly sync, …')" />
       </CoarFormField>

@@ -1462,6 +1462,10 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "section": {
+      "personal": "Mein Konto",
+      "operations": "Realm-Betrieb"
+    },
     "welcomeTitle": "Willkommen bei Modgud",
     "welcomeBody": "Du bist angemeldet als",
     "errors": {

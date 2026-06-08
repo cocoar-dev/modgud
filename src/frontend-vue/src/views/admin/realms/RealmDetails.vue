@@ -292,7 +292,7 @@ async function copyLink() {
         </CoarFormField>
       </div>
 
-      <CoarFormField :label="t('common.description', {}, 'Beschreibung')">
+      <CoarFormField :label="t('common.description', {}, 'Beschreibung')" class="field-name">
         <CoarTextInput v-model="form.Description" clearable />
       </CoarFormField>
 

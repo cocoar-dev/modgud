@@ -141,13 +141,13 @@ async function save() {
            The permission picker moves to its own tab so the role's
            grant surface gets full breathing room. -->
       <div v-show="activeTab === 'general'" class="tab-content">
-        <CoarFormField :label="t('admin.roleDetails.name', {}, 'Name')">
+        <CoarFormField :label="t('admin.roleDetails.name', {}, 'Name')" class="field-name">
           <CoarTextInput v-model="form.Name" clearable />
         </CoarFormField>
-        <CoarFormField :label="t('admin.roleDetails.description', {}, 'Description')">
+        <CoarFormField :label="t('admin.roleDetails.description', {}, 'Description')" class="field-name">
           <CoarTextInput v-model="form.Description" clearable />
         </CoarFormField>
-        <CoarFormField :label="t('admin.roleDetails.app', {}, 'Application')">
+        <CoarFormField :label="t('admin.roleDetails.app', {}, 'Application')" class="field-enum">
           <CoarSelect
             v-model="form.AppId"
             :options="appOptions"

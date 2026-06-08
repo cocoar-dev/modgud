@@ -155,7 +155,7 @@ async function save() {
 
 <template>
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="tags"
-    :footer-button="footerButton" width="40rem">
+    :footer-button="footerButton">
     <div v-if="loading && !isCreate" class="flex flex-1 items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
     </div>
@@ -168,10 +168,10 @@ async function save() {
           <CoarTextInput v-model="form.DisplayName" clearable />
         </CoarFormField>
       </div>
-      <CoarFormField :label="t('admin.oauthScopes.description', {}, 'Beschreibung')">
+      <CoarFormField :label="t('admin.oauthScopes.description', {}, 'Beschreibung')" class="field-name">
         <CoarTextInput v-model="form.Description" clearable />
       </CoarFormField>
-      <CoarFormField :label="t('admin.oauthScopes.app', {}, 'Application')">
+      <CoarFormField :label="t('admin.oauthScopes.app', {}, 'Application')" class="field-enum">
         <CoarSelect v-model="form.AppId" :options="appOptions" />
         <p class="text-xs text-gray-500 mt-1">
           {{ form.AppId

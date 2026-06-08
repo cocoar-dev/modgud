@@ -365,7 +365,7 @@ async function save() {
 </script>
 
 <template>
-  <ModalLayout :close="close" :title="modalTitle" icon="users" :footer-button="footerButton" width="44rem">
+  <ModalLayout :close="close" :title="modalTitle" icon="users" :footer-button="footerButton">
     <div v-if="!initialLoad" class="flex flex-col min-w-0 min-h-0 flex-1">
       <CoarTabGroup v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.groupDetails.tabs.general', {}, 'General') }}</CoarTab>
@@ -384,8 +384,8 @@ async function save() {
       <!-- Tab: General -->
       <div v-show="activeTab === 'general'" class="tab-content">
         <section>
-          <div class="flex flex-col gap-2">
-            <CoarFormField :label="t('admin.groupDetails.name', {}, 'Name')">
+          <div class="flex flex-col gap-2 modal-form-col">
+            <CoarFormField :label="t('admin.groupDetails.name', {}, 'Name')" class="field-name">
               <CoarTextInput v-model="form.Name" clearable />
             </CoarFormField>
             <CoarFormField :label="t('admin.groupDetails.description', {}, 'Description')">
@@ -410,7 +410,7 @@ async function save() {
                   : t('admin.groupDetails.emailMode.expandHelp', {}, 'Notifications are sent to each member individually (recursive across nested groups).') }}
               </p>
             </CoarFormField>
-            <CoarFormField :label="t('admin.groupDetails.type', {}, 'Type')">
+            <CoarFormField :label="t('admin.groupDetails.type', {}, 'Type')" class="field-enum">
               <CoarSelect v-model="form.MembershipMode" :options="membershipModeOptions" />
               <p class="script-help">
                 {{ isAutoMode
@@ -459,7 +459,7 @@ async function save() {
 
       <!-- Tab: Members -->
       <div v-show="activeTab === 'members'" class="tab-content">
-        <section class="flex-section">
+        <section class="flex-section editor-section">
           <CoarDualListbox
             v-if="!isAutoMode"
             class="flex-1 min-h-0"
@@ -499,7 +499,7 @@ async function save() {
           {{ t('common.loading', {}, 'Loading...') }}
         </div>
         <template v-else>
-          <section class="flex-section">
+          <section class="flex-section effective-section">
             <div class="section-heading">{{ t('admin.groupDetails.effective.direct', {}, 'Direct members') }}</div>
             <CoarListbox
               class="flex-1 min-h-0"
@@ -513,7 +513,7 @@ async function save() {
               :empty-text="t('admin.groupDetails.effective.noneDirect', {}, 'No direct members.')"
             />
           </section>
-          <section v-if="effectiveNestedOptions.length > 0" class="flex-section">
+          <section v-if="effectiveNestedOptions.length > 0" class="flex-section effective-section">
             <div class="section-heading">{{ t('admin.groupDetails.effective.nested', {}, 'Via nested groups') }}</div>
             <CoarListbox
               class="flex-1 min-h-0"
@@ -532,7 +532,7 @@ async function save() {
 
       <!-- Tab: Roles -->
       <div v-show="activeTab === 'roles'" class="tab-content">
-        <section class="flex-section">
+        <section class="flex-section editor-section">
           <CoarDualListbox
             class="flex-1 min-h-0"
             v-model="form.RoleIds"
@@ -549,7 +549,7 @@ async function save() {
 
       <!-- Tab: Script (auto only) -->
       <div v-show="activeTab === 'script'" class="tab-content">
-        <section class="flex-section">
+        <section class="flex-section editor-section">
           <div class="script-label-row">
             <p class="script-help flex-1">
               {{ t('admin.groupDetails.membership.autoHelp', {}, 'Write a TypeScript arrow function returning true for principals that should be members.') }}
@@ -739,11 +739,21 @@ async function save() {
 }
 
 .flex-section {
-  flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   gap: 6px;
+}
+
+/* Heavy editor / list panes carry their OWN height so they survive the
+   cap-to-content modal frame (a flex:1 child needs a definite ancestor height;
+   the modal is now height:auto). Mirrors UserDetails' .groups-editor{height:50vh}.
+   Effective (read-only, edit-only, can stack two) gets a smaller per-list height. */
+.editor-section {
+  height: 50vh;
+}
+.effective-section {
+  height: 32vh;
 }
 
 .empty-hint {

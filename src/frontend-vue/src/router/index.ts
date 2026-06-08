@@ -113,11 +113,18 @@ const USER_MODAL_SIZE = {
   width: '64vw', maxWidth: '58rem',
   height: 'auto', minHeight: 'auto', maxHeight: '85vh',
 } as const
-// Group keeps a stable tall frame: it has 5 tabs with two dual-listboxes, a
-// Monaco membership-script editor and effective lists, all flex:1 — they need a
-// definite ancestor height to scroll against, so cap-to-content would collapse
-// them.
-const GROUP_MODAL_SIZE = MODAL_LG
+// Group is cap-to-content like User: the create-landing General tab collapses the
+// frame to its content (kills the create dead half, the owner's complaint), while
+// the heavy edit tabs (Members/Roles dual-listboxes, Monaco script, effective
+// lists) carry their OWN explicit section height (.editor-section/.effective-section
+// in GroupDetails) so they survive cap-to-content instead of collapsing. minHeight
+// floors the short General/Manual-create case; vw width + maxWidth cap, no minWidth
+// rem floor (viewport-overflow gotcha). Tab-switch grows the frame to the editor
+// height — content-driven, as in any tabbed modal.
+const GROUP_MODAL_SIZE = {
+  width: '60vw', maxWidth: '52rem',
+  height: 'auto', minHeight: '30rem', maxHeight: '85vh',
+} as const
 
 // Heaviest builders (wide AG-Grid catalog / 6-tab client builder) → full.
 const APP_MODAL_SIZE = MODAL_FULL

@@ -249,10 +249,10 @@ async function createImplicitScope() {
             <CoarTextInput v-model="form.DisplayName" clearable />
           </CoarFormField>
         </div>
-        <CoarFormField :label="t('admin.oauthApis.description', {}, 'Beschreibung')">
+        <CoarFormField :label="t('admin.oauthApis.description', {}, 'Beschreibung')" class="field-name">
           <CoarTextInput v-model="form.Description" clearable />
         </CoarFormField>
-        <CoarFormField :label="t('admin.oauthApis.app', {}, 'Application')">
+        <CoarFormField :label="t('admin.oauthApis.app', {}, 'Application')" class="field-enum">
           <CoarSelect v-model="form.AppId" :options="appOptions" />
           <p class="text-xs text-gray-500 mt-1">
             {{ form.AppId
