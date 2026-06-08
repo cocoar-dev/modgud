@@ -465,8 +465,16 @@ onMounted(() => {
         elevated
         variant="info"
         class="kpi-card"
+        :role="tile.onClick ? 'button' : undefined"
+        :tabindex="tile.onClick ? 0 : undefined"
         @click="tile.onClick && tile.onClick()"
+        @keydown.enter.prevent="tile.onClick && tile.onClick()"
+        @keydown.space.prevent="tile.onClick && tile.onClick()"
       >
+        <!-- Drill-down affordance: the tile already navigates on click; the
+             chevron (revealed on hover/focus) + keyboard support make that
+             discoverable and accessible (UI/UX wave 4, #14). -->
+        <CoarIcon v-if="tile.onClick" name="arrow-right" size="s" class="kpi-arrow" />
         <div class="kpi-content">
           <div class="kpi-icon" :class="TONE_CLASS[tile.tone]">
             <CoarIcon :name="tile.icon" size="m" />
@@ -479,7 +487,14 @@ onMounted(() => {
             }"
           >
             <CoarSpinner v-if="tile.loading" size="s" />
-            <template v-else>{{ tile.value ?? '–' }}</template>
+            <template v-else>
+              <!-- Pair the bad/warn colour with an icon so status isn't
+                   signalled by colour alone (UI/UX wave 4, P2). -->
+              <CoarIcon v-if="tile.bad" name="alert-triangle" size="s" class="kpi-status-icon" aria-hidden="true" />
+              <CoarIcon v-else-if="tile.warn" name="alert-circle" size="s" class="kpi-status-icon" aria-hidden="true" />
+              <span v-if="tile.bad || tile.warn" class="sr-only">{{ t('dashboard.kpi.attention', {}, 'Achtung') }}</span>
+              {{ tile.value ?? '–' }}
+            </template>
           </div>
           <div class="kpi-label">{{ tile.caption }}</div>
         </div>
@@ -649,6 +664,12 @@ onMounted(() => {
                   <span class="list-row__title">{{ p.DisplayName }}</span>
                 </span>
                 <span class="list-row__meta">
+                  <!-- Text status next to the colour dot (status not by colour alone). -->
+                  <CoarTag :variant="p.Enabled ? 'success' : 'neutral'" size="s">
+                    {{ p.Enabled
+                      ? t('dashboard.loginProviderStatus.enabled', {}, 'Aktiviert')
+                      : t('dashboard.loginProviderStatus.disabled', {}, 'Deaktiviert') }}
+                  </CoarTag>
                   <CoarTag v-if="p.Type === 'Internal'" variant="neutral" size="s">
                     {{ t('dashboard.loginProviderStatus.system', {}, 'System') }}
                   </CoarTag>
@@ -678,12 +699,36 @@ onMounted(() => {
 
 /* KPI cards: lifted-on-hover style. */
 .kpi-card {
+  position: relative;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .kpi-card:hover {
   transform: translateY(-3px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+.kpi-card:focus-visible {
+  outline: 2px solid var(--coar-accent, #1077be);
+  outline-offset: 2px;
+}
+
+/* Drill-down chevron — hidden until the tile is hovered or keyboard-focused. */
+.kpi-arrow {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  color: var(--coar-text-neutral-secondary, #9ca3af);
+}
+.kpi-card:hover .kpi-arrow,
+.kpi-card:focus-visible .kpi-arrow {
+  opacity: 1;
+}
+
+/* Status icon paired with the bad/warn value colour (inherits currentColor). */
+.kpi-status-icon {
+  margin-right: 0.25rem;
 }
 
 .kpi-content {

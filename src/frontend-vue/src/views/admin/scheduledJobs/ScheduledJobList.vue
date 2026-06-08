@@ -19,10 +19,9 @@ const { navigateToModal } = useFragmentNavigation()
 const ui = useUI()
 watch(language, () => ui.set((ctx) => {
   ctx.header.title = t('nav.administration', {}, 'Administration')
-  ctx.header.subTitle = [
-    { label: t('nav.administration', {}, 'Administration'), to: '/admin' },
-    { label: t('admin.scheduledJobs.title', {}, 'Scheduled Jobs') },
-  ]
+  // String subtitle to match every other admin view (UI/UX wave 4, #13) —
+  // the breadcrumb's leading "Administration" crumb only duplicated the title.
+  ctx.header.subTitle = t('admin.scheduledJobs.title', {}, 'Scheduled Jobs')
   ctx.header.icon = 'clock'
   ctx.content.container = false
 }), { immediate: true })

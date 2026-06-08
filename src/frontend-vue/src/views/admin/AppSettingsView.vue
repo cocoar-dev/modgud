@@ -4,7 +4,7 @@ import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
-import { CoarCard, CoarButton } from '@cocoar/vue-ui'
+import { CoarCard, CoarButton, CoarPopconfirm } from '@cocoar/vue-ui'
 
 const { t, language } = useI18n()
 const projectionHttp = useHttpClient('/api/admin/projections')
@@ -65,11 +65,18 @@ function openConsistencyCheck() {
             </p>
           </div>
 
-          <!-- Projection rebuild -->
+          <!-- Projection rebuild — destructive (replays the whole event store),
+               so it sits behind a confirm and uses the danger variant so it
+               doesn't read as a benign action (UI/UX wave 4, #15). -->
           <div class="flex items-center gap-4 pt-2 border-t border-surface-200">
-            <CoarButton variant="secondary" size="s" :loading="rebuilding" @click="rebuildProjections">
-              {{ t('admin.settings.rebuildProjections', {}, 'Rebuild Projections') }}
-            </CoarButton>
+            <CoarPopconfirm
+              :title="t('admin.settings.rebuildConfirmTitle', {}, 'Rebuild all projections?')"
+              :message="t('admin.settings.rebuildConfirmMessage', {}, 'This replays the entire event store and rebuilds every read model. It can take a while and read models may be briefly incomplete. Run only if data appears inconsistent.')"
+              @confirmed="rebuildProjections">
+              <CoarButton variant="danger" size="s" :loading="rebuilding">
+                {{ t('admin.settings.rebuildProjections', {}, 'Rebuild Projections') }}
+              </CoarButton>
+            </CoarPopconfirm>
             <p class="text-sm text-surface-500">{{ t('admin.settings.rebuildDescription', {}, 'Rebuilds all read models from the event store. Use if data appears inconsistent.') }}</p>
           </div>
           <p v-if="rebuildResult" class="text-sm" :class="rebuildResult.ok ? 'text-green-600' : 'text-red-600'">

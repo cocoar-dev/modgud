@@ -69,10 +69,10 @@ const labelBySlot: Record<string, string> = {
 
 watch([language, slug], () => ui.set((ctx) => {
   ctx.header.title = t('nav.platform', {}, 'Plattform')
-  ctx.header.subTitle = [
-    { label: t('admin.customization.pages.title', {}, 'Pages'), to: '/plattform/customization/pages' },
-    { label: labelBySlot[slug.value] ?? slug.value },
-  ]
+  // String subtitle to match the app-wide header model (UI/UX wave 4, #13);
+  // the page hierarchy stays as text ("Pages · <name>"). The parent-list link
+  // the breadcrumb gave is still covered by the in-page Back button + sidebar.
+  ctx.header.subTitle = `${t('admin.customization.pages.title', {}, 'Pages')} · ${labelBySlot[slug.value] ?? slug.value}`
   ctx.header.icon = 'layout-template'
   ctx.content.container = false
 }), { immediate: true })

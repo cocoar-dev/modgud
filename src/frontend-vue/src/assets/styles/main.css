@@ -15,6 +15,16 @@
   --color-selection: #e7eaf0;
   --color-modal: rgba(0, 0, 0, 0.45);
 
+  /* Primary-button contrast (UI/UX wave 4, finding #12). vue-ui's default
+     --coar-accent (#1183CD) renders white-on-blue at only ~4.08:1, below WCAG
+     AA 4.5:1. This is the single root that drives accent-500 — the background
+     of every primary button (login submit, admin variant=primary, the modal
+     footer confirm), so one override lifts them all and keeps public auth and
+     admin aligned. Same hue, slightly deeper: ~4.8:1, and its oklch lightness
+     stays above the ramp's fixed hover (accent-600) lightness so the button
+     still darkens on hover/active. */
+  --coar-accent: #1077be;
+
   /* AG Grid row status colors (light mode) */
   --color-row-done: #eefeee;
   --color-row-none: #f7f7f7bf;

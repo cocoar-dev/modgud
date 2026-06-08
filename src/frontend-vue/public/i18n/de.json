@@ -695,6 +695,8 @@
       "consistencyCheck": "Konsistenzprüfung",
       "consistencyDescription": "Prüft Principal-Projektionen, Gruppen-Mitgliedschaften, Auto-Group-Predicates und Cross-References. Öffnet einen detaillierten Bericht.",
       "rebuildProjections": "Projektionen neu aufbauen",
+      "rebuildConfirmTitle": "Alle Projektionen neu aufbauen?",
+      "rebuildConfirmMessage": "Dies spielt den gesamten Event Store erneut ab und baut jedes Lesemodell neu auf. Das kann eine Weile dauern und Lesemodelle können kurzzeitig unvollständig sein. Nur ausführen, wenn Daten inkonsistent erscheinen.",
       "rebuildDescription": "Baut alle Lesemodelle aus dem Event Store neu auf. Verwenden, wenn Daten inkonsistent erscheinen.",
       "rebuildSuccess": "Projektionen erfolgreich neu aufgebaut.",
       "rebuildFailed": "Neuaufbau fehlgeschlagen."
@@ -889,6 +891,7 @@
       "activityFeed": "Letzte Ereignisse",
       "updated": "Aktualisiert",
       "empty": "Keine Ereignisse im aktuellen Fenster.",
+      "sparklineEmpty": "Keine Logins im aktuellen Fenster.",
       "errorFeed": "Letzte Fehler",
       "errorFeedHint": "Anwendungsfehler in diesem Realm",
       "errorsEmpty": "Keine Fehler erfasst."
@@ -1471,6 +1474,7 @@
       "daysAgo": "vor {n} Tagen"
     },
     "kpi": {
+      "attention": "Achtung",
       "activeSessions": "Aktive Sitzungen",
       "securityScore": "Sicherheits-Score",
       "userCount": "User im Realm",
