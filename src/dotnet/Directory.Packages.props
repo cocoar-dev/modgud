@@ -12,7 +12,7 @@
     <PackageVersion Include="Cocoar.JsEval.TsDefinition" Version="4.1.0" />
     <PackageVersion Include="Cocoar.JsEval.TypeScript" Version="4.1.0" />
     <PackageVersion Include="Cocoar.Reflectensions" Version="1.0.2" />
-    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="4.3.0" />
+    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="4.3.1" />
     <!-- Microsoft packages -->
     <PackageVersion Include="Fido2.AspNet" Version="4.0.1" />
     <PackageVersion Include="MailKit" Version="4.17.0" />
@@ -63,7 +63,7 @@
     <PackageVersion Include="OpenIddict.Server" Version="7.5.0" />
     <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.5.0" />
     <PackageVersion Include="OpenIddict.Validation" Version="7.5.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
     <!-- Testing -->
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
@@ -78,8 +78,8 @@
     <PackageVersion Include="Quartz.Extensions.Hosting" Version="3.18.1" />
     <!-- Cocoar Configuration v6 — additive over v5 (aggregate rules, multi-tenant
          + DI-backed config); no breaking API changes for our usage. -->
-    <PackageVersion Include="Cocoar.Configuration" Version="6.0.0" />
-    <PackageVersion Include="Cocoar.Configuration.AspNetCore" Version="6.0.0" />
+    <PackageVersion Include="Cocoar.Configuration" Version="6.1.0" />
+    <PackageVersion Include="Cocoar.Configuration.AspNetCore" Version="6.1.0" />
     <!-- OpenTelemetry (Audit-Followup 2026-05-13, Phase 1 foundation).
          Prometheus AspNetCore exporter stays officially beta in upstream
          OTel-dotnet but is widely used; OTLP exporter is GA. -->
