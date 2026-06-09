@@ -12,7 +12,7 @@
     <PackageVersion Include="Cocoar.JsEval.TsDefinition" Version="4.1.0" />
     <PackageVersion Include="Cocoar.JsEval.TypeScript" Version="4.1.0" />
     <PackageVersion Include="Cocoar.Reflectensions" Version="1.0.2" />
-    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="4.3.0" />
+    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="4.3.1" />
     <!-- Microsoft packages -->
     <PackageVersion Include="Fido2.AspNet" Version="4.0.1" />
     <PackageVersion Include="MailKit" Version="4.17.0" />
@@ -33,16 +33,21 @@
     <!-- Marten & Wolverine — Critter Stack 2026 (Marten 9 + Wolverine 6 +
          JasperFx 2). Migrated from 8.37 / 5.32 in chore/critter-stack-2026.
          Gotchas: dev-docs/engineering-gotchas/critter-stack-2026.md -->
-    <PackageVersion Include="Marten" Version="9.3.5" />
-    <PackageVersion Include="Marten.AspNetCore" Version="9.3.5" />
-    <PackageVersion Include="WolverineFx.Marten" Version="6.3.2" />
+    <PackageVersion Include="Marten" Version="9.6.0" />
+    <PackageVersion Include="Marten.AspNetCore" Version="9.6.0" />
+    <PackageVersion Include="WolverineFx.Marten" Version="6.5.1" />
     <!-- Marten 9 source-generates projection apply-dispatchers; every
          `.csproj` that declares a partial Projection class needs this as
          analyzer-style PackageReference. -->
+    <!-- HELD at 2.5.0: JasperFx.Events.SourceGenerator 2.6+ (confirmed 2.8.2) re-introduced
+         the AggregateEvolverGenerator that emits a duplicate ctor + Evolve(...) colliding with
+         our SingleStreamProjection subclasses (CS0111) — the same regression that pinned it at
+         2.0.0 pre-2.4.x. This analyzer is versioned independently of the Marten runtime, so it
+         stays at 2.5.0 while Marten/Wolverine advance. See engineering-gotchas/critter-stack-2026.md. -->
     <PackageVersion Include="JasperFx.Events.SourceGenerator" Version="2.5.0" />
     <!-- Wolverine 6 decoupled the Roslyn runtime codegen from core;
          IMessageBus.InvokeAsync<T> needs it in the host project. -->
-    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.3.2" />
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.5.1" />
     <!-- Other packages -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="System.Reactive" Version="6.1.0" />
@@ -63,7 +68,7 @@
     <PackageVersion Include="OpenIddict.Server" Version="7.5.0" />
     <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.5.0" />
     <PackageVersion Include="OpenIddict.Validation" Version="7.5.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
     <!-- Testing -->
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
@@ -78,8 +83,8 @@
     <PackageVersion Include="Quartz.Extensions.Hosting" Version="3.18.1" />
     <!-- Cocoar Configuration v6 — additive over v5 (aggregate rules, multi-tenant
          + DI-backed config); no breaking API changes for our usage. -->
-    <PackageVersion Include="Cocoar.Configuration" Version="6.0.0" />
-    <PackageVersion Include="Cocoar.Configuration.AspNetCore" Version="6.0.0" />
+    <PackageVersion Include="Cocoar.Configuration" Version="6.1.0" />
+    <PackageVersion Include="Cocoar.Configuration.AspNetCore" Version="6.1.0" />
     <!-- OpenTelemetry (Audit-Followup 2026-05-13, Phase 1 foundation).
          Prometheus AspNetCore exporter stays officially beta in upstream
          OTel-dotnet but is widely used; OTLP exporter is GA. -->

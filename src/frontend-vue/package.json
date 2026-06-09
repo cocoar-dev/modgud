@@ -14,13 +14,13 @@
     "cleanup:check": "pnpm dlx knip"
   },
   "dependencies": {
-    "@cocoar/signalarrr": "^4.3.0",
-    "@cocoar/vue-data-grid": "2.5.2",
-    "@cocoar/vue-fragment-parser": "2.5.2",
-    "@cocoar/vue-localization": "2.5.2",
-    "@cocoar/vue-page-builder": "2.5.2",
-    "@cocoar/vue-script-editor": "2.5.2",
-    "@cocoar/vue-ui": "2.5.2",
+    "@cocoar/signalarrr": "^4.3.1",
+    "@cocoar/vue-data-grid": "2.7.0",
+    "@cocoar/vue-fragment-parser": "2.7.0",
+    "@cocoar/vue-localization": "2.7.0",
+    "@cocoar/vue-page-builder": "2.7.0",
+    "@cocoar/vue-script-editor": "2.7.0",
+    "@cocoar/vue-ui": "2.7.0",
     "monaco-editor": "^0.55.1",
     "pinia": "^3.0.4",
     "vue": "^3.5.35",
@@ -34,7 +34,7 @@
     "tailwindcss": "^4.3.0",
     "typescript": "~6.0.3",
     "vite": "^8.0.16",
-    "vue-tsc": "^3.3.3"
+    "vue-tsc": "^3.3.4"
   },
   "volta": {
     "node": "22.17.1",

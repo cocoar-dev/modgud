@@ -75,6 +75,16 @@ updates:
       cocoar-internals:
         patterns:
           - "Cocoar.*"
+    ignore:
+      # JasperFx.Events.SourceGenerator is HELD at 2.5.0 in Directory.Packages.props.
+      # 2.6+ (confirmed 2.8.2) re-introduced the AggregateEvolverGenerator that emits a
+      # duplicate ctor + Evolve(...) colliding with our SingleStreamProjection subclasses
+      # (CS0111) — the same regression that pinned it at 2.0.0 pre-2.4.x. It is the
+      # compile-time analyzer, versioned independently of the Marten runtime, so
+      # Marten/Wolverine still upgrade via the critter-stack group. Re-test on a clean
+      # build before lifting. See engineering-gotchas/critter-stack-2026.md.
+      - dependency-name: "JasperFx.Events.SourceGenerator"
+        versions: [">2.5.0"]
 
   # GitHub Actions workflow deps
   - package-ecosystem: "github-actions"
