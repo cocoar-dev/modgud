@@ -16,27 +16,17 @@ Pinned in `src/dotnet/Directory.Packages.props`:
 
 | Package | Version |
 | --- | --- |
-| `Marten` | 9.6.0 |
-| `Marten.AspNetCore` | 9.6.0 |
-| `WolverineFx.Marten` | 6.5.1 |
-| `JasperFx.Events.SourceGenerator` | 2.5.0 (held — see note) |
-| `WolverineFx.RuntimeCompilation` | 6.5.1 |
+| `Marten` | 9.3.5 |
+| `Marten.AspNetCore` | 9.3.5 |
+| `WolverineFx.Marten` | 6.3.2 |
+| `JasperFx.Events.SourceGenerator` | 2.4.1 |
+| `WolverineFx.RuntimeCompilation` | 6.3.2 |
 
-> **JasperFx.Events.SourceGenerator RE-PINNED at `2.5.0` (2026-06-09).** It was
-> originally held at `2.0.0` because `2.1.x` source-generated an extra
-> `Evolve(...)` overload that collided with `PrincipalProjectionBase`. That was
-> fixed in `2.4.x`, the pin was lifted, and `2.5.0` shipped fine — but `2.6+`
-> (confirmed `2.8.2`, the version Dependabot proposed alongside Marten 9.6.0)
-> **re-introduced the regression**: a new `AggregateEvolverGenerator` emits a
-> duplicate constructor **and** `Evolve(...)` that now collides with *every*
-> `SingleStreamProjection<T>` subclass (`AppProjection`,
-> `PermissionRoleProjection`, `PrincipalProjectionBase`) → `CS0111`, reproduced
-> on a clean build. This package is the **compile-time analyzer only**, versioned
-> independently of the Marten/JasperFx.Events runtime, so it stays at `2.5.0`
-> while Marten / Wolverine advance (9.6.0 / 6.5.1 build + full test suite green
-> with the 2.5.0 generator). The pin lives in `Directory.Packages.props`; a
-> matching `versions: [">2.5.0"]` ignore is back in `dependabot.yml`. Re-test on
-> a clean build before lifting again.
+> **JasperFx.Events.SourceGenerator pin lifted (2026-06).** It was held at
+> `2.0.0` because `2.1.x` source-generated an extra `Evolve(...)` overload that
+> collided with `PrincipalProjectionBase`. That collision is gone as of `2.4.x`
+> — verified by a clean build + green test suite — so the pin (and its
+> `dependabot.yml` ignore) were removed.
 
 The two V8 event-store defaults Modgud still pins (and the reasoning for
 each) are in

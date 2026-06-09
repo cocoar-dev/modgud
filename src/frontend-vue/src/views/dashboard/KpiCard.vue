@@ -27,8 +27,7 @@ const TONE_CLASS: Record<TileTone, string> = {
     :role="tile.onClick ? 'button' : undefined"
     :tabindex="tile.onClick ? 0 : undefined"
     @click="tile.onClick && tile.onClick()"
-    @keydown.enter.prevent="tile.onClick && tile.onClick()"
-    @keydown.space.prevent="tile.onClick && tile.onClick()"
+    @keydown.enter.space.prevent="tile.onClick && tile.onClick()"
   >
     <!-- Drill-down affordance: the tile already navigates on click; the chevron
          (revealed on hover/focus) + keyboard support make that discoverable and
