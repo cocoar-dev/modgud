@@ -88,7 +88,13 @@ const MODAL_FULL = {
 // Single forms → cap-to-content (MD); drive the family toward ScopeDetails.
 const SCOPE_MODAL_SIZE = MODAL_MD
 const REALM_MODAL_SIZE = MODAL_MD
-const ROLE_MODAL_SIZE = MODAL_MD // tabbed but both tabs short — cap-to-content, not a tall frame.
+// Role is tabbed (Allgemein / Berechtigungen). FIXED frame so the size never
+// changes on tab switch — sized to the taller Permissions tab (its catalog
+// checklist scrolls inside). The short Allgemein tab fills the same frame.
+const ROLE_MODAL_SIZE = {
+  width: '42rem', minWidth: '42rem', maxWidth: '42rem',
+  height: '33rem', minHeight: '33rem', maxHeight: '85vh',
+} as const
 const SERVICE_ACCOUNT_MODAL_SIZE = MODAL_MD
 
 // API is a single form, but selecting an Application injects a ~14rem permission
@@ -104,26 +110,24 @@ const IDP_CLAIMS_MODAL_SIZE = MODAL_LG
 const LOGIN_PROVIDER_MODAL_SIZE = MODAL_LG
 const SCHEDULED_JOB_MODAL_SIZE = MODAL_LG
 const CONSISTENCY_CHECK_MODAL_SIZE = MODAL_LG
-// User: cap-to-content at a moderate fluid width — so the create form is
-// compact (no dead lower half, the owner's #1 complaint) yet edit mode fits the
-// Groups dual-listbox, which carries its OWN explicit height (the CoarDualListbox
-// `height` prop) so it works without a fixed modal frame. vw width + maxWidth
-// cap, no minWidth rem floor (viewport-overflow gotcha).
+// User: cap-to-content at a moderate fluid width. The CREATE form has no tabs, so
+// it stays compact (no dead lower half — the owner's #1 complaint). EDIT is tabbed
+// (General/Groups/Effektiv/Security); to keep the modal from resizing on tab switch,
+// the component pins a fixed body height in edit mode (.user-edit-frame in
+// UserDetails) so every tab fills the same height. vw width + maxWidth cap, no
+// minWidth rem floor (viewport-overflow gotcha).
 const USER_MODAL_SIZE = {
   width: '64vw', maxWidth: '58rem',
   height: 'auto', minHeight: 'auto', maxHeight: '85vh',
 } as const
-// Group is cap-to-content like User: the create-landing General tab collapses the
-// frame to its content (kills the create dead half, the owner's complaint), while
-// the heavy edit tabs (Members/Roles dual-listboxes, Monaco script, effective
-// lists) carry their OWN explicit section height (.editor-section/.effective-section
-// in GroupDetails) so they survive cap-to-content instead of collapsing. minHeight
-// floors the short General/Manual-create case; vw width + maxWidth cap, no minWidth
-// rem floor (viewport-overflow gotcha). Tab-switch grows the frame to the editor
-// height — content-driven, as in any tabbed modal.
+// Group is a tabbed editor (General form + Members/Roles dual-listboxes + Monaco
+// script + effective lists). FIXED frame so the size never changes on tab switch —
+// a modal keeps the size it opened at. The editor tabs (.flex-section flex:1) fill
+// the frame; the tall General form fills it too (52rem keeps it narrow enough for
+// the form yet fine for the two-column dual-listboxes).
 const GROUP_MODAL_SIZE = {
   width: '60vw', maxWidth: '52rem',
-  height: 'auto', minHeight: '30rem', maxHeight: '85vh',
+  height: '80vh', minHeight: '80vh', maxHeight: '80vh',
 } as const
 
 // Heaviest builders (wide AG-Grid catalog / 6-tab client builder) → full.

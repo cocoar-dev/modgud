@@ -83,6 +83,16 @@ const modalTitle = computed(() =>
 )
 const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Slug)
 
+// Visible inline email validation for the InitialAdmin field — mirrors the
+// silent gate that used to live in canSubmit, but now surfaces a message so
+// the user knows WHY the button is disabled (no type=email — CoarTextInput
+// has no type prop). Empty is not "invalid" (the required marker covers that);
+// only a non-empty, malformed value lights up red.
+const initialAdminEmailInvalid = computed(() => {
+  const v = form.value.InitialAdminEmail.trim()
+  return v.length > 0 && !v.includes('@')
+})
+
 const canSubmit = computed(() => {
   if (loading.value) return false
   if (!form.value.DisplayName.trim()) return false
@@ -93,7 +103,7 @@ const canSubmit = computed(() => {
   if (isCreate.value) {
     if (!form.value.Slug.trim()) return false
     if (!form.value.InitialAdminUserName.trim()) return false
-    if (!form.value.InitialAdminEmail.trim() || !form.value.InitialAdminEmail.includes('@')) return false
+    if (!form.value.InitialAdminEmail.trim() || initialAdminEmailInvalid.value) return false
   }
   return true
 })
@@ -225,7 +235,7 @@ async function copyLink() {
 
 <template>
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="globe"
-    :footer-button="footerButton" width="42rem">
+    :footer-button="footerButton">
     <div v-if="loading && !dto && !isCreate" class="flex flex-1 items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
     </div>
@@ -282,60 +292,76 @@ async function copyLink() {
         {{ t('admin.realms.createHint', {}, 'Beim Anlegen wird automatisch eine eigene Datenbank provisioniert und mit Default-OAuth-Scopes geseedet.') }}
       </CoarNote>
 
-      <div class="grid grid-cols-2 gap-3">
-        <CoarFormField :label="t('admin.realms.slug', {}, 'Slug (immutable)')">
-          <CoarTextInput v-model="form.Slug" :disabled="!isCreate" clearable
-            :placeholder="t('admin.realms.slugPlaceholder', {}, 'kebab-case-slug')" />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.realms.displayName', {}, 'Display Name')">
-          <CoarTextInput v-model="form.DisplayName" clearable />
-        </CoarFormField>
-      </div>
+      <div class="modal-form">
+        <!-- Section: Identity -->
+        <section class="form-section">
+          <h3 class="form-section-heading">{{ t('admin.realms.section.identity', {}, 'Identity') }}</h3>
+          <div class="modal-form-grid">
+            <CoarFormField class="col-half" :label="t('admin.realms.slug', {}, 'Slug')" required>
+              <CoarTextInput v-model="form.Slug" :disabled="!isCreate" clearable
+                :placeholder="t('admin.realms.slugPlaceholder', {}, 'kebab-case-slug')" />
+              <p class="field-hint">{{ t('admin.realms.slug.hint', {}, 'Permanent URL / API identifier in kebab-case. Immutable after creation.') }}</p>
+            </CoarFormField>
+            <CoarFormField class="col-half" :label="t('admin.realms.displayName', {}, 'Display name')" required>
+              <CoarTextInput v-model="form.DisplayName" clearable />
+              <p class="field-hint">{{ t('admin.realms.displayName.hint', {}, 'Human-friendly name shown in the realm switcher and headers.') }}</p>
+            </CoarFormField>
+            <CoarFormField class="col-full" :label="t('common.description', {}, 'Beschreibung')">
+              <CoarTextInput v-model="form.Description" clearable :rows="2" />
+              <p class="field-hint">{{ t('admin.realms.description.hint', {}, 'Optional note describing this realm\'s purpose.') }}</p>
+            </CoarFormField>
+            <CoarFormField class="col-full" :label="t('admin.realms.domains', {}, 'Domains')" required>
+              <RealmDomainsField
+                v-model:domains="form.Domains"
+                v-model:primary="form.PrimaryDomain"
+                :placeholder="t('admin.realms.domain.placeholder', {}, 'auth.example.com')" />
+              <p class="field-hint">
+                {{ t('admin.realms.primaryDomainHint', {}, 'The realm routes on any domain, but the one marked Primary is its canonical public host: all invite / magic-link / reset mails use it, and passkeys (WebAuthn) only work on it.') }}
+              </p>
+              <CoarNote v-if="primaryChanged" variant="warning" class="mt-2">
+                {{ t('admin.realms.primaryChangedWarning', {}, 'Changing the primary domain invalidates this realm\'s existing passkeys — they are bound to the previous host. Affected users must re-register their passkeys on the new primary domain.') }}
+              </CoarNote>
+            </CoarFormField>
+          </div>
+        </section>
 
-      <CoarFormField :label="t('common.description', {}, 'Beschreibung')" class="field-name">
-        <CoarTextInput v-model="form.Description" clearable />
-      </CoarFormField>
+        <!-- Section: InitialAdmin (create-only) -->
+        <section v-if="isCreate" class="form-section">
+          <h3 class="form-section-heading">{{ t('admin.realms.initialAdminTitle', {}, 'Erster Admin') }}</h3>
+          <div class="modal-form-grid">
+            <CoarFormField class="col-full">
+              <p class="field-hint">
+                {{ t('admin.realms.initialAdminHint', {}, 'Wird per Magic-Link zum Aktivieren eingeladen — der Empfänger setzt sein Passwort selbst. Pflichtfelder: Benutzername und E-Mail.') }}
+              </p>
+            </CoarFormField>
+            <CoarFormField class="col-half" :label="t('admin.realms.initialAdminUserName', {}, 'Benutzername')" required>
+              <CoarTextInput v-model="form.InitialAdminUserName" clearable placeholder="admin" />
+            </CoarFormField>
+            <CoarFormField class="col-half" :label="t('admin.realms.initialAdminEmail', {}, 'E-Mail')" required>
+              <CoarTextInput v-model="form.InitialAdminEmail" clearable placeholder="admin@example.com" />
+              <p v-if="initialAdminEmailInvalid" class="text-sm text-red-600">
+                {{ t('admin.realms.initialAdminEmailInvalid', {}, 'Please enter a valid email address.') }}
+              </p>
+            </CoarFormField>
+            <CoarFormField class="col-half" :label="t('admin.realms.initialAdminFirstname', {}, 'Vorname')">
+              <CoarTextInput v-model="form.InitialAdminFirstname" clearable />
+            </CoarFormField>
+            <CoarFormField class="col-half" :label="t('admin.realms.initialAdminLastname', {}, 'Nachname')">
+              <CoarTextInput v-model="form.InitialAdminLastname" clearable />
+            </CoarFormField>
+          </div>
+        </section>
 
-      <CoarFormField :label="t('admin.realms.domains', {}, 'Domains')">
-        <RealmDomainsField
-          v-model:domains="form.Domains"
-          v-model:primary="form.PrimaryDomain"
-          :placeholder="t('admin.realms.domain.placeholder', {}, 'auth.example.com')" />
-        <p class="text-xs text-gray-500 mt-1">
-          {{ t('admin.realms.primaryDomainHint', {}, 'The realm routes on any domain, but the one marked Primary is its canonical public host: all invite / magic-link / reset mails use it, and passkeys (WebAuthn) only work on it.') }}
-        </p>
-        <CoarNote v-if="primaryChanged" variant="warning" class="mt-2">
-          {{ t('admin.realms.primaryChangedWarning', {}, 'Changing the primary domain invalidates this realm\'s existing passkeys — they are bound to the previous host. Affected users must re-register their passkeys on the new primary domain.') }}
-        </CoarNote>
-      </CoarFormField>
-
-      <div v-if="!isCreate" class="flex flex-wrap gap-x-6 gap-y-2 mt-1">
-        <CoarCheckbox v-model="form.IsActive"
-          :label="t('common.active', {}, 'Aktiv')" />
-      </div>
-
-      <!-- InitialAdmin (create-only) -->
-      <div v-if="isCreate" class="mt-2 border-t pt-3 flex flex-col gap-2">
-        <h4 class="text-sm font-medium text-gray-700">{{ t('admin.realms.initialAdminTitle', {}, 'Erster Admin') }}</h4>
-        <p class="text-xs text-gray-500">
-          {{ t('admin.realms.initialAdminHint', {}, 'Wird per Magic-Link zum Aktivieren eingeladen — der Empfänger setzt sein Passwort selbst. Pflichtfelder: Benutzername und E-Mail.') }}
-        </p>
-        <div class="grid grid-cols-2 gap-3">
-          <CoarFormField :label="t('admin.realms.initialAdminUserName', {}, 'Benutzername')">
-            <CoarTextInput v-model="form.InitialAdminUserName" clearable placeholder="admin" />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.realms.initialAdminEmail', {}, 'E-Mail')">
-            <CoarTextInput v-model="form.InitialAdminEmail" clearable placeholder="admin@example.com" />
-          </CoarFormField>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <CoarFormField :label="t('admin.realms.initialAdminFirstname', {}, 'Vorname (optional)')">
-            <CoarTextInput v-model="form.InitialAdminFirstname" clearable />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.realms.initialAdminLastname', {}, 'Nachname (optional)')">
-            <CoarTextInput v-model="form.InitialAdminLastname" clearable />
-          </CoarFormField>
-        </div>
+        <!-- Section: Status (edit-only) -->
+        <section v-if="!isCreate" class="form-section">
+          <h3 class="form-section-heading">{{ t('admin.realms.section.status', {}, 'Status') }}</h3>
+          <div class="modal-form-grid">
+            <CoarFormField class="col-full">
+              <CoarCheckbox v-model="form.IsActive" :label="t('common.active', {}, 'Aktiv')" />
+              <p class="field-hint">{{ t('admin.realms.isActive.hint', {}, 'Inactive realms cannot sign in and cannot become the control plane.') }}</p>
+            </CoarFormField>
+          </div>
+        </section>
       </div>
 
       <!-- Resend (edit-only) -->

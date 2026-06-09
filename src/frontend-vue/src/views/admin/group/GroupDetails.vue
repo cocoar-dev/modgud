@@ -121,11 +121,13 @@ const membershipModeOptions = computed(() => [
   { value: 'Auto', label: t('admin.groupDetails.membership.auto', {}, 'Automatic (script)') },
 ])
 
-// EmailMode as a checkbox: Shared = "group has its own address", Expand = "send to each member".
-const hasOwnEmail = computed({
-  get: () => form.value.EmailMode === 'Shared',
-  set: (v) => { form.value.EmailMode = v ? 'Shared' : 'ExpandToMembers' },
-})
+// EmailMode as a named two-option select (Shared = the group has its own shared
+// mailbox; ExpandToMembers = notifications fan out to each member). Both states
+// are visibly named — no cryptic bare checkbox.
+const emailModeOptions = computed(() => [
+  { value: 'Shared', label: t('admin.groupDetails.emailMode.shared', {}, 'Shared address') },
+  { value: 'ExpandToMembers', label: t('admin.groupDetails.emailMode.expand', {}, 'Send to each member') },
+])
 
 // Script tab disappears in Manual mode — if it was active, fall back to Members
 // so the user doesn't land on a hidden tab.
@@ -383,83 +385,100 @@ async function save() {
 
       <!-- Tab: General -->
       <div v-show="activeTab === 'general'" class="tab-content">
-        <section>
-          <div class="flex flex-col gap-2 modal-form-col">
-            <CoarFormField :label="t('admin.groupDetails.name', {}, 'Name')" class="field-name">
-              <CoarTextInput v-model="form.Name" clearable />
-            </CoarFormField>
-            <CoarFormField :label="t('admin.groupDetails.description', {}, 'Description')">
-              <CoarTextInput v-model="form.Description" clearable :rows="3" />
-            </CoarFormField>
-            <CoarFormField :label="t('admin.groupDetails.email', {}, 'Email')">
-              <div class="email-row">
-                <CoarTextInput
-                  v-model="form.Email"
+        <div class="modal-form">
+          <!-- Section: Identity -->
+          <section class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.groupDetails.section.identity', {}, 'Identity') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-half" :label="t('admin.groupDetails.name', {}, 'Name')" required>
+                <CoarTextInput v-model="form.Name" clearable />
+                <p class="field-hint">{{ t('admin.groupDetails.name.hint', {}, 'Display name of the group; also sets this dialog\'s title.') }}</p>
+              </CoarFormField>
+              <CoarFormField class="col-half" :label="t('admin.groupDetails.type', {}, 'Type')">
+                <CoarSelect v-model="form.MembershipMode" :options="membershipModeOptions" />
+                <p class="field-hint">
+                  {{ isAutoMode
+                    ? t('admin.groupDetails.membership.autoHint', {}, 'Members are computed from the script in the Script tab.')
+                    : t('admin.groupDetails.membership.manualHint', {}, 'Pick members directly in the Members tab.') }}
+                </p>
+              </CoarFormField>
+              <CoarFormField class="col-full" :label="t('admin.groupDetails.description', {}, 'Description')">
+                <CoarTextInput v-model="form.Description" clearable :rows="2" />
+                <p class="field-hint">{{ t('admin.groupDetails.description.hint', {}, 'Optional note; shown as a subtitle in member and picker lists.') }}</p>
+              </CoarFormField>
+            </div>
+          </section>
+
+          <!-- Section: Notifications -->
+          <section class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.groupDetails.section.notifications', {}, 'Notifications') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-half" :label="t('admin.groupDetails.emailModeLabel', {}, 'Email mode')">
+                <CoarSelect v-model="form.EmailMode" :options="emailModeOptions" />
+                <p class="field-hint">
+                  {{ form.EmailMode === 'Shared'
+                    ? t('admin.groupDetails.emailMode.sharedHint', {}, 'The group has one shared mailbox — notifications go to the address on the right.')
+                    : t('admin.groupDetails.emailMode.expandHelp', {}, 'Notifications are sent to each member individually (recursive across nested groups).') }}
+                </p>
+              </CoarFormField>
+              <CoarFormField v-if="form.EmailMode === 'Shared'" class="col-half" :label="t('admin.groupDetails.email', {}, 'Email address')">
+                <CoarTextInput v-model="form.Email" clearable placeholder="team@example.com" />
+                <p class="field-hint">{{ t('admin.groupDetails.emailMode.sharedHelp', {}, 'Notifications go to this address.') }}</p>
+              </CoarFormField>
+            </div>
+          </section>
+
+          <!-- Section: Scope -->
+          <section class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.groupDetails.section.scope', {}, 'Scope') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-full" :label="t('admin.groupDetails.boundTo', {}, 'Active in applications')">
+                <CoarMultiSelect
+                  v-model="form.BoundTo"
+                  :options="boundToOptions"
+                  searchable
                   clearable
-                  :disabled="!hasOwnEmail"
-                  placeholder="team@example.com"
-                  class="flex-1 min-w-0"
-                />
-                <CoarCheckbox v-model="hasOwnEmail">
-                  {{ t('admin.groupDetails.emailMode.ownAddress', {}, 'Own address') }}
-                </CoarCheckbox>
-              </div>
-              <p class="script-help">
-                {{ hasOwnEmail
-                  ? t('admin.groupDetails.emailMode.sharedHelp', {}, 'Notifications go to this address.')
-                  : t('admin.groupDetails.emailMode.expandHelp', {}, 'Notifications are sent to each member individually (recursive across nested groups).') }}
-              </p>
-            </CoarFormField>
-            <CoarFormField :label="t('admin.groupDetails.type', {}, 'Type')" class="field-enum">
-              <CoarSelect v-model="form.MembershipMode" :options="membershipModeOptions" />
-              <p class="script-help">
-                {{ isAutoMode
-                  ? t('admin.groupDetails.membership.autoHint', {}, 'Members are computed from the script in the Script tab.')
-                  : t('admin.groupDetails.membership.manualHint', {}, 'Pick members directly in the Members tab.') }}
-              </p>
-            </CoarFormField>
-            <CoarFormField :label="t('admin.groupDetails.externallyDrivable.label', {}, 'Federation')">
-              <CoarCheckbox v-model="form.ExternallyDrivable" :disabled="externallyDrivableDisabled">
-                {{ t('admin.groupDetails.externallyDrivable.toggle', {}, 'Externally drivable (federation)') }}
-              </CoarCheckbox>
-              <p class="script-help">
-                <template v-if="hasRealmAdminRole">
-                  {{ t('admin.groupDetails.externallyDrivable.realmAdminBlocked', {}, 'Disabled: this group confers realm:admin, which can never be externally driven (realm:admin is hard local-only). Remove the realm-admin role to enable.') }}
-                </template>
-                <template v-else-if="!isAutoMode">
-                  {{ t('admin.groupDetails.externallyDrivable.autoOnly', {}, 'Only Automatic groups can be externally driven — switch the type to Automatic first.') }}
-                </template>
-                <template v-else>
-                  {{ t('admin.groupDetails.externallyDrivable.hint', {}, 'When on, a trusted federated login whose membership script matches confers this group for that session only (never written to durable members, never realm:admin).') }}
-                </template>
-              </p>
-            </CoarFormField>
-            <CoarFormField :label="t('admin.groupDetails.boundTo', {}, 'Bound to apps')">
-              <CoarMultiSelect
-                v-model="form.BoundTo"
-                :options="boundToOptions"
-                searchable
-                clearable
-                :placeholder="t('admin.groupDetails.boundTo.placeholder', {}, 'Select apps…')" />
-              <p class="script-help">
-                <template v-if="isAllAppsWildcard">
-                  {{ t('admin.groupDetails.boundTo.wildcardHint', {}, '★ "All apps" selected — this group is active in every app in the realm. Typical for the realm-admin group.') }}
-                </template>
-                <template v-else-if="isDormantBoundTo">
-                  {{ t('admin.groupDetails.boundTo.dormantHint', {}, 'No apps selected — the group is dormant for permission purposes (e.g. organisation-only / distribution list). It still receives mail and shows up in member views, but its roles do not grant anything.') }}
-                </template>
-                <template v-else>
-                  {{ t('admin.groupDetails.boundTo.scopedHint', {}, 'Only contributes to permission resolution when the requesting app is selected here. Roles attached to this group only fire in those apps.') }}
-                </template>
-              </p>
-            </CoarFormField>
-          </div>
-        </section>
+                  :placeholder="t('admin.groupDetails.boundTo.placeholder', {}, 'Select applications…')" />
+                <p class="field-hint">
+                  <template v-if="isAllAppsWildcard">
+                    {{ t('admin.groupDetails.boundTo.wildcardHint', {}, '★ "All applications" selected — this group is active in every application in the realm. Typical for the realm-admin group.') }}
+                  </template>
+                  <template v-else-if="isDormantBoundTo">
+                    {{ t('admin.groupDetails.boundTo.dormantHint', {}, 'No applications selected — the group is dormant for permissions (e.g. a distribution list / org group). It still receives mail and appears in member views, but its roles grant nothing.') }}
+                  </template>
+                  <template v-else>
+                    {{ t('admin.groupDetails.boundTo.scopedHint', {}, 'Only contributes to permission resolution when the requesting application is selected here. Its roles only fire in those applications.') }}
+                  </template>
+                </p>
+              </CoarFormField>
+            </div>
+          </section>
+
+          <!-- Section: Advanced — only relevant for Automatic groups, so hidden
+               entirely in the default Manual flow (no dangling cryptic toggle). -->
+          <section v-if="isAutoMode" class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.groupDetails.section.advanced', {}, 'Advanced') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-full" :label="t('admin.groupDetails.externallyDrivable.label', {}, 'External membership (federation)')">
+                <CoarCheckbox v-model="form.ExternallyDrivable" :disabled="externallyDrivableDisabled"
+                  :label="t('admin.groupDetails.externallyDrivable.toggle', {}, 'Assign this group via a federated login script')" />
+                <p class="field-hint">
+                  <template v-if="hasRealmAdminRole">
+                    {{ t('admin.groupDetails.externallyDrivable.realmAdminBlocked', {}, 'Disabled: this group confers realm:admin, which can never be externally driven (realm:admin is hard local-only). Remove the realm-admin role to enable.') }}
+                  </template>
+                  <template v-else>
+                    {{ t('admin.groupDetails.externallyDrivable.hint', {}, 'When on, a trusted federated login whose membership script matches confers this group for that session only — never stored as a durable member, never realm:admin.') }}
+                  </template>
+                </p>
+              </CoarFormField>
+            </div>
+          </section>
+        </div>
       </div>
 
       <!-- Tab: Members -->
       <div v-show="activeTab === 'members'" class="tab-content">
-        <section class="flex-section editor-section">
+        <section class="flex-section">
           <CoarDualListbox
             v-if="!isAutoMode"
             class="flex-1 min-h-0"
@@ -499,7 +518,7 @@ async function save() {
           {{ t('common.loading', {}, 'Loading...') }}
         </div>
         <template v-else>
-          <section class="flex-section effective-section">
+          <section class="flex-section">
             <div class="section-heading">{{ t('admin.groupDetails.effective.direct', {}, 'Direct members') }}</div>
             <CoarListbox
               class="flex-1 min-h-0"
@@ -513,7 +532,7 @@ async function save() {
               :empty-text="t('admin.groupDetails.effective.noneDirect', {}, 'No direct members.')"
             />
           </section>
-          <section v-if="effectiveNestedOptions.length > 0" class="flex-section effective-section">
+          <section v-if="effectiveNestedOptions.length > 0" class="flex-section">
             <div class="section-heading">{{ t('admin.groupDetails.effective.nested', {}, 'Via nested groups') }}</div>
             <CoarListbox
               class="flex-1 min-h-0"
@@ -532,7 +551,7 @@ async function save() {
 
       <!-- Tab: Roles -->
       <div v-show="activeTab === 'roles'" class="tab-content">
-        <section class="flex-section editor-section">
+        <section class="flex-section">
           <CoarDualListbox
             class="flex-1 min-h-0"
             v-model="form.RoleIds"
@@ -549,7 +568,7 @@ async function save() {
 
       <!-- Tab: Script (auto only) -->
       <div v-show="activeTab === 'script'" class="tab-content">
-        <section class="flex-section editor-section">
+        <section class="flex-section">
           <div class="script-label-row">
             <p class="script-help flex-1">
               {{ t('admin.groupDetails.membership.autoHelp', {}, 'Write a TypeScript arrow function returning true for principals that should be members.') }}
@@ -739,21 +758,11 @@ async function save() {
 }
 
 .flex-section {
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   gap: 6px;
-}
-
-/* Heavy editor / list panes carry their OWN height so they survive the
-   cap-to-content modal frame (a flex:1 child needs a definite ancestor height;
-   the modal is now height:auto). Mirrors UserDetails' .groups-editor{height:50vh}.
-   Effective (read-only, edit-only, can stack two) gets a smaller per-list height. */
-.editor-section {
-  height: 50vh;
-}
-.effective-section {
-  height: 32vh;
 }
 
 .empty-hint {

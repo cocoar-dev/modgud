@@ -141,31 +141,51 @@ async function save() {
            The permission picker moves to its own tab so the role's
            grant surface gets full breathing room. -->
       <div v-show="activeTab === 'general'" class="tab-content">
-        <CoarFormField :label="t('admin.roleDetails.name', {}, 'Name')" class="field-name">
-          <CoarTextInput v-model="form.Name" clearable />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.roleDetails.description', {}, 'Description')" class="field-name">
-          <CoarTextInput v-model="form.Description" clearable />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.roleDetails.app', {}, 'Application')" class="field-enum">
-          <CoarSelect
-            v-model="form.AppId"
-            :options="appOptions"
-            @update:model-value="onAppIdChange"
-          />
-          <p class="text-xs text-gray-500 mt-1">
-            {{ form.AppId
-              ? t('admin.roleDetails.app.linkedHint', {}, 'Role grants the selected catalog entries within this App.')
-              : t('admin.roleDetails.app.noneHint', {}, 'No App link — only the realm-admin flag below grants anything. Reserved for the System Admin role.') }}
-          </p>
-        </CoarFormField>
-        <CoarCheckbox
-          v-model="form.IsRealmAdmin"
-          :label="t('admin.roleDetails.isRealmAdmin', {}, 'Realm Admin (bypasses every permission check, every realm)')"
-        />
-        <CoarNote v-if="form.IsRealmAdmin" variant="warning">
-          {{ t('admin.roleDetails.isRealmAdmin.warning', {}, 'This flag grants realm:admin — the global bypass. Hand it out only to the System Admin role.') }}
-        </CoarNote>
+        <div class="modal-form">
+          <!-- Section: Identität -->
+          <section class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.roleDetails.section.identity', {}, 'Identity') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-half" :label="t('admin.roleDetails.name', {}, 'Name')" required>
+                <CoarTextInput v-model="form.Name" clearable />
+                <p class="field-hint">{{ t('admin.roleDetails.name.hint', {}, 'Display/identification name of the role.') }}</p>
+              </CoarFormField>
+              <CoarFormField class="col-half" :label="t('admin.roleDetails.app', {}, 'Application')">
+                <CoarSelect
+                  v-model="form.AppId"
+                  :options="appOptions"
+                  @update:model-value="onAppIdChange"
+                />
+                <p class="field-hint">
+                  {{ form.AppId
+                    ? t('admin.roleDetails.app.linkedHint', {}, 'Role grants the selected permissions of this application.')
+                    : t('admin.roleDetails.app.noneHint', {}, 'No application link — only the realm-admin flag below grants anything. Reserved for the System Admin role.') }}
+                </p>
+              </CoarFormField>
+              <CoarFormField class="col-full" :label="t('admin.roleDetails.description', {}, 'Description')">
+                <CoarTextInput v-model="form.Description" clearable :rows="2" />
+                <p class="field-hint">{{ t('admin.roleDetails.description.hint', {}, 'Optional note describing what this role is for.') }}</p>
+              </CoarFormField>
+            </div>
+          </section>
+
+          <!-- Section: Berechtigung — Vorsicht (danger / global bypass, LAST). -->
+          <section class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.roleDetails.section.danger', {}, 'Permissions — caution') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-full" :label="t('admin.roleDetails.isRealmAdmin.label', {}, 'Privileged role')">
+                <CoarCheckbox
+                  v-model="form.IsRealmAdmin"
+                  :label="t('admin.roleDetails.isRealmAdmin.toggle', {}, 'System administrator (realm:admin)')"
+                />
+                <p class="field-hint">{{ t('admin.roleDetails.isRealmAdmin.hint', {}, 'Bypasses every permission check in every realm — only for the System Admin role.') }}</p>
+                <CoarNote v-if="form.IsRealmAdmin" variant="warning">
+                  {{ t('admin.roleDetails.isRealmAdmin.warning', {}, 'This flag grants realm:admin — the global bypass. Hand it out only to the System Admin role.') }}
+                </CoarNote>
+              </CoarFormField>
+            </div>
+          </section>
+        </div>
       </div>
 
       <!-- Tab: Permissions — App-Catalog-Subset picker. Empty state
@@ -183,13 +203,16 @@ async function save() {
             {{ t('admin.roleDetails.permissions.empty', {}, 'The selected Application has no entries in its catalog. Add entries via the App admin first.') }}
           </div>
           <div v-else class="permission-checklist">
-            <label v-for="p in linkedAppCatalog" :key="p.Id" class="permission-row">
-              <input type="checkbox" :checked="form.PermissionIds.has(p.Id)" @change="togglePermissionId(p.Id)" />
-              <span class="permission-label">
+            <div v-for="p in linkedAppCatalog" :key="p.Id" class="permission-row">
+              <CoarCheckbox
+                :model-value="form.PermissionIds.has(p.Id)"
+                @update:model-value="() => togglePermissionId(p.Id)"
+              />
+              <span class="permission-label" @click="togglePermissionId(p.Id)">
                 <code>{{ p.Resource }}:{{ p.Action }}</code>
                 <span v-if="p.Description" class="permission-desc">— {{ p.Description }}</span>
               </span>
-            </label>
+            </div>
           </div>
         </template>
       </div>

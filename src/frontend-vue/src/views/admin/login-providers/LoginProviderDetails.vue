@@ -547,80 +547,104 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
       </CoarTabGroup>
 
       <!-- General tab (always visible — also the only tab for Internal) -->
-      <div v-show="!showProtocolTabs || activeTab === 'general'" class="tab-content modal-form-col">
-        <!-- Display Name (left) + Slug (right), side by side. The slug is
-             URL-stable + immutable after create; it's hidden for the built-in
-             Internal provider (fixed slug) and read-only in Edit mode. While
-             the admin hasn't hand-edited the slug, it tracks the Display Name
-             live (normalised: lowercase, non-alphanumerics → hyphens). -->
-        <div class="lp-name-row">
-          <CoarFormField
-            class="lp-name-col"
-            :label="t('admin.loginProviders.displayName', {}, 'Display Name')">
-            <CoarTextInput v-model="form.DisplayName" :disabled="isBuiltIn" clearable />
-          </CoarFormField>
-          <CoarFormField
-            v-if="!isInternal"
-            class="lp-name-col"
-            :label="t('admin.loginProviders.slug', {}, 'Slug')"
-            :required="isCreate"
-            :hint="isCreate
-              ? t('admin.loginProviders.slugHintCreate', {}, 'Erscheint in den Provider-URLs (z. B. /signin-oidc/<slug>). Nach dem Anlegen nicht mehr änderbar.')
-              : t('admin.loginProviders.slugHintEdit', {}, 'Nicht änderbar — ein anderer Slug bedeutet löschen + neu anlegen.')">
-            <CoarTextInput
-              :model-value="form.Slug"
-              :disabled="!isCreate"
-              :placeholder="t('admin.loginProviders.slugPlaceholder', {}, 'z. B. acme-entra')"
-              clearable
-              @update:model-value="onSlugInput" />
-          </CoarFormField>
+      <div v-show="!showProtocolTabs || activeTab === 'general'" class="tab-content">
+        <div class="modal-form">
+          <!-- Section: Identität -->
+          <section class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.loginProviders.section.identity', {}, 'Identität') }}</h3>
+            <div class="modal-form-grid">
+              <!-- Display Name (left) + Slug (right). The slug is URL-stable +
+                   immutable after create; it's hidden for the built-in Internal
+                   provider (fixed slug) and read-only in Edit mode. While the
+                   admin hasn't hand-edited the slug, it tracks the Display Name
+                   live (normalised: lowercase, non-alphanumerics → hyphens). -->
+              <CoarFormField
+                class="col-half"
+                :label="t('admin.loginProviders.displayName', {}, 'Display Name')"
+                required>
+                <CoarTextInput v-model="form.DisplayName" :disabled="isBuiltIn" clearable />
+                <p class="field-hint">{{ t('admin.loginProviders.displayName.hint', {}, 'Erscheint auf dem Login-Button; setzt den Slug vor.') }}</p>
+              </CoarFormField>
+              <CoarFormField
+                v-if="!isInternal"
+                class="col-half"
+                :label="t('admin.loginProviders.slug', {}, 'Slug')"
+                :required="isCreate">
+                <CoarTextInput
+                  :model-value="form.Slug"
+                  :disabled="!isCreate"
+                  :placeholder="t('admin.loginProviders.slugPlaceholder', {}, 'z. B. acme-entra')"
+                  clearable
+                  @update:model-value="onSlugInput" />
+                <p class="field-hint">
+                  {{ isCreate
+                    ? t('admin.loginProviders.slugHintCreate', {}, 'Erscheint in den Provider-URLs (z. B. /signin-oidc/<slug>). Nach dem Anlegen nicht mehr änderbar.')
+                    : t('admin.loginProviders.slugHintEdit', {}, 'Nicht änderbar — ein anderer Slug bedeutet löschen + neu anlegen.') }}
+                </p>
+              </CoarFormField>
+              <CoarFormField class="col-full" :label="t('common.description', {}, 'Beschreibung')">
+                <CoarTextInput v-model="form.Description" :disabled="isBuiltIn" clearable :rows="2" />
+                <p class="field-hint">{{ t('admin.loginProviders.description.hint', {}, 'Optionale Notiz zur internen Beschreibung dieses Providers.') }}</p>
+              </CoarFormField>
+            </div>
+          </section>
+
+          <!-- Section: Erscheinungsbild — login-button presentation. Hidden for
+               the built-in Internal provider (no external button). -->
+          <section v-if="!isInternal" class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.loginProviders.section.appearance', {}, 'Erscheinungsbild') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-half" :label="t('admin.loginProviders.iconName', {}, 'Button-Icon')">
+                <CoarTextInput v-model="form.IconName" :disabled="isBuiltIn" placeholder="microsoft" clearable />
+                <p class="field-hint">{{ t('admin.loginProviders.iconName.hint', {}, 'Name eines Lucide-Icons (z. B. microsoft, key, building). Siehe lucide.dev.') }}</p>
+              </CoarFormField>
+              <CoarFormField class="col-half" :label="t('admin.loginProviders.buttonColorHex', {}, 'Button-Farbe')">
+                <ColorField v-model="form.ButtonColorHex" :disabled="isBuiltIn" placeholder="#0078D4" />
+                <p class="field-hint">{{ t('admin.loginProviders.buttonColorHex.hint', {}, 'Hex-Farbe des Login-Buttons (optional, z. B. #0078D4).') }}</p>
+              </CoarFormField>
+            </div>
+          </section>
+
+          <!-- Section: IdP-Integration — slug-derived callback URLs. Shown live
+               as soon as the slug is valid (create + edit) so the admin can paste
+               them into the external IdP's app registration before save. -->
+          <section v-if="!isInternal && (redirectUri || (isSaml && samlSpMetadataUrl))" class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.loginProviders.section.idpIntegration', {}, 'IdP-Integration') }}</h3>
+            <div class="modal-form-grid">
+              <!-- SAML SP URLs are slug-derived (host + /saml/{slug}/...). -->
+              <template v-if="isSaml && samlSpMetadataUrl">
+                <CoarFormField class="col-full" :label="t('admin.loginProviders.samlSpMetadataUrl', {}, 'SP-Metadata-URL')">
+                  <div class="flex gap-2 items-center">
+                    <CoarTextInput :model-value="samlSpMetadataUrl" readonly class="flex-1" />
+                    <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlSpMetadataUrl)">
+                      {{ t('common.copy', {}, 'Kopieren') }}
+                    </CoarButton>
+                  </div>
+                  <p class="field-hint">{{ t('admin.loginProviders.idpReadOnlyHint', {}, 'Schreibgeschützt — in die App-Registrierung des externen IdP eintragen.') }}</p>
+                </CoarFormField>
+                <CoarFormField class="col-full" :label="t('admin.loginProviders.samlAcsUrl', {}, 'ACS-URL / Reply-URL')">
+                  <div class="flex gap-2 items-center">
+                    <CoarTextInput :model-value="samlAcsUrl" readonly class="flex-1" />
+                    <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlAcsUrl)">
+                      {{ t('common.copy', {}, 'Kopieren') }}
+                    </CoarButton>
+                  </div>
+                  <p class="field-hint">{{ t('admin.loginProviders.idpReadOnlyHint', {}, 'Schreibgeschützt — in die App-Registrierung des externen IdP eintragen.') }}</p>
+                </CoarFormField>
+              </template>
+              <!-- OIDC redirect URI is slug-derived (host + /signin-oidc/{slug}). -->
+              <CoarFormField v-if="!isSaml && redirectUri" class="col-full" :label="t('admin.loginProviders.redirectUri', {}, 'Redirect URI')">
+                <div class="flex gap-2 items-center">
+                  <CoarTextInput :model-value="redirectUri" readonly class="flex-1" />
+                  <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyRedirect">
+                    {{ t('common.copy', {}, 'Kopieren') }}
+                  </CoarButton>
+                </div>
+                <p class="field-hint">{{ t('admin.loginProviders.idpReadOnlyHint', {}, 'Schreibgeschützt — in die App-Registrierung des externen IdP eintragen.') }}</p>
+              </CoarFormField>
+            </div>
+          </section>
         </div>
-        <CoarFormField :label="t('common.description', {}, 'Beschreibung')">
-          <CoarTextInput v-model="form.Description" :disabled="isBuiltIn" clearable />
-        </CoarFormField>
-        <!-- SAML SP URLs are slug-derived (host + /saml/{slug}/...), so we show
-             them live as soon as the slug is valid — including at create, before
-             save — so the admin can paste them into the IdP and set up both
-             sides in parallel. -->
-        <template v-if="isSaml && samlSpMetadataUrl">
-          <CoarFormField :label="t('admin.loginProviders.samlSpMetadataUrl', {}, 'SP-Metadata-URL (in die IdP-Konfiguration eintragen)')">
-            <div class="flex gap-2 items-center">
-              <CoarTextInput :model-value="samlSpMetadataUrl" readonly class="flex-1" />
-              <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlSpMetadataUrl)">
-                {{ t('common.copy', {}, 'Kopieren') }}
-              </CoarButton>
-            </div>
-          </CoarFormField>
-          <CoarFormField :label="t('admin.loginProviders.samlAcsUrl', {}, 'ACS-URL / Reply-URL (in die IdP-Konfiguration eintragen)')">
-            <div class="flex gap-2 items-center">
-              <CoarTextInput :model-value="samlAcsUrl" readonly class="flex-1" />
-              <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlAcsUrl)">
-                {{ t('common.copy', {}, 'Kopieren') }}
-              </CoarButton>
-            </div>
-          </CoarFormField>
-        </template>
-        <!-- OIDC redirect URI is slug-derived (host + /signin-oidc/{slug}), so we
-             show it live as soon as the slug is valid — create + edit — letting
-             the admin paste it into the IdP app registration before save. -->
-        <template v-if="!isInternal && !isSaml && redirectUri">
-          <CoarFormField :label="t('admin.loginProviders.redirectUri', {}, 'Redirect URI (in die IdP-App-Registrierung eintragen)')">
-            <div class="flex gap-2 items-center">
-              <CoarTextInput :model-value="redirectUri" readonly class="flex-1" />
-              <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyRedirect">
-                {{ t('common.copy', {}, 'Kopieren') }}
-              </CoarButton>
-            </div>
-          </CoarFormField>
-        </template>
-        <template v-if="!isInternal">
-          <CoarFormField :label="t('admin.loginProviders.iconName', {}, 'Button-Icon (Lucide-Name)')">
-            <CoarTextInput v-model="form.IconName" :disabled="isBuiltIn" placeholder="microsoft" clearable />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.loginProviders.buttonColorHex', {}, 'Button-Farbe (Hex, optional)')">
-            <ColorField v-model="form.ButtonColorHex" :disabled="isBuiltIn" placeholder="#0078D4" />
-          </CoarFormField>
-        </template>
       </div>
 
       <!-- Protocol-specific tabs — OIDC + SAML share the surface; per-flavor
@@ -782,17 +806,6 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
   gap: 12px;
   padding: 8px 4px;
   overflow-y: auto;
-}
-/* Display Name + Slug share a row (DisplayName left, Slug right). Each takes
-   half; when the Slug field is hidden (Internal provider) DisplayName fills it. */
-.lp-name-row {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-}
-.lp-name-col {
-  flex: 1;
-  min-width: 0;
 }
 .tab-content.tab-claims {
   overflow: hidden;

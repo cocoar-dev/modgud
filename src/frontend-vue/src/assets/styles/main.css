@@ -111,19 +111,29 @@ body {
  * Coar Overlay panel — fill the host completely.
  *
  * The overlay library applies our `OverlaySpec.size` to the .coar-overlay-host
- * wrapper, but the .coar-overlay-panel inside it sizes itself to content by
- * default. That means a route saying "this modal is 92vw × 92vh" gets a host
- * at 92vw but a panel that collapses to whatever its content's intrinsic width
- * is — modal sits off-center inside the host, content area mysteriously cut.
+ * wrapper (a flex ROW with the panel as its only child). The panel sizes itself
+ * to content by default. That means a route saying "this modal is 92vw × 92vh"
+ * gets a host at 92vw but a panel that collapses to whatever its content's
+ * intrinsic width is — modal sits off-center inside the host, content cut.
  *
- * Pinning the panel to fill its host makes the route's size declaration the
- * single source of truth — host == panel == modal-container, all match the
- * SizeSpec exactly. The min-width:0 / min-height:0 unlock the flex children
- * inside so a tall content area can scroll instead of stretching the panel.
+ *  • width:100% — the MAIN axis (row) does NOT stretch a flex item, so the
+ *    panel's width must be forced to fill the host.
+ *  • height comes from the host's `align-items:stretch` (default), NOT an
+ *    explicit `height:100%`. This is load-bearing: a cap-to-content host
+ *    (height:auto + max-height:85vh, our MODAL_MD family) clamps ITS OWN box at
+ *    85vh, and align-stretch sizes the panel to that *clamped* cross-size — so
+ *    the panel never exceeds the cap and `.modal-content` scrolls internally
+ *    with the footer pinned. An explicit `height:100%` here resolves to `auto`
+ *    against the auto-height host, escaping the clamp: the panel grows to full
+ *    content height and overflows the viewport (footer unreachable). For
+ *    definite-height hosts (MODAL_LG/FULL: height==min==max in vh) align-stretch
+ *    fills the definite height just the same, so inner flex:1 children
+ *    (Monaco / dual-listbox / AG-Grid) still get a definite ancestor.
+ *  • min-width:0 / min-height:0 unlock the flex children so a tall content area
+ *    can shrink-and-scroll instead of stretching the panel.
  */
 .coar-overlay-host > .coar-overlay-panel {
   width: 100%;
-  height: 100%;
   min-width: 0;
   min-height: 0;
 }
@@ -154,6 +164,59 @@ body {
 .field-name { max-width: 24rem; }
 .field-email { max-width: 30rem; }
 .field-num { max-width: 10rem; }
+
+/*
+ * Form-layout contract (UI/UX wave 6). ONE grid primitive for every modal form
+ * body, replacing the single-column stack of content-arbitrary rem caps (the
+ * "thrown-together" look). Field width = a column SPAN, not a rem cap: short
+ * fields pair on a row, prose / lists / multiselects go full width, and concept
+ * clusters become labelled sections. The eight detail-modal forms all follow it
+ * so they read as one product.
+ */
+.modal-form {
+  width: 100%;
+  max-width: 48rem;
+  align-self: flex-start; /* .modal-content is a flex column — keep the form left, not stretched */
+  min-width: 0;
+  container-type: inline-size; /* collapse the grid on the MODAL's width (it's narrower than, and decoupled from, the viewport) */
+}
+.modal-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.875rem 1rem;
+  align-items: start;
+}
+.modal-form-grid > .col-half { grid-column: span 1; }
+.modal-form-grid > .col-full { grid-column: span 2; }
+@container (max-width: 32rem) {
+  .modal-form-grid > .col-half,
+  .modal-form-grid > .col-full { grid-column: span 1; }
+}
+
+/* Labelled section bands inside a form. */
+.form-section + .form-section { margin-top: 1.25rem; }
+.form-section-heading {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--coar-text-neutral-secondary, #525e76);
+  border-bottom: 1px solid var(--coar-border-neutral-secondary, #d1d5db);
+  padding-bottom: 4px;
+  margin-bottom: 0.75rem;
+}
+
+/*
+ * The ONE visible helper-text mechanism under a field. vue-ui's CoarFormField
+ * `:hint` renders into a hover/click popover in 2.5.2 — so cryptic-field help
+ * (e.g. the group email mode, federation) MUST stay inline and visible here.
+ */
+.field-hint {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  margin-top: 0.25rem;
+}
 
 /* Scrollbar */
 ::-webkit-scrollbar {
