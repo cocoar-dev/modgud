@@ -33,5 +33,9 @@ public static class DomainErrors
         public static Error EmailRequired => Error.Validation(
             code: "User.EmailRequired",
             description: "Email is required");
+
+        public static Error EmailInvalid => Error.Validation(
+            code: "User.EmailInvalid",
+            description: "Email address is not a valid format");
     }
 }

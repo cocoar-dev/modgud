@@ -52,6 +52,10 @@ public class UpdateUserHandler(IDocumentSession session)
         if (command.Email.HasValue && string.IsNullOrWhiteSpace(command.Email.Value))
             return DomainErrors.User.EmailRequired;
 
+        if (command.Email.HasValue && !string.IsNullOrWhiteSpace(command.Email.Value)
+            && !IsValidEmail(command.Email.Value!))
+            return DomainErrors.User.EmailInvalid;
+
         // Check Email uniqueness (exclude current user). Groups have their own Email
         // field — check both to prevent collisions across principal kinds.
         if (command.Email.HasValue && !string.IsNullOrWhiteSpace(command.Email.Value))
@@ -125,4 +129,11 @@ public class UpdateUserHandler(IDocumentSession session)
             IsActive = person.IsActive,
         };
     }
+
+    // Email format guard — same rule as CreateUserHandler / the SPA. Simple by
+    // design (local "@" domain-with-dot); rejects obvious garbage without
+    // over-fitting RFC 5322.
+    private static bool IsValidEmail(string email) =>
+        System.Text.RegularExpressions.Regex.IsMatch(
+            email.Trim(), @"^[^@\s]+@[^@\s]+\.[^@\s]+$");
 }

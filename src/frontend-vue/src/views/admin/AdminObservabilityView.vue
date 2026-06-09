@@ -254,9 +254,14 @@ const toneClasses: Record<string, string> = {
           <CoarTag variant="neutral">{{ snapshot?.Realm ?? '—' }}</CoarTag>
         </div>
       </div>
-      <svg class="spark-svg" viewBox="0 0 600 80" preserveAspectRatio="none">
+      <svg v-if="sparklinePath" class="spark-svg" viewBox="0 0 600 80" preserveAspectRatio="none">
         <path :d="sparklinePath" fill="none" stroke="currentColor" stroke-width="1.5" />
       </svg>
+      <!-- Empty window → a message instead of a blank chart (UI/UX wave 4, #51),
+           mirroring the activity/error feeds' empty-states below. -->
+      <div v-else class="feed-empty">
+        {{ t('admin.observability.sparklineEmpty', {}, 'No logins in the rolling window.') }}
+      </div>
     </CoarCard>
 
     <!-- Activity feed -->

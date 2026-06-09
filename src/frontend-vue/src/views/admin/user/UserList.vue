@@ -13,10 +13,13 @@ import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-par
 import { useUserStore } from '@/stores/user.store'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
+import { useGridLocale } from '@/composables/useGridLocale'
 import type { UserDto } from '@/models/user'
 import SetPasswordModal from './SetPasswordModal.vue'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 
 const { t, language } = useI18n()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const userStore = useUserStore()
@@ -50,7 +53,12 @@ const selectedUser = computed(() => {
   return id ? users.value.find(u => u.Id === id) : null
 })
 
-const builder = CoarGridBuilder.create<UserDto>()
+// Onboarding empty-state shows only when the realm genuinely has no users
+// (keyed off the raw roster, not the recycle-bin/search-filtered view) so a
+// filtered-to-empty grid keeps its toggle + "Keine Einträge" overlay instead.
+const showEmpty = computed(() => userStore.allLoaded && users.value.length === 0)
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<UserDto>(), { openable: true })
   .persistColumnState('admin-users')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(filteredUsers)
@@ -75,7 +83,9 @@ const builder = CoarGridBuilder.create<UserDto>()
     // state at a glance, even with many columns scrolled away.
     (col) => col.icon('HasPassword').header('')
       .valueGetter((p: any) => p.data?.HasPassword ? 'key-round' : '')
-      .width(38).resizable(false).pinned('left'),
+      .width(38).resizable(false).pinned('left')
+      // Icon cells carry a lucide name as their value — no truncation tooltip.
+      .option('tooltipValueGetter', () => null),
     // Identity column — pinned next to the password indicator and
     // emphasized as the row's primary label.
     (col) => col.field('UserName').header('Username', 'admin.users.username')
@@ -85,6 +95,7 @@ const builder = CoarGridBuilder.create<UserDto>()
     (col) => col.field('Acronym').header('Acronym', 'admin.users.acronym').width(100),
     (col) => col.icon('IsActive', { color: '#16a34a', size: 's' })
       .option('valueGetter', (p: any) => p.data?.IsActive ? 'check' : '')
+      .option('tooltipValueGetter', () => null)
       .header('Active', 'admin.users.active').width(80),
     // Lifecycle badge — only meaningful for pending-deletion rows (visible
     // when the recycle bin is revealed). Empty for normal active users.
@@ -157,7 +168,7 @@ onMounted(() => {
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
-    <CoarDataGrid :builder="builder" show-search class="flex-1 min-h-0" bordered elevated>
+    <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <label class="recycle-bin-toggle" :title="t('admin.users.showRecycleBinHint', {}, 'Reveal users pending deletion')">
           <input type="checkbox" v-model="showRecycleBin" />
@@ -167,6 +178,15 @@ onMounted(() => {
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">{{ t('common.create', {}, 'Create') }}</CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="users"
+      :title="t('admin.users.title', {}, 'Users')"
+      :description="t('admin.users.emptyHint', {}, 'Users are the people who can sign in to this realm. Create the first account to get started.')"
+      :cta-label="t('common.create', {}, 'Create')"
+      @cta="navigateToModal('create')"
+    />
 
     <!-- Magic link result toast -->
     <div v-if="magicLinkResult" class="fixed bottom-4 right-4 z-50 rounded-lg px-4 py-3 text-sm shadow-lg"

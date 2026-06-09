@@ -15,10 +15,13 @@ import { useOAuthClientStore } from '@/stores/oauthClient.store'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useServiceAccountStore } from '@/stores/serviceAccount.store'
 import { useUI } from '@/composables/useUI'
+import { useGridLocale } from '@/composables/useGridLocale'
 import { useRouter } from 'vue-router'
 import type { OAuthClientDto } from '@/models/oauth'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 
 const { t, language } = useI18n()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const store = useOAuthClientStore()
@@ -59,7 +62,9 @@ const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 
-const builder = CoarGridBuilder.create<OAuthClientDto>()
+const showEmpty = computed(() => store.loaded && store.clients.length === 0)
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthClientDto>(), { openable: true })
   .persistColumnState('admin-oauth-clients')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -133,7 +138,7 @@ function openClient(client: OAuthClientDto) {
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
-    <CoarDataGrid :builder="builder" show-search class="flex-1 min-h-0" bordered elevated>
+    <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarCheckbox v-model="showDcrOnly"
           :label="t('admin.oauthClients.dcrOnly', {}, 'DCR only')"
@@ -143,6 +148,15 @@ function openClient(client: OAuthClientDto) {
         </CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="app-window"
+      :title="t('admin.oauthClients.title', {}, 'OAuth-Clients')"
+      :description="t('admin.oauthClients.emptyHint', {}, 'An OAuth client is an application that signs users in through this IdP or calls its APIs. Register your first app to obtain a client ID and secret.')"
+      :cta-label="t('common.create', {}, 'Erstellen')"
+      @cta="navigateToModal('create')"
+    />
 
     <CoarContextMenu :menu="cellMenu">
       <CoarMenuItem :label="t('common.open', {}, 'Öffnen')" icon="pencil"

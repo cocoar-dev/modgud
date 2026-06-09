@@ -193,6 +193,15 @@ const originalEmailConfirmed = ref(false)
 
 const userNameError = ref('')
 
+// Client-side email-format guard. Presence is handled separately (required);
+// this only fires for a non-empty, malformed address so the admin gets an
+// inline cue instead of silently persisting an unusable address (email drives
+// forgot-password / magic-link). The server enforces the same rule.
+const emailInvalid = computed(() => {
+  const e = form.value.Email.trim()
+  return e.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)
+})
+
 // Account state
 const isActive = ref(true)
 const originalActive = ref(true)
@@ -213,6 +222,7 @@ const footerButton = computed(() => ({
     || !form.value.Lastname.trim()
     || !form.value.UserName.trim()
     || !form.value.Email.trim()
+    || emailInvalid.value
     || loading.value
     || graceBusy.value,
   onClick: save,
@@ -254,7 +264,8 @@ async function save() {
   if (!form.value.Firstname.trim()
       || !form.value.Lastname.trim()
       || !form.value.UserName.trim()
-      || !form.value.Email.trim()) return
+      || !form.value.Email.trim()
+      || emailInvalid.value) return
   loading.value = true
   try {
     if (isCreate.value) {
@@ -325,7 +336,8 @@ watch(() => form.value.UserName, () => {
 
 <template>
   <ModalLayout :close="close" :title="modalTitle" icon="user" :footer-button="footerButton" width="42rem">
-    <div v-if="!loading" class="flex flex-col min-w-0 min-h-0 flex-1">
+    <div v-if="!loading" class="flex flex-col min-w-0 min-h-0 flex-1"
+      :class="{ 'user-edit-frame': !isCreate }">
       <CoarTabGroup v-if="!isCreate" v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.userDetails.tabs.general', {}, 'General') }}</CoarTab>
         <CoarTab id="groups">{{ t('admin.userDetails.tabs.groups', {}, 'Direkte Gruppen') }}</CoarTab>
@@ -335,41 +347,82 @@ watch(() => form.value.UserName, () => {
 
       <!-- Tab: General -->
       <div v-show="isCreate || activeTab === 'general'" class="tab-content">
-        <section>
-          <div class="flex flex-col gap-2">
-            <div class="flex items-end gap-2">
-              <CoarFormField :label="t('admin.users.firstname', {}, 'First Name')" required class="flex-1">
+        <div class="modal-form">
+          <!-- Section: Identity -->
+          <section class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.userDetails.section.identity', {}, 'Identität') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-half" :label="t('admin.users.firstname', {}, 'First Name')" required>
                 <CoarTextInput v-model="form.Firstname" clearable />
               </CoarFormField>
-              <CoarFormField :label="t('admin.users.lastname', {}, 'Last Name')" required class="flex-1">
+              <CoarFormField class="col-half" :label="t('admin.users.lastname', {}, 'Last Name')" required>
                 <CoarTextInput v-model="form.Lastname" clearable />
               </CoarFormField>
-              <CoarFormField :label="t('admin.users.acronym', {}, 'Acronym')" class="w-20">
+              <CoarFormField class="col-half" :label="t('admin.users.acronym', {}, 'Kürzel')">
                 <CoarTextInput v-model="form.Acronym" clearable />
+                <p class="field-hint">{{ t('admin.userDetails.acronym.hint', {}, 'Initialen; erscheinen im Titel als „Name | Kürzel". Optional.') }}</p>
               </CoarFormField>
             </div>
-            <CoarFormField :label="t('admin.users.email', {}, 'Email')" required>
-              <CoarTextInput v-model="form.Email" clearable />
-              <div v-if="form.Email" class="email-verify-status">
+          </section>
+
+          <!-- Section: Sign-in -->
+          <section class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.userDetails.section.signin', {}, 'Anmeldung') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-half" :label="t('admin.users.email', {}, 'Email')" required>
+                <CoarTextInput v-model="form.Email" clearable />
+                <span v-if="emailInvalid" class="text-xs text-red-600">{{ t('admin.userDetails.emailInvalid', {}, 'Bitte eine gültige E-Mail-Adresse eingeben.') }}</span>
+                <p class="field-hint">{{ t('admin.userDetails.email.hint', {}, 'Primäre Adresse; nötig für Passwort-Zurücksetzen und Magic-Link.') }}</p>
+              </CoarFormField>
+              <CoarFormField class="col-half" :label="t('admin.users.username', {}, 'Username')" required>
+                <CoarTextInput v-model="form.UserName" clearable />
+                <span v-if="userNameError" class="text-xs text-red-600">{{ userNameError }}</span>
+                <p class="field-hint">{{ t('admin.userDetails.username.hint', {}, 'Anmeldename; muss eindeutig sein.') }}</p>
+              </CoarFormField>
+            </div>
+          </section>
+
+          <!-- Section: Account status — edit only. Active flag + email-verified
+               override, the account-state toggles set off in their own band. -->
+          <section v-if="!isCreate" class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.userDetails.section.accountStatus', {}, 'Kontostatus') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-full" :label="t('admin.userDetails.activeLabel', {}, 'Konto')">
+                <CoarCheckbox v-model="isActive"
+                  :label="t('admin.userDetails.activeCheckbox', {}, 'Benutzer aktiv')" />
+                <p class="field-hint">{{ t('admin.userDetails.activeHint', {}, 'Deaktivierte Benutzer können sich nicht anmelden.') }}</p>
+              </CoarFormField>
+              <!-- Email-verified toggle pinned at the section end with its existing
+                   v-if (only meaningful once an email is set). -->
+              <CoarFormField v-if="form.Email" class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'E-Mail-Status')">
                 <CoarCheckbox v-model="emailConfirmed"
                   :label="t('admin.userDetails.emailVerifiedToggle', {}, 'Mark email address as verified')" />
-                <p class="email-verify-hint">
+                <p class="field-hint">
                   {{ emailConfirmed
                       ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
                       : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.') }}
                 </p>
-              </div>
-            </CoarFormField>
-            <CoarFormField :label="t('admin.users.username', {}, 'Username')" required>
-              <CoarTextInput v-model="form.UserName" clearable />
-              <span v-if="userNameError" class="text-xs text-red-600">{{ userNameError }}</span>
-            </CoarFormField>
-            <div v-if="!isCreate" class="mt-1">
-              <CoarCheckbox v-model="isActive"
-                :label="t('admin.userDetails.activeCheckbox', {}, 'Benutzer aktiv')" />
+              </CoarFormField>
             </div>
-          </div>
-        </section>
+          </section>
+
+          <!-- On create the email-verified override still applies (the admin vouches
+               for the address they're typing). Kept at the end, mirroring edit. -->
+          <section v-if="isCreate && form.Email" class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.userDetails.section.accountStatus', {}, 'Kontostatus') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'E-Mail-Status')">
+                <CoarCheckbox v-model="emailConfirmed"
+                  :label="t('admin.userDetails.emailVerifiedToggle', {}, 'Mark email address as verified')" />
+                <p class="field-hint">
+                  {{ emailConfirmed
+                      ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
+                      : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.') }}
+                </p>
+              </CoarFormField>
+            </div>
+          </section>
+        </div>
       </div>
 
       <!-- Tab: Security -->
@@ -445,7 +498,10 @@ watch(() => form.value.UserName, () => {
            the user is a direct member of; everything else (inheritance,
            auto-script matches) is shown on the Effektiv tab. -->
       <div v-show="!isCreate && activeTab === 'groups'" class="tab-content">
-        <section class="flex-section flex-1">
+        <!-- In edit mode the body has a fixed height (.user-edit-frame, so the
+             modal doesn't resize on tab switch); this section fills it via flex so
+             the dual-listbox gets a definite height. -->
+        <section class="flex-section groups-editor">
           <CoarDualListbox
             v-model="directGroupIds"
             :options="allGroupsOptions"
@@ -600,18 +656,6 @@ watch(() => form.value.UserName, () => {
 .status-active { background-color: #dcfce7; color: #166534; }
 .status-inactive { background-color: #f3f4f6; color: #6b7280; }
 .status-exempt { background-color: #fef3c7; color: #92400e; }
-.email-verify-status {
-  margin-top: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.email-verify-hint {
-  font-size: 0.75rem;
-  color: var(--coar-text-neutral-secondary, #6b7280);
-  margin-left: 1.5rem;
-}
 
 .tab-bar {
   margin-bottom: 12px;
@@ -637,6 +681,21 @@ watch(() => form.value.UserName, () => {
   flex-direction: column;
   min-height: 0;
   gap: 6px;
+}
+
+/* The Groups dual-listbox tab gets an explicit height so it stays usable
+   inside the cap-to-content modal (which has no definite height to inherit). */
+/* Edit mode pins a fixed body height so the modal keeps one size across all tabs
+   (no resize on tab switch). Create has no tabs and stays cap-to-content/compact.
+   flex:0 0 auto is required so this height wins over the root div's `flex-1`
+   (Tailwind flex-1 sets flex-basis:0%, which would otherwise ignore the height). */
+.user-edit-frame {
+  flex: 0 0 auto;
+  height: 60vh;
+}
+/* The Groups dual-listbox section fills that fixed body height. */
+.groups-editor {
+  flex: 1;
 }
 
 .effective-list {

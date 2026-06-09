@@ -5,9 +5,12 @@ import { useUI } from '@/composables/useUI'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { CoarButton, CoarCheckbox, CoarTextInput, CoarFormField, CoarNote } from '@cocoar/vue-ui'
+import { useGridLocale } from '@/composables/useGridLocale'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 import ModalLayout from '@/components/ModalLayout.vue'
 
 const { t, language } = useI18n()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 const http = useHttpClient('/api/admin/change-requests')
 
 const ui = useUI()
@@ -111,7 +114,9 @@ const statusLabels = computed(() => ({
   Rejected: t('admin.changeRequests.statusRejected', {}, 'Abgelehnt'),
 }))
 
-const gridBuilder = CoarGridBuilder.create<ChangeRequest>()
+const showEmpty = computed(() => !loading.value && requests.value.length === 0)
+
+const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<ChangeRequest>(), { openable: true })
   .rowDataRef(requests)
   .searchHighlight()
   .rowSelection('single')
@@ -130,7 +135,7 @@ const gridBuilder = CoarGridBuilder.create<ChangeRequest>()
 
 <template>
   <div class="flex flex-col min-h-0 flex-1 p-4">
-    <CoarDataGrid :builder="gridBuilder" class="h-full" show-search bordered elevated>
+    <CoarDataGrid v-show="!showEmpty" :builder="gridBuilder" :search-placeholder="searchPlaceholder" class="h-full" show-search bordered elevated>
       <template #toolbar-right>
         <CoarCheckbox v-model="includeTerminal"
           :label="t('admin.changeRequests.includeTerminal', {}, 'Auch erledigte anzeigen')" />
@@ -139,6 +144,13 @@ const gridBuilder = CoarGridBuilder.create<ChangeRequest>()
         </CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="inbox"
+      :title="t('admin.changeRequests.title', {}, 'Change requests')"
+      :description="t('admin.changeRequests.emptyHint', {}, 'When users request profile changes that need approval, they queue here for you to review. Nothing is waiting right now.')"
+    />
 
     <!-- Details Modal -->
     <Teleport to="body">

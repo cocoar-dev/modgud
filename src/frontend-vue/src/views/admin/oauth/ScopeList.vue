@@ -13,9 +13,12 @@ import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-par
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
+import { useGridLocale } from '@/composables/useGridLocale'
 import type { OAuthScopeDto } from '@/models/oauth'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 
 const { t, language } = useI18n()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const store = useOAuthScopeStore()
@@ -35,7 +38,9 @@ const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 
-const builder = CoarGridBuilder.create<OAuthScopeDto>()
+const showEmpty = computed(() => store.loaded && store.scopes.length === 0)
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthScopeDto>(), { openable: true })
   .persistColumnState('admin-oauth-scopes')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -89,13 +94,22 @@ onMounted(() => store.initialize())
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
-    <CoarDataGrid :builder="builder" show-search class="flex-1 min-h-0" bordered elevated>
+    <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">
           {{ t('common.create', {}, 'Erstellen') }}
         </CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="tags"
+      :title="t('admin.oauthScopes.title', {}, 'OAuth-Scopes')"
+      :description="t('admin.oauthScopes.emptyHint', {}, 'A scope is a named permission a client can request during login (e.g. read access to an API). Define your own scopes here beyond the standard OIDC ones.')"
+      :cta-label="t('common.create', {}, 'Erstellen')"
+      @cta="navigateToModal('create')"
+    />
 
     <CoarContextMenu :menu="cellMenu">
       <CoarMenuItem :label="t('common.open', {}, 'Öffnen')" icon="pencil"

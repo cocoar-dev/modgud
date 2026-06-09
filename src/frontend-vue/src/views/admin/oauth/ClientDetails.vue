@@ -324,7 +324,7 @@ async function save() {
       props.close()
     }
   } catch (e: any) {
-    error.value = e?.body?.Message ?? e?.message ?? String(e)
+    error.value = e?.body?.error ?? e?.body?.detail ?? e?.body?.Message ?? e?.message ?? String(e)
   } finally {
     loading.value = false
   }
@@ -386,7 +386,7 @@ async function regenerateSecret() {
     const res = await store.regenerateSecret(props.id)
     newSecret.value = res.ClientSecret
   } catch (e: any) {
-    error.value = e?.body?.Message ?? e?.message ?? String(e)
+    error.value = e?.body?.error ?? e?.body?.detail ?? e?.body?.Message ?? e?.message ?? String(e)
   } finally {
     loading.value = false
   }
@@ -425,6 +425,14 @@ async function copySecret() {
         <ul class="blocker-list">
           <li v-for="msg in createBlockers" :key="msg">{{ msg }}</li>
         </ul>
+      </CoarNote>
+
+      <!-- Server / validation error — surfaced at the top of the modal so it is
+           visible regardless of the active tab or scroll position. The server
+           sends an actionable message (e.g. "client_credentials must be linked
+           to a ServiceAccount"); show it instead of a bare "HTTP 400". -->
+      <CoarNote v-if="error" variant="error" class="secret-banner">
+        {{ error }}
       </CoarNote>
 
       <!-- Unified master-detail for both create + edit.
@@ -614,8 +622,6 @@ async function copySecret() {
           </div>
         </section>
       </div>
-
-      <p v-if="error" class="mt-3 text-sm text-red-600">{{ error }}</p>
     </div>
   </ModalLayout>
 </template>

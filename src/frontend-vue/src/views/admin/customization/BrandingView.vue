@@ -12,6 +12,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
 import AssetPicker from '@/components/AssetPicker.vue'
+import ColorField from '@/components/ColorField.vue'
 import type { AssetDto } from '@/models/assets'
 import type {
   BrandingSettingsDto,
@@ -178,7 +179,7 @@ async function save() {
             <CoarTextInput v-model="form.ProductName" clearable placeholder="Modgud" />
           </CoarFormField>
           <CoarFormField :label="t('admin.customization.branding.primaryColor', {}, 'Primary color (CSS color, e.g. #5A6478)')">
-            <CoarTextInput v-model="form.PrimaryColor" clearable placeholder="#5A6478" />
+            <ColorField v-model="form.PrimaryColor" placeholder="#5A6478" />
           </CoarFormField>
           <CoarFormField :label="t('admin.customization.branding.logo', {}, 'Logo')">
             <div class="asset-row">

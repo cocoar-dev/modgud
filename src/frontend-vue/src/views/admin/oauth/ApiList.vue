@@ -13,9 +13,12 @@ import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-par
 import { useOAuthApiStore } from '@/stores/oauthApi.store'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
+import { useGridLocale } from '@/composables/useGridLocale'
 import type { OAuthApiDto } from '@/models/oauth'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 
 const { t, language } = useI18n()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const store = useOAuthApiStore()
@@ -35,7 +38,9 @@ const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 
-const builder = CoarGridBuilder.create<OAuthApiDto>()
+const showEmpty = computed(() => store.loaded && store.apis.length === 0)
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthApiDto>(), { openable: true })
   .persistColumnState('admin-oauth-apis')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -54,7 +59,7 @@ const builder = CoarGridBuilder.create<OAuthApiDto>()
   })
   .onViewportContextMenu(($event) => viewportMenu.open($event))
   .columns([
-    (col) => col.field('Name').header('Name', 'admin.oauthApis.name').flex(1).minWidth(140),
+    (col) => col.field('Name').header('Name', 'admin.oauthApis.name').flex(2).minWidth(160),
     (col) => col.field('DisplayName').header('Display Name', 'admin.oauthApis.displayName').flex(1),
     (col) => col.field('Description').header('Description', 'common.description').flex(2),
     (col) => col.field('Scopes').header('Scopes', 'admin.oauthApis.scopes').width(110)
@@ -79,13 +84,22 @@ onMounted(() => store.initialize())
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
-    <CoarDataGrid :builder="builder" show-search class="flex-1 min-h-0" bordered elevated>
+    <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">
           {{ t('common.create', {}, 'Erstellen') }}
         </CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="server"
+      :title="t('admin.oauthApis.title', {}, 'OAuth-APIs')"
+      :description="t('admin.oauthApis.emptyHint', {}, 'An API is a protected backend resource clients request tokens for. It owns the scopes a client may ask for to reach your services. Define your first API here.')"
+      :cta-label="t('common.create', {}, 'Erstellen')"
+      @cta="navigateToModal('create')"
+    />
 
     <CoarContextMenu :menu="cellMenu">
       <CoarMenuItem :label="t('common.open', {}, 'Öffnen')" icon="pencil"

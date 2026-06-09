@@ -12,9 +12,12 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useRealmStore } from '@/stores/realm.store'
 import { useUI } from '@/composables/useUI'
+import { useGridLocale } from '@/composables/useGridLocale'
 import type { RealmDto } from '@/models/realm'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 
 const { t, language } = useI18n()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
 const store = useRealmStore()
@@ -32,7 +35,9 @@ const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedSlugs = ref<string[]>([])
 
-const builder = CoarGridBuilder.create<RealmDto>()
+const showEmpty = computed(() => store.loaded && store.realms.length === 0)
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<RealmDto>(), { openable: true })
   .persistColumnState('admin-realms')
   .option('getRowId', (p: any) => p.data.Slug)
   .rowDataRef(rows)
@@ -78,13 +83,22 @@ onMounted(() => store.initialize())
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
-    <CoarDataGrid :builder="builder" show-search class="flex-1 min-h-0" bordered elevated>
+    <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">
           {{ t('common.create', {}, 'Erstellen') }}
         </CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="globe"
+      :title="t('admin.realms.title', {}, 'Realms')"
+      :description="t('admin.realms.emptyHint', {}, 'A realm is an isolated tenant with its own users, clients and database. Create one to host a separate organisation or environment.')"
+      :cta-label="t('common.create', {}, 'Erstellen')"
+      @cta="navigateToModal('create')"
+    />
 
     <CoarContextMenu :menu="cellMenu">
       <CoarMenuItem :label="t('common.open', {}, 'Öffnen')" icon="pencil"

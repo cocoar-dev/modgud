@@ -4,10 +4,13 @@ import { useHttpClient } from '@/composables/useHttpClient'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { CoarButton } from '@cocoar/vue-ui'
+import { useGridLocale } from '@/composables/useGridLocale'
+import GridEmptyState from '@/components/GridEmptyState.vue'
 
 // Embedded as the "Security" tab of AdminLogsView — the header/sub-nav is owned
 // by that wrapper, so this view is pure grid content.
 const { t } = useI18n()
+const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 const http = useHttpClient('/api/admin/auth-log')
 
 // Streamless security/ops store (logging/audit redesign Track A — the half with no
@@ -65,7 +68,12 @@ onUnmounted(() => {
   if (pollInterval) clearInterval(pollInterval)
 })
 
-const gridBuilder = CoarGridBuilder.create<SecurityLogEntry>()
+// Read-only log → no row-open affordance (openable: false). Onboarding
+// empty-state keys off the raw row count so a category-filtered-to-empty grid
+// keeps its chips + localized "no rows" overlay instead.
+const showEmpty = computed(() => !loading.value && entries.value.length === 0)
+
+const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<SecurityLogEntry>(), { openable: false })
   .rowDataRef(filteredEntries)
   .searchHighlight()
   .rowClassRules({
@@ -91,7 +99,9 @@ const gridBuilder = CoarGridBuilder.create<SecurityLogEntry>()
 <template>
   <div class="flex flex-col flex-1 min-h-0 p-4">
     <CoarDataGrid
+      v-show="!showEmpty"
       :builder="gridBuilder"
+      :search-placeholder="searchPlaceholder"
       show-search
       class="h-full"
       bordered
@@ -117,6 +127,13 @@ const gridBuilder = CoarGridBuilder.create<SecurityLogEntry>()
         </CoarButton>
       </template>
     </CoarDataGrid>
+
+    <GridEmptyState
+      v-if="showEmpty"
+      icon="shield"
+      :title="t('admin.securityLog.emptyTitle', {}, 'No security events yet')"
+      :description="t('admin.securityLog.emptyHint', {}, 'Login attempts, lockouts, rate-limits and security-relevant actions appear here as they happen.')"
+    />
   </div>
 </template>
 

@@ -105,6 +105,13 @@ function togglePermissionId(id: string) {
   form.value.PermissionIds = next
 }
 
+// CoarCheckbox takes a plain-string label, so flatten the catalog entry to
+// "resource:action — description" (description optional).
+function permissionLabel(p: { Resource: string; Action: string; Description?: string | null }) {
+  const base = `${p.Resource}:${p.Action}`
+  return p.Description ? `${base} — ${p.Description}` : base
+}
+
 const modalTitle = computed(() =>
   isCreate.value
     ? t('admin.oauthApis.createTitle', {}, 'API erstellen')
@@ -219,82 +226,108 @@ async function createImplicitScope() {
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1">
       <!-- General -->
       <div class="tab-content">
-        <!--
-          Implicit-scope affordance: most APIs end up with a 1:1 OAuthScope
-          companion of the same name. Surface the one-click action so the
-          admin doesn't have to open a second modal in the OAuth-Scopes
-          section. Hidden when the scope already exists; hidden in Create
-          mode because the API hasn't been minted yet (no Id to attach to).
-        -->
-        <CoarNote v-if="!isCreate && dto && !dto.HasImplicitScope" variant="info" class="mb-1">
-          <div class="flex items-center gap-3">
-            <div class="flex flex-col min-w-0 flex-1">
-              <div class="text-sm font-medium">
-                {{ t('admin.oauthApis.implicitScope.title', {}, 'Kein passender OAuth-Scope angelegt') }}
-              </div>
-              <div class="text-xs text-gray-600">
-                {{ t('admin.oauthApis.implicitScope.hint', {}, 'Clients brauchen einen Scope um diese API anzufragen. Erstellt einen Scope mit gleichem Namen (Resources = Audience, nicht im Discovery sichtbar).') }}
-              </div>
+        <div class="modal-form">
+          <!-- Section: Identity -->
+          <section class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.oauthApis.section.identity', {}, 'Identität') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-half" :label="t('admin.oauthApis.name', {}, 'Name')" required>
+                <CoarTextInput v-model="form.Name" :disabled="!isCreate" clearable />
+                <p class="field-hint">{{ t('admin.oauthApis.name.hint', {}, 'Audience (aud) der geschützten Ressource; das Token eines Clients muss auf diesen Namen zielen. Nach dem Anlegen unveränderlich.') }}</p>
+              </CoarFormField>
+              <CoarFormField class="col-half" :label="t('admin.oauthApis.displayName', {}, 'Display Name')">
+                <CoarTextInput v-model="form.DisplayName" clearable />
+                <p class="field-hint">{{ t('admin.oauthApis.displayName.hint', {}, 'Lesbarer Anzeigename in Listen und Titeln; rein kosmetisch.') }}</p>
+              </CoarFormField>
+              <CoarFormField class="col-full" :label="t('admin.oauthApis.description', {}, 'Beschreibung')">
+                <CoarTextInput v-model="form.Description" clearable :rows="2" />
+                <p class="field-hint">{{ t('admin.oauthApis.description.hint', {}, 'Optionale Notiz zum Zweck dieser API.') }}</p>
+              </CoarFormField>
             </div>
-            <CoarButton size="s" icon-start="plus" :loading="loading" @click="createImplicitScope">
-              {{ t('admin.oauthApis.implicitScope.button', {}, 'Scope anlegen') }}
-            </CoarButton>
-          </div>
-        </CoarNote>
-        <div class="grid grid-cols-2 gap-3">
-          <CoarFormField :label="t('admin.oauthApis.name', {}, 'Name (Audience)')">
-            <CoarTextInput v-model="form.Name" :disabled="!isCreate" clearable />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.oauthApis.displayName', {}, 'Display Name')">
-            <CoarTextInput v-model="form.DisplayName" clearable />
-          </CoarFormField>
-        </div>
-        <CoarFormField :label="t('admin.oauthApis.description', {}, 'Beschreibung')">
-          <CoarTextInput v-model="form.Description" clearable />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.oauthApis.app', {}, 'Application')">
-          <CoarSelect v-model="form.AppId" :options="appOptions" />
-          <p class="text-xs text-gray-500 mt-1">
-            {{ form.AppId
-              ? t('admin.oauthApis.app.linkedHint', {}, 'When the IdP issues a token whose aud matches this RS, /connect/userinfo emits a resource_access block resolving the user\'s permissions through the linked App\'s catalog.')
-              : t('admin.oauthApis.app.unassignedHint', {}, 'Without an App link the IdP has no catalog to resolve against, so /connect/userinfo will not emit a resource_access block for this audience. Use this only for legacy / standalone setups.') }}
-          </p>
-        </CoarFormField>
+          </section>
 
-        <CoarFormField v-if="form.AppId"
-          :label="t('admin.oauthApis.permissions', {}, 'Permission-Subset (Catalog der Application)')">
-          <p class="text-xs text-gray-500 mb-2">
-            {{ t('admin.oauthApis.permissionsHint', {}, 'Welche Permissions des App-Catalogs dieser Resource Server gated. UserInfo narrowed den per-Audience-Block auf den Schnitt aus diesem Subset und den User-Grants (Bypass-Tiers schon vor-expandiert).') }}
-          </p>
-          <div v-if="linkedAppCatalog.length === 0" class="text-xs text-gray-400 italic">
-            {{ t('admin.oauthApis.permissions.empty', {}, 'Die Application hat noch keine Permissions im Catalog. Erst dort Einträge anlegen, dann hier auswählen.') }}
-          </div>
-          <div v-else class="permission-checklist">
-            <label v-for="p in linkedAppCatalog" :key="p.Id" class="permission-row">
-              <input type="checkbox" :checked="form.PermissionIds.has(p.Id)" @change="togglePermissionId(p.Id)" />
-              <span class="permission-label">
-                <code>{{ p.Resource }}:{{ p.Action }}</code>
-                <span v-if="p.Description" class="permission-desc">— {{ p.Description }}</span>
-              </span>
-            </label>
-          </div>
-        </CoarFormField>
-        <CoarFormField :label="t('admin.oauthApis.scopes', {}, 'Scopes')">
-          <EditableStringList
-            v-model="form.Scopes"
-            :placeholder="t('admin.oauthApis.scope.placeholder', {}, 'event-tree.api')" />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.oauthApis.userClaims', {}, 'User-Claims')">
-          <EditableStringList
-            v-model="form.UserClaims"
-            :placeholder="t('admin.oauthApis.userClaim.placeholder', {}, 'email')" />
-        </CoarFormField>
-        <div class="mt-1 flex flex-wrap gap-x-6 gap-y-2">
-          <CoarCheckbox v-model="form.Enabled" :label="t('common.enabled', {}, 'Aktiviert')" />
-          <CoarCheckbox
-            v-model="form.AllowDynamicRegistration"
-            :label="t('admin.oauthApis.allowDcr', {}, 'Allow DCR clients to target this API')"
-            :title="t('admin.oauthApis.allowDcr.help', {}, 'Resource-target containment for Dynamic Client Registration. Off by default: DCR-registered clients cannot request tokens for this RS unless explicitly allowed here.')" />
+          <!-- Section: Linkage & gating -->
+          <section class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.oauthApis.section.linkage', {}, 'Verknüpfung & Gating') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-half" :label="t('admin.oauthApis.app', {}, 'Application')">
+                <CoarSelect v-model="form.AppId" :options="appOptions" />
+                <p class="field-hint">{{ t('admin.oauthApis.app.hint', {}, 'Verknüpft diese API mit dem Berechtigungs-Katalog einer Anwendung; UserInfo löst die Berechtigungen des Nutzers darüber auf.') }}</p>
+              </CoarFormField>
+
+              <CoarFormField v-if="form.AppId" class="col-full"
+                :label="t('admin.oauthApis.permissions', {}, 'Berechtigungs-Auswahl (Katalog der Anwendung)')">
+                <p class="field-hint">{{ t('admin.oauthApis.permissionsHint', {}, 'Welche Berechtigungen des Katalogs diese API absichert. UserInfo gibt nur die Schnittmenge aus dieser Auswahl und den Berechtigungen des Nutzers zurück.') }}</p>
+                <div v-if="linkedAppCatalog.length === 0" class="text-xs text-gray-400 italic mt-2">
+                  {{ t('admin.oauthApis.permissions.empty', {}, 'Die Anwendung hat noch keine Berechtigungen im Katalog. Erst dort Einträge anlegen, dann hier auswählen.') }}
+                </div>
+                <div v-else class="permission-checklist mt-2">
+                  <CoarCheckbox v-for="p in linkedAppCatalog" :key="p.Id" class="permission-row"
+                    :model-value="form.PermissionIds.has(p.Id)" @update:model-value="() => togglePermissionId(p.Id)"
+                    :label="permissionLabel(p)" />
+                </div>
+              </CoarFormField>
+            </div>
+          </section>
+
+          <!-- Section: OAuth surface -->
+          <section class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.oauthApis.section.surface', {}, 'OAuth-Oberfläche') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-full" :label="t('admin.oauthApis.scopes', {}, 'Scopes')">
+                <EditableStringList
+                  v-model="form.Scopes"
+                  :placeholder="t('admin.oauthApis.scope.placeholder', {}, 'event-tree.api')" />
+                <p class="field-hint">{{ t('admin.oauthApis.scopes.hint', {}, 'Scopes, die ein Client anfragen darf, um Tokens für diese API zu erhalten.') }}</p>
+              </CoarFormField>
+              <CoarFormField class="col-full" :label="t('admin.oauthApis.userClaims', {}, 'User-Claims')">
+                <EditableStringList
+                  v-model="form.UserClaims"
+                  :placeholder="t('admin.oauthApis.userClaim.placeholder', {}, 'email')" />
+                <p class="field-hint">{{ t('admin.oauthApis.userClaims.hint', {}, 'Nutzer-Claims, die in Access-Tokens dieser API aufgenommen werden.') }}</p>
+              </CoarFormField>
+            </div>
+          </section>
+
+          <!-- Section: Options — Enabled flag and the DCR target gate. -->
+          <section class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.oauthApis.section.options', {}, 'Optionen') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-full">
+                <CoarCheckbox v-model="form.Enabled" :label="t('common.enabled', {}, 'Aktiviert')" />
+                <p class="field-hint">{{ t('admin.oauthApis.enabled.hint', {}, 'Deaktivierte APIs nehmen keine Tokens mehr an.') }}</p>
+              </CoarFormField>
+              <CoarFormField class="col-full" :label="t('admin.oauthApis.allowDcr.label', {}, 'Dynamische Client-Registrierung (DCR)')">
+                <CoarCheckbox
+                  v-model="form.AllowDynamicRegistration"
+                  :label="t('admin.oauthApis.allowDcr', {}, 'DCR-Clients dürfen diese API anfragen')" />
+                <p class="field-hint">{{ t('admin.oauthApis.allowDcr.help', {}, 'Standardmäßig aus: dynamisch registrierte Clients können keine Tokens für diese API anfragen, solange dies nicht hier erlaubt wird.') }}</p>
+              </CoarFormField>
+
+              <!--
+                Implicit-scope affordance: most APIs end up with a 1:1 OAuthScope
+                companion of the same name. Docked at the END of a stable section
+                so it never pops in at the top and shoves fields. Hidden when the
+                scope already exists; hidden in Create mode because the API hasn't
+                been minted yet (no Id to attach to).
+              -->
+              <CoarNote v-if="!isCreate && dto && !dto.HasImplicitScope" variant="info" class="col-full">
+                <div class="flex items-center gap-3">
+                  <div class="flex flex-col min-w-0 flex-1">
+                    <div class="text-sm font-medium">
+                      {{ t('admin.oauthApis.implicitScope.title', {}, 'Kein passender OAuth-Scope angelegt') }}
+                    </div>
+                    <div class="text-xs text-gray-600">
+                      {{ t('admin.oauthApis.implicitScope.hint', {}, 'Clients brauchen einen Scope um diese API anzufragen. Erstellt einen Scope mit gleichem Namen (Resources = Audience, nicht im Discovery sichtbar).') }}
+                    </div>
+                  </div>
+                  <CoarButton size="s" icon-start="plus" :loading="loading" @click="createImplicitScope">
+                    {{ t('admin.oauthApis.implicitScope.button', {}, 'Scope anlegen') }}
+                  </CoarButton>
+                </div>
+              </CoarNote>
+            </div>
+          </section>
         </div>
       </div>
 
@@ -324,23 +357,11 @@ async function createImplicitScope() {
   background: var(--coar-background-neutral-primary, #fff);
 }
 .permission-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   font-size: 0.82rem;
-  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--coar-radius-s, 3px);
 }
 .permission-row:hover {
   background: var(--coar-background-neutral-tertiary, #f3f4f6);
-}
-.permission-label {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-}
-.permission-desc {
-  color: var(--coar-text-neutral-secondary, #6b7280);
-  font-size: 0.78rem;
 }
 </style>
