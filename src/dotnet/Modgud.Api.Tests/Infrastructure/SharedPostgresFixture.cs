@@ -58,7 +58,6 @@ public class SharedPostgresFixture : IAsyncLifetime
             // needed, no real signing material required for tests.
             rule.For<OpenIddictSettings>().FromStatic(_ => new OpenIddictSettings
             {
-                Issuer = "http://localhost:5000",
                 DevelopmentMode = true,
                 AccessTokenLifetimeMinutes = 60,
                 RefreshTokenLifetimeDays = 14,

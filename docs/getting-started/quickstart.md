@@ -36,7 +36,6 @@ services:
       ASPNETCORE_ENVIRONMENT: Development            # local eval only — see Deployment for production
       DbSettings__ConnectionString: "Host=postgres;Database=modgud;Username=postgres;Password=postgres;Keepalive=30"
       AppUrl: "http://0.0.0.0:8081"
-      OpenIddict__Issuer: "http://localhost"
       OpenIddict__DevelopmentMode: "true"
     ports:
       - "80:8081"

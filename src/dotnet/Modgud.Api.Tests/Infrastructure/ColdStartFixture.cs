@@ -94,7 +94,6 @@ public class ColdStartFixture : IAsyncLifetime
             rule.For<EmailOtpConfiguration>().FromStatic(_ => new EmailOtpConfiguration()),
             rule.For<OpenIddictSettings>().FromStatic(_ => new OpenIddictSettings
             {
-                Issuer = "http://localhost:5000",
                 DevelopmentMode = true,
                 AccessTokenLifetimeMinutes = 60,
                 RefreshTokenLifetimeDays = 14,

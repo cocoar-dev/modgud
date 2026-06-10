@@ -242,7 +242,6 @@ Configured in `OpenIddictSettings`:
 
 ```json
 {
-  "Issuer": "https://localhost",   // Fallback when BaseUri is null
   "AccessTokenLifetimeMinutes": 60,
   "RefreshTokenLifetimeDays": 14,
   "AuthorizationCodeLifetimeMinutes": 5,
@@ -250,6 +249,8 @@ Configured in `OpenIddictSettings`:
   "SigningCertificatePath": null
 }
 ```
+
+There is no `Issuer` setting: the issuer is per-realm, derived from the request host on every path (discovery, the token `iss` claim, and validation). The OpenIddict base issuer is a fixed internal placeholder that is never emitted.
 
 | Mode | Signing |
 |---|---|

@@ -42,15 +42,13 @@ public class OpenIddictSettings : IOpenIddictSettings
     /// </summary>
     public string? EncryptionCertificatePath { get; set; }
 
-    /// <summary>
-    /// Issuer URL advertised in /.well-known/openid-configuration. Per-realm
-    /// overrides are applied at request time by <c>RealmIssuerHandler</c>.
-    /// CONFIG-01: defaults to empty so a Production deployment that forgot to
-    /// set it fails closed at startup rather than silently advertising
-    /// http://localhost:9099 to remote clients. Development sets the
-    /// localhost default in <c>data/configuration.json</c>.
-    /// </summary>
-    public string Issuer { get; set; } = string.Empty;
+    // NOTE: there is deliberately no configurable Issuer. Modgud is multi-tenant
+    // and the issuer is per-realm, derived from the request host (BaseUri) on
+    // every path — discovery, the token `iss` claim, and token validation (see
+    // RealmIssuerHandler / RealmSigningKeyHandler / RealmTokenValidationHandler).
+    // A global issuer setting never took effect, so exposing one only invited
+    // mis-tuning. OpenIddict's required base issuer is a fixed internal
+    // placeholder (see OpenIddictExtensions).
 
     public int AccessTokenLifetimeMinutes { get; set; } = 60;
     public int RefreshTokenLifetimeDays { get; set; } = 14;
