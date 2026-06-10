@@ -19,7 +19,12 @@ public record UpdateGroupCommand(
     string? Email = null,
     EmailMode EmailMode = EmailMode.Shared,
     List<string>? BoundTo = null,
-    bool ExternallyDrivable = false);
+    bool ExternallyDrivable = false,
+    // Whether the caller already holds realm:admin. Set by the endpoint from
+    // the authenticated principal. Defaults false (fail-closed): a command
+    // constructed without it cannot confer realm:admin or alter the membership
+    // of a realm:admin-conferring group.
+    bool CallerIsRealmAdmin = false);
 
 public class UpdateGroupHandler(
     IDocumentSession session,
@@ -74,6 +79,35 @@ public class UpdateGroupHandler(
             var guardError = await GroupMembershipGuards.RejectIfConfersRealmAdminAsync(
                 session, command.RoleIds, ct);
             if (guardError is not null) return guardError.Value;
+        }
+
+        // Privilege-escalation guard (audit H1): only a realm:admin may confer
+        // realm:admin. Two vectors, both gated unless the caller is already a
+        // realm admin:
+        //   (a) attaching a realm-admin role that wasn't on the group before;
+        //   (b) changing the membership of a group from which realm:admin is
+        //       reachable (directly or via an ancestor) — covers "add myself to
+        //       System Admins" and the auto-membership-script variant.
+        if (!command.CallerIsRealmAdmin)
+        {
+            var newlyAddedRoleIds = command.RoleIds.Where(id => !group.RoleIds.Contains(id)).ToList();
+            if (await GroupMembershipGuards.AnyRoleConfersRealmAdminAsync(session, newlyAddedRoleIds, ct))
+            {
+                return Error.Forbidden("Group.RealmAdminConferralForbidden",
+                    "Only a realm administrator may grant realm:admin to a group.");
+            }
+
+            var membershipChanges =
+                command.MembershipMode != group.MembershipMode ||
+                !string.Equals(command.MembershipScript, group.MembershipScript, StringComparison.Ordinal) ||
+                (command.MembershipMode == MembershipMode.Manual &&
+                 !new HashSet<Guid>(command.MemberIds).SetEquals(group.MemberIds));
+            if (membershipChanges &&
+                await GroupMembershipGuards.GroupConfersRealmAdminAsync(session, permissionService, group, ct))
+            {
+                return Error.Forbidden("Group.RealmAdminMembershipForbidden",
+                    "Only a realm administrator may change the membership of a group that confers realm:admin.");
+            }
         }
 
         string? compiledMembership = null;

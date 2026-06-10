@@ -1,7 +1,9 @@
 using BuildingBlocks.Helper;
 using Marten;
+using Modgud.Api.Authorization;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Apps;
+using Modgud.Authorization.Services;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Events;
 
@@ -73,8 +75,14 @@ public static class RolesEndpoints
         // Marten 8.34+ optimistic-concurrency detection — emit the event
         // only. Build the in-memory `role` instance just to compute the
         // response payload; the persisted doc comes from the projection.
-        roleGroup.MapPost("", async (RolePayload dto, IDocumentSession session) =>
+        roleGroup.MapPost("", async (RolePayload dto, HttpContext http, IPermissionService perms, IDocumentSession session) =>
             {
+                // Privilege-escalation guard (audit H1): only a realm:admin may
+                // mint a realm-admin role. permission-role:write alone is not
+                // enough — a realm-admin role is the realm-wide bypass.
+                if (dto.IsRealmAdmin && !await CallerPermissions.IsRealmAdminAsync(http, perms))
+                    return RealmAdminForbidden();
+
                 var built = await BuildRoleAsync(dto, session);
                 if (built.Error is not null) return built.Error;
 
@@ -89,10 +97,16 @@ public static class RolesEndpoints
             .WithName("V2_Role_Create")
             .RequiresPermission("permission-role:write");
 
-        roleGroup.MapPut("{id}", async (ShortGuid id, RolePayload dto, IDocumentSession session) =>
+        roleGroup.MapPut("{id}", async (ShortGuid id, RolePayload dto, HttpContext http, IPermissionService perms, IDocumentSession session) =>
             {
                 var existing = await session.LoadAsync<PermissionRole>(id.Guid);
                 if (existing is null || existing.IsDeleted) return Results.NotFound();
+
+                // Privilege-escalation guard (audit H1): only a realm:admin may
+                // set/keep the realm-admin flag on a role. A non-admin may still
+                // de-escalate (clear the flag) or edit a non-admin role.
+                if (dto.IsRealmAdmin && !await CallerPermissions.IsRealmAdminAsync(http, perms))
+                    return RealmAdminForbidden();
 
                 var built = await BuildRoleAsync(dto, session);
                 if (built.Error is not null) return built.Error;
@@ -125,6 +139,16 @@ public static class RolesEndpoints
 
         return application;
     }
+
+    // 403 for the realm:admin-conferral guard (audit H1) — named so the caller
+    // knows exactly which grant they lack, consistent with PermissionEndpointFilter.
+    private static IResult RealmAdminForbidden() => Results.Json(
+        new
+        {
+            Error = "Role.RealmAdminForbidden",
+            Message = "Only a realm administrator may create or modify a realm-admin role.",
+        },
+        statusCode: StatusCodes.Status403Forbidden);
 
     private static object MapToResponse(PermissionRole r) => new
     {

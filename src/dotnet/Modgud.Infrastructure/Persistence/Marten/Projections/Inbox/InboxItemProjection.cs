@@ -23,7 +23,7 @@ public partial class InboxItemProjection : SingleStreamProjection<InboxItemView,
     public override ValueTask RaiseSideEffects(IDocumentOperations operations, IEventSlice<InboxItemView> slice)
     {
         var snapshot = slice.Snapshot;
-        if (snapshot is null || !ProjectionSideEffects.Enabled)
+        if (snapshot is null || !ProjectionSideEffects.IsEnabledFor(operations.TenantId))
             return ValueTask.CompletedTask;
 
         var action = slice.Events().Any(e => e.Data is InboxItemCreatedEvent)

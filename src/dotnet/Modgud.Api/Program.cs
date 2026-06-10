@@ -733,7 +733,31 @@ try
     // free side effect (no more login-everyone-out on deploy).
     // See HA-2a in
     // dev-docs/future-features/ha-multi-instance.md.
-    builder.Services.AddTenantedDataProtection();
+    //
+    // Audit M7: optionally encrypt each realm's key ring at rest with an
+    // operator-supplied certificate (DataProtection__CertificatePath, optional
+    // ...Password). Opt-in + non-breaking — without it the ring is unencrypted
+    // in the tenant DB (the per-realm DB partition is the only boundary), exactly
+    // as before. The operator owns the cert lifecycle; mixing is safe (existing
+    // unencrypted keys stay readable, only new keys are wrapped).
+    var dpCertPath = Environment.GetEnvironmentVariable("DataProtection__CertificatePath");
+    System.Security.Cryptography.X509Certificates.X509Certificate2? dpCert = null;
+    if (!string.IsNullOrWhiteSpace(dpCertPath) && File.Exists(dpCertPath))
+    {
+        var dpCertPassword = Environment.GetEnvironmentVariable("DataProtection__CertificatePassword");
+        dpCert = System.Security.Cryptography.X509Certificates.X509CertificateLoader
+            .LoadPkcs12FromFile(dpCertPath, dpCertPassword);
+        Log.Information(
+            "DataProtection key ring will be encrypted at rest with the operator certificate at {Path}", dpCertPath);
+    }
+    else if (!builder.Environment.IsDevelopment())
+    {
+        Log.Warning(
+            "DataProtection key ring is NOT encrypted at rest — set DataProtection__CertificatePath to an " +
+            "operator certificate to protect login-provider secrets, SAML SP keys and auth cookies against a " +
+            "tenant-DB dump. The per-realm DB partition is the only boundary until then.");
+    }
+    builder.Services.AddTenantedDataProtection(dpCert);
 
     // OpenIddict OAuth 2.0 / OIDC server — uses our custom Marten stores. Settings are
     // captured at config time so signing certs / lifetimes can be pinned before the
@@ -820,11 +844,20 @@ try
             ? parsedMode
             : DurabilityMode.Solo;
 
-    Log.Information(
-        "Wolverine running in {Mode} mode. Multi-instance deployments must " +
-        "set Wolverine__DurabilityMode=Balanced (Solo is correct for the " +
-        "default single-instance setup).",
-        wolverineMode);
+    // Audit M9: Solo mode assumes a single instance. Surface it as a WARNING (not
+    // Information) so an operator who scales to replicas>1 without reconfiguring
+    // can't silently miss it — two Solo instances both process the same outbox row
+    // (double-execution) and, with the in-memory Quartz store, each node also runs
+    // every scheduled job. Multi-node requires Wolverine__DurabilityMode=Balanced
+    // AND a clustered Quartz store.
+    if (wolverineMode == DurabilityMode.Solo)
+        Log.Warning(
+            "Wolverine running in Solo mode — single-instance assumption. Scaling to " +
+            "more than one replica REQUIRES Wolverine__DurabilityMode=Balanced and a " +
+            "clustered Quartz store; otherwise the outbox double-executes and every " +
+            "node runs every scheduled job.");
+    else
+        Log.Information("Wolverine running in {Mode} mode.", wolverineMode);
 
     builder.Host.UseWolverine(opts =>
     {

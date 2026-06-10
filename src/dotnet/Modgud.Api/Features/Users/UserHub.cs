@@ -3,9 +3,9 @@ using Cocoar.SignalARRR.Common.Attributes;
 using Cocoar.SignalARRR.Server;
 using Microsoft.AspNetCore.SignalR;
 using BuildingBlocks.EventDispatcher;
+using Modgud.Api.Realtime;
 using Modgud.Infrastructure.Persistence.Marten.Mappers;
 using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
-using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Api.Features.Users;
 
@@ -19,9 +19,10 @@ public class UserHub(DataEventDispatcher eventDispatcher)
         // connect (Host → tenant). Scope the stream to it so a connection only
         // ever sees its own realm's events. Untagged events (Tenant == null)
         // never match a real realm → dropped (fail-closed, no cross-realm leak).
-        var realm = Context.GetHttpContext()?.Items[TenantConstants.HttpContextTenantIdKey] as string;
+        var http = Context.GetHttpContext();
+        var realm = HubAuthorization.CallerRealm(http);
 
-        return eventDispatcher.Notifications
+        var source = eventDispatcher.Notifications
             .Where(ev => ev.Subject == "User" && ev.Tenant == realm)
             .Select(de =>
             {
@@ -35,5 +36,10 @@ public class UserHub(DataEventDispatcher eventDispatcher)
                 }
                 return new DataEvent(de.Action, de.Subject, newPayload);
             });
+
+        // Per-method permission gate (audit H2): this stream carries user PII
+        // (email, names). Require user:read — the same gate as the REST list
+        // endpoint — instead of relying on UIHub's bare [Authorize].
+        return HubAuthorization.AuthorizedRealmStream(http, realm, "user:read", source);
     }
 }

@@ -187,6 +187,10 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 $"A realm with slug '{dto.Slug}' already exists.");
         }
 
+        // Domain uniqueness (audit M10) — fail fast before creating a database.
+        var domainClash = await CheckDomainUniquenessAsync(session, dto.Domains, selfId: null, ct);
+        if (domainClash is not null) return domainClash.Value;
+
         // New realms are never the control plane: the IsControlPlane flag is
         // stored and defaults to false, and there is no create-time switch to
         // request it (CreateRealmDto carries none). The control-plane role is
@@ -307,6 +311,33 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 conflict.SqlState, slug, attempt),
             ct);
 
+    /// <summary>
+    /// Audit M10: a domain may map to at most one ACTIVE realm. Slug uniqueness
+    /// is enforced everywhere, but domain uniqueness — which is what actually
+    /// drives host→tenant routing — was not. Two active realms sharing a domain
+    /// make <c>RealmCache</c>'s host map nondeterministic (last row loaded wins),
+    /// silently routing login/tokens/admin for that host to the wrong tenant.
+    /// Compared case-insensitively; only active realms are considered because
+    /// only they are routed. <paramref name="selfId"/> excludes the realm being
+    /// updated from clashing with itself.
+    /// </summary>
+    private static async Task<Error?> CheckDomainUniquenessAsync(
+        IQuerySession session, IReadOnlyCollection<string> domains, Guid? selfId, CancellationToken ct)
+    {
+        var wanted = domains.Select(d => d.ToLowerInvariant()).ToHashSet();
+        var activeRealms = await session.Query<Realm>().Where(r => r.IsActive).ToListAsync(ct);
+
+        foreach (var other in activeRealms)
+        {
+            if (selfId is { } id && other.Id == id) continue;
+            var clash = other.Domains.FirstOrDefault(d => wanted.Contains(d.ToLowerInvariant()));
+            if (clash is not null)
+                return Error.Conflict("Realm.DomainTaken",
+                    $"The domain '{clash}' is already claimed by the active realm '{other.Slug}'. Each domain must map to exactly one active realm.");
+        }
+        return null;
+    }
+
     public async Task<ErrorOr<Realm>> UpdateRealmAsync(
         string slug,
         UpdateRealmDto dto,
@@ -367,6 +398,15 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
 
         if (dto.IsActive.HasValue) realm.IsActive = dto.IsActive.Value;
         realm.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // Domain uniqueness (audit M10) — only an active realm contends for a
+        // host. A reactivation or a domain change must not collide with another
+        // active realm's domain.
+        if (realm.IsActive)
+        {
+            var domainClash = await CheckDomainUniquenessAsync(session, realm.Domains, selfId: realm.Id, ct);
+            if (domainClash is not null) return domainClash.Value;
+        }
 
         session.Store(realm);
         await session.SaveChangesAsync(ct);
@@ -650,6 +690,10 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             return Error.Conflict("Realm.DuplicateSlug",
                 $"A realm with slug '{slug}' already exists.");
         }
+
+        // Domain uniqueness (audit M10) — same invariant as create.
+        var domainClash = await CheckDomainUniquenessAsync(session, domains, selfId: null, ct);
+        if (domainClash is not null) return domainClash.Value;
 
         var csBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value);
         var mainDbName = csBuilder.Database!;

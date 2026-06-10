@@ -402,8 +402,10 @@ src/frontend-vue/apps/frontend/public/icons/lucide/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 docs/.vitepress/dist-in-app/
+docs/.vitepress/*.zip
 dev-docs/.vitepress/cache/
 dev-docs/.vitepress/dist/
+dev-docs/.vitepress/*.zip
 
 # pnpm
 .pnpm-store/

@@ -36,7 +36,7 @@ public partial class UserViewProjection : MultiStreamProjection<UserView, Guid>
     public override ValueTask RaiseSideEffects(IDocumentOperations operations, IEventSlice<UserView> slice)
     {
         var snapshot = slice.Snapshot;
-        if (snapshot is null || !ProjectionSideEffects.Enabled)
+        if (snapshot is null || !ProjectionSideEffects.IsEnabledFor(operations.TenantId))
             return ValueTask.CompletedTask;
 
         var action = slice.Events().Any(e => e.Data is UserDeletedEvent)

@@ -1,9 +1,11 @@
 using BuildingBlocks.Helper;
+using Modgud.Api.Authorization;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Commands;
 using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
+using Modgud.Authorization.Services;
 using ErrorOr;
 using Marten;
 using Wolverine;
@@ -140,44 +142,44 @@ public static class GroupEndpoints
             .WithName("V2_Group_EffectiveMembers")
             .RequiresPermission("authorization-group:read");
 
-        groupGroup.MapPost("", async (CreateGroupDto dto, IMessageBus bus) =>
+        groupGroup.MapPost("", async (CreateGroupDto dto, HttpContext http, IPermissionService perms, IMessageBus bus) =>
             {
                 // BoundTo defaults to [modgud] on create — the only app
                 // that exists in Phase 1. UI will override once additional
                 // apps can be registered.
                 var boundTo = dto.BoundTo ?? [AppSlugs.Modgud];
+                var callerIsRealmAdmin = await CallerPermissions.IsRealmAdminAsync(http, perms);
                 var command = new CreateGroupCommand(
                     dto.Name, dto.Description,
                     dto.MemberIds.Select(m => new ShortGuid(m).Guid).ToList(),
                     dto.RoleIds.Select(r => new ShortGuid(r).Guid).ToList(),
                     dto.MembershipMode, dto.MembershipScript,
                     dto.Email, dto.EmailMode,
-                    boundTo, dto.ExternallyDrivable);
+                    boundTo, dto.ExternallyDrivable, callerIsRealmAdmin);
                 var result = await bus.InvokeAsync<ErrorOr<Group>>(command);
                 return result.Match<IResult>(
                     group => Results.Ok(MapToResponse(group)),
-                    errors => Results.BadRequest(new { Errors = errors.Select(e => new { e.Code, e.Description }) }));
+                    ToErrorResult);
             })
             .WithName("V2_Group_Create")
             .RequiresPermission("authorization-group:write");
 
-        groupGroup.MapPut("{id}", async (ShortGuid id, CreateGroupDto dto, IMessageBus bus) =>
+        groupGroup.MapPut("{id}", async (ShortGuid id, CreateGroupDto dto, HttpContext http, IPermissionService perms, IMessageBus bus) =>
             {
                 // On update, null BoundTo means "keep what's stored" — the
                 // command handler reads the current value if not supplied.
+                var callerIsRealmAdmin = await CallerPermissions.IsRealmAdminAsync(http, perms);
                 var command = new UpdateGroupCommand(
                     id.Guid, dto.Name, dto.Description,
                     dto.MemberIds.Select(m => new ShortGuid(m).Guid).ToList(),
                     dto.RoleIds.Select(r => new ShortGuid(r).Guid).ToList(),
                     dto.MembershipMode, dto.MembershipScript,
                     dto.Email, dto.EmailMode,
-                    dto.BoundTo, dto.ExternallyDrivable);
+                    dto.BoundTo, dto.ExternallyDrivable, callerIsRealmAdmin);
                 var result = await bus.InvokeAsync<ErrorOr<Group>>(command);
                 return result.Match<IResult>(
                     group => Results.Ok(MapToResponse(group)),
-                    errors => errors.Any(e => e.Type == ErrorType.NotFound)
-                        ? Results.NotFound()
-                        : Results.BadRequest(new { Errors = errors.Select(e => new { e.Code, e.Description }) }));
+                    ToErrorResult);
             })
             .WithName("V2_Group_Update")
             .RequiresPermission("authorization-group:write");
@@ -195,6 +197,21 @@ public static class GroupEndpoints
             .RequiresPermission("authorization-group:write");
 
         return application;
+    }
+
+    // Maps command errors to HTTP: NotFound→404, Forbidden (realm:admin
+    // conferral guard, audit H1)→403, everything else→400.
+    private static IResult ToErrorResult(List<Error> errors)
+    {
+        if (errors.Any(e => e.Type == ErrorType.NotFound))
+            return Results.NotFound();
+
+        var status = errors.Any(e => e.Type == ErrorType.Forbidden)
+            ? StatusCodes.Status403Forbidden
+            : StatusCodes.Status400BadRequest;
+        return Results.Json(
+            new { Errors = errors.Select(e => new { e.Code, e.Description }) },
+            statusCode: status);
     }
 
     private static object MapToResponse(Group g) => new

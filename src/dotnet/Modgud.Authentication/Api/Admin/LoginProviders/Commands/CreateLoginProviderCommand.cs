@@ -210,6 +210,12 @@ public class CreateLoginProviderHandler(
         // (typically null for a fresh create — the EntraID / ADFS preset
         // seeds AttributeMap etc.). Persist as JsonDocument.
         var seededFlavorData = flavor.ApplyDefaults(SamlFlavorData.FromJson(command.FlavorData));
+
+        // Signature floor (audit L2): never persist a SAML provider that would
+        // accept entirely unsigned assertions.
+        var floorError = seededFlavorData.ValidateSignatureFloor();
+        if (floorError is not null) return floorError.Value;
+
         var flavorDataJson = seededFlavorData.ToJson();
 
         var @event = new LoginProviderAddedEvent(

@@ -1,6 +1,8 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Marten;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.Domain;
@@ -227,17 +229,40 @@ public static class MagicLinkEndpoints
                     Email: default));
             }
 
+            // Delete challenge (one-time use) — consumed regardless of whether a
+            // second factor still has to be presented below.
+            session.Delete(challenge);
+
+            // Audit M1: a magic-link must NOT bypass a user's TOTP second factor.
+            // Mailbox possession alone is exactly the channel TOTP is meant to
+            // survive. If TOTP is enabled, establish the same partial-2FA state a
+            // password login sets on RequiresTwoFactor and let /api/account/mfa/login
+            // complete the second factor. Only TOTP steps up — offering email-OTP
+            // here would defeat the purpose (the mailbox is already in play).
+            if (user.TwoFactorEnabled)
+            {
+                await session.SaveChangesAsync();
+
+                var twoFactorIdentity = new ClaimsIdentity(IdentityConstants.TwoFactorUserIdScheme);
+                twoFactorIdentity.AddClaim(new Claim(ClaimTypes.Name, user.Id.ToString()));
+                await context.SignInAsync(
+                    IdentityConstants.TwoFactorUserIdScheme, new ClaimsPrincipal(twoFactorIdentity));
+
+                Serilog.Log.Information(
+                    "Magic-link consumed; TOTP step-up required. UserId={UserId} IP={IP}", user.Id, ip);
+                ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.MagicLink, ModgudMeters.LoginOutcome.TwoFactorRequired);
+                return Results.Ok(new { RequiresMfa = true, MfaMethods = new List<string> { "totp" } });
+            }
+
             // Audit marker — magic-link login success (Phase 1). No IP on the event
             // (the Sessions feature owns IP/device); rides the same transaction.
+            // Only on an actual full login (no second factor pending).
             session.Events.Append(user.Id, new Modgud.Authentication.Events.UserLoggedInEvent(
                 user.Id, IpAddress: null, Method: ModgudMeters.LoginMethod.MagicLink));
 
-            // Delete challenge (one-time use)
-            session.Delete(challenge);
             await session.SaveChangesAsync();
 
-            // Sign in — bypasses MFA (Magic Link IS the authentication)
-            // Magic Link is always persistent — user can request a new link anytime
+            // Sign in — Magic Link is always persistent; user can request a new link anytime.
             await signInManager.SignInAsync(user, isPersistent: true);
 
             await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
