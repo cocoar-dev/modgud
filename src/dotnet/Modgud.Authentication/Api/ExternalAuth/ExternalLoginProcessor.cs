@@ -228,6 +228,31 @@ public class ExternalLoginProcessor(
 
             if (existing is not null)
             {
+                // Audit H3: never absorb an existing account on an UNVERIFIED
+                // external email. TrustForEmailLink is the admin's opt-in to
+                // match-by-email, but the email itself is attacker-controllable
+                // unless the IdP vouches for it. For OIDC that proof is the
+                // standard email_verified == true claim; an absent/false claim
+                // means an attacker who self-registered the victim's email at a
+                // permissive IdP could otherwise sign in AS the victim. (SAML is
+                // exempt — the email arrives in an assertion signed by the
+                // specifically-configured IdP, which is the trust anchor.)
+                if (!IsExternalEmailVerified(config, rawClaims))
+                {
+                    var maskedEmail = LogPiiMasking.MaskEmail(email);
+                    securityAudit.Record(new SecurityAuditRecord
+                    {
+                        EventType = AuditEvents.IdentityHijackBlocked,
+                        Level = "Warning",
+                        Actor = maskedEmail,
+                        Status = "rejected",
+                        Reason = "email-link blocked — IdP did not assert email_verified",
+                        Message = $"External email-link rejected — IdP did not verify email '{maskedEmail}' (TrustForEmailLink requires email_verified for OIDC)",
+                    });
+                    return ExternalLoginResult.Failed("Idp.EmailNotVerified",
+                        "The identity provider did not verify this email address, so it cannot be auto-linked to an existing account.");
+                }
+
                 var user = await userManager.FindByIdAsync(existing.Id.ToString());
                 if (user is not null)
                 {
@@ -509,6 +534,27 @@ public class ExternalLoginProcessor(
         => rawClaims.TryGetValue(type, out var v)
             ? v switch { string[] arr => arr, string s => [s], _ => [] }
             : [];
+
+    /// <summary>
+    /// Audit H3: has the external IdP actually verified the email it asserted?
+    /// For OIDC the proof is the standard <c>email_verified == true</c> claim
+    /// (absent or false ⇒ NOT verified — an attacker can self-register an
+    /// arbitrary email at a permissive IdP, so the address must not be trusted
+    /// for auto-linking). SAML providers are exempt: their attributes arrive in
+    /// an assertion signed by the specific IdP the admin configured
+    /// (AllowedIssuer + signature), which is the trust anchor — SAML has no
+    /// email_verified concept.
+    /// </summary>
+    private static bool IsExternalEmailVerified(
+        LoginProvider config, IReadOnlyDictionary<string, object?> rawClaims)
+    {
+        if (config.Type == LoginProviderType.Saml) return true;
+
+        return rawClaims.TryGetValue("email_verified", out var v)
+            && v is string s
+            && bool.TryParse(s, out var verified)
+            && verified;
+    }
 
     private static bool IsEmailAllowed(LoginProvider config, string? email)
     {

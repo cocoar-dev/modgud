@@ -338,6 +338,19 @@ public static class AppsEndpoints
                 }));
             }
 
+            // realm:admin is the synthetic realm-wide bypass — it must never be
+            // a catalog entry (audit H1, vector 3). Conferring realm:admin is
+            // reserved to a role's IsRealmAdmin flag, which is itself gated on
+            // the caller already holding realm:admin.
+            if (AppPermissionRules.IsReservedBypass(resource, action))
+            {
+                return (normalised, Results.BadRequest(new
+                {
+                    Error = "App.ReservedPermission",
+                    Message = "The permission 'realm:admin' is reserved — it is the realm-wide bypass and cannot be a catalog entry. Use a role's IsRealmAdmin flag instead.",
+                }));
+            }
+
             var key = $"{resource}:{action}";
             if (!seen.Add(key))
             {

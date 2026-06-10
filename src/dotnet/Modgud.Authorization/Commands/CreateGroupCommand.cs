@@ -17,7 +17,11 @@ public record CreateGroupCommand(
     string? Email = null,
     EmailMode EmailMode = EmailMode.Shared,
     List<string>? BoundTo = null,
-    bool ExternallyDrivable = false);
+    bool ExternallyDrivable = false,
+    // Whether the caller already holds realm:admin. Set by the endpoint from
+    // the authenticated principal. Defaults false (fail-closed): a command
+    // constructed without it cannot confer realm:admin.
+    bool CallerIsRealmAdmin = false);
 
 public class CreateGroupHandler(
     IDocumentSession session,
@@ -48,6 +52,16 @@ public class CreateGroupHandler(
             var guardError = await GroupMembershipGuards.RejectIfConfersRealmAdminAsync(
                 session, command.RoleIds, ct);
             if (guardError is not null) return guardError.Value;
+        }
+
+        // Privilege-escalation guard (audit H1): only a realm:admin may create a
+        // group that confers realm:admin. Without this, an authorization-group:write
+        // holder could attach a realm-admin role to a group and self-escalate.
+        if (!command.CallerIsRealmAdmin &&
+            await GroupMembershipGuards.AnyRoleConfersRealmAdminAsync(session, command.RoleIds, ct))
+        {
+            return Error.Forbidden("Group.RealmAdminConferralForbidden",
+                "Only a realm administrator may create a group that confers realm:admin.");
         }
 
         string? compiledMembership = null;

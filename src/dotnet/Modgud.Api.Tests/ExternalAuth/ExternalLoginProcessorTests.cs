@@ -138,6 +138,39 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task TrustForEmailLink_WithUnverifiedEmail_IsRejected()
+    {
+        // Audit H3: account-takeover guard. TrustForEmailLink must NOT absorb an
+        // existing account when the IdP did not assert email_verified — otherwise
+        // an attacker who self-registered the victim's email at a permissive OIDC
+        // provider could sign in as the victim. Must fail closed (no link created).
+        var config = await CreateEnabledEntraConfig(autoCreate: false, trustForEmailLink: true);
+        var existing = await Factory.CreateTestUserWithIdentityAsync("Vic", "Tim", "VT", "victim@acme.com");
+
+        using var scope = Factory.Services.CreateScope();
+        var processor = scope.ServiceProvider.GetRequiredService<ExternalLoginProcessor>();
+
+        var external = BuildExternalPrincipal(
+            subject: "sub-attacker-unverified",
+            email: "victim@acme.com",
+            name: "Victim Tim",
+            emailVerified: false);
+
+        var result = await processor.ProcessAsync(external, config.Id, default);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("Idp.EmailNotVerified", result.ErrorCode);
+
+        // No link was forged onto the victim's account.
+        using var scope2 = Factory.Services.CreateScope();
+        var session = scope2.ServiceProvider.GetRequiredService<IQuerySession>();
+        var link = await session.Query<ExternalIdentityLink>()
+            .Where(l => l.Subject == "sub-attacker-unverified")
+            .FirstOrDefaultAsync(TestContext.Current.CancellationToken);
+        Assert.Null(link);
+    }
+
+    [Fact]
     public async Task AllowedDomains_RejectsMismatchedEmail()
     {
         var config = await CreateEnabledEntraConfig(
@@ -477,12 +510,21 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
         string? email,
         string? name,
         IReadOnlyList<string>? groups = null,
-        IReadOnlyList<string>? amr = null)
+        IReadOnlyList<string>? amr = null,
+        bool emailVerified = true)
     {
         var identity = new ClaimsIdentity("oidc");
         identity.AddClaim(new Claim("iss", Issuer));
         identity.AddClaim(new Claim("sub", subject));
-        if (email is not null) identity.AddClaim(new Claim("email", email));
+        if (email is not null)
+        {
+            identity.AddClaim(new Claim("email", email));
+            // OIDC standard email_verified flag — a properly-configured IdP
+            // asserts it. Audit H3: TrustForEmailLink requires it to be true
+            // before auto-linking by email. Default true here so the common
+            // "verified IdP" tests exercise the happy path.
+            identity.AddClaim(new Claim("email_verified", emailVerified ? "true" : "false"));
+        }
         if (name is not null)
         {
             identity.AddClaim(new Claim("name", name));

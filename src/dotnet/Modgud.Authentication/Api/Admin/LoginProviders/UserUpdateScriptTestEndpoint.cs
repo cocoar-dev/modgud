@@ -3,6 +3,7 @@ using BuildingBlocks.Helper;
 using Marten;
 using Microsoft.AspNetCore.Mvc;
 using Modgud.Authorization.AspNetCore;
+using Modgud.Authorization.Membership;
 using Modgud.Authentication.Domain.ExternalAuth;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Identity.ExternalAuth;
@@ -42,6 +43,16 @@ public static class UserUpdateScriptTestEndpoint
                     if (config is null) return Results.NotFound();
                     script = config.UserUpdateScript;
                 }
+
+                // Audit M5: apply the same length + nesting-depth caps as the
+                // save-time sites BEFORE handing the body to the runner. The
+                // runner's runtime limits don't bound the PARSE phase, so an
+                // unbounded / deeply-nested script submitted here (gated only on
+                // the low login-provider:read tier) could stack-overflow the
+                // host process and take down every realm. One guard closes it.
+                var scriptInputError = ScriptInputLimits.Validate(script, "LoginProvider.UserUpdateScript");
+                if (scriptInputError is { } inputErr)
+                    return Results.BadRequest(new { Error = inputErr.Code, Message = inputErr.Description });
 
                 var claims = request.Claims ?? new Dictionary<string, JsonElement>();
                 var asDict = claims.ToDictionary(

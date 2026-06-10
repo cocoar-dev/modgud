@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Modgud.Permissions;
 
 namespace Modgud.Authorization.Apps;
 
@@ -20,6 +21,21 @@ public static partial class AppPermissionRules
     /// <summary>True if <paramref name="value"/> is a valid resource or action segment.</summary>
     public static bool IsValidSegment(string? value) =>
         !string.IsNullOrWhiteSpace(value) && SegmentRegex().IsMatch(value);
+
+    /// <summary>
+    /// True if (<paramref name="resource"/>, <paramref name="action"/>) would
+    /// mint the synthetic realm-wide bypass string
+    /// <see cref="PermissionEvaluator.RealmAdminPermission"/> (<c>realm:admin</c>).
+    /// A catalog entry may never carry it: realm:admin is conferred ONLY by a
+    /// role's <c>IsRealmAdmin</c> flag (itself gated on the caller already
+    /// holding realm:admin). Without this guard, an <c>app:write</c> holder
+    /// could inject a literal <c>realm:admin</c> catalog entry and FK a role to
+    /// it, escalating to realm-wide admin (audit H1, vector 3). Segments are
+    /// already lowercased by <see cref="IsValidSegment"/>, so an ordinal compare
+    /// of the joined string is exact.
+    /// </summary>
+    public static bool IsReservedBypass(string? resource, string? action) =>
+        string.Equals($"{resource}:{action}", PermissionEvaluator.RealmAdminPermission, StringComparison.Ordinal);
 
     /// <summary>
     /// Validates a <c>"&lt;resource&gt;:&lt;action&gt;"</c> string in one shot. Returns
