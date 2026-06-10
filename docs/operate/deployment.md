@@ -45,10 +45,10 @@ settings, the OpenIddict issuer, the magic-link rate limit, the
 | `MagicLinkConfiguration` | `MagicLink:` — `Enabled`, `ExpirationMinutes`, `RateLimitMinutes` |
 | `EmailOtpConfiguration` | `EmailOtp:` — `ExpirationMinutes`, `RateLimitMinutes` |
 | `AppSettings` | `AppSettings:` — `AuthenticationMinimumLevel`, `MagicLinkSelfService`, `TwoFactorGracePeriodDays` |
-| `OpenIddictSettings` | `OpenIddict:` — `Issuer`, `*LifetimeMinutes`, `DevelopmentMode`, `SigningCertificatePath` |
+| `OpenIddictSettings` | `OpenIddict:` — `*LifetimeMinutes`, `DevelopmentMode`, `SigningCertificatePath` |
 | `ObservabilitySettings` | `Observability:` — `Prometheus.Enabled`, `Prometheus.BearerToken`, `Otlp.*`, `ErrorFeed.*` |
 
-The token-issuer origin is **not** a global setting. There is no `PublicUrl` key — each realm carries its own `PrimaryDomain` (managed in the admin UI or the Recovery CLI), and the issuer origin is derived per request from that domain / the request host. `OpenIddict.Issuer` only fixes the canonical issuer string advertised in the discovery document.
+The token issuer is **not** a global setting — there is no `Issuer` or `PublicUrl` key. Modgud is multi-tenant: each realm carries its own `PrimaryDomain` (managed in the admin UI or the Recovery CLI), and the issuer is derived per request from that domain / the request host on every path — the discovery document, the token `iss` claim, and token validation. What you must get right for a correct issuer is therefore (1) each realm's domain and (2) the reverse proxy forwarding the real public host (see `ProxyAllowedNetworks` below), **not** any issuer config value.
 
 ### Example `configuration.json`
 
@@ -78,7 +78,6 @@ The token-issuer origin is **not** a global setting. There is no `PublicUrl` key
   "MagicLink": { "Enabled": true, "ExpirationMinutes": 15, "RateLimitMinutes": 2 },
   "EmailOtp": { "ExpirationMinutes": 10, "RateLimitMinutes": 2 },
   "OpenIddict": {
-    "Issuer": "https://auth.example.com",
     "AccessTokenLifetimeMinutes": 60,
     "RefreshTokenLifetimeDays": 14,
     "AuthorizationCodeLifetimeMinutes": 5,
@@ -141,7 +140,6 @@ Multi-arch: **linux/amd64** + **linux/arm64**. Pin a specific tag in production 
 ::: tip Production runs fail-closed
 The published image ships `ASPNETCORE_ENVIRONMENT=Production`, and Production **refuses to boot** if any of the following is true (the boot validator throws with an actionable message):
 
-- `OpenIddict.Issuer` is `http://`, `localhost`, or empty;
 - `OpenIddict.DevelopmentMode` is `true`;
 - the Prometheus scrape endpoint is enabled (the default) but no `Observability.Prometheus.BearerToken` is set.
 
@@ -154,11 +152,11 @@ For a production run you must supply, at minimum:
 
 - **`DbSettings__ConnectionString`** — Postgres master DB. Realms get
   per-tenant DBs auto-provisioned with the slug appended.
-- **`OpenIddict__Issuer`** — public **HTTPS** URL of the IdP. Boot
-  validation rejects `http://`, `localhost`, or empty here in Production.
 - **`ProxyAllowedNetworks`** — comma-separated CIDR list of reverse-
-  proxy IPs. Required so `X-Forwarded-Proto` is honoured for
-  cookie-Secure decisions; everything else is rejected.
+  proxy IPs. Required so `X-Forwarded-Proto`/`-Host` are honoured for
+  cookie-Secure decisions **and the per-realm token issuer** (the issuer
+  is derived from the forwarded host); everything else is rejected. There
+  is no issuer config value — see "token issuer" above.
 - **`Observability__Prometheus__BearerToken`** — a strong random string
   protecting the `/metrics` scrape endpoint (or set
   `Observability__Prometheus__Enabled=false` to drop the endpoint
@@ -191,7 +189,6 @@ docker run -d \
   -p 8081:8081 \
   -v cocoar-keys:/app/data/keys \
   -e DbSettings__ConnectionString="Host=your-postgres;Database=modgud;Username=postgres;Password=..." \
-  -e OpenIddict__Issuer="https://auth.example.com" \
   -e ProxyAllowedNetworks="10.0.0.0/24" \
   -e Observability__Prometheus__Enabled="false" \
   ghcr.io/cocoar-dev/modgud:latest
@@ -259,8 +256,7 @@ services:
       - "8081"   # Kestrel listens on 8081; the reverse proxy talks to it on this port
     environment:
       DbSettings__ConnectionString: "Host=postgres;Database=modgud;Username=postgres;Password=postgres"
-      OpenIddict__Issuer: "https://auth.example.com"   # must be HTTPS — Production refuses http/localhost
-      ProxyAllowedNetworks: "10.0.0.0/24"   # adjust to your reverse proxy CIDR
+      ProxyAllowedNetworks: "10.0.0.0/24"   # adjust to your reverse proxy CIDR — also pins the per-realm token issuer (forwarded host)
       # Mandatory in Production: protect the /metrics scrape endpoint, or set
       # Observability__Prometheus__Enabled=false to drop it. Boot fails otherwise.
       Observability__Prometheus__BearerToken: "${PROMETHEUS_TOKEN}"   # strong random string
@@ -307,7 +303,6 @@ auth:
     AppUrl: "https://0.0.0.0:443"
     CertPath: "/secrets/auth.pfx"            # Kestrel TLS cert (separate from OpenIddict signing/encryption)
     CertPassword: "..."                      # optional — passwordless PFX is supported
-    OpenIddict__Issuer: "https://auth.example.com"
   volumes:
     - ./certs:/secrets:ro
 ```

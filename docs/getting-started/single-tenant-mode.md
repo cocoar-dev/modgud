@@ -47,7 +47,6 @@ docker run -d \
   -p 80:8081 \
   -v cocoar-keys:/app/data/keys \
   -e DbSettings__ConnectionString="Host=db.internal;Database=modgud;Username=modgud;Password=…;Keepalive=30" \
-  -e OpenIddict__Issuer="https://auth.example.com" \
   -e ProxyAllowedNetworks="10.0.0.0/8" \
   -e Observability__Prometheus__BearerToken="$(openssl rand -hex 32)" \
   ghcr.io/cocoar-dev/modgud:latest

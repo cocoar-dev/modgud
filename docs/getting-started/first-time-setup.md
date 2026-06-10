@@ -61,7 +61,6 @@ Skip this section if you're on the default `localhost` Docker quickstart — the
 ::: warning Production boot guards (fail-closed)
 The published image runs as **Production** and refuses to boot on a dev-shaped config. Before the container will start in production you must satisfy all of these:
 
-- `OpenIddict__Issuer` is a non-`localhost`, non-`127.0.0.1` **HTTPS** URL.
 - `OpenIddict__DevelopmentMode` is `false` (the default) — ephemeral keys are rejected.
 - If Prometheus scraping stays enabled (the default), `Observability__Prometheus__BearerToken` is set to a strong random string. Otherwise set `Observability__Prometheus__Enabled=false`. An unauthenticated `/metrics` endpoint on a public host leaks realm-labelled telemetry, so the guard blocks boot until you pick one.
 

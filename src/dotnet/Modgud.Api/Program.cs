@@ -792,16 +792,12 @@ try
                 "and disable transport security on /connect/* endpoints. Set " +
                 "OpenIddict__DevelopmentMode=false.");
 
-        if (string.IsNullOrWhiteSpace(openIddictSettings.Issuer) ||
-            openIddictSettings.Issuer.Contains("localhost", StringComparison.OrdinalIgnoreCase) ||
-            openIddictSettings.Issuer.Contains("127.0.0.1"))
-            throw new InvalidOperationException(
-                $"OpenIddict.Issuer ('{openIddictSettings.Issuer}') is invalid for Production. " +
-                "Set it to the public HTTPS URL of the IdP (e.g. https://auth.example.com).");
-
-        if (openIddictSettings.Issuer.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException(
-                $"OpenIddict.Issuer ('{openIddictSettings.Issuer}') must use HTTPS in Production.");
+        // No issuer check here: the issuer is per-realm and request-derived (the
+        // realm's host via BaseUri), not a global setting — see
+        // RealmIssuerHandler / RealmSigningKeyHandler / RealmTokenValidationHandler.
+        // The real "don't advertise a wrong issuer" protection is the realm's
+        // configured domain plus the reverse proxy pinning the forwarded Host
+        // (ProxyAllowedNetworks), neither of which is a boot-time config value.
 
         // Observability: Prometheus scrape is enabled by default and emits
         // realm-labelled internal counters — leaving it unauthenticated on a

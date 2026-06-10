@@ -41,7 +41,6 @@
         "ConnectionString": "Host=localhost;Database=modgud;Username=postgres;Password=postgres"
     },
     "OpenIddict": {
-        "Issuer": "http://localhost:9099",
         "DevelopmentMode": true,
         "AccessTokenLifetimeMinutes": 60,
         "RefreshTokenLifetimeDays": 14,

@@ -41,7 +41,6 @@ public interface IOpenIddictSettings
     /// </summary>
     string? EncryptionCertificatePath { get; }
 
-    string Issuer { get; }
     int AccessTokenLifetimeMinutes { get; }
     int RefreshTokenLifetimeDays { get; }
     int AuthorizationCodeLifetimeMinutes { get; }
@@ -169,7 +168,16 @@ public static class OpenIddictExtensions
                 options.DisableResourceValidation();
                 options.IgnoreResourcePermissions();
 
-                options.SetIssuer(new Uri(settings.Issuer));
+                // OpenIddict requires a base issuer at config time, but Modgud
+                // NEVER emits it: the effective issuer is per-realm, derived from
+                // the request host (BaseUri) on every path — discovery
+                // (RealmIssuerHandler), the token `iss` claim (RealmSigningKeyHandler)
+                // and token validation (RealmTokenValidationHandler). This is a
+                // deliberately-unroutable placeholder (RFC 2606 `.invalid`); if it
+                // ever surfaces in a token, BaseUri resolution failed upstream. It is
+                // intentionally NOT operator-configurable — a knob that never takes
+                // effect is worse than none.
+                options.SetIssuer(new Uri("https://issuer.invalid/"));
                 options.SetAccessTokenLifetime(TimeSpan.FromMinutes(settings.AccessTokenLifetimeMinutes));
                 options.SetRefreshTokenLifetime(TimeSpan.FromDays(settings.RefreshTokenLifetimeDays));
                 options.SetAuthorizationCodeLifetime(TimeSpan.FromMinutes(settings.AuthorizationCodeLifetimeMinutes));
