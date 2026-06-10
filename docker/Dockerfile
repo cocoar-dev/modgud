@@ -59,4 +59,14 @@ ENV AppUrl=http://0.0.0.0:8081
 ENV CertPath=
 ENV CertPassword=
 
+# Run as the non-root `app` user shipped in the aspnet base image (defense in
+# depth, audit L9). On first Production boot CertificateBootstrap auto-generates
+# the signing/encryption PFX under /app/data/keys, so that tree must be
+# app-writable; everything else the app persists lives in Postgres (Marten),
+# including the DataProtection key ring. Port 8081 is >1024, so an unprivileged
+# user can bind it. Operators mounting a volume at /app/data/keys must ensure it
+# is writable by uid `app`.
+RUN mkdir -p /app/data/keys && chown -R app:app /app/data
+USER app
+
 ENTRYPOINT ["dotnet", "Modgud.Api.dll"]

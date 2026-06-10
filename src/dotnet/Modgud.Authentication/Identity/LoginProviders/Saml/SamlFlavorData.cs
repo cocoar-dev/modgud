@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ErrorOr;
 
 namespace Modgud.Authentication.Identity.LoginProviders.Saml;
 
@@ -116,6 +117,20 @@ public sealed record SamlFlavorData
 
     /// <summary>Default metadata refresh cadence — 24 hours.</summary>
     public const int DefaultMetadataRefreshIntervalSeconds = 86_400;
+
+    /// <summary>
+    /// Audit L2: reject a configuration that requires NO signature at all. With
+    /// both <see cref="WantAssertionsSigned"/> and <see cref="WantResponseSigned"/>
+    /// false, the SAML stack validates a signature only when one is present — an
+    /// entirely unsigned Response/Assertion would be accepted, opening
+    /// forged-assertion account takeover. At least one signing requirement must
+    /// stay on; assertion signing is the real wrapping defense.
+    /// </summary>
+    public Error? ValidateSignatureFloor()
+        => !WantAssertionsSigned && !WantResponseSigned
+            ? Error.Validation("LoginProvider.SamlNoSignatureRequired",
+                "A SAML provider must require at least one of assertion-signing or response-signing — refusing a configuration that would accept entirely unsigned SAML.")
+            : null;
 
     /// <summary>
     /// Parse a <see cref="JsonDocument"/> (as stored on

@@ -13,6 +13,39 @@ public class SamlFlavorDataTests
 {
     private static JsonDocument Json(string raw) => JsonDocument.Parse(raw);
 
+    public class SignatureFloor
+    {
+        [Fact]
+        public void Both_signing_toggles_off_is_rejected()
+        {
+            // Audit L2: a config that requires neither assertion- nor
+            // response-signing would accept entirely unsigned SAML.
+            var data = SamlFlavorData.FromJson(
+                JsonDocument.Parse("""{"wantAssertionsSigned":false,"wantResponseSigned":false}"""));
+
+            var error = data.ValidateSignatureFloor();
+
+            Assert.NotNull(error);
+            Assert.Equal("LoginProvider.SamlNoSignatureRequired", error!.Value.Code);
+        }
+
+        [Fact]
+        public void Assertion_signing_on_passes()
+        {
+            // The default (assertion signing on, response signing off — the
+            // EntraID/ADFS shape) must remain valid.
+            Assert.Null(SamlFlavorData.FromJson(null).ValidateSignatureFloor());
+        }
+
+        [Fact]
+        public void Response_signing_on_passes()
+        {
+            var data = SamlFlavorData.FromJson(
+                JsonDocument.Parse("""{"wantAssertionsSigned":false,"wantResponseSigned":true}"""));
+            Assert.Null(data.ValidateSignatureFloor());
+        }
+    }
+
     public class Defaults
     {
         [Fact]

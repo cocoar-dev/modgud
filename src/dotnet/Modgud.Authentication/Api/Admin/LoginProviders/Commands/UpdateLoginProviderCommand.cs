@@ -114,6 +114,11 @@ public class UpdateLoginProviderHandler(
             if (!samlFlavors.TryGet(config.Flavor, out _))
                 return Error.Validation("LoginProvider.UnknownFlavor",
                     $"SAML flavor '{config.Flavor}' is no longer registered.");
+
+            // Signature floor (audit L2): an admin must not turn off both
+            // assertion- and response-signing — that would accept unsigned SAML.
+            var floorError = SamlFlavorData.FromJson(flavorData).ValidateSignatureFloor();
+            if (floorError is not null) return floorError.Value;
         }
 
         // Display-name uniqueness across active providers (merged name).

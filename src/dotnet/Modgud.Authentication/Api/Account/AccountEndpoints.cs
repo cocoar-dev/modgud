@@ -348,6 +348,9 @@ public static class AccountEndpoints
             ChangePasswordRequest request,
             HttpContext context,
             UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
+            IUserAccessRevoker accessRevoker,
+            ISessionService sessionService,
             IAuthSettings appSettings) =>
         {
             if (appSettings.AuthenticationMinimumLevel >= 2)
@@ -366,7 +369,23 @@ public static class AccountEndpoints
                 return Results.Json(new { Message = string.Join(" ", errors) }, statusCode: 400);
             }
 
-            Log.Information("Password changed. UserId={UserId} IP={IP}", user.Id, ip);
+            // Audit L5: a password change must immediately revoke the user's OTHER
+            // live access — already-issued OAuth tokens and every other device
+            // session — not merely rely on the <=5-min security-stamp window. Kill
+            // everything, then refresh the CURRENT session (reload the user first so
+            // it carries the freshly-rotated stamp) so the password-changer stays
+            // signed in here, and re-record its device row so the session list stays
+            // accurate.
+            await accessRevoker.RevokeAllAccessAsync(
+                user.Id, AccessRevocationReason.ForceSignOut, context.RequestAborted);
+            var refreshed = await userManager.FindByIdAsync(user.Id.ToString());
+            if (refreshed is not null)
+            {
+                await signInManager.RefreshSignInAsync(refreshed);
+                await SessionTracker.RecordLoginAsync(sessionService, context, refreshed.Id);
+            }
+
+            Log.Information("Password changed; other sessions revoked. UserId={UserId} IP={IP}", user.Id, ip);
             return Results.Ok(new { Message = "Password changed successfully" });
         })
         .WithName("Account_ChangePassword");
