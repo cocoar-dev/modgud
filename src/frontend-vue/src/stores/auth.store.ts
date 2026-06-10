@@ -159,10 +159,17 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * Complete login via magic link token.
+   * Complete login via magic link token. When the account has TOTP enabled the
+   * backend does NOT grant a full session — it returns RequiresMfa and sets the
+   * partial-2FA cookie, so the caller (MagicLoginView) must collect the TOTP
+   * code and finish via mfaLogin. Magic-link is no longer a 2FA bypass.
    */
-  async function magicLinkLogin(userId: string, token: string, rememberMe: boolean = false): Promise<void> {
-    await magicLinkHttp.addPath('login').post({ UserId: userId, Token: token, RememberMe: rememberMe })
+  async function magicLinkLogin(userId: string, token: string, rememberMe: boolean = false): Promise<LoginResponse | void> {
+    const result = await magicLinkHttp.addPath('login').post<LoginResponse>({ UserId: userId, Token: token, RememberMe: rememberMe })
+    if (result?.RequiresMfa) {
+      // Partial sign-in only — /api/account/me would 401 until TOTP completes.
+      return result
+    }
     await fetchMe()
   }
 

@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
+import { CoarCard, CoarFormField, CoarOtpInput, CoarButton, CoarNote } from '@cocoar/vue-ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,8 +17,10 @@ async function toggleLanguage() {
   localStorage.setItem('language', next)
 }
 
-const status = ref<'loading' | 'success' | 'error'>('loading')
+const status = ref<'loading' | 'mfa' | 'success' | 'error'>('loading')
 const errorMessage = ref('')
+const totpCode = ref('')
+const submitting = ref(false)
 
 onMounted(async () => {
   const userId = route.query.userId as string
@@ -30,7 +33,13 @@ onMounted(async () => {
   }
 
   try {
-    await authStore.magicLinkLogin(userId, token)
+    const result = await authStore.magicLinkLogin(userId, token)
+    // TOTP-protected accounts: the magic-link proves mailbox control but is not
+    // a 2FA bypass — finish with the authenticator code before signing in.
+    if (result?.RequiresMfa) {
+      status.value = 'mfa'
+      return
+    }
     status.value = 'success'
     router.replace('/dashboard')
   } catch {
@@ -38,6 +47,21 @@ onMounted(async () => {
     errorMessage.value = t('auth.magicLogin.expiredLink', {}, 'This login link is invalid or expired.')
   }
 })
+
+async function submitTotp() {
+  if (!totpCode.value.trim() || submitting.value) return
+  submitting.value = true
+  errorMessage.value = ''
+  try {
+    await authStore.mfaLogin(totpCode.value.replace(/[\s-]/g, ''))
+    status.value = 'success'
+    router.replace('/dashboard')
+  } catch {
+    errorMessage.value = t('auth.mfa.invalidCode', {}, 'Invalid code. Please try again.')
+  } finally {
+    submitting.value = false
+  }
+}
 </script>
 
 <template>
@@ -59,6 +83,22 @@ onMounted(async () => {
       <div v-if="status === 'loading'" class="space-y-4">
         <p class="text-surface-500">{{ t('auth.magicLogin.loggingIn', {}, 'Logging in...') }}</p>
       </div>
+
+      <!-- TOTP step-up (account has an authenticator enabled) -->
+      <CoarCard v-else-if="status === 'mfa'" elevated>
+        <form class="space-y-4" @submit.prevent="submitTotp">
+          <p class="text-sm text-surface-500">
+            {{ t('auth.mfa.totpSubtitle', {}, 'Enter the code from your authenticator app.') }}
+          </p>
+          <CoarFormField :label="t('auth.mfa.authenticatorCode', {}, 'Authenticator Code')">
+            <CoarOtpInput v-model="totpCode" type="numeric" :length="6" auto-focus required />
+          </CoarFormField>
+          <CoarNote v-if="errorMessage" variant="error">{{ errorMessage }}</CoarNote>
+          <CoarButton type="submit" :disabled="!totpCode.trim()" :loading="submitting" full-width>
+            {{ t('common.confirm', {}, 'Confirm') }}
+          </CoarButton>
+        </form>
+      </CoarCard>
 
       <!-- Error -->
       <div v-else-if="status === 'error'" class="space-y-4">

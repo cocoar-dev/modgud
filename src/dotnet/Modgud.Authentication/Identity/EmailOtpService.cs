@@ -14,6 +14,12 @@ public class EmailOtpService(IDocumentSession session, IEmailService emailServic
         var user = await session.LoadAsync<ApplicationUser>(userId, ct);
         if (user is null)
             return Error.NotFound("EmailOtp.UserNotFound", "User not found.");
+        // Audit M2: only issue an email OTP to a user who actually enabled it as
+        // a second factor. Without this, a TOTP-only account (the partial-2FA
+        // cookie is set for any 2FA-enabled user) could be downgraded to a
+        // mailbox-based factor the user never opted into.
+        if (!user.EmailOtpEnabled)
+            return Error.Forbidden("EmailOtp.NotEnabled", "Email OTP is not enabled for this account.");
         if (string.IsNullOrEmpty(user.Email))
             return Error.Validation("EmailOtp.EmailRequired", "A verified email address is required to use email OTP.");
 

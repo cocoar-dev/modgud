@@ -15,6 +15,7 @@ using Modgud.Authorization.Apps;
 using Modgud.Authorization.Services;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Observability;
+using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -102,6 +103,11 @@ public static class AccountEndpoints
             // Never reveal whether a username exists, is deactivated, or is locked.
             if (user is null || !user.IsActive)
             {
+                // Audit M3: equalize response time so an attacker cannot tell an
+                // unknown/inactive account (no hashing) from a valid one (PBKDF2)
+                // by latency. Burn an equivalent hash verify before the 401.
+                PasswordTimingSafety.EqualizeFailure(userManager.PasswordHasher, request.Password);
+
                 securityAudit.Record(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.LoginFailedUnknownUser,
@@ -118,6 +124,37 @@ public static class AccountEndpoints
 
             var result = await signInManager.PasswordSignInAsync(user, request.Password,
                 isPersistent: request.RememberMe, lockoutOnFailure: true);
+
+            // Audit M4: when the realm requires verified emails, an unverified
+            // account must not complete login (even though it may be active).
+            // Checked AFTER the password is validated — uniform timing, and an
+            // attacker without the password still only sees "invalid credentials".
+            // Clear whatever cookie / partial-2FA state PasswordSignInAsync just
+            // issued so no session survives the block.
+            if (result.Succeeded || result.RequiresTwoFactor)
+            {
+                var realmSettings = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId);
+                if (realmSettings?.SelfRegistration?.RequireEmailVerification == true && !user.EmailConfirmed)
+                {
+                    await signInManager.SignOutAsync();
+                    securityAudit.Record(new SecurityAuditRecord
+                    {
+                        EventType = AuditEvents.LoginFailed,
+                        Level = "Warning",
+                        Actor = LogPiiMasking.MaskUsername(request.UserName),
+                        Ip = ip,
+                        Status = "rejected",
+                        Reason = "email not verified",
+                        Message = $"Login blocked for {LogPiiMasking.MaskUsername(request.UserName)} — email not verified (realm requires verification)",
+                    });
+                    ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Failure);
+                    return Results.Json(new
+                    {
+                        Message = "Please verify your email address before signing in.",
+                        Code = "Account.EmailNotVerified",
+                    }, statusCode: 403);
+                }
+            }
 
             if (result.Succeeded)
             {
