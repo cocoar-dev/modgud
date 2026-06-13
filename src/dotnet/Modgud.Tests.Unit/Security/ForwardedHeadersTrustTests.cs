@@ -56,7 +56,7 @@ public class ForwardedHeadersTrustTests
         ctx.Request.Headers["X-Forwarded-Host"] = ForwardedHost;
 
         await middleware.Invoke(ctx);
-        return (ctx.Request.Scheme, ctx.Request.Host.Value);
+        return (ctx.Request.Scheme, ctx.Request.Host.ToString());
     }
 
     [Fact]
