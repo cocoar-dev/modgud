@@ -1,3 +1,5 @@
+using BuildingBlocks.EventDispatcher;
+using Marten;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
 using Modgud.Authentication.ExtensionMethods;
@@ -36,26 +38,35 @@ public static class OAuthClientsEndpoints
         .WithName("OAuth_Clients_Get")
         .RequiresPermission("oauth-client:read");
 
-        group.MapPost("", async (CreateOAuthClientDto dto, OAuthAdminService svc, CancellationToken ct) =>
+        group.MapPost("", async (CreateOAuthClientDto dto, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
         {
             var result = await svc.CreateClientAsync(dto, ct);
+            // Broadcast only the client view (never the one-time secret in the wrapper).
+            if (!result.IsError)
+                dispatcher.DispatchCreatedEvent("OAuthClient", result.Value.Client, session.TenantId);
             return result.ToResult(created => Results.Created($"{path}/admin/oauth/clients/{created.Client.Id}", created));
         })
         .WithName("OAuth_Clients_Create")
         .RequiresPermission("oauth-client:write");
 
-        group.MapPut("{id}", async (string id, UpdateOAuthClientDto dto, OAuthAdminService svc, CancellationToken ct) =>
+        group.MapPut("{id}", async (string id, UpdateOAuthClientDto dto, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
         {
             var result = await svc.UpdateClientAsync(id, dto, ct);
+            if (!result.IsError)
+                dispatcher.DispatchUpdatedEvent("OAuthClient", result.Value, session.TenantId);
             return result.ToResult(client => Results.Ok(client));
         })
         .WithName("OAuth_Clients_Update")
         .RequiresPermission("oauth-client:write");
 
-        group.MapDelete("{id}", async (string id, OAuthAdminService svc, CancellationToken ct) =>
+        group.MapDelete("{id}", async (string id, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
         {
             var result = await svc.DeleteClientAsync(id, ct);
-            return result.IsError ? result.ToResult() : Results.NoContent();
+            if (result.IsError) return result.ToResult();
+            // The DTO.Id the SPA stores is the full Guid string (MapClient), so
+            // emit the same here — a ShortGuid wouldn't match the grid row.
+            dispatcher.DispatchDeletedEvent("OAuthClient", id, session.TenantId);
+            return Results.NoContent();
         })
         .WithName("OAuth_Clients_Delete")
         .RequiresPermission("oauth-client:write");

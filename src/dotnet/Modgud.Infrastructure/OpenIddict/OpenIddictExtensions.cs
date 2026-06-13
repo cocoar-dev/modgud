@@ -239,6 +239,7 @@ public static class OpenIddictExtensions
 
                 options.AddEventHandler(RealmIssuerHandler.Descriptor);
                 options.AddEventHandler(RealmScopesSupportedHandler.Descriptor);
+                options.AddEventHandler(TokenEndpointAuthMethodsSupportedHandler.Descriptor);
                 options.AddEventHandler(DcrRegistrationEndpointHandler.Descriptor);
                 options.AddEventHandler(AccessTokenTypeHandler.Descriptor);
                 options.AddEventHandler(TokenMintMetricHandler.Descriptor);

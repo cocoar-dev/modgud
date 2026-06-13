@@ -33,7 +33,12 @@ public interface IDcrRegistrationValidator
 
 public abstract record DcrValidationResult
 {
-    public sealed record Allow(CreateOAuthClientDto Normalized) : DcrValidationResult;
+    /// <param name="Normalized">The CreateOAuthClientDto to persist.</param>
+    /// <param name="TokenEndpointAuthMethod">The negotiated client-auth method
+    /// (<c>none</c> / <c>client_secret_basic</c> / <c>client_secret_post</c>) —
+    /// echoed back in the RFC 7591 §3.2.1 response and used by the endpoint to
+    /// decide whether to surface the generated <c>client_secret</c>.</param>
+    public sealed record Allow(CreateOAuthClientDto Normalized, string TokenEndpointAuthMethod) : DcrValidationResult;
     public sealed record Reject(string ErrorCode, string ErrorDescription, DcrRejectionReason Reason) : DcrValidationResult;
 }
 
@@ -59,7 +64,23 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
         "code",
     };
 
-    private const string RequiredTokenEndpointAuthMethod = "none";
+    // Public PKCE ("none") stays the default. Secret-based confidential methods
+    // are accepted so clients that authenticate at the token endpoint (e.g. the
+    // claude.ai MCP connector, which registers confidential) can self-register.
+    // private_key_jwt is intentionally NOT accepted via DCR: it needs a
+    // registered JWKS, which the v1 /connect/register request shape doesn't
+    // carry — such clients must be pre-registered by an admin.
+    private const string AuthMethodNone = "none";
+    private const string AuthMethodClientSecretBasic = "client_secret_basic";
+    private const string AuthMethodClientSecretPost = "client_secret_post";
+
+    private static readonly HashSet<string> AllowedTokenEndpointAuthMethods = new(StringComparer.Ordinal)
+    {
+        AuthMethodNone,
+        AuthMethodClientSecretBasic,
+        AuthMethodClientSecretPost,
+    };
+
     private const int ClientNameMaxLength = 80;
 
     public DcrValidationResult Validate(
@@ -88,15 +109,19 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
 
         // ───────── token_endpoint_auth_method ───────────────────────
         // Default to "none" if omitted (RFC 7591 leaves the default
-        // server-defined; for a public-PKCE-only profile "none" is the
-        // only sensible default).
-        var authMethod = request.TokenEndpointAuthMethod ?? RequiredTokenEndpointAuthMethod;
-        if (authMethod != RequiredTokenEndpointAuthMethod)
+        // server-defined; public PKCE is the natural default for a DCR client).
+        var authMethod = request.TokenEndpointAuthMethod ?? AuthMethodNone;
+        if (!AllowedTokenEndpointAuthMethods.Contains(authMethod))
         {
             return Reject(DcrErrorCodes.InvalidClientMetadata,
-                $"token_endpoint_auth_method must be '{RequiredTokenEndpointAuthMethod}'. Cocoar issues public PKCE-only DCR clients — confidential DCR is not supported in v1.",
+                $"token_endpoint_auth_method '{authMethod}' is not supported via DCR. Supported: {string.Join(", ", AllowedTokenEndpointAuthMethods)}. (private_key_jwt requires admin pre-registration with a JWKS.)",
                 DcrRejectionReason.InvalidTokenAuthMethod);
         }
+
+        // none → public PKCE client; client_secret_* → confidential client with
+        // a server-generated secret (CreateClientAsync mints it; the endpoint
+        // returns it once in the RFC 7591 §3.2.1 response).
+        var isConfidential = authMethod != AuthMethodNone;
 
         // ───────── grant_types ──────────────────────────────────────
         var grantTypes = request.GrantTypes is { Count: > 0 }
@@ -182,7 +207,7 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
         {
             ClientId = "dcr-" + Guid.NewGuid().ToString("N"),
             DisplayName = normalisedName,
-            ClientType = OAuthClientTypes.Public,
+            ClientType = isConfidential ? OAuthClientTypes.Confidential : OAuthClientTypes.Public,
             ConsentType = OAuthConsentTypes.Explicit, // DCR clients always go through consent
             RedirectUris = request.RedirectUris.ToList(),
             PostLogoutRedirectUris = new List<string>(),
@@ -191,7 +216,9 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
             Enabled = true,
             RequireConsent = true,
             AllowRememberConsent = false,                  // DCR consent is per-session — re-affirm each time
-            RequireClientSecret = false,
+            // Confidential → CreateClientAsync generates + persists (hashed) a
+            // secret because ClientSecret is left null here. Public → no secret.
+            RequireClientSecret = isConfidential,
             EnableLocalLogin = true,
             AllowAccessTokensViaBrowser = false,
             // JWT is the idiomatic format for MCP / agent flows: the
@@ -207,7 +234,7 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
             AllowedCorsOrigins = new List<string>(),
         };
 
-        return new DcrValidationResult.Allow(normalized);
+        return new DcrValidationResult.Allow(normalized, authMethod);
     }
 
     /// <summary>RFC 8252 §7.3 + MCP spec: HTTPS anywhere, HTTP on

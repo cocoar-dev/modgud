@@ -1,3 +1,5 @@
+using BuildingBlocks.EventDispatcher;
+using Marten;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
 using Modgud.Authentication.ExtensionMethods;
@@ -26,26 +28,32 @@ public static class OAuthScopesEndpoints
         .WithName("OAuth_Scopes_Get")
         .RequiresPermission("oauth-scope:read");
 
-        group.MapPost("", async (CreateOAuthScopeDto dto, OAuthAdminService svc, CancellationToken ct) =>
+        group.MapPost("", async (CreateOAuthScopeDto dto, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
         {
             var result = await svc.CreateScopeAsync(dto, ct);
+            if (!result.IsError)
+                dispatcher.DispatchCreatedEvent("OAuthScope", result.Value, session.TenantId);
             return result.ToResult(scope => Results.Created($"{path}/admin/oauth/scopes/{scope.Id}", scope));
         })
         .WithName("OAuth_Scopes_Create")
         .RequiresPermission("oauth-scope:write");
 
-        group.MapPut("{id}", async (string id, UpdateOAuthScopeDto dto, OAuthAdminService svc, CancellationToken ct) =>
+        group.MapPut("{id}", async (string id, UpdateOAuthScopeDto dto, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
         {
             var result = await svc.UpdateScopeAsync(id, dto, ct);
+            if (!result.IsError)
+                dispatcher.DispatchUpdatedEvent("OAuthScope", result.Value, session.TenantId);
             return result.ToResult(scope => Results.Ok(scope));
         })
         .WithName("OAuth_Scopes_Update")
         .RequiresPermission("oauth-scope:write");
 
-        group.MapDelete("{id}", async (string id, OAuthAdminService svc, CancellationToken ct) =>
+        group.MapDelete("{id}", async (string id, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
         {
             var result = await svc.DeleteScopeAsync(id, ct);
-            return result.IsError ? result.ToResult() : Results.NoContent();
+            if (result.IsError) return result.ToResult();
+            dispatcher.DispatchDeletedEvent("OAuthScope", id, session.TenantId);
+            return Results.NoContent();
         })
         .WithName("OAuth_Scopes_Delete")
         .RequiresPermission("oauth-scope:write");

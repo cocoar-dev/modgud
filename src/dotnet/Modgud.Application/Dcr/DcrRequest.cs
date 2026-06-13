@@ -70,6 +70,18 @@ public sealed record DcrRegistrationResponse
     [JsonPropertyName("client_id_issued_at")]
     public required long ClientIdIssuedAt { get; init; }
 
+    /// <summary>RFC 7591 §3.2.1 — present only for confidential clients
+    /// (<c>token_endpoint_auth_method</c> ≠ <c>none</c>). The plaintext secret
+    /// is returned exactly once, here; the server persists only its hash.</summary>
+    [JsonPropertyName("client_secret")]
+    public string? ClientSecret { get; init; }
+
+    /// <summary>RFC 7591 §3.2.1 — REQUIRED when <c>client_secret</c> is issued;
+    /// <c>0</c> means the secret never expires (Cocoar doesn't auto-expire DCR
+    /// secrets). Omitted for public clients.</summary>
+    [JsonPropertyName("client_secret_expires_at")]
+    public long? ClientSecretExpiresAt { get; init; }
+
     [JsonPropertyName("token_endpoint_auth_method")]
     public required string TokenEndpointAuthMethod { get; init; }
 

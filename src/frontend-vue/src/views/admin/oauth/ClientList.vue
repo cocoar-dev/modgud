@@ -143,6 +143,10 @@ function openClient(client: OAuthClientDto) {
         <CoarCheckbox v-model="showDcrOnly"
           :label="t('admin.oauthClients.dcrOnly', {}, 'DCR only')"
           :title="t('admin.oauthClients.dcrOnly.help', {}, 'Show only clients minted via /connect/register (RFC 7591). Useful for spotting agent-registered clients separate from admin-created ones.')" />
+        <CoarButton size="s" variant="ghost" icon-start="rotate-ccw" @click="store.loadAll()"
+          :title="t('admin.oauthClients.refresh.help', {}, 'Reload the list — picks up clients registered out-of-band (DCR via /connect/register, another admin, another tab).')">
+          {{ t('common.refresh', {}, 'Refresh') }}
+        </CoarButton>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">
           {{ t('common.create', {}, 'Erstellen') }}
         </CoarButton>
