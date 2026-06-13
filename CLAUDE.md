@@ -48,13 +48,7 @@ set by `RealmMiddleware`. Background services fall back to the `system`
 tenant. Adding a realm provisions a fresh DB and seeds default
 OAuth scopes + Internal login provider.
 
-**Permissions:** `<app>:<resource>:<action>` style (e.g.
-`modgud:user:read`, `modgud:oauth-client:write`,
-`acme-tasks:todo:write`). Three bypass tiers: `<app>:<resource>:admin`
-(resource-wide within an app), `<app>:admin` (app-wide),
-`realm:admin` (realm-wide emergency exit, the System Admin role).
-Endpoints gate via `.RequiresPermission("...")` (extension on
-`RouteHandlerBuilder`).
+**Permissions:** `<resource>:<action>` style (e.g. `user:read`, `oauth-client:write`) — the app context is implicit, because a role is FK'd to an App (the IdP itself for in-process gates, the authenticated resource server for distribution-API calls). Two bypass tiers around an exact match: `realm:admin` (realm-wide emergency exit, the System Admin role) and `<resource>:admin` (resource-wide). Evaluation order is `realm:admin` → exact match → `<resource>:admin` (see `PermissionEvaluator` in `Modgud.Permissions.Abstractions`). Endpoints gate via `.RequiresPermission("...")` (extension on `RouteHandlerBuilder`).
 
 ## Frontend essentials
 
@@ -90,7 +84,8 @@ cd src/frontend-vue
 pnpm install
 pnpm dev
 
-# First-time setup at http://localhost:4300/setup
+# First-time setup: there is NO anonymous /setup — create the first admin with the
+# recovery CLI (`recover bootstrap-admin`); see docs/getting-started/first-time-setup.
 # Default admin in dev: admin / ABC12abc!
 ```
 
@@ -103,11 +98,7 @@ pnpm dev
 
 ## Configuration
 
-`src/dotnet/Modgud.Api/data/configuration.json` (committed defaults)
-+ `configuration.local.json` (gitignored). Bound via Cocoar.Configuration
-v5 layered binding. Settings types: `StartUpConfiguration`, `AppSettings`,
-`EmailConfiguration`, `MagicLinkConfiguration`, `EmailOtpConfiguration`,
-`OpenIddictSettings`.
+`src/dotnet/Modgud.Api/data/configuration.json` (committed defaults) + `configuration.local.json` (gitignored). Bound via Cocoar.Configuration v6 layered binding (env-var binding is case-insensitive). Settings types: `StartUpConfiguration`, `AppSettings`, `EmailConfiguration`, `MagicLinkConfiguration`, `EmailOtpConfiguration`, `ObservabilitySettings`, `OpenIddictSettings`.
 
 ## When in doubt
 
