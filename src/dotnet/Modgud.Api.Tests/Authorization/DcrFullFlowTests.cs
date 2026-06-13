@@ -192,6 +192,39 @@ public class DcrFullFlowTests : IntegrationTestBase
         await AssertInvalidTargetAsync(tokenResp);
     }
 
+    [Fact]
+    public async Task Authorization_response_iss_matches_discovery_issuer_rfc9207()
+    {
+        // RFC 9207 / MCP: the authorization response (the redirect back to the
+        // client) MUST carry an `iss` parameter, and a strict client compares it
+        // (simple string comparison) against the issuer from discovery. Modgud
+        // derives the real issuer per-realm from the request host but configures
+        // OpenIddict with a placeholder Options.Issuer — so the authorize-response
+        // iss must be overridden to the realm host the same way discovery + the
+        // token iss claim are, or it leaks the placeholder and strict MCP clients
+        // reject the redirect.
+        await SeedAsync();
+        var clientId = await RegisterDcrClientAsync(scope: $"openid {ScopeName}");
+
+        var metaClient = Factory.CreateClient();
+        var metaResp = await metaClient.GetAsync("/.well-known/openid-configuration", TestContext.Current.CancellationToken);
+        using var metaDoc = JsonDocument.Parse(await metaResp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var discoveryIssuer = metaDoc.RootElement.GetProperty("issuer").GetString()!;
+        Assert.True(
+            metaDoc.RootElement.TryGetProperty("authorization_response_iss_parameter_supported", out var issSupported)
+            && issSupported.GetBoolean(),
+            "Discovery advertises authorization_response_iss_parameter_supported=true, so the iss MUST be correct.");
+
+        var codeRedirect = await DriveToFinalAuthorizeRedirectAsync(clientId, $"openid {ScopeName}", AllowedAudience);
+        var iss = System.Web.HttpUtility.ParseQueryString(codeRedirect.Query)["iss"];
+
+        Assert.False(string.IsNullOrEmpty(iss),
+            $"RFC 9207: authorization response must carry iss. Redirect: {codeRedirect}");
+        Assert.True(iss == discoveryIssuer,
+            $"RFC 9207 mismatch — authorization-response iss '{iss}' != discovery issuer '{discoveryIssuer}'. "
+            + $"A strict MCP client rejects on this. Final redirect: {codeRedirect}");
+    }
+
     // ─── Seed: enable DCR + create API+scope with the per-row flags on ──
 
     private async Task SeedAsync()
@@ -400,6 +433,56 @@ public class DcrFullFlowTests : IntegrationTestBase
             "/connect/token",
             new FormUrlEncodedContent(tokenForm),
             TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>Drives /connect/authorize → consent → the final authorize
+    /// redirect and returns its Location (the redirect back to redirect_uri
+    /// carrying code + state + iss). Same dance as
+    /// <see cref="DriveDcrFlowThroughToTokenAsync"/> steps A–D, but stops at the
+    /// redirect so the caller can inspect the response parameters (e.g. iss).</summary>
+    private async Task<Uri> DriveToFinalAuthorizeRedirectAsync(string clientId, string scope, string authorizeResource)
+    {
+        var verifier = GeneratePkceVerifier();
+        var challenge = GeneratePkceS256Challenge(verifier);
+        var state = Guid.NewGuid().ToString("N");
+        var cookieClient = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
+
+        var authorizeUri = "/connect/authorize?" + string.Join("&", new[]
+        {
+            "response_type=code",
+            $"client_id={Uri.EscapeDataString(clientId)}",
+            $"redirect_uri={Uri.EscapeDataString(RedirectUri)}",
+            $"scope={Uri.EscapeDataString(scope)}",
+            $"state={state}",
+            $"code_challenge={challenge}",
+            "code_challenge_method=S256",
+            $"resource={Uri.EscapeDataString(authorizeResource)}",
+        });
+        var authorizeResp = await cookieClient.GetAsync(authorizeUri, TestContext.Current.CancellationToken);
+        AssertRedirect(authorizeResp);
+        var consentLocation = authorizeResp.Headers.Location!.ToString();
+        Assert.StartsWith("/consent?ticket=", consentLocation);
+        var ticketId = consentLocation["/consent?ticket=".Length..];
+
+        // Load consent info (mirrors the SPA), then approve.
+        var consentInfoResp = await cookieClient.GetAsync(
+            $"/connect/consent?ticket={ticketId}", TestContext.Current.CancellationToken);
+        Assert.True(consentInfoResp.IsSuccessStatusCode);
+
+        var requestedScopes = scope.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var decisionResp = await cookieClient.PostAsJsonAsync(
+            "/connect/consent",
+            new { Ticket = ticketId, Approved = true, ApprovedScopes = requestedScopes },
+            TestContext.Current.CancellationToken);
+        var decisionBody = await decisionResp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(decisionResp.IsSuccessStatusCode,
+            $"POST /connect/consent failed ({(int)decisionResp.StatusCode}): {decisionBody}");
+        using var decisionDoc = JsonDocument.Parse(decisionBody);
+        var followUpUrl = decisionDoc.RootElement.GetProperty("RedirectUrl").GetString()!;
+
+        var followUpResp = await cookieClient.GetAsync(followUpUrl, TestContext.Current.CancellationToken);
+        AssertRedirect(followUpResp);
+        return followUpResp.Headers.Location!;
     }
 
     private static async Task AssertInvalidTargetAsync(HttpResponseMessage tokenResp)
