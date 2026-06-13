@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
+import { useSignalR } from '@/composables/useSignalR'
 import type {
   OAuthClientDto,
   CreateOAuthClientDto,
@@ -10,14 +11,24 @@ import type {
   ClientSecretDto,
 } from '@/models/oauth'
 
+interface OAuthDataEvent {
+  Subject: string
+  Action: 'Created' | 'Updated' | 'Deleted' | 'Custom' | 'FullSync'
+  Payload: unknown[]
+}
+
 /**
- * OAuth client store. Backend has no SignalR stream for OAuth — we keep
- * a manually-managed list and refresh after CUD operations. The list endpoint
- * is paginated; we ask for a generous page size and only paginate client-side
- * via the data grid.
+ * OAuth client store. Live-updated via the OAuthClientActions SignalR stream
+ * (Created/Updated → upsert, Deleted → remove), so clients minted out-of-band —
+ * DCR via /connect/register, another admin, another tab — appear without a
+ * manual reload. The store also upserts after its own CUD calls so the grid
+ * reflects a change immediately even before the SignalR echo arrives. The list
+ * endpoint is paginated; we ask for a generous page size and paginate
+ * client-side via the data grid.
  */
 export const useOAuthClientStore = defineStore('oauth-client', () => {
   const http = useHttpClient('/api/admin/oauth/clients')
+  const signalr = useSignalR()
 
   const clients = ref<OAuthClientDto[]>([])
   const loaded = ref(false)
@@ -35,7 +46,32 @@ export const useOAuthClientStore = defineStore('oauth-client', () => {
   }
 
   async function initialize() {
+    // Live updates (DCR, other admins/tabs). Mirrors useEntityService:
+    // (re)subscribe + REST re-sync on every (re)connect, de-duped by the stream
+    // key. The explicit initial loadAll below fills the grid before SignalR is
+    // even connected.
+    signalr.runOnEveryReconnect(() => {
+      subscribeToSignalR()
+      loadAll()
+    }, 'OAuthClientActions.Subscribe')
+
     if (!loaded.value) await loadAll()
+  }
+
+  function subscribeToSignalR() {
+    signalr.stream<OAuthDataEvent>('OAuthClientActions.Subscribe').subscribe({
+      next: (ev) => {
+        if (ev.Action === 'Created' || ev.Action === 'Updated') {
+          let next = clients.value
+          for (const dto of ev.Payload as OAuthClientDto[]) next = upsert(next, dto)
+          clients.value = next
+        } else if (ev.Action === 'Deleted') {
+          const ids = ev.Payload as string[]
+          clients.value = clients.value.filter((c) => !ids.includes(c.Id))
+        }
+      },
+      error: (err) => console.error('[oauth-client] SignalR stream error:', err),
+    })
   }
 
   async function loadOne(id: string): Promise<OAuthClientDto | null> {

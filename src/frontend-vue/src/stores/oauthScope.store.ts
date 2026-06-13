@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
+import { useSignalR } from '@/composables/useSignalR'
 import type {
   OAuthScopeDto,
   OAuthScopeListDto,
@@ -8,12 +9,22 @@ import type {
   UpdateOAuthScopeDto,
 } from '@/models/oauth'
 
+interface OAuthDataEvent {
+  Subject: string
+  Action: 'Created' | 'Updated' | 'Deleted' | 'Custom' | 'FullSync'
+  Payload: unknown[]
+}
+
 /**
- * OAuth scope store. The list endpoint is paginated and returns
+ * OAuth scope store. Live-updated via the OAuthScopeActions SignalR stream
+ * (Created/Updated → upsert, Deleted → remove), so scopes created out-of-band —
+ * implicitly when an OAuth API is added, another admin, another tab — appear
+ * without a manual reload. The list endpoint is paginated and returns
  * <c>{ Items, TotalCount }</c>; we unwrap <c>Items</c> for the grid.
  */
 export const useOAuthScopeStore = defineStore('oauth-scope', () => {
   const http = useHttpClient('/api/admin/oauth/scopes')
+  const signalr = useSignalR()
 
   const scopes = ref<OAuthScopeDto[]>([])
   const loaded = ref(false)
@@ -31,7 +42,32 @@ export const useOAuthScopeStore = defineStore('oauth-scope', () => {
   }
 
   async function initialize() {
+    // Live updates (implicit scope-per-API, other admins/tabs). Mirrors
+    // useEntityService: (re)subscribe + REST re-sync on every (re)connect,
+    // de-duped by the stream key. The explicit initial loadAll below fills the
+    // grid before SignalR is even connected.
+    signalr.runOnEveryReconnect(() => {
+      subscribeToSignalR()
+      loadAll()
+    }, 'OAuthScopeActions.Subscribe')
+
     if (!loaded.value) await loadAll()
+  }
+
+  function subscribeToSignalR() {
+    signalr.stream<OAuthDataEvent>('OAuthScopeActions.Subscribe').subscribe({
+      next: (ev) => {
+        if (ev.Action === 'Created' || ev.Action === 'Updated') {
+          let next = scopes.value
+          for (const dto of ev.Payload as OAuthScopeDto[]) next = upsert(next, dto)
+          scopes.value = next
+        } else if (ev.Action === 'Deleted') {
+          const ids = ev.Payload as string[]
+          scopes.value = scopes.value.filter((s) => !ids.includes(s.Id))
+        }
+      },
+      error: (err) => console.error('[oauth-scope] SignalR stream error:', err),
+    })
   }
 
   async function loadOne(id: string): Promise<OAuthScopeDto | null> {
