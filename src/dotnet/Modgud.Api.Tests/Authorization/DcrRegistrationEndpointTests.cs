@@ -104,6 +104,80 @@ public class DcrRegistrationEndpointTests : IntegrationTestBase
         Assert.Equal(new[] { "https://client.example.com/callback" }, redirects);
     }
 
+    [Theory]
+    [InlineData("client_secret_post")]
+    [InlineData("client_secret_basic")]
+    public async Task Confidential_registration_issues_a_client_secret(string authMethod)
+    {
+        // The claude.ai MCP connector registers confidential — DCR must mint a
+        // secret and return it once per RFC 7591 §3.2.1.
+        await EnableDcrAsync();
+        var client = Factory.CreateClient();
+
+        var body = JsonContent.Create(new
+        {
+            client_name = "Confidential MCP Client",
+            redirect_uris = new[] { "https://client.example.com/callback" },
+            token_endpoint_auth_method = authMethod,
+        });
+
+        var resp = await client.PostAsync("/connect/register", body, TestContext.Current.CancellationToken);
+        var bodyText = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(resp.StatusCode == HttpStatusCode.Created,
+            $"Expected 201 Created, got {(int)resp.StatusCode}: {bodyText}");
+
+        using var doc = JsonDocument.Parse(bodyText);
+        // Echoes the negotiated method (not hardcoded "none").
+        Assert.Equal(authMethod, doc.RootElement.GetProperty("token_endpoint_auth_method").GetString());
+        // A non-empty secret is returned exactly here, plus the never-expires marker.
+        var secret = doc.RootElement.GetProperty("client_secret").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(secret));
+        Assert.Equal(0, doc.RootElement.GetProperty("client_secret_expires_at").GetInt64());
+    }
+
+    [Fact]
+    public async Task Public_registration_omits_client_secret()
+    {
+        await EnableDcrAsync();
+        var client = Factory.CreateClient();
+
+        var body = JsonContent.Create(new
+        {
+            client_name = "Public PKCE Client",
+            redirect_uris = new[] { "https://client.example.com/callback" },
+            token_endpoint_auth_method = "none",
+        });
+
+        var resp = await client.PostAsync("/connect/register", body, TestContext.Current.CancellationToken);
+        var bodyText = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
+
+        using var doc = JsonDocument.Parse(bodyText);
+        Assert.Equal("none", doc.RootElement.GetProperty("token_endpoint_auth_method").GetString());
+        // No secret for a public client — the field is absent (or null).
+        Assert.False(
+            doc.RootElement.TryGetProperty("client_secret", out var s) && s.ValueKind == JsonValueKind.String,
+            "public client must not receive a client_secret");
+    }
+
+    [Fact]
+    public async Task Discovery_advertises_none_as_a_token_endpoint_auth_method()
+    {
+        await EnableDcrAsync();
+        var client = Factory.CreateClient();
+
+        var resp = await client.GetAsync("/.well-known/openid-configuration",
+            TestContext.Current.CancellationToken);
+        var bodyText = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        using var doc = JsonDocument.Parse(bodyText);
+
+        var methods = doc.RootElement.GetProperty("token_endpoint_auth_methods_supported")
+            .EnumerateArray().Select(e => e.GetString()!).ToArray();
+        // Public PKCE clients are supported, so "none" must be advertised
+        // alongside the confidential methods OpenIddict emits by default.
+        Assert.Contains("none", methods);
+    }
+
     [Fact]
     public async Task Returns_400_invalid_redirect_uri_for_non_loopback_http()
     {

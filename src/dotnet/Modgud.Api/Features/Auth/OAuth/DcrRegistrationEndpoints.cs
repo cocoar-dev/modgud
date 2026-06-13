@@ -1,3 +1,5 @@
+using BuildingBlocks.EventDispatcher;
+using Marten;
 using Modgud.Application.Dcr;
 using Modgud.Application.Services;
 using Modgud.Authentication.RealmSettings;
@@ -52,6 +54,8 @@ public static class DcrRegistrationEndpoints
         DcrRateLimiter rateLimiter,
         Serilog.ILogger logger,
         ISecurityAuditLog securityAudit,
+        IDocumentSession session,
+        DataEventDispatcher dispatcher,
         CancellationToken ct)
     {
         if (request is null)
@@ -111,7 +115,8 @@ public static class DcrRegistrationEndpoints
             });
         }
 
-        var normalized = ((DcrValidationResult.Allow)validation).Normalized;
+        var allow = (DcrValidationResult.Allow)validation;
+        var normalized = allow.Normalized;
         var registeredAt = DateTimeOffset.UtcNow;
 
         // ───────── Persist ─────────
@@ -143,6 +148,15 @@ public static class DcrRegistrationEndpoints
         }
 
         var created = createResult.Value.Client;
+        // Non-null only for confidential clients (token_endpoint_auth_method ≠
+        // none) — the plaintext secret, returned to the client exactly once.
+        var issuedSecret = createResult.Value.ClientSecret;
+
+        // Live-update the admin OAuth-clients grid: DCR writes through the same
+        // event-sourced aggregate as admin creates but never touches the admin
+        // store, so without this push the grid stays stale until a manual reload.
+        dispatcher.DispatchCreatedEvent("OAuthClient", created, session.TenantId);
+
         securityAudit.Record(new SecurityAuditRecord
         {
             EventType = AuditEvents.DcrClientRegistered,
@@ -160,7 +174,11 @@ public static class DcrRegistrationEndpoints
         {
             ClientId = created.ClientId,
             ClientIdIssuedAt = registeredAt.ToUnixTimeSeconds(),
-            TokenEndpointAuthMethod = "none",
+            // Echo the negotiated method; surface the secret (+ never-expires
+            // marker) only when one was issued (confidential).
+            TokenEndpointAuthMethod = allow.TokenEndpointAuthMethod,
+            ClientSecret = issuedSecret,
+            ClientSecretExpiresAt = issuedSecret is null ? null : 0,
             GrantTypes = created.AllowedGrantTypes,
             ResponseTypes = new[] { "code" },
             RedirectUris = created.RedirectUris,

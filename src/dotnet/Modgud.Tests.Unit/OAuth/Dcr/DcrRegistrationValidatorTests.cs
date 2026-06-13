@@ -80,20 +80,40 @@ public class DcrRegistrationValidatorTests
         Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
     }
 
-    [Fact]
-    public void Token_endpoint_auth_method_other_than_none_rejected()
+    [Theory]
+    [InlineData("client_secret_basic")]
+    [InlineData("client_secret_post")]
+    public void Confidential_auth_method_accepted_as_confidential_client_with_secret(string method)
     {
-        var req = ValidRequest() with { TokenEndpointAuthMethod = "client_secret_basic" };
+        var req = ValidRequest() with { TokenEndpointAuthMethod = method };
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
+        Assert.Equal(method, allow.TokenEndpointAuthMethod);
+        Assert.Equal("confidential", allow.Normalized.ClientType);
+        Assert.True(allow.Normalized.RequireClientSecret);
+        // Secret is left unset so CreateClientAsync mints one.
+        Assert.Null(allow.Normalized.ClientSecret);
+    }
+
+    [Theory]
+    [InlineData("private_key_jwt")]  // advertised by the AS, but DCR needs a JWKS we don't accept
+    [InlineData("tls_client_auth")]
+    [InlineData("bogus")]
+    public void Unsupported_token_endpoint_auth_method_rejected(string method)
+    {
+        var req = ValidRequest() with { TokenEndpointAuthMethod = method };
         var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrErrorCodes.InvalidClientMetadata, reject.ErrorCode);
         Assert.Equal(DcrRejectionReason.InvalidTokenAuthMethod, reject.Reason);
     }
 
     [Fact]
-    public void Token_endpoint_auth_method_defaults_to_none_when_omitted()
+    public void Token_endpoint_auth_method_defaults_to_none_public_when_omitted()
     {
         var req = ValidRequest() with { TokenEndpointAuthMethod = null };
-        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
+        Assert.Equal("none", allow.TokenEndpointAuthMethod);
+        Assert.Equal("public", allow.Normalized.ClientType);
+        Assert.False(allow.Normalized.RequireClientSecret);
     }
 
     [Theory]
