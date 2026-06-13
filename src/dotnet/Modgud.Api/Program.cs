@@ -152,46 +152,19 @@ try
         });
     }
 
-    // Trust reverse proxy headers (Sophos XG terminates HTTPS).
+    // Trust reverse proxy headers (Sophos XG terminates HTTPS). PROD-03.
     //
-    // PROD-03: KnownIPNetworks/KnownProxies cleared in Production means
-    // X-Forwarded-Proto from anywhere is accepted, so anyone who can reach
-    // Kestrel directly can spoof "HTTPS" and bypass Request.IsHttps. The
-    // ProxyAllowedNetworks env var (CIDR list, comma-separated, e.g.
-    // "10.0.0.0/8,192.168.1.0/24") narrows trust to the actual reverse-proxy
-    // range. Empty == reject every X-Forwarded-* header in Production. In
-    // Development the default behaviour stays open for ease of local work.
+    // The public scheme/host — and thus the per-realm OAuth issuer and every
+    // outbound link — are derived from X-Forwarded-Proto/-Host, so those headers
+    // must be trusted ONLY from the real proxy (ProxyAllowedNetworks CIDR list).
+    // The fail-closed default and the ASP.NET Core "both known-lists empty ==
+    // trust-all (NOT reject-all)" gotcha are handled in ForwardedHeadersTrust,
+    // unit-tested against the real ForwardedHeadersMiddleware.
     builder.Services.Configure<ForwardedHeadersOptions>(options =>
-    {
-        options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
-                                 | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
-                                 | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedHost;
-        options.KnownIPNetworks.Clear();
-        options.KnownProxies.Clear();
-
-        if (builder.Environment.IsProduction())
-        {
-            var allowed = Environment.GetEnvironmentVariable("ProxyAllowedNetworks");
-            if (!string.IsNullOrWhiteSpace(allowed))
-            {
-                foreach (var entry in allowed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                {
-                    if (Microsoft.AspNetCore.HttpOverrides.IPNetwork.TryParse(entry, out var network))
-                        options.KnownNetworks.Add(network);
-                }
-            }
-            // ForwardLimit caps the X-Forwarded-* depth — defence against a
-            // chain of attacker-controlled headers being treated as trusted.
-            options.ForwardLimit = 1;
-        }
-        else
-        {
-            // Dev convenience: trust loopback so localhost reverse-proxies
-            // (Vite, Docker port-forwards) work without ENV setup.
-            options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(System.Net.IPAddress.Parse("127.0.0.0"), 8));
-            options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(System.Net.IPAddress.IPv6Loopback, 128));
-        }
-    });
+        ForwardedHeadersTrust.Configure(
+            options,
+            builder.Environment.IsProduction(),
+            Environment.GetEnvironmentVariable("ProxyAllowedNetworks")));
 
     // PROD-03: HSTS defaults — 1 year max-age, includeSubDomains, preload-eligible.
     // The IETF default (30 days) is too short for an IdP that holds session
