@@ -228,9 +228,16 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
             <p class="mt-1 text-sm text-surface-500">
               {{ t('consent.subtitle', {}, 'Review the access this app is asking for.') }}
             </p>
+            <p v-if="model!.ClientIdHostname" class="mt-2 text-sm text-surface-600">
+              {{ t('consent.appIdentity', {}, 'App identity') }}:
+              <span class="cimd-hostname">{{ model!.ClientIdHostname }}</span>
+            </p>
           </div>
 
-          <CoarNote v-if="model!.IsDynamicallyRegistered" variant="warning">
+          <CoarNote v-if="model!.ClientIdHostname" variant="warning">
+            {{ t('consent.cimdWarning', { host: model!.ClientIdHostname }, 'This app is identified by the domain {host}. Make sure you trust this domain before continuing — only authorise it if you intended to sign in to an app at {host}.') }}
+          </CoarNote>
+          <CoarNote v-else-if="model!.IsDynamicallyRegistered" variant="warning">
             {{ t('consent.dcrWarning', {}, 'This app registered itself with the identity provider — its name has not been verified by an administrator. Make sure the name above matches the app you actually intended to authorise before continuing.') }}
           </CoarNote>
 
@@ -293,5 +300,11 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
   letter-spacing: 0.05em;
   color: var(--coar-text-semantic-warning, #92400e);
   vertical-align: middle;
+}
+
+.cimd-hostname {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 600;
+  color: var(--coar-text-neutral-primary, #1f2937);
 }
 </style>

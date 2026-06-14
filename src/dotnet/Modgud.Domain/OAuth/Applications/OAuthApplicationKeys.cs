@@ -53,4 +53,16 @@ public static class OAuthApplicationPropertyKeys
     /// <c>LastUsedAt</c> older than the per-realm DCR TTL get
     /// soft-deleted.</summary>
     public const string DcrLastUsedAt = "modgud:dcr:last_used_at";
+
+    // ─────── Client ID Metadata Documents (CIMD) ──────
+    // Set only on the synthesized, NON-persisted application a CIMD
+    // client_id URL resolves to. CIMD clients also carry
+    // DcrIsDynamicallyRegistered=true so the existing DCR audience
+    // containment + "unverified" consent treatment apply unchanged.
+
+    /// <summary>Boolean — <c>true</c> on the synthetic application produced
+    /// when a CIMD <c>client_id</c> URL is resolved. Lets call sites tell a
+    /// CIMD-resolved client apart from a DCR-registered one even though both
+    /// set <see cref="DcrIsDynamicallyRegistered"/>.</summary>
+    public const string CimdIsResolvedClient = "modgud:cimd:is_resolved_client";
 }

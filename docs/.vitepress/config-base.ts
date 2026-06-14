@@ -152,6 +152,7 @@ export const baseConfig = {
             { text: 'OAuth Scopes', link: '/admin/oauth-scopes' },
             { text: 'OAuth APIs (Resource Servers)', link: '/admin/oauth-apis' },
             { text: 'Dynamic Client Registration', link: '/admin/dynamic-client-registration' },
+            { text: 'Client ID Metadata Documents', link: '/admin/client-id-metadata-documents' },
             { text: 'Login Providers', link: '/admin/login-providers' },
           ],
         },

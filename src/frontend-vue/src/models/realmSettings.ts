@@ -6,6 +6,7 @@
 export interface RealmSettingsDto {
   SelfRegistration: SelfRegistrationDto
   Dcr: DcrSettingsDto
+  Cimd: CimdSettingsDto
   Branding: BrandingSettingsDto
   Deletion: DeletionSettingsDto
   /** Page-builder schemas keyed by slug. Read-only here — writes use
@@ -16,6 +17,7 @@ export interface RealmSettingsDto {
 export interface UpdateRealmSettingsDto {
   SelfRegistration?: UpdateSelfRegistrationDto | null
   Dcr?: UpdateDcrSettingsDto | null
+  Cimd?: UpdateCimdSettingsDto | null
   Branding?: UpdateBrandingSettingsDto | null
   Deletion?: UpdateDeletionSettingsDto | null
 }
@@ -116,4 +118,23 @@ export interface UpdateDcrSettingsDto {
   PerIpRateLimitPerHour?: number
   PerRealmRateLimitPerDay?: number
   ReservedNames?: string[] | null
+}
+
+// Client ID Metadata Documents (CIMD) — the MCP-preferred
+// registration path. The client_id IS an https URL the server fetches +
+// validates on demand; no stored record, no client_secret, identity bound
+// to domain ownership. Per-realm master toggle, off by default. Like DCR,
+// a CIMD client still has to clear the per-OAuthApi AllowDynamicRegistration
+// opt-in before it can mint a usable token — this toggle is necessary, not
+// sufficient.
+export interface CimdSettingsDto {
+  Enabled: boolean
+  AccessTokenLifetimeMinutes: number
+  RefreshTokenLifetimeDays: number
+}
+
+export interface UpdateCimdSettingsDto {
+  Enabled?: boolean
+  AccessTokenLifetimeMinutes?: number
+  RefreshTokenLifetimeDays?: number
 }

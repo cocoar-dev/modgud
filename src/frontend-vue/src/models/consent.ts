@@ -20,9 +20,15 @@ export interface ConsentModel {
   ClientName: string
   RequestedScopes: ConsentScopeInfo[]
   ExpiresAt: string
-  /** True for clients minted via RFC 7591 Dynamic Client Registration.
-   * Drives the [unverified] marker + warning text on the consent UI. */
+  /** True for clients minted via RFC 7591 DCR or resolved via a CIMD
+   * client_id URL. Drives the [unverified] marker + warning
+   * text on the consent UI. */
   IsDynamicallyRegistered: boolean
+  /** For a CIMD client, the hostname of the client_id URL (e.g.
+   * "claude.ai") — the domain that owns the metadata document. Null for
+   * DCR / admin-registered clients. Shown prominently as a phishing
+   * mitigation: verify the real domain, not just the display name. */
+  ClientIdHostname?: string | null
 }
 
 export interface ConsentDecision {

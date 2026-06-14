@@ -23,10 +23,12 @@ public sealed class AccessTokenTypeHandler : IOpenIddictServerHandler<OpenIddict
             .Build();
 
     private readonly IQuerySession _querySession;
+    private readonly Cimd.CimdClientResolver _cimdResolver;
 
-    public AccessTokenTypeHandler(IQuerySession querySession)
+    public AccessTokenTypeHandler(IQuerySession querySession, Cimd.CimdClientResolver cimdResolver)
     {
         _querySession = querySession;
+        _cimdResolver = cimdResolver;
     }
 
     public async ValueTask HandleAsync(OpenIddictServerEvents.ProcessSignInContext context)
@@ -36,6 +38,11 @@ public sealed class AccessTokenTypeHandler : IOpenIddictServerHandler<OpenIddict
 
         var app = await _querySession.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(a => a.ClientId == clientId && !a.IsDeleted);
+
+        // CIMD clients are non-persisted, so the direct query misses them —
+        // fall back to the resolver (cache-warm after the store's resolve
+        // earlier this request). CIMD clients always use JWT access tokens.
+        app ??= await _cimdResolver.ResolveAsync(clientId, context.CancellationToken);
 
         if (app is null || app.AccessTokenType != AccessTokenType.Jwt) return;
 

@@ -21,10 +21,12 @@ namespace Modgud.Infrastructure.OpenIddict;
 public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicationState>
 {
     private readonly ITenantSessionFactory _sessionFactory;
+    private readonly Cimd.CimdClientResolver _cimdResolver;
 
-    public MartenApplicationStore(ITenantSessionFactory sessionFactory)
+    public MartenApplicationStore(ITenantSessionFactory sessionFactory, Cimd.CimdClientResolver cimdResolver)
     {
         _sessionFactory = sessionFactory;
+        _cimdResolver = cimdResolver;
     }
 
     public async ValueTask<long> CountAsync(CancellationToken cancellationToken)
@@ -98,8 +100,16 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
     public async ValueTask<OAuthApplicationState?> FindByClientIdAsync(string identifier, CancellationToken cancellationToken)
     {
         await using var session = _sessionFactory.OpenQuerySession();
-        return await session.Query<OAuthApplicationState>()
+        var stored = await session.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(x => x.ClientId == identifier && !x.IsDeleted, cancellationToken);
+        if (stored is not null) return stored;
+
+        // CIMD: a stored client always wins; only when the
+        // identifier is unknown AND looks like a CIMD client_id URL (and the
+        // realm has opted in) do we fetch + validate its metadata document
+        // and return a synthesized, non-persisted public client. Returns null
+        // for non-CIMD identifiers, disabled realms, or invalid documents.
+        return await _cimdResolver.ResolveAsync(identifier, cancellationToken);
     }
 
     public async ValueTask<OAuthApplicationState?> FindByIdAsync(string identifier, CancellationToken cancellationToken)

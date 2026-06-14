@@ -63,6 +63,11 @@ public sealed class RealmSettingsService(
             doc.Dcr = ApplyDcrPatch(doc.Dcr, dto.Dcr);
         }
 
+        if (dto.Cimd is not null)
+        {
+            doc.Cimd = ApplyCimdPatch(doc.Cimd, dto.Cimd);
+        }
+
         if (dto.Branding is not null)
         {
             var branding = ApplyBrandingPatch(doc.Branding, dto.Branding);
@@ -121,6 +126,7 @@ public sealed class RealmSettingsService(
     {
         SelfRegistration = MapSelfRegistrationToDto(doc.SelfRegistration),
         Dcr = MapDcrToDto(doc.Dcr),
+        Cimd = MapCimdToDto(doc.Cimd),
         Branding = MapBrandingToDto(doc.Branding),
         Deletion = MapDeletionToDto(doc.Deletion),
         Audit = MapAuditToDto(doc.Audit),
@@ -291,6 +297,32 @@ public sealed class RealmSettingsService(
             PerIpRateLimitPerHour = s.PerIpRateLimitPerHour,
             PerRealmRateLimitPerDay = s.PerRealmRateLimitPerDay,
             ReservedNames = s.ReservedNames,
+        };
+    }
+
+    private static CimdSettings ApplyCimdPatch(CimdSettings? current, UpdateCimdSettingsDto patch)
+    {
+        var s = current ?? new CimdSettings();
+        return s with
+        {
+            Enabled = patch.Enabled ?? s.Enabled,
+            AccessTokenLifetime = patch.AccessTokenLifetimeMinutes is { } atm
+                ? TimeSpan.FromMinutes(atm)
+                : s.AccessTokenLifetime,
+            RefreshTokenLifetime = patch.RefreshTokenLifetimeDays is { } rtd
+                ? TimeSpan.FromDays(rtd)
+                : s.RefreshTokenLifetime,
+        };
+    }
+
+    internal static CimdSettingsDto MapCimdToDto(CimdSettings? s)
+    {
+        if (s is null) return new CimdSettingsDto();
+        return new CimdSettingsDto
+        {
+            Enabled = s.Enabled,
+            AccessTokenLifetimeMinutes = (int)s.AccessTokenLifetime.TotalMinutes,
+            RefreshTokenLifetimeDays = (int)s.RefreshTokenLifetime.TotalDays,
         };
     }
 
