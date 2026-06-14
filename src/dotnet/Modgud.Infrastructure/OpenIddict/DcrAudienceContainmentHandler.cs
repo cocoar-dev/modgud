@@ -51,10 +51,12 @@ public sealed class DcrAudienceContainmentHandler
             .Build();
 
     private readonly IDocumentSession _session;
+    private readonly Cimd.CimdClientResolver _cimdResolver;
 
-    public DcrAudienceContainmentHandler(IDocumentSession session)
+    public DcrAudienceContainmentHandler(IDocumentSession session, Cimd.CimdClientResolver cimdResolver)
     {
         _session = session;
+        _cimdResolver = cimdResolver;
     }
 
     public async ValueTask HandleAsync(OpenIddictServerEvents.ProcessSignInContext context)
@@ -66,6 +68,12 @@ public sealed class DcrAudienceContainmentHandler
 
         var application = await _session.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(x => x.ClientId == clientId && !x.IsDeleted);
+
+        // CIMD clients are non-persisted; the synthesized application carries
+        // DcrIsDynamicallyRegistered=true, so resolving it here subjects CIMD
+        // clients to the same audience containment as DCR clients (must send
+        // resource=, target RS must opt in via AllowDynamicRegistration).
+        application ??= await _cimdResolver.ResolveAsync(clientId, context.CancellationToken);
         if (application is null) return;
 
         if (!IsDcrClient(application.Properties)) return;

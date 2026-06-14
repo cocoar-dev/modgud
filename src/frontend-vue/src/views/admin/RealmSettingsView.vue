@@ -24,6 +24,8 @@ import type {
   UpdateSelfRegistrationDto,
   DcrSettingsDto,
   UpdateDcrSettingsDto,
+  CimdSettingsDto,
+  UpdateCimdSettingsDto,
   DeletionSettingsDto,
   UpdateDeletionSettingsDto,
 } from '@/models/realmSettings'
@@ -43,7 +45,7 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.hasSubNav = true
 }), { immediate: true })
 
-type TabId = 'self-registration' | 'dcr' | 'deletion' | 'signing-keys'
+type TabId = 'self-registration' | 'dcr' | 'cimd' | 'deletion' | 'signing-keys'
 const activeTab = ref<TabId>('self-registration')
 
 const canRotateSigningKey = computed(() => authStore.hasPermission('realm-settings:write'))
@@ -106,6 +108,28 @@ function emptyDcr(): DcrFormState {
 
 const dcrForm = ref<DcrFormState>(emptyDcr())
 const originalDcr = ref<DcrSettingsDto | null>(null)
+
+// ── CIMD form state ──────────────────────────────────────────────────
+interface CimdFormState {
+  Enabled: boolean
+  AccessTokenLifetimeMinutes: number
+  RefreshTokenLifetimeDays: number
+}
+
+function emptyCimd(): CimdFormState {
+  return { Enabled: false, AccessTokenLifetimeMinutes: 15, RefreshTokenLifetimeDays: 7 }
+}
+
+const cimdForm = ref<CimdFormState>(emptyCimd())
+const originalCimd = ref<CimdSettingsDto | null>(null)
+
+function cimdFromDto(d: CimdSettingsDto): CimdFormState {
+  return {
+    Enabled: d.Enabled,
+    AccessTokenLifetimeMinutes: d.AccessTokenLifetimeMinutes,
+    RefreshTokenLifetimeDays: d.RefreshTokenLifetimeDays,
+  }
+}
 
 // ── Deletion-policy form state ───────────────────────────────────────
 interface DeletionFormState {
@@ -179,6 +203,8 @@ onMounted(async () => {
     form.value = fromDto(dto.SelfRegistration)
     originalDcr.value = dto.Dcr
     dcrForm.value = dcrFromDto(dto.Dcr)
+    originalCimd.value = dto.Cimd
+    cimdForm.value = cimdFromDto(dto.Cimd)
     originalDeletion.value = dto.Deletion
     deletionForm.value = deletionFromDto(dto.Deletion)
   } catch (e: any) {
@@ -247,6 +273,21 @@ function buildDcrPatch(): UpdateDcrSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildCimdPatch(): UpdateCimdSettingsDto | undefined {
+  const orig = originalCimd.value
+  if (!orig) return undefined
+  const cur = cimdForm.value
+  const patch: UpdateCimdSettingsDto = {}
+
+  if (cur.Enabled !== orig.Enabled) patch.Enabled = cur.Enabled
+  if (cur.AccessTokenLifetimeMinutes !== orig.AccessTokenLifetimeMinutes)
+    patch.AccessTokenLifetimeMinutes = cur.AccessTokenLifetimeMinutes
+  if (cur.RefreshTokenLifetimeDays !== orig.RefreshTokenLifetimeDays)
+    patch.RefreshTokenLifetimeDays = cur.RefreshTokenLifetimeDays
+
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
 function buildDeletionPatch(): UpdateDeletionSettingsDto | undefined {
   const orig = originalDeletion.value
   if (!orig) return undefined
@@ -264,8 +305,9 @@ function buildDeletionPatch(): UpdateDeletionSettingsDto | undefined {
 async function save() {
   const selfRegPatch = buildSelfRegPatch()
   const dcrPatch = buildDcrPatch()
+  const cimdPatch = buildCimdPatch()
   const deletionPatch = buildDeletionPatch()
-  if (!selfRegPatch && !dcrPatch && !deletionPatch) {
+  if (!selfRegPatch && !dcrPatch && !cimdPatch && !deletionPatch) {
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1200)
     return
@@ -276,16 +318,20 @@ async function save() {
     const payload: {
       SelfRegistration?: UpdateSelfRegistrationDto
       Dcr?: UpdateDcrSettingsDto
+      Cimd?: UpdateCimdSettingsDto
       Deletion?: UpdateDeletionSettingsDto
     } = {}
     if (selfRegPatch) payload.SelfRegistration = selfRegPatch
     if (dcrPatch) payload.Dcr = dcrPatch
+    if (cimdPatch) payload.Cimd = cimdPatch
     if (deletionPatch) payload.Deletion = deletionPatch
     const updated = await settingsStore.patch(payload)
     originalSelfReg.value = updated.SelfRegistration
     form.value = fromDto(updated.SelfRegistration)
     originalDcr.value = updated.Dcr
     dcrForm.value = dcrFromDto(updated.Dcr)
+    originalCimd.value = updated.Cimd
+    cimdForm.value = cimdFromDto(updated.Cimd)
     originalDeletion.value = updated.Deletion
     deletionForm.value = deletionFromDto(updated.Deletion)
     editingSecret.value = false
@@ -324,6 +370,9 @@ async function rotateSigningKey() {
       </CoarTab>
       <CoarTab id="dcr">
         {{ t('admin.realmSettings.tabs.dcr', {}, 'Dynamic Client Registration') }}
+      </CoarTab>
+      <CoarTab id="cimd">
+        {{ t('admin.realmSettings.tabs.cimd', {}, 'Client ID Metadata Documents') }}
       </CoarTab>
       <CoarTab id="deletion">
         {{ t('admin.realmSettings.tabs.deletion', {}, 'Account Deletion') }}
@@ -491,6 +540,43 @@ async function rotateSigningKey() {
               </p>
             </template>
           </CoarFormField>
+        </template>
+
+        <div class="flex justify-end mt-2">
+          <CoarButton :loading="saving" @click="save">
+            {{ t('common.save', {}, 'Save') }}
+          </CoarButton>
+        </div>
+      </div>
+    </CoarCard>
+
+    <CoarCard v-else-if="activeTab === 'cimd'" class="p-4">
+      <div class="flex flex-col gap-3">
+        <p class="text-xs text-gray-500">
+          {{ t('admin.realmSettings.cimd.hint', {}, 'When enabled, a client whose client_id is an https URL (a Client ID Metadata Document, the MCP-preferred path) is resolved on demand: the server fetches + validates the document and treats it as a public PKCE client — no registration request, no client_secret, identity bound to the URL’s domain. Off by default.') }}
+        </p>
+
+        <CoarCheckbox
+          v-model="cimdForm.Enabled"
+          :label="t('admin.realmSettings.cimd.enabled', {}, 'Enable Client ID Metadata Documents')" />
+
+        <CoarNote v-if="cimdForm.Enabled" variant="info">
+          {{ t('admin.realmSettings.cimd.optInWarning', {}, 'Like DCR, a CIMD client can only request access tokens for OAuth APIs with AllowDynamicRegistration enabled and scopes the metadata document declares. Until you opt in at least one API, CIMD clients cannot mint usable tokens. The server fetches the client’s metadata URL — only enable this if you trust the realm’s outbound network egress.') }}
+        </CoarNote>
+
+        <template v-if="cimdForm.Enabled">
+          <div class="grid grid-cols-2 gap-3">
+            <CoarFormField :label="t('admin.realmSettings.cimd.accessTokenMinutes', {}, 'Access token lifetime (minutes)')">
+              <CoarTextInput
+                :model-value="String(cimdForm.AccessTokenLifetimeMinutes)"
+                @update:model-value="(v) => (cimdForm.AccessTokenLifetimeMinutes = Math.max(1, parseInt(v) || 15))" />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.realmSettings.cimd.refreshTokenDays', {}, 'Refresh token lifetime (days)')">
+              <CoarTextInput
+                :model-value="String(cimdForm.RefreshTokenLifetimeDays)"
+                @update:model-value="(v) => (cimdForm.RefreshTokenLifetimeDays = Math.max(1, parseInt(v) || 7))" />
+            </CoarFormField>
+          </div>
         </template>
 
         <div class="flex justify-end mt-2">

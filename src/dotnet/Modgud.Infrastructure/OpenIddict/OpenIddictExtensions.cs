@@ -74,6 +74,20 @@ public static class OpenIddictExtensions
         // for the rationale.
         services.AddScoped<global::OpenIddict.Core.OpenIddictApplicationManager<OAuthApplicationState>, CocoarOpenIddictApplicationManager>();
 
+        // CIMD — resolves https client_id URLs into synthesized,
+        // non-persisted public clients. Scoped (reads tenant-scoped
+        // RealmSettings); the metadata fetch goes through a named HttpClient
+        // whose primary handler carries the SSRF guard (block private/
+        // loopback/link-local/ULA/CGNAT/multicast at connect time, no
+        // redirects). 5s overall timeout; the handler adds a 5s connect
+        // timeout + per-resolve 5 KB body cap.
+        services.AddScoped<Cimd.CimdClientResolver>();
+        services.AddHttpClient(Cimd.CimdClientResolver.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(5);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => Cimd.CimdHttpMessageHandlerFactory.Create());
+
         // Custom Marten stores (OpenIddict 7 pattern: register the store directly,
         // not the entity → store mapping)
         services.AddScoped<IOpenIddictApplicationStore<OAuthApplicationState>, MartenApplicationStore>();
@@ -242,6 +256,7 @@ public static class OpenIddictExtensions
                 options.AddEventHandler(RealmScopesSupportedHandler.Descriptor);
                 options.AddEventHandler(TokenEndpointAuthMethodsSupportedHandler.Descriptor);
                 options.AddEventHandler(DcrRegistrationEndpointHandler.Descriptor);
+                options.AddEventHandler(CimdMetadataDocumentSupportedHandler.Descriptor);
                 options.AddEventHandler(AccessTokenTypeHandler.Descriptor);
                 options.AddEventHandler(TokenMintMetricHandler.Descriptor);
                 options.AddEventHandler(ResourceIndicatorHandler.Descriptor);

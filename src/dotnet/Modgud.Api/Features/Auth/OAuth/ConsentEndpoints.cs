@@ -4,6 +4,7 @@ using System.Text.Json;
 using Modgud.Authentication.Domain;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Consent;
+using Modgud.Infrastructure.OpenIddict.Cimd;
 using Marten;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
@@ -58,7 +59,9 @@ public static class ConsentEndpoints
         IOpenIddictApplicationManager applicationManager,
         IOpenIddictScopeManager scopeManager,
         UserManager<ApplicationUser> userManager,
-        ClaimsPrincipal currentUserPrincipal)
+        CimdClientResolver cimdResolver,
+        ClaimsPrincipal currentUserPrincipal,
+        CancellationToken cancellationToken)
     {
         var (record, error) = await ResolveTicketAsync(ticket, session, userManager, currentUserPrincipal);
         if (error is not null) return error;
@@ -73,7 +76,24 @@ public static class ConsentEndpoints
         // is faster than going through the OpenIddict application manager
         // for one property and stays in the tenant-scoped session.
         var state = await session.Query<OAuthApplicationState>()
-            .FirstOrDefaultAsync(x => x.ClientId == record.ClientId && !x.IsDeleted);
+            .FirstOrDefaultAsync(x => x.ClientId == record.ClientId && !x.IsDeleted, cancellationToken);
+
+        // CIMD clients are non-persisted, so the direct query misses them —
+        // fall back to the resolver. The synthesized state carries
+        // DcrIsDynamicallyRegistered=true, so a CIMD client shows the same
+        // [unverified] treatment as a DCR client.
+        state ??= await cimdResolver.ResolveAsync(record.ClientId, cancellationToken);
+
+        // For a CIMD client the client_id IS an https URL — surface its
+        // hostname so the user verifies the real domain that owns this app
+        // (phishing mitigation), independent of the self-asserted
+        // display name.
+        string? clientIdHostname = null;
+        if (CimdClientId.IsCimdClientId(record.ClientId)
+            && Uri.TryCreate(record.ClientId, UriKind.Absolute, out var clientIdUri))
+        {
+            clientIdHostname = clientIdUri.Host;
+        }
         // Marten/Newtonsoft roundtrip: booleans may come back as either
         // a JsonElement (System.Text.Json path) or a plain bool
         // (Newtonsoft auto-conversion); handle both.
@@ -114,6 +134,7 @@ public static class ConsentEndpoints
             RequestedScopes = scopeInfos,
             ExpiresAt = record.ExpiresAt,
             IsDynamicallyRegistered = isDcr,
+            ClientIdHostname = clientIdHostname,
         });
     }
 
@@ -247,10 +268,18 @@ public class ConsentModel
     public required string ClientName { get; init; }
     public required List<ConsentScopeInfo> RequestedScopes { get; init; }
     public required DateTimeOffset ExpiresAt { get; init; }
-    /// <summary>True for clients minted via RFC 7591 DCR; lets the
-    /// consent UI render an <c>[unverified]</c> marker + warning text
-    /// so the user pauses before authorising an anonymous registrant.</summary>
+    /// <summary>True for clients minted via RFC 7591 DCR or resolved via a
+    /// CIMD <c>client_id</c> URL; lets the consent UI render an
+    /// <c>[unverified]</c> marker + warning text so the user pauses before
+    /// authorising a self-onboarded client.</summary>
     public bool IsDynamicallyRegistered { get; init; }
+
+    /// <summary>For a CIMD client, the hostname of the <c>client_id</c> URL
+    /// (e.g. <c>claude.ai</c>) — the domain that owns the metadata document.
+    /// Null for DCR / admin-registered clients. The consent UI shows it
+    /// prominently as a phishing mitigation: the user verifies the real
+    /// domain, not just the self-asserted display name.</summary>
+    public string? ClientIdHostname { get; init; }
 }
 
 public class ConsentScopeInfo

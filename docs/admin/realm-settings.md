@@ -9,12 +9,16 @@
 
 ## Tabs
 
-The page currently has four tabs:
+The page currently has these tabs:
 
 - [Self-Registration](#self-registration) — public sign-up policy
 - [Dynamic Client Registration](#dynamic-client-registration) —
   anonymous OAuth-client registration policy (linked detail page:
   [Dynamic Client Registration](./dynamic-client-registration))
+- **Client ID Metadata Documents** — fetch-on-demand OAuth-client
+  identification by HTTPS-URL `client_id` (linked detail page:
+  [Client ID Metadata Documents](./client-id-metadata-documents)).
+  Off by default.
 - [Account Deletion](#account-deletion) — grace period and recycle-bin retention policy
 - [Signing Keys](#signing-keys) — rotate the realm's OAuth/OIDC token-signing key
 

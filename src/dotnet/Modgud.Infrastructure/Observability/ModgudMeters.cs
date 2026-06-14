@@ -57,6 +57,7 @@ public static class ModgudMeters
         public const string Confidential = "confidential";
         public const string Public = "public";
         public const string Dcr = "dcr";
+        public const string Cimd = "cimd";
     }
 
     public static class DcrOutcome

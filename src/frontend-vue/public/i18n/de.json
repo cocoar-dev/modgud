@@ -1338,6 +1338,7 @@
       "tabs": {
         "selfRegistration": "Self-Registration",
         "dcr": "Dynamic Client Registration",
+        "cimd": "Client-ID-Metadaten (CIMD)",
         "branding": "Branding",
         "deletion": "Konto-Löschung",
         "signingKeys": "Signing-Schlüssel"
@@ -1402,6 +1403,13 @@
         "reservedNames.help": "Verhindert client_name-Impersonation. Alles, was einen dieser Strings enthält, wird bei der Registrierung abgewiesen. Jeder Eintrag wird vor dem Vergleich NFKC-normalisiert und in Kleinbuchstaben umgewandelt.",
         "reservedNames.placeholder": "Cocoar",
         "tripleOptInWarning": "Dreifaches Opt-in: Hier registrierte Clients können Access-Tokens nur für OAuth-APIs mit aktiviertem AllowDynamicRegistration UND für Scopes mit aktiviertem AllowDynamicRegistrationClients anfordern. Solange du nicht mindestens eine API und einen Scope freigibst, können DCR-Clients keine nutzbaren Tokens ausstellen."
+      },
+      "cimd": {
+        "hint": "Wenn aktiviert, wird ein Client, dessen client_id eine https-URL ist (ein Client-ID-Metadaten-Dokument, der von MCP bevorzugte Weg), bei Bedarf aufgelöst: Der Server lädt + validiert das Dokument und behandelt es als öffentlichen PKCE-Client — keine Registrierungs-Anfrage, kein client_secret, Identität an die Domain der URL gebunden. Standardmäßig aus.",
+        "enabled": "Client-ID-Metadaten-Dokumente aktivieren",
+        "accessTokenMinutes": "Access-Token-Lebensdauer (Minuten)",
+        "refreshTokenDays": "Refresh-Token-Lebensdauer (Tage)",
+        "optInWarning": "Wie bei DCR kann ein CIMD-Client Access-Tokens nur für OAuth-APIs mit aktiviertem AllowDynamicRegistration und für die im Metadaten-Dokument deklarierten Scopes anfordern. Solange du nicht mindestens eine API freigibst, können CIMD-Clients keine nutzbaren Tokens ausstellen. Der Server lädt die Metadaten-URL des Clients — aktiviere dies nur, wenn du dem ausgehenden Netzwerk des Realms vertraust."
       }
     },
     "dualListbox": {
@@ -1503,6 +1511,8 @@
       }
     },
     "dcrWarning": "Diese App hat sich selbst beim Identity Provider registriert — ihr Name wurde nicht von einem Administrator überprüft. Stelle sicher, dass der oben angezeigte Name zu der App passt, die du tatsächlich autorisieren wolltest, bevor du fortfährst.",
+    "cimdWarning": "Diese App wird durch die Domain {host} identifiziert. Stelle sicher, dass du dieser Domain vertraust, bevor du fortfährst — autorisiere sie nur, wenn du dich tatsächlich bei einer App unter {host} anmelden wolltest.",
+    "appIdentity": "App-Identität",
     "unverified": "nicht überprüft"
   },
   "verifyEmail": {

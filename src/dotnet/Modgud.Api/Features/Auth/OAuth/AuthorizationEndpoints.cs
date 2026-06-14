@@ -9,6 +9,7 @@ using Modgud.Permissions.Abstractions;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Consent;
 using Modgud.Domain.OAuth.Scopes;
+using Modgud.Infrastructure.OpenIddict.Cimd;
 using Marten;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
@@ -68,6 +69,7 @@ public static class AuthorizationEndpoints
         IOpenIddictAuthorizationManager authorizationManager,
         IOpenIddictScopeManager scopeManager,
         UserManager<ApplicationUser> userManager,
+        CimdClientResolver cimdResolver,
         IDocumentSession session)
     {
         var request = httpContext.GetOpenIddictServerRequest()
@@ -78,7 +80,7 @@ public static class AuthorizationEndpoints
         // OIDC scopes (openid/email/profile/roles/offline_access) are seeded
         // with AppId=null and therefore always pass.
         var scopeError = await ValidateScopeRestrictionAsync(
-            request.ClientId, request.GetScopes(), session);
+            request.ClientId, request.GetScopes(), session, cimdResolver, httpContext.RequestAborted);
         if (scopeError is not null) return scopeError;
 
         var authResult = await httpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
@@ -157,6 +159,15 @@ public static class AuthorizationEndpoints
 
         var consentType = await applicationManager.GetConsentTypeAsync(application);
 
+        // CIMD: the synthesized client is ConsentType=explicit, so
+        // a first authorize always lands on the consent screen — which shows
+        // the client_id hostname + "unverified" marker as the phishing
+        // mitigation. Subsequent authorizes for the same user+client+scopes
+        // auto-approve via the remembered authorization, exactly like every
+        // other client (DCR included). We deliberately do NOT force consent
+        // on every authorize: the post-consent re-entry to /authorize relies
+        // on this same shortcut to complete the round-trip, so forcing it
+        // would loop the user back to /consent indefinitely.
         if (consentType == ConsentTypes.Implicit || authorizations.Count != 0)
         {
             var principal = await CreateClaimsPrincipalAsync(
@@ -226,6 +237,7 @@ public static class AuthorizationEndpoints
         SignInManager<ApplicationUser> signInManager,
         UserManager<ApplicationUser> userManager,
         IPermissionService permissionService,
+        CimdClientResolver cimdResolver,
         IDocumentSession session)
     {
         var request = httpContext.GetOpenIddictServerRequest()
@@ -236,7 +248,7 @@ public static class AuthorizationEndpoints
         // client_credentials skips the authorize step entirely so we MUST
         // validate here too.
         var scopeError = await ValidateScopeRestrictionAsync(
-            request.ClientId, request.GetScopes(), session);
+            request.ClientId, request.GetScopes(), session, cimdResolver, httpContext.RequestAborted);
         if (scopeError is not null) return scopeError;
 
         // OAUTH-14 — refuse to mint tokens for a disabled client / disabled
@@ -1174,7 +1186,8 @@ public static class AuthorizationEndpoints
     /// </list>
     /// </summary>
     private static async Task<IResult?> ValidateScopeRestrictionAsync(
-        string? clientId, IEnumerable<string> requestedScopes, IDocumentSession session)
+        string? clientId, IEnumerable<string> requestedScopes, IDocumentSession session,
+        CimdClientResolver cimdResolver, CancellationToken cancellationToken)
     {
         var scopeNames = requestedScopes?.ToArray() ?? Array.Empty<string>();
         if (scopeNames.Length == 0) return null;
@@ -1182,7 +1195,7 @@ public static class AuthorizationEndpoints
         // Load scope projections by name once — far fewer DB hits than per-scope.
         var scopes = await session.Query<OAuthScopeState>()
             .Where(s => scopeNames.Contains(s.Name) && !s.IsDeleted)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         // If no requested scope is app-scoped, there's nothing to restrict.
         var appScoped = scopes.Where(s => s.AppId.HasValue).ToList();
@@ -1194,7 +1207,12 @@ public static class AuthorizationEndpoints
         if (!string.IsNullOrEmpty(clientId))
         {
             client = await session.Query<OAuthApplicationState>()
-                .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted);
+                .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted, cancellationToken);
+
+            // CIMD clients are non-persisted; resolve the synthesized client so
+            // the dynamic-registration scope-opt-in path below applies to them
+            // (the synthetic client carries DcrIsDynamicallyRegistered=true).
+            client ??= await cimdResolver.ResolveAsync(clientId, cancellationToken);
         }
 
         // DCR clients have no AppIds by design — they're realm-wide

@@ -23,10 +23,12 @@ public sealed class TokenMintMetricHandler : IOpenIddictServerHandler<OpenIddict
             .Build();
 
     private readonly IQuerySession _querySession;
+    private readonly Cimd.CimdClientResolver _cimdResolver;
 
-    public TokenMintMetricHandler(IQuerySession querySession)
+    public TokenMintMetricHandler(IQuerySession querySession, Cimd.CimdClientResolver cimdResolver)
     {
         _querySession = querySession;
+        _cimdResolver = cimdResolver;
     }
 
     public async ValueTask HandleAsync(OpenIddictServerEvents.ApplyTokenResponseContext context)
@@ -48,18 +50,31 @@ public sealed class TokenMintMetricHandler : IOpenIddictServerHandler<OpenIddict
             string.IsNullOrEmpty(context.Response.AccessToken))
             return;
 
-        var clientType = await ResolveClientTypeAsync(context.Request?.ClientId);
+        var clientType = await ResolveClientTypeAsync(context.Request?.ClientId, context.CancellationToken);
         ModgudMeters.RecordTokenMinted(grantType, clientType);
     }
 
-    private async ValueTask<string> ResolveClientTypeAsync(string? clientId)
+    private async ValueTask<string> ResolveClientTypeAsync(string? clientId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(clientId)) return ModgudMeters.ClientType.Public;
 
         var app = await _querySession.Query<OAuthApplicationState>()
-            .FirstOrDefaultAsync(a => a.ClientId == clientId && !a.IsDeleted);
+            .FirstOrDefaultAsync(a => a.ClientId == clientId && !a.IsDeleted, cancellationToken);
+
+        // CIMD clients are non-persisted — a CIMD client_id misses the query
+        // and resolves via the resolver; tag it distinctly.
+        if (app is null && Cimd.CimdClientId.IsCimdClientId(clientId)
+            && await _cimdResolver.ResolveAsync(clientId, cancellationToken) is not null)
+        {
+            return ModgudMeters.ClientType.Cimd;
+        }
 
         if (app is null) return ModgudMeters.ClientType.Public;
+
+        // CIMD-resolved apps are marked explicitly (they also carry the DCR
+        // marker for containment, so check CIMD first).
+        if (app.Properties.ContainsKey(OAuthApplicationPropertyKeys.CimdIsResolvedClient))
+            return ModgudMeters.ClientType.Cimd;
 
         // DCR-registered apps carry a DcrRegisteredAt marker in Properties.
         if (app.Properties.ContainsKey(OAuthApplicationPropertyKeys.DcrRegisteredAt))

@@ -51,6 +51,16 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     {
     }
 
+    /// <summary>
+    /// Test seam for CIMD: maps a CIMD <c>client_id</c> URL to the
+    /// raw JSON metadata document the stubbed fetcher should return. Tests
+    /// populate this instead of standing up a real HTTPS endpoint; the named
+    /// CIMD HttpClient's primary handler is overridden (below) to serve from
+    /// here, bypassing the real SSRF-guarded transport (SSRF is unit-tested
+    /// separately). A URL with no entry yields 404 → resolve fails.
+    /// </summary>
+    public System.Collections.Concurrent.ConcurrentDictionary<string, string> CimdDocuments { get; } = new();
+
     public JsonSerializerOptions JsonOptions { get; } = new JsonSerializerOptions
     {
         PropertyNamingPolicy = null, // Match API's behavior (no camelCase)
@@ -124,7 +134,34 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             // Provide Email OTP config for tests
             services.RemoveAll<EmailOtpConfiguration>();
             services.AddSingleton(new EmailOtpConfiguration());
+
+            // CIMD: override the metadata fetcher's primary handler
+            // with an in-memory stub serving from CimdDocuments, so tests
+            // exercise the full resolve→synthesize→token flow without real
+            // outbound HTTP. The last ConfigurePrimaryHttpMessageHandler wins.
+            services.AddHttpClient(Modgud.Infrastructure.OpenIddict.Cimd.CimdClientResolver.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => new StubCimdHandler(CimdDocuments));
         });
+    }
+
+    /// <summary>In-memory stand-in for the CIMD metadata endpoint. Returns the
+    /// document registered for the exact request URL, or 404.</summary>
+    private sealed class StubCimdHandler(
+        System.Collections.Concurrent.ConcurrentDictionary<string, string> documents) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var url = request.RequestUri?.ToString() ?? string.Empty;
+            if (documents.TryGetValue(url, out var json))
+            {
+                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+                });
+            }
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+        }
     }
 
     protected override IHost CreateHost(IHostBuilder builder)
