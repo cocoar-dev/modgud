@@ -97,12 +97,13 @@ const ROLE_MODAL_SIZE = {
 } as const
 const SERVICE_ACCOUNT_MODAL_SIZE = MODAL_MD
 
-// API is a single form, but selecting an Application injects a ~14rem permission
-// checklist. A minHeight floor reserves that space so the checklist fills it
-// instead of jumping the whole modal frame taller (the defect-#10 class).
+// API modal is now Create=wizard / Edit=tabs. A FIXED frame (like ROLE) so the
+// size never jumps between wizard steps or edit tabs — sized to the tallest
+// content (the linkage permission checklist + the review list); shorter
+// steps/tabs fill the same frame, taller ones scroll internally.
 const API_MODAL_SIZE = {
-  width: '42rem', minWidth: '42rem', maxWidth: '42rem',
-  height: 'auto', minHeight: '30rem', maxHeight: '85vh',
+  width: '46rem', minWidth: '46rem', maxWidth: '46rem',
+  height: '38rem', minHeight: '38rem', maxHeight: '85vh',
 } as const
 
 // Tabbed editors / read-only multi-pane → stable tall frame.
