@@ -191,15 +191,17 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        // Wait for async projection to create the UserView
+        // Two-step sync. (1) Best-effort global barrier: let the async daemon catch
+        // up on ALL projections so the broader suite (e.g. userinfo permission
+        // reads) sees a consistent snapshot — this is the coarse sync the suite
+        // historically relied on. (2) Targeted poll for THIS UserView, because
+        // WaitForNonStaleProjectionDataAsync can return before a specific
+        // just-appended event is applied under Marten 9.x master-table
+        // multi-tenancy — a flaky null read that surfaced as NREs in test setup on
+        // the Critter-Stack 2026 upgrade (Marten 9.8). The poll closes that gap.
         var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-        // Tenant-scoped wait — we run on master-table multi-tenancy, so the helper
-        // needs to know which tenant DB to poll. All test data lands in the "system"
-        // tenant (see TenantedSessionFactory's HttpContext-less fallback).
-        await store.WaitForNonStaleProjectionDataAsync("system", TimeSpan.FromSeconds(10));
-
-        var view = await session.LoadAsync<UserView>(id, TestContext.Current.CancellationToken);
-        return view!;
+        await store.WaitForNonStaleProjectionDataAsync("system", TimeSpan.FromSeconds(30));
+        return await LoadProjectionWithRetryAsync<UserView>(id, TimeSpan.FromSeconds(30));
     }
 
     /// <summary>
@@ -232,11 +234,11 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         session.Events.Append(userView.Id, new UserIdentitySetupEvent(userView.Id, userName, true));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 
+        // Best-effort global barrier (coarse daemon catch-up the suite relies on);
+        // the final read-back below additionally polls until the UserView itself
+        // reflects this identity-setup event (UserName).
         var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-        // Tenant-scoped wait — we run on master-table multi-tenancy, so the helper
-        // needs to know which tenant DB to poll. All test data lands in the "system"
-        // tenant (see TenantedSessionFactory's HttpContext-less fallback).
-        await store.WaitForNonStaleProjectionDataAsync("system", TimeSpan.FromSeconds(10));
+        await store.WaitForNonStaleProjectionDataAsync("system", TimeSpan.FromSeconds(30));
 
         // Step 3: Create ApplicationUser with password via Identity
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
@@ -290,8 +292,10 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             await session.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
-        // Reload with updated UserName
-        return (await session.LoadAsync<UserView>(userView.Id, TestContext.Current.CancellationToken))!;
+        // Reload, robustly waiting until the async UserView reflects the
+        // identity-setup event (UserName) — not just any version of the doc.
+        return await LoadProjectionWithRetryAsync<UserView>(
+            userView.Id, TimeSpan.FromSeconds(30), v => v.UserName == userName);
     }
 
     /// <summary>
@@ -440,5 +444,39 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         using var scope = Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
         return await session.LoadAsync<T>(id, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Robustly reads an async-projection document after a write, polling a
+    /// fresh session until the document materializes (and, if
+    /// <paramref name="until"/> is supplied, until it satisfies that predicate).
+    /// Replaces the <c>WaitForNonStaleProjectionDataAsync</c> + null-forgiving
+    /// <c>LoadAsync</c> pattern, whose async-daemon high-water-mark wait can
+    /// return before a specific event is applied under Marten 9.x master-table
+    /// multi-tenancy — a flaky null/stale read that surfaced as NREs in test
+    /// setup on the Critter-Stack 2026 upgrade (Marten 9.8).
+    /// </summary>
+    private async Task<T> LoadProjectionWithRetryAsync<T>(
+        Guid id,
+        TimeSpan timeout,
+        Func<T, bool>? until = null) where T : notnull
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var deadline = DateTime.UtcNow + timeout;
+        while (true)
+        {
+            using var scope = Services.CreateScope();
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            var doc = await session.LoadAsync<T>(id, ct);
+            if (doc is not null && (until is null || until(doc)))
+                return doc;
+
+            if (DateTime.UtcNow >= deadline)
+                throw new TimeoutException(
+                    $"Projection {typeof(T).Name} for {id} did not materialize within {timeout} " +
+                    $"({(doc is null ? "still null" : "predicate unmet")}).");
+
+            await Task.Delay(50, ct);
+        }
     }
 }
