@@ -15,6 +15,13 @@ public class SharedPostgresFixture : IAsyncLifetime
 {
     public PostgreSqlContainer Container { get; } = new PostgreSqlBuilder("postgres:18-alpine")
         .WithDatabase("modgud_test")
+        // Marten 9.x runs ONE async-projection daemon per tenant database
+        // (master-table multi-tenancy: system DB + every per-test realm DB),
+        // each holding Postgres connections via its own Npgsql data source.
+        // The server-global default max_connections=100 is exhausted on
+        // contended CI runners -> Npgsql "Timeout during connection attempt"
+        // (the 15s pool timeout) on otherwise-unrelated tests. Raise the ceiling.
+        .WithCommand("-c", "max_connections=500")
         .Build();
 
     public string ConnectionString => Container.GetConnectionString();
