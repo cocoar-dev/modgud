@@ -191,33 +191,24 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        // Materialize the async UserView so callers that immediately read it (or read it
-        // back via the HTTP API) see it. This catch-up is a deterministic no-op ONLY in one
-        // case: the VERY FIRST user appended right after ResetAllMartenDataAsync, which runs
-        // `ALTER SEQUENCE mt_events_sequence RESTART WITH 1` + empties mt_event_progression,
-        // so the single event sits at last_value == 1 and hits Marten's high-water
-        // empty-state guard (initialHighMark == 1 && CurrentMark == 0 -> HighWaterMark 0 ->
-        // SubscriptionAgent.CatchUpAsync no-ops). That first user is ALWAYS created from the
-        // setup's CreateTestUserWithIdentityAsync, whose own end-of-method catch-up (by then
-        // >= 2 events exist, so the guard cannot fire) materializes it for real; and that
-        // path only needs `.Id` from here. Standalone CreateTestUserAsync calls always run
-        // AFTER the setup user (last_value > 1), so the guard can't fire and the read below
-        // returns the real, materialized doc — which is what their later API reads depend on.
+        // Deterministically materialize the async UserView via the catch-up, then read it.
+        // Verified against Marten V9.8.0 / JasperFx V2.12.0 source: the catch-up path
+        // (ForceAllMartenDaemonActivityToCatchUpAsync -> JasperFxAsyncDaemon.CatchUpAsync)
+        // re-runs _highWater.CheckNowAsync() (fresh DB detection) then
+        // SubscriptionAgent.CatchUpAsync, which has NO seq<=1 guard (that guard lives ONLY
+        // in the WaitForNonStale* helpers, which we don't use). So even the FIRST user right
+        // after ResetAllMartenDataAsync (events sequence RESTART WITH 1 -> seq_id == 1) IS
+        // applied (state.Sequence 0 != highWaterMark 1). A null here is therefore a GENUINE
+        // catch-up failure, not an expected empty-state no-op — fail loud AT THE SOURCE
+        // rather than fabricating a partial UserView that resurfaces as a displaced flake
+        // (e.g. a /connect/userinfo 401) in some later test. Mirrors CreateTestUserWithIdentityAsync.
         await CatchUpAsyncProjectionsAsync();
 
-        // Real materialized doc when the catch-up applied (last_value > 1); otherwise (the
-        // seq-1 first-user no-op) a faithful single-UserCreatedEvent projection of the known
-        // inputs (UserName/HasPassword/links are only set by later events anyway).
         return await session.LoadAsync<UserView>(id, TestContext.Current.CancellationToken)
-            ?? new UserView
-            {
-                Id = id,
-                Firstname = firstname,
-                Lastname = lastname,
-                Acronym = resolvedAcronym,
-                Email = resolvedEmail,
-                IsActive = true,
-            };
+            ?? throw new InvalidOperationException(
+                $"UserView {id} not materialized after async-projection catch-up " +
+                "(the JasperFx CatchUp path applies seq_id 1, so this is a real daemon " +
+                "catch-up failure, not an expected no-op).");
     }
 
     /// <summary>
