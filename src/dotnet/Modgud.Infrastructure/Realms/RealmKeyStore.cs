@@ -194,6 +194,31 @@ public sealed class RealmKeyStore : IRealmKeyStore
         }
     }
 
+    /// <summary>
+    /// Test-support: clears ALL in-memory key caches for EVERY realm. The
+    /// integration harness wipes every realm DB between tests
+    /// (<c>ResetAllMartenDataAsync</c>), which deletes the persisted
+    /// <see cref="RealmSigningKey"/> rows but leaves this singleton's caches holding
+    /// the pre-wipe keys. The result is a split-brain: a token gets signed with a
+    /// cached active key (60s fast path, no DB read) whose row no longer exists,
+    /// while the verification set / JWKS is rebuilt authoritatively from the
+    /// now-empty DB and omits it — so validation fails with OpenIddict ID2090
+    /// "The signing key associated to the specified token was not found" (a 401 at
+    /// <c>/connect/userinfo</c>). Clearing the caches after the wipe makes the next
+    /// sign AND the next verify both re-read (and lazily regenerate) the same key.
+    ///
+    /// Not needed in production: nothing wipes a realm's keys out from under a
+    /// running process there (the janitor purge calls
+    /// <see cref="InvalidateVerificationCache"/>, and out-of-band peer/CLI rotation
+    /// is covered by <see cref="CacheRevalidateInterval"/>).
+    /// </summary>
+    public void ClearCachesForReset()
+    {
+        _activeCache.Clear();
+        _verificationCache.Clear();
+        _verGen.Clear();
+    }
+
     // Bumps the per-realm generation BEFORE dropping the cached set, so a
     // concurrent rebuild that already stored a pre-invalidation snapshot will
     // see the moved generation on its post-store check and evict its own entry.

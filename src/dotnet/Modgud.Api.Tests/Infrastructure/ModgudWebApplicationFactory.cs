@@ -84,9 +84,6 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             logging.ClearProviders();
             logging.AddConsole();
             logging.SetMinimumLevel(LogLevel.Warning);
-            // TEMP DIAGNOSTIC (revert): capture why /connect/userinfo returns 401 on CI.
-            logging.AddFilter("OpenIddict", LogLevel.Debug);
-            logging.AddFilter("Microsoft.AspNetCore.Authentication", LogLevel.Debug);
         });
 
         builder.ConfigureServices(services =>
@@ -428,6 +425,19 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         }
 
         await _host.ResetAllMartenDataAsync();
+
+        // The singleton RealmKeyStore caches per-realm signing keys in memory for 60s
+        // and survives the Marten wipe above — which deleted the persisted
+        // RealmSigningKey rows. Without clearing it, a token gets signed with a cached
+        // active key (60s fast path, no DB read) whose row no longer exists, while the
+        // JWKS verification set is rebuilt from the now-empty DB and omits it -> OpenIddict
+        // ID2090 "signing key not found" -> /connect/userinfo 401 (intermittent on CI).
+        // Clearing makes the next sign + verify both re-read the regenerated key.
+        if (Services.GetService<Modgud.Infrastructure.Realms.IRealmKeyStore>()
+                is Modgud.Infrastructure.Realms.RealmKeyStore keyStore)
+        {
+            keyStore.ClearCachesForReset();
+        }
 
         // Re-seed the system App + Control-Plane App so per-test fresh state
         // still has the catalog. The boot-time seed in Program.cs runs once
