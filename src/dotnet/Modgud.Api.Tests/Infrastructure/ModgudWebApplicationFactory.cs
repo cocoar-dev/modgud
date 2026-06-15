@@ -191,17 +191,13 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        // Two-step sync. (1) Best-effort global barrier: let the async daemon catch
-        // up on ALL projections so the broader suite (e.g. userinfo permission
-        // reads) sees a consistent snapshot — this is the coarse sync the suite
-        // historically relied on. (2) Targeted poll for THIS UserView, because
-        // WaitForNonStaleProjectionDataAsync can return before a specific
-        // just-appended event is applied under Marten 9.x master-table
-        // multi-tenancy — a flaky null read that surfaced as NREs in test setup on
-        // the Critter-Stack 2026 upgrade (Marten 9.8). The poll closes that gap.
-        var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-        await store.WaitForNonStaleProjectionDataAsync("system", TimeSpan.FromSeconds(30));
-        return await LoadProjectionWithRetryAsync<UserView>(id, TimeSpan.FromSeconds(30));
+        // UserView is an async MultiStreamProjection (cannot be Inline). Deterministically
+        // materialize it before reading — see CatchUpAsyncProjectionsAsync.
+        await CatchUpAsyncProjectionsAsync();
+
+        return await session.LoadAsync<UserView>(id, TestContext.Current.CancellationToken)
+            ?? throw new InvalidOperationException(
+                $"UserView {id} not materialized after async-projection catch-up.");
     }
 
     /// <summary>
@@ -233,12 +229,8 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
         session.Events.Append(userView.Id, new UserIdentitySetupEvent(userView.Id, userName, true));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
-
-        // Best-effort global barrier (coarse daemon catch-up the suite relies on);
-        // the final read-back below additionally polls until the UserView itself
-        // reflects this identity-setup event (UserName).
-        var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-        await store.WaitForNonStaleProjectionDataAsync("system", TimeSpan.FromSeconds(30));
+        // The async UserView is materialized by the single catch-up at the end of
+        // this method (after the admin events are also appended).
 
         // Step 3: Create ApplicationUser with password via Identity
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
@@ -292,10 +284,17 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             await session.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
-        // Reload, robustly waiting until the async UserView reflects the
-        // identity-setup event (UserName) — not just any version of the doc.
-        return await LoadProjectionWithRetryAsync<UserView>(
-            userView.Id, TimeSpan.FromSeconds(30), v => v.UserName == userName);
+        // Deterministically materialize the async UserView (now reflecting the
+        // identity-setup event) before returning.
+        await CatchUpAsyncProjectionsAsync();
+
+        var view = await session.LoadAsync<UserView>(userView.Id, TestContext.Current.CancellationToken)
+            ?? throw new InvalidOperationException(
+                $"UserView {userView.Id} not materialized after async-projection catch-up.");
+        if (view.UserName != userName)
+            throw new InvalidOperationException(
+                $"UserView {userView.Id} did not reflect identity setup (UserName '{view.UserName}' != '{userName}') after catch-up.");
+        return view;
     }
 
     /// <summary>
@@ -427,14 +426,12 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Waits for all async projections to catch up with the latest events.
+    /// Deterministically materializes all async projections up to the latest events.
+    /// Call after appending events and before reading an async view.
+    /// See <see cref="CatchUpAsyncProjectionsAsync"/>.
     /// </summary>
-    public async Task WaitForProjectionsAsync(TimeSpan? timeout = null)
-    {
-        using var scope = Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-        await store.WaitForNonStaleProjectionDataAsync("system", timeout ?? TimeSpan.FromSeconds(10));
-    }
+    public Task WaitForProjectionsAsync(TimeSpan? timeout = null)
+        => CatchUpAsyncProjectionsAsync(timeout);
 
     /// <summary>
     /// Gets a document by ID directly from the database
@@ -447,36 +444,34 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Robustly reads an async-projection document after a write, polling a
-    /// fresh session until the document materializes (and, if
-    /// <paramref name="until"/> is supplied, until it satisfies that predicate).
-    /// Replaces the <c>WaitForNonStaleProjectionDataAsync</c> + null-forgiving
-    /// <c>LoadAsync</c> pattern, whose async-daemon high-water-mark wait can
-    /// return before a specific event is applied under Marten 9.x master-table
-    /// multi-tenancy — a flaky null/stale read that surfaced as NREs in test
-    /// setup on the Critter-Stack 2026 upgrade (Marten 9.8).
+    /// Deterministically materializes ALL async projections across EVERY tenant DB
+    /// using Marten's <c>ForceAllMartenDaemonActivityToCatchUpAsync</c>: it pauses
+    /// the projection coordinator, runs an INLINE per-shard catch-up on the calling
+    /// thread (independent of the continuously-running daemon, which may still be in
+    /// cold-start after the per-test reset on a contended CI runner), then resumes.
+    ///
+    /// This replaces the flaky <c>WaitForNonStaleProjectionDataAsync</c> + <c>LoadAsync</c>
+    /// poll barrier, which depended on the continuous daemon making progress and so
+    /// either returned before a just-appended event was applied or timed out under
+    /// Marten 9.x master-table multi-tenancy (the Critter-Stack 9.8 CI flake). It is
+    /// also multi-tenant-complete (covers the system DB and every realm DB), unlike
+    /// the one-database WaitForNonStale overload.
+    ///
+    /// Call AFTER the arrange events are appended + committed and BEFORE reading an
+    /// async view (e.g. <c>UserView</c>, a MultiStreamProjection that cannot be Inline).
     /// </summary>
-    private async Task<T> LoadProjectionWithRetryAsync<T>(
-        Guid id,
-        TimeSpan timeout,
-        Func<T, bool>? until = null) where T : notnull
+    private async Task CatchUpAsyncProjectionsAsync(TimeSpan? timeout = null)
     {
-        var ct = TestContext.Current.CancellationToken;
-        var deadline = DateTime.UtcNow + timeout;
-        while (true)
-        {
-            using var scope = Services.CreateScope();
-            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-            var doc = await session.LoadAsync<T>(id, ct);
-            if (doc is not null && (until is null || until(doc)))
-                return doc;
+        if (_host is null)
+            throw new InvalidOperationException(
+                "Test IHost is not available. Ensure CreateClient() was called first.");
 
-            if (DateTime.UtcNow >= deadline)
-                throw new TimeoutException(
-                    $"Projection {typeof(T).Name} for {id} did not materialize within {timeout} " +
-                    $"({(doc is null ? "still null" : "predicate unmet")}).");
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cts.CancelAfter(timeout ?? TimeSpan.FromSeconds(60));
 
-            await Task.Delay(50, ct);
-        }
+        var errors = await _host.ForceAllMartenDaemonActivityToCatchUpAsync(cts.Token);
+        if (errors.Count > 0)
+            throw new AggregateException(
+                "Async-projection catch-up failed after Marten reset/append.", errors);
     }
 }
