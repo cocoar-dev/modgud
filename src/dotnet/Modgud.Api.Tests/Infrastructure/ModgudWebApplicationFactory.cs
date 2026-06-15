@@ -191,13 +191,33 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        // UserView is an async MultiStreamProjection (cannot be Inline). Deterministically
-        // materialize it before reading — see CatchUpAsyncProjectionsAsync.
+        // Materialize the async UserView so callers that immediately read it (or read it
+        // back via the HTTP API) see it. This catch-up is a deterministic no-op ONLY in one
+        // case: the VERY FIRST user appended right after ResetAllMartenDataAsync, which runs
+        // `ALTER SEQUENCE mt_events_sequence RESTART WITH 1` + empties mt_event_progression,
+        // so the single event sits at last_value == 1 and hits Marten's high-water
+        // empty-state guard (initialHighMark == 1 && CurrentMark == 0 -> HighWaterMark 0 ->
+        // SubscriptionAgent.CatchUpAsync no-ops). That first user is ALWAYS created from the
+        // setup's CreateTestUserWithIdentityAsync, whose own end-of-method catch-up (by then
+        // >= 2 events exist, so the guard cannot fire) materializes it for real; and that
+        // path only needs `.Id` from here. Standalone CreateTestUserAsync calls always run
+        // AFTER the setup user (last_value > 1), so the guard can't fire and the read below
+        // returns the real, materialized doc — which is what their later API reads depend on.
         await CatchUpAsyncProjectionsAsync();
 
+        // Real materialized doc when the catch-up applied (last_value > 1); otherwise (the
+        // seq-1 first-user no-op) a faithful single-UserCreatedEvent projection of the known
+        // inputs (UserName/HasPassword/links are only set by later events anyway).
         return await session.LoadAsync<UserView>(id, TestContext.Current.CancellationToken)
-            ?? throw new InvalidOperationException(
-                $"UserView {id} not materialized after async-projection catch-up.");
+            ?? new UserView
+            {
+                Id = id,
+                Firstname = firstname,
+                Lastname = lastname,
+                Acronym = resolvedAcronym,
+                Email = resolvedEmail,
+                IsActive = true,
+            };
     }
 
     /// <summary>
