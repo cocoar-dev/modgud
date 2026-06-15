@@ -19,10 +19,9 @@
     <PackageReference Include="Marten.AspNetCore" />
     <PackageReference Include="WolverineFx.Marten" />
     <PackageReference Include="WolverineFx.RuntimeCompilation" />
-    <PackageReference Include="JasperFx.Events.SourceGenerator">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
+    <!-- Marten 9.8+ bundles the JasperFx events source generator as an analyzer;
+         a direct Marten ref runs it. The standalone package would double it
+         (duplicate *.Evolver.g.cs -> CS0111), so it is intentionally omitted. -->
     <PackageReference Include="Riok.Mapperly" />
     <PackageReference Include="System.Linq.Async.Queryable" />
     <PackageReference Include="Cocoar.Reflectensions" />

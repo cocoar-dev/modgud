@@ -6,18 +6,17 @@
 
   <ItemGroup>
     <PackageReference Include="ErrorOr" />
-    <!-- Marten 9 source-generates Apply/Create dispatchers for live
-         aggregates (AggregateStreamAsync<T>). The 3 OAuth aggregates
-         (Application, Scope, Api) live here, so the analyzer needs to
-         see this project too — otherwise the runtime throws
-         "No source-generated dispatcher found". -->
-    <PackageReference Include="JasperFx.Events.SourceGenerator">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
+    <!-- Marten 9 source-generates Apply/Create dispatchers for live aggregates
+         (AggregateStreamAsync<T>). The 3 OAuth aggregates (Application, Scope,
+         Api) live here. Marten 9.8+ bundles the events source generator as an
+         analyzer; it reaches this project transitively via the Authorization ->
+         Marten reference, so no explicit JasperFx.Events.SourceGenerator ref is
+         needed (and adding it would double the generator -> CS0101/CS0111). -->
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Also transitively supplies the Marten-bundled source generator
+         analyzer used by the OAuth live aggregates above. -->
     <ProjectReference Include="..\Modgud.Authorization\Modgud.Authorization.csproj" />
   </ItemGroup>
 

@@ -13,10 +13,9 @@
     <!-- Persistence + messaging -->
     <PackageReference Include="Marten" />
     <PackageReference Include="WolverineFx.Marten" />
-    <PackageReference Include="JasperFx.Events.SourceGenerator">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
+    <!-- Marten 9.8+ bundles the JasperFx events source generator as an analyzer;
+         a direct Marten ref runs it. The standalone package would double it
+         (duplicate *.Evolver.g.cs -> CS0111), so it is intentionally omitted. -->
 
     <!-- FIDO2 / Passkey -->
     <PackageReference Include="Fido2.AspNet" />
