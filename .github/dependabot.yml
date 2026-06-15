@@ -1,82 +1,29 @@
 # Dependabot configuration for cocoar-dev/modgud
 #
-# Scoping rationale: production-runtime deps only.
-#   - src/frontend-vue/ — Vue 3 SPA, ships in the Docker image
-#   - src/dotnet/       — ASP.NET Core 10 backend, ships in the Docker image
-#   - .github/workflows — CI surface
+# Dependency policy (changed 2026-06-15): we do NOT want routine version-update
+# PRs for the application code. The npm + nuget version-update blocks were
+# removed because they produced a steady stream of one-PR-per-dependency noise.
 #
-# Deliberately excluded:
-#   - docs/             — VitePress build, not in production runtime
-#   - dev-docs/         — repo-only, never deployed
+# Outdated / vulnerable application dependencies are now surfaced WITHOUT PRs:
+#   - .github/workflows/dependency-report.yml runs monthly and maintains ONE
+#     tracking issue (label `dependency-report`) listing every outdated +
+#     vulnerable NuGet and pnpm package. Fix those locally.
+#   - Dependabot ALERTS (repo Settings -> Code security) keep notifying about
+#     CVEs in the Security tab — they are settings-driven, need no entry here,
+#     and open no PRs. Leave "Dependabot security updates" DISABLED so it does
+#     not auto-open security PRs.
+#   - ci.yml already fails any PR that introduces a known CVE
+#     (`dotnet list package --vulnerable` / `pnpm audit`).
 #
-# Out-of-scope vulnerabilities are documented in SECURITY.md.
+# Only GitHub Actions versions are still managed here: there is no equivalent
+# `outdated` CLI for them, the volume is tiny (monthly, rarely changes), and
+# keeping CI actions patched is security-relevant. Remove this last block too
+# if you want Dependabot to open literally zero PRs.
 
 version: 2
 updates:
-  # Production Vue SPA
-  - package-ecosystem: "npm"
-    directory: "/src/frontend-vue"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-      timezone: "Europe/Vienna"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "frontend"
-    groups:
-      vue-ecosystem:
-        patterns:
-          - "vue"
-          - "@vue/*"
-          - "vue-router"
-          - "pinia"
-      vite-build:
-        patterns:
-          - "vite"
-          - "@vitejs/*"
-          - "esbuild"
-      cocoar-internals:
-        patterns:
-          - "@cocoar/*"
-      ag-grid:
-        patterns:
-          - "ag-grid*"
-          - "@ag-grid-*"
-      types:
-        patterns:
-          - "@types/*"
-
-  # Production .NET backend
-  - package-ecosystem: "nuget"
-    directory: "/src/dotnet"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-      timezone: "Europe/Vienna"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "backend"
-    groups:
-      critter-stack:
-        patterns:
-          - "Marten*"
-          - "Wolverine*"
-          - "JasperFx*"
-      openiddict:
-        patterns:
-          - "OpenIddict*"
-      microsoft:
-        patterns:
-          - "Microsoft.*"
-      cocoar-internals:
-        patterns:
-          - "Cocoar.*"
-
-  # GitHub Actions workflow deps
+  # GitHub Actions workflow deps — low-volume, security-relevant, not covered
+  # by the dependency-report workflow.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
