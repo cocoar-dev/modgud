@@ -84,6 +84,9 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             logging.ClearProviders();
             logging.AddConsole();
             logging.SetMinimumLevel(LogLevel.Warning);
+            // TEMP DIAGNOSTIC (revert): capture why /connect/userinfo returns 401 on CI.
+            logging.AddFilter("OpenIddict", LogLevel.Debug);
+            logging.AddFilter("Microsoft.AspNetCore.Authentication", LogLevel.Debug);
         });
 
         builder.ConfigureServices(services =>
