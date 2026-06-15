@@ -5,9 +5,10 @@ name: Dependency report (no PRs)
 # `dependency-report`. It NEVER opens a pull request.
 #
 # Why this exists: routine Dependabot *version-update* PRs were too noisy, so
-# npm + nuget version-updates were removed from .github/dependabot.yml. This
-# workflow replaces them with a single "fix-locally" report. Security CVEs are
-# still caught two other ways that open no PRs either:
+# Dependabot version-updates were removed entirely (.github/dependabot.yml was
+# deleted — including github-actions, so Dependabot opens zero PRs of any kind).
+# This workflow replaces them with a single "fix-locally" report. Security CVEs
+# are still caught two other ways that open no PRs either:
 #   - Dependabot ALERTS in the repo Security tab (real-time, settings-driven),
 #   - the existing per-PR audit in ci.yml (`dotnet list package --vulnerable`
 #     / `pnpm audit`), which fails the build on a known CVE.
