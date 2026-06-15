@@ -35,16 +35,32 @@ Pinned in `src/dotnet/Directory.Packages.props`:
 > `2.1.x` generated a colliding `Evolve(...)` overload, resolved at `2.4.x`, then
 > removed altogether at the 9.8 upgrade.)*
 
-> **Test-infra read-after-write hardened (9.8).** Marten 9.8's master-table
-> multi-tenant daemon timing made `WaitForNonStaleProjectionDataAsync` + an
-> immediate `LoadAsync` flaky: the high-water-mark wait can return **before** a
-> just-appended event is applied, so the read came back `null` → `NullReference`
-> in `CreateTestUser*` (random tests, ~every CI run; local-isolated runs hid it).
-> The test factory now polls the specific doc via `LoadProjectionWithRetryAsync<T>`
-> **in addition to** the global `WaitForNonStaleProjectionDataAsync` barrier
-> (kept as a coarse daemon catch-up the heavier suites rely on — removing it made
-> `UserInfoPerAudienceTests` flake under parallel load). See
-> `Modgud.Api.Tests/Infrastructure/ModgudWebApplicationFactory.cs`.
+> **Test-harness blockers on the 9.8 upgrade (4, all fixed — PR #88, CI green).**
+> The 9.8 bump surfaced four *integration-test-harness* flakes (production was just
+> the version bumps + dropping the standalone generator package). Full write-up incl.
+> how Marten tests this itself: the global knowledge topic
+> `marten-9-8-critter-stack-upgrade-blockers`. In brief:
+> 1. **CS0111** — Marten 9.8 bundles the events generator; drop the standalone
+>    `JasperFx.Events.SourceGenerator` package (see above).
+> 2. **async `UserView` not materialized after the per-test reset** — materialize via
+>    `Host.ForceAllMartenDaemonActivityToCatchUpAsync` (seq-1-safe inline catch-up),
+>    then `LoadAsync`-or-throw. Do **not** use `WaitForNonStaleProjectionDataAsync` —
+>    its seq≤1 empty-state guard no-ops the first post-reset event (`ALTER SEQUENCE
+>    mt_events_sequence RESTART WITH 1`); `ForceAll`/`CatchUpAsync` has no such guard.
+> 3. **`Timeout during connection attempt`** in cold-start tests — 9.8 runs one async
+>    daemon per tenant DB (each holding connections); raise the test Postgres
+>    `max_connections` (`PostgreSqlBuilder.WithCommand("-c","max_connections=500")`).
+> 4. **`/connect/userinfo` 401 (OpenIddict ID2090 "signing key not found")** — NOT a
+>    daemon/projection issue: the singleton `RealmKeyStore` (60s in-memory signing-key
+>    cache) survives the per-test Marten wipe, so a token is signed with a cached `kid`
+>    whose row was deleted while the JWKS is rebuilt from the emptied DB. Fix:
+>    `RealmKeyStore.ClearCachesForReset()` called from the harness right after
+>    `ResetAllMartenDataAsync()`. (The 401 body is empty — the reason is in the
+>    `WWW-Authenticate` header, which the userinfo test assertions now surface.)
+>
+> See `Modgud.Api.Tests/Infrastructure/ModgudWebApplicationFactory.cs` (`ResetMartenDataAsync`,
+> `CreateTestUserAsync`, `CatchUpAsyncProjectionsAsync`), `SharedPostgresFixture`/`ColdStartFixture`
+> (`max_connections`), and `Modgud.Infrastructure/Realms/RealmKeyStore.cs` (`ClearCachesForReset`).
 
 The two V8 event-store defaults Modgud still pins (and the reasoning for
 each) are in
