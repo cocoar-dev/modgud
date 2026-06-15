@@ -13,8 +13,8 @@ importers:
   .:
     dependencies:
       '@cocoar/signalarrr':
-        specifier: ^4.3.1
-        version: 4.3.1
+        specifier: ^4.3.2
+        version: 4.3.2
       '@cocoar/vue-data-grid':
         specifier: 2.7.0
         version: 2.7.0(@cocoar/vue-localization@2.7.0(vue@3.5.35(typescript@6.0.3)))(@cocoar/vue-ui@2.7.0(vue-router@5.1.0(@vue/compiler-sfc@3.5.35)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.35(typescript@6.0.3)))(vite@8.0.16(@types/node@25.6.0)(jiti@2.6.1)(yaml@2.9.0))(vue@3.5.35(typescript@6.0.3)))(vue@3.5.35(typescript@6.0.3)))(@js-temporal/polyfill@0.5.1)(vue@3.5.35(typescript@6.0.3))
@@ -111,8 +111,8 @@ packages:
     resolution: {integrity: sha512-p7/ABylAYlexb31wtRdIfH9L9A0Z2T/9H6zAqzqndkY2PLkvNNc580wGhp/gGKN4Sp9sQvSkhc6Oga8/O+wTyw==}
     engines: {node: ^22.18.0 || >=24.11.0}
 
-  '@cocoar/signalarrr@4.3.1':
-    resolution: {integrity: sha512-XONn9jvAn1n/U0DzuFlOKeNn+avr4FV32OSYRbhm7qRjPQEpmYY7LiMf4yApvIQG039S3W6B/TBilAUOL22PiQ==}
+  '@cocoar/signalarrr@4.3.2':
+    resolution: {integrity: sha512-j9NpkWW0c0ZHqgAN6euJlOf0K+TJxGbqH0+/+/vIPQJ5PgMHSGmTshiATx2lyMKkWsgjNss9hAglRYUumQbDFw==}
 
   '@cocoar/vue-data-grid@2.7.0':
     resolution: {integrity: sha512-6Y4ycTeCojdWtdP9B4h5+jVVk+O3PfLFz+TFShftmQaC4CP9HgVb58O5R4TEM9Lz1zLsao2Dc4S+tm5YWoK3qA==}
@@ -1009,8 +1009,8 @@ packages:
   whatwg-url@5.0.0:
     resolution: {integrity: sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==}
 
-  ws@7.5.10:
-    resolution: {integrity: sha512-+dbF1tHwZpXcbOJdVOkzLDxZP1ailvSxM6ZweXTegylPny803bFhA+vqBYw4s31NSAk4S2Qz+AKXK9a4wkdjcQ==}
+  ws@7.5.11:
+    resolution: {integrity: sha512-zS54Oen9bITtp7kp2XM3AydrCIq1D+HwJOuH+c+e4LfpL/lotP5osijd+UoMnxwAam1GN8R4KtLAyIrIcBNpiA==}
     engines: {node: '>=8.3.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -1063,7 +1063,7 @@ snapshots:
       '@babel/helper-string-parser': 8.0.0-rc.6
       '@babel/helper-validator-identifier': 8.0.0-rc.6
 
-  '@cocoar/signalarrr@4.3.1':
+  '@cocoar/signalarrr@4.3.2':
     dependencies:
       '@microsoft/signalr': 10.0.0
       '@microsoft/signalr-protocol-msgpack': 10.0.0
@@ -1189,7 +1189,7 @@ snapshots:
       eventsource: 2.0.2
       fetch-cookie: 2.2.0
       node-fetch: 2.7.0
-      ws: 7.5.10
+      ws: 7.5.11
     transitivePeerDependencies:
       - bufferutil
       - encoding
@@ -1899,6 +1899,6 @@ snapshots:
       tr46: 0.0.3
       webidl-conversions: 3.0.1
 
-  ws@7.5.10: {}
+  ws@7.5.11: {}
 
   yaml@2.9.0: {}
