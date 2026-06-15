@@ -16,17 +16,35 @@ Pinned in `src/dotnet/Directory.Packages.props`:
 
 | Package | Version |
 | --- | --- |
-| `Marten` | 9.3.5 |
-| `Marten.AspNetCore` | 9.3.5 |
-| `WolverineFx.Marten` | 6.3.2 |
-| `JasperFx.Events.SourceGenerator` | 2.4.1 |
-| `WolverineFx.RuntimeCompilation` | 6.3.2 |
+| `Marten` | 9.8.0 |
+| `Marten.AspNetCore` | 9.8.0 |
+| `WolverineFx.Marten` | 6.9.0 |
+| `WolverineFx.RuntimeCompilation` | 6.9.0 |
 
-> **JasperFx.Events.SourceGenerator pin lifted (2026-06).** It was held at
-> `2.0.0` because `2.1.x` source-generated an extra `Evolve(...)` overload that
-> collided with `PrincipalProjectionBase`. That collision is gone as of `2.4.x`
-> — verified by a clean build + green test suite — so the pin (and its
-> `dependabot.yml` ignore) were removed.
+> **`JasperFx.Events.SourceGenerator` is no longer referenced (2026-06-15, Marten
+> 9.8 upgrade).** Marten 9.8 **bundles** the events source generator as an
+> analyzer inside the `Marten` package itself
+> (`analyzers/dotnet/cs/JasperFx.Events.SourceGenerator.dll`). Keeping the
+> standalone `JasperFx.Events.SourceGenerator` package alongside it loaded the
+> **same** generator twice, so every aggregate's `*.Evolver.g.cs` was emitted
+> twice → `CS0101`/`CS0111` (duplicate type/member). Fix: drop the standalone
+> package entirely — the version pin **and** all four `PackageReference`s. See
+> Gotcha 1 for who supplies the generator now.
+>
+> *(Earlier history: the standalone package was once pinned at `2.0.0` because
+> `2.1.x` generated a colliding `Evolve(...)` overload, resolved at `2.4.x`, then
+> removed altogether at the 9.8 upgrade.)*
+
+> **Test-infra read-after-write hardened (9.8).** Marten 9.8's master-table
+> multi-tenant daemon timing made `WaitForNonStaleProjectionDataAsync` + an
+> immediate `LoadAsync` flaky: the high-water-mark wait can return **before** a
+> just-appended event is applied, so the read came back `null` → `NullReference`
+> in `CreateTestUser*` (random tests, ~every CI run; local-isolated runs hid it).
+> The test factory now polls the specific doc via `LoadProjectionWithRetryAsync<T>`
+> **in addition to** the global `WaitForNonStaleProjectionDataAsync` barrier
+> (kept as a coarse daemon catch-up the heavier suites rely on — removing it made
+> `UserInfoPerAudienceTests` flake under parallel load). See
+> `Modgud.Api.Tests/Infrastructure/ModgudWebApplicationFactory.cs`.
 
 The two V8 event-store defaults Modgud still pins (and the reasoning for
 each) are in
@@ -58,14 +76,18 @@ dispatcher.
 ### Two requirements per class
 
 1. The class itself **must be `partial`**.
-2. The owning `.csproj` **must reference the source generator**:
+2. The owning project **must see the bundled generator analyzer**. Since Marten
+   9.8 the generator ships **inside the `Marten` package**, so:
+   - a project with a **direct `<PackageReference Include="Marten" />`** already
+     runs it — add nothing else;
+   - a project with **no** direct Marten reference (e.g. `Modgud.Domain`) gets the
+     analyzer **transitively** through a project reference to a Marten-referencing
+     project (Domain → Authorization → Marten) — also add nothing.
 
-```xml
-<PackageReference Include="JasperFx.Events.SourceGenerator">
-  <PrivateAssets>all</PrivateAssets>
-  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-</PackageReference>
-```
+   **Do not** add the standalone `JasperFx.Events.SourceGenerator` package: with
+   9.8 it double-loads the generator (`CS0101`/`CS0111`). Pre-9.8 this step
+   required exactly that standalone analyzer reference; 9.8's bundling made it
+   redundant and actively harmful.
 
 ### Where this bit us
 
@@ -80,12 +102,16 @@ projections:
 - `OAuthApiAggregate` (`src/dotnet/Modgud.Domain/OAuth/Apis/OAuthApiAggregate.cs`)
 
 All three are `public partial class …Aggregate` and define `Apply` / `Create`
-methods. Without the analyzer in `Modgud.Domain.csproj`, Marten 9 threw
+methods. They need the generator to see `Modgud.Domain`, or Marten throws
 "No source-generated dispatcher found" the first time
-`AggregateStreamAsync<OAuthApplicationAggregate>(id)` ran.
+`AggregateStreamAsync<OAuthApplicationAggregate>(id)` runs.
 
-The fix is the analyzer reference now visible in
-[`Modgud.Domain.csproj`](https://github.com/cocoar-dev/modgud/blob/develop/src/dotnet/Modgud.Domain/Modgud.Domain.csproj) lines 14-17.
+Since the 9.8 upgrade `Modgud.Domain` gets the bundled analyzer **transitively**
+through its `Modgud.Authorization` → `Marten` project reference, so it needs no
+package reference of its own (and adding the standalone one would double the
+generator). Pre-9.8 this required an explicit `JasperFx.Events.SourceGenerator`
+reference in
+[`Modgud.Domain.csproj`](https://github.com/cocoar-dev/modgud/blob/develop/src/dotnet/Modgud.Domain/Modgud.Domain.csproj).
 
 ### Grep pattern that catches everything
 
