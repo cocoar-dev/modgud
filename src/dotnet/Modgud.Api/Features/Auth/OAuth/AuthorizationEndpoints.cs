@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Identity;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Services;
@@ -7,10 +8,13 @@ using Modgud.Domain.OAuth.Apis;
 using Modgud.Permissions;
 using Modgud.Permissions.Abstractions;
 using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.OAuth.Consent;
 using Modgud.Domain.OAuth.Scopes;
+using Modgud.Domain.Realms;
 using Modgud.Infrastructure.OpenIddict.Cimd;
 using Marten;
+using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -238,6 +242,7 @@ public static class AuthorizationEndpoints
         UserManager<ApplicationUser> userManager,
         IPermissionService permissionService,
         CimdClientResolver cimdResolver,
+        IEmailOtpService emailOtpService,
         IDocumentSession session)
     {
         var request = httpContext.GetOpenIddictServerRequest()
@@ -413,6 +418,27 @@ public static class AuthorizationEndpoints
             return Results.SignIn(new ClaimsPrincipal(identity), properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         }
 
+        // ADR-0010 — native (cookieless) passwordless token grants. A clean
+        // per-grant_type branch (Phasing rule 1) so the passkey grant (phase 2)
+        // is an additive entry, not surgery. Each grant verifies its factor
+        // server-side and mints tokens via the same principal -> SignIn pipeline
+        // the code/refresh grant uses; no cookie, no browser.
+        if (string.Equals(request.GrantType, CocoarGrantTypes.Otp, StringComparison.Ordinal))
+        {
+            return await ExchangeNativeOtpAsync(
+                request, session, userManager, signInManager, scopeManager,
+                applicationManager, authorizationManager, permissionService,
+                emailOtpService, httpContext.RequestAborted);
+        }
+
+        if (string.Equals(request.GrantType, CocoarGrantTypes.Magic, StringComparison.Ordinal))
+        {
+            return await ExchangeNativeMagicAsync(
+                request, session, userManager, signInManager, scopeManager,
+                applicationManager, authorizationManager, permissionService,
+                httpContext.RequestAborted);
+        }
+
         throw new InvalidOperationException("The specified grant type is not supported.");
 
         static IResult ForbidInvalidGrant(string description) =>
@@ -423,6 +449,254 @@ public static class AuthorizationEndpoints
                     [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = description,
                 }),
                 new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+    }
+
+    // ─────────────────────────── ADR-0010 native grants ───────────────────────
+
+    /// <summary>Uniform OAuth error for the native grants — mirrors the local
+    /// <c>ForbidInvalidGrant</c> but takes the error code too (factor failures
+    /// use <c>invalid_grant</c>; a disabled realm uses <c>unsupported_grant_type</c>).</summary>
+    private static IResult ForbidNativeGrant(string error, string description) =>
+        Results.Forbid(
+            new AuthenticationProperties(new Dictionary<string, string?>
+            {
+                [OpenIddictServerAspNetCoreConstants.Properties.Error] = error,
+                [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = description,
+            }),
+            new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+
+    /// <summary>Reads the per-realm native-grant settings off the tenant-scoped
+    /// RealmSettings doc. Returns the settings ONLY when the master flag is on;
+    /// null otherwise (never-configured section reads as disabled).</summary>
+    private static async Task<NativeGrantSettings?> LoadNativeGrantSettingsAsync(IDocumentSession session, CancellationToken ct)
+    {
+        var settings = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        return settings?.NativeGrants is { Enabled: true } ng ? ng : null;
+    }
+
+    /// <summary>Second-factor gate for the native grants. Returns null when the
+    /// user has no TOTP factor (nothing owed) or the supplied <c>totp_code</c> is
+    /// valid; a Forbid result when a required code is missing or invalid. Called
+    /// AFTER the primary factor verifies, so a clear "2FA required/invalid" error
+    /// is not a user-existence oracle (the caller already proved factor possession).</summary>
+    private static async Task<IResult?> CheckTwoFactorAsync(
+        ApplicationUser user, OpenIddictRequest request, UserManager<ApplicationUser> userManager)
+    {
+        if (!user.TwoFactorEnabled) return null;
+
+        var totp = ((string?)request.GetParameter("totp_code"))?.Replace(" ", "").Replace("-", "");
+        if (string.IsNullOrEmpty(totp))
+            return ForbidNativeGrant(Errors.InvalidGrant, "Two-factor authentication is required; supply totp_code.");
+
+        var valid = await userManager.VerifyTwoFactorTokenAsync(
+            user, userManager.Options.Tokens.AuthenticatorTokenProvider, totp);
+        return valid ? null : ForbidNativeGrant(Errors.InvalidGrant, "The two-factor code is invalid.");
+    }
+
+    /// <summary>Shared token-mint pipeline for the native grants: builds the same
+    /// ClaimsPrincipal the code/refresh grant builds (sub, scopes, destinations,
+    /// security stamp — so the refresh-time OAUTH-07 kill-switch applies), bakes
+    /// federated resource_access, ensures a permanent (subject, client)
+    /// authorization (parity with AuthorizeAsync) and applies the short native
+    /// access-token TTL before the cookieless SignIn that mints the tokens.</summary>
+    private static async Task<IResult> IssueNativeGrantAsync(
+        ApplicationUser user,
+        OpenIddictRequest request,
+        IOpenIddictScopeManager scopeManager,
+        UserManager<ApplicationUser> userManager,
+        IOpenIddictApplicationManager applicationManager,
+        IOpenIddictAuthorizationManager authorizationManager,
+        IDocumentSession session,
+        IPermissionService permissionService,
+        NativeGrantSettings nativeSettings)
+    {
+        // userManager (NOT a plain session load) so the security stamp is
+        // populated on the principal — without it the OAUTH-07 parity check
+        // silently no-ops and the minted refresh chain escapes revocation.
+        var principal = await CreateClaimsPrincipalAsync(
+            user, request, scopeManager, scopeOverrides: null, userManager, cookiePrincipal: null);
+
+        await BakeFederatedResourceAccessAsync(principal, user.Id, request, session, permissionService);
+
+        // Find-or-create the permanent (subject, client) authorization so
+        // refresh, logout-all and revocation-by-authorization behave exactly like
+        // the authorization-code flow (mirrors AuthorizeAsync). Fail loud (like the
+        // code/refresh + client_credentials branches) rather than mint an
+        // authorization-less, non-revocable refresh chain — the client is
+        // guaranteed present here (OpenIddict's ValidateClientId + the per-client
+        // gt:urn:cocoar:* permission check both ran upstream).
+        var application = await applicationManager.FindByClientIdAsync(request.ClientId!)
+            ?? throw new InvalidOperationException("The application cannot be found.");
+
+        var subject = user.Id.ToString();
+        var clientPk = await applicationManager.GetIdAsync(application) ?? string.Empty;
+        var authorizations = await authorizationManager.FindAsync(
+            subject: subject, client: clientPk, status: Statuses.Valid,
+            type: AuthorizationTypes.Permanent, scopes: principal.GetScopes()).ToListAsync();
+        var authorization = authorizations.LastOrDefault()
+            ?? await authorizationManager.CreateAsync(
+                principal: principal, subject: subject, client: clientPk,
+                type: AuthorizationTypes.Permanent, scopes: principal.GetScopes());
+        principal.SetAuthorizationId(await authorizationManager.GetIdAsync(authorization));
+
+        // ADR-0010 — short JWT access TTL for native clients (per-realm tunable,
+        // validated at write time). Clamp defensively so even a settings doc
+        // written outside the validated patch path can never mint an unbounded /
+        // zero-lifetime JWT — the short TTL is the only bound on a non-revocable
+        // JWT access token. The refresh token stays a revocable reference token.
+        principal.SetAccessTokenLifetime(
+            ClampLifetime(nativeSettings.AccessTokenLifetime, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(60)));
+        principal.SetRefreshTokenLifetime(
+            ClampLifetime(nativeSettings.RefreshTokenLifetime, TimeSpan.FromDays(1), TimeSpan.FromDays(30)));
+
+        return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+    }
+
+    private static TimeSpan ClampLifetime(TimeSpan value, TimeSpan min, TimeSpan max) =>
+        value < min ? min : value > max ? max : value;
+
+    /// <summary>Uniform <c>invalid_grant</c> for a native-grant FACTOR failure,
+    /// with a 100-300ms jitter so the response time carries no email-existence
+    /// signal (an unknown email returns without the extra challenge-load work a
+    /// known email does; the jitter dominates that sub-millisecond delta). Mirrors
+    /// the anti-timing discipline of the magic-link / native OTP request endpoints.</summary>
+    private static async Task<IResult> ForbidFactorFailureAsync(string description)
+    {
+#pragma warning disable CA5394, SCS0005
+        await Task.Delay(Random.Shared.Next(100, 300));
+#pragma warning restore CA5394, SCS0005
+        return ForbidNativeGrant(Errors.InvalidGrant, description);
+    }
+
+    /// <summary><c>urn:cocoar:otp</c> — verify an email + one-time code (reusing
+    /// <see cref="IEmailOtpService.VerifyOtpAsync"/>) and mint tokens. Every proof
+    /// failure returns the SAME <c>invalid_grant</c> "Invalid or expired code."
+    /// with a uniform jitter — anti-enumeration on both the body AND timing
+    /// channels (an unknown email skips the extra challenge-load work a known one
+    /// does). The per-client (client_id-partitioned) token-endpoint rate limit
+    /// bounds brute force.</summary>
+    private static async Task<IResult> ExchangeNativeOtpAsync(
+        OpenIddictRequest request,
+        IDocumentSession session,
+        UserManager<ApplicationUser> userManager,
+        SignInManager<ApplicationUser> signInManager,
+        IOpenIddictScopeManager scopeManager,
+        IOpenIddictApplicationManager applicationManager,
+        IOpenIddictAuthorizationManager authorizationManager,
+        IPermissionService permissionService,
+        IEmailOtpService emailOtpService,
+        CancellationToken ct)
+    {
+        var nativeSettings = await LoadNativeGrantSettingsAsync(session, ct);
+        if (nativeSettings is null)
+            return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled for this realm.");
+        if (string.IsNullOrEmpty(request.ClientId))
+            return ForbidNativeGrant(Errors.InvalidClient, "client_id is required.");
+
+        var email = request.Username;
+        var code = (string?)request.GetParameter("otp_code");
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(code))
+            return await ForbidFactorFailureAsync("Invalid or expired code.");
+
+        // Store-backed lookup so the security stamp is populated (see IssueNativeGrantAsync).
+        var user = await userManager.FindByEmailAsync(email);
+        if (user is null)
+            return await ForbidFactorFailureAsync("Invalid or expired code.");
+
+        // Defence-in-depth: native email-OTP is a PRIMARY factor, so a confirmed
+        // mailbox is required at the minting site too (not only at the request
+        // endpoint) — this also closes the EmailOtpEnabled-but-unconfirmed edge.
+        if (!user.EmailConfirmed)
+            return await ForbidFactorFailureAsync("Invalid or expired code.");
+
+        var verify = await emailOtpService.VerifyOtpAsync(user.Id, code, ct);
+        if (verify.IsError)
+            return await ForbidFactorFailureAsync("Invalid or expired code.");
+
+        // Second factor only after the primary factor proved possession.
+        var twoFactor = await CheckTwoFactorAsync(user, request, userManager);
+        if (twoFactor is not null) return twoFactor;
+
+        if (!await signInManager.CanSignInAsync(user) || !user.IsActive || user.IsDeleted)
+            return ForbidNativeGrant(Errors.InvalidGrant, "The account cannot sign in.");
+
+        return await IssueNativeGrantAsync(
+            user, request, scopeManager, userManager, applicationManager,
+            authorizationManager, session, permissionService, nativeSettings);
+    }
+
+    /// <summary><c>urn:cocoar:magic</c> — verify a magic-link (user_id + token)
+    /// against the single-use <see cref="MagicLinkChallenge"/> and mint tokens.
+    /// Mirrors the web /magic-link/login verify (shared hash, single-use delete,
+    /// mailbox-proof auto-confirm) minus the cookie SignIn. Uniform
+    /// <c>invalid_grant</c> on every proof failure.</summary>
+    private static async Task<IResult> ExchangeNativeMagicAsync(
+        OpenIddictRequest request,
+        IDocumentSession session,
+        UserManager<ApplicationUser> userManager,
+        SignInManager<ApplicationUser> signInManager,
+        IOpenIddictScopeManager scopeManager,
+        IOpenIddictApplicationManager applicationManager,
+        IOpenIddictAuthorizationManager authorizationManager,
+        IPermissionService permissionService,
+        CancellationToken ct)
+    {
+        var nativeSettings = await LoadNativeGrantSettingsAsync(session, ct);
+        if (nativeSettings is null)
+            return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled for this realm.");
+        if (string.IsNullOrEmpty(request.ClientId))
+            return ForbidNativeGrant(Errors.InvalidClient, "client_id is required.");
+
+        var uidRaw = (string?)request.GetParameter("user_id");
+        var token = (string?)request.GetParameter("magic_token");
+        if (!Guid.TryParse(uidRaw, out var userId) || string.IsNullOrWhiteSpace(token))
+            return ForbidNativeGrant(Errors.InvalidGrant, "Invalid or expired link.");
+
+        var hash = MagicLinkChallenge.HashToken(token);
+        var challenge = await session.Query<MagicLinkChallenge>()
+            .FirstOrDefaultAsync(c => c.UserId == userId && c.TokenHash == hash, ct);
+        if (challenge is null || challenge.IsExpired)
+        {
+            if (challenge is not null) { session.Delete(challenge); await session.SaveChangesAsync(ct); }
+            return ForbidNativeGrant(Errors.InvalidGrant, "Invalid or expired link.");
+        }
+
+        // Store-backed lookup so the security stamp is populated.
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user is null || !await signInManager.CanSignInAsync(user) || !user.IsActive || user.IsDeleted)
+        {
+            session.Delete(challenge);
+            await session.SaveChangesAsync(ct);
+            return ForbidNativeGrant(Errors.InvalidGrant, "Invalid or expired link.");
+        }
+
+        // A consumed magic link proves mailbox control — auto-confirm (parity
+        // with the web flow) + push the SignalR projection refresh.
+        if (!user.EmailConfirmed)
+        {
+            user.EmailConfirmed = true;
+            session.Store(user);
+            session.Events.Append(user.Id, new Modgud.Domain.Users.Events.UserUpdatedEvent(
+                Id: user.Id, Firstname: default, Lastname: default, Acronym: default, Email: default));
+        }
+
+        // Second factor only after the link proved mailbox possession. The link
+        // is single-use: consume it even when the second factor is still owed, so
+        // a known-good link cannot be reused to brute-force the TOTP.
+        var twoFactor = await CheckTwoFactorAsync(user, request, userManager);
+        if (twoFactor is not null)
+        {
+            session.Delete(challenge);
+            await session.SaveChangesAsync(ct);
+            return twoFactor;
+        }
+
+        session.Delete(challenge);
+        await session.SaveChangesAsync(ct);
+
+        return await IssueNativeGrantAsync(
+            user, request, scopeManager, userManager, applicationManager,
+            authorizationManager, session, permissionService, nativeSettings);
     }
 
     private static async Task<IResult> UserinfoAsync(

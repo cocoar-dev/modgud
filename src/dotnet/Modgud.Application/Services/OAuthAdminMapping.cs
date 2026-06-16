@@ -94,6 +94,10 @@ internal static class OAuthAdminMapping
         "implicit" => OAuthPermissions.GrantTypes.Implicit,
         "password" => OAuthPermissions.GrantTypes.Password,
         "urn:ietf:params:oauth:grant-type:device_code" => OAuthPermissions.GrantTypes.DeviceCode,
+        // ADR-0010 — native (cookieless) passwordless grants. Admin-set per-client
+        // opt-in surfaces here so the OAuth-client admin CRUD can grant them.
+        CocoarGrantTypes.Otp => OAuthPermissions.GrantTypes.CocoarOtp,
+        CocoarGrantTypes.Magic => OAuthPermissions.GrantTypes.CocoarMagic,
         _ => null,
     };
 
@@ -105,6 +109,8 @@ internal static class OAuthAdminMapping
         OAuthPermissions.GrantTypes.Implicit => "implicit",
         OAuthPermissions.GrantTypes.Password => "password",
         OAuthPermissions.GrantTypes.DeviceCode => "urn:ietf:params:oauth:grant-type:device_code",
+        OAuthPermissions.GrantTypes.CocoarOtp => CocoarGrantTypes.Otp,
+        OAuthPermissions.GrantTypes.CocoarMagic => CocoarGrantTypes.Magic,
         _ => null,
     };
 
@@ -470,6 +476,10 @@ internal static class OAuthAdminMapping
         "password",
         "refresh_token",
         "urn:ietf:params:oauth:grant-type:device_code",
+        // ADR-0010 native grants authenticate a human, so they are user-flow:
+        // a client_credentials (Service-Account) client must not also carry them.
+        CocoarGrantTypes.Otp,
+        CocoarGrantTypes.Magic,
     };
 
     /// <summary>

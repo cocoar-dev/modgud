@@ -519,6 +519,21 @@ try
                     QueueLimit = 0,
                 });
         });
+
+        // ADR-0010 native passwordless OTP request — anonymous email-sending
+        // endpoint, same per-IP SMTP cap class as magic-link (5/hour).
+        options.AddPolicy("native-otp", context =>
+        {
+            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ip,
+                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 5,
+                    Window = TimeSpan.FromHours(1),
+                    QueueLimit = 0,
+                });
+        });
     });
 
     builder.Services.AddHttpContextAccessor();
@@ -1158,6 +1173,7 @@ try
     app.MapProfileEndpoints("api");
     app.MapMfaEndpoints("api");
     app.MapEmailOtpEndpoints("api");
+    app.MapNativeOtpEndpoints("api");
     app.MapPasskeyEndpoints("api");
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");

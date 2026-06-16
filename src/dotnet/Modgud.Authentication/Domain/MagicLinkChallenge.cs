@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace Modgud.Authentication.Domain;
 
 /// <summary>
@@ -16,4 +19,14 @@ public class MagicLinkChallenge
     public const int RateLimitMinutes = 2;
 
     public bool IsExpired => DateTimeOffset.UtcNow >= ExpiresAt;
+
+    /// <summary>
+    /// Hashes a raw magic-link token for storage and lookup. Shared by the web
+    /// <c>/api/account/magic-link/login</c> endpoint and the native
+    /// <c>urn:cocoar:magic</c> token grant (ADR-0010) so both hash identically:
+    /// SHA-256 over the UTF-8 bytes, lower-hex. The server never stores the raw
+    /// token — only this hash.
+    /// </summary>
+    public static string HashToken(string token)
+        => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 }

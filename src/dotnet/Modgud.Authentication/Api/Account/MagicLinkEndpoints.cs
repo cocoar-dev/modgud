@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Text;
 using Marten;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -107,7 +106,7 @@ public static class MagicLinkEndpoints
 
             // Generate token
             var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-            var tokenHash = HashToken(token);
+            var tokenHash = MagicLinkChallenge.HashToken(token);
 
             var challenge = new MagicLinkChallenge
             {
@@ -163,7 +162,7 @@ public static class MagicLinkEndpoints
             if (string.IsNullOrWhiteSpace(request.Token))
                 return Results.Json(new { Message = "Invalid or expired link" }, statusCode: 401);
 
-            var tokenHash = HashToken(request.Token);
+            var tokenHash = MagicLinkChallenge.HashToken(request.Token);
 
             // Find matching challenge
             var challenge = await session.Query<MagicLinkChallenge>()
@@ -274,12 +273,6 @@ public static class MagicLinkEndpoints
         .WithName("MagicLink_Login");
 
         return application;
-    }
-
-    private static string HashToken(string token)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
-        return Convert.ToHexStringLower(bytes);
     }
 
     /// <summary>

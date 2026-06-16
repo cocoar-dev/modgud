@@ -23,8 +23,34 @@ public class EmailOtpService(IDocumentSession session, IEmailService emailServic
         if (string.IsNullOrEmpty(user.Email))
             return Error.Validation("EmailOtp.EmailRequired", "A verified email address is required to use email OTP.");
 
+        return await IssueChallengeAsync(user, ct);
+    }
+
+    // ADR-0010 — native passwordless login. email-OTP acts here as a PRIMARY
+    // factor, so (unlike the 2FA RequestOtpAsync) it does NOT require the user's
+    // EmailOtpEnabled opt-in. It DOES require a confirmed, active mailbox:
+    // emailing a login code to an unverified address would let a typo'd or
+    // attacker-controlled mailbox become a login factor.
+    public async Task<ErrorOr<bool>> RequestNativeOtpAsync(Guid userId, CancellationToken ct)
+    {
+        var user = await session.LoadAsync<ApplicationUser>(userId, ct);
+        if (user is null)
+            return Error.NotFound("EmailOtp.UserNotFound", "User not found.");
+        if (string.IsNullOrEmpty(user.Email) || !user.EmailConfirmed)
+            return Error.Forbidden("EmailOtp.EmailNotConfirmed", "A confirmed email address is required.");
+        if (!user.IsActive || user.IsDeleted)
+            return Error.Forbidden("EmailOtp.AccountInactive", "The account cannot sign in.");
+
+        return await IssueChallengeAsync(user, ct);
+    }
+
+    // Shared core: rate-limit, generate + hash + store the challenge (overwriting
+    // any existing one for this user), and email the code. The per-method gates
+    // (2FA opt-in vs. native confirmed-mailbox) run before this is reached.
+    private async Task<ErrorOr<bool>> IssueChallengeAsync(ApplicationUser user, CancellationToken ct)
+    {
         // Rate limiting: check if a recent challenge exists
-        var existing = await session.LoadAsync<EmailOtpChallenge>(userId, ct);
+        var existing = await session.LoadAsync<EmailOtpChallenge>(user.Id, ct);
         if (existing is not null && !existing.IsExpired)
         {
             var timeSinceCreation = DateTimeOffset.UtcNow - existing.CreatedAt;
@@ -40,19 +66,19 @@ public class EmailOtpService(IDocumentSession session, IEmailService emailServic
         // Store challenge (overwrites existing)
         var challenge = new EmailOtpChallenge
         {
-            Id = userId,
+            Id = user.Id,
             CodeHash = codeHash,
             Attempts = 0,
             ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(config.ExpirationMinutes),
             CreatedAt = DateTimeOffset.UtcNow,
-            Email = user.Email,
+            Email = user.Email!,
         };
         session.Store(challenge);
         await session.SaveChangesAsync(ct);
 
         // Send email
         await emailService.SendTemplatedEmailAsync(
-            user.Email,
+            user.Email!,
             EmailTemplate.EmailOtp,
             new Dictionary<string, string>
             {
