@@ -27,10 +27,11 @@
     <!-- Persistence + messaging — fix gesetzt für alle Konsumenten. -->
     <PackageReference Include="Marten" />
     <PackageReference Include="WolverineFx.Marten" />
-    <PackageReference Include="JasperFx.Events.SourceGenerator">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
+    <!-- No explicit JasperFx.Events.SourceGenerator ref: Marten 9.8+ bundles the
+         events source generator as an analyzer, so a direct Marten reference
+         already runs it. Adding the standalone package again loads the same
+         generator twice -> duplicate *.Evolver.g.cs -> CS0111. (Modgud.Domain
+         keeps the explicit ref because it has no direct Marten reference.) -->
 
     <!-- Script evaluation for access policies. -->
     <PackageReference Include="Cocoar.JsEval.Engine" />

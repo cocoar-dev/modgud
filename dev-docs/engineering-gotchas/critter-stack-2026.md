@@ -16,17 +16,51 @@ Pinned in `src/dotnet/Directory.Packages.props`:
 
 | Package | Version |
 | --- | --- |
-| `Marten` | 9.3.5 |
-| `Marten.AspNetCore` | 9.3.5 |
-| `WolverineFx.Marten` | 6.3.2 |
-| `JasperFx.Events.SourceGenerator` | 2.4.1 |
-| `WolverineFx.RuntimeCompilation` | 6.3.2 |
+| `Marten` | 9.8.0 |
+| `Marten.AspNetCore` | 9.8.0 |
+| `WolverineFx.Marten` | 6.9.0 |
+| `WolverineFx.RuntimeCompilation` | 6.9.0 |
 
-> **JasperFx.Events.SourceGenerator pin lifted (2026-06).** It was held at
-> `2.0.0` because `2.1.x` source-generated an extra `Evolve(...)` overload that
-> collided with `PrincipalProjectionBase`. That collision is gone as of `2.4.x`
-> — verified by a clean build + green test suite — so the pin (and its
-> `dependabot.yml` ignore) were removed.
+> **`JasperFx.Events.SourceGenerator` is no longer referenced (2026-06-15, Marten
+> 9.8 upgrade).** Marten 9.8 **bundles** the events source generator as an
+> analyzer inside the `Marten` package itself
+> (`analyzers/dotnet/cs/JasperFx.Events.SourceGenerator.dll`). Keeping the
+> standalone `JasperFx.Events.SourceGenerator` package alongside it loaded the
+> **same** generator twice, so every aggregate's `*.Evolver.g.cs` was emitted
+> twice → `CS0101`/`CS0111` (duplicate type/member). Fix: drop the standalone
+> package entirely — the version pin **and** all four `PackageReference`s. See
+> Gotcha 1 for who supplies the generator now.
+>
+> *(Earlier history: the standalone package was once pinned at `2.0.0` because
+> `2.1.x` generated a colliding `Evolve(...)` overload, resolved at `2.4.x`, then
+> removed altogether at the 9.8 upgrade.)*
+
+> **Test-harness blockers on the 9.8 upgrade (4, all fixed — PR #88, CI green).**
+> The 9.8 bump surfaced four *integration-test-harness* flakes (production was just
+> the version bumps + dropping the standalone generator package). Full write-up incl.
+> how Marten tests this itself: the global knowledge topic
+> `marten-9-8-critter-stack-upgrade-blockers`. In brief:
+> 1. **CS0111** — Marten 9.8 bundles the events generator; drop the standalone
+>    `JasperFx.Events.SourceGenerator` package (see above).
+> 2. **async `UserView` not materialized after the per-test reset** — materialize via
+>    `Host.ForceAllMartenDaemonActivityToCatchUpAsync` (seq-1-safe inline catch-up),
+>    then `LoadAsync`-or-throw. Do **not** use `WaitForNonStaleProjectionDataAsync` —
+>    its seq≤1 empty-state guard no-ops the first post-reset event (`ALTER SEQUENCE
+>    mt_events_sequence RESTART WITH 1`); `ForceAll`/`CatchUpAsync` has no such guard.
+> 3. **`Timeout during connection attempt`** in cold-start tests — 9.8 runs one async
+>    daemon per tenant DB (each holding connections); raise the test Postgres
+>    `max_connections` (`PostgreSqlBuilder.WithCommand("-c","max_connections=500")`).
+> 4. **`/connect/userinfo` 401 (OpenIddict ID2090 "signing key not found")** — NOT a
+>    daemon/projection issue: the singleton `RealmKeyStore` (60s in-memory signing-key
+>    cache) survives the per-test Marten wipe, so a token is signed with a cached `kid`
+>    whose row was deleted while the JWKS is rebuilt from the emptied DB. Fix:
+>    `RealmKeyStore.ClearCachesForReset()` called from the harness right after
+>    `ResetAllMartenDataAsync()`. (The 401 body is empty — the reason is in the
+>    `WWW-Authenticate` header, which the userinfo test assertions now surface.)
+>
+> See `Modgud.Api.Tests/Infrastructure/ModgudWebApplicationFactory.cs` (`ResetMartenDataAsync`,
+> `CreateTestUserAsync`, `CatchUpAsyncProjectionsAsync`), `SharedPostgresFixture`/`ColdStartFixture`
+> (`max_connections`), and `Modgud.Infrastructure/Realms/RealmKeyStore.cs` (`ClearCachesForReset`).
 
 The two V8 event-store defaults Modgud still pins (and the reasoning for
 each) are in
@@ -58,14 +92,18 @@ dispatcher.
 ### Two requirements per class
 
 1. The class itself **must be `partial`**.
-2. The owning `.csproj` **must reference the source generator**:
+2. The owning project **must see the bundled generator analyzer**. Since Marten
+   9.8 the generator ships **inside the `Marten` package**, so:
+   - a project with a **direct `<PackageReference Include="Marten" />`** already
+     runs it — add nothing else;
+   - a project with **no** direct Marten reference (e.g. `Modgud.Domain`) gets the
+     analyzer **transitively** through a project reference to a Marten-referencing
+     project (Domain → Authorization → Marten) — also add nothing.
 
-```xml
-<PackageReference Include="JasperFx.Events.SourceGenerator">
-  <PrivateAssets>all</PrivateAssets>
-  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-</PackageReference>
-```
+   **Do not** add the standalone `JasperFx.Events.SourceGenerator` package: with
+   9.8 it double-loads the generator (`CS0101`/`CS0111`). Pre-9.8 this step
+   required exactly that standalone analyzer reference; 9.8's bundling made it
+   redundant and actively harmful.
 
 ### Where this bit us
 
@@ -80,12 +118,16 @@ projections:
 - `OAuthApiAggregate` (`src/dotnet/Modgud.Domain/OAuth/Apis/OAuthApiAggregate.cs`)
 
 All three are `public partial class …Aggregate` and define `Apply` / `Create`
-methods. Without the analyzer in `Modgud.Domain.csproj`, Marten 9 threw
+methods. They need the generator to see `Modgud.Domain`, or Marten throws
 "No source-generated dispatcher found" the first time
-`AggregateStreamAsync<OAuthApplicationAggregate>(id)` ran.
+`AggregateStreamAsync<OAuthApplicationAggregate>(id)` runs.
 
-The fix is the analyzer reference now visible in
-[`Modgud.Domain.csproj`](https://github.com/cocoar-dev/modgud/blob/develop/src/dotnet/Modgud.Domain/Modgud.Domain.csproj) lines 14-17.
+Since the 9.8 upgrade `Modgud.Domain` gets the bundled analyzer **transitively**
+through its `Modgud.Authorization` → `Marten` project reference, so it needs no
+package reference of its own (and adding the standalone one would double the
+generator). Pre-9.8 this required an explicit `JasperFx.Events.SourceGenerator`
+reference in
+[`Modgud.Domain.csproj`](https://github.com/cocoar-dev/modgud/blob/develop/src/dotnet/Modgud.Domain/Modgud.Domain.csproj).
 
 ### Grep pattern that catches everything
 

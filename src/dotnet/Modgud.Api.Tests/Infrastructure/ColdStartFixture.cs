@@ -30,6 +30,12 @@ public class ColdStartFixture : IAsyncLifetime
 
     public PostgreSqlContainer Container { get; } = new PostgreSqlBuilder("postgres:18-alpine")
         .WithDatabase(MasterDbName)
+        // Cold-start tests provision multiple realm databases, each of which gets
+        // its own Marten 9.x async-projection daemon holding Postgres connections.
+        // The default server-global max_connections=100 is exhausted on contended
+        // CI runners -> Npgsql "Timeout during connection attempt" (15s pool
+        // timeout). Raise the ceiling to match SharedPostgresFixture.
+        .WithCommand("-c", "max_connections=500")
         .Build();
 
     /// <summary>Config context for the shared <see cref="Factory"/> (master DB <c>modgud_coldstart</c>).</summary>

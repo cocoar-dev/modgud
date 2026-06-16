@@ -190,8 +190,10 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         var response = await userinfoClient.GetAsync("/connect/userinfo",
             TestContext.Current.CancellationToken);
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        // Include WWW-Authenticate on failure — see note in DriveFlowAndReadAlphaBlockAsync.
+        var wwwAuth = string.Join(" | ", response.Headers.WwwAuthenticate.Select(h => $"{h.Scheme} {h.Parameter}"));
         Assert.True(response.IsSuccessStatusCode,
-            $"/connect/userinfo after refresh failed ({(int)response.StatusCode}): {body}");
+            $"/connect/userinfo after refresh failed ({(int)response.StatusCode}): body='{body}' WWW-Authenticate='{wwwAuth}'");
 
         using var doc = JsonDocument.Parse(body);
         Assert.True(doc.RootElement.TryGetProperty("resource_access", out var ra)
@@ -562,8 +564,11 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         var response = await userinfoClient.GetAsync("/connect/userinfo",
             TestContext.Current.CancellationToken);
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        // Include WWW-Authenticate on failure — OpenIddict reports the real reason there
+        // (e.g. ID2090 "signing key not found"), not in the (empty) 401 body.
+        var wwwAuth = string.Join(" | ", response.Headers.WwwAuthenticate.Select(h => $"{h.Scheme} {h.Parameter}"));
         Assert.True(response.IsSuccessStatusCode,
-            $"/connect/userinfo failed ({(int)response.StatusCode}): {body}");
+            $"/connect/userinfo failed ({(int)response.StatusCode}): body='{body}' WWW-Authenticate='{wwwAuth}'");
 
         var doc = JsonDocument.Parse(body);
         var pretty = JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
