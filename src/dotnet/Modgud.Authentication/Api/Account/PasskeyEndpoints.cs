@@ -110,7 +110,19 @@ public static class PasskeyEndpoints
             {
                 User = fidoUser,
                 ExcludeCredentials = excludeCredentials,
-                AuthenticatorSelection = AuthenticatorSelection.Default,
+                // ADR-0010: enroll a DISCOVERABLE (resident-key) credential so the
+                // native usernameless begin (empty allowCredentials) can find it on
+                // the device. Preferred — not Required — so authenticators without a
+                // resident-key slot still enroll; platform authenticators (Face ID /
+                // Windows Hello / iOS/Android passkeys, the native target) create
+                // discoverable credentials under Preferred. UserVerification stays
+                // Preferred here; the native login ceremony enforces UV=Required,
+                // and platform authenticators perform UV at assertion time.
+                AuthenticatorSelection = new AuthenticatorSelection
+                {
+                    ResidentKey = ResidentKeyRequirement.Preferred,
+                    UserVerification = UserVerificationRequirement.Preferred,
+                },
                 AttestationPreference = AttestationConveyancePreference.None,
             });
 
