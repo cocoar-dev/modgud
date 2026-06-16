@@ -97,6 +97,13 @@ public static class MartenStoreOptionsExtensions
             .Identity(x => x.Id)
             .Index(x => x.UserId);
 
+        // ADR-0010 Phase 2 — cookieless WebAuthn assertion ceremony for the
+        // native urn:cocoar:passkey grant. Single-use, short-TTL; keyed by the
+        // server-generated ceremonyId. Indexed by ExpiresAt for an optional sweep.
+        options.Schema.For<PasskeyCeremony>()
+            .Identity(x => x.Id)
+            .Index(x => x.ExpiresAt);
+
         // GDPR: per-user deletion bookkeeping (pending request + masked flag).
         // Keyed on the user id so we can simply Load it.
         options.Schema.For<UserDeletionState>()

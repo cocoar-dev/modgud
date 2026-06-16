@@ -534,6 +534,22 @@ try
                     QueueLimit = 0,
                 });
         });
+
+        // ADR-0010 Phase 2 — anonymous passkey "begin" endpoint. Cheap (no email/
+        // SMTP, just a challenge + a single-use ceremony doc), so more generous
+        // than native-otp; still per-IP bounded to cap ceremony-doc spam.
+        options.AddPolicy("passkey-begin", context =>
+        {
+            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ip,
+                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 60,
+                    Window = TimeSpan.FromMinutes(5),
+                    QueueLimit = 0,
+                });
+        });
     });
 
     builder.Services.AddHttpContextAccessor();
@@ -1175,6 +1191,7 @@ try
     app.MapEmailOtpEndpoints("api");
     app.MapNativeOtpEndpoints("api");
     app.MapPasskeyEndpoints("api");
+    app.MapNativePasskeyEndpoints();
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");
     app.MapEmailVerificationEndpoints("api");

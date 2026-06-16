@@ -41,6 +41,7 @@ public static class OAuthPermissions
         // client that lacks it). Value = "gt:" + the raw URN, mirroring DeviceCode.
         public const string CocoarOtp = Prefixes.GrantType + CocoarGrantTypes.Otp;
         public const string CocoarMagic = Prefixes.GrantType + CocoarGrantTypes.Magic;
+        public const string CocoarPasskey = Prefixes.GrantType + CocoarGrantTypes.Passkey;
     }
 
     public static class ResponseTypes
@@ -61,6 +62,7 @@ public static class CocoarGrantTypes
 {
     public const string Otp = "urn:cocoar:otp";
     public const string Magic = "urn:cocoar:magic";
+    public const string Passkey = "urn:cocoar:passkey";
 }
 
 public static class OAuthClientTypes

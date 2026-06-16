@@ -98,6 +98,7 @@ internal static class OAuthAdminMapping
         // opt-in surfaces here so the OAuth-client admin CRUD can grant them.
         CocoarGrantTypes.Otp => OAuthPermissions.GrantTypes.CocoarOtp,
         CocoarGrantTypes.Magic => OAuthPermissions.GrantTypes.CocoarMagic,
+        CocoarGrantTypes.Passkey => OAuthPermissions.GrantTypes.CocoarPasskey,
         _ => null,
     };
 
@@ -111,6 +112,7 @@ internal static class OAuthAdminMapping
         OAuthPermissions.GrantTypes.DeviceCode => "urn:ietf:params:oauth:grant-type:device_code",
         OAuthPermissions.GrantTypes.CocoarOtp => CocoarGrantTypes.Otp,
         OAuthPermissions.GrantTypes.CocoarMagic => CocoarGrantTypes.Magic,
+        OAuthPermissions.GrantTypes.CocoarPasskey => CocoarGrantTypes.Passkey,
         _ => null,
     };
 
@@ -480,6 +482,7 @@ internal static class OAuthAdminMapping
         // a client_credentials (Service-Account) client must not also carry them.
         CocoarGrantTypes.Otp,
         CocoarGrantTypes.Magic,
+        CocoarGrantTypes.Passkey,
     };
 
     /// <summary>

@@ -13,6 +13,8 @@ using Modgud.Domain.OAuth.Consent;
 using Modgud.Domain.OAuth.Scopes;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.OpenIddict.Cimd;
+using Fido2NetLib;
+using Fido2NetLib.Objects;
 using Marten;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 using Microsoft.AspNetCore;
@@ -243,6 +245,7 @@ public static class AuthorizationEndpoints
         IPermissionService permissionService,
         CimdClientResolver cimdResolver,
         IEmailOtpService emailOtpService,
+        RealmScopedFido2Factory fido2Factory,
         IDocumentSession session)
     {
         var request = httpContext.GetOpenIddictServerRequest()
@@ -437,6 +440,14 @@ public static class AuthorizationEndpoints
                 request, session, userManager, signInManager, scopeManager,
                 applicationManager, authorizationManager, permissionService,
                 httpContext.RequestAborted);
+        }
+
+        if (string.Equals(request.GrantType, CocoarGrantTypes.Passkey, StringComparison.Ordinal))
+        {
+            return await ExchangeNativePasskeyAsync(
+                request, session, userManager, signInManager, scopeManager,
+                applicationManager, authorizationManager, permissionService,
+                fido2Factory, httpContext.RequestAborted);
         }
 
         throw new InvalidOperationException("The specified grant type is not supported.");
@@ -694,6 +705,92 @@ public static class AuthorizationEndpoints
         session.Delete(challenge);
         await session.SaveChangesAsync(ct);
 
+        return await IssueNativeGrantAsync(
+            user, request, scopeManager, userManager, applicationManager,
+            authorizationManager, session, permissionService, nativeSettings);
+    }
+
+    /// <summary><c>urn:cocoar:passkey</c> — verify a WebAuthn assertion against a
+    /// server-side ceremony (issued by <c>POST /connect/passkey/begin</c>) and mint
+    /// tokens. The ceremony is single-use (consumed before verifying so a captured
+    /// id can't be replayed). A UserVerification passkey is itself multi-factor
+    /// (device possession + biometric/PIN), so — unlike the otp/magic grants — this
+    /// does NOT additionally demand a totp_code. Uniform jittered <c>invalid_grant</c>
+    /// on every proof failure.</summary>
+    private static async Task<IResult> ExchangeNativePasskeyAsync(
+        OpenIddictRequest request,
+        IDocumentSession session,
+        UserManager<ApplicationUser> userManager,
+        SignInManager<ApplicationUser> signInManager,
+        IOpenIddictScopeManager scopeManager,
+        IOpenIddictApplicationManager applicationManager,
+        IOpenIddictAuthorizationManager authorizationManager,
+        IPermissionService permissionService,
+        RealmScopedFido2Factory fido2Factory,
+        CancellationToken ct)
+    {
+        var nativeSettings = await LoadNativeGrantSettingsAsync(session, ct);
+        if (nativeSettings is null)
+            return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled for this realm.");
+        if (string.IsNullOrEmpty(request.ClientId))
+            return ForbidNativeGrant(Errors.InvalidClient, "client_id is required.");
+
+        var ceremonyRaw = (string?)request.GetParameter("ceremony_id");
+        var assertionJson = (string?)request.GetParameter("assertion");
+        if (!Guid.TryParse(ceremonyRaw, out var ceremonyId))
+            return await ForbidFactorFailureAsync("Invalid or expired passkey ceremony.");
+
+        var ceremony = await session.LoadAsync<PasskeyCeremony>(ceremonyId, ct);
+        if (ceremony is null || ceremony.IsExpired)
+        {
+            if (ceremony is not null) { session.Delete(ceremony); await session.SaveChangesAsync(ct); }
+            return await ForbidFactorFailureAsync("Invalid or expired passkey ceremony.");
+        }
+
+        // Single-use: consume ANY presented live ceremony as soon as it resolves —
+        // before the assertion-presence check and the verify — so a captured
+        // ceremony_id can never be replayed, even when paired with a
+        // missing/garbage assertion.
+        session.Delete(ceremony);
+        await session.SaveChangesAsync(ct);
+
+        if (string.IsNullOrWhiteSpace(assertionJson))
+            return await ForbidFactorFailureAsync("Invalid or expired passkey ceremony.");
+
+        IFido2 fido2;
+        try
+        {
+            fido2 = await fido2Factory.CreateAsync(ct);
+        }
+        catch (RelyingPartyUnavailableException)
+        {
+            return ForbidNativeGrant(Errors.InvalidGrant, "Passkey sign-in is not available for this realm.");
+        }
+
+        AssertionOptions options;
+        try
+        {
+            options = AssertionOptions.FromJson(ceremony.OptionsJson);
+        }
+        catch
+        {
+            return await ForbidFactorFailureAsync("Invalid or expired passkey ceremony.");
+        }
+
+        // Shared FIDO2 verify — the SAME path the web cookie flow uses (no fork).
+        // Resolves + counter-advances the StoredPasskeyCredential, or null on any
+        // failure (bad assertion, unknown credential, signature/origin mismatch).
+        var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(fido2, options, assertionJson, session, ct);
+        if (storedCredential is null)
+            return await ForbidFactorFailureAsync("Passkey verification failed.");
+
+        // Store-backed lookup so the security stamp is populated (see IssueNativeGrantAsync).
+        var user = await userManager.FindByIdAsync(storedCredential.UserId.ToString());
+        if (user is null || !await signInManager.CanSignInAsync(user) || !user.IsActive || user.IsDeleted)
+            return await ForbidFactorFailureAsync("Passkey verification failed.");
+
+        // No CheckTwoFactorAsync: a UserVerification passkey already satisfies MFA
+        // (the begin endpoint requires UV), so we do not additionally demand totp_code.
         return await IssueNativeGrantAsync(
             user, request, scopeManager, userManager, applicationManager,
             authorizationManager, session, permissionService, nativeSettings);

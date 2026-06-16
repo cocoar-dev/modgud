@@ -314,39 +314,13 @@ public static class PasskeyEndpoints
 
             context.Response.Cookies.Delete("Modgud.Passkey.Challenge");
 
-            var fido2JsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var assertionResponse = JsonSerializer.Deserialize<AuthenticatorAssertionRawResponse>(body.GetRawText(), fido2JsonOptions);
-            if (assertionResponse is null)
-                return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
-
-            // Find stored credential by credential ID
-            var assertionCredentialId = Convert.FromBase64String(
-                assertionResponse.Id.Replace('-', '+').Replace('_', '/').PadRight(
-                    assertionResponse.Id.Length + (4 - assertionResponse.Id.Length % 4) % 4, '='));
-            var allCredentials = await session.Query<StoredPasskeyCredential>().ToListAsync();
-            var storedCredential = allCredentials.FirstOrDefault(c => c.CredentialId.SequenceEqual(assertionCredentialId));
-
+            // Verify the assertion via the shared verifier (the SAME FIDO2 verify
+            // the native urn:cocoar:passkey grant uses — no fork). Only the
+            // challenge transport differs: web reads AssertionOptions from the
+            // cookie above, native from the server-side ceremony doc.
+            var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(fido2, options, body.GetRawText(), session, ct);
             if (storedCredential is null)
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
-
-            var result = await fido2.MakeAssertionAsync(new MakeAssertionParams
-            {
-                AssertionResponse = assertionResponse,
-                OriginalOptions = options,
-                StoredPublicKey = storedCredential.PublicKey,
-                StoredSignatureCounter = storedCredential.SignatureCount,
-                IsUserHandleOwnerOfCredentialIdCallback = async (args, ct) =>
-                {
-                    var credential = allCredentials.FirstOrDefault(c => c.CredentialId.SequenceEqual(args.CredentialId));
-                    return credential?.UserHandle.SequenceEqual(args.UserHandle) ?? false;
-                },
-            });
-
-            // Update signature counter
-            storedCredential.SignatureCount = result.SignCount;
-            storedCredential.LastUsedAt = DateTimeOffset.UtcNow;
-            session.Store(storedCredential);
-            await session.SaveChangesAsync();
 
             // Sign in
             var user = await session.LoadAsync<ApplicationUser>(storedCredential.UserId);

@@ -154,6 +154,7 @@ public static class OpenIddictExtensions
                 // rejects a client that lacks the permission with unauthorized_client.
                 options.AllowCustomFlow(CocoarGrantTypes.Otp);
                 options.AllowCustomFlow(CocoarGrantTypes.Magic);
+                options.AllowCustomFlow(CocoarGrantTypes.Passkey);
 
                 // Reference tokens by default; per-client opt-in to JWT via AccessTokenTypeHandler.
                 options.UseReferenceAccessTokens()
