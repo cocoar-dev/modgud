@@ -102,6 +102,9 @@ public class OAuthAdminService
         if (dto.ConsentType is not (OAuthConsentTypes.Explicit or OAuthConsentTypes.Implicit or OAuthConsentTypes.External))
             return OAuthErrors.InvalidConsentType(dto.ConsentType);
 
+        if (ValidateWebAuthnRpId(dto.WebAuthnRpId) is { } createRpIdErr)
+            return createRpIdErr;
+
         var existing = await _session.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(x => x.ClientId == dto.ClientId && !x.IsDeleted, ct);
         if (existing is not null)
@@ -280,6 +283,9 @@ public class OAuthAdminService
         if (dto.AllowedGrantTypes is not null &&
             ValidateServiceAccountLinkInvariant(dto.AllowedGrantTypes, linkedServiceAccountId: null) is { } updLinkErr)
             return updLinkErr;
+
+        if (ValidateWebAuthnRpId(dto.WebAuthnRpId) is { } updRpIdErr)
+            return updRpIdErr;
 
         if (dto.DisplayName is not null && dto.DisplayName != aggregate.DisplayName)
             _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName));

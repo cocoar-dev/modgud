@@ -131,6 +131,9 @@ internal static class OAuthAdminMapping
         if (dto.AbsoluteRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.AbsoluteRefreshTokenLifetime] = dto.AbsoluteRefreshTokenLifetime.Value.ToString();
         if (dto.SlidingRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime] = dto.SlidingRefreshTokenLifetime.Value.ToString();
         if (dto.ClientClaimsPrefix is not null) settings[OAuthApplicationSettingKeys.ClientClaimsPrefix] = dto.ClientClaimsPrefix;
+        // ADR-0009 — store the normalized (trimmed, lowercased) per-client RP ID; a
+        // blank value leaves it realm-scoped (no key). Format is validated upstream.
+        if (!string.IsNullOrWhiteSpace(dto.WebAuthnRpId)) settings[OAuthApplicationSettingKeys.WebAuthnRpId] = dto.WebAuthnRpId.Trim().ToLowerInvariant();
         return settings;
     }
 
@@ -258,6 +261,15 @@ internal static class OAuthAdminMapping
         if (dto.AbsoluteRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.AbsoluteRefreshTokenLifetime] = dto.AbsoluteRefreshTokenLifetime.Value.ToString();
         if (dto.SlidingRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime] = dto.SlidingRefreshTokenLifetime.Value.ToString();
         if (dto.ClientClaimsPrefix is not null) settings[OAuthApplicationSettingKeys.ClientClaimsPrefix] = dto.ClientClaimsPrefix;
+        // ADR-0009 PATCH: null = omit; empty/blank = clear back to realm-scoped;
+        // non-blank = set (normalized). Format is validated upstream.
+        if (dto.WebAuthnRpId is not null)
+        {
+            if (string.IsNullOrWhiteSpace(dto.WebAuthnRpId))
+                settings.Remove(OAuthApplicationSettingKeys.WebAuthnRpId);
+            else
+                settings[OAuthApplicationSettingKeys.WebAuthnRpId] = dto.WebAuthnRpId.Trim().ToLowerInvariant();
+        }
         return settings;
     }
 
@@ -311,6 +323,7 @@ internal static class OAuthAdminMapping
             settings.TryGetValue(key, out var sv) && int.TryParse(sv, out var iv) ? iv : null;
 
         settings.TryGetValue(OAuthApplicationSettingKeys.ClientClaimsPrefix, out var prefix);
+        settings.TryGetValue(OAuthApplicationSettingKeys.WebAuthnRpId, out var webAuthnRpId);
 
         return new OAuthClientDto
         {
@@ -340,6 +353,7 @@ internal static class OAuthAdminMapping
             AlwaysSendClientClaims = GetBoolProp(props, OAuthApplicationPropertyKeys.AlwaysSendClientClaims, false),
             UpdateAccessTokenClaimsOnRefresh = GetBoolProp(props, OAuthApplicationPropertyKeys.UpdateAccessTokenClaimsOnRefresh, false),
             ClientClaimsPrefix = prefix,
+            WebAuthnRpId = webAuthnRpId,
             Claims = GetClaimsProp(props),
             Roles = GetStringListProp(props, OAuthApplicationPropertyKeys.Roles),
             AppIds = s.AppIds.Select(g => new ShortGuid(g).ToString()).ToList(),
@@ -499,6 +513,25 @@ internal static class OAuthAdminMapping
 
         if (hasCc && !hasLink) return OAuthErrors.ClientCredentialsRequiresServiceAccountLink;
         if (hasLink && (!hasCc || hasUserFlow)) return OAuthErrors.ServiceAccountLinkRequiresClientCredentialsOnly;
+        return null;
+    }
+
+    // ───────────────────────────────────────────── WebAuthn RP-ID (ADR-0009) ──
+
+    /// <summary>
+    /// Validates an admin-set per-client WebAuthn RP ID. Null/blank is valid
+    /// (realm-scoped / clear). A set value must be a bare registrable hostname —
+    /// no scheme, port, path, or whitespace. Per ADR-0009 the value is high-trust
+    /// (admin-set, not client-supplied) so there is NO public-suffix-list check;
+    /// this only rejects obvious malformity that would mint unverifiable credentials.
+    /// </summary>
+    internal static Error? ValidateWebAuthnRpId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var v = value.Trim();
+        if (v.Contains('/') || v.Contains(':') || v.Any(char.IsWhiteSpace)
+            || Uri.CheckHostName(v) != UriHostNameType.Dns)
+            return OAuthErrors.InvalidWebAuthnRpId(value);
         return null;
     }
 }

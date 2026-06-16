@@ -285,6 +285,12 @@ public static class OpenIddictExtensions
             {
                 options.UseLocalServer();
                 options.UseAspNetCore();
+                // Multi-realm: accept the active realm's keys + issuer when a custom
+                // resource endpoint (ADR-0009 native passkey enroll) is protected by
+                // the validation/Bearer scheme — the mirror of RealmTokenValidationHandler
+                // on the server pipeline. Without it a realm-signed access token is
+                // rejected as invalid_token ("issuer not valid", ID2088).
+                options.AddEventHandler(RealmValidationTokenHandler.Descriptor);
             });
 
         return services;

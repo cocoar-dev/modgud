@@ -80,6 +80,7 @@ public static class PasskeyEndpoints
         group.MapPost("register-options", [Authorize] async (
             HttpContext context,
             RealmScopedFido2Factory fido2Factory,
+            RpIdResolver rpIdResolver,
             IDocumentSession session,
             UserManager<ApplicationUser> userManager,
             CancellationToken ct) =>
@@ -91,9 +92,15 @@ public static class PasskeyEndpoints
             // same RP is used to create and (later) verify the credential.
             var fido2 = await fido2Factory.CreateAsync(ct);
 
-            var existingCredentials = await session.Query<StoredPasskeyCredential>()
+            // ADR-0009: the web register flow is realm-scoped (RP = PrimaryDomain).
+            // Exclude only the user's realm-RP credentials so a native per-client
+            // credential (a different RP) is not referenced in this ceremony.
+            var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
+            var existingCredentials = (await session.Query<StoredPasskeyCredential>()
                 .Where(c => c.UserId == user.Id)
-                .ToListAsync();
+                .ToListAsync())
+                .Where(c => string.Equals(c.RpId ?? primaryDomain, primaryDomain, StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
             var excludeCredentials = existingCredentials
                 .Select(c => new PublicKeyCredentialDescriptor(c.CredentialId))
@@ -166,9 +173,11 @@ public static class PasskeyEndpoints
                 OriginalOptions = options,
                 IsCredentialIdUniqueToUserCallback = async (args, ct) =>
                 {
-                    var existing = await session.Query<StoredPasskeyCredential>()
-                        .AnyAsync(c => c.CredentialId == args.CredentialId, ct);
-                    return !existing;
+                    // CredentialId is a byte[]; Marten can't translate a byte[]
+                    // equality into valid SQL (it casts the base64 to jsonb and
+                    // fails) — load + compare in memory, as the assertion verifier does.
+                    var all = await session.Query<StoredPasskeyCredential>().ToListAsync(ct);
+                    return !all.Any(c => c.CredentialId.SequenceEqual(args.CredentialId));
                 },
             });
 
@@ -241,6 +250,7 @@ public static class PasskeyEndpoints
         group.MapPost("login-options", async (
             HttpContext context,
             RealmScopedFido2Factory fido2Factory,
+            RpIdResolver rpIdResolver,
             IDocumentSession session,
             PasskeyLoginOptionsRequest? request,
             CancellationToken ct) =>
@@ -256,9 +266,15 @@ public static class PasskeyEndpoints
 
                 if (user is not null)
                 {
-                    var credentials = await session.Query<StoredPasskeyCredential>()
+                    // ADR-0009: realm-scoped web login only surfaces the user's
+                    // realm-RP credentials (a native per-client credential is bound
+                    // to a different RP and is unusable here).
+                    var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
+                    var credentials = (await session.Query<StoredPasskeyCredential>()
                         .Where(c => c.UserId == user.Id)
-                        .ToListAsync();
+                        .ToListAsync())
+                        .Where(c => string.Equals(c.RpId ?? primaryDomain, primaryDomain, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
 
                     allowedCredentials = credentials
                         .Select(c => new PublicKeyCredentialDescriptor(c.CredentialId))
@@ -300,6 +316,7 @@ public static class PasskeyEndpoints
         group.MapPost("login", async (
             HttpContext context,
             RealmScopedFido2Factory fido2Factory,
+            RpIdResolver rpIdResolver,
             IDocumentSession session,
             SignInManager<ApplicationUser> signInManager,
             ISessionService sessionService,
@@ -329,8 +346,12 @@ public static class PasskeyEndpoints
             // Verify the assertion via the shared verifier (the SAME FIDO2 verify
             // the native urn:cocoar:passkey grant uses — no fork). Only the
             // challenge transport differs: web reads AssertionOptions from the
-            // cookie above, native from the server-side ceremony doc.
-            var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(fido2, options, body.GetRawText(), session, ct);
+            // cookie above, native from the server-side ceremony doc. The web flow
+            // is realm-scoped: RP ID = PrimaryDomain (the fido2 above was built with
+            // it), so legacy null-RpId credentials resolve to it and still verify.
+            var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
+            var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(
+                fido2, options, body.GetRawText(), session, primaryDomain, primaryDomain, ct);
             if (storedCredential is null)
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
 

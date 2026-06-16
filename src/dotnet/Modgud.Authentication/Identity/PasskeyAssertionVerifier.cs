@@ -20,17 +20,32 @@ public static class PasskeyAssertionVerifier
     /// Verifies a WebAuthn assertion against a previously-issued
     /// <paramref name="originalOptions"/>, resolves the matching
     /// <see cref="StoredPasskeyCredential"/> (by credential id, tenant-scoped via
-    /// <paramref name="session"/>), and advances + persists its signature counter.
-    /// Returns the matched credential (the caller loads the user from
-    /// <see cref="StoredPasskeyCredential.UserId"/>) or <c>null</c> on ANY failure
-    /// — fails closed (bad JSON, unknown credential, signature/origin/counter
-    /// mismatch all yield null, never an exception to the caller).
+    /// <paramref name="session"/>, AND scoped to the active RP ID), and advances +
+    /// persists its signature counter. Returns the matched credential (the caller
+    /// loads the user from <see cref="StoredPasskeyCredential.UserId"/>) or
+    /// <c>null</c> on ANY failure — fails closed (bad JSON, unknown credential,
+    /// signature/origin/counter mismatch all yield null, never an exception to the
+    /// caller).
+    ///
+    /// <para>ADR-0009 per-client RP-ID: <paramref name="activeRpId"/> is the RP ID
+    /// this ceremony was issued for (the same value the <paramref name="fido2"/>
+    /// instance was built with). Only credentials whose effective RP ID equals it
+    /// are even considered — a credential enrolled under another app's RP ID is
+    /// never handed to the FIDO2 verify (so its clone-detection counter can never be
+    /// advanced by a foreign-RP attempt). A legacy credential
+    /// (<see cref="StoredPasskeyCredential.RpId"/> == null) resolves to
+    /// <paramref name="fallbackPrimaryDomain"/> (the realm <c>PrimaryDomain</c>), so
+    /// the realm/web path is unchanged. This candidate filter is defense-in-depth;
+    /// the FIDO2 <c>rpIdHash == SHA256(ServerDomain)</c> crypto check remains the
+    /// primary cross-RP boundary.</para>
     /// </summary>
     public static async Task<StoredPasskeyCredential?> VerifyAsync(
         IFido2 fido2,
         AssertionOptions originalOptions,
         string assertionJson,
         IDocumentSession session,
+        string activeRpId,
+        string fallbackPrimaryDomain,
         CancellationToken ct = default)
     {
         AuthenticatorAssertionRawResponse? assertionResponse;
@@ -68,7 +83,18 @@ public static class PasskeyAssertionVerifier
         // memory. Discoverable/usernameless login resolves the user from the
         // credential the authenticator picked, so the lookup is by credential id.
         var allCredentials = await session.Query<StoredPasskeyCredential>().ToListAsync(ct);
-        var storedCredential = allCredentials.FirstOrDefault(c => c.CredentialId.SequenceEqual(assertionCredentialId));
+
+        // ADR-0009 — narrow to credentials enrolled under the ACTIVE RP ID before
+        // anything else. A legacy credential (RpId == null) resolves to the realm
+        // PrimaryDomain. An off-RP credential never reaches MakeAssertionAsync, so a
+        // cross-app attempt can neither surface nor counter-advance it.
+        var candidates = allCredentials
+            .Where(c => string.Equals(
+                string.IsNullOrEmpty(c.RpId) ? fallbackPrimaryDomain : c.RpId,
+                activeRpId,
+                StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var storedCredential = candidates.FirstOrDefault(c => c.CredentialId.SequenceEqual(assertionCredentialId));
         if (storedCredential is null)
             return null;
 
@@ -83,7 +109,9 @@ public static class PasskeyAssertionVerifier
                 StoredSignatureCounter = storedCredential.SignatureCount,
                 IsUserHandleOwnerOfCredentialIdCallback = (args, _) =>
                 {
-                    var credential = allCredentials.FirstOrDefault(c => c.CredentialId.SequenceEqual(args.CredentialId));
+                    // Scoped to RP-ID-matching candidates: a foreign-RP credential
+                    // can never satisfy the user-handle owner check for this verify.
+                    var credential = candidates.FirstOrDefault(c => c.CredentialId.SequenceEqual(args.CredentialId));
                     return Task.FromResult(credential?.UserHandle.SequenceEqual(args.UserHandle) ?? false);
                 },
             }, ct);

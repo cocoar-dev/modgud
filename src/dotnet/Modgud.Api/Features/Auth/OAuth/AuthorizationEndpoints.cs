@@ -246,6 +246,7 @@ public static class AuthorizationEndpoints
         CimdClientResolver cimdResolver,
         IEmailOtpService emailOtpService,
         RealmScopedFido2Factory fido2Factory,
+        RpIdResolver rpIdResolver,
         IDocumentSession session)
     {
         var request = httpContext.GetOpenIddictServerRequest()
@@ -447,7 +448,7 @@ public static class AuthorizationEndpoints
             return await ExchangeNativePasskeyAsync(
                 request, session, userManager, signInManager, scopeManager,
                 applicationManager, authorizationManager, permissionService,
-                fido2Factory, httpContext.RequestAborted);
+                fido2Factory, rpIdResolver, httpContext.RequestAborted);
         }
 
         throw new InvalidOperationException("The specified grant type is not supported.");
@@ -727,6 +728,7 @@ public static class AuthorizationEndpoints
         IOpenIddictAuthorizationManager authorizationManager,
         IPermissionService permissionService,
         RealmScopedFido2Factory fido2Factory,
+        RpIdResolver rpIdResolver,
         CancellationToken ct)
     {
         var nativeSettings = await LoadNativeGrantSettingsAsync(session, ct);
@@ -754,13 +756,28 @@ public static class AuthorizationEndpoints
         session.Delete(ceremony);
         await session.SaveChangesAsync(ct);
 
+        // ADR-0009 per-client RP-ID: a ceremony begun for a specific client may only
+        // be redeemed by that same client. Skipped for a legacy/realm-scoped ceremony
+        // (ClientId == null). This keeps token-authorization provenance unambiguous
+        // even when two clients legitimately share one RP ID (where the crypto
+        // rpIdHash check alone would not distinguish them).
+        if (!string.IsNullOrEmpty(ceremony.ClientId)
+            && !string.Equals(ceremony.ClientId, request.ClientId, StringComparison.Ordinal))
+            return await ForbidFactorFailureAsync("Invalid or expired passkey ceremony.");
+
         if (string.IsNullOrWhiteSpace(assertionJson))
             return await ForbidFactorFailureAsync("Invalid or expired passkey ceremony.");
+
+        // Rebuild the relying party with EXACTLY the RP ID pinned at begin — never
+        // re-resolved — so verify validates against the same RP ID the authenticator
+        // signed. PrimaryDomain is the fallback for a legacy/realm-scoped ceremony.
+        var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
+        var activeRpId = string.IsNullOrWhiteSpace(ceremony.RpId) ? primaryDomain : ceremony.RpId;
 
         IFido2 fido2;
         try
         {
-            fido2 = await fido2Factory.CreateAsync(ct);
+            fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: activeRpId);
         }
         catch (RelyingPartyUnavailableException)
         {
@@ -780,7 +797,10 @@ public static class AuthorizationEndpoints
         // Shared FIDO2 verify — the SAME path the web cookie flow uses (no fork).
         // Resolves + counter-advances the StoredPasskeyCredential, or null on any
         // failure (bad assertion, unknown credential, signature/origin mismatch).
-        var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(fido2, options, assertionJson, session, ct);
+        // Scoped to the active RP ID (ADR-0009): a credential enrolled under another
+        // app's RP ID is never even considered here.
+        var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(
+            fido2, options, assertionJson, session, activeRpId, primaryDomain, ct);
         if (storedCredential is null)
             return await ForbidFactorFailureAsync("Passkey verification failed.");
 

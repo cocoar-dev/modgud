@@ -36,6 +36,13 @@ public record OAuthClientDto
     public string? ClientClaimsPrefix { get; init; }
     public List<OAuthClientClaimDto> Claims { get; init; } = [];
 
+    /// <summary>
+    /// ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys. Null/blank
+    /// ⇒ realm-scoped (the realm's PrimaryDomain). Changing it invalidates all passkeys
+    /// already enrolled for this client.
+    /// </summary>
+    public string? WebAuthnRpId { get; init; }
+
     public List<string> Roles { get; init; } = [];
 
     /// <summary>
@@ -120,6 +127,10 @@ public record CreateOAuthClientDto
     public string? ClientClaimsPrefix { get; init; }
     public List<OAuthClientClaimDto> Claims { get; init; } = [];
 
+    /// <summary>ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys.
+    /// Null/blank ⇒ realm-scoped (the realm's PrimaryDomain).</summary>
+    public string? WebAuthnRpId { get; init; }
+
     public List<string> Roles { get; init; } = [];
 
     /// <summary>
@@ -166,6 +177,12 @@ public record UpdateOAuthClientDto
     public bool? UpdateAccessTokenClaimsOnRefresh { get; init; }
     public string? ClientClaimsPrefix { get; init; }
     public List<OAuthClientClaimDto>? Claims { get; init; }
+
+    /// <summary>
+    /// ADR-0009 per-client WebAuthn RP ID patch. <c>null</c> = field omitted (no
+    /// change); empty string = clear back to realm-scoped; any non-blank value sets it.
+    /// </summary>
+    public string? WebAuthnRpId { get; init; }
 
     public List<string>? Roles { get; init; }
 

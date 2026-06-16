@@ -30,6 +30,7 @@ public static class NativePasskeyEndpoints
             HttpContext context,
             IDocumentSession session,
             RealmScopedFido2Factory fido2Factory,
+            RpIdResolver rpIdResolver,
             CancellationToken ct) =>
         {
             // Per-realm master gate (default OFF). The injected session is
@@ -43,10 +44,26 @@ public static class NativePasskeyEndpoints
                     title: "NativeGrants.Disabled",
                     detail: "Native passkey sign-in is not enabled for this realm.");
 
+            // ADR-0009 per-client RP-ID: an optional client_id (the requesting app)
+            // selects its admin-set RP ID; absent ⇒ realm-scoped (PrimaryDomain).
+            // Read as a form field so existing no-body callers keep working. The
+            // grant permission (gt:urn:cocoar:passkey) is NOT checked here — begin is
+            // anonymous/pre-authorization; OpenIddict enforces it at redeem, so a
+            // ceremony begun for a client lacking the grant is simply unredeemable.
+            string? clientId = null;
+            if (context.Request.HasFormContentType)
+            {
+                var form = await context.Request.ReadFormAsync(ct);
+                var raw = form["client_id"].ToString();
+                if (!string.IsNullOrWhiteSpace(raw)) clientId = raw;
+            }
+
+            var rpId = await rpIdResolver.ResolveAsync(session, clientId, ct);
+
             IFido2 fido2;
             try
             {
-                fido2 = await fido2Factory.CreateAsync(ct);
+                fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: rpId);
             }
             catch (RelyingPartyUnavailableException ex)
             {
@@ -83,6 +100,12 @@ public static class NativePasskeyEndpoints
             {
                 Id = Guid.NewGuid(),
                 OptionsJson = optionsJson,
+                // Pin the resolved RP ID + requesting client so redeem verifies
+                // against EXACTLY this RP ID (never re-resolving — an admin editing
+                // the setting mid-ceremony cannot cause a begin/redeem drift) and so
+                // a ceremony begun for one client cannot be redeemed by another.
+                ClientId = clientId,
+                RpId = rpId,
                 ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(PasskeyCeremony.ExpirationMinutes),
                 CreatedAt = DateTimeOffset.UtcNow,
             };

@@ -20,6 +20,11 @@ public static class OAuthErrors
         code: "OAuth.InvalidConsentType",
         description: $"Invalid consent type '{consentType}'. Must be 'explicit', 'implicit', or 'external'.");
 
+    public static Error InvalidWebAuthnRpId(string value) => Error.Validation(
+        code: "OAuth.InvalidWebAuthnRpId",
+        description: $"Invalid WebAuthn RP ID '{value}'. Must be a bare hostname (e.g. 'app.example.com') "
+                   + "— no scheme, port, path, or whitespace.");
+
     public static Error CannotRegenerateSecretForPublicClient => Error.Validation(
         code: "OAuth.CannotRegenerateSecretForPublicClient",
         description: "Cannot regenerate secret for a public client. Only confidential clients have secrets.");

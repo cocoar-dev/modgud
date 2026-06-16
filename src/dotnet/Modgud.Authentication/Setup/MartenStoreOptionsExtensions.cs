@@ -104,6 +104,13 @@ public static class MartenStoreOptionsExtensions
             .Identity(x => x.Id)
             .Index(x => x.ExpiresAt);
 
+        // ADR-0009 — cookieless WebAuthn ATTESTATION ceremony for native per-client
+        // passkey enrollment (Bearer-authenticated; a native client has no session
+        // to stash CredentialCreateOptions). Single-use, short-TTL; same sweep index.
+        options.Schema.For<PasskeyEnrollCeremony>()
+            .Identity(x => x.Id)
+            .Index(x => x.ExpiresAt);
+
         // GDPR: per-user deletion bookkeeping (pending request + masked flag).
         // Keyed on the user id so we can simply Load it.
         options.Schema.For<UserDeletionState>()

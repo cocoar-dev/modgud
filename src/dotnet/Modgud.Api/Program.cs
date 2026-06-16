@@ -42,6 +42,7 @@ using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.Scheduling;
 using Modgud.Infrastructure.Persistence.DataProtection;
 using Microsoft.AspNetCore.DataProtection;
+using Modgud.Api.Features.Auth;
 using Modgud.Api.Features.Auth.OAuth;
 using Modgud.Authentication.Setup;
 using Modgud.Authentication.Identity;
@@ -269,6 +270,12 @@ try
     // registered on, and the same RP is resolved for both registration and
     // assertion. Scoped: one per request, keyed off the request's tenant.
     builder.Services.AddScoped<Modgud.Authentication.Identity.RealmScopedFido2Factory>();
+
+    // ADR-0009 — resolves the effective WebAuthn RP ID for a passkey ceremony: the
+    // requesting OAuth client's admin-set per-client RP ID, or the realm's
+    // PrimaryDomain when unset. Shared by native login begin/redeem + native enroll
+    // so the RP ID a credential is enrolled under matches what login later demands.
+    builder.Services.AddScoped<Modgud.Authentication.Identity.RpIdResolver>();
 
     // Identity + Cookie Authentication
     builder.Services.AddIdentityCore<ApplicationUser>(options =>
@@ -1192,6 +1199,7 @@ try
     app.MapNativeOtpEndpoints("api");
     app.MapPasskeyEndpoints("api");
     app.MapNativePasskeyEndpoints();
+    app.MapNativePasskeyEnrollEndpoints();
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");
     app.MapEmailVerificationEndpoints("api");

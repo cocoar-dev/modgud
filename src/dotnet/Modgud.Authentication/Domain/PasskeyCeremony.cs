@@ -24,6 +24,25 @@ public class PasskeyCeremony
     /// <c>OriginalOptions</c> (expected challenge) for the assertion verify.</summary>
     public string OptionsJson { get; set; } = "";
 
+    /// <summary>
+    /// The OAuth <c>client_id</c> this ceremony was begun for (ADR-0009 per-client
+    /// RP-ID). <c>null</c> = a realm-scoped begin (no <c>client_id</c> sent). When
+    /// non-null, the <c>urn:cocoar:passkey</c> grant asserts it equals the redeeming
+    /// <c>request.ClientId</c> so a ceremony begun for one app cannot be redeemed by
+    /// another (keeps token-authorization provenance unambiguous even when two
+    /// clients share one RP ID).
+    /// </summary>
+    public string? ClientId { get; set; }
+
+    /// <summary>
+    /// The WebAuthn RP ID resolved at begin and PINNED here (ADR-0009). The grant
+    /// rebuilds its <c>IFido2</c> with exactly this value and verifies the assertion
+    /// against it — never re-resolving — so an admin editing the client's RP ID
+    /// mid-ceremony cannot cause a begin/redeem RP-ID drift. <c>null</c> = legacy /
+    /// realm-scoped (effective RP ID = realm <c>PrimaryDomain</c>).
+    /// </summary>
+    public string? RpId { get; set; }
+
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
