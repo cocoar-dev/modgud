@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -191,7 +192,76 @@ public class CocoarPasskeyGrantFlowTests : IntegrationTestBase
         Assert.False(await CeremonyExistsAsync(ceremonyId));
     }
 
+    // ─────────────────── crypto success path (software authenticator) ─────────
+
+    [Fact]
+    public async Task PasskeyGrant_ValidAssertion_NativeOrigin_MintsTokens()
+    {
+        // The full crypto-success path: a real ES256 assertion over the server
+        // challenge, presented with the native origin https://<rp-id>. Closes
+        // ADR-0010 Gate item #2 (native-origin acceptance pinned by a test).
+        await EnableNativeGrantsAsync();
+        await SeedPasskeyClientAsync("native-passkey-app");
+
+        using var authenticator = new SoftwareWebAuthnAuthenticator(DefaultUser!.Id.ToByteArray());
+        await SeedCredentialAsync(authenticator.CredentialId, authenticator.CosePublicKey(), authenticator.UserHandle);
+
+        var (ceremonyId, challenge, rpId) = await BeginAsync();
+        var assertion = authenticator.CreateAssertionJson(challenge, rpId, $"https://{rpId}");
+
+        var response = await PostPasskeyAsync("native-passkey-app", ceremonyId, assertion);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(response.IsSuccessStatusCode, $"passkey grant failed ({(int)response.StatusCode}): {body}");
+
+        using var json = JsonDocument.Parse(body);
+        var accessToken = json.RootElement.GetProperty("access_token").GetString()!;
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
+        Assert.Equal(DefaultUser!.Id.ToString(), jwt.Subject);
+        Assert.True(json.RootElement.TryGetProperty("refresh_token", out var rt) && !string.IsNullOrEmpty(rt.GetString()));
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+
+        // The ceremony is single-use — gone even on the success path.
+        Assert.False(await CeremonyExistsAsync(Guid.Parse(ceremonyId)));
+    }
+
+    [Fact]
+    public async Task PasskeyGrant_ValidSignature_WrongOrigin_Rejected()
+    {
+        // Same valid signature, but a FOREIGN origin: the WebAuthn origin/RP-ID
+        // check must reject it (this is the anti-phishing property the native
+        // grant relies on). Pins that the origin gate actually fires.
+        await EnableNativeGrantsAsync();
+        await SeedPasskeyClientAsync("native-passkey-app");
+
+        using var authenticator = new SoftwareWebAuthnAuthenticator(DefaultUser!.Id.ToByteArray());
+        await SeedCredentialAsync(authenticator.CredentialId, authenticator.CosePublicKey(), authenticator.UserHandle);
+
+        var (ceremonyId, challenge, rpId) = await BeginAsync();
+        var assertion = authenticator.CreateAssertionJson(challenge, rpId, "https://evil.example");
+
+        var response = await PostPasskeyAsync("native-passkey-app", ceremonyId, assertion);
+
+        Assert.False(response.IsSuccessStatusCode);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.Contains("invalid_grant", body);
+    }
+
     // ─────────────────────────────── helpers ──────────────────────────────────
+
+    private async Task<(string CeremonyId, string Challenge, string RpId)> BeginAsync()
+    {
+        var anon = Factory.CreateClient();
+        var resp = await anon.PostAsync("/connect/passkey/begin", content: null, TestContext.Current.CancellationToken);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(resp.IsSuccessStatusCode, $"/connect/passkey/begin failed ({(int)resp.StatusCode}): {body}");
+        using var json = JsonDocument.Parse(body);
+        var ceremonyId = json.RootElement.GetProperty("ceremonyId").GetString()!;
+        var options = json.RootElement.GetProperty("options");
+        var challenge = options.GetProperty("challenge").GetString()!;
+        var rpId = options.GetProperty("rpId").GetString()!;
+        return (ceremonyId, challenge, rpId);
+    }
 
     private Task<HttpResponseMessage> PostTokenAsync(Dictionary<string, string> form) =>
         Factory.CreateClient().PostAsync(
@@ -207,7 +277,7 @@ public class CocoarPasskeyGrantFlowTests : IntegrationTestBase
             ["client_secret"] = $"{clientId}-secret",
             ["ceremony_id"] = ceremonyId,
             ["assertion"] = assertion,
-            ["scope"] = "openid",
+            ["scope"] = "openid email profile offline_access",
         });
 
     private async Task EnableNativeGrantsAsync()
@@ -236,7 +306,7 @@ public class CocoarPasskeyGrantFlowTests : IntegrationTestBase
         return ceremony.Id;
     }
 
-    private async Task SeedCredentialAsync(byte[] credentialId)
+    private async Task SeedCredentialAsync(byte[] credentialId, byte[]? publicKey = null, byte[]? userHandle = null)
     {
         using var scope = NewSystemTenantScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
@@ -245,8 +315,8 @@ public class CocoarPasskeyGrantFlowTests : IntegrationTestBase
             Id = Guid.NewGuid(),
             UserId = DefaultUser!.Id,
             CredentialId = credentialId,
-            PublicKey = RandomNumberGenerator.GetBytes(64),
-            UserHandle = DefaultUser.Id.ToByteArray(),
+            PublicKey = publicKey ?? RandomNumberGenerator.GetBytes(64),
+            UserHandle = userHandle ?? DefaultUser.Id.ToByteArray(),
             SignatureCount = 0,
             AttestationType = "none",
             DisplayName = "Test passkey",
