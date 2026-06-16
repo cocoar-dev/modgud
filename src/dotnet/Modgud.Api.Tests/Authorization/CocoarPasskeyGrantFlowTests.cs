@@ -247,12 +247,144 @@ public class CocoarPasskeyGrantFlowTests : IntegrationTestBase
         Assert.Contains("invalid_grant", body);
     }
 
+    // ─────────────────── per-client RP-ID (ADR-0009) ──────────────────────────
+
+    [Fact]
+    public async Task PasskeyGrant_PerClientRpId_ValidAssertion_MintsTokens()
+    {
+        // ADR-0009 — a credential enrolled under a client's per-client RP-ID logs in
+        // for that client. Proves the override path end-to-end AND that the
+        // candidate filter does not over-block a legitimately-matching credential.
+        await EnableNativeGrantsAsync();
+        await SeedPasskeyClientAsync("app-b", rpId: "b.localhost");
+
+        using var authenticator = new SoftwareWebAuthnAuthenticator(DefaultUser!.Id.ToByteArray());
+        await SeedCredentialAsync(authenticator.CredentialId, authenticator.CosePublicKey(), authenticator.UserHandle, rpId: "b.localhost");
+
+        var (ceremonyId, challenge, rpId) = await BeginAsync(clientId: "app-b");
+        Assert.Equal("b.localhost", rpId); // resolver applied the per-client RP-ID
+        var assertion = authenticator.CreateAssertionJson(challenge, rpId, $"https://{rpId}");
+
+        var response = await PostPasskeyAsync("app-b", ceremonyId, assertion);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(response.IsSuccessStatusCode, $"per-client passkey grant failed ({(int)response.StatusCode}): {body}");
+        using var json = JsonDocument.Parse(body);
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(json.RootElement.GetProperty("access_token").GetString()!);
+        Assert.Equal(DefaultUser!.Id.ToString(), jwt.Subject);
+    }
+
+    [Fact]
+    public async Task PasskeyGrant_CredentialEnrolledUnderClientA_RedeemedForClientB_InvalidGrant()
+    {
+        // ADR-0009 Gate #3 — cross-app credential confusion. A credential enrolled
+        // under client A's RP-ID must NEITHER surface NOR verify when client B (a
+        // different RP-ID) redeems. Both layers reject: the candidate filter excludes
+        // the A-credential, and the FIDO2 rpIdHash/origin check would too. The
+        // A-credential must not even be touched (its clone-detection counter stays put).
+        await EnableNativeGrantsAsync();
+        await SeedPasskeyClientAsync("app-a", rpId: "a.localhost");
+        await SeedPasskeyClientAsync("app-b", rpId: "b.localhost");
+
+        using var authenticator = new SoftwareWebAuthnAuthenticator(DefaultUser!.Id.ToByteArray());
+        await SeedCredentialAsync(authenticator.CredentialId, authenticator.CosePublicKey(), authenticator.UserHandle, rpId: "a.localhost");
+
+        // Begin for client B; present a GENUINE assertion signed for A's RP-ID/origin.
+        var (ceremonyId, challenge, rpId) = await BeginAsync(clientId: "app-b");
+        Assert.Equal("b.localhost", rpId);
+        var assertion = authenticator.CreateAssertionJson(challenge, "a.localhost", "https://a.localhost");
+
+        var response = await PostPasskeyAsync("app-b", ceremonyId, assertion);
+
+        Assert.NotEqual(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.False(response.IsSuccessStatusCode);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.Contains("invalid_grant", body);
+
+        // The A-credential was neither surfaced nor counter-advanced.
+        var cred = await LoadCredentialAsync(authenticator.CredentialId);
+        Assert.NotNull(cred);
+        Assert.Equal(0u, cred!.SignatureCount);
+    }
+
+    // ─────────────────── native enrollment (ADR-0009) ─────────────────────────
+
+    [Fact]
+    public async Task NativeEnroll_StoresCredentialUnderClientRpId_AndCanLogin()
+    {
+        // ADR-0009 full bootstrap: authenticate once, then add a passkey for THIS
+        // app via the Bearer enroll endpoints — the new credential is stored under
+        // the client's per-client RP-ID and is usable for a subsequent native login.
+        await EnableNativeGrantsAsync();
+        await SeedPasskeyClientAsync("app-a", rpId: "a.localhost");
+
+        // Bootstrap login (existing credential) → access token for app-a.
+        using var bootstrap = new SoftwareWebAuthnAuthenticator(DefaultUser!.Id.ToByteArray());
+        await SeedCredentialAsync(bootstrap.CredentialId, bootstrap.CosePublicKey(), bootstrap.UserHandle, rpId: "a.localhost");
+        var (bootCeremony, bootChallenge, bootRpId) = await BeginAsync(clientId: "app-a");
+        var bootAssertion = bootstrap.CreateAssertionJson(bootChallenge, bootRpId, $"https://{bootRpId}");
+        var tokenResp = await PostPasskeyAsync("app-a", bootCeremony, bootAssertion);
+        var tokenBody = await tokenResp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(tokenResp.IsSuccessStatusCode, $"bootstrap login failed ({(int)tokenResp.StatusCode}): {tokenBody}");
+        var accessToken = JsonDocument.Parse(tokenBody).RootElement.GetProperty("access_token").GetString()!;
+
+        // Enroll a NEW credential via the Bearer endpoints. The enroll ceremony sets
+        // the WebAuthn user handle to UTF8(user.Id) (Fido2User.Id), so the software
+        // authenticator must echo exactly that at login (the owner-check compares them).
+        using var enrolling = new SoftwareWebAuthnAuthenticator(System.Text.Encoding.UTF8.GetBytes(DefaultUser!.Id.ToString()));
+        var bearer = Factory.CreateClient();
+        bearer.DefaultRequestHeaders.Authorization = new("Bearer", accessToken);
+
+        var beginResp = await bearer.PostAsync("/connect/passkey/enroll/begin", content: null, TestContext.Current.CancellationToken);
+        var beginBody = await beginResp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        var wwwAuth = beginResp.Headers.WwwAuthenticate.ToString();
+        Assert.True(beginResp.IsSuccessStatusCode, $"enroll/begin failed ({(int)beginResp.StatusCode}): [{wwwAuth}] {beginBody}");
+        using var beginJson = JsonDocument.Parse(beginBody);
+        var enrollCeremonyId = beginJson.RootElement.GetProperty("ceremonyId").GetString()!;
+        var opts = beginJson.RootElement.GetProperty("options");
+        var enrollChallenge = opts.GetProperty("challenge").GetString()!;
+        var enrollRpId = opts.GetProperty("rp").GetProperty("id").GetString()!;
+        Assert.Equal("a.localhost", enrollRpId); // resolved from the token's client
+
+        var attestation = enrolling.CreateAttestationJson(enrollChallenge, enrollRpId, $"https://{enrollRpId}");
+        var enrollReqBody = $"{{\"ceremonyId\":\"{enrollCeremonyId}\",\"attestation\":{attestation}}}";
+        var enrollResp = await bearer.PostAsync("/connect/passkey/enroll",
+            new StringContent(enrollReqBody, System.Text.Encoding.UTF8, "application/json"),
+            TestContext.Current.CancellationToken);
+        var enrollRespBody = await enrollResp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(enrollResp.IsSuccessStatusCode, $"enroll failed ({(int)enrollResp.StatusCode}): {enrollRespBody}");
+
+        // Stored under the client's RP-ID.
+        var stored = await LoadCredentialAsync(enrolling.CredentialId);
+        Assert.NotNull(stored);
+        Assert.Equal("a.localhost", stored!.RpId);
+
+        // And usable for a subsequent native login for that client.
+        var (loginCeremony, loginChallenge, loginRpId) = await BeginAsync(clientId: "app-a");
+        var loginAssertion = enrolling.CreateAssertionJson(loginChallenge, loginRpId, $"https://{loginRpId}");
+        var loginResp = await PostPasskeyAsync("app-a", loginCeremony, loginAssertion);
+        var loginBody = await loginResp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(loginResp.IsSuccessStatusCode, $"login with enrolled credential failed ({(int)loginResp.StatusCode}): {loginBody}");
+    }
+
+    [Fact]
+    public async Task NativeEnrollBegin_Anonymous_Unauthorized()
+    {
+        await EnableNativeGrantsAsync();
+        var anon = Factory.CreateClient();
+        var resp = await anon.PostAsync("/connect/passkey/enroll/begin", content: null, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+    }
+
     // ─────────────────────────────── helpers ──────────────────────────────────
 
-    private async Task<(string CeremonyId, string Challenge, string RpId)> BeginAsync()
+    private async Task<(string CeremonyId, string Challenge, string RpId)> BeginAsync(string? clientId = null)
     {
         var anon = Factory.CreateClient();
-        var resp = await anon.PostAsync("/connect/passkey/begin", content: null, TestContext.Current.CancellationToken);
+        HttpContent? content = clientId is null
+            ? null
+            : new FormUrlEncodedContent(new Dictionary<string, string> { ["client_id"] = clientId });
+        var resp = await anon.PostAsync("/connect/passkey/begin", content, TestContext.Current.CancellationToken);
         var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.True(resp.IsSuccessStatusCode, $"/connect/passkey/begin failed ({(int)resp.StatusCode}): {body}");
         using var json = JsonDocument.Parse(body);
@@ -306,7 +438,7 @@ public class CocoarPasskeyGrantFlowTests : IntegrationTestBase
         return ceremony.Id;
     }
 
-    private async Task SeedCredentialAsync(byte[] credentialId, byte[]? publicKey = null, byte[]? userHandle = null)
+    private async Task SeedCredentialAsync(byte[] credentialId, byte[]? publicKey = null, byte[]? userHandle = null, string? rpId = null)
     {
         using var scope = NewSystemTenantScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
@@ -320,9 +452,18 @@ public class CocoarPasskeyGrantFlowTests : IntegrationTestBase
             SignatureCount = 0,
             AttestationType = "none",
             DisplayName = "Test passkey",
+            RpId = rpId,
             CreatedAt = DateTimeOffset.UtcNow,
         });
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    private async Task<StoredPasskeyCredential?> LoadCredentialAsync(byte[] credentialId)
+    {
+        using var scope = NewSystemTenantScope();
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        var all = await session.Query<StoredPasskeyCredential>().ToListAsync(TestContext.Current.CancellationToken);
+        return all.FirstOrDefault(c => c.CredentialId.SequenceEqual(credentialId));
     }
 
     private async Task<bool> CeremonyExistsAsync(Guid ceremonyId)
@@ -333,10 +474,10 @@ public class CocoarPasskeyGrantFlowTests : IntegrationTestBase
         return doc is not null;
     }
 
-    private Task SeedPasskeyClientAsync(string clientId) =>
-        SeedClientAsync(clientId, [CocoarGrantTypes.Passkey, "refresh_token"]);
+    private Task SeedPasskeyClientAsync(string clientId, string? rpId = null) =>
+        SeedClientAsync(clientId, [CocoarGrantTypes.Passkey, "refresh_token"], rpId);
 
-    private async Task SeedClientAsync(string clientId, List<string> grantTypes)
+    private async Task SeedClientAsync(string clientId, List<string> grantTypes, string? rpId = null)
     {
         var app = await CreateAppAsync($"{clientId}-catalog", clientId);
 
@@ -355,6 +496,7 @@ public class CocoarPasskeyGrantFlowTests : IntegrationTestBase
             AllowedGrantTypes = grantTypes,
             RequireConsent = false,
             AccessTokenType = AccessTokenType.Jwt,
+            WebAuthnRpId = rpId,
             AppIds = [new ShortGuid(app.Id).ToString()],
         };
         var result = await oauthAdmin.CreateClientAsync(dto, TestContext.Current.CancellationToken);

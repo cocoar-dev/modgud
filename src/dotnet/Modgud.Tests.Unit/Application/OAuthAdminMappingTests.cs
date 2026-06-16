@@ -1245,4 +1245,125 @@ public class OAuthAdminMappingTests
             Assert.DoesNotContain("newly-added-claim", dto.UserClaims);
         }
     }
+
+    // ─────────────────── ADR-0009 per-client WebAuthn RP-ID ────────────────────
+
+    public class WebAuthnRpIdValidation
+    {
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        [InlineData("app.example.com")]
+        [InlineData("amzettel.at")]
+        [InlineData("localhost")]
+        [InlineData("a.localhost")]
+        public void Accepts_null_blank_or_bare_hostname(string? value)
+            => Assert.Null(OAuthAdminMapping.ValidateWebAuthnRpId(value));
+
+        [Theory]
+        [InlineData("https://app.example.com")] // scheme
+        [InlineData("app.example.com/path")]    // path
+        [InlineData("app.example.com:443")]     // port
+        [InlineData("app example com")]          // whitespace
+        [InlineData("127.0.0.1")]                // IP, not a DNS host
+        public void Rejects_url_port_path_whitespace_or_ip(string value)
+        {
+            var err = OAuthAdminMapping.ValidateWebAuthnRpId(value);
+            Assert.NotNull(err);
+            Assert.Equal("OAuth.InvalidWebAuthnRpId", err!.Value.Code);
+        }
+    }
+
+    public class WebAuthnRpIdMapping
+    {
+        [Fact]
+        public void BuildClientSettings_stores_normalized_value()
+        {
+            var settings = OAuthAdminMapping.BuildClientSettings(new CreateOAuthClientDto
+            {
+                ClientId = "c",
+                ClientType = OAuthClientTypes.Public,
+                WebAuthnRpId = "  App.Example.COM  ",
+            });
+
+            Assert.Equal("app.example.com", settings[OAuthApplicationSettingKeys.WebAuthnRpId]);
+        }
+
+        [Fact]
+        public void BuildClientSettings_omits_key_when_blank()
+        {
+            var settings = OAuthAdminMapping.BuildClientSettings(new CreateOAuthClientDto
+            {
+                ClientId = "c",
+                ClientType = OAuthClientTypes.Public,
+                WebAuthnRpId = "   ",
+            });
+
+            Assert.DoesNotContain(OAuthApplicationSettingKeys.WebAuthnRpId, settings.Keys);
+        }
+
+        [Fact]
+        public void MergeClientSettings_null_preserves_existing()
+        {
+            var current = new Dictionary<string, string>
+            {
+                [OAuthApplicationSettingKeys.WebAuthnRpId] = "app.example.com",
+            };
+
+            var merged = OAuthAdminMapping.MergeClientSettings(current, new UpdateOAuthClientDto { WebAuthnRpId = null });
+
+            Assert.Equal("app.example.com", merged[OAuthApplicationSettingKeys.WebAuthnRpId]);
+        }
+
+        [Fact]
+        public void MergeClientSettings_empty_clears_back_to_realm_scoped()
+        {
+            var current = new Dictionary<string, string>
+            {
+                [OAuthApplicationSettingKeys.WebAuthnRpId] = "app.example.com",
+            };
+
+            var merged = OAuthAdminMapping.MergeClientSettings(current, new UpdateOAuthClientDto { WebAuthnRpId = "" });
+
+            Assert.DoesNotContain(OAuthApplicationSettingKeys.WebAuthnRpId, merged.Keys);
+        }
+
+        [Fact]
+        public void MergeClientSettings_value_sets_normalized()
+        {
+            var merged = OAuthAdminMapping.MergeClientSettings(
+                new Dictionary<string, string>(), new UpdateOAuthClientDto { WebAuthnRpId = "B.Localhost" });
+
+            Assert.Equal("b.localhost", merged[OAuthApplicationSettingKeys.WebAuthnRpId]);
+        }
+
+        [Fact]
+        public void MapClient_reads_back_the_rp_id()
+        {
+            var state = new OAuthApplicationState
+            {
+                Id = Guid.NewGuid(),
+                ClientId = "c",
+                Settings = new Dictionary<string, string>
+                {
+                    [OAuthApplicationSettingKeys.WebAuthnRpId] = "app.example.com",
+                },
+            };
+
+            var dto = OAuthAdminMapping.MapClient(state);
+
+            Assert.Equal("app.example.com", dto.WebAuthnRpId);
+        }
+
+        [Fact]
+        public void MapClient_null_when_unset()
+        {
+            var state = new OAuthApplicationState { Id = Guid.NewGuid(), ClientId = "c" };
+
+            var dto = OAuthAdminMapping.MapClient(state);
+
+            Assert.Null(dto.WebAuthnRpId);
+        }
+    }
 }

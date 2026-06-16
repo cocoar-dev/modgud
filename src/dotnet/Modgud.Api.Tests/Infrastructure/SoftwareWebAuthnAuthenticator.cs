@@ -86,6 +86,54 @@ public sealed class SoftwareWebAuthnAuthenticator : IDisposable
         return JsonSerializer.Serialize(response);
     }
 
+    /// <summary>
+    /// Builds an <c>AuthenticatorAttestationRawResponse</c> JSON for a registration
+    /// ceremony (ADR-0009 native enroll): a "none"-format attestation embedding this
+    /// authenticator's COSE public key + credential id. UP+UV+AT flags are set; no
+    /// attestation statement is signed (fmt="none", matching
+    /// AttestationConveyancePreference.None). The resulting credential verifies under
+    /// the same <paramref name="rpId"/> at login.
+    /// </summary>
+    public string CreateAttestationJson(string challengeB64Url, string rpId, string origin)
+    {
+        var clientData = $"{{\"type\":\"webauthn.create\",\"challenge\":\"{challengeB64Url}\",\"origin\":\"{origin}\",\"crossOrigin\":false}}";
+        var clientDataBytes = Encoding.UTF8.GetBytes(clientData);
+
+        var rpIdHash = SHA256.HashData(Encoding.UTF8.GetBytes(rpId));
+        const byte flags = 0x45; // UP (0x01) | UV (0x04) | AT (0x40 — attested credential data present)
+        var counter = new byte[4]; // signCount = 0 at registration
+
+        // attestedCredentialData = aaguid(16) ‖ credentialIdLength(2 BE) ‖ credentialId ‖ COSE public key
+        var aaguid = new byte[16];
+        var credIdLen = new byte[2];
+        BinaryPrimitives.WriteUInt16BigEndian(credIdLen, (ushort)CredentialId.Length);
+        var attestedCredentialData = Concat(aaguid, credIdLen, CredentialId, CosePublicKey());
+
+        var authData = Concat(rpIdHash, [flags], counter, attestedCredentialData);
+
+        // attestationObject = CBOR { fmt: "none", attStmt: {}, authData }
+        var w = new CborWriter();
+        w.WriteStartMap(3);
+        w.WriteTextString("fmt"); w.WriteTextString("none");
+        w.WriteTextString("attStmt"); w.WriteStartMap(0); w.WriteEndMap();
+        w.WriteTextString("authData"); w.WriteByteString(authData);
+        w.WriteEndMap();
+        var attestationObject = w.Encode();
+
+        var response = new
+        {
+            id = B64Url(CredentialId),
+            rawId = B64Url(CredentialId),
+            type = "public-key",
+            response = new
+            {
+                attestationObject = B64Url(attestationObject),
+                clientDataJSON = B64Url(clientDataBytes),
+            },
+        };
+        return JsonSerializer.Serialize(response);
+    }
+
     private static byte[] Concat(params byte[][] parts)
     {
         var result = new byte[parts.Sum(p => p.Length)];
