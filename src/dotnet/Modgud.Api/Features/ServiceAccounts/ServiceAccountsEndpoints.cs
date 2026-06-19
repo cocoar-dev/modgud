@@ -91,6 +91,9 @@ public static class ServiceAccountsEndpoints
                 var sa = await session.LoadAsync<ServiceAccount>(id.Guid, ct);
                 if (sa is null || sa.IsDeleted) return Results.NotFound();
 
+                // Prior active-state, read from the persisted record (not the request).
+                var wasActive = sa.IsActive;
+
                 if (dto.AccountName is { } rawAccountName)
                 {
                     var normalised = rawAccountName.Trim().ToLowerInvariant();
@@ -127,12 +130,20 @@ public static class ServiceAccountsEndpoints
                 // Audit #6 — deactivating an SA must cut off its live M2M access, not
                 // just block new token issuance. The SA's client_credentials tokens
                 // carry sub = sa.Id (across every credential), so a by-subject revoke
-                // kills them all; reactivation re-issues normally.
-                if (dto.IsActive == false)
+                // kills them all; reactivation re-issues normally. Gate on the
+                // persisted active→inactive TRANSITION (prior state from the load,
+                // new state read back from the store) rather than the raw request
+                // flag: a benign edit, or re-saving an already-inactive SA, does not
+                // trigger a pointless revoke sweep.
+                if (wasActive)
                 {
-                    var subject = sa.Id.ToString();
-                    await revoker.RevokeTokensBySubjectAsync(subject, ct);
-                    await revoker.RevokeAuthorizationsBySubjectAsync(subject, ct);
+                    var persisted = await session.LoadAsync<ServiceAccount>(id.Guid, ct);
+                    if (persisted is { IsActive: false })
+                    {
+                        var subject = persisted.Id.ToString();
+                        await revoker.RevokeTokensBySubjectAsync(subject, ct);
+                        await revoker.RevokeAuthorizationsBySubjectAsync(subject, ct);
+                    }
                 }
 
                 var updated = ToDto(sa);
