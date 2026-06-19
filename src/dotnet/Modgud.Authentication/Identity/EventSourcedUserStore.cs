@@ -343,9 +343,15 @@ public class EventSourcedUserStore(IDocumentSession session)
         return Task.CompletedTask;
     }
 
-    public Task<bool> GetTwoFactorEnabledAsync(ApplicationUser user, CancellationToken cancellationToken)
+    public async Task<bool> GetTwoFactorEnabledAsync(ApplicationUser user, CancellationToken cancellationToken)
     {
-        return Task.FromResult(user.TwoFactorEnabled);
+        // Audit #18 — re-fetch the AUTHORITATIVE flag from UserSecurityData, exactly
+        // like GetSecurityStampAsync. user.TwoFactorEnabled is the transient mirror
+        // (hydrated only by the finders). This is the predicate behind the 2FA
+        // step-up gate, so a raw-loaded user handed to the gate must not be able to
+        // skip the second factor because its mirror read false.
+        var securityData = await session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
+        return securityData?.TwoFactorEnabled ?? user.TwoFactorEnabled;
     }
 
     // IUserAuthenticatorKeyStore<ApplicationUser>
@@ -356,9 +362,13 @@ public class EventSourcedUserStore(IDocumentSession session)
         return Task.CompletedTask;
     }
 
-    public Task<string?> GetAuthenticatorKeyAsync(ApplicationUser user, CancellationToken cancellationToken)
+    public async Task<string?> GetAuthenticatorKeyAsync(ApplicationUser user, CancellationToken cancellationToken)
     {
-        return Task.FromResult(user.AuthenticatorKey);
+        // Audit #18 — authoritative re-fetch (sibling of GetTwoFactorEnabledAsync):
+        // the TOTP secret used to validate a step-up code must come from the source
+        // of truth, not the mirror, regardless of how the user was loaded.
+        var securityData = await session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
+        return securityData?.AuthenticatorKey ?? user.AuthenticatorKey;
     }
 
     // IUserPhoneNumberStore<ApplicationUser> (required by PasswordSignInAsync for 2FA check)

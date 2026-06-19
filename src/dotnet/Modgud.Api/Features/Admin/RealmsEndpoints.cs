@@ -163,7 +163,14 @@ public static class RealmsEndpoints
             using (TenantContext.Enter(slug))
             {
                 var session = inviteScope.ServiceProvider.GetRequiredService<IDocumentSession>();
+                // Audit #32 — only an UNUSED invite may be resent. Without the
+                // UsedAt==null filter, resend returns the most recent invite even
+                // after it was consumed, re-arming a fresh 7-day realm:admin token
+                // (and a misleading "invite issued" audit entry) for an already-
+                // bootstrapped realm. With the filter a bootstrapped realm has no
+                // pending invite to resend → 404.
                 var lastInvite = await session.Query<PendingAdminInvite>()
+                    .Where(i => i.UsedAt == null)
                     .OrderByDescending(i => i.CreatedAt)
                     .FirstOrDefaultAsync(ct);
                 if (lastInvite is null)
@@ -171,7 +178,7 @@ public static class RealmsEndpoints
                     return Results.Problem(
                         statusCode: StatusCodes.Status404NotFound,
                         title: "Realm.NoPriorInvite",
-                        detail: "No prior bootstrap-invite for this realm — resend re-uses the original recipient identity.");
+                        detail: "No pending bootstrap-invite for this realm — there is no unused invite to resend (it may already be bootstrapped).");
                 }
 
                 var inviteService = inviteScope.ServiceProvider.GetRequiredService<IPendingAdminInviteService>();

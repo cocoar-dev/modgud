@@ -20,13 +20,15 @@ namespace Modgud.Authentication.Setup;
 ///   <item><description>Future migration / repair tooling that needs to seed an admin</description></item>
 /// </list>
 ///
-/// <para>What "atomic" means here: in one Marten transaction we (a) create the
-/// <c>ApplicationUser</c> via <see cref="UserManager{T}"/> (which appends
-/// UserCreatedEvent + UserUserNameChangedEvent + UserPasswordChangedEvent), (b)
-/// seed the three default roles (System Admin / User Manager / Viewer) if they
-/// don't yet exist in this realm, (c) create the <c>Administratoren</c> group
-/// with the user as sole member and the System Admin role attached. If any
-/// step fails, the whole transaction rolls back — no half-bootstrapped realms.</para>
+/// <para>Order of work (Audit #31 — NOT a single transaction): (a) create the
+/// <c>ApplicationUser</c> via <see cref="UserManager{T}"/>, which commits on its
+/// own store session (appending UserCreatedEvent + UserUserNameChangedEvent +
+/// UserPasswordChangedEvent); then (b) seed the three default roles (System Admin
+/// / User Manager / Viewer) if they don't yet exist in this realm and (c) create
+/// the <c>Administratoren</c> group with the user as sole member and the System
+/// Admin role attached — both committed by a second <c>SaveChangesAsync</c>. A
+/// weak password fails at (a) before any commit. The role/group seed (b)+(c) is
+/// idempotent, so a re-bootstrap repairs a partial seed rather than duplicating.</para>
 ///
 /// <para>The seeded structure mirrors what the legacy <c>POST /api/setup/create-admin</c>
 /// endpoint produced, so existing realms keep the same shape.</para>

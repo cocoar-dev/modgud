@@ -39,7 +39,11 @@ public static class AdminMagicLinkEndpoints
             var userId = BuildingBlocks.Helper.ShortGuid.Decode(id);
             var user = await session.LoadAsync<ApplicationUser>(userId);
 
-            if (user is null || !user.IsActive)
+            // Audit #29 — also reject IsDeleted, mirroring the FindByIdAsync finder
+            // (which filters {IsDeleted:true}). Latent today (no production path
+            // produces IsDeleted+IsActive), but the raw LoadAsync here diverged from
+            // the finder — close the drift as defense-in-depth.
+            if (user is null || !user.IsActive || user.IsDeleted)
                 return Results.NotFound(new { Message = "User not found or inactive" });
 
             if (string.IsNullOrEmpty(user.Email))

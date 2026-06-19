@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Api.Account.Services;
 using Modgud.Authentication;
+using Modgud.Infrastructure.OpenIddict;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Sessions;
 using Modgud.Infrastructure.Observability;
@@ -79,7 +80,9 @@ public static class MfaEndpoints
             HttpContext context,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
-            MfaVerifyRequest request) =>
+            IOAuthGrantRevoker grantRevoker,
+            MfaVerifyRequest request,
+            CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
@@ -101,6 +104,12 @@ public static class MfaEndpoints
             // at the next validation pass (other sessions remain invalidated).
             await signInManager.RefreshSignInAsync(user);
 
+            // Audit #10 — the stamp rotation kills cookies, but stock OpenIddict
+            // introspection trusts store status, so OAuth reference tokens issued
+            // before this change would still validate. Revoke them so a 2FA change
+            // is a real cut-off across channels (consent grants are kept).
+            await grantRevoker.RevokeTokensBySubjectAsync(user.Id.ToString(), ct);
+
             return Results.Ok(new { Message = "MFA has been enabled.", Enabled = true });
         })
         .WithName("Mfa_Verify");
@@ -113,8 +122,10 @@ public static class MfaEndpoints
             HttpContext context,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
+            IOAuthGrantRevoker grantRevoker,
             IAuthSettings appSettings,
-            IDocumentSession session) =>
+            IDocumentSession session,
+            CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
@@ -135,6 +146,10 @@ public static class MfaEndpoints
             // session so disabling 2FA doesn't self-logout the current session at
             // the next validation pass (other sessions remain invalidated).
             await signInManager.RefreshSignInAsync(user);
+
+            // Audit #10 — revoke OAuth reference tokens too (see verify above);
+            // removing a 2FA factor must cut off live access across channels.
+            await grantRevoker.RevokeTokensBySubjectAsync(user.Id.ToString(), ct);
 
             return Results.Ok(new
             {

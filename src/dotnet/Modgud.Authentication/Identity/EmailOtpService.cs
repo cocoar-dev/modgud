@@ -116,9 +116,10 @@ public class EmailOtpService(IDocumentSession session, IEmailService emailServic
 
     private static string GenerateOtpCode()
     {
-        var bytes = RandomNumberGenerator.GetBytes(4);
-        var number = BitConverter.ToUInt32(bytes, 0) % 1000000;
-        return number.ToString("D6");
+        // Audit #34 — rejection-sampled, modulo-bias-free. The old `4 CSPRNG bytes %
+        // 1_000_000` skewed codes 0..967_295 ~0.023% higher (2^32 mod 10^6); GetInt32
+        // draws uniformly over the exact range.
+        return RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
     }
 
     private static string HashCode(string code)

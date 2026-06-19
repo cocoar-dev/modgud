@@ -8,6 +8,7 @@ using Modgud.Authentication;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
 using Modgud.Authentication.Sessions;
+using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.Observability;
 
 namespace Modgud.Authentication.Api.Account;
@@ -43,7 +44,9 @@ public static class EmailOtpEndpoints
         group.MapPost("enable", [Authorize] async (
             HttpContext context,
             UserManager<ApplicationUser> userManager,
-            IDocumentSession session) =>
+            IOAuthGrantRevoker grantRevoker,
+            IDocumentSession session,
+            CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
@@ -64,7 +67,12 @@ public static class EmailOtpEndpoints
 
             user.EmailOtpEnabled = true;
             session.Store(user);
-            await session.SaveChangesAsync();
+            await session.SaveChangesAsync(ct);
+
+            // Audit #10/#12 — a 2FA factor change must cut off OAuth reference tokens
+            // (stock introspection trusts store status). Enabling is additive, so we
+            // don't force-logout other cookie sessions here (unlike disable below).
+            await grantRevoker.RevokeTokensBySubjectAsync(user.Id.ToString(), ct);
 
             return Results.Ok(new { Message = "Email OTP enabled", Enabled = true });
         })
@@ -77,8 +85,11 @@ public static class EmailOtpEndpoints
         group.MapPost("disable", [Authorize] async (
             HttpContext context,
             UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
+            IOAuthGrantRevoker grantRevoker,
             IAuthSettings appSettings,
-            IDocumentSession session) =>
+            IDocumentSession session,
+            CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
@@ -92,7 +103,19 @@ public static class EmailOtpEndpoints
 
             user.EmailOtpEnabled = false;
             session.Store(user);
-            await session.SaveChangesAsync();
+            await session.SaveChangesAsync(ct);
+
+            // Audit #12 — parity with the TOTP-disable path: removing a 2FA factor
+            // rotates the security stamp (other cookie sessions die at the next
+            // validation pass) and re-issues the acting session so the user isn't
+            // self-logged-out. Done via the UserManager AFTER the session commit so
+            // it doesn't race the in-session UserSecurityData write above.
+            await userManager.UpdateSecurityStampAsync(user);
+            await signInManager.RefreshSignInAsync(user);
+
+            // Audit #10 — and revoke OAuth reference tokens, which the stamp rotation
+            // alone doesn't kill (stock introspection trusts store status).
+            await grantRevoker.RevokeTokensBySubjectAsync(user.Id.ToString(), ct);
 
             return Results.Ok(new
             {
