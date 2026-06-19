@@ -4,7 +4,9 @@ using Modgud.Authentication.Domain.ExternalAuth.Events;
 using Modgud.Authentication.Events;
 using Modgud.Authentication.Sessions;
 using Modgud.Authorization.Apps;
+using Modgud.Authorization.Principals;
 using Modgud.Authorization.Services;
+using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Email;
@@ -242,6 +244,18 @@ public class GdprService(
             user.EmailOtpEnabled = false;
             session.Store(user);
         }
+
+        // 1b) Scrub the PII-bearing projection read-models (audit remediation #20/#21).
+        //     Marten masking rewrites event JSON only — it does NOT re-run projections —
+        //     and the UserDeletedEvent Apply handlers merely flag IsDeleted while KEEPING
+        //     Email/name. So without this the "forgotten" user's name + email survive in
+        //     the queryable Principal/Person doc (also served by /api/principal/lookup)
+        //     and the async UserView read-model (Art. 17 violation), and the Person stays
+        //     IsActive=true (selectable in pickers / auto-group recompute). Hard-delete
+        //     both docs; the stream is masked + archived below, so a rebuild (which
+        //     excludes archived events) will not recreate them.
+        session.Delete<Principal>(userId);
+        session.Delete<UserView>(userId);
 
         // 2) Drop secondary documents (sessions + security data + change requests).
         session.DeleteWhere<UserSession>(s => s.UserId == userId);
