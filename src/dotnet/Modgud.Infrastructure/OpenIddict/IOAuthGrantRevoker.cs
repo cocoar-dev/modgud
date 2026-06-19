@@ -34,4 +34,11 @@ public interface IOAuthGrantRevoker
     /// <summary>Revoke every authorization (consent grant) for the subject,
     /// across all clients. Returns the number revoked.</summary>
     Task<int> RevokeAuthorizationsBySubjectAsync(string subject, CancellationToken ct = default);
+
+    /// <summary>Revoke every token issued FOR a given OAuth application (client),
+    /// across all subjects. Returns the number revoked. Used by the Service-Account
+    /// credential lifecycle (Audit #8): rotating or deleting a single credential
+    /// must invalidate exactly that client's outstanding M2M tokens — narrower than
+    /// a by-subject revoke, which would also kill the SA's other credentials.</summary>
+    Task<int> RevokeTokensByApplicationIdAsync(string applicationId, CancellationToken ct = default);
 }
