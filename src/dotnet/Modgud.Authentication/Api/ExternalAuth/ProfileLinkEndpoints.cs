@@ -95,6 +95,7 @@ public static class ProfileLinkEndpoints
             [FromServices] IDocumentSession writeSession,
             [FromServices] UserManager<ApplicationUser> userManager,
             [FromServices] ILoggerFactory loggerFactory,
+            [FromServices] Modgud.Authentication.Sessions.IUserAccessRevoker accessRevoker,
             CancellationToken ct) =>
         {
             var userId = http.GetUserId();
@@ -104,7 +105,7 @@ public static class ProfileLinkEndpoints
             if (link is null || link.IsUnlinked) return Results.NotFound();
             if (link.UserId != userId.Value) return Results.Forbid();
 
-            return await UnlinkAsync(writeSession, userManager,
+            return await UnlinkAsync(writeSession, userManager, accessRevoker,
                 loggerFactory.CreateLogger(UnlinkLogCategory), clock, link, isAdmin: false, ct);
         });
 
@@ -119,12 +120,13 @@ public static class ProfileLinkEndpoints
             [FromServices] IDocumentSession writeSession,
             [FromServices] UserManager<ApplicationUser> userManager,
             [FromServices] ILoggerFactory loggerFactory,
+            [FromServices] Modgud.Authentication.Sessions.IUserAccessRevoker accessRevoker,
             CancellationToken ct) =>
         {
             var link = await writeSession.LoadAsync<ExternalIdentityLink>(linkId.Guid, ct);
             if (link is null || link.IsUnlinked || link.UserId != userId.Guid) return Results.NotFound();
 
-            return await UnlinkAsync(writeSession, userManager,
+            return await UnlinkAsync(writeSession, userManager, accessRevoker,
                 loggerFactory.CreateLogger(UnlinkLogCategory), clock, link, isAdmin: true, ct);
         })
         .RequireAuthorization()
@@ -148,6 +150,7 @@ public static class ProfileLinkEndpoints
     private static async Task<IResult> UnlinkAsync(
         IDocumentSession writeSession,
         UserManager<ApplicationUser> userManager,
+        Modgud.Authentication.Sessions.IUserAccessRevoker accessRevoker,
         ILogger logger,
         TimeProvider clock,
         ExternalIdentityLink link,
@@ -184,6 +187,14 @@ public static class ProfileLinkEndpoints
         writeSession.Events.Append(link.UserId,
             new UserExternalIdentityUnlinkedEvent(link.UserId, link.Id, link.LoginProviderId, now));
         await writeSession.SaveChangesAsync(ct);
+
+        // Audit remediation #5: the federated cookie is validated solely by the
+        // security stamp, and the linkId claim is never re-checked against live link
+        // state — so unlinking (esp. admin force-unlink of a compromised route) left
+        // the in-flight session + tokens alive. Revoke live access on unlink. (Self-
+        // service also revokes; keeping the actor's current session via RefreshSignIn
+        // is a deferred UX refinement — re-auth after removing a login method is safe.)
+        await accessRevoker.RevokeAllAccessAsync(link.UserId, Modgud.Authentication.Sessions.AccessRevocationReason.ForceSignOut, ct);
 
         logger.LogInformation(
             "External identity disconnected{AdminTag} — {UserId} unlinked provider {ProviderId} (link {LinkId})",

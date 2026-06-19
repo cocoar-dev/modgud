@@ -485,7 +485,11 @@ public class OAuthAdminService
             RequireClientSecret = true,
             RequireConsent = false,
             Enabled = true,
-            AccessTokenType = AccessTokenType.Jwt,
+            // Audit #6/#7/#8 — default Reference (opaque + instantly revocable) so
+            // SA deactivate/delete/rotate cuts off live M2M access immediately. JWT
+            // is opt-in for resource servers that must self-validate (its already-
+            // issued tokens then survive a revoke until expiry).
+            AccessTokenType = dto.AccessTokenType,
             AccessTokenLifetime = dto.AccessTokenLifetime,
             AppIds = dto.AppIds,
             LinkedServiceAccountId = new ShortGuid(serviceAccountId).ToString(),
@@ -550,12 +554,15 @@ public class OAuthAdminService
                 _session.Events.Append(guid, aggregate.SetAppIds(parsed));
         }
 
-        if (dto.AccessTokenLifetime.HasValue)
+        if (dto.AccessTokenLifetime.HasValue || dto.AccessTokenType.HasValue)
         {
-            var settings = new Dictionary<string, string>(aggregate.Settings)
-            {
-                [OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString(),
-            };
+            // Merge both into ONE settings revision — two separate SetSettings events
+            // built off the same base would clobber each other.
+            var settings = new Dictionary<string, string>(aggregate.Settings);
+            if (dto.AccessTokenLifetime.HasValue)
+                settings[OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString();
+            if (dto.AccessTokenType.HasValue)
+                settings[OAuthApplicationSettingKeys.AccessTokenType] = dto.AccessTokenType.Value.ToString();
             if (!DictEquals(settings, aggregate.Settings))
                 _session.Events.Append(guid, aggregate.SetSettings(settings));
         }

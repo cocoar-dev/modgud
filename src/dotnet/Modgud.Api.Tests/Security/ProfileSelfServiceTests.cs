@@ -137,7 +137,12 @@ public class ProfileSelfServiceTests : IntegrationTestBase
             new { NotifyUser = false }, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, approve.StatusCode);
 
-        var me = await (await client.GetAsync("/api/account/me", TestContext.Current.CancellationToken)).Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        // Applying the email change revokes the user's live sessions (audit
+        // remediation #4: email is the account-recovery anchor), so the original
+        // cookie is now dead. Re-authenticate (username is unchanged) to read the
+        // applied result — exactly what a real user does after an email change.
+        var freshClient = await CreateAuthenticatedClientAsync("aa", "TestPass1234");
+        var me = await (await freshClient.GetAsync("/api/account/me", TestContext.Current.CancellationToken)).Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         Assert.Equal("NewFirst", me.GetProperty("Firstname").GetString());
         Assert.Equal("NewLast", me.GetProperty("Lastname").GetString());
         Assert.Equal("NA", me.GetProperty("Acronym").GetString());

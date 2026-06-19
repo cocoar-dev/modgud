@@ -7,6 +7,7 @@ import {
   CoarNote,
   CoarDualListbox,
   CoarButton,
+  CoarSelect,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -17,7 +18,7 @@ import type {
   ServiceAccountCredentialIssuedDto,
   UpdateServiceAccountCredentialDto,
 } from '@/models/serviceAccount'
-import type { OAuthClientDto } from '@/models/oauth'
+import type { OAuthClientDto, AccessTokenType } from '@/models/oauth'
 
 const { t } = useI18n()
 
@@ -48,9 +49,17 @@ const form = ref({
   Scopes: [] as string[],
   AppIds: [] as string[],
   AccessTokenLifetime: null as number | null,
+  // Default Reference — opaque + instantly revocable, so deactivate/delete/rotate
+  // cuts off live M2M access immediately (Audit #6/#7/#8). JWT is opt-in.
+  AccessTokenType: 'Reference' as AccessTokenType,
   Enabled: true,
 })
 const originalForm = ref<typeof form.value | null>(null)
+
+const accessTokenTypeOptions: { value: AccessTokenType; label: string }[] = [
+  { value: 'Reference', label: 'Reference (opaque, sofort widerrufbar)' },
+  { value: 'Jwt', label: 'JWT (selbst-validierend, Revoke erst bei Ablauf)' },
+]
 
 // Text-backed proxy for the optional numeric AccessTokenLifetime — empty
 // string maps back to null. CoarTextInput is text-only; the alternative
@@ -146,6 +155,7 @@ onMounted(async () => {
           .map((p) => p.slice('scp:'.length)),
         AppIds: cred.AppIds.slice(),
         AccessTokenLifetime: cred.AccessTokenLifetime ?? null,
+        AccessTokenType: (cred.AccessTokenType as AccessTokenType) ?? 'Reference',
         Enabled: cred.Enabled,
       }
       originalForm.value = JSON.parse(JSON.stringify(form.value))
@@ -168,6 +178,7 @@ async function save() {
         Scopes: form.value.Scopes,
         AppIds: form.value.AppIds,
         AccessTokenLifetime: form.value.AccessTokenLifetime ?? undefined,
+        AccessTokenType: form.value.AccessTokenType,
       })
       newSecret.value = res.ClientSecret
       newClientIdForSecret.value = res.Credential.ClientId
@@ -183,6 +194,8 @@ async function save() {
         patch.AppIds = form.value.AppIds
       if (form.value.AccessTokenLifetime !== orig.AccessTokenLifetime)
         patch.AccessTokenLifetime = form.value.AccessTokenLifetime ?? undefined
+      if (form.value.AccessTokenType !== orig.AccessTokenType)
+        patch.AccessTokenType = form.value.AccessTokenType
       if (form.value.Enabled !== orig.Enabled)
         patch.Enabled = form.value.Enabled
 
@@ -287,6 +300,14 @@ async function copySecret() {
       <CoarFormField :label="t('admin.serviceAccountCredentials.accessTokenLifetime', {}, 'Access-Token-Lebenszeit (Sekunden)')">
         <CoarTextInput v-model="accessTokenLifetimeText"
           :placeholder="t('admin.serviceAccountCredentials.accessTokenLifetimePlaceholder', {}, '3600 (Default)')" />
+      </CoarFormField>
+
+      <CoarFormField :label="t('admin.serviceAccountCredentials.accessTokenType', {}, 'Access-Token-Format')">
+        <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" />
+        <p class="mt-1 text-xs text-surface-500">
+          {{ t('admin.serviceAccountCredentials.accessTokenTypeHint', {},
+            'Reference-Tokens sind sofort widerrufbar (Deaktivieren/Löschen/Rotieren wirkt direkt); der Resource-Server muss introspecten. JWT validiert sich selbst, überlebt einen Revoke aber bis zum Ablauf — Lebenszeit dann kurz halten.') }}
+        </p>
       </CoarFormField>
 
       <div v-if="!isCreate" class="mt-1">

@@ -155,15 +155,26 @@ public static class ConsentEndpoints
         var (record, error) = await ResolveTicketAsync(ticketId, session, userManager, currentUserPrincipal);
         if (error is not null) return error;
 
-        // Mark the ticket consumed BEFORE doing anything else so two parallel
-        // POSTs (e.g. user double-click) cannot both succeed. SaveChangesAsync
-        // below atomically commits this together with the authorization.
+        // Audit #26 — CLAIM the ticket atomically, BEFORE doing anything else.
+        // ConsentTicket uses optimistic concurrency, so two parallel POSTs (user
+        // double-click) both load ConsumedAt==null but only ONE can commit this
+        // version-checked Store; the loser's stale write throws and maps to the
+        // existing 409. Claiming first — before any authorization is created —
+        // means the loser doesn't even mint a duplicate Permanent authorization
+        // row (the previously-documented benign residual is now gone too).
         record!.ConsumedAt = DateTimeOffset.UtcNow;
+        session.Store(record);
+        try
+        {
+            await session.SaveChangesAsync();
+        }
+        catch (JasperFx.ConcurrencyException)
+        {
+            return Results.Conflict(new { message = "Consent ticket has already been used." });
+        }
 
         if (!decision.Approved)
         {
-            session.Store(record);
-            await session.SaveChangesAsync();
             return Results.Ok(new ConsentResult
             {
                 RedirectUrl = $"/consent/denied?error={Uri.EscapeDataString(Errors.AccessDenied)}" +
@@ -207,8 +218,8 @@ public static class ConsentEndpoints
             type: AuthorizationTypes.Permanent,
             scopes: approvedSet.ToImmutableArray());
 
-        session.Store(record);
-        await session.SaveChangesAsync();
+        // The ticket was already claimed (consumed) above, before this
+        // authorization was created — nothing more to persist here.
 
         // OAUTH-08 fix: reconstruct the redirect from the SERVER-SIDE locked
         // query string. The SPA never sees the OAuth URL — there's no chance

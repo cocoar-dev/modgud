@@ -7,6 +7,7 @@ using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Principals;
 using Modgud.Domain.ValueObjects;
+using Modgud.Infrastructure.OpenIddict;
 using Marten;
 
 namespace Modgud.Api.Features.ServiceAccounts;
@@ -85,10 +86,13 @@ public static class ServiceAccountsEndpoints
             .WithName("V2_ServiceAccount_Create")
             .RequiresPermission("service-account:write");
 
-        group.MapPut("{id}", async (ShortGuid id, ServiceAccountUpdateDto dto, IDocumentSession session, DataEventDispatcher dispatcher) =>
+        group.MapPut("{id}", async (ShortGuid id, ServiceAccountUpdateDto dto, IDocumentSession session, DataEventDispatcher dispatcher, IOAuthGrantRevoker revoker, CancellationToken ct) =>
             {
-                var sa = await session.LoadAsync<ServiceAccount>(id.Guid);
+                var sa = await session.LoadAsync<ServiceAccount>(id.Guid, ct);
                 if (sa is null || sa.IsDeleted) return Results.NotFound();
+
+                // Prior active-state, read from the persisted record (not the request).
+                var wasActive = sa.IsActive;
 
                 if (dto.AccountName is { } rawAccountName)
                 {
@@ -121,7 +125,27 @@ public static class ServiceAccountsEndpoints
                     sa.IsActive = dto.IsActive.Value;
 
                 session.Store(sa);
-                await session.SaveChangesAsync();
+                await session.SaveChangesAsync(ct);
+
+                // Audit #6 — deactivating an SA must cut off its live M2M access, not
+                // just block new token issuance. The SA's client_credentials tokens
+                // carry sub = sa.Id (across every credential), so a by-subject revoke
+                // kills them all; reactivation re-issues normally. Gate on the
+                // persisted active→inactive TRANSITION (prior state from the load,
+                // new state read back from the store) rather than the raw request
+                // flag: a benign edit, or re-saving an already-inactive SA, does not
+                // trigger a pointless revoke sweep.
+                if (wasActive)
+                {
+                    var persisted = await session.LoadAsync<ServiceAccount>(id.Guid, ct);
+                    if (persisted is { IsActive: false })
+                    {
+                        var subject = persisted.Id.ToString();
+                        await revoker.RevokeTokensBySubjectAsync(subject, ct);
+                        await revoker.RevokeAuthorizationsBySubjectAsync(subject, ct);
+                    }
+                }
+
                 var updated = ToDto(sa);
                 dispatcher.DispatchUpdatedEvent("ServiceAccount", updated, session.TenantId);
                 return Results.Ok(updated);
@@ -134,6 +158,7 @@ public static class ServiceAccountsEndpoints
                 IDocumentSession session,
                 OAuthAdminService oauth,
                 DataEventDispatcher dispatcher,
+                IOAuthGrantRevoker revoker,
                 CancellationToken ct) =>
             {
                 var sa = await session.LoadAsync<ServiceAccount>(id.Guid, ct);
@@ -158,6 +183,15 @@ public static class ServiceAccountsEndpoints
                 sa.IsDeleted = true;
                 session.Update(sa);
                 await session.SaveChangesAsync(ct);
+
+                // Audit #7 — deleting an SA cascade-deletes its credential clients,
+                // but a deleted client document does NOT invalidate already-issued
+                // M2M tokens. Revoke them by subject (sub = sa.Id) so outstanding
+                // reference tokens stop validating immediately.
+                var subject = sa.Id.ToString();
+                await revoker.RevokeTokensBySubjectAsync(subject, ct);
+                await revoker.RevokeAuthorizationsBySubjectAsync(subject, ct);
+
                 dispatcher.DispatchDeletedEvent("ServiceAccount", new ShortGuid(sa.Id).ToString(), session.TenantId);
                 return Results.Ok(new { DeletedCredentialCount = deletedCredentialCount });
             })
@@ -210,9 +244,16 @@ public static class ServiceAccountsEndpoints
                 ShortGuid id,
                 string credId,
                 OAuthAdminService svc,
+                IOAuthGrantRevoker revoker,
                 CancellationToken ct) =>
             {
                 var result = await svc.RotateServiceAccountCredentialAsync(id.Guid, credId, ct);
+                // Audit #8 — rotating a credential's secret does NOT invalidate tokens
+                // already minted with the old secret (a bearer token doesn't re-check
+                // the secret). Revoke exactly this client's outstanding tokens
+                // (credId == the OAuth application id) so rotation is a real cut-off.
+                if (!result.IsError)
+                    await revoker.RevokeTokensByApplicationIdAsync(credId, ct);
                 return result.ToResult(secret => Results.Ok(secret));
             })
             .WithName("V2_ServiceAccount_Credentials_Rotate")
@@ -222,10 +263,15 @@ public static class ServiceAccountsEndpoints
                 ShortGuid id,
                 string credId,
                 OAuthAdminService svc,
+                IOAuthGrantRevoker revoker,
                 CancellationToken ct) =>
             {
                 var result = await svc.DeleteServiceAccountCredentialAsync(id.Guid, credId, ct);
-                return result.IsError ? result.ToResult() : Results.NoContent();
+                if (result.IsError) return result.ToResult();
+                // Audit #7 (per-credential) — same as rotate: a deleted client doc
+                // doesn't invalidate its already-issued M2M tokens. Revoke them.
+                await revoker.RevokeTokensByApplicationIdAsync(credId, ct);
+                return Results.NoContent();
             })
             .WithName("V2_ServiceAccount_Credentials_Delete")
             .RequiresPermission("service-account:write");

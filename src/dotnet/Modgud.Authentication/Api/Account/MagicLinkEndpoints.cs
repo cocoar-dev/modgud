@@ -89,8 +89,12 @@ public static class MagicLinkEndpoints
                 .Where(c => c.UserId == user.Id)
                 .ToListAsync();
 
+            // Audit #25 follow-up — exclude already-consumed challenges. Since the
+            // consume switched from Delete to a mark-consumed Store, a just-used link
+            // leaves a non-expired row behind; without this filter it would spuriously
+            // rate-limit the user's NEXT link request for up to RateLimitMinutes.
             var recentChallenge = existingChallenges
-                .FirstOrDefault(c => !c.IsExpired &&
+                .FirstOrDefault(c => !c.IsExpired && !c.IsConsumed &&
                     (DateTimeOffset.UtcNow - c.CreatedAt).TotalMinutes < config.RateLimitMinutes);
 
             if (recentChallenge is not null)
@@ -155,6 +159,7 @@ public static class MagicLinkEndpoints
         group.MapPost("login", async (
             MagicLinkLoginDto request,
             IDocumentSession session,
+            UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             ISessionService sessionService,
             ISecurityAuditLog securityAudit,
@@ -171,7 +176,7 @@ public static class MagicLinkEndpoints
 
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
-            if (challenge is null || challenge.IsExpired)
+            if (challenge is null || challenge.IsExpired || challenge.IsConsumed)
             {
                 securityAudit.Record(new SecurityAuditRecord
                 {
@@ -187,8 +192,13 @@ public static class MagicLinkEndpoints
                 return Results.Json(new { Message = "Invalid or expired link" }, statusCode: 401);
             }
 
-            // Load user
-            var user = await session.LoadAsync<ApplicationUser>(request.UserId);
+            // Load via the UserManager finder (not a raw session load) so the
+            // in-memory user is hydrated with the AUTHORITATIVE security data from
+            // UserSecurityData (stamp, 2FA, lockout). The cookie minted below AND
+            // the user.TwoFactorEnabled TOTP step-up gate further down must not
+            // read a stale ApplicationUser mirror; FindByIdAsync also filters
+            // IsDeleted (the explicit gate stays as defense-in-depth).
+            var user = await userManager.FindByIdAsync(request.UserId.ToString());
             if (user is null || user.IsDeleted || !user.IsActive)
             {
                 securityAudit.Record(new SecurityAuditRecord
@@ -229,9 +239,16 @@ public static class MagicLinkEndpoints
                     Email: default));
             }
 
-            // Delete challenge (one-time use) — consumed regardless of whether a
-            // second factor still has to be presented below.
-            session.Delete(challenge);
+            // Mark the challenge consumed (one-time use) — regardless of whether a
+            // second factor still has to be presented below. Audit #25: this is a
+            // version-checked Store, not a Delete. Marten does NOT enforce optimistic
+            // concurrency on deletes, so two concurrent redemptions of the same link
+            // would both delete-and-proceed; a Store of the ConsumedAt flag makes the
+            // losing racer's SaveChangesAsync throw a ConcurrencyException (caught
+            // below → 401), while a later replay is rejected by the IsConsumed gate
+            // above. The row is reaped by expiry / the per-user request sweep.
+            challenge.ConsumedAt = DateTimeOffset.UtcNow;
+            session.Store(challenge);
 
             // Audit M1: a magic-link must NOT bypass a user's TOTP second factor.
             // Mailbox possession alone is exactly the channel TOTP is meant to
@@ -241,7 +258,18 @@ public static class MagicLinkEndpoints
             // here would defeat the purpose (the mailbox is already in play).
             if (user.TwoFactorEnabled)
             {
-                await session.SaveChangesAsync();
+                try
+                {
+                    await session.SaveChangesAsync();
+                }
+                catch (JasperFx.ConcurrencyException)
+                {
+                    // Audit #25 — a concurrent redemption already consumed this
+                    // one-time link (version-checked delete lost the race). Treat as
+                    // invalid; do NOT establish the partial-2FA state for a stale link.
+                    ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.MagicLink, ModgudMeters.LoginOutcome.Failure);
+                    return Results.Json(new { Message = "Invalid or expired link" }, statusCode: 401);
+                }
 
                 var twoFactorIdentity = new ClaimsIdentity(IdentityConstants.TwoFactorUserIdScheme);
                 twoFactorIdentity.AddClaim(new Claim(ClaimTypes.Name, user.Id.ToString()));
@@ -260,7 +288,17 @@ public static class MagicLinkEndpoints
             session.Events.Append(user.Id, new Modgud.Authentication.Events.UserLoggedInEvent(
                 user.Id, IpAddress: null, Method: ModgudMeters.LoginMethod.MagicLink));
 
-            await session.SaveChangesAsync();
+            try
+            {
+                await session.SaveChangesAsync();
+            }
+            catch (JasperFx.ConcurrencyException)
+            {
+                // Audit #25 — a concurrent redemption already consumed this one-time
+                // link. Don't mint a second full session for a stale link.
+                ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.MagicLink, ModgudMeters.LoginOutcome.Failure);
+                return Results.Json(new { Message = "Invalid or expired link" }, statusCode: 401);
+            }
 
             // Sign in — Magic Link is always persistent; user can request a new link anytime.
             await signInManager.SignInAsync(user, isPersistent: true);

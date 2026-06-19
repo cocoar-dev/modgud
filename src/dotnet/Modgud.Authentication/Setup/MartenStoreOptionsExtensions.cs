@@ -65,8 +65,15 @@ public static class MartenStoreOptionsExtensions
         options.Schema.For<EmailOtpChallenge>()
             .Identity(x => x.Id);
 
+        // Audit #25 — optimistic concurrency makes the "one-time use" consume
+        // atomic. Login loads the challenge then deletes it; two concurrent
+        // redemptions of the same link both pass the null/expiry check before
+        // either deletes. The version-checked delete lets exactly one win — the
+        // loser's stale delete throws a ConcurrencyException, which the login
+        // endpoint maps to a 401 "already used".
         options.Schema.For<MagicLinkChallenge>()
             .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
             .Index(x => x.UserId);
 
         // C15 — bootstrap-invite for first-admin creation in a realm.

@@ -78,22 +78,24 @@ public sealed class CimdClientResolver
     {
         if (!CimdClientId.IsCimdClientId(clientId)) return null;
 
-        var cacheKey = $"cimd:doc:{TenantContext.Current}:{clientId}";
-        if (_cache.TryGetValue<CachedCimd>(cacheKey, out var cached) && cached is not null)
-            return Synthesize(cached);
-
-        // Realm opt-in is checked on the resolve (cache-miss) path. A cache
-        // hit serves without a settings read; disabling CIMD stops NEW
-        // resolutions and takes full effect at cache expiry — the same
-        // "disable doesn't retroactively revoke" stance DCR takes. The query
-        // session is opened lazily here (never in the constructor) so a
-        // non-CIMD request on a realm without a physical DB never touches it.
+        // Audit #27 — read the realm opt-in on EVERY resolve, BEFORE the cache
+        // lookup. Previously Enabled was only checked on the cache-miss path, so an
+        // already-cached client_id kept resolving (and minting tokens) for up to the
+        // cache TTL (24h) after an admin set Cimd.Enabled=false — a stale security
+        // decision unbounded by the admin action. A cheap tenant-singleton LoadAsync
+        // makes the opt-in live while the cache still memoizes the expensive metadata
+        // fetch. The query session is opened lazily here (never in the constructor)
+        // so a non-CIMD request on a realm without a physical DB never touches it.
         CimdSettings? settings;
         await using (var session = _sessionFactory.OpenQuerySession())
         {
             settings = (await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, cancellationToken))?.Cimd;
         }
         if (settings is null || !settings.Enabled) return null;
+
+        var cacheKey = $"cimd:doc:{TenantContext.Current}:{clientId}";
+        if (_cache.TryGetValue<CachedCimd>(cacheKey, out var cached) && cached is not null)
+            return Synthesize(cached);
 
         if (!CimdClientId.TryValidateUrl(clientId, out var uri, out var urlError) || uri is null)
         {

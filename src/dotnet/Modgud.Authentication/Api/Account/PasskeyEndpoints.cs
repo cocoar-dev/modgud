@@ -154,9 +154,13 @@ public static class PasskeyEndpoints
                 OriginalOptions = options,
                 IsCredentialIdUniqueToUserCallback = async (args, ct) =>
                 {
-                    var existing = await session.Query<StoredPasskeyCredential>()
-                        .AnyAsync(c => c.CredentialId == args.CredentialId, ct);
-                    return !existing;
+                    // Audit #33 — compare CredentialId (byte[]) IN MEMORY. A Marten
+                    // LINQ `c.CredentialId == args.CredentialId` is untranslatable
+                    // (Postgres 22P02), so the uniqueness guard would throw on enroll
+                    // (web register 500) instead of detecting a duplicate. Mirror the
+                    // login path: materialize, then SequenceEqual.
+                    var all = await session.Query<StoredPasskeyCredential>().ToListAsync(ct);
+                    return !all.Any(c => c.CredentialId.SequenceEqual(args.CredentialId));
                 },
             });
 
@@ -257,7 +261,13 @@ public static class PasskeyEndpoints
             var options = fido2.GetAssertionOptions(new GetAssertionOptionsParams
             {
                 AllowedCredentials = allowedCredentials ?? [],
-                UserVerification = UserVerificationRequirement.Preferred,
+                // Audit #16 — Required, not Preferred. A passkey is treated as a full
+                // (MFA-grade) credential here, so the assertion MUST prove user
+                // verification (biometric/PIN). With Preferred the authenticator may
+                // skip UV and MakeAssertionAsync would still accept it, downgrading a
+                // passkey login to single-factor "possession only". Required makes the
+                // library reject a non-UV assertion.
+                UserVerification = UserVerificationRequirement.Required,
             });
 
             // Store challenge in a secure cookie (anonymous users don't have sessions).
@@ -289,6 +299,7 @@ public static class PasskeyEndpoints
             HttpContext context,
             RealmScopedFido2Factory fido2Factory,
             IDocumentSession session,
+            UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             ISessionService sessionService,
             JsonElement body,
@@ -348,11 +359,12 @@ public static class PasskeyEndpoints
             session.Store(storedCredential);
             await session.SaveChangesAsync();
 
-            // Sign in
-            var user = await session.LoadAsync<ApplicationUser>(storedCredential.UserId);
-            // Defense-in-depth: passkey login loads the user directly (bypassing
-            // the Identity store's filters), so reject deleted users explicitly —
-            // not just inactive ones — closing the soft-delete auth-bypass.
+            // Sign in — load via the UserManager finder so the user is hydrated
+            // with authoritative security data (stamp/2FA/lockout) from
+            // UserSecurityData rather than a stale ApplicationUser mirror.
+            // FindByIdAsync also filters IsDeleted; the explicit IsActive/IsDeleted
+            // gate below stays as defense-in-depth (soft-delete auth-bypass).
+            var user = await userManager.FindByIdAsync(storedCredential.UserId.ToString());
             if (user is null || !user.IsActive || user.IsDeleted)
             {
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Passkey, ModgudMeters.LoginOutcome.Failure);

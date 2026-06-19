@@ -2,11 +2,13 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
 using Marten;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Api.Account.Services;
 using Modgud.Authentication;
+using Modgud.Infrastructure.OpenIddict;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Sessions;
 using Modgud.Infrastructure.Observability;
@@ -47,7 +49,8 @@ public static class MfaEndpoints
         // POST /api/account/mfa/setup — Generate authenticator key + QR code URI
         group.MapPost("setup", [Authorize] async (
             HttpContext context,
-            UserManager<ApplicationUser> userManager) =>
+            UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
@@ -58,6 +61,12 @@ public static class MfaEndpoints
 
             if (string.IsNullOrEmpty(unformattedKey))
                 return Results.Problem("Failed to generate authenticator key.");
+
+            // ResetAuthenticatorKeyAsync rotates the security stamp → without a
+            // refresh the acting session is killed at the next SecurityStampValidator
+            // pass (self-logout). Re-issue THIS session with the fresh stamp; the
+            // user's OTHER sessions stay invalidated (the point of the rotation).
+            await signInManager.RefreshSignInAsync(user);
 
             var sharedKey = FormatKey(unformattedKey);
             var authenticatorUri = GenerateQrCodeUri(user.UserName ?? user.Acronym ?? "user", unformattedKey);
@@ -70,7 +79,10 @@ public static class MfaEndpoints
         group.MapPost("verify", [Authorize] async (
             HttpContext context,
             UserManager<ApplicationUser> userManager,
-            MfaVerifyRequest request) =>
+            SignInManager<ApplicationUser> signInManager,
+            IOAuthGrantRevoker grantRevoker,
+            MfaVerifyRequest request,
+            CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
@@ -87,6 +99,17 @@ public static class MfaEndpoints
             // Enable 2FA
             await userManager.SetTwoFactorEnabledAsync(user, true);
 
+            // SetTwoFactorEnabledAsync rotates the security stamp → re-issue the
+            // acting session so the user who just enabled 2FA isn't self-logged-out
+            // at the next validation pass (other sessions remain invalidated).
+            await signInManager.RefreshSignInAsync(user);
+
+            // Audit #10 — the stamp rotation kills cookies, but stock OpenIddict
+            // introspection trusts store status, so OAuth reference tokens issued
+            // before this change would still validate. Revoke them so a 2FA change
+            // is a real cut-off across channels (consent grants are kept).
+            await grantRevoker.RevokeTokensBySubjectAsync(user.Id.ToString(), ct);
+
             return Results.Ok(new { Message = "MFA has been enabled.", Enabled = true });
         })
         .WithName("Mfa_Verify");
@@ -98,8 +121,11 @@ public static class MfaEndpoints
         group.MapPost("disable", [Authorize] async (
             HttpContext context,
             UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
+            IOAuthGrantRevoker grantRevoker,
             IAuthSettings appSettings,
-            IDocumentSession session) =>
+            IDocumentSession session,
+            CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
@@ -115,6 +141,15 @@ public static class MfaEndpoints
 
             await userManager.SetTwoFactorEnabledAsync(user, false);
             await userManager.ResetAuthenticatorKeyAsync(user);
+
+            // Both calls above rotate the security stamp → re-issue the acting
+            // session so disabling 2FA doesn't self-logout the current session at
+            // the next validation pass (other sessions remain invalidated).
+            await signInManager.RefreshSignInAsync(user);
+
+            // Audit #10 — revoke OAuth reference tokens too (see verify above);
+            // removing a 2FA factor must cut off live access across channels.
+            await grantRevoker.RevokeTokensBySubjectAsync(user.Id.ToString(), ct);
 
             return Results.Ok(new
             {
@@ -146,6 +181,20 @@ public static class MfaEndpoints
             // Capture the user that's mid-2FA *before* we sign in — afterwards the
             // partial sign-in cookie is gone and we lose the handle.
             var twoFactorUser = await signInManager.GetTwoFactorAuthenticationUserAsync();
+
+            // Audit remediation #14: TwoFactorAuthenticatorSignInAsync only runs
+            // CanSignInAsync (lockout + confirmation) — it never re-checks
+            // IsActive/IsDeleted. Deactivation sets IsActive=false without a
+            // LockoutEnd, so CanSignInAsync passes and a user deactivated mid-login
+            // could complete TOTP and obtain a durable, kill-switch-surviving
+            // session. Reject + clear the partial scheme before sign-in.
+            if (twoFactorUser is not null && (!twoFactorUser.IsActive || twoFactorUser.IsDeleted))
+            {
+                await context.SignOutAsync(IdentityConstants.TwoFactorUserIdScheme);
+                Serilog.Log.Warning("MFA login rejected — user inactive/deleted. UserId={UserId} IP={IP}", twoFactorUser.Id, ip);
+                ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Mfa, ModgudMeters.LoginOutcome.Failure);
+                return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+            }
 
             var result = await signInManager.TwoFactorAuthenticatorSignInAsync(
                 code, isPersistent: request.RememberMe, rememberClient: request.RememberMachine);

@@ -1,4 +1,5 @@
 import type { EntityStatus } from './common'
+import type { AccessTokenType } from './oauth'
 
 export interface ServiceAccountDto {
   Id: string
@@ -34,6 +35,8 @@ export interface IssueServiceAccountCredentialDto {
   Scopes: string[]
   AppIds: string[]
   AccessTokenLifetime?: number
+  /** Reference (opaque, instantly revocable — default) vs Jwt (self-validating). */
+  AccessTokenType?: AccessTokenType
 }
 
 export interface UpdateServiceAccountCredentialDto {
@@ -42,6 +45,7 @@ export interface UpdateServiceAccountCredentialDto {
   AppIds?: string[]
   AccessTokenLifetime?: number
   Enabled?: boolean
+  AccessTokenType?: AccessTokenType
 }
 
 import type { OAuthClientDto } from './oauth'

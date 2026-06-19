@@ -293,15 +293,18 @@ public static class AuthorizationEndpoints
                 return ForbidInvalidGrant("The user is no longer allowed to sign in.");
             }
 
-            // OAUTH-07 — security-stamp parity check. UserManager.UpdateSecurityStampAsync
-            // is called on user-disable, password-change, role-revocation, etc.
-            // (see SESSION-01 in Program.cs for the cookie side). Refresh-token
-            // grant must honor the same kill-switch: if the stamp embedded in
-            // the original token no longer matches the user's current stamp,
-            // refuse to issue a fresh access token. Without this check a
-            // stolen-or-compromised refresh token stays valid for the full
-            // RefreshTokenLifetimeDays (14d default) regardless of password
-            // resets and account deactivations in between.
+            // OAUTH-07 — security-stamp parity check. The stamp is rotated on
+            // password change, password reset, account deactivate/delete, and
+            // explicit force-logout (see SESSION-01 in Program.cs for the cookie
+            // side). Audit #11: RBAC mutations (group/role/permission changes) are
+            // FK-based and do NOT rotate the stamp — a demotion is therefore picked
+            // up at the NEXT refresh, which re-reads durable permissions via
+            // BakeFederatedResourceAccessAsync, not instantly. Refresh-token grant
+            // honors the stamp kill-switch: if the stamp embedded in the original
+            // token no longer matches the user's current stamp, refuse to issue a
+            // fresh access token. Without this check a stolen-or-compromised refresh
+            // token stays valid for the full RefreshTokenLifetimeDays (14d default)
+            // regardless of password resets and account deactivations in between.
             var tokenStamp = result.Principal?.FindFirstValue("AspNet.Identity.SecurityStamp");
             var currentStamp = await userManager.GetSecurityStampAsync(user);
             if (!string.IsNullOrEmpty(tokenStamp) &&
@@ -498,6 +501,24 @@ public static class AuthorizationEndpoints
                 {
                     [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidToken,
                     [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The specified access token is bound to an account that no longer exists.",
+                }),
+                new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+        }
+
+        // Audit #9 — re-check account state before serving identity/authz, mirroring
+        // the token-exchange guard (:~291). FindByIdAsync already filters IsDeleted,
+        // but a client that opted into JWT access tokens holds a self-validating token
+        // with no revocable store doc — so a freshly DEACTIVATED user's unexpired JWT
+        // would otherwise keep reading email/profile + resource_access for a full
+        // access-token lifetime. (Reference-token clients are already cut off by the
+        // revoker; this closes the JWT window.)
+        if (!user.IsActive || user.IsDeleted)
+        {
+            return Results.Challenge(
+                new AuthenticationProperties(new Dictionary<string, string?>
+                {
+                    [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidToken,
+                    [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The user account is no longer active.",
                 }),
                 new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
         }

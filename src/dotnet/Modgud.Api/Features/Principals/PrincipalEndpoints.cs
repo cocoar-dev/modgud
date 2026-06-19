@@ -1,4 +1,5 @@
 using BuildingBlocks.Helper;
+using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Principals;
 using Marten;
 using Modgud.Authentication.Domain;
@@ -53,11 +54,21 @@ public static class PrincipalEndpoints
                         // Description doubles as the "Purpose" line for
                         // ServiceAccounts in the picker subtitle.
                         Description = groupP?.Description ?? serviceAccount?.Purpose,
-                        Email = person?.Email ?? groupP?.Email,
+                        // Audit #19 — Email deliberately dropped. It was the
+                        // disproportionate PII in this directory dump and the picker
+                        // (the only consumer) never rendered it. Names/acronym stay
+                        // because the member picker shows them; the leak was email
+                        // enumeration, now gone, and the endpoint requires
+                        // authorization-group:read so a zero-role user can't dump the
+                        // directory at all.
                     };
                 }));
         })
-        .WithName("Principal_Lookup");
+        .WithName("Principal_Lookup")
+        // Audit #19 — was authenticated-only (.RequireAuthorization at the group),
+        // which let any zero-role user enumerate the whole realm directory. The sole
+        // consumer is the group-member picker, already gated on this permission.
+        .RequiresPermission("authorization-group:read");
 
         return application;
     }

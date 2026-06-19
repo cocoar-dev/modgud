@@ -208,7 +208,7 @@ public static class UsersEndpoints
             .RequiresPermission("user:write");
 
         // Set/Reset password for a user
-        userGroup.MapPut("{id}/password", async (ShortGuid id, SetPasswordDto dto, IDocumentSession session, UserManager<ApplicationUser> userManager) =>
+        userGroup.MapPut("{id}/password", async (ShortGuid id, SetPasswordDto dto, IDocumentSession session, UserManager<ApplicationUser> userManager, IUserAccessRevoker accessRevoker) =>
             {
                 var person = await session.LoadAsync<Person>(id.Guid);
                 if (person is null || person.IsDeleted)
@@ -246,6 +246,12 @@ public static class UsersEndpoints
 
                 session.Events.Append(id.Guid, new UserPasswordChangedEvent(id.Guid, null));
                 await session.SaveChangesAsync();
+
+                // Audit remediation #2: the incident-response lever ("user compromised,
+                // reset their password"). The reset rotates the Identity stamp but never
+                // revoked OAuth tokens / device-session rows — kill them too. Mirrors the
+                // sibling /active endpoint, which already injects the revoker.
+                await accessRevoker.RevokeAllAccessAsync(id.Guid, AccessRevocationReason.ForceSignOut);
 
                 return Results.Ok(new { Message = "Password set successfully" });
             })

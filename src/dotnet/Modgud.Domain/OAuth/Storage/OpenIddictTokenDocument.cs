@@ -6,6 +6,14 @@ namespace Modgud.Domain.OAuth.Storage;
 /// Document entity for OpenIddict tokens. NOT event-sourced — tokens are
 /// security-sensitive and ephemeral. Stored as a plain document in each realm's
 /// tenant DB.
+///
+/// <para><see cref="ConcurrencyToken"/> is the optimistic-concurrency guard for
+/// the refresh-token redeem (Audit #22). OpenIddict spreads the redeem across two
+/// sessions (the manager loads the token via <c>FindBy…</c>, then the store flips
+/// it to Redeemed in a fresh session via <c>UpdateAsync</c>) and preserves this
+/// field untouched across that boundary, so the store can compare the caller's
+/// loaded token against the live row and reject a stale write. See
+/// <c>MartenTokenStore.UpdateAsync</c>.</para>
 /// </summary>
 public class OpenIddictTokenDocument
 {

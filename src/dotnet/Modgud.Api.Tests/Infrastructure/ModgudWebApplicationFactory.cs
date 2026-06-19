@@ -119,6 +119,22 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
                 options.Cookie.SecurePolicy = CookieSecurePolicy.None;
             });
 
+            // SecurityStamp revalidation — make every authenticated request a
+            // stamp-revalidation test. Production ValidationInterval is 5 min
+            // (Program.cs), so a follow-up request right after sign-in lands
+            // inside the cache window and never re-validates — which structurally
+            // MASKS any sign-in path that mints a cookie WITHOUT the user's
+            // authoritative security stamp. Forcing Zero closes that blind spot:
+            // the affected non-password paths (magic-link / passkey / OIDC / SAML)
+            // now fail their post-sign-in assertions, and any future sign-in path
+            // that regresses the same way fails its own happy-path test.
+            // Password-based logins re-align the in-memory stamp via FindByName
+            // before minting, so they stay green.
+            services.Configure<SecurityStampValidatorOptions>(options =>
+            {
+                options.ValidationInterval = TimeSpan.Zero;
+            });
+
             // Replace email service with in-memory implementation for tests
             // Must construct manually to avoid circular dependency:
             // InMemoryEmailService(ILogger, IEmailService?) → IEmailService = InMemoryEmailService → loop

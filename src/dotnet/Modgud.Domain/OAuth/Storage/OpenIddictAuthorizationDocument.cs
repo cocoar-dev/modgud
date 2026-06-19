@@ -7,6 +7,11 @@ namespace Modgud.Domain.OAuth.Storage;
 /// are security-sensitive and ephemeral; we store them as plain documents in each
 /// realm's tenant DB. Mirrors the legacy backend so realm DBs reused from Legacy
 /// keep working without a data migration.
+///
+/// <para><see cref="ConcurrencyToken"/> is the optimistic-concurrency guard for
+/// the same reason as <see cref="OpenIddictTokenDocument"/> (Audit #22): the
+/// refresh-grant pipeline updates the parent authorization across a session
+/// boundary, and a stale write must lose rather than silently overwrite.</para>
 /// </summary>
 public class OpenIddictAuthorizationDocument
 {

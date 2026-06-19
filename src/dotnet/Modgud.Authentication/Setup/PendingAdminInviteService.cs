@@ -60,9 +60,14 @@ public interface IPendingAdminInviteService
     /// <see cref="Error"/> describing why (expired / used / unknown
     /// token / weak password).
     ///
-    /// <para>Atomicity: invite-mark-used + user-create + role/group seed
-    /// all share one Marten transaction. If the password rejected by
-    /// Identity, the invite stays unused and can be retried.</para>
+    /// <para>Consistency (Audit #31): the user-create commits first (through the
+    /// UserManager's own store session), then the role/group seed, then the invite
+    /// is marked used — these are SEPARATE commits, not one transaction. A weak
+    /// password is rejected before any commit, so the invite stays unused and can be
+    /// retried. A crash after the admin exists but before the invite is marked used
+    /// leaves a benign INERT token: the admin already exists, so the unique
+    /// username/email indexes block a second admin, and a later replay is detected
+    /// (the target admin exists) and the invite marked used then.</para>
     /// </summary>
     Task<ErrorOr<BootstrappedAdmin>> ConsumeAsync(
         string plaintextToken,
@@ -202,9 +207,22 @@ public sealed class PendingAdminInviteService(
 
         if (bootstrapResult.IsError)
         {
-            // Don't mark the invite used — recipient can retry with a
-            // valid password. The reuse-detection still fires when the
-            // bootstrap eventually succeeds.
+            // Audit #31 — distinguish a retryable failure from a spent invite.
+            // A weak password is rejected before the user is created, so keep the
+            // invite armed for a retry. But if the target admin ALREADY exists, a
+            // prior consume succeeded (possibly crashing before it marked the invite
+            // used) — the invite is spent, so mark it used now instead of leaving it
+            // armed indefinitely. (Replays can't create a second admin anyway: the
+            // unique username/email indexes reject them — this just stops the stale
+            // armed token + the misleading audit trail.)
+            var adminAlreadyExists = await session.Query<ApplicationUser>()
+                .AnyAsync(u => !u.IsDeleted && u.NormalizedEmail == invite.Email.ToUpperInvariant(), ct);
+            if (adminAlreadyExists)
+            {
+                invite.UsedAt = DateTimeOffset.UtcNow;
+                session.Store(invite);
+                await session.SaveChangesAsync(ct);
+            }
             return bootstrapResult.Errors;
         }
 

@@ -4,6 +4,7 @@ using System.Text.Json;
 using Modgud.Domain.OAuth.Storage;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Marten;
+using JasperFx;
 using OpenIddict.Abstractions;
 
 namespace Modgud.Infrastructure.OpenIddict;
@@ -188,66 +189,76 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 
     public async ValueTask<long> PruneAsync(DateTimeOffset threshold, CancellationToken cancellationToken)
     {
-        await using var session = _sessionFactory.OpenSession();
-        var authorizations = await session.Query<OpenIddictAuthorizationDocument>()
-            .Where(x => x.CreationDate < threshold &&
-                (x.Status == OpenIddictConstants.Statuses.Inactive ||
-                 x.Status == OpenIddictConstants.Statuses.Revoked))
-            .ToListAsync(cancellationToken);
+        return await RetryOnConflictAsync(async session =>
+        {
+            var authorizations = await session.Query<OpenIddictAuthorizationDocument>()
+                .Where(x => x.CreationDate < threshold &&
+                    (x.Status == OpenIddictConstants.Statuses.Inactive ||
+                     x.Status == OpenIddictConstants.Statuses.Revoked))
+                .ToListAsync(cancellationToken);
 
-        foreach (var authorization in authorizations) session.Delete(authorization);
-        await session.SaveChangesAsync(cancellationToken);
-        return authorizations.Count;
+            foreach (var authorization in authorizations) session.Delete(authorization);
+            return authorizations.Count;
+        }, cancellationToken);
     }
 
-    public async ValueTask<long> RevokeAsync(string? subject, string? client, string? status, string? type, CancellationToken cancellationToken)
-    {
-        await using var session = _sessionFactory.OpenSession();
-        var query = session.Query<OpenIddictAuthorizationDocument>().AsQueryable();
-
-        if (!string.IsNullOrEmpty(subject)) query = query.Where(x => x.Subject == subject);
-        if (!string.IsNullOrEmpty(client)) query = query.Where(x => x.ApplicationId == client);
-        if (!string.IsNullOrEmpty(status)) query = query.Where(x => x.Status == status);
-        if (!string.IsNullOrEmpty(type)) query = query.Where(x => x.Type == type);
-
-        var authorizations = await query.ToListAsync(cancellationToken);
-        foreach (var authorization in authorizations)
+    public ValueTask<long> RevokeAsync(string? subject, string? client, string? status, string? type, CancellationToken cancellationToken) =>
+        RevokeMatchingAsync(query =>
         {
-            authorization.Status = OpenIddictConstants.Statuses.Revoked;
-            session.Store(authorization);
-        }
-        await session.SaveChangesAsync(cancellationToken);
-        return authorizations.Count;
-    }
+            if (!string.IsNullOrEmpty(subject)) query = query.Where(x => x.Subject == subject);
+            if (!string.IsNullOrEmpty(client)) query = query.Where(x => x.ApplicationId == client);
+            if (!string.IsNullOrEmpty(status)) query = query.Where(x => x.Status == status);
+            if (!string.IsNullOrEmpty(type)) query = query.Where(x => x.Type == type);
+            return query;
+        }, cancellationToken);
 
-    public async ValueTask<long> RevokeByApplicationIdAsync(string identifier, CancellationToken cancellationToken)
-    {
-        await using var session = _sessionFactory.OpenSession();
-        var authorizations = await session.Query<OpenIddictAuthorizationDocument>()
-            .Where(x => x.ApplicationId == identifier)
-            .ToListAsync(cancellationToken);
-        foreach (var authorization in authorizations)
-        {
-            authorization.Status = OpenIddictConstants.Statuses.Revoked;
-            session.Store(authorization);
-        }
-        await session.SaveChangesAsync(cancellationToken);
-        return authorizations.Count;
-    }
+    public ValueTask<long> RevokeByApplicationIdAsync(string identifier, CancellationToken cancellationToken) =>
+        RevokeMatchingAsync(query => query.Where(x => x.ApplicationId == identifier), cancellationToken);
 
-    public async ValueTask<long> RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
-    {
-        await using var session = _sessionFactory.OpenSession();
-        var authorizations = await session.Query<OpenIddictAuthorizationDocument>()
-            .Where(x => x.Subject == subject)
-            .ToListAsync(cancellationToken);
-        foreach (var authorization in authorizations)
+    public ValueTask<long> RevokeBySubjectAsync(string subject, CancellationToken cancellationToken) =>
+        RevokeMatchingAsync(query => query.Where(x => x.Subject == subject), cancellationToken);
+
+    /// <summary>
+    /// Load the matching authorizations, flip them to Revoked, and persist —
+    /// retrying the whole load-and-store on a Marten <see cref="ConcurrencyException"/>.
+    /// See <c>MartenTokenStore.RevokeMatchingAsync</c>: Audit #22 enabled optimistic
+    /// concurrency, so a revoke sweep racing a concurrent refresh-grant authorization
+    /// update would throw; revoke is idempotent so a fresh reload + re-store converges.
+    /// </summary>
+    private async ValueTask<long> RevokeMatchingAsync(
+        Func<IQueryable<OpenIddictAuthorizationDocument>, IQueryable<OpenIddictAuthorizationDocument>> filter,
+        CancellationToken cancellationToken) =>
+        await RetryOnConflictAsync(async session =>
         {
-            authorization.Status = OpenIddictConstants.Statuses.Revoked;
-            session.Store(authorization);
+            var authorizations = await filter(session.Query<OpenIddictAuthorizationDocument>().AsQueryable())
+                .ToListAsync(cancellationToken);
+            foreach (var authorization in authorizations)
+            {
+                authorization.Status = OpenIddictConstants.Statuses.Revoked;
+                session.Store(authorization);
+            }
+            return authorizations.Count;
+        }, cancellationToken);
+
+    private async ValueTask<long> RetryOnConflictAsync(
+        Func<IDocumentSession, Task<int>> work, CancellationToken cancellationToken)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; ; attempt++)
+        {
+            await using var session = _sessionFactory.OpenSession();
+            var affected = await work(session);
+            if (affected == 0) return 0;
+            try
+            {
+                await session.SaveChangesAsync(cancellationToken);
+                return affected;
+            }
+            catch (ConcurrencyException) when (attempt < maxAttempts)
+            {
+                // Reload + redo against a fresh session on the next loop turn.
+            }
         }
-        await session.SaveChangesAsync(cancellationToken);
-        return authorizations.Count;
     }
 
     public ValueTask SetApplicationIdAsync(OpenIddictAuthorizationDocument a, string? v, CancellationToken _) { a.ApplicationId = v; return default; }
@@ -266,9 +277,28 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
 
     public async ValueTask UpdateAsync(OpenIddictAuthorizationDocument authorization, CancellationToken cancellationToken)
     {
-        authorization.ConcurrencyToken = Guid.NewGuid().ToString();
         await using var session = _sessionFactory.OpenSession();
+
+        // Audit #22 — same guard as MartenTokenStore.UpdateAsync: re-load the live
+        // row here so same-session optimistic concurrency engages, and compare the
+        // caller's ConcurrencyToken against the live one to reject a stale write.
+        var current = await session.LoadAsync<OpenIddictAuthorizationDocument>(authorization.Id, cancellationToken);
+        if (current is null || !string.Equals(current.ConcurrencyToken, authorization.ConcurrencyToken, StringComparison.Ordinal))
+        {
+            throw new OpenIddictExceptions.ConcurrencyException(
+                "The authorization was concurrently updated and cannot be persisted.");
+        }
+
+        authorization.ConcurrencyToken = Guid.NewGuid().ToString();
         session.Store(authorization);
-        await session.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await session.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyException ex)
+        {
+            throw new OpenIddictExceptions.ConcurrencyException(
+                "The authorization was concurrently updated and cannot be persisted.", ex);
+        }
     }
 }

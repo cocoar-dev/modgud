@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using ErrorOr;
 using Marten;
+using Marten.Patching;
 using Modgud.Authentication.Domain;
 using Modgud.Infrastructure.Email;
 
@@ -93,8 +94,14 @@ public class EmailOtpService(IDocumentSession session, IEmailService emailServic
         var codeHash = HashCode(code.Trim());
         if (codeHash != challenge.CodeHash)
         {
-            challenge.Attempts++;
-            session.Store(challenge);
+            // Audit #24 — increment the attempt counter ATOMICALLY. The endpoint is
+            // anonymous and unthrottled, so this counter is the brute-force defense
+            // for a 6-digit code. A read-then-Store increment lets concurrent wrong
+            // guesses all read Attempts=N and overwrite each other (last writer wins
+            // at N+1), so the MaxAttempts lockout never trips and the code space can
+            // be exhausted. A server-side jsonb increment lands every attempt, so the
+            // lockout is reliable regardless of concurrency.
+            session.Patch<EmailOtpChallenge>(userId).Increment(c => c.Attempts, 1);
             await session.SaveChangesAsync(ct);
             return Error.Validation("EmailOtp.InvalidCode",
                 "The verification code is invalid.");
@@ -109,9 +116,10 @@ public class EmailOtpService(IDocumentSession session, IEmailService emailServic
 
     private static string GenerateOtpCode()
     {
-        var bytes = RandomNumberGenerator.GetBytes(4);
-        var number = BitConverter.ToUInt32(bytes, 0) % 1000000;
-        return number.ToString("D6");
+        // Audit #34 — rejection-sampled, modulo-bias-free. The old `4 CSPRNG bytes %
+        // 1_000_000` skewed codes 0..967_295 ~0.023% higher (2^32 mod 10^6); GetInt32
+        // draws uniformly over the exact range.
+        return RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
     }
 
     private static string HashCode(string code)
