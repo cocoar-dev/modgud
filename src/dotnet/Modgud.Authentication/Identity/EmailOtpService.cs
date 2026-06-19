@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using ErrorOr;
 using Marten;
+using Marten.Patching;
 using Modgud.Authentication.Domain;
 using Modgud.Infrastructure.Email;
 
@@ -93,8 +94,14 @@ public class EmailOtpService(IDocumentSession session, IEmailService emailServic
         var codeHash = HashCode(code.Trim());
         if (codeHash != challenge.CodeHash)
         {
-            challenge.Attempts++;
-            session.Store(challenge);
+            // Audit #24 — increment the attempt counter ATOMICALLY. The endpoint is
+            // anonymous and unthrottled, so this counter is the brute-force defense
+            // for a 6-digit code. A read-then-Store increment lets concurrent wrong
+            // guesses all read Attempts=N and overwrite each other (last writer wins
+            // at N+1), so the MaxAttempts lockout never trips and the code space can
+            // be exhausted. A server-side jsonb increment lands every attempt, so the
+            // lockout is reliable regardless of concurrency.
+            session.Patch<EmailOtpChallenge>(userId).Increment(c => c.Attempts, 1);
             await session.SaveChangesAsync(ct);
             return Error.Validation("EmailOtp.InvalidCode",
                 "The verification code is invalid.");

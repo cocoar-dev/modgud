@@ -155,9 +155,17 @@ public static class ConsentEndpoints
         var (record, error) = await ResolveTicketAsync(ticketId, session, userManager, currentUserPrincipal);
         if (error is not null) return error;
 
-        // Mark the ticket consumed BEFORE doing anything else so two parallel
-        // POSTs (e.g. user double-click) cannot both succeed. SaveChangesAsync
-        // below atomically commits this together with the authorization.
+        // Mark the ticket consumed together with the authorization in one
+        // SaveChangesAsync. NOTE (Audit #26): this is NOT a hard one-time-use
+        // guard — ConsentTicket has no optimistic concurrency, so two parallel
+        // POSTs (user double-click) can both read ConsumedAt==null and both
+        // commit. The residual is benign: the consent POST mints no auth code
+        // (it returns a redirect; the subsequent /authorize reuses the existing
+        // authorization), so the worst case is a duplicate Permanent
+        // authorization row — deduped on the next /authorize and torn down by
+        // logout's revoke-all. If this ever needs to be strictly single-use,
+        // add UseOptimisticConcurrency to ConsentTicket and map the resulting
+        // ConcurrencyException to the existing 409 "already used".
         record!.ConsumedAt = DateTimeOffset.UtcNow;
 
         if (!decision.Approved)

@@ -49,14 +49,26 @@ public static class OAuthMartenSetup
 
         // OpenIddict authorization + token documents — string-id (OpenIddict gives
         // us a Guid-as-string); not event-sourced, ephemeral.
+        //
+        // Audit #22 — UseOptimisticConcurrency stamps a row version that Marten adds
+        // to the WHERE of every same-session update. The refresh-token redeem
+        // (Valid→Redeemed) is otherwise an unguarded read-modify-write that two
+        // concurrent /connect/token POSTs both win, replaying a single stolen
+        // refresh token past RFC 6749 §10.4 reuse detection. The stores' UpdateAsync
+        // re-loads the row in its own session (so the version check engages) and
+        // compares the caller's ConcurrencyToken against the live row to reject a
+        // stale redeem; revoke/prune sweeps retry on conflict so they never throw
+        // spuriously under concurrent rotation.
         options.Schema.For<OpenIddictAuthorizationDocument>()
             .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
             .Index(x => x.Subject)
             .Index(x => x.ApplicationId)
             .Index(x => x.Status);
 
         options.Schema.For<OpenIddictTokenDocument>()
             .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
             .Index(x => x.Subject)
             .Index(x => x.ApplicationId)
             .Index(x => x.AuthorizationId)
