@@ -86,6 +86,32 @@ public class CimdFullFlowTests : IntegrationTestBase
         Assert.Equal(ClientHost, consentModel.GetProperty("ClientIdHostname").GetString());
     }
 
+    // Audit #26 (re-audit follow-up) — endpoint-level proof of the claim-first,
+    // single-use consume: the FIRST consent POST marks the ticket used, so a second
+    // POST with the same ticket is rejected with 409 rather than minting a duplicate
+    // authorization. (The concurrent-race leg is covered at the store layer by
+    // SecurityAuditWave5Tests.ConsentTicket_ConcurrentConsume_SecondWriterRejected.)
+    [Fact]
+    public async Task Consent_ticket_is_single_use_second_post_returns_409()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await SeedAsync();
+        RegisterCimdDocument();
+
+        var (ticketId, _) = await DriveToConsentModelAsync(_clientIdUrl, Scope);
+
+        var cookieClient = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
+        var scopes = Scope.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        var first = await cookieClient.PostAsJsonAsync("/connect/consent",
+            new { Ticket = ticketId, Approved = true, ApprovedScopes = scopes }, ct);
+        Assert.True(first.IsSuccessStatusCode, await first.Content.ReadAsStringAsync(ct));
+
+        var second = await cookieClient.PostAsJsonAsync("/connect/consent",
+            new { Ticket = ticketId, Approved = true, ApprovedScopes = scopes }, ct);
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+    }
+
     [Fact]
     public async Task Discovery_advertises_cimd_support_only_when_enabled()
     {

@@ -207,7 +207,10 @@ public static class EmailOtpEndpoints
             return Results.Ok(new { Message = "Login successful" });
         })
         .WithName("EmailOtp_Login")
-        .AllowAnonymous();
+        .AllowAnonymous()
+        // Audit #24 — bound brute-force bursts against the 6-digit code; the
+        // per-challenge MaxAttempts counter alone races under concurrency.
+        .RequireRateLimiting("email-otp");
 
         return application;
     }

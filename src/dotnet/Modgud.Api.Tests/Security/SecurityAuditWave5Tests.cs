@@ -210,7 +210,11 @@ public class SecurityAuditWave5Tests : IntegrationTestBase
         Assert.True(sawLockout, "Email-OTP did not lock out after MaxAttempts wrong guesses.");
     }
 
-    // #25 — magic-link "one-time use" is enforced by a version-checked consume. Two
+    // #25 — the endpoint-level reuse contract (a consumed link → 401 on re-presentation)
+    // is covered by MagicLinkTests.MagicLink_TokenIsOneTimeUse. This test covers the
+    // concurrency leg: a version-checked consume so two parallel redemptions can't both win.
+    //
+    // magic-link "one-time use" is enforced by a version-checked consume. Two
     // concurrent redemptions both load the live challenge (via Query, mirroring the
     // endpoint); the first marks it ConsumedAt + Store and wins, and the second's
     // stale Store must be REJECTED (ConcurrencyException), which the login endpoint

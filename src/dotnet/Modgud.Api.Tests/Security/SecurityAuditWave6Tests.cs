@@ -20,6 +20,12 @@ public class SecurityAuditWave6Tests : IntegrationTestBase
     // the buggy guard threw on every web enroll (500) and the uniqueness check was
     // effectively skipped. Asserts the in-memory SequenceEqual approach detects a
     // duplicate + a distinct id, and pins that the byte[]== LINQ form still throws.
+    //
+    // KNOWN TEST GAP (re-audit): this verifies the Marten query-translation contract,
+    // not the full POST /api/account/passkey/register endpoint — a true crypto E2E
+    // would need a software WebAuthn authenticator, which is not present in this
+    // checkout. Reverting the production callback to byte[]== would NOT fail this
+    // test; it is caught by code review + the 22P02 assertion below.
     [Fact]
     public async Task PasskeyEnroll_CredentialIdUniqueness_ComparesInMemory()
     {

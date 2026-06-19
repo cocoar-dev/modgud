@@ -550,6 +550,25 @@ try
                     QueueLimit = 0,
                 });
         });
+
+        // Audit #24 — email-OTP code VERIFY. The endpoint is anonymous (partial-2FA
+        // state) and the per-challenge MaxAttempts counter is the only other
+        // brute-force defense; without a request cap, a concurrent burst that all
+        // read Attempts=0 before any increment commits could evaluate many guesses
+        // against the 6-digit code before the lockout trips. A per-IP fixed window
+        // bounds that burst. Sized well above any legitimate verify cadence.
+        options.AddPolicy("email-otp", context =>
+        {
+            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ip,
+                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 30,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                });
+        });
     });
 
     builder.Services.AddHttpContextAccessor();
