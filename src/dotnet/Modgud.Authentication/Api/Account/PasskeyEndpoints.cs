@@ -154,9 +154,13 @@ public static class PasskeyEndpoints
                 OriginalOptions = options,
                 IsCredentialIdUniqueToUserCallback = async (args, ct) =>
                 {
-                    var existing = await session.Query<StoredPasskeyCredential>()
-                        .AnyAsync(c => c.CredentialId == args.CredentialId, ct);
-                    return !existing;
+                    // Audit #33 — compare CredentialId (byte[]) IN MEMORY. A Marten
+                    // LINQ `c.CredentialId == args.CredentialId` is untranslatable
+                    // (Postgres 22P02), so the uniqueness guard would throw on enroll
+                    // (web register 500) instead of detecting a duplicate. Mirror the
+                    // login path: materialize, then SequenceEqual.
+                    var all = await session.Query<StoredPasskeyCredential>().ToListAsync(ct);
+                    return !all.Any(c => c.CredentialId.SequenceEqual(args.CredentialId));
                 },
             });
 
@@ -257,7 +261,13 @@ public static class PasskeyEndpoints
             var options = fido2.GetAssertionOptions(new GetAssertionOptionsParams
             {
                 AllowedCredentials = allowedCredentials ?? [],
-                UserVerification = UserVerificationRequirement.Preferred,
+                // Audit #16 — Required, not Preferred. A passkey is treated as a full
+                // (MFA-grade) credential here, so the assertion MUST prove user
+                // verification (biometric/PIN). With Preferred the authenticator may
+                // skip UV and MakeAssertionAsync would still accept it, downgrading a
+                // passkey login to single-factor "possession only". Required makes the
+                // library reject a non-UV assertion.
+                UserVerification = UserVerificationRequirement.Required,
             });
 
             // Store challenge in a secure cookie (anonymous users don't have sessions).
