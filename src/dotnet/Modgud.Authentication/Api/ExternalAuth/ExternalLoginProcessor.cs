@@ -237,7 +237,7 @@ public class ExternalLoginProcessor(
                 // permissive IdP could otherwise sign in AS the victim. (SAML is
                 // exempt — the email arrives in an assertion signed by the
                 // specifically-configured IdP, which is the trust anchor.)
-                if (!IsExternalEmailVerified(config, rawClaims))
+                if (!IsEmailLinkTrustworthy(config, rawClaims, email))
                 {
                     var maskedEmail = LogPiiMasking.MaskEmail(email);
                     securityAudit.Record(new SecurityAuditRecord
@@ -550,24 +550,36 @@ public class ExternalLoginProcessor(
             : [];
 
     /// <summary>
-    /// Audit H3: has the external IdP actually verified the email it asserted?
-    /// For OIDC the proof is the standard <c>email_verified == true</c> claim
-    /// (absent or false ⇒ NOT verified — an attacker can self-register an
-    /// arbitrary email at a permissive IdP, so the address must not be trusted
-    /// for auto-linking). SAML providers are exempt: their attributes arrive in
-    /// an assertion signed by the specific IdP the admin configured
-    /// (AllowedIssuer + signature), which is the trust anchor — SAML has no
-    /// email_verified concept.
+    /// Audit H3 + audit remediation #15: may the script-chosen <paramref name="matchEmail"/>
+    /// be trusted as the auto-link match key against an existing account?
+    /// For OIDC the proof is the standard <c>email_verified == true</c> claim — BUT
+    /// that claim vouches only for the raw <c>email</c> claim, not for whatever the
+    /// admin-authored user-update script produced. A script can remap its output
+    /// email from any claim (e.g. <c>upn</c>/<c>preferred_username</c>), so an
+    /// attacker holding a genuinely-verified throwaway <c>email</c> could set the
+    /// match key to a victim's address and be auto-linked INTO the victim's account.
+    /// We therefore additionally require the match key to BE the verified raw email.
+    /// SAML providers are exempt: their attributes arrive in an assertion signed by
+    /// the specific IdP the admin configured (AllowedIssuer + signature), which is
+    /// the trust anchor — SAML has no email_verified concept.
     /// </summary>
-    private static bool IsExternalEmailVerified(
-        LoginProvider config, IReadOnlyDictionary<string, object?> rawClaims)
+    private static bool IsEmailLinkTrustworthy(
+        LoginProvider config, IReadOnlyDictionary<string, object?> rawClaims, string? matchEmail)
     {
         if (config.Type == LoginProviderType.Saml) return true;
 
-        return rawClaims.TryGetValue("email_verified", out var v)
+        var verified = rawClaims.TryGetValue("email_verified", out var v)
             && v is string s
-            && bool.TryParse(s, out var verified)
-            && verified;
+            && bool.TryParse(s, out var b)
+            && b;
+        if (!verified) return false;
+
+        // email_verified vouches ONLY for the raw 'email' claim — the match key must
+        // be that same address, not a script-remapped value from another claim.
+        var rawEmail = ClaimValues(rawClaims, "email").FirstOrDefault();
+        return !string.IsNullOrWhiteSpace(rawEmail)
+            && !string.IsNullOrWhiteSpace(matchEmail)
+            && string.Equals(rawEmail, matchEmail, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsEmailAllowed(LoginProvider config, string? email)
