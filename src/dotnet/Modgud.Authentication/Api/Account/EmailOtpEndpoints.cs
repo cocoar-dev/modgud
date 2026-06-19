@@ -150,6 +150,19 @@ public static class EmailOtpEndpoints
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
             }
 
+            // Audit remediation #13: re-check account state before completing 2FA.
+            // The OTP service does not gate, and the partial 2FA cookie is not
+            // stamp-validated — so a user deactivated mid-login (after the partial
+            // cookie was issued) could otherwise complete OTP and obtain a durable,
+            // kill-switch-surviving session. Reject + clear the partial scheme.
+            // (FindByIdAsync already filters IsDeleted; IsActive is the live vector.)
+            if (!user.IsActive || user.IsDeleted)
+            {
+                await context.SignOutAsync(IdentityConstants.TwoFactorUserIdScheme);
+                ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.EmailOtp, ModgudMeters.LoginOutcome.Failure);
+                return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+            }
+
             var result = await emailOtpService.VerifyOtpAsync(user.Id, request.Code, ct);
             if (result.IsError)
             {

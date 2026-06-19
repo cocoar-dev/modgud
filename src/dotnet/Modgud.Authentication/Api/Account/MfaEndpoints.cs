@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
 using Marten;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.ExtensionMethods;
@@ -165,6 +166,20 @@ public static class MfaEndpoints
             // Capture the user that's mid-2FA *before* we sign in — afterwards the
             // partial sign-in cookie is gone and we lose the handle.
             var twoFactorUser = await signInManager.GetTwoFactorAuthenticationUserAsync();
+
+            // Audit remediation #14: TwoFactorAuthenticatorSignInAsync only runs
+            // CanSignInAsync (lockout + confirmation) — it never re-checks
+            // IsActive/IsDeleted. Deactivation sets IsActive=false without a
+            // LockoutEnd, so CanSignInAsync passes and a user deactivated mid-login
+            // could complete TOTP and obtain a durable, kill-switch-surviving
+            // session. Reject + clear the partial scheme before sign-in.
+            if (twoFactorUser is not null && (!twoFactorUser.IsActive || twoFactorUser.IsDeleted))
+            {
+                await context.SignOutAsync(IdentityConstants.TwoFactorUserIdScheme);
+                Serilog.Log.Warning("MFA login rejected — user inactive/deleted. UserId={UserId} IP={IP}", twoFactorUser.Id, ip);
+                ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Mfa, ModgudMeters.LoginOutcome.Failure);
+                return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+            }
 
             var result = await signInManager.TwoFactorAuthenticatorSignInAsync(
                 code, isPersistent: request.RememberMe, rememberClient: request.RememberMachine);
