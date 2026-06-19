@@ -49,6 +49,11 @@ public class SecurityAuditWave1Tests : IntegrationTestBase
 
         // Acting device survives (RefreshSignInAsync re-issues its cookie).
         Assert.Equal(HttpStatusCode.OK, (await deviceA.GetAsync("/api/account/me", ct)).StatusCode);
+
+        // Re-audit regression guard: revoke-all deletes EVERY session row including
+        // the acting device's; the acting session must be re-recorded so the user's
+        // own "active sessions" list isn't left empty while they're still signed in.
+        Assert.True(await SessionCountAsync(DefaultUser!.Id, ct) >= 1);
     }
 
     // #2 — admin password reset must revoke the target user's live access.

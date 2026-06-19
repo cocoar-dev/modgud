@@ -67,6 +67,7 @@ public static class SessionEndpoints
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             IUserAccessRevoker accessRevoker,
+            ISessionService sessionService,
             CancellationToken ct) =>
         {
             var userId = context.GetUserId();
@@ -75,7 +76,15 @@ public static class SessionEndpoints
             await accessRevoker.RevokeAllAccessAsync(userId.Value, AccessRevocationReason.ForceSignOut, ct);
             var user = await userManager.FindByIdAsync(userId.Value.ToString());
             if (user is not null)
+            {
                 await signInManager.RefreshSignInAsync(user);
+                // RevokeAllAccessAsync deleted EVERY session row, including the acting
+                // device's. RefreshSignInAsync keeps this device signed in but doesn't
+                // re-track it — so without this the user's own "active sessions" list
+                // would read empty until their next fresh login. Re-record the acting
+                // session so the live device reappears.
+                await SessionTracker.RecordLoginAsync(sessionService, context, userId.Value, ct);
+            }
             return Results.NoContent();
         })
         .WithName("Auth_Sessions_RevokeAll");

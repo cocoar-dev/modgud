@@ -89,8 +89,12 @@ public static class MagicLinkEndpoints
                 .Where(c => c.UserId == user.Id)
                 .ToListAsync();
 
+            // Audit #25 follow-up — exclude already-consumed challenges. Since the
+            // consume switched from Delete to a mark-consumed Store, a just-used link
+            // leaves a non-expired row behind; without this filter it would spuriously
+            // rate-limit the user's NEXT link request for up to RateLimitMinutes.
             var recentChallenge = existingChallenges
-                .FirstOrDefault(c => !c.IsExpired &&
+                .FirstOrDefault(c => !c.IsExpired && !c.IsConsumed &&
                     (DateTimeOffset.UtcNow - c.CreatedAt).TotalMinutes < config.RateLimitMinutes);
 
             if (recentChallenge is not null)
