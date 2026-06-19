@@ -58,6 +58,42 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
         Assert.True(link.LastScriptSucceeded);
     }
 
+    /// <summary>
+    /// Regression for the SecurityStamp-sign-in bug (AppBase v5.1.1/v5.1.2),
+    /// OIDC/SAML leg. Both federated flows sign in the hand-built principal this
+    /// processor returns (ExternalAuthEndpoints + SamlLoginFlow call
+    /// <c>SignInAsync(ApplicationScheme, result.Principal)</c>). The principal must
+    /// carry the user's authoritative security-stamp claim, otherwise the cookie
+    /// has no stamp and the SecurityStampValidator rejects it on the first pass
+    /// (≤ ValidationInterval) → every federated session is silently logged out.
+    /// RED until the fix stamps the principal. See <c>SecurityStampSignInTests</c>
+    /// for the magic-link/passkey legs and the store-level root cause.
+    /// </summary>
+    [Fact]
+    public async Task ProcessAsync_ReturnedPrincipal_CarriesAuthoritativeSecurityStampClaim()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = await CreateEnabledEntraConfig();
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            "Stan", "Stamp", "SS", "stan-stamp@acme.com");
+        await LinkUserAsync(user.Id, config.Id, subject: "sub-stan-1");
+
+        // Authoritative stamp lives on UserSecurityData (the cookie must carry it).
+        string authoritativeStamp;
+        using (var read = GetTenantedSession())
+            authoritativeStamp = (await read.LoadAsync<UserSecurityData>(user.Id, ct))!.SecurityStamp;
+
+        using var scope = Factory.Services.CreateScope();
+        var processor = scope.ServiceProvider.GetRequiredService<ExternalLoginProcessor>();
+
+        var external = BuildExternalPrincipal(subject: "sub-stan-1", email: "stan-stamp@acme.com", name: "Stan Stamp");
+        var result = await processor.ProcessAsync(external, config.Id, ct);
+        Assert.True(result.Succeeded);
+
+        var stampClaim = result.Principal!.FindFirst("AspNet.Identity.SecurityStamp")?.Value;
+        Assert.Equal(authoritativeStamp, stampClaim);
+    }
+
     [Fact]
     public async Task JitCreation_CreatesUserAndLink_WhenAutoCreateOn()
     {
