@@ -1,4 +1,5 @@
 using Modgud.Application.DTOs.OAuth;
+using Modgud.Domain.OAuth.Common;
 
 namespace Modgud.Application.DTOs.ServiceAccount;
 
@@ -30,6 +31,16 @@ public class IssueServiceAccountCredentialDto
 
     /// <summary>Optional override for the access-token lifetime (seconds).</summary>
     public int? AccessTokenLifetime { get; set; }
+
+    /// <summary>
+    /// Access-token format. Defaults to <see cref="AccessTokenType.Reference"/>
+    /// (opaque, stored, INSTANTLY revocable) — so deactivating/deleting/rotating
+    /// the credential immediately cuts off live M2M access (Audit #6/#7/#8). Opt
+    /// into <see cref="AccessTokenType.Jwt"/> only for resource servers that must
+    /// self-validate without an introspection round-trip; an already-issued JWT
+    /// then survives a revoke until it expires, so keep its lifetime short.
+    /// </summary>
+    public AccessTokenType AccessTokenType { get; set; } = AccessTokenType.Reference;
 }
 
 /// <summary>
@@ -44,6 +55,10 @@ public class UpdateServiceAccountCredentialDto
     public List<string>? AppIds { get; set; }
     public int? AccessTokenLifetime { get; set; }
     public bool? Enabled { get; set; }
+
+    /// <summary>Switch the credential's access-token format (Reference ↔ Jwt).
+    /// Null leaves it unchanged. See <see cref="IssueServiceAccountCredentialDto.AccessTokenType"/>.</summary>
+    public AccessTokenType? AccessTokenType { get; set; }
 }
 
 /// <summary>
