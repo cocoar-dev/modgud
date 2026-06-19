@@ -62,8 +62,15 @@ public static class MartenConfiguration
         // to the calling user's subject so cross-tenant misuse is impossible
         // by construction. Indexed on ExpiresAt for the future janitor that
         // trims expired-and-consumed records.
+        //
+        // Audit #26 — UseOptimisticConcurrency makes the "consume" a hard
+        // one-time-use guard: the consent endpoint claims the ticket via a
+        // version-checked Store before creating any authorization, so two
+        // parallel POSTs (double-click) can't both succeed — the loser's stale
+        // Store throws and maps to a 409.
         options.Schema.For<Modgud.Domain.OAuth.Consent.ConsentTicket>()
             .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
             .Index(x => x.ExpiresAt);
 
         // DataProtection keys (cookie/antiforgery encryption material).

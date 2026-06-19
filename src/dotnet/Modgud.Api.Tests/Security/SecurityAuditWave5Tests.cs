@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
+using Modgud.Domain.OAuth.Consent;
 using Modgud.Domain.OAuth.Storage;
 using OpenIddict.Abstractions;
 
@@ -249,6 +250,47 @@ public class SecurityAuditWave5Tests : IntegrationTestBase
 
         cB!.ConsumedAt = DateTimeOffset.UtcNow;
         sB.Store(cB);
+        await Assert.ThrowsAsync<ConcurrencyException>(async () => await sB.SaveChangesAsync(ct));
+    }
+
+    // #26 — the consent-ticket consume is now a hard one-time-use guard. Two parallel
+    // consent POSTs both load ConsumedAt==null; the first to claim (version-checked
+    // Store) wins and the second's stale Store is REJECTED (ConcurrencyException →
+    // 409), so it never proceeds to mint a duplicate authorization. RED before this
+    // fix: no optimistic concurrency → both claims commit (last-writer-wins).
+    [Fact]
+    public async Task ConsentTicket_ConcurrentConsume_SecondWriterRejected()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var id = Guid.NewGuid();
+        await using (var seed = GetTenantedDocumentSession())
+        {
+            seed.Store(new ConsentTicket
+            {
+                Id = id,
+                Subject = Guid.NewGuid(),
+                ClientId = "client-26",
+                RequestedScopes = ["openid"],
+                AuthorizeRequestQuery = "?x=1",
+                CreatedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
+            });
+            await seed.SaveChangesAsync(ct);
+        }
+
+        await using var sA = GetTenantedDocumentSession();
+        await using var sB = GetTenantedDocumentSession();
+        var a = await sA.LoadAsync<ConsentTicket>(id, ct);
+        var b = await sB.LoadAsync<ConsentTicket>(id, ct);
+        Assert.NotNull(a);
+        Assert.NotNull(b);
+
+        a!.ConsumedAt = DateTimeOffset.UtcNow;
+        sA.Store(a);
+        await sA.SaveChangesAsync(ct);
+
+        b!.ConsumedAt = DateTimeOffset.UtcNow;
+        sB.Store(b);
         await Assert.ThrowsAsync<ConcurrencyException>(async () => await sB.SaveChangesAsync(ct));
     }
 
