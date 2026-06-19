@@ -469,6 +469,20 @@ public class ExternalLoginProcessor(
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()));
         if (!string.IsNullOrWhiteSpace(user.UserName))
             identity.AddClaim(new Claim(ClaimTypes.Name, user.UserName));
+
+        // SecurityStamp claim — federated sign-in builds this principal by hand, so
+        // it must carry the authoritative stamp itself. The SecurityStampValidator
+        // re-validates the cookie against the user's current stamp every interval;
+        // a principal without this claim is rejected on the first pass (silent
+        // logout of every OIDC/SAML session). The store re-fetches the source of
+        // truth. The validator re-mints the principal via the ClaimsPrincipalFactory
+        // on each pass and would drop the external.*/session-group claims below —
+        // SecurityStampValidatorOptions.OnRefreshingPrincipal (Program.cs) re-injects
+        // them so federated authorization survives the interval.
+        var securityStamp = await userManager.GetSecurityStampAsync(user);
+        if (!string.IsNullOrEmpty(securityStamp))
+            identity.AddClaim(new Claim(userManager.Options.ClaimsIdentity.SecurityStampClaimType, securityStamp));
+
         identity.AddClaim(new Claim("modgud.external.issuer", issuer));
         identity.AddClaim(new Claim("modgud.external.linkId", link.Id.ToString()));
         identity.AddClaim(new Claim("modgud.external.loginProviderId", loginProviderId.ToString()));

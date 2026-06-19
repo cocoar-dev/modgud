@@ -47,7 +47,8 @@ public static class MfaEndpoints
         // POST /api/account/mfa/setup — Generate authenticator key + QR code URI
         group.MapPost("setup", [Authorize] async (
             HttpContext context,
-            UserManager<ApplicationUser> userManager) =>
+            UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
@@ -58,6 +59,12 @@ public static class MfaEndpoints
 
             if (string.IsNullOrEmpty(unformattedKey))
                 return Results.Problem("Failed to generate authenticator key.");
+
+            // ResetAuthenticatorKeyAsync rotates the security stamp → without a
+            // refresh the acting session is killed at the next SecurityStampValidator
+            // pass (self-logout). Re-issue THIS session with the fresh stamp; the
+            // user's OTHER sessions stay invalidated (the point of the rotation).
+            await signInManager.RefreshSignInAsync(user);
 
             var sharedKey = FormatKey(unformattedKey);
             var authenticatorUri = GenerateQrCodeUri(user.UserName ?? user.Acronym ?? "user", unformattedKey);
@@ -70,6 +77,7 @@ public static class MfaEndpoints
         group.MapPost("verify", [Authorize] async (
             HttpContext context,
             UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
             MfaVerifyRequest request) =>
         {
             var user = await userManager.GetUserAsync(context.User);
@@ -87,6 +95,11 @@ public static class MfaEndpoints
             // Enable 2FA
             await userManager.SetTwoFactorEnabledAsync(user, true);
 
+            // SetTwoFactorEnabledAsync rotates the security stamp → re-issue the
+            // acting session so the user who just enabled 2FA isn't self-logged-out
+            // at the next validation pass (other sessions remain invalidated).
+            await signInManager.RefreshSignInAsync(user);
+
             return Results.Ok(new { Message = "MFA has been enabled.", Enabled = true });
         })
         .WithName("Mfa_Verify");
@@ -98,6 +111,7 @@ public static class MfaEndpoints
         group.MapPost("disable", [Authorize] async (
             HttpContext context,
             UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
             IAuthSettings appSettings,
             IDocumentSession session) =>
         {
@@ -115,6 +129,11 @@ public static class MfaEndpoints
 
             await userManager.SetTwoFactorEnabledAsync(user, false);
             await userManager.ResetAuthenticatorKeyAsync(user);
+
+            // Both calls above rotate the security stamp → re-issue the acting
+            // session so disabling 2FA doesn't self-logout the current session at
+            // the next validation pass (other sessions remain invalidated).
+            await signInManager.RefreshSignInAsync(user);
 
             return Results.Ok(new
             {

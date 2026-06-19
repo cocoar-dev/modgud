@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using Modgud.Api.Features;
+using Modgud.Permissions.Abstractions;
 using System.Text.Json.Serialization;
 using Cocoar.Configuration.AspNetCore;
 using Cocoar.Configuration.DI;
@@ -303,6 +305,35 @@ try
     builder.Services.Configure<SecurityStampValidatorOptions>(options =>
     {
         options.ValidationInterval = TimeSpan.FromMinutes(5);
+
+        // SESSION-01 — preserve federated session claims across stamp revalidation.
+        // On every validation pass the SecurityStampValidator REBUILDS the principal
+        // from durable user state via the ClaimsPrincipalFactory, which drops the
+        // session-only claims ExternalLoginProcessor stamps onto the federated
+        // sign-in principal: the federation session-group (externally-derived
+        // authorization, unioned into resource_access at token time) and the
+        // external.* claims (logout routing, TwoFactorFederated/amr). Without
+        // re-injecting them a federated session would silently lose its
+        // externally-derived authorization after the first interval. Password
+        // sessions carry none of these, so the loops below are a no-op for them.
+        options.OnRefreshingPrincipal = context =>
+        {
+            var current = context.CurrentPrincipal;
+            var newIdentity = context.NewPrincipal?.Identities.FirstOrDefault();
+            if (current is null || newIdentity is null)
+                return Task.CompletedTask;
+
+            foreach (var claim in current.FindAll(FederationClaimTypes.SessionGroup))
+                if (!newIdentity.HasClaim(claim.Type, claim.Value))
+                    newIdentity.AddClaim(new Claim(claim.Type, claim.Value));
+
+            foreach (var claim in current.Claims.Where(
+                c => c.Type.StartsWith("modgud.external.", StringComparison.Ordinal)))
+                if (!newIdentity.HasClaim(claim.Type, claim.Value))
+                    newIdentity.AddClaim(new Claim(claim.Type, claim.Value));
+
+            return Task.CompletedTask;
+        };
     });
 
     builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)

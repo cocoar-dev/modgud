@@ -44,11 +44,21 @@ public class EventSourcedUserStore(IDocumentSession session)
         return Task.CompletedTask;
     }
 
-    public Task<string?> GetSecurityStampAsync(ApplicationUser user, CancellationToken cancellationToken)
+    public async Task<string?> GetSecurityStampAsync(ApplicationUser user, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(user);
-        return Task.FromResult(user.SecurityStamp);
+
+        // Re-fetch the AUTHORITATIVE stamp from UserSecurityData (mirrors
+        // GetPasswordHashAsync). The ApplicationUser.SecurityStamp field is only a
+        // transient mirror, hydrated by the UserManager finders. Returning it here
+        // would mint cookies/principals with a stamp that diverges from the value
+        // the SecurityStampValidator re-loads on its next pass — a silent logout
+        // for every sign-in path that loaded the user raw (magic-link, passkey) or
+        // built the principal by hand (OIDC/SAML). Reading the source of truth
+        // makes all of those paths correct regardless of how the user was loaded.
+        var securityData = await session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
+        return securityData?.SecurityStamp ?? user.SecurityStamp;
     }
 
     // IUserStore<ApplicationUser>
@@ -76,8 +86,15 @@ public class EventSourcedUserStore(IDocumentSession session)
         // Store ApplicationUser document
         session.Store(user);
 
-        // Create UserSecurityData document
+        // Create UserSecurityData document. Align its stamp with the mirror that
+        // ASP.NET Identity already generated on the ApplicationUser
+        // (UserManager.CreateAsync runs UpdateSecurityStampInternal before calling
+        // this store). Without the alignment the two are independent GUIDs, so a
+        // cookie minted from a raw-loaded user carries a stamp that never matches
+        // the authoritative one and is rejected on the first validation pass.
         var securityData = UserSecurityData.Create(user.Id, user.PasswordHash);
+        if (!string.IsNullOrEmpty(user.SecurityStamp))
+            securityData.SecurityStamp = user.SecurityStamp;
         session.Store(securityData);
 
         await session.SaveChangesAsync(cancellationToken);
