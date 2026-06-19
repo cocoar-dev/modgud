@@ -1,7 +1,9 @@
 using BuildingBlocks.Helper;
+using Modgud.Authentication.Domain;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Sessions;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -32,7 +34,13 @@ public static class SessionEndpoints
         })
         .WithName("Auth_Sessions_List");
 
-        // DELETE /api/auth/sessions/{id} — revoke a single session of mine
+        // DELETE /api/auth/sessions/{id} — revoke a single session of mine.
+        // LIMITATION: this deletes the tracking row only. The auth cookie carries
+        // no session-id binding, so a *targeted* single-device revoke cannot
+        // invalidate that device's cookie (it keeps authenticating until expiry).
+        // Truly killing one specific device needs a session-id claim on the cookie
+        // + a per-request existence check in OnValidatePrincipal — tracked as a
+        // follow-up. "Log out everywhere" (below) IS effective via stamp rotation.
         group.MapDelete("{id:guid}", [Authorize] async (
             Guid id,
             HttpContext context,
@@ -47,17 +55,28 @@ public static class SessionEndpoints
         })
         .WithName("Auth_Sessions_Revoke");
 
-        // DELETE /api/auth/sessions — revoke all my sessions (logout everywhere)
+        // DELETE /api/auth/sessions — revoke all my sessions (logout everywhere).
+        // Audit remediation #1: RevokeAllSessionsAsync alone only deleted tracking
+        // rows — invisible to the cookie middleware, so other devices stayed signed
+        // in for up to 30 days and OAuth tokens survived. Route through the kill
+        // switch: rotate the security stamp (kills every cookie at the next
+        // validator pass) + revoke OAuth tokens + delete session rows. Then refresh
+        // THIS request so the acting device stays signed in; all others die.
         group.MapDelete("", [Authorize] async (
             HttpContext context,
-            ISessionService svc,
+            UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
+            IUserAccessRevoker accessRevoker,
             CancellationToken ct) =>
         {
             var userId = context.GetUserId();
             if (userId is null) return Results.Unauthorized();
 
-            var result = await svc.RevokeAllSessionsAsync(userId.Value, exceptSessionId: null, ct);
-            return result.IsError ? result.ToResult() : Results.NoContent();
+            await accessRevoker.RevokeAllAccessAsync(userId.Value, AccessRevocationReason.ForceSignOut, ct);
+            var user = await userManager.FindByIdAsync(userId.Value.ToString());
+            if (user is not null)
+                await signInManager.RefreshSignInAsync(user);
+            return Results.NoContent();
         })
         .WithName("Auth_Sessions_RevokeAll");
 

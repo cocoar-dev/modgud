@@ -82,6 +82,7 @@ public static class PasswordResetEndpoints
         group.MapPost("reset-password", async (
             ResetPasswordRequest request,
             UserManager<ApplicationUser> userManager,
+            Modgud.Authentication.Sessions.IUserAccessRevoker accessRevoker,
             IAuthSettings appSettings) =>
         {
             if (appSettings.AuthenticationMinimumLevel >= 2)
@@ -107,6 +108,13 @@ public static class PasswordResetEndpoints
 
                 return Results.Json(new { Message = string.Join(" ", errors) }, statusCode: 400);
             }
+
+            // Audit remediation #3: the anonymous ATO-recovery path. ResetPasswordAsync
+            // rotates the Identity stamp (cuts cookies + refresh-token continuation) but
+            // touches no OAuth grants and no device-session rows — leaving an attacker's
+            // live reference access token + session rows alive. Revoke everything.
+            // (Anonymous request → no acting session to RefreshSignIn.)
+            await accessRevoker.RevokeAllAccessAsync(user.Id, Modgud.Authentication.Sessions.AccessRevocationReason.ForceSignOut);
 
             return Results.Ok(new { Message = "Passwort wurde erfolgreich zurückgesetzt." });
         })

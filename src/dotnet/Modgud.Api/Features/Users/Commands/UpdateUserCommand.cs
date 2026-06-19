@@ -7,6 +7,7 @@ using Modgud.Domain.Errors;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Events;
 using Modgud.Authentication.Gdpr;
+using Modgud.Authentication.Sessions;
 using Modgud.Authentication.Api.Users;
 using Modgud.Domain.Users.Events;
 using Modgud.Infrastructure.Persistence.Marten.Mappers;
@@ -17,6 +18,7 @@ public class UpdateUserHandler(IDocumentSession session)
 {
     public async Task<ErrorOr<UserDto>> Handle(
         UpdateUserCommand command,
+        IUserAccessRevoker accessRevoker,
         CancellationToken ct)
     {
         // Validation via the polymorphic Principal projection (inline, always consistent)
@@ -86,6 +88,7 @@ public class UpdateUserHandler(IDocumentSession session)
         session.Events.Append(command.UserId, @event);
 
         // Sync ALL profile changes to ApplicationUser (Identity document)
+        var emailChanged = false;
         {
             var appUser = await session.LoadAsync<ApplicationUser>(command.UserId, ct);
             if (appUser is not null)
@@ -95,8 +98,10 @@ public class UpdateUserHandler(IDocumentSession session)
                     appUser.UserName = normalizedUserName!;
                     appUser.NormalizedUserName = normalizedUserName!.ToUpperInvariant();
                 }
-                if (command.Email.HasValue)
+                if (command.Email.HasValue
+                    && !string.Equals(appUser.Email, command.Email.Value, StringComparison.OrdinalIgnoreCase))
                 {
+                    emailChanged = true;
                     appUser.Email = command.Email.Value;
                     appUser.NormalizedEmail = command.Email.Value?.ToUpperInvariant();
                 }
@@ -117,6 +122,14 @@ public class UpdateUserHandler(IDocumentSession session)
         // via Marten Event Forwarding (UserUpdatedEvent → Wolverine → sync handlers)
 
         await session.SaveChangesAsync(ct);
+
+        // Audit remediation #4: email is the account-recovery anchor (controls future
+        // forgot-password + magic-link delivery). This path mutates it via raw
+        // session.Store, bypassing UserManager — so even Identity's implicit stamp
+        // rotation is lost and existing tokens/sessions survive. Revoke live access
+        // when the email actually changes.
+        if (emailChanged)
+            await accessRevoker.RevokeAllAccessAsync(command.UserId, AccessRevocationReason.ForceSignOut, ct);
 
         return new UserDto
         {
