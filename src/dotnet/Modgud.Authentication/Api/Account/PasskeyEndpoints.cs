@@ -289,6 +289,7 @@ public static class PasskeyEndpoints
             HttpContext context,
             RealmScopedFido2Factory fido2Factory,
             IDocumentSession session,
+            UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             ISessionService sessionService,
             JsonElement body,
@@ -348,11 +349,12 @@ public static class PasskeyEndpoints
             session.Store(storedCredential);
             await session.SaveChangesAsync();
 
-            // Sign in
-            var user = await session.LoadAsync<ApplicationUser>(storedCredential.UserId);
-            // Defense-in-depth: passkey login loads the user directly (bypassing
-            // the Identity store's filters), so reject deleted users explicitly —
-            // not just inactive ones — closing the soft-delete auth-bypass.
+            // Sign in — load via the UserManager finder so the user is hydrated
+            // with authoritative security data (stamp/2FA/lockout) from
+            // UserSecurityData rather than a stale ApplicationUser mirror.
+            // FindByIdAsync also filters IsDeleted; the explicit IsActive/IsDeleted
+            // gate below stays as defense-in-depth (soft-delete auth-bypass).
+            var user = await userManager.FindByIdAsync(storedCredential.UserId.ToString());
             if (user is null || !user.IsActive || user.IsDeleted)
             {
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Passkey, ModgudMeters.LoginOutcome.Failure);

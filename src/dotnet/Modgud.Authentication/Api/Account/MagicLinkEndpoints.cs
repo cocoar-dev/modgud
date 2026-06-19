@@ -155,6 +155,7 @@ public static class MagicLinkEndpoints
         group.MapPost("login", async (
             MagicLinkLoginDto request,
             IDocumentSession session,
+            UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             ISessionService sessionService,
             ISecurityAuditLog securityAudit,
@@ -187,8 +188,13 @@ public static class MagicLinkEndpoints
                 return Results.Json(new { Message = "Invalid or expired link" }, statusCode: 401);
             }
 
-            // Load user
-            var user = await session.LoadAsync<ApplicationUser>(request.UserId);
+            // Load via the UserManager finder (not a raw session load) so the
+            // in-memory user is hydrated with the AUTHORITATIVE security data from
+            // UserSecurityData (stamp, 2FA, lockout). The cookie minted below AND
+            // the user.TwoFactorEnabled TOTP step-up gate further down must not
+            // read a stale ApplicationUser mirror; FindByIdAsync also filters
+            // IsDeleted (the explicit gate stays as defense-in-depth).
+            var user = await userManager.FindByIdAsync(request.UserId.ToString());
             if (user is null || user.IsDeleted || !user.IsActive)
             {
                 securityAudit.Record(new SecurityAuditRecord
