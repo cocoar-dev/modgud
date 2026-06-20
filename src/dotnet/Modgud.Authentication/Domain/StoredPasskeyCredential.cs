@@ -31,6 +31,17 @@ public class StoredPasskeyCredential
     /// <summary>Human-readable name for this passkey (e.g. "Windows Hello", "YubiKey").</summary>
     public string DisplayName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The WebAuthn RP ID this credential was enrolled under (ADR-0009 per-client
+    /// RP-ID). <c>null</c> = legacy realm-scoped, i.e. the effective RP ID is the
+    /// realm's <c>PrimaryDomain</c> (the only behaviour before per-client RP-IDs).
+    /// Stored as the resolved host string, NOT a client id — two OAuth clients may
+    /// legitimately share one RP ID, and a passkey is cryptographically bound to the
+    /// RP ID, so credential lookup filters on RP ID, not client. Existing documents
+    /// deserialize with <c>null</c> (no migration).
+    /// </summary>
+    public string? RpId { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastUsedAt { get; set; }
 }

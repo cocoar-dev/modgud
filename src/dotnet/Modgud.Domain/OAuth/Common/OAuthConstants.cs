@@ -34,12 +34,35 @@ public static class OAuthPermissions
         public const string Implicit = "gt:implicit";
         public const string Password = "gt:password";
         public const string DeviceCode = "gt:urn:ietf:params:oauth:grant-type:device_code";
+
+        // ADR-0010 — native (cookieless) passwordless token grants. The per-client
+        // opt-in IS the presence of one of these gt: permissions on the client
+        // (IgnoreGrantTypePermissions is not set, so OpenIddict natively rejects a
+        // client that lacks it). Value = "gt:" + the raw URN, mirroring DeviceCode.
+        public const string CocoarOtp = Prefixes.GrantType + CocoarGrantTypes.Otp;
+        public const string CocoarMagic = Prefixes.GrantType + CocoarGrantTypes.Magic;
+        public const string CocoarPasskey = Prefixes.GrantType + CocoarGrantTypes.Passkey;
     }
 
     public static class ResponseTypes
     {
         public const string Code = "rst:code";
     }
+}
+
+/// <summary>
+/// Raw <c>grant_type</c> URNs for the native (cookieless) passwordless token
+/// grants (ADR-0010). These are the wire values a native client sends to
+/// <c>/connect/token</c> and the values passed to
+/// <c>options.AllowCustomFlow(...)</c>. The matching per-client OpenIddict
+/// permission is <see cref="OAuthPermissions.Prefixes.GrantType"/> + the URN
+/// (see <see cref="OAuthPermissions.GrantTypes.CocoarOtp"/> / <c>CocoarMagic</c>).
+/// </summary>
+public static class CocoarGrantTypes
+{
+    public const string Otp = "urn:cocoar:otp";
+    public const string Magic = "urn:cocoar:magic";
+    public const string Passkey = "urn:cocoar:passkey";
 }
 
 public static class OAuthClientTypes

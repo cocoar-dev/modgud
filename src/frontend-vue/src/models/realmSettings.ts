@@ -7,6 +7,7 @@ export interface RealmSettingsDto {
   SelfRegistration: SelfRegistrationDto
   Dcr: DcrSettingsDto
   Cimd: CimdSettingsDto
+  NativeGrants: NativeGrantSettingsDto
   Branding: BrandingSettingsDto
   Deletion: DeletionSettingsDto
   /** Page-builder schemas keyed by slug. Read-only here — writes use
@@ -18,6 +19,7 @@ export interface UpdateRealmSettingsDto {
   SelfRegistration?: UpdateSelfRegistrationDto | null
   Dcr?: UpdateDcrSettingsDto | null
   Cimd?: UpdateCimdSettingsDto | null
+  NativeGrants?: UpdateNativeGrantSettingsDto | null
   Branding?: UpdateBrandingSettingsDto | null
   Deletion?: UpdateDeletionSettingsDto | null
 }
@@ -134,6 +136,23 @@ export interface CimdSettingsDto {
 }
 
 export interface UpdateCimdSettingsDto {
+  Enabled?: boolean
+  AccessTokenLifetimeMinutes?: number
+  RefreshTokenLifetimeDays?: number
+}
+
+// Native passwordless token grants (ADR-0010) — the cookieless
+// urn:cocoar:otp / :magic / :passkey grants on /connect/token. Per-realm
+// master toggle, off by default. Necessary but not sufficient: a client
+// also needs the matching gt:urn:cocoar:* grant-type permission before it
+// can use these grants — flipping this toggle just unlocks the seam.
+export interface NativeGrantSettingsDto {
+  Enabled: boolean
+  AccessTokenLifetimeMinutes: number
+  RefreshTokenLifetimeDays: number
+}
+
+export interface UpdateNativeGrantSettingsDto {
   Enabled?: boolean
   AccessTokenLifetimeMinutes?: number
   RefreshTokenLifetimeDays?: number

@@ -60,12 +60,23 @@ public sealed class RealmSettingsService(
 
         if (dto.Dcr is not null)
         {
-            doc.Dcr = ApplyDcrPatch(doc.Dcr, dto.Dcr);
+            var dcr = ApplyDcrPatch(doc.Dcr, dto.Dcr);
+            if (dcr.IsError) return dcr.FirstError;
+            doc.Dcr = dcr.Value;
         }
 
         if (dto.Cimd is not null)
         {
-            doc.Cimd = ApplyCimdPatch(doc.Cimd, dto.Cimd);
+            var cimd = ApplyCimdPatch(doc.Cimd, dto.Cimd);
+            if (cimd.IsError) return cimd.FirstError;
+            doc.Cimd = cimd.Value;
+        }
+
+        if (dto.NativeGrants is not null)
+        {
+            var native = ApplyNativeGrantsPatch(doc.NativeGrants, dto.NativeGrants);
+            if (native.IsError) return native.FirstError;
+            doc.NativeGrants = native.Value;
         }
 
         if (dto.Branding is not null)
@@ -127,6 +138,7 @@ public sealed class RealmSettingsService(
         SelfRegistration = MapSelfRegistrationToDto(doc.SelfRegistration),
         Dcr = MapDcrToDto(doc.Dcr),
         Cimd = MapCimdToDto(doc.Cimd),
+        NativeGrants = MapNativeGrantsToDto(doc.NativeGrants),
         Branding = MapBrandingToDto(doc.Branding),
         Deletion = MapDeletionToDto(doc.Deletion),
         Audit = MapAuditToDto(doc.Audit),
@@ -214,10 +226,10 @@ public sealed class RealmSettingsService(
         };
     }
 
-    private static DcrSettings ApplyDcrPatch(DcrSettings? current, UpdateDcrSettingsDto patch)
+    private static ErrorOr<DcrSettings> ApplyDcrPatch(DcrSettings? current, UpdateDcrSettingsDto patch)
     {
         var s = current ?? new DcrSettings();
-        return s with
+        var merged = s with
         {
             Enabled = patch.Enabled ?? s.Enabled,
             AccessTokenLifetime = patch.AccessTokenLifetimeMinutes is { } atm
@@ -231,6 +243,27 @@ public sealed class RealmSettingsService(
             PerRealmRateLimitPerDay = patch.PerRealmRateLimitPerDay ?? s.PerRealmRateLimitPerDay,
             ReservedNames = patch.ReservedNames ?? s.ReservedNames,
         };
+
+        if (ValidateTokenLifetimes("Dcr", merged.AccessTokenLifetime, merged.RefreshTokenLifetime) is { } error)
+            return error;
+        return merged;
+    }
+
+    // Shared bounds for the per-realm JWT-access-token-flow lifetimes (DCR, CIMD,
+    // native grants). All three mint self-contained, individually-non-revocable
+    // JWT access tokens for unverified / native clients, so the short access TTL
+    // is the only bound on a leaked token — reject degenerate / over-long values
+    // rather than let an admin configure an effectively-permanent token that no
+    // logout or security-stamp rotation can recall.
+    private static Error? ValidateTokenLifetimes(string section, TimeSpan access, TimeSpan refresh)
+    {
+        if (access.TotalMinutes < 1 || access.TotalMinutes > 60)
+            return Error.Validation($"{section}.InvalidAccessTokenLifetime",
+                "AccessTokenLifetimeMinutes must be between 1 and 60.");
+        if (refresh.TotalDays < 1 || refresh.TotalDays > 30)
+            return Error.Validation($"{section}.InvalidRefreshTokenLifetime",
+                "RefreshTokenLifetimeDays must be between 1 and 30.");
+        return null;
     }
 
     private static ErrorOr<DeletionSettings> ApplyDeletionPatch(DeletionSettings? current, UpdateDeletionSettingsDto patch)
@@ -300,10 +333,10 @@ public sealed class RealmSettingsService(
         };
     }
 
-    private static CimdSettings ApplyCimdPatch(CimdSettings? current, UpdateCimdSettingsDto patch)
+    private static ErrorOr<CimdSettings> ApplyCimdPatch(CimdSettings? current, UpdateCimdSettingsDto patch)
     {
         var s = current ?? new CimdSettings();
-        return s with
+        var merged = s with
         {
             Enabled = patch.Enabled ?? s.Enabled,
             AccessTokenLifetime = patch.AccessTokenLifetimeMinutes is { } atm
@@ -313,12 +346,50 @@ public sealed class RealmSettingsService(
                 ? TimeSpan.FromDays(rtd)
                 : s.RefreshTokenLifetime,
         };
+
+        if (ValidateTokenLifetimes("Cimd", merged.AccessTokenLifetime, merged.RefreshTokenLifetime) is { } error)
+            return error;
+        return merged;
     }
 
     internal static CimdSettingsDto MapCimdToDto(CimdSettings? s)
     {
         if (s is null) return new CimdSettingsDto();
         return new CimdSettingsDto
+        {
+            Enabled = s.Enabled,
+            AccessTokenLifetimeMinutes = (int)s.AccessTokenLifetime.TotalMinutes,
+            RefreshTokenLifetimeDays = (int)s.RefreshTokenLifetime.TotalDays,
+        };
+    }
+
+    private static ErrorOr<NativeGrantSettings> ApplyNativeGrantsPatch(NativeGrantSettings? current, UpdateNativeGrantSettingsDto patch)
+    {
+        var s = current ?? new NativeGrantSettings();
+        var merged = s with
+        {
+            Enabled = patch.Enabled ?? s.Enabled,
+            AccessTokenLifetime = patch.AccessTokenLifetimeMinutes is { } atm
+                ? TimeSpan.FromMinutes(atm)
+                : s.AccessTokenLifetime,
+            RefreshTokenLifetime = patch.RefreshTokenLifetimeDays is { } rtd
+                ? TimeSpan.FromDays(rtd)
+                : s.RefreshTokenLifetime,
+        };
+
+        // ADR-0010 — bounds-check the lifetimes (shared with DCR/CIMD): the short
+        // access TTL is the only bound on a non-revocable JWT access token.
+        if (ValidateTokenLifetimes("NativeGrants", merged.AccessTokenLifetime, merged.RefreshTokenLifetime) is { } error)
+            return error;
+        return merged;
+    }
+
+    internal static NativeGrantSettingsDto MapNativeGrantsToDto(NativeGrantSettings? s)
+    {
+        // Source the never-configured display defaults from the domain record so
+        // the admin UI can't drift from the engine's actual defaults.
+        s ??= new NativeGrantSettings();
+        return new NativeGrantSettingsDto
         {
             Enabled = s.Enabled,
             AccessTokenLifetimeMinutes = (int)s.AccessTokenLifetime.TotalMinutes,

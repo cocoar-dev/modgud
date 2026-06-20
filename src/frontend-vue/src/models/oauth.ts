@@ -38,6 +38,12 @@ export interface OAuthClientDto {
   AlwaysSendClientClaims: boolean
   UpdateAccessTokenClaimsOnRefresh: boolean
   ClientClaimsPrefix?: string | null
+  /**
+   * ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys.
+   * Null/blank = realm-scoped (the realm's primary domain). Changing it
+   * invalidates all passkeys already enrolled for this client.
+   */
+  WebAuthnRpId?: string | null
   Claims: OAuthClientClaimDto[]
   Roles: string[]
   /**
@@ -85,6 +91,8 @@ export interface CreateOAuthClientDto {
   RequireConsent?: boolean
   AllowedGrantTypes?: string[]
   AllowedCorsOrigins?: string[]
+  /** ADR-0009 — admin-set per-client WebAuthn RP ID. Blank = realm-scoped. */
+  WebAuthnRpId?: string | null
   /**
    * Apps this client links to. Empty/undefined = realm-wide. Multiple
    * entries = Keycloak-style multi-app client.
@@ -115,6 +123,13 @@ export interface UpdateOAuthClientDto {
   SlidingRefreshTokenLifetime?: number | null
   Claims?: OAuthClientClaimDto[] | null
   Roles?: string[] | null
+  /**
+   * ADR-0009 per-client WebAuthn RP ID patch:
+   *   undefined/missing → no change
+   *   "" (empty)        → clear back to realm-scoped
+   *   "host"            → set
+   */
+  WebAuthnRpId?: string | null
   /**
    * App-link patch (set semantics, mirrors the backend):
    *   undefined/missing → no change

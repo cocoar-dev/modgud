@@ -17,6 +17,7 @@ import EditableStringList from '@/components/EditableStringList.vue'
 import { useOAuthClientStore } from '@/stores/oauthClient.store'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
+import { useRealmSettingsStore } from '@/stores/realmSettings.store'
 import type { OAuthClientDto, CreateOAuthClientDto, UpdateOAuthClientDto, AccessTokenType } from '@/models/oauth'
 
 const { t } = useI18n()
@@ -29,6 +30,7 @@ const props = defineProps<{
 const store = useOAuthClientStore()
 const scopeStore = useOAuthScopeStore()
 const applicationsStore = useApplicationsStore()
+const realmSettingsStore = useRealmSettingsStore()
 const isCreate = computed(() => props.id === 'create' && !justCreated.value)
 // Genuinely-existing client opened from the list (drives the regenerate-secret
 // affordance) — distinct from the transient just-created state where props.id
@@ -68,7 +70,7 @@ const accessTokenTypeOptions: { value: AccessTokenType; label: string }[] = [
   { value: 'Reference', label: 'Reference (introspection)' },
 ]
 
-const grantTypeOptions = [
+const standardGrantTypeOptions = [
   { value: 'authorization_code', label: 'authorization_code',
     subtitle: 'Interactive user-flow with PKCE',
     icon: 'log-in', group: 'Standard flows' },
@@ -88,6 +90,34 @@ const grantTypeOptions = [
     subtitle: 'DEPRECATED — resource-owner password credentials',
     icon: 'circle-alert', group: 'Deprecated' },
 ]
+
+// Native passwordless grants (ADR-0010) — cookieless proofs exchanged
+// directly at /connect/token. Only surfaced when the realm has enabled
+// native grants (RealmSettings.NativeGrants.Enabled); a client also needs
+// the matching gt:urn:cocoar:* permission to actually use them. Existing
+// selections are kept visible even when the realm toggle is off so an
+// already-configured grant never silently vanishes from the listbox.
+const cocoarGrantTypeOptions = [
+  { value: 'urn:cocoar:otp', label: 'urn:cocoar:otp',
+    subtitle: 'Email one-time code, no browser redirect',
+    icon: 'mail', group: 'Native passwordless (Cocoar)' },
+  { value: 'urn:cocoar:magic', label: 'urn:cocoar:magic',
+    subtitle: 'Magic-link token, no browser redirect',
+    icon: 'link', group: 'Native passwordless (Cocoar)' },
+  { value: 'urn:cocoar:passkey', label: 'urn:cocoar:passkey',
+    subtitle: 'WebAuthn assertion, no browser redirect',
+    icon: 'fingerprint', group: 'Native passwordless (Cocoar)' },
+]
+
+const nativeGrantsEnabled = computed(
+  () => realmSettingsStore.settings?.NativeGrants?.Enabled ?? false)
+
+const grantTypeOptions = computed(() => {
+  const selected = new Set(form.value.AllowedGrantTypes)
+  const cocoar = cocoarGrantTypeOptions.filter(
+    (o) => nativeGrantsEnabled.value || selected.has(o.value))
+  return [...standardGrantTypeOptions, ...cocoar]
+})
 
 const scopeOptions = computed(() => {
   const standardOidc = new Set(['openid', 'profile', 'email', 'roles', 'offline_access'])
@@ -154,6 +184,8 @@ interface FormState {
   AuthorizationCodeLifetime: string
   AbsoluteRefreshTokenLifetime: string
   SlidingRefreshTokenLifetime: string
+  /** ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys. Empty = realm-scoped. */
+  WebAuthnRpId: string
   /** Selected App.Ids. Empty list = realm-wide. */
   AppIds: string[]
 }
@@ -198,6 +230,7 @@ function emptyForm(): FormState {
     AuthorizationCodeLifetime: '',
     AbsoluteRefreshTokenLifetime: '',
     SlidingRefreshTokenLifetime: '',
+    WebAuthnRpId: '',
     AppIds: [],
   }
 }
@@ -229,6 +262,7 @@ function fromDto(dto: OAuthClientDto): FormState {
     AuthorizationCodeLifetime: dto.AuthorizationCodeLifetime?.toString() ?? '',
     AbsoluteRefreshTokenLifetime: dto.AbsoluteRefreshTokenLifetime?.toString() ?? '',
     SlidingRefreshTokenLifetime: dto.SlidingRefreshTokenLifetime?.toString() ?? '',
+    WebAuthnRpId: dto.WebAuthnRpId ?? '',
     AppIds: [...(dto.AppIds ?? [])],
   }
 }
@@ -286,6 +320,9 @@ onMounted(async () => {
   // multiselect — needed for both create + edit.
   applicationsStore.initialize()
   scopeStore.initialize()
+  // Realm settings gate whether the native passwordless grants appear in the
+  // grant-type picker. Cheap singleton GET; skip if already in the store.
+  if (!realmSettingsStore.loaded) realmSettingsStore.load().catch(() => {})
   if (isCreate.value) return
   loading.value = true
   try {
@@ -348,6 +385,8 @@ function buildCreateDto(): CreateOAuthClientDto {
   }
   const secret = form.value.ClientSecret.trim()
   if (secret) dto.ClientSecret = secret
+  const rpId = form.value.WebAuthnRpId.trim()
+  if (rpId) dto.WebAuthnRpId = rpId
   if (form.value.AppIds.length > 0) dto.AppIds = [...form.value.AppIds]
   return dto
 }
@@ -373,6 +412,9 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     AuthorizationCodeLifetime: parseInt(form.value.AuthorizationCodeLifetime),
     AbsoluteRefreshTokenLifetime: parseInt(form.value.AbsoluteRefreshTokenLifetime),
     SlidingRefreshTokenLifetime: parseInt(form.value.SlidingRefreshTokenLifetime),
+    // ADR-0009 PATCH: send the trimmed value verbatim — "" clears back to
+    // realm-scoped, a host sets the per-client RP ID.
+    WebAuthnRpId: form.value.WebAuthnRpId.trim(),
     // Always send AppIds on update — empty array = detach all, otherwise replace.
     AppIds: [...form.value.AppIds],
   }
@@ -455,6 +497,13 @@ async function copySecret() {
           </CoarFormField>
           <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent-Typ')">
             <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" class="input-enum" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.oauthClients.webAuthnRpId', {}, 'WebAuthn RP-ID (Passkeys)')">
+            <CoarTextInput v-model="form.WebAuthnRpId" clearable class="input-name"
+              :placeholder="t('admin.oauthClients.webAuthnRpIdPlaceholder', {}, 'leer = Realm-Domain')" />
+            <p class="field-hint">
+              {{ t('admin.oauthClients.webAuthnRpIdHint', {}, 'Optional. Eigene Relying-Party-Domain für native Passkeys dieser App (z. B. app.example.com). Leer = Realm-Domain. Achtung: Eine Änderung macht alle bereits registrierten Passkeys dieser App ungültig.') }}
+            </p>
           </CoarFormField>
           <CoarFormField v-if="isCreate" :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (leer = generieren)')">
             <CoarTextInput v-model="form.ClientSecret" type="password" clearable class="input-name" />
@@ -540,6 +589,9 @@ async function copySecret() {
             <p class="tab-hint tab-hint--shortcut">
               {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
             </p>
+            <CoarNote v-if="nativeGrantsEnabled" variant="info">
+              {{ t('admin.oauthClients.grantTypes.nativeHint', {}, 'Native passwordless grants (urn:cocoar:otp / :magic / :passkey) are enabled for this realm and available below. Add one here to give this client the matching gt:urn:cocoar:* permission — only then can it exchange a passwordless proof at /connect/token.') }}
+            </CoarNote>
             <section class="flex-section">
               <CoarDualListbox
                 class="flex-1 min-h-0"
@@ -712,6 +764,12 @@ async function copySecret() {
 }
 .tab-hint--shortcut {
   opacity: 0.85;
+}
+.field-hint {
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  margin-top: 4px;
 }
 .flex-section {
   flex: 1;
