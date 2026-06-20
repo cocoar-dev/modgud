@@ -11,6 +11,16 @@ public static class OAuthApplicationSettingKeys
     public const string AbsoluteRefreshTokenLifetime = "modgud:absolute_refresh_token_lifetime";
     public const string SlidingRefreshTokenLifetime = "modgud:sliding_refresh_token_lifetime";
     public const string ClientClaimsPrefix = "modgud:client_claims_prefix";
+
+    /// <summary>
+    /// ADR-0009 — the admin-set per-client WebAuthn RP ID. When set, native passkey
+    /// ceremonies (login begin/redeem + enrollment) for this client use this value
+    /// as the WebAuthn relying-party id (and the derived origin) instead of the
+    /// realm's <c>PrimaryDomain</c>. Absent/blank ⇒ realm-scoped (today's behaviour).
+    /// High-trust admin-set value (not client-supplied), so there is no runtime
+    /// public-suffix check.
+    /// </summary>
+    public const string WebAuthnRpId = "modgud:webauthn_rp_id";
 }
 
 /// <summary>Custom OAuth application property keys (JSON-element values for complex types).</summary>

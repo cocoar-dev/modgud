@@ -50,6 +50,15 @@ public class RealmSettings
     /// omits <c>client_id_metadata_document_supported</c>.</summary>
     public CimdSettings? Cimd { get; set; }
 
+    /// <summary>Native (cookieless) passwordless token-grant sub-section
+    /// (ADR-0010: <c>urn:cocoar:otp</c>, <c>urn:cocoar:magic</c>). Null = never
+    /// configured; callers read null as
+    /// <c>NativeGrantSettings { Enabled = false }</c>. The master gate for
+    /// whether <c>/connect/token</c> accepts the native grants for this realm at
+    /// all — per-client opt-in via the <c>gt:urn:cocoar:*</c> permission is an
+    /// additional, separate gate.</summary>
+    public NativeGrantSettings? NativeGrants { get; set; }
+
     /// <summary>Per-realm SPA branding (product name, logo, primary color,
     /// favicon). Null = SPA falls back to the Cocoar default. Surfaced via
     /// the anonymous <c>/api/app-info</c> so the login page renders branded

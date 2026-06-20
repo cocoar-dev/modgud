@@ -1,4 +1,5 @@
 using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.OAuth.Scopes;
 using Modgud.Domain.OAuth.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -142,6 +143,19 @@ public static class OpenIddictExtensions
                 options.AllowClientCredentialsFlow();
                 options.AllowDeviceAuthorizationFlow();
 
+                // ADR-0010 — native (cookieless) passwordless token grants. The
+                // factor (email-OTP / magic-link) is verified server-side in
+                // AuthorizationEndpoints.ExchangeAsync and tokens are minted
+                // directly, with no browser, no cookie and no hosted login page.
+                // Two independent gates beyond AllowCustomFlow: a per-realm enable
+                // flag (RealmSettings.NativeGrants, default OFF) checked in the
+                // dispatch branch, and the per-client gt:urn:cocoar:* application
+                // permission — IgnoreGrantTypePermissions is NOT set, so OpenIddict
+                // rejects a client that lacks the permission with unauthorized_client.
+                options.AllowCustomFlow(CocoarGrantTypes.Otp);
+                options.AllowCustomFlow(CocoarGrantTypes.Magic);
+                options.AllowCustomFlow(CocoarGrantTypes.Passkey);
+
                 // Reference tokens by default; per-client opt-in to JWT via AccessTokenTypeHandler.
                 options.UseReferenceAccessTokens()
                     .UseReferenceRefreshTokens();
@@ -271,6 +285,12 @@ public static class OpenIddictExtensions
             {
                 options.UseLocalServer();
                 options.UseAspNetCore();
+                // Multi-realm: accept the active realm's keys + issuer when a custom
+                // resource endpoint (ADR-0009 native passkey enroll) is protected by
+                // the validation/Bearer scheme — the mirror of RealmTokenValidationHandler
+                // on the server pipeline. Without it a realm-signed access token is
+                // rejected as invalid_token ("issuer not valid", ID2088).
+                options.AddEventHandler(RealmValidationTokenHandler.Descriptor);
             });
 
         return services;

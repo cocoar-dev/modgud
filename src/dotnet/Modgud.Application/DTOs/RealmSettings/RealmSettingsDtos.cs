@@ -15,6 +15,7 @@ public record RealmSettingsDto
     public SelfRegistrationDto SelfRegistration { get; init; } = new();
     public DcrSettingsDto Dcr { get; init; } = new();
     public CimdSettingsDto Cimd { get; init; } = new();
+    public NativeGrantSettingsDto NativeGrants { get; init; } = new();
     public BrandingSettingsDto Branding { get; init; } = new();
     public DeletionSettingsDto Deletion { get; init; } = new();
     public AuditSettingsDto Audit { get; init; } = new();
@@ -35,6 +36,7 @@ public record UpdateRealmSettingsDto
     public UpdateSelfRegistrationDto? SelfRegistration { get; init; }
     public UpdateDcrSettingsDto? Dcr { get; init; }
     public UpdateCimdSettingsDto? Cimd { get; init; }
+    public UpdateNativeGrantSettingsDto? NativeGrants { get; init; }
     public UpdateBrandingSettingsDto? Branding { get; init; }
     public UpdateDeletionSettingsDto? Deletion { get; init; }
     public UpdateAuditSettingsDto? Audit { get; init; }

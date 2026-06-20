@@ -154,6 +154,8 @@ interface FormState {
   AuthorizationCodeLifetime: string
   AbsoluteRefreshTokenLifetime: string
   SlidingRefreshTokenLifetime: string
+  /** ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys. Empty = realm-scoped. */
+  WebAuthnRpId: string
   /** Selected App.Ids. Empty list = realm-wide. */
   AppIds: string[]
 }
@@ -198,6 +200,7 @@ function emptyForm(): FormState {
     AuthorizationCodeLifetime: '',
     AbsoluteRefreshTokenLifetime: '',
     SlidingRefreshTokenLifetime: '',
+    WebAuthnRpId: '',
     AppIds: [],
   }
 }
@@ -229,6 +232,7 @@ function fromDto(dto: OAuthClientDto): FormState {
     AuthorizationCodeLifetime: dto.AuthorizationCodeLifetime?.toString() ?? '',
     AbsoluteRefreshTokenLifetime: dto.AbsoluteRefreshTokenLifetime?.toString() ?? '',
     SlidingRefreshTokenLifetime: dto.SlidingRefreshTokenLifetime?.toString() ?? '',
+    WebAuthnRpId: dto.WebAuthnRpId ?? '',
     AppIds: [...(dto.AppIds ?? [])],
   }
 }
@@ -348,6 +352,8 @@ function buildCreateDto(): CreateOAuthClientDto {
   }
   const secret = form.value.ClientSecret.trim()
   if (secret) dto.ClientSecret = secret
+  const rpId = form.value.WebAuthnRpId.trim()
+  if (rpId) dto.WebAuthnRpId = rpId
   if (form.value.AppIds.length > 0) dto.AppIds = [...form.value.AppIds]
   return dto
 }
@@ -373,6 +379,9 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     AuthorizationCodeLifetime: parseInt(form.value.AuthorizationCodeLifetime),
     AbsoluteRefreshTokenLifetime: parseInt(form.value.AbsoluteRefreshTokenLifetime),
     SlidingRefreshTokenLifetime: parseInt(form.value.SlidingRefreshTokenLifetime),
+    // ADR-0009 PATCH: send the trimmed value verbatim — "" clears back to
+    // realm-scoped, a host sets the per-client RP ID.
+    WebAuthnRpId: form.value.WebAuthnRpId.trim(),
     // Always send AppIds on update — empty array = detach all, otherwise replace.
     AppIds: [...form.value.AppIds],
   }
@@ -455,6 +464,13 @@ async function copySecret() {
           </CoarFormField>
           <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent-Typ')">
             <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" class="input-enum" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.oauthClients.webAuthnRpId', {}, 'WebAuthn RP-ID (Passkeys)')">
+            <CoarTextInput v-model="form.WebAuthnRpId" clearable class="input-name"
+              :placeholder="t('admin.oauthClients.webAuthnRpIdPlaceholder', {}, 'leer = Realm-Domain')" />
+            <p class="field-hint">
+              {{ t('admin.oauthClients.webAuthnRpIdHint', {}, 'Optional. Eigene Relying-Party-Domain für native Passkeys dieser App (z. B. app.example.com). Leer = Realm-Domain. Achtung: Eine Änderung macht alle bereits registrierten Passkeys dieser App ungültig.') }}
+            </p>
           </CoarFormField>
           <CoarFormField v-if="isCreate" :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (leer = generieren)')">
             <CoarTextInput v-model="form.ClientSecret" type="password" clearable class="input-name" />
@@ -712,6 +728,12 @@ async function copySecret() {
 }
 .tab-hint--shortcut {
   opacity: 0.85;
+}
+.field-hint {
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  margin-top: 4px;
 }
 .flex-section {
   flex: 1;

@@ -37,12 +37,18 @@ public static class RealmFido2
     /// where the WebAuthn ceremony runs in dev. <c>localhost</c> /
     /// <c>*.localhost</c> are browser secure-contexts, so dev passkeys work.
     /// </summary>
-    public static Fido2Configuration BuildConfiguration(Realm realm, IWebHostEnvironment env)
+    public static Fido2Configuration BuildConfiguration(Realm realm, IWebHostEnvironment env, string? rpIdOverride = null)
     {
         ArgumentNullException.ThrowIfNull(realm);
         ArgumentNullException.ThrowIfNull(env);
 
-        var host = realm.PrimaryDomain;
+        // ADR-0009 implementation seam (per-client WebAuthn RP-ID). When the
+        // override is null — the only Phase-2 caller — behaviour is bit-identical
+        // to today (RP-ID = realm.PrimaryDomain). When a future caller (Phase 3,
+        // per-client RP-ID) supplies an admin-set value, it becomes BOTH the
+        // ServerDomain (RP-ID) and the host the https origin is derived from, so
+        // the RP-ID and the accepted origin can never disagree.
+        var host = string.IsNullOrWhiteSpace(rpIdOverride) ? realm.PrimaryDomain : rpIdOverride;
         // A passkey's RP ID IS the primary domain — an empty one would mint
         // unverifiable credentials. Every realm must have a primary domain
         // (enforced at create/update/adopt + backfilled at boot); fail loudly
@@ -91,7 +97,7 @@ public sealed class RealmScopedFido2Factory(
     IWebHostEnvironment env,
     IMetadataService? metadataService = null)
 {
-    public async Task<IFido2> CreateAsync(CancellationToken ct = default)
+    public async Task<IFido2> CreateAsync(CancellationToken ct = default, string? rpIdOverride = null)
     {
         var http = httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException(
@@ -101,7 +107,10 @@ public sealed class RealmScopedFido2Factory(
             ?? throw new InvalidOperationException(
                 "Could not resolve the current realm for the WebAuthn ceremony — no relying party can be built.");
 
-        var config = RealmFido2.BuildConfiguration(realm, env);
+        // ADR-0009 seam: rpIdOverride is null for every Phase-2 caller (RP-ID stays
+        // realm.PrimaryDomain). Threaded through so the Phase-3 per-client RP-ID
+        // only has to supply the value here — no new RP-ID code path.
+        var config = RealmFido2.BuildConfiguration(realm, env, rpIdOverride);
         // metadataService is optional — the previous global setup used the
         // library's NullMetadataService (no attestation-metadata validation),
         // and passing null here gives the identical behaviour.

@@ -80,6 +80,7 @@ public static class PasskeyEndpoints
         group.MapPost("register-options", [Authorize] async (
             HttpContext context,
             RealmScopedFido2Factory fido2Factory,
+            RpIdResolver rpIdResolver,
             IDocumentSession session,
             UserManager<ApplicationUser> userManager,
             CancellationToken ct) =>
@@ -91,9 +92,15 @@ public static class PasskeyEndpoints
             // same RP is used to create and (later) verify the credential.
             var fido2 = await fido2Factory.CreateAsync(ct);
 
-            var existingCredentials = await session.Query<StoredPasskeyCredential>()
+            // ADR-0009: the web register flow is realm-scoped (RP = PrimaryDomain).
+            // Exclude only the user's realm-RP credentials so a native per-client
+            // credential (a different RP) is not referenced in this ceremony.
+            var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
+            var existingCredentials = (await session.Query<StoredPasskeyCredential>()
                 .Where(c => c.UserId == user.Id)
-                .ToListAsync();
+                .ToListAsync())
+                .Where(c => string.Equals(c.RpId ?? primaryDomain, primaryDomain, StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
             var excludeCredentials = existingCredentials
                 .Select(c => new PublicKeyCredentialDescriptor(c.CredentialId))
@@ -110,7 +117,19 @@ public static class PasskeyEndpoints
             {
                 User = fidoUser,
                 ExcludeCredentials = excludeCredentials,
-                AuthenticatorSelection = AuthenticatorSelection.Default,
+                // ADR-0010: enroll a DISCOVERABLE (resident-key) credential so the
+                // native usernameless begin (empty allowCredentials) can find it on
+                // the device. Preferred — not Required — so authenticators without a
+                // resident-key slot still enroll; platform authenticators (Face ID /
+                // Windows Hello / iOS/Android passkeys, the native target) create
+                // discoverable credentials under Preferred. UserVerification stays
+                // Preferred here; the native login ceremony enforces UV=Required,
+                // and platform authenticators perform UV at assertion time.
+                AuthenticatorSelection = new AuthenticatorSelection
+                {
+                    ResidentKey = ResidentKeyRequirement.Preferred,
+                    UserVerification = UserVerificationRequirement.Preferred,
+                },
                 AttestationPreference = AttestationConveyancePreference.None,
             });
 
@@ -233,6 +252,7 @@ public static class PasskeyEndpoints
         group.MapPost("login-options", async (
             HttpContext context,
             RealmScopedFido2Factory fido2Factory,
+            RpIdResolver rpIdResolver,
             IDocumentSession session,
             PasskeyLoginOptionsRequest? request,
             CancellationToken ct) =>
@@ -248,9 +268,15 @@ public static class PasskeyEndpoints
 
                 if (user is not null)
                 {
-                    var credentials = await session.Query<StoredPasskeyCredential>()
+                    // ADR-0009: realm-scoped web login only surfaces the user's
+                    // realm-RP credentials (a native per-client credential is bound
+                    // to a different RP and is unusable here).
+                    var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
+                    var credentials = (await session.Query<StoredPasskeyCredential>()
                         .Where(c => c.UserId == user.Id)
-                        .ToListAsync();
+                        .ToListAsync())
+                        .Where(c => string.Equals(c.RpId ?? primaryDomain, primaryDomain, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
 
                     allowedCredentials = credentials
                         .Select(c => new PublicKeyCredentialDescriptor(c.CredentialId))
@@ -298,6 +324,7 @@ public static class PasskeyEndpoints
         group.MapPost("login", async (
             HttpContext context,
             RealmScopedFido2Factory fido2Factory,
+            RpIdResolver rpIdResolver,
             IDocumentSession session,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
@@ -325,45 +352,28 @@ public static class PasskeyEndpoints
 
             context.Response.Cookies.Delete("Modgud.Passkey.Challenge");
 
-            var fido2JsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var assertionResponse = JsonSerializer.Deserialize<AuthenticatorAssertionRawResponse>(body.GetRawText(), fido2JsonOptions);
-            if (assertionResponse is null)
-                return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
-
-            // Find stored credential by credential ID
-            var assertionCredentialId = Convert.FromBase64String(
-                assertionResponse.Id.Replace('-', '+').Replace('_', '/').PadRight(
-                    assertionResponse.Id.Length + (4 - assertionResponse.Id.Length % 4) % 4, '='));
-            var allCredentials = await session.Query<StoredPasskeyCredential>().ToListAsync();
-            var storedCredential = allCredentials.FirstOrDefault(c => c.CredentialId.SequenceEqual(assertionCredentialId));
-
+            // Verify the assertion via the shared verifier (the SAME FIDO2 verify
+            // the native urn:cocoar:passkey grant uses — no fork). Only the
+            // challenge transport differs: web reads AssertionOptions from the
+            // cookie above, native from the server-side ceremony doc. The web flow
+            // is realm-scoped: RP ID = PrimaryDomain (the fido2 above was built with
+            // it), so legacy null-RpId credentials resolve to it and still verify.
+            var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
+            var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(
+                fido2, options, body.GetRawText(), session, primaryDomain, primaryDomain, ct);
             if (storedCredential is null)
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
 
-            var result = await fido2.MakeAssertionAsync(new MakeAssertionParams
-            {
-                AssertionResponse = assertionResponse,
-                OriginalOptions = options,
-                StoredPublicKey = storedCredential.PublicKey,
-                StoredSignatureCounter = storedCredential.SignatureCount,
-                IsUserHandleOwnerOfCredentialIdCallback = async (args, ct) =>
-                {
-                    var credential = allCredentials.FirstOrDefault(c => c.CredentialId.SequenceEqual(args.CredentialId));
-                    return credential?.UserHandle.SequenceEqual(args.UserHandle) ?? false;
-                },
-            });
-
-            // Update signature counter
-            storedCredential.SignatureCount = result.SignCount;
-            storedCredential.LastUsedAt = DateTimeOffset.UtcNow;
-            session.Store(storedCredential);
-            await session.SaveChangesAsync();
-
-            // Sign in — load via the UserManager finder so the user is hydrated
-            // with authoritative security data (stamp/2FA/lockout) from
-            // UserSecurityData rather than a stale ApplicationUser mirror.
-            // FindByIdAsync also filters IsDeleted; the explicit IsActive/IsDeleted
-            // gate below stays as defense-in-depth (soft-delete auth-bypass).
+            // PasskeyAssertionVerifier.VerifyAsync (above) already ran the FIDO2
+            // assertion and advanced + persisted the signature counter, so there is
+            // no inline MakeAssertionAsync here.
+            //
+            // Sign in — load via the UserManager finder (NOT a raw session load) so
+            // the user is hydrated with authoritative security data (stamp/2FA/
+            // lockout) from UserSecurityData rather than a stale ApplicationUser
+            // mirror — the SecurityStamp sign-in fix. FindByIdAsync also filters
+            // IsDeleted; the explicit IsActive/IsDeleted gate below stays as
+            // defense-in-depth (soft-delete auth-bypass).
             var user = await userManager.FindByIdAsync(storedCredential.UserId.ToString());
             if (user is null || !user.IsActive || user.IsDeleted)
             {

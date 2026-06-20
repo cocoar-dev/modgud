@@ -44,6 +44,7 @@ using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.Scheduling;
 using Modgud.Infrastructure.Persistence.DataProtection;
 using Microsoft.AspNetCore.DataProtection;
+using Modgud.Api.Features.Auth;
 using Modgud.Api.Features.Auth.OAuth;
 using Modgud.Authentication.Setup;
 using Modgud.Authentication.Identity;
@@ -271,6 +272,12 @@ try
     // registered on, and the same RP is resolved for both registration and
     // assertion. Scoped: one per request, keyed off the request's tenant.
     builder.Services.AddScoped<Modgud.Authentication.Identity.RealmScopedFido2Factory>();
+
+    // ADR-0009 — resolves the effective WebAuthn RP ID for a passkey ceremony: the
+    // requesting OAuth client's admin-set per-client RP ID, or the realm's
+    // PrimaryDomain when unset. Shared by native login begin/redeem + native enroll
+    // so the RP ID a credential is enrolled under matches what login later demands.
+    builder.Services.AddScoped<Modgud.Authentication.Identity.RpIdResolver>();
 
     // Identity + Cookie Authentication
     builder.Services.AddIdentityCore<ApplicationUser>(options =>
@@ -566,6 +573,37 @@ try
                 {
                     PermitLimit = 30,
                     Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                });
+        });
+
+        // ADR-0010 native passwordless OTP request — anonymous email-sending
+        // endpoint, same per-IP SMTP cap class as magic-link (5/hour).
+        options.AddPolicy("native-otp", context =>
+        {
+            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ip,
+                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 5,
+                    Window = TimeSpan.FromHours(1),
+                    QueueLimit = 0,
+                });
+        });
+
+        // ADR-0010 Phase 2 — anonymous passkey "begin" endpoint. Cheap (no email/
+        // SMTP, just a challenge + a single-use ceremony doc), so more generous
+        // than native-otp; still per-IP bounded to cap ceremony-doc spam.
+        options.AddPolicy("passkey-begin", context =>
+        {
+            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ip,
+                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 60,
+                    Window = TimeSpan.FromMinutes(5),
                     QueueLimit = 0,
                 });
         });
@@ -1208,7 +1246,10 @@ try
     app.MapProfileEndpoints("api");
     app.MapMfaEndpoints("api");
     app.MapEmailOtpEndpoints("api");
+    app.MapNativeOtpEndpoints("api");
     app.MapPasskeyEndpoints("api");
+    app.MapNativePasskeyEndpoints();
+    app.MapNativePasskeyEnrollEndpoints();
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");
     app.MapEmailVerificationEndpoints("api");
