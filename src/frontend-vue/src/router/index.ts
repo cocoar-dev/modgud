@@ -167,6 +167,16 @@ const routes = [
       meta: { public: true },
     },
     {
+      // OAuth 2.0 Device Authorization Grant (RFC 8628) verification page.
+      // A device shows the user "go to <host>/device" + a user code; the user
+      // lands here either directly (then types the code) or via
+      // /connect/verify's redirect (?ticket=<id>, code captured server-side).
+      // Public route; the /connect/device-verification API demands the cookie.
+      path: '/device',
+      component: () => import('@/views/auth/DeviceVerifyView.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/reset-password',
       component: () => import('@/views/auth/ResetPasswordView.vue'),
       meta: { public: true },

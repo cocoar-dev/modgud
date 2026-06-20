@@ -60,6 +60,7 @@ export default withMermaid(defineConfig({
   themeConfig: {
     nav: [
       { text: 'Overview', link: '/' },
+      { text: 'Product', link: '/product/feature-matrix' },
       { text: 'Future Features', link: '/future-features/' },
       { text: 'Upstream Requests', link: '/upstream-feature-requests/' },
     ],
@@ -70,6 +71,13 @@ export default withMermaid(defineConfig({
         items: [
           { text: 'Overview', link: '/' },
           { text: 'README (conventions)', link: '/README' },
+        ],
+      },
+      {
+        text: 'Product',
+        items: [
+          { text: '⭐ Feature Specification (code-verified)', link: '/product/feature-matrix' },
+          { text: '⭐ Competitor Comparison', link: '/product/comparison' },
         ],
       },
       {

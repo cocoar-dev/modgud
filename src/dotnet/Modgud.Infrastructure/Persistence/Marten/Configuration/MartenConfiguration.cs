@@ -73,6 +73,15 @@ public static class MartenConfiguration
             .UseOptimisticConcurrency(true)
             .Index(x => x.ExpiresAt);
 
+        // Device Authorization Grant (RFC 8628) end-user verification ticket.
+        // Same shape/rationale as ConsentTicket: per-tenant, subject-bound,
+        // single-use via optimistic concurrency on the consume, indexed on
+        // ExpiresAt for the janitor.
+        options.Schema.For<Modgud.Domain.OAuth.Device.DeviceVerificationTicket>()
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Index(x => x.ExpiresAt);
+
         // DataProtection keys (cookie/antiforgery encryption material).
         // Lives in the system tenant so every instance shares one key pool
         // and keys survive Container-Restart. Friendly-name (UUID-shaped,
