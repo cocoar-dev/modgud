@@ -1039,6 +1039,7 @@
       "dcrOnly.help": "Nur Clients anzeigen, die über /connect/register (RFC 7591) erzeugt wurden. Nützlich, um von Agents registrierte Clients von admin-erstellten zu unterscheiden.",
       "grantTypes.available": "Verfügbare Grant-Types",
       "grantTypes.hint": "Keine stillen Defaults: Bleibt dies leer, entsteht ein Client, der keine Tokens ausstellen kann. SPAs / Mobile-Apps: authorization_code + refresh_token. Server-zu-Server: client_credentials. Wähle, was der Client tatsächlich braucht.",
+      "grantTypes.nativeHint": "Native passwortlose Grants (urn:cocoar:otp / :magic / :passkey) sind für diesen Realm aktiviert und unten verfügbar. Füge hier einen hinzu, um diesem Client die passende gt:urn:cocoar:*-Permission zu geben — erst dann kann er einen passwortlosen Nachweis an /connect/token eintauschen.",
       "grantTypes.searchPlaceholder": "Suchen…",
       "grantTypes.selected": "Aktiviert",
       "postLogoutRedirectUri": {
@@ -1352,6 +1353,7 @@
         "selfRegistration": "Self-Registration",
         "dcr": "Dynamic Client Registration",
         "cimd": "Client-ID-Metadaten (CIMD)",
+        "nativeGrants": "Native passwortlose Grants",
         "branding": "Branding",
         "deletion": "Konto-Löschung",
         "signingKeys": "Signing-Schlüssel"
@@ -1423,6 +1425,13 @@
         "accessTokenMinutes": "Access-Token-Lebensdauer (Minuten)",
         "refreshTokenDays": "Refresh-Token-Lebensdauer (Tage)",
         "optInWarning": "Wie bei DCR kann ein CIMD-Client Access-Tokens nur für OAuth-APIs mit aktiviertem AllowDynamicRegistration und für die im Metadaten-Dokument deklarierten Scopes anfordern. Solange du nicht mindestens eine API freigibst, können CIMD-Clients keine nutzbaren Tokens ausstellen. Der Server lädt die Metadaten-URL des Clients — aktiviere dies nur, wenn du dem ausgehenden Netzwerk des Realms vertraust."
+      },
+      "nativeGrants": {
+        "hint": "Wenn aktiviert, können native Apps einen passwortlosen Nachweis direkt unter POST /connect/token gegen Tokens eintauschen — ohne Browser-Redirect, ohne Cookie. Drei Grants: urn:cocoar:otp (Einmalcode per E-Mail), urn:cocoar:magic (Magic-Link-Token), urn:cocoar:passkey (WebAuthn-Assertion). Standardmäßig aus.",
+        "enabled": "Native passwortlose Grants aktivieren",
+        "accessTokenMinutes": "Access-Token-Lebensdauer (Minuten)",
+        "refreshTokenDays": "Refresh-Token-Lebensdauer (Tage)",
+        "optInWarning": "Pro-Client-Opt-in weiterhin nötig: Ein Client kann einen nativen Grant erst nutzen, wenn er die passende Grant-Type-Permission trägt (gt:urn:cocoar:otp / :magic / :passkey), aktiviert im Grants-Tab des Clients. Dieser Realm-Schalter ist notwendig, aber nicht hinreichend. Nur Katalog-Clients kommen infrage — DCR-/CIMD-Clients sind ausgeschlossen."
       }
     },
     "dualListbox": {

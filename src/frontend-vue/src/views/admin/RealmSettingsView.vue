@@ -26,6 +26,8 @@ import type {
   UpdateDcrSettingsDto,
   CimdSettingsDto,
   UpdateCimdSettingsDto,
+  NativeGrantSettingsDto,
+  UpdateNativeGrantSettingsDto,
   DeletionSettingsDto,
   UpdateDeletionSettingsDto,
 } from '@/models/realmSettings'
@@ -45,7 +47,7 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.hasSubNav = true
 }), { immediate: true })
 
-type TabId = 'self-registration' | 'dcr' | 'cimd' | 'deletion' | 'signing-keys'
+type TabId = 'self-registration' | 'dcr' | 'cimd' | 'native-grants' | 'deletion' | 'signing-keys'
 const activeTab = ref<TabId>('self-registration')
 
 const canRotateSigningKey = computed(() => authStore.hasPermission('realm-settings:write'))
@@ -131,6 +133,28 @@ function cimdFromDto(d: CimdSettingsDto): CimdFormState {
   }
 }
 
+// ── Native-grants form state (ADR-0010) ──────────────────────────────
+interface NativeGrantFormState {
+  Enabled: boolean
+  AccessTokenLifetimeMinutes: number
+  RefreshTokenLifetimeDays: number
+}
+
+function emptyNativeGrants(): NativeGrantFormState {
+  return { Enabled: false, AccessTokenLifetimeMinutes: 15, RefreshTokenLifetimeDays: 14 }
+}
+
+const nativeGrantsForm = ref<NativeGrantFormState>(emptyNativeGrants())
+const originalNativeGrants = ref<NativeGrantSettingsDto | null>(null)
+
+function nativeGrantsFromDto(d: NativeGrantSettingsDto): NativeGrantFormState {
+  return {
+    Enabled: d.Enabled,
+    AccessTokenLifetimeMinutes: d.AccessTokenLifetimeMinutes,
+    RefreshTokenLifetimeDays: d.RefreshTokenLifetimeDays,
+  }
+}
+
 // ── Deletion-policy form state ───────────────────────────────────────
 interface DeletionFormState {
   GraceDays: number
@@ -205,6 +229,8 @@ onMounted(async () => {
     dcrForm.value = dcrFromDto(dto.Dcr)
     originalCimd.value = dto.Cimd
     cimdForm.value = cimdFromDto(dto.Cimd)
+    originalNativeGrants.value = dto.NativeGrants
+    nativeGrantsForm.value = nativeGrantsFromDto(dto.NativeGrants)
     originalDeletion.value = dto.Deletion
     deletionForm.value = deletionFromDto(dto.Deletion)
   } catch (e: any) {
@@ -288,6 +314,21 @@ function buildCimdPatch(): UpdateCimdSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildNativeGrantsPatch(): UpdateNativeGrantSettingsDto | undefined {
+  const orig = originalNativeGrants.value
+  if (!orig) return undefined
+  const cur = nativeGrantsForm.value
+  const patch: UpdateNativeGrantSettingsDto = {}
+
+  if (cur.Enabled !== orig.Enabled) patch.Enabled = cur.Enabled
+  if (cur.AccessTokenLifetimeMinutes !== orig.AccessTokenLifetimeMinutes)
+    patch.AccessTokenLifetimeMinutes = cur.AccessTokenLifetimeMinutes
+  if (cur.RefreshTokenLifetimeDays !== orig.RefreshTokenLifetimeDays)
+    patch.RefreshTokenLifetimeDays = cur.RefreshTokenLifetimeDays
+
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
 function buildDeletionPatch(): UpdateDeletionSettingsDto | undefined {
   const orig = originalDeletion.value
   if (!orig) return undefined
@@ -306,8 +347,9 @@ async function save() {
   const selfRegPatch = buildSelfRegPatch()
   const dcrPatch = buildDcrPatch()
   const cimdPatch = buildCimdPatch()
+  const nativeGrantsPatch = buildNativeGrantsPatch()
   const deletionPatch = buildDeletionPatch()
-  if (!selfRegPatch && !dcrPatch && !cimdPatch && !deletionPatch) {
+  if (!selfRegPatch && !dcrPatch && !cimdPatch && !nativeGrantsPatch && !deletionPatch) {
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1200)
     return
@@ -319,11 +361,13 @@ async function save() {
       SelfRegistration?: UpdateSelfRegistrationDto
       Dcr?: UpdateDcrSettingsDto
       Cimd?: UpdateCimdSettingsDto
+      NativeGrants?: UpdateNativeGrantSettingsDto
       Deletion?: UpdateDeletionSettingsDto
     } = {}
     if (selfRegPatch) payload.SelfRegistration = selfRegPatch
     if (dcrPatch) payload.Dcr = dcrPatch
     if (cimdPatch) payload.Cimd = cimdPatch
+    if (nativeGrantsPatch) payload.NativeGrants = nativeGrantsPatch
     if (deletionPatch) payload.Deletion = deletionPatch
     const updated = await settingsStore.patch(payload)
     originalSelfReg.value = updated.SelfRegistration
@@ -332,6 +376,8 @@ async function save() {
     dcrForm.value = dcrFromDto(updated.Dcr)
     originalCimd.value = updated.Cimd
     cimdForm.value = cimdFromDto(updated.Cimd)
+    originalNativeGrants.value = updated.NativeGrants
+    nativeGrantsForm.value = nativeGrantsFromDto(updated.NativeGrants)
     originalDeletion.value = updated.Deletion
     deletionForm.value = deletionFromDto(updated.Deletion)
     editingSecret.value = false
@@ -373,6 +419,9 @@ async function rotateSigningKey() {
       </CoarTab>
       <CoarTab id="cimd">
         {{ t('admin.realmSettings.tabs.cimd', {}, 'Client ID Metadata Documents') }}
+      </CoarTab>
+      <CoarTab id="native-grants">
+        {{ t('admin.realmSettings.tabs.nativeGrants', {}, 'Native Passwordless Grants') }}
       </CoarTab>
       <CoarTab id="deletion">
         {{ t('admin.realmSettings.tabs.deletion', {}, 'Account Deletion') }}
@@ -575,6 +624,43 @@ async function rotateSigningKey() {
               <CoarTextInput
                 :model-value="String(cimdForm.RefreshTokenLifetimeDays)"
                 @update:model-value="(v) => (cimdForm.RefreshTokenLifetimeDays = Math.max(1, parseInt(v) || 7))" />
+            </CoarFormField>
+          </div>
+        </template>
+
+        <div class="flex justify-end mt-2">
+          <CoarButton :loading="saving" @click="save">
+            {{ t('common.save', {}, 'Save') }}
+          </CoarButton>
+        </div>
+      </div>
+    </CoarCard>
+
+    <CoarCard v-else-if="activeTab === 'native-grants'" class="p-4">
+      <div class="flex flex-col gap-3">
+        <p class="text-xs text-gray-500">
+          {{ t('admin.realmSettings.nativeGrants.hint', {}, 'When enabled, native apps can exchange a passwordless proof directly at POST /connect/token for tokens — no browser redirect, no cookie. Three grants: urn:cocoar:otp (email one-time code), urn:cocoar:magic (magic-link token), urn:cocoar:passkey (WebAuthn assertion). Off by default.') }}
+        </p>
+
+        <CoarCheckbox
+          v-model="nativeGrantsForm.Enabled"
+          :label="t('admin.realmSettings.nativeGrants.enabled', {}, 'Enable native passwordless grants')" />
+
+        <CoarNote v-if="nativeGrantsForm.Enabled" variant="info">
+          {{ t('admin.realmSettings.nativeGrants.optInWarning', {}, 'Per-client opt-in still required: a client can only use a native grant once it carries the matching grant-type permission (gt:urn:cocoar:otp / :magic / :passkey), enabled on the client’s Grants tab. Flipping this realm toggle is necessary but not sufficient. Only catalog clients qualify — DCR/CIMD clients are excluded.') }}
+        </CoarNote>
+
+        <template v-if="nativeGrantsForm.Enabled">
+          <div class="grid grid-cols-2 gap-3">
+            <CoarFormField :label="t('admin.realmSettings.nativeGrants.accessTokenMinutes', {}, 'Access token lifetime (minutes)')">
+              <CoarTextInput
+                :model-value="String(nativeGrantsForm.AccessTokenLifetimeMinutes)"
+                @update:model-value="(v) => (nativeGrantsForm.AccessTokenLifetimeMinutes = Math.max(1, parseInt(v) || 15))" />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.realmSettings.nativeGrants.refreshTokenDays', {}, 'Refresh token lifetime (days)')">
+              <CoarTextInput
+                :model-value="String(nativeGrantsForm.RefreshTokenLifetimeDays)"
+                @update:model-value="(v) => (nativeGrantsForm.RefreshTokenLifetimeDays = Math.max(1, parseInt(v) || 14))" />
             </CoarFormField>
           </div>
         </template>
