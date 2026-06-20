@@ -1308,7 +1308,7 @@ public static class AuthorizationEndpoints
             new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
     }
 
-    private static async Task<ClaimsPrincipal> CreateClaimsPrincipalAsync(
+    internal static async Task<ClaimsPrincipal> CreateClaimsPrincipalAsync(
         ApplicationUser user,
         OpenIddictRequest request,
         IOpenIddictScopeManager scopeManager,

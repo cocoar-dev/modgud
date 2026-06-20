@@ -1215,6 +1215,7 @@ try
     // explicit minimal-API handlers.
     app.MapAuthorizationEndpoints();
     app.MapConsentEndpoints();
+    app.MapDeviceVerificationEndpoints();
     app.MapDcrRegistrationEndpoints();
 
     app.MapStatusEndpoints();
