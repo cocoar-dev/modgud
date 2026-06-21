@@ -671,6 +671,11 @@ try
     builder.Services.AddScoped<Modgud.Authentication.Applications.IApplicationSettingsResolver,
         Modgud.Authentication.Applications.ApplicationSettingsResolver>();
 
+    // ADR-0011 — native passwordless registration: creates a passwordless user
+    // from an email (JIT sign-up). Scoped (uses the tenant-scoped UserManager).
+    builder.Services.AddScoped<Modgud.Authentication.Identity.IPasswordlessUserFactory,
+        Modgud.Authentication.Identity.PasswordlessUserFactory>();
+
     builder.Services.AddScoped<Modgud.Application.Services.ILoginProviderRealmSeeder,
         Modgud.Authentication.Setup.LoginProviderRealmSeeder>();
 

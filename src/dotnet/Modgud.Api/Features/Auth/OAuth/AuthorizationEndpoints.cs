@@ -643,13 +643,29 @@ public static class AuthorizationEndpoints
 
         // Defence-in-depth: native email-OTP is a PRIMARY factor, so a confirmed
         // mailbox is required at the minting site too (not only at the request
-        // endpoint) — this also closes the EmailOtpEnabled-but-unconfirmed edge.
-        if (!user.EmailConfirmed)
+        // endpoint). ADR-0011 exception: a passwordless, still-unconfirmed account
+        // is a native JIT registration — the OTP redeem itself proves the mailbox,
+        // so it is allowed and confirmed on success below. A password-bearing
+        // unconfirmed account must verify via the web link (never gets a native
+        // code issued, and is rejected here as before).
+        var isPasswordlessRegistration = !user.EmailConfirmed && string.IsNullOrEmpty(user.PasswordHash);
+        if (!user.EmailConfirmed && !isPasswordlessRegistration)
             return await ForbidFactorFailureAsync("Invalid or expired code.");
 
         var verify = await emailOtpService.VerifyOtpAsync(user.Id, code, ct);
         if (verify.IsError)
             return await ForbidFactorFailureAsync("Invalid or expired code.");
+
+        // A consumed OTP proves mailbox control — auto-confirm a JIT registration
+        // (parity with the magic-link grant's mailbox-proof confirm).
+        if (!user.EmailConfirmed)
+        {
+            user.EmailConfirmed = true;
+            session.Store(user);
+            session.Events.Append(user.Id, new Modgud.Domain.Users.Events.UserUpdatedEvent(
+                Id: user.Id, Firstname: default, Lastname: default, Acronym: default, Email: default));
+            await session.SaveChangesAsync(ct);
+        }
 
         // Second factor only after the primary factor proved possession.
         var twoFactor = await CheckTwoFactorAsync(user, request, userManager);

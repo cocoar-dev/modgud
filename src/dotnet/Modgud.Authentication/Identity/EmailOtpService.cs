@@ -45,6 +45,25 @@ public class EmailOtpService(IDocumentSession session, IEmailService emailServic
         return await IssueChallengeAsync(user, ct);
     }
 
+    // ADR-0011 — native passwordless REGISTRATION. Same as the native-login issue
+    // but WITHOUT the EmailConfirmed gate: the user was just JIT-created
+    // (passwordless, unconfirmed) and this code is the mailbox proof that confirms
+    // it on redeem. Still requires a present email + an active, non-deleted
+    // account. The endpoint only routes here under the App's JIT posture for an
+    // unknown email or a still-unconfirmed passwordless registration.
+    public async Task<ErrorOr<bool>> RequestNativeRegistrationOtpAsync(Guid userId, CancellationToken ct)
+    {
+        var user = await session.LoadAsync<ApplicationUser>(userId, ct);
+        if (user is null)
+            return Error.NotFound("EmailOtp.UserNotFound", "User not found.");
+        if (string.IsNullOrEmpty(user.Email))
+            return Error.Validation("EmailOtp.EmailRequired", "An email address is required.");
+        if (!user.IsActive || user.IsDeleted)
+            return Error.Forbidden("EmailOtp.AccountInactive", "The account cannot sign in.");
+
+        return await IssueChallengeAsync(user, ct);
+    }
+
     // Shared core: rate-limit, generate + hash + store the challenge (overwriting
     // any existing one for this user), and email the code. The per-method gates
     // (2FA opt-in vs. native confirmed-mailbox) run before this is reached.
