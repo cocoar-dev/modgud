@@ -362,6 +362,10 @@ try
             // gets Secure cookies even when Kestrel listens on plain HTTP.
             options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
             options.Cookie.Name = "Modgud.Auth";
+            // ADR-0011 (#2) — cross-app browser SSO: widen the cookie domain to the
+            // tenant's primary domain (so it spans every App subdomain under it)
+            // when the request is on that domain or a child; host-only otherwise.
+            options.CookieManager = new Modgud.Api.Cookies.TenantApexCookieManager();
             options.ExpireTimeSpan = TimeSpan.FromDays(30); // Max lifetime for persistent (RememberMe) cookies
             options.SlidingExpiration = true;
             // SESSION-01 — re-validate the user's security stamp on every
