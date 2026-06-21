@@ -120,6 +120,9 @@ onMounted(() => store.initialize())
     <CoarContextMenu :menu="cellMenu">
       <CoarMenuItem :label="t('common.open', {}, 'Öffnen')" icon="pencil"
         @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />
+      <CoarMenuItem :label="t('admin.appSettings.open', {}, 'Einstellungen')" icon="sliders-horizontal"
+        :disabled="selectedIsSystem"
+        @clicked="selectedIds[0] && navigateToModal(`settings/${selectedIds[0]}`)" />
       <CoarMenuItem :label="t('common.create', {}, 'Erstellen')" icon="plus"
         @clicked="navigateToModal('create')" />
       <CoarMenuDivider />
