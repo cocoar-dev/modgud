@@ -681,6 +681,11 @@ try
     builder.Services.AddScoped<Modgud.Authentication.Applications.IEmailBrandingResolver,
         Modgud.Authentication.Applications.EmailBrandingResolver>();
 
+    // ADR-0011 — admin write surface for per-Application settings overrides
+    // (tenant ApplicationSettings doc + the global subdomain→App routing map).
+    builder.Services.AddScoped<Modgud.Authentication.Applications.IApplicationSettingsService,
+        Modgud.Authentication.Applications.ApplicationSettingsService>();
+
     builder.Services.AddScoped<Modgud.Application.Services.ILoginProviderRealmSeeder,
         Modgud.Authentication.Setup.LoginProviderRealmSeeder>();
 
@@ -1288,6 +1293,7 @@ try
     app.MapRolesEndpoints("api");
     app.MapGroupEndpoints("api");
     Modgud.Api.Features.Admin.Apps.AppsEndpoints.MapAppsEndpoints(app, "api");
+    Modgud.Api.Features.Admin.Apps.ApplicationSettingsEndpoints.MapApplicationSettingsEndpoints(app, "api");
 
     // /api/v1/me/* — Cookie-only, for the admin SPA's self-introspection.
     Modgud.Api.Features.Auth.MeEndpoints.MapMeEndpoints(app, "api");
