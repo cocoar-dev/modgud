@@ -665,6 +665,12 @@ try
     // scoped so the injected IDocumentSession tracks the current tenant.
     builder.Services.AddScoped<Modgud.Authentication.RealmSettings.IRealmSettingsService,
         Modgud.Authentication.RealmSettings.RealmSettingsService>();
+
+    // ADR-0011 — resolves effective settings (App overrides ⊕ RealmSettings).
+    // Scoped so the injected IDocumentSession tracks the current tenant.
+    builder.Services.AddScoped<Modgud.Authentication.Applications.IApplicationSettingsResolver,
+        Modgud.Authentication.Applications.ApplicationSettingsResolver>();
+
     builder.Services.AddScoped<Modgud.Application.Services.ILoginProviderRealmSeeder,
         Modgud.Authentication.Setup.LoginProviderRealmSeeder>();
 
