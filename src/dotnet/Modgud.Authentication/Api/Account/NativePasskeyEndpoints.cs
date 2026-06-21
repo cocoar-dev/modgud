@@ -5,9 +5,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
-using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -29,16 +29,18 @@ public static class NativePasskeyEndpoints
         application.MapPost("/connect/passkey/begin", async (
             HttpContext context,
             IDocumentSession session,
+            IApplicationSettingsResolver settingsResolver,
             RealmScopedFido2Factory fido2Factory,
             RpIdResolver rpIdResolver,
             CancellationToken ct) =>
         {
-            // Per-realm master gate (default OFF). The injected session is
-            // tenant-scoped (RealmMiddleware); a null section reads as disabled.
-            // Gating here (not just at the token grant) avoids issuing useless
-            // ceremony docs when the realm hasn't opted into native passwordless.
-            var settings = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
-            if (settings?.NativeGrants is null || !settings.NativeGrants.Enabled)
+            // Per-(App⊕realm) master gate (default OFF), ADR-0011. Host-time: the
+            // App (if any) comes from the request Host (an Application subdomain).
+            // A null section reads as disabled. Gating here (not just at the token
+            // grant) avoids issuing useless ceremony docs when native passwordless
+            // is not enabled.
+            var settings = await settingsResolver.ResolveForRequestAsync(context, clientId: null, ct);
+            if (settings.NativeGrants is null || !settings.NativeGrants.Enabled)
                 return Results.Problem(
                     statusCode: StatusCodes.Status400BadRequest,
                     title: "NativeGrants.Disabled",

@@ -1,9 +1,9 @@
 using Marten;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
-using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -33,17 +33,21 @@ public static class NativeOtpEndpoints
         // POST /api/account/native/otp/request — email a one-time login code.
         group.MapPost("request", async (
             NativeOtpRequestDto request,
+            HttpContext httpContext,
             IDocumentSession session,
+            IApplicationSettingsResolver settingsResolver,
             IEmailOtpService emailOtpService,
             CancellationToken ct) =>
         {
             const string genericMessage = "If your email is registered, you will receive a verification code.";
 
-            // Per-realm master gate (default OFF). The injected session is
-            // tenant-scoped (RealmMiddleware), so this reads the calling realm's
-            // doc; a null section reads as disabled.
-            var settings = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
-            if (settings?.NativeGrants is null || !settings.NativeGrants.Enabled)
+            // Per-(App⊕realm) master gate (default OFF), ADR-0011. Host-time: the
+            // begin request carries no client_id, so the App (if any) comes from
+            // the request Host (an Application subdomain). A null section reads as
+            // disabled; an existing realm with no Application resolves to its realm
+            // setting unchanged.
+            var settings = await settingsResolver.ResolveForRequestAsync(httpContext, clientId: null, ct);
+            if (settings.NativeGrants is null || !settings.NativeGrants.Enabled)
             {
                 await AntiTimingDelayAsync();
                 return Results.Ok(new { Message = genericMessage });

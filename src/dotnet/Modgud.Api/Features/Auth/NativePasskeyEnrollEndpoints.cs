@@ -7,12 +7,12 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Identity;
 using OpenIddict.Abstractions;
 using OpenIddict.Validation.AspNetCore;
-using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace Modgud.Api.Features.Auth;
@@ -43,12 +43,13 @@ public static class NativePasskeyEnrollEndpoints
         application.MapPost("/connect/passkey/enroll/begin", async (
             HttpContext context,
             IDocumentSession session,
+            IApplicationSettingsResolver settingsResolver,
             UserManager<ApplicationUser> userManager,
             RealmScopedFido2Factory fido2Factory,
             RpIdResolver rpIdResolver,
             CancellationToken ct) =>
         {
-            if (await GateDisabledAsync(session, ct) is { } gate) return gate;
+            if (await GateDisabledAsync(settingsResolver, context, ct) is { } gate) return gate;
 
             var (user, clientId, unauthorized) = await ResolvePrincipalAsync(context, userManager);
             if (unauthorized is not null) return unauthorized;
@@ -136,12 +137,13 @@ public static class NativePasskeyEnrollEndpoints
         application.MapPost("/connect/passkey/enroll", async (
             HttpContext context,
             IDocumentSession session,
+            IApplicationSettingsResolver settingsResolver,
             UserManager<ApplicationUser> userManager,
             RealmScopedFido2Factory fido2Factory,
             JsonElement body,
             CancellationToken ct) =>
         {
-            if (await GateDisabledAsync(session, ct) is { } gate) return gate;
+            if (await GateDisabledAsync(settingsResolver, context, ct) is { } gate) return gate;
 
             var (user, clientId, unauthorized) = await ResolvePrincipalAsync(context, userManager);
             if (unauthorized is not null) return unauthorized;
@@ -248,11 +250,15 @@ public static class NativePasskeyEnrollEndpoints
         return application;
     }
 
-    /// <summary>Per-realm master gate (default OFF), mirroring the login begin.</summary>
-    private static async Task<IResult?> GateDisabledAsync(IDocumentSession session, CancellationToken ct)
+    /// <summary>Per-(App ⊕ realm) master gate (default OFF), ADR-0011. Bearer-
+    /// authenticated, so the App is resolved client_id-time from the token's
+    /// client (or the Host pin when on an Application subdomain).</summary>
+    private static async Task<IResult?> GateDisabledAsync(
+        IApplicationSettingsResolver settingsResolver, HttpContext context, CancellationToken ct)
     {
-        var settings = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
-        if (settings?.NativeGrants is null || !settings.NativeGrants.Enabled)
+        var clientId = context.User.GetClaim(Claims.ClientId) ?? context.User.GetClaim(Claims.AuthorizedParty);
+        var settings = await settingsResolver.ResolveForRequestAsync(context, clientId, ct);
+        if (settings.NativeGrants is null || !settings.NativeGrants.Enabled)
             return Results.Problem(
                 statusCode: StatusCodes.Status400BadRequest,
                 title: "NativeGrants.Disabled",

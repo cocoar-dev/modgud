@@ -1,6 +1,9 @@
 using Marten;
+using Microsoft.AspNetCore.Http;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Domain.Applications;
+using Modgud.Domain.OAuth.Applications;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Applications;
 
@@ -20,6 +23,17 @@ public interface IApplicationSettingsResolver
     /// returns the realm settings unchanged (zero-behaviour path).
     /// </summary>
     Task<EffectiveSettings> ResolveAsync(Guid? applicationId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Resolve the effective settings for the current request, picking the
+    /// Application by the ADR-0011 signal order: the Host-pinned App (Phase 1)
+    /// leads; absent that, the presented client's App when it is bound to exactly
+    /// one (a client bound to zero apps is realm-wide, and one bound to several is
+    /// ambiguous — both resolve to no Application override). Phase 2 guarantees a
+    /// Host pin and a client App are consistent when both are present.
+    /// </summary>
+    Task<EffectiveSettings> ResolveForRequestAsync(
+        HttpContext httpContext, string? clientId = null, CancellationToken ct = default);
 }
 
 public sealed class ApplicationSettingsResolver(
@@ -41,5 +55,22 @@ public sealed class ApplicationSettingsResolver(
                   ?? new ApplicationSettings { Id = appId };
 
         return EffectiveSettings.Merge(realm, app);
+    }
+
+    public async Task<EffectiveSettings> ResolveForRequestAsync(
+        HttpContext httpContext, string? clientId = null, CancellationToken ct = default)
+    {
+        // Host pin leads (Phase 1). Otherwise fall back to the client's App when
+        // it is bound to exactly one — zero (realm-wide) or several (ambiguous)
+        // both mean "no Application override".
+        var applicationId = httpContext.GetApplicationId();
+        if (applicationId is null && !string.IsNullOrEmpty(clientId))
+        {
+            var client = await session.Query<OAuthApplicationState>()
+                .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted, ct);
+            if (client is { AppIds.Count: 1 }) applicationId = client.AppIds[0];
+        }
+
+        return await ResolveAsync(applicationId, ct);
     }
 }

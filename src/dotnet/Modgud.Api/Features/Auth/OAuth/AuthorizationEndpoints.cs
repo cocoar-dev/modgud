@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
 using Modgud.Authorization.Apps;
@@ -255,6 +256,7 @@ public static class AuthorizationEndpoints
         IEmailOtpService emailOtpService,
         RealmScopedFido2Factory fido2Factory,
         RpIdResolver rpIdResolver,
+        IApplicationSettingsResolver applicationSettingsResolver,
         IDocumentSession session)
     {
         var request = httpContext.GetOpenIddictServerRequest()
@@ -449,7 +451,7 @@ public static class AuthorizationEndpoints
         if (string.Equals(request.GrantType, CocoarGrantTypes.Otp, StringComparison.Ordinal))
         {
             return await ExchangeNativeOtpAsync(
-                request, session, userManager, signInManager, scopeManager,
+                request, httpContext, applicationSettingsResolver, session, userManager, signInManager, scopeManager,
                 applicationManager, authorizationManager, permissionService,
                 emailOtpService, httpContext.RequestAborted);
         }
@@ -457,7 +459,7 @@ public static class AuthorizationEndpoints
         if (string.Equals(request.GrantType, CocoarGrantTypes.Magic, StringComparison.Ordinal))
         {
             return await ExchangeNativeMagicAsync(
-                request, session, userManager, signInManager, scopeManager,
+                request, httpContext, applicationSettingsResolver, session, userManager, signInManager, scopeManager,
                 applicationManager, authorizationManager, permissionService,
                 httpContext.RequestAborted);
         }
@@ -465,7 +467,7 @@ public static class AuthorizationEndpoints
         if (string.Equals(request.GrantType, CocoarGrantTypes.Passkey, StringComparison.Ordinal))
         {
             return await ExchangeNativePasskeyAsync(
-                request, session, userManager, signInManager, scopeManager,
+                request, httpContext, applicationSettingsResolver, session, userManager, signInManager, scopeManager,
                 applicationManager, authorizationManager, permissionService,
                 fido2Factory, rpIdResolver, httpContext.RequestAborted);
         }
@@ -496,13 +498,16 @@ public static class AuthorizationEndpoints
             }),
             new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
 
-    /// <summary>Reads the per-realm native-grant settings off the tenant-scoped
-    /// RealmSettings doc. Returns the settings ONLY when the master flag is on;
-    /// null otherwise (never-configured section reads as disabled).</summary>
-    private static async Task<NativeGrantSettings?> LoadNativeGrantSettingsAsync(IDocumentSession session, CancellationToken ct)
+    /// <summary>Reads the effective (App ⊕ realm) native-grant settings for the
+    /// request (ADR-0011). Client_id-time: the App comes from the Host pin when
+    /// present, else the calling client's single App binding. Returns the settings
+    /// ONLY when the master flag is on; null otherwise (never-configured reads as
+    /// disabled).</summary>
+    private static async Task<NativeGrantSettings?> LoadNativeGrantSettingsAsync(
+        IApplicationSettingsResolver settingsResolver, HttpContext httpContext, string? clientId, CancellationToken ct)
     {
-        var settings = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
-        return settings?.NativeGrants is { Enabled: true } ng ? ng : null;
+        var settings = await settingsResolver.ResolveForRequestAsync(httpContext, clientId, ct);
+        return settings.NativeGrants is { Enabled: true } ng ? ng : null;
     }
 
     /// <summary>Second-factor gate for the native grants. Returns null when the
@@ -608,6 +613,8 @@ public static class AuthorizationEndpoints
     /// bounds brute force.</summary>
     private static async Task<IResult> ExchangeNativeOtpAsync(
         OpenIddictRequest request,
+        HttpContext httpContext,
+        IApplicationSettingsResolver settingsResolver,
         IDocumentSession session,
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
@@ -618,7 +625,7 @@ public static class AuthorizationEndpoints
         IEmailOtpService emailOtpService,
         CancellationToken ct)
     {
-        var nativeSettings = await LoadNativeGrantSettingsAsync(session, ct);
+        var nativeSettings = await LoadNativeGrantSettingsAsync(settingsResolver, httpContext, request.ClientId, ct);
         if (nativeSettings is null)
             return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled for this realm.");
         if (string.IsNullOrEmpty(request.ClientId))
@@ -663,6 +670,8 @@ public static class AuthorizationEndpoints
     /// <c>invalid_grant</c> on every proof failure.</summary>
     private static async Task<IResult> ExchangeNativeMagicAsync(
         OpenIddictRequest request,
+        HttpContext httpContext,
+        IApplicationSettingsResolver settingsResolver,
         IDocumentSession session,
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
@@ -672,7 +681,7 @@ public static class AuthorizationEndpoints
         IPermissionService permissionService,
         CancellationToken ct)
     {
-        var nativeSettings = await LoadNativeGrantSettingsAsync(session, ct);
+        var nativeSettings = await LoadNativeGrantSettingsAsync(settingsResolver, httpContext, request.ClientId, ct);
         if (nativeSettings is null)
             return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled for this realm.");
         if (string.IsNullOrEmpty(request.ClientId))
@@ -739,6 +748,8 @@ public static class AuthorizationEndpoints
     /// on every proof failure.</summary>
     private static async Task<IResult> ExchangeNativePasskeyAsync(
         OpenIddictRequest request,
+        HttpContext httpContext,
+        IApplicationSettingsResolver settingsResolver,
         IDocumentSession session,
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
@@ -750,7 +761,7 @@ public static class AuthorizationEndpoints
         RpIdResolver rpIdResolver,
         CancellationToken ct)
     {
-        var nativeSettings = await LoadNativeGrantSettingsAsync(session, ct);
+        var nativeSettings = await LoadNativeGrantSettingsAsync(settingsResolver, httpContext, request.ClientId, ct);
         if (nativeSettings is null)
             return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled for this realm.");
         if (string.IsNullOrEmpty(request.ClientId))
