@@ -8,8 +8,11 @@ namespace Modgud.Infrastructure.Realms;
 /// <summary>
 /// Resolved tenant information from the realm cache.
 /// Stored in <c>HttpContext.Items["TenantInfo"]</c> by <c>RealmMiddleware</c>.
+/// <para><see cref="PrimaryDomain"/> (ADR-0011) is the realm's canonical host —
+/// used to anchor the OIDC issuer to the tenant when a request arrives on an
+/// Application subdomain. Null only for legacy/hand-built infos.</para>
 /// </summary>
-public sealed record TenantInfo(string Slug, bool IsControlPlane, bool IsActive);
+public sealed record TenantInfo(string Slug, bool IsControlPlane, bool IsActive, string? PrimaryDomain = null);
 
 /// <summary>
 /// ADR-0011 — a host → (tenant, Application) resolution. <see cref="ApplicationId"/>
@@ -166,7 +169,7 @@ public sealed class RealmCache : IRealmCache
 
         foreach (var realm in activeRealms)
         {
-            var info = new TenantInfo(realm.Slug, realm.IsControlPlane, realm.IsActive);
+            var info = new TenantInfo(realm.Slug, realm.IsControlPlane, realm.IsActive, realm.PrimaryDomain);
             foreach (var domain in realm.Domains)
             {
                 byDomain[domain] = info;
@@ -183,7 +186,7 @@ public sealed class RealmCache : IRealmCache
         if (activeRealms.Count == 1)
         {
             var only = activeRealms[0];
-            single = new TenantInfo(only.Slug, only.IsControlPlane, only.IsActive);
+            single = new TenantInfo(only.Slug, only.IsControlPlane, only.IsActive, only.PrimaryDomain);
         }
 
         _snapshot = new CacheSnapshot(byDomain, byAppDomain, single, DateTimeOffset.UtcNow);

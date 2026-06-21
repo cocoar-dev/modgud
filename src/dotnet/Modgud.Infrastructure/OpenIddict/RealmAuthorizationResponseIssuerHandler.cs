@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using OpenIddict.Server;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 using static OpenIddict.Server.OpenIddictServerHandlers;
@@ -38,17 +39,26 @@ public sealed class RealmAuthorizationResponseIssuerHandler
             .UseSingletonHandler<RealmAuthorizationResponseIssuerHandler>()
             .Build();
 
+    private readonly IHttpContextAccessor _httpContextAccessor;
+
+    public RealmAuthorizationResponseIssuerHandler(IHttpContextAccessor httpContextAccessor)
+    {
+        _httpContextAccessor = httpContextAccessor;
+    }
+
     public ValueTask HandleAsync(OpenIddictServerEvents.ApplyAuthorizationResponseContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         // Only correct a value the stock pipeline actually emitted, and only when
         // we have a request-derived issuer — never invent or add an iss the server
-        // didn't intend to send.
+        // didn't intend to send. ADR-0011: anchor to the tenant canonical origin
+        // when on an Application subdomain (else the request host, as before).
         if (context.BaseUri is { IsAbsoluteUri: true } baseUri &&
             !string.IsNullOrEmpty((string?)context.Response[Parameters.Iss]))
         {
-            context.Response[Parameters.Iss] = baseUri.AbsoluteUri;
+            var issuer = CanonicalIssuer.Resolve(baseUri, _httpContextAccessor.HttpContext);
+            if (issuer is not null) context.Response[Parameters.Iss] = issuer.AbsoluteUri;
         }
 
         return default;
