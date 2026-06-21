@@ -2,6 +2,7 @@ using System.Security.Claims;
 using BuildingBlocks.Helper;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Services;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -44,22 +45,45 @@ public static class MeEndpoints
                 var userId = ResolveUserId(httpContext.User);
                 if (userId is null) return Results.Unauthorized();
 
-                // Cookie-auth path: the admin SPA is interactive — passing
-                // ?app= is required for any app other than modgud so
-                // the operator is explicit about what they're looking at.
-                // Default to modgud (the IDP's own admin surface) when
-                // omitted, matching the SPA's default landing context.
-                var appSlug = string.IsNullOrWhiteSpace(app) ? AppSlugs.Modgud : app;
-                var verified = await session.Query<App>()
-                    .FirstOrDefaultAsync(a => a.Slug == appSlug && !a.IsDeleted);
+                // ADR-0011 — the App being introspected is resolved by the same
+                // signal order as everywhere else: an explicit ?app= leads; absent
+                // that, the Host-pinned App (when on an Application subdomain), else
+                // modgud (the IdP's own admin surface, the SPA's default landing).
+                var pinnedAppId = httpContext.GetApplicationId();
+                App? verified;
+                if (!string.IsNullOrWhiteSpace(app))
+                    verified = await session.Query<App>().FirstOrDefaultAsync(a => a.Slug == app && !a.IsDeleted);
+                else if (pinnedAppId is { } pinned)
+                    verified = await session.Query<App>().FirstOrDefaultAsync(a => a.Id == pinned && !a.IsDeleted);
+                else
+                    verified = await session.Query<App>().FirstOrDefaultAsync(a => a.Slug == AppSlugs.Modgud && !a.IsDeleted);
+
                 if (verified is null)
                 {
                     return Results.BadRequest(new
                     {
                         Error = "Me.UnknownApp",
-                        Message = $"App '{appSlug}' not found in this realm.",
+                        Message = $"App '{app ?? AppSlugs.Modgud}' not found in this realm.",
                     });
                 }
+
+                // ADR-0011 first-signal-consistency on the introspection path: if the
+                // request arrived on an Application subdomain, the App being queried
+                // must be that App. An explicit ?app= naming a different App is a
+                // cross-app probe (e.g. amzettel.cocoar.app/me?app=portal) → reject.
+                // On a plain tenant host (no Host pin) the operator may query any App.
+                if (pinnedAppId is { } hostApp && verified.Id != hostApp)
+                {
+                    return Results.Json(
+                        new
+                        {
+                            Error = "Me.AppMismatch",
+                            Message = "The requested app does not match the application for this origin.",
+                        },
+                        statusCode: StatusCodes.Status403Forbidden);
+                }
+
+                var appSlug = verified.Slug;
 
                 var permissions = await permissionService.GetUserPermissionsAsync(userId.Value, appSlug);
                 var roles = await permissionService.GetUserRolesAsync(userId.Value, appSlug);
