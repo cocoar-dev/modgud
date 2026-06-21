@@ -489,11 +489,11 @@ try
     //     of leaked tokens.
     // In the Testing environment the WebApplicationFactory leaves
     // context.Connection.RemoteIpAddress null on every request, so the per-IP
-    // SMTP-class limiters below all collapse into one "anon" partition that
-    // shares a single process-wide budget across the entire xUnit collection.
-    // An incidental Nth live hit to such an endpoint then trips a 429 only in
-    // the full run (a displaced flake), forcing tests to route around the HTTP
-    // layer. The test-aware key selector (see EmailLimiterPartitionKey) gives
+    // limiters below all collapse into one "anon" partition that shares a
+    // single process-wide budget across the entire xUnit collection. An
+    // incidental Nth live hit to such an endpoint then trips a 429 only in the
+    // full run (a displaced flake), forcing tests to route around the HTTP
+    // layer. The test-aware key selector (see PerIpRateLimitPartitionKey) gives
     // each Testing request its OWN partition unless it opts into a shared one
     // via the X-Test-RateLimit header — production is unchanged (per-IP).
     var isTestEnv = builder.Environment.IsEnvironment("Testing");
@@ -520,9 +520,9 @@ try
 
         options.AddPolicy("bootstrap", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 10,
@@ -533,9 +533,9 @@ try
 
         options.AddPolicy("password-reset", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 5,
@@ -546,9 +546,9 @@ try
 
         options.AddPolicy("magic-link", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 5,
@@ -562,9 +562,9 @@ try
         // form; the endpoint itself returns a generic response either way.
         options.AddPolicy("email-verification", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 5,
@@ -581,9 +581,9 @@ try
         // bounds that burst. Sized well above any legitimate verify cadence.
         options.AddPolicy("email-otp", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 30,
@@ -593,14 +593,14 @@ try
         });
 
         // ADR-0010 native passwordless OTP request — anonymous email-sending
-        // endpoint, same per-IP SMTP cap class as magic-link (5/hour). Uses the
-        // test-aware key so the full-suite shared-budget footgun (above) can't
-        // make an incidental second live hit flake; the dedicated boundary test
-        // sets X-Test-RateLimit to share a budget on purpose and assert the 429.
+        // endpoint, same per-IP SMTP cap class as magic-link (5/hour). The
+        // dedicated boundary test sets X-Test-RateLimit to share a budget on
+        // purpose and assert the 429 (see PerIpRateLimitPartitionKey).
         options.AddPolicy("native-otp", context =>
         {
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: EmailLimiterPartitionKey(context, isTestEnv),
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 5,
@@ -614,9 +614,9 @@ try
         // than native-otp; still per-IP bounded to cap ceremony-doc spam.
         options.AddPolicy("passkey-begin", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 60,
@@ -1668,18 +1668,19 @@ static string? TryReadFormField(HttpContext context, string fieldName)
 }
 
 /// <summary>
-/// Partition key for the per-IP SMTP/email-class rate limiters. Production
-/// partitions by the caller's remote IP (per-IP SMTP cap). The Testing
-/// environment is special: the WebApplicationFactory leaves
-/// <c>RemoteIpAddress</c> null on every request, so a bare per-IP key collapses
-/// the whole xUnit collection into one shared "anon" budget — an incidental Nth
-/// live hit then 429s only in the full run. To kill that footgun without
-/// weakening production, Testing gives each request its OWN partition (a unique
-/// key) UNLESS it carries the <c>X-Test-RateLimit</c> header, whose value
-/// becomes the partition — letting a dedicated boundary test deliberately share
-/// a budget across N requests and assert the 429.
+/// Partition key for the per-IP rate limiters (bootstrap, password-reset,
+/// magic-link, email-verification, email-otp, native-otp, passkey-begin).
+/// Production partitions by the caller's remote IP. The Testing environment is
+/// special: the WebApplicationFactory leaves <c>RemoteIpAddress</c> null on
+/// every request, so a bare per-IP key collapses the whole xUnit collection
+/// into one shared "anon" budget — an incidental Nth live hit then 429s only in
+/// the full run. To kill that footgun without weakening production, Testing
+/// gives each request its OWN partition (a unique key) UNLESS it carries the
+/// <c>X-Test-RateLimit</c> header, whose value becomes the partition — letting a
+/// dedicated boundary test deliberately share a budget across N requests and
+/// assert the 429.
 /// </summary>
-static string EmailLimiterPartitionKey(HttpContext context, bool isTestEnv)
+static string PerIpRateLimitPartitionKey(HttpContext context, bool isTestEnv)
 {
     if (!isTestEnv)
         return context.Connection.RemoteIpAddress?.ToString() ?? "anon";
