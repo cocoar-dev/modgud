@@ -487,6 +487,17 @@ try
     //   * /api/account/bootstrap-admin → IP. Bootstrap-invite consume is
     //     one-shot per token; the policy is a brake on automated probing
     //     of leaked tokens.
+    // In the Testing environment the WebApplicationFactory leaves
+    // context.Connection.RemoteIpAddress null on every request, so the per-IP
+    // SMTP-class limiters below all collapse into one "anon" partition that
+    // shares a single process-wide budget across the entire xUnit collection.
+    // An incidental Nth live hit to such an endpoint then trips a 429 only in
+    // the full run (a displaced flake), forcing tests to route around the HTTP
+    // layer. The test-aware key selector (see EmailLimiterPartitionKey) gives
+    // each Testing request its OWN partition unless it opts into a shared one
+    // via the X-Test-RateLimit header — production is unchanged (per-IP).
+    var isTestEnv = builder.Environment.IsEnvironment("Testing");
+
     builder.Services.AddRateLimiter(options =>
     {
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -582,12 +593,14 @@ try
         });
 
         // ADR-0010 native passwordless OTP request — anonymous email-sending
-        // endpoint, same per-IP SMTP cap class as magic-link (5/hour).
+        // endpoint, same per-IP SMTP cap class as magic-link (5/hour). Uses the
+        // test-aware key so the full-suite shared-budget footgun (above) can't
+        // make an incidental second live hit flake; the dedicated boundary test
+        // sets X-Test-RateLimit to share a budget on purpose and assert the 429.
         options.AddPolicy("native-otp", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: EmailLimiterPartitionKey(context, isTestEnv),
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 5,
@@ -1652,4 +1665,25 @@ static string? TryReadFormField(HttpContext context, string fieldName)
     {
         return null;
     }
+}
+
+/// <summary>
+/// Partition key for the per-IP SMTP/email-class rate limiters. Production
+/// partitions by the caller's remote IP (per-IP SMTP cap). The Testing
+/// environment is special: the WebApplicationFactory leaves
+/// <c>RemoteIpAddress</c> null on every request, so a bare per-IP key collapses
+/// the whole xUnit collection into one shared "anon" budget — an incidental Nth
+/// live hit then 429s only in the full run. To kill that footgun without
+/// weakening production, Testing gives each request its OWN partition (a unique
+/// key) UNLESS it carries the <c>X-Test-RateLimit</c> header, whose value
+/// becomes the partition — letting a dedicated boundary test deliberately share
+/// a budget across N requests and assert the 429.
+/// </summary>
+static string EmailLimiterPartitionKey(HttpContext context, bool isTestEnv)
+{
+    if (!isTestEnv)
+        return context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+
+    var shared = context.Request.Headers["X-Test-RateLimit"].ToString();
+    return string.IsNullOrEmpty(shared) ? Guid.NewGuid().ToString("N") : shared;
 }
