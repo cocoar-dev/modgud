@@ -169,6 +169,48 @@ public class EffectiveSettingsTests
         }
 
         [Fact]
+        public void Self_registration_is_merged_field_by_field()
+        {
+            var app = new ApplicationSettings
+            {
+                // Override Enabled only; RequireAdminApproval must inherit the realm.
+                SelfRegistration = new ApplicationSelfRegistration { Enabled = false },
+            };
+
+            var eff = EffectiveSettings.Merge(Realm(), app);
+
+            Assert.False(eff.SelfRegistration!.Enabled);
+            Assert.True(eff.SelfRegistration.RequireAdminApproval); // inherited
+        }
+
+        [Fact]
+        public void Dcr_is_merged_field_by_field()
+        {
+            var app = new ApplicationSettings
+            {
+                Dcr = new ApplicationDcrOverrides { AccessTokenLifetime = TimeSpan.FromMinutes(5) },
+            };
+
+            var eff = EffectiveSettings.Merge(Realm(), app);
+
+            Assert.True(eff.Dcr!.Enabled); // inherited (realm = true)
+            Assert.Equal(TimeSpan.FromMinutes(5), eff.Dcr.AccessTokenLifetime); // overridden
+        }
+
+        [Fact]
+        public void Cimd_is_merged_field_by_field()
+        {
+            var app = new ApplicationSettings
+            {
+                Cimd = new ApplicationCimdOverrides { Enabled = false },
+            };
+
+            var eff = EffectiveSettings.Merge(Realm(), app);
+
+            Assert.False(eff.Cimd!.Enabled); // overridden
+        }
+
+        [Fact]
         public void Origin_and_email_branding_pass_through_from_application()
         {
             var app = new ApplicationSettings

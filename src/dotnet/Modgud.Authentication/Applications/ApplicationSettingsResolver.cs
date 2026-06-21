@@ -34,11 +34,20 @@ public interface IApplicationSettingsResolver
     /// </summary>
     Task<EffectiveSettings> ResolveForRequestAsync(
         HttpContext httpContext, string? clientId = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Host-time convenience for service-layer callers that have no
+    /// <see cref="HttpContext"/> parameter: resolves against the ambient request
+    /// (via <see cref="IHttpContextAccessor"/>), Application pinned by Host only.
+    /// With no ambient request (CLI/background) returns the realm settings.
+    /// </summary>
+    Task<EffectiveSettings> ResolveForCurrentRequestAsync(CancellationToken ct = default);
 }
 
 public sealed class ApplicationSettingsResolver(
     IDocumentSession session,
-    IRealmSettingsService realmSettings) : IApplicationSettingsResolver
+    IRealmSettingsService realmSettings,
+    IHttpContextAccessor httpContextAccessor) : IApplicationSettingsResolver
 {
     public async Task<EffectiveSettings> ResolveAsync(Guid? applicationId, CancellationToken ct = default)
     {
@@ -72,5 +81,13 @@ public sealed class ApplicationSettingsResolver(
         }
 
         return await ResolveAsync(applicationId, ct);
+    }
+
+    public Task<EffectiveSettings> ResolveForCurrentRequestAsync(CancellationToken ct = default)
+    {
+        var httpContext = httpContextAccessor.HttpContext;
+        return httpContext is null
+            ? ResolveAsync(null, ct)
+            : ResolveForRequestAsync(httpContext, clientId: null, ct);
     }
 }

@@ -45,17 +45,27 @@ public class ApplicationSettings
     /// deployment email branding. Consumed in Phase 6.</summary>
     public ApplicationEmailBranding? EmailBranding { get; set; }
 
-    /// <summary>Per-Application self-registration facet — currently the
-    /// <see cref="SelfRegPosture"/>. Null section = inherit; a null
-    /// <see cref="ApplicationSelfRegistration.Posture"/> within a present
-    /// section resolves to the Application default
+    /// <summary>Per-Application self-registration facet: the
+    /// <see cref="SelfRegPosture"/> plus per-field overrides of the realm
+    /// <see cref="SelfRegistrationSettings"/> policy (captcha stays realm-level).
+    /// Null section = inherit; a null <see cref="ApplicationSelfRegistration.Posture"/>
+    /// within a present section resolves to the Application default
     /// (<see cref="Applications.SelfRegPosture.JitOnOtp"/>).</summary>
     public ApplicationSelfRegistration? SelfRegistration { get; set; }
 
     /// <summary>Per-Application native (cookieless) grant overrides, merged
     /// field-by-field over the realm <see cref="NativeGrantSettings"/>. Null =
-    /// inherit the realm native-grant settings. Consumed in Phase 3.</summary>
+    /// inherit the realm native-grant settings.</summary>
     public ApplicationNativeGrantOverrides? NativeGrants { get; set; }
+
+    /// <summary>Per-Application Dynamic Client Registration overrides, merged
+    /// field-by-field over the realm <see cref="DcrSettings"/>. Null = inherit.</summary>
+    public ApplicationDcrOverrides? Dcr { get; set; }
+
+    /// <summary>Per-Application Client ID Metadata Document (CIMD) overrides,
+    /// merged field-by-field over the realm <see cref="CimdSettings"/>. Null =
+    /// inherit.</summary>
+    public ApplicationCimdOverrides? Cimd { get; set; }
 }
 
 /// <summary>An Application's own origin. Phase-1 resolution maps a host to an
@@ -79,20 +89,53 @@ public record ApplicationEmailBranding
     public string? ProductName { get; init; }
 }
 
-/// <summary>Per-Application self-registration overrides. Kept minimal for now
-/// (just the posture); realm <see cref="SelfRegistrationSettings"/> fields can
-/// gain per-App overrides here as later phases need them.</summary>
+/// <summary>Per-Application self-registration overrides: the posture plus
+/// nullable mirrors of the realm <see cref="SelfRegistrationSettings"/> policy
+/// fields. Captcha (site key / secret) is deliberately NOT overridable per-App —
+/// it stays a realm/deployment concern. A null field inherits the realm value.</summary>
 public record ApplicationSelfRegistration
 {
     /// <summary>Registration posture. Null = inherit the Application default
     /// (<see cref="Applications.SelfRegPosture.JitOnOtp"/>).</summary>
     public SelfRegPosture? Posture { get; init; }
+
+    public bool? Enabled { get; init; }
+    public bool? RequireEmailVerification { get; init; }
+    public string[]? AllowedEmailDomains { get; init; }
+    public bool? RequireAdminApproval { get; init; }
+    public string[]? DefaultGroupIds { get; init; }
+    public string? TermsOfServiceUrl { get; init; }
+    public string? PrivacyPolicyUrl { get; init; }
 }
 
 /// <summary>Nullable-field mirror of <see cref="NativeGrantSettings"/> so each
 /// field can be individually overridden or inherited. A null field inherits
 /// the realm value.</summary>
 public record ApplicationNativeGrantOverrides
+{
+    public bool? Enabled { get; init; }
+    public TimeSpan? AccessTokenLifetime { get; init; }
+    public TimeSpan? RefreshTokenLifetime { get; init; }
+}
+
+/// <summary>Nullable-field mirror of <see cref="DcrSettings"/>. A null field
+/// inherits the realm value. (GcTtlDays is read by the realm-iterating GC job,
+/// not the per-request registration endpoint, so it stays effectively realm-level
+/// even if set here.)</summary>
+public record ApplicationDcrOverrides
+{
+    public bool? Enabled { get; init; }
+    public TimeSpan? AccessTokenLifetime { get; init; }
+    public TimeSpan? RefreshTokenLifetime { get; init; }
+    public int? GcTtlDays { get; init; }
+    public int? PerIpRateLimitPerHour { get; init; }
+    public int? PerRealmRateLimitPerDay { get; init; }
+    public string[]? ReservedNames { get; init; }
+}
+
+/// <summary>Nullable-field mirror of <see cref="CimdSettings"/>. A null field
+/// inherits the realm value.</summary>
+public record ApplicationCimdOverrides
 {
     public bool? Enabled { get; init; }
     public TimeSpan? AccessTokenLifetime { get; init; }

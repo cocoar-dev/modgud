@@ -3,11 +3,13 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Modgud.Domain.Applications;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Marten;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using OpenIddict.Abstractions;
@@ -47,6 +49,7 @@ public sealed class CimdClientResolver
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IMemoryCache _cache;
     private readonly ITenantSessionFactory _sessionFactory;
+    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<CimdClientResolver> _logger;
 
     // Inject the session FACTORY, not IDocumentSession: resolving an
@@ -59,11 +62,13 @@ public sealed class CimdClientResolver
         IHttpClientFactory httpClientFactory,
         IMemoryCache cache,
         ITenantSessionFactory sessionFactory,
+        IHttpContextAccessor httpContextAccessor,
         ILogger<CimdClientResolver> logger)
     {
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _sessionFactory = sessionFactory;
+        _httpContextAccessor = httpContextAccessor;
         _logger = logger;
     }
 
@@ -86,10 +91,31 @@ public sealed class CimdClientResolver
         // makes the opt-in live while the cache still memoizes the expensive metadata
         // fetch. The query session is opened lazily here (never in the constructor)
         // so a non-CIMD request on a realm without a physical DB never touches it.
+        // ADR-0011 — effective (App ⊕ realm) CIMD opt-in. Host-time: if the
+        // authorize/token request arrived on an Application subdomain, the App's
+        // CIMD override applies; else the realm setting. Loaded via the lazy
+        // session (NOT the resolver) to preserve this resolver's no-eager-tenant-
+        // session design (it must not throw on a realm without a physical DB).
         CimdSettings? settings;
         await using (var session = _sessionFactory.OpenQuerySession())
         {
-            settings = (await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, cancellationToken))?.Cimd;
+            var realmCimd = (await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, cancellationToken))?.Cimd;
+            var appId = _httpContextAccessor.HttpContext?.GetApplicationId();
+            if (appId is { } id
+                && (await session.LoadAsync<ApplicationSettings>(id, cancellationToken))?.Cimd is { } appCimd)
+            {
+                var baseCimd = realmCimd ?? new CimdSettings();
+                settings = baseCimd with
+                {
+                    Enabled = appCimd.Enabled ?? baseCimd.Enabled,
+                    AccessTokenLifetime = appCimd.AccessTokenLifetime ?? baseCimd.AccessTokenLifetime,
+                    RefreshTokenLifetime = appCimd.RefreshTokenLifetime ?? baseCimd.RefreshTokenLifetime,
+                };
+            }
+            else
+            {
+                settings = realmCimd;
+            }
         }
         if (settings is null || !settings.Enabled) return null;
 

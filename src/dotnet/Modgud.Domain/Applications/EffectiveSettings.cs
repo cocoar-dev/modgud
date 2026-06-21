@@ -64,14 +64,14 @@ public sealed record EffectiveSettings
     /// realm sections unchanged plus the Application-default facets.</summary>
     public static EffectiveSettings Merge(RealmSettingsDoc realm, ApplicationSettings app) => new()
     {
-        // Sections the App can override today (field-by-field):
+        // Sections the App can override (field-by-field):
         NativeGrants = MergeNativeGrants(realm.NativeGrants, app.NativeGrants),
         Branding = MergeBranding(realm.Branding, app.Branding),
+        SelfRegistration = MergeSelfRegistration(realm.SelfRegistration, app.SelfRegistration),
+        Dcr = MergeDcr(realm.Dcr, app.Dcr),
+        Cimd = MergeCimd(realm.Cimd, app.Cimd),
 
-        // Realm-owned sections with no per-App override yet — passthrough:
-        SelfRegistration = realm.SelfRegistration,
-        Dcr = realm.Dcr,
-        Cimd = realm.Cimd,
+        // Realm-owned sections with no per-App override (operational / GDPR) — passthrough:
         Deletion = realm.Deletion,
         Audit = realm.Audit,
         Pages = realm.Pages,
@@ -108,6 +108,56 @@ public sealed record EffectiveSettings
             Enabled = app.Enabled ?? n.Enabled,
             AccessTokenLifetime = app.AccessTokenLifetime ?? n.AccessTokenLifetime,
             RefreshTokenLifetime = app.RefreshTokenLifetime ?? n.RefreshTokenLifetime,
+        };
+    }
+
+    // App override absent → realm passthrough. Present → each field is the App
+    // value when set, else the realm value. Captcha fields stay realm-level (the
+    // App override type doesn't carry them).
+    private static SelfRegistrationSettings? MergeSelfRegistration(
+        SelfRegistrationSettings? realm,
+        ApplicationSelfRegistration? app)
+    {
+        if (app is null) return realm;
+        var s = realm ?? new SelfRegistrationSettings();
+        return s with
+        {
+            Enabled = app.Enabled ?? s.Enabled,
+            RequireEmailVerification = app.RequireEmailVerification ?? s.RequireEmailVerification,
+            AllowedEmailDomains = app.AllowedEmailDomains ?? s.AllowedEmailDomains,
+            RequireAdminApproval = app.RequireAdminApproval ?? s.RequireAdminApproval,
+            DefaultGroupIds = app.DefaultGroupIds ?? s.DefaultGroupIds,
+            TermsOfServiceUrl = app.TermsOfServiceUrl ?? s.TermsOfServiceUrl,
+            PrivacyPolicyUrl = app.PrivacyPolicyUrl ?? s.PrivacyPolicyUrl,
+            // Captcha (CaptchaEnabled/SiteKey/EncryptedCaptchaSecret) untouched.
+        };
+    }
+
+    private static DcrSettings? MergeDcr(DcrSettings? realm, ApplicationDcrOverrides? app)
+    {
+        if (app is null) return realm;
+        var d = realm ?? new DcrSettings();
+        return d with
+        {
+            Enabled = app.Enabled ?? d.Enabled,
+            AccessTokenLifetime = app.AccessTokenLifetime ?? d.AccessTokenLifetime,
+            RefreshTokenLifetime = app.RefreshTokenLifetime ?? d.RefreshTokenLifetime,
+            GcTtlDays = app.GcTtlDays ?? d.GcTtlDays,
+            PerIpRateLimitPerHour = app.PerIpRateLimitPerHour ?? d.PerIpRateLimitPerHour,
+            PerRealmRateLimitPerDay = app.PerRealmRateLimitPerDay ?? d.PerRealmRateLimitPerDay,
+            ReservedNames = app.ReservedNames ?? d.ReservedNames,
+        };
+    }
+
+    private static CimdSettings? MergeCimd(CimdSettings? realm, ApplicationCimdOverrides? app)
+    {
+        if (app is null) return realm;
+        var c = realm ?? new CimdSettings();
+        return c with
+        {
+            Enabled = app.Enabled ?? c.Enabled,
+            AccessTokenLifetime = app.AccessTokenLifetime ?? c.AccessTokenLifetime,
+            RefreshTokenLifetime = app.RefreshTokenLifetime ?? c.RefreshTokenLifetime,
         };
     }
 }
