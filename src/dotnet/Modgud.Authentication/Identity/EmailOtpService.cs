@@ -3,12 +3,17 @@ using System.Text;
 using ErrorOr;
 using Marten;
 using Marten.Patching;
+using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Infrastructure.Email;
 
 namespace Modgud.Authentication.Identity;
 
-public class EmailOtpService(IDocumentSession session, IEmailService emailService, EmailOtpConfiguration config) : IEmailOtpService
+public class EmailOtpService(
+    IDocumentSession session,
+    IEmailService emailService,
+    EmailOtpConfiguration config,
+    IEmailBrandingResolver emailBranding) : IEmailOtpService
 {
     public async Task<ErrorOr<bool>> RequestOtpAsync(Guid userId, CancellationToken ct)
     {
@@ -102,7 +107,7 @@ public class EmailOtpService(IDocumentSession session, IEmailService emailServic
             EmailTemplate.EmailOtp,
             new Dictionary<string, string>
             {
-                ["AppName"] = "Modgud",
+                ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                 ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                 ["Code"] = code,
                 ["ExpirationMinutes"] = config.ExpirationMinutes.ToString(),

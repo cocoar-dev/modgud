@@ -676,6 +676,11 @@ try
     builder.Services.AddScoped<Modgud.Authentication.Identity.IPasswordlessUserFactory,
         Modgud.Authentication.Identity.PasswordlessUserFactory>();
 
+    // ADR-0011 — resolves the product name for outbound emails (App email branding
+    // ⊕ realm branding, Host-resolved). Scoped (per-request resolution).
+    builder.Services.AddScoped<Modgud.Authentication.Applications.IEmailBrandingResolver,
+        Modgud.Authentication.Applications.EmailBrandingResolver>();
+
     builder.Services.AddScoped<Modgud.Application.Services.ILoginProviderRealmSeeder,
         Modgud.Authentication.Setup.LoginProviderRealmSeeder>();
 

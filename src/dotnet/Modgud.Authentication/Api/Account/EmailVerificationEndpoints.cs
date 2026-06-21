@@ -49,6 +49,7 @@ public static class EmailVerificationEndpoints
         group.MapPost("send-verification", [Authorize] async (
             IDocumentSession session,
             IEmailService emailService,
+            Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
             UserManager<ApplicationUser> userManager,
             IRealmProvisioningService realmSvc,
             IWebHostEnvironment env,
@@ -115,7 +116,7 @@ public static class EmailVerificationEndpoints
                 EmailTemplate.EmailVerification,
                 new Dictionary<string, string>
                 {
-                    ["AppName"] = "Modgud",
+                    ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                     ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                     ["ActionUrl"] = verifyUrl,
                     ["ExpirationHours"] = EmailVerificationChallenge.ExpirationHours.ToString(),

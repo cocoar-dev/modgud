@@ -30,6 +30,7 @@ public static class AdminMagicLinkEndpoints
             string id,
             IDocumentSession session,
             IEmailService emailService,
+            Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
             IMagicLinkConfiguration config,
             IRealmProvisioningService realmSvc,
             IWebHostEnvironment env,
@@ -89,7 +90,7 @@ public static class AdminMagicLinkEndpoints
                 EmailTemplate.MagicLink,
                 new Dictionary<string, string>
                 {
-                    ["AppName"] = "Modgud",
+                    ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                     ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                     ["ActionUrl"] = magicUrl,
                     ["ExpirationMinutes"] = config.ExpirationMinutes.ToString(),
