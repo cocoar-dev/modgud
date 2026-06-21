@@ -12,6 +12,18 @@ namespace Modgud.Infrastructure.Realms;
 public sealed record TenantInfo(string Slug, bool IsControlPlane, bool IsActive);
 
 /// <summary>
+/// ADR-0011 — a host → (tenant, Application) resolution. <see cref="ApplicationId"/>
+/// is non-null only when the host was an Application subdomain.
+/// </summary>
+public sealed record RealmResolution(TenantInfo Tenant, Guid? ApplicationId);
+
+/// <summary>
+/// ADR-0011 — a cached Application-subdomain entry: the owning tenant plus the
+/// Application id the subdomain pins.
+/// </summary>
+public sealed record ApplicationDomainMatch(TenantInfo Tenant, Guid ApplicationId);
+
+/// <summary>
 /// Cache of domain → realm mappings for fast middleware resolution.
 /// Loaded lazily from the global store and invalidated on realm CUD.
 /// </summary>
@@ -24,6 +36,14 @@ public interface IRealmCache
     /// a localhost variant, we return that realm so dev boots work without hosts entries.
     /// </summary>
     Task<TenantInfo?> ResolveDomainAsync(string hostname);
+
+    /// <summary>
+    /// ADR-0011 — resolves a hostname to a tenant AND (when the host is an
+    /// Application subdomain, per <see cref="Realm.ApplicationDomains"/>) the
+    /// owning Application id. Superset of <see cref="ResolveDomainAsync"/>;
+    /// returns <c>null</c> when no active realm matches.
+    /// </summary>
+    Task<RealmResolution?> ResolveAsync(string hostname);
 
     /// <summary>
     /// Returns every active realm. Used by hosted services that need to enumerate
@@ -57,6 +77,7 @@ public sealed class RealmCache : IRealmCache
 
     private sealed record CacheSnapshot(
         ConcurrentDictionary<string, TenantInfo> ByDomain,
+        ConcurrentDictionary<string, ApplicationDomainMatch> ByApplicationDomain,
         TenantInfo? SingleActiveRealm,
         DateTimeOffset LoadedAt);
 
@@ -65,16 +86,20 @@ public sealed class RealmCache : IRealmCache
         _globalStore = globalStore;
     }
 
-    public async Task<TenantInfo?> ResolveDomainAsync(string hostname)
+    public async Task<TenantInfo?> ResolveDomainAsync(string hostname) =>
+        (await ResolveAsync(hostname))?.Tenant;
+
+    public async Task<RealmResolution?> ResolveAsync(string hostname)
     {
         var snapshot = await EnsureFreshAsync();
         if (snapshot is null)
             return null;
 
-        // Dev-friendly fallback: localhost-style host with exactly one active realm
-        // → return that realm. Lets the existing single-tenant boot keep working
-        // without requiring a hosts-file entry for system.localhost.
-        return RealmCacheLookup.Resolve(hostname, snapshot.ByDomain, snapshot.SingleActiveRealm);
+        // App-subdomain match (more specific) takes precedence; otherwise the
+        // plain tenant resolution incl. the dev-friendly localhost fallback
+        // (localhost-style host with exactly one active realm → that realm).
+        return RealmCacheLookup.Resolve(
+            hostname, snapshot.ByApplicationDomain, snapshot.ByDomain, snapshot.SingleActiveRealm);
     }
 
     public async Task<IReadOnlyList<TenantInfo>> GetAllActiveAsync()
@@ -132,6 +157,7 @@ public sealed class RealmCache : IRealmCache
     private async Task LoadCacheAsync(CancellationToken ct = default)
     {
         var byDomain = new ConcurrentDictionary<string, TenantInfo>(StringComparer.OrdinalIgnoreCase);
+        var byAppDomain = new ConcurrentDictionary<string, ApplicationDomainMatch>(StringComparer.OrdinalIgnoreCase);
 
         await using var session = _globalStore.QuerySession();
         var activeRealms = await session.Query<Realm>()
@@ -145,6 +171,12 @@ public sealed class RealmCache : IRealmCache
             {
                 byDomain[domain] = info;
             }
+
+            // ADR-0011 — Application subdomains route to this tenant AND pin the App.
+            foreach (var (host, appId) in realm.ApplicationDomains)
+            {
+                byAppDomain[host] = new ApplicationDomainMatch(info, appId);
+            }
         }
 
         TenantInfo? single = null;
@@ -154,6 +186,6 @@ public sealed class RealmCache : IRealmCache
             single = new TenantInfo(only.Slug, only.IsControlPlane, only.IsActive);
         }
 
-        _snapshot = new CacheSnapshot(byDomain, single, DateTimeOffset.UtcNow);
+        _snapshot = new CacheSnapshot(byDomain, byAppDomain, single, DateTimeOffset.UtcNow);
     }
 }
