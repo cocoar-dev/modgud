@@ -1,109 +1,64 @@
-using System.Net.Http.Json;
 using Marten;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Tests.Infrastructure;
-using Modgud.Authorization.Apps;
-using Modgud.Authorization.Events;
+using Modgud.Authentication.Applications;
 using Modgud.Domain.Applications;
-using Modgud.Domain.Realms;
-using Modgud.Infrastructure.Email;
 using Modgud.Infrastructure.Persistence.Tenancy;
-using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
-/// ADR-0011 Phase 3 — proves the settings cascade end-to-end on the NativeGrants
-/// Host-time gate: with the realm's NativeGrants OFF, an Application that overrides
-/// Enabled=true opens the native-OTP gate on its own subdomain, while a sibling
-/// Application with no override inherits the realm's OFF on its subdomain. The gate
-/// is observed via whether a code email is actually sent (the endpoint response is
-/// uniform for anti-enumeration).
+/// ADR-0011 Phase 3 — the NativeGrants settings cascade via the request-time
+/// resolver: with the realm's NativeGrants OFF, an Application that overrides
+/// Enabled=true resolves to Enabled=true for a request pinned to that App
+/// (Host-time), while a request with no App pinned resolves to the realm's OFF.
+/// Driven through <see cref="IApplicationSettingsResolver.ResolveForRequestAsync"/>
+/// (the exact path the native-grant gates call) rather than the rate-limited HTTP
+/// endpoint, whose end-to-end wiring is covered by the JIT-registration flow test.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
 public class NativeGrantsAppOverrideTests : IntegrationTestBase
 {
-    private const string Email = "test@test.com"; // the seeded DefaultUser
-
     public NativeGrantsAppOverrideTests(SharedPostgresFixture fixture) : base(fixture) { }
 
     [Fact]
-    public async Task App_Override_Opens_NativeGrants_Gate_While_Sibling_Inherits_Realm_Off()
+    public async Task App_Override_Opens_NativeGrants_While_No_App_Inherits_Realm_Off()
     {
         var ct = TestContext.Current.CancellationToken;
-        // Realm NativeGrants left at its default (OFF) — not enabled anywhere.
+        var appId = Guid.NewGuid();
+        // Realm NativeGrants left at its default (OFF) — not enabled at the realm.
 
-        var overrideApp = await CreateAppAsync("ng-override-app");
-        var plainApp = await CreateAppAsync("ng-plain-app");
-        await StoreApplicationSettingsAsync(new ApplicationSettings
+        using var scope = NewSystemScope();
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        session.Store(new ApplicationSettings
         {
-            Id = overrideApp.Id,
+            Id = appId,
             CreatedAt = DateTimeOffset.UtcNow,
             NativeGrants = new ApplicationNativeGrantOverrides { Enabled = true },
         });
-        await MapApplicationDomainsAsync(
-            ("ng-override.localhost", overrideApp.Id),
-            ("ng-plain.localhost", plainApp.Id));
+        await session.SaveChangesAsync(ct);
 
-        var email = Factory.Services.GetRequiredService<InMemoryEmailService>();
+        var resolver = scope.ServiceProvider.GetRequiredService<IApplicationSettingsResolver>();
+        var http = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>().HttpContext!;
 
-        // Override App subdomain → gate open → a code is sent to the known user.
-        email.Clear();
-        await RequestNativeOtpAsync("ng-override.localhost");
-        Assert.NotNull(email.GetLastEmailTo(Email));
+        // App pinned (as if on its subdomain) → the override opens the gate despite
+        // the realm being OFF.
+        http.Items[TenantConstants.HttpContextApplicationIdKey] = appId;
+        var withApp = await resolver.ResolveForRequestAsync(http, clientId: null, ct);
+        Assert.True(withApp.NativeGrants!.Enabled);
 
-        // Sibling App subdomain (no override) → inherits realm OFF → no code sent.
-        email.Clear();
-        await RequestNativeOtpAsync("ng-plain.localhost");
-        Assert.Null(email.GetLastEmailTo(Email));
+        // No App pinned (plain tenant host, no client) → inherits the realm OFF.
+        http.Items.Remove(TenantConstants.HttpContextApplicationIdKey);
+        var withoutApp = await resolver.ResolveForRequestAsync(http, clientId: null, ct);
+        Assert.True(withoutApp.NativeGrants is null || !withoutApp.NativeGrants.Enabled);
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
-    private async Task RequestNativeOtpAsync(string host)
+    private IServiceScope NewSystemScope()
     {
-        var req = new HttpRequestMessage(HttpMethod.Post, "/api/account/native/otp/request")
-        {
-            Content = JsonContent.Create(new { Email }),
-        };
-        req.Headers.Host = host;
-        var resp = await Client.SendAsync(req, TestContext.Current.CancellationToken);
-        resp.EnsureSuccessStatusCode(); // uniform 200 regardless of the gate (anti-enumeration)
-    }
-
-    private async Task<App> CreateAppAsync(string slug)
-    {
-        using var scope = Factory.Services.CreateScope();
-        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-        var id = Guid.NewGuid();
-        session.Events.StartStream<App>(id, new AppCreatedEvent(
-            Id: id, Slug: slug, DisplayName: slug, Description: null, Permissions: [], IsSystem: false));
-        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
-        return (await session.LoadAsync<App>(id, TestContext.Current.CancellationToken))!;
-    }
-
-    private async Task StoreApplicationSettingsAsync(ApplicationSettings settings)
-    {
-        using var scope = Factory.Services.CreateScope();
-        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-        session.Store(settings);
-        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
-    }
-
-    private async Task MapApplicationDomainsAsync(params (string Host, Guid AppId)[] entries)
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var globalStore = Factory.Services.GetRequiredService<IGlobalStore>();
-        await using (var session = globalStore.LightweightSession())
-        {
-            var systemRealm = await session.Query<Realm>().FirstOrDefaultAsync(r => r.Slug == "system", ct);
-            Assert.NotNull(systemRealm);
-            foreach (var (host, appId) in entries)
-                systemRealm!.ApplicationDomains[host] = appId;
-            session.Store(systemRealm!);
-            await session.SaveChangesAsync(ct);
-        }
-
-        Factory.Services.GetRequiredService<IRealmCache>().Invalidate();
+        var scope = Factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>()
+            .HttpContext = new DefaultHttpContext { Items = { [TenantConstants.HttpContextTenantIdKey] = "system" } };
+        return scope;
     }
 }

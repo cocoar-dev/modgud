@@ -1,25 +1,23 @@
-using System.Net.Http.Json;
 using Marten;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Tests.Infrastructure;
-using Modgud.Application.DTOs.RealmSettings;
-using Modgud.Authentication.RealmSettings;
-using Modgud.Authorization.Apps;
-using Modgud.Authorization.Events;
+using Modgud.Authentication.Identity;
 using Modgud.Domain.Applications;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Email;
 using Modgud.Infrastructure.Persistence.Tenancy;
-using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
-/// ADR-0011 Phase 6 — per-Application email branding. An OTP email triggered on an
-/// App subdomain carries the App's branding product name (merged over the realm),
-/// not the hardcoded "Modgud". Verified via the rendered email body captured by the
-/// in-memory email service.
+/// ADR-0011 Phase 6 — per-Application email branding. When an OTP email is issued
+/// with an Application in context (Host-resolved), it carries the App's branding
+/// product name (merged over the realm), not the hardcoded "Modgud". Driven through
+/// <see cref="IEmailOtpService"/> with a faked request context rather than the live
+/// rate-limited HTTP endpoint (its per-IP budget is a scarce, collection-shared
+/// resource keyed on the null test RemoteIp); the resolver reads the ambient
+/// HttpContext exactly as it does in the real pipeline.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
 public class NativeEmailBrandingTests : IntegrationTestBase
@@ -29,28 +27,35 @@ public class NativeEmailBrandingTests : IntegrationTestBase
     public NativeEmailBrandingTests(SharedPostgresFixture fixture) : base(fixture) { }
 
     [Fact]
-    public async Task Otp_Email_On_App_Subdomain_Uses_App_Branding_Product_Name()
+    public async Task Otp_Email_With_App_Context_Uses_App_Branding_Product_Name()
     {
         var ct = TestContext.Current.CancellationToken;
-        await EnableRealmNativeGrantsAsync();
-        var app = await CreateAppAsync("p6-brand-app");
-        await StoreApplicationSettingsAsync(new ApplicationSettings
+        var appId = Guid.NewGuid();
+
+        using var scope = Factory.Services.CreateScope();
+        // Fake the per-request context the real pipeline would set: tenant + the
+        // pinned Application (as if the request arrived on the App subdomain).
+        var http = new DefaultHttpContext();
+        http.Items[TenantConstants.HttpContextTenantIdKey] = "system";
+        http.Items[TenantConstants.HttpContextApplicationIdKey] = appId;
+        scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>().HttpContext = http;
+
+        // The App overrides its branding product name.
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        session.Store(new ApplicationSettings
         {
-            Id = app.Id,
+            Id = appId,
             CreatedAt = DateTimeOffset.UtcNow,
             Branding = new BrandingSettings { ProductName = "amZettel" },
         });
-        await MapApplicationDomainsAsync(("p6-brand.localhost", app.Id));
+        await session.SaveChangesAsync(ct);
 
         var emailService = Factory.Services.GetRequiredService<InMemoryEmailService>();
         emailService.Clear();
 
-        var req = new HttpRequestMessage(HttpMethod.Post, "/api/account/native/otp/request")
-        {
-            Content = JsonContent.Create(new { Email }),
-        };
-        req.Headers.Host = "p6-brand.localhost";
-        (await Client.SendAsync(req, ct)).EnsureSuccessStatusCode();
+        var otp = scope.ServiceProvider.GetRequiredService<IEmailOtpService>();
+        var result = await otp.RequestNativeOtpAsync(DefaultUser!.Id, ct);
+        Assert.False(result.IsError, "RequestNativeOtpAsync should issue a code for the confirmed DefaultUser");
 
         var msg = emailService.GetLastEmailTo(Email);
         Assert.NotNull(msg);
@@ -58,55 +63,5 @@ public class NativeEmailBrandingTests : IntegrationTestBase
         // the OTP template renders into the subject), instead of hardcoded "Modgud".
         Assert.Contains("amZettel", msg!.Subject);
         Assert.DoesNotContain("Modgud", msg.Subject);
-    }
-
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
-    private async Task EnableRealmNativeGrantsAsync()
-    {
-        var scope = Factory.Services.CreateScope();
-        scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>()
-            .HttpContext = new DefaultHttpContext { Items = { ["TenantId"] = "system" } };
-        var settings = scope.ServiceProvider.GetRequiredService<IRealmSettingsService>();
-        await settings.PatchAsync(new UpdateRealmSettingsDto
-        {
-            NativeGrants = new UpdateNativeGrantSettingsDto { Enabled = true },
-        }, TestContext.Current.CancellationToken);
-    }
-
-    private async Task<App> CreateAppAsync(string slug)
-    {
-        using var scope = Factory.Services.CreateScope();
-        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-        var id = Guid.NewGuid();
-        session.Events.StartStream<App>(id, new AppCreatedEvent(
-            Id: id, Slug: slug, DisplayName: slug, Description: null, Permissions: [], IsSystem: false));
-        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
-        return (await session.LoadAsync<App>(id, TestContext.Current.CancellationToken))!;
-    }
-
-    private async Task StoreApplicationSettingsAsync(ApplicationSettings settings)
-    {
-        using var scope = Factory.Services.CreateScope();
-        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-        session.Store(settings);
-        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
-    }
-
-    private async Task MapApplicationDomainsAsync(params (string Host, Guid AppId)[] entries)
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var globalStore = Factory.Services.GetRequiredService<IGlobalStore>();
-        await using (var session = globalStore.LightweightSession())
-        {
-            var systemRealm = await session.Query<Realm>().FirstOrDefaultAsync(r => r.Slug == "system", ct);
-            Assert.NotNull(systemRealm);
-            foreach (var (host, appId) in entries)
-                systemRealm!.ApplicationDomains[host] = appId;
-            session.Store(systemRealm!);
-            await session.SaveChangesAsync(ct);
-        }
-
-        Factory.Services.GetRequiredService<IRealmCache>().Invalidate();
     }
 }
