@@ -5,12 +5,15 @@ namespace Modgud.Authentication.Identity;
 
 /// <summary>
 /// ADR-0011 — creates a brand-new <b>passwordless</b> user from an email address
-/// (native passwordless registration, Phase 5). The username is derived from the
-/// email local-part and disambiguated against the unique-username index, mirroring
-/// the federation JIT path (<c>ExternalLoginProcessor.CreateUserJitAsync</c>). The
-/// account is created <see cref="ApplicationUser.IsActive"/> = true but
-/// <see cref="ApplicationUser.EmailConfirmed"/> = false; the OTP redeem that
-/// follows proves the mailbox and flips EmailConfirmed.
+/// (native passwordless registration, Phase 5). The <b>full email address is the
+/// username</b>: emails are unique per realm (and the native registration callers
+/// only reach here for an email that does not yet exist), so this is collision-free
+/// — unlike deriving from the email local-part, where two addresses sharing a local
+/// part (<c>john@a.com</c> vs <c>john@b.com</c>) would clash and one would be
+/// suffixed (<c>john2</c>). The account is created
+/// <see cref="ApplicationUser.IsActive"/> = true but
+/// <see cref="ApplicationUser.EmailConfirmed"/> = false; the OTP redeem that follows
+/// proves the mailbox and flips EmailConfirmed.
 /// </summary>
 public interface IPasswordlessUserFactory
 {
@@ -21,21 +24,13 @@ public sealed class PasswordlessUserFactory(UserManager<ApplicationUser> userMan
 {
     public async Task<ApplicationUser?> CreateAsync(string email, CancellationToken ct = default)
     {
-        var atIndex = email.IndexOf('@');
-        var localPart = atIndex > 0 ? email[..atIndex] : email;
-        var baseUserName = new string(localPart.Where(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_').ToArray());
-        if (string.IsNullOrWhiteSpace(baseUserName)) baseUserName = "user";
+        // The full email IS the username. The default Identity
+        // AllowedUserNameCharacters set includes '@', '.', '+' and '-', so an email
+        // is a valid username; and because email is unique per realm this avoids the
+        // local-part collisions of the previous "derive + numeric suffix" scheme.
+        var userName = email.Trim();
 
-        var candidate = baseUserName;
-        var suffix = 1;
-        while (await userManager.FindByNameAsync(candidate) is not null)
-        {
-            suffix++;
-            candidate = $"{baseUserName}{suffix}";
-            if (suffix > 1000) return null; // runaway safeguard
-        }
-
-        var user = new ApplicationUser(candidate, email)
+        var user = new ApplicationUser(userName, email)
         {
             Id = Guid.NewGuid(),
             IsActive = true,
@@ -43,6 +38,9 @@ public sealed class PasswordlessUserFactory(UserManager<ApplicationUser> userMan
         };
 
         // No password → passwordless account (like the magic-link / passkey users).
+        // CreateAsync enforces a unique normalized username, so a rare TOCTOU race
+        // against a concurrent registration of the same email fails → null, which the
+        // caller treats as "no code sent" (uniform anti-enumeration response).
         var result = await userManager.CreateAsync(user);
         return result.Succeeded ? user : null;
     }

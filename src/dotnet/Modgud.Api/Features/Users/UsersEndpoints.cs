@@ -78,7 +78,11 @@ public static class UsersEndpoints
                     createDto.Lastname,
                     createDto.Acronym,
                     createDto.Email,
-                    !string.IsNullOrWhiteSpace(createDto.UserName) ? createDto.UserName : createDto.Acronym ?? "",
+                    // Username is optional: when the admin leaves it blank it
+                    // defaults to the email address, mirroring native passwordless
+                    // registration (PasswordlessUserFactory). Email is the only hard
+                    // requirement (CreateUserCommand still rejects a blank email).
+                    !string.IsNullOrWhiteSpace(createDto.UserName) ? createDto.UserName : createDto.Email ?? "",
                     createDto.Password,
                     createDto.EmailConfirmed);
                 var result = await bus.InvokeAsync<ErrorOr.ErrorOr<UserDto>>(command);
