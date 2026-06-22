@@ -64,6 +64,8 @@ public class NativeRegistrationFlowTests : IntegrationTestBase
         Assert.NotNull(user);
         Assert.True(user!.EmailConfirmed);
         Assert.True(string.IsNullOrEmpty(user.PasswordHash));
+        // The full email is the username (no local-part derivation / suffixing).
+        Assert.Equal(newEmail, user.UserName);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

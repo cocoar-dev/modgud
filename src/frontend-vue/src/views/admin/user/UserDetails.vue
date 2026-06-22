@@ -218,10 +218,10 @@ const modalTitle = computed(() => {
 const footerButton = computed(() => ({
   visible: true,
   text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
-  disabled: !form.value.Firstname.trim()
-    || !form.value.Lastname.trim()
-    || !form.value.UserName.trim()
-    || !form.value.Email.trim()
+  // Email is the only required field. Username + first/last name are optional
+  // (username defaults to the email server-side; passwordless users have no name
+  // at all), mirroring native passwordless registration.
+  disabled: !form.value.Email.trim()
     || emailInvalid.value
     || loading.value
     || graceBusy.value,
@@ -261,11 +261,7 @@ onMounted(async () => {
 })
 
 async function save() {
-  if (!form.value.Firstname.trim()
-      || !form.value.Lastname.trim()
-      || !form.value.UserName.trim()
-      || !form.value.Email.trim()
-      || emailInvalid.value) return
+  if (!form.value.Email.trim() || emailInvalid.value) return
   loading.value = true
   try {
     if (isCreate.value) {
@@ -274,6 +270,7 @@ async function save() {
         Lastname: form.value.Lastname,
         Acronym: form.value.Acronym || undefined,
         Email: form.value.Email || undefined,
+        // Blank username is fine — the backend defaults it to the email address.
         UserName: form.value.UserName,
         EmailConfirmed: emailConfirmed.value || undefined,
       })
@@ -287,7 +284,7 @@ async function save() {
           Lastname: form.value.Lastname,
           Acronym: form.value.Acronym || undefined,
           Email: form.value.Email || undefined,
-          UserName: form.value.UserName,
+          UserName: form.value.UserName || existing.UserName,
           IsActive: isActive.value,
           Status: 'Pending' as const,
         }])
@@ -301,7 +298,9 @@ async function save() {
         Lastname: form.value.Lastname,
         Acronym: form.value.Acronym || undefined,
         Email: form.value.Email || undefined,
-        UserName: form.value.UserName,
+        // Username left blank on edit = no change (a user must keep a username);
+        // the email-default only applies on create.
+        UserName: form.value.UserName || undefined,
         IsActive: isActive.value !== originalActive.value ? isActive.value : undefined,
         EmailConfirmed: emailConfirmed.value !== originalEmailConfirmed.value ? emailConfirmed.value : undefined,
       })
@@ -352,10 +351,10 @@ watch(() => form.value.UserName, () => {
           <section class="form-section">
             <h3 class="form-section-heading">{{ t('admin.userDetails.section.identity', {}, 'Identität') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-half" :label="t('admin.users.firstname', {}, 'First Name')" required>
+              <CoarFormField class="col-half" :label="t('admin.users.firstname', {}, 'First Name')">
                 <CoarTextInput v-model="form.Firstname" clearable />
               </CoarFormField>
-              <CoarFormField class="col-half" :label="t('admin.users.lastname', {}, 'Last Name')" required>
+              <CoarFormField class="col-half" :label="t('admin.users.lastname', {}, 'Last Name')">
                 <CoarTextInput v-model="form.Lastname" clearable />
               </CoarFormField>
               <CoarFormField class="col-half" :label="t('admin.users.acronym', {}, 'Kürzel')">
@@ -374,10 +373,10 @@ watch(() => form.value.UserName, () => {
                 <span v-if="emailInvalid" class="text-xs text-red-600">{{ t('admin.userDetails.emailInvalid', {}, 'Bitte eine gültige E-Mail-Adresse eingeben.') }}</span>
                 <p class="field-hint">{{ t('admin.userDetails.email.hint', {}, 'Primäre Adresse; nötig für Passwort-Zurücksetzen und Magic-Link.') }}</p>
               </CoarFormField>
-              <CoarFormField class="col-half" :label="t('admin.users.username', {}, 'Username')" required>
+              <CoarFormField class="col-half" :label="t('admin.users.username', {}, 'Username')">
                 <CoarTextInput v-model="form.UserName" clearable />
                 <span v-if="userNameError" class="text-xs text-red-600">{{ userNameError }}</span>
-                <p class="field-hint">{{ t('admin.userDetails.username.hint', {}, 'Anmeldename; muss eindeutig sein.') }}</p>
+                <p class="field-hint">{{ t('admin.userDetails.username.hint', {}, 'Anmeldename; muss eindeutig sein. Leer = die E-Mail-Adresse wird verwendet.') }}</p>
               </CoarFormField>
             </div>
           </section>
