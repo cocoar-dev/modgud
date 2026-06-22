@@ -14,6 +14,7 @@ using Modgud.Authentication.Domain.Saml;
 using Modgud.Authentication.Identity.ExternalAuth;
 using Modgud.Authentication.Identity.LoginProviders;
 using Modgud.Authentication.Projections;
+using Modgud.Authentication.SelfRegistration.Domain;
 
 namespace Modgud.Authentication.Setup;
 
@@ -83,6 +84,19 @@ public static class MartenStoreOptionsExtensions
             .Identity(x => x.Id)
             .Index(x => x.TokenHash)
             .Index(x => x.Email);
+
+        // ADR-0012 — single-use registration invite codes. Indexed by CodeHash
+        // (the hot redeem lookup) and AppId (per-app list/prune). Optimistic
+        // concurrency makes the single-use consume atomic the same way it does
+        // for MagicLinkChallenge above: two concurrent redemptions of one bearer
+        // code both pass the unused/expiry check, but the version-checked update
+        // lets exactly one win — the loser throws ConcurrencyException, which the
+        // native sign-up path treats as "already used" (→ no account created).
+        options.Schema.For<RegistrationInviteCode>()
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Index(x => x.CodeHash)
+            .Index(x => x.AppId);
 
         options.Schema.For<UserChangeRequest>()
             .Identity(x => x.Id)

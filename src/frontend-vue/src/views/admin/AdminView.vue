@@ -70,6 +70,7 @@ const sections = computed<SectionDef[]>(() => [
       { label: 'admin.oauthClients.title', icon: 'app-window', to: '/admin/oauth/clients', requirePermissions: ['oauth-client:read'] },
       { label: 'admin.oauthScopes.title', icon: 'tags', to: '/admin/oauth/scopes', requirePermissions: ['oauth-scope:read'] },
       { label: 'admin.oauthApis.title', icon: 'server', to: '/admin/oauth/apis', requirePermissions: ['oauth-api:read'] },
+      { label: 'admin.inviteCodes.title', icon: 'ticket', to: '/admin/invite-codes', requirePermissions: ['invite-code:read'] },
     ],
   },
   {

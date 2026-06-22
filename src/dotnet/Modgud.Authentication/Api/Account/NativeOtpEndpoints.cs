@@ -5,7 +5,9 @@ using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
+using Modgud.Authentication.SelfRegistration;
 using Modgud.Domain.Applications;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -24,7 +26,10 @@ namespace Modgud.Authentication.Api.Account;
 /// </summary>
 public static class NativeOtpEndpoints
 {
-    public record NativeOtpRequestDto(string Email);
+    /// <summary><paramref name="InviteCode"/> is optional and only consulted
+    /// under the <see cref="SelfRegPosture.InviteCode"/> posture (ADR-0012); it
+    /// is ignored for every other posture, so the field is backward-compatible.</summary>
+    public record NativeOtpRequestDto(string Email, string? InviteCode = null);
 
     public static WebApplication MapNativeOtpEndpoints(this WebApplication application, string path)
     {
@@ -40,6 +45,7 @@ public static class NativeOtpEndpoints
             IApplicationSettingsResolver settingsResolver,
             IEmailOtpService emailOtpService,
             IPasswordlessUserFactory passwordlessUserFactory,
+            IRegistrationInviteService inviteService,
             UserManager<ApplicationUser> userManager,
             CancellationToken ct) =>
         {
@@ -64,8 +70,9 @@ public static class NativeOtpEndpoints
                 // registration code too, so "code sent" leaks nothing about
                 // existence (ADR-0011 OQ3 — JIT is anti-enumeration-safe).
                 await IssueOtpForRequestAsync(
-                    request.Email, settings.SelfRegPosture, session, userManager,
-                    emailOtpService, passwordlessUserFactory, ct);
+                    request.Email, request.InviteCode, httpContext.GetApplicationId(),
+                    settings.SelfRegPosture, session, userManager,
+                    emailOtpService, passwordlessUserFactory, inviteService, ct);
             }
 
             // Same jitter on every branch (incl. success, which did real work) so
@@ -91,17 +98,25 @@ public static class NativeOtpEndpoints
     ///   the registration OTP (resend for an in-progress sign-up).</item>
     ///   <item>Unknown email + JIT posture → create a passwordless user and issue
     ///   the registration OTP.</item>
-    ///   <item>Otherwise (no JIT posture, or a password-bearing unconfirmed
+    ///   <item>Unknown email + InviteCode posture (ADR-0012) → create + register
+    ///   ONLY if a valid, unused, unexpired, app-matching code is presented; the
+    ///   code is consumed atomically before creation. A missing/invalid/used/
+    ///   expired/mismatched code is silently a no-op (indistinguishable from
+    ///   <see cref="SelfRegPosture.Off"/>).</item>
+    ///   <item>Otherwise (no self-reg posture, or a password-bearing unconfirmed
     ///   account) → nothing (the web verification flow owns those).</item>
     /// </list>
     /// </summary>
     private static async Task IssueOtpForRequestAsync(
         string email,
+        string? inviteCode,
+        Guid? appId,
         SelfRegPosture? posture,
         IDocumentSession session,
         UserManager<ApplicationUser> userManager,
         IEmailOtpService emailOtpService,
         IPasswordlessUserFactory passwordlessUserFactory,
+        IRegistrationInviteService inviteService,
         CancellationToken ct)
     {
         var user = await session.Query<ApplicationUser>()
@@ -122,9 +137,9 @@ public static class NativeOtpEndpoints
                 _ = await emailOtpService.RequestNativeRegistrationOtpAsync(user!.Id, ct);
                 break;
             case NativeOtpAction.CreateAndRegister:
-                var created = await passwordlessUserFactory.CreateAsync(email, ct);
-                if (created is not null)
-                    _ = await emailOtpService.RequestNativeRegistrationOtpAsync(created.Id, ct);
+                await CreateAndRegisterAsync(
+                    email, inviteCode, appId, posture,
+                    emailOtpService, passwordlessUserFactory, inviteService, ct);
                 break;
             case NativeOtpAction.None:
             default:
@@ -132,28 +147,79 @@ public static class NativeOtpEndpoints
         }
     }
 
+    /// <summary>
+    /// Materialises a new passwordless user for an unknown email and issues the
+    /// registration OTP. Under <see cref="SelfRegPosture.InviteCode"/> this is
+    /// gated on consuming a valid invite code FIRST (ADR-0012, D4/§5): the code is
+    /// consumed atomically (single-use, optimistic-concurrency) before the user
+    /// exists, which closes the bearer-code race (consuming at redeem would let two
+    /// requests each create an account before either redeems). Any code failure is
+    /// a silent no-op so the path stays anti-enumeration-safe.
+    /// </summary>
+    private static async Task CreateAndRegisterAsync(
+        string email,
+        string? inviteCode,
+        Guid? appId,
+        SelfRegPosture? posture,
+        IEmailOtpService emailOtpService,
+        IPasswordlessUserFactory passwordlessUserFactory,
+        IRegistrationInviteService inviteService,
+        CancellationToken ct)
+    {
+        Guid? consumedInviteId = null;
+        if (posture == SelfRegPosture.InviteCode)
+        {
+            // Codes are app-bound (D3). With no App in context there is nothing to
+            // validate against → silent no-op.
+            if (appId is null)
+                return;
+            var consume = await inviteService.TryConsumeAsync(appId.Value, email, inviteCode ?? string.Empty, ct);
+            if (!consume.IsConsumed)
+                return; // missing/invalid/used/expired/mismatched/lost-race → no-op
+            consumedInviteId = consume.InviteId;
+        }
+
+        var created = await passwordlessUserFactory.CreateAsync(email, ct);
+        if (created is null)
+            return; // TOCTOU race lost; under InviteCode the code stays consumed (benign, swept later)
+
+        if (consumedInviteId is { } inviteId)
+            await inviteService.AttachConsumerAsync(inviteId, created.Id, ct);
+
+        _ = await emailOtpService.RequestNativeRegistrationOtpAsync(created.Id, ct);
+    }
+
     public enum NativeOtpAction { None, Login, ResendRegistration, CreateAndRegister }
 
     /// <summary>
     /// Pure routing decision for a native OTP request (ADR-0010 login + ADR-0011
-    /// JIT registration). Security-relevant: JIT registration fires ONLY under the
-    /// <see cref="SelfRegPosture.JitOnOtp"/> posture, and a password-bearing
-    /// unconfirmed account is never served a native code (it must verify via the
-    /// web link).
+    /// JIT registration + ADR-0012 invite-code registration). Security-relevant:
+    /// self-registration fires ONLY under <see cref="SelfRegPosture.JitOnOtp"/> or
+    /// <see cref="SelfRegPosture.InviteCode"/>, and a password-bearing unconfirmed
+    /// account is never served a native code (it must verify via the web link).
+    ///
+    /// <para>JIT and InviteCode route email-state identically here; the difference
+    /// — that InviteCode requires a valid code — is enforced downstream in
+    /// <see cref="CreateAndRegisterAsync"/> because code validity needs the DB and
+    /// this method stays pure. So <see cref="NativeOtpAction.CreateAndRegister"/>
+    /// under InviteCode means "create IF a valid code is presented".</para>
     /// </summary>
     public static NativeOtpAction Decide(bool userExists, bool emailConfirmed, bool hasPassword, SelfRegPosture? posture)
     {
-        var jit = posture == SelfRegPosture.JitOnOtp;
+        var selfReg = posture is SelfRegPosture.JitOnOtp or SelfRegPosture.InviteCode;
 
         if (userExists)
         {
+            // A confirmed user always just logs in — under InviteCode the code is
+            // ignored and NOT consumed (D11); app-side resource joins use the app's
+            // own accept-invite path.
             if (emailConfirmed) return NativeOtpAction.Login;
-            // Unconfirmed: only a passwordless in-progress JIT sign-up may resend.
-            if (jit && !hasPassword) return NativeOtpAction.ResendRegistration;
+            // Unconfirmed: only a passwordless in-progress self-reg sign-up may resend.
+            if (selfReg && !hasPassword) return NativeOtpAction.ResendRegistration;
             return NativeOtpAction.None;
         }
 
-        return jit ? NativeOtpAction.CreateAndRegister : NativeOtpAction.None;
+        return selfReg ? NativeOtpAction.CreateAndRegister : NativeOtpAction.None;
     }
 
     /// <summary>

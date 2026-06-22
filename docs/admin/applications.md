@@ -136,9 +136,46 @@ passwordless sign-up is triggered for the App:
 | `JitOnOtp` *(default)* | Sign-in-or-sign-up: an unknown email at the native OTP endpoint creates a passwordless user and emails a one-time code; redeeming it both verifies the mailbox and signs in. The low-friction consumer default. |
 | `Off` | No self-registration — an unknown email gets the uniform anti-enumeration response, no user is created. |
 | `ExplicitEndpoint` | Registration is a deliberate, separate step via `POST /api/account/native/register` (room for an app's own ToS / profile UI); sign-in stays strict — the OTP-request endpoint serves only known users. An unknown email at the register endpoint creates the passwordless user and emails the same registration code. |
+| `InviteCode` | Invite-only: an unknown email becomes a passwordless user **only** when the native sign-up request carries a valid, unused, unexpired [invite code](#invite-codes-the-invitecode-posture). Existing confirmed users still sign in normally (no code needed). Code failures are indistinguishable from `Off` (anti-enumeration). |
 
 See [Integrate → Native apps](../integrate/native-apps#native-passwordless-registration-jit-on-otp)
 for the end-to-end flow.
+
+### Invite codes (the `InviteCode` posture)
+
+Set the posture to `InviteCode` to run an app **invite-only** — a new person
+gets an account only by presenting a single-use code. The code is app-bound,
+optionally email-bound (bearer by default), hashed at rest, and expires
+(default **14 days**). Two ways to mint, and you only need to set up the second
+one if a backend should mint automatically:
+
+- **Admin UI (works immediately, no setup).** Open **Invite Codes** in the
+  admin sidebar (OAuth & Federation), pick the app, and bulk-mint. The plaintext
+  codes are shown **once** — copy them then; only their hashes are stored.
+  Gated by the `invite-code:read` / `invite-code:write` permissions.
+
+- **Machine-to-machine (the consuming app's backend).** For a backend that mints
+  codes itself (e.g. when a user invites someone), there is a one-time setup:
+  1. Create an OAuth scope named **`invite:write`** that is **bound to this app**
+     (set its App-ID) — see [OAuth scopes](../reference/admin-api). Scope names
+     are unique per realm, so in a multi-app realm name the scope per app.
+  2. Give a **ServiceAccount** a credential (a confidential `client_credentials`
+     client) carrying that scope.
+  3. The backend then calls
+     `POST /api/app/{appId}/invite-codes` `{ "Count": N, "BoundEmail": null, "ExpiresInDays": 7 }`
+     with its `client_credentials` access token. The response carries the
+     plaintext codes once. The `{appId}` must match the scope's app — a
+     cross-app or cross-tenant caller is rejected.
+
+The public mobile client never mints — it only **redeems** a code it was handed,
+by passing it on the native sign-up request (`InviteCode` field on
+`POST /api/account/native/otp/request`). Redemption confirms the mailbox via the
+usual OTP step. See [Integrate → Native apps](../integrate/native-apps) for the
+redemption flow.
+
+> **Identity vs. authorization.** Modgud's invite code only governs *who may
+> exist*. What the invite is *for* (join list L, beta access, …) stays in the
+> consuming app — Modgud only ever learns `(email, code, appId)`.
 
 ### What stays realm-only
 

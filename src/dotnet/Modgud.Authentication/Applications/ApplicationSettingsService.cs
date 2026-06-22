@@ -196,7 +196,7 @@ public sealed class ApplicationSettingsService(
         {
             if (!Enum.TryParse<SelfRegPosture>(d.Posture, ignoreCase: true, out var p))
                 return Error.Validation("Application.InvalidPosture",
-                    "Posture must be Off, JitOnOtp or ExplicitEndpoint.");
+                    "Posture must be Off, JitOnOtp, ExplicitEndpoint or InviteCode.");
             posture = p;
         }
 

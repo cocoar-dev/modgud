@@ -29,7 +29,12 @@ namespace Modgud.Authentication.Api.Account;
 /// </summary>
 public static class NativeRegisterEndpoints
 {
-    public record NativeRegisterRequestDto(string Email);
+    /// <summary><paramref name="InviteCode"/> is accepted for wire-compatibility
+    /// (ADR-0012 §3) but ignored here in v1: this endpoint only fires under the
+    /// <see cref="SelfRegPosture.ExplicitEndpoint"/> posture, whereas invite-code
+    /// registration runs under the <see cref="SelfRegPosture.InviteCode"/> posture
+    /// through the OTP-request path (<see cref="NativeOtpEndpoints"/>, D13).</summary>
+    public record NativeRegisterRequestDto(string Email, string? InviteCode = null);
 
     public static WebApplication MapNativeRegisterEndpoints(this WebApplication application, string path)
     {

@@ -2,6 +2,7 @@ using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Modgud.Authentication.Gdpr;
+using Modgud.Authentication.SelfRegistration;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
@@ -53,7 +54,7 @@ public class AccountLifecycleSweepJob(
             .Where(r => r.IsActive)
             .ToListAsync(ct);
 
-        int realmsTouched = 0, totalReminded = 0, totalErased = 0, totalPurged = 0;
+        int realmsTouched = 0, totalReminded = 0, totalErased = 0, totalPurged = 0, totalInviteCodesPruned = 0;
         foreach (var realm in realms)
         {
             if (ct.IsCancellationRequested) break;
@@ -68,18 +69,23 @@ public class AccountLifecycleSweepJob(
                     var (reminded, erased) = await gdpr.RunSelfServiceSweepAsync(ct);
                     var purged = await gdpr.RunAdminRetentionPurgeAsync(ct);
 
+                    // ADR-0012 §8 — prune used/expired invite codes (hygiene only).
+                    var inviteService = scope.ServiceProvider.GetRequiredService<IRegistrationInviteService>();
+                    var inviteCodesPruned = await inviteService.PruneAsync(ct);
+
                     totalReminded += reminded;
                     totalErased += erased;
                     totalPurged += purged;
-                    if (reminded + erased + purged > 0)
+                    totalInviteCodesPruned += inviteCodesPruned;
+                    if (reminded + erased + purged + inviteCodesPruned > 0)
                         securityAudit.Record(new SecurityAuditRecord
                         {
                             EventType = AuditEvents.AccountLifecycleSwept,
                             Level = "Info",
                             Realm = realm.Slug,
                             Status = "swept",
-                            Reason = $"reminded={reminded} selfErased={erased} autoPurged={purged}",
-                            Message = $"Account-lifecycle sweep — Realm={realm.Slug} Reminded={reminded} SelfErased={erased} AutoPurged={purged}",
+                            Reason = $"reminded={reminded} selfErased={erased} autoPurged={purged} inviteCodesPruned={inviteCodesPruned}",
+                            Message = $"Account-lifecycle sweep — Realm={realm.Slug} Reminded={reminded} SelfErased={erased} AutoPurged={purged} InviteCodesPruned={inviteCodesPruned}",
                         });
                 }
                 realmsTouched++;
@@ -92,6 +98,6 @@ public class AccountLifecycleSweepJob(
         }
 
         context.Result =
-            $"{realmsTouched} realm(s): {totalReminded} reminded, {totalErased} self-erased, {totalPurged} auto-purged";
+            $"{realmsTouched} realm(s): {totalReminded} reminded, {totalErased} self-erased, {totalPurged} auto-purged, {totalInviteCodesPruned} invite-codes pruned";
     }
 }
