@@ -17,6 +17,7 @@ public record ApplicationSettingsDto
     public ApplicationNativeGrantsDto? NativeGrants { get; init; }
     public ApplicationDcrDto? Dcr { get; init; }
     public ApplicationCimdDto? Cimd { get; init; }
+    public ApplicationRegistrationFieldsDto? RegistrationFields { get; init; }
 }
 
 public record ApplicationOriginDto
@@ -79,4 +80,12 @@ public record ApplicationCimdDto
     public bool? Enabled { get; init; }
     public int? AccessTokenLifetimeMinutes { get; init; }
     public int? RefreshTokenLifetimeDays { get; init; }
+}
+
+public record ApplicationRegistrationFieldsDto
+{
+    /// <summary>One of <c>Off</c> / <c>Optional</c> / <c>Required</c>. Null = inherit.</summary>
+    public string? Username { get; init; }
+    public string? Firstname { get; init; }
+    public string? Lastname { get; init; }
 }
