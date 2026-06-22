@@ -1,6 +1,7 @@
 using BuildingBlocks.Helper;
 using Modgud.Api;
 using Modgud.Authentication.Applications;
+using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 
@@ -32,6 +33,13 @@ public static class AppSettingsEndpoints
                 // the realm branding unchanged.
                 var effective = await settingsResolver.ResolveForRequestAsync(http, clientId: null, http.RequestAborted);
                 var branding = effective.Branding;
+                // ADR-0011 — publish the resolved (App⊕realm) registration-field
+                // policy so native apps + the web register form render exactly the
+                // inputs this App requires. Email is the always-required anchor and
+                // is reported as such; the three configurable fields carry their
+                // Off/Optional/Required requirement. Default (never configured) = all
+                // three Optional (today's lenient behaviour).
+                var registrationFields = effective.RegistrationFields ?? RegistrationFieldsSettings.Defaults;
                 return Results.Ok(new
                 {
                     settings.AuthenticationMinimumLevel,
@@ -55,6 +63,13 @@ public static class AppSettingsEndpoints
                     Features = new
                     {
                         settings.Features.PageBuilder,
+                    },
+                    RegistrationFields = new
+                    {
+                        Email = nameof(FieldRequirement.Required), // always required (the anchor)
+                        Username = registrationFields.Username.ToString(),
+                        Firstname = registrationFields.Firstname.ToString(),
+                        Lastname = registrationFields.Lastname.ToString(),
                     },
                 });
             })

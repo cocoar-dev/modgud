@@ -94,6 +94,55 @@ public class IssuerAnchoringFlowTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task AppInfo_Publishes_Resolved_Registration_Field_Policy()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await CreateAppAsync("iss-regfields-app");
+        await StoreApplicationSettingsAsync(new ApplicationSettings
+        {
+            Id = app.Id,
+            CreatedAt = DateTimeOffset.UtcNow,
+            // Enterprise App in a tenant whose realm default is lenient: require
+            // names, hide the separate username.
+            RegistrationFields = new ApplicationRegistrationFieldsOverrides
+            {
+                Username = FieldRequirement.Off,
+                Firstname = FieldRequirement.Required,
+                Lastname = FieldRequirement.Required,
+            },
+        });
+        await MapApplicationDomainsAsync(("iss-regfields.localhost", app.Id));
+
+        var req = new HttpRequestMessage(HttpMethod.Get, "/api/app-info");
+        req.Headers.Host = "iss-regfields.localhost";
+        var resp = await Client.SendAsync(req, ct);
+        var json = await resp.Content.ReadFromJsonAsync<JsonElement>(ct);
+
+        var rf = json.GetProperty("RegistrationFields");
+        Assert.Equal("Required", rf.GetProperty("Email").GetString());     // always the anchor
+        Assert.Equal("Off", rf.GetProperty("Username").GetString());
+        Assert.Equal("Required", rf.GetProperty("Firstname").GetString());
+        Assert.Equal("Required", rf.GetProperty("Lastname").GetString());
+    }
+
+    [Fact]
+    public async Task AppInfo_Defaults_Registration_Fields_To_Optional_When_Unconfigured()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Plain tenant host, no Application, no realm policy configured → the lenient
+        // default (all three Optional), i.e. zero behaviour change.
+        var req = new HttpRequestMessage(HttpMethod.Get, "/api/app-info");
+        var resp = await Client.SendAsync(req, ct);
+        var json = await resp.Content.ReadFromJsonAsync<JsonElement>(ct);
+
+        var rf = json.GetProperty("RegistrationFields");
+        Assert.Equal("Optional", rf.GetProperty("Username").GetString());
+        Assert.Equal("Optional", rf.GetProperty("Firstname").GetString());
+        Assert.Equal("Optional", rf.GetProperty("Lastname").GetString());
+    }
+
+    [Fact]
     public async Task UserInfo_On_App_Subdomain_Accepts_A_Subdomain_Minted_Token()
     {
         var ct = TestContext.Current.CancellationToken;
