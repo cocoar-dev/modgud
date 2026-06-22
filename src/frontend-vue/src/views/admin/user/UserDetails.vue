@@ -202,6 +202,28 @@ const emailInvalid = computed(() => {
   return e.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)
 })
 
+// Configurable (App⊕realm) required-identity-field policy, resolved from
+// /api/app-info (the admin SPA host → realm policy). Drives which inputs are
+// shown / starred / required. Default = all Optional (today's behaviour).
+const fieldPolicy = computed(() => appConfig.config.RegistrationFields)
+const showUsername = computed(() => fieldPolicy.value.Username !== 'Off')
+const usernameRequired = computed(() => fieldPolicy.value.Username === 'Required')
+const firstnameRequired = computed(() => fieldPolicy.value.Firstname === 'Required')
+const lastnameRequired = computed(() => fieldPolicy.value.Lastname === 'Required')
+
+// A required field that is empty blocks save. On edit a blank username means
+// "no change" (the user keeps its existing one), so it isn't enforced there;
+// a cleared required NAME is a real empty and is blocked on both paths.
+const requiredFieldMissing = computed(() => {
+  const p = fieldPolicy.value
+  const nameMissing =
+    (p.Firstname === 'Required' && !form.value.Firstname.trim())
+    || (p.Lastname === 'Required' && !form.value.Lastname.trim())
+  if (isCreate.value)
+    return nameMissing || (p.Username === 'Required' && !form.value.UserName.trim())
+  return nameMissing
+})
+
 // Account state
 const isActive = ref(true)
 const originalActive = ref(true)
@@ -218,11 +240,12 @@ const modalTitle = computed(() => {
 const footerButton = computed(() => ({
   visible: true,
   text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
-  // Email is the only required field. Username + first/last name are optional
-  // (username defaults to the email server-side; passwordless users have no name
-  // at all), mirroring native passwordless registration.
+  // Email is always required (the anchor). Username + first/last name follow the
+  // configurable (App⊕realm) policy — required ones must be filled, defaulting to
+  // the lenient "all Optional" behaviour when the realm never configured it.
   disabled: !form.value.Email.trim()
     || emailInvalid.value
+    || requiredFieldMissing.value
     || loading.value
     || graceBusy.value,
   onClick: save,
@@ -230,6 +253,8 @@ const footerButton = computed(() => ({
 
 
 onMounted(async () => {
+  // Ensure the field policy is available (idempotent; usually already loaded at boot).
+  appConfig.load()
   if (!isCreate.value) {
     loading.value = true
     try {
@@ -351,10 +376,10 @@ watch(() => form.value.UserName, () => {
           <section class="form-section">
             <h3 class="form-section-heading">{{ t('admin.userDetails.section.identity', {}, 'Identität') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-half" :label="t('admin.users.firstname', {}, 'First Name')">
+              <CoarFormField class="col-half" :label="t('admin.users.firstname', {}, 'First Name')" :required="firstnameRequired">
                 <CoarTextInput v-model="form.Firstname" clearable />
               </CoarFormField>
-              <CoarFormField class="col-half" :label="t('admin.users.lastname', {}, 'Last Name')">
+              <CoarFormField class="col-half" :label="t('admin.users.lastname', {}, 'Last Name')" :required="lastnameRequired">
                 <CoarTextInput v-model="form.Lastname" clearable />
               </CoarFormField>
               <CoarFormField class="col-half" :label="t('admin.users.acronym', {}, 'Kürzel')">
@@ -373,10 +398,12 @@ watch(() => form.value.UserName, () => {
                 <span v-if="emailInvalid" class="text-xs text-red-600">{{ t('admin.userDetails.emailInvalid', {}, 'Bitte eine gültige E-Mail-Adresse eingeben.') }}</span>
                 <p class="field-hint">{{ t('admin.userDetails.email.hint', {}, 'Primäre Adresse; nötig für Passwort-Zurücksetzen und Magic-Link.') }}</p>
               </CoarFormField>
-              <CoarFormField class="col-half" :label="t('admin.users.username', {}, 'Username')">
+              <CoarFormField v-if="showUsername" class="col-half" :label="t('admin.users.username', {}, 'Username')" :required="usernameRequired">
                 <CoarTextInput v-model="form.UserName" clearable />
                 <span v-if="userNameError" class="text-xs text-red-600">{{ userNameError }}</span>
-                <p class="field-hint">{{ t('admin.userDetails.username.hint', {}, 'Anmeldename; muss eindeutig sein. Leer = die E-Mail-Adresse wird verwendet.') }}</p>
+                <p class="field-hint">{{ usernameRequired
+                  ? t('admin.userDetails.username.hintRequired', {}, 'Anmeldename; muss eindeutig sein und ist Pflicht.')
+                  : t('admin.userDetails.username.hint', {}, 'Anmeldename; muss eindeutig sein. Leer = die E-Mail-Adresse wird verwendet.') }}</p>
               </CoarFormField>
             </div>
           </section>

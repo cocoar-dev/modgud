@@ -273,6 +273,7 @@ The following capabilities set Modgud apart from classic IdP solutions and are a
 |---------|-------------|--------|---------------|
 | Admin user CRUD | List, view, create, edit, soft-delete via the admin API + grid | ✅ Available | `user:read/write` |
 | Email/username uniqueness on creation | Rejects duplicate names/emails (also against group emails); format validation | ✅ Available | Automatic |
+| Configurable required identity fields | Per-realm + per-App policy for which of username / first / last name are `Off` / `Optional` / `Required` on account creation (email always required); enforced on admin, self-registration and native paths; published via `/api/app-info` | ⚙️ Optional / all Optional by default | Per-realm, per-App override |
 | Admin set/reset password | Reset rotates the security stamp and revokes all live access (incident response) | ✅ Available | `user:write` |
 | Admin enable/disable (kill-switch) | Deactivation revokes tokens/sessions/cookie, keeps consent grants | ✅ Available | `user:write` |
 | Admin override `EmailConfirmed` | Directly set the verification status from the edit form | ✅ Available | `user:write` |

@@ -100,6 +100,14 @@ export interface ApplicationDcrOverrideDto extends ApplicationGrantOverrideDto {
   ReservedNames?: string[] | null
 }
 
+/** Per-field requirement override: 'Off' | 'Optional' | 'Required'. A null
+ * field inherits the realm requirement for that field. */
+export interface ApplicationRegistrationFieldsOverrideDto {
+  Username?: string | null
+  Firstname?: string | null
+  Lastname?: string | null
+}
+
 export interface ApplicationSettingsDto {
   Origin?: ApplicationOriginDto | null
   Branding?: ApplicationBrandingSettingsDto | null
@@ -108,4 +116,5 @@ export interface ApplicationSettingsDto {
   NativeGrants?: ApplicationGrantOverrideDto | null
   Dcr?: ApplicationDcrOverrideDto | null
   Cimd?: ApplicationGrantOverrideDto | null
+  RegistrationFields?: ApplicationRegistrationFieldsOverrideDto | null
 }

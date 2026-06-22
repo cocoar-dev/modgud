@@ -106,6 +106,13 @@ public sealed class ApplicationSettingsService(
                 : new ApplicationEmailBranding { ProductName = dto.EmailBranding.ProductName!.Trim() };
         }
 
+        if (dto.RegistrationFields is not null)
+        {
+            var r = MapRegistrationFields(dto.RegistrationFields);
+            if (r.IsError) return r.FirstError;
+            doc.RegistrationFields = r.Value;
+        }
+
         // Origin / subdomain is special: it also drives the GLOBAL host→App routing
         // map, validated for child-of-primary-domain + cross-realm uniqueness.
         if (dto.Origin is not null)
@@ -250,6 +257,32 @@ public sealed class ApplicationSettingsService(
         };
     }
 
+    private static ErrorOr<ApplicationRegistrationFieldsOverrides> MapRegistrationFields(ApplicationRegistrationFieldsDto d)
+    {
+        var username = ParseRequirement("Username", d.Username);
+        if (username.IsError) return username.FirstError;
+        var firstname = ParseRequirement("Firstname", d.Firstname);
+        if (firstname.IsError) return firstname.FirstError;
+        var lastname = ParseRequirement("Lastname", d.Lastname);
+        if (lastname.IsError) return lastname.FirstError;
+
+        return new ApplicationRegistrationFieldsOverrides
+        {
+            Username = username.Value,
+            Firstname = firstname.Value,
+            Lastname = lastname.Value,
+        };
+    }
+
+    private static ErrorOr<FieldRequirement?> ParseRequirement(string field, string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return (FieldRequirement?)null;
+        if (!Enum.TryParse<FieldRequirement>(raw, ignoreCase: true, out var v))
+            return Error.Validation($"RegistrationFields.Invalid{field}",
+                $"{field} must be Off, Optional or Required.");
+        return (FieldRequirement?)v;
+    }
+
     private static ErrorOr<BrandingSettings> MapBranding(ApplicationBrandingDto d)
     {
         var color = NullIfBlank(d.PrimaryColor);
@@ -343,6 +376,12 @@ public sealed class ApplicationSettingsService(
                 Enabled = doc.Cimd.Enabled,
                 AccessTokenLifetimeMinutes = doc.Cimd.AccessTokenLifetime is { } ca ? (int)ca.TotalMinutes : null,
                 RefreshTokenLifetimeDays = doc.Cimd.RefreshTokenLifetime is { } cr ? (int)cr.TotalDays : null,
+            },
+            RegistrationFields = doc.RegistrationFields is null ? null : new ApplicationRegistrationFieldsDto
+            {
+                Username = doc.RegistrationFields.Username?.ToString(),
+                Firstname = doc.RegistrationFields.Firstname?.ToString(),
+                Lastname = doc.RegistrationFields.Lastname?.ToString(),
             },
         };
     }

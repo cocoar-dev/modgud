@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
+import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
   CoarCard,
@@ -31,6 +32,15 @@ const { t, language } = useI18n()
 const localization = useLocalization()!
 const router = useRouter()
 const accountHttp = useHttpClient('/api/account')
+const appConfig = useAppConfigStore()
+
+// Configurable (App⊕realm) required-identity-field policy from /api/app-info.
+// Drives which inputs the register form renders and requires.
+const fieldPolicy = computed(() => appConfig.config.RegistrationFields)
+const showUsername = computed(() => fieldPolicy.value.Username !== 'Off')
+const usernameRequired = computed(() => fieldPolicy.value.Username === 'Required')
+const firstnameRequired = computed(() => fieldPolicy.value.Firstname === 'Required')
+const lastnameRequired = computed(() => fieldPolicy.value.Lastname === 'Required')
 
 async function toggleLanguage() {
   const next = language.value === 'de' ? 'en' : 'de'
@@ -61,7 +71,9 @@ const tosRequired = computed(() => !!info.value?.TermsOfServiceUrl)
 const captchaRequired = computed(() => !!info.value?.CaptchaSiteKey)
 const canSubmit = computed(() => {
   if (submitting.value || submitted.value) return false
-  if (!form.value.UserName.trim()) return false
+  if (showUsername.value && usernameRequired.value && !form.value.UserName.trim()) return false
+  if (firstnameRequired.value && !form.value.Firstname.trim()) return false
+  if (lastnameRequired.value && !form.value.Lastname.trim()) return false
   if (!form.value.Email.trim() || !form.value.Email.includes('@')) return false
   if (!form.value.Password) return false
   if (tosRequired.value && !form.value.AcceptedTerms) return false
@@ -117,6 +129,7 @@ function resetTurnstile() {
 
 onMounted(async () => {
   try {
+    appConfig.load() // idempotent; ensures the field policy is available
     info.value = await accountHttp.addPath('self-registration-info').get<SelfRegistrationInfoDto>()
     if (!info.value.Enabled) {
       router.replace('/login')
@@ -214,8 +227,8 @@ async function handleSubmit() {
         </div>
 
         <form v-else class="space-y-4" @submit.prevent="handleSubmit">
-          <CoarFormField :label="t('auth.register.username', {}, 'Username')">
-            <CoarTextInput v-model="form.UserName" autocomplete="username" required />
+          <CoarFormField v-if="showUsername" :label="t('auth.register.username', {}, 'Username')">
+            <CoarTextInput v-model="form.UserName" autocomplete="username" :required="usernameRequired" />
           </CoarFormField>
 
           <CoarFormField :label="t('auth.register.email', {}, 'Email')">
@@ -227,11 +240,15 @@ async function handleSubmit() {
           </CoarFormField>
 
           <div class="grid grid-cols-2 gap-3">
-            <CoarFormField :label="t('auth.register.firstname', {}, 'First name (optional)')">
-              <CoarTextInput v-model="form.Firstname" autocomplete="given-name" />
+            <CoarFormField :label="firstnameRequired
+              ? t('auth.register.firstnameRequired', {}, 'First name')
+              : t('auth.register.firstname', {}, 'First name (optional)')">
+              <CoarTextInput v-model="form.Firstname" autocomplete="given-name" :required="firstnameRequired" />
             </CoarFormField>
-            <CoarFormField :label="t('auth.register.lastname', {}, 'Last name (optional)')">
-              <CoarTextInput v-model="form.Lastname" autocomplete="family-name" />
+            <CoarFormField :label="lastnameRequired
+              ? t('auth.register.lastnameRequired', {}, 'Last name')
+              : t('auth.register.lastname', {}, 'Last name (optional)')">
+              <CoarTextInput v-model="form.Lastname" autocomplete="family-name" :required="lastnameRequired" />
             </CoarFormField>
           </div>
 

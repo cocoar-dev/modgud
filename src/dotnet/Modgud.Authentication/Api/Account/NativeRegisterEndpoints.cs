@@ -6,6 +6,7 @@ using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
 using Modgud.Domain.Applications;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -29,7 +30,7 @@ namespace Modgud.Authentication.Api.Account;
 /// </summary>
 public static class NativeRegisterEndpoints
 {
-    public record NativeRegisterRequestDto(string Email);
+    public record NativeRegisterRequestDto(string Email, string? FirstName = null, string? LastName = null);
 
     public static WebApplication MapNativeRegisterEndpoints(this WebApplication application, string path)
     {
@@ -57,12 +58,23 @@ public static class NativeRegisterEndpoints
             var eligible = settings.NativeGrants is { Enabled: true }
                            && settings.SelfRegPosture == SelfRegPosture.ExplicitEndpoint;
 
+            // Required-field gate (configurable per App⊕realm). Surfaced as a hard
+            // 400 BEFORE the uniform branch and only when the endpoint is eligible to
+            // act — both are email-independent, so this leaks nothing. Username is
+            // never enforced here (the native username is always the email).
+            if (eligible && RegistrationFieldsPolicy.FirstMissingRequiredName(
+                    settings.RegistrationFields, request.FirstName, request.LastName) is { } missing)
+            {
+                return Results.BadRequest(new { error = $"{missing} is required." });
+            }
+
             if (eligible && !string.IsNullOrWhiteSpace(request.Email))
             {
                 // Anti-enumeration: every branch is silent (results discarded) so
                 // the uniform response + jitter below is the only observable.
                 await IssueRegistrationOtpAsync(
-                    request.Email, session, emailOtpService, passwordlessUserFactory, ct);
+                    request.Email, request.FirstName, request.LastName,
+                    session, emailOtpService, passwordlessUserFactory, ct);
             }
 
             // Same jitter on every branch (incl. the success path, which did real
@@ -94,6 +106,8 @@ public static class NativeRegisterEndpoints
     /// </summary>
     private static async Task IssueRegistrationOtpAsync(
         string email,
+        string? firstName,
+        string? lastName,
         IDocumentSession session,
         IEmailOtpService emailOtpService,
         IPasswordlessUserFactory passwordlessUserFactory,
@@ -104,7 +118,7 @@ public static class NativeRegisterEndpoints
 
         if (user is null)
         {
-            var created = await passwordlessUserFactory.CreateAsync(email, ct);
+            var created = await passwordlessUserFactory.CreateAsync(email, firstName, lastName, ct);
             if (created is not null)
                 _ = await emailOtpService.RequestNativeRegistrationOtpAsync(created.Id, ct);
             return;

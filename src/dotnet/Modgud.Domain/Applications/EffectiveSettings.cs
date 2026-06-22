@@ -26,6 +26,7 @@ public sealed record EffectiveSettings
     public CimdSettings? Cimd { get; init; }
     public NativeGrantSettings? NativeGrants { get; init; }
     public BrandingSettings? Branding { get; init; }
+    public RegistrationFieldsSettings? RegistrationFields { get; init; }
     public DeletionSettings? Deletion { get; init; }
     public AuditSettings? Audit { get; init; }
     public Dictionary<string, string>? Pages { get; init; }
@@ -50,6 +51,7 @@ public sealed record EffectiveSettings
         Cimd = realm.Cimd,
         NativeGrants = realm.NativeGrants,
         Branding = realm.Branding,
+        RegistrationFields = realm.RegistrationFields,
         Deletion = realm.Deletion,
         Audit = realm.Audit,
         Pages = realm.Pages,
@@ -70,6 +72,7 @@ public sealed record EffectiveSettings
         SelfRegistration = MergeSelfRegistration(realm.SelfRegistration, app.SelfRegistration),
         Dcr = MergeDcr(realm.Dcr, app.Dcr),
         Cimd = MergeCimd(realm.Cimd, app.Cimd),
+        RegistrationFields = MergeRegistrationFields(realm.RegistrationFields, app.RegistrationFields),
 
         // Realm-owned sections with no per-App override (operational / GDPR) — passthrough:
         Deletion = realm.Deletion,
@@ -158,6 +161,20 @@ public sealed record EffectiveSettings
             Enabled = app.Enabled ?? c.Enabled,
             AccessTokenLifetime = app.AccessTokenLifetime ?? c.AccessTokenLifetime,
             RefreshTokenLifetime = app.RefreshTokenLifetime ?? c.RefreshTokenLifetime,
+        };
+    }
+
+    private static RegistrationFieldsSettings? MergeRegistrationFields(
+        RegistrationFieldsSettings? realm,
+        ApplicationRegistrationFieldsOverrides? app)
+    {
+        if (app is null) return realm;
+        var r = realm ?? new RegistrationFieldsSettings();
+        return r with
+        {
+            Username = app.Username ?? r.Username,
+            Firstname = app.Firstname ?? r.Firstname,
+            Lastname = app.Lastname ?? r.Lastname,
         };
     }
 }

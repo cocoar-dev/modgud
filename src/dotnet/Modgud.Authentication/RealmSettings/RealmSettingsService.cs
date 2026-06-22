@@ -86,6 +86,13 @@ public sealed class RealmSettingsService(
             doc.Branding = branding.Value;
         }
 
+        if (dto.RegistrationFields is not null)
+        {
+            var rf = ApplyRegistrationFieldsPatch(doc.RegistrationFields, dto.RegistrationFields);
+            if (rf.IsError) return rf.FirstError;
+            doc.RegistrationFields = rf.Value;
+        }
+
         if (dto.Deletion is not null)
         {
             var deletion = ApplyDeletionPatch(doc.Deletion, dto.Deletion);
@@ -140,6 +147,7 @@ public sealed class RealmSettingsService(
         Cimd = MapCimdToDto(doc.Cimd),
         NativeGrants = MapNativeGrantsToDto(doc.NativeGrants),
         Branding = MapBrandingToDto(doc.Branding),
+        RegistrationFields = MapRegistrationFieldsToDto(doc.RegistrationFields),
         Deletion = MapDeletionToDto(doc.Deletion),
         Audit = MapAuditToDto(doc.Audit),
         Pages = doc.Pages is null
@@ -264,6 +272,48 @@ public sealed class RealmSettingsService(
             return Error.Validation($"{section}.InvalidRefreshTokenLifetime",
                 "RefreshTokenLifetimeDays must be between 1 and 30.");
         return null;
+    }
+
+    private static ErrorOr<RegistrationFieldsSettings> ApplyRegistrationFieldsPatch(
+        RegistrationFieldsSettings? current,
+        UpdateRegistrationFieldsSettingsDto patch)
+    {
+        var s = current ?? new RegistrationFieldsSettings();
+
+        var username = ParseRequirement("Username", patch.Username, s.Username);
+        if (username.IsError) return username.FirstError;
+        var firstname = ParseRequirement("Firstname", patch.Firstname, s.Firstname);
+        if (firstname.IsError) return firstname.FirstError;
+        var lastname = ParseRequirement("Lastname", patch.Lastname, s.Lastname);
+        if (lastname.IsError) return lastname.FirstError;
+
+        return s with
+        {
+            Username = username.Value,
+            Firstname = firstname.Value,
+            Lastname = lastname.Value,
+        };
+    }
+
+    // Null/missing patch value = keep current; non-null = parse + replace.
+    private static ErrorOr<FieldRequirement> ParseRequirement(string field, string? raw, FieldRequirement current)
+    {
+        if (raw is null) return current;
+        if (!Enum.TryParse<FieldRequirement>(raw, ignoreCase: true, out var v))
+            return Error.Validation($"RegistrationFields.Invalid{field}",
+                $"{field} must be Off, Optional or Required.");
+        return v;
+    }
+
+    internal static RegistrationFieldsSettingsDto MapRegistrationFieldsToDto(RegistrationFieldsSettings? s)
+    {
+        s ??= RegistrationFieldsSettings.Defaults;
+        return new RegistrationFieldsSettingsDto
+        {
+            Username = s.Username.ToString(),
+            Firstname = s.Firstname.ToString(),
+            Lastname = s.Lastname.ToString(),
+        };
     }
 
     private static ErrorOr<DeletionSettings> ApplyDeletionPatch(DeletionSettings? current, UpdateDeletionSettingsDto patch)

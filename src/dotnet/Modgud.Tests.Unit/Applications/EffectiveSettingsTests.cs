@@ -24,6 +24,12 @@ public class EffectiveSettingsTests
             RefreshTokenLifetime = TimeSpan.FromDays(14),
         },
         Branding = new BrandingSettings { ProductName = "RealmProduct", PrimaryColor = "#111111" },
+        RegistrationFields = new RegistrationFieldsSettings
+        {
+            Username = FieldRequirement.Off,
+            Firstname = FieldRequirement.Required,
+            Lastname = FieldRequirement.Optional,
+        },
         Deletion = DeletionSettings.Defaults,
         Audit = AuditSettings.Defaults,
         Pages = new Dictionary<string, string> { ["login"] = "{}" },
@@ -43,6 +49,7 @@ public class EffectiveSettingsTests
             Assert.Equal(realm.Cimd, eff.Cimd);
             Assert.Equal(realm.NativeGrants, eff.NativeGrants);
             Assert.Equal(realm.Branding, eff.Branding);
+            Assert.Equal(realm.RegistrationFields, eff.RegistrationFields);
             Assert.Equal(realm.Deletion, eff.Deletion);
             Assert.Equal(realm.Audit, eff.Audit);
             Assert.Equal(realm.Pages, eff.Pages);
@@ -84,6 +91,7 @@ public class EffectiveSettingsTests
             Assert.Equal(realm.Cimd, eff.Cimd);
             Assert.Equal(realm.NativeGrants, eff.NativeGrants);
             Assert.Equal(realm.Branding, eff.Branding);
+            Assert.Equal(realm.RegistrationFields, eff.RegistrationFields);
             Assert.Equal(realm.Deletion, eff.Deletion);
             Assert.Equal(realm.Audit, eff.Audit);
             Assert.Equal(realm.Pages, eff.Pages);
@@ -208,6 +216,44 @@ public class EffectiveSettingsTests
             var eff = EffectiveSettings.Merge(Realm(), app);
 
             Assert.False(eff.Cimd!.Enabled); // overridden
+        }
+
+        [Fact]
+        public void Registration_fields_are_merged_field_by_field()
+        {
+            var app = new ApplicationSettings
+            {
+                // Override only Username; the name requirements must inherit the realm.
+                RegistrationFields = new ApplicationRegistrationFieldsOverrides
+                {
+                    Username = FieldRequirement.Required,
+                },
+            };
+
+            var eff = EffectiveSettings.Merge(Realm(), app);
+
+            Assert.Equal(FieldRequirement.Required, eff.RegistrationFields!.Username); // overridden
+            Assert.Equal(FieldRequirement.Required, eff.RegistrationFields.Firstname); // inherited
+            Assert.Equal(FieldRequirement.Optional, eff.RegistrationFields.Lastname);  // inherited
+        }
+
+        [Fact]
+        public void Registration_fields_override_against_unset_realm_section_uses_record_defaults()
+        {
+            var realm = new RealmSettingsDoc(); // RegistrationFields null = all Optional
+            var app = new ApplicationSettings
+            {
+                RegistrationFields = new ApplicationRegistrationFieldsOverrides
+                {
+                    Lastname = FieldRequirement.Required,
+                },
+            };
+
+            var eff = EffectiveSettings.Merge(realm, app);
+
+            Assert.Equal(FieldRequirement.Optional, eff.RegistrationFields!.Username);  // record default
+            Assert.Equal(FieldRequirement.Optional, eff.RegistrationFields.Firstname);  // record default
+            Assert.Equal(FieldRequirement.Required, eff.RegistrationFields.Lastname);   // overridden
         }
 
         [Fact]

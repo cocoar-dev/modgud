@@ -68,16 +68,72 @@ public class NativeRegistrationFlowTests : IntegrationTestBase
         Assert.Equal(newEmail, user.UserName);
     }
 
+    [Fact]
+    public async Task Native_Otp_Required_Name_Missing_Returns_BadRequest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await EnableRealmNativeGrantsAsync();
+        await SetRealmRegistrationFieldsAsync(firstname: "Required");
+        var app = await CreateAppAsync("p5-reqname-app");
+        await MapApplicationDomainsAsync(("p5-reqname.localhost", app.Id));
+
+        // No FirstName despite the policy requiring it → hard 400, BEFORE the
+        // uniform branch. This is email-independent so it leaks no existence.
+        var resp = await RequestNativeOtpAsync("p5-reqname.localhost", "noname@example.test");
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task Native_Otp_With_Required_Name_Persists_It_On_Jit()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var newEmail = "p5-named-newuser@example.test";
+        await EnableRealmNativeGrantsAsync();
+        await SetRealmRegistrationFieldsAsync(firstname: "Required");
+        var app = await CreateAppAsync("p5-named-app");
+        await MapApplicationDomainsAsync(("p5-named.localhost", app.Id));
+
+        var emailService = Factory.Services.GetRequiredService<InMemoryEmailService>();
+        emailService.Clear();
+        var resp = await RequestNativeOtpAsync("p5-named.localhost", newEmail, firstName: "Ada", lastName: "Lovelace");
+        resp.EnsureSuccessStatusCode();
+        Assert.NotNull(emailService.GetLastEmailTo(newEmail)); // JIT issued the registration code
+
+        var user = await QuerySystemUserByEmailAsync(newEmail);
+        Assert.NotNull(user);
+        Assert.Equal("Ada", user!.Firstname);
+        Assert.Equal("Lovelace", user.Lastname);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private Task<HttpResponseMessage> RequestNativeOtpAsync(string host, string email)
+    private Task<HttpResponseMessage> RequestNativeOtpAsync(
+        string host, string email, string? firstName = null, string? lastName = null)
     {
         var req = new HttpRequestMessage(HttpMethod.Post, "/api/account/native/otp/request")
         {
-            Content = JsonContent.Create(new { Email = email }),
+            Content = JsonContent.Create(new { Email = email, FirstName = firstName, LastName = lastName }),
         };
         req.Headers.Host = host;
         return Client.SendAsync(req, TestContext.Current.CancellationToken);
+    }
+
+    private async Task SetRealmRegistrationFieldsAsync(
+        string? username = null, string? firstname = null, string? lastname = null)
+    {
+        var scope = Factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>()
+            .HttpContext = new DefaultHttpContext { Items = { ["TenantId"] = "system" } };
+        var settings = scope.ServiceProvider.GetRequiredService<IRealmSettingsService>();
+        await settings.PatchAsync(new UpdateRealmSettingsDto
+        {
+            RegistrationFields = new UpdateRegistrationFieldsSettingsDto
+            {
+                Username = username,
+                Firstname = firstname,
+                Lastname = lastname,
+            },
+        }, TestContext.Current.CancellationToken);
     }
 
     private async Task<string> MintOtpTokenAsync(string host, string clientId, string email, string code)

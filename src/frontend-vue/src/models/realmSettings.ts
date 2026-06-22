@@ -9,6 +9,7 @@ export interface RealmSettingsDto {
   Cimd: CimdSettingsDto
   NativeGrants: NativeGrantSettingsDto
   Branding: BrandingSettingsDto
+  RegistrationFields: RegistrationFieldsSettingsDto
   Deletion: DeletionSettingsDto
   /** Page-builder schemas keyed by slug. Read-only here — writes use
    * the dedicated /api/admin/customization/pages/{slug} endpoints. */
@@ -21,7 +22,25 @@ export interface UpdateRealmSettingsDto {
   Cimd?: UpdateCimdSettingsDto | null
   NativeGrants?: UpdateNativeGrantSettingsDto | null
   Branding?: UpdateBrandingSettingsDto | null
+  RegistrationFields?: UpdateRegistrationFieldsSettingsDto | null
   Deletion?: UpdateDeletionSettingsDto | null
+}
+
+// Per-realm policy for which identity fields are required when an account is
+// created. Email is always required and is not represented. Each value is one
+// of 'Off' | 'Optional' | 'Required'. Default (unconfigured) = all Optional.
+export type FieldRequirement = 'Off' | 'Optional' | 'Required'
+
+export interface RegistrationFieldsSettingsDto {
+  Username: FieldRequirement
+  Firstname: FieldRequirement
+  Lastname: FieldRequirement
+}
+
+export interface UpdateRegistrationFieldsSettingsDto {
+  Username?: string
+  Firstname?: string
+  Lastname?: string
 }
 
 // Per-realm account-deletion policy. GraceDays drives the self-service

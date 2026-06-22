@@ -38,6 +38,7 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
             Dcr = new ApplicationDcrDto { Enabled = true },
             Cimd = new ApplicationCimdDto { Enabled = true },
             Branding = new ApplicationBrandingDto { ProductName = "Admin Test App" },
+            RegistrationFields = new ApplicationRegistrationFieldsDto { Firstname = "Required", Lastname = "Off" },
             Origin = new ApplicationOriginDto { Subdomain = host },
         };
         var patchResp = await Client.PatchAsJsonAsync($"/api/app/{appShort}/settings", patch, JsonOptions, ct);
@@ -53,6 +54,9 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
         Assert.True(got.Dcr!.Enabled);
         Assert.True(got.Cimd!.Enabled);
         Assert.Equal("Admin Test App", got.Branding!.ProductName);
+        Assert.Equal("Required", got.RegistrationFields!.Firstname);
+        Assert.Equal("Off", got.RegistrationFields.Lastname);
+        Assert.Null(got.RegistrationFields.Username); // not patched → inherits (null override)
         Assert.Equal(host, got.Origin!.Subdomain);
 
         // The Origin write populated the GLOBAL host→App routing map.
