@@ -135,7 +135,7 @@ passwordless sign-up is triggered for the App:
 | --- | --- |
 | `JitOnOtp` *(default)* | Sign-in-or-sign-up: an unknown email at the native OTP endpoint creates a passwordless user and emails a one-time code; redeeming it both verifies the mailbox and signs in. The low-friction consumer default. |
 | `Off` | No self-registration — an unknown email gets the uniform anti-enumeration response, no user is created. |
-| `ExplicitEndpoint` | Registration is a deliberate, separate step; sign-in stays strict (known users only). *Reserved — the explicit endpoint is not yet wired, so this currently behaves like `Off`.* |
+| `ExplicitEndpoint` | Registration is a deliberate, separate step via `POST /api/account/native/register` (room for an app's own ToS / profile UI); sign-in stays strict — the OTP-request endpoint serves only known users. An unknown email at the register endpoint creates the passwordless user and emails the same registration code. |
 
 See [Integrate → Native apps](../integrate/native-apps#native-passwordless-registration-jit-on-otp)
 for the end-to-end flow.

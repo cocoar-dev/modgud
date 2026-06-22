@@ -2,12 +2,13 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
   CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarNote,
-  CoarTabGroup, CoarTab,
+  CoarTabGroup, CoarTab, CoarMultiSelect,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import EditableStringList from '@/components/EditableStringList.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
+import { useGroupStore } from '@/stores/group.store'
 import type { ApplicationSettingsDto } from '@/models/application'
 
 const { t } = useI18n()
@@ -18,9 +19,13 @@ const props = defineProps<{
 }>()
 
 const store = useApplicationsStore()
+const groupStore = useGroupStore()
 const loading = ref(false)
 const error = ref<string | null>(null)
 const activeTab = ref<'origin' | 'registration' | 'grants' | 'oauth'>('origin')
+
+const groupOptions = computed(() =>
+  groupStore.groups.map((g) => ({ value: g.Id, label: g.Name })))
 
 // Per-section "override" toggle (on → this App overrides the realm; off → inherit).
 // Numbers are kept as strings (empty = inherit that field). Booleans inside an
@@ -36,11 +41,15 @@ const f = reactive({
     requireEmailVerification: true,
     requireAdminApproval: false,
     allowedEmailDomains: [] as string[],
+    defaultGroupIds: [] as string[],
     termsOfServiceUrl: '',
     privacyPolicyUrl: '',
   },
   nativeGrants: { override: false, enabled: false, access: '', refresh: '' },
-  dcr: { override: false, enabled: false, access: '', refresh: '' },
+  dcr: {
+    override: false, enabled: false, access: '', refresh: '',
+    reservedNames: [] as string[], perIp: '', perRealm: '',
+  },
   cimd: { override: false, enabled: false, access: '', refresh: '' },
 })
 
@@ -64,7 +73,8 @@ function parseNum(s: string): number | null {
 onMounted(async () => {
   loading.value = true
   try {
-    const s = await store.loadSettings(props.id)
+    // Load groups too so the DefaultGroups picker can label by name.
+    const [s] = await Promise.all([store.loadSettings(props.id), groupStore.initialize()])
     if (s.Origin) { f.origin.override = true; f.origin.subdomain = s.Origin.Subdomain ?? '' }
     if (s.Branding) {
       f.branding.override = true
@@ -83,6 +93,7 @@ onMounted(async () => {
       f.selfReg.requireEmailVerification = sr.RequireEmailVerification ?? true
       f.selfReg.requireAdminApproval = sr.RequireAdminApproval ?? false
       f.selfReg.allowedEmailDomains = sr.AllowedEmailDomains ?? []
+      f.selfReg.defaultGroupIds = sr.DefaultGroupIds ?? []
       f.selfReg.termsOfServiceUrl = sr.TermsOfServiceUrl ?? ''
       f.selfReg.privacyPolicyUrl = sr.PrivacyPolicyUrl ?? ''
     }
@@ -97,6 +108,9 @@ onMounted(async () => {
       f.dcr.enabled = s.Dcr.Enabled ?? false
       f.dcr.access = numStr(s.Dcr.AccessTokenLifetimeMinutes)
       f.dcr.refresh = numStr(s.Dcr.RefreshTokenLifetimeDays)
+      f.dcr.reservedNames = s.Dcr.ReservedNames ?? []
+      f.dcr.perIp = numStr(s.Dcr.PerIpRateLimitPerHour)
+      f.dcr.perRealm = numStr(s.Dcr.PerRealmRateLimitPerDay)
     }
     if (s.Cimd) {
       f.cimd.override = true
@@ -129,6 +143,7 @@ function buildDto(): ApplicationSettingsDto {
           RequireEmailVerification: f.selfReg.requireEmailVerification,
           RequireAdminApproval: f.selfReg.requireAdminApproval,
           AllowedEmailDomains: f.selfReg.allowedEmailDomains.length ? f.selfReg.allowedEmailDomains : null,
+          DefaultGroupIds: f.selfReg.defaultGroupIds.length ? f.selfReg.defaultGroupIds : null,
           TermsOfServiceUrl: f.selfReg.termsOfServiceUrl.trim() || null,
           PrivacyPolicyUrl: f.selfReg.privacyPolicyUrl.trim() || null,
         }
@@ -137,7 +152,14 @@ function buildDto(): ApplicationSettingsDto {
       ? { Enabled: f.nativeGrants.enabled, AccessTokenLifetimeMinutes: parseNum(f.nativeGrants.access), RefreshTokenLifetimeDays: parseNum(f.nativeGrants.refresh) }
       : {},
     Dcr: f.dcr.override
-      ? { Enabled: f.dcr.enabled, AccessTokenLifetimeMinutes: parseNum(f.dcr.access), RefreshTokenLifetimeDays: parseNum(f.dcr.refresh) }
+      ? {
+          Enabled: f.dcr.enabled,
+          AccessTokenLifetimeMinutes: parseNum(f.dcr.access),
+          RefreshTokenLifetimeDays: parseNum(f.dcr.refresh),
+          ReservedNames: f.dcr.reservedNames.length ? f.dcr.reservedNames : null,
+          PerIpRateLimitPerHour: parseNum(f.dcr.perIp),
+          PerRealmRateLimitPerDay: parseNum(f.dcr.perRealm),
+        }
       : {},
     Cimd: f.cimd.override
       ? { Enabled: f.cimd.enabled, AccessTokenLifetimeMinutes: parseNum(f.cimd.access), RefreshTokenLifetimeDays: parseNum(f.cimd.refresh) }
@@ -218,6 +240,14 @@ const footerButton = computed(() => ({
           <CoarFormField :label="t('admin.appSettings.selfReg.domains', {}, 'Erlaubte E-Mail-Domains (leer = alle)')">
             <EditableStringList v-model="f.selfReg.allowedEmailDomains" />
           </CoarFormField>
+          <CoarFormField :label="t('admin.appSettings.selfReg.defaultGroups', {}, 'Standard-Gruppen (Auto-Mitgliedschaft nach Verifizierung)')">
+            <CoarMultiSelect
+              v-model="f.selfReg.defaultGroupIds"
+              :options="groupOptions"
+              searchable
+              clearable
+              :placeholder="t('admin.appSettings.selfReg.defaultGroups.placeholder', {}, 'Gruppen wählen…')" />
+          </CoarFormField>
           <CoarFormField :label="t('admin.appSettings.selfReg.tos', {}, 'AGB-URL')">
             <CoarTextInput v-model="f.selfReg.termsOfServiceUrl" clearable />
           </CoarFormField>
@@ -256,6 +286,17 @@ const footerButton = computed(() => ({
               <CoarTextInput v-model="f.dcr.refresh" clearable placeholder="7" />
             </CoarFormField>
           </div>
+          <div class="grid grid-cols-2 gap-3">
+            <CoarFormField :label="t('admin.appSettings.dcr.perIp', {}, 'Rate-Limit pro IP / Stunde')">
+              <CoarTextInput v-model="f.dcr.perIp" clearable placeholder="5" />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.appSettings.dcr.perRealm', {}, 'Rate-Limit pro Realm / Tag')">
+              <CoarTextInput v-model="f.dcr.perRealm" clearable placeholder="100" />
+            </CoarFormField>
+          </div>
+          <CoarFormField :label="t('admin.appSettings.dcr.reservedNames', {}, 'Reservierte Client-Namen (Blockliste)')">
+            <EditableStringList v-model="f.dcr.reservedNames" />
+          </CoarFormField>
         </template>
 
         <CoarCheckbox v-model="f.cimd.override" :label="t('admin.appSettings.cimd.override', {}, 'Eigene CIMD-Settings')" />
