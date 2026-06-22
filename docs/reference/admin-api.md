@@ -207,13 +207,36 @@ behind the `realm:admin` bypass.
 
 ## App info
 
-There is no editable `app-settings` endpoint. The SPA bootstrap reads
-public realm/branding metadata anonymously; realm-admin-owned config
-lives under `/api/realm-settings`.
+The SPA bootstrap reads public realm/branding metadata anonymously.
+Realm-wide admin-owned config lives under `/api/realm-settings`; the
+**per-Application** override of that config lives under
+`/api/app/{id}/settings` (below).
 
 | Method | Path | Permission |
 |---|---|---|
 | `GET` | `/api/app-info` | Anonymous |
+
+## Application settings
+
+Per-Application override of the realm defaults (ADR-0011). The
+`ApplicationSettings` document is keyed by the App's id and tenant-scoped.
+**Sparse** in both directions: `GET` returns only what the App overrides
+(a `null` section = inherits the realm); `PATCH` replaces the provided
+sections (a `null`/omitted section = no change, and within a provided
+section a `null` field = inherit the realm value). Setting
+`Origin.Subdomain` also writes the global host→App routing map (and clearing
+it removes the route). See [Applications](/admin/applications#application-settings).
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/app/{id}/settings` | `app:read` |
+| `PATCH` | `/api/app/{id}/settings` | `app:write` |
+
+The body sections are `Origin` (subdomain), `Branding`, `EmailBranding`,
+`SelfRegistration` (incl. the `Posture` = `Off` / `JitOnOtp` /
+`ExplicitEndpoint`), `NativeGrants`, `Dcr`, and `Cimd` — each nullable,
+each mirroring the realm-level shape minus the pieces that stay realm-only
+(captcha, DCR GC interval).
 
 ## Projection endpoints (maintenance)
 

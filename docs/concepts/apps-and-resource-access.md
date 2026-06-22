@@ -53,6 +53,29 @@ artefacts (`PermissionRole.AppId`, `OAuthScope.AppId`,
 `OAuthApi.AppId`) reach back up to the App; `Group.BoundTo` is the
 activation switch ("is this group active in app X?").
 
+## The App's second facet: a login experience (ADR-0011)
+
+The permission clamp above is the App's *first* facet. Since ADR-0011 an
+App is also a **soft origin/login facet** within the realm: an optional
+own subdomain, branding, email branding, and sparse per-app overrides of
+self-registration / native-grant / DCR / CIMD policy.
+
+The key word is **soft**. The realm (tenant) stays the **hard** boundary —
+own database, signing keys, OIDC issuer, user pool, apex. An App does not
+get its own user pool or its own issuer: all apps in a realm share one
+account namespace (one `sub` everywhere, no shadow users), and a request
+on an App subdomain still mints tokens under the **tenant's** canonical
+issuer (the realm primary domain). The App only changes the *experience*
+(which host serves login, what it's branded as, whether unknown emails can
+self-register) — never the identity of the user behind it.
+
+Resolution is by signal, ordered in time: **Host** (an App subdomain pins
+the App) → **`client_id`** (a client's `AppIds`) → **scope/audience**. The
+first signal wins and later signals must be consistent with it (Host pins
+App X + a `client_id` for App Y → rejected). The settings themselves live
+in a tenant-scoped `ApplicationSettings` document and merge field-by-field
+over the realm defaults. See [Admin → Applications](../admin/applications#application-settings).
+
 ## Why apps and resource servers aren't 1:1
 
 Two real-world deviations from "one App = one Resource Server":

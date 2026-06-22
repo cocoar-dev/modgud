@@ -10,6 +10,14 @@ Every realm starts with DCR disabled. The `POST /connect/register` endpoint refu
 DCR registers **software** (an OAuth client). [Self-Registration](./realm-settings#self-registration) registers **people** (user accounts). Two unrelated concepts sharing the word "register".
 :::
 
+::: tip Per-Application override
+The DCR policy below is the **realm default**. An individual
+[Application](./applications#application-settings) can override it per-app
+(enable/disable, token lifetimes, rate limits, reserved-name blocklist).
+The garbage-collection interval stays realm-only — the GC job iterates per
+realm.
+:::
+
 ## When to enable it
 
 Enable DCR when **you want AI agents you don't pre-trust** to be able to attach to your MCP server (or other OAuth-protected API) without an administrator walking each one through client creation.

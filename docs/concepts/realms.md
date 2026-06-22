@@ -18,6 +18,18 @@ Per realm:
 Each realm looks like a standalone modgud installation —
 because that is essentially what it is.
 
+::: tip Realm (tenant) vs. Application
+The realm is the **hard** boundary above. An **Application** is a **soft
+facet** *within* a realm — it can carry its own subdomain, branding and a
+per-app override of self-registration / native-grant / DCR / CIMD policy,
+but it shares the realm's user pool, signing keys and OIDC issuer (a
+request on an App subdomain still mints tokens under the realm's canonical
+issuer). Promote an App to its own realm only when you need independent key
+rotation, breach containment, or data isolation. See
+[Apps & resource access](./apps-and-resource-access#the-apps-second-facet-a-login-experience-adr-0011)
+and [Admin → Applications](../admin/applications#application-settings).
+:::
+
 ## Domain-based routing
 
 Modgud identifies the realm via the **HTTP Host header** —

@@ -1,6 +1,17 @@
 # Per-App login customization (routing + form-builder)
 
-> **Status:** Designkonsens 2026-05-12. Nicht implementiert.
+> **Status (Update 2026-06-22):** Die **Routing- + per-App-Settings-Hälfte
+> ist GESHIPPT** als **ADR-0011 (Application tier)** — App-Context-aware
+> Host→(Tenant,App)-Routing, per-App `ApplicationSettings` (Origin/Subdomain,
+> Branding, Email-Branding, Self-Registration-Posture, NativeGrants/DCR/CIMD-
+> Overrides), Admin-API `GET/PATCH /api/app/{id}/settings` + Admin-UI-Modal,
+> Issuer-Anchoring auf die Tenant-Primary-Domain, native JIT-on-OTP-
+> Registrierung und Cross-App-Cookie-SSO. **Der Form-Builder (Block-Editor
+> für die Login-Seite) ist NICHT umgesetzt** und bleibt der offene Zukunfts-
+> teil dieser Note (siehe Form-Builder-Abschnitt unten). Volle Entscheidung +
+> Phasen + Fortschritt: Atlas `decisions/adr-0011-application-tier-origin-facet`
+> / `-implementation-plan` / `-implementation-progress`.
+> **Ursprünglicher Status:** Designkonsens 2026-05-12.
 > **Why:** Modgud zentralisiert Login — ein Realm, eine
 > Login-Seite, alle Apps des Realms teilen sich denselben UI. Sobald
 > derselbe Cocoar-Kunde mehrere eigene Produkte/Apps fährt (alpha-blog,

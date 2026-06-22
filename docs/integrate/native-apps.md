@@ -93,6 +93,32 @@ grant_type=urn:cocoar:otp
 &totp_code=000000              # only if the user has TOTP 2FA enabled
 ```
 
+#### Native passwordless registration (JIT-on-OTP)
+
+The OTP request above signs in an **existing** user. For consumer apps,
+an [Application](../admin/applications#application-settings) can also turn
+the same endpoint into sign-in-**or**-sign-up by setting its
+self-registration posture to `JitOnOtp` (the per-app default). Then, when
+the request arrives on the **App's subdomain** and the email is unknown,
+Modgud creates a passwordless user on the spot and emails a registration
+code; redeeming it at `/connect/token` mints tokens **and** confirms the
+mailbox in one step. No password, no separate registration call.
+
+The endpoint behaves identically on the wire (same uniform response, same
+anti-enumeration jitter — "code sent" leaks nothing about existence,
+because under `JitOnOtp` an unknown email gets a code too). What changes is
+governed entirely by the App's posture:
+
+- `JitOnOtp` — unknown email on the App subdomain → create + register.
+- `Off` (default for plain realms / no App context) — unknown email → no
+  user, just the uniform response.
+- `ExplicitEndpoint` — reserved for a deliberate separate registration
+  step; not yet wired (currently behaves like `Off`).
+
+A password-bearing but unconfirmed account is never served a native code —
+it must finish verification via the web link. See
+[Applications → Self-registration posture](../admin/applications#self-registration-posture).
+
 ### Flow 2 — Magic link
 
 **Step 1 — request a link:**

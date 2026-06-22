@@ -180,7 +180,10 @@ free-HTML — Security + A11y eingebaut. Builds auf
 [white-label-customization](./white-label-customization) (per-Realm)
 auf, ist die feinere App-Schicht darunter.
 
-**Status:** Designkonsens 2026-05-12. Nicht implementiert.
+**Status:** Routing + per-App-Settings **GESHIPPT als ADR-0011
+(Application tier)** 2026-06-21; nur der **Form-Builder** ist noch offen.
+Siehe die [Note](./per-app-login-customization) für den Restumfang und
+Atlas `decisions/adr-0011-*` für Entscheidung/Plan/Fortschritt.
 
 ### [Application as permission catalog; Resource Server gets a subset](./app-resources-as-permissions)
 
