@@ -49,6 +49,7 @@ public static class DcrRegistrationEndpoints
         [FromBody] DcrRegistrationRequest? request,
         HttpContext httpContext,
         IRealmSettingsService realmSettingsService,
+        Modgud.Authentication.Applications.IApplicationSettingsResolver settingsResolver,
         OAuthAdminService oauthAdminService,
         IDcrRegistrationValidator validator,
         DcrRateLimiter rateLimiter,
@@ -70,11 +71,12 @@ public static class DcrRegistrationEndpoints
         var sourceIp = ResolveSourceIp(httpContext);
         var realmSlug = ResolveRealmSlug(httpContext);
 
-        // ───────── Realm gate ─────────
-        // Reading the singleton RealmSettings doc does a tenant-DB
-        // round-trip; the response is cacheable per-realm but for v1 we
-        // accept the cost (DCR is low-frequency by design).
-        var settings = (await realmSettingsService.LoadAsync(ct)).Dcr ?? new DcrSettings();
+        // ───────── (App ⊕ realm) gate (ADR-0011) ─────────
+        // Host-time: /connect/register is anonymous, so the App (if any) comes
+        // from the request Host (an Application subdomain). A plain tenant host
+        // resolves to the realm DCR settings unchanged.
+        var settings = (await settingsResolver.ResolveForRequestAsync(httpContext, clientId: null, ct)).Dcr
+                       ?? new DcrSettings();
         if (!settings.Enabled)
         {
             LogRejected(securityAudit, sourceIp, request.ClientName, DcrRejectionReason.RealmDisabled);

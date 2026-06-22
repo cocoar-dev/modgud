@@ -25,6 +25,7 @@ public static class PasswordResetEndpoints
             ForgotPasswordRequest request,
             UserManager<ApplicationUser> userManager,
             IEmailService emailService,
+            Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
             IRealmProvisioningService realmSvc,
             IAuthSettings appSettings,
             IWebHostEnvironment env,
@@ -62,7 +63,7 @@ public static class PasswordResetEndpoints
                     EmailTemplate.PasswordReset,
                     new Dictionary<string, string>
                     {
-                        ["AppName"] = "Modgud",
+                        ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                         ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                         ["ActionUrl"] = resetUrl,
                         ["ExpirationMinutes"] = "1440",

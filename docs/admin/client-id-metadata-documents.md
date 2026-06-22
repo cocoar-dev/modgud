@@ -12,6 +12,12 @@ Every realm starts with CIMD disabled. A CIMD `client_id` URL is not resolved (t
 [DCR](./dynamic-client-registration) mints and **stores** a client record from a `POST /connect/register`. CIMD stores **nothing**: the `client_id` URL is fetched, validated, and turned into an in-memory client for the duration of the flow. CIMD removes the open registration endpoint entirely; in exchange the server makes an outbound HTTPS request to a client-controlled URL, which is hardened against SSRF (see below).
 :::
 
+::: tip Per-Application override
+The CIMD policy below is the **realm default**. An individual
+[Application](./applications#application-settings) can override it per-app
+(enable/disable, token lifetimes).
+:::
+
 ## When to enable it
 
 Enable CIMD when you want **AI agents you don't pre-trust** to attach to your MCP server using the modern, standardised path — without an administrator onboarding each one and without minting a stored record for every stranger.

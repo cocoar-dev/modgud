@@ -1,6 +1,6 @@
 using BuildingBlocks.Helper;
 using Modgud.Api;
-using Modgud.Authentication.RealmSettings;
+using Modgud.Authentication.Applications;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 
@@ -23,10 +23,15 @@ public static class AppSettingsEndpoints
         // is metadata, no secrets — same disclosure surface as the existing
         // public realm settings.
         application.MapGet($"{path}/app-info",
-            async (HttpContext http, AppSettings settings, IRealmSettingsService realmSettings) =>
+            async (HttpContext http, AppSettings settings, IApplicationSettingsResolver settingsResolver) =>
             {
                 var tenant = http.Items[TenantConstants.HttpContextTenantInfoKey] as TenantInfo;
-                var realmDoc = await realmSettings.LoadAsync(http.RequestAborted);
+                // ADR-0011 — Host-time: on an Application subdomain the branding is
+                // the App's overrides merged over the realm branding, so the login
+                // page renders App-branded; on a plain tenant host this resolves to
+                // the realm branding unchanged.
+                var effective = await settingsResolver.ResolveForRequestAsync(http, clientId: null, http.RequestAborted);
+                var branding = effective.Branding;
                 return Results.Ok(new
                 {
                     settings.AuthenticationMinimumLevel,
@@ -35,17 +40,17 @@ public static class AppSettingsEndpoints
                     IsControlPlane = tenant?.IsControlPlane ?? false,
                     Branding = new
                     {
-                        ProductName = realmDoc.Branding?.ProductName,
+                        ProductName = branding?.ProductName,
                         // Resolve the asset id to a public URL so the SPA
                         // can drop it straight into <img src>. No need to
                         // expose the raw asset id to anonymous callers.
-                        LogoUrl = realmDoc.Branding?.LogoAssetId is { } l
+                        LogoUrl = branding?.LogoAssetId is { } l
                             ? $"/api/assets/{ShortGuid.Encode(l)}"
                             : null,
-                        FaviconUrl = realmDoc.Branding?.FaviconAssetId is { } f
+                        FaviconUrl = branding?.FaviconAssetId is { } f
                             ? $"/api/assets/{ShortGuid.Encode(f)}"
                             : null,
-                        PrimaryColor = realmDoc.Branding?.PrimaryColor,
+                        PrimaryColor = branding?.PrimaryColor,
                     },
                     Features = new
                     {

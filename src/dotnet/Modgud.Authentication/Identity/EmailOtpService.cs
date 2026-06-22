@@ -3,12 +3,17 @@ using System.Text;
 using ErrorOr;
 using Marten;
 using Marten.Patching;
+using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Infrastructure.Email;
 
 namespace Modgud.Authentication.Identity;
 
-public class EmailOtpService(IDocumentSession session, IEmailService emailService, EmailOtpConfiguration config) : IEmailOtpService
+public class EmailOtpService(
+    IDocumentSession session,
+    IEmailService emailService,
+    EmailOtpConfiguration config,
+    IEmailBrandingResolver emailBranding) : IEmailOtpService
 {
     public async Task<ErrorOr<bool>> RequestOtpAsync(Guid userId, CancellationToken ct)
     {
@@ -39,6 +44,25 @@ public class EmailOtpService(IDocumentSession session, IEmailService emailServic
             return Error.NotFound("EmailOtp.UserNotFound", "User not found.");
         if (string.IsNullOrEmpty(user.Email) || !user.EmailConfirmed)
             return Error.Forbidden("EmailOtp.EmailNotConfirmed", "A confirmed email address is required.");
+        if (!user.IsActive || user.IsDeleted)
+            return Error.Forbidden("EmailOtp.AccountInactive", "The account cannot sign in.");
+
+        return await IssueChallengeAsync(user, ct);
+    }
+
+    // ADR-0011 — native passwordless REGISTRATION. Same as the native-login issue
+    // but WITHOUT the EmailConfirmed gate: the user was just JIT-created
+    // (passwordless, unconfirmed) and this code is the mailbox proof that confirms
+    // it on redeem. Still requires a present email + an active, non-deleted
+    // account. The endpoint only routes here under the App's JIT posture for an
+    // unknown email or a still-unconfirmed passwordless registration.
+    public async Task<ErrorOr<bool>> RequestNativeRegistrationOtpAsync(Guid userId, CancellationToken ct)
+    {
+        var user = await session.LoadAsync<ApplicationUser>(userId, ct);
+        if (user is null)
+            return Error.NotFound("EmailOtp.UserNotFound", "User not found.");
+        if (string.IsNullOrEmpty(user.Email))
+            return Error.Validation("EmailOtp.EmailRequired", "An email address is required.");
         if (!user.IsActive || user.IsDeleted)
             return Error.Forbidden("EmailOtp.AccountInactive", "The account cannot sign in.");
 
@@ -83,7 +107,7 @@ public class EmailOtpService(IDocumentSession session, IEmailService emailServic
             EmailTemplate.EmailOtp,
             new Dictionary<string, string>
             {
-                ["AppName"] = "Modgud",
+                ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                 ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                 ["Code"] = code,
                 ["ExpirationMinutes"] = config.ExpirationMinutes.ToString(),

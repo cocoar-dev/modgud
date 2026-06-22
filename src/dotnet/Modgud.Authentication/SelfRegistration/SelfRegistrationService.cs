@@ -62,6 +62,7 @@ public sealed class SelfRegistrationService(
     RegistrationRateLimiter rateLimiter,
     IEmailService emailService,
     IHostEnvironment env,
+    Modgud.Authentication.Applications.IApplicationSettingsResolver settingsResolver,
     ILogger<SelfRegistrationService> logger) : ISelfRegistrationService
 {
     // Single response shape — anti-enumeration. Don't leak whether an
@@ -79,10 +80,10 @@ public sealed class SelfRegistrationService(
         string? remoteIp,
         CancellationToken ct)
     {
-        // Tenant-scoped session points at the current realm's DB (resolved
-        // by RealmMiddleware). The settings doc lives there as a singleton.
-        var settingsDoc = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
-        var settings = settingsDoc?.SelfRegistration;
+        // ADR-0011 — effective (App ⊕ realm) self-registration: on an Application
+        // subdomain the App's posture/policy overrides the realm's; on a plain
+        // tenant host this is the realm setting unchanged.
+        var settings = (await settingsResolver.ResolveForCurrentRequestAsync(ct)).SelfRegistration;
         if (settings is null || !settings.Enabled)
         {
             // Anti-enumeration: same response shape even if the feature

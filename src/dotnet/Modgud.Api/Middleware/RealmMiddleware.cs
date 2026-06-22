@@ -59,16 +59,23 @@ public sealed class RealmMiddleware
         }
 
         var hostname = context.Request.Host.Host;
-        var tenantInfo = await _realmCache.ResolveDomainAsync(hostname);
+        var resolution = await _realmCache.ResolveAsync(hostname);
 
-        if (tenantInfo is null)
+        if (resolution is null)
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
         }
 
+        var tenantInfo = resolution.Tenant;
         context.Items[TenantConstants.HttpContextTenantIdKey] = tenantInfo.Slug;
         context.Items[TenantConstants.HttpContextTenantInfoKey] = tenantInfo;
+
+        // ADR-0011 — when the request arrived on an Application subdomain, pin the
+        // resolved Application so downstream (first-signal-consistency check,
+        // settings cascade, branding) can read it. Absent on plain tenant hosts.
+        if (resolution.ApplicationId is { } applicationId)
+            context.Items[TenantConstants.HttpContextApplicationIdKey] = applicationId;
 
         // Ambient AsyncLocal — survives DI-scope boundaries that
         // HttpContextAccessor alone doesn't. TenantedSessionFactory and the

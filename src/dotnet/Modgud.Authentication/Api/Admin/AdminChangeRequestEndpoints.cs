@@ -80,6 +80,7 @@ public static class AdminChangeRequestEndpoints
             IDocumentSession session,
             IMessageBus bus,
             IEmailService emailService,
+            Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
             IInboxNotifier inboxNotifier,
             HttpContext context) =>
         {
@@ -110,7 +111,7 @@ public static class AdminChangeRequestEndpoints
                 await emailService.SendTemplatedEmailAsync(user.Email, EmailTemplate.ChangeRequestApproved,
                     new Dictionary<string, string>
                     {
-                        ["AppName"] = "Modgud",
+                        ["AppName"] = await emailBranding.ResolveProductNameAsync(),
                         ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                         ["Field"] = string.Join(", ", changes.Select(c => c.Field)),
                         ["NewValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.NewValue ?? "—"}")),
@@ -146,6 +147,7 @@ public static class AdminChangeRequestEndpoints
             RejectRequest request,
             IDocumentSession session,
             IEmailService emailService,
+            Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
             IInboxNotifier inboxNotifier,
             HttpContext context) =>
         {
@@ -168,7 +170,7 @@ public static class AdminChangeRequestEndpoints
                 await emailService.SendTemplatedEmailAsync(targetUser.Email, EmailTemplate.ChangeRequestRejected,
                     new Dictionary<string, string>
                     {
-                        ["AppName"] = "Modgud",
+                        ["AppName"] = await emailBranding.ResolveProductNameAsync(),
                         ["DisplayName"] = targetUser.Firstname ?? targetUser.UserName ?? "",
                         ["Field"] = string.Join(", ", changes.Select(c => c.Field)),
                         ["NewValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.NewValue ?? "—"}")),

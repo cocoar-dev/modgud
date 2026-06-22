@@ -62,6 +62,7 @@ public static class ProfileEndpoints
             IDocumentSession session,
             IRealmProvisioningService realmSvc,
             IEmailService emailService,
+            Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
             IAdminNotifier adminNotifier,
             IInboxNotifier inboxNotifier,
             IWebHostEnvironment env,
@@ -191,7 +192,7 @@ public static class ProfileEndpoints
                 await emailService.SendTemplatedEmailAsync(pending.Email.Value!, EmailTemplate.EmailVerification,
                     new Dictionary<string, string>
                     {
-                        ["AppName"] = "Modgud",
+                        ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                         ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                         ["ActionUrl"] = verifyUrl,
                         ["ExpirationHours"] = VerificationTokenLifetimeHours.ToString(),
@@ -223,6 +224,7 @@ public static class ProfileEndpoints
             VerifyEmailChangeDto body,
             IDocumentSession session,
             IEmailService emailService,
+            Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
             IAdminNotifier adminNotifier,
             IInboxNotifier inboxNotifier,
             IRealmProvisioningService realmSvc,
@@ -262,7 +264,7 @@ public static class ProfileEndpoints
                     EmailTemplate.AdminChangeRequestNotification,
                     new Dictionary<string, string>
                     {
-                        ["AppName"] = "Modgud",
+                        ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                         ["RequestingUser"] = $"{user.Firstname} {user.Lastname} ({user.UserName})".Trim(),
                         ["Field"] = string.Join(", ", changes.Select(c => c.Field)),
                         ["OldValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.OldValue ?? "—"}")),

@@ -6,6 +6,17 @@ OAuth bindings. When a realm is created the system app `modgud` (=
 Modgud itself) is provisioned automatically; every other app you
 register here.
 
+An Application is **not** an isolation boundary — that is the realm
+(tenant): own database, signing keys, OIDC issuer, user pool. An
+Application is a **soft facet** *within* a realm: it shares the realm's
+user pool (one account, one `sub`, across all of a realm's apps — no
+shadow users), and on top of the permission clamp it can carry its own
+**login-experience** — an optional subdomain, branding, email branding,
+and per-app overrides of self-registration / native-grant / DCR / CIMD
+policy. Those live in [Application settings](#application-settings) below.
+See [Concepts → Apps & resource access](../concepts/apps-and-resource-access)
+for the model.
+
 ::: tip First time?
 If this is your first integration, the [SaaS App Integration Walkthrough](../integrate/saas-walkthrough)
 is the better entry point — it walks through all five stations (App,
@@ -94,6 +105,51 @@ Catalog entries can be edited any time, but:
   silently lose the grant. The admin UI shows a "rename" indicator and
   a delete-block prompt when something downstream is still referencing
   a catalog entry. Audit roles before dropping.
+
+## Application settings
+
+Beyond the permission catalog, an Application can override a slice of the
+realm's configuration and carry its own login experience. Open
+**Settings** from the app's row in the list (the routed `settings/:id`
+modal; disabled for the system apps). Everything here is **optional and
+sparse** — an App overrides only what you switch on; anything left off
+**inherits the realm** value, field by field. Clearing an override
+re-inherits the realm.
+
+| Section | What it does |
+| --- | --- |
+| **Origin** | The App's own subdomain (e.g. `amzettel.cocoar.app`), which must be a child of the realm's primary domain. Setting it routes that host to this App and serves the branded login there; clearing it falls back to the tenant URL. The OIDC issuer stays the tenant's (anchored to the realm primary domain) — a subdomain is not its own issuer. |
+| **Branding** | Product name, primary colour, logo/favicon — the look of the login + consent UI when reached via this App. |
+| **Email branding** | The product name used in this App's outbound emails (OTP, magic link, ...) instead of the realm default. |
+| **Self-registration** | Per-app override of the realm self-registration policy (allowed email domains, admin approval, default groups, ToS/privacy URLs) plus the **posture** (see below). Captcha stays realm-level. |
+| **Native grants** | Per-app toggle + token lifetimes for the cookieless [native passwordless grants](../integrate/native-apps). |
+| **DCR** | Per-app override of [Dynamic Client Registration](./dynamic-client-registration) (enable, token lifetimes, rate limits, reserved-name blocklist). |
+| **CIMD** | Per-app override of [Client-ID Metadata Documents](./client-id-metadata-documents) (enable, token lifetimes). |
+
+### Self-registration posture
+
+The self-registration section carries a **posture** that decides how a
+passwordless sign-up is triggered for the App:
+
+| Posture | Behaviour |
+| --- | --- |
+| `JitOnOtp` *(default)* | Sign-in-or-sign-up: an unknown email at the native OTP endpoint creates a passwordless user and emails a one-time code; redeeming it both verifies the mailbox and signs in. The low-friction consumer default. |
+| `Off` | No self-registration — an unknown email gets the uniform anti-enumeration response, no user is created. |
+| `ExplicitEndpoint` | Registration is a deliberate, separate step; sign-in stays strict (known users only). *Reserved — the explicit endpoint is not yet wired, so this currently behaves like `Off`.* |
+
+See [Integrate → Native apps](../integrate/native-apps#native-passwordless-registration-jit-on-otp)
+for the end-to-end flow.
+
+### What stays realm-only
+
+Captcha (needs a per-app secret store), account deletion / audit / custom
+pages (operational / GDPR), and the DCR garbage-collection interval (the
+GC job iterates per realm) are **not** per-app overridable — set them in
+[Realm settings](./realm-settings).
+
+The same overrides are reachable over the API at
+`GET`/`PATCH /api/app/{id}/settings` (`app:read` / `app:write`) — see the
+[Admin API reference](../reference/admin-api#application-settings).
 
 ## Relationships to other areas
 

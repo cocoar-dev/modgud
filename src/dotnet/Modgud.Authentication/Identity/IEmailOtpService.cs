@@ -16,5 +16,14 @@ public interface IEmailOtpService
     /// into a uniform response + anti-timing).</summary>
     Task<ErrorOr<bool>> RequestNativeOtpAsync(Guid userId, CancellationToken ct);
 
+    /// <summary>ADR-0011 — issues an email-OTP code for native passwordless
+    /// REGISTRATION. Identical to <see cref="RequestNativeOtpAsync"/> but does NOT
+    /// require <c>EmailConfirmed</c>: the user was just JIT-created (passwordless,
+    /// unconfirmed) and this code IS the mailbox proof that confirms it on redeem.
+    /// The caller (the native OTP-request endpoint) only routes here for an unknown
+    /// email or a still-unconfirmed passwordless registration, under the App's
+    /// JIT self-registration posture — never for a password-bearing account.</summary>
+    Task<ErrorOr<bool>> RequestNativeRegistrationOtpAsync(Guid userId, CancellationToken ct);
+
     Task<ErrorOr<bool>> VerifyOtpAsync(Guid userId, string code, CancellationToken ct);
 }

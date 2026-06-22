@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
 using Modgud.Authorization.Apps;
@@ -13,6 +14,7 @@ using Modgud.Domain.OAuth.Consent;
 using Modgud.Domain.OAuth.Scopes;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.OpenIddict.Cimd;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using Fido2NetLib;
 using Fido2NetLib.Objects;
 using Marten;
@@ -80,6 +82,13 @@ public static class AuthorizationEndpoints
     {
         var request = httpContext.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("The OpenID Connect request cannot be retrieved.");
+
+        // ADR-0011 — first-signal-consistency: if we entered on an Application
+        // subdomain, the client must belong to that App (or be realm-wide).
+        // Runs first so a cross-app client is rejected before any other work.
+        var consistencyError = await ValidateFirstSignalConsistencyAsync(
+            httpContext, request.ClientId, session, cimdResolver, httpContext.RequestAborted);
+        if (consistencyError is not null) return consistencyError;
 
         // Stufe-3 scope restriction: an app-scoped scope (Scope.AppId != null)
         // can only be requested by a client linked to the same App. Standard
@@ -247,10 +256,19 @@ public static class AuthorizationEndpoints
         IEmailOtpService emailOtpService,
         RealmScopedFido2Factory fido2Factory,
         RpIdResolver rpIdResolver,
+        IApplicationSettingsResolver applicationSettingsResolver,
         IDocumentSession session)
     {
         var request = httpContext.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("The OpenID Connect request cannot be retrieved.");
+
+        // ADR-0011 — first-signal-consistency (mirror of the authorize check, and
+        // the only gate for client_credentials which skips authorize entirely):
+        // a request on an Application subdomain must present a client that belongs
+        // to that App or is realm-wide.
+        var consistencyError = await ValidateFirstSignalConsistencyAsync(
+            httpContext, request.ClientId, session, cimdResolver, httpContext.RequestAborted);
+        if (consistencyError is not null) return consistencyError;
 
         // Stufe-3 scope restriction. Code/refresh-grant scopes were already
         // validated at /connect/authorize time, but defence in depth — and
@@ -433,7 +451,7 @@ public static class AuthorizationEndpoints
         if (string.Equals(request.GrantType, CocoarGrantTypes.Otp, StringComparison.Ordinal))
         {
             return await ExchangeNativeOtpAsync(
-                request, session, userManager, signInManager, scopeManager,
+                request, httpContext, applicationSettingsResolver, session, userManager, signInManager, scopeManager,
                 applicationManager, authorizationManager, permissionService,
                 emailOtpService, httpContext.RequestAborted);
         }
@@ -441,7 +459,7 @@ public static class AuthorizationEndpoints
         if (string.Equals(request.GrantType, CocoarGrantTypes.Magic, StringComparison.Ordinal))
         {
             return await ExchangeNativeMagicAsync(
-                request, session, userManager, signInManager, scopeManager,
+                request, httpContext, applicationSettingsResolver, session, userManager, signInManager, scopeManager,
                 applicationManager, authorizationManager, permissionService,
                 httpContext.RequestAborted);
         }
@@ -449,7 +467,7 @@ public static class AuthorizationEndpoints
         if (string.Equals(request.GrantType, CocoarGrantTypes.Passkey, StringComparison.Ordinal))
         {
             return await ExchangeNativePasskeyAsync(
-                request, session, userManager, signInManager, scopeManager,
+                request, httpContext, applicationSettingsResolver, session, userManager, signInManager, scopeManager,
                 applicationManager, authorizationManager, permissionService,
                 fido2Factory, rpIdResolver, httpContext.RequestAborted);
         }
@@ -480,13 +498,16 @@ public static class AuthorizationEndpoints
             }),
             new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
 
-    /// <summary>Reads the per-realm native-grant settings off the tenant-scoped
-    /// RealmSettings doc. Returns the settings ONLY when the master flag is on;
-    /// null otherwise (never-configured section reads as disabled).</summary>
-    private static async Task<NativeGrantSettings?> LoadNativeGrantSettingsAsync(IDocumentSession session, CancellationToken ct)
+    /// <summary>Reads the effective (App ⊕ realm) native-grant settings for the
+    /// request (ADR-0011). Client_id-time: the App comes from the Host pin when
+    /// present, else the calling client's single App binding. Returns the settings
+    /// ONLY when the master flag is on; null otherwise (never-configured reads as
+    /// disabled).</summary>
+    private static async Task<NativeGrantSettings?> LoadNativeGrantSettingsAsync(
+        IApplicationSettingsResolver settingsResolver, HttpContext httpContext, string? clientId, CancellationToken ct)
     {
-        var settings = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
-        return settings?.NativeGrants is { Enabled: true } ng ? ng : null;
+        var settings = await settingsResolver.ResolveForRequestAsync(httpContext, clientId, ct);
+        return settings.NativeGrants is { Enabled: true } ng ? ng : null;
     }
 
     /// <summary>Second-factor gate for the native grants. Returns null when the
@@ -592,6 +613,8 @@ public static class AuthorizationEndpoints
     /// bounds brute force.</summary>
     private static async Task<IResult> ExchangeNativeOtpAsync(
         OpenIddictRequest request,
+        HttpContext httpContext,
+        IApplicationSettingsResolver settingsResolver,
         IDocumentSession session,
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
@@ -602,7 +625,7 @@ public static class AuthorizationEndpoints
         IEmailOtpService emailOtpService,
         CancellationToken ct)
     {
-        var nativeSettings = await LoadNativeGrantSettingsAsync(session, ct);
+        var nativeSettings = await LoadNativeGrantSettingsAsync(settingsResolver, httpContext, request.ClientId, ct);
         if (nativeSettings is null)
             return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled for this realm.");
         if (string.IsNullOrEmpty(request.ClientId))
@@ -620,13 +643,29 @@ public static class AuthorizationEndpoints
 
         // Defence-in-depth: native email-OTP is a PRIMARY factor, so a confirmed
         // mailbox is required at the minting site too (not only at the request
-        // endpoint) — this also closes the EmailOtpEnabled-but-unconfirmed edge.
-        if (!user.EmailConfirmed)
+        // endpoint). ADR-0011 exception: a passwordless, still-unconfirmed account
+        // is a native JIT registration — the OTP redeem itself proves the mailbox,
+        // so it is allowed and confirmed on success below. A password-bearing
+        // unconfirmed account must verify via the web link (never gets a native
+        // code issued, and is rejected here as before).
+        var isPasswordlessRegistration = !user.EmailConfirmed && string.IsNullOrEmpty(user.PasswordHash);
+        if (!user.EmailConfirmed && !isPasswordlessRegistration)
             return await ForbidFactorFailureAsync("Invalid or expired code.");
 
         var verify = await emailOtpService.VerifyOtpAsync(user.Id, code, ct);
         if (verify.IsError)
             return await ForbidFactorFailureAsync("Invalid or expired code.");
+
+        // A consumed OTP proves mailbox control — auto-confirm a JIT registration
+        // (parity with the magic-link grant's mailbox-proof confirm).
+        if (!user.EmailConfirmed)
+        {
+            user.EmailConfirmed = true;
+            session.Store(user);
+            session.Events.Append(user.Id, new Modgud.Domain.Users.Events.UserUpdatedEvent(
+                Id: user.Id, Firstname: default, Lastname: default, Acronym: default, Email: default));
+            await session.SaveChangesAsync(ct);
+        }
 
         // Second factor only after the primary factor proved possession.
         var twoFactor = await CheckTwoFactorAsync(user, request, userManager);
@@ -647,6 +686,8 @@ public static class AuthorizationEndpoints
     /// <c>invalid_grant</c> on every proof failure.</summary>
     private static async Task<IResult> ExchangeNativeMagicAsync(
         OpenIddictRequest request,
+        HttpContext httpContext,
+        IApplicationSettingsResolver settingsResolver,
         IDocumentSession session,
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
@@ -656,7 +697,7 @@ public static class AuthorizationEndpoints
         IPermissionService permissionService,
         CancellationToken ct)
     {
-        var nativeSettings = await LoadNativeGrantSettingsAsync(session, ct);
+        var nativeSettings = await LoadNativeGrantSettingsAsync(settingsResolver, httpContext, request.ClientId, ct);
         if (nativeSettings is null)
             return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled for this realm.");
         if (string.IsNullOrEmpty(request.ClientId))
@@ -723,6 +764,8 @@ public static class AuthorizationEndpoints
     /// on every proof failure.</summary>
     private static async Task<IResult> ExchangeNativePasskeyAsync(
         OpenIddictRequest request,
+        HttpContext httpContext,
+        IApplicationSettingsResolver settingsResolver,
         IDocumentSession session,
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
@@ -734,7 +777,7 @@ public static class AuthorizationEndpoints
         RpIdResolver rpIdResolver,
         CancellationToken ct)
     {
-        var nativeSettings = await LoadNativeGrantSettingsAsync(session, ct);
+        var nativeSettings = await LoadNativeGrantSettingsAsync(settingsResolver, httpContext, request.ClientId, ct);
         if (nativeSettings is null)
             return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled for this realm.");
         if (string.IsNullOrEmpty(request.ClientId))
@@ -1681,6 +1724,43 @@ public static class AuthorizationEndpoints
         return null;
     }
 
+    /// <summary>
+    /// ADR-0011 first-signal-consistency invariant. When the request arrived on
+    /// an Application subdomain (the Host pinned an App — Phase 1), the presented
+    /// client must belong to that Application OR be realm-wide (empty
+    /// <c>AppIds</c>). A client bound to a <em>different</em> App is a cross-app
+    /// confusion / confused-deputy surface and is rejected. No Host pin = the
+    /// <c>client_id</c> is the first signal and there is nothing to reconcile.
+    /// </summary>
+    private static async Task<IResult?> ValidateFirstSignalConsistencyAsync(
+        HttpContext httpContext, string? clientId, IDocumentSession session,
+        CimdClientResolver cimdResolver, CancellationToken cancellationToken)
+    {
+        if (httpContext.GetApplicationId() is not { } pinnedApplicationId) return null;
+        if (string.IsNullOrEmpty(clientId)) return null;
+
+        var client = await session.Query<OAuthApplicationState>()
+            .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted, cancellationToken);
+        // CIMD clients are non-persisted + realm-wide (no AppIds) — resolve so the
+        // realm-wide allowance below applies rather than treating them as unknown.
+        client ??= await cimdResolver.ResolveAsync(clientId, cancellationToken);
+
+        // Unknown client: not our concern — the standard client validation rejects it.
+        if (client is null) return null;
+
+        if (!AuthorizationEndpointHelpers.IsCrossAppViolation(pinnedApplicationId, client.AppIds))
+            return null;
+
+        return Results.Forbid(
+            new AuthenticationProperties(new Dictionary<string, string?>
+            {
+                [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidRequest,
+                [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] =
+                    "The client is not associated with the application for this origin.",
+            }),
+            new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+    }
+
     /// <summary>Reads a cocoar:* boolean from a Marten-serialised
     /// Properties dict. The value may come back as a plain bool
     /// (Newtonsoft default) OR a JsonElement depending on the
@@ -1720,6 +1800,24 @@ internal static class AuthorizationEndpointHelpers
             return $"{user.Firstname} {user.Lastname}".Trim();
         }
         return user.UserName;
+    }
+
+    /// <summary>
+    /// ADR-0011 first-signal-consistency decision (pure). Given the App pinned by
+    /// the request Host (Phase 1) and the presented client's App set, returns
+    /// <c>true</c> iff this is a cross-app violation that must be rejected:
+    /// <list type="bullet">
+    ///   <item>no Host-pinned App → no violation (client_id leads);</item>
+    ///   <item>client has empty <c>AppIds</c> (realm-wide) → no violation;</item>
+    ///   <item>client's <c>AppIds</c> contains the pinned App → consistent;</item>
+    ///   <item>client is bound only to other App(s) → <b>violation</b>.</item>
+    /// </list>
+    /// </summary>
+    public static bool IsCrossAppViolation(Guid? hostPinnedApplicationId, IReadOnlyCollection<Guid> clientAppIds)
+    {
+        if (hostPinnedApplicationId is not { } applicationId) return false;
+        if (clientAppIds.Count == 0) return false;
+        return !clientAppIds.Contains(applicationId);
     }
 
     /// <summary>

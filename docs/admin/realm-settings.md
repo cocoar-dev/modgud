@@ -7,6 +7,15 @@
 - **Realm Settings** (self-registration, DCR policy, branding, …) are managed by the **realm admin** inside their own realm. The Control-Plane admin reaches their own realm's settings the same way as any other realm admin would — through this page.
 :::
 
+::: tip These are the realm defaults — Applications can override them
+The Self-Registration, DCR and CIMD policies (and branding / email
+branding) set here are the **realm defaults**. An individual
+[Application](./applications#application-settings) can override a slice of
+them per-app (sparse, field by field — anything it doesn't set inherits the
+realm value here). Captcha, account deletion and the DCR garbage-collection
+interval stay realm-only.
+:::
+
 ## Tabs
 
 The page currently has these tabs:

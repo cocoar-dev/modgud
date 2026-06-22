@@ -51,4 +51,30 @@ public static class RealmCacheLookup
 
         return null;
     }
+
+    /// <summary>
+    /// ADR-0011 — resolves a hostname to a tenant AND (when the host is an
+    /// Application subdomain) the owning Application. An Application-subdomain
+    /// match is more specific than a plain tenant domain, so it takes
+    /// precedence; otherwise this falls back to the plain tenant resolution
+    /// (incl. the single-realm localhost fallback). Application subdomains are
+    /// explicit host entries — they do NOT participate in the localhost
+    /// fallback. Returns <c>null</c> when nothing matches.
+    /// </summary>
+    public static RealmResolution? Resolve(
+        string hostname,
+        IReadOnlyDictionary<string, ApplicationDomainMatch> byApplicationDomain,
+        IReadOnlyDictionary<string, TenantInfo> byDomain,
+        TenantInfo? singleActiveRealm)
+    {
+        ArgumentNullException.ThrowIfNull(hostname);
+        ArgumentNullException.ThrowIfNull(byApplicationDomain);
+        ArgumentNullException.ThrowIfNull(byDomain);
+
+        if (byApplicationDomain.TryGetValue(hostname, out var appMatch))
+            return new RealmResolution(appMatch.Tenant, appMatch.ApplicationId);
+
+        var tenant = Resolve(hostname, byDomain, singleActiveRealm);
+        return tenant is null ? null : new RealmResolution(tenant, ApplicationId: null);
+    }
 }

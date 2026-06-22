@@ -133,6 +133,7 @@ const GROUP_MODAL_SIZE = {
 
 // Heaviest builders (wide AG-Grid catalog / 6-tab client builder) → full.
 const APP_MODAL_SIZE = MODAL_FULL
+const APP_SETTINGS_MODAL_SIZE = MODAL_MD
 const CLIENT_MODAL_SIZE = MODAL_FULL
 
 const routes = [
@@ -389,6 +390,14 @@ const routes = [
                     path: ':id',
                     component: () => import('@/views/admin/apps/AppDetails.vue'),
                     overlayOptions: { size: APP_MODAL_SIZE },
+                  },
+                  {
+                    // ADR-0011 — per-App settings overrides. Two-segment path so
+                    // it never collides with the single-segment `:id` App modal.
+                    type: 'modal',
+                    path: 'settings/:id',
+                    component: () => import('@/views/admin/apps/ApplicationSettingsModal.vue'),
+                    overlayOptions: { size: APP_SETTINGS_MODAL_SIZE },
                   },
                 ],
               },

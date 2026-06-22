@@ -25,6 +25,32 @@ The realm boundary is the **domain** (Host header), not the URL path.
 Realm `acme` lives under `acme.example.com`, the system realm under
 `system.example.com` or `localhost`.
 
+### Application
+
+A **soft facet within a realm** — not an isolation boundary. An
+Application owns a permission catalog (its `<resource>:<action>` entries)
+and, since ADR-0011, an optional login experience: its own subdomain,
+branding, email branding, and sparse per-app overrides of the realm's
+self-registration / native-grant / DCR / CIMD policy. All apps in a realm
+**share the realm's user pool** — one account, one `sub`, no shadow users.
+
+Tenant vs. Application: the **realm (tenant)** is the hard boundary (own
+DB, signing keys, OIDC issuer, user pool, apex); an **Application** is a
+refinement inside it. Promote an App to its own realm only when you need
+independent key rotation, breach containment, or data isolation.
+
+In code: `Modgud.Authorization.Apps.App` (the catalog discriminator) plus
+the tenant-scoped `ApplicationSettings` document (the override doc, keyed
+by `App.Id`).
+
+### SelfRegPosture
+
+How an Application triggers a passwordless self-registration:
+`Off` (none), `JitOnOtp` (sign-in-or-sign-up on an unknown email — the
+consumer default), or `ExplicitEndpoint` (a deliberate separate
+registration step; reserved, not yet wired). Lives in an App's
+self-registration settings.
+
 ### User
 
 A human or service account inside a realm. Users belong to exactly

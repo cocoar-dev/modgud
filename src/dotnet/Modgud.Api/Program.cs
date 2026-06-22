@@ -362,6 +362,10 @@ try
             // gets Secure cookies even when Kestrel listens on plain HTTP.
             options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
             options.Cookie.Name = "Modgud.Auth";
+            // ADR-0011 (#2) — cross-app browser SSO: widen the cookie domain to the
+            // tenant's primary domain (so it spans every App subdomain under it)
+            // when the request is on that domain or a child; host-only otherwise.
+            options.CookieManager = new Modgud.Api.Cookies.TenantApexCookieManager();
             options.ExpireTimeSpan = TimeSpan.FromDays(30); // Max lifetime for persistent (RememberMe) cookies
             options.SlidingExpiration = true;
             // SESSION-01 — re-validate the user's security stamp on every
@@ -483,6 +487,17 @@ try
     //   * /api/account/bootstrap-admin → IP. Bootstrap-invite consume is
     //     one-shot per token; the policy is a brake on automated probing
     //     of leaked tokens.
+    // In the Testing environment the WebApplicationFactory leaves
+    // context.Connection.RemoteIpAddress null on every request, so the per-IP
+    // limiters below all collapse into one "anon" partition that shares a
+    // single process-wide budget across the entire xUnit collection. An
+    // incidental Nth live hit to such an endpoint then trips a 429 only in the
+    // full run (a displaced flake), forcing tests to route around the HTTP
+    // layer. The test-aware key selector (see PerIpRateLimitPartitionKey) gives
+    // each Testing request its OWN partition unless it opts into a shared one
+    // via the X-Test-RateLimit header — production is unchanged (per-IP).
+    var isTestEnv = builder.Environment.IsEnvironment("Testing");
+
     builder.Services.AddRateLimiter(options =>
     {
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -505,9 +520,9 @@ try
 
         options.AddPolicy("bootstrap", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 10,
@@ -518,9 +533,9 @@ try
 
         options.AddPolicy("password-reset", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 5,
@@ -531,9 +546,9 @@ try
 
         options.AddPolicy("magic-link", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 5,
@@ -547,9 +562,9 @@ try
         // form; the endpoint itself returns a generic response either way.
         options.AddPolicy("email-verification", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 5,
@@ -566,9 +581,9 @@ try
         // bounds that burst. Sized well above any legitimate verify cadence.
         options.AddPolicy("email-otp", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 30,
@@ -578,12 +593,14 @@ try
         });
 
         // ADR-0010 native passwordless OTP request — anonymous email-sending
-        // endpoint, same per-IP SMTP cap class as magic-link (5/hour).
+        // endpoint, same per-IP SMTP cap class as magic-link (5/hour). The
+        // dedicated boundary test sets X-Test-RateLimit to share a budget on
+        // purpose and assert the 429 (see PerIpRateLimitPartitionKey).
         options.AddPolicy("native-otp", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 5,
@@ -597,9 +614,9 @@ try
         // than native-otp; still per-IP bounded to cap ceremony-doc spam.
         options.AddPolicy("passkey-begin", context =>
         {
-            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
             return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: ip,
+                partitionKey: key,
                 factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 60,
@@ -665,6 +682,27 @@ try
     // scoped so the injected IDocumentSession tracks the current tenant.
     builder.Services.AddScoped<Modgud.Authentication.RealmSettings.IRealmSettingsService,
         Modgud.Authentication.RealmSettings.RealmSettingsService>();
+
+    // ADR-0011 — resolves effective settings (App overrides ⊕ RealmSettings).
+    // Scoped so the injected IDocumentSession tracks the current tenant.
+    builder.Services.AddScoped<Modgud.Authentication.Applications.IApplicationSettingsResolver,
+        Modgud.Authentication.Applications.ApplicationSettingsResolver>();
+
+    // ADR-0011 — native passwordless registration: creates a passwordless user
+    // from an email (JIT sign-up). Scoped (uses the tenant-scoped UserManager).
+    builder.Services.AddScoped<Modgud.Authentication.Identity.IPasswordlessUserFactory,
+        Modgud.Authentication.Identity.PasswordlessUserFactory>();
+
+    // ADR-0011 — resolves the product name for outbound emails (App email branding
+    // ⊕ realm branding, Host-resolved). Scoped (per-request resolution).
+    builder.Services.AddScoped<Modgud.Authentication.Applications.IEmailBrandingResolver,
+        Modgud.Authentication.Applications.EmailBrandingResolver>();
+
+    // ADR-0011 — admin write surface for per-Application settings overrides
+    // (tenant ApplicationSettings doc + the global subdomain→App routing map).
+    builder.Services.AddScoped<Modgud.Authentication.Applications.IApplicationSettingsService,
+        Modgud.Authentication.Applications.ApplicationSettingsService>();
+
     builder.Services.AddScoped<Modgud.Application.Services.ILoginProviderRealmSeeder,
         Modgud.Authentication.Setup.LoginProviderRealmSeeder>();
 
@@ -1272,6 +1310,7 @@ try
     app.MapRolesEndpoints("api");
     app.MapGroupEndpoints("api");
     Modgud.Api.Features.Admin.Apps.AppsEndpoints.MapAppsEndpoints(app, "api");
+    Modgud.Api.Features.Admin.Apps.ApplicationSettingsEndpoints.MapApplicationSettingsEndpoints(app, "api");
 
     // /api/v1/me/* — Cookie-only, for the admin SPA's self-introspection.
     Modgud.Api.Features.Auth.MeEndpoints.MapMeEndpoints(app, "api");
@@ -1626,4 +1665,26 @@ static string? TryReadFormField(HttpContext context, string fieldName)
     {
         return null;
     }
+}
+
+/// <summary>
+/// Partition key for the per-IP rate limiters (bootstrap, password-reset,
+/// magic-link, email-verification, email-otp, native-otp, passkey-begin).
+/// Production partitions by the caller's remote IP. The Testing environment is
+/// special: the WebApplicationFactory leaves <c>RemoteIpAddress</c> null on
+/// every request, so a bare per-IP key collapses the whole xUnit collection
+/// into one shared "anon" budget — an incidental Nth live hit then 429s only in
+/// the full run. To kill that footgun without weakening production, Testing
+/// gives each request its OWN partition (a unique key) UNLESS it carries the
+/// <c>X-Test-RateLimit</c> header, whose value becomes the partition — letting a
+/// dedicated boundary test deliberately share a budget across N requests and
+/// assert the 429.
+/// </summary>
+static string PerIpRateLimitPartitionKey(HttpContext context, bool isTestEnv)
+{
+    if (!isTestEnv)
+        return context.Connection.RemoteIpAddress?.ToString() ?? "anon";
+
+    var shared = context.Request.Headers["X-Test-RateLimit"].ToString();
+    return string.IsNullOrEmpty(shared) ? Guid.NewGuid().ToString("N") : shared;
 }

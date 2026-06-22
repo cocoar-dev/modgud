@@ -384,3 +384,28 @@ The combined projection writes polymorphic `Person` documents into
 the authorization-slice's `mt_doc_principal` table via Marten
 sub-class mapping. See [`authorization.md`](./authorization.md) for
 the receiving side.
+
+## Application tier (ADR-0011)
+
+The Application tier adds a **soft per-Application facet** on top of the
+realm. It is mostly resolved in `Modgud.Infrastructure` (Host→(Tenant,App)
+routing via `Realm.ApplicationDomains` + `RealmCache`; issuer anchoring via
+`CanonicalIssuer`) and read through `IApplicationSettingsResolver`, but it
+touches this slice at three send/auth sites:
+
+- **Native passwordless registration (JIT-on-OTP)** — `NativeOtpEndpoints`
+  + `IPasswordlessUserFactory` + `EmailOtpService.RequestNativeRegistrationOtpAsync`:
+  on an App subdomain with the `JitOnOtp` posture, an unknown email creates
+  a passwordless user and is confirmed on redeem. The routing matrix is
+  unit-pinned in `NativeOtpDecisionTests`.
+- **Per-Application email branding** — `IEmailBrandingResolver` over the
+  send sites, so OTP/magic-link mails carry the App's product name.
+- **Cross-app cookie SSO** — `TenantApexCookieManager` scopes the
+  `Modgud.Auth` cookie to the realm primary domain when the request host is
+  that domain or a subdomain of it, so a login on one App subdomain is
+  shared across sibling subdomains.
+
+The authoritative decision/plan/progress lives in Atlas
+(`decisions/adr-0011-application-tier-origin-facet`,
+`-implementation-plan`, `-implementation-progress`) — this repo keeps no
+ADR mirror by convention.

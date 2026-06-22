@@ -26,6 +26,22 @@ public class Realm
     public string[] Domains { get; set; } = [];
 
     /// <summary>
+    /// ADR-0011 — per-Application origin map: host → owning <c>App.Id</c>. Lets a
+    /// request on an Application subdomain (e.g. <c>amzettel.cocoar.app</c>)
+    /// resolve BOTH this tenant AND the Application at middleware time, before any
+    /// tenant DB session exists. The map lives here (global store) because the
+    /// <c>App</c> aggregate is per-tenant (tenant DB) and so is unreachable that
+    /// early; the App's full config is loaded from the tenant DB later, keyed by
+    /// this id.
+    ///
+    /// <para>An app-subdomain host need NOT also appear in <see cref="Domains"/> —
+    /// it routes to the tenant by virtue of being in this map. Empty (the default
+    /// for every existing realm) = no Application subdomains, so resolution and
+    /// behaviour are exactly as before.</para>
+    /// </summary>
+    public Dictionary<string, Guid> ApplicationDomains { get; set; } = new();
+
+    /// <summary>
     /// The realm's canonical public host — the designated primary among
     /// <see cref="Domains"/>. It is used for ALL outbound user-facing links
     /// (magic-link, password-reset, email-verify, bootstrap-invite,

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using OpenIddict.Server;
@@ -55,10 +56,12 @@ public sealed class RealmTokenValidationHandler : IOpenIddictServerHandler<Valid
             .Build();
 
     private readonly IRealmKeyStore _keyStore;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public RealmTokenValidationHandler(IRealmKeyStore keyStore)
+    public RealmTokenValidationHandler(IRealmKeyStore keyStore, IHttpContextAccessor httpContextAccessor)
     {
         _keyStore = keyStore;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     // RFC 8693 token-type URIs OpenIddict stamps on tokens it issues. Only
@@ -108,9 +111,17 @@ public sealed class RealmTokenValidationHandler : IOpenIddictServerHandler<Valid
         // (https://auth.example.com) and reject with invalid_token. Set
         // ValidIssuer to the active request's BaseUri so the validator
         // accepts the realm-specific iss it just issued.
+        //
+        // ADR-0011: on an Application subdomain, tokens were minted with the
+        // tenant CANONICAL issuer (see RealmSigningKeyHandler/CanonicalIssuer),
+        // so the validator must accept that same canonical iss here — otherwise
+        // a subdomain Bearer call (e.g. passkey enroll) rejects its own token.
+        // Plain realm hosts are unchanged (Resolve returns BaseUri).
         if (context.BaseUri is not null)
         {
-            var realmIssuer = context.BaseUri.OriginalString.TrimEnd('/');
+            var issuerUri = CanonicalIssuer.Resolve(context.BaseUri, _httpContextAccessor.HttpContext)
+                            ?? context.BaseUri;
+            var realmIssuer = issuerUri.AbsoluteUri.TrimEnd('/');
             context.TokenValidationParameters.ValidIssuer = realmIssuer;
             // Also keep the trailing-slash variant in the valid-issuers set
             // because OpenIddict's signing path emits with the slash and

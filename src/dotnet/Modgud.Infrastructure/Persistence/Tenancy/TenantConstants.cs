@@ -23,4 +23,12 @@ public static class TenantConstants
     /// is stored by <c>RealmMiddleware</c>.
     /// </summary>
     public const string HttpContextTenantInfoKey = "TenantInfo";
+
+    /// <summary>
+    /// HttpContext.Items key under which the resolved Application id (ADR-0011)
+    /// is stored by <c>RealmMiddleware</c> when the request arrived on an
+    /// Application subdomain. Absent = no Application in context (a plain tenant
+    /// host). The value is the owning <c>App.Id</c> (a <see cref="System.Guid"/>).
+    /// </summary>
+    public const string HttpContextApplicationIdKey = "ApplicationId";
 }

@@ -1,5 +1,6 @@
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
@@ -40,11 +41,16 @@ public sealed class RealmSigningKeyHandler : IOpenIddictServerHandler<GenerateTo
             .Build();
 
     private readonly IRealmKeyStore _keyStore;
+    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<RealmSigningKeyHandler> _logger;
 
-    public RealmSigningKeyHandler(IRealmKeyStore keyStore, ILogger<RealmSigningKeyHandler> logger)
+    public RealmSigningKeyHandler(
+        IRealmKeyStore keyStore,
+        IHttpContextAccessor httpContextAccessor,
+        ILogger<RealmSigningKeyHandler> logger)
     {
         _keyStore = keyStore;
+        _httpContextAccessor = httpContextAccessor;
         _logger = logger;
     }
 
@@ -95,7 +101,12 @@ public sealed class RealmSigningKeyHandler : IOpenIddictServerHandler<GenerateTo
             // Discovery's Uri-typed issuer field always serialises with
             // the trailing slash and we have no clean way to override
             // that on the discovery side.
-            var realmIssuer = context.BaseUri.AbsoluteUri;
+            //
+            // ADR-0011: anchor to the tenant canonical origin when the request
+            // arrived on an Application subdomain, so a token minted there
+            // carries the same iss the tenant's discovery + JWKS advertise.
+            var realmIssuer = (CanonicalIssuer.Resolve(context.BaseUri, _httpContextAccessor.HttpContext)
+                               ?? context.BaseUri).AbsoluteUri;
             context.Principal?.SetClaim(OpenIddictConstants.Claims.Private.Issuer, realmIssuer);
             if (context.SecurityTokenDescriptor is not null)
             {

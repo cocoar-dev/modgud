@@ -151,7 +151,7 @@ public sealed class PendingAdminInviteService(
                 EmailTemplate.RealmAdminBootstrap,
                 new Dictionary<string, string>
                 {
-                    ["AppName"] = "Modgud",
+                    ["AppName"] = realm.DisplayName,
                     ["DisplayName"] = displayName,
                     ["UserName"] = normalizedUserName,
                     ["Email"] = normalizedEmail,
