@@ -216,6 +216,12 @@ Realm-wide admin-owned config lives under `/api/realm-settings`; the
 |---|---|---|
 | `GET` | `/api/app-info` | Anonymous |
 
+`/api/app-info` also publishes the resolved (App ⊕ realm)
+`RegistrationFields` policy (`Email` always `Required`; `Username` / `Firstname`
+/ `Lastname` one of `Off` / `Optional` / `Required`) so clients render exactly
+the identity inputs the realm or App requires. See
+[Registration Fields](/admin/realm-settings#registration-fields).
+
 ## Application settings
 
 Per-Application override of the realm defaults (ADR-0011). The
@@ -234,9 +240,11 @@ it removes the route). See [Applications](/admin/applications#application-settin
 
 The body sections are `Origin` (subdomain), `Branding`, `EmailBranding`,
 `SelfRegistration` (incl. the `Posture` = `Off` / `JitOnOtp` /
-`ExplicitEndpoint`), `NativeGrants`, `Dcr`, and `Cimd` — each nullable,
-each mirroring the realm-level shape minus the pieces that stay realm-only
-(captcha, DCR GC interval).
+`ExplicitEndpoint`), `RegistrationFields` (per-field `Username` / `Firstname` /
+`Lastname` = `Off` / `Optional` / `Required`, each `null` = inherit),
+`NativeGrants`, `Dcr`, and `Cimd` — each nullable, each mirroring the
+realm-level shape minus the pieces that stay realm-only (captcha, DCR GC
+interval).
 
 ## Projection endpoints (maintenance)
 

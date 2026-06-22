@@ -120,6 +120,37 @@ A password-bearing but unconfirmed account is never served a native code —
 it must finish verification via the web link. See
 [Applications → Self-registration posture](../admin/applications#self-registration-posture).
 
+##### Required identity fields
+
+By default registration is **email-only** — the username is the email and names
+are optional. A realm (or App) can require more via the
+[Registration Fields](../admin/realm-settings#registration-fields) policy. Both
+the OTP-request and the explicit-register endpoints accept optional
+`FirstName` / `LastName` for this:
+
+```http
+POST /api/account/native/otp/request
+Content-Type: application/json
+
+{ "Email": "user@example.com", "FirstName": "Ada", "LastName": "Lovelace" }
+```
+
+The client should **read the resolved policy from `GET /api/app-info`** and
+render exactly what it reports:
+
+```json
+{
+  "RegistrationFields": { "Email": "Required", "Username": "Off",
+                          "Firstname": "Required", "Lastname": "Required" }
+}
+```
+
+If a **required** name is missing the endpoint returns `400` **before** the
+uniform branch — this check is independent of whether the email exists, so it
+leaks nothing. (The username is never required on native paths — it is always
+the email.) A returning user signing in re-sends the fields; they are ignored on
+login. On registration they are persisted on the new account.
+
 ##### Explicit registration endpoint
 
 When an App's posture is `ExplicitEndpoint`, sign-up is a separate call (so
@@ -131,8 +162,13 @@ as the OTP request:
 POST /api/account/native/register
 Content-Type: application/json
 
-{ "Email": "user@example.com" }
+{ "Email": "user@example.com", "FirstName": "Ada", "LastName": "Lovelace" }
 ```
+
+`FirstName` / `LastName` are optional unless the resolved
+[Registration Fields](../admin/realm-settings#registration-fields) policy
+(published at `GET /api/app-info`) marks them `Required` — then a missing one is
+rejected with `400` before the uniform branch.
 
 On an App subdomain whose posture is `ExplicitEndpoint`, an unknown email
 creates the passwordless user and emails a registration code; redeem it at
