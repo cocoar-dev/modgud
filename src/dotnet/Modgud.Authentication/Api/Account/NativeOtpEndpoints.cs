@@ -6,6 +6,7 @@ using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
 using Modgud.Domain.Applications;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -24,7 +25,7 @@ namespace Modgud.Authentication.Api.Account;
 /// </summary>
 public static class NativeOtpEndpoints
 {
-    public record NativeOtpRequestDto(string Email);
+    public record NativeOtpRequestDto(string Email, string? FirstName = null, string? LastName = null);
 
     public static WebApplication MapNativeOtpEndpoints(this WebApplication application, string path)
     {
@@ -57,6 +58,18 @@ public static class NativeOtpEndpoints
                 return Results.Ok(new { Message = genericMessage });
             }
 
+            // Required-field gate (configurable per App⊕realm). Surfaced as a hard
+            // 400 BEFORE the uniform branch: name-presence is independent of whether
+            // the email exists, so this leaks nothing. The native client renders the
+            // fields /api/app-info reports as required, so it always sends them; an
+            // existing user signing in re-sends them (ignored on login). Username is
+            // never enforced here — the native username is always the email.
+            if (RegistrationFieldsPolicy.FirstMissingRequiredName(
+                    settings.RegistrationFields, request.FirstName, request.LastName) is { } missing)
+            {
+                return Results.BadRequest(new { error = $"{missing} is required." });
+            }
+
             if (!string.IsNullOrWhiteSpace(request.Email))
             {
                 // Anti-enumeration: EVERY branch returns the same body + jitter and
@@ -64,8 +77,8 @@ public static class NativeOtpEndpoints
                 // registration code too, so "code sent" leaks nothing about
                 // existence (ADR-0011 OQ3 — JIT is anti-enumeration-safe).
                 await IssueOtpForRequestAsync(
-                    request.Email, settings.SelfRegPosture, session, userManager,
-                    emailOtpService, passwordlessUserFactory, ct);
+                    request.Email, request.FirstName, request.LastName, settings.SelfRegPosture,
+                    session, userManager, emailOtpService, passwordlessUserFactory, ct);
             }
 
             // Same jitter on every branch (incl. success, which did real work) so
@@ -97,6 +110,8 @@ public static class NativeOtpEndpoints
     /// </summary>
     private static async Task IssueOtpForRequestAsync(
         string email,
+        string? firstName,
+        string? lastName,
         SelfRegPosture? posture,
         IDocumentSession session,
         UserManager<ApplicationUser> userManager,
@@ -122,7 +137,7 @@ public static class NativeOtpEndpoints
                 _ = await emailOtpService.RequestNativeRegistrationOtpAsync(user!.Id, ct);
                 break;
             case NativeOtpAction.CreateAndRegister:
-                var created = await passwordlessUserFactory.CreateAsync(email, ct);
+                var created = await passwordlessUserFactory.CreateAsync(email, firstName, lastName, ct);
                 if (created is not null)
                     _ = await emailOtpService.RequestNativeRegistrationOtpAsync(created.Id, ct);
                 break;

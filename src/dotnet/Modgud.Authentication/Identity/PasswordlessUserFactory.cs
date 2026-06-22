@@ -18,11 +18,21 @@ namespace Modgud.Authentication.Identity;
 public interface IPasswordlessUserFactory
 {
     Task<ApplicationUser?> CreateAsync(string email, CancellationToken ct = default);
+
+    /// <summary>As <see cref="CreateAsync(string, CancellationToken)"/>, also
+    /// persisting the supplied given/family name when the (App⊕realm)
+    /// registration-field policy collects them. The caller validates any
+    /// <c>Required</c> name is present before reaching here.</summary>
+    Task<ApplicationUser?> CreateAsync(string email, string? firstName, string? lastName, CancellationToken ct = default);
 }
 
 public sealed class PasswordlessUserFactory(UserManager<ApplicationUser> userManager) : IPasswordlessUserFactory
 {
-    public async Task<ApplicationUser?> CreateAsync(string email, CancellationToken ct = default)
+    public Task<ApplicationUser?> CreateAsync(string email, CancellationToken ct = default)
+        => CreateAsync(email, firstName: null, lastName: null, ct);
+
+    public async Task<ApplicationUser?> CreateAsync(
+        string email, string? firstName, string? lastName, CancellationToken ct = default)
     {
         // The full email IS the username. The default Identity
         // AllowedUserNameCharacters set includes '@', '.', '+' and '-', so an email
@@ -33,6 +43,8 @@ public sealed class PasswordlessUserFactory(UserManager<ApplicationUser> userMan
         var user = new ApplicationUser(userName, email)
         {
             Id = Guid.NewGuid(),
+            Firstname = string.IsNullOrWhiteSpace(firstName) ? null : firstName.Trim(),
+            Lastname = string.IsNullOrWhiteSpace(lastName) ? null : lastName.Trim(),
             IsActive = true,
             // EmailConfirmed stays false — the OTP redeem confirms the mailbox.
         };

@@ -4,6 +4,8 @@ using Marten;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Application.DTOs.User;
 using Modgud.Domain.Errors;
+using Modgud.Domain.Realms;
+using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authorization.Principals;
 
@@ -12,26 +14,44 @@ namespace Modgud.Api.Features.Users.Commands;
 
 public record CreateUserCommand(string? Firstname, string? Lastname, string? Acronym, string? Email, string UserName, string? Password, bool EmailConfirmed = false);
 
-public class CreateUserHandler(IDocumentSession session, UserManager<ApplicationUser> userManager)
+public class CreateUserHandler(
+    IDocumentSession session,
+    UserManager<ApplicationUser> userManager,
+    IApplicationSettingsResolver settingsResolver)
 {
     public async Task<ErrorOr<UserDto>> Handle(
         CreateUserCommand command,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(command.UserName))
-            return DomainErrors.User.UserNameRequired;
-
-        // Email is required on humans. The Authorization model carves out
-        // ServiceAccount as a separate Principal kind for emailless machine
-        // identities — this endpoint only creates Person+ApplicationUser,
-        // which always represents a human.
+        // Email is required on humans (the always-required anchor). The
+        // Authorization model carves out ServiceAccount as a separate Principal
+        // kind for emailless machine identities — this endpoint only creates
+        // Person+ApplicationUser, which always represents a human.
         if (string.IsNullOrWhiteSpace(command.Email))
             return DomainErrors.User.EmailRequired;
 
         if (!IsValidEmail(command.Email))
             return DomainErrors.User.EmailInvalid;
 
-        var normalizedUserName = command.UserName.Trim().ToLowerInvariant();
+        // Configurable (App⊕realm) identity-field policy. Default = all Optional
+        // (today's behaviour): username defaults to the email, names may be blank.
+        var registrationFields = (await settingsResolver.ResolveForCurrentRequestAsync(ct)).RegistrationFields;
+        if (RegistrationFieldsPolicy.FirstMissingRequired(
+                registrationFields, command.UserName, command.Firstname, command.Lastname) is { } missing)
+        {
+            return missing switch
+            {
+                RegistrationField.Firstname => DomainErrors.User.FirstnameRequired,
+                RegistrationField.Lastname => DomainErrors.User.LastnameRequired,
+                _ => DomainErrors.User.UserNameRequired,
+            };
+        }
+
+        // Username: Off → always the email; Optional/blank → the email; else the
+        // supplied value (validated non-empty above when Required).
+        var normalizedUserName = RegistrationFieldsPolicy
+            .ResolveUsername(registrationFields, command.UserName, command.Email)
+            .ToLowerInvariant();
 
         // Check UserName uniqueness (humans only)
         var userNameTaken = await session.Query<Person>()

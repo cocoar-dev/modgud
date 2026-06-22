@@ -9,6 +9,8 @@ using Modgud.Authentication.Events;
 using Modgud.Authentication.Gdpr;
 using Modgud.Authentication.Sessions;
 using Modgud.Authentication.Api.Users;
+using Modgud.Authentication.Applications;
+using Modgud.Domain.Realms;
 using Modgud.Domain.Users.Events;
 using Modgud.Infrastructure.Persistence.Marten.Mappers;
 
@@ -19,6 +21,7 @@ public class UpdateUserHandler(IDocumentSession session)
     public async Task<ErrorOr<UserDto>> Handle(
         UpdateUserCommand command,
         IUserAccessRevoker accessRevoker,
+        IApplicationSettingsResolver settingsResolver,
         CancellationToken ct)
     {
         // Validation via the polymorphic Principal projection (inline, always consistent)
@@ -53,6 +56,22 @@ public class UpdateUserHandler(IDocumentSession session)
         // identities; this endpoint only mutates Person+ApplicationUser.
         if (command.Email.HasValue && string.IsNullOrWhiteSpace(command.Email.Value))
             return DomainErrors.User.EmailRequired;
+
+        // Configurable (App⊕realm) identity-field policy: a field marked Required
+        // must not be emptied by an edit (a blank value on a field the caller chose
+        // to touch). Pre-existing empties on fields the edit leaves alone are not
+        // forced — only an explicit clear of a Required field is rejected.
+        var registrationFields = (await settingsResolver.ResolveForCurrentRequestAsync(ct)).RegistrationFields
+                                 ?? RegistrationFieldsSettings.Defaults;
+        if (command.UserName.HasValue && string.IsNullOrWhiteSpace(command.UserName.Value)
+            && registrationFields.Username == FieldRequirement.Required)
+            return DomainErrors.User.UserNameRequired;
+        if (command.Firstname.HasValue && string.IsNullOrWhiteSpace(command.Firstname.Value)
+            && registrationFields.Firstname == FieldRequirement.Required)
+            return DomainErrors.User.FirstnameRequired;
+        if (command.Lastname.HasValue && string.IsNullOrWhiteSpace(command.Lastname.Value)
+            && registrationFields.Lastname == FieldRequirement.Required)
+            return DomainErrors.User.LastnameRequired;
 
         if (command.Email.HasValue && !string.IsNullOrWhiteSpace(command.Email.Value)
             && !IsValidEmail(command.Email.Value!))
