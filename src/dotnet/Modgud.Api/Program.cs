@@ -1286,6 +1286,7 @@ try
     app.MapMfaEndpoints("api");
     app.MapEmailOtpEndpoints("api");
     app.MapNativeOtpEndpoints("api");
+    app.MapNativeRegisterEndpoints("api");
     app.MapPasskeyEndpoints("api");
     app.MapNativePasskeyEndpoints();
     app.MapNativePasskeyEnrollEndpoints();

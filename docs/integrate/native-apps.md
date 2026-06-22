@@ -112,12 +112,33 @@ governed entirely by the App's posture:
 - `JitOnOtp` — unknown email on the App subdomain → create + register.
 - `Off` (default for plain realms / no App context) — unknown email → no
   user, just the uniform response.
-- `ExplicitEndpoint` — reserved for a deliberate separate registration
-  step; not yet wired (currently behaves like `Off`).
+- `ExplicitEndpoint` — the OTP-request endpoint stays strict (known users
+  only); registration is a deliberate separate step via
+  `POST /api/account/native/register` (see below).
 
 A password-bearing but unconfirmed account is never served a native code —
 it must finish verification via the web link. See
 [Applications → Self-registration posture](../admin/applications#self-registration-posture).
+
+##### Explicit registration endpoint
+
+When an App's posture is `ExplicitEndpoint`, sign-up is a separate call (so
+the app can gate it behind its own ToS / profile UI) while sign-in stays
+strict. Same uniform response, anti-enumeration jitter and per-IP rate limit
+as the OTP request:
+
+```http
+POST /api/account/native/register
+Content-Type: application/json
+
+{ "Email": "user@example.com" }
+```
+
+On an App subdomain whose posture is `ExplicitEndpoint`, an unknown email
+creates the passwordless user and emails a registration code; redeem it at
+`/connect/token` with `grant_type=urn:cocoar:otp` exactly like the JIT code
+(it also confirms the mailbox). Under any other posture (or with native
+grants off) the endpoint does nothing — it never doubles the JIT path.
 
 ### Flow 2 — Magic link
 
