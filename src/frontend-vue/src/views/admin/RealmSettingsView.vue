@@ -8,6 +8,7 @@ import {
   CoarNote,
   CoarButton,
   CoarMultiSelect,
+  CoarSelect,
   CoarTabGroup,
   CoarTab,
   CoarPopconfirm,
@@ -30,6 +31,9 @@ import type {
   UpdateNativeGrantSettingsDto,
   DeletionSettingsDto,
   UpdateDeletionSettingsDto,
+  RegistrationFieldsSettingsDto,
+  UpdateRegistrationFieldsSettingsDto,
+  FieldRequirement,
 } from '@/models/realmSettings'
 
 const { t, language } = useI18n()
@@ -47,7 +51,7 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.hasSubNav = true
 }), { immediate: true })
 
-type TabId = 'self-registration' | 'dcr' | 'cimd' | 'native-grants' | 'deletion' | 'signing-keys'
+type TabId = 'self-registration' | 'registration-fields' | 'dcr' | 'cimd' | 'native-grants' | 'deletion' | 'signing-keys'
 const activeTab = ref<TabId>('self-registration')
 
 const canRotateSigningKey = computed(() => authStore.hasPermission('realm-settings:write'))
@@ -179,6 +183,22 @@ function deletionFromDto(d: DeletionSettingsDto): DeletionFormState {
   }
 }
 
+// ── Registration-fields policy form state ────────────────────────────
+const regFieldsForm = ref<RegistrationFieldsSettingsDto>({
+  Username: 'Optional', Firstname: 'Optional', Lastname: 'Optional',
+})
+const originalRegFields = ref<RegistrationFieldsSettingsDto | null>(null)
+
+function regFieldsFromDto(d: RegistrationFieldsSettingsDto): RegistrationFieldsSettingsDto {
+  return { Username: d.Username, Firstname: d.Firstname, Lastname: d.Lastname }
+}
+
+const requirementOptions: { value: FieldRequirement; label: string }[] = [
+  { value: 'Off', label: t('admin.regFields.off', {}, 'Aus') },
+  { value: 'Optional', label: t('admin.regFields.optional', {}, 'Optional') },
+  { value: 'Required', label: t('admin.regFields.required', {}, 'Pflicht') },
+]
+
 function dcrFromDto(d: DcrSettingsDto): DcrFormState {
   return {
     Enabled: d.Enabled,
@@ -233,6 +253,8 @@ onMounted(async () => {
     nativeGrantsForm.value = nativeGrantsFromDto(dto.NativeGrants)
     originalDeletion.value = dto.Deletion
     deletionForm.value = deletionFromDto(dto.Deletion)
+    originalRegFields.value = dto.RegistrationFields
+    regFieldsForm.value = regFieldsFromDto(dto.RegistrationFields)
   } catch (e: any) {
     error.value = e?.body?.detail ?? e?.message ?? String(e)
   } finally {
@@ -343,13 +365,27 @@ function buildDeletionPatch(): UpdateDeletionSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildRegFieldsPatch(): UpdateRegistrationFieldsSettingsDto | undefined {
+  const orig = originalRegFields.value
+  if (!orig) return undefined
+  const cur = regFieldsForm.value
+  const patch: UpdateRegistrationFieldsSettingsDto = {}
+
+  if (cur.Username !== orig.Username) patch.Username = cur.Username
+  if (cur.Firstname !== orig.Firstname) patch.Firstname = cur.Firstname
+  if (cur.Lastname !== orig.Lastname) patch.Lastname = cur.Lastname
+
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
 async function save() {
   const selfRegPatch = buildSelfRegPatch()
   const dcrPatch = buildDcrPatch()
   const cimdPatch = buildCimdPatch()
   const nativeGrantsPatch = buildNativeGrantsPatch()
   const deletionPatch = buildDeletionPatch()
-  if (!selfRegPatch && !dcrPatch && !cimdPatch && !nativeGrantsPatch && !deletionPatch) {
+  const regFieldsPatch = buildRegFieldsPatch()
+  if (!selfRegPatch && !dcrPatch && !cimdPatch && !nativeGrantsPatch && !deletionPatch && !regFieldsPatch) {
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1200)
     return
@@ -363,12 +399,14 @@ async function save() {
       Cimd?: UpdateCimdSettingsDto
       NativeGrants?: UpdateNativeGrantSettingsDto
       Deletion?: UpdateDeletionSettingsDto
+      RegistrationFields?: UpdateRegistrationFieldsSettingsDto
     } = {}
     if (selfRegPatch) payload.SelfRegistration = selfRegPatch
     if (dcrPatch) payload.Dcr = dcrPatch
     if (cimdPatch) payload.Cimd = cimdPatch
     if (nativeGrantsPatch) payload.NativeGrants = nativeGrantsPatch
     if (deletionPatch) payload.Deletion = deletionPatch
+    if (regFieldsPatch) payload.RegistrationFields = regFieldsPatch
     const updated = await settingsStore.patch(payload)
     originalSelfReg.value = updated.SelfRegistration
     form.value = fromDto(updated.SelfRegistration)
@@ -380,6 +418,8 @@ async function save() {
     nativeGrantsForm.value = nativeGrantsFromDto(updated.NativeGrants)
     originalDeletion.value = updated.Deletion
     deletionForm.value = deletionFromDto(updated.Deletion)
+    originalRegFields.value = updated.RegistrationFields
+    regFieldsForm.value = regFieldsFromDto(updated.RegistrationFields)
     editingSecret.value = false
     secretInput.value = ''
     savedFlash.value = true
@@ -413,6 +453,9 @@ async function rotateSigningKey() {
     <CoarTabGroup v-model="activeTab" class="tab-bar">
       <CoarTab id="self-registration">
         {{ t('admin.realmSettings.tabs.selfRegistration', {}, 'Self-Registration') }}
+      </CoarTab>
+      <CoarTab id="registration-fields">
+        {{ t('admin.realmSettings.tabs.registrationFields', {}, 'Pflichtfelder') }}
       </CoarTab>
       <CoarTab id="dcr">
         {{ t('admin.realmSettings.tabs.dcr', {}, 'Dynamic Client Registration') }}
@@ -524,6 +567,43 @@ async function rotateSigningKey() {
             </CoarFormField>
           </template>
         </template>
+
+        <div class="flex justify-end mt-2">
+          <CoarButton :loading="saving" @click="save">
+            {{ t('common.save', {}, 'Save') }}
+          </CoarButton>
+        </div>
+      </div>
+    </CoarCard>
+
+    <CoarCard v-else-if="activeTab === 'registration-fields'" class="p-4">
+      <div class="flex flex-col gap-3">
+        <p class="text-xs text-gray-500">
+          {{ t('admin.realmSettings.regFields.hint', {}, 'Welche Identitätsfelder bei der Kontoerstellung gefordert sind (Admin-Anlage, Selbstregistrierung, native passwortlose Registrierung). E-Mail ist immer Pflicht. Pro Application überschreibbar.') }}
+        </p>
+
+        <CoarFormField :label="t('admin.regFields.email', {}, 'E-Mail')">
+          <CoarTextInput :model-value="t('admin.regFields.required', {}, 'Pflicht')" disabled />
+        </CoarFormField>
+        <div class="field-enum">
+          <CoarFormField :label="t('admin.regFields.username', {}, 'Benutzername')">
+            <CoarSelect v-model="regFieldsForm.Username" :options="requirementOptions" />
+          </CoarFormField>
+        </div>
+        <div class="field-enum">
+          <CoarFormField :label="t('admin.regFields.firstname', {}, 'Vorname')">
+            <CoarSelect v-model="regFieldsForm.Firstname" :options="requirementOptions" />
+          </CoarFormField>
+        </div>
+        <div class="field-enum">
+          <CoarFormField :label="t('admin.regFields.lastname', {}, 'Nachname')">
+            <CoarSelect v-model="regFieldsForm.Lastname" :options="requirementOptions" />
+          </CoarFormField>
+        </div>
+
+        <CoarNote v-if="regFieldsForm.Username === 'Off'" variant="info">
+          {{ t('admin.regFields.usernameOffHint', {}, 'Benutzername = E-Mail (kein separates Feld).') }}
+        </CoarNote>
 
         <div class="flex justify-end mt-2">
           <CoarButton :loading="saving" @click="save">

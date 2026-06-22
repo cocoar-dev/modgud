@@ -84,7 +84,9 @@
       "acceptTerms": "Ich akzeptiere die AGB",
       "allowedDomainsHint": "Nur E-Mails dieser Domains:",
       "error": "Registrierung fehlgeschlagen.",
-      "rateLimited": "Zu viele Versuche. Bitte später erneut probieren."
+      "rateLimited": "Zu viele Versuche. Bitte später erneut probieren.",
+      "firstnameRequired": "Vorname",
+      "lastnameRequired": "Nachname"
     },
     "secureSetup": {
       "subtitle": "Sichern Sie Ihren Account ab, bevor Sie fortfahren.",
@@ -540,7 +542,10 @@
       "username.hint": "Anmeldename; muss eindeutig sein.",
       "activeLabel": "Konto",
       "activeHint": "Deaktivierte Benutzer können sich nicht anmelden.",
-      "emailVerifiedLabel": "E-Mail-Status"
+      "emailVerifiedLabel": "E-Mail-Status",
+      "username": {
+        "hintRequired": "Anmeldename; muss eindeutig sein und ist Pflicht."
+      }
     },
     "setPassword": {
       "title": "Passwort setzen",
@@ -1356,7 +1361,8 @@
         "nativeGrants": "Native passwortlose Grants",
         "branding": "Branding",
         "deletion": "Konto-Löschung",
-        "signingKeys": "Signing-Schlüssel"
+        "signingKeys": "Signing-Schlüssel",
+        "registrationFields": "Pflichtfelder"
       },
       "signingKeys": {
         "hint": "Dieser Realm signiert seine OpenIddict Access- und ID-Tokens mit einem realm-eigenen RSA-Schlüssel. Beim Rotieren wird ein frischer Schlüssel für neue Tokens erzeugt; der bisherige wird stillgelegt, bleibt aber 30 Tage lang im JWKS, damit bereits ausgestellte Tokens gültig bleiben. Abgelaufene stillgelegte Schlüssel werden automatisch entfernt.",
@@ -1432,6 +1438,9 @@
         "accessTokenMinutes": "Access-Token-Lebensdauer (Minuten)",
         "refreshTokenDays": "Refresh-Token-Lebensdauer (Tage)",
         "optInWarning": "Pro-Client-Opt-in weiterhin nötig: Ein Client kann einen nativen Grant erst nutzen, wenn er die passende Grant-Type-Permission trägt (gt:urn:cocoar:otp / :magic / :passkey), aktiviert im Grants-Tab des Clients. Dieser Realm-Schalter ist notwendig, aber nicht hinreichend. Nur Katalog-Clients kommen infrage — DCR-/CIMD-Clients sind ausgeschlossen."
+      },
+      "regFields": {
+        "hint": "Welche Identitätsfelder bei der Kontoerstellung gefordert sind (Admin-Anlage, Selbstregistrierung, native passwortlose Registrierung). E-Mail ist immer Pflicht. Pro Application überschreibbar."
       }
     },
     "dualListbox": {
@@ -1439,6 +1448,16 @@
     },
     "system": {
       "lockedHint": "System-Eintrag — vom IdP verwaltet, schreibgeschützt"
+    },
+    "regFields": {
+      "off": "Aus",
+      "optional": "Optional",
+      "required": "Pflicht",
+      "email": "E-Mail",
+      "username": "Benutzername",
+      "firstname": "Vorname",
+      "lastname": "Nachname",
+      "usernameOffHint": "Benutzername = E-Mail (kein separates Feld)."
     }
   },
   "permissions": {
