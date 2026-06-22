@@ -8,8 +8,8 @@
 :::
 
 ::: tip These are the realm defaults — Applications can override them
-The Self-Registration, DCR and CIMD policies (and branding / email
-branding) set here are the **realm defaults**. An individual
+The Self-Registration, Registration-Fields, DCR and CIMD policies (and
+branding / email branding) set here are the **realm defaults**. An individual
 [Application](./applications#application-settings) can override a slice of
 them per-app (sparse, field by field — anything it doesn't set inherits the
 realm value here). Captcha, account deletion and the DCR garbage-collection
@@ -21,6 +21,8 @@ interval stay realm-only.
 The page currently has these tabs:
 
 - [Self-Registration](#self-registration) — public sign-up policy
+- [Registration Fields](#registration-fields) — which identity fields are
+  required when an account is created
 - [Dynamic Client Registration](#dynamic-client-registration) —
   anonymous OAuth-client registration policy (linked detail page:
   [Dynamic Client Registration](./dynamic-client-registration))
@@ -106,6 +108,57 @@ The email-verification endpoint (`POST /api/account/register/verify-email`) is t
 - **In-memory rate limiter.** The per-email cap (1/min, 3/h) resets on restart and isn't shared across multiple instances. Single-instance deployments are fine; multi-instance setups can bypass the cap by hopping between instances. A Redis-backed implementation behind the same interface is a follow-up.
 - **No pre-submit username availability check.** The form surfaces username collisions through the generic 200-OK like every other rejection. An anonymous `GET /api/account/check-username/{name}` (rate-limited) would improve the UX without touching the anti-enumeration guarantees on email.
 - **Email template is shared with the email-change flow.** Both reuse `EmailTemplate.EmailVerification`. A dedicated `EmailTemplate.SelfRegistrationVerify` with welcome wording is a quality-of-life improvement.
+
+## Registration Fields
+
+Controls **which identity fields are required when a user account is created** —
+across every creation path (admin create/edit, public self-registration, native
+passwordless registration). **Email is always required** and is the anchor every
+other field is resolved against; it is not configurable.
+
+Each of the other three fields is a uniform tri-state. The **default is
+`Optional` for all three**, which is exactly the historical behaviour — a realm
+that never touches this tab behaves as before (zero change).
+
+| Field | `Off` | `Optional` | `Required` |
+| --- | --- | --- | --- |
+| **Username** | hidden; the username **is always the email** | shown; blank → the email | a non-empty username must be supplied |
+| **First name** | not collected | shown, may be blank | must be supplied |
+| **Last name** | not collected | shown, may be blank | must be supplied |
+
+### Why configure it
+
+- **Consumer apps** (e.g. amZettel) stay email-only — leave everything
+  `Optional` (or set `Username = Off`) for the lowest-friction passwordless
+  sign-up.
+- **Enterprise apps** typically want a real first/last name on every account —
+  set them `Required`. This is coherent with enterprise tenants that disable
+  self-registration, but it is enforced on *all* paths regardless.
+
+### How it is enforced
+
+- A missing **required** field is rejected on every creation path. On the admin
+  and native endpoints it surfaces as a hard `400`; on the anti-enumeration
+  self-registration endpoint it is folded into the uniform generic response.
+- The check is **independent of whether the email already exists**, so it never
+  leaks account existence.
+- The resolved policy is published anonymously at `GET /api/app-info`
+  (`RegistrationFields`), so native apps and the web register form render exactly
+  the inputs the realm (or App) requires.
+
+::: info Per-Application override + native clients
+A single [Application](./applications#application-settings) can override this
+policy (e.g. an Enterprise App requiring names inside a tenant whose realm
+default is lenient). When an App requires a field, its **native clients must
+collect and send it** — see
+[Integrate → Native apps](../integrate/native-apps#required-identity-fields).
+:::
+
+::: warning Federation (SSO) is lenient
+Just-in-time accounts created from an external IdP (OIDC/SAML) are **not** held
+to the required-field policy today — they take whatever `given_name` /
+`family_name` claims the IdP provides. Tightening this is a possible follow-up.
+:::
 
 ## Dynamic Client Registration
 

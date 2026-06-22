@@ -65,6 +65,15 @@ public class RealmSettings
     /// before the user authenticates.</summary>
     public BrandingSettings? Branding { get; set; }
 
+    /// <summary>Per-realm policy for which identity fields (username, given
+    /// name, family name) are required when a user account is created. Email is
+    /// always required and is not represented here. Null = never configured;
+    /// callers read it as <see cref="RegistrationFieldsSettings.Defaults"/>
+    /// (all three Optional — today's lenient behaviour). Overridable per
+    /// Application (ADR-0011) and surfaced via <c>/api/app-info</c> so native
+    /// apps + the web register form know which inputs to render.</summary>
+    public RegistrationFieldsSettings? RegistrationFields { get; set; }
+
     /// <summary>Per-realm account-deletion policy (self-service grace +
     /// admin recycle-bin retention). Null = never configured; callers read
     /// it as <see cref="DeletionSettings.Defaults"/>.</summary>

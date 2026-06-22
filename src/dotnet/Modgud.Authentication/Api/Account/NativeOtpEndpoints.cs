@@ -7,6 +7,7 @@ using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
 using Modgud.Authentication.SelfRegistration;
 using Modgud.Domain.Applications;
+using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Api.Account;
@@ -28,8 +29,10 @@ public static class NativeOtpEndpoints
 {
     /// <summary><paramref name="InviteCode"/> is optional and only consulted
     /// under the <see cref="SelfRegPosture.InviteCode"/> posture (ADR-0012); it
-    /// is ignored for every other posture, so the field is backward-compatible.</summary>
-    public record NativeOtpRequestDto(string Email, string? InviteCode = null);
+    /// is ignored for every other posture, so the field is backward-compatible.
+    /// <paramref name="FirstName"/>/<paramref name="LastName"/> are collected when
+    /// the (App⊕realm) registration-field policy requires them (PR #95).</summary>
+    public record NativeOtpRequestDto(string Email, string? FirstName = null, string? LastName = null, string? InviteCode = null);
 
     public static WebApplication MapNativeOtpEndpoints(this WebApplication application, string path)
     {
@@ -63,6 +66,18 @@ public static class NativeOtpEndpoints
                 return Results.Ok(new { Message = genericMessage });
             }
 
+            // Required-field gate (configurable per App⊕realm). Surfaced as a hard
+            // 400 BEFORE the uniform branch: name-presence is independent of whether
+            // the email exists, so this leaks nothing. The native client renders the
+            // fields /api/app-info reports as required, so it always sends them; an
+            // existing user signing in re-sends them (ignored on login). Username is
+            // never enforced here — the native username is always the email.
+            if (RegistrationFieldsPolicy.FirstMissingRequiredName(
+                    settings.RegistrationFields, request.FirstName, request.LastName) is { } missing)
+            {
+                return Results.BadRequest(new { error = $"{missing} is required." });
+            }
+
             if (!string.IsNullOrWhiteSpace(request.Email))
             {
                 // Anti-enumeration: EVERY branch returns the same body + jitter and
@@ -70,7 +85,8 @@ public static class NativeOtpEndpoints
                 // registration code too, so "code sent" leaks nothing about
                 // existence (ADR-0011 OQ3 — JIT is anti-enumeration-safe).
                 await IssueOtpForRequestAsync(
-                    request.Email, request.InviteCode, httpContext.GetApplicationId(),
+                    request.Email, request.FirstName, request.LastName,
+                    request.InviteCode, httpContext.GetApplicationId(),
                     settings.SelfRegPosture, session, userManager,
                     emailOtpService, passwordlessUserFactory, inviteService, ct);
             }
@@ -109,6 +125,8 @@ public static class NativeOtpEndpoints
     /// </summary>
     private static async Task IssueOtpForRequestAsync(
         string email,
+        string? firstName,
+        string? lastName,
         string? inviteCode,
         Guid? appId,
         SelfRegPosture? posture,
@@ -138,7 +156,7 @@ public static class NativeOtpEndpoints
                 break;
             case NativeOtpAction.CreateAndRegister:
                 await CreateAndRegisterAsync(
-                    email, inviteCode, appId, posture,
+                    email, firstName, lastName, inviteCode, appId, posture,
                     emailOtpService, passwordlessUserFactory, inviteService, ct);
                 break;
             case NativeOtpAction.None:
@@ -158,6 +176,8 @@ public static class NativeOtpEndpoints
     /// </summary>
     private static async Task CreateAndRegisterAsync(
         string email,
+        string? firstName,
+        string? lastName,
         string? inviteCode,
         Guid? appId,
         SelfRegPosture? posture,
@@ -179,7 +199,7 @@ public static class NativeOtpEndpoints
             consumedInviteId = consume.InviteId;
         }
 
-        var created = await passwordlessUserFactory.CreateAsync(email, ct);
+        var created = await passwordlessUserFactory.CreateAsync(email, firstName, lastName, ct);
         if (created is null)
             return; // TOCTOU race lost; under InviteCode the code stays consumed (benign, swept later)
 

@@ -122,6 +122,7 @@ re-inherits the realm.
 | **Branding** | Product name, primary colour, logo/favicon — the look of the login + consent UI when reached via this App. |
 | **Email branding** | The product name used in this App's outbound emails (OTP, magic link, ...) instead of the realm default. |
 | **Self-registration** | Per-app override of the realm self-registration policy (allowed email domains, admin approval, default groups, ToS/privacy URLs) plus the **posture** (see below). Captcha stays realm-level. |
+| **Registration fields** | Per-app override of which identity fields (username / first / last name) are required when an account is created — each one inheriting the realm by default. See [Registration fields](#registration-fields) below. |
 | **Native grants** | Per-app toggle + token lifetimes for the cookieless [native passwordless grants](../integrate/native-apps). |
 | **DCR** | Per-app override of [Dynamic Client Registration](./dynamic-client-registration) (enable, token lifetimes, rate limits, reserved-name blocklist). |
 | **CIMD** | Per-app override of [Client-ID Metadata Documents](./client-id-metadata-documents) (enable, token lifetimes). |
@@ -176,6 +177,21 @@ redemption flow.
 > **Identity vs. authorization.** Modgud's invite code only governs *who may
 > exist*. What the invite is *for* (join list L, beta access, …) stays in the
 > consuming app — Modgud only ever learns `(email, code, appId)`.
+
+### Registration fields
+
+Overrides the realm's [Registration Fields](./realm-settings#registration-fields)
+policy for this App — which identity fields (username / first / last name) are
+required when an account is created here. Each field is a tri-state
+(`Off` / `Optional` / `Required`) that **inherits the realm** when left unset,
+so a Consumer App can stay email-only inside the same tenant where an Enterprise
+App requires a real name.
+
+The resolved (App ⊕ realm) policy is published at `GET /api/app-info`, so the
+App's clients render exactly the inputs it requires. When an App requires a
+field, **its native clients must collect and send it** (`FirstName` / `LastName`
+on the native OTP / register calls) — otherwise registration fails. Email is
+always required and is never configurable.
 
 ### What stays realm-only
 

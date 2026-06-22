@@ -25,6 +25,20 @@ export interface FeatureFlags {
   PageBuilder: boolean
 }
 
+/**
+ * Resolved (App⊕realm) required-identity-field policy for the host the SPA was
+ * loaded from. Email is always 'Required' (the anchor); the others are one of
+ * 'Off' | 'Optional' | 'Required'. Drives which inputs forms render and require.
+ */
+export type FieldRequirement = 'Off' | 'Optional' | 'Required'
+
+export interface RegistrationFieldsConfig {
+  Email: FieldRequirement
+  Username: FieldRequirement
+  Firstname: FieldRequirement
+  Lastname: FieldRequirement
+}
+
 export interface AppConfig {
   AuthenticationMinimumLevel: number  // 0=None, 1=SecureLogin, 2=Passwordless
   MagicLinkSelfService: boolean
@@ -32,6 +46,7 @@ export interface AppConfig {
   IsControlPlane: boolean              // true ⇔ the realm hosting this SPA is the Control Plane
   Branding: BrandingConfig
   Features: FeatureFlags
+  RegistrationFields: RegistrationFieldsConfig
 }
 
 const defaults: AppConfig = {
@@ -47,6 +62,13 @@ const defaults: AppConfig = {
   },
   Features: {
     PageBuilder: false,
+  },
+  // Lenient default = today's behaviour, used until /api/app-info responds.
+  RegistrationFields: {
+    Email: 'Required',
+    Username: 'Optional',
+    Firstname: 'Optional',
+    Lastname: 'Optional',
   },
 }
 
@@ -94,6 +116,7 @@ export const useAppConfigStore = defineStore('appConfig', () => {
           ...result,
           Branding: { ...defaults.Branding, ...(result.Branding ?? {}) },
           Features: { ...defaults.Features, ...(result.Features ?? {}) },
+          RegistrationFields: { ...defaults.RegistrationFields, ...(result.RegistrationFields ?? {}) },
         }
         applyBranding(config.value.Branding)
       }

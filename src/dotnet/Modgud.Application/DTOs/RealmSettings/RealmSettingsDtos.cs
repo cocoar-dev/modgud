@@ -17,6 +17,7 @@ public record RealmSettingsDto
     public CimdSettingsDto Cimd { get; init; } = new();
     public NativeGrantSettingsDto NativeGrants { get; init; } = new();
     public BrandingSettingsDto Branding { get; init; } = new();
+    public RegistrationFieldsSettingsDto RegistrationFields { get; init; } = new();
     public DeletionSettingsDto Deletion { get; init; } = new();
     public AuditSettingsDto Audit { get; init; } = new();
 
@@ -38,6 +39,7 @@ public record UpdateRealmSettingsDto
     public UpdateCimdSettingsDto? Cimd { get; init; }
     public UpdateNativeGrantSettingsDto? NativeGrants { get; init; }
     public UpdateBrandingSettingsDto? Branding { get; init; }
+    public UpdateRegistrationFieldsSettingsDto? RegistrationFields { get; init; }
     public UpdateDeletionSettingsDto? Deletion { get; init; }
     public UpdateAuditSettingsDto? Audit { get; init; }
 }

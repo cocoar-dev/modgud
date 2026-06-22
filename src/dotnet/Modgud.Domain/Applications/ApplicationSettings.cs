@@ -66,6 +66,12 @@ public class ApplicationSettings
     /// merged field-by-field over the realm <see cref="CimdSettings"/>. Null =
     /// inherit.</summary>
     public ApplicationCimdOverrides? Cimd { get; set; }
+
+    /// <summary>Per-Application registration-field requirement overrides, merged
+    /// field-by-field over the realm <see cref="RegistrationFieldsSettings"/>.
+    /// Null = inherit the realm policy. Lets a Consumer App stay email-only
+    /// while an Enterprise App in the same tenant requires given/family name.</summary>
+    public ApplicationRegistrationFieldsOverrides? RegistrationFields { get; set; }
 }
 
 /// <summary>An Application's own origin. Phase-1 resolution maps a host to an
@@ -140,4 +146,13 @@ public record ApplicationCimdOverrides
     public bool? Enabled { get; init; }
     public TimeSpan? AccessTokenLifetime { get; init; }
     public TimeSpan? RefreshTokenLifetime { get; init; }
+}
+
+/// <summary>Nullable-field mirror of <see cref="RegistrationFieldsSettings"/>.
+/// A null field inherits the realm requirement for that field.</summary>
+public record ApplicationRegistrationFieldsOverrides
+{
+    public FieldRequirement? Username { get; init; }
+    public FieldRequirement? Firstname { get; init; }
+    public FieldRequirement? Lastname { get; init; }
 }

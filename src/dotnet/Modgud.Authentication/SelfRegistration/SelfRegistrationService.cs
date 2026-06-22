@@ -83,7 +83,9 @@ public sealed class SelfRegistrationService(
         // ADR-0011 — effective (App ⊕ realm) self-registration: on an Application
         // subdomain the App's posture/policy overrides the realm's; on a plain
         // tenant host this is the realm setting unchanged.
-        var settings = (await settingsResolver.ResolveForCurrentRequestAsync(ct)).SelfRegistration;
+        var effective = await settingsResolver.ResolveForCurrentRequestAsync(ct);
+        var settings = effective.SelfRegistration;
+        var registrationFields = effective.RegistrationFields ?? RegistrationFieldsSettings.Defaults;
         if (settings is null || !settings.Enabled)
         {
             // Anti-enumeration: same response shape even if the feature
@@ -100,11 +102,18 @@ public sealed class SelfRegistrationService(
             return GenericSuccess;
         }
 
-        // Required-fields gate (without leaking which one failed).
-        if (string.IsNullOrWhiteSpace(dto.UserName)
-            || string.IsNullOrWhiteSpace(dto.Email)
+        // Required-fields gate (without leaking which one failed). Email + password
+        // are always required; username + names follow the configurable (App⊕realm)
+        // policy. A missing required field is a silent generic response, consistent
+        // with the rest of this anti-enumeration flow.
+        if (string.IsNullOrWhiteSpace(dto.Email)
             || string.IsNullOrWhiteSpace(dto.Password)
             || !dto.Email.Contains('@'))
+        {
+            return GenericSuccess;
+        }
+        if (RegistrationFieldsPolicy.FirstMissingRequired(
+                registrationFields, dto.UserName, dto.Firstname, dto.Lastname) is not null)
         {
             return GenericSuccess;
         }
@@ -154,7 +163,11 @@ public sealed class SelfRegistrationService(
         // and no email sent. The SPA-side validation should surface the
         // "username taken" error pre-submit; this is the second line of
         // defense.
-        var normalizedUserName = dto.UserName.Trim().ToLowerInvariant();
+        // Resolve the username per policy: Off → the email; Optional/blank → the
+        // email; else the supplied username (validated non-empty above when Required).
+        var normalizedUserName = RegistrationFieldsPolicy
+            .ResolveUsername(registrationFields, dto.UserName, normalizedEmail)
+            .ToLowerInvariant();
         var userNameTaken = await session.Query<Person>()
             .AnyAsync(p => p.AccountName == normalizedUserName && !p.IsDeleted, ct);
         if (userNameTaken) return GenericSuccess;

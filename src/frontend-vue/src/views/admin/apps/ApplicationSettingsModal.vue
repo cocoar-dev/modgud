@@ -45,6 +45,12 @@ const f = reactive({
     termsOfServiceUrl: '',
     privacyPolicyUrl: '',
   },
+  registrationFields: {
+    override: false,
+    username: '' as '' | 'Off' | 'Optional' | 'Required',
+    firstname: '' as '' | 'Off' | 'Optional' | 'Required',
+    lastname: '' as '' | 'Off' | 'Optional' | 'Required',
+  },
   nativeGrants: { override: false, enabled: false, access: '', refresh: '' },
   dcr: {
     override: false, enabled: false, access: '', refresh: '',
@@ -59,6 +65,14 @@ const postureOptions = [
   { value: 'JitOnOtp', label: t('admin.appSettings.posture.jit', {}, 'JIT-on-OTP (passwortlos)') },
   { value: 'ExplicitEndpoint', label: t('admin.appSettings.posture.explicit', {}, 'Expliziter Endpoint') },
   { value: 'InviteCode', label: t('admin.appSettings.posture.inviteCode', {}, 'Invite-Code (nur auf Einladung)') },
+]
+
+// Tri-state per identity field; '' = inherit the realm requirement for that field.
+const requirementOptions = [
+  { value: '', label: t('admin.appSettings.inherit', {}, '(vom Realm erben)') },
+  { value: 'Off', label: t('admin.regFields.off', {}, 'Aus') },
+  { value: 'Optional', label: t('admin.regFields.optional', {}, 'Optional') },
+  { value: 'Required', label: t('admin.regFields.required', {}, 'Pflicht') },
 ]
 
 function numStr(n?: number | null): string {
@@ -97,6 +111,13 @@ onMounted(async () => {
       f.selfReg.defaultGroupIds = sr.DefaultGroupIds ?? []
       f.selfReg.termsOfServiceUrl = sr.TermsOfServiceUrl ?? ''
       f.selfReg.privacyPolicyUrl = sr.PrivacyPolicyUrl ?? ''
+    }
+    if (s.RegistrationFields) {
+      const rf = s.RegistrationFields
+      f.registrationFields.override = true
+      f.registrationFields.username = (rf.Username as any) ?? ''
+      f.registrationFields.firstname = (rf.Firstname as any) ?? ''
+      f.registrationFields.lastname = (rf.Lastname as any) ?? ''
     }
     if (s.NativeGrants) {
       f.nativeGrants.override = true
@@ -147,6 +168,13 @@ function buildDto(): ApplicationSettingsDto {
           DefaultGroupIds: f.selfReg.defaultGroupIds.length ? f.selfReg.defaultGroupIds : null,
           TermsOfServiceUrl: f.selfReg.termsOfServiceUrl.trim() || null,
           PrivacyPolicyUrl: f.selfReg.privacyPolicyUrl.trim() || null,
+        }
+      : {},
+    RegistrationFields: f.registrationFields.override
+      ? {
+          Username: f.registrationFields.username || null,
+          Firstname: f.registrationFields.firstname || null,
+          Lastname: f.registrationFields.lastname || null,
         }
       : {},
     NativeGrants: f.nativeGrants.override
@@ -264,6 +292,22 @@ const footerButton = computed(() => ({
           </CoarFormField>
           <CoarFormField :label="t('admin.appSettings.selfReg.privacy', {}, 'Datenschutz-URL')">
             <CoarTextInput v-model="f.selfReg.privacyPolicyUrl" clearable />
+          </CoarFormField>
+        </template>
+
+        <CoarCheckbox v-model="f.registrationFields.override" :label="t('admin.appSettings.regFields.override', {}, 'Eigene Pflichtfelder bei Registrierung')" />
+        <template v-if="f.registrationFields.override">
+          <CoarNote variant="info">
+            {{ t('admin.appSettings.regFields.hint', {}, 'Welche Identitätsfelder bei der Kontoerstellung gefordert sind. E-Mail ist immer Pflicht. Native Clients müssen geforderte Felder erfassen.') }}
+          </CoarNote>
+          <CoarFormField :label="t('admin.regFields.username', {}, 'Benutzername')">
+            <CoarSelect v-model="f.registrationFields.username" :options="requirementOptions" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.regFields.firstname', {}, 'Vorname')">
+            <CoarSelect v-model="f.registrationFields.firstname" :options="requirementOptions" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.regFields.lastname', {}, 'Nachname')">
+            <CoarSelect v-model="f.registrationFields.lastname" :options="requirementOptions" />
           </CoarFormField>
         </template>
       </div>
