@@ -13,6 +13,13 @@ const appConfig = useAppConfigStore()
 
 interface NavItemDef {
   label: string
+  /**
+   * English fallback shown when `label` isn't in the loaded locale file.
+   * The sidebar resolves labels with `t(label, {}, fallback)`; without this
+   * the fallback would be the raw key, so any item whose key is missing from
+   * the active locale must set an English default here.
+   */
+  labelEn?: string
   icon: string
   to: string
   /**
@@ -44,7 +51,7 @@ function canSee(item: NavItemDef): boolean {
 
 function toNavItem(def: NavItemDef): SubNavItem {
   return {
-    label: t(def.label, {}, def.label),
+    label: t(def.label, {}, def.labelEn ?? def.label),
     icon: def.icon,
     to: def.to,
     visible: canSee(def),
@@ -70,7 +77,7 @@ const sections = computed<SectionDef[]>(() => [
       { label: 'admin.oauthClients.title', icon: 'app-window', to: '/admin/oauth/clients', requirePermissions: ['oauth-client:read'] },
       { label: 'admin.oauthScopes.title', icon: 'tags', to: '/admin/oauth/scopes', requirePermissions: ['oauth-scope:read'] },
       { label: 'admin.oauthApis.title', icon: 'server', to: '/admin/oauth/apis', requirePermissions: ['oauth-api:read'] },
-      { label: 'admin.inviteCodes.title', icon: 'ticket', to: '/admin/invite-codes', requirePermissions: ['invite-code:read'] },
+      { label: 'admin.inviteCodes.title', labelEn: 'Invite Codes', icon: 'ticket', to: '/admin/invite-codes', requirePermissions: ['invite-code:read'] },
     ],
   },
   {
