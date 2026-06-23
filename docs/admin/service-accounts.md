@@ -52,6 +52,10 @@ Concretely:
 - Adding `client_credentials` to a client that has no linked SA is rejected — no ownerless M2M clients.
 - The `authorization_code` / `device_code` / `implicit` paths refuse to issue a token whose client has a `LinkedServiceAccountId`.
 
+::: tip Dual-role BFF backends
+A backend-for-frontend that both **brokers user login** (redeeming a native grant like `urn:cocoar:otp` server-side) **and** acts **machine-to-machine** (e.g. minting invite codes via `client_credentials`) needs **two** clients, not one — a login client carrying the native grant **plus** a separate SA-linked client for `client_credentials`. The single shared secret lives on the M2M client; the login client can be public (one secret total) or confidential (client-auth on the redeem). See [Native app integration → server-side BFF](../integrate/native-apps#2-create-the-oauth-client).
+:::
+
 ## Creating a Service Account
 
 1. Open `/admin/service-accounts` and click **Create**.
