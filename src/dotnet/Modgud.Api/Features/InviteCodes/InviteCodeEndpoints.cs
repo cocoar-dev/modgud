@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.SelfRegistration;
 using Modgud.Authentication.SelfRegistration.Domain;
+using Modgud.Authorization.AspNetCore;
 using OpenIddict.Abstractions;
 using OpenIddict.Validation.AspNetCore;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -113,6 +114,23 @@ public static class InviteCodeEndpoints
             })
             .WithName("InviteCodes_Revoke")
             .AddEndpointFilter(new ScopeOrPermissionEndpointFilter(ScopeWrite, PermissionWrite));
+
+        // Realm-wide admin overview — lists EVERY app's invite codes for the
+        // current tenant (the admin grid loads this once and filters client-side
+        // by the header App selector, like the Clients/Scopes grids). Admin-only:
+        // there is no M2M equivalent (the OAuth scope is app-bound), so this gates
+        // on the in-process invite-code:read permission, not the dual-auth filter.
+        application.MapGet($"{path}/admin/invite-codes", async (
+                IRegistrationInviteService inviteService,
+                CancellationToken ct) =>
+            {
+                var codes = await inviteService.ListAllAsync(ct);
+                return Results.Ok(codes.Select(ToDto));
+            })
+            .WithTags("Invite Codes")
+            .RequireAuthorization()
+            .WithName("InviteCodes_ListAll")
+            .RequiresPermission(PermissionRead);
 
         return application;
     }

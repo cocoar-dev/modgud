@@ -11,26 +11,26 @@ import type {
 interface InviteCodeDataEvent {
   Subject: string
   Action: 'Created' | 'Updated' | 'Deleted' | 'Custom' | 'FullSync'
-  /** Payload entries carry at least an AppId so the grid can reload selectively. */
-  Payload: { AppId?: string }[]
+  Payload: unknown[]
 }
 
 /**
- * ADR-0012 invite-code store. Unlike the realm-wide grids, invite codes are
- * strictly app-scoped (`/api/app/{appId}/invite-codes`), so the store tracks a
- * `selectedAppId` the list view drives via its app picker and the bulk-mint
- * modal reads to know which app to mint for. Live-updated via the
- * InviteCodeActions SignalR stream (realm-scoped); an event whose AppId matches
- * the app currently shown triggers a reload, so codes minted/revoked out-of-band
- * (M2M backend, another admin/tab) appear without a manual refresh.
+ * ADR-0012 invite-code store. The admin grid loads the realm-wide list once
+ * (`GET /api/admin/invite-codes` — every app's codes) and filters client-side by
+ * the shared header App selector, the same shape as the Clients / Scopes grids.
+ * Minting and revoking stay app-scoped (the OAuth scope is app-bound), so those
+ * still go through `/api/app/{appId}/invite-codes`. `selectedAppId` is synced
+ * from the header App context so the bulk-mint modal knows its target app (null
+ * on 'all' / 'global' → minting disabled). Live via the InviteCodeActions
+ * SignalR stream (realm-scoped); any event reloads the list.
  */
 export const useInviteCodeStore = defineStore('invite-code', () => {
-  const http = useHttpClient('/api/app')
+  const appHttp = useHttpClient('/api/app')
+  const adminHttp = useHttpClient('/api/admin/invite-codes')
   const signalr = useSignalR()
 
   const codes = ref<InviteCodeDto[]>([])
-  const loadedAppId = ref<string | null>(null)
-  /** The app the list/modal currently operate on (an App.Id), or null. */
+  const loaded = ref(false)
   const selectedAppId = ref<string | null>(null)
   let subscribed = false
 
@@ -38,61 +38,56 @@ export const useInviteCodeStore = defineStore('invite-code', () => {
     selectedAppId.value = appId
   }
 
+  async function loadAll(): Promise<InviteCodeDto[]> {
+    const res = await adminHttp.get<InviteCodeDto[]>()
+    codes.value = res
+    loaded.value = true
+    return res
+  }
+
+  function refresh(): Promise<InviteCodeDto[]> {
+    return loadAll()
+  }
+
   function initialize() {
-    if (subscribed) return
-    subscribed = true
-    // (Re)subscribe + re-sync on every (re)connect, de-duped by the stream key.
-    signalr.runOnEveryReconnect(() => {
-      subscribeToSignalR()
-      void refresh()
-    }, 'InviteCodeActions.Subscribe')
+    if (!subscribed) {
+      subscribed = true
+      // (Re)subscribe + re-sync on every (re)connect; codes minted/revoked
+      // out-of-band (M2M backend, another admin/tab) appear without a manual reload.
+      signalr.runOnEveryReconnect(() => {
+        subscribeToSignalR()
+        void loadAll()
+      }, 'InviteCodeActions.Subscribe')
+    }
+    if (!loaded.value) void loadAll()
   }
 
   function subscribeToSignalR() {
     signalr.stream<InviteCodeDataEvent>('InviteCodeActions.Subscribe').subscribe({
-      next: (ev) => {
-        const appId = loadedAppId.value
-        if (!appId) return
-        // Reload only when the event concerns the app the grid is showing.
-        const concernsThisApp = ev.Payload.some((p) => p.AppId === appId)
-        if (concernsThisApp) void loadForApp(appId)
-      },
+      next: () => void loadAll(),
       error: (err) => console.error('[invite-code] SignalR stream error:', err),
     })
   }
 
-  async function loadForApp(appId: string): Promise<InviteCodeDto[]> {
-    const res = await http.addPath(appId, 'invite-codes').get<InviteCodeDto[]>()
-    codes.value = res
-    loadedAppId.value = appId
-    return res
-  }
-
-  async function refresh(): Promise<void> {
-    if (selectedAppId.value) await loadForApp(selectedAppId.value)
-  }
-
   async function mint(appId: string, dto: MintInviteCodesDto): Promise<MintInviteCodesResultDto> {
-    const result = await http.addPath(appId, 'invite-codes').post<MintInviteCodesResultDto>(dto)
-    // The mint response carries only plaintext; reload to surface the new rows
-    // (metadata) in the grid the admin is looking at.
-    if (loadedAppId.value === appId) await loadForApp(appId)
+    const result = await appHttp.addPath(appId, 'invite-codes').post<MintInviteCodesResultDto>(dto)
+    await loadAll()
     return result
   }
 
   async function revoke(appId: string, id: string): Promise<void> {
-    await http.addPath(appId, 'invite-codes', id).delete()
+    await appHttp.addPath(appId, 'invite-codes', id).delete()
     codes.value = codes.value.filter((c) => c.Id !== id)
   }
 
   return {
     codes,
-    loadedAppId,
+    loaded,
     selectedAppId,
     setApp,
-    initialize,
-    loadForApp,
+    loadAll,
     refresh,
+    initialize,
     mint,
     revoke,
   }

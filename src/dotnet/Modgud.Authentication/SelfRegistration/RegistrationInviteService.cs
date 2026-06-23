@@ -56,6 +56,10 @@ public interface IRegistrationInviteService
 
     Task<IReadOnlyList<RegistrationInviteCode>> ListAsync(Guid appId, CancellationToken ct = default);
 
+    /// <summary>Realm-wide overview: every app's codes in the current tenant,
+    /// newest first. Backs the admin grid (permission-gated, no M2M equivalent).</summary>
+    Task<IReadOnlyList<RegistrationInviteCode>> ListAllAsync(CancellationToken ct = default);
+
     /// <summary>Revoke an unused code (delete before use). Returns false if the
     /// code doesn't exist for this App or is already consumed.</summary>
     Task<bool> RevokeAsync(Guid appId, Guid id, CancellationToken ct = default);
@@ -181,6 +185,14 @@ public sealed class RegistrationInviteService(
         {
             // Best-effort audit linkage only; a lost race here is benign.
         }
+    }
+
+    public async Task<IReadOnlyList<RegistrationInviteCode>> ListAllAsync(CancellationToken ct = default)
+    {
+        var codes = await session.Query<RegistrationInviteCode>()
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync(ct);
+        return codes;
     }
 
     public async Task<IReadOnlyList<RegistrationInviteCode>> ListAsync(Guid appId, CancellationToken ct = default)

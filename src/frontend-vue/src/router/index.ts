@@ -355,9 +355,16 @@ const routes = [
               meta: {
                 routedFragments: [
                   {
+                    // Literal first so it wins over the :id code-details fragment.
+                    type: 'modal',
+                    path: 'mint',
+                    component: () => import('@/views/admin/inviteCodes/BulkMintModal.vue'),
+                    overlayOptions: { size: MODAL_MD },
+                  },
+                  {
                     type: 'modal',
                     path: ':id',
-                    component: () => import('@/views/admin/inviteCodes/BulkMintModal.vue'),
+                    component: () => import('@/views/admin/inviteCodes/InviteCodeDetailsModal.vue'),
                     overlayOptions: { size: MODAL_MD },
                   },
                 ],
