@@ -1468,11 +1468,9 @@
       "createdAt": "Erstellt",
       "expiresAt": "Läuft ab",
       "createdBy": "Erstellt von",
-      "app.help": "Einladungscodes gehören zu einer Anwendung. Wähle, welche App du verwalten willst.",
       "mint": "Codes erzeugen",
       "mint.title": "Einladungscodes erzeugen",
-      "emptyHint": "Noch keine Einladungscodes für diese App. Unter der InviteCode-Posture kann sich eine unbekannte E-Mail nur mit einem gültigen Code registrieren. Erzeuge einen Stapel zum Verteilen.",
-      "pickApp": "Wähle eine Anwendung, um ihre Einladungscodes zu verwalten.",
+      "emptyHint": "Noch keine Einladungscodes. Unter der InviteCode-Posture kann sich eine unbekannte E-Mail nur mit einem gültigen Code registrieren. Erzeuge einen Stapel zum Verteilen.",
       "revoke": "Widerrufen",
       "revoke.confirm": "Diesen Einladungscode widerrufen?",
       "revoke.onlyOpen": "Nur unbenutzte (offene) Codes können widerrufen werden.",
@@ -1483,7 +1481,14 @@
       "bindEmail": "An E-Mail binden (optional)",
       "bindEmail.placeholder": "Leer lassen für Bearer-Codes",
       "bindEmail.hint": "Wenn gesetzt, funktioniert ein Code nur für genau diesen Empfänger. Leer = Bearer (jeder, der den Code besitzt).",
-      "result.warning": "Kopiere diese Codes jetzt — sie werden nur einmal angezeigt. Gespeichert werden nur ihre Hashes."
+      "result.warning": "Kopiere diese Codes jetzt — sie werden nur einmal angezeigt. Gespeichert werden nur ihre Hashes.",
+      "app": "App",
+      "app.hint": "Zu welcher Anwendung diese Codes gehören. Codes sind einmalig und app-gebunden.",
+      "usedAt": "Eingelöst",
+      "usedBy": "Eingelöst von (Nutzer)",
+      "details.title": "Einladungscode",
+      "details.notFound": "Dieser Einladungscode existiert nicht mehr.",
+      "details.hint": "Der Code selbst wird nur einmal bei der Erzeugung angezeigt — gespeichert wird nur sein Hash, daher kann er hier nicht angezeigt werden."
     },
     "appSettings": {
       "posture.inviteCode": "Invite-Code (nur auf Einladung)",

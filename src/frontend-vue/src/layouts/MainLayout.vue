@@ -92,6 +92,7 @@ const appContextSelectorRoutes = [
     '/admin/oauth/apis',
     '/admin/roles',
     '/admin/groups',
+    '/admin/invite-codes',
 ]
 const showAppContextSelector = computed(() =>
     appContextSelectorRoutes.some((p) => route.path.startsWith(p)))

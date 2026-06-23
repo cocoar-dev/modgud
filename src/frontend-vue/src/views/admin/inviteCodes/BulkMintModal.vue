@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarNumberInput, CoarFormField, CoarButton } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarNumberInput, CoarSelect, CoarFormField, CoarButton } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useInviteCodeStore } from '@/stores/inviteCode.store'
@@ -16,10 +16,14 @@ const props = defineProps<{
 const store = useInviteCodeStore()
 const applicationsStore = useApplicationsStore()
 
-const appId = computed(() => store.selectedAppId)
+// The app to mint for is chosen here, pre-selected to the header App context
+// when one is active — so you can also mint from the unfiltered "all" view.
+const appId = ref<string>('')
+const appOptions = computed(() =>
+  applicationsStore.apps.map((a) => ({ value: a.Id, label: `${a.DisplayName} (${a.Slug})` })))
 const appLabel = computed(() => {
   const a = applicationsStore.apps.find((x) => x.Id === appId.value)
-  return a ? `${a.DisplayName} (${a.Slug})` : appId.value ?? ''
+  return a ? `${a.DisplayName} (${a.Slug})` : ''
 })
 
 const count = ref<number>(1)
@@ -45,8 +49,10 @@ const footerButton = computed(() => ({
   onClick: isDone.value ? () => props.close() : mint,
 }))
 
-onMounted(() => {
-  applicationsStore.initialize()
+onMounted(async () => {
+  await applicationsStore.initialize()
+  // Pre-select the header's app if one is active, else the first available app.
+  appId.value = store.selectedAppId ?? applicationsStore.apps[0]?.Id ?? ''
 })
 
 async function mint() {
@@ -87,6 +93,10 @@ async function copyAll() {
         <!-- Phase 1: the mint form -->
         <section v-if="!isDone" class="form-section">
           <div class="modal-form-grid">
+            <CoarFormField class="col-full" :label="t('admin.inviteCodes.app', {}, 'App')" required>
+              <CoarSelect v-model="appId" :options="appOptions" />
+              <p class="field-hint">{{ t('admin.inviteCodes.app.hint', {}, 'Which application these codes belong to. Codes are single-use and app-bound.') }}</p>
+            </CoarFormField>
             <CoarFormField class="col-half" :label="t('admin.inviteCodes.count', {}, 'How many')" required>
               <CoarNumberInput v-model="count" :min="1" :step="1" />
               <p class="field-hint">{{ t('admin.inviteCodes.count.hint', {}, 'Number of single-use codes to generate.') }}</p>

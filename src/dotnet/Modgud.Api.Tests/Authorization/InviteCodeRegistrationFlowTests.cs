@@ -209,6 +209,27 @@ public class InviteCodeRegistrationFlowTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task ListAll_Admin_Returns_Codes_Across_Apps()
+    {
+        // The realm-wide admin overview lists EVERY app's codes (the grid loads
+        // this once and filters client-side). Permission-gated, not dual-auth.
+        var ct = TestContext.Current.CancellationToken;
+        var appA = await CreateAppAsync("adr12-all-a");
+        var appB = await CreateAppAsync("adr12-all-b");
+        var appAShort = new ShortGuid(appA.Id).ToString();
+        var appBShort = new ShortGuid(appB.Id).ToString();
+
+        await Client.PostAsJsonAsync($"/api/app/{appAShort}/invite-codes", new { Count = 2 }, ct);
+        await Client.PostAsJsonAsync($"/api/app/{appBShort}/invite-codes", new { Count = 1 }, ct);
+
+        var all = await Client.GetFromJsonAsync<JsonElement>("/api/admin/invite-codes", JsonOptions, ct);
+        var appIds = all.EnumerateArray().Select(e => e.GetProperty("AppId").GetString()).ToList();
+        Assert.Contains(appAShort, appIds);
+        Assert.Contains(appBShort, appIds);
+        Assert.True(appIds.Count >= 3);
+    }
+
+    [Fact]
     public async Task Prune_Removes_Used_And_Expired_Codes_Keeps_Open()
     {
         var ct = TestContext.Current.CancellationToken;
