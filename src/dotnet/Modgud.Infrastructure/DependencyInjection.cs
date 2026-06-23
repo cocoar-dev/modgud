@@ -165,6 +165,10 @@ public static class DependencyInjection
             // Identity / directory
             opt.RegisterResource(app, "user", "read", "write");
             opt.RegisterResource(app, "service-account", "read", "write");
+            // ADR-0012 — registration invite codes (the InviteCode posture). The
+            // admin-UI bulk-mint gates on these in-process permissions; the M2M
+            // mint path gates on the separate app-scoped `invite:write` OAuth scope.
+            opt.RegisterResource(app, "invite-code", "read", "write");
             opt.RegisterResource(app, "role", "read", "write");
             opt.RegisterResource(app, "authorization-group", "read", "write");
             opt.RegisterResource(app, "permission-role", "read", "write");

@@ -670,6 +670,11 @@ try
     builder.Services.AddScoped<Modgud.Authentication.SelfRegistration.ISelfRegistrationService,
         Modgud.Authentication.SelfRegistration.SelfRegistrationService>();
 
+    // ADR-0012 — single-use registration invite codes (the InviteCode posture).
+    // Scoped so the injected IDocumentSession tracks the current tenant DB.
+    builder.Services.AddScoped<Modgud.Authentication.SelfRegistration.IRegistrationInviteService,
+        Modgud.Authentication.SelfRegistration.RegistrationInviteService>();
+
     // Dynamic Client Registration — validator is stateless (scoped is fine,
     // but singleton avoids a per-request allocation). Rate limiter is
     // process-wide in-memory state so MUST be singleton.
@@ -1312,6 +1317,8 @@ try
     app.MapGroupEndpoints("api");
     Modgud.Api.Features.Admin.Apps.AppsEndpoints.MapAppsEndpoints(app, "api");
     Modgud.Api.Features.Admin.Apps.ApplicationSettingsEndpoints.MapApplicationSettingsEndpoints(app, "api");
+    // ADR-0012 — app-scoped invite codes (dual-auth: invite:write scope or invite-code:write permission).
+    Modgud.Api.Features.InviteCodes.InviteCodeEndpoints.MapInviteCodeEndpoints(app, "api");
 
     // /api/v1/me/* — Cookie-only, for the admin SPA's self-introspection.
     Modgud.Api.Features.Auth.MeEndpoints.MapMeEndpoints(app, "api");

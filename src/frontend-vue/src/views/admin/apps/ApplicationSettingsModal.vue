@@ -36,7 +36,7 @@ const f = reactive({
   emailBranding: { override: false, productName: '' },
   selfReg: {
     override: false,
-    posture: '' as '' | 'Off' | 'JitOnOtp' | 'ExplicitEndpoint',
+    posture: '' as '' | 'Off' | 'JitOnOtp' | 'ExplicitEndpoint' | 'InviteCode',
     enabled: false,
     requireEmailVerification: true,
     requireAdminApproval: false,
@@ -64,6 +64,7 @@ const postureOptions = [
   { value: 'Off', label: t('admin.appSettings.posture.off', {}, 'Off — keine Selbstregistrierung') },
   { value: 'JitOnOtp', label: t('admin.appSettings.posture.jit', {}, 'JIT-on-OTP (passwortlos)') },
   { value: 'ExplicitEndpoint', label: t('admin.appSettings.posture.explicit', {}, 'Expliziter Endpoint') },
+  { value: 'InviteCode', label: t('admin.appSettings.posture.inviteCode', {}, 'Invite-Code (nur auf Einladung)') },
 ]
 
 // Tri-state per identity field; '' = inherit the realm requirement for that field.
@@ -262,6 +263,16 @@ const footerButton = computed(() => ({
           <CoarFormField :label="t('admin.appSettings.selfReg.posture', {}, 'Posture (passwortlose Registrierung)')">
             <CoarSelect v-model="f.selfReg.posture" :options="postureOptions" />
           </CoarFormField>
+
+          <!-- ADR-0012 — how to actually use the InviteCode posture. The admin-UI
+               path works immediately; M2M minting needs a one-time scope + SA setup. -->
+          <div v-if="f.selfReg.posture === 'InviteCode'"
+            class="rounded border border-amber-300 bg-amber-50 dark:border-amber-700/50 dark:bg-amber-900/20 p-3 text-sm space-y-1">
+            <p class="font-medium">{{ t('admin.appSettings.posture.inviteCode.title', {}, 'Invite-Code-Posture: so vergibst du Codes') }}</p>
+            <p>{{ t('admin.appSettings.posture.inviteCode.ui', {}, 'Sofort nutzbar: Codes mintest du im Admin unter „Invite Codes" (Sidebar OAuth & Federation) für diese App — dafür ist keine weitere Einrichtung nötig.') }}</p>
+            <p>{{ t('admin.appSettings.posture.inviteCode.m2m', {}, 'Für automatisches Minting durch die Backend-App (M2M): lege einen OAuth-Scope „invite:write" an, der an diese App gebunden ist (App-ID gesetzt), und gib einem ServiceAccount ein Credential mit diesem Scope. Die App ruft dann POST /api/app/{appId}/invite-codes mit ihrem client_credentials-Token.') }}</p>
+            <p class="text-gray-500">{{ t('admin.appSettings.posture.inviteCode.redeem', {}, 'Einlösung: Der Code reist auf dem nativen Sign-up-Request (Feld InviteCode) mit; unbekannte E-Mails werden nur mit gültigem, unbenutztem Code zu Nutzern. Bestehende bestätigte Nutzer loggen sich normal ein (Code wird ignoriert).') }}</p>
+          </div>
           <CoarCheckbox v-model="f.selfReg.enabled" :label="t('admin.appSettings.selfReg.enabled', {}, 'Self-Registration aktiv')" />
           <CoarCheckbox v-model="f.selfReg.requireEmailVerification" :label="t('admin.appSettings.selfReg.verify', {}, 'E-Mail-Verifizierung erforderlich')" />
           <CoarCheckbox v-model="f.selfReg.requireAdminApproval" :label="t('admin.appSettings.selfReg.approval', {}, 'Admin-Freigabe erforderlich')" />

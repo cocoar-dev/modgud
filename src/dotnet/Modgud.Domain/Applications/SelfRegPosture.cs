@@ -26,4 +26,12 @@ public enum SelfRegPosture
     /// <summary>Registration is a deliberate, separate step (room for ToS /
     /// profile fields); sign-in stays strict (known users only).</summary>
     ExplicitEndpoint,
+
+    /// <summary>Invite-only (ADR-0012): an unknown email becomes a passwordless
+    /// user <em>only</em> when the native sign-up request carries a valid,
+    /// unused, unexpired single-use invite code. Closed self-registration
+    /// except for invited people. Known confirmed users still sign in normally
+    /// (no code needed). Code failures are indistinguishable from
+    /// <see cref="Off"/> (anti-enumeration).</summary>
+    InviteCode,
 }

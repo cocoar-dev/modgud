@@ -349,6 +349,21 @@ const routes = [
               },
             },
             {
+              // ADR-0012 — app-scoped registration invite codes (the InviteCode posture).
+              path: 'invite-codes',
+              component: () => import('@/views/admin/inviteCodes/InviteCodeList.vue'),
+              meta: {
+                routedFragments: [
+                  {
+                    type: 'modal',
+                    path: ':id',
+                    component: () => import('@/views/admin/inviteCodes/BulkMintModal.vue'),
+                    overlayOptions: { size: MODAL_MD },
+                  },
+                ],
+              },
+            },
+            {
               path: 'login-providers',
               component: () => import('@/views/admin/login-providers/LoginProviderList.vue'),
               meta: {
