@@ -42,7 +42,8 @@
     "edit": "Bearbeiten",
     "closeModal": "Dialog schließen",
     "copied": "Kopiert!",
-    "readOnly": "Nur Lesen"
+    "readOnly": "Nur Lesen",
+    "copyAll": "Alle kopieren"
   },
   "asset": {
     "picker": {
@@ -1458,6 +1459,38 @@
       "firstname": "Vorname",
       "lastname": "Nachname",
       "usernameOffHint": "Benutzername = E-Mail (kein separates Feld)."
+    },
+    "inviteCodes": {
+      "title": "Einladungscodes",
+      "boundEmail": "Gebunden an",
+      "bearer": "Bearer (jeder)",
+      "status": "Status",
+      "createdAt": "Erstellt",
+      "expiresAt": "Läuft ab",
+      "createdBy": "Erstellt von",
+      "app.help": "Einladungscodes gehören zu einer Anwendung. Wähle, welche App du verwalten willst.",
+      "mint": "Codes erzeugen",
+      "mint.title": "Einladungscodes erzeugen",
+      "emptyHint": "Noch keine Einladungscodes für diese App. Unter der InviteCode-Posture kann sich eine unbekannte E-Mail nur mit einem gültigen Code registrieren. Erzeuge einen Stapel zum Verteilen.",
+      "pickApp": "Wähle eine Anwendung, um ihre Einladungscodes zu verwalten.",
+      "revoke": "Widerrufen",
+      "revoke.confirm": "Diesen Einladungscode widerrufen?",
+      "revoke.onlyOpen": "Nur unbenutzte (offene) Codes können widerrufen werden.",
+      "count": "Anzahl",
+      "count.hint": "Anzahl der zu erzeugenden Einmal-Codes.",
+      "expiresInDays": "Gültig für (Tage)",
+      "expiresInDays.hint": "Lebensdauer des Codes. Standard 14 Tage.",
+      "bindEmail": "An E-Mail binden (optional)",
+      "bindEmail.placeholder": "Leer lassen für Bearer-Codes",
+      "bindEmail.hint": "Wenn gesetzt, funktioniert ein Code nur für genau diesen Empfänger. Leer = Bearer (jeder, der den Code besitzt).",
+      "result.warning": "Kopiere diese Codes jetzt — sie werden nur einmal angezeigt. Gespeichert werden nur ihre Hashes."
+    },
+    "appSettings": {
+      "posture.inviteCode": "Invite-Code (nur auf Einladung)",
+      "posture.inviteCode.title": "Invite-Code-Posture: So vergibst du Codes",
+      "posture.inviteCode.ui": "Sofort nutzbar: Codes erzeugst du im Admin unter „Einladungscodes“ (Sidebar, OAuth & Federation) für diese App — keine weitere Einrichtung nötig.",
+      "posture.inviteCode.m2m": "Für automatisches Minting durch die Backend-App (M2M): Lege einen OAuth-Scope „invite:write“ an, der an diese App gebunden ist (App-ID gesetzt), und gib einem ServiceAccount ein Credential mit diesem Scope. Die App ruft dann POST /api/app/{appId}/invite-codes mit ihrem client_credentials-Token auf.",
+      "posture.inviteCode.redeem": "Einlösung: Der Code reist auf dem nativen Sign-up-Request mit (Feld InviteCode); unbekannte E-Mails werden nur mit gültigem, unbenutztem Code zu Nutzern. Bestehende bestätigte Nutzer melden sich normal an (der Code wird ignoriert)."
     }
   },
   "permissions": {

@@ -95,10 +95,10 @@ async function copyAll() {
               <CoarNumberInput v-model="expiresInDays" :min="1" :step="1" />
               <p class="field-hint">{{ t('admin.inviteCodes.expiresInDays.hint', {}, 'Code lifetime. Default 14 days.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-full" :label="t('admin.inviteCodes.boundEmail', {}, 'Bind to email (optional)')">
+            <CoarFormField class="col-full" :label="t('admin.inviteCodes.bindEmail', {}, 'Bind to email (optional)')">
               <CoarTextInput v-model="boundEmail" clearable
-                :placeholder="t('admin.inviteCodes.boundEmail.placeholder', {}, 'Leave blank for bearer codes')" />
-              <p class="field-hint">{{ t('admin.inviteCodes.boundEmail.hint', {}, 'When set, a code only works for that exact recipient. Blank = bearer (anyone holding the code).') }}</p>
+                :placeholder="t('admin.inviteCodes.bindEmail.placeholder', {}, 'Leave blank for bearer codes')" />
+              <p class="field-hint">{{ t('admin.inviteCodes.bindEmail.hint', {}, 'When set, a code only works for that exact recipient. Blank = bearer (anyone holding the code).') }}</p>
             </CoarFormField>
           </div>
           <p v-if="error" class="text-red-500 text-sm mt-2">{{ error }}</p>
