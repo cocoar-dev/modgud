@@ -193,9 +193,12 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task NativeOtpRequest_RealmFlagOff_NoSend()
+    public async Task NativeOtpRequest_RealmFlagOff_Rejected_NoSend()
     {
-        // Flag left OFF.
+        // Flag left OFF. A disabled realm is a configuration error, not an
+        // email-existence signal, so the endpoint rejects LOUDLY (400
+        // NativeGrants.Disabled) instead of returning a silent uniform 200 — the
+        // old behaviour looked identical to "code sent" and was un-diagnosable.
         var emailService = Factory.Services.GetRequiredService<InMemoryEmailService>();
         emailService.Clear();
 
@@ -203,7 +206,9 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
         var resp = await anon.PostAsJsonAsync("/api/account/native/otp/request",
             new { Email = TestEmail }, TestContext.Current.CancellationToken);
 
-        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.Contains("NativeGrants.Disabled", body);
         Assert.Null(emailService.GetLastEmailTo(TestEmail));
     }
 

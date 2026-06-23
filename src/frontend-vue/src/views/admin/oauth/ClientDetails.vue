@@ -112,6 +112,15 @@ const cocoarGrantTypeOptions = [
 const nativeGrantsEnabled = computed(
   () => realmSettingsStore.settings?.NativeGrants?.Enabled ?? false)
 
+// The inverse of nativeGrantsEnabled's info note: this client carries a native
+// grant but the realm flag is OFF, so the grant silently won't work at
+// /connect/token. The grant stays visible (see grantTypeOptions) precisely so an
+// existing selection isn't hidden — which is exactly when this warning is needed.
+const cocoarGrantValues = new Set(cocoarGrantTypeOptions.map((o) => o.value))
+const hasNativeGrantWithRealmOff = computed(
+  () => !nativeGrantsEnabled.value
+    && form.value.AllowedGrantTypes.some((g) => cocoarGrantValues.has(g)))
+
 const grantTypeOptions = computed(() => {
   const selected = new Set(form.value.AllowedGrantTypes)
   const cocoar = cocoarGrantTypeOptions.filter(
@@ -591,6 +600,9 @@ async function copySecret() {
             </p>
             <CoarNote v-if="nativeGrantsEnabled" variant="info">
               {{ t('admin.oauthClients.grantTypes.nativeHint', {}, 'Native passwordless grants (urn:cocoar:otp / :magic / :passkey) are enabled for this realm and available below. Add one here to give this client the matching gt:urn:cocoar:* permission — only then can it exchange a passwordless proof at /connect/token.') }}
+            </CoarNote>
+            <CoarNote v-if="hasNativeGrantWithRealmOff" variant="warning">
+              {{ t('admin.oauthClients.grantTypes.nativeDisabledWarning', {}, 'This client has a native passwordless grant (urn:cocoar:otp / :magic / :passkey) selected, but native grants are DISABLED for this realm — so it will not work: the token endpoint rejects the grant and the OTP-request endpoint returns an error instead of emailing a code. Enable them under Realm Settings → Native Passwordless Grants.') }}
             </CoarNote>
             <section class="flex-section">
               <CoarDualListbox
