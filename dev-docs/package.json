@@ -12,5 +12,10 @@
     "mermaid": "^11.13.0",
     "vitepress": "^1.6.3",
     "vitepress-plugin-mermaid": "^2.0.17"
+  },
+  "pnpm": {
+    "overrides": {
+      "dompurify": "^3.4.11"
+    }
   }
 }
