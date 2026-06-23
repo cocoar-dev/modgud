@@ -35,6 +35,8 @@ What a realm administrator must configure in Modgud before the app can connect.
 
 Granting a native grant on the client sets the matching `gt:urn:cocoar:*` permission. Both the realm flag **and** this per-client permission must be present.
 
+> **Server-side BFF (confidential redeem).** "Public" is the right posture for a true native app that can't keep a secret. A **backend-for-frontend** that redeems the OTP / magic / passkey grant *server-side* (browser never touches Modgud) may instead use a **confidential** client — there is no public-only enforcement on these grants, so a `client_secret` adds client authentication on top of the user's factor. If such a BFF also acts machine-to-machine (e.g. minting [invite codes](../admin/applications#invite-codes-the-invitecode-posture) via `client_credentials`), that is a **separate** client: a single client cannot hold both user-flow and `client_credentials` grants (see [strict grant separation](../admin/service-accounts#strict-grant-separation)). So a dual-role BFF runs **two clients** — a login client carrying `urn:cocoar:otp` (public for a single shared secret, or confidential for client-auth on the redeem) **plus** a separate SA-linked client for `client_credentials`.
+
 ### 3. Passkeys: set the per-client RP-ID and serve an AASA
 
 For `urn:cocoar:passkey`, set the client's **WebAuthn RP-ID** to the app's branded apex (e.g. `app.example.com`). If left blank it falls back to the realm's primary domain.
