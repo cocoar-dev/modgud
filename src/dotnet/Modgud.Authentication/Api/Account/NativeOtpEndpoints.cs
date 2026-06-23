@@ -2,6 +2,7 @@ using Marten;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
@@ -50,6 +51,7 @@ public static class NativeOtpEndpoints
             IPasswordlessUserFactory passwordlessUserFactory,
             IRegistrationInviteService inviteService,
             UserManager<ApplicationUser> userManager,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
             const string genericMessage = "If your email is registered, you will receive a verification code.";
@@ -62,8 +64,23 @@ public static class NativeOtpEndpoints
             var settings = await settingsResolver.ResolveForRequestAsync(httpContext, clientId: null, ct);
             if (settings.NativeGrants is null || !settings.NativeGrants.Enabled)
             {
-                await AntiTimingDelayAsync();
-                return Results.Ok(new { Message = genericMessage });
+                // Surfaced LOUDLY, not as a silent uniform 200. Whether native grants
+                // are enabled is a realm/App configuration state, NOT a signal about
+                // whether a given email exists — so returning an explicit error here
+                // leaks nothing the email-existence branch below must protect. It
+                // matches the native passkey-begin and the /connect/token grant, both
+                // of which already reject loudly when the realm flag is off. The old
+                // silent no-op meant a misconfigured realm looked exactly like "email
+                // sent" — no mail, no error, no way to diagnose. The WARN lands in the
+                // per-realm error feed so the admin sees the misconfiguration.
+                loggerFactory.CreateLogger("Modgud.Authentication.NativeOtp").LogWarning(
+                    "Native OTP requested but native passwordless grants are disabled for this realm/App. " +
+                    "Enable them under Realm Settings → Native Passwordless Grants (and grant the client the " +
+                    "matching gt:urn:cocoar:otp permission).");
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "NativeGrants.Disabled",
+                    detail: "Native passwordless sign-in is not enabled for this realm.");
             }
 
             // Required-field gate (configurable per App⊕realm). Surfaced as a hard

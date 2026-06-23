@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -90,6 +91,30 @@ public class NativeExplicitRegistrationFlowTests : IntegrationTestBase
         var resp = await PostAsync("/api/account/native/register", "p-explicit-guard.localhost", email);
         resp.EnsureSuccessStatusCode(); // uniform response either way
 
+        Assert.Null(emailService.GetLastEmailTo(email));
+        Assert.Null(await QuerySystemUserByEmailAsync(email));
+    }
+
+    [Fact]
+    public async Task RealmGrantsOff_Register_Rejected_NoSend()
+    {
+        var email = "explicit-reg-grants-off@example.test";
+
+        // Native grants left OFF (deliberately NO EnableRealmNativeGrantsAsync) on an
+        // otherwise valid App host. A disabled realm is a configuration error, not an
+        // email-existence signal, so the register endpoint rejects LOUDLY (400
+        // NativeGrants.Disabled) rather than returning a silent uniform 200 — mirrors
+        // the OTP-request endpoint.
+        var app = await CreateAppAsync("p-explicit-off-app");
+        await MapApplicationDomainsAsync(("p-explicit-off.localhost", app.Id));
+
+        var emailService = Factory.Services.GetRequiredService<InMemoryEmailService>();
+        emailService.Clear();
+        var resp = await PostAsync("/api/account/native/register", "p-explicit-off.localhost", email);
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.Contains("NativeGrants.Disabled", body);
         Assert.Null(emailService.GetLastEmailTo(email));
         Assert.Null(await QuerySystemUserByEmailAsync(email));
     }

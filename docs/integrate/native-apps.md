@@ -80,6 +80,8 @@ Content-Type: application/json
 { "Message": "If your email is registered, you will receive a verification code." }
 ```
 
+> If the realm has **native grants disabled**, this endpoint does **not** return the uniform "code sent" response — it fails fast with `400 NativeGrants.Disabled`. Whether the feature is enabled is a realm/App configuration state (not a per-email signal), so surfacing it is safe and saves you from a silent "no email, no error" dead end. Enable it under **Realm Settings → Native Passwordless Grants** (and give the client the `gt:urn:cocoar:otp` permission).
+
 **Step 2 — redeem the code for tokens:**
 
 ```http
@@ -285,7 +287,8 @@ From then on, the app uses **Flow 3 (passkey)** as the steady-state login.
 
 | Condition | Response |
 |---|---|
-| Realm hasn't enabled native grants | `unsupported_grant_type` |
+| Realm hasn't enabled native grants (token endpoint) | `unsupported_grant_type` |
+| Realm hasn't enabled native grants (OTP-request / native-register endpoint) | `400` `NativeGrants.Disabled` — an explicit error, **not** a silent "code sent". Enable the grants in Realm Settings. |
 | Client lacks the `gt:urn:cocoar:*` permission | `unauthorized_client` |
 | Wrong/expired code, link, or passkey assertion | `invalid_grant` — **uniform** message + jitter (anti-enumeration); don't parse it for "which part was wrong" |
 | TOTP required but missing/invalid (OTP & magic flows) | `invalid_grant` ("Two-factor authentication is required; supply totp_code.") |

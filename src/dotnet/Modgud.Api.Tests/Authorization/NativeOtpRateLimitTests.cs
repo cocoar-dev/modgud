@@ -29,15 +29,16 @@ public class NativeOtpRateLimitTests : IntegrationTestBase
     {
         // The limiter runs before the endpoint handler, so the result is
         // independent of the native-grants flag / email existence: the first
-        // PermitLimit (5) requests pass the limiter (200, uniform body), the
-        // 6th is rejected with 429.
+        // PermitLimit (5) requests pass the limiter (the handler then rejects with
+        // 400 NativeGrants.Disabled since the flag is left off — that is fine, the
+        // point here is that they were NOT throttled), the 6th is rejected with 429.
         const int permitLimit = 5;
         var anon = Factory.CreateClient();
 
         for (var i = 1; i <= permitLimit; i++)
         {
-            var ok = await SendAsync(anon, $"probe{i}@nowhere.example");
-            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+            var passed = await SendAsync(anon, $"probe{i}@nowhere.example");
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, passed.StatusCode);
         }
 
         var rejected = await SendAsync(anon, "probe-over@nowhere.example");

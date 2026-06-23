@@ -1046,6 +1046,7 @@
       "grantTypes.available": "Verfügbare Grant-Types",
       "grantTypes.hint": "Keine stillen Defaults: Bleibt dies leer, entsteht ein Client, der keine Tokens ausstellen kann. SPAs / Mobile-Apps: authorization_code + refresh_token. Server-zu-Server: client_credentials. Wähle, was der Client tatsächlich braucht.",
       "grantTypes.nativeHint": "Native passwortlose Grants (urn:cocoar:otp / :magic / :passkey) sind für diesen Realm aktiviert und unten verfügbar. Füge hier einen hinzu, um diesem Client die passende gt:urn:cocoar:*-Permission zu geben — erst dann kann er einen passwortlosen Nachweis an /connect/token eintauschen.",
+      "grantTypes.nativeDisabledWarning": "Dieser Client hat einen nativen passwortlosen Grant (urn:cocoar:otp / :magic / :passkey) ausgewählt, aber native Grants sind für diesen Realm DEAKTIVIERT — er funktioniert also nicht: Der Token-Endpoint weist den Grant ab und der OTP-Request-Endpoint liefert einen Fehler, statt einen Code zu mailen. Aktiviere sie unter Realm-Einstellungen → Native passwortlose Grants.",
       "grantTypes.searchPlaceholder": "Suchen…",
       "grantTypes.selected": "Aktiviert",
       "postLogoutRedirectUri": {

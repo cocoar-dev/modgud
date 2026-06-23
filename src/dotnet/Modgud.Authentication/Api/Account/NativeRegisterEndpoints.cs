@@ -2,6 +2,7 @@ using Marten;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
@@ -49,6 +50,7 @@ public static class NativeRegisterEndpoints
             IApplicationSettingsResolver settingsResolver,
             IEmailOtpService emailOtpService,
             IPasswordlessUserFactory passwordlessUserFactory,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
             const string genericMessage = "If registration is available, you will receive a verification code.";
@@ -57,13 +59,29 @@ public static class NativeRegisterEndpoints
             // App (if any) comes from the request Host (an Application subdomain).
             var settings = await settingsResolver.ResolveForRequestAsync(httpContext, clientId: null, ct);
 
-            // Two gates, both required: the (App⊕realm) NativeGrants master flag
-            // (the code is a native OTP redeemed at /connect/token) AND the
-            // ExplicitEndpoint posture. Under Off/JitOnOtp this endpoint does
-            // nothing — JIT sign-up flows through the OTP-request endpoint, and
-            // Off has no self-registration at all.
-            var eligible = settings.NativeGrants is { Enabled: true }
-                           && settings.SelfRegPosture == SelfRegPosture.ExplicitEndpoint;
+            // Realm/App config error — surfaced LOUDLY (matching the OTP-request and
+            // passkey-begin endpoints). Whether native grants are enabled is a
+            // configuration state, not an email-existence signal, so an explicit
+            // error here leaks nothing the uniform branch below must protect — and a
+            // silent 200 with no code is exactly the un-diagnosable trap we are
+            // removing. The posture gate stays uniform (see below) because that is a
+            // per-App routing choice, not a hard misconfiguration.
+            if (settings.NativeGrants is null || !settings.NativeGrants.Enabled)
+            {
+                loggerFactory.CreateLogger("Modgud.Authentication.NativeRegister").LogWarning(
+                    "Native registration requested but native passwordless grants are disabled for this realm/App. " +
+                    "Enable them under Realm Settings → Native Passwordless Grants.");
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "NativeGrants.Disabled",
+                    detail: "Native passwordless sign-in is not enabled for this realm.");
+            }
+
+            // Posture gate: this endpoint only acts under the ExplicitEndpoint
+            // posture. Under Off/JitOnOtp it stays a uniform no-op — JIT sign-up
+            // flows through the OTP-request endpoint, and Off has no self-registration
+            // at all. Kept silent (not loud) so it is not a per-App posture oracle.
+            var eligible = settings.SelfRegPosture == SelfRegPosture.ExplicitEndpoint;
 
             // Required-field gate (configurable per App⊕realm). Surfaced as a hard
             // 400 BEFORE the uniform branch and only when the endpoint is eligible to
