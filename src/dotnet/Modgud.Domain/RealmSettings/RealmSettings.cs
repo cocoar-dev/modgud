@@ -59,6 +59,13 @@ public class RealmSettings
     /// additional, separate gate.</summary>
     public NativeGrantSettings? NativeGrants { get; set; }
 
+    /// <summary>Per-realm overrides for the per-IP auth rate-limit ceilings
+    /// (native-otp, magic-link, password-reset, email-otp, email-verification,
+    /// passkey-begin, bootstrap). Null = never configured; every policy uses its
+    /// shipped <see cref="AuthRateLimitDefaults"/>. A null rule for an individual
+    /// policy likewise falls back to that policy's default.</summary>
+    public AuthRateLimitSettings? AuthRateLimits { get; set; }
+
     /// <summary>Per-realm SPA branding (product name, logo, primary color,
     /// favicon). Null = SPA falls back to the Cocoar default. Surfaced via
     /// the anonymous <c>/api/app-info</c> so the login page renders branded

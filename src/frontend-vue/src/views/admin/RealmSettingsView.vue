@@ -29,6 +29,8 @@ import type {
   UpdateCimdSettingsDto,
   NativeGrantSettingsDto,
   UpdateNativeGrantSettingsDto,
+  AuthRateLimitsDto,
+  UpdateAuthRateLimitsDto,
   DeletionSettingsDto,
   UpdateDeletionSettingsDto,
   RegistrationFieldsSettingsDto,
@@ -51,7 +53,7 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.hasSubNav = true
 }), { immediate: true })
 
-type TabId = 'self-registration' | 'registration-fields' | 'dcr' | 'cimd' | 'native-grants' | 'deletion' | 'signing-keys'
+type TabId = 'self-registration' | 'registration-fields' | 'dcr' | 'cimd' | 'native-grants' | 'auth-rate-limits' | 'deletion' | 'signing-keys'
 const activeTab = ref<TabId>('self-registration')
 
 const canRotateSigningKey = computed(() => authStore.hasPermission('realm-settings:write'))
@@ -159,6 +161,54 @@ function nativeGrantsFromDto(d: NativeGrantSettingsDto): NativeGrantFormState {
   }
 }
 
+// ── Auth rate-limit form state (per-IP ceilings, configurable per realm) ──
+type RateLimitPolicyKey =
+  'NativeOtp' | 'MagicLink' | 'PasswordReset' | 'EmailOtp'
+  | 'EmailVerification' | 'PasskeyBegin' | 'Bootstrap'
+
+type AuthRateLimitsFormState = Record<RateLimitPolicyKey, { PermitLimit: number; WindowMinutes: number }>
+
+// Display order + labels for the rate-limit grid. Labels carry the endpoint so an
+// admin knows which flow each ceiling gates.
+const rateLimitPolicies: { key: RateLimitPolicyKey; labelKey: string; fallback: string }[] = [
+  { key: 'NativeOtp', labelKey: 'admin.realmSettings.authRateLimits.nativeOtp', fallback: 'Native OTP request (passwordless login code)' },
+  { key: 'MagicLink', labelKey: 'admin.realmSettings.authRateLimits.magicLink', fallback: 'Magic-link request' },
+  { key: 'PasswordReset', labelKey: 'admin.realmSettings.authRateLimits.passwordReset', fallback: 'Password-reset request' },
+  { key: 'EmailOtp', labelKey: 'admin.realmSettings.authRateLimits.emailOtp', fallback: 'Email-OTP login verify' },
+  { key: 'EmailVerification', labelKey: 'admin.realmSettings.authRateLimits.emailVerification', fallback: 'Email verification resend' },
+  { key: 'PasskeyBegin', labelKey: 'admin.realmSettings.authRateLimits.passkeyBegin', fallback: 'Passkey ceremony begin / enroll' },
+  { key: 'Bootstrap', labelKey: 'admin.realmSettings.authRateLimits.bootstrap', fallback: 'First-admin bootstrap' },
+]
+
+function emptyAuthRateLimits(): AuthRateLimitsFormState {
+  return {
+    NativeOtp: { PermitLimit: 5, WindowMinutes: 60 },
+    MagicLink: { PermitLimit: 5, WindowMinutes: 60 },
+    PasswordReset: { PermitLimit: 5, WindowMinutes: 60 },
+    EmailOtp: { PermitLimit: 30, WindowMinutes: 1 },
+    EmailVerification: { PermitLimit: 5, WindowMinutes: 60 },
+    PasskeyBegin: { PermitLimit: 60, WindowMinutes: 5 },
+    Bootstrap: { PermitLimit: 10, WindowMinutes: 15 },
+  }
+}
+
+const authRateLimitsForm = ref<AuthRateLimitsFormState>(emptyAuthRateLimits())
+const originalAuthRateLimits = ref<AuthRateLimitsDto | null>(null)
+
+function authRateLimitsFromDto(d: AuthRateLimitsDto): AuthRateLimitsFormState {
+  const copy = (r: { PermitLimit: number; WindowMinutes: number }) =>
+    ({ PermitLimit: r.PermitLimit, WindowMinutes: r.WindowMinutes })
+  return {
+    NativeOtp: copy(d.NativeOtp),
+    MagicLink: copy(d.MagicLink),
+    PasswordReset: copy(d.PasswordReset),
+    EmailOtp: copy(d.EmailOtp),
+    EmailVerification: copy(d.EmailVerification),
+    PasskeyBegin: copy(d.PasskeyBegin),
+    Bootstrap: copy(d.Bootstrap),
+  }
+}
+
 // ── Deletion-policy form state ───────────────────────────────────────
 interface DeletionFormState {
   GraceDays: number
@@ -251,6 +301,8 @@ onMounted(async () => {
     cimdForm.value = cimdFromDto(dto.Cimd)
     originalNativeGrants.value = dto.NativeGrants
     nativeGrantsForm.value = nativeGrantsFromDto(dto.NativeGrants)
+    originalAuthRateLimits.value = dto.AuthRateLimits
+    authRateLimitsForm.value = authRateLimitsFromDto(dto.AuthRateLimits)
     originalDeletion.value = dto.Deletion
     deletionForm.value = deletionFromDto(dto.Deletion)
     originalRegFields.value = dto.RegistrationFields
@@ -351,6 +403,22 @@ function buildNativeGrantsPatch(): UpdateNativeGrantSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildAuthRateLimitsPatch(): UpdateAuthRateLimitsDto | undefined {
+  const orig = originalAuthRateLimits.value
+  if (!orig) return undefined
+  const cur = authRateLimitsForm.value
+  const patch: UpdateAuthRateLimitsDto = {}
+
+  for (const { key } of rateLimitPolicies) {
+    const o = orig[key]
+    const c = cur[key]
+    if (c.PermitLimit !== o.PermitLimit || c.WindowMinutes !== o.WindowMinutes)
+      patch[key] = { PermitLimit: c.PermitLimit, WindowMinutes: c.WindowMinutes }
+  }
+
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
 function buildDeletionPatch(): UpdateDeletionSettingsDto | undefined {
   const orig = originalDeletion.value
   if (!orig) return undefined
@@ -383,9 +451,10 @@ async function save() {
   const dcrPatch = buildDcrPatch()
   const cimdPatch = buildCimdPatch()
   const nativeGrantsPatch = buildNativeGrantsPatch()
+  const authRateLimitsPatch = buildAuthRateLimitsPatch()
   const deletionPatch = buildDeletionPatch()
   const regFieldsPatch = buildRegFieldsPatch()
-  if (!selfRegPatch && !dcrPatch && !cimdPatch && !nativeGrantsPatch && !deletionPatch && !regFieldsPatch) {
+  if (!selfRegPatch && !dcrPatch && !cimdPatch && !nativeGrantsPatch && !authRateLimitsPatch && !deletionPatch && !regFieldsPatch) {
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1200)
     return
@@ -398,6 +467,7 @@ async function save() {
       Dcr?: UpdateDcrSettingsDto
       Cimd?: UpdateCimdSettingsDto
       NativeGrants?: UpdateNativeGrantSettingsDto
+      AuthRateLimits?: UpdateAuthRateLimitsDto
       Deletion?: UpdateDeletionSettingsDto
       RegistrationFields?: UpdateRegistrationFieldsSettingsDto
     } = {}
@@ -405,6 +475,7 @@ async function save() {
     if (dcrPatch) payload.Dcr = dcrPatch
     if (cimdPatch) payload.Cimd = cimdPatch
     if (nativeGrantsPatch) payload.NativeGrants = nativeGrantsPatch
+    if (authRateLimitsPatch) payload.AuthRateLimits = authRateLimitsPatch
     if (deletionPatch) payload.Deletion = deletionPatch
     if (regFieldsPatch) payload.RegistrationFields = regFieldsPatch
     const updated = await settingsStore.patch(payload)
@@ -416,6 +487,8 @@ async function save() {
     cimdForm.value = cimdFromDto(updated.Cimd)
     originalNativeGrants.value = updated.NativeGrants
     nativeGrantsForm.value = nativeGrantsFromDto(updated.NativeGrants)
+    originalAuthRateLimits.value = updated.AuthRateLimits
+    authRateLimitsForm.value = authRateLimitsFromDto(updated.AuthRateLimits)
     originalDeletion.value = updated.Deletion
     deletionForm.value = deletionFromDto(updated.Deletion)
     originalRegFields.value = updated.RegistrationFields
@@ -465,6 +538,9 @@ async function rotateSigningKey() {
       </CoarTab>
       <CoarTab id="native-grants">
         {{ t('admin.realmSettings.tabs.nativeGrants', {}, 'Native Passwordless Grants') }}
+      </CoarTab>
+      <CoarTab id="auth-rate-limits">
+        {{ t('admin.realmSettings.tabs.authRateLimits', {}, 'Rate Limits') }}
       </CoarTab>
       <CoarTab id="deletion">
         {{ t('admin.realmSettings.tabs.deletion', {}, 'Account Deletion') }}
@@ -744,6 +820,39 @@ async function rotateSigningKey() {
             </CoarFormField>
           </div>
         </template>
+
+        <div class="flex justify-end mt-2">
+          <CoarButton :loading="saving" @click="save">
+            {{ t('common.save', {}, 'Save') }}
+          </CoarButton>
+        </div>
+      </div>
+    </CoarCard>
+
+    <CoarCard v-else-if="activeTab === 'auth-rate-limits'" class="p-4">
+      <div class="flex flex-col gap-3">
+        <p class="text-xs text-gray-500">
+          {{ t('admin.realmSettings.authRateLimits.hint', {}, 'Per-IP request ceilings for this realm’s auth endpoints: at most PermitLimit requests per Window (minutes) from one source IP. The defaults are the secure production posture — raise them only for test realms, dev, or legitimately bursty consumers; lower them to tighten. Each value applies per realm.') }}
+        </p>
+
+        <div
+          v-for="p in rateLimitPolicies"
+          :key="p.key"
+          class="grid grid-cols-[1fr_auto_auto] items-end gap-3">
+          <div class="text-sm self-center">{{ t(p.labelKey, {}, p.fallback) }}</div>
+          <CoarFormField :label="t('admin.realmSettings.authRateLimits.permitLimit', {}, 'Max requests')">
+            <CoarTextInput
+              class="w-28"
+              :model-value="String(authRateLimitsForm[p.key].PermitLimit)"
+              @update:model-value="(v) => (authRateLimitsForm[p.key].PermitLimit = Math.max(1, parseInt(v) || 1))" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.realmSettings.authRateLimits.windowMinutes', {}, 'Window (minutes)')">
+            <CoarTextInput
+              class="w-28"
+              :model-value="String(authRateLimitsForm[p.key].WindowMinutes)"
+              @update:model-value="(v) => (authRateLimitsForm[p.key].WindowMinutes = Math.max(1, parseInt(v) || 1))" />
+          </CoarFormField>
+        </div>
 
         <div class="flex justify-end mt-2">
           <CoarButton :loading="saving" @click="save">

@@ -1361,6 +1361,7 @@
         "dcr": "Dynamic Client Registration",
         "cimd": "Client-ID-Metadaten (CIMD)",
         "nativeGrants": "Native passwortlose Grants",
+        "authRateLimits": "Rate-Limits",
         "branding": "Branding",
         "deletion": "Konto-Löschung",
         "signingKeys": "Signing-Schlüssel",
@@ -1440,6 +1441,18 @@
         "accessTokenMinutes": "Access-Token-Lebensdauer (Minuten)",
         "refreshTokenDays": "Refresh-Token-Lebensdauer (Tage)",
         "optInWarning": "Pro-Client-Opt-in weiterhin nötig: Ein Client kann einen nativen Grant erst nutzen, wenn er die passende Grant-Type-Permission trägt (gt:urn:cocoar:otp / :magic / :passkey), aktiviert im Grants-Tab des Clients. Dieser Realm-Schalter ist notwendig, aber nicht hinreichend. Nur Katalog-Clients kommen infrage — DCR-/CIMD-Clients sind ausgeschlossen."
+      },
+      "authRateLimits": {
+        "hint": "Pro-IP-Anfrage-Obergrenzen für die Auth-Endpoints dieses Realms: höchstens „Max. Anfragen“ pro „Fenster“ (Minuten) von einer Quell-IP. Die Defaults sind die sichere Produktions-Vorgabe — erhöhe sie nur für Test-Realms, Dev oder legitim stoßweise Consumer; senke sie zum Verschärfen. Jeder Wert gilt pro Realm.",
+        "permitLimit": "Max. Anfragen",
+        "windowMinutes": "Fenster (Minuten)",
+        "nativeOtp": "Native-OTP-Anfrage (passwortloser Login-Code)",
+        "magicLink": "Magic-Link-Anfrage",
+        "passwordReset": "Passwort-Reset-Anfrage",
+        "emailOtp": "E-Mail-OTP-Login-Prüfung",
+        "emailVerification": "E-Mail-Verifizierung erneut senden",
+        "passkeyBegin": "Passkey-Ceremony Begin / Enroll",
+        "bootstrap": "First-Admin-Bootstrap"
       },
       "regFields": {
         "hint": "Welche Identitätsfelder bei der Kontoerstellung gefordert sind (Admin-Anlage, Selbstregistrierung, native passwortlose Registrierung). E-Mail ist immer Pflicht. Pro Application überschreibbar."

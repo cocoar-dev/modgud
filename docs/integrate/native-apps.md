@@ -292,7 +292,7 @@ From then on, the app uses **Flow 3 (passkey)** as the steady-state login.
 | Client lacks the `gt:urn:cocoar:*` permission | `unauthorized_client` |
 | Wrong/expired code, link, or passkey assertion | `invalid_grant` — **uniform** message + jitter (anti-enumeration); don't parse it for "which part was wrong" |
 | TOTP required but missing/invalid (OTP & magic flows) | `invalid_grant` ("Two-factor authentication is required; supply totp_code.") |
-| Rate limit hit (OTP request, passkey begin, token endpoint) | `429 Too Many Requests` — back off |
+| Rate limit hit (OTP request, passkey begin, token endpoint) | `429 Too Many Requests` — back off. The per-IP ceilings are realm-configurable under [Realm Settings → Rate Limits](../admin/realm-settings#rate-limits) (defaults unchanged). |
 | Passkey begin while realm has no primary domain | `503` (admin must set the realm/client RP-ID) |
 
 ### Discovery
