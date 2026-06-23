@@ -30,6 +30,9 @@ The page currently has these tabs:
   identification by HTTPS-URL `client_id` (linked detail page:
   [Client ID Metadata Documents](./client-id-metadata-documents)).
   Off by default.
+- **Native Passwordless Grants** — the per-realm master toggle for the
+  cookieless `urn:cocoar:*` grants (see [Native app integration](../integrate/native-apps))
+- [Rate Limits](#rate-limits) — per-IP request ceilings for the realm's auth endpoints
 - [Account Deletion](#account-deletion) — grace period and recycle-bin retention policy
 - [Signing Keys](#signing-keys) — rotate the realm's OAuth/OIDC token-signing key
 
@@ -167,6 +170,28 @@ Anonymous OAuth-client registration policy: master toggle, token lifetimes, GC T
 Off by default. See the full feature page for when to enable it, what gets accepted, and the consent-screen `[unverified]` marker:
 
 → **[Dynamic Client Registration](./dynamic-client-registration)** (full feature page)
+
+## Rate Limits
+
+Per-IP request ceilings for this realm's auth endpoints. Each policy is a **max requests / window (minutes)** pair, partitioned by source IP and applied **per realm**. The shipped defaults are the secure production posture — the knob exists so a test realm, dev, or a legitimately bursty consumer can raise a ceiling **without a modgud code change + redeploy**, and so a hardened realm can tighten one.
+
+| Policy | Endpoint | Default |
+| --- | --- | --- |
+| Native OTP request | `POST /api/account/native/otp/request` (+ native register) | 5 / 60 min |
+| Magic-link request | `POST /api/account/magic-link/request` | 5 / 60 min |
+| Password-reset request | `POST /api/account/forgot-password` | 5 / 60 min |
+| Email-OTP login verify | `POST /api/account/email-otp/login` | 30 / 1 min |
+| Email verification resend | `POST /api/account/email/send-verification` | 5 / 60 min |
+| Passkey ceremony begin / enroll | `POST /connect/passkey/begin` (+ enroll) | 60 / 5 min |
+| First-admin bootstrap | `POST /api/account/bootstrap-admin` | 10 / 15 min |
+
+Notes:
+
+- A realm that never touches this tab behaves exactly as before — the defaults are the previously-hardcoded values.
+- Limits are **per realm**: raising a ceiling on one realm does not affect another on the same shared IdP.
+- The limiter is in-memory and resets on app restart; over-limit requests get `429 Too Many Requests`.
+- A config change takes effect within a few seconds (a short cache smooths the per-request lookup).
+- This governs the **request rate**; it is independent of per-challenge attempt counters (e.g. the email-OTP `MaxAttempts` brute-force lock) and of the realm's anti-enumeration uniform responses.
 
 ## Account Deletion
 

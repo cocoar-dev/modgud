@@ -79,6 +79,13 @@ public sealed class RealmSettingsService(
             doc.NativeGrants = native.Value;
         }
 
+        if (dto.AuthRateLimits is not null)
+        {
+            var arl = ApplyAuthRateLimitsPatch(doc.AuthRateLimits, dto.AuthRateLimits);
+            if (arl.IsError) return arl.FirstError;
+            doc.AuthRateLimits = arl.Value;
+        }
+
         if (dto.Branding is not null)
         {
             var branding = ApplyBrandingPatch(doc.Branding, dto.Branding);
@@ -146,6 +153,7 @@ public sealed class RealmSettingsService(
         Dcr = MapDcrToDto(doc.Dcr),
         Cimd = MapCimdToDto(doc.Cimd),
         NativeGrants = MapNativeGrantsToDto(doc.NativeGrants),
+        AuthRateLimits = MapAuthRateLimitsToDto(doc.AuthRateLimits),
         Branding = MapBrandingToDto(doc.Branding),
         RegistrationFields = MapRegistrationFieldsToDto(doc.RegistrationFields),
         Deletion = MapDeletionToDto(doc.Deletion),
@@ -380,6 +388,74 @@ public sealed class RealmSettingsService(
             PerIpRateLimitPerHour = s.PerIpRateLimitPerHour,
             PerRealmRateLimitPerDay = s.PerRealmRateLimitPerDay,
             ReservedNames = s.ReservedNames,
+        };
+    }
+
+    // Per-policy whole-rule replacement: a non-null patch field replaces that
+    // policy's ceiling (stored as a realm override); a null field leaves the
+    // existing override (or the inherited default) untouched.
+    private static ErrorOr<AuthRateLimitSettings> ApplyAuthRateLimitsPatch(
+        AuthRateLimitSettings? current, UpdateAuthRateLimitsDto patch)
+    {
+        var s = current ?? new AuthRateLimitSettings();
+
+        foreach (var (name, rule) in new (string, RateLimitRuleDto?)[]
+                 {
+                     (nameof(patch.NativeOtp), patch.NativeOtp),
+                     (nameof(patch.MagicLink), patch.MagicLink),
+                     (nameof(patch.PasswordReset), patch.PasswordReset),
+                     (nameof(patch.EmailOtp), patch.EmailOtp),
+                     (nameof(patch.EmailVerification), patch.EmailVerification),
+                     (nameof(patch.PasskeyBegin), patch.PasskeyBegin),
+                     (nameof(patch.Bootstrap), patch.Bootstrap),
+                 })
+        {
+            if (rule is not null && ValidateRateLimitRule(name, rule) is { } err) return err;
+        }
+
+        return s with
+        {
+            NativeOtp = patch.NativeOtp is { } a ? ToRule(a) : s.NativeOtp,
+            MagicLink = patch.MagicLink is { } b ? ToRule(b) : s.MagicLink,
+            PasswordReset = patch.PasswordReset is { } c ? ToRule(c) : s.PasswordReset,
+            EmailOtp = patch.EmailOtp is { } d ? ToRule(d) : s.EmailOtp,
+            EmailVerification = patch.EmailVerification is { } e ? ToRule(e) : s.EmailVerification,
+            PasskeyBegin = patch.PasskeyBegin is { } f ? ToRule(f) : s.PasskeyBegin,
+            Bootstrap = patch.Bootstrap is { } g ? ToRule(g) : s.Bootstrap,
+        };
+
+        static RateLimitRule ToRule(RateLimitRuleDto d)
+            => new() { PermitLimit = d.PermitLimit, WindowMinutes = d.WindowMinutes };
+    }
+
+    private static Error? ValidateRateLimitRule(string policy, RateLimitRuleDto rule)
+    {
+        if (rule.PermitLimit is < 1 or > 100_000)
+            return Error.Validation($"AuthRateLimits.{policy}.PermitLimit",
+                "PermitLimit must be between 1 and 100000.");
+        if (rule.WindowMinutes is < 1 or > 1440)
+            return Error.Validation($"AuthRateLimits.{policy}.WindowMinutes",
+                "WindowMinutes must be between 1 and 1440 (24 hours).");
+        return null;
+    }
+
+    internal static AuthRateLimitsDto MapAuthRateLimitsToDto(AuthRateLimitSettings? s)
+    {
+        static RateLimitRuleDto Eff(AuthRateLimitSettings? settings, AuthRateLimitPolicy p)
+        {
+            var r = AuthRateLimitSettings.Effective(settings, p);
+            return new RateLimitRuleDto { PermitLimit = r.PermitLimit, WindowMinutes = r.WindowMinutes };
+        }
+
+        return new AuthRateLimitsDto
+        {
+            NativeOtp = Eff(s, AuthRateLimitPolicy.NativeOtp),
+            MagicLink = Eff(s, AuthRateLimitPolicy.MagicLink),
+            PasswordReset = Eff(s, AuthRateLimitPolicy.PasswordReset),
+            EmailOtp = Eff(s, AuthRateLimitPolicy.EmailOtp),
+            EmailVerification = Eff(s, AuthRateLimitPolicy.EmailVerification),
+            PasskeyBegin = Eff(s, AuthRateLimitPolicy.PasskeyBegin),
+            Bootstrap = Eff(s, AuthRateLimitPolicy.Bootstrap),
         };
     }
 

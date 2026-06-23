@@ -37,6 +37,7 @@ using Modgud.Api.Features.Shared;
 using Modgud.Api.Features.Users;
 using Modgud.Api.Helper;
 using Modgud.Domain.Common;
+using AuthRateLimitPolicy = Modgud.Domain.Realms.AuthRateLimitPolicy;
 using Modgud.Authentication.Domain;
 using Modgud.Infrastructure;
 using Modgud.Infrastructure.OAuth;
@@ -518,112 +519,31 @@ try
                 });
         });
 
-        options.AddPolicy("bootstrap", context =>
-        {
-            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
-            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: key,
-                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = 10,
-                    Window = TimeSpan.FromMinutes(15),
-                    QueueLimit = 0,
-                });
-        });
-
-        options.AddPolicy("password-reset", context =>
-        {
-            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
-            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: key,
-                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = 5,
-                    Window = TimeSpan.FromHours(1),
-                    QueueLimit = 0,
-                });
-        });
-
-        options.AddPolicy("magic-link", context =>
-        {
-            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
-            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: key,
-                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = 5,
-                    Window = TimeSpan.FromHours(1),
-                    QueueLimit = 0,
-                });
-        });
-
-        // Email-verification (re)send — same bucket sizing as magic-link.
-        // Covers both authenticated 1-click and the anonymous self-service
-        // form; the endpoint itself returns a generic response either way.
-        options.AddPolicy("email-verification", context =>
-        {
-            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
-            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: key,
-                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = 5,
-                    Window = TimeSpan.FromHours(1),
-                    QueueLimit = 0,
-                });
-        });
-
-        // Audit #24 — email-OTP code VERIFY. The endpoint is anonymous (partial-2FA
-        // state) and the per-challenge MaxAttempts counter is the only other
-        // brute-force defense; without a request cap, a concurrent burst that all
-        // read Attempts=0 before any increment commits could evaluate many guesses
-        // against the 6-digit code before the lockout trips. A per-IP fixed window
-        // bounds that burst. Sized well above any legitimate verify cadence.
-        options.AddPolicy("email-otp", context =>
-        {
-            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
-            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: key,
-                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = 30,
-                    Window = TimeSpan.FromMinutes(1),
-                    QueueLimit = 0,
-                });
-        });
-
-        // ADR-0010 native passwordless OTP request — anonymous email-sending
-        // endpoint, same per-IP SMTP cap class as magic-link (5/hour). The
-        // dedicated boundary test sets X-Test-RateLimit to share a budget on
-        // purpose and assert the 429 (see PerIpRateLimitPartitionKey).
-        options.AddPolicy("native-otp", context =>
-        {
-            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
-            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: key,
-                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = 5,
-                    Window = TimeSpan.FromHours(1),
-                    QueueLimit = 0,
-                });
-        });
-
-        // ADR-0010 Phase 2 — anonymous passkey "begin" endpoint. Cheap (no email/
-        // SMTP, just a challenge + a single-use ceremony doc), so more generous
-        // than native-otp; still per-IP bounded to cap ceremony-doc spam.
-        options.AddPolicy("passkey-begin", context =>
-        {
-            var key = PerIpRateLimitPartitionKey(context, isTestEnv);
-            return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: key,
-                factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = 60,
-                    Window = TimeSpan.FromMinutes(5),
-                    QueueLimit = 0,
-                });
-        });
+        // The per-IP auth limiters below now read their ceiling per request from
+        // the realm's configured AuthRateLimits (resolved by
+        // AuthRateLimitResolutionMiddleware, falling back to AuthRateLimitDefaults).
+        // The default values are unchanged from the previously-hardcoded ones — a
+        // realm that never touches the feature behaves exactly as before. See
+        // AuthFixedWindow for the realm+limit-aware partition key.
+        options.AddPolicy("bootstrap", context => AuthFixedWindow(context, AuthRateLimitPolicy.Bootstrap, isTestEnv));
+        options.AddPolicy("password-reset", context => AuthFixedWindow(context, AuthRateLimitPolicy.PasswordReset, isTestEnv));
+        options.AddPolicy("magic-link", context => AuthFixedWindow(context, AuthRateLimitPolicy.MagicLink, isTestEnv));
+        // Email-verification (re)send. Covers both authenticated 1-click and the
+        // anonymous self-service form; the endpoint returns a generic response either way.
+        options.AddPolicy("email-verification", context => AuthFixedWindow(context, AuthRateLimitPolicy.EmailVerification, isTestEnv));
+        // Audit #24 — email-OTP code VERIFY. Anonymous (partial-2FA state); the
+        // per-challenge MaxAttempts counter is the only other brute-force defense,
+        // so a per-IP window bounds a concurrent guess burst. Default sized well
+        // above any legitimate verify cadence (30/min).
+        options.AddPolicy("email-otp", context => AuthFixedWindow(context, AuthRateLimitPolicy.EmailOtp, isTestEnv));
+        // ADR-0010 native passwordless OTP request — anonymous email-sending endpoint
+        // (default 5/hour). The dedicated boundary test sets X-Test-RateLimit to share
+        // a budget on purpose and assert the 429 (see PerIpRateLimitPartitionKey).
+        options.AddPolicy("native-otp", context => AuthFixedWindow(context, AuthRateLimitPolicy.NativeOtp, isTestEnv));
+        // ADR-0010 Phase 2 — anonymous passkey "begin" endpoint. Cheap (no email/SMTP,
+        // just a challenge + a single-use ceremony doc), so a more generous default
+        // (60/5min); still per-IP bounded to cap ceremony-doc spam.
+        options.AddPolicy("passkey-begin", context => AuthFixedWindow(context, AuthRateLimitPolicy.PasskeyBegin, isTestEnv));
     });
 
     builder.Services.AddHttpContextAccessor();
@@ -1242,6 +1162,10 @@ try
     // (see /connect/* + /api/account/bootstrap-admin + /api/account/forgot-password +
     // /api/account/magic-link below). Endpoints without an explicit
     // policy are not rate-limited at the app layer.
+    // Resolve the realm's configured auth rate-limit ceilings and stash them on
+    // HttpContext.Items BEFORE the limiter runs, so the (synchronous) policy
+    // factories can read per-realm limits. Runs after RealmMiddleware (tenant set).
+    app.UseMiddleware<Modgud.Api.Middleware.AuthRateLimitResolutionMiddleware>();
     app.UseRateLimiter();
 
     // Observability surface: /metrics (Prometheus scrape) + /health/live +
@@ -1695,4 +1619,38 @@ static string PerIpRateLimitPartitionKey(HttpContext context, bool isTestEnv)
 
     var shared = context.Request.Headers["X-Test-RateLimit"].ToString();
     return string.IsNullOrEmpty(shared) ? Guid.NewGuid().ToString("N") : shared;
+}
+
+/// <summary>
+/// Builds a per-IP fixed-window partition whose ceiling comes from the realm's
+/// configured <see cref="Modgud.Domain.Realms.AuthRateLimitSettings"/> (stashed on
+/// Items by <see cref="Modgud.Api.Middleware.AuthRateLimitResolutionMiddleware"/>),
+/// falling back to the shipped <see cref="Modgud.Domain.Realms.AuthRateLimitDefaults"/>.
+/// The realm slug AND the resolved limit are baked into the partition key: each realm
+/// gets its own per-IP bucket (so its ceiling is coherent on a shared IdP), and a
+/// config change yields a fresh partition so the new limit applies on the next
+/// request (the stale limiter idles out).
+/// </summary>
+static System.Threading.RateLimiting.RateLimitPartition<string> AuthFixedWindow(
+    HttpContext context, AuthRateLimitPolicy policy, bool isTestEnv)
+{
+    var settings = context.Items.TryGetValue(
+        Modgud.Api.Middleware.AuthRateLimitResolutionMiddleware.ItemsKey, out var raw)
+        ? raw as Modgud.Domain.Realms.AuthRateLimitSettings
+        : null;
+    var rule = Modgud.Domain.Realms.AuthRateLimitSettings.Effective(settings, policy);
+
+    var ipPart = PerIpRateLimitPartitionKey(context, isTestEnv);
+    var realm = context.Items[
+        Modgud.Infrastructure.Persistence.Tenancy.TenantConstants.HttpContextTenantIdKey] as string ?? "-";
+    var key = $"{policy}|{realm}|{ipPart}|{rule.PermitLimit}|{rule.WindowMinutes}";
+
+    return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: key,
+        factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            PermitLimit = rule.PermitLimit,
+            Window = TimeSpan.FromMinutes(rule.WindowMinutes),
+            QueueLimit = 0,
+        });
 }

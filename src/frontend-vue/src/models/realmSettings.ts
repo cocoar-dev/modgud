@@ -8,6 +8,7 @@ export interface RealmSettingsDto {
   Dcr: DcrSettingsDto
   Cimd: CimdSettingsDto
   NativeGrants: NativeGrantSettingsDto
+  AuthRateLimits: AuthRateLimitsDto
   Branding: BrandingSettingsDto
   RegistrationFields: RegistrationFieldsSettingsDto
   Deletion: DeletionSettingsDto
@@ -21,6 +22,7 @@ export interface UpdateRealmSettingsDto {
   Dcr?: UpdateDcrSettingsDto | null
   Cimd?: UpdateCimdSettingsDto | null
   NativeGrants?: UpdateNativeGrantSettingsDto | null
+  AuthRateLimits?: UpdateAuthRateLimitsDto | null
   Branding?: UpdateBrandingSettingsDto | null
   RegistrationFields?: UpdateRegistrationFieldsSettingsDto | null
   Deletion?: UpdateDeletionSettingsDto | null
@@ -175,4 +177,36 @@ export interface UpdateNativeGrantSettingsDto {
   Enabled?: boolean
   AccessTokenLifetimeMinutes?: number
   RefreshTokenLifetimeDays?: number
+}
+
+// Per-IP auth rate-limit ceilings, configurable per realm. Each policy is a
+// { PermitLimit, WindowMinutes } pair; the read shape carries the EFFECTIVE
+// values (the realm override if set, else the shipped default), so the form
+// shows concrete numbers. Lowering tightens, raising relaxes — defaults keep
+// the secure production posture. Mirrors AuthRateLimitsDtos.cs.
+export interface RateLimitRuleDto {
+  PermitLimit: number
+  WindowMinutes: number
+}
+
+export interface AuthRateLimitsDto {
+  NativeOtp: RateLimitRuleDto
+  MagicLink: RateLimitRuleDto
+  PasswordReset: RateLimitRuleDto
+  EmailOtp: RateLimitRuleDto
+  EmailVerification: RateLimitRuleDto
+  PasskeyBegin: RateLimitRuleDto
+  Bootstrap: RateLimitRuleDto
+}
+
+// PATCH shape: a missing policy = no change; a present rule replaces that
+// policy's ceiling (stored as a realm override).
+export interface UpdateAuthRateLimitsDto {
+  NativeOtp?: RateLimitRuleDto
+  MagicLink?: RateLimitRuleDto
+  PasswordReset?: RateLimitRuleDto
+  EmailOtp?: RateLimitRuleDto
+  EmailVerification?: RateLimitRuleDto
+  PasskeyBegin?: RateLimitRuleDto
+  Bootstrap?: RateLimitRuleDto
 }
