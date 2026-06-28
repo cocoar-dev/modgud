@@ -107,9 +107,12 @@ required. The Marten outbox is still active for event side-effects:
 SignalR notifications fire after `SaveChangesAsync` via
 `ProjectionSideEffects`.
 
-Codegen runs with `TypeLoadMode.Auto` — Wolverine/Marten generated
-classes are pre-generated at build time to save cold-start time and
-avoid Roslyn compilation at runtime.
+Codegen mode is environment-aware. Production runs `TypeLoadMode.Dynamic`
+— Wolverine/Marten handler classes are generated in memory on first use
+and never written to disk, so the container never tries to write into its
+read-only application directory. Local dev and tests run
+`TypeLoadMode.Auto`, which generates into `Internal/Generated/` on first
+boot and reuses it on the next.
 
 ## Marten usage
 
@@ -241,5 +244,6 @@ Integration tests (`Modgud.Api.Tests`) use:
 - **Shared PostgreSQL container** — one container instance for all
   test collections, parallelised
 - **WireMock** — fake OIDC server for external login tests
-- **Pre-generated Wolverine/Marten code** (`TypeLoadMode.Auto`) —
-  eliminates Roslyn compilation at runtime
+- **Wolverine/Marten codegen** (`TypeLoadMode.Auto`) — generated on the
+  first boot into the test working tree and reused, so repeat runs skip
+  Roslyn compilation

@@ -885,7 +885,21 @@ try
         opts.Discovery.IncludeAssembly(typeof(Modgud.Authentication.Api.Admin.RecoveryCli).Assembly);
         opts.Discovery.IncludeAssembly(typeof(Modgud.Authorization.Commands.CreateGroupCommand).Assembly);
         opts.Durability.Mode = wolverineMode;
-        opts.CodeGeneration.TypeLoadMode = JasperFx.CodeGeneration.TypeLoadMode.Auto;
+        // Production generates handler code in-memory (Dynamic): each handler is
+        // compiled via Roslyn on first use and never written to disk. The previous
+        // Auto mode tried to persist the generated source under /app/Internal —
+        // which the non-root container user cannot write — logging "Access to the
+        // path '/app/Internal' is denied" on the first hit of every handler.
+        // Dev/Test keep Auto, which writes into Internal/Generated/ on a writable
+        // working tree and reuses it across restarts.
+        //
+        // (Pre-generating at build time + TypeLoadMode.Static would also avoid the
+        // runtime Roslyn pass, but it requires JasperFx's `RunJasperFxCommands`
+        // entry point, which is incompatible with this app's WebApplicationFactory
+        // integration tests — see git history for fix/wolverine-codegen-static-prod.)
+        opts.CodeGeneration.TypeLoadMode = builder.Environment.IsProduction()
+            ? JasperFx.CodeGeneration.TypeLoadMode.Dynamic
+            : JasperFx.CodeGeneration.TypeLoadMode.Auto;
 
         // Wolverine 6 made `ServiceLocationPolicy.NotAllowed` the default. We
         // keep that strict default — accidental new service-location dependencies
