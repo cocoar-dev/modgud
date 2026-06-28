@@ -1233,6 +1233,7 @@ try
     app.MapPasskeyEndpoints("api");
     app.MapNativePasskeyEndpoints();
     app.MapNativePasskeyEnrollEndpoints();
+    app.MapNativePasskeyManagementEndpoints();
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");
     app.MapEmailVerificationEndpoints("api");

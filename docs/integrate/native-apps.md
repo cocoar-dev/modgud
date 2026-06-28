@@ -272,6 +272,33 @@ A passkey is bound to one RP-ID, so the first time a user opens a *new* app they
 
 From then on, the app uses **Flow 3 (passkey)** as the steady-state login.
 
+### Manage passkeys — list & revoke
+
+A profile screen (web BFF or native) lists the user's passkeys and lets them remove a lost or stale one — cookielessly, from the **same access token** the app already holds (no Modgud session needed). Both endpoints are Bearer-authenticated, gated by the realm's native-grants flag, and **strictly owner-scoped**: a caller only ever sees or deletes credentials owned by the token's subject.
+
+**List** the subject's passkeys:
+
+```http
+GET /connect/passkey
+Authorization: Bearer <access_token>
+```
+```json
+[
+  { "Id": "0190…",  "DisplayName": "Passkey", "CreatedAt": "2026-06-28T09:00:00Z", "LastUsedAt": "2026-06-28T10:15:00Z" }
+]
+```
+
+`Id` is the credential's stable management id (**not** the raw WebAuthn credential id) — pass it to delete. `LastUsedAt` is omitted while the passkey has never been used.
+
+**Revoke** one passkey:
+
+```http
+DELETE /connect/passkey/{id}
+Authorization: Bearer <access_token>
+```
+
+Returns `204 No Content`. A deleted passkey can no longer satisfy a `urn:cocoar:passkey` assertion. An id that doesn't exist **or** belongs to another user is a `404` (never a `403`) — the endpoint is not a cross-user credential-existence oracle.
+
 ### Tokens: storage, refresh, revocation
 
 - **Store** the refresh token in the Keychain. Access tokens are short-lived by design (per-realm native lifetime, default 15 min).
@@ -294,6 +321,9 @@ From then on, the app uses **Flow 3 (passkey)** as the steady-state login.
 | TOTP required but missing/invalid (OTP & magic flows) | `invalid_grant` ("Two-factor authentication is required; supply totp_code.") |
 | Rate limit hit (OTP request, passkey begin, token endpoint) | `429 Too Many Requests` — back off. The per-IP ceilings are realm-configurable under [Realm Settings → Rate Limits](../admin/realm-settings#rate-limits) (defaults unchanged). |
 | Passkey begin while realm has no primary domain | `503` (admin must set the realm/client RP-ID) |
+| Passkey list / delete without a valid Bearer token | `401 Unauthorized` |
+| Passkey delete of an unknown id **or** one owned by another user | `404 Not Found` — never `403`, so it is not a cross-user existence oracle |
+| Passkey enroll / list / delete while the realm has native grants off | `400` `NativeGrants.Disabled` |
 
 ### Discovery
 

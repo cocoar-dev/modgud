@@ -29,7 +29,7 @@ namespace Modgud.Api.Tests.Authorization;
 /// on bad/missing/expired ceremonies, and single-use ceremony consumption.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class CocoarPasskeyGrantFlowTests : IntegrationTestBase
+public partial class CocoarPasskeyGrantFlowTests : IntegrationTestBase
 {
     public CocoarPasskeyGrantFlowTests(SharedPostgresFixture fixture) : base(fixture) { }
 
