@@ -552,6 +552,11 @@ try
     // + IAutoMembershipRecalculator are all registered by AddModgudAuthorization
     // inside AddInfrastructure. Only keep app-specific wiring here.
     builder.Services.AddScoped<IAdminNotifier, AdminNotifier>();
+
+    // Declarative realm provisioning — applies a RealmManifest in-process by reusing
+    // the canonical admin operations (the engine behind import/apply/export).
+    builder.Services.AddScoped<Modgud.Api.Features.Admin.Provisioning.RealmManifestApplier>();
+
     // C16: Demo-seed runs as an API client now — see scripts/seed-demo.mjs.
     // No backend service, no DI registration, no PROD-01 bracket needed:
     // the script logs in as a regular admin and POSTs through the same
