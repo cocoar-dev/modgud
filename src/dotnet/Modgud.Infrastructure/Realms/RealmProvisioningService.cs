@@ -37,6 +37,17 @@ public interface IRealmProvisioningService
     Task<ErrorOr<bool>> DeleteRealmAsync(string slug, CancellationToken ct = default);
 
     /// <summary>
+    /// HARD-removes a realm: drops the tenant database entirely (event streams,
+    /// signing keys, the OpenIddict token store — all gone) and deletes the global
+    /// <see cref="Realm"/> record. Unlike <see cref="DeleteRealmAsync"/> (a
+    /// reversible soft-delete) this is irreversible. Blocked for the control-plane
+    /// realm. Sequence: deregister the tenant from Marten's registry table, then
+    /// <c>DROP DATABASE ... WITH (FORCE)</c> to terminate any remaining daemon/pool
+    /// backends, then remove the global record + invalidate the realm cache.
+    /// </summary>
+    Task<ErrorOr<bool>> HardDeleteRealmAsync(string slug, CancellationToken ct = default);
+
+    /// <summary>
     /// Compensation for a realm whose <see cref="CreateRealmAsync"/> succeeded
     /// but whose post-create bootstrap (issuing the initial-admin invite) then
     /// failed. Hard-removes the global <see cref="Realm"/> record so the
@@ -442,6 +453,84 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         await session.SaveChangesAsync(ct);
 
         _realmCache.Invalidate();
+        return true;
+    }
+
+    public async Task<ErrorOr<bool>> HardDeleteRealmAsync(string slug, CancellationToken ct = default)
+    {
+        await using var session = _globalStore.LightweightSession();
+
+        var realm = await session.Query<Realm>()
+            .FirstOrDefaultAsync(r => r.Slug == slug, ct);
+
+        if (realm is null)
+            return Error.NotFound("Realm.NotFound", $"Realm '{slug}' not found.");
+
+        // Same guard as DeleteRealmAsync: the Control-Plane realm holds the
+        // global administration surface and must never be dropped.
+        if (realm.IsControlPlane)
+        {
+            return Error.Validation("Realm.CannotDeleteControlPlane",
+                "Cannot hard-delete the Control-Plane realm — the deployment would lose its global administration surface.");
+        }
+
+        var csBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value);
+        var mainDbName = csBuilder.Database!;
+        var tenantDbName = $"{mainDbName}_{slug}";
+
+        // 1. Hand the tenant back to Marten. RemoveTenantAsync evicts it from the
+        //    tenancy's in-memory cache, disposes its Npgsql data source (gracefully
+        //    closing the pool before the drop) and deletes the registry row in
+        //    realms.mt_tenant_databases, so the async daemon stops rediscovering the
+        //    database and it drops out of tenant resolution.
+        //
+        //    Caveat — re-creating a realm with the SAME slug in the SAME process:
+        //    Weasel's DefaultNpgsqlDataSourceFactory caches data sources by connection
+        //    string with no per-key eviction, so the disposed data source would be
+        //    handed back on a later create with the identical connection string. Realm
+        //    slugs are unique per lifecycle (tests use unique slugs too), so this does
+        //    not arise on the normal path; a custom evictable INpgsqlDataSourceFactory
+        //    is the clean fix if in-process slug reuse is ever required.
+        var tenancy = (Marten.Storage.MasterTableTenancy)_tenantedStore.Options.Tenancy;
+        await tenancy.RemoveTenantAsync(slug);
+
+        // 2. DROP DATABASE ... WITH (FORCE) on the maintenance DB. Marten holds one
+        //    Npgsql data source (its own pool plus the async daemon's connection) per
+        //    tenant DB; FORCE (PG13+) terminates every remaining backend so the drop
+        //    succeeds without a "database is being accessed by other users" error.
+        var bootstrapBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value) { Database = "postgres" };
+        await using (var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString))
+        {
+            await bootstrapConn.OpenAsync(ct);
+            var quotedName = "\"" + tenantDbName.Replace("\"", "\"\"") + "\"";
+#pragma warning disable CA2100 // tenantDbName derives from the operator connection string + a validated slug, never raw request input
+            await using var dropCmd = new NpgsqlCommand(
+                $"DROP DATABASE IF EXISTS {quotedName} WITH (FORCE)", bootstrapConn);
+#pragma warning restore CA2100
+            await dropCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // 3. Remove the global Realm record and invalidate the cache so middleware
+        //    stops resolving the now-dropped realm.
+        session.Delete(realm);
+        await session.SaveChangesAsync(ct);
+        _realmCache.Invalidate();
+
+        _logger.LogWarning(
+            "Hard-deleted realm {Slug}: dropped tenant database {DbName} and removed the global Realm record. " +
+            "Irreversible — event streams, signing keys and the OpenIddict token store are gone.",
+            slug, tenantDbName);
+
+        _securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RealmProvisioned,
+            Level = "Warning",
+            Realm = slug,
+            Status = "hard-deleted",
+            Reason = "operator hard-delete",
+            Message = $"Hard-deleted realm {slug} (tenant database {tenantDbName} dropped)",
+        });
+
         return true;
     }
 
