@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Fido2NetLib;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -36,8 +37,23 @@ public static class RealmFido2
     /// SPA dev-server origin (<c>http://{PrimaryDomain}:4300</c>) since that is
     /// where the WebAuthn ceremony runs in dev. <c>localhost</c> /
     /// <c>*.localhost</c> are browser secure-contexts, so dev passkeys work.
+    ///
+    /// <para><paramref name="additionalOrigins"/> — origins the authenticator
+    /// actually signed (read from the ceremony's clientDataJSON). Each is accepted
+    /// ONLY if it is the RP-ID host or a subdomain of it (see
+    /// <see cref="IsOriginUnderRpId"/>). This is what makes a per-client RP-ID that
+    /// is a registrable SUFFIX of the app origin work: RP-ID <c>amzettel.at</c> for a
+    /// page on <c>app.amzettel.at</c> is spec-valid (the browser only ever presents
+    /// an origin whose effective domain has the RP-ID as a suffix), but deriving the
+    /// accepted origin as <c>https://{rpId}</c> wrongly rejected it. The RP-ID hash
+    /// and signature checks remain the primary boundary; this only widens the origin
+    /// allow-list to the set the WebAuthn spec already scopes to this RP-ID.</para>
     /// </summary>
-    public static Fido2Configuration BuildConfiguration(Realm realm, IWebHostEnvironment env, string? rpIdOverride = null)
+    public static Fido2Configuration BuildConfiguration(
+        Realm realm,
+        IWebHostEnvironment env,
+        string? rpIdOverride = null,
+        IEnumerable<string>? additionalOrigins = null)
     {
         ArgumentNullException.ThrowIfNull(realm);
         ArgumentNullException.ThrowIfNull(env);
@@ -74,6 +90,17 @@ public static class RealmFido2
             origins.Add($"https://{host}");
         }
 
+        // Widen the accepted origins to the actual signed origin(s), but only those
+        // genuinely under this RP-ID — never a foreign host.
+        if (additionalOrigins is not null)
+        {
+            foreach (var origin in additionalOrigins)
+            {
+                if (IsOriginUnderRpId(origin, host, env.IsDevelopment()))
+                    origins.Add(origin);
+            }
+        }
+
         return new Fido2Configuration
         {
             // RP ID — the effective domain a passkey is bound to.
@@ -81,6 +108,44 @@ public static class RealmFido2
             ServerName = string.IsNullOrWhiteSpace(realm.DisplayName) ? "Modgud" : realm.DisplayName,
             Origins = origins,
         };
+    }
+
+    /// <summary>
+    /// True when <paramref name="origin"/> is an absolute <c>https</c> URL (also
+    /// <c>http</c> when <paramref name="allowInsecure"/>, i.e. dev) whose host equals
+    /// <paramref name="rpId"/> or is a subdomain of it — exactly the set of origins
+    /// WebAuthn already scopes to this RP-ID. The dotted-suffix test (<c>host</c> ends
+    /// with <c>"." + rpId</c>) deliberately rejects look-alikes like
+    /// <c>amzettel.at.evil.com</c> and <c>evilamzettel.at</c>.
+    /// </summary>
+    public static bool IsOriginUnderRpId(string? origin, string? rpId, bool allowInsecure)
+    {
+        if (string.IsNullOrWhiteSpace(origin) || string.IsNullOrWhiteSpace(rpId)) return false;
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
+        if (uri.Scheme != Uri.UriSchemeHttps && !(allowInsecure && uri.Scheme == Uri.UriSchemeHttp))
+            return false;
+        return string.Equals(uri.Host, rpId, StringComparison.OrdinalIgnoreCase)
+            || uri.Host.EndsWith("." + rpId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Extracts the WebAuthn <c>origin</c> from a clientDataJSON byte payload (the
+    /// value Fido2NetLib already base64url-decoded onto the raw response). Returns
+    /// <c>null</c> on any malformed input — the caller then simply passes no extra
+    /// origin and the verify fails closed as before.
+    /// </summary>
+    public static string? TryGetClientDataOrigin(byte[]? clientDataJson)
+    {
+        if (clientDataJson is null || clientDataJson.Length == 0) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(clientDataJson);
+            return doc.RootElement.TryGetProperty("origin", out var o) ? o.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }
 
@@ -97,7 +162,10 @@ public sealed class RealmScopedFido2Factory(
     IWebHostEnvironment env,
     IMetadataService? metadataService = null)
 {
-    public async Task<IFido2> CreateAsync(CancellationToken ct = default, string? rpIdOverride = null)
+    public async Task<IFido2> CreateAsync(
+        CancellationToken ct = default,
+        string? rpIdOverride = null,
+        IEnumerable<string>? additionalOrigins = null)
     {
         var http = httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException(
@@ -110,7 +178,9 @@ public sealed class RealmScopedFido2Factory(
         // ADR-0009 seam: rpIdOverride is null for every Phase-2 caller (RP-ID stays
         // realm.PrimaryDomain). Threaded through so the Phase-3 per-client RP-ID
         // only has to supply the value here — no new RP-ID code path.
-        var config = RealmFido2.BuildConfiguration(realm, env, rpIdOverride);
+        // additionalOrigins carries the actual signed origin at verify time so a
+        // per-client RP-ID that is a suffix of the app origin is accepted.
+        var config = RealmFido2.BuildConfiguration(realm, env, rpIdOverride, additionalOrigins);
         // metadataService is optional — the previous global setup used the
         // library's NullMetadataService (no attestation-metadata validation),
         // and passing null here gives the identical behaviour.

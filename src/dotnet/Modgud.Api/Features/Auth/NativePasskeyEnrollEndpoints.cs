@@ -166,12 +166,23 @@ public static class NativePasskeyEnrollEndpoints
             session.Delete(ceremony);
             await session.SaveChangesAsync(ct);
 
+            // Parse the attestation up-front so the origin the authenticator actually
+            // signed can scope the relying party (below) — a per-client RP ID that is
+            // a registrable suffix of the app origin (RP-ID amzettel.at for a page on
+            // app.amzettel.at) is then accepted instead of failing the origin check.
+            var attestation = JsonSerializer.Deserialize<AuthenticatorAttestationRawResponse>(
+                attEl.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (attestation is null)
+                return Results.BadRequest(new { Message = "Invalid attestation response." });
+
             IFido2 fido2;
             try
             {
                 // Pinned RP ID from begin — never re-resolved (admin edits mid-ceremony
-                // cannot drift the attestation's RP ID).
-                fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: ceremony.RpId);
+                // cannot drift the attestation's RP ID). The accepted origin is the
+                // signed one, filtered to this RP-ID's own subdomains in BuildConfiguration.
+                fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: ceremony.RpId,
+                    additionalOrigins: PresentedOrigins(attestation.Response?.ClientDataJson));
             }
             catch (RelyingPartyUnavailableException ex)
             {
@@ -187,11 +198,6 @@ public static class NativePasskeyEnrollEndpoints
             {
                 return Results.BadRequest(new { Message = "Enrollment session expired. Please try again." });
             }
-
-            var attestation = JsonSerializer.Deserialize<AuthenticatorAttestationRawResponse>(
-                attEl.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (attestation is null)
-                return Results.BadRequest(new { Message = "Invalid attestation response." });
 
             RegisteredPublicKeyCredential credential;
             try
@@ -210,10 +216,16 @@ public static class NativePasskeyEnrollEndpoints
                     },
                 }, ct);
             }
-            catch
+            catch (Exception ex)
             {
                 // Fail closed on any attestation failure (bad/forged response,
-                // duplicate credential) — never a 500.
+                // duplicate credential, origin/RP-ID mismatch) — never a 500. Log the
+                // reason into the per-realm error feed so an origin mismatch is
+                // diagnosable instead of surfacing as a reasonless 400.
+                context.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger(LoggerCategory)
+                    .LogWarning(ex, "Native passkey enrollment verification failed (UserId={UserId}, RpId={RpId}).",
+                        user!.Id, ceremony.RpId);
                 return Results.BadRequest(new { Message = "Passkey enrollment failed." });
             }
 
@@ -247,6 +259,12 @@ public static class NativePasskeyEnrollEndpoints
 
         return application;
     }
+
+    /// <summary>The single signed origin (if any) read from the attestation's
+    /// clientDataJSON, as a one-element array for <c>CreateAsync(additionalOrigins:)</c>.
+    /// <c>null</c> when absent/malformed — then only the RP-ID host is accepted.</summary>
+    private static string[]? PresentedOrigins(byte[]? clientDataJson)
+        => RealmFido2.TryGetClientDataOrigin(clientDataJson) is { } origin ? [origin] : null;
 
     private static IResult RpUnavailable(HttpContext context, RelyingPartyUnavailableException ex)
     {
