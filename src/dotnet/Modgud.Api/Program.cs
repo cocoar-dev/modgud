@@ -553,6 +553,9 @@ try
     // inside AddInfrastructure. Only keep app-specific wiring here.
     builder.Services.AddScoped<IAdminNotifier, AdminNotifier>();
 
+    // Shared canonical App create path (AppsEndpoints + the provisioning applier).
+    builder.Services.AddScoped<Modgud.Api.Features.Admin.Apps.AppAdminService>();
+
     // Declarative realm provisioning — applies a RealmManifest in-process by reusing
     // the canonical admin operations (the engine behind import/apply/export).
     builder.Services.AddScoped<Modgud.Api.Features.Admin.Provisioning.RealmManifestApplier>();

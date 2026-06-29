@@ -1,6 +1,7 @@
 using BuildingBlocks.Helper;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
+using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Events;
@@ -90,43 +91,14 @@ public static class AppsEndpoints
             .WithName("V2_App_GetById")
             .RequiresPermission("app:read");
 
-        appGroup.MapPost("", async (CreateAppDto dto, IDocumentSession session) =>
+        // Create delegates to the shared AppAdminService — the single canonical create
+        // path that the realm-provisioning applier also calls (no divergence). Update /
+        // delete stay inline below (their reference-checking is consolidated when the
+        // applier gains update via UpdateRealm).
+        appGroup.MapPost("", async (CreateAppDto dto, AppAdminService appAdmin, CancellationToken ct) =>
             {
-                if (!AppSlugRules.IsValidFormat(dto.Slug))
-                    return Results.BadRequest(new { Error = "App.InvalidSlug",
-                        Message = "Slug must be 3-63 characters, start with a letter, end with a letter or digit, and contain only lowercase letters, digits, and hyphens." });
-
-                if (AppSlugRules.IsReserved(dto.Slug))
-                    return Results.BadRequest(new { Error = "App.ReservedSlug",
-                        Message = $"The slug '{dto.Slug}' is reserved." });
-
-                if (string.IsNullOrWhiteSpace(dto.DisplayName))
-                    return Results.BadRequest(new { Error = "App.DisplayNameRequired",
-                        Message = "DisplayName is required." });
-
-                var existing = await session.Query<App>()
-                    .Where(a => a.Slug == dto.Slug && !a.IsDeleted)
-                    .AnyAsync();
-                if (existing)
-                    return Results.Conflict(new { Error = "App.DuplicateSlug",
-                        Message = $"An app with slug '{dto.Slug}' already exists." });
-
-                var permissionsResult = NormalizePermissions(dto.Permissions, existingByKey: null);
-                if (permissionsResult.Error is not null) return permissionsResult.Error;
-
-                var id = Guid.NewGuid();
-                var created = new AppCreatedEvent(
-                    Id: id,
-                    Slug: dto.Slug,
-                    DisplayName: dto.DisplayName,
-                    Description: dto.Description,
-                    Permissions: permissionsResult.Permissions,
-                    IsSystem: false);
-                session.Events.StartStream<App>(id, created);
-                await session.SaveChangesAsync();
-
-                var loaded = await session.LoadAsync<App>(id);
-                return Results.Ok(MapToResponse(loaded!));
+                var result = await appAdmin.CreateAppAsync(dto, ct);
+                return result.ToResult(app => Results.Ok(MapToResponse(app)));
             })
             .WithName("V2_App_Create")
             .RequiresPermission("app:write");
