@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
@@ -820,10 +821,24 @@ public static class AuthorizationEndpoints
         var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
         var activeRpId = string.IsNullOrWhiteSpace(ceremony.RpId) ? primaryDomain : ceremony.RpId;
 
+        // Accept the origin the authenticator actually signed (scoped in
+        // BuildConfiguration to this RP-ID's own subdomains) so a per-client RP-ID
+        // that is a registrable suffix of the app origin still verifies. Malformed
+        // input yields no extra origin; the shared verifier then fails closed.
+        string[]? presentedOrigins = null;
+        try
+        {
+            var assertion = JsonSerializer.Deserialize<AuthenticatorAssertionRawResponse>(
+                assertionJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (RealmFido2.TryGetClientDataOrigin(assertion?.Response?.ClientDataJson) is { } origin)
+                presentedOrigins = [origin];
+        }
+        catch (JsonException) { /* leave null — verifier fails closed below */ }
+
         IFido2 fido2;
         try
         {
-            fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: activeRpId);
+            fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: activeRpId, additionalOrigins: presentedOrigins);
         }
         catch (RelyingPartyUnavailableException)
         {
