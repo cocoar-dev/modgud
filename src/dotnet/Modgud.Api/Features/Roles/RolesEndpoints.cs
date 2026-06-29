@@ -1,6 +1,7 @@
 using BuildingBlocks.Helper;
 using Marten;
 using Modgud.Api.Authorization;
+using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Services;
@@ -75,24 +76,15 @@ public static class RolesEndpoints
         // Marten 8.34+ optimistic-concurrency detection — emit the event
         // only. Build the in-memory `role` instance just to compute the
         // response payload; the persisted doc comes from the projection.
-        roleGroup.MapPost("", async (RolePayload dto, HttpContext http, IPermissionService perms, IDocumentSession session) =>
+        // Create delegates to the shared RoleAdminService — the single canonical create
+        // path the realm-provisioning applier also calls. The realm:admin guard is
+        // passed as a parameter (here from the HTTP caller's permissions). Update stays
+        // inline below; it is consolidated when the applier gains update via UpdateRealm.
+        roleGroup.MapPost("", async (RolePayload dto, HttpContext http, IPermissionService perms, RoleAdminService roleAdmin, CancellationToken ct) =>
             {
-                // Privilege-escalation guard (audit H1): only a realm:admin may
-                // mint a realm-admin role. permission-role:write alone is not
-                // enough — a realm-admin role is the realm-wide bypass.
-                if (dto.IsRealmAdmin && !await CallerPermissions.IsRealmAdminAsync(http, perms))
-                    return RealmAdminForbidden();
-
-                var built = await BuildRoleAsync(dto, session);
-                if (built.Error is not null) return built.Error;
-
-                var role = built.Role;
-                session.Events.StartStream(role.Id,
-                    new PermissionRoleCreatedEvent(
-                        role.Id, role.Name, role.Description,
-                        role.AppId, role.IsRealmAdmin, role.PermissionIds));
-                await session.SaveChangesAsync();
-                return Results.Ok(MapToResponse(role));
+                var callerIsRealmAdmin = await CallerPermissions.IsRealmAdminAsync(http, perms);
+                var result = await roleAdmin.CreateRoleAsync(dto, callerIsRealmAdmin, ct);
+                return result.ToResult(role => Results.Ok(MapToResponse(role)));
             })
             .WithName("V2_Role_Create")
             .RequiresPermission("permission-role:write");
