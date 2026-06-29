@@ -5,6 +5,7 @@ using Modgud.Application.DTOs.Realms;
 using Modgud.Application.Services;
 using Modgud.Authentication.Domain;
 using Modgud.Authorization.Apps;
+using Modgud.Authorization.Principals;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using Marten;
@@ -95,6 +96,10 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             [
                 new RealmManifestUser { Key = "alice", Email = "alice@acme.test", UserName = "alice", Password = "Passw0rd!23" },
             ],
+            Groups =
+            [
+                new RealmManifestGroup { Name = "Admins", Members = ["alice"], Roles = ["acme-admin"] },
+            ],
         };
 
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
@@ -127,6 +132,12 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             Assert.NotNull(role);
             Assert.NotNull(role!.AppId);
             Assert.Equal(2, role.PermissionIds.Count);
+
+            // The group resolved its member (alice → user id) and role (acme-admin → role id).
+            var group = await session.Query<Group>().Where(gr => !gr.IsDeleted && gr.Name == "Admins").SingleOrDefaultAsync(ct);
+            Assert.NotNull(group);
+            Assert.Single(group!.MemberIds);
+            Assert.Single(group.RoleIds);
         });
 
         // Isolation: the realm's client must NOT exist in the system tenant.

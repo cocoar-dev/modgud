@@ -26,9 +26,7 @@ public sealed record RealmManifest
     public List<RealmManifestClient> Clients { get; init; } = [];
     public List<RealmManifestRole> Roles { get; init; } = [];
     public List<RealmManifestUser> Users { get; init; } = [];
-    // Groups are a follow-up — group creation cascades a durable Wolverine message
-    // (membership recalculation) that InvokeForTenantAsync routes to the tenant DB,
-    // which has no Wolverine durability tables. See the engineering note.
+    public List<RealmManifestGroup> Groups { get; init; } = [];
 }
 
 /// <summary>A permission catalog entry referenced by <c>resource:action</c>.</summary>
@@ -117,6 +115,21 @@ public sealed record RealmManifestUser
     public bool EmailConfirmed { get; init; }
 
     public string ResolveKey() => Key ?? UserName ?? Email;
+}
+
+/// <summary>A group. <see cref="Members"/> are user keys; <see cref="Roles"/> are role keys.</summary>
+public sealed record RealmManifestGroup
+{
+    public required string Name { get; init; }
+    public string? Description { get; init; }
+    public List<string> Members { get; init; } = [];
+    public List<string> Roles { get; init; } = [];
+    public string MembershipMode { get; init; } = "Manual";
+    public string? MembershipScript { get; init; }
+    public string? Email { get; init; }
+    public string EmailMode { get; init; } = "Shared";
+    public List<string>? BoundTo { get; init; }
+    public bool ExternallyDrivable { get; init; }
 }
 
 /// <summary>The outcome of a successful import.</summary>

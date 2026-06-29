@@ -1,5 +1,6 @@
 using BuildingBlocks.Helper;
 using ErrorOr;
+using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Modgud.Api.Features.Admin.Apps;
@@ -10,6 +11,9 @@ using Modgud.Application.DTOs.User;
 using Modgud.Application.Services;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Authorization.Apps;
+using Modgud.Authorization.Commands;
+using Modgud.Authorization.Membership;
+using Modgud.Authorization.Principals;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using Wolverine;
@@ -34,9 +38,8 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// <c>InvokeForTenantAsync(slug, ...)</c>.</para>
 ///
 /// <para>Cross-references resolve in dependency order: apps → apis/scopes/clients →
-/// roles → users. App slugs and <c>resource:action</c> permission keys are mapped to
-/// ids as each entity is created. Groups are a follow-up (they need Wolverine
-/// tenant-durability — see the engineering note).</para>
+/// roles → users → groups. Keys (app slug, role/user key, <c>resource:action</c>) are
+/// mapped to ids as each entity is created.</para>
 /// </summary>
 public sealed class RealmManifestApplier(
     IRealmProvisioningService realms,
@@ -66,9 +69,9 @@ public sealed class RealmManifestApplier(
         {
             var secrets = await ApplyTenantConfigAsync(slug, manifest, ct);
             logger.LogInformation(
-                "Imported realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users.",
+                "Imported realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users, {Groups} groups.",
                 slug, manifest.Apps.Count, manifest.Apis.Count, manifest.Scopes.Count,
-                manifest.Clients.Count, manifest.Roles.Count, manifest.Users.Count);
+                manifest.Clients.Count, manifest.Roles.Count, manifest.Users.Count, manifest.Groups.Count);
             return new RealmImportResult
             {
                 Slug = slug,
@@ -93,6 +96,8 @@ public sealed class RealmManifestApplier(
     {
         var secrets = new Dictionary<string, string>(StringComparer.Ordinal);
         var apps = new Dictionary<string, App>(StringComparer.Ordinal);        // slug → App (id + catalog)
+        var roleIds = new Dictionary<string, Guid>(StringComparer.Ordinal);    // role key → id (for groups)
+        var userIds = new Dictionary<string, Guid>(StringComparer.Ordinal);    // user key → id (for groups)
 
         // Enter the new realm's tenant context, then resolve the per-tenant services in
         // a FRESH scope so their IDocumentSession binds to this tenant.
@@ -188,7 +193,9 @@ public sealed class RealmManifestApplier(
                 r.IsRealmAdmin,
                 ResolvePermissionIds(apps, r.App, r.Permissions, $"role '{r.Name}'"));
             // Control-plane provisioning is trusted, so the realm-admin guard is satisfied.
-            EnsureOk(await roleAdmin.CreateRoleAsync(payload, callerIsRealmAdmin: true, ct), $"role '{r.Name}'");
+            var created = await roleAdmin.CreateRoleAsync(payload, callerIsRealmAdmin: true, ct);
+            EnsureOk(created, $"role '{r.Name}'");
+            roleIds[r.ResolveKey()] = created.Value.Id;
         }
 
         // ── Users — Wolverine commands, dispatched for the realm tenant ───────────
@@ -197,7 +204,37 @@ public sealed class RealmManifestApplier(
         {
             var cmd = new CreateUserCommand(u.Firstname, u.Lastname, u.Acronym, u.Email,
                 u.UserName ?? string.Empty, u.Password, u.EmailConfirmed);
-            EnsureOk(await bus.InvokeForTenantAsync<ErrorOr<UserDto>>(slug, cmd, ct), $"user '{u.Email}'");
+            var created = await bus.InvokeForTenantAsync<ErrorOr<UserDto>>(slug, cmd, ct);
+            EnsureOk(created, $"user '{u.Email}'");
+            if (ShortGuid.TryParse(created.Value.Id, out Guid uid))
+                userIds[u.ResolveKey()] = uid;
+        }
+
+        // ── Groups — committed via a PLAIN tenant-scoped session (NOT the Wolverine
+        //    outbox session). InvokeForTenantAsync would enroll the Wolverine outbox, and
+        //    the durable-inbox auto-membership event forwarding (ReferenceSync) would try
+        //    to write wolverine_incoming_envelopes in the tenant DB, which a fresh realm
+        //    lacks. A plain session skips that forwarding (auto-membership re-derives at
+        //    login). We call the canonical CreateGroupHandler directly with this session.
+        if (manifest.Groups.Count > 0)
+        {
+            var groupHandler = new CreateGroupHandler(
+                sp.GetRequiredService<IDocumentSession>(),
+                sp.GetRequiredService<IMembershipEvaluator>(),
+                sp.GetRequiredService<IAutoMembershipRecalculator>());
+
+            foreach (var g in manifest.Groups)
+            {
+                var memberIds = g.Members.Select(m => ResolveRef(userIds, m, $"group '{g.Name}' member '{m}'")).ToList();
+                var groupRoleIds = g.Roles.Select(rk => ResolveRef(roleIds, rk, $"group '{g.Name}' role '{rk}'")).ToList();
+                var cmd = new CreateGroupCommand(
+                    g.Name, g.Description, memberIds, groupRoleIds,
+                    ParseEnum<MembershipMode>(g.MembershipMode, $"group '{g.Name}' membershipMode"),
+                    g.MembershipScript, g.Email,
+                    ParseEnum<EmailMode>(g.EmailMode, $"group '{g.Name}' emailMode"),
+                    g.BoundTo, g.ExternallyDrivable, CallerIsRealmAdmin: true);
+                EnsureOk(await groupHandler.Handle(cmd, ct), $"group '{g.Name}'");
+            }
         }
 
         return secrets;
@@ -231,6 +268,22 @@ public sealed class RealmManifestApplier(
             ids.Add(new ShortGuid(pid).ToString());
         }
         return ids;
+    }
+
+    private static Guid ResolveRef(IReadOnlyDictionary<string, Guid> map, string key, string context)
+    {
+        if (!map.TryGetValue(key, out var id))
+            throw new ManifestApplyException(context,
+                [Error.Validation("Manifest.UnknownReference", $"{context} references an unknown key.")]);
+        return id;
+    }
+
+    private static TEnum ParseEnum<TEnum>(string value, string context) where TEnum : struct, Enum
+    {
+        if (!Enum.TryParse<TEnum>(value, ignoreCase: true, out var result))
+            throw new ManifestApplyException(context,
+                [Error.Validation("Manifest.InvalidEnum", $"'{value}' is not a valid {typeof(TEnum).Name}.")]);
+        return result;
     }
 
     private static void EnsureOk<T>(ErrorOr<T> result, string what)
