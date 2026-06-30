@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Features.Admin.Provisioning;
@@ -57,6 +58,31 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         var deleteResp = await client.DeleteAsync($"/api/admin/realms/{slug}?hard=true", ct);
         Assert.Equal(HttpStatusCode.NoContent, deleteResp.StatusCode);
         Assert.Null(await svc.GetRealmBySlugAsync(slug, ct));
+    }
+
+    [Fact]
+    public async Task Export_endpoint_returns_a_structure_only_manifest()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var client = await factory.CreateRealmAdminAndLoginAsync();
+
+        const string slug = "exportep";
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync(
+            "/api/admin/realms/import", BuildManifest(slug, "Ex EP App"), factory.JsonOptions, ct)).StatusCode);
+
+        var resp = await client.GetAsync($"/api/admin/realms/{slug}/export", ct);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        using var json = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+        var root = json.RootElement;
+        Assert.Equal(slug, root.GetProperty("Realm").GetProperty("Slug").GetString());
+
+        // The confidential client is present but its secret is omitted (structure-only).
+        var web = root.GetProperty("Clients").EnumerateArray()
+            .Single(c => c.GetProperty("ClientId").GetString() == "initech-web");
+        Assert.False(web.TryGetProperty("ClientSecret", out var secret) && secret.ValueKind != JsonValueKind.Null);
     }
 
     [Fact]

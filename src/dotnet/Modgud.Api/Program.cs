@@ -553,13 +553,16 @@ try
     // inside AddInfrastructure. Only keep app-specific wiring here.
     builder.Services.AddScoped<IAdminNotifier, AdminNotifier>();
 
-    // Shared canonical App + Role create paths (admin endpoints + provisioning applier).
+    // Shared canonical App + Role create paths + admin set-password (admin endpoints +
+    // provisioning applier).
     builder.Services.AddScoped<Modgud.Api.Features.Admin.Apps.AppAdminService>();
     builder.Services.AddScoped<Modgud.Api.Features.Roles.RoleAdminService>();
+    builder.Services.AddScoped<Modgud.Api.Features.Users.Commands.SetUserPasswordHandler>();
 
     // Declarative realm provisioning — applies a RealmManifest in-process by reusing
     // the canonical admin operations (the engine behind import/apply/export).
     builder.Services.AddScoped<Modgud.Api.Features.Admin.Provisioning.RealmManifestApplier>();
+    builder.Services.AddScoped<Modgud.Api.Features.Admin.Provisioning.RealmManifestExporter>();
 
     // C16: Demo-seed runs as an API client now — see scripts/seed-demo.mjs.
     // No backend service, no DI registration, no PROD-01 bracket needed:

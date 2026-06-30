@@ -518,6 +518,7 @@ public sealed class RealmManifestApplier(
 
         // ── Users (natural key = email or username) ────────────────────────────────
         var bus = sp.GetRequiredService<IMessageBus>();
+        var setPassword = sp.GetRequiredService<SetUserPasswordHandler>();
         foreach (var u in manifest.Users)
         {
             var ctx = $"user '{u.Email}'";
@@ -556,6 +557,13 @@ public sealed class RealmManifestApplier(
                     sp.GetRequiredService<IApplicationSettingsResolver>(), ct);
                 EnsureOk(updated, ctx);
                 uid = existing.Id;
+
+                // A manifest password on an EXISTING user IS applied (the profile update
+                // alone never touches the password) — this is what makes the
+                // export → edit → "set a password" → apply flow work. New users already
+                // get their password at create via CreateUserCommand above.
+                if (!string.IsNullOrWhiteSpace(u.Password))
+                    EnsureOk(await setPassword.Handle(existing.Id, u.Password, ct), $"{ctx} password");
             }
             if (uid.HasValue) userIds[u.ResolveKey()] = uid.Value;
         }

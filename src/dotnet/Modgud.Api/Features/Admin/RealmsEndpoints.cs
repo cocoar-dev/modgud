@@ -266,6 +266,18 @@ public static class RealmsEndpoints
         .WithName("Realms_Apply")
         .RequiresPermission("realm:write", AppSlugs.ControlPlane);
 
+        // Export a realm's current config as a manifest (structure-only — never secrets or
+        // password hashes). Round-trips with /apply: GET, edit (e.g. add a user password),
+        // POST back to /{slug}/apply.
+        group.MapGet("{slug}/export", async (
+            string slug, RealmManifestExporter exporter, CancellationToken ct) =>
+        {
+            var result = await exporter.ExportRealmAsync(slug, ct);
+            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+        })
+        .WithName("Realms_Export")
+        .RequiresPermission("realm:read", AppSlugs.ControlPlane);
+
         // Transfer the control-plane role to {slug}. POST to the realm that
         // should BECOME the control plane, from the current control-plane host
         // (the group's RequireControlPlaneFilter enforces the latter). After
