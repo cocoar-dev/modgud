@@ -5,6 +5,7 @@ import { useRoleStore } from '@/stores/role.store'
 import { useUserStore } from '@/stores/user.store'
 import { usePrincipalStore } from '@/stores/principal.store'
 import { useApplicationsStore } from '@/stores/applications.store'
+import { useClone, GROUP_CLONE } from '@/composables/useClone'
 import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarMultiSelect, CoarTabGroup, CoarTab, CoarPopover, CoarCodeBlock, CoarIcon, CoarListbox, CoarDualListbox } from '@cocoar/vue-ui'
 import type { CoarListboxOption } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
@@ -12,7 +13,7 @@ import ModalLayout from '@/components/ModalLayout.vue'
 import { CoarScriptEditor } from '@cocoar/vue-script-editor'
 import { membershipExamples, membershipPreamble } from './membershipScriptTypes'
 import { useScriptTypes } from './useScriptTypes'
-import type { MembershipMode, EmailMode } from '@/models/group'
+import type { GroupDto, MembershipMode, EmailMode } from '@/models/group'
 
 const { sharedTypeDefinitions } = useScriptTypes()
 const scriptExtraLibs = computed(() => [
@@ -31,6 +32,7 @@ const roleStore = useRoleStore()
 const userStore = useUserStore()
 const principalStore = usePrincipalStore()
 const applicationsStore = useApplicationsStore()
+const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 const initialLoad = ref(false)
 const saving = ref(false)
@@ -286,7 +288,27 @@ onMounted(async () => {
       applicationsStore.initialize(),
     ])
 
-    if (!isCreate.value) {
+    if (isCreate.value) {
+      // Clone: prefill from the staged source with the Name blanked. Members,
+      // roles, script and BoundTo clone 1:1; the source's last script error is
+      // not carried over (the clone hasn't run yet).
+      const clone = consume<GroupDto>(GROUP_CLONE.entity)
+      if (clone) {
+        form.value = {
+          Name: clone.Name ?? '',
+          Description: clone.Description || '',
+          MemberIds: [...(clone.MemberIds ?? [])],
+          RoleIds: [...(clone.RoleIds ?? [])],
+          MembershipMode: clone.MembershipMode || 'Manual',
+          MembershipScript: clone.MembershipScript || '',
+          MembershipLastError: null,
+          ExternallyDrivable: clone.ExternallyDrivable ?? false,
+          Email: clone.Email || '',
+          EmailMode: clone.EmailMode || 'Shared',
+          BoundTo: [...(clone.BoundTo ?? [])],
+        }
+      }
+    } else {
       await groupStore.initialize()
       const group = groupStore.groups.find(g => g.Id === props.id)
       if (group) {

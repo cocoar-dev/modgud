@@ -130,6 +130,10 @@ Open a client by double-click. Most fields can be edited live; **Client ID** is 
 
 The **Regenerate Secret** button at the bottom rotates the client secret. Old secret stops working immediately, new one is shown once — copy it now.
 
+## Cloning a client
+
+**Client ID** is immutable, so to stand up a near-identical client — or to effectively rename one — clone it. List → right-click → **Clone**. The Create modal opens pre-filled: scopes, grants, redirect URIs, app links, token lifetimes and the rest are copied; only **Client ID** is blank (enter a new one). The **client secret is not copied** — a fresh one is generated on create and shown once, exactly as for a brand-new client. DCR registration metadata and any Service-Account link are dropped, so the copy is a plain admin-created client.
+
 ## Deleting
 
 List → right-click → **Delete**. Soft-deleted entries can still be queried for audit purposes but are excluded from the OAuth flow.

@@ -75,6 +75,10 @@ Hiding scopes from discovery is defense-in-depth. An attacker can still try arbi
 
 In the [OAuth client](./oauth-clients) → tab **Scopes** → add the new scope to "Allowed scopes". Only then may the client include it in its authorisation request.
 
+## Cloning a scope
+
+Scope **Name** is immutable, so to make a variant of an existing scope, clone it. List → right-click → **Clone**. The Create modal opens pre-filled — display name, description, resources, user claims, the app binding and all the flags are copied; only **Name** is blank. A standard OIDC scope can be cloned too — the copy is an ordinary editable scope.
+
 ## Deleting a scope
 
 List → right-click → **Delete** (soft delete).

@@ -14,6 +14,7 @@ import { useRoleStore } from '@/stores/role.store'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
+import { useClone, buildClonePrefill, ROLE_CLONE } from '@/composables/useClone'
 import type { RoleDto } from '@/models/role'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -21,6 +22,7 @@ const { t, language } = useI18n()
 const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
+const { stage } = useClone()
 const roleStore = useRoleStore()
 const appCtx = useAppContextStore()
 
@@ -87,6 +89,17 @@ async function deleteSelected() {
   }
 }
 
+// Clone: roles load in full on the list, so prefill straight from the store —
+// blank the Name; the App-link + catalog subset clone 1:1.
+function cloneSelected() {
+  const id = selectedIds.value[0]
+  if (!id) return
+  const source = roleStore.roles.find((r) => r.Id === id)
+  if (!source) return
+  stage(ROLE_CLONE.entity, buildClonePrefill(source, ROLE_CLONE.descriptor))
+  navigateToModal('create')
+}
+
 onMounted(() => roleStore.initialize())
 </script>
 
@@ -111,6 +124,7 @@ onMounted(() => roleStore.initialize())
     <CoarContextMenu :menu="cellMenu">
       <CoarMenuItem :label="t('common.open', {}, 'Open')" icon="pencil" @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />
       <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus" @clicked="navigateToModal('create')" />
+      <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy" @clicked="cloneSelected" />
       <CoarMenuDivider />
       <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteSelected" />
     </CoarContextMenu>

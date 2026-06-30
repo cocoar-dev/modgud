@@ -209,8 +209,8 @@ behind the `realm:admin` bypass.
 
 The SPA bootstrap reads public realm/branding metadata anonymously.
 Realm-wide admin-owned config lives under `/api/realm-settings`; the
-**per-Application** override of that config lives under
-`/api/app/{id}/settings` (below).
+**per-Application** override of that config rides inline on the App
+resource (see [Application settings](#application-settings) below).
 
 | Method | Path | Permission |
 |---|---|---|
@@ -224,19 +224,28 @@ the identity inputs the realm or App requires. See
 
 ## Application settings
 
-Per-Application override of the realm defaults (ADR-0011). The
-`ApplicationSettings` document is keyed by the App's id and tenant-scoped.
-**Sparse** in both directions: `GET` returns only what the App overrides
-(a `null` section = inherits the realm); `PATCH` replaces the provided
-sections (a `null`/omitted section = no change, and within a provided
-section a `null` field = inherit the realm value). Setting
-`Origin.Subdomain` also writes the global host→App routing map (and clearing
-it removes the route). See [Applications](/admin/applications#application-settings).
+Per-Application override of the realm defaults (ADR-0011). An App is **one
+resource**, so this override is not a separate endpoint — it rides **inline**
+on the App as a `Settings` field, read and written in the same call as the
+rest of the App (one tenant transaction).
+
+- **Read** — `GET /api/app/{id}` returns `Settings` next to the catalog. It is
+  **sparse**: only the sections the App overrides are present; a `null`/absent
+  section inherits the realm. (The list endpoint `GET /api/app` omits it.)
+- **Write** — `POST /api/app` and `PUT /api/app/{id}` carry `Settings` as the
+  **complete desired override state** (a replace, not a merge): a present
+  section sets that override, a `null` section clears it (→ inherit the realm),
+  and within a section a `null` field inherits that field. Setting
+  `Origin.Subdomain` also writes the global host→App routing map (clearing it
+  removes the route).
+
+See [Applications](/admin/applications#application-settings).
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/app/{id}/settings` | `app:read` |
-| `PATCH` | `/api/app/{id}/settings` | `app:write` |
+| `GET` | `/api/app/{id}` | `app:read` |
+| `POST` | `/api/app` | `app:write` |
+| `PUT` | `/api/app/{id}` | `app:write` |
 
 The body sections are `Origin` (subdomain), `Branding`, `EmailBranding`,
 `SelfRegistration` (incl. the `Posture` = `Off` / `JitOnOtp` /

@@ -128,6 +128,14 @@ Changing the linked **Application** is allowed but be careful — the
 RS's scope-resolution and the per-Audience `resource_access` shape
 immediately switch to the new app context.
 
+## Cloning an API
+
+The **Name** (the audience) is immutable, so to make a near-identical
+resource server, clone it. List → right-click → **Clone**. The Create
+wizard opens pre-filled — display name, description, scopes, user claims,
+the linked Application and its catalog subset are copied; only **Name** is
+blank. API secrets are not copied; the copy starts with none.
+
 ## Deleting
 
 List → right-click → **Delete**. Soft-deleted; the OAuth API is no

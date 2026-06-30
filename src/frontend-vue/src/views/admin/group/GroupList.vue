@@ -15,6 +15,7 @@ import { useAppContextStore } from '@/stores/appContext.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
+import { useClone, buildClonePrefill, GROUP_CLONE } from '@/composables/useClone'
 import type { GroupDto } from '@/models/group'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -22,6 +23,7 @@ const { t, language } = useI18n()
 const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
+const { stage } = useClone()
 const groupStore = useGroupStore()
 const appCtx = useAppContextStore()
 const appsStore = useApplicationsStore()
@@ -94,6 +96,17 @@ async function deleteSelected() {
   }
 }
 
+// Clone: groups load in full on the list, so prefill straight from the store —
+// blank the Name; members, roles, script, BoundTo clone 1:1.
+function cloneSelected() {
+  const id = selectedIds.value[0]
+  if (!id) return
+  const source = groupStore.groups.find((g) => g.Id === id)
+  if (!source) return
+  stage(GROUP_CLONE.entity, buildClonePrefill(source, GROUP_CLONE.descriptor))
+  navigateToModal('create')
+}
+
 onMounted(() => groupStore.initialize())
 </script>
 
@@ -117,6 +130,7 @@ onMounted(() => groupStore.initialize())
     <CoarContextMenu :menu="cellMenu">
       <CoarMenuItem :label="t('common.open', {}, 'Open')" icon="pencil" @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />
       <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus" @clicked="navigateToModal('create')" />
+      <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy" @clicked="cloneSelected" />
       <CoarMenuDivider />
       <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteSelected" />
     </CoarContextMenu>

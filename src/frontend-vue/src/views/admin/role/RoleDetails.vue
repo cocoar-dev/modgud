@@ -2,9 +2,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoleStore } from '@/stores/role.store'
 import { useApplicationsStore } from '@/stores/applications.store'
+import { useClone, ROLE_CLONE } from '@/composables/useClone'
 import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarNote, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
+import type { RoleDto } from '@/models/role'
 
 const { t } = useI18n()
 
@@ -15,6 +17,7 @@ const props = defineProps<{
 
 const roleStore = useRoleStore()
 const applicationsStore = useApplicationsStore()
+const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
 const activeTab = ref<'general' | 'permissions'>('general')
@@ -72,23 +75,36 @@ const footerButton = computed(() => ({
 
 onMounted(async () => {
   applicationsStore.initialize()
-  if (!isCreate.value) {
-    loading.value = true
-    try {
-      await roleStore.initialize()
-      const role = roleStore.roles.find(r => r.Id === props.id)
-      if (role) {
-        form.value = {
-          Name: role.Name,
-          Description: role.Description || '',
-          AppId: role.AppId ?? '',
-          IsRealmAdmin: role.IsRealmAdmin,
-          PermissionIds: new Set(role.PermissionIds ?? []),
-        }
+  if (isCreate.value) {
+    // Clone: prefill from the staged source with the Name blanked. The App-link
+    // + its catalog subset clone 1:1.
+    const clone = consume<RoleDto>(ROLE_CLONE.entity)
+    if (clone) {
+      form.value = {
+        Name: clone.Name ?? '',
+        Description: clone.Description || '',
+        AppId: clone.AppId ?? '',
+        IsRealmAdmin: clone.IsRealmAdmin,
+        PermissionIds: new Set(clone.PermissionIds ?? []),
       }
-    } finally {
-      loading.value = false
     }
+    return
+  }
+  loading.value = true
+  try {
+    await roleStore.initialize()
+    const role = roleStore.roles.find(r => r.Id === props.id)
+    if (role) {
+      form.value = {
+        Name: role.Name,
+        Description: role.Description || '',
+        AppId: role.AppId ?? '',
+        IsRealmAdmin: role.IsRealmAdmin,
+        PermissionIds: new Set(role.PermissionIds ?? []),
+      }
+    }
+  } finally {
+    loading.value = false
   }
 })
 

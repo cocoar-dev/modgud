@@ -90,6 +90,10 @@ Tab **Roles**: pick the roles the group should carry. A group can hold roles fro
 
 Tab **Effective Members** shows the fully expanded list — direct members plus everyone reached through nested groups, with a "via" hint pointing at the first nested-group hop. Useful for sanity checks before granting a powerful role.
 
+## Cloning a group
+
+To make a near-identical group, right-click it in the list → **Clone**. The Create modal opens pre-filled: members, assigned roles, the membership type (manual or the auto-membership script), email mode and the `BoundTo` app list are all copied; only the **Name** is blank. A cloned auto-group starts without the source's last-evaluation error — it re-evaluates on first save.
+
 ## Deleting a group
 
 List → right-click → **Delete**.

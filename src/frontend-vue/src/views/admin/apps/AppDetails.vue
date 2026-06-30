@@ -6,9 +6,11 @@ import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import AppSettingsSections from './AppSettingsSections.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
+import { useClone, APP_CLONE } from '@/composables/useClone'
 import type {
   ApplicationDto,
   ApplicationPermissionInputDto,
+  ApplicationSettingsDto,
 } from '@/models/application'
 
 const { t } = useI18n()
@@ -21,6 +23,7 @@ const props = defineProps<{
 
 const id = computed(() => props.id)
 const store = useApplicationsStore()
+const { consume } = useClone()
 const isCreate = computed(() => id.value === 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -72,6 +75,9 @@ interface FormState {
 
 const form = ref<FormState>({ Slug: '', DisplayName: '', Description: '' })
 const dto = ref<ApplicationDto | null>(null)
+// In clone-create mode the source's ADR-0011 settings (minus its globally-unique
+// Origin) ride here so AppSettingsSections populates from them; null otherwise.
+const clonePrefillSettings = ref<ApplicationSettingsDto | null>(null)
 
 function fromDto(d: ApplicationDto): { form: FormState; catalog: CatalogRow[] } {
   return {
@@ -256,8 +262,18 @@ const footerButton = computed(() => ({
 
 onMounted(async () => {
   if (isCreate.value) {
-    // Start with one empty row so a new App has somewhere to type into.
-    addRow()
+    // Clone: prefill identity + catalog (ids already nulled) + settings (Origin
+    // dropped) from the staged source; fall back to one empty row otherwise.
+    const clone = consume<ApplicationDto>(APP_CLONE.entity)
+    if (clone) {
+      const parsed = fromDto(clone)
+      form.value = parsed.form
+      catalog.value = parsed.catalog
+      clonePrefillSettings.value = clone.Settings ?? null
+    } else {
+      // Start with one empty row so a new App has somewhere to type into.
+      addRow()
+    }
     return
   }
   loading.value = true
@@ -415,7 +431,7 @@ async function save() {
 
       <!-- Tab: Settings (ADR-0011 per-App override) — one App, one modal -->
       <div v-if="!isSystem" v-show="activeTab === 'settings'" class="tab-content">
-        <AppSettingsSections ref="settingsRef" :model-value="dto?.Settings" />
+        <AppSettingsSections ref="settingsRef" :model-value="isCreate ? clonePrefillSettings : dto?.Settings" />
       </div>
 
       <p v-if="error" class="text-sm text-red-600">{{ error }}</p>

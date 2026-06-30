@@ -10,6 +10,7 @@ import ApiFormSections, {
 } from './ApiFormSections.vue'
 import { useOAuthApiStore } from '@/stores/oauthApi.store'
 import { useApplicationsStore } from '@/stores/applications.store'
+import { useClone, API_CLONE } from '@/composables/useClone'
 import type { OAuthApiDto } from '@/models/oauth'
 
 const { t } = useI18n()
@@ -21,6 +22,7 @@ const props = defineProps<{
 
 const store = useOAuthApiStore()
 const applicationsStore = useApplicationsStore()
+const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 
 // Empty value = "unassigned" — RS exists but the IdP can't resolve a
@@ -105,7 +107,13 @@ const editFooterButton = computed(() => ({
 
 onMounted(async () => {
   applicationsStore.initialize()
-  if (isCreate.value) return
+  if (isCreate.value) {
+    // Clone: prefill the wizard with the Name (the immutable aud) blanked. The
+    // linked App + catalog subset clone 1:1; secrets reset to none.
+    const clone = consume<OAuthApiDto>(API_CLONE.entity)
+    if (clone) form.value = fromDto(clone)
+    return
+  }
   loading.value = true
   try {
     const loaded = await store.loadOne(props.id)
