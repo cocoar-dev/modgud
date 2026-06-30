@@ -154,6 +154,11 @@ public sealed class ApplicationSettingsService(
     }
 
     // ── Atomic-create staging (every section except Origin, no commit) ────────
+    // REPLACE semantics: the DTO is the COMPLETE desired override state (the unified App
+    // create/update is a replace, not a sparse patch). A provided section sets the override;
+    // a NULL section CLEARS it (→ inherit the realm). This is what keeps the modal honest —
+    // an unchecked section round-trips back unchecked instead of as an empty-but-present
+    // override. (PatchAsync stays sparse for the Origin-only follow-on.)
 
     public async Task<ErrorOr<Success>> StageNonOriginAsync(
         Guid applicationId, ApplicationSettingsDto dto, CancellationToken ct = default)
@@ -162,48 +167,27 @@ public sealed class ApplicationSettingsService(
                   ?? new ApplicationSettings { Id = applicationId, CreatedAt = DateTimeOffset.UtcNow };
         if (doc.CreatedAt == default) doc.CreatedAt = DateTimeOffset.UtcNow;
 
-        if (dto.SelfRegistration is not null)
-        {
-            var r = MapSelfRegistration(dto.SelfRegistration);
-            if (r.IsError) return r.FirstError;
-            doc.SelfRegistration = r.Value;
-        }
-        if (dto.NativeGrants is not null)
-        {
-            var r = MapNativeGrants(dto.NativeGrants);
-            if (r.IsError) return r.FirstError;
-            doc.NativeGrants = r.Value;
-        }
-        if (dto.Dcr is not null)
-        {
-            var r = MapDcr(dto.Dcr);
-            if (r.IsError) return r.FirstError;
-            doc.Dcr = r.Value;
-        }
-        if (dto.Cimd is not null)
-        {
-            var r = MapCimd(dto.Cimd);
-            if (r.IsError) return r.FirstError;
-            doc.Cimd = r.Value;
-        }
-        if (dto.Branding is not null)
-        {
-            var r = MapBranding(dto.Branding);
-            if (r.IsError) return r.FirstError;
-            doc.Branding = r.Value;
-        }
-        if (dto.EmailBranding is not null)
-        {
-            doc.EmailBranding = string.IsNullOrWhiteSpace(dto.EmailBranding.ProductName)
-                ? null
-                : new ApplicationEmailBranding { ProductName = dto.EmailBranding.ProductName!.Trim() };
-        }
-        if (dto.RegistrationFields is not null)
-        {
-            var r = MapRegistrationFields(dto.RegistrationFields);
-            if (r.IsError) return r.FirstError;
-            doc.RegistrationFields = r.Value;
-        }
+        if (dto.SelfRegistration is null) doc.SelfRegistration = null;
+        else { var r = MapSelfRegistration(dto.SelfRegistration); if (r.IsError) return r.FirstError; doc.SelfRegistration = r.Value; }
+
+        if (dto.NativeGrants is null) doc.NativeGrants = null;
+        else { var r = MapNativeGrants(dto.NativeGrants); if (r.IsError) return r.FirstError; doc.NativeGrants = r.Value; }
+
+        if (dto.Dcr is null) doc.Dcr = null;
+        else { var r = MapDcr(dto.Dcr); if (r.IsError) return r.FirstError; doc.Dcr = r.Value; }
+
+        if (dto.Cimd is null) doc.Cimd = null;
+        else { var r = MapCimd(dto.Cimd); if (r.IsError) return r.FirstError; doc.Cimd = r.Value; }
+
+        if (dto.Branding is null) doc.Branding = null;
+        else { var r = MapBranding(dto.Branding); if (r.IsError) return r.FirstError; doc.Branding = r.Value; }
+
+        doc.EmailBranding = string.IsNullOrWhiteSpace(dto.EmailBranding?.ProductName)
+            ? null
+            : new ApplicationEmailBranding { ProductName = dto.EmailBranding.ProductName!.Trim() };
+
+        if (dto.RegistrationFields is null) doc.RegistrationFields = null;
+        else { var r = MapRegistrationFields(dto.RegistrationFields); if (r.IsError) return r.FirstError; doc.RegistrationFields = r.Value; }
 
         doc.UpdatedAt = DateTimeOffset.UtcNow;
         session.Store(doc);   // enrolled on the shared session; the caller commits.

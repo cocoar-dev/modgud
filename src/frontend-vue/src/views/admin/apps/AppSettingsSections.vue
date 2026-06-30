@@ -150,17 +150,19 @@ function populate(s?: ApplicationSettingsDto | null) {
   }
 }
 
-/** Build the override DTO — an overridden section sends its values; a non-overridden
- * section sends {} (clear → inherit the realm), exactly as the old modal did. */
+/** Build the override DTO as the COMPLETE desired state (the App PUT is a replace):
+ * an overridden section sends its values, a non-overridden section sends `null` so the
+ * backend clears that override (→ inherit the realm). Origin sends null when off
+ * (sparse — toggling a subdomain off doesn't clear an existing route in this view). */
 function build(): ApplicationSettingsDto {
   return {
-    Origin: f.origin.override ? { Subdomain: f.origin.subdomain.trim() || null } : {},
+    Origin: f.origin.override ? { Subdomain: f.origin.subdomain.trim() || null } : null,
     Branding: f.branding.override
       ? { ProductName: f.branding.productName.trim() || null, PrimaryColor: f.branding.primaryColor.trim() || null }
-      : {},
+      : null,
     EmailBranding: f.emailBranding.override
       ? { ProductName: f.emailBranding.productName.trim() || null }
-      : {},
+      : null,
     SelfRegistration: f.selfReg.override
       ? {
           Posture: f.selfReg.posture || null,
@@ -172,17 +174,17 @@ function build(): ApplicationSettingsDto {
           TermsOfServiceUrl: f.selfReg.termsOfServiceUrl.trim() || null,
           PrivacyPolicyUrl: f.selfReg.privacyPolicyUrl.trim() || null,
         }
-      : {},
+      : null,
     RegistrationFields: f.registrationFields.override
       ? {
           Username: f.registrationFields.username || null,
           Firstname: f.registrationFields.firstname || null,
           Lastname: f.registrationFields.lastname || null,
         }
-      : {},
+      : null,
     NativeGrants: f.nativeGrants.override
       ? { Enabled: f.nativeGrants.enabled, AccessTokenLifetimeMinutes: parseNum(f.nativeGrants.access), RefreshTokenLifetimeDays: parseNum(f.nativeGrants.refresh) }
-      : {},
+      : null,
     Dcr: f.dcr.override
       ? {
           Enabled: f.dcr.enabled,
@@ -192,10 +194,10 @@ function build(): ApplicationSettingsDto {
           PerIpRateLimitPerHour: parseNum(f.dcr.perIp),
           PerRealmRateLimitPerDay: parseNum(f.dcr.perRealm),
         }
-      : {},
+      : null,
     Cimd: f.cimd.override
       ? { Enabled: f.cimd.enabled, AccessTokenLifetimeMinutes: parseNum(f.cimd.access), RefreshTokenLifetimeDays: parseNum(f.cimd.refresh) }
-      : {},
+      : null,
   }
 }
 
