@@ -73,6 +73,14 @@ Control-Plane host. From a tenant host the realm-management surface
 is 404.
 :::
 
+::: tip Realm-as-code / per-test realms
+To create (or update, or tear down) a **complete** realm — apps, OAuth
+clients/scopes/APIs, roles, users, groups and settings — from a single JSON
+manifest in one call, see [Declarative Realm Provisioning](./realm-provisioning).
+Ideal for reproducible setups, per-test realms, and automation. It also serves a
+JSON Schema of the manifest you (or an agent) can fetch to author it.
+:::
+
 Admin → **Realms** → **Create**.
 
 | Field | Example |

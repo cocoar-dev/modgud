@@ -151,7 +151,79 @@ public class AppCatalogDeleteBlockTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    // ── App DELETE block (the App.HasReferences body AppDetails.vue consumes) ──
+
+    [Fact]
+    public async Task DELETE_unreferenced_app_succeeds()
+    {
+        var (appId, _) = await SeedAppWithCatalogAsync("epsilon", [("policy", "read")]);
+
+        var response = await Client.DeleteAsync(
+            $"/api/app/{new ShortGuid(appId)}", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DELETE_system_app_returns_400_CannotDeleteSystemApp()
+    {
+        var appId = await SeedSystemAppAsync("zeta-system");
+
+        var response = await Client.DeleteAsync(
+            $"/api/app/{new ShortGuid(appId)}", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        using var json = JsonDocument.Parse(body);
+        Assert.Equal("App.CannotDeleteSystemApp", json.RootElement.GetProperty("Error").GetString());
+    }
+
+    [Fact]
+    public async Task DELETE_app_referenced_by_role_returns_409_with_role_in_blockers()
+    {
+        // A role links directly to the app (role.AppId == app.Id) → deleting the app
+        // would silently revoke that role's grant, so it's refused with the rich body.
+        var (appId, perms) = await SeedAppWithCatalogAsync("eta", [("policy", "read"), ("policy", "write")]);
+        var policyWriteId = perms.First(p => p.Resource == "policy" && p.Action == "write").Id;
+        await SeedRoleAsync("Eta Editor", appId, [policyWriteId]);
+
+        var response = await Client.DeleteAsync(
+            $"/api/app/{new ShortGuid(appId)}", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        using var json = JsonDocument.Parse(body);
+        var root = json.RootElement;
+        Assert.Equal("App.HasReferences", root.GetProperty("Error").GetString());
+
+        // The role appears both as a direct App reference and as a catalog-entry reference.
+        var directRoles = root.GetProperty("ReferencedByRoles").EnumerateArray()
+            .Select(e => e.GetString()).ToList();
+        Assert.Contains("Eta Editor", directRoles);
+
+        var catalogRefs = root.GetProperty("CatalogEntryReferences");
+        Assert.True(catalogRefs.GetArrayLength() >= 1);
+        var blocker = catalogRefs[0];
+        Assert.Equal("policy:write", blocker.GetProperty("Permission").GetString());
+        var blockerRoles = blocker.GetProperty("ReferencedByRoles").EnumerateArray()
+            .Select(e => e.GetString()).ToList();
+        Assert.Contains("Eta Editor", blockerRoles);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────
+
+    private async Task<Guid> SeedSystemAppAsync(string slug)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+
+        var id = Guid.NewGuid();
+        session.Events.StartStream<App>(id, new AppCreatedEvent(
+            Id: id, Slug: slug, DisplayName: slug, Description: null,
+            Permissions: [], IsSystem: true));
+        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return id;
+    }
 
     private async Task<(Guid AppId, List<AppPermission> Permissions)> SeedAppWithCatalogAsync(
         string slug, IReadOnlyList<(string Resource, string Action)> catalog)

@@ -25,6 +25,7 @@ using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Api.Account;
 using Modgud.Authentication.Api.Account.Services;
 using Modgud.Api.Features.Admin;
+using Modgud.Api.Features.Admin.Provisioning;
 using Modgud.Api.Features.Admin.OAuth;
 using Modgud.Authentication.Api.Admin;
 using Modgud.Authentication.Api.Admin.LoginProviders;
@@ -552,6 +553,18 @@ try
     // + IAutoMembershipRecalculator are all registered by AddModgudAuthorization
     // inside AddInfrastructure. Only keep app-specific wiring here.
     builder.Services.AddScoped<IAdminNotifier, AdminNotifier>();
+
+    // Shared canonical App + Role create paths + admin set-password (admin endpoints +
+    // provisioning applier).
+    builder.Services.AddScoped<Modgud.Api.Features.Admin.Apps.AppAdminService>();
+    builder.Services.AddScoped<Modgud.Api.Features.Roles.RoleAdminService>();
+    builder.Services.AddScoped<Modgud.Api.Features.Users.Commands.SetUserPasswordHandler>();
+
+    // Declarative realm provisioning — applies a RealmManifest in-process by reusing
+    // the canonical admin operations (the engine behind import/apply/export).
+    builder.Services.AddScoped<Modgud.Api.Features.Admin.Provisioning.RealmManifestApplier>();
+    builder.Services.AddScoped<Modgud.Api.Features.Admin.Provisioning.RealmManifestExporter>();
+
     // C16: Demo-seed runs as an API client now — see scripts/seed-demo.mjs.
     // No backend service, no DI registration, no PROD-01 bracket needed:
     // the script logs in as a regular admin and POSTs through the same
@@ -1205,6 +1218,7 @@ try
     app.MapAppSettingsEndpoints("api");
     app.MapProjectionEndpoints("api");
     app.MapRealmsEndpoints("api");
+    app.MapRealmConfigEndpoints("api");
     app.MapOAuthClientsEndpoints("api");
     app.MapOAuthScopesEndpoints("api");
     app.MapOAuthApisEndpoints("api");

@@ -211,53 +211,18 @@ public static class UsersEndpoints
             .WithName("V2_User_Restore")
             .RequiresPermission("user:write");
 
-        // Set/Reset password for a user
-        userGroup.MapPut("{id}/password", async (ShortGuid id, SetPasswordDto dto, IDocumentSession session, UserManager<ApplicationUser> userManager, IUserAccessRevoker accessRevoker) =>
+        // Set/Reset password for a user — delegates to the shared canonical
+        // SetUserPasswordHandler (the path the realm-provisioning applier also uses).
+        userGroup.MapPut("{id}/password", async (ShortGuid id, SetPasswordDto dto, SetUserPasswordHandler setPassword, CancellationToken ct) =>
             {
-                var person = await session.LoadAsync<Person>(id.Guid);
-                if (person is null || person.IsDeleted)
-                    return Results.NotFound(new { Message = "User not found" });
+                var result = await setPassword.Handle(id.Guid, dto.Password, ct);
+                if (!result.IsError) return Results.Ok(new { Message = "Password set successfully" });
 
-                var appUser = await userManager.FindByIdAsync(id.Guid.ToString());
-                if (appUser is null)
-                {
-                    // Create ApplicationUser if it doesn't exist yet
-                    appUser = new ApplicationUser(person.AccountName ?? person.Acronym ?? person.Id.ToString(), person.Email)
-                    {
-                        Id = person.Id,
-                        Firstname = person.Firstname,
-                        Lastname = person.Lastname,
-                        Acronym = person.Acronym,
-                        IsActive = person.IsActive
-                    };
-                    var createResult = await userManager.CreateAsync(appUser, dto.Password);
-                    if (!createResult.Succeeded)
-                        return Results.Problem(
-                            statusCode: StatusCodes.Status400BadRequest,
-                            title: "Password error",
-                            detail: string.Join("; ", createResult.Errors.Select(e => e.Description)));
-                }
-                else
-                {
-                    await userManager.RemovePasswordAsync(appUser);
-                    var addResult = await userManager.AddPasswordAsync(appUser, dto.Password);
-                    if (!addResult.Succeeded)
-                        return Results.Problem(
-                            statusCode: StatusCodes.Status400BadRequest,
-                            title: "Password error",
-                            detail: string.Join("; ", addResult.Errors.Select(e => e.Description)));
-                }
-
-                session.Events.Append(id.Guid, new UserPasswordChangedEvent(id.Guid, null));
-                await session.SaveChangesAsync();
-
-                // Audit remediation #2: the incident-response lever ("user compromised,
-                // reset their password"). The reset rotates the Identity stamp but never
-                // revoked OAuth tokens / device-session rows — kill them too. Mirrors the
-                // sibling /active endpoint, which already injects the revoker.
-                await accessRevoker.RevokeAllAccessAsync(id.Guid, AccessRevocationReason.ForceSignOut);
-
-                return Results.Ok(new { Message = "Password set successfully" });
+                var error = result.FirstError;
+                return error.Type == ErrorOr.ErrorType.NotFound
+                    ? Results.NotFound(new { Message = "User not found" })
+                    : Results.Problem(statusCode: StatusCodes.Status400BadRequest,
+                        title: "Password error", detail: error.Description);
             })
             .WithName("V2_User_SetPassword")
             .RequiresPermission("user:write");

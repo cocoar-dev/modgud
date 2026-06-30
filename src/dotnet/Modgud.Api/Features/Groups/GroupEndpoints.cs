@@ -3,7 +3,6 @@ using Modgud.Api.Authorization;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Commands;
-using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Services;
 using ErrorOr;
@@ -184,14 +183,12 @@ public static class GroupEndpoints
             .WithName("V2_Group_Update")
             .RequiresPermission("authorization-group:write");
 
-        groupGroup.MapDelete("{id}", async (ShortGuid id, IDocumentSession session) =>
+        // Delete delegates to the shared DeleteGroupCommand — the same canonical path the
+        // realm-provisioning prune calls (mirrors create/update; no longer endpoint-inline).
+        groupGroup.MapDelete("{id}", async (ShortGuid id, IMessageBus bus) =>
             {
-                var group = await session.LoadAsync<Group>(id.Guid);
-                if (group is null || group.IsDeleted) return Results.NotFound();
-                group.IsDeleted = true;
-                session.Events.Append(id.Guid, new GroupDeletedEvent(id.Guid));
-                await session.SaveChangesAsync();
-                return Results.NoContent();
+                var result = await bus.InvokeAsync<ErrorOr<Success>>(new DeleteGroupCommand(id.Guid));
+                return result.Match<IResult>(_ => Results.NoContent(), ToErrorResult);
             })
             .WithName("V2_Group_Delete")
             .RequiresPermission("authorization-group:write");

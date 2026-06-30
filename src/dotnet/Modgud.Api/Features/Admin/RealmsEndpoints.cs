@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using ErrorOr;
+using Modgud.Api.Features.Admin.Provisioning;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Domain;
@@ -215,12 +217,84 @@ public static class RealmsEndpoints
         .WithName("Realms_Update")
         .RequiresPermission("realm:write", AppSlugs.ControlPlane);
 
-        group.MapDelete("{slug}", async (string slug, IRealmProvisioningService svc, CancellationToken ct) =>
+        // ?hard=true escalates from the reversible soft-delete to the prod-safe hard
+        // delete that DROPs the tenant database (HardDeleteRealmAsync). Default false keeps
+        // the existing soft-delete behaviour. Hard-delete is refused for the control plane.
+        group.MapDelete("{slug}", async (string slug, IRealmProvisioningService svc, CancellationToken ct, bool hard = false) =>
         {
-            var result = await svc.DeleteRealmAsync(slug, ct);
+            var result = hard
+                ? await svc.HardDeleteRealmAsync(slug, ct)
+                : await svc.DeleteRealmAsync(slug, ct);
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
         .WithName("Realms_Delete")
+        .RequiresPermission("realm:write", AppSlugs.ControlPlane);
+
+        // ── Declarative provisioning (RealmManifestApplier) ─────────────────────────
+        // Import a brand-new realm from a complete manifest (realm + settings + apps +
+        // apis + scopes + clients + roles + users + groups), all via the canonical admin
+        // operations. The slug must NOT already exist; a failed import rolls the whole
+        // realm back (hard-delete). Returns the created slug + primary domain + the
+        // plaintext secrets of any confidential clients (only available at create time).
+        group.MapPost("import", async (
+            RealmManifest manifest, RealmManifestApplier applier, CancellationToken ct) =>
+        {
+            var result = await applier.ImportNewRealmAsync(manifest, ct);
+            if (result.IsError) return ManifestError(result.Errors);
+            ModgudMeters.RecordRealmProvisioned();
+            return Results.Created($"{path}/admin/realms/{result.Value.Slug}", result.Value);
+        })
+        .WithName("Realms_Import")
+        .RequiresPermission("realm:write", AppSlugs.ControlPlane);
+
+        // Apply a manifest to an EXISTING realm: in-place merge/upsert per entity (never
+        // drops the DB). The route slug must match the manifest's realm slug. Default is an
+        // additive merge (entities absent from the manifest are left untouched);
+        // ?prune=true makes it a full sync that also deletes the absent entities (k8s
+        // apply --prune — infrastructure + every realm:admin path are protected, never pruned).
+        group.MapPost("{slug}/apply", async (
+            string slug, RealmManifest manifest, RealmManifestApplier applier, CancellationToken ct, bool prune = false) =>
+        {
+            if (!string.Equals(slug, manifest.Realm.Slug, StringComparison.Ordinal))
+                return Results.BadRequest(new
+                {
+                    Error = "Manifest.SlugMismatch",
+                    Message = $"Route slug '{slug}' does not match the manifest realm slug '{manifest.Realm.Slug}'.",
+                });
+
+            var result = await applier.UpdateRealmAsync(manifest, prune, ct);
+            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+        })
+        .WithName("Realms_Apply")
+        .RequiresPermission("realm:write", AppSlugs.ControlPlane);
+
+        // Export a realm's current config as a manifest (structure-only — never secrets or
+        // password hashes). Round-trips with /apply: GET, edit (e.g. add a user password),
+        // POST back to /{slug}/apply.
+        group.MapGet("{slug}/export", async (
+            string slug, RealmManifestExporter exporter, CancellationToken ct) =>
+        {
+            var result = await exporter.ExportRealmAsync(slug, ct);
+            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+        })
+        .WithName("Realms_Export")
+        .RequiresPermission("realm:read", AppSlugs.ControlPlane);
+
+        // The JSON Schema for the import/apply body, generated from the live RealmManifest type
+        // (so it can't drift from the contract) with per-field descriptions + a worked example.
+        // Lets a consumer / agent fetch the contract and author a valid manifest without the
+        // source. Generated with the API's own JSON options so property casing matches the wire.
+        // Gated with the SAME permission as import/apply (realm:write) — only a caller who can
+        // actually apply a manifest may fetch its schema.
+        group.MapGet("manifest-schema", (
+            Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions> jsonOptions) =>
+        {
+            var schema = Provisioning.RealmManifestSchema.Build(jsonOptions.Value.SerializerOptions);
+            return Results.Text(
+                schema.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
+                "application/json");
+        })
+        .WithName("Realms_ManifestSchema")
         .RequiresPermission("realm:write", AppSlugs.ControlPlane);
 
         // Transfer the control-plane role to {slug}. POST to the realm that
@@ -293,6 +367,23 @@ public static class RealmsEndpoints
             }
             return false;
         }
+    }
+
+    // Renders a RealmManifestApplier ErrorOr error with the code in the body — the manifest
+    // codes (Realm.AlreadyExists / Realm.NotFound / Manifest.*) are how a test-kit / caller
+    // distinguishes outcomes, so don't collapse them through the shared ToResult.
+    private static IResult ManifestError(List<Error> errors)
+    {
+        var error = errors[0];
+        var status = error.Type switch
+        {
+            ErrorType.NotFound => StatusCodes.Status404NotFound,
+            ErrorType.Conflict => StatusCodes.Status409Conflict,
+            ErrorType.Validation => StatusCodes.Status400BadRequest,
+            ErrorType.Forbidden => StatusCodes.Status403Forbidden,
+            _ => StatusCodes.Status500InternalServerError,
+        };
+        return Results.Json(new { Error = error.Code, Message = error.Description }, statusCode: status);
     }
 
     internal static RealmDto MapToDto(Realm realm) => new()

@@ -1,0 +1,69 @@
+# Local app-testing stack for declarative realm provisioning.
+#
+# Brings up a self-contained Modgud (the LOCALLY-BUILT `modgud:local` image —
+# which carries the realm-provisioning feature that isn't on :beta yet) plus its
+# own Postgres, on ports that DON'T collide with the contributor dev stack
+# (cocoar-postgres :5432, the dev backend :9099). Another local app's integration
+# tests point an HttpClient here, provision a throwaway realm per test run via the
+# control-plane API (or Modgud.Provisioning.TestKit), and hard-delete it after.
+#
+# Build the image first (from the repo root):
+#   docker build -f docker/Dockerfile -t modgud:local .
+# Then:
+#   docker compose -f dev/app-testing/docker-compose.yml up -d
+#   # one-time: create the control-plane admin (system realm == control plane)
+#   docker compose -f dev/app-testing/docker-compose.yml exec modgud \
+#     dotnet Modgud.Api.dll recover bootstrap-admin \
+#       --email admin@local --username admin --password 'ABC12abc!'
+#
+# See README.md for the app-side recipe + the host-routing caveat.
+name: modgud-app-testing
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: modgud-apptest-postgres
+    # No host port — Modgud reaches it over the internal docker network, and the
+    # app-under-test talks to Modgud on :8080, never to Postgres directly. (Add a
+    # mapping like "5433:5432" here only if you want to inspect the DB from the host.)
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - apptest-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  modgud:
+    image: modgud:local
+    container_name: modgud-apptest
+    # Container binds 8081 (non-root); exposed on the host as :18080. (18080 to
+    # dodge the busy 808x range on this box — cocoar-nexus 8081/8082, amzettel
+    # 8091, and a host process on 8080. Pick any free host port you like.)
+    ports:
+      - "18080:8081"
+    environment:
+      # Development on purpose: the Production boot guards reject a localhost /
+      # http issuer + DevelopmentMode (ephemeral keys). For app-testing that's
+      # exactly what we want — see the root docker-compose.yml for the rationale.
+      ASPNETCORE_ENVIRONMENT: Development
+      DbSettings__ConnectionString: "Host=postgres;Database=modgud;Username=postgres;Password=postgres;Keepalive=30"
+      AppUrl: "http://0.0.0.0:8081"
+      # Issuer must match how clients reach the container (host-mapped :18080).
+      # Per-realm issuer overrides apply at request time via RealmIssuerHandler.
+      OpenIddict__Issuer: "http://localhost:18080"
+      OpenIddict__DevelopmentMode: "true"
+      # SMTP routes nowhere in this stack (no MTA) — fine for tests.
+      Email__Smtp__Host: "localhost"
+      Email__Smtp__Port: "25"
+      Email__Smtp__UseSsl: "false"
+      Email__Smtp__FromAddress: "noreply@localhost"
+      Email__Smtp__FromName: "Modgud"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  apptest-pgdata:

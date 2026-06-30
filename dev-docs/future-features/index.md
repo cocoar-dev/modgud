@@ -29,6 +29,17 @@ Severity. Detail-Pages unten.
 [logging-audit-redesign](./logging-audit-redesign)
 — split today's `AuthLog` (a fragile Serilog "Auth:"-magic-prefix sink that also silently fails GDPR) into two tracks: (A) a typed, **durable** (Wolverine outbox), GDPR-erasable per-realm **audit** trail (event-sourced), and (B) a centralized **operational** logging track (OTel Logs → OTLP + a slim in-app platform live-tail). Grounded in existing conventions (outbox, GdprService masking, Inbox slice, RealmSettings). Has 7 open decisions + a 6-phase plan. Read before any audit/logging work.
 
+⭐ **Declarative Realm Provisioning (shipped — Stage 1 + 2):**
+[declarative-realm-provisioning](./declarative-realm-provisioning)
+— provision a complete realm from one JSON manifest at runtime: `POST /import`
+(create), `POST /{slug}/apply` (in-place merge), `?prune=true` (full sync that
+deletes absent entities, with lockout + infra protection), `GET /export`
+(structure-only, never secrets), `DELETE ?hard=true` (drops the tenant DB). The
+design-of-record: the single-canonical-write-path invariant, the manifest schema,
+patch-vs-prune field semantics, the prune protection rules, the structure-only
+export + secrets stance, and the tenant-durability gotchas. Read before any
+provisioning / TestKit / prune work.
+
 ### Audit-Followups (in Severity-Reihenfolge)
 
 - Observability — OpenTelemetry / Metrics / Tracing — ✅ shipped (see
