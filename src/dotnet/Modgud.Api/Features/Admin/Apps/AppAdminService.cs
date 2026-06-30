@@ -103,6 +103,63 @@ public sealed class AppAdminService(IDocumentSession session)
     }
 
     /// <summary>
+    /// The single canonical delete path for an <see cref="App"/>, shared by
+    /// <see cref="AppsEndpoints"/> and the realm-provisioning applier's prune. Refuses the
+    /// system app, and refuses an App that is still referenced — by a role / resource server
+    /// linked directly to it (<c>PermissionRole.AppId</c> / <c>OAuthApiState.AppId</c>) or by
+    /// an FK into any of its catalog entries — because deleting it would silently revoke those
+    /// grants. The structured reference list rides through <c>Metadata["appReferences"]</c>
+    /// so the admin endpoint can render its rich 409 body (the same one
+    /// <c>AppDetails.vue</c> consumes).
+    /// </summary>
+    public async Task<ErrorOr<Success>> DeleteAppAsync(Guid id, CancellationToken ct = default)
+    {
+        var app = await session.LoadAsync<App>(id, ct);
+        if (app is null || app.IsDeleted)
+            return Error.NotFound("App.NotFound", "App not found.");
+
+        if (app.IsSystem)
+            return Error.Validation("App.CannotDeleteSystemApp",
+                $"The system app '{app.Slug}' cannot be deleted.");
+
+        // App-level delete-block: if any role or resource-server FKs into this App's catalog
+        // (or directly into the App via PermissionRole.AppId / OAuthApiState.AppId), refuse.
+        // Same rationale as the per-entry catalog block: deleting an App with live grants is a
+        // silent revoke.
+        var allCatalogIds = app.Permissions.Select(p => p.Id).ToList();
+        var blockingByPermissionId = allCatalogIds.Count > 0
+            ? await FindReferencesAsync(allCatalogIds, session, ct)
+            : [];
+        var rolesByApp = await session.Query<PermissionRole>()
+            .Where(r => !r.IsDeleted && r.AppId == app.Id)
+            .Select(r => r.Name)
+            .ToListAsync(ct);
+        var apisByApp = await session.Query<OAuthApiState>()
+            .Where(a => !a.IsDeleted && a.AppId == app.Id)
+            .Select(a => a.Name)
+            .ToListAsync(ct);
+
+        if (blockingByPermissionId.Count > 0 || rolesByApp.Count > 0 || apisByApp.Count > 0)
+        {
+            var catalogBlockers = blockingByPermissionId.Select(b => new AppCatalogBlocker(
+                new BuildingBlocks.Helper.ShortGuid(b.PermissionId).ToString(),
+                app.Permissions.First(p => p.Id == b.PermissionId).ToPermissionString(),
+                b.RoleNames,
+                b.OAuthApiNames)).ToList();
+            return Error.Conflict("App.HasReferences",
+                "Cannot delete an App that's still referenced. Detach roles and resource servers first.",
+                new Dictionary<string, object>
+                {
+                    ["appReferences"] = new AppReferenceBlockers(rolesByApp.ToList(), apisByApp.ToList(), catalogBlockers),
+                });
+        }
+
+        session.Events.Append(id, new AppDeletedEvent(id));
+        await session.SaveChangesAsync(ct);
+        return Result.Success;
+    }
+
+    /// <summary>
     /// Validates and normalises the permission catalog off a create / update payload:
     /// parses incoming ids (ShortGuid → Guid, minting a fresh one when absent), dedupes
     /// by (Resource, Action), enforces the segment grammar and rejects the reserved
@@ -204,3 +261,14 @@ public sealed record AppCatalogBlocker(
     string Permission,
     List<string> ReferencedByRoles,
     List<string> ReferencedByResourceServers);
+
+/// <summary>
+/// The rich blocker shape surfaced in the <c>App.HasReferences</c> 409 body when a delete is
+/// refused — the roles / resource servers linked directly to the App plus the per-catalog-entry
+/// references. Carried through <see cref="Error.Metadata"/> so <see cref="AppsEndpoints"/> can
+/// render it verbatim for <c>AppDetails.vue</c>'s delete-block panel.
+/// </summary>
+public sealed record AppReferenceBlockers(
+    List<string> ReferencedByRoles,
+    List<string> ReferencedByResourceServers,
+    List<AppCatalogBlocker> CatalogEntryReferences);

@@ -4,9 +4,6 @@ using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.AspNetCore;
-using Modgud.Authorization.Events;
-using Modgud.Authorization.Roles;
-using Modgud.Domain.OAuth.Apis;
 using Marten;
 
 namespace Modgud.Api.Features.Admin.Apps;
@@ -120,54 +117,37 @@ public static class AppsEndpoints
             .WithName("V2_App_Update")
             .RequiresPermission("app:write");
 
-        appGroup.MapDelete("{id}", async (ShortGuid id, IDocumentSession session) =>
+        // Delete delegates to the shared AppAdminService — the same canonical path the
+        // realm-provisioning prune calls. The App-level reference block carries its rich
+        // blocker list through the error metadata; render the exact 409 body AppDetails.vue
+        // consumes.
+        appGroup.MapDelete("{id}", async (ShortGuid id, AppAdminService appAdmin, CancellationToken ct) =>
             {
-                var app = await session.LoadAsync<App>(id.Guid);
-                if (app is null || app.IsDeleted) return Results.NotFound();
+                var result = await appAdmin.DeleteAppAsync(id.Guid, ct);
+                if (!result.IsError) return Results.NoContent();
 
-                if (app.IsSystem)
-                    return Results.BadRequest(new { Error = "App.CannotDeleteSystemApp",
-                        Message = $"The system app '{app.Slug}' cannot be deleted." });
-
-                // App-level delete-block: if any role or resource-server FKs
-                // into this App's catalog (or directly into the App via
-                // PermissionRole.AppId / OAuthApiState.AppId), refuse. Same
-                // rationale as the per-entry block: deleting an App with live
-                // grants is a silent revoke.
-                var allCatalogIds = app.Permissions.Select(p => p.Id).ToList();
-                var blockingByPermissionId = allCatalogIds.Count > 0
-                    ? await AppAdminService.FindReferencesAsync(allCatalogIds, session)
-                    : [];
-                var rolesByApp = await session.Query<PermissionRole>()
-                    .Where(r => !r.IsDeleted && r.AppId == app.Id)
-                    .Select(r => r.Name)
-                    .ToListAsync();
-                var apisByApp = await session.Query<OAuthApiState>()
-                    .Where(a => !a.IsDeleted && a.AppId == app.Id)
-                    .Select(a => a.Name)
-                    .ToListAsync();
-
-                if (blockingByPermissionId.Count > 0 || rolesByApp.Count > 0 || apisByApp.Count > 0)
+                var error = result.FirstError;
+                if (error.Code == "App.HasReferences"
+                    && error.Metadata?.TryGetValue("appReferences", out var raw) == true
+                    && raw is AppReferenceBlockers refs)
                 {
                     return Results.Conflict(new
                     {
-                        Error = "App.HasReferences",
-                        Message = "Cannot delete an App that's still referenced. Detach roles and resource servers first.",
-                        ReferencedByRoles = rolesByApp,
-                        ReferencedByResourceServers = apisByApp,
-                        CatalogEntryReferences = blockingByPermissionId.Select(b => new
+                        Error = error.Code,
+                        Message = error.Description,
+                        ReferencedByRoles = refs.ReferencedByRoles,
+                        ReferencedByResourceServers = refs.ReferencedByResourceServers,
+                        CatalogEntryReferences = refs.CatalogEntryReferences.Select(b => new
                         {
-                            PermissionId = new ShortGuid(b.PermissionId).ToString(),
-                            Permission = app.Permissions.First(p => p.Id == b.PermissionId).ToPermissionString(),
-                            ReferencedByRoles = b.RoleNames,
-                            ReferencedByResourceServers = b.OAuthApiNames,
+                            b.PermissionId,
+                            b.Permission,
+                            b.ReferencedByRoles,
+                            b.ReferencedByResourceServers,
                         }),
                     });
                 }
 
-                session.Events.Append(id.Guid, new AppDeletedEvent(id.Guid));
-                await session.SaveChangesAsync();
-                return Results.NoContent();
+                return ToErrorResult(error);
             })
             .WithName("V2_App_Delete")
             .RequiresPermission("app:write");

@@ -4,7 +4,6 @@ using Marten;
 using Modgud.Api.Authorization;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Services;
-using Modgud.Authentication.Events;
 
 namespace Modgud.Api.Features.Roles;
 
@@ -95,13 +94,12 @@ public static class RolesEndpoints
             .WithName("V2_Role_Update")
             .RequiresPermission("permission-role:write");
 
-        roleGroup.MapDelete("{id}", async (ShortGuid id, IDocumentSession session) =>
+        // Delete delegates to the shared RoleAdminService — the same canonical path the
+        // realm-provisioning prune calls.
+        roleGroup.MapDelete("{id}", async (ShortGuid id, RoleAdminService roleAdmin, CancellationToken ct) =>
             {
-                var role = await session.LoadAsync<PermissionRole>(id.Guid);
-                if (role is null || role.IsDeleted) return Results.NotFound();
-                session.Events.Append(id.Guid, new PermissionRoleDeletedEvent(id.Guid));
-                await session.SaveChangesAsync();
-                return Results.NoContent();
+                var result = await roleAdmin.DeleteRoleAsync(id.Guid, ct);
+                return result.IsError ? ToErrorResult(result.Errors) : Results.NoContent();
             })
             .WithName("V2_Role_Delete")
             .RequiresPermission("permission-role:write");

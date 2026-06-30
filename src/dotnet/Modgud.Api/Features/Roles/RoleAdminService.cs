@@ -75,6 +75,23 @@ public sealed class RoleAdminService(IDocumentSession session)
     }
 
     /// <summary>
+    /// The single canonical delete path for an existing <see cref="PermissionRole"/>, shared
+    /// by <see cref="RolesEndpoints"/> and the realm-provisioning applier's prune. Soft-deletes
+    /// by emitting <c>PermissionRoleDeletedEvent</c> (the inline projection flips
+    /// <c>IsDeleted</c>). Idempotent: a missing / already-deleted role returns NotFound.
+    /// </summary>
+    public async Task<ErrorOr<Success>> DeleteRoleAsync(Guid id, CancellationToken ct = default)
+    {
+        var role = await session.LoadAsync<PermissionRole>(id, ct);
+        if (role is null || role.IsDeleted)
+            return Error.NotFound("Role.NotFound", "Role not found.");
+
+        session.Events.Append(id, new PermissionRoleDeletedEvent(id));
+        await session.SaveChangesAsync(ct);
+        return ErrorOr.Result.Success;
+    }
+
+    /// <summary>
     /// Validates a payload into a <see cref="PermissionRole"/> (Id minted here): AppId
     /// resolves to an existing App, every PermissionId resolves to that App's catalog,
     /// PermissionIds require an App link, and a role must grant something (App link or
