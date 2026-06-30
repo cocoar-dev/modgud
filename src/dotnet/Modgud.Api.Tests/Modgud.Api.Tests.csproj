@@ -36,6 +36,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Modgud.Api\Modgud.Api.csproj" />
+    <ProjectReference Include="..\Modgud.Provisioning.TestKit\Modgud.Provisioning.TestKit.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -51,8 +52,7 @@
     <Content Include="Observability\otel-collector-test-config.yaml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\..\..\docker\otel-collector\otel-collector-config.yaml"
-             Link="Observability\otel-collector-config.shipped.yaml">
+    <Content Include="..\..\..\docker\otel-collector\otel-collector-config.yaml" Link="Observability\otel-collector-config.shipped.yaml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

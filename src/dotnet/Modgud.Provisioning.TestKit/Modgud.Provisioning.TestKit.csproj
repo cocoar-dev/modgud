@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Modgud.Provisioning.TestKit</RootNamespace>
+    <Description>
+      Test-kit for spinning up isolated Modgud realms from a declarative manifest.
+      A thin client over the control-plane provisioning API (import / apply /
+      hard-delete): ImportRealmAsync(manifest) returns a disposable realm handle
+      exposing the authority, client ids and freshly minted client secrets;
+      disposing it hard-deletes the realm (drops the tenant database). Built for
+      consumer-app integration tests that need a real, throwaway realm per test.
+    </Description>
+  </PropertyGroup>
+
+  <!-- NuGet package metadata. Version is supplied by CI via -p:Version=…
+       (GitVersion output); kept out of source so the source-of-truth for
+       versioning is the git tag, not a checked-in string. -->
+  <PropertyGroup>
+    <PackageId>Modgud.Provisioning.TestKit</PackageId>
+    <Authors>Cocoar</Authors>
+    <Company>Cocoar</Company>
+    <Copyright>Copyright © Cocoar</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/cocoar-dev/modgud</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/cocoar-dev/modgud</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>modgud;provisioning;testing;integration-tests;realm;oauth;oidc</PackageTags>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>
