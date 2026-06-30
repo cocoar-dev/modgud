@@ -9,6 +9,25 @@ realm-provisioning API (`import` / `apply` / `?prune=true` / hard-delete) and th
 > This uses the **locally-built `modgud:local`** image, not `ghcr.io/cocoar-dev/modgud:beta`
 > — the provisioning feature isn't on `:beta` yet (branch `feat/realm-declarative-provisioning`).
 
+## TL;DR — you were given a running instance
+
+If someone already started this for you, here's all you need:
+
+- **Base URL:** `http://localhost:18080` (admin UI + `/api`; in-app docs at `/docs/`)
+- **Control-plane admin:** `admin` / `ABC12abc!` (full rights — create/delete any realm)
+- **Flow for your tests:**
+  1. Log in: `POST /api/account/login` `{"UserName":"admin","Password":"ABC12abc!"}` (keep the cookie).
+  2. Learn the manifest contract: `GET /api/admin/realms/manifest-schema` (JSON Schema + example).
+  3. Create a realm: `POST /api/admin/realms/import` with a manifest → get back the client secret(s).
+  4. Point your app at it, run tests.
+  5. Tear down: `DELETE /api/admin/realms/{slug}?hard=true`.
+
+.NET? Use `Modgud.Provisioning.TestKit` ([§3](#3-app-side-recipe-the-modgudprovisioningtestkit)).
+Full schema/flow below; the host-routing caveat for real OAuth flows is in [§4](#4-caveat--using-the-provisioned-realm-for-oauth-flows).
+
+> Each test run should use a **unique realm slug** — realms are physically separate
+> databases, so they're fully isolated and run in parallel.
+
 ## The manifest contract — fetch the schema
 
 The import/apply body is a **realm manifest**. Its full JSON Schema — every field, its
