@@ -25,6 +25,7 @@ using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Scopes;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
+using Modgud.Permissions;
 using Wolverine;
 
 namespace Modgud.Api.Features.Admin.Provisioning;
@@ -119,9 +120,17 @@ public sealed class RealmManifestApplier(
     /// <para>Unlike import there is no all-or-nothing rollback: each canonical op commits its
     /// own unit of work, so a mid-apply failure leaves the earlier successful writes in place.
     /// The upserts are safe to re-apply after fixing the manifest.</para>
+    ///
+    /// <para>When <paramref name="prune"/> is set the merge becomes a full sync (k8s
+    /// <c>apply --prune</c>): after the upsert, every entity that exists in the realm but is
+    /// absent from the manifest is deleted via its canonical delete op, in reverse-dependency
+    /// order. Lockout- and infrastructure-protected entities are NEVER pruned — the system app,
+    /// auto-seeded standard scopes, service-account-linked clients, and anything conferring
+    /// <c>realm:admin</c> (a realm-admin role, any user who currently holds realm:admin, and any
+    /// admin-conferring group). Without the flag the additive merge above is unchanged.</para>
     /// </summary>
     public async Task<ErrorOr<RealmImportResult>> UpdateRealmAsync(
-        RealmManifest manifest, CancellationToken ct = default)
+        RealmManifest manifest, bool prune = false, CancellationToken ct = default)
     {
         var slug = manifest.Realm.Slug;
 
@@ -132,7 +141,7 @@ public sealed class RealmManifestApplier(
 
         try
         {
-            var secrets = await ApplyTenantUpdateAsync(slug, manifest, ct);
+            var secrets = await ApplyTenantUpdateAsync(slug, manifest, prune, ct);
             logger.LogInformation(
                 "Updated realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users, {Groups} groups (in-place merge).",
                 slug, manifest.Apps.Count, manifest.Apis.Count, manifest.Scopes.Count,
@@ -297,7 +306,11 @@ public sealed class RealmManifestApplier(
                     ParseEnum<MembershipMode>(g.MembershipMode, $"group '{g.Name}' membershipMode"),
                     g.MembershipScript, g.Email,
                     ParseEnum<EmailMode>(g.EmailMode, $"group '{g.Name}' emailMode"),
-                    g.BoundTo, g.ExternallyDrivable, CallerIsRealmAdmin: true);
+                    // Mirror the create endpoint's default (GroupEndpoints: dto.BoundTo ?? [Modgud])
+                    // so a manifest group is bound to the IdP and actually confers its roles —
+                    // CreateGroupHandler itself defaults null to [] (dormant), which would make an
+                    // imported admin group silently grant nothing.
+                    g.BoundTo ?? [AppSlugs.Modgud], g.ExternallyDrivable, CallerIsRealmAdmin: true);
                 EnsureOk(await groupHandler.Handle(cmd, ct), $"group '{g.Name}'");
             }
         }
@@ -312,7 +325,7 @@ public sealed class RealmManifestApplier(
     /// it doesn't. See <see cref="UpdateRealmAsync"/> for the field-level merge semantics.
     /// </summary>
     private async Task<Dictionary<string, string>> ApplyTenantUpdateAsync(
-        string slug, RealmManifest manifest, CancellationToken ct)
+        string slug, RealmManifest manifest, bool prune, CancellationToken ct)
     {
         var secrets = new Dictionary<string, string>(StringComparer.Ordinal);
         var apps = new Dictionary<string, App>(StringComparer.Ordinal);        // slug → App (id + catalog)
@@ -599,10 +612,11 @@ public sealed class RealmManifestApplier(
                     .FirstOrDefaultAsync(x => x.Name == g.Name && !x.IsDeleted, ct);
                 if (existing is null)
                 {
+                    // Create-branch mirrors the create endpoint's BoundTo default (see import).
                     EnsureOk(await createHandler.Handle(new CreateGroupCommand(
                         g.Name, g.Description, memberIds, groupRoleIds, mode,
                         g.MembershipScript, g.Email, emailMode,
-                        g.BoundTo, g.ExternallyDrivable, CallerIsRealmAdmin: true), ct), ctx);
+                        g.BoundTo ?? [AppSlugs.Modgud], g.ExternallyDrivable, CallerIsRealmAdmin: true), ct), ctx);
                 }
                 else
                 {
@@ -614,7 +628,112 @@ public sealed class RealmManifestApplier(
             }
         }
 
+        // ── Prune: full-sync removal of entities absent from the manifest. Runs AFTER the
+        //    upsert so the protection checks see the realm's desired (post-merge) role graph.
+        if (prune)
+            await PruneAsync(sp, session, manifest, appAdmin, oauth, roleAdmin, ct);
+
         return secrets;
+    }
+
+    /// <summary>
+    /// Deletes every entity that exists in the realm but is absent from the manifest, each via
+    /// its canonical delete op (the same the admin API uses), in reverse-dependency order so a
+    /// dependent is gone before the app / role it points at — clients → scopes → apis → groups
+    /// → users → roles → apps. An app still referenced by a manifest-KEPT role / resource server
+    /// correctly errors (surfaced via <see cref="ManifestApplyException"/>).
+    ///
+    /// <para>NEVER pruned (infrastructure + lockout protection — the robust superset of "System
+    /// + last admin": protect ALL admins so no manifest can lock the realm out): the system app
+    /// (<c>IsSystem</c>), auto-seeded standard scopes (<c>StandardScopes.IsStandard</c>),
+    /// service-account-linked clients (<c>LinkedServiceAccountId</c>), any realm-admin role
+    /// (<c>IsRealmAdmin</c>), any user who currently holds <c>realm:admin</c>, and any group that
+    /// confers <c>realm:admin</c> (else pruning an admin's group silently strips their admin path
+    /// even though the role + user survive).</para>
+    ///
+    /// <para>Tenant durability (same trap as create/update): user delete runs through
+    /// <see cref="DeleteUsersHandler"/> and group delete through <see cref="DeleteGroupHandler"/>
+    /// on the PLAIN tenant session, NOT the bus — <c>UserDeactivatedEvent</c> /
+    /// <c>GroupDeletedEvent</c> have durable ReferenceSync forwarders that would write
+    /// <c>wolverine_*_envelopes</c> a tenant DB lacks. OAuth / app / role deletes go through their
+    /// services on the same scoped session.</para>
+    /// </summary>
+    private async Task PruneAsync(
+        IServiceProvider sp, IDocumentSession session, RealmManifest manifest,
+        AppAdminService appAdmin, OAuthAdminService oauth, RoleAdminService roleAdmin,
+        CancellationToken ct)
+    {
+        var perms = sp.GetRequiredService<IPermissionService>();
+
+        // ── Clients (natural key = ClientId) — keep SA-linked (auto-managed, not modelled). ──
+        var keepClients = manifest.Clients.Select(c => c.ClientId).ToHashSet(StringComparer.Ordinal);
+        foreach (var c in await session.Query<OAuthApplicationState>().Where(x => !x.IsDeleted).ToListAsync(ct))
+        {
+            if (keepClients.Contains(c.ClientId) || c.LinkedServiceAccountId.HasValue) continue;
+            EnsureOk(await oauth.DeleteClientAsync(c.Id.ToString(), ct), $"prune client '{c.ClientId}'");
+        }
+
+        // ── Scopes (natural key = Name) — keep auto-seeded standard scopes. ──────────────────
+        var keepScopes = manifest.Scopes.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
+        foreach (var s in await session.Query<OAuthScopeState>().Where(x => !x.IsDeleted).ToListAsync(ct))
+        {
+            if (keepScopes.Contains(s.Name) || StandardScopes.IsStandard(s.Name)) continue;
+            EnsureOk(await oauth.DeleteScopeAsync(s.Id.ToString(), ct), $"prune scope '{s.Name}'");
+        }
+
+        // ── APIs (natural key = Name / aud). ─────────────────────────────────────────────────
+        var keepApis = manifest.Apis.Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
+        foreach (var a in await session.Query<OAuthApiState>().Where(x => !x.IsDeleted).ToListAsync(ct))
+        {
+            if (keepApis.Contains(a.Name)) continue;
+            EnsureOk(await oauth.DeleteApiAsync(a.Id.ToString(), ct), $"prune api '{a.Name}'");
+        }
+
+        // ── Groups (natural key = Name) — keep admin-conferring groups (lockout guard). ──────
+        var keepGroups = manifest.Groups.Select(g => g.Name).ToHashSet(StringComparer.Ordinal);
+        var groupHandler = new DeleteGroupHandler(session);
+        foreach (var g in await session.Query<Group>().Where(x => !x.IsDeleted).ToListAsync(ct))
+        {
+            if (keepGroups.Contains(g.Name)) continue;
+            if (await GroupMembershipGuards.GroupConfersRealmAdminAsync(session, perms, g, ct)) continue;
+            EnsureOk(await groupHandler.Handle(new DeleteGroupCommand(g.Id), ct), $"prune group '{g.Name}'");
+        }
+
+        // ── Users (natural key = email / username) — keep anyone who holds realm:admin. ──────
+        var keepEmails = manifest.Users.Select(u => u.Email.ToUpperInvariant()).ToHashSet(StringComparer.Ordinal);
+        var keepUserNames = manifest.Users
+            .Where(u => !string.IsNullOrEmpty(u.UserName))
+            .Select(u => u.UserName!.ToLowerInvariant())
+            .ToHashSet(StringComparer.Ordinal);
+        var userHandler = new DeleteUsersHandler(
+            session,
+            sp.GetRequiredService<IUserAccessRevoker>(),
+            sp.GetRequiredService<IRealmSettingsService>(),
+            sp.GetRequiredService<TimeProvider>());
+        foreach (var p in await session.Query<Person>().Where(x => !x.IsDeleted).ToListAsync(ct))
+        {
+            if (keepEmails.Contains(p.NormalizedEmail ?? string.Empty) ||
+                (p.AccountName is not null && keepUserNames.Contains(p.AccountName))) continue;
+            if (await perms.HasPermissionAsync(p.Id, AppSlugs.Modgud, PermissionEvaluator.RealmAdminPermission, ct))
+                continue;
+            EnsureOk(await userHandler.Handle(new DeleteUsersCommand([p.Id]), ct), $"prune user '{p.AccountName ?? p.Id.ToString()}'");
+        }
+
+        // ── Roles (natural key = Name) — keep realm-admin roles (lockout guard). ─────────────
+        var keepRoles = manifest.Roles.Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        foreach (var r in await session.Query<PermissionRole>().Where(x => !x.IsDeleted).ToListAsync(ct))
+        {
+            if (keepRoles.Contains(r.Name) || r.IsRealmAdmin) continue;
+            EnsureOk(await roleAdmin.DeleteRoleAsync(r.Id, ct), $"prune role '{r.Name}'");
+        }
+
+        // ── Apps (natural key = Slug) — keep the system app; a still-referenced app errors. ──
+        var keepApps = manifest.Apps.Select(a => a.Slug).ToHashSet(StringComparer.Ordinal);
+        foreach (var a in await session.Query<App>().Where(x => !x.IsDeleted).ToListAsync(ct))
+        {
+            if (keepApps.Contains(a.Slug) || a.IsSystem) continue;
+            EnsureOk(await appAdmin.DeleteAppAsync(a.Id, ct), $"prune app '{a.Slug}'");
+        }
     }
 
     /// <summary>Wraps a manifest string in a "some" optional, or "none" when null — the

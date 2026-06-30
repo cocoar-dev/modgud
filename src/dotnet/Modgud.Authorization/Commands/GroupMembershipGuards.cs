@@ -10,9 +10,12 @@ namespace Modgud.Authorization.Commands;
 /// Shared write-time guards for group commands. Keeps the federation v1
 /// <c>realm:admin</c>-local-only invariant AND the "only a realm:admin may
 /// confer realm:admin" privilege-escalation guard in one place so create and
-/// update enforce them identically.
+/// update enforce them identically. Public so the realm-provisioning prune can
+/// reuse <see cref="GroupConfersRealmAdminAsync"/> to decide which groups it must
+/// never delete (deleting an admin-conferring group would strip an admin's path
+/// to <c>realm:admin</c> even when the role + user survive).
 /// </summary>
-internal static class GroupMembershipGuards
+public static class GroupMembershipGuards
 {
     /// <summary>
     /// Federation v1 (decision G): a group whose roles confer <c>realm:admin</c>

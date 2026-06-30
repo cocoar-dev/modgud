@@ -132,6 +132,36 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         Assert.Contains("Manifest.SlugMismatch", await resp.Content.ReadAsStringAsync(ct));
     }
 
+    [Fact]
+    public async Task Apply_with_prune_true_removes_a_client_absent_from_the_manifest()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var client = await factory.CreateRealmAdminAndLoginAsync();
+
+        const string slug = "pruneep";
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync(
+            "/api/admin/realms/import", BuildManifest(slug, "Prune EP"), factory.JsonOptions, ct)).StatusCode);
+
+        // Re-apply with ?prune=true a manifest that drops the client → it must be pruned.
+        var withoutClient = BuildManifest(slug, "Prune EP") with { Clients = [] };
+        var applyResp = await client.PostAsJsonAsync(
+            $"/api/admin/realms/{slug}/apply?prune=true", withoutClient, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, applyResp.StatusCode);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            Assert.False(
+                await session.Query<Modgud.Domain.OAuth.Applications.OAuthApplicationState>()
+                    .AnyAsync(x => !x.IsDeleted && x.ClientId == "initech-web", ct),
+                "the client absent from the ?prune=true manifest was pruned");
+            // The app is still in the manifest → untouched.
+            Assert.True(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.Slug == "initech-app", ct));
+        });
+    }
+
     private static RealmManifest BuildManifest(string slug, string appDisplayName) => new()
     {
         Realm = new CreateRealmDto

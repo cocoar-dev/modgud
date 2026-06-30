@@ -248,10 +248,12 @@ public static class RealmsEndpoints
         .RequiresPermission("realm:write", AppSlugs.ControlPlane);
 
         // Apply a manifest to an EXISTING realm: in-place merge/upsert per entity (never
-        // drops the DB). The route slug must match the manifest's realm slug. No prune —
-        // entities absent from the manifest are left untouched.
+        // drops the DB). The route slug must match the manifest's realm slug. Default is an
+        // additive merge (entities absent from the manifest are left untouched);
+        // ?prune=true makes it a full sync that also deletes the absent entities (k8s
+        // apply --prune — infrastructure + every realm:admin path are protected, never pruned).
         group.MapPost("{slug}/apply", async (
-            string slug, RealmManifest manifest, RealmManifestApplier applier, CancellationToken ct) =>
+            string slug, RealmManifest manifest, RealmManifestApplier applier, CancellationToken ct, bool prune = false) =>
         {
             if (!string.Equals(slug, manifest.Realm.Slug, StringComparison.Ordinal))
                 return Results.BadRequest(new
@@ -260,7 +262,7 @@ public static class RealmsEndpoints
                     Message = $"Route slug '{slug}' does not match the manifest realm slug '{manifest.Realm.Slug}'.",
                 });
 
-            var result = await applier.UpdateRealmAsync(manifest, ct);
+            var result = await applier.UpdateRealmAsync(manifest, prune, ct);
             return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("Realms_Apply")

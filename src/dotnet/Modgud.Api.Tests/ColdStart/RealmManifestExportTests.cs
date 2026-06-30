@@ -82,7 +82,7 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         Assert.Null(m.Settings.SelfRegistration!.CaptchaSecret);            // write-only — never exported
 
         // ── Re-apply the UNEDITED export = idempotent ──────────────────────────
-        Assert.False((await applier.UpdateRealmAsync(m, ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(m, ct: ct)).IsError);
 
         // ── Edit a setting and re-apply → it round-trips ───────────────────────
         var withSetting = m with
@@ -92,7 +92,7 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
                 RegistrationFields = new UpdateRegistrationFieldsSettingsDto { Username = "Required" },
             },
         };
-        Assert.False((await applier.UpdateRealmAsync(withSetting, ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(withSetting, ct: ct)).IsError);
         var reexport = await exporter.ExportRealmAsync(slug, ct);
         Assert.Equal("Required", reexport.Value.Settings!.RegistrationFields!.Username);
 
@@ -101,7 +101,7 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         {
             Users = m.Users.Select(u => u.UserName == "bob" ? u with { Password = "Bobsecret1!" } : u).ToList(),
         };
-        Assert.False((await applier.UpdateRealmAsync(withPassword, ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(withPassword, ct: ct)).IsError);
 
         await InTenantAsync(factory, slug, async sp =>
         {

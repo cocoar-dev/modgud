@@ -12,6 +12,7 @@ using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Scopes;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
+using Modgud.Permissions;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -210,7 +211,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         });
 
         // ── Apply the v2 manifest: changes every existing entity + adds a new role ──
-        var updated = await applier.UpdateRealmAsync(BuildGlobexManifest(slug, version: 2), ct);
+        var updated = await applier.UpdateRealmAsync(BuildGlobexManifest(slug, version: 2), ct: ct);
         Assert.False(updated.IsError, updated.IsError ? updated.FirstError.Description : string.Empty);
 
         // The realm DB was never dropped.
@@ -311,7 +312,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 },
             ],
         };
-        Assert.False((await applier.UpdateRealmAsync(patch, ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(patch, ct: ct)).IsError);
 
         await InTenantAsync(factory, slug, async sp =>
         {
@@ -330,10 +331,139 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var ct = TestContext.Current.CancellationToken;
 
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
-        var result = await applier.UpdateRealmAsync(BuildGlobexManifest("ghost", version: 1), ct);
+        var result = await applier.UpdateRealmAsync(BuildGlobexManifest("ghost", version: 1), ct: ct);
 
         Assert.True(result.IsError);
         Assert.Equal("Realm.NotFound", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task Prune_removes_absent_entities_but_protects_infra_and_admins()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "prune";
+
+        // Import a realm with keep-* + drop-* entities AND a full admin path
+        // (realm-admin role + user + group). The prune manifest will OMIT every drop-*
+        // entity AND the whole admin path — drop-* must go, the admin path must survive
+        // (no lockout). drop-app is referenced by drop-role/drop-api/drop.read/drop-web,
+        // all dropped too → exercises reverse-dependency-order pruning.
+        var full = new RealmManifest
+        {
+            Realm = new CreateRealmDto
+            {
+                Slug = slug,
+                DisplayName = "Prune",
+                Domains = [$"{slug}.localhost"],
+                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@prune.test" },
+            },
+            Apps =
+            [
+                new RealmManifestApp { Slug = "keep-app", DisplayName = "Keep", Permissions = [new RealmManifestPermission("keep", "read")] },
+                new RealmManifestApp { Slug = "drop-app", DisplayName = "Drop", Permissions = [new RealmManifestPermission("drop", "read")] },
+            ],
+            Apis =
+            [
+                new RealmManifestApi { Name = "keep-api", DisplayName = "Keep API", App = "keep-app" },
+                new RealmManifestApi { Name = "drop-api", DisplayName = "Drop API", App = "drop-app" },
+            ],
+            Scopes =
+            [
+                new RealmManifestScope { Name = "keep.read", DisplayName = "Keep", App = "keep-app", Resources = ["keep-api"] },
+                new RealmManifestScope { Name = "drop.read", DisplayName = "Drop", App = "drop-app", Resources = ["drop-api"] },
+            ],
+            Clients =
+            [
+                new RealmManifestClient { ClientId = "keep-web", ClientType = "confidential", RedirectUris = ["https://k.test/cb"], Scopes = ["openid"], AllowedGrantTypes = ["authorization_code"], Apps = ["keep-app"] },
+                new RealmManifestClient { ClientId = "drop-web", ClientType = "confidential", RedirectUris = ["https://d.test/cb"], Scopes = ["openid"], AllowedGrantTypes = ["authorization_code"], Apps = ["drop-app"] },
+            ],
+            Roles =
+            [
+                new RealmManifestRole { Name = "keep-role", App = "keep-app", Permissions = [new RealmManifestPermission("keep", "read")] },
+                new RealmManifestRole { Name = "drop-role", App = "drop-app", Permissions = [new RealmManifestPermission("drop", "read")] },
+                new RealmManifestRole { Name = "super-admin", IsRealmAdmin = true },
+            ],
+            Users =
+            [
+                new RealmManifestUser { Key = "keepuser", Email = "keep@prune.test", UserName = "keepuser", Password = "Passw0rd!23" },
+                new RealmManifestUser { Key = "dropuser", Email = "drop@prune.test", UserName = "dropuser", Password = "Passw0rd!23" },
+                new RealmManifestUser { Key = "adminuser", Email = "admin2@prune.test", UserName = "adminuser", Password = "Passw0rd!23" },
+            ],
+            Groups =
+            [
+                new RealmManifestGroup { Name = "KeepGroup", Members = ["keepuser"], Roles = ["keep-role"] },
+                new RealmManifestGroup { Name = "DropGroup", Members = ["dropuser"], Roles = ["drop-role"] },
+                new RealmManifestGroup { Name = "AdminGroup", Members = ["adminuser"], Roles = ["super-admin"] },
+            ],
+        };
+        var import = await applier.ImportNewRealmAsync(full, ct);
+        Assert.False(import.IsError, import.IsError ? import.FirstError.Description : string.Empty);
+
+        // The prune manifest keeps only the keep-* entities; everything else is absent.
+        var keepOnly = new RealmManifest
+        {
+            Realm = full.Realm,
+            Apps = [full.Apps[0]],
+            Apis = [full.Apis[0]],
+            Scopes = [full.Scopes[0]],
+            Clients = [full.Clients[0]],
+            Roles = [full.Roles[0]],
+            Users = [full.Users[0]],
+            Groups = [full.Groups[0]],
+        };
+
+        var pruned = await applier.UpdateRealmAsync(keepOnly, prune: true, ct);
+        Assert.False(pruned.IsError, pruned.IsError ? pruned.FirstError.Description : string.Empty);
+
+        // The realm DB was never dropped.
+        Assert.NotNull(await factory.Services.GetRequiredService<IRealmProvisioningService>().GetRealmBySlugAsync(slug, ct));
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var perms = sp.GetRequiredService<IPermissionService>();
+
+            // ── Absent, non-protected entities are pruned ──────────────────────
+            Assert.False(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.Slug == "drop-app", ct), "drop-app pruned");
+            Assert.False(await session.Query<PermissionRole>().AnyAsync(r => !r.IsDeleted && r.Name == "drop-role", ct), "drop-role pruned");
+            Assert.False(await session.Query<OAuthApplicationState>().AnyAsync(x => !x.IsDeleted && x.ClientId == "drop-web", ct), "drop-web pruned");
+            Assert.False(await session.Query<OAuthScopeState>().AnyAsync(x => !x.IsDeleted && x.Name == "drop.read", ct), "drop.read pruned");
+            Assert.False(await session.Query<OAuthApiState>().AnyAsync(x => !x.IsDeleted && x.Name == "drop-api", ct), "drop-api pruned");
+            Assert.False(await session.Query<Group>().AnyAsync(g => !g.IsDeleted && g.Name == "DropGroup", ct), "DropGroup pruned");
+            // User delete is the canonical recycle-bin soft-delete (deactivate + pending),
+            // so the Person survives but the ApplicationUser is deactivated.
+            var dropPerson = await session.Query<Person>().SingleAsync(p => p.AccountName == "dropuser", ct);
+            var dropUser = await session.LoadAsync<ApplicationUser>(dropPerson.Id, ct);
+            Assert.False(dropUser!.IsActive, "dropuser binned (deactivated)");
+
+            // ── Kept entities survive ──────────────────────────────────────────
+            Assert.True(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.Slug == "keep-app", ct), "keep-app kept");
+            Assert.True(await session.Query<PermissionRole>().AnyAsync(r => !r.IsDeleted && r.Name == "keep-role", ct), "keep-role kept");
+            Assert.True(await session.Query<OAuthApplicationState>().AnyAsync(x => !x.IsDeleted && x.ClientId == "keep-web", ct), "keep-web kept");
+            Assert.True(await session.Query<OAuthScopeState>().AnyAsync(x => !x.IsDeleted && x.Name == "keep.read", ct), "keep.read kept");
+            Assert.True(await session.Query<OAuthApiState>().AnyAsync(x => !x.IsDeleted && x.Name == "keep-api", ct), "keep-api kept");
+            Assert.True(await session.Query<Group>().AnyAsync(g => !g.IsDeleted && g.Name == "KeepGroup", ct), "KeepGroup kept");
+            var keepPerson = await session.Query<Person>().SingleAsync(p => p.AccountName == "keepuser", ct);
+            Assert.True((await session.LoadAsync<ApplicationUser>(keepPerson.Id, ct))!.IsActive, "keepuser still active");
+
+            // ── Lockout protection: the whole admin path survives despite being omitted ──
+            Assert.True(await session.Query<PermissionRole>().AnyAsync(r => !r.IsDeleted && r.Name == "super-admin", ct), "realm-admin role protected");
+            Assert.True(await session.Query<Group>().AnyAsync(g => !g.IsDeleted && g.Name == "AdminGroup", ct), "admin-conferring group protected");
+            var adminPerson = await session.Query<Person>().SingleAsync(p => !p.IsDeleted && p.AccountName == "adminuser", ct);
+            Assert.True((await session.LoadAsync<ApplicationUser>(adminPerson.Id, ct))!.IsActive, "admin user not binned");
+            Assert.True(
+                await perms.HasPermissionAsync(adminPerson.Id, AppSlugs.Modgud, PermissionEvaluator.RealmAdminPermission, ct),
+                "admin user retains realm:admin after prune");
+
+            // ── Infrastructure protection ──────────────────────────────────────
+            Assert.True(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.IsSystem, ct), "system app protected");
+            var scopes = (await sp.GetRequiredService<OAuthAdminService>().GetScopesAsync(ct)).Items;
+            Assert.Contains(scopes, s => s.Name == "openid"); // auto-seeded standard scope protected
+        });
     }
 
     /// <summary>
