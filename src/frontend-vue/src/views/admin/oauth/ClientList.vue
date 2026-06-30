@@ -16,6 +16,7 @@ import { useAppContextStore } from '@/stores/appContext.store'
 import { useServiceAccountStore } from '@/stores/serviceAccount.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
+import { useClone, buildClonePrefill, CLIENT_CLONE } from '@/composables/useClone'
 import { useRouter } from 'vue-router'
 import type { OAuthClientDto } from '@/models/oauth'
 import GridEmptyState from '@/components/GridEmptyState.vue'
@@ -24,6 +25,7 @@ const { t, language } = useI18n()
 const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
+const { stage } = useClone()
 const store = useOAuthClientStore()
 const appCtx = useAppContextStore()
 const saStore = useServiceAccountStore()
@@ -115,6 +117,21 @@ async function deleteSelected() {
   }
 }
 
+// Clone: load the full client, build a prefill with a blank client_id and the
+// secret dropped (create mints a fresh one), then open the Create modal.
+async function cloneSelected() {
+  const id = selectedIds.value[0]
+  if (!id) return
+  try {
+    const source = await store.loadOne(id)
+    if (!source) return
+    stage(CLIENT_CLONE.entity, buildClonePrefill(source, CLIENT_CLONE.descriptor))
+    navigateToModal('create')
+  } catch (e: any) {
+    alert(e?.message ?? String(e))
+  }
+}
+
 // Pre-load the SA list once so the M2M column can resolve names without
 // per-row HTTP fetches. SignalR keeps the store fresh from there.
 onMounted(async () => {
@@ -172,6 +189,8 @@ function openClient(client: OAuthClientDto) {
         })()" />
       <CoarMenuItem :label="t('common.create', {}, 'Erstellen')" icon="plus"
         @clicked="navigateToModal('create')" />
+      <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy"
+        @clicked="cloneSelected" />
       <CoarMenuDivider />
       <CoarMenuItem :label="t('common.delete', {}, 'Löschen')" icon="trash-2" @clicked="deleteSelected" />
     </CoarContextMenu>

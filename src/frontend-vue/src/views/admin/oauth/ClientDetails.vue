@@ -18,6 +18,7 @@ import { useOAuthClientStore } from '@/stores/oauthClient.store'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
+import { useClone, CLIENT_CLONE } from '@/composables/useClone'
 import type { OAuthClientDto, CreateOAuthClientDto, UpdateOAuthClientDto, AccessTokenType } from '@/models/oauth'
 
 const { t } = useI18n()
@@ -31,6 +32,7 @@ const store = useOAuthClientStore()
 const scopeStore = useOAuthScopeStore()
 const applicationsStore = useApplicationsStore()
 const realmSettingsStore = useRealmSettingsStore()
+const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create' && !justCreated.value)
 // Genuinely-existing client opened from the list (drives the regenerate-secret
 // affordance) — distinct from the transient just-created state where props.id
@@ -332,7 +334,13 @@ onMounted(async () => {
   // Realm settings gate whether the native passwordless grants appear in the
   // grant-type picker. Cheap singleton GET; skip if already in the store.
   if (!realmSettingsStore.loaded) realmSettingsStore.load().catch(() => {})
-  if (isCreate.value) return
+  if (isCreate.value) {
+    // Clone: prefill the whole form (ClientId blank, secret dropped → a fresh
+    // one is minted on create).
+    const clone = consume<OAuthClientDto>(CLIENT_CLONE.entity)
+    if (clone) form.value = fromDto(clone)
+    return
+  }
   loading.value = true
   try {
     const dto = await store.loadOne(props.id)

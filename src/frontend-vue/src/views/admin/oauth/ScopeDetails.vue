@@ -6,6 +6,7 @@ import ModalLayout from '@/components/ModalLayout.vue'
 import EditableStringList from '@/components/EditableStringList.vue'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
+import { useClone, SCOPE_CLONE } from '@/composables/useClone'
 import type { OAuthScopeDto } from '@/models/oauth'
 
 const { t } = useI18n()
@@ -17,6 +18,7 @@ const props = defineProps<{
 
 const store = useOAuthScopeStore()
 const applicationsStore = useApplicationsStore()
+const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 
 // Empty value = "global" (cross-app, e.g. standard OIDC scopes).
@@ -96,7 +98,12 @@ const footerButton = computed(() => ({
 
 onMounted(async () => {
   applicationsStore.initialize()
-  if (isCreate.value) return
+  if (isCreate.value) {
+    // Clone: prefill the form with the Name (immutable) blanked.
+    const clone = consume<OAuthScopeDto>(SCOPE_CLONE.entity)
+    if (clone) form.value = fromDto(clone)
+    return
+  }
   loading.value = true
   try {
     const dto = await store.loadOne(props.id)

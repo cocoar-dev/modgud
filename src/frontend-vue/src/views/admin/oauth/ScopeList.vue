@@ -14,6 +14,7 @@ import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
+import { useClone, buildClonePrefill, SCOPE_CLONE } from '@/composables/useClone'
 import type { OAuthScopeDto } from '@/models/oauth'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -21,6 +22,7 @@ const { t, language } = useI18n()
 const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
+const { stage } = useClone()
 const store = useOAuthScopeStore()
 const appCtx = useAppContextStore()
 
@@ -89,6 +91,20 @@ async function deleteSelected() {
   try { await store.remove(id) } catch (e: any) { alert(e?.message ?? String(e)) }
 }
 
+// Clone: load the full scope, blank the immutable Name, open Create pre-filled.
+async function cloneSelected() {
+  const id = selectedIds.value[0]
+  if (!id) return
+  try {
+    const source = await store.loadOne(id)
+    if (!source) return
+    stage(SCOPE_CLONE.entity, buildClonePrefill(source, SCOPE_CLONE.descriptor))
+    navigateToModal('create')
+  } catch (e: any) {
+    alert(e?.message ?? String(e))
+  }
+}
+
 onMounted(() => store.initialize())
 </script>
 
@@ -116,6 +132,8 @@ onMounted(() => store.initialize())
         @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />
       <CoarMenuItem :label="t('common.create', {}, 'Erstellen')" icon="plus"
         @clicked="navigateToModal('create')" />
+      <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy"
+        @clicked="cloneSelected" />
       <CoarMenuDivider />
       <CoarMenuItem :label="t('common.delete', {}, 'Löschen')" icon="trash-2" @clicked="deleteSelected" />
     </CoarContextMenu>

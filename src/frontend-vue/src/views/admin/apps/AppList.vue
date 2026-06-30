@@ -13,6 +13,7 @@ import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-par
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
+import { useClone, buildClonePrefill, APP_CLONE } from '@/composables/useClone'
 import type { ApplicationDto } from '@/models/application'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -20,6 +21,7 @@ const { t, language } = useI18n()
 const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 useRoutedModals()
 const { navigateToModal } = useFragmentNavigation()
+const { stage } = useClone()
 const store = useApplicationsStore()
 
 const ui = useUI()
@@ -84,6 +86,22 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<ApplicationDto>(), 
         : t('common.no', {}, 'Nein')),
   ])
 
+// Clone: load the full source App (the list endpoint omits Settings + only the
+// detail DTO carries the complete catalog), build a prefill with a blank slug +
+// fresh catalog ids, then open the Create modal pre-filled.
+async function cloneSelected() {
+  const id = selectedIds.value[0]
+  if (!id) return
+  try {
+    const source = await store.loadOne(id)
+    if (!source) return
+    stage(APP_CLONE.entity, buildClonePrefill(source, APP_CLONE.descriptor))
+    navigateToModal('create')
+  } catch (e: any) {
+    alert(e?.message ?? String(e))
+  }
+}
+
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
@@ -122,6 +140,8 @@ onMounted(() => store.initialize())
         @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />
       <CoarMenuItem :label="t('common.create', {}, 'Erstellen')" icon="plus"
         @clicked="navigateToModal('create')" />
+      <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy"
+        @clicked="cloneSelected" />
       <CoarMenuDivider />
       <CoarMenuItem :label="t('common.delete', {}, 'Löschen')" icon="trash-2"
         :disabled="selectedIsSystem" @clicked="deleteSelected" />
