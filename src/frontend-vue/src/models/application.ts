@@ -20,6 +20,9 @@ export interface ApplicationDto {
   Description?: string | null
   Permissions: ApplicationPermissionDto[]
   IsSystem: boolean
+  // An App is one resource: the per-App ADR-0011 settings override is carried inline on
+  // GET {id} / create / update (null on the list endpoint, which doesn't render it).
+  Settings?: ApplicationSettingsDto | null
 }
 
 export interface ApplicationLookupDto {
@@ -45,12 +48,15 @@ export interface CreateApplicationDto {
   DisplayName: string
   Description?: string | null
   Permissions: ApplicationPermissionInputDto[]
+  // Optional per-App settings override, written atomically with the App.
+  Settings?: ApplicationSettingsDto | null
 }
 
 export interface UpdateApplicationDto {
   DisplayName: string
   Description?: string | null
   Permissions: ApplicationPermissionInputDto[]
+  Settings?: ApplicationSettingsDto | null
 }
 
 // ── ADR-0011: per-Application settings overrides ────────────────────────────

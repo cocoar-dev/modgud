@@ -4,6 +4,7 @@ import { CoarTextInput, CoarFormField, CoarNote, CoarButton, CoarTabGroup, CoarT
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
+import AppSettingsSections from './AppSettingsSections.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
 import type {
   ApplicationDto,
@@ -153,7 +154,8 @@ const hasIncompleteRows = computed(() => catalog.value.some((r) =>
 ))
 
 const isSystem = computed(() => dto.value?.IsSystem === true)
-const activeTab = ref<'general' | 'catalog'>('general')
+const activeTab = ref<'general' | 'catalog' | 'settings'>('general')
+const settingsRef = ref<InstanceType<typeof AppSettingsSections> | null>(null)
 
 /**
  * Per-cell visual cue for the resource/action validation surface. The
@@ -279,18 +281,24 @@ async function save() {
   error.value = null
   catalogBlockers.value = []
   try {
+    // An App is one resource: its ADR-0011 settings override is part of the same
+    // create/update payload (the backend writes it in one tenant transaction). System
+    // apps carry no per-App settings, so omit it for them.
+    const settings = isSystem.value ? undefined : settingsRef.value?.build()
     if (isCreate.value) {
       await store.create({
         Slug: form.value.Slug.trim(),
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
         Permissions: buildPermissionsPayload(),
+        Settings: settings,
       })
     } else {
       await store.update(id.value, {
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
         Permissions: buildPermissionsPayload(),
+        Settings: settings,
       })
     }
     props.close()
@@ -318,9 +326,10 @@ async function save() {
       <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
     </div>
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-      <CoarTabGroup v-if="!isCreate" v-model="activeTab" class="tab-bar">
+      <CoarTabGroup v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.apps.tabs.general', {}, 'Allgemein') }}</CoarTab>
         <CoarTab id="catalog">{{ t('admin.apps.tabs.catalog', {}, 'Permission-Catalog') }}</CoarTab>
+        <CoarTab v-if="!isSystem" id="settings">{{ t('admin.apps.tabs.settings', {}, 'Einstellungen') }}</CoarTab>
       </CoarTabGroup>
 
       <CoarNote v-if="isCreate" variant="info">
@@ -331,7 +340,7 @@ async function save() {
       </CoarNote>
 
       <!-- Tab: General -->
-      <div v-show="isCreate || activeTab === 'general'" class="tab-content">
+      <div v-show="activeTab === 'general'" class="tab-content">
         <div class="grid grid-cols-2 gap-3">
           <CoarFormField :label="t('admin.apps.slug', {}, 'Slug (immutable)')">
             <CoarTextInput v-model="form.Slug" :disabled="!isCreate || isSystem" clearable
@@ -348,7 +357,7 @@ async function save() {
       </div>
 
       <!-- Tab: Permission Catalog -->
-      <div v-show="isCreate || activeTab === 'catalog'" class="tab-content">
+      <div v-show="activeTab === 'catalog'" class="tab-content">
         <p class="catalog-subtitle">
           {{ isSystem
             ? t('admin.apps.permissionsHintSystem', {}, 'Permission-Catalog der System-App — read-only. Diese Einträge entsprechen 1:1 den RequiresPermission-Aufrufen im Backend-Code.')
@@ -402,6 +411,11 @@ async function save() {
             </li>
           </ul>
         </CoarNote>
+      </div>
+
+      <!-- Tab: Settings (ADR-0011 per-App override) — one App, one modal -->
+      <div v-if="!isSystem" v-show="activeTab === 'settings'" class="tab-content">
+        <AppSettingsSections ref="settingsRef" :model-value="dto?.Settings" />
       </div>
 
       <p v-if="error" class="text-sm text-red-600">{{ error }}</p>

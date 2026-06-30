@@ -166,21 +166,28 @@ public class InviteCodeRegistrationFlowTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task InviteCode_Posture_RoundTrips_Through_Settings_Endpoint()
+    public async Task InviteCode_Posture_RoundTrips_Through_App_Resource()
     {
-        // Gate 1 — the new posture value survives PATCH → GET on the per-App
-        // settings surface (sparse, zero-migration).
+        // Gate 1 — the new posture value survives a unified App update → GET on the
+        // single App resource (settings carried inline; sparse, zero-migration).
         var ct = TestContext.Current.CancellationToken;
         var app = await CreateAppAsync("adr12-posture");
         var appShort = new ShortGuid(app.Id).ToString();
 
-        var patch = await Client.PatchAsJsonAsync(
-            $"/api/app/{appShort}/settings",
-            new { SelfRegistration = new { Posture = "InviteCode" } }, ct);
-        Assert.Equal(HttpStatusCode.OK, patch.StatusCode);
+        var put = await Client.PutAsJsonAsync(
+            $"/api/app/{appShort}",
+            new
+            {
+                DisplayName = "adr12-posture",
+                Description = (string?)null,
+                Permissions = Array.Empty<object>(),
+                Settings = new { SelfRegistration = new { Posture = "InviteCode" } },
+            }, ct);
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
 
-        var got = await Client.GetFromJsonAsync<JsonElement>($"/api/app/{appShort}/settings", JsonOptions, ct);
-        Assert.Equal("InviteCode", got.GetProperty("SelfRegistration").GetProperty("Posture").GetString());
+        var got = await Client.GetFromJsonAsync<JsonElement>($"/api/app/{appShort}", JsonOptions, ct);
+        Assert.Equal("InviteCode",
+            got.GetProperty("Settings").GetProperty("SelfRegistration").GetProperty("Posture").GetString());
     }
 
     [Fact]
