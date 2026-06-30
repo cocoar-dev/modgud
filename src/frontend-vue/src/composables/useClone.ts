@@ -74,7 +74,12 @@ export function buildClonePrefill<T extends object>(
   source: T,
   descriptor: CloneDescriptor,
 ): Record<string, unknown> {
-  const clone = structuredClone(source) as Record<string, unknown>
+  // JSON round-trip rather than structuredClone: the source is often a Pinia
+  // store entity (a Vue reactive Proxy), which structuredClone rejects with a
+  // DataCloneError. The DTOs are pure JSON (no Dates / Sets / functions), so
+  // this is a faithful detached deep copy and serialises straight through the
+  // reactive proxy.
+  const clone = JSON.parse(JSON.stringify(source)) as Record<string, unknown>
   for (const key of descriptor.blank ?? []) clone[key] = ''
   for (const key of descriptor.drop ?? []) delete clone[key]
   return descriptor.reshape ? descriptor.reshape(clone) : clone
