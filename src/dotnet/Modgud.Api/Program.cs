@@ -25,6 +25,7 @@ using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Api.Account;
 using Modgud.Authentication.Api.Account.Services;
 using Modgud.Api.Features.Admin;
+using Modgud.Api.Features.Admin.Provisioning;
 using Modgud.Api.Features.Admin.OAuth;
 using Modgud.Authentication.Api.Admin;
 using Modgud.Authentication.Api.Admin.LoginProviders;
@@ -1217,6 +1218,7 @@ try
     app.MapAppSettingsEndpoints("api");
     app.MapProjectionEndpoints("api");
     app.MapRealmsEndpoints("api");
+    app.MapRealmConfigEndpoints("api");
     app.MapOAuthClientsEndpoints("api");
     app.MapOAuthScopesEndpoints("api");
     app.MapOAuthApisEndpoints("api");

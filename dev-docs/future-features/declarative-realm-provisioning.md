@@ -37,6 +37,26 @@ dropping the tenant DB would discard the realm's signing keys, wipe the
 OpenIddict token store, and change every user's `sub`, invalidating all issued
 tokens.
 
+### Per-realm (data-plane) surface — delegated self-service
+
+The above is the **control-plane** surface (operators; full realm lifecycle). A second
+surface lets a realm's **own** admin manage just that realm declaratively, without
+control-plane powers — `RealmConfigEndpoints` at `/api/admin/realm-config/*`
+(`apply` / `export` / `manifest-schema`):
+
+- Runs on **any** realm's own host (NOT control-plane-filtered), gated by
+  **`realm:admin` in the current realm** (`.RequiresPermission(PermissionEvaluator.RealmAdminPermission)`
+  on the `modgud` app), reachable by a user OR a service-account token holding realm:admin.
+- **Scope = `TenantContext.Current`** (the host-routed realm). The endpoint pins the
+  manifest to the current slug; a manifest whose `Realm.Slug` names a different realm is
+  rejected (`Manifest.SlugMismatch`). No `import`, no realm-delete — lifecycle stays
+  control-plane-only.
+- **Reuses the same `RealmManifestApplier.UpdateRealmAsync` / `RealmManifestExporter`** — it
+  only changes the entry point + the gate. Works from the data plane because the applier
+  reads the global realm record (any host) then `TenantContext.Enter`s the slug; prune's
+  lockout/infra protections apply identically. The realm shell (domains/slug) is not mutated
+  by apply — only in-realm config + entities. Tests: `RealmConfigEndpointsTests`.
+
 ## The governing invariant
 
 > **Exactly one canonical write path per mutation.** The applier reimplements

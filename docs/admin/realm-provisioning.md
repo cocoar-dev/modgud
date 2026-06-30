@@ -16,16 +16,30 @@ It's built for three jobs:
 - **Agents / automation** — a machine can fetch the [contract schema](#discover-the-schema)
   and author a valid manifest without reading any source.
 
-::: info Where it runs
-All endpoints live on the **Control-Plane realm** (the realm flagged
-`IsControlPlane = true`, i.e. the system realm). On any other host they return
-**404**. See [Control Plane / Data Plane](../concepts/control-plane).
-:::
+## Two surfaces — pick by who's calling
 
-## The endpoints
+The same manifest format is applied through **two** surfaces, differing in scope and
+who's allowed:
+
+| | Control-plane provisioning | Per-realm self-service |
+|---|---|---|
+| **For** | Operators managing the deployment | A realm's own admin (delegate this) |
+| **Path** | `/api/admin/realms/*` | `/api/admin/realm-config/*` |
+| **Runs on** | Control-Plane realm only (404 elsewhere) | The realm's own host (any realm) |
+| **Permission** | `realm:write` on the `control-plane` app | `realm:admin` **in that realm** |
+| **Can** | Create / update / export / **delete any** realm | Update + export **its own** realm (incl. prune) |
+| **Cannot** | — | Create or delete realms; touch another realm |
+
+If you run a **shared** Modgud and want to hand one realm to an app team (or an
+agent) so they manage *only* that realm without operator powers, use
+[per-realm self-service](#per-realm-self-service). For full lifecycle control
+(creating/removing realms), use the control-plane surface below.
+
+## Control-plane endpoints
 
 All under `/api/admin/realms`, all requiring **`realm:write`** on the
-`control-plane` app (the `realm:admin` bypass also grants it):
+`control-plane` app (the `realm:admin` bypass also grants it), and only on the
+Control-Plane host ([404 elsewhere](../concepts/control-plane)):
 
 | Method | Path | What it does |
 |---|---|---|
@@ -155,6 +169,52 @@ database). Its purpose is **get-config → edit → re-apply**: export a realm, 
 password or tweak a setting, and `POST` it back to `/{slug}/apply`. Because confidential
 clients regenerate a secret on import and users can be created passwordless, a
 structure-only manifest still re-applies into a fully working realm.
+
+## Per-realm self-service
+
+On a **shared** deployment you often want to delegate one realm to its owner — an app
+team or an agent — so they can fully manage *that* realm's config and entities, but
+**not** create or delete realms and **not** see any other realm. That is exactly what a
+**`realm:admin` in that realm** can do, through `/api/admin/realm-config/*`:
+
+| Method | Path | What it does |
+|---|---|---|
+| `GET`  | `/api/admin/realm-config/manifest-schema` | The manifest JSON Schema (identical to the control-plane one). |
+| `GET`  | `/api/admin/realm-config/export` | Export **this** realm as a manifest. |
+| `POST` | `/api/admin/realm-config/apply` | Apply a manifest to **this** realm (merge; `?prune=true` = full sync within the realm). |
+
+- **Scope is the calling realm** — resolved from the request host, never from a slug in
+  the body. A manifest whose `Realm.Slug` names a *different* realm is rejected
+  (`Manifest.SlugMismatch`). There is no `import` and no realm-delete here — realm
+  lifecycle stays control-plane-only.
+- **Permission**: `realm:admin` in the realm being called. Nothing control-plane.
+- **Same engine, same protections** as the control-plane path: prune is bounded to the
+  realm and never removes the system app, standard scopes, service-account clients, or any
+  `realm:admin` path — so a manifest can't lock the realm out.
+
+### Delegating a realm
+
+To grant someone management of exactly one realm:
+
+1. **Create the realm** (control-plane: `import`, or the admin UI).
+2. **In that realm, give the principal `realm:admin`** — either a **user** (interactive)
+   or a **service account** (machine / agent, `client_credentials`). Both work; the only
+   requirement is that the credential carries `realm:admin` in that realm.
+3. They call `/api/admin/realm-config/*` against the realm's host with that credential.
+
+That credential can do everything to *its* realm's config and **nothing** to any other
+realm — and cannot create or delete realms.
+
+```bash
+REALM=https://acme.example.com   # the realm's own host
+
+curl -c cookies.txt -X POST "$REALM/api/account/login" \
+  -H 'Content-Type: application/json' -d '{"UserName":"realm-admin","Password":"<password>"}'
+
+curl -b cookies.txt "$REALM/api/admin/realm-config/export"             # current config
+curl -b cookies.txt -X POST "$REALM/api/admin/realm-config/apply" \
+  -H 'Content-Type: application/json' -d @manifest.json                # apply edits (+ ?prune=true)
+```
 
 ## Provisioning from a .NET test suite
 

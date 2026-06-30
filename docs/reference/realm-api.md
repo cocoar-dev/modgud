@@ -25,6 +25,18 @@ Endpoints in `Modgud.Api/Features/Admin/RealmsEndpoints.cs`.
 See [Declarative Realm Provisioning](../admin/realm-provisioning) for the manifest
 contract, merge-vs-prune semantics, and how to fetch the schema.
 
+### Per-realm self-service (data plane — not control-plane)
+
+A realm's own admin can manage **just that realm** from a manifest, without control-plane
+powers. These run on the realm's **own host** and require **`realm:admin` in that realm**
+(not the `control-plane` app); they cannot create or delete realms or target another realm.
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/admin/realm-config/manifest-schema` | `realm:admin` (in the realm) |
+| `GET` | `/api/admin/realm-config/export` | `realm:admin` (in the realm) |
+| `POST` | `/api/admin/realm-config/apply` | `realm:admin` (in the realm; `?prune=true` = full sync within the realm) |
+
 ::: tip Permission context
 These permissions live in the **`control-plane`** App's catalog
 (seeded only on the Control-Plane realm). The same string `realm:read`
