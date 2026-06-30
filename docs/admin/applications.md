@@ -86,6 +86,23 @@ you also need to:
   provision a resource server
 - create at least one role + group that connects users to the app
 
+## Cloning an app
+
+The slug is immutable, so the way to stand up a near-identical app — or to
+effectively **rename** one — is to clone it. In the list, right-click a row →
+**Clone**. The Create modal opens pre-filled from the source:
+
+- **Slug** is left blank — give the copy its own (the source's can't be reused).
+- **Display name, description and the whole permission catalog** are copied. The
+  catalog entries are copied as *new* entries (fresh ids), so the source app's
+  role grants and resource-server subsets are left untouched.
+- **Settings** are copied too — branding, registration, native-grant / DCR / CIMD
+  overrides — **except the Origin subdomain**, which is globally unique and would
+  collide. Set a new subdomain on the copy if it needs one.
+
+To rename: clone the app, give the copy the new slug, re-point the dependent
+clients / scopes / APIs / roles / groups, then delete the original.
+
 ## Provisioning the resource server
 
 Under [OAuth → APIs](./oauth-apis), create an OAuth API named after
@@ -109,9 +126,9 @@ Catalog entries can be edited any time, but:
 ## Application settings
 
 Beyond the permission catalog, an Application can override a slice of the
-realm's configuration and carry its own login experience. Open
-**Settings** from the app's row in the list (the routed `settings/:id`
-modal; disabled for the system apps). Everything here is **optional and
+realm's configuration and carry its own login experience. Open the app
+from the list and switch to the **Settings** tab (disabled for the system
+apps). Everything here is **optional and
 sparse** — an App overrides only what you switch on; anything left off
 **inherits the realm** value, field by field. Clearing an override
 re-inherits the realm.
@@ -200,8 +217,10 @@ pages (operational / GDPR), and the DCR garbage-collection interval (the
 GC job iterates per realm) are **not** per-app overridable — set them in
 [Realm settings](./realm-settings).
 
-The same overrides are reachable over the API at
-`GET`/`PATCH /api/app/{id}/settings` (`app:read` / `app:write`) — see the
+An App is one resource, so these overrides ride **inline** on the app itself —
+`GET /api/app/{id}` returns them, and `POST`/`PUT /api/app` write them in the
+same call that creates or updates the app (`app:read` / `app:write`), in one
+tenant transaction. There is no separate settings endpoint. See the
 [Admin API reference](../reference/admin-api#application-settings).
 
 ## Relationships to other areas

@@ -102,6 +102,10 @@ modgud:authorization-group:read
 
 Fully-qualified strings (containing `:`) pass through the resolver unchanged. The seeded System Admin / User Manager / Viewer roles are built exactly this way.
 
+## Cloning a role
+
+To make a variant of a role — say a tighter copy of an existing one — right-click it in the list → **Clone**. The Create modal opens pre-filled: the linked Application, the selected permission subset and the realm-admin flag are copied; only the **Name** is blank. Give the copy a new name, adjust the permission selection, and create.
+
 ## Cross-app roles (special case)
 
 A role can also include fully-qualified permissions from **other** apps in its permissions list — for example a "Cross-App Auditor" with `modgud:auth-log:read` AND `acme-tasks:audit:read`. This works because fully-qualified permissions pass through without further filtering.
