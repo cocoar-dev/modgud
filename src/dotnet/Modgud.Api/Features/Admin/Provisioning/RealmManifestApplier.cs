@@ -9,11 +9,20 @@ using Modgud.Api.Features.Users.Commands;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.User;
 using Modgud.Application.Services;
+using Modgud.Authentication.Api.Users;
+using Modgud.Authentication.Applications;
 using Modgud.Authentication.RealmSettings;
+using Modgud.Authentication.Sessions;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Commands;
 using Modgud.Authorization.Membership;
 using Modgud.Authorization.Principals;
+using Modgud.Authorization.Roles;
+using Modgud.Authorization.Services;
+using Modgud.Domain.Common;
+using Modgud.Domain.OAuth.Apis;
+using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Scopes;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using Wolverine;
@@ -87,6 +96,62 @@ public sealed class RealmManifestApplier(
                 "Manifest apply failed for realm {Slug} ({What}); hard-deleting the partially-provisioned realm.",
                 slug, ex.What);
             await realms.HardDeleteRealmAsync(slug, ct);
+            return ex.Errors;
+        }
+    }
+
+    /// <summary>
+    /// Updates an existing realm in place: the slug MUST already exist. Each entity in the
+    /// manifest is upserted by its natural key (app slug, api/scope/role/group name, client
+    /// id, user email/username) — created if absent, otherwise updated through the SAME
+    /// canonical Update operation the admin API uses. The realm database is NEVER dropped
+    /// (that would discard signing keys, the OpenIddict token store and user <c>sub</c>s),
+    /// so this is a strict in-place merge.
+    ///
+    /// <para>Semantics (v1, merge/upsert — entity-level prune is a separate later stage):
+    /// the manifest is the desired state for the fields it carries. Boolean flags are always
+    /// applied; scalar strings and non-empty lists replace the stored value; an omitted /
+    /// empty list and a null app-link leave the stored value unchanged (UpdateRealm sets and
+    /// changes, but never clears a list to empty or detaches an app-link — use the admin API
+    /// for that). Client secrets are only minted at create; an existing client keeps its
+    /// secret (rotate via the dedicated endpoint).</para>
+    ///
+    /// <para>Unlike import there is no all-or-nothing rollback: each canonical op commits its
+    /// own unit of work, so a mid-apply failure leaves the earlier successful writes in place.
+    /// The upserts are safe to re-apply after fixing the manifest.</para>
+    /// </summary>
+    public async Task<ErrorOr<RealmImportResult>> UpdateRealmAsync(
+        RealmManifest manifest, CancellationToken ct = default)
+    {
+        var slug = manifest.Realm.Slug;
+
+        var realm = await realms.GetRealmBySlugAsync(slug, ct);
+        if (realm is null)
+            return Error.NotFound("Realm.NotFound",
+                $"Realm '{slug}' does not exist. Use ImportNewRealm to create it.");
+
+        try
+        {
+            var secrets = await ApplyTenantUpdateAsync(slug, manifest, ct);
+            logger.LogInformation(
+                "Updated realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users, {Groups} groups (in-place merge).",
+                slug, manifest.Apps.Count, manifest.Apis.Count, manifest.Scopes.Count,
+                manifest.Clients.Count, manifest.Roles.Count, manifest.Users.Count, manifest.Groups.Count);
+            return new RealmImportResult
+            {
+                Slug = slug,
+                PrimaryDomain = realm.PrimaryDomain,
+                ClientSecrets = secrets,
+            };
+        }
+        catch (ManifestApplyException ex)
+        {
+            // In-place update never drops the realm DB. A partial failure leaves the writes
+            // that committed before it in place; surface the error so the caller can fix the
+            // manifest and re-apply (every step is an idempotent upsert).
+            logger.LogError(ex,
+                "Manifest update failed for realm {Slug} ({What}); the realm is left partially updated.",
+                slug, ex.What);
             return ex.Errors;
         }
     }
@@ -238,6 +303,347 @@ public sealed class RealmManifestApplier(
         }
 
         return secrets;
+    }
+
+    /// <summary>
+    /// In-place upsert of every entity in the manifest against an already-provisioned realm.
+    /// Mirrors <see cref="ApplyTenantConfigAsync"/> but reads current state by natural key
+    /// and dispatches to the canonical Update op when the entity exists, the Create op when
+    /// it doesn't. See <see cref="UpdateRealmAsync"/> for the field-level merge semantics.
+    /// </summary>
+    private async Task<Dictionary<string, string>> ApplyTenantUpdateAsync(
+        string slug, RealmManifest manifest, CancellationToken ct)
+    {
+        var secrets = new Dictionary<string, string>(StringComparer.Ordinal);
+        var apps = new Dictionary<string, App>(StringComparer.Ordinal);        // slug → App (id + catalog)
+        var roleIds = new Dictionary<string, Guid>(StringComparer.Ordinal);    // role key → id (for groups)
+        var userIds = new Dictionary<string, Guid>(StringComparer.Ordinal);    // user key → id (for groups)
+
+        using var _ = TenantContext.Enter(slug);
+        using var scope = scopeFactory.CreateScope();
+        var sp = scope.ServiceProvider;
+        var session = sp.GetRequiredService<IDocumentSession>();
+
+        if (manifest.Settings is not null)
+            EnsureOk(await sp.GetRequiredService<IRealmSettingsService>().PatchAsync(manifest.Settings, ct), "settings");
+
+        // ── Apps (+ permission catalog) ───────────────────────────────────────────
+        // Seed the resolver with every existing app so downstream entities can reference
+        // apps the manifest doesn't re-list, then upsert the manifest's apps over them.
+        foreach (var existing in await session.Query<App>().Where(a => !a.IsDeleted).ToListAsync(ct))
+            apps[existing.Slug] = existing;
+
+        var appAdmin = sp.GetRequiredService<AppAdminService>();
+        foreach (var app in manifest.Apps)
+        {
+            App result;
+            if (apps.TryGetValue(app.Slug, out var current))
+            {
+                // Preserve existing catalog-entry ids by resource:action so an unchanged
+                // permission keeps its id — otherwise it would look "removed + re-added" and
+                // trip the catalog-delete block (which guards FK references from roles/RSes).
+                // Genuinely new entries carry a null id (minted fresh); genuinely removed ones
+                // are then correctly subject to the reference check.
+                var byKey = current.Permissions.ToDictionary(p => $"{p.Resource}:{p.Action}", p => p.Id);
+                var permissions = app.Permissions.Select(p => new AppPermissionDto(
+                    byKey.TryGetValue($"{p.Resource}:{p.Action}", out var existingId)
+                        ? new ShortGuid(existingId).ToString()
+                        : null,
+                    p.Resource, p.Action, p.Description)).ToList();
+                var updated = await appAdmin.UpdateAppAsync(current.Id,
+                    new UpdateAppDto(app.DisplayName, app.Description, permissions), ct);
+                EnsureOk(updated, $"app '{app.Slug}'");
+                result = updated.Value;
+            }
+            else
+            {
+                var permissions = app.Permissions
+                    .Select(p => new AppPermissionDto(null, p.Resource, p.Action, p.Description)).ToList();
+                var created = await appAdmin.CreateAppAsync(
+                    new CreateAppDto(app.Slug, app.DisplayName, app.Description, permissions), ct);
+                EnsureOk(created, $"app '{app.Slug}'");
+                result = created.Value;
+            }
+            apps[app.Slug] = result;
+        }
+
+        var oauth = sp.GetRequiredService<OAuthAdminService>();
+
+        // ── OAuth APIs (natural key = Name / aud) ──────────────────────────────────
+        foreach (var api in manifest.Apis)
+        {
+            var ctx = $"api '{api.Name}'";
+            var existing = await session.Query<OAuthApiState>()
+                .FirstOrDefaultAsync(x => x.Name == api.Name && !x.IsDeleted, ct);
+            if (existing is null)
+            {
+                EnsureOk(await oauth.CreateApiAsync(new CreateOAuthApiDto
+                {
+                    Name = api.Name,
+                    DisplayName = api.DisplayName,
+                    Description = api.Description,
+                    Enabled = api.Enabled,
+                    Scopes = api.Scopes,
+                    UserClaims = api.UserClaims,
+                    AppId = ResolveAppId(apps, api.App, ctx),
+                    PermissionIds = ResolvePermissionIds(apps, api.App, api.Permissions, ctx),
+                    AllowDynamicRegistration = api.AllowDynamicRegistration,
+                }, ct), ctx);
+            }
+            else
+            {
+                EnsureOk(await oauth.UpdateApiAsync(existing.Id.ToString(), new UpdateOAuthApiDto
+                {
+                    DisplayName = api.DisplayName,
+                    Description = api.Description,
+                    Enabled = api.Enabled,
+                    Scopes = NullIfEmpty(api.Scopes),
+                    UserClaims = NullIfEmpty(api.UserClaims),
+                    AppId = api.App is null ? null : ResolveAppId(apps, api.App, ctx),
+                    PermissionIds = NullIfEmpty(ResolvePermissionIds(apps, api.App, api.Permissions, ctx)),
+                    AllowDynamicRegistration = api.AllowDynamicRegistration,
+                }, ct), ctx);
+            }
+        }
+
+        // ── OAuth scopes (natural key = Name) ──────────────────────────────────────
+        foreach (var s in manifest.Scopes)
+        {
+            var ctx = $"scope '{s.Name}'";
+            var existing = await session.Query<OAuthScopeState>()
+                .FirstOrDefaultAsync(x => x.Name == s.Name && !x.IsDeleted, ct);
+            if (existing is null)
+            {
+                EnsureOk(await oauth.CreateScopeAsync(new CreateOAuthScopeDto
+                {
+                    Name = s.Name,
+                    DisplayName = s.DisplayName,
+                    Description = s.Description,
+                    Resources = s.Resources,
+                    UserClaims = s.UserClaims,
+                    Enabled = s.Enabled,
+                    Required = s.Required,
+                    Emphasize = s.Emphasize,
+                    ShowInDiscoveryDocument = s.ShowInDiscoveryDocument,
+                    AppId = ResolveAppId(apps, s.App, ctx),
+                }, ct), ctx);
+            }
+            else
+            {
+                EnsureOk(await oauth.UpdateScopeAsync(existing.Id.ToString(), new UpdateOAuthScopeDto
+                {
+                    DisplayName = s.DisplayName,
+                    Description = s.Description,
+                    Resources = NullIfEmpty(s.Resources),
+                    UserClaims = NullIfEmpty(s.UserClaims),
+                    Enabled = s.Enabled,
+                    Required = s.Required,
+                    Emphasize = s.Emphasize,
+                    ShowInDiscoveryDocument = s.ShowInDiscoveryDocument,
+                    AppId = s.App is null ? null : ResolveAppId(apps, s.App, ctx),
+                }, ct), ctx);
+            }
+        }
+
+        // ── OAuth clients (natural key = ClientId) ─────────────────────────────────
+        foreach (var c in manifest.Clients)
+        {
+            var ctx = $"client '{c.ClientId}'";
+            var existing = await session.Query<OAuthApplicationState>()
+                .FirstOrDefaultAsync(x => x.ClientId == c.ClientId && !x.IsDeleted, ct);
+            if (existing is null)
+            {
+                var created = await oauth.CreateClientAsync(new CreateOAuthClientDto
+                {
+                    ClientId = c.ClientId,
+                    DisplayName = c.DisplayName,
+                    ClientType = c.ClientType,
+                    ClientSecret = c.ClientSecret,
+                    RedirectUris = c.RedirectUris,
+                    PostLogoutRedirectUris = c.PostLogoutRedirectUris,
+                    Scopes = c.Scopes,
+                    AllowedGrantTypes = c.AllowedGrantTypes,
+                    Roles = c.Roles,
+                    WebAuthnRpId = c.WebAuthnRpId,
+                    Enabled = c.Enabled,
+                    RequireConsent = c.RequireConsent,
+                    AppIds = c.Apps.Count == 0 ? null
+                        : c.Apps.Select(appSlug => ResolveAppId(apps, appSlug, ctx)!).ToList(),
+                }, ct);
+                EnsureOk(created, ctx);
+                if (created.Value.ClientSecret is not null)
+                    secrets[c.ClientId] = created.Value.ClientSecret;
+            }
+            else
+            {
+                // ClientType + secret are immutable through the canonical update path; an
+                // existing client keeps its secret (rotate via the dedicated endpoint).
+                EnsureOk(await oauth.UpdateClientAsync(existing.Id.ToString(), new UpdateOAuthClientDto
+                {
+                    DisplayName = c.DisplayName,
+                    RedirectUris = NullIfEmpty(c.RedirectUris),
+                    PostLogoutRedirectUris = NullIfEmpty(c.PostLogoutRedirectUris),
+                    Scopes = NullIfEmpty(c.Scopes),
+                    AllowedGrantTypes = NullIfEmpty(c.AllowedGrantTypes),
+                    Roles = NullIfEmpty(c.Roles),
+                    WebAuthnRpId = c.WebAuthnRpId,
+                    Enabled = c.Enabled,
+                    RequireConsent = c.RequireConsent,
+                    AppIds = c.Apps.Count == 0 ? null
+                        : c.Apps.Select(appSlug => ResolveAppId(apps, appSlug, ctx)!).ToList(),
+                }, ct), ctx);
+            }
+        }
+
+        // ── Roles (natural key = Name) ─────────────────────────────────────────────
+        var roleAdmin = sp.GetRequiredService<RoleAdminService>();
+        foreach (var r in manifest.Roles)
+        {
+            var ctx = $"role '{r.Name}'";
+            var payload = new RolePayload(
+                r.Name,
+                r.Description,
+                ResolveAppId(apps, r.App, ctx),
+                r.IsRealmAdmin,
+                ResolvePermissionIds(apps, r.App, r.Permissions, ctx));
+            var existing = await session.Query<PermissionRole>()
+                .FirstOrDefaultAsync(x => x.Name == r.Name && !x.IsDeleted, ct);
+            // Control-plane provisioning is trusted, so the realm-admin guard is satisfied.
+            ErrorOr<PermissionRole> result = existing is null
+                ? await roleAdmin.CreateRoleAsync(payload, callerIsRealmAdmin: true, ct)
+                : await roleAdmin.UpdateRoleAsync(existing.Id, payload, callerIsRealmAdmin: true, ct);
+            EnsureOk(result, ctx);
+            roleIds[r.ResolveKey()] = result.Value.Id;
+        }
+
+        // ── Users (natural key = email or username) ────────────────────────────────
+        var bus = sp.GetRequiredService<IMessageBus>();
+        foreach (var u in manifest.Users)
+        {
+            var ctx = $"user '{u.Email}'";
+            var normalizedEmail = u.Email.ToUpperInvariant();
+            var normalizedUserName = u.UserName?.ToLowerInvariant();
+            var existing = await session.Query<Person>()
+                .FirstOrDefaultAsync(p => !p.IsDeleted &&
+                    (p.NormalizedEmail == normalizedEmail ||
+                     (normalizedUserName != null && p.AccountName == normalizedUserName)), ct);
+
+            Guid? uid;
+            if (existing is null)
+            {
+                var createCmd = new CreateUserCommand(u.Firstname, u.Lastname, u.Acronym, u.Email,
+                    u.UserName ?? string.Empty, u.Password, u.EmailConfirmed);
+                var created = await bus.InvokeForTenantAsync<ErrorOr<UserDto>>(slug, createCmd, ct);
+                EnsureOk(created, ctx);
+                uid = ShortGuid.TryParse(created.Value.Id, out Guid cid) ? cid : null;
+            }
+            else
+            {
+                // UpdateUserCommand mutates only the profile fields. Password / EmailConfirmed
+                // / active-state are divergent inline ops (Stage 2) — left untouched here.
+                var updateCmd = new UpdateUserCommand(existing.Id,
+                    OptionalOf(u.Firstname), OptionalOf(u.Lastname), OptionalOf(u.Acronym),
+                    new Optional<string>(u.Email), OptionalOf(u.UserName));
+                // Plain-session direct call (NOT the bus): UpdateUserHandler appends
+                // UserUpdatedEvent straight to its session, and under InvokeForTenantAsync
+                // that's the Wolverine outbox session — the durable ReferenceSync forwarding
+                // would then write wolverine_*_envelopes tables the tenant DB doesn't have
+                // (the same reason groups use a plain session). CreateUser is unaffected: it
+                // persists via UserManager on a separate, non-outbox session.
+                var updateHandler = new UpdateUserHandler(session);
+                var updated = await updateHandler.Handle(updateCmd,
+                    sp.GetRequiredService<IUserAccessRevoker>(),
+                    sp.GetRequiredService<IApplicationSettingsResolver>(), ct);
+                EnsureOk(updated, ctx);
+                uid = existing.Id;
+            }
+            if (uid.HasValue) userIds[u.ResolveKey()] = uid.Value;
+        }
+
+        // ── Groups (natural key = Name) — PLAIN tenant-scoped session, NOT the Wolverine
+        //    outbox: the durable-inbox auto-membership forwarding would write to wolverine
+        //    tables the tenant DB doesn't have (see ApplyTenantConfigAsync). ──────────────
+        if (manifest.Groups.Count > 0)
+        {
+            var groupSession = sp.GetRequiredService<IDocumentSession>();
+            var evaluator = sp.GetRequiredService<IMembershipEvaluator>();
+            var recalculator = sp.GetRequiredService<IAutoMembershipRecalculator>();
+            var createHandler = new CreateGroupHandler(groupSession, evaluator, recalculator);
+            var updateHandler = new UpdateGroupHandler(groupSession, evaluator,
+                sp.GetRequiredService<IPermissionService>(), recalculator);
+
+            foreach (var g in manifest.Groups)
+            {
+                var ctx = $"group '{g.Name}'";
+                // Members/roles may reference entities created this run OR pre-existing ones,
+                // so fall back to a DB lookup by key when the in-run map misses.
+                var memberIds = new List<Guid>(g.Members.Count);
+                foreach (var m in g.Members)
+                    memberIds.Add(await ResolveUserRefAsync(session, userIds, m, $"{ctx} member '{m}'", ct));
+                var groupRoleIds = new List<Guid>(g.Roles.Count);
+                foreach (var rk in g.Roles)
+                    groupRoleIds.Add(await ResolveRoleRefAsync(session, roleIds, rk, $"{ctx} role '{rk}'", ct));
+
+                var mode = ParseEnum<MembershipMode>(g.MembershipMode, $"{ctx} membershipMode");
+                var emailMode = ParseEnum<EmailMode>(g.EmailMode, $"{ctx} emailMode");
+
+                var existing = await session.Query<Group>()
+                    .FirstOrDefaultAsync(x => x.Name == g.Name && !x.IsDeleted, ct);
+                if (existing is null)
+                {
+                    EnsureOk(await createHandler.Handle(new CreateGroupCommand(
+                        g.Name, g.Description, memberIds, groupRoleIds, mode,
+                        g.MembershipScript, g.Email, emailMode,
+                        g.BoundTo, g.ExternallyDrivable, CallerIsRealmAdmin: true), ct), ctx);
+                }
+                else
+                {
+                    EnsureOk(await updateHandler.Handle(new UpdateGroupCommand(
+                        existing.Id, g.Name, g.Description, memberIds, groupRoleIds, mode,
+                        g.MembershipScript, g.Email, emailMode,
+                        g.BoundTo, g.ExternallyDrivable, CallerIsRealmAdmin: true), ct), ctx);
+                }
+            }
+        }
+
+        return secrets;
+    }
+
+    /// <summary>Wraps a manifest string in a "some" optional, or "none" when null — the
+    /// UpdateUserCommand semantics: a null manifest field leaves the stored value unchanged
+    /// rather than clearing it.</summary>
+    private static Optional<string> OptionalOf(string? value)
+        => value is null ? Optional<string>.None : new Optional<string>(value);
+
+    /// <summary>Returns null for an empty list so a canonical PATCH op treats it as
+    /// "no change" rather than "clear" — UpdateRealm sets and changes lists but never
+    /// clears them to empty (that stays an admin-API operation).</summary>
+    private static List<string>? NullIfEmpty(List<string> list) => list.Count == 0 ? null : list;
+
+    private static async Task<Guid> ResolveUserRefAsync(
+        IDocumentSession session, IReadOnlyDictionary<string, Guid> map, string key, string context, CancellationToken ct)
+    {
+        if (map.TryGetValue(key, out var id)) return id;
+        var lowered = key.ToLowerInvariant();
+        var upper = key.ToUpperInvariant();
+        var person = await session.Query<Person>()
+            .FirstOrDefaultAsync(p => !p.IsDeleted && (p.AccountName == lowered || p.NormalizedEmail == upper), ct);
+        if (person is null)
+            throw new ManifestApplyException(context,
+                [Error.Validation("Manifest.UnknownReference", $"{context} resolves to no user.")]);
+        return person.Id;
+    }
+
+    private static async Task<Guid> ResolveRoleRefAsync(
+        IDocumentSession session, IReadOnlyDictionary<string, Guid> map, string key, string context, CancellationToken ct)
+    {
+        if (map.TryGetValue(key, out var id)) return id;
+        var role = await session.Query<PermissionRole>()
+            .FirstOrDefaultAsync(r => !r.IsDeleted && r.Name == key, ct);
+        if (role is null)
+            throw new ManifestApplyException(context,
+                [Error.Validation("Manifest.UnknownReference", $"{context} resolves to no role.")]);
+        return role.Id;
     }
 
     private static string? ResolveAppId(IReadOnlyDictionary<string, App> apps, string? slug, string context)
