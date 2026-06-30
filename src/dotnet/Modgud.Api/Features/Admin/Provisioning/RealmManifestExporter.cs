@@ -4,8 +4,10 @@ using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.Realms;
+using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Application.Services;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.RealmSettings;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
@@ -25,8 +27,9 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// <para>Cross-references are reversed back to KEYS (app slug, role/user key,
 /// <c>resource:action</c>). Entities that can't be cleanly re-applied are omitted: the
 /// auto-seeded standard OIDC scopes and system apps, plus service-account-linked clients (the
-/// manifest doesn't model service accounts). Realm settings are not exported yet — re-applying
-/// with no <c>Settings</c> leaves them untouched.</para>
+/// manifest doesn't model service accounts). Realm settings ARE exported (all sections, current
+/// values) EXCEPT the write-only captcha secret (a <c>CaptchaSecretSet</c> flag, never the
+/// plaintext) — re-applying leaves that untouched.</para>
 /// </summary>
 public sealed class RealmManifestExporter(
     IRealmProvisioningService realms,
@@ -47,6 +50,9 @@ public sealed class RealmManifestExporter(
         var sp = scope.ServiceProvider;
         var session = sp.GetRequiredService<IDocumentSession>();
         var oauth = sp.GetRequiredService<OAuthAdminService>();
+
+        // Realm settings (all sections, current values) reverse-mapped read→patch shape.
+        var settings = MapSettings(await sp.GetRequiredService<IRealmSettingsService>().GetDtoAsync(ct));
 
         // ── Apps + reverse-resolution maps (these cover ALL apps incl. system, so
         //    downstream references to a system app still resolve to a slug). ──────────
@@ -176,6 +182,7 @@ public sealed class RealmManifestExporter(
                 PrimaryDomain = realm.PrimaryDomain,
                 // InitialAdmin is meaningless for an existing realm; left default (ignored on apply).
             },
+            Settings = settings,
             Apps = manifestApps,
             Apis = manifestApis,
             Scopes = manifestScopes,
@@ -185,6 +192,86 @@ public sealed class RealmManifestExporter(
             Groups = manifestGroups,
         };
     }
+
+    /// <summary>
+    /// Reverse-maps the realm-settings read shape to the patch shape the manifest carries —
+    /// every section emitted with its current effective values so the export shows the full
+    /// config. The write-only captcha secret is intentionally left null (no plaintext to read);
+    /// re-applying leaves the stored secret untouched.
+    /// </summary>
+    private static UpdateRealmSettingsDto MapSettings(RealmSettingsDto s) => new()
+    {
+        SelfRegistration = new UpdateSelfRegistrationDto
+        {
+            Enabled = s.SelfRegistration.Enabled,
+            RequireEmailVerification = s.SelfRegistration.RequireEmailVerification,
+            AllowedEmailDomains = s.SelfRegistration.AllowedEmailDomains,
+            RequireAdminApproval = s.SelfRegistration.RequireAdminApproval,
+            DefaultGroupIds = s.SelfRegistration.DefaultGroupIds,
+            TermsOfServiceUrl = s.SelfRegistration.TermsOfServiceUrl,
+            PrivacyPolicyUrl = s.SelfRegistration.PrivacyPolicyUrl,
+            CaptchaEnabled = s.SelfRegistration.CaptchaEnabled,
+            CaptchaSiteKey = s.SelfRegistration.CaptchaSiteKey,
+            // CaptchaSecret is write-only (only a CaptchaSecretSet flag is readable) — leave null.
+        },
+        Dcr = new UpdateDcrSettingsDto
+        {
+            Enabled = s.Dcr.Enabled,
+            AccessTokenLifetimeMinutes = s.Dcr.AccessTokenLifetimeMinutes,
+            RefreshTokenLifetimeDays = s.Dcr.RefreshTokenLifetimeDays,
+            GcTtlDays = s.Dcr.GcTtlDays,
+            PerIpRateLimitPerHour = s.Dcr.PerIpRateLimitPerHour,
+            PerRealmRateLimitPerDay = s.Dcr.PerRealmRateLimitPerDay,
+            ReservedNames = s.Dcr.ReservedNames,
+        },
+        Cimd = new UpdateCimdSettingsDto
+        {
+            Enabled = s.Cimd.Enabled,
+            AccessTokenLifetimeMinutes = s.Cimd.AccessTokenLifetimeMinutes,
+            RefreshTokenLifetimeDays = s.Cimd.RefreshTokenLifetimeDays,
+        },
+        NativeGrants = new UpdateNativeGrantSettingsDto
+        {
+            Enabled = s.NativeGrants.Enabled,
+            AccessTokenLifetimeMinutes = s.NativeGrants.AccessTokenLifetimeMinutes,
+            RefreshTokenLifetimeDays = s.NativeGrants.RefreshTokenLifetimeDays,
+        },
+        AuthRateLimits = new UpdateAuthRateLimitsDto
+        {
+            // Read + patch share RateLimitRuleDto, so the rules copy across directly.
+            NativeOtp = s.AuthRateLimits.NativeOtp,
+            MagicLink = s.AuthRateLimits.MagicLink,
+            PasswordReset = s.AuthRateLimits.PasswordReset,
+            EmailOtp = s.AuthRateLimits.EmailOtp,
+            EmailVerification = s.AuthRateLimits.EmailVerification,
+            PasskeyBegin = s.AuthRateLimits.PasskeyBegin,
+            Bootstrap = s.AuthRateLimits.Bootstrap,
+        },
+        Branding = new UpdateBrandingSettingsDto
+        {
+            ProductName = s.Branding.ProductName,
+            LogoAssetId = s.Branding.LogoAssetId,
+            FaviconAssetId = s.Branding.FaviconAssetId,
+            PrimaryColor = s.Branding.PrimaryColor,
+        },
+        RegistrationFields = new UpdateRegistrationFieldsSettingsDto
+        {
+            Username = s.RegistrationFields.Username,
+            Firstname = s.RegistrationFields.Firstname,
+            Lastname = s.RegistrationFields.Lastname,
+        },
+        Deletion = new UpdateDeletionSettingsDto
+        {
+            GraceDays = s.Deletion.GraceDays,
+            ReminderLeadDays = s.Deletion.ReminderLeadDays,
+            AdminRetentionDays = s.Deletion.AdminRetentionDays,
+            AutoPurgeEnabled = s.Deletion.AutoPurgeEnabled,
+        },
+        Audit = new UpdateAuditSettingsDto
+        {
+            VisibilityWindowDays = s.Audit.VisibilityWindowDays,
+        },
+    };
 
     private static string? SlugOfShort(IReadOnlyDictionary<Guid, string> appSlugById, string? shortGuid)
         => !string.IsNullOrEmpty(shortGuid) && ShortGuid.TryParse(shortGuid, out Guid id)

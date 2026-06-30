@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Features.Admin.Provisioning;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.Realms;
+using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Authentication.Domain;
 using Modgud.Infrastructure.Persistence.Tenancy;
 
@@ -75,8 +76,25 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         Assert.DoesNotContain(m.Apps, a => a.Slug == "modgud");     // system app
         Assert.DoesNotContain(m.Scopes, s => s.Name == "openid");   // standard scope
 
+        // Settings ARE exported (all sections, current values) so you can see what to change.
+        Assert.NotNull(m.Settings);
+        Assert.Equal("Optional", m.Settings!.RegistrationFields!.Username); // shipped default
+        Assert.Null(m.Settings.SelfRegistration!.CaptchaSecret);            // write-only — never exported
+
         // ── Re-apply the UNEDITED export = idempotent ──────────────────────────
         Assert.False((await applier.UpdateRealmAsync(m, ct)).IsError);
+
+        // ── Edit a setting and re-apply → it round-trips ───────────────────────
+        var withSetting = m with
+        {
+            Settings = new UpdateRealmSettingsDto
+            {
+                RegistrationFields = new UpdateRegistrationFieldsSettingsDto { Username = "Required" },
+            },
+        };
+        Assert.False((await applier.UpdateRealmAsync(withSetting, ct)).IsError);
+        var reexport = await exporter.ExportRealmAsync(slug, ct);
+        Assert.Equal("Required", reexport.Value.Settings!.RegistrationFields!.Username);
 
         // ── Edit: set bob's password, re-apply ─────────────────────────────────
         var withPassword = m with
