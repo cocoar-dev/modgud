@@ -37,6 +37,44 @@ public sealed class RoleAdminService(IDocumentSession session)
     }
 
     /// <summary>
+    /// The single canonical update path for an existing <see cref="PermissionRole"/>,
+    /// shared by <see cref="RolesEndpoints"/> and the realm-provisioning applier. The
+    /// realm-admin privilege-escalation guard (audit H1) is a parameter: the endpoint
+    /// passes the caller's realm:admin status (so a non-admin may de-escalate but not
+    /// confer the flag), the applier passes <c>true</c> (trusted control-plane path).
+    /// </summary>
+    public async Task<ErrorOr<PermissionRole>> UpdateRoleAsync(
+        Guid id, RolePayload dto, bool callerIsRealmAdmin, CancellationToken ct = default)
+    {
+        var existing = await session.LoadAsync<PermissionRole>(id, ct);
+        if (existing is null || existing.IsDeleted)
+            return Error.NotFound("Role.NotFound", "Role not found.");
+
+        // Only a realm:admin may set/keep the realm-admin flag on a role. A non-admin may
+        // still de-escalate (clear the flag) or edit a non-admin role.
+        if (dto.IsRealmAdmin && !callerIsRealmAdmin)
+            return Error.Forbidden("Role.RealmAdminForbidden",
+                "Only a realm administrator may create or modify a realm-admin role.");
+
+        var built = await BuildRoleAsync(dto, ct);
+        if (built.IsError) return built.Errors;
+
+        var role = built.Value;
+        existing.Name = role.Name;
+        existing.Description = role.Description;
+        existing.AppId = role.AppId;
+        existing.IsRealmAdmin = role.IsRealmAdmin;
+        existing.PermissionIds = role.PermissionIds;
+        // PermissionRoleProjection (inline) writes the doc from the event; emit only.
+        session.Events.Append(id,
+            new PermissionRoleUpdatedEvent(
+                id, existing.Name, existing.Description,
+                existing.AppId, existing.IsRealmAdmin, existing.PermissionIds));
+        await session.SaveChangesAsync(ct);
+        return existing;
+    }
+
+    /// <summary>
     /// Validates a payload into a <see cref="PermissionRole"/> (Id minted here): AppId
     /// resolves to an existing App, every PermissionId resolves to that App's catalog,
     /// PermissionIds require an App link, and a role must grant something (App link or

@@ -2,13 +2,15 @@ using ErrorOr;
 using Marten;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
+using Modgud.Domain.OAuth.Apis;
+using Modgud.Authorization.Roles;
 
 namespace Modgud.Api.Features.Admin.Apps;
 
 /// <summary>
-/// The single canonical write path for creating <see cref="App"/> records, shared by
-/// <see cref="AppsEndpoints"/> and the realm-provisioning applier so the manual path
-/// and the manifest path can never diverge. Returns <see cref="ErrorOr{T}"/> so the
+/// The single canonical write path for creating and updating <see cref="App"/> records,
+/// shared by <see cref="AppsEndpoints"/> and the realm-provisioning applier so the manual
+/// path and the manifest path can never diverge. Returns <see cref="ErrorOr{T}"/> so the
 /// endpoint maps it to HTTP while the applier consumes it directly. The injected
 /// <see cref="IDocumentSession"/> is tenant-scoped, so a call lands in whatever realm
 /// the ambient <c>TenantContext</c> selects.
@@ -44,6 +46,57 @@ public sealed class AppAdminService(IDocumentSession session)
             Description: dto.Description,
             Permissions: permissions.Value,
             IsSystem: false));
+        await session.SaveChangesAsync(ct);
+
+        return (await session.LoadAsync<App>(id, ct))!;
+    }
+
+    /// <summary>
+    /// The single canonical update path for an existing <see cref="App"/> — display name,
+    /// description, and the permission catalog. Mirrors the create path's validation and
+    /// adds the catalog-edit safety net: removing a catalog entry that is still referenced
+    /// by a role or resource server is refused with a <see cref="ErrorType.Conflict"/>
+    /// whose <c>Metadata["blockers"]</c> carries the structured reference list (so the
+    /// admin endpoint can render its rich 409 body and the applier can surface the cause).
+    /// </summary>
+    public async Task<ErrorOr<App>> UpdateAppAsync(Guid id, UpdateAppDto dto, CancellationToken ct = default)
+    {
+        var app = await session.LoadAsync<App>(id, ct);
+        if (app is null || app.IsDeleted)
+            return Error.NotFound("App.NotFound", "App not found.");
+
+        if (string.IsNullOrWhiteSpace(dto.DisplayName))
+            return Error.Validation("App.DisplayNameRequired", "DisplayName is required.");
+
+        // Existing-permission lookup by id keeps stable identities across updates: an entry
+        // already present by id retains it, an entry without an id gets a fresh one.
+        var existingByKey = app.Permissions.ToDictionary(p => p.Id, p => p);
+        var permissions = NormalizePermissions(dto.Permissions, existingByKey);
+        if (permissions.IsError) return permissions.Errors;
+
+        // Detect catalog deletions that would orphan FKs in PermissionRole.PermissionIds or
+        // OAuthApiState.PermissionIds. Removing a still-referenced entry is a silent
+        // permission revocation in disguise — refuse with 409 + what's blocking.
+        var newIds = permissions.Value.Select(p => p.Id).ToHashSet();
+        var removedIds = app.Permissions.Where(p => !newIds.Contains(p.Id)).ToList();
+        if (removedIds.Count > 0)
+        {
+            var blockers = await FindReferencesAsync(removedIds.Select(p => p.Id).ToList(), session, ct);
+            if (blockers.Count > 0)
+            {
+                var payload = blockers.Select(b => new AppCatalogBlocker(
+                    new BuildingBlocks.Helper.ShortGuid(b.PermissionId).ToString(),
+                    removedIds.First(p => p.Id == b.PermissionId).ToPermissionString(),
+                    b.RoleNames,
+                    b.OAuthApiNames)).ToList();
+                return Error.Conflict("App.CatalogEntriesReferenced",
+                    "Cannot remove catalog entries that are still referenced by roles or resource servers. Detach them first.",
+                    new Dictionary<string, object> { ["blockers"] = payload });
+            }
+        }
+
+        session.Events.Append(id, new AppUpdatedEvent(
+            id, dto.DisplayName, dto.Description, permissions.Value));
         await session.SaveChangesAsync(ct);
 
         return (await session.LoadAsync<App>(id, ct))!;
@@ -100,4 +153,54 @@ public sealed class AppAdminService(IDocumentSession session)
 
         return normalised;
     }
+
+    /// <summary>
+    /// Per-permission-id reference summary used by the catalog editor's delete-block
+    /// panel. Only entries with at least one referencing role or RS are returned.
+    /// </summary>
+    internal sealed record PermissionReference(Guid PermissionId, List<string> RoleNames, List<string> OAuthApiNames);
+
+    /// <summary>
+    /// Finds every <see cref="PermissionRole"/> and <see cref="OAuthApiState"/> that
+    /// references any of the supplied permission ids in their respective
+    /// <c>PermissionIds</c> FK list. Returns one entry per permission-id that has at least
+    /// one referencing row — empty list = safe to remove. Shared by the catalog update
+    /// (here) and the App-delete block in <see cref="AppsEndpoints"/>.
+    /// </summary>
+    internal static async Task<List<PermissionReference>> FindReferencesAsync(
+        List<Guid> permissionIds, IDocumentSession session, CancellationToken ct = default)
+    {
+        if (permissionIds.Count == 0) return [];
+
+        // For our small catalogs it's acceptable to load every role/api with any non-empty
+        // PermissionIds and filter in memory. Tenant DBs aren't huge here.
+        var roles = await session.Query<PermissionRole>()
+            .Where(r => !r.IsDeleted && r.PermissionIds.Any())
+            .ToListAsync(ct);
+        var apis = await session.Query<OAuthApiState>()
+            .Where(a => !a.IsDeleted && a.PermissionIds.Any())
+            .ToListAsync(ct);
+
+        var result = new List<PermissionReference>();
+        foreach (var pid in permissionIds)
+        {
+            var roleNames = roles.Where(r => r.PermissionIds.Contains(pid)).Select(r => r.Name).ToList();
+            var apiNames = apis.Where(a => a.PermissionIds.Contains(pid)).Select(a => a.Name).ToList();
+            if (roleNames.Count > 0 || apiNames.Count > 0)
+                result.Add(new PermissionReference(pid, roleNames, apiNames));
+        }
+        return result;
+    }
 }
+
+/// <summary>
+/// The rich blocker shape surfaced in the <c>App.CatalogEntriesReferenced</c> 409 body —
+/// one entry per still-referenced catalog id the update tried to remove. Carried through
+/// <see cref="Error.Metadata"/> so <see cref="AppsEndpoints"/> can render it verbatim and
+/// the admin SPA's <c>AppDetails.vue</c> delete-block panel keeps working.
+/// </summary>
+public sealed record AppCatalogBlocker(
+    string PermissionId,
+    string Permission,
+    List<string> ReferencedByRoles,
+    List<string> ReferencedByResourceServers);
