@@ -71,8 +71,9 @@ public sealed record RealmManifestApi
     public List<string> Scopes { get; init; } = [];
     public List<RealmManifestPermission> Permissions { get; init; } = [];
     public List<string> UserClaims { get; init; } = [];
-    public bool Enabled { get; init; } = true;
-    public bool AllowDynamicRegistration { get; init; }
+    // Nullable = surgical patch: omitted = no change on apply / default on create.
+    public bool? Enabled { get; init; }
+    public bool? AllowDynamicRegistration { get; init; }
 }
 
 public sealed record RealmManifestScope
@@ -83,10 +84,11 @@ public sealed record RealmManifestScope
     public string? App { get; init; }
     public List<string> Resources { get; init; } = [];
     public List<string> UserClaims { get; init; } = [];
-    public bool Enabled { get; init; } = true;
-    public bool Required { get; init; }
-    public bool Emphasize { get; init; }
-    public bool ShowInDiscoveryDocument { get; init; } = true;
+    // Nullable = surgical patch: omitted = no change on apply / default on create.
+    public bool? Enabled { get; init; }
+    public bool? Required { get; init; }
+    public bool? Emphasize { get; init; }
+    public bool? ShowInDiscoveryDocument { get; init; }
 }
 
 public sealed record RealmManifestClient
@@ -102,8 +104,9 @@ public sealed record RealmManifestClient
     public List<string> Apps { get; init; } = [];
     public List<string> Roles { get; init; } = [];
     public string? WebAuthnRpId { get; init; }
-    public bool Enabled { get; init; } = true;
-    public bool RequireConsent { get; init; }
+    // Nullable = surgical patch: omitted = no change on apply / default on create.
+    public bool? Enabled { get; init; }
+    public bool? RequireConsent { get; init; }
 }
 
 public sealed record RealmManifestRole

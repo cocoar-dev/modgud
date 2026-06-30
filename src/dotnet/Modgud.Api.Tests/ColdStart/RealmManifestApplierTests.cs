@@ -260,6 +260,69 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
     }
 
     [Fact]
+    public async Task Update_omitting_a_bool_leaves_it_unchanged()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "boolpatch";
+        // Import a DISABLED confidential client (Enabled explicitly false).
+        var manifest = new RealmManifest
+        {
+            Realm = new CreateRealmDto
+            {
+                Slug = slug,
+                DisplayName = slug,
+                Domains = [$"{slug}.localhost"],
+                InitialAdmin = new InitialAdminDto { UserName = "admin", Email = $"admin@{slug}.test" },
+            },
+            Apps = [new RealmManifestApp { Slug = "bp-app", DisplayName = "BP", Permissions = [new RealmManifestPermission("bp", "read")] }],
+            Clients =
+            [
+                new RealmManifestClient
+                {
+                    ClientId = "bp-web",
+                    ClientType = "confidential",
+                    RedirectUris = ["https://bp.test/cb1"],
+                    Scopes = ["openid"],
+                    AllowedGrantTypes = ["authorization_code", "refresh_token"],
+                    Apps = ["bp-app"],
+                    Enabled = false,
+                },
+            ],
+        };
+        Assert.False((await applier.ImportNewRealmAsync(manifest, ct)).IsError);
+
+        // Apply a partial update: change the redirect URI, OMIT Enabled (null = no change).
+        var patch = new RealmManifest
+        {
+            Realm = manifest.Realm,
+            Clients =
+            [
+                new RealmManifestClient
+                {
+                    ClientId = "bp-web",
+                    ClientType = "confidential",
+                    RedirectUris = ["https://bp.test/cb2"],
+                    Apps = ["bp-app"],
+                    // Enabled deliberately omitted.
+                },
+            ],
+        };
+        Assert.False((await applier.UpdateRealmAsync(patch, ct)).IsError);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var client = (await sp.GetRequiredService<OAuthAdminService>()
+                .GetClientsAsync(new PaginationRequest { PageSize = 200 }, ct)).Items.Single(c => c.ClientId == "bp-web");
+            Assert.False(client.Enabled, "the omitted Enabled bool must not flip the disabled client back on");
+            Assert.Contains("https://bp.test/cb2", client.RedirectUris);
+        });
+    }
+
+    [Fact]
     public async Task Update_rejects_a_slug_that_does_not_exist()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();

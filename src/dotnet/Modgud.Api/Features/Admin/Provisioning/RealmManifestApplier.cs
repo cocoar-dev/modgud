@@ -194,12 +194,12 @@ public sealed class RealmManifestApplier(
                 Name = api.Name,
                 DisplayName = api.DisplayName,
                 Description = api.Description,
-                Enabled = api.Enabled,
+                Enabled = api.Enabled ?? true,
                 Scopes = api.Scopes,
                 UserClaims = api.UserClaims,
                 AppId = ResolveAppId(apps, api.App, $"api '{api.Name}'"),
                 PermissionIds = ResolvePermissionIds(apps, api.App, api.Permissions, $"api '{api.Name}'"),
-                AllowDynamicRegistration = api.AllowDynamicRegistration,
+                AllowDynamicRegistration = api.AllowDynamicRegistration ?? false,
             }, ct), $"api '{api.Name}'");
         }
 
@@ -213,10 +213,10 @@ public sealed class RealmManifestApplier(
                 Description = s.Description,
                 Resources = s.Resources,
                 UserClaims = s.UserClaims,
-                Enabled = s.Enabled,
-                Required = s.Required,
-                Emphasize = s.Emphasize,
-                ShowInDiscoveryDocument = s.ShowInDiscoveryDocument,
+                Enabled = s.Enabled ?? true,
+                Required = s.Required ?? false,
+                Emphasize = s.Emphasize ?? false,
+                ShowInDiscoveryDocument = s.ShowInDiscoveryDocument ?? true,
                 AppId = ResolveAppId(apps, s.App, $"scope '{s.Name}'"),
             }, ct), $"scope '{s.Name}'");
         }
@@ -236,8 +236,8 @@ public sealed class RealmManifestApplier(
                 AllowedGrantTypes = c.AllowedGrantTypes,
                 Roles = c.Roles,
                 WebAuthnRpId = c.WebAuthnRpId,
-                Enabled = c.Enabled,
-                RequireConsent = c.RequireConsent,
+                Enabled = c.Enabled ?? true,
+                RequireConsent = c.RequireConsent ?? false,
                 AppIds = c.Apps.Count == 0
                     ? null
                     : c.Apps.Select(appSlug => ResolveAppId(apps, appSlug, $"client '{c.ClientId}'")!).ToList(),
@@ -382,12 +382,12 @@ public sealed class RealmManifestApplier(
                     Name = api.Name,
                     DisplayName = api.DisplayName,
                     Description = api.Description,
-                    Enabled = api.Enabled,
+                    Enabled = api.Enabled ?? true,
                     Scopes = api.Scopes,
                     UserClaims = api.UserClaims,
                     AppId = ResolveAppId(apps, api.App, ctx),
                     PermissionIds = ResolvePermissionIds(apps, api.App, api.Permissions, ctx),
-                    AllowDynamicRegistration = api.AllowDynamicRegistration,
+                    AllowDynamicRegistration = api.AllowDynamicRegistration ?? false,
                 }, ct), ctx);
             }
             else
@@ -421,10 +421,10 @@ public sealed class RealmManifestApplier(
                     Description = s.Description,
                     Resources = s.Resources,
                     UserClaims = s.UserClaims,
-                    Enabled = s.Enabled,
-                    Required = s.Required,
-                    Emphasize = s.Emphasize,
-                    ShowInDiscoveryDocument = s.ShowInDiscoveryDocument,
+                    Enabled = s.Enabled ?? true,
+                    Required = s.Required ?? false,
+                    Emphasize = s.Emphasize ?? false,
+                    ShowInDiscoveryDocument = s.ShowInDiscoveryDocument ?? true,
                     AppId = ResolveAppId(apps, s.App, ctx),
                 }, ct), ctx);
             }
@@ -465,8 +465,8 @@ public sealed class RealmManifestApplier(
                     AllowedGrantTypes = c.AllowedGrantTypes,
                     Roles = c.Roles,
                     WebAuthnRpId = c.WebAuthnRpId,
-                    Enabled = c.Enabled,
-                    RequireConsent = c.RequireConsent,
+                    Enabled = c.Enabled ?? true,
+                    RequireConsent = c.RequireConsent ?? false,
                     AppIds = c.Apps.Count == 0 ? null
                         : c.Apps.Select(appSlug => ResolveAppId(apps, appSlug, ctx)!).ToList(),
                 }, ct);

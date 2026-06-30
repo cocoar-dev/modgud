@@ -51,8 +51,11 @@ public sealed record RealmManifestApi
     public List<string> Scopes { get; init; } = [];
     public List<RealmManifestPermission> Permissions { get; init; } = [];
     public List<string> UserClaims { get; init; } = [];
-    public bool Enabled { get; init; } = true;
-    public bool AllowDynamicRegistration { get; init; }
+
+    // Bool flags are nullable so an apply can patch surgically: omitted = no change on
+    // update (and the shipped default on create). Enabled defaults to true on create.
+    public bool? Enabled { get; init; }
+    public bool? AllowDynamicRegistration { get; init; }
 }
 
 /// <summary>An OAuth scope. <see cref="App"/> is a slug; <see cref="Resources"/> are API audience names.</summary>
@@ -64,10 +67,13 @@ public sealed record RealmManifestScope
     public string? App { get; init; }
     public List<string> Resources { get; init; } = [];
     public List<string> UserClaims { get; init; } = [];
-    public bool Enabled { get; init; } = true;
-    public bool Required { get; init; }
-    public bool Emphasize { get; init; }
-    public bool ShowInDiscoveryDocument { get; init; } = true;
+
+    // Nullable for surgical patching: omitted = no change on update / shipped default on
+    // create (Enabled + ShowInDiscoveryDocument default true, the rest false).
+    public bool? Enabled { get; init; }
+    public bool? Required { get; init; }
+    public bool? Emphasize { get; init; }
+    public bool? ShowInDiscoveryDocument { get; init; }
 }
 
 /// <summary>An OAuth client. <see cref="Apps"/> are slugs; <see cref="Scopes"/> are scope names.</summary>
@@ -84,8 +90,11 @@ public sealed record RealmManifestClient
     public List<string> Apps { get; init; } = [];
     public List<string> Roles { get; init; } = [];
     public string? WebAuthnRpId { get; init; }
-    public bool Enabled { get; init; } = true;
-    public bool RequireConsent { get; init; }
+
+    // Nullable for surgical patching: omitted = no change on update / shipped default on
+    // create (Enabled defaults true, RequireConsent false).
+    public bool? Enabled { get; init; }
+    public bool? RequireConsent { get; init; }
     public string? AccessTokenType { get; init; }
 }
 
