@@ -9,24 +9,19 @@ realm-provisioning API (`import` / `apply` / `?prune=true` / hard-delete) and th
 > This uses the **locally-built `modgud:local`** image, not `ghcr.io/cocoar-dev/modgud:beta`
 > — the provisioning feature isn't on `:beta` yet (branch `feat/realm-declarative-provisioning`).
 
-## TL;DR — you were given a running instance
+## At a glance
 
-If someone already started this for you, here's all you need:
+1. **Get an instance running** — build the `modgud:local` image, start the stack, and create
+   the first control-plane admin ([§1 below](#1-one-time-setup)). The compose maps Modgud to
+   `http://localhost:18080` (admin UI + `/api`; in-app docs at `/docs/`).
+2. **Per test run** — using the admin you created, log in, fetch the manifest schema, import a
+   realm with a **unique slug**, run your app's tests against it, then hard-delete it
+   ([§2](#2-smoke-test-the-loop-curl) for curl, [§3](#3-app-side-recipe-the-modgudprovisioningtestkit)
+   for the .NET `Modgud.Provisioning.TestKit`).
 
-- **Base URL:** `http://localhost:18080` (admin UI + `/api`; in-app docs at `/docs/`)
-- **Control-plane admin:** `admin` / `ABC12abc!` (full rights — create/delete any realm)
-- **Flow for your tests:**
-  1. Log in: `POST /api/account/login` `{"UserName":"admin","Password":"ABC12abc!"}` (keep the cookie).
-  2. Learn the manifest contract: `GET /api/admin/realms/manifest-schema` (JSON Schema + example).
-  3. Create a realm: `POST /api/admin/realms/import` with a manifest → get back the client secret(s).
-  4. Point your app at it, run tests.
-  5. Tear down: `DELETE /api/admin/realms/{slug}?hard=true`.
-
-.NET? Use `Modgud.Provisioning.TestKit` ([§3](#3-app-side-recipe-the-modgudprovisioningtestkit)).
-Full schema/flow below; the host-routing caveat for real OAuth flows is in [§4](#4-caveat--using-the-provisioned-realm-for-oauth-flows).
-
-> Each test run should use a **unique realm slug** — realms are physically separate
-> databases, so they're fully isolated and run in parallel.
+Realms are physically separate databases → fully isolated and parallel-safe. The host-routing
+caveat for driving real OAuth flows against a provisioned realm is in
+[§4](#4-caveat--using-the-provisioned-realm-for-oauth-flows).
 
 ## The manifest contract — fetch the schema
 
@@ -60,8 +55,9 @@ docker build -f docker/Dockerfile -t modgud:local .
 docker compose -f dev/app-testing/docker-compose.yml up -d
 
 # Create the first control-plane admin. The system realm IS the control plane,
-# so a realm:admin there can call the provisioning endpoints. Idempotent-ish:
-# re-running errors if the user exists — that's fine.
+# so a realm:admin there can call the provisioning endpoints. This is the standard
+# recovery-CLI bootstrap (see ../../docs/getting-started/first-time-setup.md for the
+# concept). Pick any credentials you like — these are just an example.
 docker compose -f dev/app-testing/docker-compose.yml exec modgud `
   dotnet Modgud.Api.dll recover bootstrap-admin `
     --email admin@local --username admin --password 'ABC12abc!'
