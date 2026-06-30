@@ -15,8 +15,15 @@ Endpoints in `Modgud.Api/Features/Admin/RealmsEndpoints.cs`.
 | `GET` | `/api/admin/realms/{slug}` | `realm:read` |
 | `POST` | `/api/admin/realms` | `realm:write` |
 | `PATCH` | `/api/admin/realms/{slug}` | `realm:write` |
-| `DELETE` | `/api/admin/realms/{slug}` | `realm:write` (soft-delete = deactivate) |
+| `DELETE` | `/api/admin/realms/{slug}` | `realm:write` (soft-delete = deactivate; `?hard=true` drops the tenant database) |
 | `POST` | `/api/admin/realms/{slug}/resend-bootstrap-invite` | `realm:write` |
+| `POST` | `/api/admin/realms/import` | `realm:write` (create a realm from a manifest) |
+| `POST` | `/api/admin/realms/{slug}/apply` | `realm:write` (merge a manifest; `?prune=true` = full sync) |
+| `GET` | `/api/admin/realms/{slug}/export` | `realm:read` (structure-only manifest) |
+| `GET` | `/api/admin/realms/manifest-schema` | `realm:write` (JSON Schema of the manifest + example) |
+
+See [Declarative Realm Provisioning](../admin/realm-provisioning) for the manifest
+contract, merge-vs-prune semantics, and how to fetch the schema.
 
 ::: tip Permission context
 These permissions live in the **`control-plane`** App's catalog

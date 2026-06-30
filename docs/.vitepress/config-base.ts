@@ -161,6 +161,7 @@ export const baseConfig = {
           items: [
             { text: 'Applications', link: '/admin/applications' },
             { text: 'Realms', link: '/admin/realms' },
+            { text: 'Declarative Realm Provisioning', link: '/admin/realm-provisioning' },
             { text: 'Realm Settings', link: '/admin/realm-settings' },
             { text: 'Auth Log', link: '/admin/auth-log' },
             { text: 'Scheduled Jobs', link: '/admin/scheduled-jobs' },
