@@ -23,6 +23,24 @@ public interface IApplicationSettingsService
 {
     Task<ErrorOr<ApplicationSettingsDto>> GetAsync(Guid applicationId, CancellationToken ct = default);
     Task<ErrorOr<ApplicationSettingsDto>> PatchAsync(Guid applicationId, ApplicationSettingsDto dto, CancellationToken ct = default);
+
+    /// <summary>
+    /// Stages the per-App settings override (every section EXCEPT <c>Origin</c>) onto the
+    /// caller's shared <see cref="IDocumentSession"/> WITHOUT committing, so it lands in the
+    /// same tenant transaction as the App aggregate — the unified, atomic App create/update.
+    /// <c>Origin</c> is excluded because it also drives the GLOBAL host→App routing map (a
+    /// different database, so inherently a separate write): validate it up-front via
+    /// <see cref="ValidateOriginAsync"/> and apply it via <see cref="PatchAsync"/> AFTER the
+    /// atomic commit. No app-existence check — the caller (<c>AppAdminService</c>) guarantees it.
+    /// </summary>
+    Task<ErrorOr<Success>> StageNonOriginAsync(Guid applicationId, ApplicationSettingsDto dto, CancellationToken ct = default);
+
+    /// <summary>
+    /// Read-only validation of an Origin subdomain (format, child-of-the-realm-primary,
+    /// cross-realm uniqueness) so a unified create/update can reject an invalid subdomain
+    /// up-front — before committing anything. An empty/null subdomain (a clear) is always valid.
+    /// </summary>
+    Task<ErrorOr<Success>> ValidateOriginAsync(Guid applicationId, string? subdomain, CancellationToken ct = default);
 }
 
 public sealed class ApplicationSettingsService(
@@ -135,14 +153,98 @@ public sealed class ApplicationSettingsService(
         return app is { IsDeleted: false } ? app : null;
     }
 
+    // ── Atomic-create staging (every section except Origin, no commit) ────────
+    // REPLACE semantics: the DTO is the COMPLETE desired override state (the unified App
+    // create/update is a replace, not a sparse patch). A provided section sets the override;
+    // a NULL section CLEARS it (→ inherit the realm). This is what keeps the modal honest —
+    // an unchecked section round-trips back unchecked instead of as an empty-but-present
+    // override. (PatchAsync stays sparse for the Origin-only follow-on.)
+
+    public async Task<ErrorOr<Success>> StageNonOriginAsync(
+        Guid applicationId, ApplicationSettingsDto dto, CancellationToken ct = default)
+    {
+        var doc = await session.LoadAsync<ApplicationSettings>(applicationId, ct)
+                  ?? new ApplicationSettings { Id = applicationId, CreatedAt = DateTimeOffset.UtcNow };
+        if (doc.CreatedAt == default) doc.CreatedAt = DateTimeOffset.UtcNow;
+
+        if (dto.SelfRegistration is null) doc.SelfRegistration = null;
+        else { var r = MapSelfRegistration(dto.SelfRegistration); if (r.IsError) return r.FirstError; doc.SelfRegistration = r.Value; }
+
+        if (dto.NativeGrants is null) doc.NativeGrants = null;
+        else { var r = MapNativeGrants(dto.NativeGrants); if (r.IsError) return r.FirstError; doc.NativeGrants = r.Value; }
+
+        if (dto.Dcr is null) doc.Dcr = null;
+        else { var r = MapDcr(dto.Dcr); if (r.IsError) return r.FirstError; doc.Dcr = r.Value; }
+
+        if (dto.Cimd is null) doc.Cimd = null;
+        else { var r = MapCimd(dto.Cimd); if (r.IsError) return r.FirstError; doc.Cimd = r.Value; }
+
+        if (dto.Branding is null) doc.Branding = null;
+        else { var r = MapBranding(dto.Branding); if (r.IsError) return r.FirstError; doc.Branding = r.Value; }
+
+        doc.EmailBranding = string.IsNullOrWhiteSpace(dto.EmailBranding?.ProductName)
+            ? null
+            : new ApplicationEmailBranding { ProductName = dto.EmailBranding.ProductName!.Trim() };
+
+        if (dto.RegistrationFields is null) doc.RegistrationFields = null;
+        else { var r = MapRegistrationFields(dto.RegistrationFields); if (r.IsError) return r.FirstError; doc.RegistrationFields = r.Value; }
+
+        doc.UpdatedAt = DateTimeOffset.UtcNow;
+        session.Store(doc);   // enrolled on the shared session; the caller commits.
+        return ErrorOr.Result.Success;
+    }
+
     // ── Origin / global routing map ──────────────────────────────────────────
+
+    public async Task<ErrorOr<Success>> ValidateOriginAsync(
+        Guid applicationId, string? subdomainRaw, CancellationToken ct = default)
+    {
+        var subdomain = subdomainRaw?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(subdomain)) return ErrorOr.Result.Success;   // clearing is always valid
+
+        var slug = TenantContext.Current;
+        await using var gsession = globalStore.LightweightSession();
+        var realm = await gsession.Query<Realm>().FirstOrDefaultAsync(r => r.Slug == slug, ct);
+        if (realm is null)
+            return Error.Failure("Application.RealmNotFound", "The current realm could not be resolved.");
+
+        if (!HostRegex.IsMatch(subdomain))
+            return Error.Validation("Application.InvalidSubdomain", "Subdomain must be a valid hostname.");
+
+        // Must be a child of the realm's primary domain (the cookie + routing
+        // model: apps live under the tenant's primary domain).
+        var primary = realm.PrimaryDomain.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(primary) || !subdomain.EndsWith("." + primary, StringComparison.Ordinal))
+            return Error.Validation("Application.SubdomainNotUnderPrimary",
+                $"Subdomain must be a child of the realm's primary domain ('{realm.PrimaryDomain}').");
+
+        // Cross-realm uniqueness: the host must not be claimed by any realm's
+        // plain domains or another App's route.
+        var allRealms = await gsession.Query<Realm>().ToListAsync(ct);
+        foreach (var r in allRealms)
+        {
+            if (r.Domains.Any(d => string.Equals(d, subdomain, StringComparison.OrdinalIgnoreCase)))
+                return Error.Conflict("Application.SubdomainTaken", "That host is already a realm domain.");
+            foreach (var kv in r.ApplicationDomains)
+            {
+                if (string.Equals(kv.Key, subdomain, StringComparison.OrdinalIgnoreCase)
+                    && !(r.Id == realm.Id && kv.Value == applicationId))
+                    return Error.Conflict("Application.SubdomainTaken", "That host is already mapped to an application.");
+            }
+        }
+
+        return ErrorOr.Result.Success;
+    }
 
     private async Task<ErrorOr<ApplicationOrigin?>> ApplyOriginAsync(
         Guid applicationId, string? subdomainRaw, CancellationToken ct)
     {
-        var slug = TenantContext.Current;
         var subdomain = subdomainRaw?.Trim().ToLowerInvariant();
 
+        var valid = await ValidateOriginAsync(applicationId, subdomain, ct);
+        if (valid.IsError) return valid.FirstError;
+
+        var slug = TenantContext.Current;
         await using var gsession = globalStore.LightweightSession();
         var realm = await gsession.Query<Realm>().FirstOrDefaultAsync(r => r.Slug == slug, ct);
         if (realm is null)
@@ -159,31 +261,6 @@ public sealed class ApplicationSettingsService(
         ApplicationOrigin? origin = null;
         if (!string.IsNullOrEmpty(subdomain))
         {
-            if (!HostRegex.IsMatch(subdomain))
-                return Error.Validation("Application.InvalidSubdomain", "Subdomain must be a valid hostname.");
-
-            // Must be a child of the realm's primary domain (the cookie + routing
-            // model: apps live under the tenant's primary domain).
-            var primary = realm.PrimaryDomain.Trim().ToLowerInvariant();
-            if (string.IsNullOrEmpty(primary) || !subdomain.EndsWith("." + primary, StringComparison.Ordinal))
-                return Error.Validation("Application.SubdomainNotUnderPrimary",
-                    $"Subdomain must be a child of the realm's primary domain ('{realm.PrimaryDomain}').");
-
-            // Cross-realm uniqueness: the host must not be claimed by any realm's
-            // plain domains or another App's route.
-            var allRealms = await gsession.Query<Realm>().ToListAsync(ct);
-            foreach (var r in allRealms)
-            {
-                if (r.Domains.Any(d => string.Equals(d, subdomain, StringComparison.OrdinalIgnoreCase)))
-                    return Error.Conflict("Application.SubdomainTaken", "That host is already a realm domain.");
-                foreach (var kv in r.ApplicationDomains)
-                {
-                    if (string.Equals(kv.Key, subdomain, StringComparison.OrdinalIgnoreCase)
-                        && !(r.Id == realm.Id && kv.Value == applicationId))
-                        return Error.Conflict("Application.SubdomainTaken", "That host is already mapped to an application.");
-                }
-            }
-
             realm.ApplicationDomains[subdomain] = applicationId;
             origin = new ApplicationOrigin { Subdomain = subdomain };
         }

@@ -1,7 +1,9 @@
 using BuildingBlocks.Helper;
 using ErrorOr;
+using Modgud.Application.DTOs.Applications;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
+using Modgud.Authentication.Applications;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.AspNetCore;
 using Marten;
@@ -25,12 +27,17 @@ public record CreateAppDto(
     string Slug,
     string DisplayName,
     string? Description,
-    List<AppPermissionDto> Permissions);
+    List<AppPermissionDto> Permissions,
+    // ADR-0011 — an App is ONE resource: the optional per-App settings override is created
+    // in the SAME tenant transaction as the App (see AppAdminService). Null = inherit the
+    // realm everywhere (the zero-config default). The applier never sends it.
+    ApplicationSettingsDto? Settings = null);
 
 public record UpdateAppDto(
     string DisplayName,
     string? Description,
-    List<AppPermissionDto> Permissions);
+    List<AppPermissionDto> Permissions,
+    ApplicationSettingsDto? Settings = null);
 
 /// <summary>
 /// Admin surface for managing <see cref="App"/> records — the per-realm list
@@ -74,34 +81,41 @@ public static class AppsEndpoints
                     .OrderBy(a => a.Slug)
                     .ToListAsync();
 
-                return Results.Ok(apps.Select(MapToResponse));
+                return Results.Ok(apps.Select(a => MapToResponse(a)));
             })
             .WithName("V2_App_GetAll")
             .RequiresPermission("app:read");
 
-        appGroup.MapGet("{id}", async (ShortGuid id, IDocumentSession session) =>
+        appGroup.MapGet("{id}", async (ShortGuid id, IDocumentSession session, IApplicationSettingsService settingsSvc, CancellationToken ct) =>
             {
-                var app = await session.LoadAsync<App>(id.Guid);
+                var app = await session.LoadAsync<App>(id.Guid, ct);
                 if (app is null || app.IsDeleted) return Results.NotFound();
-                return Results.Ok(MapToResponse(app));
+                var settings = await settingsSvc.GetAsync(id.Guid, ct);
+                return Results.Ok(MapToResponse(app, settings.IsError ? null : settings.Value));
             })
             .WithName("V2_App_GetById")
             .RequiresPermission("app:read");
 
         // Create / Update both delegate to the shared AppAdminService — the single
         // canonical write path the realm-provisioning applier also calls (no divergence).
-        appGroup.MapPost("", async (CreateAppDto dto, AppAdminService appAdmin, CancellationToken ct) =>
+        appGroup.MapPost("", async (CreateAppDto dto, AppAdminService appAdmin, IApplicationSettingsService settingsSvc, CancellationToken ct) =>
             {
                 var result = await appAdmin.CreateAppAsync(dto, ct);
-                return result.IsError ? ToErrorResult(result.FirstError) : Results.Ok(MapToResponse(result.Value));
+                if (result.IsError) return ToErrorResult(result.FirstError);
+                var settings = await settingsSvc.GetAsync(result.Value.Id, ct);
+                return Results.Ok(MapToResponse(result.Value, settings.IsError ? null : settings.Value));
             })
             .WithName("V2_App_Create")
             .RequiresPermission("app:write");
 
-        appGroup.MapPut("{id}", async (ShortGuid id, UpdateAppDto dto, AppAdminService appAdmin, CancellationToken ct) =>
+        appGroup.MapPut("{id}", async (ShortGuid id, UpdateAppDto dto, AppAdminService appAdmin, IApplicationSettingsService settingsSvc, CancellationToken ct) =>
             {
                 var result = await appAdmin.UpdateAppAsync(id.Guid, dto, ct);
-                if (!result.IsError) return Results.Ok(MapToResponse(result.Value));
+                if (!result.IsError)
+                {
+                    var settings = await settingsSvc.GetAsync(id.Guid, ct);
+                    return Results.Ok(MapToResponse(result.Value, settings.IsError ? null : settings.Value));
+                }
 
                 var error = result.FirstError;
                 // The catalog-delete block carries its rich blocker list through the error
@@ -155,7 +169,9 @@ public static class AppsEndpoints
         return application;
     }
 
-    private static object MapToResponse(App a) => new
+    // The list endpoint passes no settings (the grid doesn't show them); the detail / create /
+    // update responses pass the per-App settings override so the single App modal can render it.
+    private static object MapToResponse(App a, ApplicationSettingsDto? settings = null) => new
     {
         Id = new ShortGuid(a.Id).ToString(),
         a.Slug,
@@ -171,6 +187,7 @@ public static class AppsEndpoints
             })
             .ToList(),
         a.IsSystem,
+        Settings = settings,
     };
 
     // Renders an AppAdminService ErrorOr error with the error code in the body. The shared

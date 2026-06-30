@@ -3,7 +3,6 @@ import { ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import type {
   ApplicationDto,
-  ApplicationSettingsDto,
   CreateApplicationDto,
   UpdateApplicationDto,
 } from '@/models/application'
@@ -60,15 +59,8 @@ export const useApplicationsStore = defineStore('applications', () => {
     apps.value = apps.value.filter((a) => a.Id !== id)
   }
 
-  // ADR-0011 — per-Application settings overrides (separate from the App CRUD
-  // above; tenant ApplicationSettings doc + global subdomain routing map).
-  async function loadSettings(id: string): Promise<ApplicationSettingsDto> {
-    return await http.addPath(id, 'settings').get<ApplicationSettingsDto>()
-  }
-
-  async function saveSettings(id: string, dto: ApplicationSettingsDto): Promise<ApplicationSettingsDto> {
-    return await http.addPath(id, 'settings').patch<ApplicationSettingsDto>(dto)
-  }
+  // The per-App ADR-0011 settings override rides inline on loadOne/create/update
+  // (an App is one resource) — there is no separate settings endpoint.
 
   return {
     apps,
@@ -79,8 +71,6 @@ export const useApplicationsStore = defineStore('applications', () => {
     create,
     update,
     remove,
-    loadSettings,
-    saveSettings,
   }
 })
 

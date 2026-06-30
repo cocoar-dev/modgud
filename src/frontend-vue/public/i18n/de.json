@@ -1296,7 +1296,8 @@
       "systemHint": "Dies ist eine System-App des IdP. Slug, Display Name und Permission-Catalog sind im Backend fest hinterlegt — der Catalog hier ist schreibgeschützt und dient nur zur Einsicht. Änderungen an den Strings würden die RequiresPermission-Aufrufe im Backend brechen.",
       "tabs": {
         "catalog": "Permission-Catalog",
-        "general": "Allgemein"
+        "general": "Allgemein",
+        "settings": "Einstellungen"
       }
     },
     "realms": {

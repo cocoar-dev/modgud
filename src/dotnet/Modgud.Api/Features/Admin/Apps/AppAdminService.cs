@@ -1,5 +1,7 @@
 using ErrorOr;
 using Marten;
+using Modgud.Application.DTOs.Applications;
+using Modgud.Authentication.Applications;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Domain.OAuth.Apis;
@@ -14,8 +16,16 @@ namespace Modgud.Api.Features.Admin.Apps;
 /// endpoint maps it to HTTP while the applier consumes it directly. The injected
 /// <see cref="IDocumentSession"/> is tenant-scoped, so a call lands in whatever realm
 /// the ambient <c>TenantContext</c> selects.
+///
+/// <para>An App is ONE resource: when <see cref="CreateAppDto.Settings"/> /
+/// <see cref="UpdateAppDto.Settings"/> is supplied, the per-App ADR-0011 settings override
+/// is written in the SAME tenant transaction as the App aggregate (atomic). The only piece
+/// that cannot be — the <c>Origin</c> subdomain, which drives the GLOBAL host→App routing
+/// map in a different database — is validated up-front (so an invalid subdomain rejects the
+/// whole call before any commit) and its routing applied right after the atomic commit. The
+/// applier passes no settings, so its behaviour is unchanged.</para>
 /// </summary>
-public sealed class AppAdminService(IDocumentSession session)
+public sealed class AppAdminService(IDocumentSession session, IApplicationSettingsService settingsSvc)
 {
     public async Task<ErrorOr<App>> CreateAppAsync(CreateAppDto dto, CancellationToken ct = default)
     {
@@ -46,7 +56,18 @@ public sealed class AppAdminService(IDocumentSession session)
             Description: dto.Description,
             Permissions: permissions.Value,
             IsSystem: false));
+
+        // App + its settings override commit together (atomic) — see class summary.
+        if (dto.Settings is not null)
+        {
+            var staged = await StageSettingsAsync(id, dto.Settings, ct);
+            if (staged.IsError) return staged.Errors;
+        }
+
         await session.SaveChangesAsync(ct);
+
+        var originApplied = await ApplyOriginIfAnyAsync(id, dto.Settings, ct);
+        if (originApplied.IsError) return originApplied.Errors;
 
         return (await session.LoadAsync<App>(id, ct))!;
     }
@@ -97,9 +118,50 @@ public sealed class AppAdminService(IDocumentSession session)
 
         session.Events.Append(id, new AppUpdatedEvent(
             id, dto.DisplayName, dto.Description, permissions.Value));
+
+        // App + its settings override commit together (atomic) — see class summary.
+        if (dto.Settings is not null)
+        {
+            var staged = await StageSettingsAsync(id, dto.Settings, ct);
+            if (staged.IsError) return staged.Errors;
+        }
+
         await session.SaveChangesAsync(ct);
 
+        var originApplied = await ApplyOriginIfAnyAsync(id, dto.Settings, ct);
+        if (originApplied.IsError) return originApplied.Errors;
+
         return (await session.LoadAsync<App>(id, ct))!;
+    }
+
+    /// <summary>
+    /// Validates the Origin subdomain up-front (so an invalid one rejects the whole
+    /// create/update before any commit) and stages every other settings section onto the
+    /// shared session — committed atomically with the App by the caller's SaveChangesAsync.
+    /// </summary>
+    private async Task<ErrorOr<Success>> StageSettingsAsync(Guid appId, ApplicationSettingsDto settings, CancellationToken ct)
+    {
+        if (settings.Origin is not null)
+        {
+            var validOrigin = await settingsSvc.ValidateOriginAsync(appId, settings.Origin.Subdomain, ct);
+            if (validOrigin.IsError) return validOrigin.Errors;
+        }
+        var staged = await settingsSvc.StageNonOriginAsync(appId, settings, ct);
+        return staged.IsError ? staged.Errors : Result.Success;
+    }
+
+    /// <summary>
+    /// Applies the Origin subdomain → GLOBAL host routing AFTER the atomic tenant commit
+    /// (the routing map lives in a different database, so it can't be in the tenant
+    /// transaction). Already validated in <see cref="StageSettingsAsync"/>, so this only
+    /// fails on a race or infrastructure error — and then the App + its other settings are
+    /// already persisted (a valid state; only the subdomain route is missing).
+    /// </summary>
+    private async Task<ErrorOr<Success>> ApplyOriginIfAnyAsync(Guid appId, ApplicationSettingsDto? settings, CancellationToken ct)
+    {
+        if (settings?.Origin is null) return Result.Success;
+        var r = await settingsSvc.PatchAsync(appId, new ApplicationSettingsDto { Origin = settings.Origin }, ct);
+        return r.IsError ? r.Errors : Result.Success;
     }
 
     /// <summary>
