@@ -280,6 +280,23 @@ public static class RealmsEndpoints
         .WithName("Realms_Export")
         .RequiresPermission("realm:read", AppSlugs.ControlPlane);
 
+        // The JSON Schema for the import/apply body, generated from the live RealmManifest type
+        // (so it can't drift from the contract) with per-field descriptions + a worked example.
+        // Lets a consumer / agent fetch the contract and author a valid manifest without the
+        // source. Generated with the API's own JSON options so property casing matches the wire.
+        // Gated with the SAME permission as import/apply (realm:write) — only a caller who can
+        // actually apply a manifest may fetch its schema.
+        group.MapGet("manifest-schema", (
+            Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions> jsonOptions) =>
+        {
+            var schema = Provisioning.RealmManifestSchema.Build(jsonOptions.Value.SerializerOptions);
+            return Results.Text(
+                schema.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
+                "application/json");
+        })
+        .WithName("Realms_ManifestSchema")
+        .RequiresPermission("realm:write", AppSlugs.ControlPlane);
+
         // Transfer the control-plane role to {slug}. POST to the realm that
         // should BECOME the control plane, from the current control-plane host
         // (the group's RequireControlPlaneFilter enforces the latter). After

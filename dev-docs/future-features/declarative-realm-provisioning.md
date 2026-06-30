@@ -27,6 +27,7 @@ provisioning):
 | `POST` | `/{slug}/apply` | In-place merge/upsert into an EXISTING realm. Never drops the DB. Route slug must equal the manifest slug (`Manifest.SlugMismatch` → `400`). |
 | `POST` | `/{slug}/apply?prune=true` | As above, then a **full sync**: delete entities present in the realm but absent from the manifest (see [Prune](#prune-full-sync)). |
 | `GET` | `/{slug}/export` | Structure-only manifest of the realm (the inverse of the applier). Never emits secrets / password hashes. `realm:read`. |
+| `GET` | `/manifest-schema` | The JSON Schema for the import/apply body, generated from the live `RealmManifest` type (can't drift) with per-field `description`s + a worked `example`. Lets a consumer / agent fetch the contract and author a valid manifest without the source. Gated with `realm:write` (same as import/apply — only a caller who can apply a manifest may fetch its schema). |
 | `DELETE` | `/{slug}?hard=true` | Hard-delete: drop the tenant database. Default (`hard=false`) is the existing soft-delete. |
 
 `Import` vs `Apply` is deliberate: import creates (rolls back on failure), apply

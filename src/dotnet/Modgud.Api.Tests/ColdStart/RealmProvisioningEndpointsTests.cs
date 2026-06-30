@@ -162,6 +162,57 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         });
     }
 
+    [Fact]
+    public async Task Manifest_schema_endpoint_returns_a_described_json_schema_with_an_example()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var client = await factory.CreateRealmAdminAndLoginAsync();
+
+        var resp = await client.GetAsync("/api/admin/realms/manifest-schema", ct);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        using var json = JsonDocument.Parse(body);
+        var root = json.RootElement;
+
+        // A real JSON Schema for an object with all the manifest sections.
+        Assert.Equal("object", root.GetProperty("type").GetString());
+        Assert.True(root.TryGetProperty("$schema", out _));
+        var props = root.GetProperty("properties");
+        foreach (var section in new[] { "Realm", "Settings", "Apps", "Apis", "Scopes", "Clients", "Roles", "Users", "Groups" })
+            Assert.True(props.TryGetProperty(section, out _), $"schema missing '{section}'");
+
+        // Only the realm shell is required; the entity lists default to empty.
+        var required = root.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains("Realm", required);
+        Assert.DoesNotContain("Apps", required);
+
+        // Field-level [Description]s are injected (proves the docs ride along).
+        Assert.Contains("permission namespace", props.GetProperty("Apps").GetProperty("description").GetString());
+        Assert.Contains("resource:action", body); // RealmManifestPermission description
+
+        // A worked example is attached so a consumer can author a manifest from the schema alone.
+        var examples = root.GetProperty("examples");
+        Assert.True(examples.GetArrayLength() >= 1);
+        Assert.Equal("acme-test", examples[0].GetProperty("Realm").GetProperty("Slug").GetString());
+    }
+
+    [Fact]
+    public async Task Manifest_schema_endpoint_is_gated_for_an_unauthenticated_caller()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var ct = TestContext.Current.CancellationToken;
+
+        // No login → the schema (gated with realm:write, same as import/apply) must not leak.
+        var anon = host.Factory.CreateClient();
+        var resp = await anon.GetAsync("/api/admin/realms/manifest-schema", ct);
+
+        Assert.NotEqual(HttpStatusCode.OK, resp.StatusCode);
+        Assert.Contains(resp.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
+    }
+
     private static RealmManifest BuildManifest(string slug, string appDisplayName) => new()
     {
         Realm = new CreateRealmDto
