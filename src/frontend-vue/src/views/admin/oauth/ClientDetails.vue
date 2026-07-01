@@ -732,6 +732,13 @@ async function copySecret() {
   flex: 1;
   display: grid;
   grid-template-columns: 24rem 1fr;
+  /* Bind the single implicit row to the flex-allocated height. Without an
+     explicit rows track the row is `auto` and sizes to the taller column's
+     content, so it can overgrow the modal body — then `.col-identity`'s
+     overflow never engages and its last element (the Regenerate-Secret
+     button) is pushed under the sticky footer, unreachable by scroll.
+     `minmax(0, 1fr)` clamps the row so each column scrolls independently. */
+  grid-template-rows: minmax(0, 1fr);
   gap: 1.25rem;
   min-height: 0;
   min-width: 0;
@@ -741,9 +748,22 @@ async function copySecret() {
   flex-direction: column;
   gap: 0.6rem;
   padding-right: 1.25rem;
+  /* Bottom breathing room so the last control (Regenerate Secret) clears the
+     scroll-area edge instead of sitting flush against it. */
+  padding-bottom: 0.5rem;
   border-right: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
   overflow-y: auto;
   min-height: 0;
+}
+
+/* This is a scroll container: its children must keep their natural height and
+   let the column scroll — never be flex-shrunk to fit. Without this the last
+   item (the Regenerate-Secret button, whose overflow:hidden gives it a 0
+   min-height) is the most shrinkable child, so an overflowing column crushes
+   it to height:0 and it vanishes (it only reappeared when zoomed out far
+   enough that the content stopped overflowing). */
+.col-identity > * {
+  flex-shrink: 0;
 }
 .col-heading {
   margin: 0 0 0.25rem 0;
