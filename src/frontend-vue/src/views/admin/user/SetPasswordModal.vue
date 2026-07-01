@@ -49,7 +49,7 @@ async function savePassword() {
 </script>
 
 <template>
-  <ModalLayout :close="close" :title="modalTitle" icon="key" :footer-button="footerButton" width="28rem">
+  <ModalLayout :close="close" :title="modalTitle" icon="key" :footer-button="footerButton">
     <div class="flex flex-col gap-2 p-2 pb-4">
       <CoarFormField :label="t('admin.setPassword.newPassword', {}, 'New Password')">
         <CoarPasswordInput v-model="password" autocomplete="new-password" />

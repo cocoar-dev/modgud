@@ -14,27 +14,27 @@
     "cleanup:check": "pnpm dlx knip"
   },
   "dependencies": {
-    "@cocoar/signalarrr": "^4.3.1",
-    "@cocoar/vue-data-grid": "2.7.0",
-    "@cocoar/vue-fragment-parser": "2.7.0",
-    "@cocoar/vue-localization": "2.7.0",
-    "@cocoar/vue-page-builder": "2.7.0",
-    "@cocoar/vue-script-editor": "2.7.0",
-    "@cocoar/vue-ui": "2.7.0",
+    "@cocoar/signalarrr": "^4.3.2",
+    "@cocoar/vue-data-grid": "2.13.0",
+    "@cocoar/vue-fragment-parser": "2.13.0",
+    "@cocoar/vue-localization": "2.13.0",
+    "@cocoar/vue-page-builder": "2.13.0",
+    "@cocoar/vue-script-editor": "2.13.0",
+    "@cocoar/vue-ui": "2.13.0",
     "monaco-editor": "^0.55.1",
     "pinia": "^3.0.4",
-    "vue": "^3.5.35",
+    "vue": "^3.5.39",
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
-    "@tailwindcss/vite": "^4.3.0",
+    "@playwright/test": "^1.61.1",
+    "@tailwindcss/vite": "^4.3.2",
     "@vitejs/plugin-vue": "^6.0.7",
     "otplib": "^13.4.1",
-    "tailwindcss": "^4.3.0",
+    "tailwindcss": "^4.3.2",
     "typescript": "~6.0.3",
-    "vite": "^8.0.16",
-    "vue-tsc": "^3.3.4"
+    "vite": "^8.1.2",
+    "vue-tsc": "^3.3.6"
   },
   "volta": {
     "node": "22.17.1",
