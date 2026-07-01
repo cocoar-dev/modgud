@@ -226,10 +226,15 @@ onMounted(() => {
       <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus" @clicked="navigateToModal('create')" />
     </CoarContextMenu>
 
-    <!-- Password modal (non-routed) -->
+    <!-- Password modal (non-routed): unlike the routed modals it has no overlay
+         host to size the panel, so the panel wrapper caps the width here —
+         otherwise ModalLayout's width:100%/height:100% container fills the whole
+         fixed overlay (i.e. the viewport). -->
     <Teleport to="body">
       <div v-if="passwordModalUserId" class="password-modal-overlay" @click.self="passwordModalUserId = null">
-        <SetPasswordModal :id="passwordModalUserId" :close="() => passwordModalUserId = null" />
+        <div class="password-modal-panel">
+          <SetPasswordModal :id="passwordModalUserId" :close="() => passwordModalUserId = null" />
+        </div>
       </div>
     </Teleport>
   </div>
@@ -244,6 +249,19 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   background-color: rgba(0, 0, 0, 0.4);
+}
+
+/* Cap the modal to a compact form size (mirrors the routed MODAL_MD size).
+   The panel bounds the width; overriding ModalLayout's height:100% to auto +
+   a viewport cap makes it size to its single input field instead of filling
+   the whole overlay. */
+.password-modal-panel {
+  width: 28rem;
+  max-width: calc(100vw - 2rem);
+}
+.password-modal-panel :deep(.modal-container) {
+  height: auto;
+  max-height: 85vh;
 }
 
 /* AG Grid cells render inside the host component, so style hooks need
