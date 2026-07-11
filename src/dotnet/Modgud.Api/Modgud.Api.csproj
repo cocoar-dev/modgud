@@ -22,6 +22,9 @@
     <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <!-- Direct reference solely to pin the transitive above the vulnerable
+         2.0.0 — see the note in Directory.Packages.props. -->
+    <PackageReference Include="Microsoft.OpenApi" />
     <PackageReference Include="Cocoar.JsEval.TsDefinition" />
     <PackageReference Include="Cocoar.Reflectensions" />
     <PackageReference Include="Cocoar.SignalARRR.Server" />
