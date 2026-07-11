@@ -108,7 +108,7 @@ onMounted(async () => {
               {{ t('verifyEmail.successBody', {}, 'Thanks! Your new email address has been confirmed. An administrator will review and approve the change before it is applied.') }}
             </template>
           </p>
-          <CoarButton full-width @click="router.push('/login')">
+          <CoarButton full-width @click="router.push({ path: '/login', query: { redirect: route.query.redirect } })">
             {{ t('verifyEmail.toLogin', {}, 'To login') }}
           </CoarButton>
         </template>
@@ -123,7 +123,7 @@ onMounted(async () => {
           <p class="text-sm text-surface-600">
             {{ t('verifyEmail.selfReg.pendingBody', {}, 'Your email address has been confirmed. An administrator still needs to approve your account — you will be notified.') }}
           </p>
-          <CoarButton full-width @click="router.push('/login')">
+          <CoarButton full-width @click="router.push({ path: '/login', query: { redirect: route.query.redirect } })">
             {{ t('verifyEmail.toLogin', {}, 'To login') }}
           </CoarButton>
         </template>
@@ -134,7 +134,7 @@ onMounted(async () => {
           </div>
           <h1 class="text-xl font-semibold">{{ t('verifyEmail.errorTitle', {}, 'Confirmation failed') }}</h1>
           <p class="text-sm text-surface-600">{{ errorMessage }}</p>
-          <CoarButton full-width @click="router.push('/login')">
+          <CoarButton full-width @click="router.push({ path: '/login', query: { redirect: route.query.redirect } })">
             {{ t('verifyEmail.toLogin', {}, 'To login') }}
           </CoarButton>
         </template>

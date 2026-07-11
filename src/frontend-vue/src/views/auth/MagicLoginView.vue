@@ -1,13 +1,19 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
+import { useLoginRedirect } from '@/composables/useLoginRedirect'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import { CoarCard, CoarFormField, CoarOtpInput, CoarButton, CoarNote } from '@cocoar/vue-ui'
 
 const route = useRoute()
-const router = useRouter()
 const authStore = useAuthStore()
+
+// The emailed magic-link URL carries the pending continuation as ?redirect=
+// (validated server-side, same-origin-guarded again here) — finish through
+// the shared logic so a /connect/authorize target resumes the client app's
+// OIDC flow instead of hardcoding the dashboard.
+const { finishLogin } = useLoginRedirect()
 const { t, language } = useI18n()
 const localization = useLocalization()!
 
@@ -41,7 +47,7 @@ onMounted(async () => {
       return
     }
     status.value = 'success'
-    router.replace('/dashboard')
+    await finishLogin()
   } catch {
     status.value = 'error'
     errorMessage.value = t('auth.magicLogin.expiredLink', {}, 'This login link is invalid or expired.')
@@ -55,7 +61,7 @@ async function submitTotp() {
   try {
     await authStore.mfaLogin(totpCode.value.replace(/[\s-]/g, ''))
     status.value = 'success'
-    router.replace('/dashboard')
+    await finishLogin()
   } catch {
     errorMessage.value = t('auth.mfa.invalidCode', {}, 'Invalid code. Please try again.')
   } finally {
@@ -104,7 +110,7 @@ async function submitTotp() {
       <div v-else-if="status === 'error'" class="space-y-4">
         <p class="text-red-600">{{ errorMessage }}</p>
         <RouterLink
-          to="/login"
+          :to="{ path: '/login', query: { redirect: route.query.redirect } }"
           class="inline-block rounded bg-[#525e76] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#434d61]"
         >
           {{ t('auth.magicLogin.goToLogin', {}, 'Go to login') }}

@@ -163,6 +163,10 @@ public static class ConsentEndpoints
         // means the loser doesn't even mint a duplicate Permanent authorization
         // row (the previously-documented benign residual is now gone too).
         record!.ConsumedAt = DateTimeOffset.UtcNow;
+        // Mark the deny atomically with the claim so the authorize re-entry
+        // below can prove this was a genuine denial (not just any consumed
+        // ticket) before OpenIddict emits an error to the client.
+        if (!decision.Approved) record.DeniedAt = DateTimeOffset.UtcNow;
         session.Store(record);
         try
         {
@@ -170,15 +174,30 @@ public static class ConsentEndpoints
         }
         catch (JasperFx.ConcurrencyException)
         {
-            return Results.Conflict(new { message = "Consent ticket has already been used." });
+            return Results.Conflict(new
+            {
+                message = "Consent ticket has already been used.",
+                retryUrl = "/connect/authorize" + record.AuthorizeRequestQuery,
+            });
         }
 
         if (!decision.Approved)
         {
+            // Return control to the CLIENT (RFC 6749 §4.1.2.1) by re-entering
+            // /connect/authorize with a deny marker — symmetric with the
+            // approve path, which likewise re-enters authorize to complete the
+            // grant. OpenIddict then emits the access_denied error to the
+            // client's registered redirect_uri, honoring the client's
+            // response_mode (query/fragment/form_post) and RFC 9207 iss — none
+            // of which a hand-built redirect here would get right. It's a 302
+            // to a same-origin /connect/authorize URL (not the client URI), so
+            // there is no window.location.assign(javascript:) sink either.
+            // AuthorizeAsync validates DeniedAt + subject-binding before acting.
             return Results.Ok(new ConsentResult
             {
-                RedirectUrl = $"/consent/denied?error={Uri.EscapeDataString(Errors.AccessDenied)}" +
-                              $"&error_description={Uri.EscapeDataString("The user denied the authorization request.")}",
+                RedirectUrl = "/connect/authorize" + record.AuthorizeRequestQuery
+                            + "&deny_ticket=" + record.Id.ToString("N"),
+                ReturnsToClient = true,
             });
         }
 
@@ -248,24 +267,33 @@ public static class ConsentEndpoints
             return (null, Results.NotFound(new { message = "Consent ticket not found or expired." }));
         }
 
-        if (record.ConsumedAt is not null)
-        {
-            return (null, Results.Conflict(new { message = "Consent ticket has already been used." }));
-        }
-
-        if (record.ExpiresAt < DateTimeOffset.UtcNow)
-        {
-            return (null, Results.BadRequest(new { message = "Consent ticket has expired." }));
-        }
-
         // OAUTH-03 fix: subject binding. An attacker forcing a victim to POST
         // a consent decision can only act on tickets the victim's own session
         // created — and tickets are only created by /authorize, which is
         // session-scoped. Cross-user tampering is impossible by construction.
+        // Checked BEFORE the consumed/expired branches so the retryUrl below —
+        // which carries the locked-in authorize query (state, PKCE challenge)
+        // — is only ever disclosed to the ticket's own subject.
         var user = await userManager.GetUserAsync(currentUserPrincipal);
         if (user is null || user.Id != record.Subject)
         {
             return (null, Results.Forbid());
+        }
+
+        // A dead ticket is not a dead end: re-entering /connect/authorize with
+        // the locked-in query is safe — it mints a fresh ticket, or completes
+        // silently via the remembered authorization — so hand the SPA a retry
+        // URL instead of stranding the user.
+        var retryUrl = "/connect/authorize" + record.AuthorizeRequestQuery;
+
+        if (record.ConsumedAt is not null)
+        {
+            return (null, Results.Conflict(new { message = "Consent ticket has already been used.", retryUrl }));
+        }
+
+        if (record.ExpiresAt < DateTimeOffset.UtcNow)
+        {
+            return (null, Results.BadRequest(new { message = "Consent ticket has expired.", retryUrl }));
         }
 
         return (record, null);
@@ -316,4 +344,10 @@ public class ConsentDecision
 public class ConsentResult
 {
     public required string RedirectUrl { get; init; }
+
+    /// <summary>True when <see cref="RedirectUrl"/> points back at the CLIENT
+    /// app (RFC 6749 §4.1.2.1 error redirect after a deny) rather than an
+    /// IdP-local page — the SPA must full-page-navigate there so the client
+    /// receives its <c>error=access_denied</c> callback.</summary>
+    public bool ReturnsToClient { get; init; }
 }

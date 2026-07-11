@@ -220,7 +220,7 @@ public sealed class SelfRegistrationService(
         // flips it. We log so the admin sees why no email was sent.
         if (settings.RequireEmailVerification)
         {
-            await SendVerificationEmailAsync(appUser, realm, token, ct);
+            await SendVerificationEmailAsync(appUser, realm, token, dto.ReturnUrl, ct);
         }
         else
         {
@@ -311,10 +311,18 @@ public sealed class SelfRegistrationService(
         ApplicationUser user,
         Realm realm,
         string plaintextToken,
+        string? returnUrl,
         CancellationToken ct)
     {
         var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
         var url = $"{appUrl}/verify-email?token={Uri.EscapeDataString(plaintextToken)}";
+
+        // Thread the pending continuation through the e-mail round trip so a
+        // self-registration can resume a client app's OIDC authorize flow.
+        // Same-origin guard mirrors the SPA's; the verify page forwards
+        // ?redirect= to /login once the account is confirmed.
+        if (Modgud.Authentication.Api.LoginRedirectGuard.IsSameOriginPath(returnUrl) && returnUrl != "/")
+            url += $"&redirect={Uri.EscapeDataString(returnUrl!)}";
 
         var displayName = !string.IsNullOrWhiteSpace(user.Firstname)
             ? $"{user.Firstname} {user.Lastname}".Trim()

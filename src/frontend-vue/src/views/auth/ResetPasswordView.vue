@@ -89,7 +89,7 @@ async function handleSubmit() {
           <CoarNote variant="info">
             {{ t('auth.resetPassword.passwordlessMode', {}, 'Password reset is not available. This application uses passwordless login.') }}
           </CoarNote>
-          <RouterLink to="/login" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
+          <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.resetPassword.backToLogin', {}, 'Back to login') }}
           </RouterLink>
         </div>
@@ -109,7 +109,7 @@ async function handleSubmit() {
           <CoarNote variant="success">
             {{ t('auth.resetPassword.success', {}, 'Password has been successfully reset. You can now sign in.') }}
           </CoarNote>
-          <CoarButton full-width @click="router.push('/login')">{{ t('auth.resetPassword.goToLogin', {}, 'Go to login') }}</CoarButton>
+          <CoarButton full-width @click="router.push({ path: '/login', query: { redirect: route.query.redirect } })">{{ t('auth.resetPassword.goToLogin', {}, 'Go to login') }}</CoarButton>
         </div>
 
         <!-- Form -->

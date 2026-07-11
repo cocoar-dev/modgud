@@ -33,6 +33,25 @@ const phase = ref<Phase>('loading')
 const error = ref('')
 const submitting = ref(false)
 
+// A dead ticket (expired/consumed) is not a dead end: the backend hands us
+// a retry URL (/connect/authorize + the locked-in query) that safely mints a
+// fresh ticket — or completes silently via the remembered authorization.
+const retryUrl = ref<string | null>(null)
+
+function readRetryUrl(e: HttpClientError): string | null {
+  const b = e.body
+  if (b && typeof b === 'object' && 'retryUrl' in b && typeof b.retryUrl === 'string'
+    && b.retryUrl.startsWith('/connect/authorize')) {
+    return b.retryUrl
+  }
+  return null
+}
+
+function retryAuthorize() {
+  // Server-side endpoint — Vue Router cannot navigate there.
+  if (retryUrl.value) window.location.assign(retryUrl.value)
+}
+
 const model = ref<ConsentModel | null>(null)
 // approval is keyed by scope-name; required scopes are pre-checked AND
 // the toggle is rendered disabled so the user cannot uncheck them.
@@ -103,9 +122,11 @@ onMounted(async () => {
           break
         case 409:
           error.value = t('consent.alreadyUsed', {}, 'This consent request has already been completed. Please start over from the app.')
+          retryUrl.value = readRetryUrl(e)
           break
         case 400:
           error.value = t('consent.expired', {}, 'Consent request expired. Please start over from the app.')
+          retryUrl.value = readRetryUrl(e)
           break
         default:
           error.value = t('consent.loadError', {}, 'Failed to load the consent request.')
@@ -136,18 +157,32 @@ async function submit(approved: boolean) {
       // server-side endpoint Vue Router cannot navigate to. Full-page
       // assign so the OIDC dance continues on the backend.
       window.location.assign(result.RedirectUrl)
+    } else if (result.ReturnsToClient) {
+      // Deny — the backend re-enters /connect/authorize with a deny marker;
+      // OpenIddict then emits the RFC 6749 access_denied error to the client's
+      // redirect_uri (honoring its response_mode + iss). RedirectUrl is a
+      // same-origin /connect/authorize URL, so full-page-assign into it.
+      window.location.assign(result.RedirectUrl)
     } else {
-      // On deny the backend returns /consent/denied?error=… which is
-      // an IdP-side landing URL, not an RP redirect. We ignore it
-      // and render the denial state inline — cleaner UX, no extra
-      // route needed.
+      // Defensive fallback: no client redirect available — render the denial
+      // state inline (not reached while the backend always re-enters authorize).
       phase.value = 'denied'
     }
   } catch (e) {
-    if (e instanceof HttpClientError && e.status === 409) {
-      error.value = t('consent.alreadyUsed', {}, 'This consent request has already been completed. Please start over from the app.')
-    } else if (e instanceof HttpClientError && e.status === 400) {
-      error.value = t('consent.expired', {}, 'Consent request expired. Please start over from the app.')
+    if (e instanceof HttpClientError && (e.status === 409 || e.status === 400)) {
+      error.value = e.status === 409
+        ? t('consent.alreadyUsed', {}, 'This consent request has already been completed. Please start over from the app.')
+        : t('consent.expired', {}, 'Consent request expired. Please start over from the app.')
+      retryUrl.value = readRetryUrl(e)
+      phase.value = 'error'
+    } else if (e instanceof HttpClientError && (e.status === 404 || e.status === 403)) {
+      // Ticket GC'd between the prompt and submit, or bound to a different
+      // user — not retryable in place, so surface the error card instead of
+      // leaving the stale Allow/Deny prompt showing a dead message.
+      error.value = e.status === 404
+        ? t('consent.notFound', {}, 'Consent request not found or expired. Please start the sign-in flow again from the app.')
+        : t('consent.forbidden', {}, 'This consent ticket belongs to a different user. Please sign in with the correct account.')
+      phase.value = 'error'
     } else if (e instanceof HttpClientError) {
       error.value = t('consent.submitError', {}, 'Could not submit your decision. Please try again.')
     } else {
@@ -195,7 +230,14 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
         <!-- Error -->
         <div v-else-if="phase === 'error'" class="space-y-4">
           <CoarNote variant="error">{{ error }}</CoarNote>
-          <CoarButton full-width @click="router.push('/login')">
+          <!-- Expired/consumed tickets carry a retry URL — re-entering
+               /connect/authorize mints a fresh ticket (or completes silently
+               via the remembered authorization), so the OIDC flow resumes
+               instead of dead-ending here. -->
+          <CoarButton v-if="retryUrl" full-width @click="retryAuthorize">
+            {{ t('consent.retry', {}, 'Try again') }}
+          </CoarButton>
+          <CoarButton :variant="retryUrl ? 'secondary' : undefined" full-width @click="router.push('/login')">
             {{ t('consent.toLogin', {}, 'Back to sign-in') }}
           </CoarButton>
         </div>

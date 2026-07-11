@@ -163,6 +163,29 @@ public static class AuthorizationEndpoints
                 new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
         }
 
+        // Consent-deny re-entry: /connect/consent redirects a DENIED decision
+        // back here with ?deny_ticket={id} so OpenIddict emits the RFC 6749
+        // access_denied error to the client's redirect_uri honoring its
+        // response_mode + RFC 9207 iss — symmetric with the approve path, which
+        // re-enters authorize to complete the grant. We require a genuine denied,
+        // subject-bound ticket before acting; a forged/mismatched deny_ticket
+        // falls through to the normal flow (re-prompts consent), leaking nothing.
+        if ((string?)request.GetParameter("deny_ticket") is { Length: > 0 } denyTicketRaw
+            && Guid.TryParseExact(denyTicketRaw, "N", out var denyTicketId))
+        {
+            var deniedTicket = await session.LoadAsync<ConsentTicket>(denyTicketId);
+            if (deniedTicket is { DeniedAt: not null } && deniedTicket.Subject == user.Id)
+            {
+                return Results.Forbid(
+                    new AuthenticationProperties(new Dictionary<string, string?>
+                    {
+                        [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.AccessDenied,
+                        [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The user denied the authorization request.",
+                    }),
+                    new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+            }
+        }
+
         var subject = user.Id.ToString();
         var clientPk = await applicationManager.GetIdAsync(application) ?? string.Empty;
 

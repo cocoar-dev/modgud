@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
+import { useLoginRedirect } from '@/composables/useLoginRedirect'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
   CoarCard,
@@ -28,68 +29,12 @@ async function toggleLanguage() {
   localStorage.setItem('language', next)
 }
 
-const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
-// Redirect target after login (from query param set by router guard).
-// Open-redirect guard: the redirect param has to be a same-origin path,
-// i.e. a string starting with a single '/'. Anything starting with '//',
-// 'http:', 'https:', a scheme, or a backslash could send the user to an
-// attacker-controlled host after a successful login. Reject everything
-// outside that shape and fall back to the dashboard.
-const redirectTarget = computed(() => {
-  const r = route.query.redirect as string | undefined
-  if (!r) return '/'
-  let decoded: string
-  try {
-    decoded = decodeURIComponent(r)
-  } catch {
-    return '/'
-  }
-  if (!isSameOriginPath(decoded)) return '/'
-  return decoded
-})
-
-function isSameOriginPath(value: string): boolean {
-  if (!value.startsWith('/')) return false       // must be absolute path
-  if (value.startsWith('//')) return false       // protocol-relative URL
-  if (value.startsWith('/\\')) return false      // backslash-smuggling
-  return true
-}
-
-// Paths outside the SPA (served directly by the backend) — Vue Router can't navigate
-// there, so we use a full-page load after successful login.
-// `/connect/*` are the OpenIddict OAuth/OIDC endpoints; an inbound third-party
-// client kicks the flow off there, so completing login has to send the browser
-// back to /connect/authorize verbatim, not push the path through Vue Router
-// (which would silently drop it as an unknown route).
-const NON_SPA_PREFIXES = ['/docs/', '/docs', '/connect/', '/connect']
-
-const gdprHttp = useHttpClient('/api/auth')
-
-async function finishLogin() {
-  const target = redirectTarget.value
-
-  // Self-service grace interstitial: a user who scheduled their own deletion
-  // stays able to log in precisely so they can cancel. Divert them to the
-  // interstitial (which continues to `target` on cancel/continue) before the
-  // normal redirect. Admin recycle-bin users can't log in, so never land here.
-  try {
-    const status = await gdprHttp.addPath('deletion-status')
-      .get<{ IsPending: boolean; Initiator?: string | null }>()
-    if (status?.IsPending && status.Initiator === 'SelfService') {
-      router.push({ path: '/deletion-pending', query: { redirect: target } })
-      return
-    }
-  } catch { /* status unavailable — never block the login on it */ }
-
-  if (NON_SPA_PREFIXES.some((p) => target === p || target.startsWith(p + '/') || target.startsWith(p + '?'))) {
-    window.location.assign(target)
-  } else {
-    router.push(target)
-  }
-}
+// Post-login continuation — reads ?redirect= (same-origin-guarded) and
+// finishes every successful login through the shared redirect logic.
+const { redirectTarget, finishLogin } = useLoginRedirect()
 
 // HttpClientError.body is `unknown` by design — narrow it here. Most
 // API errors are ProblemDetails-shaped, so we look for `.detail`.
@@ -135,7 +80,12 @@ async function loadSelfRegistrationInfo() {
 loadSelfRegistrationInfo()
 
 function startExternalLogin(idp: ExternalLoginDto) {
-  const returnUrl = new URLSearchParams(window.location.search).get('returnUrl') ?? '/'
+  // The pending continuation rides ?redirect= (set by the cookie handler /
+  // router guard) — redirectTarget already applies the same-origin guard.
+  // The backend start endpoints stash it and the finish endpoints redirect
+  // there after the external round trip, so a /connect/authorize target
+  // resumes the client app's OIDC flow.
+  const returnUrl = redirectTarget.value
   // SAML is SP-initiated via its own slug-based route; OIDC goes through the
   // challenge start endpoint keyed by provider id.
   const target = idp.Kind === 'Saml'
@@ -294,7 +244,9 @@ async function handleMagicLinkRequest() {
   error.value = ''
 
   try {
-    await authStore.requestMagicLink(magicLinkEmail.value.trim())
+    // Pass the pending continuation along — it survives the e-mail round
+    // trip as ?redirect= on the emailed /magic-login URL.
+    await authStore.requestMagicLink(magicLinkEmail.value.trim(), redirectTarget.value)
     magicLinkSent.value = true
   } catch {
     error.value = t('common.connectionError', {}, 'Connection to server failed.')
@@ -536,11 +488,13 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
             {{ t('auth.login.externalPrefix', {}, 'Sign in with') }} {{ idp.DisplayName }}
           </CoarButton>
 
-          <RouterLink v-if="!isPasswordless()" to="/forgot-password" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
+          <!-- Detours forward ?redirect= so the pending continuation (e.g. a
+               client app's /connect/authorize flow) survives the side trip. -->
+          <RouterLink v-if="!isPasswordless()" :to="{ path: '/forgot-password', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.login.forgotPassword', {}, 'Forgot password?') }}
           </RouterLink>
 
-          <RouterLink v-if="selfRegistrationEnabled" to="/register"
+          <RouterLink v-if="selfRegistrationEnabled" :to="{ path: '/register', query: { redirect: route.query.redirect } }"
             class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.login.registerLink', {}, 'No account yet? Register →') }}
           </RouterLink>
