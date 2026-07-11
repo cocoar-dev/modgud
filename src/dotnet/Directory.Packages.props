@@ -26,6 +26,12 @@
     <PackageVersion Include="ITfoxtec.Identity.Saml2.MvcCore" Version="4.18.0" />
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
+    <!-- Transitive-CVE pin: Microsoft.AspNetCore.OpenApi floats Microsoft.OpenApi
+         at [2.0.0, ), which resolves to the vulnerable 2.0.0
+         (GHSA-v5pm-xwqc-g5wc, circular-schema-reference DoS in parsing).
+         Referenced directly from Modgud.Api so the whole graph lifts to the
+         patched 2.x. Drop this once AspNetCore.OpenApi requires >= 2.7.5. -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.8" />
     <PackageVersion Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.23.0" />
