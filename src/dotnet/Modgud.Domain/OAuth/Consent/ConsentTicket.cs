@@ -75,4 +75,15 @@ public class ConsentTicket
     /// ticket are rejected — single-use enforced.
     /// </summary>
     public DateTimeOffset? ConsumedAt { get; set; }
+
+    /// <summary>
+    /// Set (alongside <see cref="ConsumedAt"/>) when the user DENIES the
+    /// request. The consent endpoint then re-enters <c>/connect/authorize</c>
+    /// with <c>?deny_ticket={Id}</c>; the authorize endpoint verifies this
+    /// marker (and <see cref="Subject"/>) before letting OpenIddict emit the
+    /// RFC 6749 <c>access_denied</c> error to the client — honoring the
+    /// client's <c>response_mode</c> + RFC 9207 <c>iss</c>, symmetric with the
+    /// approve path's re-entry.
+    /// </summary>
+    public DateTimeOffset? DeniedAt { get; set; }
 }

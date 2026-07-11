@@ -152,10 +152,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * Request a magic link email for passwordless login.
+   * Request a magic link email for passwordless login. `returnUrl` threads a
+   * pending post-login continuation (e.g. a /connect/authorize OIDC flow)
+   * through the e-mail round trip — the backend appends it to the emailed
+   * /magic-login URL as ?redirect= after validating it server-side.
    */
-  async function requestMagicLink(email: string): Promise<void> {
-    await magicLinkHttp.addPath('request').post({ Email: email })
+  async function requestMagicLink(email: string, returnUrl?: string): Promise<void> {
+    await magicLinkHttp.addPath('request').post({ Email: email, ReturnUrl: returnUrl ?? null })
   }
 
   /**

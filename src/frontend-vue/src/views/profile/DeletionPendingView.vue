@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useHttpClient } from '@/composables/useHttpClient'
+import { isSameOriginPath } from '@/composables/useLoginRedirect'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarCard, CoarButton, CoarIcon } from '@cocoar/vue-ui'
 import type { DeletionStatusDto } from '@/models/gdpr'
@@ -17,9 +18,11 @@ const cancelling = ref(false)
 const error = ref('')
 
 // Same-origin guard on the continue target — never honor an absolute URL.
+// Shared with the login flow so '//', '/\' and control-char smuggling are all
+// rejected consistently (not just '//').
 const continueTarget = computed(() => {
-  const r = route.query.redirect as string | undefined
-  return r && r.startsWith('/') && !r.startsWith('//') ? r : '/'
+  const r = route.query.redirect
+  return isSameOriginPath(r) ? r : '/'
 })
 
 const deadlineText = computed(() =>

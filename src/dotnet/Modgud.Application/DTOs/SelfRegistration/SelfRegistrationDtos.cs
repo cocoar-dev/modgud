@@ -46,6 +46,13 @@ public record RegisterDto
     /// non-empty the server quietly rejects (still 200 OK to keep the
     /// bot in the dark).</summary>
     public string? Honeypot { get; init; }
+
+    /// <summary>Optional pending post-login continuation (e.g. a client app's
+    /// /connect/authorize flow the user detoured away from via "Register").
+    /// Validated server-side as a same-origin path and appended to the emailed
+    /// verification link as <c>?redirect=</c> so the verify page can forward it
+    /// to /login; ignored otherwise.</summary>
+    public string? ReturnUrl { get; init; }
 }
 
 /// <summary>Generic response — the same shape regardless of whether the

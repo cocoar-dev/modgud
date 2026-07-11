@@ -448,8 +448,8 @@ public class SamlLoginFlow(
         if (string.IsNullOrWhiteSpace(raw)) return null;
 
         if (Uri.TryCreate(raw, UriKind.Absolute, out _)) return null;
-        if (!raw.StartsWith('/')) return null;
-
-        return raw;
+        // Same-origin absolute path only (rejects //…, /\…, and control-char
+        // smuggling like /\t/evil.com that a browser collapses to //evil.com).
+        return Modgud.Authentication.Api.LoginRedirectGuard.IsSameOriginPath(raw) ? raw : null;
     }
 }

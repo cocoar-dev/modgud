@@ -73,7 +73,7 @@ public static class ExternalAuthEndpoints
                     Items =
                     {
                         ["loginProviderId"] = loginProviderId.ToString("N"),
-                        ["returnUrl"] = string.IsNullOrWhiteSpace(returnUrl) ? "/" : returnUrl!,
+                        ["returnUrl"] = SanitizeReturnUrl(returnUrl),
                     },
                 };
                 return Results.Challenge(props, [schemeName]);
@@ -183,6 +183,15 @@ public static class ExternalAuthEndpoints
         string Flavor,
         string? IconName,
         string? ButtonColorHex);
+
+    /// <summary>
+    /// Open-redirect guard for the post-login continuation: the finish
+    /// endpoint redirects to the stored value verbatim, so only a same-origin
+    /// absolute path ('/…', but not protocol-relative '//…' or
+    /// backslash-smuggling '/\…') survives; anything else falls back to '/'.
+    /// </summary>
+    private static string SanitizeReturnUrl(string? returnUrl) =>
+        LoginRedirectGuard.IsSameOriginPath(returnUrl) ? returnUrl! : "/";
 
     /// <summary>
     /// Returns true when the request looks like a same-site navigation:

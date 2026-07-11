@@ -38,8 +38,14 @@ export interface ConsentDecision {
 }
 
 export interface ConsentResult {
-  /** Non-SPA URL. Approve → /connect/authorize?<original-query>;
-   * Deny → /consent/denied?error=… (an IdP-side error landing page).
-   * Use window.location.assign — Vue Router cannot navigate to either. */
+  /** Non-SPA, same-origin /connect/authorize URL. Approve → re-enters with
+   * the original query to complete the grant; Deny → re-enters with a
+   * deny marker (?deny_ticket=…) so OpenIddict emits the RFC 6749
+   * error=access_denied to the client honoring its response_mode + iss.
+   * Use window.location.assign — Vue Router cannot navigate to it. */
   RedirectUrl: string
+  /** True on a deny that hands control back to the client via the authorize
+   * re-entry (vs. the defensive inline-denied fallback). Both cases
+   * full-page-navigate to a same-origin RedirectUrl. */
+  ReturnsToClient?: boolean
 }

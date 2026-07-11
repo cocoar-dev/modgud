@@ -11,7 +11,12 @@ namespace Modgud.Authentication.Api.Account;
 
 public static class PasswordResetEndpoints
 {
-    public record ForgotPasswordRequest(string UserName);
+    /// <summary><paramref name="ReturnUrl"/> threads a pending post-login
+    /// continuation (e.g. a client app's /connect/authorize flow the user
+    /// detoured away from via "Forgot password?") through the e-mail round
+    /// trip; validated as a same-origin path before it is appended to the
+    /// emailed reset URL as <c>?redirect=</c>.</summary>
+    public record ForgotPasswordRequest(string UserName, string? ReturnUrl = null);
     public record ResetPasswordRequest(string UserId, string Token, string NewPassword);
 
     public static WebApplication MapPasswordResetEndpoints(this WebApplication application, string path)
@@ -57,6 +62,13 @@ public static class PasswordResetEndpoints
                 // Build reset URL — Vue frontend handles /reset-password route
                 var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
                 var resetUrl = $"{appUrl}/reset-password?userId={userId}&token={encodedToken}";
+
+                // Thread the pending continuation through the e-mail round trip
+                // so a password reset can resume a client app's OIDC authorize
+                // flow. Same-origin guard mirrors the SPA's; the reset page
+                // forwards ?redirect= to /login after a successful reset.
+                if (LoginRedirectGuard.IsSameOriginPath(request.ReturnUrl) && request.ReturnUrl != "/")
+                    resetUrl += $"&redirect={Uri.EscapeDataString(request.ReturnUrl!)}";
 
                 await emailService.SendTemplatedEmailAsync(
                     user.Email,

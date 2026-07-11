@@ -17,7 +17,11 @@ namespace Modgud.Authentication.Api.Account;
 
 public static class MagicLinkEndpoints
 {
-    public record MagicLinkRequestDto(string Email);
+    /// <summary><paramref name="ReturnUrl"/> threads a pending post-login
+    /// continuation (e.g. a client app's /connect/authorize flow) through the
+    /// e-mail round trip; it is validated as a same-origin path before being
+    /// appended to the emailed URL as <c>?redirect=</c>.</summary>
+    public record MagicLinkRequestDto(string Email, string? ReturnUrl = null);
     public record MagicLinkLoginDto(Guid UserId, string Token);
 
     public static WebApplication MapMagicLinkEndpoints(this WebApplication application, string path)
@@ -128,6 +132,13 @@ public static class MagicLinkEndpoints
             var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
             var encodedToken = Uri.EscapeDataString(token);
             var magicUrl = $"{appUrl}/magic-login?userId={user.Id}&token={encodedToken}";
+
+            // Thread the pending continuation through the e-mail round trip so
+            // a magic-link login can complete a client app's OIDC authorize
+            // flow. Open-redirect guard mirrors the SPA's: only a
+            // single-'/'-rooted same-origin path may ride along.
+            if (Api.LoginRedirectGuard.IsSameOriginPath(request.ReturnUrl) && request.ReturnUrl != "/")
+                magicUrl += $"&redirect={Uri.EscapeDataString(request.ReturnUrl!)}";
 
             await emailService.SendTemplatedEmailAsync(
                 user.Email!,

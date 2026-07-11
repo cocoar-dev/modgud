@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
 import { useAppConfigStore } from '@/stores/appconfig.store'
+import { isSameOriginPath } from '@/composables/useLoginRedirect'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
   CoarCard,
@@ -30,6 +31,7 @@ interface RegisterResponseDto {
 
 const { t, language } = useI18n()
 const localization = useLocalization()!
+const route = useRoute()
 const router = useRouter()
 const accountHttp = useHttpClient('/api/account')
 const appConfig = useAppConfigStore()
@@ -132,7 +134,9 @@ onMounted(async () => {
     appConfig.load() // idempotent; ensures the field policy is available
     info.value = await accountHttp.addPath('self-registration-info').get<SelfRegistrationInfoDto>()
     if (!info.value.Enabled) {
-      router.replace('/login')
+      // Forward ?redirect= so a pending continuation (e.g. a client app's
+      // /connect/authorize flow) survives the bounce back to the login page.
+      router.replace({ path: '/login', query: { redirect: route.query.redirect } })
       return
     }
     if (info.value.CaptchaSiteKey) {
@@ -162,6 +166,10 @@ async function handleSubmit() {
   submitting.value = true
   error.value = ''
   try {
+    // Thread the pending continuation (e.g. a client app's /connect/authorize
+    // flow) through the e-mail round trip; the backend re-validates it and the
+    // verify-email page forwards ?redirect= to /login once confirmed.
+    const redirect = route.query.redirect
     const res = await accountHttp.addPath('register').post<RegisterResponseDto>({
       UserName: form.value.UserName.trim(),
       Email: form.value.Email.trim(),
@@ -171,6 +179,7 @@ async function handleSubmit() {
       AcceptedTerms: form.value.AcceptedTerms,
       CaptchaToken: form.value.CaptchaToken || null,
       Honeypot: form.value.Honeypot || null,
+      ReturnUrl: isSameOriginPath(redirect) ? redirect : null,
     })
     successMessage.value = res.Message
     submitted.value = true
@@ -220,7 +229,7 @@ async function handleSubmit() {
 
         <div v-else-if="submitted" class="space-y-4">
           <CoarNote variant="success">{{ successMessage }}</CoarNote>
-          <RouterLink to="/login"
+          <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }"
             class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.register.toLogin', {}, 'To login') }}
           </RouterLink>
@@ -289,7 +298,7 @@ async function handleSubmit() {
           </CoarButton>
 
           <div class="flex justify-between text-sm">
-            <RouterLink to="/login" class="text-surface-500 hover:text-surface-700 hover:underline">
+            <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }" class="text-surface-500 hover:text-surface-700 hover:underline">
               {{ t('auth.register.haveAccount', {}, 'Already have an account?') }}
             </RouterLink>
             <a v-if="info?.PrivacyPolicyUrl" :href="info.PrivacyPolicyUrl" target="_blank" rel="noopener noreferrer"

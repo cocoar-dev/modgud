@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
+import { isSameOriginPath } from '@/composables/useLoginRedirect'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
@@ -15,6 +17,10 @@ const { t, language } = useI18n()
 const localization = useLocalization()!
 const appConfig = useAppConfigStore()
 const isPasswordless = appConfig.config.AuthenticationMinimumLevel >= 2
+
+// Forwarded on every "Back to login" link so a pending continuation
+// (e.g. a client app's /connect/authorize flow) survives the detour.
+const route = useRoute()
 
 async function toggleLanguage() {
   const next = language.value === 'de' ? 'en' : 'de'
@@ -34,7 +40,14 @@ async function handleSubmit() {
   submitting.value = true
   error.value = ''
   try {
-    await http.addPath('forgot-password').post({ UserName: userName.value.trim() })
+    // Thread the pending continuation (e.g. a client app's /connect/authorize
+    // flow) through the e-mail round trip; the backend re-validates it and the
+    // reset page forwards ?redirect= to /login on success.
+    const redirect = route.query.redirect
+    await http.addPath('forgot-password').post({
+      UserName: userName.value.trim(),
+      ReturnUrl: isSameOriginPath(redirect) ? redirect : null,
+    })
     sent.value = true
   } catch (e) {
     error.value = e instanceof HttpClientError
@@ -74,7 +87,7 @@ async function handleSubmit() {
           <CoarNote variant="info">
             {{ t('auth.forgotPassword.passwordlessMode', {}, 'Password reset is not available. This application uses passwordless login.') }}
           </CoarNote>
-          <RouterLink to="/login" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
+          <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.forgotPassword.backToLogin', {}, 'Back to login') }}
           </RouterLink>
         </div>
@@ -84,7 +97,7 @@ async function handleSubmit() {
           <CoarNote variant="success">
             {{ t('auth.forgotPassword.sent', {}, 'If an account exists with this username, an email with a reset link has been sent.') }}
           </CoarNote>
-          <RouterLink to="/login" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
+          <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.forgotPassword.backToLogin', {}, 'Back to login') }}
           </RouterLink>
         </div>
@@ -115,7 +128,7 @@ async function handleSubmit() {
             {{ t('auth.forgotPassword.sendLink', {}, 'Send link') }}
           </CoarButton>
 
-          <RouterLink to="/login" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
+          <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.forgotPassword.backToLogin', {}, 'Back to login') }}
           </RouterLink>
         </form>
