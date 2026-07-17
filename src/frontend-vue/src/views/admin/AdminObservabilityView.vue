@@ -12,7 +12,7 @@ const signalr = useSignalR()
 
 const ui = useUI()
 watch(language, () => ui.set((ctx) => {
-  ctx.header.title = t('nav.platform', {}, 'Plattform')
+  ctx.header.title = t('nav.platform', {}, 'Platform')
   ctx.header.subTitle = t('admin.observability.title', {}, 'Observability')
   ctx.header.icon = 'activity'
   ctx.content.container = false

@@ -91,7 +91,7 @@ The CLI atomically creates:
 
 - An `ApplicationUser` with the given password (hashed with the configured Identity policy)
 - The three default `PermissionRole`s — System Admin, User Manager, Viewer
-- A `Group` "Administratoren" with you as the only member, the System Admin role attached, `BoundTo: ["*"]` (active in every app)
+- A `Group` "Administrators" with you as the only member, the System Admin role attached, `BoundTo: ["*"]` (active in every app)
 
 Sign in at `http://localhost:4300/` with `admin` / `ABC12abc!`. You hold `realm:admin`, so the sidebar shows everything.
 

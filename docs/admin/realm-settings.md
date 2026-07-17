@@ -37,7 +37,7 @@ The page currently has these tabs:
 - [Signing Keys](#signing-keys) — rotate the realm's OAuth/OIDC token-signing key
 
 Per-realm **branding** is configured on a separate page under
-Plattform — see [Customization → Branding](../plattform/branding).
+Platform — see [Customization → Branding](../platform/branding).
 
 Permissions: `realm-settings:read` / `realm-settings:write`. The
 realm-admin role grants both via the `realm:admin` bypass.
@@ -254,8 +254,8 @@ Permission: `realm-settings:write` (the `realm:admin` bypass grants it).
 
 ## Branding (separate page)
 
-Branding lives on its own page under Plattform — go to
-**Plattform → Customization → Branding**. It writes a sub-document on
+Branding lives on its own page under Platform — go to
+**Platform → Customization → Branding**. It writes a sub-document on
 the same `RealmSettings` doc but isn't surfaced as a tab here today.
 
-→ **[Customization — Branding](../plattform/branding)**
+→ **[Customization — Branding](../platform/branding)**

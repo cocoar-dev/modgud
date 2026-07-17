@@ -36,7 +36,7 @@ You need:
 
 - A running Modgud instance (see
   [Getting Started](../getting-started/quickstart))
-- An admin account (a member of the `Administratoren` group, created
+- An admin account (a member of the `Administrators` group, created
   via the [first-time bootstrap](../getting-started/first-time-setup))
 - A URL for your target app (for redirect URIs), e.g.
   `https://acme.dev.local`
@@ -146,7 +146,7 @@ permissions don't leak.
 
 ## Station 4: roles and groups
 
-On setup Modgud seeds exactly one realm admin (`Administratoren`
+On setup Modgud seeds exactly one realm admin (`Administrators`
 group with wildcard `BoundTo: ["*"]`). For your new app you'll
 usually want more nuanced roles.
 
@@ -321,7 +321,7 @@ Made it through? **Done. First SaaS app integrated.**
 - **Don't try to delete the system app `modgud`.** It's flagged
   `IsSystem`; the attempt is rejected.
 - **Lost realm admin.** If you locked yourself out of the
-  `Administratoren` group: the recovery CLI inside the container can
+  `Administrators` group: the recovery CLI inside the container can
   pull you back in — see [Recovery CLI](../operate/recovery-cli).
 - **Lost a secret.** Client secrets are shown exactly once. If you've
   lost one: **regenerate** in the corresponding detail modal.

@@ -174,7 +174,7 @@ Backend:
 8. `RealmCache.Invalidate()`.
 9. **Bootstrap-invite** issued atomically: writes a `PendingAdminInvite` into the new tenant DB, sends a magic-link email to `InitialAdmin.Email`, returns the URL in the API response.
 
-The recipient clicks the magic-link, lands at `/bootstrap?token=…`, sets a password, and is auto-signed-in with `realm:admin`. The first user creation runs through `RealmAdminBootstrapper`, which atomically seeds the three default roles and adds the user to the `Administratoren` group.
+The recipient clicks the magic-link, lands at `/bootstrap?token=…`, sets a password, and is auto-signed-in with `realm:admin`. The first user creation runs through `RealmAdminBootstrapper`, which atomically seeds the three default roles and adds the user to the `Administrators` group.
 
 ### 3. Deactivate a realm
 

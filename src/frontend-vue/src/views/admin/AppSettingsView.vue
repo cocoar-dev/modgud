@@ -15,7 +15,7 @@ const { navigateToModal } = useFragmentNavigation()
 const ui = useUI()
 
 watch(language, () => ui.set((ctx) => {
-  ctx.header.title = t('nav.platform', {}, 'Plattform')
+  ctx.header.title = t('nav.platform', {}, 'Platform')
   ctx.header.subTitle = t('nav.settings', {}, 'Einstellungen')
   ctx.header.icon = 'settings'
   ctx.content.container = false
@@ -41,7 +41,7 @@ async function rebuildProjections() {
 
 // Consistency check now lives in a routed modal — see
 // `ConsistencyCheckModal.vue` and the matching `routedFragments` entry
-// on the /plattform/settings route. The button just navigates there.
+// on the /platform/settings route. The button just navigates there.
 function openConsistencyCheck() {
   navigateToModal('consistency-check')
 }

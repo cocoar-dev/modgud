@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import type { NavigationGuard } from 'vue-router'
+import type { NavigationGuard, RouteLocationGeneric } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 
@@ -14,7 +14,7 @@ import { useAppConfigStore } from '@/stores/appconfig.store'
 const pageBuilderFeatureGate: NavigationGuard = () => {
   const appConfig = useAppConfigStore()
   if (!appConfig.config.Features.PageBuilder) {
-    return { path: '/plattform/customization/branding', replace: true }
+    return { path: '/platform/customization/branding', replace: true }
   }
   return true
 }
@@ -436,13 +436,13 @@ const routes = [
             },
           ],
         },
-        // Plattform — second top-level admin area for operator-facing config
-        // (Anpassung + Betrieb). Own SubNavLayoutGrouped wrapper.
+        // Platform — second top-level admin area for operator-facing config
+        // (customization + operations). Own SubNavLayoutGrouped wrapper.
         {
-          path: 'plattform',
+          path: 'platform',
           component: () => import('@/views/platform/PlatformView.vue'),
           children: [
-            { path: '', redirect: '/plattform/customization/branding' },
+            { path: '', redirect: '/platform/customization/branding' },
             {
               path: 'customization/branding',
               component: () => import('@/views/admin/customization/BrandingView.vue'),
@@ -484,6 +484,17 @@ const routes = [
               },
             },
           ],
+        },
+        // Back-compat: /plattform was the old (German) segment for the route
+        // above; redirect old bookmarks/links onto the equivalent /platform
+        // path, preserving any trailing segments, query and hash.
+        {
+          path: 'plattform/:rest(.*)*',
+          redirect: (to: RouteLocationGeneric) => {
+            const rest = to.params.rest
+            const suffix = Array.isArray(rest) && rest.length > 0 ? `/${rest.join('/')}` : ''
+            return { path: `/platform${suffix}`, query: to.query, hash: to.hash }
+          },
         },
       ],
     },

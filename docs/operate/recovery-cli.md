@@ -44,7 +44,7 @@ dotnet Modgud.Api.dll recover list
 ```
 
 `Admin` means the user holds `realm:admin` (typically via the
-System Admin role inside the seeded Administratoren group).
+System Admin role inside the seeded Administrators group).
 
 ### `reset-2fa <username>`
 Disable TOTP and Email-OTP, delete every stored passkey credential,

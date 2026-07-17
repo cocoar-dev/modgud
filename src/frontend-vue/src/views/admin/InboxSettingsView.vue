@@ -12,7 +12,7 @@ const { t, language } = useI18n()
 const ui = useUI()
 
 watch(language, () => ui.set((ctx) => {
-  ctx.header.title = t('nav.platform', {}, 'Plattform')
+  ctx.header.title = t('nav.platform', {}, 'Platform')
   ctx.header.subTitle = t('admin.inboxSettings.title', {}, 'Inbox-Einstellungen')
   ctx.header.icon = 'inbox'
   ctx.content.container = false

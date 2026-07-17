@@ -61,7 +61,7 @@ Required for:
 
 Without SMTP these flows degrade gracefully (password sign-in still works, TOTP / Passkey 2FA work) but you lose recovery capability. With no SMTP host configured, outbound email is silently dropped; the recovery CLI and the realm-creation API still print/return invite and magic-link URLs directly. For local capture, point Modgud at a dev SMTP catcher (Mailpit, smtp4dev).
 
-Configure SMTP via [Settings](../plattform/settings) per realm, or instance-wide through env vars (the published image takes all config as env vars — `Section__Property`, case-insensitive — since `configuration.json` is not shipped in the image).
+Configure SMTP via [Settings](../platform/settings) per realm, or instance-wide through env vars (the published image takes all config as env vars — `Section__Property`, case-insensitive — since `configuration.json` is not shipped in the image).
 
 ### Optional: external Identity Providers
 

@@ -24,7 +24,7 @@ namespace Modgud.Authentication.Setup;
 /// </list>
 /// One consume call-site: <c>POST /api/account/bootstrap-admin</c>
 /// (anonymous, rate-limited). On consume, the user is atomically created
-/// + put into the Administratoren group via <see cref="IRealmAdminBootstrapper"/>.
+/// + put into the Administrators group via <see cref="IRealmAdminBootstrapper"/>.
 ///
 /// <para>Token format: 32 random bytes, Base64Url-encoded → URL-safe,
 /// 43 chars. Stored as SHA-256 hex hash. Plain-text only ever lives in

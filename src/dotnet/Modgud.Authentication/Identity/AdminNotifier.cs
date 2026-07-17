@@ -11,7 +11,7 @@ namespace Modgud.Authentication.Identity;
 /// every <see cref="Group"/> whose roles carry the realm-admin flag. A group with its
 /// own shared mailbox is addressed directly; a group without one is expanded to its
 /// members. The lookup matches the role+group shape produced by
-/// <c>RealmAdminBootstrapper</c> (System Admin role + Administratoren group).
+/// <c>RealmAdminBootstrapper</c> (System Admin role + Administrators group).
 /// </summary>
 public interface IAdminNotifier
 {

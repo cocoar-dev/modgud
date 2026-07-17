@@ -213,7 +213,7 @@ const allNavItems: NavItem[] = [
   { section: 'system', label: 'admin.realms.title', icon: 'globe',
     path: '/admin/realms', requirePermissions: ['realm:read'] },
   { section: 'system', label: 'nav.settings', icon: 'settings',
-    path: '/plattform/settings', requirePermissions: ['realm:admin'] },
+    path: '/platform/settings', requirePermissions: ['realm:admin'] },
   // ...
 ]
 ```
@@ -256,7 +256,7 @@ user creation, three default `PermissionRole`s are seeded (idempotent
 IsRealmAdmin: true
 ```
 
-The new admin is added to the **Administratoren** group with
+The new admin is added to the **Administrators** group with
 `BoundTo: ["*"]` (active in every app), and that group carries the
 System Admin role. Realm-wide bypass — sees and can do everything in
 every app.

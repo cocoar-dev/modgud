@@ -68,7 +68,7 @@ const labelBySlot: Record<string, string> = {
 }
 
 watch([language, slug], () => ui.set((ctx) => {
-  ctx.header.title = t('nav.platform', {}, 'Plattform')
+  ctx.header.title = t('nav.platform', {}, 'Platform')
   // String subtitle to match the app-wide header model (UI/UX wave 4, #13);
   // the page hierarchy stays as text ("Pages · <name>"). The parent-list link
   // the breadcrumb gave is still covered by the in-page Back button + sidebar.
@@ -167,7 +167,7 @@ async function resetToDefault() {
 }
 
 function back() {
-  router.push('/plattform/customization/pages')
+  router.push('/platform/customization/pages')
 }
 
 onMounted(loadSchema)

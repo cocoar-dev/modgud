@@ -1,13 +1,13 @@
 ---
-title: Plattform
+title: Platform
 description: Operator-facing configuration of the Modgud instance.
 ---
 
-# Plattform
+# Platform
 
 The sidebar has **two** top-level admin areas, and the difference matters.
 **Administration** is realm-admin work — users, groups, OAuth clients, realms; the
-"who can do what" of the system. **Plattform** is operator-facing IdP config —
+"who can do what" of the system. **Platform** is operator-facing IdP config —
 branding, observability, notification retention, app-level settings; the "how
 this IdP-instance is configured".
 
@@ -17,7 +17,7 @@ Different audience, different cadence.
 
 - **Administration** is touched daily by realm admins, user managers, and OAuth
   managers. The data inside is the live tenant content.
-- **Plattform** is touched mostly during setup, on the occasional theme refresh,
+- **Platform** is touched mostly during setup, on the occasional theme refresh,
   and when an operator needs to look at runtime telemetry or trim inbox
   retention. The data inside describes the instance, not the tenants in it.
 
@@ -27,24 +27,24 @@ retention window" without scrolling past two dozen tenant grids.
 
 ## Sub-nav groups
 
-The Plattform area is itself split into two thematic groups inside its own
+The Platform area is itself split into two thematic groups inside its own
 sub-nav (see `PlatformView.vue`):
 
 ### Customization
 
 | Item | Path | What it does |
 | --- | --- | --- |
-| [Branding](./branding) | `/plattform/customization/branding` | Per-realm SPA theming (optionally overridden per Application) — product name, primary color, logo, favicon |
-| [Pages](./pages) | `/plattform/customization/pages` | Page-builder editor (Beta) for login / logout / forgot-password — gated by the `PageBuilder` feature flag |
-| [Asset Library](./assets) | `/plattform/customization/assets` | BYTEA store for logos, favicons, login illustrations; SVG sanitisation, 2 MB cap |
+| [Branding](./branding) | `/platform/customization/branding` | Per-realm SPA theming (optionally overridden per Application) — product name, primary color, logo, favicon |
+| [Pages](./pages) | `/platform/customization/pages` | Page-builder editor (Beta) for login / logout / forgot-password — gated by the `PageBuilder` feature flag |
+| [Asset Library](./assets) | `/platform/customization/assets` | BYTEA store for logos, favicons, login illustrations; SVG sanitisation, 2 MB cap |
 
 ### Operations
 
 | Item | Path | What it does |
 | --- | --- | --- |
 | [Observability](../operate/observability) | `/operate/observability` | Live IdP metrics + traces, with the OpenTelemetry pipeline behind it |
-| Inbox settings | `/plattform/inbox-settings` | Per-tenant notification retention windows |
-| [Settings](./settings) | `/plattform/settings` | Projection rebuild, 2FA enforcement, grace period, SMTP, …; the catch-all operator surface |
+| Inbox settings | `/platform/inbox-settings` | Per-tenant notification retention windows |
+| [Settings](./settings) | `/platform/settings` | Projection rebuild, 2FA enforcement, grace period, SMTP, …; the catch-all operator surface |
 
 ## Permission gating
 
@@ -71,21 +71,21 @@ operator hasn't switched the beta flag on.
 
 ## URL convention
 
-Every Plattform route sits under `/plattform/*`. The wrapper redirects an empty
-`/plattform` to `/plattform/customization/branding` (the always-on starting
-point), so the area is link-safe even when the user has no other plattform
+Every Platform route sits under `/platform/*`. The wrapper redirects an empty
+`/platform` to `/platform/customization/branding` (the always-on starting
+point), so the area is link-safe even when the user has no other platform
 permission.
 
 ## Header pattern
 
-Every Plattform view sets the same header shape via `useUI()`:
+Every Platform view sets the same header shape via `useUI()`:
 
 ```ts
-ui.header.title = 'Plattform'
+ui.header.title = 'Platform'
 ui.header.subTitle = 'Branding' // or 'Observability', 'Asset Library', …
 ```
 
-So the breadcrumb the user sees is always `Plattform › <item>` — consistent
+So the breadcrumb the user sees is always `Platform › <item>` — consistent
 across the area regardless of which sub-page they landed on.
 
 ## Quick links

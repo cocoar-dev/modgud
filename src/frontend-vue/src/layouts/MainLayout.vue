@@ -131,9 +131,10 @@ const hasAnyAdminPermission = computed(() =>
     ADMIN_RESOURCE_PERMISSIONS.some((p) => authStore.hasPermission(p))
 )
 
-// Permission gate for the "Plattform" sidebar entry — its own wrapper view
-// (PlatformView) groups Anpassung + Betrieb (Observability / Inbox-Settings /
-// Einstellungen). The entry is visible if the user can see any of those.
+// Permission gate for the "Platform" sidebar entry — its own wrapper view
+// (PlatformView) groups customization + operations (Observability /
+// Inbox-Settings / Settings). The entry is visible if the user can see any
+// of those.
 const PLATFORM_RESOURCE_PERMISSIONS = [
     'realm-settings:read',
     'asset:read',
@@ -231,9 +232,9 @@ const hasAnyPlatformPermission = computed(() =>
                 </template>
                 <CoarSidebarItem v-if="hasAnyPlatformPermission"
                     icon="server"
-                    :label="t('nav.platform', {}, 'Plattform')"
-                    :active="route.path.startsWith('/plattform')"
-                    @click="router.push('/plattform')" />
+                    :label="t('nav.platform', {}, 'Platform')"
+                    :active="route.path.startsWith('/platform')"
+                    @click="router.push('/platform')" />
 
                 <CoarSidebarSpacer grow />
 

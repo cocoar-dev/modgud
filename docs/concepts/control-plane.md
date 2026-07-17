@@ -201,7 +201,7 @@ docker exec <container> dotnet Modgud.Api.dll recover bootstrap-admin \
 
 Atomic seed of `ApplicationUser` (Identity-Password-Rules enforced —
 the CLI does NOT bypass policy), the three default roles (System Admin
-/ User Manager / Viewer) and the Administratoren group. Idempotent:
+/ User Manager / Viewer) and the Administrators group. Idempotent:
 re-running for a second admin appends them to the existing group
 instead of duplicating.
 

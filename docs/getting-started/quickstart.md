@@ -81,10 +81,10 @@ You should see:
   Mode:     Direct (password set on creation)
 ```
 
-The CLI atomically creates the user, seeds the three default roles (System Admin / User Manager / Viewer) into the system realm, and adds the user to the **Administratoren** group with `realm:admin`.
+The CLI atomically creates the user, seeds the three default roles (System Admin / User Manager / Viewer) into the system realm, and adds the user to the **Administrators** group with `realm:admin`.
 
 ::: tip Password rules
-The CLI enforces the same Identity password policy the SPA uses (length, mixed case, digit). A weak password is rejected — see [Settings](../plattform/settings) for how to relax the policy if needed.
+The CLI enforces the same Identity password policy the SPA uses (length, mixed case, digit). A weak password is rejected — see [Settings](../platform/settings) for how to relax the policy if needed.
 :::
 
 ::: details Other ways to create the first admin
@@ -166,7 +166,7 @@ The bootstrap-admin command writes the user immediately. If login still fails, c
 :::
 
 ::: details Magic-link emails don't arrive
-With no SMTP configured, Modgud silently drops outbound email — there is no on-disk dev mailbox. For the bootstrap flow this is fine: the recovery CLI prints the invite / magic-link URL straight to stdout, and `POST /api/admin/realms` returns it in the response. To actually capture emails locally, point Modgud at a dev SMTP catcher such as [Mailpit](https://github.com/axllent/mailpit) or [smtp4dev](https://github.com/rnwood/smtp4dev) via the SMTP settings — see [Settings](../plattform/settings). For real delivery, configure your production SMTP host.
+With no SMTP configured, Modgud silently drops outbound email — there is no on-disk dev mailbox. For the bootstrap flow this is fine: the recovery CLI prints the invite / magic-link URL straight to stdout, and `POST /api/admin/realms` returns it in the response. To actually capture emails locally, point Modgud at a dev SMTP catcher such as [Mailpit](https://github.com/axllent/mailpit) or [smtp4dev](https://github.com/rnwood/smtp4dev) via the SMTP settings — see [Settings](../platform/settings). For real delivery, configure your production SMTP host.
 :::
 
 ::: details OIDC discovery returns 404

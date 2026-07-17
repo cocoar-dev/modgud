@@ -154,7 +154,7 @@ The single anonymous endpoint is the bootstrap-invite consumer:
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/account/bootstrap-admin` | Consume a single-use invite token + set password. Body: `{ "Token": "<plaintext>", "Password": "<new>" }`. On success: user is created, atomically added to the Administratoren group with `realm:admin`, and auto-signed-in via cookie. |
+| `POST` | `/api/account/bootstrap-admin` | Consume a single-use invite token + set password. Body: `{ "Token": "<plaintext>", "Password": "<new>" }`. On success: user is created, atomically added to the Administrators group with `realm:admin`, and auto-signed-in via cookie. |
 
 The token comes from one of:
 

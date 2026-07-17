@@ -41,16 +41,16 @@ Modgud is not just a login frontend — it's a full **OAuth 2.0 / OpenID Connect
 
 Per-realm look and feel. SPA-shell branding plus a beta page-builder editor.
 
-- [Branding](../plattform/branding) — product name, primary color, logo, favicon
-- [Asset Library](../plattform/assets) — upload images for branding (and, later, page schemas); SVG sanitisation built in
-- [Pages (Beta)](../plattform/pages) — drag-and-drop editor for login / logout / forgot-password; gated behind a [feature flag](../operate/feature-flags) while the runtime renderer is still being built
+- [Branding](../platform/branding) — product name, primary color, logo, favicon
+- [Asset Library](../platform/assets) — upload images for branding (and, later, page schemas); SVG sanitisation built in
+- [Pages (Beta)](../platform/pages) — drag-and-drop editor for login / logout / forgot-password; gated behind a [feature flag](../operate/feature-flags) while the runtime renderer is still being built
 
 ### Operations
 
 - [Observability](../operate/observability) — OpenTelemetry metrics + tracing + in-app live activity feed
 - [Logs](./auth-log) — a combined **Audit** tab (GDPR audit trail of user/config changes) and **Security** tab (login events, lockouts, rejected logins), gated separately
 - [Change Requests](./change-requests) — approve profile changes (when the approval flow is enabled)
-- [Settings](../plattform/settings) — 2FA enforcement, grace period, SMTP, …
+- [Settings](../platform/settings) — 2FA enforcement, grace period, SMTP, …
 - [Feature Flags](../operate/feature-flags) — operator-level toggles for beta / WIP surfaces
 - [Recovery CLI](../operate/recovery-cli) — when the UI no longer responds
 
@@ -72,7 +72,7 @@ Two bypass tiers keep permission lists short:
 - **`<resource>:admin`** — resource-wide, within the app the grant came from.
 
 ::: info Who is a realm admin?
-The first admin in every realm — created via the recovery CLI or the Control-Plane-issued bootstrap invite (see [First-time setup](../getting-started/first-time-setup)) — is automatically placed into the `Administratoren` group whose `BoundTo: ["*"]` wildcard makes them effective in every app. Add more admins by putting users into that group (or any other group with equivalent rights).
+The first admin in every realm — created via the recovery CLI or the Control-Plane-issued bootstrap invite (see [First-time setup](../getting-started/first-time-setup)) — is automatically placed into the `Administrators` group whose `BoundTo: ["*"]` wildcard makes them effective in every app. Add more admins by putting users into that group (or any other group with equivalent rights).
 :::
 
 ## Granular gating

@@ -32,7 +32,7 @@ export default withMermaid(defineConfig({
     // override to the admin-facing subset.
     nav: [
       { text: 'Admin', link: '/admin/' },
-      { text: 'Plattform', link: '/plattform/' },
+      { text: 'Platform', link: '/platform/' },
       { text: 'Concepts', link: '/concepts/apps-and-resource-access' },
       { text: 'Reference', link: '/reference/oauth-api' },
     ],

@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 
 /**
- * Plattform-Bereich — operator-facing config for the IdP itself (vs. AdminView
+ * Platform area — operator-facing config for the IdP itself (vs. AdminView
  * which is tenant/realm-admin work). Two thematic groups:
  *   - Anpassung: visual + content (branding, custom pages, asset library)
  *   - Betrieb: runtime + ops (observability, inbox retention, app settings)
@@ -28,19 +28,19 @@ const groups = computed<SubNavGroup[]>(() => [
       {
         label: t('admin.customization.branding.title', {}, 'Branding'),
         icon: 'palette',
-        to: '/plattform/customization/branding',
+        to: '/platform/customization/branding',
         visible: authStore.hasPermission('realm-settings:read'),
       } satisfies SubNavItem,
       {
         label: t('admin.customization.pages.title', {}, 'Pages'),
         icon: 'layout-template',
-        to: '/plattform/customization/pages',
+        to: '/platform/customization/pages',
         visible: authStore.hasPermission('realm-settings:read') && !!appConfig.config.Features.PageBuilder,
       } satisfies SubNavItem,
       {
         label: t('admin.assets.title', {}, 'Asset Library'),
         icon: 'image',
-        to: '/plattform/customization/assets',
+        to: '/platform/customization/assets',
         visible: authStore.hasPermission('asset:read'),
       } satisfies SubNavItem,
     ],
@@ -51,19 +51,19 @@ const groups = computed<SubNavGroup[]>(() => [
       {
         label: t('admin.observability.title', {}, 'Observability'),
         icon: 'activity',
-        to: '/plattform/observability',
+        to: '/platform/observability',
         visible: authStore.hasPermission('observability:read'),
       } satisfies SubNavItem,
       {
         label: t('admin.inboxSettings.title', {}, 'Inbox-Einstellungen'),
         icon: 'inbox',
-        to: '/plattform/inbox-settings',
+        to: '/platform/inbox-settings',
         visible: authStore.hasPermission('inbox-settings:read'),
       } satisfies SubNavItem,
       {
         label: t('nav.settings', {}, 'Einstellungen'),
         icon: 'settings',
-        to: '/plattform/settings',
+        to: '/platform/settings',
         visible: authStore.hasPermission('realm:admin'),
       } satisfies SubNavItem,
     ],
