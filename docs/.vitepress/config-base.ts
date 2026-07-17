@@ -79,7 +79,7 @@ export const baseConfig = {
       { text: 'Reference', link: '/reference/oauth-api' },
       { text: 'Contribute', link: '/contribute/developing-locally' },
       { text: 'Roadmap', link: '/roadmap' },
-      { text: 'LLM Docs', link: '/llms-full.txt', target: '_blank' },
+      { text: 'LLM Docs', link: '/llms.txt', target: '_blank' },
     ],
 
     sidebar: {
