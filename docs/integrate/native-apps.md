@@ -1,6 +1,12 @@
 # Native app integration (iOS / Android / headless)
 
-Modgud lets native apps sign a user in **without a browser redirect and without a cookie** — the app talks to the token endpoint directly. This is the path for iOS/Android apps, CLIs, and other clients that can't (or shouldn't) host a web login.
+::: tip Two ways to sign a native app in
+The standards-based, interoperable default for native apps is **Authorization Code + PKCE via the system browser** (`ASWebAuthenticationSession` on iOS, Custom Tabs on Android, per [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252)). It works with off-the-shelf OAuth SDKs such as [AppAuth](https://github.com/openid/AppAuth-iOS), and Modgud fully supports it — see [OAuth & OIDC concepts](/concepts/oauth) and the [OAuth / OpenIddict implementation guide](/integrate/oauth).
+
+The cookieless grants documented on **this page** are something else: Modgud's optional first-party profile for apps that want a fully native, browser-free login UX — passkeys, email OTP, magic link — with no system-browser hop at all.
+:::
+
+Modgud also lets native apps sign a user in **without a browser redirect and without a cookie** — the app talks to the token endpoint directly. This suits iOS/Android apps, CLIs, and other clients that want a native passwordless UX instead of a browser hand-off.
 
 It is built on three cookieless passwordless grants at `/connect/token` (ADR-0010) plus native passkey enrollment with a per-client WebAuthn RP-ID (ADR-0009):
 
@@ -308,6 +314,8 @@ Returns `204 No Content`. A deleted passkey can no longer satisfy a `urn:cocoar:
   POST /connect/token
   grant_type=refresh_token&client_id=<client_id>&refresh_token=<rt>&resource=<api-audience>
   ```
+
+  Refresh tokens are **single-use and rotate on every redeem** — a replayed (already-redeemed) refresh token is rejected with `invalid_grant` and revokes the whole token family, not just that one token. See [Refresh Token](/concepts/tokens#refresh-token).
 - **Revocation:** an admin disabling/deleting the user, a password reset, or "log out everywhere" rotates the user's security stamp — the next refresh then fails (`invalid_grant`), so the app must fall back to a fresh sign-in. Reference (opaque) access tokens (the default) are additionally revocable server-side immediately.
 
 ### Errors

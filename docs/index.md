@@ -25,8 +25,8 @@ features:
     title: Multi-app permission model
     details: Apps are first-class. Permissions are two-segment `<resource>:<action>` strings (e.g. `todo:write`) scoped to an app via the role→App relationship, groups carry an activation list (BoundTo), roles bind to one app, and the resolver answers per-app permission queries in-memory.
   - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M16 10h2"/><path d="M16 14h2"/><path d="M6.17 15a3 3 0 0 1 5.66 0"/><circle cx="9" cy="11" r="2"/></svg>'
-    title: Keycloak-style resource_access
-    details: Tokens carry resource_access keyed by app slug. A drop-in IClaimsTransformation library flattens the right block into ClaimTypes.Role so [Authorize(Roles="...")] works without per-endpoint plumbing.
+    title: Per-app resource_access claim
+    details: Tokens carry resource_access keyed by app slug, shaped like Keycloak's nested claim for familiarity. A drop-in IClaimsTransformation library flattens the right block into ClaimTypes.Role so [Authorize(Roles="...")] works without per-endpoint plumbing.
   - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="11.49"/></svg>'
     title: Permissions on UserInfo
     details: '/connect/userinfo emits per-Audience resource_access blocks with bypass-pre-expansion and per-RS subset narrowing. Standard OIDC tooling consumes it; no custom client required.'

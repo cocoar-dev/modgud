@@ -42,7 +42,7 @@ A point-by-point list of what Modgud delivers out of the box.
 - Apps also carry their own soft configuration facet — origin, branding, and login posture — while still sharing the realm's user pool and a single `sub` per user
 
 ### Permission distribution to resource servers
-- **Keycloak-style `resource_access`** claim emitted in `/connect/userinfo`, keyed by app slug, per-Audience
+- **Own `resource_access` claim** (shaped like Keycloak's nested format for familiarity) emitted in `/connect/userinfo`, keyed by app slug, per-Audience
 - **Bypass-pre-expanded + per-RS narrowed** — consumers do straight exact-match without porting the evaluator
 - **`Modgud.Client.AspNetCore`** library ships an `IClaimsTransformation` that flattens `resource_access[<app>].roles` into `ClaimTypes.Role` so `[Authorize(Roles="...")]` works on resource servers without per-endpoint code
 
@@ -77,7 +77,7 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 
 ### Standard scopes
 - `openid`, `profile`, `email`, `offline_access`, `roles`, `permissions` (seeded into every realm)
-- Plus the Keycloak-style `resource_access` claim shape (under the `roles` and/or `permissions` scopes)
+- Plus the `resource_access` claim shape (Keycloak-style nesting, under the `roles` and/or `permissions` scopes)
 - `phone` and `address` are recognised but not auto-seeded — add them per-realm when needed
 
 ### App-scoped custom scopes
@@ -89,7 +89,7 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 ### Realms
 - Each tenant gets its own PostgreSQL database (`<master-db>_<slug>`)
 - Domain-based routing — Host header decides the realm
-- Cross-realm leakage is impossible at the database level
+- Query-level cross-realm leakage is prevented by physical separation — every realm is its own database
 
 ### Realm management
 - Realm-management UI on the Control-Plane realm (the realm holding the persisted `Realm.IsControlPlane` flag — `system` by default, but the flag is **transferable** to any active realm via `recover control-plane transfer <slug>` or `POST /api/admin/realms/{slug}/transfer-control-plane`)

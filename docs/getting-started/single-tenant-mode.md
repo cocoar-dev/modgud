@@ -99,6 +99,12 @@ realm stay where they are.
 
 The new realm gets its own PostgreSQL database (`<master-db>_<slug>`),
 its own hostname-routing entry, its own everything. Cross-realm
-isolation is enforced at the database level — there's no path for
-tenant data to leak from one realm to another, even if a bug in
-Modgud opened a query without the tenant scope.
+isolation is enforced at the database level for queries and
+connections — a query that's missing its tenant scope still only
+runs against the single realm's own database, so it can't reach
+another tenant's data. That's a guarantee about query-level bugs
+specifically, not a blanket promise that no bug anywhere in the
+application layer could ever cross a realm boundary — see
+[Concepts: Realms](../concepts/realms#cross-realm-isolation) for how
+the other surfaces (permissions, tokens, cookies, SignalR) are
+isolated.

@@ -43,6 +43,7 @@ dotnet test
 | ServiceAccount principal | `Authorization/Principals/ServiceAccountTests.cs` | 4 | type discriminator, DisplayName, capability-interface set |
 | App aggregate + projection | `Authorization/Apps/*Tests.cs` | 11 | Create / Setters / Delete / Replay; `IsSystem` flag for the seeded `modgud` app |
 | App slug rules | `Authorization/Apps/AppSlugRulesTests.cs` | reserved set (`realm`, `*`, `modgud`), 3-63 chars, lowercase + digits + hyphens, no leading/trailing hyphen |
+| Membership-script JsEval security (adversarial) | `Authorization/MembershipSecurityTests.cs` | 30+ | JsEval threat-model suite, six test groups mirroring attacker classes A1-A6: A1 resource exhaustion/DoS (depth/length caps, transpile+eval timeouts), A2 native-host escape (`eval`/`Function`/`globalThis`/`require`/`import` rejected at translation, dangerous globals removed, prototype pollution neutralized, `DocumentSession` not reachable), A3 type confusion (BigInt/NaN/overflow/negative-zero), A4 cross-tenant probe (unknown property/identifier rejected at translation), A5 SQL-injection via LINQ (metacharacters stay literal constants, malformed GUID input rejected), A6 information disclosure (translator errors never leak Acornima internals or stack traces) |
 
 ### Realms
 

@@ -1,8 +1,9 @@
 # Apps and resource_access
 
 This page explains the mental model behind Modgud's permission system:
-what an "App" is, how it relates to OAuth concepts, how the
-Keycloak-style `resource_access` claim is shaped, and how the
+what an "App" is, how it relates to OAuth concepts, how Modgud's own
+per-audience authorization claim — shaped like Keycloak's nested
+`resource_access` format for familiarity — works, and how the
 permission resolver gets from a logged-in user to a concrete answer.
 
 ## The four-axis model
@@ -136,7 +137,8 @@ are handled differently by each:
 
 When a user logs in via an OAuth Client linked to apps `[billing,
 shipping]`, the access token's `/connect/userinfo` response (with
-appropriate scopes granted) contains a Keycloak-style nested claim:
+appropriate scopes granted) contains a nested claim shaped like
+Keycloak's `resource_access` format:
 
 ```json
 {
@@ -252,6 +254,6 @@ would muddle the audit trail.
   (null when `IsRealmAdmin = true`).
 - **Permission** — `<resource>:<action>` string within one App's
   catalog. App context is implicit from the catalog container.
-- **`resource_access`** — Keycloak-style nested UserInfo claim,
-  keyed by app slug, with bypass-pre-expanded permissions narrowed
-  per-RS.
+- **`resource_access`** — Modgud's own per-audience UserInfo claim,
+  shaped like Keycloak's nested format, keyed by app slug, with
+  bypass-pre-expanded permissions narrowed per-RS.
