@@ -8,9 +8,9 @@ Profile → Security → **Change password**. Type the current one, then the new
 
 ## Forgot it
 
-On the login page: **Forgot password?** Type your username (or email if you don't remember the username). Modgud emails you a magic link valid for 15 minutes.
+On the login page: **Forgot password?** Type your username (or email if you don't remember the username). Modgud emails you a password-reset link valid for 24 hours.
 
-Click the link → you're signed in (no password needed) → set a new password from your profile.
+Click the link to open a **Set new password** page. Type your new password there directly — there's no sign-in step and no profile visit involved — then sign in as usual with it.
 
 If the email never arrives:
 
@@ -20,10 +20,10 @@ If the email never arrives:
 
 ## Recover when you've lost everything
 
-If you have **no email access** AND **no working 2FA** AND **no recovery codes**:
+If you have **no email access** AND **no working 2FA**:
 
 - Contact your admin. They can `Send sign-in link` from the user editor (which goes to whatever email they have on file — same problem if it's wrong) or `Set password` directly (they generate a temporary one for you).
-- Worst case (no admin available): the admin's [Recovery CLI](../operate/recovery-cli) is the last fallback. Someone with container access can reset your password without the UI.
+- Worst case (no admin available): someone with server access can use the admin's [Recovery CLI](../operate/recovery-cli) to issue you a one-time sign-in link. It does **not** reset your password for you — once signed in, set a new one yourself from Profile → Security.
 
 ## Best practices
 

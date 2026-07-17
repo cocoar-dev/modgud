@@ -6,8 +6,8 @@ Per-realm SPA-shell branding so every tenant can present its own product name, c
 Every realm starts unbranded. The Cocoar defaults (product name "Modgud", primary color, logo, favicon) apply until at least one branding field is set. Partial branding is supported — set just the logo and leave the colour at default, etc.
 :::
 
-::: info Two ways to reach this surface
-This page (**Administration → Customization → Branding**) and the **Branding** tab inside [Realm Settings](../admin/realm-settings#branding) edit the same `RealmSettings.Branding` sub-document. Both render the same form. Pick whichever fits your mental model.
+::: info Reaching this surface
+[Realm Settings](../admin/realm-settings#branding-separate-page) links out to this page for branding, but the editable form lives only here — under **Plattform → Customization → Branding**.
 :::
 
 Permissions: `realm-settings:read` / `realm-settings:write`. The `realm:admin` bypass grants both.
@@ -36,11 +36,19 @@ Each field has three save states: **leave the value** (don't touch the input), *
 
 | Surface | What it picks up |
 | --- | --- |
-| `/api/app-info` (anonymous, public) | All four fields. The endpoint resolves `LogoAssetId` / `FaviconAssetId` to public URLs (`/api/assets/{shortGuid}`) — anonymous callers never see the raw asset id. |
+| `/api/app-info` (anonymous, public) | All four fields, resolved as the *effective* branding for the request (realm branding merged with any per-Application override — see below). The endpoint resolves `LogoAssetId` / `FaviconAssetId` to public URLs (`/api/assets/{shortGuid}`) — anonymous callers never see the raw asset id. |
 | Login page (`/login`) | Product name + logo + primary color; favicon set at boot. |
 | Admin shell | Same. The shell picks the values up from the same `appConfig` Pinia store. |
 | `document.title` | Product name as prefix. |
 | Browser tab icon | `<link rel="icon" href="…">` is rewritten in JS at boot. |
+
+## Per-Application override
+
+A realm can host more than one Application (each with its own origin, login behaviour, and OAuth clients — see **Administration → Apps**). Each Application can optionally override the realm's product name and primary color on top of the realm-wide branding described above.
+
+The override lives on the Application record itself: open **Administration → Apps**, pick an Application, and switch to the **Origin & Branding** tab. A "custom branding" checkbox turns the override on; leaving it off means the Application simply inherits the realm branding. The logo and favicon are not currently overridable per Application — only product name and primary color.
+
+For a realm with a single Application (the common case), the effective branding and the realm branding are identical, so this distinction doesn't come up.
 
 ## Asset-reference safety
 

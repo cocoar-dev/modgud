@@ -11,7 +11,7 @@ namespace Modgud.Domain.Realms;
 /// CDN, no per-page overrides). The full drag-and-drop page-builder
 /// integration lands as a separate project once
 /// <c>@cocoar/vue-page-builder</c> ships its first stable; see
-/// <c>dev-docs/future-features/per-app-login-customization.md</c>
+/// the maintainers' <c>per-app-login-customization</c> design note
 /// for that direction.</para>
 ///
 /// <para>Stored as a JSONB sub-document on the tenant-DB

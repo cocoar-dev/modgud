@@ -163,6 +163,19 @@ opt-in toggles** (realm master, per-API, per-scope) — see the
 [Admin doc](/admin/dynamic-client-registration#triple-opt-in-design)
 for the exact gating logic.
 
+## A newer sibling: CIMD
+
+Modgud also supports **Client ID Metadata Documents** (CIMD), a
+newer client-identification mechanism aimed at the same MCP use
+case. Instead of registering a client record via `/connect/register`,
+a CIMD client publishes a metadata document at an HTTPS URL and uses
+that URL *as* its `client_id` — the IdP fetches and validates the
+document on demand, and stores nothing. Both claude.ai and ChatGPT
+prefer CIMD when a server advertises support for it, falling back to
+DCR otherwise. See
+[Admin → Client ID Metadata Documents](/admin/client-id-metadata-documents)
+for the full mechanics and how it compares to DCR.
+
 ## How other IdPs handle DCR
 
 Where Modgud sits on the spectrum, compared to other commonly-used
@@ -213,6 +226,9 @@ is the single source of truth when DCR isn't enabled.
 - [Admin → Dynamic Client Registration](/admin/dynamic-client-registration)
   — operational setup: enabling the feature, sizing rate-limits,
   managing the registered-client surface.
+- [Client ID Metadata Documents](/admin/client-id-metadata-documents)
+  — the newer, no-registration-endpoint sibling mechanism, also
+  aimed at MCP clients.
 - [OAuth & OIDC](/concepts/oauth) — the larger flow context DCR
   plugs into.
 - [Service Accounts](/admin/service-accounts) — the admin-only path

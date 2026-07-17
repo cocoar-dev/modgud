@@ -122,7 +122,7 @@ WebAuthn/Passkey support requires:
 
 ## What's not (yet) supported
 
-- **SAML** — OIDC / OAuth 2.0 only
+- **Acting as a SAML identity provider** — Modgud consumes SAML 2.0 as an external login provider (see [SAML federation](../admin/saml-federation)), but it doesn't issue SAML assertions for downstream apps; OIDC / OAuth 2.0 only on that side.
 - **LDAP** — for directory sync, build a one-off ETL or use the [user editor's API](../reference/admin-api)
 - **Tenant-level data export** as a single archive — per-realm `pg_dump` is the path today
 - **Audit-log export** in a structured wire format — only via the admin UI's CSV export (manual download)

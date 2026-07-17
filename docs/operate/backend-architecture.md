@@ -13,6 +13,9 @@ src/dotnet/
 ├── Modgud.Domain/           ← Realm, OAuth, LoginProvider domain
 ├── Modgud.Application/      ← DTOs, service interfaces
 ├── Modgud.Infrastructure/   ← OpenIddict stores, tenancy, realm cache, Wolverine handlers
+├── Modgud.Permissions.Abstractions/ ← Shared permission evaluator (realm:admin / <resource>:admin bypass tiers)
+├── Modgud.Client.AspNetCore/ ← Published NuGet package: ASP.NET Core integration for resource servers
+├── Modgud.Provisioning.TestKit/ ← Published NuGet package: throwaway realms for integration tests
 ├── Modgud.Api/              ← Minimal API endpoints, middleware, setup, SignalR hub
 ├── Modgud.Api.Tests/        ← Integration tests (Testcontainers + PostgreSQL)
 └── Common/                       ← Shared utilities (PathHelper, Optional<T>, ...)
@@ -33,7 +36,7 @@ graph TB
         Setup[Bootstrap + master tenancy + seeding]
     end
 
-    subgraph Slices ["Slices (acme copies)"]
+    subgraph Slices ["Slices (reusable across apps)"]
         Authn[Modgud.Authentication<br/>Login, 2FA, OIDC, GDPR]
         Authz[Modgud.Authorization<br/>Groups, Roles, Permissions]
     end
@@ -128,8 +131,8 @@ data — no event sourcing.
 | `ApplicationUser` | ASP.NET Identity user |
 | `UserSecurityData` | Password hash, TOTP key, recovery codes, passkey credentials |
 | `UserSession` | Active login session |
-| `EmailOtpChallenge`, `MagicLinkChallenge`, `WebAuthnChallenge` | Ephemeral challenges |
-| `IdpConfig` | OIDC IdP configuration |
+| `EmailOtpChallenge`, `MagicLinkChallenge` | Ephemeral challenges |
+| `PasskeyCeremony`, `PasskeyEnrollCeremony` | Ephemeral, single-use passkey login/enrollment ceremony state (native/bearer flow only — the cookie-based web flow keeps its ceremony state in ASP.NET Core session) |
 | `OpenIddictAuthorizationDocument`, `OpenIddictTokenDocument` | OAuth tokens + authorizations |
 
 ### 2. Inline projections (`*State`)
@@ -143,7 +146,7 @@ identity stores.
 | `OAuthApplicationState` | OpenIddict application state |
 | `OAuthScopeState` | OpenIddict scope state |
 | `OAuthApiState` | API resource state |
-| `LoginProviderState` | Internal/external login provider state |
+| `LoginProvider` | Internal/external login provider config — applied directly onto the document by `LoginProviderProjection` (no separate aggregate/state split) |
 
 ### 3. Event-sourced aggregates
 
@@ -154,7 +157,10 @@ OAuth domain aggregates are fully event-sourced via Marten:
 | `OAuthApplicationAggregate` | Created, Updated, Deleted, Renamed, ... |
 | `OAuthScopeAggregate` | Created, ResourcesChanged, ... |
 | `OAuthApiAggregate` | Created, Updated, Scopes-Changed, ... |
-| `LoginProviderAggregate` | Created, Updated, Disabled, ... |
+
+Login providers are event-sourced too, but skip the Aggregate+State
+split: `LoginProviderProjection` applies the events directly onto the
+`LoginProvider` document (see inline projections above).
 
 User events are emitted by the Authentication slice (`UserCreated`,
 `UserUpdated`, `UserPasswordChanged`, `UserLoggedIn`, ...). The slice
@@ -201,7 +207,10 @@ Plus two pipeline hooks:
    the control plane
 6. **Seed default OAuth scopes + internal login provider**
    (`OAuthRealmSeeder.SeedAsync`)
-7. **Warm up RealmCache**
+7. **Seed the system Apps** (`AppRealmSeeder.SeedAsync`), including the
+   control-plane App, so App-scoped permissions resolve before the
+   first realm is created
+8. **Warm up RealmCache**
 
 Only after this does Kestrel start listening.
 
@@ -230,8 +239,6 @@ The Vue frontend lives at `src/frontend-vue/` and is served from the
 container as static `wwwroot/` content via `app.UseSpaUI()`. The SignalR
 hub is mounted at `/signalr/ui` (`MapHARRRController<UIHub>`).
 
-See the repo-only [Vue frontend notes](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/frontend.md) for the slice-internal detail.
-
 ## Testing
 
 Integration tests (`Modgud.Api.Tests`) use:
@@ -243,7 +250,9 @@ Integration tests (`Modgud.Api.Tests`) use:
 - **Per-test-class DB isolation** — each test class gets its own DB
 - **Shared PostgreSQL container** — one container instance for all
   test collections, parallelised
-- **WireMock** — fake OIDC server for external login tests
+- **In-process test IdP** — external-login tests either construct
+  principals directly or exercise a lightweight Kestrel-hosted stand-in
+  OIDC server; no third-party mocking library is involved
 - **Wolverine/Marten codegen** (`TypeLoadMode.Auto`) — generated on the
   first boot into the test working tree and reused, so repeat runs skip
   Roslyn compilation

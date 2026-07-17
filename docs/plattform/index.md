@@ -34,7 +34,7 @@ sub-nav (see `PlatformView.vue`):
 
 | Item | Path | What it does |
 | --- | --- | --- |
-| [Branding](./branding) | `/plattform/customization/branding` | Per-realm SPA theming — product name, primary color, logo, favicon |
+| [Branding](./branding) | `/plattform/customization/branding` | Per-realm SPA theming (optionally overridden per Application) — product name, primary color, logo, favicon |
 | [Pages](./pages) | `/plattform/customization/pages` | Page-builder editor (Beta) for login / logout / forgot-password — gated by the `PageBuilder` feature flag |
 | [Asset Library](./assets) | `/plattform/customization/assets` | BYTEA store for logos, favicons, login illustrations; SVG sanitisation, 2 MB cap |
 

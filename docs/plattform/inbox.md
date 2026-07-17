@@ -20,14 +20,14 @@ The panel has two tabs:
 
 Each item renders an icon (per kind, see below), title, optional body line, and a relative timestamp (`just now`, `5 min`, `3 h`, ...). Severity drives the icon-bubble accent — `Info` / `Success` / `Warning` / `Critical` use the design-system semantic tokens.
 
-**Link behaviour.** Items with a `Link` render as a `RouterLink` covering the icon + body. Plain click navigates inside the SPA and closes the panel. Ctrl/Cmd-click, middle-click, and Shift-click open the link in a new tab and **keep the panel open** — explicitly so admins can fan out into multiple jobs at once (`src/frontend-vue/src/components/InboxPanel.vue:24-35`).
+**Link behaviour.** Items with a `Link` render as a `RouterLink` covering the icon + body. Plain click navigates inside the SPA and closes the panel. Ctrl/Cmd-click, middle-click, and Shift-click open the link in a new tab and **keep the panel open** — explicitly so admins can fan out into multiple jobs at once.
 
 **Per-item dismiss** — the small `x` that appears on hover dismisses a single item.
 
 **Footer actions** — *Mark all as read* (only shown when there's anything unread) and *Clear all* (dismisses every open item for the user).
 
 ::: info Snooze: backend-ready, no UI
-The backend supports per-item snooze (`POST /api/inbox/{id}/snooze` with `Until: ISO-8601` or `null`) on actionable items only. The bell/panel does not expose snooze yet — only the store method exists (`src/frontend-vue/src/stores/inbox.store.ts:107`). A future iteration can wire it without a backend change.
+The backend supports per-item snooze (`POST /api/inbox/{id}/snooze` with `Until: ISO-8601` or `null`) on actionable items only. The bell/panel does not expose snooze yet. A future iteration can wire it without a backend change.
 :::
 
 ## The five inbox kinds
@@ -60,19 +60,19 @@ A Quartz job that was manually triggered finished — success or failure. Sent t
 
 ## Dedup model
 
-The only dedup policy currently in use is `ReplaceBySource`. When an item is created with a non-null `(sourceType, sourceId)` pair and the kind opts in, the notifier looks up the recipient's existing open items with the same source and marks them dismissed before appending the new one (`InboxNotifier.cs:48-63`). The audit trail stays intact (events live forever) — the visible surface just collapses.
+The only dedup policy currently in use is `ReplaceBySource`. When an item is created with a non-null `(sourceType, sourceId)` pair and the kind opts in, the notifier looks up the recipient's existing open items with the same source and marks them dismissed before appending the new one. The audit trail stays intact (events live forever) — the visible surface just collapses.
 
 Why: admins should see the *current state* of a job/request, not its failure history. The history lives on the source aggregate.
 
 ## Recipient filtering & SignalR live push
 
-`InboxHub` (`[MessageName("InboxActions")]`) is one shared SignalR hub for the whole inbox. Every connected client subscribes once; the per-event filter inside `Subscribe()` checks `view.RecipientUserId == userId.Value` and only forwards items addressed to the current user (`src/dotnet/Modgud.Api/Features/Inbox/InboxHub.cs:31-57`). Result: the client doesn't need to know about other users' items, and bandwidth per connection is bounded by the user's actual inbox volume.
+`InboxHub` (`[MessageName("InboxActions")]`) is one shared SignalR hub for the whole inbox. Every connected client subscribes once; a per-event filter on the server only forwards items addressed to the current user. Result: the client doesn't need to know about other users' items, and bandwidth per connection is bounded by the user's actual inbox volume.
 
 Server-side, recipient resolution lives at the call-site. For admin-fan-out kinds (`AdminChangeRequestSubmitted`, `ScheduledJobFailed`) the call-site invokes `IAdminNotifier.GetAdminRecipientUserIdsAsync()`, which returns the user-ids of every Realm-Admin-group member.
 
 ## Persistence model
 
-Each inbox item is a single Marten event stream. `InboxItemProjection` (async single-stream projection) folds the four events — `InboxItemCreatedEvent`, `InboxItemReadEvent`, `InboxItemDismissedEvent`, `InboxItemSnoozedEvent` — into `InboxItemView` and raises a SignalR side-effect from `RaiseSideEffects` so the recipient's clients see the change live, no polling (`src/dotnet/Modgud.Infrastructure/Persistence/Marten/Projections/Inbox/InboxItemProjection.cs:23-36`).
+Each inbox item is a single Marten event stream. An async single-stream projection folds the four events — created, read, dismissed, snoozed — into the item's current view and raises a SignalR side-effect so the recipient's clients see the change live, no polling.
 
 ## REST endpoints
 

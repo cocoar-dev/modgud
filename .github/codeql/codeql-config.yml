@@ -9,8 +9,8 @@ query-filters:
   # is captured as a property (NOT string-interpolated into the message line)
   # and is a validated identifier/slug. CodeQL cannot distinguish this from
   # `$"...{userInput}"` concatenation, so it fired on ~17 provably-safe call
-  # sites over a year with 0 true positives (full audit trail:
-  # dev-docs/codeql-triage.md, Bucket 2).
+  # sites over a year with 0 true positives (Bucket 2 of the maintainers'
+  # CodeQL triage log).
   #
   # TRADE-OFF: this also suppresses a genuine string-interpolated log-forge if
   # one were ever introduced. The codebase convention is structured logging

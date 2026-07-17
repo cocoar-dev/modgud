@@ -23,7 +23,7 @@ The `realm:admin` bypass grants both, as it does for every per-resource permissi
 
 The shape of each section follows the lifecycle of the kinds it covers. The defaults below match `Modgud.Application/Inbox/InboxRetentionSettings.cs`.
 
-### 1. Änderungsanträge (Admin-Inbox) — event-driven
+### 1. Admin change requests (admin inbox) — event-driven
 
 Covers `AdminChangeRequestSubmitted`. These items are **not** time-bounded while open — they live until the underlying change-request is approved, rejected, or withdrawn, which dismisses the inbox item through the explicit dismiss-by-source chain. The only knob is how long the **dismissed-audit row** sticks around before it's hard-deleted.
 
@@ -32,10 +32,10 @@ Covers `AdminChangeRequestSubmitted`. These items are **not** time-bounded while
 | `HardDeleteDaysAfterDismissed` | `30` days | Once dismissed, the item (and its event stream) is wiped after this many days. `null` = never wipe. |
 
 ::: warning "Hard-delete" really wipes the stream
-For this kind only, retention archives the event stream and deletes the projection doc (`InboxRetentionService.cs:53-66`). The dismissed-audit row is gone after the cutoff — there is no recovery without restoring from a Marten backup. Other kinds are only *soft-dismissed* (a `Dismissed` event is appended; the stream stays).
+For this kind only, retention archives the event stream and deletes the projection doc. The dismissed-audit row is gone after the cutoff — there is no recovery without restoring from a Marten backup. Other kinds are only *soft-dismissed* (a `Dismissed` event is appended; the stream stays).
 :::
 
-### 2. Antrags-Feedback (User-Inbox) — time-based
+### 2. Change-request feedback (user inbox) — time-based
 
 Covers `ChangeRequestApproved` and `ChangeRequestRejected`. Standard "two-number" lifecycle for FYI feedback that the user may or may not look at.
 
@@ -44,7 +44,7 @@ Covers `ChangeRequestApproved` and `ChangeRequestRejected`. Standard "two-number
 | `MaxUnreadDays` | `60` days | Dismiss items that have been sitting unread for longer than this. `null` = never. |
 | `AutoExpireDaysAfterRead` | `30` days | Dismiss items this many days after the user marked them read. `null` = never. |
 
-### 3. Scheduled-Job-Feedback — operational
+### 3. Scheduled-job feedback — operational
 
 Covers `ManualJobCompleted` (manual-trigger completions sent to the user who pressed the button). Same two-number shape as user feedback, with **shorter defaults** because operational signals get noisier and admins don't need ancient ones once the underlying issue is fixed.
 
@@ -54,7 +54,7 @@ Covers `ManualJobCompleted` (manual-trigger completions sent to the user who pre
 | `AutoExpireDaysAfterRead` | `14` days | Dismiss read operational items this many days after they were read. `null` = never. |
 
 ::: info `ScheduledJobFailed` is intentionally NOT auto-dismissed
-Failures are `Persistent + ReplaceBySource` — repeated failures of the same job collapse onto one bell entry per admin until an admin explicitly dismisses, or a successful run logically replaces them (planned follow-up; not retention's job). They never expire on a timer, regardless of the operational settings above (`InboxRetentionService.cs:37-46`).
+Failures are `Persistent + ReplaceBySource` — repeated failures of the same job collapse onto one bell entry per admin until an admin explicitly dismisses, or a successful run logically replaces them (planned follow-up; not retention's job). They never expire on a timer, regardless of the operational settings above.
 :::
 
 ## When the sweep runs

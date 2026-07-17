@@ -28,9 +28,9 @@ A password alone is not enough. Add at least one of:
 
 See [Two-factor authentication](./two-factor) for setup steps.
 
-### 3. Save your recovery codes
+### 3. Add a backup sign-in method
 
-When you enable 2FA, Modgud shows you a list of one-time recovery codes. Print them out, store them in a safe, or save them in a password manager. They're your way back in if you lose your 2FA device.
+Modgud doesn't use recovery codes — your safety net is enrolling more than one way in instead. If you set up TOTP, also add a passkey (or the other way around). If you ever lose one device, sign in with the other and remove the lost one from Profile → Security.
 
 ### 4. Verify your email
 
@@ -38,21 +38,21 @@ If your email isn't verified yet (a yellow banner shows up), click the verificat
 
 ### 5. Check your profile
 
-Profile → General. Make sure your first name, last name, and email are correct. Some apps connected to Modgud display these.
+Profile → Account. Make sure your first name, last name, and email are correct. Some apps connected to Modgud display these.
 
 ## What happens if I forget everything?
 
-- **Forgot password but have email**: use "Forgot password?" on the login page → magic link in your inbox → set a new one.
+- **Forgot password but have email**: use "Forgot password?" on the login page → a password-reset link arrives in your inbox → click it to set a new password directly.
 - **Forgot password, no email access**: contact your admin. They can send you a sign-in link.
-- **Lost 2FA device with recovery codes**: use a recovery code on the 2FA challenge.
-- **Lost 2FA device, no recovery codes**: contact your admin. They can reset 2FA for you (you'll re-enrol from scratch).
+- **Lost your 2FA device, but still have another method enrolled** (e.g. a passkey): sign in with that method, then remove the lost device from Profile → Security and enrol a replacement.
+- **Lost your only 2FA device**: contact your admin. They can reset 2FA for you — you'll re-enrol from scratch.
 
 ## Tips
 
 ::: tip Use a password manager
-Almost every problem on this page disappears with a password manager. It generates strong unique passwords, stores recovery codes, and remembers your sign-ins automatically.
+Almost every problem on this page disappears with a password manager. It generates strong unique passwords and remembers your sign-ins automatically.
 :::
 
-::: warning Don't share your passwords or recovery codes
-Modgud, your admin, and your IT team will never ask for them. If anyone does, it's a phishing attempt.
+::: warning Don't share your password or one-time codes
+Modgud, your admin, and your IT team will never ask for your password or for a TOTP/email-OTP code. If anyone does, it's a phishing attempt.
 :::

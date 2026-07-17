@@ -174,7 +174,7 @@ jobs:
       # local/internal testing but are NOT pushed — nuget.org versions are
       # permanent (only unlistable) and there is no anonymous-pullable
       # alternative feed, so we keep the public feed to develop betas +
-      # stable releases only. See dev-docs/future-features/versioning-publishing-conventions.md.
+      # stable releases only.
       - name: Push prerelease to NuGet.org
         if: github.ref == 'refs/heads/develop'
         env:

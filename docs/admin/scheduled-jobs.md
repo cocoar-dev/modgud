@@ -22,7 +22,7 @@ Run history (`JobRunHistoryEntry`) and per-job overrides (`JobConfig`) live in t
 
 ## Registered jobs
 
-Four jobs ship with Modgud today. All of them iterate every active realm internally — you see one row per job, not one row per (job, realm).
+Six jobs ship with Modgud today. Most of them iterate every active realm internally — you see one row per job, not one row per (job, realm). The exception is `security-audit-prune`, which operates on a single cross-realm store rather than per realm.
 
 ### `inbox-retention` — Inbox Retention
 
@@ -66,6 +66,24 @@ Hard-deletes per-realm OAuth/OIDC signing keys whose rotation overlap window has
 - **What it does:** for every realm (including deactivated ones, whose retired keys still hold private signing material), deletes signing keys where `RetiredAt + 30 days < now`. Active keys and keys still inside their overlap window are left untouched. Realms with nothing expired finish after a single indexed lookup. See [Realm Settings → Signing Keys](./realm-settings#signing-keys) for the rotation that produces these retired keys.
 - **On failure:** logged + inbox-notified.
 
+### `account-lifecycle-sweep` — Account Lifecycle Sweep
+
+Drives the account-deletion deadlines across every active realm: sends "about to be deleted" reminders, erases self-service deletion requests whose grace period has passed, and auto-purges admin recycle-bin users past their retention deadline (when auto-purge is enabled for the realm). Also prunes used/expired registration invite codes as a hygiene side effect.
+
+- **Default cron:** `0 30 3 * * ?` (03:30 UTC daily)
+- **Parameters:** none — deadlines and lead times come from [Realm Settings → Account Deletion](./realm-settings#account-deletion).
+- **What it does:** for each realm, runs the self-service reminder/erasure sweep, the admin recycle-bin auto-purge sweep, and the invite-code prune, then reports counts for each. See [Users → recycle bin & permanent erase](./users#recycle-bin-permanent-erase) for the lifecycle this job enforces.
+- **On failure:** logged per realm; the sweep continues with the remaining realms.
+
+### `security-audit-prune` — Security Audit Prune
+
+Hard-deletes security/ops audit entries older than a fixed 7-day retention window.
+
+- **Default cron:** `0 0 2 * * ?` (02:00 UTC daily)
+- **Parameters:** none — the 7-day retention is fixed and not configurable per realm.
+- **What it does:** deletes entries older than the retention window from the single cross-realm audit store in one indexed delete — there's no per-realm iteration for this job.
+- **On failure:** logged + inbox-notified.
+
 ## Job-detail modal
 
 Double-click any row (or open `/admin/scheduled-jobs#<job-key>`) to get a three-tab modal.
@@ -73,7 +91,7 @@ Double-click any row (or open `/admin/scheduled-jobs#<job-key>`) to get a three-
 | Tab | What it shows |
 | --- | --- |
 | **Schedule** | Cron expression input (placeholder shows the registration default), enabled toggle, **Run now** button, and the computed **Next run** timestamp. |
-| **Configuration** | One field per `JobParameterField` declared by the job, grouped by `Section` when set. Empty value = fall back to the schema's `Default`. Tab is hidden for jobs with no tunable parameters (currently `inbox-retention`, `dcr-gc`, and `signing-key-janitor`). |
+| **Configuration** | One field per `JobParameterField` declared by the job, grouped by `Section` when set. Empty value = fall back to the schema's `Default`. Tab is hidden for jobs with no tunable parameters — currently every job except `job-run-history-retention`. |
 | **History** | Last 50 runs, newest first. Success runs show duration + optional one-line summary. Failed runs show the first-line error message and an expandable stack trace. Manual triggers carry a `manual` tag. |
 
 The modal's footer **Save** button persists Schedule + Configuration in one shot; the trigger button on the Schedule tab is independent.
@@ -109,7 +127,3 @@ See [Inbox](/plattform/inbox) for the notification slice in general.
 | `scheduled-job:write` | Save schedule / parameter overrides, trigger a job manually. Implies `:read` is also needed to see anything. |
 
 Both are seeded in the modgud App permission catalog. `realm:admin` bypasses both per Modgud's standard 3-tier model.
-
----
-
-Looking to add a new job, or curious how the Quartz wiring works under the hood? See the contributor guide: [Scheduling framework](/integrate/scheduling).

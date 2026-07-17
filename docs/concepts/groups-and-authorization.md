@@ -94,8 +94,8 @@ them immediately.
 | Role | Permissions |
 | --- | --- |
 | **System Admin** | `IsRealmAdmin = true` (the realm-wide bypass) |
-| **User Manager** | `user:read`, `user:write`, `permission-role:read`, `authorization-group:read`, `authorization-group:write` (in the `modgud` app) |
-| **Viewer** | Read-only on Users, Roles, Groups, OAuth-Clients, OAuth-Scopes (in the `modgud` app) |
+| **User Manager** | `user:read`, `user:write`, `session:read`, `session:write`, `authorization-group:read`, `permission-role:read`, `auth-log:read`, `audit-log:read` (in the `modgud` app) |
+| **Viewer** | `user:read`, `authorization-group:read`, `permission-role:read` (in the `modgud` app) — read-only on Users, Groups, Roles |
 
 The first-time-setup admin lands in the System Admin group with
 `BoundTo: ["*"]`, so they immediately see every app.

@@ -9,6 +9,8 @@ A point-by-point list of what Modgud delivers out of the box.
 - Configurable account lockout (default: 5 failed attempts → 1 minute lock)
 - Password reset via emailed magic link
 - Email confirmation with double-opt-in for self-service email changes
+- Public self-registration, off by default and configurable per app: sign-in-or-sign-up on first OTP, an explicit register step, or invite-code-gated sign-up (single-use codes minted by an admin or by the consuming app's backend)
+- Configurable required identity fields per realm/app (username, first name, last name — each off/optional/required); email is always required
 
 ### Two-factor authentication
 - **TOTP** (Google Authenticator, 1Password, Authy, …)
@@ -37,6 +39,7 @@ A point-by-point list of what Modgud delivers out of the box.
 - **Roles** bound to one app, holding permissions on its resources
 - **Groups** with `BoundTo` activation switch — wildcard `*`, specific apps, or dormant
 - Permission strings shaped `<resource>:<action>` (two segments; app context implicit from the catalog container) with two bypass tiers (`realm:admin`, `<resource>:admin`)
+- Apps also carry their own soft configuration facet — origin, branding, and login posture — while still sharing the realm's user pool and a single `sub` per user
 
 ### Permission distribution to resource servers
 - **Keycloak-style `resource_access`** claim emitted in `/connect/userinfo`, keyed by app slug, per-Audience
@@ -58,10 +61,13 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 - **Authorization Code + PKCE** (web, SPA, mobile)
 - **Refresh Token**
 - **Client Credentials** (server-to-server)
-- **Device Code** (CLI tools, set-top boxes — implementation present, lightly tested)
+- **Device Code** (RFC 8628 — CLI tools, set-top boxes) with a hosted verification page for entering the user code
+- **Audience-restricted tokens** (RFC 8707 `resource` parameter) — a client can bind the issued token's audience to exactly the resource(s) it requested, for hard cross-RS isolation
+- **Native cookieless grants** — dedicated token grants for email-OTP, magic-link, and passkey sign-in, for mobile/native clients that can't hold a browser session; passkeys support a per-client WebAuthn RP-ID
 
 ### Endpoints (per realm)
-- `/connect/authorize`, `/connect/token`, `/connect/userinfo`, `/connect/logout`, `/connect/introspect`
+- `/connect/authorize`, `/connect/token`, `/connect/userinfo`, `/connect/logout`, `/connect/introspect`, `/connect/revoke`
+- `/connect/device`, `/connect/verify` (Device Code flow)
 - `/.well-known/openid-configuration`, `/.well-known/jwks`
 - Realm-aware issuer URLs — every realm is its own OIDC provider
 
@@ -81,7 +87,7 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 ## Multi-tenancy
 
 ### Realms
-- Each tenant gets its own PostgreSQL database (`<main-db>_<slug>`)
+- Each tenant gets its own PostgreSQL database (`<master-db>_<slug>`)
 - Domain-based routing — Host header decides the realm
 - Cross-realm leakage is impossible at the database level
 
@@ -89,6 +95,7 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 - Realm-management UI on the Control-Plane realm (the realm holding the persisted `Realm.IsControlPlane` flag — `system` by default, but the flag is **transferable** to any active realm via `recover control-plane transfer <slug>` or `POST /api/admin/realms/{slug}/transfer-control-plane`)
 - Per-realm bootstrap via Control-Plane-issued magic-link invite or recovery CLI
 - Exactly one Control Plane per deployment, enforced on create / transfer
+- **Declarative realm provisioning** — export a realm as a manifest, import/apply it to create or update a realm in place, and optionally prune anything the manifest no longer lists
 
 ### Per-realm configuration
 - Domains, display name, description
@@ -96,6 +103,7 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 - Sign-in cookie lifetime
 - SMTP settings
 - Profile-change approval flow
+- Rate-limit ceilings on auth endpoints (OTP request, magic-link request, password reset, passkey ceremonies, …), each configurable per realm
 
 ## GDPR
 
@@ -149,6 +157,8 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 - OAuth 2.0 PKCE (RFC 7636)
 - OAuth 2.0 Token Introspection (RFC 7662)
 - OAuth 2.0 Token Revocation (RFC 7009)
+- OAuth 2.0 Resource Indicators (RFC 8707)
+- OAuth 2.0 Device Authorization Grant (RFC 8628)
 - OpenID Connect Core 1.0
 - OpenID Connect Discovery 1.0
 - WebAuthn Level 2 (FIDO2)
@@ -161,4 +171,3 @@ Documented but not yet implemented:
 
 - **SCIM 2.0** for directory sync from external IdPs
 - **SignalR push for permission revocations** (so consumers don't have to poll UserInfo)
-- **Audience-restricted tokens** (RFC 8707 `resource` parameter) for hard cross-RS isolation

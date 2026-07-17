@@ -24,6 +24,8 @@ in a changelog that ages between releases.
   for migrating existing users
 - Account-lockout, session tracking with device info (UAParser),
   per-session revoke + "log out everywhere"
+- Public self-registration with a per-app posture — sign-in-or-sign-up on first OTP, an explicit register endpoint, invite-code-gated sign-up, or switched off entirely
+- Configurable per-realm rate-limit ceilings on auth endpoints (OTP request, magic-link request, password reset, passkey ceremonies, …)
 
 **Authorization**
 
@@ -53,6 +55,8 @@ in a changelog that ages between releases.
   only OAuth clients linked 1:N to a `ServiceAccount` so audit logs
   and the Group → Role → Permission chain work the same for machines
   and humans
+- [Client ID Metadata Documents](./admin/client-id-metadata-documents) — an https URL as `client_id` for dynamic, unregistered clients, SSRF-hardened and opt-in per realm
+- Native cookieless grants (email-OTP, magic-link, passkey) for mobile/native apps that can't hold a browser session, plus per-client WebAuthn RP-ID for passkeys
 
 **Multi-tenancy**
 
@@ -65,6 +69,8 @@ in a changelog that ages between releases.
   + anti-forgery tokens survive restarts and never cross realms
 - First-admin bootstrap via recovery CLI **or** a control-plane
   `POST /api/admin/realms` with `InitialAdmin` payload
+- [Applications](./admin/applications) as a soft per-tenant facet — per-app origin, branding, login posture, and self-registration settings, sharing the realm's user pool with a single `sub`
+- [Declarative realm provisioning](./admin/realm-provisioning) — import/export a realm as a manifest, apply it in place, and optionally prune anything the manifest no longer lists
 
 **Operations**
 
@@ -82,8 +88,7 @@ in a changelog that ages between releases.
 - Recovery CLI for break-glass admin operations (`bootstrap-admin`,
   `set-email`, `magic-link`, `reset-2fa`, `list`,
   `rebuild-projections`, `realm-add-domain`)
-- Auth Log — Serilog-sink-backed audit trail with 7-day retention
-  per realm
+- Auth Log — Serilog-sink-backed audit trail with a configurable per-realm visibility window (90 days by default) on the read surface — history itself isn't deleted when the window rolls
 
 **Compliance + safety**
 
@@ -106,62 +111,15 @@ updates when something ships.
 
 ### High
 
-**Multi-instance HA** — Modgud runs as a single instance today.
-Per-tenant DataProtection keys and the Marten outbox already cover
-the "restart = everyone logged out" class of bugs, but real HA needs
-shared state (Redis or equivalent) for SignalR backplane and
-distributed rate-limiting, plus a failover test rig. See
-[HA / Multi-Instance Readiness](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/ha-multi-instance.md)
-for the concrete breakages identified.
-
-**Realm backup / restore / DR** — Database-per-realm makes pg_dump-
-per-tenant straightforward; the gap is the tooling around it
-(scheduling, verification, restore-into-new-realm, point-in-time
-recovery). See
-[Realm backup/restore/DR](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/realm-backup-restore.md).
+- **Multi-instance HA** — Modgud runs as a single instance today. Per-tenant DataProtection keys and the Marten outbox already cover the "restart = everyone logged out" class of bugs, but real HA needs shared state (Redis or equivalent) for the SignalR backplane and distributed rate-limiting, plus a failover test rig.
+- **Realm backup / restore / DR** — database-per-realm makes a pg_dump-per-tenant straightforward; the gap is the tooling around it (scheduling, verification, restore-into-new-realm, point-in-time recovery).
 
 ### Medium
 
-**LDAP + Kerberos federation** — SAML 2.0 federation now **ships**
-(see [SAML federation](./admin/saml-federation)). The `LoginProvider`
-aggregate also reserves the `Ldap` and `Kerberos` `Type` values;
-those handlers come next. See
-[Enterprise SSO](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/enterprise-sso-saml-ldap.md).
-
-**NodaTime-based time domain — foundation for scheduled operations**
-— Today every timestamp in Modgud is a UTC `DateTimeOffset`. That's
-correct for "expires N minutes from now" semantics (tokens, magic
-links, audit logs) but wrong for an admin-intended local time. If
-an admin says "deactivate this user on 2026-06-27 at 18:00", *18:00
-in which timezone?* A UTC instant cannot carry that intent: the
-moment EU adjusts DST rules, the stored UTC value re-derives to the
-wrong local clock reading. The migration moves the domain to
-NodaTime's `LocalDateTime + DateTimeZone` for scheduled-event
-fields (keeping `Instant` for "happens now" cases) and unlocks a
-family of features that share this foundation:
-
-- Scheduled user deactivation (the canonical "deactivate at date X")
-- Time-boxed group memberships ("membership ends 2026-12-31 17:00 Vienna")
-- Scheduled credential / password rotation
-- Scheduled GDPR retention sweeps
-- Password-expiry policies with calendar semantics
-  ("last Friday of the quarter at 17:00 organisation time")
-- Maintenance windows
-
-Plan + OpenIddict-boundary strategy + Marten/Postgres mapping
-captured in [NodaTime migration](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/nodatime-migration.md).
-Pre-1.0 is the cheapest moment for this — no user data to migrate.
-
-**Login alerts + manual IP blacklist** — Surfacing suspicious-login
-events to operators with an explicit allow/deny action — a NAT-safer
-alternative to auto-rate-limiting that risks locking out legitimate
-users behind a shared IP. Design captured, see
-[Login alerts + IP blacklist](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/login-alerts-ip-blacklist.md).
-
-**Page-builder runtime** — The editor ships today (Beta,
-feature-flagged); runtime rendering of the custom pages is the next
-slice. See
-[Page-builder runtime](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/future-features/page-builder-runtime.md).
+- **Enterprise SSO — LDAP + Kerberos** — SAML 2.0 federation ships today (see [SAML federation](./admin/saml-federation)); the `LoginProvider` aggregate also reserves `Ldap` and `Kerberos` types for the handlers that come next.
+- **NodaTime migration** — move scheduled-event fields (deactivation dates, time-boxed group memberships, credential rotation, GDPR sweeps, password-expiry policies, maintenance windows) from UTC timestamps to a proper local-date-plus-timezone representation, so an admin-intended local time survives a DST rule change correctly.
+- **Login alerts + manual IP blacklist** — surface suspicious-login events to operators with an explicit allow/deny action, as a NAT-safer alternative to auto-rate-limiting that risks locking out legitimate users behind a shared IP.
+- **Page-builder runtime rendering** — the editor ships today (Beta, feature-flagged); rendering the custom pages at runtime is the next slice.
 
 ### Lower
 
@@ -172,10 +130,7 @@ slice. See
 
 ## Where to follow along
 
-Detailed design notes for individual items live in the repo-only
-[dev-docs](https://github.com/cocoar-dev/modgud/tree/develop/dev-docs/future-features)
-tree. Read them on GitHub, or clone the repo and run `pnpm dev` in
-`dev-docs/` for the rendered VitePress experience.
+There's no separate design-notes tree to browse — progress shows up as it ships, tracked on [GitHub Issues](https://github.com/cocoar-dev/modgud/issues) and [Releases](https://github.com/cocoar-dev/modgud/releases).
 
 Have an opinion on priority, or a use case that would benefit from
 something on the lower list moving up? Open a

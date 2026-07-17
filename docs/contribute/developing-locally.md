@@ -135,13 +135,13 @@ cd src/frontend-vue
 pnpm test:e2e
 ```
 
-Requires the backend + frontend to be running. ENV variables for the
-test credentials:
+By default this builds and runs a self-contained rig — a production-mode Modgud image plus Postgres and a Mailpit container for capturing outbound email — so you don't need anything else running first. To point the suite at an already-running instance instead, use `pnpm test:e2e:local` with `E2E_BASE_URL` set:
 
+```bash
+E2E_BASE_URL=http://localhost:4300 pnpm test:e2e:local
 ```
-E2E_ADMIN_USER=admin
-E2E_ADMIN_PASSWORD=ABC12abc!
-```
+
+Override the bootstrap-admin credentials the specs log in with via `E2E_ADMIN_USER` / `E2E_ADMIN_PASSWORD` (default `admin` / `ABC12abc!`).
 
 ## Wolverine codegen
 
@@ -172,17 +172,6 @@ dotnet run --no-launch-profile -- recover rebuild-projections
 ```
 
 In the container: `docker exec modgud dotnet Modgud.Api.dll recover list`.
-
-## Dev endpoints
-
-In development mode, additional endpoints are mounted under `/api/dev/*`
-(see `Modgud.Api.Features.Dev`):
-
-- Email inspector (shows sent mails without SMTP)
-- MFA reset for test users
-- General test helpers for E2E
-
-In production they are not mounted.
 
 ## What's next?
 

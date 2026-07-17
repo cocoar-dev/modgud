@@ -412,8 +412,12 @@ On first start (or after every image update):
 6. Default scopes + internal LoginProvider are seeded
 7. RealmCache is warmed up
 
-Additional realms are only created at runtime via
-`POST /api/admin/realms`.
+Additional realms are created at runtime, either one at a time via
+`POST /api/admin/realms`, or declaratively: `POST /api/admin/realms/import`
+and `POST /api/admin/realms/{slug}/apply` accept a realm manifest (realm +
+Apps + OAuth clients + users in one document) for import/upsert, with a
+matching `GET /api/admin/realms/{slug}/export` and a `GET
+/api/admin/realms/manifest-schema` for the manifest's JSON Schema.
 
 ::: warning Multi-pod deployments
 When several modgud instances boot in parallel, schema apply can

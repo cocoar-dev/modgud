@@ -63,6 +63,12 @@ But: existing roles break if you remove an entry that's still in use.
 The admin UI surfaces those references before letting you delete.
 :::
 
+Beyond the catalog, an app's **Settings** tab lets you override a slice
+of the realm's configuration per app — its own subdomain/origin,
+branding, self-registration posture, and native-grant / DCR / CIMD
+toggles — while anything left off inherits the realm. See
+[Application settings](../admin/applications#application-settings).
+
 ## Station 2: OAuth client for the frontend
 
 The OAuth client is the identity your app's **frontend** uses when
@@ -188,9 +194,8 @@ A complete, runnable version of everything below ships in the repo at `src/dotne
 ### Packages
 
 ```bash
+dotnet add package Modgud.Client.AspNetCore
 dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
-# Until the NuGet ships, reference the project:
-dotnet add reference ../modgud/src/dotnet/Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj
 ```
 
 ### `Program.cs`
@@ -299,6 +304,10 @@ Made it through? **Done. First SaaS app integrated.**
   [Login Providers](./login-providers) you configure Google /
   Microsoft / EntraID. Modgud stays the central IDP but delegates
   the login step.
+- **Standing up a second, similar app:** right-click an existing App,
+  Client, Scope, API, Role, or Group in its list and choose **Clone**
+  to pre-fill a new one from it, instead of repeating all five
+  stations from scratch. See [Cloning an app](../admin/applications#cloning-an-app).
 
 ## Tips and pitfalls
 

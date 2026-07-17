@@ -8,12 +8,12 @@
 :::
 
 ::: tip These are the realm defaults — Applications can override them
-The Self-Registration, Registration-Fields, DCR and CIMD policies (and
-branding / email branding) set here are the **realm defaults**. An individual
-[Application](./applications#application-settings) can override a slice of
-them per-app (sparse, field by field — anything it doesn't set inherits the
-realm value here). Captcha, account deletion and the DCR garbage-collection
-interval stay realm-only.
+The Self-Registration, Registration-Fields, DCR, CIMD and Native Passwordless
+Grants policies (and branding / email branding) set here are the **realm
+defaults**. An individual [Application](./applications#application-settings)
+can override a slice of them per-app (sparse, field by field — anything it
+doesn't set inherits the realm value here). Captcha, account deletion and the
+DCR garbage-collection interval stay realm-only.
 :::
 
 ## Tabs
@@ -131,9 +131,9 @@ that never touches this tab behaves as before (zero change).
 
 ### Why configure it
 
-- **Consumer apps** (e.g. amZettel) stay email-only — leave everything
-  `Optional` (or set `Username = Off`) for the lowest-friction passwordless
-  sign-up.
+- **Consumer apps** (e.g. a task-management app) stay email-only — leave
+  everything `Optional` (or set `Username = Off`) for the lowest-friction
+  passwordless sign-up.
 - **Enterprise apps** typically want a real first/last name on every account —
   set them `Required`. This is coherent with enterprise tenants that disable
   self-registration, but it is enforced on *all* paths regardless.

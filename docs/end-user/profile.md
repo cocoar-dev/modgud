@@ -2,9 +2,13 @@
 
 Manage your account: name, email, phone, sessions, privacy. Click your avatar in the top-right → **Profile**.
 
+::: tip Interface language
+The interface defaults to German; English is available but not fully translated yet, so a few labels on this page — particularly under Sessions and Privacy — may still show up in German even with English selected. The features work identically either way; switch languages under Profile → Preferences.
+:::
+
 ## Tabs
 
-### General
+### Account
 
 Master data — first name, last name, profile name, email, phone, profile picture.
 
@@ -29,7 +33,6 @@ Sign-in methods and recovery state:
 - 2FA methods — see [Two-factor](./two-factor)
 - Passkeys — see [Passkey](./passkey)
 - Linked external accounts — Google, Microsoft, etc., if you've signed in via them
-- Recovery codes remaining
 
 ### Sessions
 

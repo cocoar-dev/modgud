@@ -12,43 +12,39 @@ Some compliance regimes require that user profile changes are reviewed — parti
 
 ## The list
 
-Columns: *User*, *Submitted*, *Field*, *Old value*, *New value*, *Status* (Pending / Approved / Cancelled / Rejected).
+Columns: *Last changed*, *User*, *Type*, *Fields* (which fields the request touches), *Status*. By default only open requests show; tick **Also show completed** to include approved/rejected ones too. There's free-text search, but no separate Status/User/date-range filters — open a row to see the proposed old → new values for each field.
 
-Filters:
-
-- **Status** — focus on Pending most of the time
-- **User** — see one specific user's history
-- **Date range**
+Status values: *Waiting for email confirmation* (`EmailVerificationPending`), *Waiting for approval* (`AdminApprovalPending`), *Approved*, *Rejected*. There's no "Cancelled" status — a self-cancelled request is removed from the queue outright (see [Cancelling](#cancelling)).
 
 ## Approving a request
 
-Open a pending request → review the proposed change → **Approve**.
+Open a request → review the proposed change → **Approve**.
 
-For most fields the change takes effect immediately on approval. **Email changes are a two-stage flow** because the new address is itself untrusted until the recipient proves they own it:
+For most fields the change takes effect immediately on admin approval. **Email changes are a two-stage flow**, and — unlike other fields — the admin is deliberately the *second* gate, not the first, because the new address is untrusted until the recipient proves they own it:
 
-1. **Admin approves** the request. The new email is recorded as *pending verification*; the user's effective email is still the old one. A confirmation token is sent to the **new** address.
-2. **Recipient confirms** by clicking the verification link. Only then does the new address become the user's effective email.
+1. **Recipient confirms first.** As soon as the request is submitted, a confirmation link is emailed to the **new** address; the request sits in *Waiting for email confirmation* and doesn't even reach the admin queue yet. The user's effective email is still the old one.
+2. **Admin approves second.** Only once the recipient has clicked the link does the request move to *Waiting for approval* — that's when you're notified and can approve or reject. Approving then makes the new address the user's effective email.
 
-So for email specifically there are **two consents in sequence**: the admin's approval (this UI), and the recipient's click on the verification email. If the user can't access the new mailbox the change never lands — which is the point. If the recipient never confirms, the request stays in *Approved – Awaiting Verification* state; the user can re-trigger the verification email from their profile or the admin can cancel the request.
+So for email specifically there are **two consents in sequence**: the recipient's click on the verification email, then the admin's approval (this UI). If the user can't access the new mailbox, the request never reaches you at all — which is the point. Requests that never get confirmed simply stay in *Waiting for email confirmation*; the user can re-trigger the verification email from their profile.
 
-For other fields (name, phone, …) the change is applied immediately on admin approval — no second confirmation needed.
+For other fields (name, …) there's no email-ownership step, so the request goes straight to *Waiting for approval*.
 
 ## Rejecting
 
-**Reject** with an optional reason. The user sees the rejection in their profile UI; the original value remains.
+**Reject** with an optional reason. The user sees the rejection in their profile UI; the original value remains. Rejection is only available once a request has reached *Waiting for approval* — a request still waiting on the recipient's email confirmation can't be rejected (or approved) yet.
 
 ## Cancelling
 
-The user can cancel their own pending request from their profile page. As an admin, you can also cancel any request via right-click → **Cancel**.
+The user can cancel their own pending request from their profile page — this removes it from the queue outright rather than moving it to a status. There's no admin-side cancel; approve or reject are the two admin actions on an open request.
 
 ## Audit
 
-Every approve / reject / cancel is logged in the [Auth Log](./auth-log) with the deciding admin's name, the field, the old and new values, and any reason.
+Approvals and rejections are recorded in the server logs with the deciding admin, the request, and any reason.
 
 ## Tips
 
 ::: tip Email changes need extra scrutiny
-An email change is essentially "give this account to a different mailbox". Double-check that the new address is in the user's possession — typically by an out-of-band confirmation (Slack message, phone call) before approving.
+By the time an email change reaches your queue, the new address has already been verified — the recipient had to click the confirmation link before it got here. Your approval is the second gate: it's there to catch a coerced or socially-engineered change, not to (re-)prove mailbox ownership.
 :::
 
 ::: tip Disable the flow for trusted realms

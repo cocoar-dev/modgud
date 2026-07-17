@@ -12,20 +12,23 @@ are deliberately terse and contract-focused.
 ## OAuth / OIDC
 
 - [OAuth Endpoints](./oauth-api) — `/connect/*` and `/.well-known/*`:
-  authorize, token, userinfo, introspection, discovery, JWKS,
-  end-session, device-code, dynamic registration.
+  authorize, token (incl. the native cookieless grants), userinfo,
+  introspection, discovery, JWKS, end-session, device-code, dynamic
+  registration, consent, bearer passkey management.
 
 ## Authentication
 
 - [Auth Endpoints](./auth-api) — `/api/account/*` and friends: login,
-  register, magic-link, 2FA enrolment, password reset, change-request
-  submission, bootstrap-invite consumption.
+  register, magic-link, native passwordless sign-in, 2FA enrolment,
+  password reset, change-request submission, bootstrap-invite
+  consumption.
 
 ## Administration
 
 - [Admin Endpoints](./admin-api) — the tenant-admin surface under
-  `/api/admin/*`: users, groups, roles, OAuth client/scope/API CRUD,
-  login providers, IdP config, auth log, change-request review.
+  `/api/admin/*`: users, groups, roles, applications, service
+  accounts, invite codes, OAuth client/scope/API CRUD, login
+  providers, IdP config, auth log, change-request review.
 - [Realm Endpoints](./realm-api) — Control-Plane-only:
   `/api/admin/realms/*`. Realm CRUD with `InitialAdmin` bootstrap
   invite issuance.

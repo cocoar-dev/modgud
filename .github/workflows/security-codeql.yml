@@ -9,7 +9,6 @@ on:
     # against unchanged code, so we don't lose coverage.
     paths-ignore:
       - 'docs/**'
-      - 'dev-docs/**'
       - '**/*.md'
       - 'LICENSE'
       - 'NOTICE'
@@ -20,7 +19,6 @@ on:
     branches: [ develop ]
     paths-ignore:
       - 'docs/**'
-      - 'dev-docs/**'
       - '**/*.md'
       - 'LICENSE'
       - 'NOTICE'

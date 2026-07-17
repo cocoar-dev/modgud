@@ -16,7 +16,7 @@ namespace Modgud.Api.ExtensionMethods;
 
 /// <summary>
 /// Phase 1 observability foundation. See
-/// dev-docs/future-features/observability-opentelemetry.md.
+/// the maintainers' <c>observability-opentelemetry</c> design note.
 ///
 /// Wires:
 /// - OpenTelemetry metrics: AspNetCore, Http, Runtime instrumentations

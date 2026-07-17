@@ -11,7 +11,7 @@ least one file under `src/dotnet/Modgud.Tests.Unit/` or
 | Project | Purpose | Run time | Needs Docker? |
 |---|---|---|---|
 | `Modgud.Tests.Unit` | Pure logic — pinning behaviour of helpers, evaluators, aggregates, flavors. No web host, no Marten, no Wolverine. | ~1 s test execution, ~3 s wall-clock with build | no |
-| `Modgud.Api.Tests` | Integration — full `WebApplicationFactory` against a real Testcontainers Postgres. End-to-end HTTP through the actual middleware stack. | ~90 s | yes |
+| `Modgud.Api.Tests` | Integration — full `WebApplicationFactory` against a real Testcontainers Postgres. End-to-end HTTP through the actual middleware stack. | ~6-7 min | yes |
 
 Run commands:
 
@@ -30,11 +30,7 @@ dotnet test
 
 ## Unit-test inventory
 
-944 tests in `Modgud.Tests.Unit` (verified by `dotnet test
-Modgud.Tests.Unit/`, 2026-05-25 — current as of the OAuthApi-
-credential cut). The per-area numbers below are snapshots from
-earlier waves; if a row's count drifts, trust the file's own
-`[Fact]` count over this table.
+1283 tests in `Modgud.Tests.Unit` (`dotnet test Modgud.Tests.Unit`). The per-area numbers below are snapshots and will drift as tests are added; if a row's count is off, trust the file's own `[Fact]` count over this table.
 
 ### Authorization slice
 
@@ -43,7 +39,7 @@ earlier waves; if a row's count drifts, trust the file's own
 | Permission evaluation | `Authorization/PermissionEvaluatorTests.cs` | 15 | 2-segment `<resource>:<action>` matching inside an App's catalog, `realm:admin` realm-wide bypass, `<resource>:admin` resource-wide bypass, no cross-app/cross-resource leak, no substring match (`oauth:admin` does NOT cover `oauth-client:read`), null/empty argument guards |
 | Resource registry | `Resources/ResourceRegistryTests.cs` | 16 | `(appSlug, resource)`-keyed registration, permission listing, case-sensitive lookup |
 | Person principal | `Authorization/Principals/PersonTests.cs` | 12 | DisplayName fallback chain (Acronym → Name → AccountName → Id), whitespace-only-fields filter |
-| Group principal | `Authorization/Principals/GroupTests.cs` | 15 | GetEmailsAsync over Shared / ExpandToMembers / Shared-without-Email-fallback, inactive/deleted/dangling-member skips, nested recursion, **cycle detection (this test caught a real production bug — see commit `b6b2dc3`)** |
+| Group principal | `Authorization/Principals/GroupTests.cs` | 15 | GetEmailsAsync over Shared / ExpandToMembers / Shared-without-Email-fallback, inactive/deleted/dangling-member skips, nested recursion, **cycle detection** (a group graph with a cycle must not infinite-loop or stack-overflow) |
 | ServiceAccount principal | `Authorization/Principals/ServiceAccountTests.cs` | 4 | type discriminator, DisplayName, capability-interface set |
 | App aggregate + projection | `Authorization/Apps/*Tests.cs` | 11 | Create / Setters / Delete / Replay; `IsSystem` flag for the seeded `modgud` app |
 | App slug rules | `Authorization/Apps/AppSlugRulesTests.cs` | reserved set (`realm`, `*`, `modgud`), 3-63 chars, lowercase + digits + hyphens, no leading/trailing hyphen |
@@ -119,19 +115,20 @@ earlier waves; if a row's count drifts, trust the file's own
 
 ## Integration-test inventory
 
-162 tests in `Modgud.Api.Tests`, all green against Testcontainers
-PostgreSQL (~3.5 min, Docker required; verified 2026-05-25 after the
-OAuthApi-credential cut). The per-folder breakdown below is a
-snapshot; if it drifts, `dotnet test Modgud.Api.Tests/ --list-tests`
-is authoritative.
+485 tests in `Modgud.Api.Tests`, all green against Testcontainers PostgreSQL (~6-7 min, Docker required). The per-folder breakdown below is a snapshot and will drift as tests are added; `dotnet test Modgud.Api.Tests --list-tests` is authoritative.
 
 | Folder | Files | What's covered |
 |---|---|---|
-| `Users/` | 1 | UserCRUD via the singular `/api/user` endpoint (not `/api/admin/users`) |
-| `Security/` | 6 | AuthEnforcement (grace period, whitelist), MFA (TOTP), EmailOtp, MagicLink, ProfileSelfService (UserChangeRequest), OWASP Top 10 (see below) |
-| `Authorization/` | 1 | PermissionResolutionTests — end-to-end gate tests against `GET /api/user`: BoundTo on/off/wildcard/wrong-app, role-AppSlug filter, bypass cascade (resource-admin, realm-admin), cross-app no-leak |
-| `ExternalAuth/` | 6 | OIDC IdpConfig CRUD, ExternalLoginProcessor (JIT account creation + linking), DynamicOidcSchemeManager, FlavorRegistry, ExternalIdentityLink aggregate, UserUpdateScriptRunner (JsEval) |
+| `Users/` | 5 | User CRUD via the singular `/api/user` endpoint, account lifecycle (soft-delete/recycle-bin/sweep), GDPR deletion settings, configurable required registration fields |
+| `Security/` | 20 | AuthEnforcement (grace period, whitelist), MFA (TOTP), EmailOtp, MagicLink, ProfileSelfService (UserChangeRequest), OWASP Top 10 (see below), security-stamp/session revocation on password/2FA/credential changes, control-plane transfer + separation, passkey hardening, service-account revocation |
+| `Authorization/` | 37 | End-to-end permission gating (`PermissionResolutionTests`), plus the newer feature surfaces: invite-code self-registration, per-realm auth rate limits, CIMD, native cookieless grants (OTP/magic-link/passkey, incl. per-client WebAuthn RP-ID), the device authorization flow, dynamic client registration, OIDC federation (issuer anchoring, first-signal consistency), application settings + the settings cascade, signing-key rotation, roles/groups endpoint robustness |
+| `ColdStart/` | 15 | Full-process boot + declarative realm provisioning: cold-start bootstrap, login/magic-link/passkey contracts, realm create/hard-delete, manifest export/apply/parity, the provisioning test kit, recovery CLI commands |
+| `ExternalAuth/` | 13 | OIDC IdpConfig CRUD, ExternalLoginProcessor (JIT account creation + linking), DynamicOidcSchemeManager, FlavorRegistry, ExternalIdentityLink aggregate + lifecycle, UserUpdateScriptRunner (JsEval), federation |
+| `Admin/` | 1 | Projection-rebuild endpoint |
+| `Audit/` | 5 | Audit endpoint, GDPR erasure survival in the audit trail, auth-audit-view projection, login-failure-streak emission, security audit store |
+| `Observability/` | 1 | OpenTelemetry log redaction |
 | `Principals/` | 1 | PrincipalEmailResolver (group expansion) |
+| `Infrastructure/` | 10 | Shared test fixtures and harnesses (Testcontainers Postgres fixture, cold-start web-application factory, CLI harness, software WebAuthn authenticator) — not test classes themselves |
 
 ### OWASP Top 10 (2021)
 
@@ -173,9 +170,9 @@ conversation again.
   `Cocoar.JsEval`, BCrypt, Wangkanai.Detection. They have their own
   tests; we test our *use* of them, not them.
 - **Heavy services with DB / JsEval / HTTP / DI** — `OAuthAdminService`
-  (after full helper extraction in waves 2 + 4, the only remaining
-  instance method is `MapApiAsync` which is a one-line DB-load wrapper
-  around the pure `MapApiState` helper), `MembershipEvaluator`
+  (after the pure-helper extraction above, the only remaining instance
+  method is `MapApiAsync`, a one-line DB-load wrapper around the pure
+  `MapApiState` helper), `MembershipEvaluator`
   (Jint.Engine + JsExpressionTranslator on the membership-script path),
   `RealmProvisioningService`, `RealmCache` (lookup logic already
   extracted to `RealmCacheLookup` and tested), `SmtpEmailService`,
@@ -195,88 +192,4 @@ conversation again.
 - **Minimal-API endpoint files** (`*Endpoints.cs`) — need
   `WebApplicationFactory`. Tested at integration level if at all.
 
-## Refactors made for testability
-
-These are pure-extractions made to enable unit-testing. None changed
-behaviour.
-
-| Source | What was extracted | Test file |
-|---|---|---|
-| `Modgud.Authorization/Services/PermissionService.cs` | bypass logic → `PermissionEvaluator.Evaluate(grants, permission)` (static class), now 3-segment + 3 bypass tiers | `Authorization/PermissionEvaluatorTests.cs` |
-| `Modgud.Infrastructure/Realms/RealmProvisioningService.cs` | slug regex + reserved set → `Modgud.Domain.Realms.RealmSlugRules` | `Realms/RealmSlugRulesTests.cs` |
-| `Modgud.Infrastructure/Realms/RealmCache.cs` | host-matching + localhost-fallback → `Modgud.Infrastructure.Realms.RealmCacheLookup` | `Realms/RealmCacheLookupTests.cs` |
-| `Modgud.Application/Services/OAuthAdminService.cs` | 16 `private static` helpers (mapping, permission building, BCrypt wrappers) → `internal static OAuthAdminMapping`. Service shrunk by 262 LoC. Wave 4 added `MapApiState`, `MergeClientSettings`/`MergeClientProperties`. | `Application/OAuthAdminMappingTests.cs` |
-| `Modgud.Authentication/Api/Account/TwoFactorEnforcementMiddleware.cs` | `IsWhitelisted`, `HasFederatedMfa`, `FederatedMfaAmrValues` lifted from `private static` to `internal static` | `Authentication/Account/TwoFactorEnforcementMiddlewareTests.cs` |
-| `Modgud.Api/Features/Auth/OAuth/ConsentEndpoints.cs` | `ParseAuthorizationUrl`, `AppendErrorToUrl` → `internal static ConsentUrlHelper` | `Api/Features/Auth/OAuth/ConsentUrlHelperTests.cs` |
-| `Modgud.Api/Features/Auth/OAuth/AuthorizationEndpoints.cs` | `GetDisplayName(user)`, `GetDestinations(claim)` → `internal static AuthorizationEndpointHelpers` | `Api/Features/Auth/OAuth/AuthorizationEndpointHelpersTests.cs` |
-| `Modgud.Api/Features/Admin/ProjectionEndpoints.cs` | `DetectCycles`, `HasCycle`, `GroupRef`, `CycleReport` → `internal static GroupCycleDetector` | `Api/Features/Admin/GroupCycleDetectorTests.cs` |
-| `Modgud.Api/Features/Admin/RealmsEndpoints.cs` | `MapToDto` private→internal | `Api/Features/Admin/RealmsEndpointsTests.cs` |
-| `Modgud.Authentication/Api/Account/Services/TwoFactorHelper.cs` | `BuildMethodsList(user, passkeyCount)` and `TryExpireSetupGrace(security, now)` | `Authentication/Account/Services/TwoFactorHelperTests.cs` |
-
-## Production bugs found and fixed during the test sweep
-
-The pattern: a test exposes the bug, the fix lands in the same wave,
-the pinning test is flipped to assert the corrected behaviour.
-
-### Wave 3 — Api/Features bug-fix pass
-
-- **`AuthorizationEndpoints.GetDestinations` did not route
-  `given_name`/`family_name`/`email_verified` into the id_token.** The
-  OIDC `profile` scope is supposed to deliver `given_name` /
-  `family_name` in the id_token; the `email` scope is supposed to
-  deliver `email_verified`. The principal-builder set those claims, but
-  `GetDestinations` had no explicit cases for them — they fell into the
-  default branch (AccessToken only) and never reached the id_token.
-  Added explicit allow-listed cases for all three; three new pinning
-  tests cover the new behaviour.
-- **`ProjectionEndpoints.MapPost("rebuild")` race on a process-wide
-  static.** `ProjectionSideEffects.Enabled` is mutable static; two
-  concurrent rebuilds could capture each other's interim `false` and
-  permanently disable side effects. Now serialised behind a
-  `SemaphoreSlim(1,1)` — the second caller gets a 409 Conflict.
-- **`ConsentUrlHelper.ParseAuthorizationUrl` swallowed all exceptions.**
-  The bare `catch` masked programming errors (NRE, OOM, …) by turning
-  them into "bad request" responses. Narrowed to
-  `catch (UriFormatException)`. New regression-guard test asserts NRE
-  on null input bubbles up.
-
-### Wave 2 — Authorization / Authentication / Infrastructure / Api sweep
-
-- **`HttpRequestExtensions.FindSourceIp` crashed on standard
-  `X-Forwarded-For` comma-list** (commit `a2a4a61`). Now splits on `,`,
-  trims, `TryParse`s; silently skips garbage entries.
-- **`OAuthApplicationStateProjection` parsed `AccessTokenType`
-  case-sensitively** (commit `dab1883`). Operator writing `"jwt"`
-  silently fell back to `Reference`. Now `ignoreCase: true`.
-- **`Group.MemberIds` interface accessor returned the live backing list**
-  (commit `f676947`). Defensive `.ToArray()` snapshot now; the result
-  cannot be downcast to mutate the backing list.
-- **`UserView.GetDisplayLabel` returned whitespace verbatim** (commit
-  `bc5968f`). Falls through to `<no name>` placeholder when nothing
-  visible is set.
-
-### Polish from the same passes
-
-- **`UserSecurityData.RotateSecurityStamp()` renamed →
-  `RotateAllStamps()`** (commit `9253771`). The old name lied: it
-  rotated both stamps. Both stamp-rotation methods got proper XML
-  docs.
-- **`TwoFactorEnforcementMiddleware.HasFederatedMfa` doc completed**
-  (commit `9253771`). Now lists all seven recognised AMR values.
-- **`OAuthApplicationTypes` constants centralised** (commit `1b294e8`).
-  `"web"` / `"native"` now live alongside the sister classes
-  `OAuthClientTypes`, `OAuthConsentTypes`. Sweep of bare literals is
-  its own backlog item.
-- **`PaginationRequest.WithDefaults(page, pageSize)` factory
-  extracted.** `OAuthClientsEndpoints` and `OAuthApisEndpoints` were
-  inlining the same `<= 0 ? default` clamp logic. Helper now lives on
-  the DTO; both endpoints call it; six new tests pin the clamp + that
-  the parameterless ctor and the clamp targets agree.
-- **`RequireControlPlaneFilter` now logs each early-return.** 404
-  used to be silent — a future misrouted realm would look like a
-  missing route. Now `Log.Debug` carries the reason ("no tenant info"
-  / "realm '{Slug}' is not a management realm").
-- **`AutoMembershipOnUserUpdatedHandler.ShouldSync` trade-off
-  documented.** The deliberate "trigger on `Optional.HasValue` even
-  when the value didn't change" is now a code comment so a future
-  cleanup doesn't optimise it back the wrong way.
+Several of the source files listed above (`PermissionEvaluator`, `RealmSlugRules`, `RealmCacheLookup`, `OAuthAdminMapping`, `ConsentUrlHelper`, `AuthorizationEndpointHelpers`, `GroupCycleDetector`, `TwoFactorHelper`, …) started life as private helpers inside a larger service and were pulled out to `internal static` so they could be unit-tested directly, with no behaviour change. That's why the test-file column above often names a small static helper class rather than the endpoint or service file itself.

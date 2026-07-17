@@ -79,7 +79,7 @@ export const baseConfig = {
       { text: 'Reference', link: '/reference/oauth-api' },
       { text: 'Contribute', link: '/contribute/developing-locally' },
       { text: 'Roadmap', link: '/roadmap' },
-      { text: 'LLM Docs', link: '/llms-full.txt', target: '_blank' },
+      { text: 'LLM Docs', link: '/llms.txt', target: '_blank' },
     ],
 
     sidebar: {
@@ -151,6 +151,7 @@ export const baseConfig = {
             { text: 'OAuth Clients', link: '/admin/oauth-clients' },
             { text: 'OAuth Scopes', link: '/admin/oauth-scopes' },
             { text: 'OAuth APIs (Resource Servers)', link: '/admin/oauth-apis' },
+            { text: 'Invite Codes', link: '/admin/invite-codes' },
             { text: 'Dynamic Client Registration', link: '/admin/dynamic-client-registration' },
             { text: 'Client ID Metadata Documents', link: '/admin/client-id-metadata-documents' },
             { text: 'Login Providers', link: '/admin/login-providers' },
@@ -163,7 +164,7 @@ export const baseConfig = {
             { text: 'Realms', link: '/admin/realms' },
             { text: 'Declarative Realm Provisioning', link: '/admin/realm-provisioning' },
             { text: 'Realm Settings', link: '/admin/realm-settings' },
-            { text: 'Auth Log', link: '/admin/auth-log' },
+            { text: 'Logs (Security & Audit)', link: '/admin/auth-log' },
             { text: 'Scheduled Jobs', link: '/admin/scheduled-jobs' },
             { text: 'Change Requests', link: '/admin/change-requests' },
           ],
@@ -205,7 +206,6 @@ export const baseConfig = {
             { text: 'Login flows', link: '/integrate/login-flows' },
             { text: 'Login providers (OIDC federation)', link: '/integrate/login-providers' },
             { text: '2FA (TOTP, Email, Passkey)', link: '/integrate/two-factor' },
-            { text: 'Scheduling (Quartz)', link: '/integrate/scheduling' },
           ],
         },
       ],

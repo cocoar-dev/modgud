@@ -70,6 +70,15 @@ input-constrained appliances. The client polls
 device. Endpoint shape + verification UI documented in
 [Reference → OAuth API](/reference/oauth-api).
 
+### Native cookieless grants (`urn:cocoar:*`)
+
+For native/mobile apps that want a passwordless sign-in without ever
+holding a browser cookie, Modgud accepts three custom grant types
+directly at `/connect/token`: `urn:cocoar:otp` (email + one-time
+code), `urn:cocoar:magic` (magic-link token), and `urn:cocoar:passkey`
+(WebAuthn assertion). Each is opt-in per client. See
+[Native apps](/integrate/native-apps) for the request/response shape.
+
 ## Dynamic Client Registration (DCR)
 
 In addition to admin-created clients, Modgud supports
@@ -87,6 +96,11 @@ per-API + per-scope). See the
 rationale and the
 [admin setup guide](/admin/dynamic-client-registration) for the
 operational checklist.
+
+Modgud also supports [**Client ID Metadata Documents**](/admin/client-id-metadata-documents)
+(CIMD), a newer, no-registration-endpoint alternative aimed at the
+same MCP use case — a client identifies itself with an HTTPS URL
+instead of a stored client record.
 
 ::: warning No Implicit, no ROPC
 Modgud rejects Implicit Flow and Resource Owner Password
@@ -203,8 +217,10 @@ The admin area (`/admin/oauth/...`) has list and detail views for:
   UserClaim mappings
 - **APIs** — protected API resources with scopes and UserClaims
 
-Gating: `modgud:oauth-client:read/write`,
-`modgud:oauth-scope:read/write`,
-`modgud:oauth-api:read/write` (deletes are gated by `:write`, there is
+Gating: `oauth-client:read`/`:write`,
+`oauth-scope:read`/`:write`,
+`oauth-api:read`/`:write` (deletes are gated by `:write`, there is
 no separate `:delete` tier). Per-resource admin bypass via
-`modgud:oauth-client:admin` etc.
+`oauth-client:admin` etc. As with every permission string, the
+`modgud` app context is implicit and never part of the string itself
+— see [Permissions & gating](/concepts/permissions#permission-format).

@@ -13,43 +13,49 @@ Group(s)
    ↓ does BoundTo contain the requesting app?  (otherwise: dormant)
 active group(s)
    ↓ roles
-Role(s) (with AppSlug)
-   ↓ filter: Role.AppSlug == requesting app?  (or permission is fully-qualified)
-Permission(s)  →  app:resource:action
+Role(s) (linked to one Application)
+   ↓ filter: Role.AppId == requesting app?  (or the role is a realm-admin role)
+Permission(s)  →  resource:action
 ```
 
 Effect: a user is `Editor in Acme-Tasks` because
 
 1. they are a member of a group `Acme-Tasks Team`,
 2. the group has `BoundTo: ["acme-tasks"]`,
-3. the group references a role `Acme-Tasks Editor` with `AppSlug = "acme-tasks"`,
-4. the role's permissions `read`, `write` on resource `todo` expand to `acme-tasks:todo:read`, `acme-tasks:todo:write`.
+3. the group references a role `Acme-Tasks Editor` linked to the Acme-Tasks Application,
+4. the role grants the catalog entries `todo:read` and `todo:write` from that Application.
 
-## Permission format: three segments
+## Permission format: two segments
 
-Modgud manages permissions as **`app:resource:action`** strings:
+Modgud manages permissions as **`resource:action`** strings, scoped to
+whichever Application the role belongs to (see
+[Concepts → Permissions & gating](../concepts/permissions) for the
+full model):
 
 | Permission | Meaning |
 | --- | --- |
-| `modgud:user:read` | Read the user list in modgud |
-| `modgud:oauth-client:write` | Edit OAuth clients in modgud |
-| `acme-tasks:todo:write` | Write todos in the Acme-Tasks app |
+| `user:read` | Read the user list — in whichever app the role is linked to |
+| `oauth-client:write` | Edit OAuth clients — same |
+| `todo:write` | Write todos — same, if granted on an Acme-Tasks-linked role |
 
-Plus three bypass tiers:
+The app is never part of the string — it comes from the role's
+Application link (or, for the built-in `modgud`/`control-plane` admin
+surfaces, from the endpoint being called). Plus two bypass tiers:
 
-- **`realm:admin`** — realm-wide. The holder may do anything in any app.
-- **`<app>:admin`** — app-wide.
-- **`<app>:<resource>:admin`** — resource-wide.
+- **`realm:admin`** — realm-wide. The holder may do anything in any app. Set via the role's **Privileged role** flag, not a catalog entry.
+- **`<resource>:admin`** — resource-wide, within the role's linked Application (e.g. `user:admin` bypasses both `user:read` and `user:write`).
+
+There is no app-wide bypass tier — bypass is either realm-wide or resource-wide, nothing in between.
 
 ## Standard roles (after setup)
 
-When the first admin in a realm is created (recovery CLI or HTTP bootstrap-invite — see [First-time setup](../getting-started/first-time-setup)), Modgud atomically seeds three roles — all under the system app `modgud`:
+When the first admin in a realm is created (recovery CLI or HTTP bootstrap-invite — see [First-time setup](../getting-started/first-time-setup)), Modgud atomically seeds three roles:
 
-| Role | App | Effect |
+| Role | Application link | Effect |
 | --- | --- | --- |
-| **System Admin** | modgud | holds the fully-qualified permission `realm:admin` → realm-wide bypass |
-| **User Manager** | modgud | `modgud:user:read/write` + `:session:read/write` + `:authorization-group:read` + `:permission-role:read` + `:auth-log:read` |
-| **Viewer** | modgud | read-only on user, authorization-group, permission-role |
+| **System Admin** | none — **Privileged role** flag set | realm-wide bypass (`realm:admin`) |
+| **User Manager** | modgud | `user:read/write` + `session:read/write` + `authorization-group:read` + `permission-role:read` + `auth-log:read` + `audit-log:read` |
+| **Viewer** | modgud | read-only on `user`, `authorization-group`, `permission-role` |
 
 Run `node scripts/seed-demo.mjs` after first login and you'll get additional roles for realistic test setups (see `data/demo-seed.json` for the manifest).
 
@@ -61,17 +67,28 @@ What resources an app has is defined by the app itself — see [Applications](./
 | --- | --- |
 | **app** | read, write, admin (for app management itself) |
 | **user** | read, write |
-| **session** | read, write |
-| **permission-role** | read, write |
+| **service-account** | read, write |
+| **role** | read, write |
 | **authorization-group** | read, write |
+| **permission-role** | read, write |
+| **session** | read, write |
+| **auth-log** | read |
+| **audit-log** | read |
+| **gdpr** | admin |
+| **oauth** | admin |
 | **oauth-client** | read, write |
 | **oauth-scope** | read, write |
 | **oauth-api** | read, write |
 | **login-provider** | admin, read, write |
-| **idp-config** | read, write |
-| **realm** | read, write |
-| **auth-log** | read |
-| **gdpr** | admin |
+| **realm-settings** | read, write |
+| **asset** | read, write |
+| **observability** | read |
+| **scheduled-job** | read, write |
+| **inbox-settings** | read, write |
+
+The **realm** resource (realm CRUD) lives in a separate `control-plane`
+app, seeded only into the control-plane realm — see
+[Realms](./realms) — not in `modgud`.
 
 External apps (Acme-Tasks, Knowledge, …) bring their own resources, defined in their App record.
 
@@ -81,26 +98,33 @@ Administration → **Roles** → **Create**, or double-click an entry.
 
 ![Role detail](/screenshots/admin-rolle-detail.png)
 
-Fields:
+The modal has two tabs:
+
+**General**
 
 - **Name** (unique per realm)
 - **Description** (optional)
-- **AppSlug** — which app does this role belong to? Required. A role belongs to exactly one app.
-- **Resource Type** — together with AppSlug determines the permission prefix
-- **Permissions** — actions on the resource. With Resource Type `todo` and Permissions `["read", "write"]`, the role resolves to `<AppSlug>:todo:read` and `<AppSlug>:todo:write`.
+- **Application** — which app does this role belong to? Pick "— None
+  (realm-admin role)" for a pure bypass role (only meaningful together
+  with **Privileged role** below); otherwise a role belongs to exactly
+  one Application.
+- **Privileged role** — a checkbox, independent of the Application
+  link. Grants `realm:admin` — the realm-wide bypass. Reserved for the
+  System Admin role.
+
+**Permissions**
+
+A checklist of the linked Application's permission catalog, one row
+per `resource:action` entry. Check as many as the role should grant —
+there's no per-resource limit, so a role can (and often does) span
+several resources of the same app in one go.
 
 ### Multi-resource roles
 
-If you want a role to span several resources (e.g. "User Manager" covers user, session, authorization-group), **leave Resource Type empty** and write fully-qualified permissions in the list:
-
-```
-modgud:user:read
-modgud:user:write
-modgud:session:read
-modgud:authorization-group:read
-```
-
-Fully-qualified strings (containing `:`) pass through the resolver unchanged. The seeded System Admin / User Manager / Viewer roles are built exactly this way.
+A role isn't limited to one resource. The seeded **User Manager** role,
+for example, checks entries across `user`, `session`,
+`authorization-group`, `permission-role`, `auth-log` and `audit-log` —
+all from the `modgud` catalog, all on one role.
 
 ## Cloning a role
 
@@ -108,22 +132,26 @@ To make a variant of a role — say a tighter copy of an existing one — right-
 
 ## Cross-app roles (special case)
 
-A role can also include fully-qualified permissions from **other** apps in its permissions list — for example a "Cross-App Auditor" with `modgud:auth-log:read` AND `acme-tasks:audit:read`. This works because fully-qualified permissions pass through without further filtering.
-
-In practice though: prefer two separate roles in two separate groups (each with their own BoundTo). Cleaner to understand and audit.
+A role is always linked to exactly one Application (or none, for a
+pure realm-admin role) — there's no way to check permissions from two
+different apps' catalogs on the same role. To grant someone rights in
+both, say, `modgud` and Acme-Tasks, create two roles (one per app) and
+put both in the same group — or in two groups, if you also want their
+`BoundTo` scoping to differ. Cleaner to understand and audit than a
+single sprawling role either way.
 
 ## Bypass roles
 
-A role becomes a bypass role when its permissions list contains an `admin`-shaped entry:
+A role becomes a bypass role through either of two mechanisms:
 
-| In the permissions list | Effect |
+| Mechanism | Effect |
 | --- | --- |
-| `realm:admin` (fully qualified) | realm-wide bypass |
-| `<app>:admin` | app-wide bypass |
-| `<app>:<resource>:admin` (Resource Type empty + fully qualified) | resource-wide |
-| `admin` (with Resource Type set) | resource-wide, AppSlug-prefixed |
+| **Privileged role** checkbox set | realm-wide bypass (`realm:admin`) — works in every app, ignores the Application link |
+| A catalog entry with action `admin` checked (e.g. `user:admin`) | resource-wide bypass — every action on that resource, within the role's linked Application |
 
-On setup exactly one user is seeded as realm admin (System Admin role + Administratoren group with `BoundTo: ["*"]`). Grant sparingly — realm-admin is the nuclear option.
+There's no app-wide bypass in between — a role is either realm-wide or scoped down to individual resources.
+
+On setup exactly one user is seeded as realm admin (System Admin role + the realm's admin group, `BoundTo: ["*"]`). Grant sparingly — realm-admin is the nuclear option.
 
 ## Deleting a role
 
@@ -140,5 +168,5 @@ Many small roles, each tied to a clear resource, compose freely into groups. A "
 :::
 
 ::: tip Per-app roles
-Roles for Acme-Tasks go under `AppSlug = "acme-tasks"`, not `modgud`. They show up in the right permission lists, and `[Authorize(Roles = "...")]` in the Acme-Tasks backend finds them via the `resource_access["acme-tasks"]` claim in the token.
+Roles for Acme-Tasks link to the Acme-Tasks Application, not `modgud`. They show up in the right permission lists, and `[Authorize(Roles = "...")]` in the Acme-Tasks backend finds them via the `resource_access["acme-tasks"]` claim in the token.
 :::

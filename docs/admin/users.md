@@ -6,15 +6,14 @@ Administration → **Users**.
 
 ## User list
 
-Columns: *Username*, *First name*, *Last name*, *Email*, *Active*, *2FA*, *Last login*.
+Columns: a password-set indicator, *Username*, *First Name*, *Last Name*, *Acronym*, *Active*, *Lifecycle* (only populated for users pending deletion — see below), *Email*.
 
 Filters:
 
 - **Search** across username, email, first/last name
-- **Status filter** — active / disabled
 - **Show recycle bin** — a toggle (with a count badge) that reveals users pending deletion. Those rows carry a **Lifecycle** badge — *Recycle bin* (an admin scheduled it) or *Self-deletion* (the user did) — plus the deletion deadline. See [recycle bin & permanent erase](#recycle-bin-permanent-erase) below.
 
-Double-click a row to open the detail dialog.
+Double-click a row to open the detail dialog. Right-click a row for a context menu with **Set Password**, **Send Magic Link**, **Show IdP Claims**, and the recycle-bin actions described below.
 
 ## Creating a user
 
@@ -28,7 +27,10 @@ Optional but recommended:
 
 - **First name**, **Last name**
 - **Email** — **unique per realm**; without it, magic links and reset emails are impossible. An address is freed for reuse only once its previous owner is permanently erased (see [recycle bin & permanent erase](#recycle-bin-permanent-erase)).
-- **Phone number**
+
+::: info Required fields can be stricter
+Email is always required. Whether Username, First name and Last name are optional or required is controlled by the realm's (or per-App's) [Registration Fields](./realm-settings#registration-fields) policy — the same policy that governs self-registration also applies here, so an admin creating a user is held to the same requirements.
+:::
 
 ::: tip Initial password vs. magic link
 Two ways to give a new user their first access:
@@ -45,7 +47,7 @@ Tabs:
 
 ### General
 
-Master data: first name, last name, profile name, email, phone, username, **active flag**.
+Master data: first name, last name, acronym, email, username, **active flag**, and (once an email is set) an email-verified override.
 
 ::: warning Changing email as admin
 If you change the email **directly as an admin**, it takes effect immediately — **no double-opt-in**. Make sure the address is correct, otherwise you lock the user out (reset links would go to the wrong address).
@@ -53,50 +55,35 @@ If you change the email **directly as an admin**, it takes effect immediately �
 If the user changes their email themselves, double-opt-in to the new address kicks in automatically — see [Profile](../end-user/profile#change-email-double-opt-in).
 :::
 
+### Direct Groups
+
+Assignment to [groups](./groups) the user is a **manual, direct** member of. Group membership determines roles and therefore permissions.
+
+### Effective
+
+Read-only view of every group the user effectively belongs to — direct, inherited through group nesting, and auto-computed by membership scripts — with a badge showing how each one was reached.
+
 ### Security
 
-Overview of the user's security status:
+Overview of the user's 2FA status:
 
-- **2FA methods** (TOTP / email-OTP / passkeys) with status and counts
-- **Last login** and IP
-- **Linked external accounts** (Google, Microsoft, …)
-- **Recovery codes remaining**
+- **2FA status** — a badge showing which methods are active, whether the user is exempt, or that 2FA isn't configured yet.
+- **Grace period** (when 2FA is required but not yet set up) — days remaining before enforcement kicks in, with **Reset grace** and **Force immediate enforcement** actions.
+- **Individual policy override** — a per-user grace-period-days override, and a checkbox to exempt this user from the 2FA requirement entirely (for service-style accounts or migrated legacy users). Use sparingly; changes here are audited.
 
-Actions:
+Actions that live elsewhere but affect the same user: **Set password** and **Send Magic Link** are right-click actions on the user list (see [User list](#user-list) above), not fields inside this tab.
 
-- **Set password** — assign a new password (the user can still change it themselves later)
-- **Reset 2FA completely** — disable all methods, fresh grace period (see [Recovery CLI](../operate/recovery-cli))
-- **Send sign-in link** (magic link via email)
-- **Lift lockout** — when the user has locked themselves out via too many failed attempts
-- **2FA enforcement override** — exempt this user from the global 2FA requirement (use sparingly, audited)
+## Viewing a linked external identity's claims
 
-### Groups
+Right-click a user on the list → **Show IdP Claims** opens a standalone panel with the raw and mapped claims from that user's most recent external (OIDC/SAML) login. Useful for debugging when SSO-side fields are missing or wrong.
 
-Assignment to [groups](./groups). Group membership determines roles and therefore permissions.
+## Sessions
 
-You see:
+Modgud tracks sign-in sessions per user (device, browser, IP, last activity), but today there is no admin-UI surface to list or end another user's sessions — that view only exists for end users managing their own sessions, under **Profile → Sessions** (see [Profile](../end-user/profile#sessions)). If you need to force a user out of all their sessions as an admin today, deactivating the account (see below) revokes live access immediately.
 
-- **Static memberships** — added manually, removable here
-- **Auto memberships** — computed by membership scripts, can't be edited manually (the script decides)
+## Account lockout
 
-### Sessions
-
-List of the user's current sessions.
-
-Per session: device, browser, IP, last activity.
-
-Actions:
-
-- **End single session**
-- **End all sessions** — force-logout, the user is signed out on every device and must sign in again
-
-### IdP claims (when an external provider is linked)
-
-Raw and mapped claims from the user's most recent external login. Useful for debugging when SSO-side fields are missing or wrong.
-
-## Unlocking a user
-
-After too many failed attempts, Modgud temporarily locks the account. List → right-click → **Lift lockout**, or in the security tab → **Unlock**.
+After too many failed sign-in attempts, Modgud temporarily locks the account for a short, fixed cooldown — it clears itself automatically after a few minutes, with no admin action needed. There is currently no manual "lift lockout" control in the admin UI.
 
 ## Recycle bin & permanent erase
 
@@ -153,7 +140,7 @@ When to use force-delete instead of letting auto-purge run:
 - Data cleanup after test or demo setups.
 
 ::: tip Deactivate is a separate action
-**Deactivate** (Security tab / *Active* flag) suspends an account indefinitely with no deletion intent and no timer — fully reversible, email kept. **Delete** is the stronger action that *includes* deactivation plus a countdown to erasure.
+**Deactivate** (General tab / *Active* flag) suspends an account indefinitely with no deletion intent and no timer — fully reversible, email kept. **Delete** is the stronger action that *includes* deactivation plus a countdown to erasure.
 :::
 
 ## Editing a user's profile on their behalf

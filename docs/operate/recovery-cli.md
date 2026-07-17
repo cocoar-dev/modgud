@@ -4,10 +4,11 @@ The recovery CLI is a break-glass tool. It runs **inside the
 container**, using the configured database connection — there's no
 network surface, no auth bypass. It exists for the situations where
 the admin UI cannot help: no admin can sign in, the projections
-desynced after a schema change, a legacy client needs a Phase-2C
-retrofit, etc.
+desynced after a schema change, an old OAuth client needs to be
+migrated onto a linked Service Account, etc.
 
-Every invocation is written to the auth log.
+Most invocations write an entry to the security audit log (see
+[Audit trail](#audit-trail) below); a few read-only commands don't.
 
 ## Entry point
 
@@ -111,10 +112,9 @@ Flags:
 | `--realm <slug>` | no | Defaults to `system`. |
 
 ### `migrate-cc-credentials`
-Phase-2C retrofit. For every OAuth client that still has the
-`client_credentials` grant without a `LinkedServiceAccountId` (i.e.
-pre-Phase-2C clients), auto-provision a Service Account named
-`legacy.{clientId}` and backfill the link so the standard
+For every OAuth client that still has the `client_credentials` grant
+without a linked Service Account, auto-provision a Service Account
+named `legacy.{clientId}` and backfill the link so the standard
 SA-managed mutation guard applies.
 
 Idempotent — already-linked clients are skipped; existing `legacy.*`
@@ -125,7 +125,7 @@ dotnet Modgud.Api.dll recover migrate-cc-credentials --realm system
 ```
 
 ### `realm-list`
-List every active realm with its slug, primary domain, and configured domains (the control-plane realm is marked `[CP]`). Useful first probe after a fresh deploy — shows the system realm's seeded localhost domains so you know which Host header to use.
+List every active realm with its slug, display name, primary domain, and configured domains (the control-plane realm is marked `[CP]`). Useful first probe after a fresh deploy — shows the system realm's seeded localhost domains so you know which Host header to use.
 
 ```bash
 dotnet Modgud.Api.dll recover realm-list
@@ -202,6 +202,16 @@ exists. Schema is applied idempotently (existing data is kept).
 dotnet Modgud.Api.dll recover adopt-tenant acme "Acme Corp" acme.example.com
 ```
 
+### `rotate-signing-key`
+Rotate a realm's OpenIddict signing key: generates a fresh RSA keypair
+and retires the previous active key into a 30-day verification-overlap
+window so tokens already issued stay valid until they expire. Running
+API instances pick up the new key within about a minute.
+
+```bash
+dotnet Modgud.Api.dll recover rotate-signing-key --realm acme
+```
+
 ### `help`
 Show the usage summary.
 
@@ -229,12 +239,16 @@ serving. `STARTUP_COMMAND` is only consulted when no CLI command args are
 present, and is a raw environment variable (not a `Cocoar.Configuration` key).
 Multi-word arguments work when double-quoted (e.g. a realm display name).
 
-## Audit trail
+## Audit trail {#audit-trail}
 
-Every recovery invocation writes a `Auth: Recovery <command>` entry
-to the auth log via Serilog. Successful operations log at `Warning`
-level (to make them stand out in the log stream); failures log at
-`Error`.
+Most recovery commands write a `Recovery <command>. ...` entry to the
+security audit log, surfaced in the admin UI's auth log
+(`GET /api/admin/auth-log`). These entries are logged at `Warning`
+level, including failures — there is no separate `Error` level for a
+failed recovery command. Purely read-only commands (`list`,
+`realm-list`) don't write an audit entry, and most usage/validation
+failures (unknown realm, bad flags, guard violations) are only printed
+to the console, not recorded.
 
 ## When to reach for the CLI
 
@@ -247,6 +261,9 @@ level (to make them stand out in the log stream); failures log at
   `rebuild-projections`.
 - **Legacy `client_credentials` clients fail mutation guard** →
   `migrate-cc-credentials` provisions the linked SA they need.
+- **Suspected signing-key compromise, or routine key hygiene** →
+  `rotate-signing-key` issues a fresh key while honoring in-flight
+  tokens.
 
 For the operational story of first-time admin setup (when there's no
 admin yet to invite anyone), see

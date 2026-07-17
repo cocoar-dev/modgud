@@ -42,7 +42,7 @@ GET    /api/admin/users/{id}/sessions   # gated on session:read
 DELETE /api/admin/users/{id}/sessions   # force logout, gated on session:write
 ```
 
-Admin needs `modgud:session:read` (list) or `modgud:session:write` (force logout), or the matching `:admin` bypass tier. The granular split lets a help-desk role read sessions without being able to terminate them.
+Admin needs `session:read` (list) or `session:write` (force logout), or the matching `:admin` bypass tier. The granular split lets a help-desk role read sessions without being able to terminate them.
 
 ## OAuth tokens
 

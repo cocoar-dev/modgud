@@ -13,7 +13,7 @@ namespace Modgud.Infrastructure.Audit;
 /// (no aggregate to attach to) routed to the cross-realm
 /// <c>SecurityAuditEntry</c> store under a legitimate-interest basis with short
 /// retention. The boundary is about whether a stream exists, not whether the data
-/// is personal — see <c>dev-docs/future-features/logging-audit-redesign.md</c> §.</para>
+/// is personal — see the maintainers' <c>logging-audit-redesign</c> design note.</para>
 ///
 /// <para><b>PII discipline:</b> these name <i>occurrences</i>, not payloads. The
 /// stream-backed rows store only metadata (who/when/what-kind/realm) and inherit

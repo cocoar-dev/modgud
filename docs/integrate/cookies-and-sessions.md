@@ -20,9 +20,7 @@ Configured in `Program.cs`:
 {
     options.Cookie.HttpOnly = true;
     options.Cookie.SameSite = SameSiteMode.Lax;
-    options.Cookie.SecurePolicy = builder.Environment.IsProduction()
-        ? CookieSecurePolicy.Always
-        : CookieSecurePolicy.None;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
     options.Cookie.Name = "Modgud.Auth";
     options.ExpireTimeSpan = TimeSpan.FromDays(30);
     options.SlidingExpiration = true;
@@ -34,7 +32,7 @@ Configured in `Program.cs`:
 | Property | Value | Purpose |
 |---|---|---|
 | `HttpOnly` | `true` | XSS mitigation — JS can't read the cookie |
-| `SecurePolicy` | `Always` (Prod) / `None` (Dev) | HTTPS-only in prod; HTTP Vite proxy allowed in dev |
+| `SecurePolicy` | `SameAsRequest` | Cookie is marked `Secure` when the request itself is HTTPS (reflecting the real scheme behind a reverse proxy), so it's HTTPS-only in prod while still working over the plain-HTTP Vite dev proxy |
 | `SameSite` | `Lax` | Required for cross-site OIDC redirect-back navigations |
 | `ExpireTimeSpan` | 30 days | Max lifetime of persistent cookies |
 | `SlidingExpiration` | `true` | Refresh on active use |
@@ -69,11 +67,20 @@ For API calls, the cookie events return status codes instead of redirects:
 
 In modgud the realm boundary is the **domain** (Host header), not
 the URL path. Cookies are not path-scoped — they live under the realm
-domain. A login on `acme.example.com` sets a cookie for exactly that
-domain; on `finance.example.com` it isn't sent.
+domain. A login on `acme.example.com` isn't sent to a request on
+`finance.example.com`, and vice versa.
 
 That makes cross-realm leaks **automatically** impossible — no path
 acrobatics, no `Cookie.Path` to set.
+
+Within a single realm, a realm can have multiple apps hosted on
+subdomains of the realm's primary domain (e.g. `app1.acme.example.com`
+and `app2.acme.example.com` alongside `acme.example.com` itself). When
+the request host is the primary domain or one of those app subdomains,
+the auth cookie's `Domain` is widened to the primary domain, so one
+login is shared across all of that realm's apps — enabling single
+sign-on between them. A realm reached through any other, unrelated
+domain still gets a host-only cookie scoped to exactly that host.
 
 ::: tip Single-domain dev setup
 In dev, everything runs under `localhost:4300` (Vite proxy). Only the
@@ -113,9 +120,9 @@ throttled (e.g. at most once per minute per session).
 ### Self-service endpoints
 
 ```http
-GET    /api/account/sessions
-DELETE /api/account/sessions/{id}
-DELETE /api/account/sessions          # all except current
+GET    /api/auth/sessions
+DELETE /api/auth/sessions/{id}
+DELETE /api/auth/sessions          # all except current
 ```
 
 ### Admin variants

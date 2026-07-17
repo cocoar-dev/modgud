@@ -111,10 +111,7 @@ permissions does the user effectively hold?
 5. Filter to this app       (r.AppId == app.Id  OR  r.IsRealmAdmin)
 6. For each role: resolve PermissionIds → catalog strings
                               ("invoice:read", "invoice:write", …)
-7. Bypass-pre-expand:
-     - realm:admin          → all catalog strings of every reachable App
-     - <r>:admin            → all <r>:<a> strings in this app's catalog
-8. Distinct → result
+7. Distinct → result
 ```
 
 Two filters, not one: BoundTo on the group, AppId on the role. They
@@ -123,8 +120,17 @@ AppId is "is this role about this app?".
 
 The resolver lives in
 `Modgud.Authorization.Services.PermissionService`. It runs IdP-side
-both for in-process gates and for the per-Audience `resource_access`
-block on `/connect/userinfo`.
+for both consumers, but the bypass tiers (`realm:admin`, `<r>:admin`)
+are handled differently by each:
+
+- **In-process gates** (`.RequiresPermission(...)`) get the raw
+  markers back from the resolver and check them lazily at gate time —
+  `realm:admin` or `<r>:admin` in the user's permission set is enough
+  to pass, with no expansion into concrete strings.
+- **The per-Audience `resource_access` block** on
+  `/connect/userinfo` bypass-pre-expands those same markers into
+  concrete catalog strings before the token is emitted (see below),
+  so token consumers never have to special-case them.
 
 ## The token shape
 

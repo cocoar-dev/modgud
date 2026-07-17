@@ -1,41 +1,28 @@
 # Testing
 
 This section is the one place where you can see **what is tested in
-Modgud and how**. Open it before any release, after any phase
-change, or whenever you suspect drift between the runtime and what the
-docs claim.
+Modgud and how**. Open it before any release, or whenever you suspect
+drift between the runtime and what the docs claim.
 
 ## Test surface at a glance
 
 | Surface | Where | Status | Run |
 |---|---|---|---|
-| **Unit tests** | `src/dotnet/Modgud.Tests.Unit/` | **813 / 813 green** (~1 s) | `dotnet test Modgud.Tests.Unit` |
-| **Integration tests** | `src/dotnet/Modgud.Api.Tests/` | **121 / 121 green** (~2 min, Docker required) | `dotnet test Modgud.Api.Tests` |
+| **Unit tests** | `src/dotnet/Modgud.Tests.Unit/` | **1283 / 1283 green** (~1 s) | `dotnet test Modgud.Tests.Unit` |
+| **Integration tests** | `src/dotnet/Modgud.Api.Tests/` | **485 / 485 green** (~6-7 min, Docker required) | `dotnet test Modgud.Api.Tests` |
 | **OWASP Top 10 (subset)** | `src/dotnet/Modgud.Api.Tests/Security/OwaspTop10Tests.cs` | **12 / 12 green** (part of integration suite, runs in <30 s) | `dotnet test Modgud.Api.Tests --filter "OWASP=Top10"` |
-| **Manual smoke checklist** | [`testing/manual-checklist`](./manual-checklist) | Operator-driven, ~1–2 h end-to-end | walk the page |
-| **E2E (Playwright)** | `src/frontend-vue/e2e/` | **Phase A green** — 4 tests, ~25 s after a warm rig (~60 s on first run because the modgud image gets built). Runs against the **bit-for-bit production image** with Mailpit catching outbound SMTP. | `cd src/frontend-vue && pnpm test:e2e` |
+| **Manual smoke checklist** | [`testing/manual-checklist`](./manual-checklist) | Operator-driven, walk before a release | walk the page |
+| **E2E (Playwright)** | `src/frontend-vue/e2e/` | 12 spec files, runs against the **bit-for-bit production image** with Mailpit catching outbound SMTP | `cd src/frontend-vue && pnpm test:e2e` |
 
-Wave 8 (2026-04-30) closed the longstanding gaps: the previous
-89 / 96 ProfileSelfService blockers got fixed via a tenant-aware
-session helper, and ten new permission-resolution + three distribution
-auth-filter tests joined the suite. Wave 9 (same day) brought back
-the OWASP Top 10 (2021) coverage that the post-cutover legacy strip
-had dropped — the IDP now ships explicit security tests under the
-`OWASP=Top10` xUnit trait. Wave 10 (also 2026-04-30) ported the first
-slice of the manual smoke checklist (§0 + §1 + §2 incl. magic-link)
-to Playwright running against the **production-mode container** with
-Mailpit as a real SMTP capture; the dev-only `/api/dev/emails`
-endpoint and the dev-mode `InMemoryEmailService` runtime registration
-were removed in the same wave (F10 closed).
+The security-testing story includes an explicit OWASP Top 10 (2021) suite under the `OWASP=Top10` xUnit trait, plus a full Playwright pass against a production-mode container (not a dev-only shortcut) that exercises real outbound email via Mailpit instead of an in-process email inspector.
 
 ## What's here
 
 | Page | What you get |
 |---|---|
-| [Automated tests](./automated-tests) | Per-area inventory of every unit-test file + the integration-test buckets; what each one pins and why. The "what is tested" reference. |
+| [Automated tests](./automated-tests) | Per-area inventory of every unit-test file + the integration-test buckets — including newer areas like invite-code self-registration, per-realm rate limits, the device authorization flow, native cookieless grants, CIMD and declarative realm provisioning; what each one pins and why. The "what is tested" reference. |
 | [Pinned-by-design](./pinned-by-design) | Behaviours that look surprising but are intentional — and the test that guards each one. Read this before touching anything that "looks weird". |
-| [Manual smoke checklist](./manual-checklist) | End-to-end checklist you tick off when smoke-testing the live system. ~24 sections, ~150 checkboxes. |
-| Production bugs found by tests | See [Automated tests → Production bugs found and fixed](./automated-tests#production-bugs-found-and-fixed-during-the-test-sweep) — a running list of real bugs that the unit-test sweeps caught and the commits that fixed them. |
+| [Manual smoke checklist](./manual-checklist) | End-to-end checklist you tick off when smoke-testing the live system. |
 
 ## Conventions
 
@@ -58,12 +45,9 @@ were removed in the same wave (F10 closed).
   ~1 s feedback, no Docker. Run on every save if your editor supports it.
 - **Before pushing a branch:** add `dotnet test Modgud.Api.Tests`.
   Needs Docker for Testcontainers Postgres.
-- **Before a release / after a phase:**
+- **Before a release:**
   - Run the Playwright suite: `cd src/frontend-vue && pnpm test:e2e`.
     On first run it builds the `modgud:e2e` Docker image (~60 s).
-    Re-runs reuse the image (~25 s). The rig is teared down between
-    runs.
+    Re-runs reuse the image. The rig is torn down between runs.
   - Walk the [manual smoke checklist](./manual-checklist) end to end
-    for the parts Playwright can't reach (the ⏳ items at the time of
-    the last manual run). Tick what you verify, link a finding in the
-    page's own block at the bottom for anything that breaks.
+    for the parts Playwright can't reach.

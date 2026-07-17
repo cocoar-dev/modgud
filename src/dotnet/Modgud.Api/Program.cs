@@ -111,7 +111,7 @@ try
             rule.For<TurnstileSettings>().FromEnvironment("Turnstile"),
 
             // OpenTelemetry observability settings (Phase 1 foundation, see
-            // dev-docs/future-features/observability-opentelemetry.md).
+            // the maintainers' 'observability-opentelemetry' design note).
             rule.For<ObservabilitySettings>().FromFile("data/configuration.json").Select("Observability"),
             rule.For<ObservabilitySettings>().FromFile("data/configuration.local.json").Select("Observability"),
             rule.For<ObservabilitySettings>().FromEnvironment("Observability"),
@@ -757,7 +757,7 @@ try
         });
 
     // OpenTelemetry foundation (Phase 1). See
-    // dev-docs/future-features/observability-opentelemetry.md.
+    // the maintainers' 'observability-opentelemetry' design note.
     var observabilitySettings = configManager.GetConfig<ObservabilitySettings>();
     builder.Services.AddModgudObservability(
         observabilitySettings,
@@ -769,7 +769,7 @@ try
     // Cookies + antiforgery survive `docker-compose down && up` as a
     // free side effect (no more login-everyone-out on deploy).
     // See HA-2a in
-    // dev-docs/future-features/ha-multi-instance.md.
+    // the maintainers' 'ha-multi-instance' design note.
     //
     // Audit M7: optionally encrypt each realm's key ring at rest with an
     // operator-supplied certificate (DataProtection__CertificatePath, optional
@@ -1065,7 +1065,7 @@ try
         // not here; LogPiiMasking stays as belt. Endpoint is a bare base host:port
         // for both protocols — the sink derives the per-signal path itself (and
         // trims any /v1/logs an operator appends).
-        // See dev-docs/future-features/logging-audit-redesign.md §B.1-B.2.
+        // See the maintainers' 'logging-audit-redesign' design note §B.1-B.2.
         if (observabilitySettings.Otlp.Enabled)
         {
             var otlp = observabilitySettings.Otlp;

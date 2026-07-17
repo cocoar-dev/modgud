@@ -16,7 +16,7 @@ namespace Modgud.Infrastructure.Persistence.Marten.Projections.Inbox;
 /// <para>partial because Marten 9's source-generator (JasperFx.Events.SourceGenerator)
 /// emits the apply-dispatcher into this class; without partial the boot throws
 /// <c>InvalidProjectionException</c> — see
-/// <c>dev-docs/engineering-gotchas/marten-raise-side-effects.md</c> for the wider context.</para>
+/// the maintainers' <c>marten-raise-side-effects</c> engineering note for the wider context.</para>
 /// </summary>
 public partial class InboxItemProjection : SingleStreamProjection<InboxItemView, Guid>
 {

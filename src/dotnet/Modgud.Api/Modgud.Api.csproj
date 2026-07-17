@@ -35,7 +35,7 @@
     <PackageReference Include="OpenIddict.Abstractions" />
     <PackageReference Include="OpenIddict.Server.AspNetCore" />
     <!-- OpenTelemetry (Phase 1 foundation, see
-         dev-docs/future-features/observability-opentelemetry.md). -->
+         the maintainers' 'observability-opentelemetry' design note). -->
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" />

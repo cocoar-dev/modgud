@@ -33,23 +33,37 @@ public async Task InvokeAsync(HttpContext context)
     if (SkipPaths.Any(p => path.StartsWith(p))) { await _next(context); return; }
 
     var hostname = context.Request.Host.Host;
-    var tenantInfo = await _realmCache.ResolveDomainAsync(hostname);
+    var resolution = await _realmCache.ResolveAsync(hostname);
 
-    if (tenantInfo is null)
+    if (resolution is null)
     {
         context.Response.StatusCode = 404;
         return;
     }
 
+    var tenantInfo = resolution.Tenant;
     context.Items[TenantConstants.HttpContextTenantIdKey] = tenantInfo.Slug;
     context.Items[TenantConstants.HttpContextTenantInfoKey] = tenantInfo;
+
+    // Set only when the host is an Application's own subdomain (see
+    // "Applications and domain routing" below).
+    if (resolution.ApplicationId is { } applicationId)
+        context.Items[TenantConstants.HttpContextApplicationIdKey] = applicationId;
+
+    // Ambient AsyncLocal so code without an HttpContext (background services,
+    // Wolverine handlers) can still see which realm is active; restored when
+    // the request scope unwinds.
+    using var _ = TenantContext.Enter(tenantInfo.Slug);
 
     await _next(context);
 }
 ```
 
-Skip paths: `/health`, `/swagger`, `/openapi`, `/_framework`,
-`/signalr` — these run without realm context.
+Skip paths: `/health`, `/swagger`, `/openapi`, `/_framework` — these
+run without realm context. `/signalr` is deliberately **not** skipped:
+SignalR connections still need a resolved realm so the auth cookie
+(encrypted with that realm's own keys) can be decrypted on
+`/signalr/*/negotiate`.
 
 ### Single-tenant fallback in dev
 
@@ -62,6 +76,10 @@ single-realm dev boot works without a hosts-file entry.
 
 While a realm may route from several domains, exactly one of them is its **PrimaryDomain** — the canonical public host. Any host in `Domains` resolves the realm for *inbound* requests, but the PrimaryDomain is what Modgud uses whenever it has to *emit* a host: magic-link and bootstrap-invite URLs, and the **WebAuthn relying-party ID** that binds passkeys. A realm always has a PrimaryDomain (it defaults to the first domain at creation) and it must be one of `Domains`. Re-point it from the admin UI's domain picker or via the [Recovery CLI](recovery-cli) `realm-set-primary-domain`; because it is the passkey RP ID, changing it invalidates every passkey in the realm.
 
+### Applications and domain routing
+
+A realm can also give one of its [Applications](../admin/applications) its own subdomain (e.g. `billing.acme.example.com`). Resolving that host still lands on the realm — same tenant DB, same user pool, same OIDC issuer — but the middleware additionally pins which Application the request is for, so app-specific branding and login-experience settings apply. This is a routing refinement layered on top of the realm/domain mechanism above, not a second isolation boundary.
+
 ## RealmCache
 
 `RealmCache` (`Modgud.Infrastructure/Realms/RealmCache.cs`) holds
@@ -70,11 +88,16 @@ a snapshot of the domain → realm mappings in memory:
 ```csharp
 private sealed record CacheSnapshot(
     ConcurrentDictionary<string, TenantInfo> ByDomain,
-    TenantInfo? SingleActiveRealm);
+    ConcurrentDictionary<string, ApplicationDomainMatch> ByApplicationDomain,
+    TenantInfo? SingleActiveRealm,
+    DateTimeOffset LoadedAt);
 ```
 
 Loads all active realms from `IGlobalStore` (see below) at startup.
-Invalidated on realm CUD (Create/Update/Delete via the admin API).
+Invalidated on realm CUD (Create/Update/Delete via the admin API), and
+also revalidated on a 60-second timer regardless — so a change made on
+another node of a multi-node deployment is picked up within that
+window even without a cross-node cache invalidation.
 
 ## Database-per-tenant via Marten
 
@@ -122,16 +145,25 @@ that reads the `TenantId` from `HttpContext.Items`:
 
 ```csharp
 public IDocumentSession OpenSession()
-    => _store.LightweightSession(ResolveTenantId());
+    => _store.LightweightSession(ResolveTenantId(forWrite: true));
 
 public IQuerySession OpenQuerySession()
-    => _store.QuerySession(ResolveTenantId());
+    => _store.QuerySession(ResolveTenantId(forWrite: false));
 
-private string ResolveTenantId()
-    => _httpContextAccessor.HttpContext?
-         .Items[TenantConstants.HttpContextTenantIdKey] as string
-       ?? TenantConstants.SystemTenantId;
+private string ResolveTenantId(bool forWrite)
+{
+    var explicitTenant = TenantContext.CurrentOrNull
+        ?? _httpContextAccessor.HttpContext?
+             .Items[TenantConstants.HttpContextTenantIdKey] as string;
+
+    return explicitTenant ?? FallbackTenantId(forWrite);
+}
 ```
+
+An ambient `TenantContext.CurrentOrNull` (set by `RealmMiddleware`, or
+explicitly via `TenantContext.Enter(...)` for a deliberate cross-realm
+operation) is checked before `HttpContext.Items`, which carries the
+same value on the common request path.
 
 Wired up via:
 
@@ -141,8 +173,18 @@ builder.Services.AddMarten(...)
 ```
 
 This way every `IDocumentSession`/`IQuerySession` injection is
-automatically realm-scoped. Background services without an
-`HttpContext` fall back to the system tenant.
+automatically realm-scoped. When neither signal resolves a tenant, the
+fallback splits by intent:
+
+- **No `HttpContext` at all** (background service, hosted service, CLI,
+  test) — falls back to the system tenant. This is the intended,
+  load-bearing path for infrastructure jobs and single-realm boots.
+- **An in-flight HTTP request with no resolved realm** — this can only
+  happen on a realm-agnostic skip-path (`/health`, `/openapi`, …),
+  since every routed request is resolved or 404'd by `RealmMiddleware`.
+  A **write** in that state throws instead of silently landing in the
+  system tenant's database; a **read** falls back to the system tenant
+  with a warning logged.
 
 ## IGlobalStore
 
@@ -151,7 +193,7 @@ chicken-and-egg. It lives in a separate Marten store (`IGlobalStore`)
 against schema `global` of the master DB:
 
 ```csharp
-public sealed record TenantInfo(string Slug, bool IsControlPlane, bool IsActive);
+public sealed record TenantInfo(string Slug, bool IsControlPlane, bool IsActive, string? PrimaryDomain = null);
 
 public class Realm
 {
@@ -160,6 +202,8 @@ public class Realm
     public string DisplayName { get; set; }
     public string? Description { get; set; }
     public string[] Domains { get; set; }       // ["acme.example.com", ...]
+    public string PrimaryDomain { get; set; }   // must be one of Domains — see "Primary domain" above
+    public Dictionary<string, Guid> ApplicationDomains { get; set; } // subdomain -> Application id
     // Stored, transferable: exactly one realm carries the flag. The
     // bootstrap "system" realm is stamped at first boot, but the role
     // can be moved to any active realm.
@@ -263,6 +307,11 @@ sets a password, gets auto-signed-in. Atomic with that consume,
 `PermissionRole`s (System Admin / User Manager / Viewer) and adds the
 user to the `Administratoren` group with `realm:admin`.
 
+If the invite link gets lost or expires before it's consumed,
+`POST /api/admin/realms/{slug}/resend-bootstrap-invite` revokes the
+previous invite and issues a fresh one for the same recipient, with a
+new 7-day expiry.
+
 ### Update
 
 ```http
@@ -291,11 +340,31 @@ The system realm cannot be deactivated — the endpoint blocks that.
 
 ### Hard-delete
 
-::: warning In progress
-Not currently implemented. Would need to drop the tenant DB cleanly,
-shut down the Wolverine durability agent for the tenant, invalidate
-sessions — see roadmap.
-:::
+```http
+DELETE /api/admin/realms/{slug}?hard=true
+```
+
+Escalates from the reversible soft-delete above to a destructive
+delete that drops the realm's tenant database. Refused for the
+Control-Plane realm. Without `?hard=true`, `DELETE` behaves the same
+as the soft-delete (`isActive = false`).
+
+### Declarative provisioning (import / apply / export)
+
+Beyond the one-field-at-a-time Create/Update above, the same
+`/api/admin/realms` group also accepts a **manifest** — a single JSON
+document describing a realm's apps, OAuth clients/scopes/APIs, roles,
+users and groups:
+
+- `POST /import` — create a brand-new realm from a manifest.
+- `POST /{slug}/apply` (optionally `?prune=true` for a full sync that
+  also removes anything absent from the manifest) — apply a manifest
+  to an existing realm in place.
+- `GET /{slug}/export` — export a realm's current shape as a manifest.
+- `GET /manifest-schema` — the manifest's JSON Schema.
+
+See [Declarative Realm Provisioning](../admin/realm-provisioning) for
+the full walkthrough.
 
 ## Cookies and sessions in a multi-realm setup
 

@@ -154,10 +154,12 @@ transferring, or recover one afterwards via the
 - **Deactivate** (clear "Is Active") — the realm rejects logins but
   stays in the DB. Reactivatable any time. Cannot deactivate the
   Control-Plane realm (`Realm.CannotDeactivateControlPlane`).
-- **Delete** — soft delete in the master DB. The tenant database is
-  **not** dropped automatically (data preservation by default). Drop
-  the DB manually if you really mean to wipe it. Hard-delete with
-  automatic DB drop is a roadmap item.
+- **Delete** — soft delete in the master DB by default. The tenant database is
+  **not** dropped automatically (data preservation by default), so a plain
+  delete is reversible at the database level. To wipe a realm for real, hard
+  delete it: `DELETE /api/admin/realms/{slug}?hard=true` drops the tenant
+  database and removes the realm record (Control-Plane only, irreversible) —
+  see [Declarative Realm Provisioning](./realm-provisioning) for the API surface.
 
 ## First-time setup of a fresh realm
 
@@ -176,7 +178,7 @@ If something goes wrong:
   See [Recovery CLI](../operate/recovery-cli).
 - **Locked-out admin** — same recovery CLI, again with
   `bootstrap-admin --email <e>`. The CLI adds the new user to the
-  existing Administratoren group rather than creating a duplicate.
+  realm's existing admin group rather than creating a duplicate.
 
 ## Routing
 

@@ -21,7 +21,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.8" />
     <!-- SAML 2.0 SP federation (BSD-3-Clause, compatible with Apache-2.0).
          Maintained by FoxIDs; tested against Entra ID, ADFS, Azure AD B2C.
-         See dev-docs/future-features/saml-federation.md for library audit. -->
+         See the maintainers' 'saml-federation' design note for library audit. -->
     <PackageVersion Include="ITfoxtec.Identity.Saml2" Version="4.18.0" />
     <PackageVersion Include="ITfoxtec.Identity.Saml2.MvcCore" Version="4.18.0" />
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
@@ -38,7 +38,7 @@
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
     <!-- Marten & Wolverine — Critter Stack 2026 (Marten 9 + Wolverine 6 +
          JasperFx 2). Migrated from 8.37 / 5.32 in chore/critter-stack-2026.
-         Gotchas: dev-docs/engineering-gotchas/critter-stack-2026.md -->
+         Gotchas: the maintainers' 'critter-stack-2026' engineering note -->
     <PackageVersion Include="Marten" Version="9.8.0" />
     <PackageVersion Include="Marten.AspNetCore" Version="9.8.0" />
     <PackageVersion Include="WolverineFx.Marten" Version="6.9.0" />

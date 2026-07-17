@@ -37,14 +37,11 @@ data — no event sourcing.
 | Document | Contents | Indexes |
 |---|---|---|
 | `ApplicationUser` | ASP.NET Identity user | `NormalizedUserName` (unique), `NormalizedEmail` |
-| `ApplicationRole` | Identity role | `NormalizedName` (unique) |
 | `UserSecurityData` | Password hash, TOTP key, recovery codes, passkey credentials | Same id as the user |
 | `UserSession` | Active session tracking (UAParser) | `UserId`, `LastActiveAt` |
 | `EmailOtpChallenge` | 6-digit OTP hash + expiry | `UserId` |
 | `MagicLinkChallenge` | Token hash + expiry | `UserId` |
-| `WebAuthnChallenge` | Passkey ceremony state | TTL ~5 min |
-| `IdpConfig` | OIDC IdP config (without secret) | Per realm |
-| `IdpSecret` | OIDC client secret (separate) | Per IdpConfig |
+| `PasskeyCeremony`, `PasskeyEnrollCeremony` | Single-use passkey login/enrollment ceremony state (native/bearer flow only — the cookie-based web flow keeps its ceremony state in ASP.NET Core session) | TTL ~5 min |
 | `OpenIddictAuthorizationDocument` | OAuth consent records | `ApplicationId`, `Subject` |
 | `OpenIddictTokenDocument` | Reference tokens, refresh tokens | `ApplicationId`, `Subject`, `ReferenceId` |
 | `SecurityAuditEntry` | Streamless security / ops events (unknown-actor logins, probes, rate-limit hits, recovery-CLI actions). Lives in the **system DB**, attributed to a realm via `Realm`; short hard-retention prune (no per-subject erase) | `Realm`, `Timestamp` |
@@ -52,6 +49,10 @@ data — no event sourcing.
 | `UserChangeRequest` | Profile self-service pending changes | Per `(UserId, Type)` |
 | `Principal` (polymorphic) | Person + Group + ServiceAccount | `mt_doc_type` discriminator |
 | `PermissionRole` | RBAC role definitions | Per realm |
+| `RealmSettings` | Realm-admin-owned config (self-registration, rate-limit overrides, branding, required-identity-fields, ...) | Singleton per tenant |
+| `ApplicationSettings` | Per-App config overrides, merged field-by-field over `RealmSettings` | One per App |
+| `RegistrationInviteCode` | Single-use registration invite code (invite-code-gated self-registration) | `AppId`, code hash |
+| `PendingAdminInvite` | One-shot invite for the first admin in a freshly provisioned realm | Token hash |
 | `Realm` (in `IGlobalStore`) | Tenant metadata in master DB | Schema `global` |
 
 ### 2. Inline projections (`*State`)
@@ -65,10 +66,9 @@ for the OpenIddict stores.
 | `OAuthApplicationStateProjection` → `OAuthApplicationState` | `OAuthApplicationAggregate` | `MartenApplicationStore` (OpenIddict) |
 | `OAuthScopeStateProjection` → `OAuthScopeState` | `OAuthScopeAggregate` | `MartenScopeStore` (OpenIddict) |
 | `OAuthApiStateProjection` → `OAuthApiState` | `OAuthApiAggregate` | API resource management |
-| `LoginProviderStateProjection` → `LoginProviderState` | `LoginProviderAggregate` | Login provider resolution |
+| `LoginProviderProjection` → `LoginProvider` | (no separate aggregate — events apply directly onto the document) | Login provider resolution |
 | `PrincipalProjectionBase` → `Principal` (polymorphic) | abstract — app extension | Authorization slice |
 | `PermissionRoleProjection` | Permission role aggregate | Authorization slice |
-| `IdpConfigProjection` → `IdpConfig` | IdpConfig aggregate | OIDC login |
 | `ExternalIdentityLinkProjection` | (no aggregate, plain doc apply) | OIDC login |
 
 ### 3. Async read models (`*ListReadModel`, `*DetailsReadModel`)
@@ -91,12 +91,11 @@ User lifecycle (written by the Authentication slice):
 
 ```
 Stream: <userId>
-  v1: UserCreated         { UserId, UserName, Email, ... }
-  v2: UserPasswordChanged { UserId }
-  v3: UserLoggedIn        { UserId, IpAddress, OccurredAt }
-  v4: UserNameChanged     { UserId, NewFirstName, NewLastName }
-  v5: UserTwoFactorEnabled { UserId }
-  v6: UserLoggedIn        { UserId, IpAddress, OccurredAt }
+  v1: UserCreatedEvent         { Id, Firstname, Lastname, Acronym, Email }
+  v2: UserPasswordChangedEvent { UserId }
+  v3: UserLoggedInEvent        { UserId, IpAddress, Method }
+  v4: UserProfileUpdatedEvent  { UserId, Firstname, Lastname, Acronym }
+  v5: UserLoggedInEvent        { UserId, IpAddress, Method }
   ...
 ```
 
@@ -121,45 +120,56 @@ Same approach for:
 | TOTP authenticator key | `UserSecurityData.AuthenticatorKey` |
 | Recovery codes | `UserSecurityData.RecoveryCodes` |
 | Passkey credentials (public key, sign count) | `StoredPasskeyCredential` (separate doc, per user) |
-| OIDC client secret | `IdpSecret` (separate doc, per IdpConfig) |
+| OIDC login-provider client secret | `LoginProvider.ClientSecretEncrypted` (encrypted at rest, inline on the document — not event-sourced) |
 
 The benefit: GDPR erase and stream replay are safe — no re-applying of
 masked hashes.
 
 ## Indexes and filtered unique constraints
 
-Soft-delete is everywhere — but usernames/emails must be reusable
-after a soft-delete. Solution: **filtered unique indexes** with
-PostgreSQL partial indexes:
+Soft-delete is everywhere, but only the email address is reusable
+immediately after a soft-delete — the username stays reserved by a
+plain unique index until the account is permanently erased. Solution
+for email: a **filtered unique index** using a PostgreSQL partial
+index:
 
 ```csharp
 schema.For<ApplicationUser>()
-    .UniqueIndex(UniqueIndexType.DuplicatedField, "NormalizedUserName",
-        u => u.NormalizedUserName)
-    .Where(u => u.IsDeleted == false || u.IsDeleted == null);
+    .UniqueIndex(x => x.NormalizedUserName)   // plain unique — reserved even after soft-delete
+    .Index(x => x.NormalizedEmail, idx =>
+    {
+        idx.IsUnique = true;
+        idx.Predicate =
+            "(data ->> 'NormalizedEmail') IS NOT NULL " +
+            "AND COALESCE((data ->> 'IsDeleted')::boolean, false) = false";
+    });
 ```
 
 In SQL:
 
 ```sql
 CREATE UNIQUE INDEX ... ON mt_doc_applicationuser
-  ((data ->> 'NormalizedUserName'))
-  WHERE (data ->> 'IsDeleted')::boolean IS NOT TRUE;
+  ((data ->> 'NormalizedEmail'))
+  WHERE (data ->> 'NormalizedEmail') IS NOT NULL
+    AND COALESCE((data ->> 'IsDeleted')::boolean, false) = false;
 ```
 
-This way usernames/emails can be reused immediately after soft-delete
-without colliding with active users.
+This way a soft-deleted user's email can be claimed by a new signup
+right away, without colliding with active users — while the username
+remains reserved until permanent erase.
 
 ## GDPR via Marten
 
 ### Data masking
 
 ```csharp
-options.Events.AddMaskingRuleForProtectedInformation<UserCreated>(x =>
-    new UserCreated(x.UserId, "[DELETED]", "[DELETED]", null, null, null));
+options.Events.AddMaskingRuleForProtectedInformation<UserCreatedEvent>(e =>
+    new UserCreatedEvent(e.Id,
+        new Optional<string>("[DELETED]"), new Optional<string>("[DELETED]"),
+        new Optional<string>("[DELETED]"), new Optional<string>("[DELETED]")));
 
-options.Events.AddMaskingRuleForProtectedInformation<UserLoggedIn>(x =>
-    new UserLoggedIn(x.UserId, "[DELETED-IP]", x.OccurredAt));
+options.Events.AddMaskingRuleForProtectedInformation<UserLoggedInEvent>(e =>
+    new UserLoggedInEvent(e.UserId, IpAddress: null, e.Method));
 ```
 
 Only takes effect when the stream is **archived** (`ArchiveStream`) —
@@ -204,10 +214,11 @@ Enums are stored as strings (readable in the DB inspector).
 | `mt_doc_oauthapplicationstate` | OpenIddict application inline projection |
 | `mt_doc_oauthscopestate` | OpenIddict scope inline projection |
 | `mt_doc_oauthapistate` | API resource inline projection |
-| `mt_doc_loginproviderstate` | Login provider inline projection |
+| `mt_doc_loginprovider` | Login provider config (inline projection) |
 | `mt_doc_openiddicttokendocument` | Reference tokens, refresh tokens |
 | `mt_doc_openiddictauthorizationdocument` | OAuth authorizations (consent records) |
-| `mt_doc_idpconfig` | OIDC IdP configurations |
+| `mt_doc_realmsettings` | Realm-admin-owned config |
+| `mt_doc_applicationsettings` | Per-App config overrides |
 | `mt_doc_auth_audit_view` | Per-realm tenant audit feed (`AuthAuditView` projection — metadata only) |
 | `mt_doc_usersession` | Active sessions |
 

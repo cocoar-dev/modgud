@@ -67,7 +67,11 @@ The membership-script editor's IntelliSense is generated from the real CLR types
 
 ### How it runs (the batch engine)
 
-`Cocoar.JsEval.Linq` translates the predicate into an `Expression<Func<Person, bool>>` → SQL against `mt_doc_principal WHERE mt_doc_type = 'person'`. A single query returns the new `MemberIds`. This is the durable path: it writes `MemberIds` and only ever sees the persisted `Person` fields (it cannot see the ephemeral federation surface, which has no SQL columns).
+The membership script is translated into a single database query that
+matches every person record against the predicate in one pass, and the
+result becomes the new `MemberIds`. This is the durable path: it writes
+`MemberIds` and only ever sees the persisted `Person` fields (it cannot
+see the ephemeral federation surface, which isn't stored).
 
 ## Externally-driven membership (federation)
 
@@ -144,7 +148,7 @@ The permission BFS expands this without special-casing — `IPrincipalWithMember
 
 ## Initial recompute
 
-When an admin creates a new auto-group (or changes the script), an initial full pass runs — `IAutoMembershipRecalculator.RecalculateForGroupAsync` issues a single SQL query against all person documents with the script as the `WHERE` clause, sets `MemberIds`, and fires the recompute event. Modgud is sized for mid-sized org charts (a few thousand users per realm), where this is sub-second; it is not built for million-row tenants.
+When an admin creates a new auto-group (or changes the script), an initial full pass runs — a single query matches the script against every person record, sets `MemberIds`, and fires the recompute event. Modgud is sized for mid-sized org charts (a few thousand users per realm), where this is sub-second; it is not built for million-row tenants.
 
 ## Example setup
 

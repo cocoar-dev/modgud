@@ -9,7 +9,7 @@ import { clearMailpit, extractOtpCodeFromHtml, waitForMail } from './mailpit'
  * this file covers the rest of the human doors).
  *
  * Asserted to Principle 5 of the cold-start ladder
- * (dev-docs/future-features/human-path-testing-ladder.md): real input only
+ * (see the maintainers' 'human-path-testing-ladder' design note): real input only
  * (getByRole().fill()/.click() + real keystrokes via fillOtpCode), visibility
  * via toBeVisible(), and a screenshot at each key step. Email flows are
  * observed through the real SMTP path captured by Mailpit — no Development-mode

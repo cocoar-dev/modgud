@@ -58,7 +58,10 @@ All under `/connect/...`, all realm-scoped via the domain:
 | `/connect/device` | `POST` | Device-authorization endpoint (CLI / TV / set-top boxes) |
 | `/connect/verify` | `GET` | User-verification endpoint for the device flow |
 | `/connect/register` | `POST` | Dynamic Client Registration (RFC 7591). Registration only — there is no RFC 7592 management surface. |
-| `/connect/consent` | `GET`/`POST` | Consent ticket resolve + decision (the SPA calls these after `/connect/authorize` redirects it to `/consent?ticket=…`) |
+| `/connect/consent` | `GET`/`POST` | Consent ticket resolve + decision (the SPA calls these after `/connect/authorize` redirects it to `/consent?ticket=…`). A deny decision re-enters `/connect/authorize` with a deny marker so the client gets a standard `error=access_denied` redirect, symmetric with an approve. |
+| `/connect/passkey/begin` | `POST` | Anonymous — begin a usernameless WebAuthn assertion ceremony for the `urn:cocoar:passkey` grant |
+| `/connect/passkey` | `GET` | Bearer-authenticated — list the signed-in token subject's own passkeys |
+| `/connect/passkey/{id}` | `DELETE` | Bearer-authenticated — revoke one of the token subject's own passkeys |
 
 ## Supported flows
 
@@ -70,6 +73,11 @@ The discovery doc lists `grant_types_supported`:
 | `refresh_token` | Token rotation. Single-use — each refresh issues a new refresh-token and invalidates the old one. |
 | `client_credentials` | Server-to-server. Must be linked to a `ServiceAccount` (the SA-managed mutation guard rejects free-standing CC clients). |
 | `urn:ietf:params:oauth:grant-type:device_code` | Device flow for input-constrained clients. |
+| `urn:cocoar:otp` | Native cookieless login/registration via an emailed one-time code — see [Native cookieless grants](/reference/auth-api#native-cookieless-grants). |
+| `urn:cocoar:magic` | Native cookieless login via a magic-link token. |
+| `urn:cocoar:passkey` | Native cookieless login via a WebAuthn assertion begun at `/connect/passkey/begin`. |
+
+The `urn:cocoar:*` grants are disabled by default (the per-realm/App `NativeGrants` flag) and are for clients that can't hold a session cookie — no browser redirect, no `/connect/authorize` round-trip.
 
 `response_modes_supported`: `query`, `form_post`, `fragment`.
 `response_types_supported`: `code` (no implicit, no hybrid).
