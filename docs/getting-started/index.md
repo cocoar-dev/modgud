@@ -12,14 +12,14 @@ Pick the one that matches what you're trying to do right now:
 
 ## What Modgud is — in one paragraph
 
-A self-hostable IdP. OAuth 2.0 + OpenID Connect server, runs on .NET 10, persists in PostgreSQL via Marten (event-sourced where it matters). Each customer / environment lives in an isolated realm with its own database. Apps within a realm declare their own permission catalogs and OAuth bindings. Tokens carry a `resource_access` claim (Keycloak-style nesting) keyed per Audience, with bypass-pre-expansion and per-RS subset narrowing — resource servers do straight exact-match against a flat permission list, no custom claim format and no separate IdP roundtrip.
+A self-hostable IdP. OAuth 2.0 + OpenID Connect server, runs on .NET 10, persists in PostgreSQL via Marten (event-sourced where it matters). Each customer / environment lives in an isolated realm with its own database. Apps within a realm declare their own permission catalogs and OAuth bindings. Tokens carry a `resource_access` claim (Keycloak-style nesting) keyed per Audience, with bypass-pre-expansion and per-RS subset narrowing — resource servers do straight exact-match against a flat permission list, no custom claim format required.
 
 ## What it isn't
 
 - Not a hosted service. You run it.
 - Not a user database for arbitrary domain data. Profiles only — your apps own their own tables.
 - Not a BFF. It issues tokens; downstream apps consume them.
-- Not a SAML provider. OIDC and OAuth 2.0 only.
+- Not a SAML identity provider for downstream apps — Modgud only ever issues OAuth 2.0 / OIDC tokens. It can *consume* SAML 2.0 as a service provider for federated login (see [SAML Federation](../admin/saml-federation)).
 
 ## Sections
 

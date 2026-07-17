@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import fs from 'node:fs'
 
 const require = createRequire(import.meta.url)
 const dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -27,9 +28,12 @@ const buildDate = new Date().toISOString().slice(0, 10)
 // No cheap version source exists at this point: there's no VERSION file
 // or package.json version field, and GitVersion needs its CLI + full
 // history, which isn't cheaply available in every build context this
-// file runs in (see gitShortSha above) — so the version segment is
-// omitted rather than guessed.
-const llmsTxtProvenance = `Generated: ${buildDate} · Source commit: ${gitShortSha()} · Product: Modgud · Canonical: https://docs.cocoar.dev/modgud/`
+// file runs in (see gitShortSha above). CI sets DOCS_VERSION (the
+// `vX.Y` docs slot computed in cd-release.yml, or the manual version
+// input in cd-deploy-docs.yml) for a real build; local/dev builds have
+// no such env var, so the segment is omitted rather than guessed.
+const docsVersion = process.env.DOCS_VERSION
+const llmsTxtProvenance = `Generated: ${buildDate} · Source commit: ${gitShortSha()} · Product: Modgud · Canonical: https://docs.cocoar.dev/modgud/${docsVersion ? ` · Version: ${docsVersion}` : ''}`
 
 // Shared raw config used by both the public site (`config.ts`) and
 // the in-app variant (`config.in-app.ts`).
@@ -175,6 +179,7 @@ export const baseConfig = {
             { text: 'Multi-tenancy / Realms', link: '/operate/realms' },
             { text: 'Observability', link: '/operate/observability' },
             { text: 'Recovery CLI', link: '/operate/recovery-cli' },
+            { text: 'Key material', link: '/operate/key-material' },
             { text: 'Feature Flags', link: '/operate/feature-flags' },
           ],
         },
@@ -326,5 +331,22 @@ export const baseConfig = {
 
   mermaidPlugin: {
     class: 'mermaid',
+  },
+
+  // vitepress-plugin-llms only templates llms.txt (customLLMsTxtTemplate
+  // above) — llms-full.txt is a plain concatenation of page content with
+  // no template hook in this plugin version, so it ships with no
+  // provenance at all unless we add it ourselves. `buildEnd` runs after
+  // the plugin has written both files, for both the public build
+  // (config.ts) and the in-app build (config.in-app.ts), since both
+  // spread this object into `defineConfig` — `siteConfig.outDir` is
+  // already resolved to the right directory for whichever one is
+  // running (dist/ vs dist-in-app/, the latter set via the `--outDir`
+  // CLI flag, see config.in-app.ts).
+  async buildEnd(siteConfig: { outDir: string }) {
+    const fullPath = path.join(siteConfig.outDir, 'llms-full.txt')
+    if (!fs.existsSync(fullPath)) return
+    const header = `# ${baseConfig.title}\n\n> ${llmsTxtProvenance}\n\n`
+    fs.writeFileSync(fullPath, header + fs.readFileSync(fullPath, 'utf-8'))
   },
 }

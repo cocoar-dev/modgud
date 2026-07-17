@@ -149,7 +149,7 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 ### UserInfo as the permission delivery channel
 - `/connect/userinfo` emits `resource_access` keyed by app slug, per Audience
 - Bypass-pre-expanded server-side + narrowed to each RS's declared `OAuthApi.PermissionIds` subset
-- Standard OIDC tooling consumes it; no Modgud-specific endpoint required
+- Delivered via the standard OIDC UserInfo endpoint and standard JWT claims — any OIDC-aware consumer can parse it. `Modgud.Client.AspNetCore` adds the audience selection and claims projection for ASP.NET Core on top; it's not a custom protocol
 
 ## Standards
 

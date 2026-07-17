@@ -1,6 +1,6 @@
 # Client ID Metadata Documents (CIMD)
 
-**Client ID Metadata Documents** ([`draft-ietf-oauth-client-id-metadata-document`](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/), adopted by the IETF OAuth WG) let a piece of software identify itself as an OAuth client by **publishing a metadata document at an HTTPS URL** — and using that URL *as* its `client_id`. The authorization server fetches and validates the document on demand. There is no registration request, no client secret, and no stored client record: the client's identity is bound to ownership of the domain hosting the document.
+**Client ID Metadata Documents** ([`draft-ietf-oauth-client-id-metadata-document`](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/), adopted by the IETF OAuth WG) let a piece of software identify itself as an OAuth client by **publishing a metadata document at an HTTPS URL** — and using that URL *as* its `client_id`. The authorization server fetches and validates the document on demand. There is no registration request, no client secret, and no stored client record: the client's **metadata and display identity** are anchored to the HTTPS origin hosting the document. The client itself remains a public PKCE client and performs no cryptographic client authentication in v1 — see [What's NOT in v1](#what-s-not-in-v1) for the `private_key_jwt` option under consideration for v2.
 
 CIMD is the **MCP-preferred** client-onboarding path; both claude.ai and ChatGPT support it and fall back to [Dynamic Client Registration](./dynamic-client-registration) when a server doesn't advertise CIMD.
 
@@ -41,6 +41,10 @@ When a client presents an HTTPS-URL `client_id` that isn't a known stored client
 5. Caches the validated document per URL, respecting `Cache-Control` (clamped to between 5 minutes and 24 hours; failures are never cached).
 
 No database row is created. A refresh after the cache expires re-fetches and re-validates the live document — if the URL becomes unreachable, refresh fails and the client must re-authenticate.
+
+::: tip Metadata refresh trade-offs
+This is fail-closed by design: once a cache entry expires, an unreachable metadata URL fails the operation rather than serving the stale, previously-validated document (no stale-if-error fallback). A brief outage of the metadata host can therefore surface as failed authorizations or refreshes for that client until the document is reachable again. For an unauthenticated, self-asserted client, that's the intended trade-off — integrity over availability.
+:::
 
 ## Opt-in design
 

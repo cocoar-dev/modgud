@@ -66,7 +66,7 @@ in a changelog that ages between releases.
   separate App catalog, gated by middleware + endpoint filter +
   database-level isolation
 - Per-realm DataProtection keys persisted in the tenant DB so cookies
-  + anti-forgery tokens survive restarts and never cross realms
+  and anti-forgery tokens survive restarts and never cross realms
 - First-admin bootstrap via recovery CLI **or** a control-plane
   `POST /api/admin/realms` with `InitialAdmin` payload
 - [Applications](./admin/applications) as a soft per-tenant facet — per-app origin, branding, login posture, and self-registration settings, sharing the realm's user pool with a single `sub`
