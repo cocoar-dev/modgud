@@ -654,6 +654,11 @@ try
     // consumed by POST /api/account/bootstrap-admin).
     builder.Services.AddScoped<Modgud.Authentication.Setup.IPendingAdminInviteService,
         Modgud.Authentication.Setup.PendingAdminInviteService>();
+
+    // English-naming pass (2026-07) — one-time, idempotent boot migration that
+    // renames a realm's legacy "Administratoren" admin group to "Administrators".
+    // Same cold-start-walks-every-realm pattern as OidcSchemeBootstrap below.
+    builder.Services.AddHostedService<Modgud.Authentication.Setup.LegacyAdminGroupRenameBootstrap>();
     builder.Services.AddSingleton<UserUpdateScriptRunner>();
     builder.Services.AddSingleton<Modgud.Authentication.Api.ExternalAuth.OidcSchemeRealmRegistry>();
     builder.Services.AddSingleton<DynamicOidcSchemeManager>();

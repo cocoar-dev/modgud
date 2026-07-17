@@ -225,27 +225,27 @@ export const baseConfig = {
           ],
         },
       ],
-      '/plattform/': [
+      '/platform/': [
         {
-          text: 'Plattform',
+          text: 'Platform',
           items: [
-            { text: 'Overview', link: '/plattform/' },
+            { text: 'Overview', link: '/platform/' },
           ],
         },
         {
           text: 'Customization',
           items: [
-            { text: 'Branding', link: '/plattform/branding' },
-            { text: 'Asset Library', link: '/plattform/assets' },
-            { text: 'Pages (Beta)', link: '/plattform/pages' },
+            { text: 'Branding', link: '/platform/branding' },
+            { text: 'Asset Library', link: '/platform/assets' },
+            { text: 'Pages (Beta)', link: '/platform/pages' },
           ],
         },
         {
           text: 'Operations',
           items: [
-            { text: 'Inbox', link: '/plattform/inbox' },
-            { text: 'Inbox settings', link: '/plattform/inbox-settings' },
-            { text: 'Settings', link: '/plattform/settings' },
+            { text: 'Inbox', link: '/platform/inbox' },
+            { text: 'Inbox settings', link: '/platform/inbox-settings' },
+            { text: 'Settings', link: '/platform/settings' },
           ],
         },
       ],

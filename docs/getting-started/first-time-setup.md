@@ -26,7 +26,7 @@ realms — the system realm is fully featured and works on its own.
 See [Single-tenant mode](single-tenant-mode) for the recipe.
 :::
 
-All three paths end up with the same shape inside the realm: an `ApplicationUser`, the three default roles (System Admin / User Manager / Viewer), and an `Administratoren` group containing the new user with `realm:admin` — exactly what every other admin in the system has.
+All three paths end up with the same shape inside the realm: an `ApplicationUser`, the three default roles (System Admin / User Manager / Viewer), and an `Administrators` group containing the new user with `realm:admin` — exactly what every other admin in the system has.
 
 ## Prerequisite — add your public hostname to the system realm
 
@@ -94,7 +94,7 @@ Output:
 Sign in immediately at the realm's host — `http://localhost/` for the default Docker quickstart.
 
 ::: tip Password rules apply
-The CLI enforces the same Identity password policy the SPA uses (length ≥ 8, mixed case, at least one digit). A weak password is rejected with a clear error — no privileged bypass. See [Settings](../plattform/settings) to relax the policy if your operational needs require it.
+The CLI enforces the same Identity password policy the SPA uses (length ≥ 8, mixed case, at least one digit). A weak password is rejected with a clear error — no privileged bypass. See [Settings](../platform/settings) to relax the policy if your operational needs require it.
 :::
 
 ## Path B — Recovery CLI, invite mode
@@ -213,7 +213,7 @@ Recommended next steps:
 
 ## Lost the admin account?
 
-If the only admin in a realm loses their access, no UI flow can restore them — but the recovery CLI can. Run the same `bootstrap-admin` command again with a fresh email/username; it adds you to the existing `Administratoren` group rather than duplicating it. See [Recovery CLI](../operate/recovery-cli) for related commands (`reset-2fa`, `magic-link`, `set-email`).
+If the only admin in a realm loses their access, no UI flow can restore them — but the recovery CLI can. Run the same `bootstrap-admin` command again with a fresh email/username; it adds you to the existing `Administrators` group rather than duplicating it. See [Recovery CLI](../operate/recovery-cli) for related commands (`reset-2fa`, `magic-link`, `set-email`).
 
 ## Tips
 

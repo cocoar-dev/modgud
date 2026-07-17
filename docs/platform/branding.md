@@ -7,7 +7,7 @@ Every realm starts unbranded. The Cocoar defaults (product name "Modgud", primar
 :::
 
 ::: info Reaching this surface
-[Realm Settings](../admin/realm-settings#branding-separate-page) links out to this page for branding, but the editable form lives only here — under **Plattform → Customization → Branding**.
+[Realm Settings](../admin/realm-settings#branding-separate-page) links out to this page for branding, but the editable form lives only here — under **Platform → Customization → Branding**.
 :::
 
 Permissions: `realm-settings:read` / `realm-settings:write`. The `realm:admin` bypass grants both.

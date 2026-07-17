@@ -25,10 +25,11 @@ namespace Modgud.Authentication.Setup;
 /// own store session (appending UserCreatedEvent + UserUserNameChangedEvent +
 /// UserPasswordChangedEvent); then (b) seed the three default roles (System Admin
 /// / User Manager / Viewer) if they don't yet exist in this realm and (c) create
-/// the <c>Administratoren</c> group with the user as sole member and the System
-/// Admin role attached — both committed by a second <c>SaveChangesAsync</c>. A
-/// weak password fails at (a) before any commit. The role/group seed (b)+(c) is
-/// idempotent, so a re-bootstrap repairs a partial seed rather than duplicating.</para>
+/// the <see cref="AdminGroupNames.Current"/> group with the user as sole member
+/// and the System Admin role attached — both committed by a second
+/// <c>SaveChangesAsync</c>. A weak password fails at (a) before any commit. The
+/// role/group seed (b)+(c) is idempotent, so a re-bootstrap repairs a partial
+/// seed rather than duplicating.</para>
 ///
 /// <para>The seeded structure mirrors what the legacy <c>POST /api/setup/create-admin</c>
 /// endpoint produced, so existing realms keep the same shape.</para>
@@ -43,8 +44,8 @@ public interface IRealmAdminBootstrapper
 {
     /// <summary>
     /// Create an admin user with a known password and add them to the
-    /// <c>Administratoren</c> group. Returns <see cref="Error"/> on
-    /// validation failures from <see cref="UserManager{T}"/> (password
+    /// <see cref="AdminGroupNames.Current"/> group. Returns <see cref="Error"/>
+    /// on validation failures from <see cref="UserManager{T}"/> (password
     /// rules, duplicate username) or domain conflicts.
     /// </summary>
     Task<ErrorOr<BootstrappedAdmin>> BootstrapDirectAsync(
@@ -112,9 +113,9 @@ public sealed class RealmAdminBootstrapper(
 
     /// <summary>
     /// Idempotent seed of the three default roles + the
-    /// <c>Administratoren</c> group containing the new user. Called from
-    /// <see cref="BootstrapDirectAsync"/> AND will be called from the
-    /// future Invite-Mode endpoint.
+    /// <see cref="AdminGroupNames.Current"/> group containing the new user.
+    /// Called from <see cref="BootstrapDirectAsync"/> AND will be called from
+    /// the future Invite-Mode endpoint.
     /// </summary>
     private async Task SeedDefaultRolesAndAdminGroupAsync(Guid userId, CancellationToken ct)
     {
@@ -213,12 +214,23 @@ public sealed class RealmAdminBootstrapper(
             adminRoleId = existingAdminRole.Id;
         }
 
-        // Administratoren group — add the user. If the group already exists
-        // (re-bootstrap), append the user to its members instead of creating
-        // a duplicate group.
+        // Admin group — add the user. If the group already exists (re-bootstrap),
+        // append the user to its members instead of creating a duplicate group.
+        // Primary signal is the role linkage (RoleIds.Contains(adminRoleId)) —
+        // that survives a group rename untouched. Name is a fallback for the
+        // rare case where the linkage itself is missing (e.g. a group created
+        // by an import/manifest that predates role wiring): prefer an exact
+        // AdminGroupNames.Current match, else join a AdminGroupNames.Legacy
+        // group left over from a realm provisioned before the rename.
         var existingGroup = await session.Query<Group>()
             .Where(g => !g.IsDeleted && g.RoleIds.Contains(adminRoleId))
-            .FirstOrDefaultAsync(ct);
+            .FirstOrDefaultAsync(ct)
+            ?? await session.Query<Group>()
+                .Where(g => !g.IsDeleted && g.Name == AdminGroupNames.Current)
+                .FirstOrDefaultAsync(ct)
+            ?? await session.Query<Group>()
+                .Where(g => !g.IsDeleted && g.Name == AdminGroupNames.Legacy)
+                .FirstOrDefaultAsync(ct);
 
         if (existingGroup is null)
         {
@@ -227,7 +239,7 @@ public sealed class RealmAdminBootstrapper(
             var group = new Group
             {
                 Id = Guid.NewGuid(),
-                Name = "Administratoren",
+                Name = AdminGroupNames.Current,
                 Description = "Full system access",
                 MemberIds = [userId],
                 RoleIds = [adminRoleId],
@@ -238,19 +250,32 @@ public sealed class RealmAdminBootstrapper(
                     group.MemberIds, group.RoleIds,
                     BoundTo: group.BoundTo));
         }
-        else if (!existingGroup.MemberIds.Contains(userId))
+        else
         {
-            // Append the update event only; PrincipalProjection.Apply
-            // mutates the existing doc. Don't re-Store the mutated record
-            // — it would race the projection's own write.
-            var newMemberIds = (List<Guid>)[.. existingGroup.MemberIds, userId];
-            session.Events.Append(existingGroup.Id,
-                new GroupUpdatedEvent(
-                    existingGroup.Id, existingGroup.Name, existingGroup.Description,
-                    newMemberIds, existingGroup.RoleIds,
-                    Email: existingGroup.Email,
-                    BoundTo: existingGroup.BoundTo,
-                    ExternallyDrivable: existingGroup.ExternallyDrivable));
+            // The group may have been matched by name only (fallback above),
+            // in which case it might not carry adminRoleId yet — attach it
+            // alongside the member so the join actually confers realm:admin.
+            var newMemberIds = existingGroup.MemberIds.Contains(userId)
+                ? existingGroup.MemberIds
+                : (List<Guid>)[.. existingGroup.MemberIds, userId];
+            var newRoleIds = existingGroup.RoleIds.Contains(adminRoleId)
+                ? existingGroup.RoleIds
+                : (List<Guid>)[.. existingGroup.RoleIds, adminRoleId];
+
+            if (!ReferenceEquals(newMemberIds, existingGroup.MemberIds) ||
+                !ReferenceEquals(newRoleIds, existingGroup.RoleIds))
+            {
+                // Append the update event only; PrincipalProjection.Apply
+                // mutates the existing doc. Don't re-Store the mutated record
+                // — it would race the projection's own write.
+                session.Events.Append(existingGroup.Id,
+                    new GroupUpdatedEvent(
+                        existingGroup.Id, existingGroup.Name, existingGroup.Description,
+                        newMemberIds, newRoleIds,
+                        Email: existingGroup.Email,
+                        BoundTo: existingGroup.BoundTo,
+                        ExternallyDrivable: existingGroup.ExternallyDrivable));
+            }
         }
     }
 }

@@ -305,7 +305,7 @@ on the new realm's host (anonymous, rate-limited under `bootstrap`),
 sets a password, gets auto-signed-in. Atomic with that consume,
 `RealmAdminBootstrapper` creates the user, seeds the three default
 `PermissionRole`s (System Admin / User Manager / Viewer) and adds the
-user to the `Administratoren` group with `realm:admin`.
+user to the `Administrators` group with `realm:admin`.
 
 If the invite link gets lost or expires before it's consumed,
 `POST /api/admin/realms/{slug}/resend-bootstrap-invite` revokes the

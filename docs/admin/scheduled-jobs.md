@@ -29,7 +29,7 @@ Six jobs ship with Modgud today. Most of them iterate every active realm interna
 Applies the per-kind inbox retention policy across every active realm.
 
 - **Default cron:** `0 0 3 * * ?` (03:00 UTC daily)
-- **Parameters:** none — retention rules are configured separately under [Inbox Settings](/plattform/inbox).
+- **Parameters:** none — retention rules are configured separately under [Inbox Settings](/platform/inbox).
 - **What it does:** loads each realm's `InboxRetentionSettings` doc, dismisses or hard-deletes items per the configured policy, reports per-reason counts in the run summary.
 - **On failure:** an `inbox-retention failed for realm <slug>` entry is logged and an inbox notification fires (see [Failure notification](#failure-notification)).
 
@@ -117,7 +117,7 @@ When any run completes with an exception, a `ScheduledJobFailed` item drops into
 
 The notification links straight to `/admin/scheduled-jobs#<job-key>` so the History tab is one click away.
 
-See [Inbox](/plattform/inbox) for the notification slice in general.
+See [Inbox](/platform/inbox) for the notification slice in general.
 
 ## Permissions
 

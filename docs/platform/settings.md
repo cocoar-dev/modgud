@@ -1,6 +1,6 @@
 # Platform Settings
 
-Plattform → **Settings** (`/plattform/settings`) is a maintenance
+Platform → **Settings** (`/platform/settings`) is a maintenance
 surface for the instance's data integrity. It also doubles as the
 reference page below for instance-wide operational settings that
 apply across every realm in the deployment — those are set through

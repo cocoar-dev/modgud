@@ -58,7 +58,7 @@ internal sealed class ListCommand : IRecoveryCommand
 
             var mfa = user.TwoFactorEnabled ? "TOTP" : (user.EmailOtpEnabled ? "EMAIL" : "-");
             // "Admin" = realm-wide admin: the user holds realm:admin (typically via
-            // the System Admin role + Administratoren group). Checked against any app
+            // the System Admin role + Administrators group). Checked against any app
             // slug because realm:admin is universal — modgud picked for legibility.
             var isAdmin = await permissions.HasPermissionAsync(user.Id, AppSlugs.Modgud, PermissionEvaluator.RealmAdminPermission, CancellationToken.None);
 
@@ -412,7 +412,7 @@ internal sealed class BootstrapAdminCommand : IRecoveryCommand
         ctx.WriteLine($"  Email:    {admin.Email}");
         ctx.WriteLine($"  Mode:     Direct (password set on creation)");
         ctx.WriteLine();
-        ctx.WriteLine("Sign in via the realm's domain — the user is in the Administratoren group with realm:admin.");
+        ctx.WriteLine("Sign in via the realm's domain — the user is in the Administrators group with realm:admin.");
         return 0;
     }
 

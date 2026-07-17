@@ -82,7 +82,7 @@ That's it. From the browser:
 
 - **Don't grant `control-plane:*` permissions to regular users.** The
   default seeding doesn't — `realm:admin` (in the seeded
-  Administratoren group) is the only privileged role. Custom roles
+  Administrators group) is the only privileged role. Custom roles
   you create yourself shouldn't list `control-plane:realm:read` or
   `control-plane:realm:write` unless the user genuinely is a
   deployment-level admin.

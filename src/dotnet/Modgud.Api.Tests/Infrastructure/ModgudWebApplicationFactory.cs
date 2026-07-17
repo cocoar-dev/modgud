@@ -233,7 +233,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     ///
     /// <para>The legacy <c>permissions: ["realm:admin"]</c> pattern is replaced
     /// by the explicit <paramref name="isRealmAdmin"/> flag — pass true to
-    /// attach the user to a System Admin role + Administratoren wildcard-
+    /// attach the user to a System Admin role + Administrators wildcard-
     /// bound group so realm-wide permission checks pass. Bare-action grants
     /// against a specific resource catalog must use
     /// <see cref="CreateTestRoleAsync"/> + <see cref="CreateTestGroupAsync"/>

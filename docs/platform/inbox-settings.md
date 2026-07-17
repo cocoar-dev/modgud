@@ -5,7 +5,7 @@ description: Per-kind retention policy for the inbox — how long items stay aro
 
 # Inbox settings
 
-`/plattform/inbox-settings` configures how long items in the [Inbox](./inbox) survive before the `inbox-retention` Quartz job sweeps them. Different kinds have different lifecycles, so the settings are structured per domain rather than as one flat number.
+`/platform/inbox-settings` configures how long items in the [Inbox](./inbox) survive before the `inbox-retention` Quartz job sweeps them. Different kinds have different lifecycles, so the settings are structured per domain rather than as one flat number.
 
 ::: info One singleton per realm
 The settings live as a Marten document with a fixed id (`InboxRetentionSettings.SingletonId` — `0a0a0a0a-1111-2222-3333-444444444444`) inside each realm's tenant DB. Defaults are applied in C# when the document doesn't exist yet, so a fresh install behaves sensibly before any admin touches the page.
@@ -15,7 +15,7 @@ The settings live as a Marten document with a fixed id (`InboxRetentionSettings.
 
 | Path | Permissions |
 | --- | --- |
-| `/plattform/inbox-settings` (Admin SPA) | `inbox-settings:read` for the read view, `inbox-settings:write` to save |
+| `/platform/inbox-settings` (Admin SPA) | `inbox-settings:read` for the read view, `inbox-settings:write` to save |
 
 The `realm:admin` bypass grants both, as it does for every per-resource permission. The view is one form with three cards — one per retention section. Empty inputs mean *never expire* and round-trip cleanly as `null` to the backend.
 
