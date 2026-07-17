@@ -70,8 +70,9 @@ the URL path. Cookies are not path-scoped — they live under the realm
 domain. A login on `acme.example.com` isn't sent to a request on
 `finance.example.com`, and vice versa.
 
-That makes cross-realm leaks **automatically** impossible — no path
-acrobatics, no `Cookie.Path` to set.
+That means the browser itself won't attach one realm's cookie to a
+request against another realm's domain — no path acrobatics, no
+`Cookie.Path` to set.
 
 Within a single realm, a realm can have multiple apps hosted on
 subdomains of the realm's primary domain (e.g. `app1.acme.example.com`

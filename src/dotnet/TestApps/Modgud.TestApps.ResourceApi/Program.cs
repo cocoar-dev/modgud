@@ -25,8 +25,10 @@ JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 //   POST /policy/write — RequiresCocoarPermission("demo:write")
 //
 // What the path proves: the IdP issues a JWT with aud=<this-rs>, the
-// JwtBearer middleware fetches /connect/userinfo (because we set
-// GetClaimsFromUserInfoEndpoint=true), UserInfo emits
+// Modgud client library (Modgud.Client.AspNetCore) enriches the principal
+// by fetching /connect/userinfo on JwtBearer's OnTokenValidated event —
+// there's no GetClaimsFromUserInfoEndpoint on JwtBearerOptions, that
+// property only exists on AddOpenIdConnect. UserInfo emits
 // resource_access[<aud>] = { permissions, roles, groups } with bypass
 // tiers (realm:admin, <r>:admin) already pre-expanded to concrete
 // strings, and the lib's claims-transformation flattens that block onto

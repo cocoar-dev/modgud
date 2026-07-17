@@ -256,12 +256,18 @@ the discovery document emits the correct issuer. Tokens from realm
 A are not valid in realm B — the issuer mismatch is enough to reject
 them.
 
-## Cross-realm guarantees
+## Cross-realm isolation
 
-| Guarantee | Mechanism |
+| Surface | Isolation mechanism |
 |---|---|
-| No user-data leaks | Database-per-tenant, physical DB boundary |
-| No permission leaks | Per-tenant Marten sessions, no cross-tenant joins |
-| No token leaks | Issuer-claim check + per-realm OpenIddict stores |
-| No cookie leaks | Cookie domain per realm |
-| No SignalR leaks | Hub connection is auth-gated, runs in the realm context |
+| User data | Database-per-tenant, physical DB boundary |
+| Permissions | Per-tenant Marten sessions, no cross-tenant joins |
+| Tokens | Issuer-claim check + per-realm OpenIddict stores |
+| Cookies | Cookie domain per realm |
+| SignalR | Hub connection is auth-gated and runs in the realm context resolved from the authenticated host |
+
+Query-level cross-realm mixing is prevented by physical separation — each
+realm's data lives in its own database, so a query can't reach across the
+boundary even by accident. The application-layer surfaces above (permissions,
+tokens, cookies, SignalR) are isolated by per-realm scoping enforced in code,
+and are covered by tests rather than by the database boundary itself.

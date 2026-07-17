@@ -116,7 +116,8 @@ a migration.
 
 Resource servers read permissions from a standard OIDC UserInfo call.
 For each audience (`aud`) the access token names, Modgud emits a
-**`resource_access`** block on `/connect/userinfo`, Keycloak-style:
+**`resource_access`** block on `/connect/userinfo`, shaped like
+Keycloak's nested format:
 
 ```json
 {

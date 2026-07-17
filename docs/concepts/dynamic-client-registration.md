@@ -66,9 +66,12 @@ each one individually**. Three historical waves drove it:
    you don't want to be the bottleneck.
 3. **MCP and AI agents** (2024 onwards) — the most recent and
    probably the loudest. The
-   [Model Context Protocol](https://modelcontextprotocol.io) spec
-   mandates DCR for the "agent attaches to a tool server" handshake,
-   because the universe of agents is open-ended and growing weekly.
+   [Model Context Protocol](https://modelcontextprotocol.io) spec's
+   2025-06-18 authorization revision says authorization servers and
+   clients SHOULD support DCR for the "agent attaches to a tool
+   server" handshake, because the universe of agents is open-ended
+   and growing weekly — the current draft downgrades that to MAY and
+   points implementers toward Client ID Metadata Documents instead.
 
 The third one is what makes DCR interesting again in 2026, and is
 the design target for Modgud's implementation.
@@ -163,11 +166,13 @@ opt-in toggles** (realm master, per-API, per-scope) — see the
 [Admin doc](/admin/dynamic-client-registration#triple-opt-in-design)
 for the exact gating logic.
 
-## A newer sibling: CIMD
+## CIMD: the spec-preferred path, with DCR as fallback
 
-Modgud also supports **Client ID Metadata Documents** (CIMD), a
-newer client-identification mechanism aimed at the same MCP use
-case. Instead of registering a client record via `/connect/register`,
+Modgud also supports **Client ID Metadata Documents** (CIMD), the
+client-identification mechanism the MCP authorization spec's current
+draft steers implementers toward for this same use case, with DCR
+retained as the compatibility fallback for clients that don't support
+it yet. Instead of registering a client record via `/connect/register`,
 a CIMD client publishes a metadata document at an HTTPS URL and uses
 that URL *as* its `client_id` — the IdP fetches and validates the
 document on demand, and stores nothing. Both claude.ai and ChatGPT
@@ -227,8 +232,8 @@ is the single source of truth when DCR isn't enabled.
   — operational setup: enabling the feature, sizing rate-limits,
   managing the registered-client surface.
 - [Client ID Metadata Documents](/admin/client-id-metadata-documents)
-  — the newer, no-registration-endpoint sibling mechanism, also
-  aimed at MCP clients.
+  — the spec-preferred, no-registration-endpoint mechanism for the
+  same MCP clients, with DCR as the fallback.
 - [OAuth & OIDC](/concepts/oauth) — the larger flow context DCR
   plugs into.
 - [Service Accounts](/admin/service-accounts) — the admin-only path
@@ -236,4 +241,6 @@ is the single source of truth when DCR isn't enabled.
 - [RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591) — the
   protocol spec.
 - [Model Context Protocol — Authorization](https://modelcontextprotocol.io/specification/draft/basic/authorization)
-  — the MCP-side spec that mandates DCR for agent attachment.
+  — the MCP-side spec covering DCR for agent attachment (SHOULD in
+  the 2025-06-18 revision, downgraded to MAY in the current draft in
+  favor of CIMD).

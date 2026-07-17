@@ -113,6 +113,12 @@ app.Run();
 
 `ModgudOptions` has exactly two required properties — `Authority` and `Audience` — plus an optional `JwtBearerScheme` (default `"Bearer"`) if you registered JwtBearer under a custom scheme name. Both `Authority` and `Audience` must match the values you passed to `AddJwtBearer`.
 
+## Performance and availability
+
+`AddModgudClient` fetches `/connect/userinfo` **once per authenticated request** — there is no response caching yet, so every call into your resource server costs a round-trip to the IdP. Reducing that per-request cost is planned, but there's no firm timeline for it yet.
+
+The enrichment also **fails open**: if the IdP is unreachable or returns a non-2xx, the request proceeds without the `resource_access` claim rather than being rejected outright. In practice this means `RequiresCocoarPermission` gates return `403` (the principal simply carries no permissions) rather than the API 500ing during an IdP outage. Keep access-token lifetimes short so a principal missing its permissions doesn't linger longer than necessary.
+
 ## Reading roles and permissions
 
 The claims transformation projects the per-audience block onto flat claims:

@@ -234,3 +234,60 @@ In the system DB (`<master-db>_system`) additionally:
 | Table | Contents |
 |---|---|
 | `mt_doc_security_audit_entry` | Cross-realm streamless security / ops audit (`SecurityAuditEntry` — short hard-retention prune) |
+
+## Backing up realms
+
+Modgud does not ship a backup scheduler — use your existing PostgreSQL
+backup tooling (`pg_dump`, `pg_basebackup`, a managed Postgres
+provider's snapshot feature, WAL-archiving, whatever your operations
+team already runs). What's specific to Modgud is *what* to back up:
+
+- the **master DB** (convention: `modgud`) — control-plane infra: the
+  tenant registry (`realms.mt_tenant_databases`) and the global Realm
+  store (`global.mt_doc_realm`);
+- **`<master-db>_system`** — the bootstrap system realm, including its
+  users and its share of the cross-realm security audit
+  (`mt_doc_security_audit_entry`);
+- **every `<master-db>_<slug>` DB** — one per realm.
+
+Because each realm is a physically separate database, backup and
+restore granularity falls out of the schema for free: `pg_dump` a
+single `<master-db>_<slug>` database to back up (or restore) just that
+tenant, without touching any other realm's data. A minimal per-database
+dump loop:
+
+```bash
+for db in modgud modgud_system modgud_acme modgud_finance; do
+  pg_dump -Fc -h localhost -U postgres "$db" > "${db}_$(date -u +%Y%m%dT%H%M%SZ).dump"
+done
+```
+
+Restore is the mirror image — a standard `pg_restore` (or `psql <
+dump.sql`) into a freshly created database of the same name, for the
+realm database(s) plus the master and system databases. There's no
+Modgud-specific restore step beyond that: on next boot the app
+reconnects, finds its schema and data already there, and the
+[database auto-provisioning](./deployment#database-auto-provisioning)
+sequence is a no-op for anything that already exists.
+
+Key material is split across two places, both of which need their own
+backup coverage:
+
+- **Per-realm RSA signing keys and DataProtection keys live in
+  Postgres** (in the tenant DB), so they're already covered by the
+  per-database dumps above and survive a restore the same way the rest
+  of the realm's data does.
+- **The OpenIddict signing/encryption certificates** (`signing.pfx`,
+  `encryption.pfx`) live on disk, not in the database — see
+  [OpenIddict signing + encryption certificates](./deployment#minimum-env-vars)
+  and the `cocoar-keys` volume in the
+  [Docker Compose reference](./deployment#docker-compose-canonical-production-reference).
+  Back up that volume too, or accept that losing it invalidates live
+  refresh tokens and authorization codes (a new cert auto-generates on
+  next boot if the file is missing — it just isn't the *same* cert).
+
+There is no Modgud-native scheduling, verification, or
+point-in-time-recovery layer on top of this — it's standard Postgres
+operations against a schema that happens to make per-tenant isolation
+easy. See the [roadmap](../roadmap#deliberate-non-goals) for why this
+is a deliberate scope decision rather than a gap.

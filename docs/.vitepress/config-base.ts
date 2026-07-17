@@ -1,7 +1,35 @@
 import llmstxt from 'vitepress-plugin-llms'
 import { createRequire } from 'node:module'
+import { execSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import path from 'node:path'
 
 const require = createRequire(import.meta.url)
+const dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// llms.txt / llms-full.txt are consumed out of band (agents fetching the
+// URL directly, no repo checkout in hand) — a provenance line lets a
+// consumer tell how stale their copy is. `git` is only ever available
+// when this file runs from a real checkout (public docs build, local
+// `pnpm dev`/`build`); the in-app Docker stage `COPY`s docs/ without
+// `.git`, so this must degrade to 'unknown' rather than fail the build.
+function gitShortSha(): string {
+  try {
+    return execSync('git rev-parse --short HEAD', { cwd: dirname, stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim() || 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+const buildDate = new Date().toISOString().slice(0, 10)
+// No cheap version source exists at this point: there's no VERSION file
+// or package.json version field, and GitVersion needs its CLI + full
+// history, which isn't cheaply available in every build context this
+// file runs in (see gitShortSha above) — so the version segment is
+// omitted rather than guessed.
+const llmsTxtProvenance = `Generated: ${buildDate} · Source commit: ${gitShortSha()} · Product: Modgud · Canonical: https://docs.cocoar.dev/modgud/`
 
 // Shared raw config used by both the public site (`config.ts`) and
 // the in-app variant (`config.in-app.ts`).
@@ -37,6 +65,28 @@ export const baseConfig = {
     plugins: [llmstxt({
       excludeUnnecessaryFiles: false,
       ignoreFiles: ['changelog.md'],
+      // Replicates the plugin's default llms.txt layout (see
+      // defaultLLMsTxtTemplate in vitepress-plugin-llms/dist/index.js)
+      // with one line of provenance metadata inserted after the
+      // description. `{description}` already arrives with its own
+      // leading `> ` from the plugin, so the blockquote marker for our
+      // line is written directly in the template. Only llms.txt takes a
+      // template — llms-full.txt is a plain concatenation of page
+      // content with no template hook in this plugin version.
+      customLLMsTxtTemplate: `# {title}
+
+{description}
+
+> {provenance}
+
+{details}
+
+## Table of Contents
+
+{toc}`,
+      customTemplateVariables: {
+        provenance: llmsTxtProvenance,
+      },
     })],
     // Mermaid 11.x depends on dayjs which is CJS-only — dayjs's package.json
     // has `main: "dayjs.min.js"` (CJS) and no `"exports"` field, so a

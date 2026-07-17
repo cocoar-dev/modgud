@@ -216,8 +216,8 @@ GET /connect/userinfo
 Authorization: Bearer <access_token>
 ```
 
-Returns the claims for the bearer token, plus a Keycloak-style
-`resource_access` block keyed per Audience:
+Returns the claims for the bearer token, plus a `resource_access`
+block (Keycloak-style nesting) keyed per Audience:
 
 ```json
 {

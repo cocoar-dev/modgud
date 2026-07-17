@@ -112,7 +112,6 @@ updates when something ships.
 ### High
 
 - **Multi-instance HA** — Modgud runs as a single instance today. Per-tenant DataProtection keys and the Marten outbox already cover the "restart = everyone logged out" class of bugs, but real HA needs shared state (Redis or equivalent) for the SignalR backplane and distributed rate-limiting, plus a failover test rig.
-- **Realm backup / restore / DR** — database-per-realm makes a pg_dump-per-tenant straightforward; the gap is the tooling around it (scheduling, verification, restore-into-new-realm, point-in-time recovery).
 
 ### Medium
 
@@ -127,6 +126,24 @@ updates when something ships.
 **bulk user import**, **SCIM provisioning**, **step-up authentication**,
 **risk-based authentication**, **more locales beyond DE/EN**,
 **compliance certifications** (SOC 2, ISO 27001).
+
+## Deliberate non-goals
+
+- **A backup/restore product.** Modgud does not ship its own backup
+  scheduler, snapshot format, or restore tooling. Backing up Modgud is
+  standard PostgreSQL operations, and database-per-realm makes
+  per-tenant backups straightforward — each realm is one database, so
+  `pg_dump` per database (or whatever backup tooling the operator
+  already runs for Postgres) is all that's needed. Restore is a
+  standard Postgres restore of the realm database(s) plus the
+  master/system databases. See [Backing up realms](./operate/database#backing-up-realms)
+  for the operational detail. This is a scope decision, not a gap —
+  the product's job is the clean per-realm database layout that makes
+  operator-owned backup tooling straightforward to apply, not a
+  reimplementation of Postgres backup. A possible future convenience —
+  tooling to restore a realm's data into a *new* realm slug — may show
+  up later as a low-priority nicety, not because backup itself is
+  missing.
 
 ## Where to follow along
 

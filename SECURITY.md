@@ -29,10 +29,14 @@ thing.
   (e.g. VitePress build tools, testcontainers and its transitive
   graph including `protobufjs`/`grpc-js`, `@vue/test-utils`, ESLint
   plugins) are not treated as security issues — the vulnerable code
-  paths never run in the shipped runtime. We track them via the
-  weekly Dependabot sweep on the production manifests and patch on
-  a best-effort cadence. See `.github/dependabot.yml` for the exact
-  scope.
+  paths never run in the shipped runtime. We don't run Dependabot
+  version-update PRs (removed — too noisy); instead every PR's CI run
+  gates on `dotnet list package --vulnerable` and `pnpm audit`
+  (`.github/workflows/ci.yml`), a monthly workflow
+  (`.github/workflows/dependency-report.yml`) posts outdated/vulnerable
+  dependencies to a single tracking issue, and GitHub's own Dependabot
+  alerts (Security tab) catch new CVEs in between. Build/test-only
+  findings from any of those are patched on a best-effort cadence.
 - Deployments not run by COCOAR e.U. — if you find an issue with a
   third-party Modgud instance, please contact that operator first.
 - Recovery scenarios involving server access — the `recover` CLI

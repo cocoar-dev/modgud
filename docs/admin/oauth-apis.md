@@ -160,7 +160,9 @@ when both are under the same App.
 
 If the same API logic serves multiple realms, each realm gets its own
 OAuth API entry. Modgud's tenancy already enforces realm separation
-at the database level, so cross-realm token leakage is impossible.
+at the database level, so a query-level lookup can't reach another
+realm's tokens — each realm's OpenIddict store lives in its own
+database.
 
 ## Tips
 

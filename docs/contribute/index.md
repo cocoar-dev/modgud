@@ -25,8 +25,8 @@ for the ground rules.
 - [Testing overview](./testing/) — how unit tests vs integration
   tests vs Playwright e2e fit together.
 - [Automated tests](./testing/automated-tests) — what's covered
-  where, including the OWASP-Top-10 suite and the JsEval threat-model
-  tests.
+  where, including the OWASP-Top-10 suite and the adversarial JsEval
+  membership-script suite (attacker classes A1-A6).
 - [Pinned-by-design](./testing/pinned-by-design) — tests that
   exist *specifically* to make certain behaviour hard to change
   silently (security invariants, multi-tenant isolation, the

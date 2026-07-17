@@ -76,7 +76,7 @@ We don't auto-clear branding when an asset is deleted — that would silently re
 | Asset metadata (id, filename, content type, size, sha256, uploadedAt, uploadedBy) | tenant DB, `mt_doc_asset` |
 | Asset binary | tenant DB, `mt_doc_asset.Data` column (BYTEA) |
 
-Each realm's assets live in its own tenant DB. There is no shared CDN, no cross-realm reference, and no way for one realm to enumerate another realm's library — the standard Marten tenant scope handles that automatically.
+Each realm's assets live in its own tenant DB. There is no shared CDN or cross-realm reference, and a query against one realm's database structurally can't enumerate another realm's library — the standard Marten tenant scope keeps queries within their own database automatically.
 
 ## Future
 
