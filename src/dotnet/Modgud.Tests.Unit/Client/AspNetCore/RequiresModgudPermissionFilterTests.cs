@@ -19,7 +19,7 @@ namespace Modgud.Tests.Unit.Client.AspNetCore;
 /// upstream sees <c>policy:read</c>, <c>policy:write</c>, ... materialised
 /// in the principal claims; the filter just checks membership.</para>
 /// </summary>
-public class RequiresCocoarPermissionFilterTests
+public class RequiresModgudPermissionFilterTests
 {
     private static EndpointFilterInvocationContext NewContext(
         ClaimsPrincipal? user = null)
@@ -50,7 +50,7 @@ public class RequiresCocoarPermissionFilterTests
     [Fact]
     public async Task Anonymous_principal_returns_401()
     {
-        var filter = new RequiresCocoarPermissionFilter("policy:write");
+        var filter = new RequiresModgudPermissionFilter("policy:write");
         var anon = new ClaimsPrincipal(new ClaimsIdentity());
         var ctx = NewContext(anon);
         var next = new CapturingNext();
@@ -64,7 +64,7 @@ public class RequiresCocoarPermissionFilterTests
     [Fact]
     public async Task Exact_permission_match_passes_to_next()
     {
-        var filter = new RequiresCocoarPermissionFilter("policy:write");
+        var filter = new RequiresModgudPermissionFilter("policy:write");
         var ctx = NewContext(NewPrincipalWithPermissions("policy:write"));
         var next = new CapturingNext();
 
@@ -80,7 +80,7 @@ public class RequiresCocoarPermissionFilterTests
         // policy:write, policy:admin (every <r>:<a> in the catalog) before
         // putting them in resource_access. From the filter's perspective
         // it's just exact-match against the materialised list.
-        var filter = new RequiresCocoarPermissionFilter("policy:write");
+        var filter = new RequiresModgudPermissionFilter("policy:write");
         var ctx = NewContext(NewPrincipalWithPermissions(
             "policy:read", "policy:write", "policy:admin"));
         var next = new CapturingNext();
@@ -98,7 +98,7 @@ public class RequiresCocoarPermissionFilterTests
         // simulate it), the filter does NOT bypass — exact-match only.
         // This pins that the filter doesn't accidentally implement
         // bypass semantics on top of an already-expanded source.
-        var filter = new RequiresCocoarPermissionFilter("policy:write");
+        var filter = new RequiresModgudPermissionFilter("policy:write");
         var ctx = NewContext(NewPrincipalWithPermissions("policy:admin"));
         var next = new CapturingNext();
 
@@ -112,7 +112,7 @@ public class RequiresCocoarPermissionFilterTests
     public async Task Different_resource_does_not_leak()
     {
         // Holding knowledge:write must NOT cover policy:write.
-        var filter = new RequiresCocoarPermissionFilter("policy:write");
+        var filter = new RequiresModgudPermissionFilter("policy:write");
         var ctx = NewContext(NewPrincipalWithPermissions("knowledge:write"));
         var next = new CapturingNext();
 
@@ -125,7 +125,7 @@ public class RequiresCocoarPermissionFilterTests
     [Fact]
     public async Task Empty_permission_set_returns_403()
     {
-        var filter = new RequiresCocoarPermissionFilter("policy:write");
+        var filter = new RequiresModgudPermissionFilter("policy:write");
         var ctx = NewContext(NewPrincipalWithPermissions());
         var next = new CapturingNext();
 
@@ -138,7 +138,7 @@ public class RequiresCocoarPermissionFilterTests
     [Fact]
     public async Task Wrong_action_on_correct_resource_returns_403()
     {
-        var filter = new RequiresCocoarPermissionFilter("policy:write");
+        var filter = new RequiresModgudPermissionFilter("policy:write");
         var ctx = NewContext(NewPrincipalWithPermissions("policy:read"));
         var next = new CapturingNext();
 
@@ -151,6 +151,6 @@ public class RequiresCocoarPermissionFilterTests
     [Fact]
     public void Constructor_rejects_empty_permission_string()
     {
-        Assert.Throws<ArgumentException>(() => new RequiresCocoarPermissionFilter(""));
+        Assert.Throws<ArgumentException>(() => new RequiresModgudPermissionFilter(""));
     }
 }

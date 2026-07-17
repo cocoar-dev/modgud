@@ -18,8 +18,8 @@ public static class ServiceCollectionExtensions
     ///   that flattens <c>resource_access[<see cref="ModgudOptions.Audience"/>]</c>
     ///   into native <see cref="System.Security.Claims.ClaimTypes.Role"/>,
     ///   <c>"permission"</c> and <c>"group"</c> claims.</item>
-    ///   <item>The <see cref="RequiresCocoarPermissionFilter"/> endpoint
-    ///   filter (consumed via the <c>RequiresCocoarPermission</c>
+    ///   <item>The <see cref="RequiresModgudPermissionFilter"/> endpoint
+    ///   filter (consumed via the <c>RequiresModgudPermission</c>
     ///   extension).</item>
     /// </list>
     ///
@@ -44,7 +44,7 @@ public static class ServiceCollectionExtensions
     /// });
     ///
     /// // Now [Authorize(Roles = "Editor")] and
-    /// // .RequiresCocoarPermission("policy:write") just work.
+    /// // .RequiresModgudPermission("policy:write") just work.
     /// </code>
     /// </summary>
     public static IServiceCollection AddModgudClient(

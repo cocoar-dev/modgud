@@ -9,7 +9,7 @@ The lib does two things on top of vanilla `AddJwtBearer`:
    the `resource_access[<audience>]` block onto the principal.
 2. Flattens that block into native `ClaimTypes.Role` / `"permission"` /
    `"group"` claims so `[Authorize(Roles = "...")]` and an
-   `.RequiresCocoarPermission("...")` endpoint filter work natively.
+   `.RequiresModgudPermission("...")` endpoint filter work natively.
 
 Bypass tiers (`realm:admin`, `<resource>:admin`) are pre-expanded
 **IdP-side** before emission, so the client lib does pure
@@ -56,7 +56,7 @@ app.MapGet("/admin/ping", () => "pong")
 // expanded realm:admin / <resource>:admin to catalog entries, so
 // this is a pure contains-check.
 app.MapPost("/calendars/{id}", (string id) => Results.Ok())
-   .RequiresCocoarPermission("calendar:write");
+   .RequiresModgudPermission("calendar:write");
 
 app.Run();
 ```

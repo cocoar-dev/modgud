@@ -57,7 +57,7 @@ dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
 
 ### 2. Configure authentication and the Modgud client
 
-`AddJwtBearer` validates the JWT. `AddModgudClient` adds the two pieces vanilla `AddJwtBearer` lacks: it fetches `/connect/userinfo` and merges the `resource_access` block onto the principal (via a post-configure on the JwtBearer scheme — you do **not** set `GetClaimsFromUserInfoEndpoint`, that property is for `AddOpenIdConnect`), and it registers a claims transformation that flattens the per-audience block into native role/permission claims plus the `RequiresCocoarPermission` endpoint filter.
+`AddJwtBearer` validates the JWT. `AddModgudClient` adds the two pieces vanilla `AddJwtBearer` lacks: it fetches `/connect/userinfo` and merges the `resource_access` block onto the principal (via a post-configure on the JwtBearer scheme — you do **not** set `GetClaimsFromUserInfoEndpoint`, that property is for `AddOpenIdConnect`), and it registers a claims transformation that flattens the per-audience block into native role/permission claims plus the `RequiresModgudPermission` endpoint filter.
 
 ```csharp
 using System.IdentityModel.Tokens.Jwt;
@@ -102,11 +102,11 @@ app.MapGet("/me", (ClaimsPrincipal user) => new
 
 app.MapGet("/todos", () => Results.Ok(new[] { "buy milk" }))
    .RequireAuthorization()
-   .RequiresCocoarPermission("todo:read");
+   .RequiresModgudPermission("todo:read");
 
 app.MapPost("/todos", () => Results.Ok())
    .RequireAuthorization()
-   .RequiresCocoarPermission("todo:write");
+   .RequiresModgudPermission("todo:write");
 
 app.Run();
 ```
@@ -128,9 +128,9 @@ app.Run();
 
 `AddModgudClient` fetches `/connect/userinfo` **once per authenticated request** — there is no response caching yet, so every call into your resource server costs a round-trip to the IdP. Reducing that per-request cost is planned, but there's no firm timeline for it yet.
 
-The enrichment **degrades without failing the authentication handler** — a `/connect/userinfo` failure never rejects the request outright. But authorization stays **fail-closed**: if the IdP is unreachable or returns a non-2xx, no `resource_access` claim is added, so any endpoint gated with `RequiresCocoarPermission` returns `403` (the principal simply carries no permissions) rather than the API 500ing during an IdP outage.
+The enrichment **degrades without failing the authentication handler** — a `/connect/userinfo` failure never rejects the request outright. But authorization stays **fail-closed**: if the IdP is unreachable or returns a non-2xx, no `resource_access` claim is added, so any endpoint gated with `RequiresModgudPermission` returns `403` (the principal simply carries no permissions) rather than the API 500ing during an IdP outage.
 
-One caveat: that fail-closed behavior only protects endpoints actually gated on a permission. An endpoint secured with a bare `.RequireAuthorization()` and no `RequiresCocoarPermission` call has nothing checking `resource_access` in the first place, so it stays reachable straight through an enrichment outage. If that matters for a given endpoint, gate it on a permission too.
+One caveat: that fail-closed behavior only protects endpoints actually gated on a permission. An endpoint secured with a bare `.RequireAuthorization()` and no `RequiresModgudPermission` call has nothing checking `resource_access` in the first place, so it stays reachable straight through an enrichment outage. If that matters for a given endpoint, gate it on a permission too.
 
 There is also no negative caching: every request retries `/connect/userinfo` independently, so a principal never carries a stale missing-permissions state past the request that hit the outage. Shortening access-token lifetimes doesn't change any of this — permissions are re-fetched per request rather than cached from the token — so the only real-world effect of an IdP outage is temporary `403`s on permission-gated endpoints for as long as the IdP stays unreachable, clearing on their own the moment UserInfo answers again.
 
@@ -149,13 +149,13 @@ app.MapGet("/admin/reports", () => Results.Ok())
 // Granular permission gate — the canonical way.
 app.MapPost("/todos", () => Results.Ok())
    .RequireAuthorization()
-   .RequiresCocoarPermission("todo:write");
+   .RequiresModgudPermission("todo:write");
 ```
 
-`RequiresCocoarPermission("<resource>:<action>")` is an extension on both `RouteHandlerBuilder` (per-endpoint) and `RouteGroupBuilder` (whole group). It does a straight exact-match against the principal's `"permission"` claims: `401` when anonymous, `403` when authenticated but lacking the permission. The permission string is bare 2-segment (`todo:write`) — the app context is implicit from the audience you configured.
+`RequiresModgudPermission("<resource>:<action>")` is an extension on both `RouteHandlerBuilder` (per-endpoint) and `RouteGroupBuilder` (whole group). It does a straight exact-match against the principal's `"permission"` claims: `401` when anonymous, `403` when authenticated but lacking the permission. The permission string is bare 2-segment (`todo:write`) — the app context is implicit from the audience you configured.
 
 ::: tip Roles and permissions compose
-The same user can be `Roles = "Editor"` **and** hold `todo:write`. Pick role gates for coarse buckets (`Admin` / `Editor` / `Viewer`) and `RequiresCocoarPermission` for per-action checks. Both flavours read from the same UserInfo-sourced `resource_access` block — there is no separate server-to-server call to wire up.
+The same user can be `Roles = "Editor"` **and** hold `todo:write`. Pick role gates for coarse buckets (`Admin` / `Editor` / `Viewer`) and `RequiresModgudPermission` for per-action checks. Both flavours read from the same UserInfo-sourced `resource_access` block — there is no separate server-to-server call to wire up.
 :::
 
 ::: warning Groups are not emitted
@@ -175,7 +175,7 @@ The IdP does two transformations before emitting the per-audience block, so your
 - **Client issues Reference (opaque) tokens** — `AddJwtBearer` cannot validate them. Set the OAuth client's **Access Token Type** to **JWT (self-contained)**.
 - **Token's `aud` doesn't match `Audience`** — JWT validation rejects with an audience mismatch. `aud=acme` only appears when a requested scope carries `Resources=[acme]` (the implicit scope from linking the API to the app). Align the API name, the requested scope, and `options.Audience`.
 - **`Authority` / `Audience` differ between `AddJwtBearer` and `AddModgudClient`** — UserInfo is fetched from the wrong host or the transformation reads the wrong `resource_access[…]` key, so roles/permissions silently go missing. Keep both pairs identical.
-- **`permissions` scope not requested** — `resource_access[acme]` has no `permissions` array, so every `RequiresCocoarPermission` gate denies. Add the `permissions` scope to the client's allowed scopes and to the authorization request (same for `roles`).
+- **`permissions` scope not requested** — `resource_access[acme]` has no `permissions` array, so every `RequiresModgudPermission` gate denies. Add the `permissions` scope to the client's allowed scopes and to the authorization request (same for `roles`).
 - **Resource server not linked to an app** — without a linked app there is no `PermissionIds` subset, so the audience block is empty. Open the OAuth API in Modgud admin and assign the app.
 
 ## Reference
