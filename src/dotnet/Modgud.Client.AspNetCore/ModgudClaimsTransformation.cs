@@ -24,7 +24,7 @@ namespace Modgud.Client.AspNetCore;
 ///
 /// <para>The IdP pre-expands bypass tiers before emission, so this lib
 /// performs no <c>realm:admin</c> / <c>&lt;r&gt;:admin</c> walk —
-/// <see cref="RequiresCocoarPermissionFilter"/> just reads the
+/// <see cref="RequiresModgudPermissionFilter"/> just reads the
 /// <c>"permission"</c> claims and does <c>contains(...)</c>.</para>
 /// </summary>
 public sealed class ModgudClaimsTransformation : IClaimsTransformation

@@ -20,11 +20,11 @@ namespace Modgud.Client.AspNetCore;
 /// <para>Synchronous (no I/O). Returns <c>401</c> when anonymous,
 /// <c>403</c> when authenticated but lacking the permission.</para>
 /// </summary>
-public sealed class RequiresCocoarPermissionFilter : IEndpointFilter
+public sealed class RequiresModgudPermissionFilter : IEndpointFilter
 {
     private readonly string _permission;
 
-    public RequiresCocoarPermissionFilter(string permission)
+    public RequiresModgudPermissionFilter(string permission)
     {
         ArgumentException.ThrowIfNullOrEmpty(permission);
         _permission = permission;
@@ -47,25 +47,25 @@ public sealed class RequiresCocoarPermissionFilter : IEndpointFilter
     }
 }
 
-public static class RequiresCocoarPermissionExtensions
+public static class RequiresModgudPermissionExtensions
 {
     /// <summary>
     /// Gates the route group on the given permission. Equivalent to wiring
-    /// <see cref="RequiresCocoarPermissionFilter"/> as an endpoint filter.
+    /// <see cref="RequiresModgudPermissionFilter"/> as an endpoint filter.
     /// The permission is bare 2-segment (<c>"&lt;resource&gt;:&lt;action&gt;"</c>) —
     /// the App context is implicit from the audience the lib was configured
     /// with.
     /// </summary>
-    public static RouteGroupBuilder RequiresCocoarPermission(this RouteGroupBuilder builder, string permission)
+    public static RouteGroupBuilder RequiresModgudPermission(this RouteGroupBuilder builder, string permission)
     {
-        builder.AddEndpointFilter(new RequiresCocoarPermissionFilter(permission));
+        builder.AddEndpointFilter(new RequiresModgudPermissionFilter(permission));
         return builder;
     }
 
-    /// <summary>Per-endpoint variant of <see cref="RequiresCocoarPermission(RouteGroupBuilder,string)"/>.</summary>
-    public static RouteHandlerBuilder RequiresCocoarPermission(this RouteHandlerBuilder builder, string permission)
+    /// <summary>Per-endpoint variant of <see cref="RequiresModgudPermission(RouteGroupBuilder,string)"/>.</summary>
+    public static RouteHandlerBuilder RequiresModgudPermission(this RouteHandlerBuilder builder, string permission)
     {
-        builder.AddEndpointFilter(new RequiresCocoarPermissionFilter(permission));
+        builder.AddEndpointFilter(new RequiresModgudPermissionFilter(permission));
         return builder;
     }
 }

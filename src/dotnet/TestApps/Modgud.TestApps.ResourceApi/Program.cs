@@ -20,9 +20,9 @@ JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 //                        roles/permissions/groups)
 //   GET /scoped        — token-scope based gate ("demo.read")
 //   GET /admin         — token-scope based gate ("demo.admin")
-//   GET /policy/read   — RequiresCocoarPermission("demo:read")
+//   GET /policy/read   — RequiresModgudPermission("demo:read")
 //                        — exact-match against pre-expanded permissions
-//   POST /policy/write — RequiresCocoarPermission("demo:write")
+//   POST /policy/write — RequiresModgudPermission("demo:write")
 //
 // What the path proves: the IdP issues a JWT with aud=<this-rs>, the
 // Modgud client library (Modgud.Client.AspNetCore) enriches the principal
@@ -32,7 +32,7 @@ JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 // resource_access[<aud>] = { permissions, roles, groups } with bypass
 // tiers (realm:admin, <r>:admin) already pre-expanded to concrete
 // strings, and the lib's claims-transformation flattens that block onto
-// the principal. RequiresCocoarPermission then does straight membership
+// the principal. RequiresModgudPermission then does straight membership
 // match — no HTTP, no cache, no evaluator on the RS side.
 
 var builder = WebApplication.CreateBuilder(args);
@@ -57,7 +57,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 // Lib hooks JwtBearer.OnTokenValidated to fetch /connect/userinfo and
 // merge resource_access onto the principal, then a ClaimsTransformation
 // flattens the matching audience block to ClaimTypes.Role / "permission"
-// / "group" claims. Plus the RequiresCocoarPermission endpoint filter.
+// / "group" claims. Plus the RequiresModgudPermission endpoint filter.
 builder.Services.AddModgudClient(o =>
 {
     o.Authority = authority;
@@ -120,11 +120,11 @@ app.MapGet("/admin", () => Results.Ok(new { message = "You called the admin endp
 // projected onto principal → filter does exact-match.
 app.MapGet("/policy/read", () => Results.Ok(new { message = "You called demo:read." }))
    .RequireAuthorization()
-   .RequiresCocoarPermission("demo:read");
+   .RequiresModgudPermission("demo:read");
 
 app.MapPost("/policy/write", () => Results.Ok(new { message = "You called demo:write." }))
    .RequireAuthorization()
-   .RequiresCocoarPermission("demo:write");
+   .RequiresModgudPermission("demo:write");
 
 app.Run();
 

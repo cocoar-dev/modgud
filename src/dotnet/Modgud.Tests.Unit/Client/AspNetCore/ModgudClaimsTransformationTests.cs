@@ -187,7 +187,7 @@ public class ModgudClaimsTransformationTests
         {
             // A token whose aud[] doesn't include this RS still authenticated
             // (signature/issuer valid). It just doesn't grant any of OUR
-            // permissions — caller's [Authorize] / RequiresCocoarPermission
+            // permissions — caller's [Authorize] / RequiresModgudPermission
             // will then return 403 cleanly.
             var resourceAccess = """{ "https://other-api.example.com": { "permissions": ["policy:read"] } }""";
             var principal = NewAuthenticatedPrincipal(ResourceAccessClaim(resourceAccess));

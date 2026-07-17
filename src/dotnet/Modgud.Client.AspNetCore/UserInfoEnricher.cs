@@ -23,7 +23,7 @@ namespace Modgud.Client.AspNetCore;
 /// <para>Network fault tolerance: if UserInfo is unreachable or returns
 /// a non-2xx, the handler logs and silently continues — the request
 /// proceeds with whatever claims the bearer token already carried, and
-/// downstream gates (RequiresCocoarPermission, [Authorize(Roles=...)])
+/// downstream gates (RequiresModgudPermission, [Authorize(Roles=...)])
 /// will return 403 if those weren't enough. This is the security-positive
 /// default: a transient IdP outage MUST NOT 500 the whole API.</para>
 /// </summary>

@@ -247,13 +247,13 @@ transformation surfaces `resource_access["acme"].roles` as
 
 ### Granular permission check
 
-Gate endpoints with `.RequiresCocoarPermission(...)` — the filter reads
+Gate endpoints with `.RequiresModgudPermission(...)` — the filter reads
 the flattened `permission` claims and does a straight exact-match:
 
 ```csharp
 app.MapPost("/todos", () => Results.Ok())
    .RequireAuthorization()
-   .RequiresCocoarPermission("todo:write");
+   .RequiresModgudPermission("todo:write");
 ```
 
 If you need to read permissions imperatively, they live under
@@ -284,7 +284,7 @@ common pitfalls) live in
    and `resource_access.acme.roles = ["Acme Editor"]` plus
    `resource_access.acme.permissions = ["todo:read", "todo:write"]`
 8. `[Authorize(Roles = "Acme Editor")]` lets you in, and
-   `.RequiresCocoarPermission("todo:write")` passes — the resource
+   `.RequiresModgudPermission("todo:write")` passes — the resource
    server validated the JWT against the realm's JWKS (because the client's
    Access Token Type is JWT) and matched the flattened `permission` claims
 
@@ -332,7 +332,7 @@ Made it through? **Done. First SaaS app integrated.**
   request.
 - **`scope=permissions` not requested.** Without it, the
   `permissions` array in the `resource_access` block is omitted — your
-  `RequiresCocoarPermission(…)` check sees nothing. Same for `roles`
+  `RequiresModgudPermission(…)` check sees nothing. Same for `roles`
   and the role list. Add the scope to the client's allowed-scopes list
   and to every authorization request.
 - **Access Token Type left as Reference.** `AddJwtBearer` can only

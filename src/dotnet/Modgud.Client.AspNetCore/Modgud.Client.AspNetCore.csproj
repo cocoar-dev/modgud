@@ -6,7 +6,7 @@
       ASP.NET Core integration for Modgud resource servers. Reads
       Modgud's resource_access[audience] claim from the JWT/UserInfo
       and surfaces roles/permissions/groups as flat claims so
-      [Authorize(Roles="...")] and .RequiresCocoarPermission("...") work
+      [Authorize(Roles="...")] and .RequiresModgudPermission("...") work
       natively. Bypass tiers are pre-expanded by the IdP, so the lib does
       pure exact-match — no evaluator logic, no HTTP client, no caching.
     </Description>
