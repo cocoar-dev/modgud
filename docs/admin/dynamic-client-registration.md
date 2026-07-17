@@ -30,7 +30,7 @@ Typical example: a user pastes your MCP server's URL into Claude Code, Cursor, C
 4. Agent `POST`s its name + redirect URI to `/connect/register` → gets back a `client_id`.
 5. Agent runs Authorization-Code + PKCE with `resource=<mcp-server-url>` → audience-bound access token.
 
-Without DCR, step 4 isn't possible and every agent has to be onboarded manually. With one pre-registered client an admin can pilot the integration, but "anyone with an agent attaches" needs DCR.
+Without DCR **or** [CIMD](/admin/client-id-metadata-documents), step 4 isn't possible and every agent has to be onboarded manually. DCR is the stored-client fallback for agents that don't support CIMD; with one pre-registered client an admin can pilot the integration, but "anyone with an agent attaches" needs DCR or CIMD.
 
 ## Triple opt-in design
 
@@ -42,7 +42,7 @@ Anonymous registration is gated **three times**. All three must be on for a DCR-
 | Per-API allow-list | [OAuth APIs](./oauth-apis) → **Allow DCR** checkbox per row | Off |
 | Per-Scope allow-list | [OAuth Scopes](./oauth-scopes) → **Dynamic Client Registration** toggle per row | Off |
 
-The master toggle just turns the registration endpoint on. The per-API flag controls which resource servers a DCR client can target with `resource=`. The per-scope flag controls which scopes a DCR client can ever request. A DCR-registered client that asks for `tenant:admin:*` and a non-opted-in API is rejected at the token endpoint with `invalid_target`.
+The master toggle just turns the registration endpoint on. The per-API flag controls which resource servers a DCR client can target with `resource=`. The per-scope flag controls which scopes a DCR client can ever request. A DCR-registered client that sets `resource=` to an API that hasn't ticked **Allow DCR** is rejected at the token endpoint with `invalid_target`.
 
 ### How the per-Scope flag interacts with app-scoped scopes
 
@@ -87,7 +87,7 @@ DCR-registered clients always go through the explicit consent screen, with two e
 - **`[unverified]`** marker next to the client name.
 - Warning callout: *"This app registered itself — verify the name carefully before authorizing."*
 
-`AllowRememberConsent` is forced off for DCR clients, so the consent prompt appears on every authorize hit until the user actively trusts the app at the client end (typical pattern: the agent caches its own consent decision).
+`AllowRememberConsent` is forced off for DCR clients, so the AS never skips consent for a new authorization request — a fresh authorize flow always shows the consent screen again. Clients avoid repeated prompts by retaining and refreshing the authorization they already obtained (typical pattern: the agent caches its own consent decision and reuses the refresh token instead of re-authorizing).
 
 ## Audit log
 

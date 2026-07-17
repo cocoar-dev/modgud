@@ -113,11 +113,26 @@ app.Run();
 
 `ModgudOptions` has exactly two required properties — `Authority` and `Audience` — plus an optional `JwtBearerScheme` (default `"Bearer"`) if you registered JwtBearer under a custom scheme name. Both `Authority` and `Audience` must match the values you passed to `AddJwtBearer`.
 
+## Where permissions come from
+
+`resource_access` is embedded directly in the access token at issuance: for JWT clients it's a claim inside the token itself, for reference tokens the same data lives server-side and is resolvable via introspection. The token you already hold could, in principle, be the sole source of truth for permission gating.
+
+`Modgud.Client.AspNetCore` doesn't take that shortcut today — it re-fetches `/connect/userinfo` on every request instead of reading the token's own claims. That yields **live** permissions (a grant or revocation is visible on the very next request) at the cost of the per-request round-trip covered below. Consolidating this — preferring the token's embedded claims, with an optional cached refresh — is tracked in [modgud#116](https://github.com/cocoar-dev/modgud/issues/116).
+
+| Source | Freshness | IdP dependency per request |
+|---|---|---|
+| Embedded in token (JWT `resource_access` claim, or introspection for reference tokens) | As of token issuance — stale until the token itself is refreshed | None for JWT; one introspection call for reference tokens |
+| Live from `/connect/userinfo` (current `Modgud.Client.AspNetCore` behavior) | Live — reflects the latest grant/revocation on every request | One UserInfo call per request |
+
 ## Performance and availability
 
 `AddModgudClient` fetches `/connect/userinfo` **once per authenticated request** — there is no response caching yet, so every call into your resource server costs a round-trip to the IdP. Reducing that per-request cost is planned, but there's no firm timeline for it yet.
 
-The enrichment also **fails open**: if the IdP is unreachable or returns a non-2xx, the request proceeds without the `resource_access` claim rather than being rejected outright. In practice this means `RequiresCocoarPermission` gates return `403` (the principal simply carries no permissions) rather than the API 500ing during an IdP outage. Keep access-token lifetimes short so a principal missing its permissions doesn't linger longer than necessary.
+The enrichment **degrades without failing the authentication handler** — a `/connect/userinfo` failure never rejects the request outright. But authorization stays **fail-closed**: if the IdP is unreachable or returns a non-2xx, no `resource_access` claim is added, so any endpoint gated with `RequiresCocoarPermission` returns `403` (the principal simply carries no permissions) rather than the API 500ing during an IdP outage.
+
+One caveat: that fail-closed behavior only protects endpoints actually gated on a permission. An endpoint secured with a bare `.RequireAuthorization()` and no `RequiresCocoarPermission` call has nothing checking `resource_access` in the first place, so it stays reachable straight through an enrichment outage. If that matters for a given endpoint, gate it on a permission too.
+
+There is also no negative caching: every request retries `/connect/userinfo` independently, so a principal never carries a stale missing-permissions state past the request that hit the outage. Shortening access-token lifetimes doesn't change any of this — permissions are re-fetched per request rather than cached from the token — so the only real-world effect of an IdP outage is temporary `403`s on permission-gated endpoints for as long as the IdP stays unreachable, clearing on their own the moment UserInfo answers again.
 
 ## Reading roles and permissions
 

@@ -78,6 +78,31 @@ again. Only issued when `offline_access` is granted.
   token and invalidates the old one
 - Revocable at any time
 
+#### Replay and races
+
+- **Reuse of an already-redeemed refresh token** is detected with
+  strict, zero-leeway checking and revokes the **entire token
+  family**: every sibling token sharing the same authorization —
+  refresh tokens and reference access tokens alike — plus the
+  parent authorization itself. The client has to run a fresh
+  grant; there's no partial recovery.
+- **A benign race** — two near-parallel refreshes presenting the
+  same not-yet-redeemed token (e.g. a mobile client double-sending
+  the request) — does **not** trigger that teardown. Strict
+  optimistic concurrency on the token document lets exactly one
+  request win; the loser just gets a plain `invalid_grant` for
+  that one request, while the winner's new token pair and the
+  authorization survive untouched.
+- **Already-issued JWT access tokens are the exception**: they
+  have no store document to invalidate, so they keep validating
+  until their own (short) expiry regardless of a refresh-token
+  replay on the same family — one more reason to pair JWT access
+  tokens with short lifetimes.
+- The "family" is the OpenIddict authorization id, carried across
+  every rotation — it's what ties a chain of rotated refresh
+  tokens (and any reference access tokens issued alongside them)
+  together for revocation purposes.
+
 ## Token revocation
 
 | Token type | How to revoke | Effect |
@@ -86,6 +111,8 @@ again. Only issued when `offline_access` is granted.
 | **JWT access token** | `POST /connect/revoke` | Takes effect only at expiry — the JWT remains valid until then |
 | **Refresh token** | `POST /connect/revoke` | Invalid immediately, no new access tokens possible |
 | **Session** (first-party cookie) | Logout or via session management | Cookie invalid, the user has to sign in again |
+
+Refresh-token reuse detection (above) triggers the same effects automatically and cascades them across the whole token family, without a client ever calling `/connect/revoke` itself.
 
 ## Token storage
 

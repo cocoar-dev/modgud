@@ -29,6 +29,8 @@ jobs:
 
       - name: Build VitePress
         working-directory: docs
+        env:
+          DOCS_VERSION: ${{ inputs.version }}
         run: pnpm build
 
       - name: Package

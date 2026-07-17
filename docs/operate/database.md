@@ -264,9 +264,10 @@ done
 
 Restore is the mirror image — a standard `pg_restore` (or `psql <
 dump.sql`) into a freshly created database of the same name, for the
-realm database(s) plus the master and system databases. There's no
-Modgud-specific restore step beyond that: on next boot the app
-reconnects, finds its schema and data already there, and the
+realm database(s) plus the master and system databases. That covers
+the data plane; see the notes below for consistency before restoring
+more than a single realm. On next boot the app reconnects, finds its
+schema and data already there, and the
 [database auto-provisioning](./deployment#database-auto-provisioning)
 sequence is a no-op for anything that already exists.
 
@@ -291,3 +292,25 @@ point-in-time-recovery layer on top of this — it's standard Postgres
 operations against a schema that happens to make per-tenant isolation
 easy. See the [roadmap](../roadmap#deliberate-non-goals) for why this
 is a deliberate scope decision rather than a gap.
+
+### Consistency and restore notes
+
+- **Per-database dumps taken at different times can disagree** — e.g.
+  the master's tenant registry (`realms.mt_tenant_databases`) can
+  reference a realm DB that was created (or dropped) between two dump
+  runs in the loop above. For a single-realm restore that's usually
+  fine — you're restoring one `<master-db>_<slug>` DB back to a known
+  point, independent of the others. For a **full-instance restore**,
+  prefer a consistent point in time across every database: a
+  filesystem/provider snapshot that covers all of them atomically, or
+  `pg_dump` runs taken while Modgud is stopped.
+- **Restore with the same Modgud version that produced the backup**,
+  then upgrade afterwards — don't restore an older backup directly
+  into a newer version's schema expectations.
+- **The signing/encryption PFX volume must match the database state
+  it's restored alongside.** A mismatched pair (old keys against new
+  data, or vice versa) invalidates live authorization codes and
+  refresh tokens — see [Key material](./key-material) for what's
+  bound to what.
+- **A backup only counts once a restore of it has been tested.** An
+  untested dump is a hope, not a backup.

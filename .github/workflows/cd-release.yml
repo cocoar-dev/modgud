@@ -312,6 +312,8 @@ jobs:
 
       - name: Build VitePress
         working-directory: docs
+        env:
+          DOCS_VERSION: ${{ needs.validate-version.outputs.docs-version }}
         run: pnpm build
 
       - name: Package

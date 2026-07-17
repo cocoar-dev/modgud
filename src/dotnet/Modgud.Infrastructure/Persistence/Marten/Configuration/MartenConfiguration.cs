@@ -83,9 +83,11 @@ public static class MartenConfiguration
             .Index(x => x.ExpiresAt);
 
         // DataProtection keys (cookie/antiforgery encryption material).
-        // Lives in the system tenant so every instance shares one key pool
-        // and keys survive Container-Restart. Friendly-name (UUID-shaped,
-        // framework-supplied) is the stable document key. See
+        // Resolved per-tenant at Protect/Unprotect time (TenantedDataProtectionProvider),
+        // so each realm has its own key ring in its own tenant DB — tenant A's
+        // keys are never present in tenant B's DB — and keys survive
+        // Container-Restart. Friendly-name (UUID-shaped, framework-supplied)
+        // is the stable document key. See
         // Modgud.Infrastructure.Persistence.DataProtection.
         options.Schema.For<Modgud.Infrastructure.Persistence.DataProtection.DataProtectionKeyDocument>()
             .Identity(x => x.Id);
