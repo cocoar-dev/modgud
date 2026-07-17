@@ -23,7 +23,7 @@ features:
     details: Every realm gets its own PostgreSQL database via Marten's master-table tenancy. Domain-based routing maps Host headers to tenants — no tenant_id columns, no cross-realm leaks possible.
   - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>'
     title: Multi-app permission model
-    details: Apps are first-class. Permissions are app-scoped (acme-tasks:todo:write), groups carry an activation list (BoundTo), roles bind to one app, and the resolver answers per-app permission queries in-memory.
+    details: Apps are first-class. Permissions are two-segment `<resource>:<action>` strings (e.g. `todo:write`) scoped to an app via the role→App relationship, groups carry an activation list (BoundTo), roles bind to one app, and the resolver answers per-app permission queries in-memory.
   - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M16 10h2"/><path d="M16 14h2"/><path d="M6.17 15a3 3 0 0 1 5.66 0"/><circle cx="9" cy="11" r="2"/></svg>'
     title: Keycloak-style resource_access
     details: Tokens carry resource_access keyed by app slug. A drop-in IClaimsTransformation library flattens the right block into ClaimTypes.Role so [Authorize(Roles="...")] works without per-endpoint plumbing.

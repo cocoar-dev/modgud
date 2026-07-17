@@ -1,8 +1,9 @@
 # Modgud — OpenTelemetry Collector configuration (Phase 4, Track B).
 #
 # Sits between the IdP and OpenObserve. Its redaction processor is the PII
-# GUARANTEE for operational logs (logging-audit-redesign.md §B.2): emails, IPs,
-# tokens and usernames are stripped here, in the pipeline, regardless of whether
+# GUARANTEE for operational logs (the maintainers' 'logging-audit-redesign'
+# design note §B.2): emails, IPs, tokens and usernames are stripped here, in
+# the pipeline, regardless of whether
 # a call site remembered to mask. Call-site LogPiiMasking.MaskEmail stays as a
 # belt — defense in depth, best-effort — but it is no longer the control.
 #
@@ -13,7 +14,7 @@
 # Requires the *-contrib* collector distribution (the transform processor with
 # OTTL ships in contrib, not the core collector).
 #
-# See dev-docs/future-features/logging-audit-redesign.md §B.1-B.2 and
+# See the maintainers' 'logging-audit-redesign' design note §B.1-B.2 and
 # docs/operate/observability.md.
 
 receivers:

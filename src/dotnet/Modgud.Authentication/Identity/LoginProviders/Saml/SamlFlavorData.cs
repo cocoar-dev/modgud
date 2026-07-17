@@ -14,7 +14,7 @@ namespace Modgud.Authentication.Identity.LoginProviders.Saml;
 /// metadata fetches; the SP-side (our own signing/encryption cert per realm)
 /// lives separately and is never part of <c>FlavorData</c>.
 /// <para>
-/// Shape mirrors the proposal in <c>dev-docs/future-features/saml-federation.md</c>.
+/// Shape mirrors the proposal in the maintainers' <c>saml-federation</c> design note.
 /// Unknown fields are tolerated on parse so we can extend the schema forward-
 /// compatibly without breaking older stored docs.
 /// </para>
@@ -102,7 +102,7 @@ public sealed record SamlFlavorData
     /// side already preserves <c>amr</c> from the external ticket
     /// (<c>ExternalLoginProcessor.Success</c>); the SAML equivalent that maps
     /// <c>AuthnContextClassRef</c> through this dictionary is a follow-up. See
-    /// <c>dev-docs/future-features/saml-amr-wiring.md</c>.
+    /// the maintainers' <c>saml-amr-wiring</c> design note.
     /// </remarks>
     public IReadOnlyDictionary<string, IReadOnlyList<string>> AmrMapping { get; init; }
         = FrozenDictionary<string, IReadOnlyList<string>>.Empty;
@@ -110,7 +110,7 @@ public sealed record SamlFlavorData
     /// <summary>
     /// Metadata-refresh cadence in seconds. Default 24h. Allowed range is
     /// enforced at the API boundary (1h / 6h / 24h / 7d per
-    /// <c>dev-docs/future-features/saml-federation.md</c> — open-ended seconds
+    /// the maintainers' <c>saml-federation</c> design note — open-ended seconds
     /// here keeps the schema flexible for tests / future tuning).
     /// </summary>
     public int MetadataRefreshIntervalSeconds { get; init; } = DefaultMetadataRefreshIntervalSeconds;

@@ -166,6 +166,22 @@ For authorization-code exchange:
    - JWT: signed JWTs returned, no DB entry
 ```
 
+`/connect/token` also accepts a few grant types beyond
+`authorization_code`, `client_credentials`, and `refresh_token`:
+
+- The cookieless native grants `urn:cocoar:otp`, `urn:cocoar:magic`, and
+  `urn:cocoar:passkey` let a mobile or desktop app redeem an email code,
+  magic-link token, or passkey assertion directly for tokens with no
+  browser round-trip — see [native app integration](./native-apps).
+- `urn:ietf:params:oauth:grant-type:device_code` (RFC 8628) covers
+  input-constrained devices such as CLIs and TVs — see the
+  [device flow reference](../reference/oauth-api#device-flow).
+
+Clients can also identify themselves without a pre-registered
+`client_id` by publishing a **Client ID Metadata Document** at an
+HTTPS URL and using that URL as the `client_id` (opt-in per realm) —
+see [Client ID Metadata Documents](../admin/client-id-metadata-documents).
+
 ## Browser-only SPAs (no BFF)
 
 A pure single-page app running entirely in the browser — Authorization Code + PKCE with no backend-for-frontend — is supported. PKCE is required (S256 only; `plain` is removed) and there is no implicit or ROPC grant, so the browser-only flow is the Authorization Code flow with a public (no-secret) client.
@@ -255,8 +271,12 @@ There is no `Issuer` setting: the issuer is per-realm, derived from the request 
 | Mode | Signing |
 |---|---|
 | `DevelopmentMode = true` | Ephemeral signing/encryption keys (lost on restart) |
-| `DevelopmentMode = false` | X.509 cert from `SigningCertificatePath` (required!) |
+| `DevelopmentMode = false` | X.509 cert from `SigningCertificatePath` |
 
 In dev, every OAuth client may have to refresh its token validation
-on every modgud restart (JWKS changes). In prod the cert stays
-stable.
+on every modgud restart (JWKS changes). In prod, if
+`SigningCertificatePath` doesn't point at an existing file, a
+self-signed certificate is auto-generated there on first boot (fine
+for a quick trial; replace it with a managed certificate before
+serving real traffic) — otherwise the cert stays stable across
+restarts.

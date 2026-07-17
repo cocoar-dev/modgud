@@ -13,7 +13,7 @@ namespace Modgud.Tests.Unit.Authorization;
 /// <summary>
 /// Adversarial test suite for the membership-script JsEval pipeline. Phase 2
 /// of the JsEval-Fuzzing initiative — see
-/// <c>dev-docs/jseval-threat-model.md</c> for the full threat model
+/// the maintainers' JsEval threat-model note for the full threat model
 /// (Phase 1) and the gap classification.
 ///
 /// <para>Six test groups, mirroring the attacker classes (A1-A6) in the
@@ -87,7 +87,7 @@ public sealed class MembershipSecurityTests : IDisposable
             throw new TimeoutException(
                 $"Operation did not complete within {deadline.TotalSeconds:F1}s. " +
                 $"This usually points at Gap-1 (no engine timeout / no max-statements) — " +
-                $"see dev-docs/jseval-threat-model.md.");
+                $"see the maintainers' JsEval threat-model note.");
         }
         return task.Result;
     }

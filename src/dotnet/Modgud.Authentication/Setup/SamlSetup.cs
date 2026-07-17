@@ -10,7 +10,7 @@ namespace Modgud.Authentication.Setup;
 /// (<see cref="Modgud.Authentication.Api.ExternalAuth"/>) — flavor registry,
 /// dynamic per-realm scheme manager, and SP signing/encryption cert
 /// management. Implementation lands incrementally across the SAML wave;
-/// see <c>dev-docs/future-features/saml-federation.md</c>.
+/// see the maintainers' <c>saml-federation</c> design note.
 /// </summary>
 public static class SamlSetup
 {

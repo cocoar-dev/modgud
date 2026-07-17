@@ -4,11 +4,10 @@ import { baseConfig } from './config-base'
 
 // Public docs site for Modgud. Single tree, single config, two outputs.
 //
-// The repo-only design notes live in a sibling VitePress site at
-// `dev-docs/` — they are never bundled here, and cross-references
-// from this site to dev-docs would be external URLs if they existed
-// (they shouldn't — public content has no business pointing at
-// repo-only design history).
+// This site is the ONLY documentation tree in the repo — it serves end
+// users, admins, integrators and (slim) contributor content. Internal
+// design notes live in the maintainers' knowledge base, not in the repo,
+// and public content never points at them.
 //
 // In-app build (the version shipped inside the Docker container)
 // is the SAME content — just with a different `base` + sub-shell nav,

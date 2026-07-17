@@ -109,11 +109,9 @@ Open <http://localhost> and sign in with `admin` + your password. The admin SPA 
 
 The sidebar shows everything because you hold `realm:admin`:
 
-- **Identity & Access** — Users, Roles, Groups
-- **Apps** — Applications
-- **OAuth & OIDC** — Clients, Scopes, APIs
-- **Federation** — Login Providers, Realms
-- **Operations** — Auth Log, Change Requests, Settings
+- **Authorization** — Users, Service Accounts, Roles, Groups
+- **OAuth & Federation** — Login Providers, OAuth Clients, Scopes, APIs, Invite Codes
+- **System** — Apps, Realms, Realm Settings, Auth Log, Scheduled Jobs, Change Requests
 
 ## 4. Verify OIDC endpoints
 
@@ -139,7 +137,7 @@ You should get a key ID — that's the public key resource servers use to valida
 
 ## 5. Try a real OAuth flow
 
-Register a client in the admin SPA: **OAuth & OIDC → Clients → Create**. The create modal lets you set grants, scopes, redirect URIs, and the app at create time, so the client is functional immediately. For a quick test:
+Register a client in the admin SPA: **OAuth & Federation → OAuth Clients → Create**. The create modal lets you set grants, scopes, redirect URIs, and the app at create time, so the client is functional immediately. For a quick test:
 
 1. Set **Access Token Type = JWT** if you want a decodable token (otherwise you get an opaque reference token).
 2. Add a redirect URI — e.g. the test redirect on [oidcdebugger.com](https://oidcdebugger.com).

@@ -56,7 +56,7 @@ public record OAuthApplicationPropertiesChanged(Guid ApplicationId, IReadOnlyDic
 /// reads this to resolve <c>sub = SA.Id</c> instead of the OAuth client's
 /// own id, so audit logs and the Group → Role → Permission chain treat
 /// machine principals consistently with humans. See
-/// <c>dev-docs/future-features/service-account-credentials.md</c>
+/// the maintainers' <c>service-account-credentials</c> design note
 /// for the design.
 /// </summary>
 public record OAuthApplicationServiceAccountLinkChanged(Guid ApplicationId, Guid? ServiceAccountId);

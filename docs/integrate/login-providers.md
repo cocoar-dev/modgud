@@ -46,8 +46,8 @@ A flavor provides:
 - Allowed `FlavorConfigField` list (which inputs the admin UI shows)
 - An optional default for the `UserUpdateScript`
 
-New flavors live under `Identity/LoginProviders/Flavors/` and are registered
-in `Program.cs`.
+The flavor list can grow over time as new IdP-specific defaults are added;
+today `EntraIdFlavor` and `GenericOidcFlavor` are the two that are wired up.
 
 ## LoginProvider document
 
@@ -55,7 +55,8 @@ Marten document in the tenant store. Selected fields:
 
 | Field | Meaning |
 |---|---|
-| `Id` | GUID, used as the scheme name `oidc-{guid}` for OIDC providers |
+| `Id` | GUID, internal identifier — also the base of the OIDC authentication scheme name |
+| `Slug` | URL-stable, admin-chosen identifier. Immutable after creation. Used in the user-facing provider URLs (OIDC callback path) instead of `Id`, so deleting and recreating a provider can keep the same URLs |
 | `Type` | `Internal` / `Oidc` / `Saml` / `Ldap` / `Kerberos` |
 | `IsBuiltIn` | True for the seeded Internal entry. Write commands reject edits. |
 | `DisplayName` | Display name in the login UI ("Login with Acme SSO") |
@@ -89,8 +90,11 @@ Solution:
 3. `LoginProviderEventHandlers` (Wolverine handlers) react to
    create/update/delete events and call
    `DynamicOidcSchemeManager.Register/Reload/Unregister`.
-4. The `DynamicOidcSchemeManager` registers a dedicated OIDC scheme
-   `oidc-{guid}` per OIDC `LoginProvider` with the options from the document.
+4. The `DynamicOidcSchemeManager` registers a dedicated OIDC authentication
+   scheme per OIDC `LoginProvider` (keyed off the provider's `Id`) with the
+   options from the document; the callback path it listens on is keyed off
+   the provider's `Slug` instead, so the callback URL survives a delete +
+   recreate.
 
 Internal providers don't participate in this — they are served by the
 local password-login path.

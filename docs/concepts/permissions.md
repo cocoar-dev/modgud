@@ -89,6 +89,7 @@ I/O, reused on both ends of the wire.
 | `session` | Per-user session management |
 | `service-account` | Service-account identity layer |
 | `auth-log` | Read AuthLog |
+| `audit-log` | Read the audit log (admin actions, distinct from AuthLog) |
 | `gdpr` | Permanent-erase GDPR operations |
 | `oauth` | OAuth admin surface umbrella |
 | `oauth-client` | OAuth client management |
@@ -267,10 +268,10 @@ PermissionIds:[user:read, user:write,
                session:read, session:write,
                authorization-group:read,
                permission-role:read,
-               auth-log:read]
+               auth-log:read, audit-log:read]
 ```
 
-Maintains users + groups + sessions, reads roles + auth log.
+Maintains users + groups + sessions, reads roles + auth log + audit log.
 
 ### Viewer
 

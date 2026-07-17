@@ -126,8 +126,8 @@ before this policy went into effect. PII masking, CSP, anti-CSRF
 middleware, path-traversal guards, and rate-limiting on credential
 endpoints are documented in the public security model — see
 `docs/concepts/authentication.md` for the relevant cookies +
-middleware, and the dev-only [security hardening tracker](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/security-hardening.md)
-for the per-finding history.
+middleware. The per-finding hardening history is kept in the
+maintainers' internal notes.
 
 This doesn't mean we're free of bugs — it means we know where to
 look when one is reported.

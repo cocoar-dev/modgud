@@ -233,7 +233,7 @@ public class SamlLoginFlow(
         // cross-site, so this AuthenticateAsync returns Failed even when the
         // user is in fact logged in. The link-flow then degrades to JIT /
         // email-auto-link. Fix needs server-side state — see
-        // dev-docs/future-features/saml-link-flow-samesite.md. Blocked on
+        // the maintainers' 'saml-link-flow-samesite' design note. Blocked on
         // test-server + real-IdP verification.
         var existingAuth = await http.AuthenticateAsync(IdentityConstants.ApplicationScheme);
         Guid? authenticatedUserId = null;

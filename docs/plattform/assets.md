@@ -80,6 +80,6 @@ Each realm's assets live in its own tenant DB. There is no shared CDN, no cross-
 
 ## Future
 
-- **Storage quota / per-realm cap** — not enforced in v1. The audit-roadmap captures it as a follow-up under `realm-provisioning-quota`.
+- **Storage quota / per-realm cap** — not enforced in v1. Per-realm provisioning quotas are tracked as a planned item on the [roadmap](../roadmap).
 - **Object-storage backend** — assets live in BYTEA today. For deployments with very many or very large assets, a backend that pages out to S3 / Hetzner Storage Box is a possible future tier; the public read endpoint stays the same.
 - **Versioning / replacement-without-id-change** — the current model treats each upload as immutable; replacing a logo means uploading a new asset and switching the branding reference. That's by design (cache-buster comes for free via the new id) but limits "edit the image in place" workflows.

@@ -480,7 +480,7 @@ internal static class OAuthAdminMapping
     //       grants alongside client_credentials).
     //
     // The split between user-flow and M2M is structural, not a per-token
-    // toggle — see dev-docs/future-features/service-account-credentials.md
+    // toggle — see the maintainers' 'service-account-credentials' design note
     // for the design.
 
     internal const string ClientCredentialsGrantType = "client_credentials";

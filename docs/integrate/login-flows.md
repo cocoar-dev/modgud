@@ -12,7 +12,9 @@ flowchart TD
     B -->|Yes| C[403 Password disabled]
     B -->|No| D{Credentials OK?}
     D -->|No| E[401 Invalid credentials]
-    D -->|Yes| F{RequiresTwoFactor?}
+    D -->|Yes| N{Email verified, or realm doesn't require it?}
+    N -->|No| O[403 Account.EmailNotVerified]
+    N -->|Yes| F{RequiresTwoFactor?}
     F -->|Yes| G[200 RequiresMfa + MfaMethods]
     F -->|No| H{Level >= 1 & no 2FA?}
     H -->|Yes| I{TwoFactorExempt?}
@@ -56,6 +58,7 @@ Possible responses. The backend serializes with `PropertyNamingPolicy = null`, s
 | `200 { "RequiresSecureSetup": true, "GracePeriod": false }` | Grace period over, blocking |
 | `401 { "Message": "Invalid credentials" }` | Username/password wrong, user inactive, or account locked |
 | `403 { "Message": "Password login is disabled" }` | Level = 2 (passwordless), password login disabled |
+| `403 { "Message": "Please verify your email address before signing in.", "Code": "Account.EmailNotVerified" }` | Realm requires email verification (a self-registration setting) and this account's email isn't confirmed yet |
 
 ## TOTP login
 
@@ -142,18 +145,28 @@ Self-service request:
 POST /api/account/magic-link/request
 Content-Type: application/json
 
-{ "email": "alice@example.com" }
+{ "email": "alice@example.com", "returnUrl": "/optional/path" }
 ```
 
-Sends an email with a `?token=...&user=...` link. The click opens:
+`returnUrl` is optional and only needed when the login was triggered by
+an external app's OAuth flow (e.g. the user landed on `/connect/authorize`
+and had to sign in first) — it threads that pending continuation through
+the e-mail round trip so the user lands back in the OAuth flow after
+clicking the link. It must be a same-origin path.
+
+Sends an email with a `?userId=...&token=...` link that opens the
+frontend's magic-login page. That page reads the parameters and calls:
 
 ```http
-GET /api/account/magic-link/login?token=...&user=...
+POST /api/account/magic-link/login
+Content-Type: application/json
+
+{ "userId": "...", "token": "..." }
 ```
 
 The backend hashes the token, compares it with
 `MagicLinkChallenge.TokenHash`, checks expiry and sets a persistent
-cookie. Redirect to the frontend.
+cookie.
 
 ::: tip Admin-send instead of self-service
 Admins can send a link without any feature toggle via
@@ -163,25 +176,28 @@ and onboarding.
 
 ## OIDC external login
 
-Three endpoints:
-
 ```http
-GET /api/account/external-login/{idpConfigId}/start?returnUrl=/
+GET /api/account/external-login/{loginProviderId}/start?returnUrl=/
 ```
 
 → ASP.NET Core `Challenge` with the dynamically registered OIDC
 scheme (`DynamicOidcSchemeManager`). Browser lands at the external
 IdP.
 
+The IdP itself redirects back to a separate, per-provider callback path
+(`/signin-oidc/{slug}`, keyed by the provider's own stable slug), where
+the OIDC middleware completes the handshake and then forwards the
+browser on to:
+
 ```http
-GET /api/account/external-login/callback
+GET /api/account/external-login/finish
 ```
 
 → `ExternalLoginProcessor` runs:
 
 1. Looks up `ExternalIdentityLink` (Issuer + Subject) → existing user
    or JIT create
-2. `UserUpdateScriptRunner` runs `IdpConfig.UserUpdateScript` (Jint)
+2. `UserUpdateScriptRunner` runs the provider's `UserUpdateScript` (Jint)
    → maps claims to a `{ firstname, lastname, email, acronym }` patch
 3. Email conflict (email belongs to a different user) → hard reject
    (`Idp.EmailConflict`)

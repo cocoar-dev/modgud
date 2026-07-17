@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test'
  *
  * The plan's Stage-3 centerpiece: sign in with a password through the real UI
  * and land on the dashboard, asserted to Principle 5 of the cold-start ladder
- * (see dev-docs/future-features/human-path-testing-ladder.md):
+ * (see the maintainers' 'human-path-testing-ladder' design note):
  *   - real input only — getByRole().fill() / .click() with Playwright's
  *     actionability checks, never synthetic events;
  *   - visibility asserted with toBeVisible(), not DOM presence;

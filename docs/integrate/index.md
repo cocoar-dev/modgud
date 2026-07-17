@@ -37,8 +37,3 @@ protocol-specific pages.
 - [Cookies & sessions](./cookies-and-sessions) — when to use the
   cookie-session pattern instead of OAuth (typically: internal SPAs
   on the same domain as the IdP).
-
-## Background work
-
-- [Scheduling (Quartz)](./scheduling) — registering background jobs
-  that operate against Modgud data.

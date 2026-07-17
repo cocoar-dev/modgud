@@ -293,7 +293,7 @@ public static class MartenStoreOptionsExtensions
         // audited event) over the user + config streams; queried per realm by the
         // GDPR-audit read surface (Phase 2). Deliberately an EventProjection, not an
         // aggregation: an audit log is a list of occurrences, not a per-aggregate
-        // snapshot. See dev-docs/future-features/logging-audit-redesign.md §A.3.
+        // snapshot. See the maintainers' 'logging-audit-redesign' design note §A.3.
         options.Projections.Add<Modgud.Authentication.Audit.AuthAuditViewProjection>(ProjectionLifecycle.Async);
 
         return options;

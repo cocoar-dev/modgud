@@ -18,7 +18,7 @@ namespace Modgud.Api.Features.Admin.Jobs;
 /// interest, with no per-subject erase path — so a genuine hard delete on a tight
 /// window keeps the processing proportionate. Deliberately NOT per-realm configurable
 /// (unlike the per-realm GDPR-audit <i>visibility window</i>, which is a view bound,
-/// not a deletion). See <c>dev-docs/future-features/logging-audit-redesign.md</c> §A.6
+/// not a deletion). See the maintainers' <c>logging-audit-redesign</c> design note §A.6
 /// + the Legitimate-Interest Assessment.</para>
 ///
 /// <para>The store is a single cross-realm doc set in the system DB, so this is one

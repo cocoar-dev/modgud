@@ -28,7 +28,7 @@ A working M2M setup needs two objects living in two layers. The split is deliber
 
 Modgud has a unified permission model that has to work identically for humans and machines:
 
-- `bwi` (Person) → group `data-engineers` → role `data-read` → permission `acme-tasks:data:read`
+- `alice` (Person) → group `data-engineers` → role `data-read` → permission `acme-tasks:data:read`
 - `ci.build-agent` (ServiceAccount) → group `data-engineers` → role `data-read` → permission `acme-tasks:data:read`
 
 If the OAuth client carried the machine identity directly, the entire group/role/permission graph would have to be duplicated on the client side, and audit logs would surface opaque `client_id` strings. The industry pattern is consistent: Keycloak auto-creates a hidden "service account user" behind every `client_credentials` client, AWS IAM separates Roles from access keys, GCP IAM separates Service Accounts from JSON keys. Modgud surfaces both layers explicitly because admins need to manage them — but the SA is the user-facing concept and the OAuth client is an implementation detail of "how does this SA authenticate".
@@ -43,7 +43,7 @@ A single OAuth client serves **exactly one** identity model:
 | Service-account credential | `client_credentials` only | required | `ServiceAccount.Id` |
 
 ::: warning No mixing
-A client with both `authorization_code` and `client_credentials` enabled would make `sub` ambiguous (logged-in user on the user flow, …what? on the M2M flow). The OAuth admin endpoints reject this at validation time — see `OAuthAdminService.cs` for the invariant guards.
+A client with both `authorization_code` and `client_credentials` enabled would make `sub` ambiguous (logged-in user on the user flow, …what? on the M2M flow). The OAuth admin endpoints reject this combination at validation time, with a clear error, before the client is ever saved.
 :::
 
 Concretely:
@@ -137,7 +137,7 @@ Deleting a Service Account (`DELETE /api/service-account/{id}`) cascade-deletes 
 
 There is no "unlink credential" operation. The only way to detach a credential from its SA is delete-and-reissue under a different SA.
 
-## Migrating pre-2C clients
+## Migrating clients created before Service Account credentials
 
 Realms that existed before the Service-Account-credentials feature shipped may still hold standalone `client_credentials` clients with no `LinkedServiceAccountId`. The token endpoint falls back to the legacy `sub = client_id` behaviour for these so production callers keep working, but their tokens skip the SA-derived `resource_access` block and they show up in audit as raw client IDs.
 

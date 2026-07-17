@@ -158,12 +158,18 @@ Content-Type: application/json
   "DisplayName": "Acme Corporation",
   "Description": "Updated",
   "Domains": ["acme.example.com", "auth.acme.com"],
+  "PrimaryDomain": "auth.acme.com",
   "IsActive": true
 }
 ```
 
-`Slug` is immutable. The patchable fields are exactly the four shown
-above — `IsControlPlane` is not accepted in PATCH either.
+`Slug` is immutable. The patchable fields are exactly the five shown
+above — `IsControlPlane` is not accepted in PATCH either. `PrimaryDomain`
+must be one of the resulting `Domains` set; it is the realm's canonical
+public host and doubles as the WebAuthn relying-party ID, so changing it
+invalidates every passkey already registered in the realm (a passkey is
+cryptographically bound to the RP ID it was created against) — treat it
+as a rare, disruptive change.
 
 ## Deactivate a realm
 
@@ -205,12 +211,15 @@ within the flag-holding realm; no permission migration). See
 
 ## Hard-delete a realm
 
-::: warning Not implemented
-Current state: only soft-delete (deactivation). The tenant DB is not
-dropped. Roadmap: the Wolverine durability agent has to be shut down
-cleanly, the tenant removed from `mt_tenant_databases`, all sessions
-invalidated, and finally the DB dropped.
-:::
+```http
+DELETE /api/admin/realms/acme?hard=true HTTP/1.1
+Host: auth.example.com   # must be the control-plane host
+```
+
+Unlike the default `DELETE` (soft-delete = deactivation, data preserved),
+`?hard=true` drops the tenant's PostgreSQL database
+(`DROP DATABASE ... WITH (FORCE)`) and removes the global `Realm` record.
+This is irreversible — there is no recovery path once it completes.
 
 ## Realm data model
 
@@ -224,6 +233,8 @@ public class Realm
     public string DisplayName { get; set; }
     public string? Description { get; set; }
     public string[] Domains { get; set; }         // Host-header matches
+    public Dictionary<string, Guid> ApplicationDomains { get; set; }  // host → App.Id (ADR-0011)
+    public string PrimaryDomain { get; set; }     // canonical public host + WebAuthn RP ID
     public bool IsControlPlane { get; set; }      // stored, transferable; exactly one holder
     public bool IsActive { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

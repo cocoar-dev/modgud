@@ -1,6 +1,6 @@
 # Groups
 
-Groups are the **organisational layer** in Modgud. They serve two distinct purposes — and you decide per-group which one applies via the **Bound to apps** field.
+Groups are the **organisational layer** in Modgud. They serve two distinct purposes — and you decide per-group which one applies via the **Active in applications** field.
 
 1. **Authorisation grouping.** Members of the group inherit the group's roles in the apps the group is bound to.
 2. **Mailing-list / distribution semantics.** Even a group with no roles and no app binding can carry an email address, expand to its members, and be addressed by notification flows.
@@ -29,11 +29,11 @@ Tabs in the detail dialog:
 
 | Tab | Content |
 | --- | --- |
-| **General** | Name, description, **Bound to apps**, membership mode |
+| **General** | Name, description, **Active in applications**, membership mode |
 | **Members** | Manual user / sub-group assignment (when membership is Static) |
 | **Script** | JsEval membership script (when membership is Auto) |
 | **Roles** | Which roles does the group carry? |
-| **Effective Members** | The fully expanded member list |
+| **Effective** | The fully expanded member list |
 
 ::: info No row-level ABAC in IAM
 Modgud groups deliberately carry no row-level access policies. Whether the user may see a particular row depends on app-specific data the IAM neither owns nor wants to know — that decision lives in the consuming app. See [Concepts → ABAC](../concepts/abac).
@@ -47,11 +47,11 @@ Modgud groups deliberately carry no row-level access policies. Whether the user 
   - **Manual** — you maintain members manually on the Members tab
   - **Auto** — membership is computed by a JsEval script over the
     principal directory
-- **Bound to apps** — *(MultiSelect)* which apps does this group take effect in? See below.
+- **Active in applications** — *(MultiSelect)* which apps does this group take effect in? See below.
 
-#### Bound to apps — the activation switch
+#### Active in applications — the activation switch
 
-A group can have members and roles without taking effect for permissions. The decision is in **Bound to apps**:
+A group can have members and roles without taking effect for permissions. The decision is in **Active in applications**:
 
 | Selection | Effect |
 | --- | --- |
@@ -61,7 +61,7 @@ A group can have members and roles without taking effect for permissions. The de
 
 **Practical behaviour:** you can temporarily remove an app from the list (e.g. during maintenance) without losing role assignments. Re-adding the app reactivates the group immediately. BoundTo changes never cascade-delete the group's roles.
 
-**Default for new groups:** `[modgud]`. When creating a group for another app, remember to update the selection.
+**Default for new groups:** empty (dormant). A freshly created group is not active in any app until you explicitly pick one or more apps (or the **★ All apps (\*)** wildcard) here — don't forget this step, or the group's roles will never take effect.
 
 ## Static membership
 
@@ -88,7 +88,7 @@ Tab **Roles**: pick the roles the group should carry. A group can hold roles fro
 
 ## Effective members
 
-Tab **Effective Members** shows the fully expanded list — direct members plus everyone reached through nested groups, with a "via" hint pointing at the first nested-group hop. Useful for sanity checks before granting a powerful role.
+Tab **Effective** shows the fully expanded list — direct members plus everyone reached through nested groups, with a "via" hint pointing at the first nested-group hop. Useful for sanity checks before granting a powerful role.
 
 ## Cloning a group
 

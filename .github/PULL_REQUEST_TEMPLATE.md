@@ -25,7 +25,6 @@ there's no tracking issue.
 - [ ] **Recovery CLI** (`Modgud.Authentication/Cli/`)
 - [ ] **Realm provisioning** / multi-tenancy
 - [ ] **Docs** (`docs/`)
-- [ ] **Dev-docs** (`dev-docs/`)
 - [ ] **Build / CI / Docker**
 - [ ] **Other:**
 
@@ -46,13 +45,10 @@ please confirm both green for non-trivial changes.
 ## Docs
 
 <!--
-Public-facing changes need docs/. Architecture-level changes may also
-warrant dev-docs/.
+Public-facing changes need docs/.
 -->
 
 - [ ] `docs/` updated where user-visible behavior changed
-- [ ] `dev-docs/architecture/{authentication,authorization}.md` updated
-      if a slice's internal design changed
 - [ ] `docs/roadmap.md` updated if a roadmap item moved
 - [ ] N/A — internal-only change
 

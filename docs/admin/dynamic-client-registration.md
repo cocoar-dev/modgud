@@ -40,7 +40,7 @@ Anonymous registration is gated **three times**. All three must be on for a DCR-
 | --- | --- | --- |
 | Realm master toggle | [Realm Settings → Dynamic Client Registration](./realm-settings) tab | Off |
 | Per-API allow-list | [OAuth APIs](./oauth-apis) → **Allow DCR** checkbox per row | Off |
-| Per-Scope allow-list | [OAuth Scopes](./oauth-scopes) → **Allow DCR Clients** checkbox per row | Off |
+| Per-Scope allow-list | [OAuth Scopes](./oauth-scopes) → **Dynamic Client Registration** toggle per row | Off |
 
 The master toggle just turns the registration endpoint on. The per-API flag controls which resource servers a DCR client can target with `resource=`. The per-scope flag controls which scopes a DCR client can ever request. A DCR-registered client that asks for `tenant:admin:*` and a non-opted-in API is rejected at the token endpoint with `invalid_target`.
 
@@ -64,7 +64,7 @@ The combined effect: enabling DCR safely requires you to walk through your exist
     - **Per-IP rate-limit** (default 5/h), **Per-realm rate-limit** (default 100/d) — caps spray.
     - **Reserved names** — substring blocklist for `client_name`. NFKC-normalised + case-insensitive. Use it for your own trademark plus anything you don't want impersonated ("Cocoar", "Anthropic", …).
 3. **OAuth APIs → your MCP-server API** → tick **Allow DCR**.
-4. **OAuth Scopes → the scope(s) the MCP server gates** → tick **Allow DCR Clients**.
+4. **OAuth Scopes → the scope(s) the MCP server gates** → enable the **Dynamic Client Registration** toggle.
 
 After these four steps, an agent that POSTs to `/connect/register` with a valid payload gets a `client_id` back and can complete the full auth-code + PKCE flow against your opted-in API.
 
@@ -91,7 +91,7 @@ DCR-registered clients always go through the explicit consent screen, with two e
 
 ## Audit log
 
-Every DCR-related event lands in the auth log with a `DCR ` prefix; the [Auth Log](./auth-log) grid has a **"DCR events only"** filter chip.
+Every DCR-related event lands in the auth log with a `DCR ` prefix in its message. The [Auth Log](./auth-log) grid's category filter chips are derived from whatever event categories are present, so look for DCR events under the **operations** (and, for rejected registrations, **security-ops**) chip rather than a dedicated DCR chip.
 
 | Event | When |
 | --- | --- |

@@ -9,12 +9,17 @@ deliberately decoupled so a regression in one doesn't open the others.
 ## Why bother
 
 Every realm in modgud is a fully autonomous IdP — its own DB, users,
-OAuth clients, login providers (see [Realms](./realms.md)). But one
-operation is inherently cross-realm:
+OAuth clients, login providers (see [Realms](./realms.md)). But some
+operations are inherently cross-realm:
 
 - **Realm CRUD** — `POST /api/admin/realms` provisions a *new* tenant DB
   and seeds the initial admin via an emailed bootstrap invite (see
   "First-admin onboarding" below).
+- **Declarative realm provisioning** — importing, applying, and
+  exporting a realm from a manifest (see
+  [Realm provisioning](/admin/realm-provisioning)) — lives under the
+  same `/api/admin/realms/*` route group and the same three-layer
+  defence described below.
 
 It doesn't belong on a tenant. A tenant should not even be able to
 *discover* that a global admin surface exists at this hostname.

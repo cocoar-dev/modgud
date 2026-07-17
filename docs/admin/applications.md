@@ -135,7 +135,7 @@ re-inherits the realm.
 
 | Section | What it does |
 | --- | --- |
-| **Origin** | The App's own subdomain (e.g. `amzettel.cocoar.app`), which must be a child of the realm's primary domain. Setting it routes that host to this App and serves the branded login there; clearing it falls back to the tenant URL. The OIDC issuer stays the tenant's (anchored to the realm primary domain) — a subdomain is not its own issuer. |
+| **Origin** | The App's own subdomain (e.g. `acme.cocoar.app`), which must be a child of the realm's primary domain. Setting it routes that host to this App and serves the branded login there; clearing it falls back to the tenant URL. The OIDC issuer stays the tenant's (anchored to the realm primary domain) — a subdomain is not its own issuer. |
 | **Branding** | Product name, primary colour, logo/favicon — the look of the login + consent UI when reached via this App. |
 | **Email branding** | The product name used in this App's outbound emails (OTP, magic link, ...) instead of the realm default. |
 | **Self-registration** | Per-app override of the realm self-registration policy (allowed email domains, admin approval, default groups, ToS/privacy URLs) plus the **posture** (see below). Captcha stays realm-level. |

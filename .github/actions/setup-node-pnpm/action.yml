@@ -7,7 +7,7 @@ description: |
 
 inputs:
   working-directory:
-    description: 'Directory to run pnpm install in (e.g. src/frontend-vue, docs, dev-docs)'
+    description: 'Directory to run pnpm install in (e.g. src/frontend-vue, docs)'
     required: true
 
 runs:

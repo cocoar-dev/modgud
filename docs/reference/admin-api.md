@@ -20,6 +20,7 @@ separate `user:delete` tier. There is no `unlock` endpoint.
 
 | Method | Path | Permission |
 |---|---|---|
+| `GET` | `/api/user/lookup` | Authenticated (no specific permission) |
 | `GET` | `/api/user` | `user:read` |
 | `GET` | `/api/user/{id}` | `user:read` |
 | `POST` | `/api/user` | `user:write` |
@@ -27,8 +28,13 @@ separate `user:delete` tier. There is no `unlock` endpoint.
 | `DELETE` | `/api/user/{id}` | `user:write` |
 | `DELETE` | `/api/user` | `user:write` (bulk delete, ids in body) |
 | `POST` | `/api/user/{id}/restore` | `user:write` |
+| `POST` | `/api/user/restore` | `user:write` (bulk restore, ids in body) |
 | `PUT` | `/api/user/{id}/password` | `user:write` |
 | `PUT` | `/api/user/{id}/active` | `user:write` |
+| `GET` | `/api/user/{id}/groups` | `user:read` (direct + inherited group memberships) |
+| `GET` | `/api/user/{id}/effective-groups` | `user:read` (live effective membership, incl. auto-match diagnostics) |
+| `POST` | `/api/user/{id}/groups` | `user:write` (add to a group) |
+| `DELETE` | `/api/user/{id}/groups/{groupId}` | `user:write` (remove direct membership) |
 
 ### Admin GDPR
 
@@ -109,6 +115,7 @@ there is no `authorization-group:delete` tier.
 |---|---|---|
 | `GET` | `/api/group` | `authorization-group:read` |
 | `GET` | `/api/group/{id}` | `authorization-group:read` |
+| `GET` | `/api/group/{id}/effective-members` | `authorization-group:read` |
 | `POST` | `/api/group` | `authorization-group:write` |
 | `PUT` | `/api/group/{id}` | `authorization-group:write` |
 | `DELETE` | `/api/group/{id}` | `authorization-group:write` |
@@ -119,11 +126,44 @@ Returns active persons, groups, and service accounts mixed — used by
 the member picker in the frontend. The single endpoint is a lookup
 (`/api/principal/lookup`) that returns all active, non-deleted
 principals; it has no `search` query parameter and is gated by
-authentication only (any signed-in user), not a specific permission.
+`authorization-group:read` (a zero-role user cannot dump the
+directory).
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/api/principal/lookup` | Authenticated (no specific permission) |
+| `GET` | `/api/principal/lookup` | `authorization-group:read` |
+
+## Service accounts
+
+The non-human leg of the Principal hierarchy — for `client_credentials`
+(machine-to-machine) callers. Endpoint definitions in
+`Modgud.Api/Features/ServiceAccounts/ServiceAccountsEndpoints.cs`.
+Deletes are gated by `service-account:write` — there is no
+`service-account:delete` tier; deleting a service account
+cascade-deletes its credentials and revokes their outstanding tokens.
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/service-account` | `service-account:read` |
+| `GET` | `/api/service-account/{id}` | `service-account:read` |
+| `POST` | `/api/service-account` | `service-account:write` |
+| `PUT` | `/api/service-account/{id}` | `service-account:write` |
+| `DELETE` | `/api/service-account/{id}` | `service-account:write` |
+
+### Service account credentials
+
+A "credential" is a confidential OAuth client pinned to the service
+account with the single `client_credentials` grant — the only
+mutation path for these SA-managed OAuth clients (`/api/admin/oauth/clients`
+rejects mutating them directly).
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/service-account/{id}/credentials` | `service-account:read` |
+| `POST` | `/api/service-account/{id}/credentials` | `service-account:write` |
+| `PUT` | `/api/service-account/{id}/credentials/{credId}` | `service-account:write` |
+| `POST` | `/api/service-account/{id}/credentials/{credId}/rotate` | `service-account:write` |
+| `DELETE` | `/api/service-account/{id}/credentials/{credId}` | `service-account:write` |
 
 ## OAuth clients
 
@@ -222,6 +262,26 @@ resource (see [Application settings](#application-settings) below).
 the identity inputs the realm or App requires. See
 [Registration Fields](/admin/realm-settings#registration-fields).
 
+## Applications
+
+The per-realm list of registered apps. Endpoint definitions in
+`Modgud.Api/Features/Admin/Apps/AppsEndpoints.cs`. The system app (`modgud`)
+is seeded automatically, cannot be created through this API, and cannot be
+deleted — only its display name / description / permission catalog can be
+edited. Deletes are gated by `app:write` and blocked (409, with a body
+listing every blocker) while the App's permission catalog is still
+referenced by a role or resource server.
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/app/lookup` | Authenticated (no specific permission) |
+| `GET` | `/api/app` | `app:read` |
+| `GET` | `/api/app/{id}` | `app:read` |
+| `DELETE` | `/api/app/{id}` | `app:write` |
+
+`POST /api/app` and `PUT /api/app/{id}` are documented below, alongside the
+per-Application settings override that rides on the same calls.
+
 ## Application settings
 
 Per-Application override of the realm defaults (ADR-0011). An App is **one
@@ -254,6 +314,23 @@ The body sections are `Origin` (subdomain), `Branding`, `EmailBranding`,
 `NativeGrants`, `Dcr`, and `Cimd` — each nullable, each mirroring the
 realm-level shape minus the pieces that stay realm-only (captcha, DCR GC
 interval).
+
+## Invite codes
+
+Single-use registration invite codes for the `InviteCode` self-registration
+posture, scoped to one App. Endpoint definitions in
+`Modgud.Api/Features/InviteCodes/InviteCodeEndpoints.cs`. Dual-auth: each
+mutating/reading call accepts either the admin cookie (gated on the
+`invite-code:read`/`invite-code:write` permission) or an M2M bearer token
+carrying the app-bound `invite:read`/`invite:write` OAuth scope. The mint
+endpoint returns the plaintext code exactly once; only its hash is stored.
+
+| Method | Path | Permission |
+|---|---|---|
+| `POST` | `/api/app/{appId}/invite-codes` | `invite-code:write` (or scope `invite:write`) |
+| `GET` | `/api/app/{appId}/invite-codes` | `invite-code:read` (or scope `invite:read`) |
+| `DELETE` | `/api/app/{appId}/invite-codes/{id}` | `invite-code:write` (or scope `invite:write`) |
+| `GET` | `/api/admin/invite-codes` | `invite-code:read` (realm-wide overview across every App; admin-only) |
 
 ## Projection endpoints (maintenance)
 

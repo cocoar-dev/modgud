@@ -7,7 +7,7 @@ name: CD - Publish Image (GHCR)
 # This is a *publish*, not a deploy: the job ends with `docker push`.
 # Whatever pulls + runs it (Watchtower, a cron, a human) lives outside.
 #
-# Tagging (see dev-docs/future-features/versioning-publishing-conventions.md):
+# Tagging:
 #   develop push     → :<version> + :beta    (e.g. :0.6.0-beta.5 + :beta)
 #   feature dispatch → :<version> + :<slug>  (e.g. :0.6.0-saml-federation.8 + :saml-federation)
 # `:<version>` is immutable per commit; the moving pointer (:beta / :<slug>)
@@ -23,7 +23,6 @@ on:
     branches: [develop]
     paths-ignore:
       - 'docs/**'
-      - 'dev-docs/**'
       - '**/*.md'
       - 'LICENSE'
       - 'NOTICE'

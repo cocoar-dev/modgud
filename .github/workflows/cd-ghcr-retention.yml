@@ -2,7 +2,7 @@ name: CD - GHCR Retention
 
 # Prunes old Modgud container images from GHCR so storage stays bounded.
 # There is NO automatic GHCR retention policy configured on the package —
-# this workflow IS the cleanup (see dev-docs/future-features/versioning-publishing-conventions.md).
+# this workflow IS the cleanup.
 #
 # Keep / age model (everything is age-based; no per-event immediate deletes):
 #   KEEP forever — any version whose tags include:

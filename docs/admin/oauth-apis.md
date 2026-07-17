@@ -47,8 +47,8 @@ Administration → **OAuth → APIs** → **Create**.
 
 ### Required fields
 
-- **Name** — technical identifier (e.g. `acme-api`). Used in `aud`
-  claims when the token is issued.
+- **Audience (aud)** — technical identifier (e.g. `acme-api`). Used in
+  `aud` claims when the token is issued.
 - **Display Name** — UI label
 - **Application** — which App does this RS belong to? Required for
   per-Audience subset narrowing.
@@ -123,18 +123,18 @@ other token. There is no per-API shared secret to rotate.
 
 ## Editing
 
-Most fields can be edited live; **Name** is immutable after creation.
+Most fields can be edited live; **Audience (aud)** is immutable after creation.
 Changing the linked **Application** is allowed but be careful — the
 RS's scope-resolution and the per-Audience `resource_access` shape
 immediately switch to the new app context.
 
 ## Cloning an API
 
-The **Name** (the audience) is immutable, so to make a near-identical
+**Audience (aud)** is immutable, so to make a near-identical
 resource server, clone it. List → right-click → **Clone**. The Create
 wizard opens pre-filled — display name, description, scopes, user claims,
-the linked Application and its catalog subset are copied; only **Name** is
-blank. API secrets are not copied; the copy starts with none.
+the linked Application and its catalog subset are copied; only
+**Audience (aud)** is blank. API secrets are not copied; the copy starts with none.
 
 ## Deleting
 

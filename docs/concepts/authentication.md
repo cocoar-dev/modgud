@@ -88,6 +88,17 @@ Not supported: Implicit Flow, ROPC.
 See [OAuth & OIDC](/concepts/oauth) and
 [OAuth implementation](/integrate/oauth) for details.
 
+### Native app grants
+
+Native and headless clients (mobile apps, CLIs) can sign in directly
+against `/connect/token` without ever holding a browser cookie, using
+one of three cookieless grants: email OTP (`urn:cocoar:otp`), magic
+link (`urn:cocoar:magic`), or passkey (`urn:cocoar:passkey`). A
+signed-in native client can also list and revoke its own passkeys via
+`GET`/`DELETE /connect/passkey`. These grants are opt-in per OAuth
+client and disabled by default. See
+[Native app integration](/integrate/native-apps) for the full flows.
+
 ### Per-realm isolation
 
 Each realm is its own OIDC provider with its own discovery document at
@@ -114,7 +125,7 @@ Plus **recovery codes** as a last-resort backup.
 A passkey is registered against a WebAuthn relying-party ID, and Modgud uses the realm's **PrimaryDomain** as that ID. A passkey therefore only works when the user reaches the realm on its primary domain — not via a secondary domain in the realm's `Domains` list — and changing the realm's PrimaryDomain invalidates every existing passkey (affected users must re-register). See [Realms — primary domain](/operate/realms#primary-domain).
 :::
 
-## External login (OIDC IdPs)
+## External login (OIDC IdPs and SAML)
 
 Users can sign in via external OIDC providers (Entra ID, Google,
 Auth0, ...). Configurable per realm.
@@ -132,6 +143,11 @@ Auth0, ...). Configurable per realm.
 
 See [Login providers (OIDC)](/integrate/login-providers)
 for details.
+
+Modgud also supports **SAML 2.0** as an external login provider type
+(`LoginProvider` of `Type = Saml`), for IdPs that only speak SAML. It
+follows the same JIT-create-on-first-login shape as OIDC. See
+[SAML federation](/admin/saml-federation) for setup.
 
 ## Account lifecycle
 
@@ -151,6 +167,8 @@ Lifecycle states:
 - **GDPR-erased** — stream archived, PII masked, irreversible
   (Article 17)
 
-Detailed slice-internal walkthrough lives in the repo-only
-[Authentication slice blueprint](https://github.com/cocoar-dev/modgud/blob/develop/dev-docs/architecture/authentication.md)
-notes.
+Self-registration can also be gated by an invite code: an Application
+can require a valid, unused, single-use code before an unknown email
+is allowed to self-register, while already-known users keep signing
+in normally. See [Applications](/admin/applications) for how to turn
+this on per Application.

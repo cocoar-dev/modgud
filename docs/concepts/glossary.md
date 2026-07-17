@@ -47,8 +47,11 @@ by `App.Id`).
 
 How an Application triggers a passwordless self-registration:
 `Off` (none), `JitOnOtp` (sign-in-or-sign-up on an unknown email — the
-consumer default), or `ExplicitEndpoint` (a deliberate separate
-registration step; reserved, not yet wired). Lives in an App's
+consumer default), `ExplicitEndpoint` (a deliberate separate
+registration step, so sign-in stays strict for known users only), or
+`InviteCode` (invite-only — an unknown email can only self-register
+with a valid, unused invite code; everyone else gets the same
+anti-enumeration response as `Off`). Lives in an App's
 self-registration settings.
 
 ### User
@@ -104,7 +107,8 @@ evaluator + UserInfo-emission story.
 A server-side record (`UserSession` Marten document) of an active
 login. Tracks IP, browser, OS, device type, `LastActiveAt`,
 `ExpiresAt`. Users can revoke their own sessions; admins can force-logout
-users. UAParser parses the user agent.
+users. The browser, OS, and device type are detected from the
+request's user agent.
 
 ---
 
@@ -193,7 +197,8 @@ aggregate per entry, with a `Type` discriminator. Configurable per realm.
 |---|---|---|
 | **Internal** | Wired up | Built-in username/password. Auto-seeded once per realm, marked `IsBuiltIn=true`, not editable from the admin UI. |
 | **Oidc** | Wired up | External OIDC IdPs (Entra ID, Google, Auth0, ...). Authority + client ID + secret + UserUpdateScript. |
-| **Saml** / **Ldap** / **Kerberos** | Reserved | Enum values exist; create endpoint rejects with `LoginProvider.TypeNotSupported`. The shape ships now so the FE doesn't have to add a "not supported yet" UI per type later. |
+| **Saml** | Wired up | External SAML 2.0 IdPs. See [SAML federation](/admin/saml-federation). |
+| **Ldap** / **Kerberos** | Reserved | Enum values exist; create endpoint rejects with `LoginProvider.TypeNotSupported`. The shape ships now so the FE doesn't have to add a "not supported yet" UI per type later. |
 
 Configured Oidc providers automatically show "Login with {Provider}"
 buttons in the login UI. Internal never produces an SSO button — it

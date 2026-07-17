@@ -10,7 +10,7 @@ namespace Modgud.Authorization.Apps;
 /// canonical 2-segment string <c>"&lt;resource&gt;:&lt;action&gt;"</c>.
 ///
 /// <para>Per the design spec
-/// (<c>dev-docs/future-features/permission-modell.md §3</c>):
+/// (the maintainers' <c>permission-modell</c> design note §3):
 /// each segment is <c>^[a-z0-9-]+$</c>, lowercase only, no slug prefix.</para>
 /// </summary>
 public static partial class AppPermissionRules

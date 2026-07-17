@@ -14,6 +14,7 @@ Per realm:
 - its own **OIDC discovery endpoint**
 - its own **login providers** (Internal + OIDC IdPs)
 - its own **cookie domain**
+- its own **auth rate-limit ceilings** (per-IP request limits on login/register/etc., overridable per realm)
 
 Each realm looks like a standalone modgud installation —
 because that is essentially what it is.
@@ -139,11 +140,12 @@ On first start:
 
 ### 2. Create additional realms
 
-Only users with `control-plane:realm:write` **on the Control-Plane realm**
-can do this. See [Control Plane](./control-plane.md) for the cross-realm
-admin model — in short: realm CRUD lives on a dedicated app slug
-(`control-plane`) that is only seeded into the Control-Plane realm's DB,
-and the routing layer 404s the endpoint on tenant hosts.
+Only users holding `realm:write` in the Control-Plane app context — which
+only exists on the Control-Plane realm — can do this. See
+[Control Plane](./control-plane.md) for the cross-realm admin model — in
+short: realm CRUD lives on a dedicated app slug (`control-plane`) that is
+only seeded into the Control-Plane realm's DB, and the routing layer 404s
+the endpoint on tenant hosts.
 
 ```http
 POST /api/admin/realms
@@ -192,11 +194,47 @@ back into the system.
 
 ### 4. Hard-delete a realm
 
-::: warning Work in progress
-Currently only soft-delete (deactivation) is implemented. Hard-delete
-would have to drop the tenant DB cleanly, shut down Wolverine's
-durability agent, invalidate sessions — complex. Roadmap item.
-:::
+```http
+DELETE /api/admin/realms/{slug}?hard=true
+```
+
+Without `hard=true`, `DELETE` behaves exactly like the deactivation
+above — reversible, data stays in the DB. With `hard=true`, the realm
+is removed for good: its tenant database is dropped and the global
+`Realm` record is deleted. There is no undo. Hard-delete is refused
+for the Control-Plane realm, so a deployment can never delete its own
+administration surface.
+
+### 5. Declarative provisioning (import / apply / export)
+
+Beyond the one-field-at-a-time `POST`/`PATCH` above, a realm's entire
+configuration — settings, Apps, OAuth APIs/Scopes/Clients, roles,
+users, groups — can be described as one **manifest** document and
+applied in a single call:
+
+- `POST /api/admin/realms/import` — creates a **brand-new** realm from
+  a complete manifest. Fails if the slug already exists; a failed
+  import rolls the realm back so it's never left half-provisioned.
+- `POST /api/admin/realms/{slug}/apply` — applies a manifest to an
+  **existing** realm as an in-place merge/upsert; it never drops the
+  database. Add `?prune=true` to make it a full sync that also removes
+  entities absent from the manifest — infrastructure essentials
+  (the system App, standard scopes, service-account clients) and every
+  `realm:admin`-carrying group/user are protected from ever being
+  pruned, so an admin can't accidentally lock themselves out.
+- `GET /api/admin/realms/{slug}/export` — exports the realm's current
+  configuration as a manifest (structure only, never secrets or
+  password hashes). Round-trips with `apply`: export, edit, re-apply.
+- `GET /api/admin/realms/manifest-schema` — the manifest's JSON Schema,
+  generated from the live contract, so a caller can author a valid
+  manifest without reading source.
+
+A realm admin (someone holding `realm:admin` inside their own realm,
+without any Control-Plane access) gets the same export/apply/prune
+workflow scoped to just their own realm, under
+`/api/admin/realm-config/*` — they can fully manage their realm's own
+configuration and entities, but can't create, delete, or touch any
+other realm.
 
 ## OIDC endpoints per realm
 

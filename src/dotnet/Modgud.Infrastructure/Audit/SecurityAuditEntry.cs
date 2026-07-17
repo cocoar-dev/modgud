@@ -14,7 +14,7 @@ namespace Modgud.Infrastructure.Audit;
 /// rate-limit hits, and operational actions. Processed under <b>Art. 6(1)(f)</b>
 /// (security / fraud detection); <b>short hard retention is the proportionality
 /// control</b> (a Quartz prune), NOT per-subject erasure — there is no subject
-/// stream to attach these to. See <c>dev-docs/future-features/logging-audit-redesign.md</c>
+/// stream to attach these to. See the maintainers' <c>logging-audit-redesign</c> design note
 /// §A.5 + the Legitimate-Interest Assessment.</para>
 /// </summary>
 [DocumentAlias("security_audit_entry")]

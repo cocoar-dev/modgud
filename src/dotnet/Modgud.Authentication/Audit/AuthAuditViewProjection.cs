@@ -13,7 +13,7 @@ namespace Modgud.Authentication.Audit;
 /// streams into the flat <see cref="AuthAuditView"/> read model — one row per
 /// audited event. This is deliberately an <c>EventProjection</c>, not a
 /// Single/MultiStream aggregation: an audit trail is a <i>list of occurrences</i>,
-/// not a per-aggregate snapshot. (See <c>dev-docs/future-features/logging-audit-redesign.md</c> §A.3.)
+/// not a per-aggregate snapshot. (See the maintainers' <c>logging-audit-redesign</c> design note §A.3.)
 ///
 /// <para>Metadata comes from the <see cref="IEvent{T}"/> envelope: <c>Id</c> keys
 /// the row, <c>Timestamp</c> is the occurrence time, <c>TenantId</c> is the realm
@@ -21,7 +21,7 @@ namespace Modgud.Authentication.Audit;
 /// payload is copied into the view — see <see cref="AuthAuditView"/>.</para>
 ///
 /// <para><c>partial</c> because Marten 9's source generator emits the event
-/// dispatcher into the class — see <c>dev-docs/engineering-gotchas/marten-raise-side-effects.md</c>.</para>
+/// dispatcher into the class — see the maintainers' <c>marten-raise-side-effects</c> engineering note.</para>
 ///
 /// <para>SCOPE (Phase 0): user-aggregate auth/lifecycle events + the login-provider
 /// config family. OAuth application/scope/API config events are the next mechanical
@@ -36,7 +36,7 @@ public partial class AuthAuditViewProjection : EventProjection
         // archived events so a full rebuild regenerates the erased user's rows
         // FROM the masked events (Ip already null) — the masked archived events are
         // the durable, de-identified audit record, so no separate store is needed.
-        // See dev-docs/future-features/logging-audit-redesign.md §A.4.2.
+        // See the maintainers' 'logging-audit-redesign' design note §A.4.2.
         IncludeArchivedEvents = true;
     }
 

@@ -102,28 +102,28 @@ on access.
 
 **Add the login provider**
 
-1. Admin → **Login-Provider** → **Provider hinzufügen.** A single modal
-   opens — flavor picker in the header, all tabs (Allgemein, Verbindung,
-   User-Update-Script, Verknüpfung & Richtlinien) visible.
+1. Admin → **Login Providers** → **Add provider.** A single modal
+   opens — flavor picker in the header, all tabs (General, Connection,
+   User Update Script, Linking & Policies) visible.
 2. **Flavor** (header dropdown): *OIDC · Microsoft Entra ID*. Switching
    flavor in this modal re-seeds the flavor-derived defaults (Scopes,
-   default User-Update-Script, button icon) without touching what you've
+   default User Update Script, button icon) without touching what you've
    already typed in Display Name / Description.
-3. **Allgemein** tab: enter **Display Name** (e.g. "Company SSO"), a
-   **Slug**, + optional Beschreibung. The slug is a short, URL-safe
+3. **General** tab: enter **Display Name** (e.g. "Company SSO"), a
+   **Slug**, + optional Description. The slug is a short, URL-safe
    identifier (lowercase letters/digits/hyphens, 3-64 chars) that becomes
-   part of the Redirect-URI (`/signin-oidc/<slug>`). It is **immutable
+   part of the Redirect URI (`/signin-oidc/<slug>`). It is **immutable
    after create** — pick a stable name (e.g. `company-sso`); typing a
-   Display Name first lets Modgud suggest one. The Redirect-URI field
+   Display Name first lets Modgud suggest one. The Redirect URI field
    appears AFTER first save.
-4. **Verbindung** tab:
+4. **Connection** tab:
    - **Tenant ID** (Entra-specific): paste from Entra.
    - **Client ID**: from Entra.
    - **Scopes**: `openid profile email` (default is fine).
-   - **Initiales Secret** (optional): paste the Entra client secret here
+   - **Initial Secret** (optional): paste the Entra client secret here
      so it's set in one step. You can also skip this and rotate via the
-     Verbindung tab after Save — same audit-event shape either way.
-5. **User-Update-Script** tab: default for Entra is
+     Connection tab after Save — same audit-event shape either way.
+5. **User Update Script** tab: default for Entra is
 
    ```js
    (claims) => ({
@@ -136,15 +136,15 @@ on access.
 
    The **Run** button at the top of the test panel runs the script
    against a sample claims object — instant feedback on what comes out.
-   After at least one successful login, **Letzter Login** loads the
+   After at least one successful login, **Last Login** loads the
    actual claims that came through last.
-6. **Erstellen.** The provider is created **disabled** (security default;
+6. **Create.** The provider is created **disabled** (security default;
    enable explicitly after the smoke-test). The modal stays open and
    transitions into Edit mode — the URL fragment updates to the new
-   provider id and the **Redirect-URI** field now appears in the
-   Allgemein tab with a copy button next to it.
+   provider id and the **Redirect URI** field now appears in the
+   General tab with a copy button next to it.
 
-**Copy the Redirect URI** from the Allgemein tab — you'll paste it into
+**Copy the Redirect URI** from the General tab — you'll paste it into
 Entra next. Because the URI is built from your chosen slug (not a
 generated GUID), deleting and recreating the provider with the same slug
 keeps the **same** Redirect URI — no need to re-edit the Entra app.
@@ -157,14 +157,14 @@ keeps the **same** Redirect URI — no need to re-edit the Entra app.
 
 #### 4. Enable + test
 
-1. Back in Modgud's provider modal, click the **Deaktiviert** badge to
-   flip it to **Aktiviert**. Modgud verifies ClientId + Client-Secret
+1. Back in Modgud's provider modal, click the **Disabled** badge to
+   flip it to **Enabled**. Modgud verifies Client ID + Client Secret
    are set before enabling.
 2. Open Modgud's login page in incognito.
 3. The new SSO button should appear.
 4. Click → redirect to Microsoft → sign in → redirect back.
-5. You're signed in. Check the user's IdP-Claims tab to verify the
-   mapped fields.
+5. You're signed in. From the Users list, right-click the user and choose
+   **Show IdP Claims** to verify the mapped fields.
 
 ### Generic OIDC
 
@@ -184,8 +184,8 @@ signs in via the external IdP — no admin action needed. The user-update
 script populates the master data from claims.
 
 If you want to **disable JIT** (only pre-existing users may sign in via SSO),
-toggle the **Auto-create unknown users** flag in the **Verknüpfung &
-Richtlinien** tab. Unknown users get a 403 with a message explaining how to
+toggle the **Auto-create unknown users** flag in the **Linking &
+Policies** tab. Unknown users get a 403 with a message explaining how to
 request access.
 
 ### Linking OIDC to existing users
@@ -195,8 +195,8 @@ they can attach additional OIDC identities to their existing Modgud
 account. The link is stored on `ExternalIdentityLink` (issuer + subject →
 user id) and survives email changes on either side.
 
-To deny self-service linking for a particular provider, untick **User dürfen
-diesen Provider im Profil verknüpfen** in the linking tab.
+To deny self-service linking for a particular provider, untick **Allow
+linking** in the Linking & Policies tab.
 
 ### Multiple linked providers & profile precedence
 
@@ -205,7 +205,7 @@ A user may hold links to several IdPs at once (e.g. EntraID *and* Google). Ident
 On every external login the provider's user-update script *can* patch the four profile fields (first name / last name / email / acronym). To stop two providers fighting over them on alternating logins, only **one provider is authoritative for the profile** at a time:
 
 - The provider whose login **JIT-created** the user is authoritative by default.
-- Any provider can be made authoritative explicitly via the **Authoritative for profile** toggle in the **Verknüpfung & Richtlinien** tab.
+- Any provider can be made authoritative explicitly via the **Authoritative for profile** toggle in the **Linking & Policies** tab.
 - A non-authoritative provider still authenticates the user (and may confer session membership), but does **not** overwrite their profile fields.
 
 The net effect: a user's display name / email stays stable no matter which linked IdP they signed in with, and there is no per-login flapping.
@@ -214,7 +214,7 @@ The net effect: a user's display name / email stays stable no matter which linke
 
 ## Disabling without deleting
 
-For OIDC providers, toggle the **Aktiviert** flag in the detail dialog. The
+For OIDC providers, toggle the **Enabled** flag in the detail dialog. The
 button disappears from the login page; existing user-account links are
 preserved. Re-enabling brings the button back.
 
@@ -225,7 +225,7 @@ The Internal provider has no enable/disable button — by design.
 Configuration values flagged as secret (client secret) are stored encrypted
 in the IdP secret store and **shown only once** at creation. Forgot one?
 Regenerate it on the upstream provider and rotate the value via the secret
-panel on the **Verbindung** tab.
+panel on the **Connection** tab.
 
 ## Common pitfalls
 

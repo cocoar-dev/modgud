@@ -7,11 +7,11 @@ The login page is where every sign-in starts. Modgud supports several methods �
 | Method | Description |
 | --- | --- |
 | **Username + password** | Classic. Enter username and password, optionally a 2FA code. |
-| **Magic link** | Email-based. Click "Sign in via email", get a one-time link, click it. |
+| **Magic link** | Email-based. Click "Login link via email", get a one-time link, click it. |
 | **Passkey** | If you've enrolled one: passwordless via Touch ID / Windows Hello / YubiKey. |
 | **External provider** | Microsoft, Google, etc. — only the buttons your admin has enabled appear. |
 
-## "Remember me"
+## "Stay signed in"
 
 Toggle on the login page. When enabled, your sign-in cookie lives for ~30 days (admin-configurable) instead of the default ~12 hours. Don't enable it on shared / public devices.
 
@@ -22,7 +22,6 @@ If you have 2FA enabled, after the first factor (password or magic link), you're
 - **TOTP**: open your authenticator app, type the 6 digits
 - **Email-OTP**: a code is mailed to you, type it
 - **Passkey**: tap your device or YubiKey
-- **Recovery code**: one-time backup code, used as a last resort
 
 ## After sign-in
 
@@ -49,13 +48,13 @@ You can also cancel later from **Profile → Privacy** at any point before the d
 ::: details "Username or password is incorrect"
 Most common cause: typo. Check Caps Lock, paste-from-clipboard for invisible whitespace, retry once.
 
-If still failing: use "Forgot password?" — Modgud emails you a magic link.
+If still failing: use "Forgot password?" — Modgud emails you a password-reset link.
 :::
 
 ::: details "Account locked"
-Too many failed attempts. The lockout is short (default 5 minutes); wait it out and try again.
+Too many failed attempts (5 in a row). The lockout is short (default one minute); wait it out and try again.
 
-If you've genuinely forgotten the password, use "Forgot password?" — magic links work even during lockout.
+If you've genuinely forgotten the password, use "Forgot password?" — the password-reset link works even during lockout.
 :::
 
 ::: details "Email is not verified"

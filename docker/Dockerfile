@@ -19,8 +19,6 @@ RUN pnpm build
 # that sets `base: '/docs/'` and points outDir at `.vitepress/dist-in-app`.
 # Both variants build the same content — the in-app version just
 # carries a different `base` URL and a slimmed-down nav.
-# (The repo also has a sibling `dev-docs/` VitePress site for
-# repo-only design notes; that one is never bundled in the image.)
 FROM node:22-slim AS userdocs-build
 ENV CI=true
 RUN corepack enable && corepack prepare pnpm@10.13.1 --activate

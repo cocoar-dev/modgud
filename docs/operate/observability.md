@@ -3,7 +3,7 @@
 OpenTelemetry-based metrics + tracing + an in-app live activity view. Modgud emits a dedicated `Modgud` meter for IdP-domain events (logins, token minting, DCR, GDPR, 2FA enforcement, realm provisioning) on top of the standard ASP.NET Core instrumentation. Metrics go out via a Prometheus scrape endpoint; both metrics and traces can also push to an OTLP collector.
 
 ::: warning `/metrics` is sensitive — gate it
-The Prometheus scrape endpoint is **not** an admin-permissioned API — it lives outside the cookie-auth pipeline so Prometheus servers (which have no cookies) can reach it. Gate it via a **bearer token** (built in) plus a reverse-proxy / firewall that keeps it off the public internet. The boot-validator refuses to start the API if Prometheus is enabled and the bearer token is empty in any non-Development environment.
+The Prometheus scrape endpoint is **not** an admin-permissioned API — it lives outside the cookie-auth pipeline so Prometheus servers (which have no cookies) can reach it. Gate it via a **bearer token** (built in) plus a reverse-proxy / firewall that keeps it off the public internet. The boot-validator refuses to start the API if Prometheus is enabled and the bearer token is empty when `ASPNETCORE_ENVIRONMENT` is `Production`. Any other environment (Development, Staging, etc.) is not gated by this check.
 :::
 
 Permissions for the in-app live view: `observability:read`. The `realm:admin` bypass grants it.
@@ -15,10 +15,12 @@ Permissions for the in-app live view: `observability:read`. The `realm:admin` by
 | Prometheus scrape | `/metrics` (default) | Static **bearer token** — set via `Observability__Prometheus__BearerToken`. Mismatch returns 404 (not 401) so the endpoint's existence stays unconfirmed. Constant-time compare. |
 | OTLP push (metrics + traces) | configurable endpoint (default `http://127.0.0.1:4317`) | Whatever the collector requires. Off by default; turn on when you actually have a collector (Tempo, Honeycomb, …). |
 | OTLP **log** export | same OTLP endpoint | Off by default — **same** `Observability__Otlp__Enabled` gate. Logs go through an OTel Collector whose redaction processor strips PII before OpenObserve. See [Logs — export & redaction](#logs-export-redaction). |
-| In-app live view | `/operate/observability` (Admin SPA) | Cookie auth + `observability:read`. Realm-scoped — each admin sees only their own realm. |
+| In-app live view | `/plattform/observability` (Admin SPA) | Cookie auth + `observability:read`. Realm-scoped — each admin sees only their own realm. |
 | REST snapshot | `GET /api/admin/observability/snapshot?windowMinutes=15` | Same as in-app view. Returns event-type counts, login outcome breakdown, per-minute sparkline. |
 | REST activity feed | `GET /api/admin/observability/activity?limit=50` | Same. Most-recent first, last 60 min, capped at 200. |
+| REST error feed | `GET /api/admin/observability/errors?limit=50` | Same. Recent operational errors (warnings/errors logged by the app) for the caller's realm, newest first. |
 | Live push (SignalR) | `ObservabilityHub.Subscribe()` | Same. Streams new events for the subscriber's realm. The in-app view uses this — no polling. |
+| Live error push (SignalR) | `ObservabilityHub.LogsSubscribe()` | Same. Streams new operational-error entries for the subscriber's realm as they're logged. |
 
 ## Configuration
 
@@ -31,15 +33,23 @@ Permissions for the in-app live view: `observability:read`. The `realm:admin` by
   "Prometheus": {
     "Enabled": true,                     // default on
     "Path": "/metrics",                  // scrape path
-    "BearerToken": ""                    // REQUIRED outside Development; empty = boot fails
+    "BearerToken": ""                    // REQUIRED in Production; empty = boot fails
   },
   "Otlp": {
     "Enabled": false,                    // default off — gates metrics, traces AND logs
     "Endpoint": "http://127.0.0.1:4317", // gRPC by default (127.0.0.1, not localhost — see note)
     "Protocol": "Grpc"                   // or "HttpProtobuf"
+  },
+  "ErrorFeed": {
+    "Enabled": true,                     // default on — captures into the per-realm live error feed
+    "MinimumLevel": "Error",             // minimum Serilog level captured
+    "SourcePrefix": "Modgud",            // only loggers whose SourceContext starts with this feed the buffer
+    "CapacityPerRealm": 100              // bounded ring buffer size per realm
   }
 }
 ```
+
+`ErrorFeed` powers the "Recent errors" panel and `LogsSubscribe()` stream in the in-app live view — it's local-only (an in-memory buffer plus the SignalR hub), so it works independently of `Otlp.Enabled` and needs no collector.
 
 ::: tip One gate for all three signals
 `Otlp.Enabled` turns on metrics, traces **and** log export together — there is no separate logs flag by design. With it off, Serilog stays Console + File and nothing leaves the box; no collector / OpenObserve is required. Use a bare base `host:port` endpoint for either protocol — the log sink derives the per-signal path itself (and trims a `/v1/logs` suffix if you add one).
@@ -86,7 +96,7 @@ All counters; tag keys listed; cardinality is bounded by design (realm count + f
 | Metric | Tags | Counts |
 | --- | --- | --- |
 | `modgud.logins.total` | `realm`, `method`, `outcome` | Login attempts. `method` ∈ {password, magic_link, passkey, mfa, email_otp, external}; `outcome` ∈ {success, failure, locked, 2fa_required, requires_setup}. |
-| `modgud.token.minted.total` | `realm`, `grant_type`, `client_type` | OAuth/OIDC tokens issued. `client_type` ∈ {confidential, public, dcr}. |
+| `modgud.token.minted.total` | `realm`, `grant_type`, `client_type` | OAuth/OIDC tokens issued. `client_type` ∈ {confidential, public, dcr, cimd}. |
 | `modgud.token.refresh.rejected.total` | `realm` | Refresh-token grant rejected (reuse-detection / expired / revoked — OpenIddict 7 doesn't separate them). Spikes worth alerting on. |
 | `modgud.two_factor.enforcement.blocked.total` | `realm` | Requests blocked by the 2FA enforcement middleware after grace expiry. |
 | `modgud.dcr.registration.total` | `realm`, `outcome` | Dynamic-client-registration attempts. `outcome` ∈ {success, rate_limited, policy_denied, invalid_request}. |
@@ -107,12 +117,13 @@ A baseline for owner-operator deployments (you can refine later):
 
 ## In-app live view
 
-`/operate/observability` shows:
+`/plattform/observability` shows:
 
 - **Headline counters** for the rolling window (default 15 min; selector for 1–60).
 - **Login outcome breakdown** — success vs failure vs locked vs 2fa-required.
 - **Per-minute sparkline** of login attempts.
 - **Live activity feed** — every event the meter emits, newest first, streamed via SignalR. The page subscribes once at mount and updates in real time; no polling.
+- **Recent errors** — a live feed of application warnings/errors logged for the realm (see the error-feed configuration below), newest first, also streamed via SignalR.
 
 Each realm-admin sees only their own realm. The cross-realm aggregate ("global-ops view") is a planned follow-up.
 
@@ -138,7 +149,7 @@ Two limits worth knowing, both because the targeted values have no machine-recog
 
 ### Failure modes
 
-The export is **best-effort and lossy by design** (Track B). It must never be load-bearing — the tenant audit (`/admin/audit`, `/admin/auth-log`) is a separate, durable pipeline and is unaffected whether export is on or off.
+The export is **best-effort and lossy by design**. It must never be load-bearing — the tenant audit (`/admin/audit`, `/admin/auth-log`) is a separate, durable pipeline and is unaffected whether export is on or off.
 
 | Situation | What happens | What to do |
 | --- | --- | --- |

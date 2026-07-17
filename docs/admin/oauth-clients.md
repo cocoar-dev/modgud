@@ -100,6 +100,8 @@ Pick the grants the client actually needs (multi-select). There are **no silent 
 | --- | --- |
 | `authorization_code, refresh_token` | Web app / SPA / mobile (with PKCE on public clients) |
 | `client_credentials` | Machine-to-machine — but only via a [Service Account](./service-accounts) (see below) |
+| `urn:ietf:params:oauth:grant-type:device_code` | A CLI tool or other input-constrained device — see the [device flow reference](../reference/oauth-api#device-flow) |
+| `urn:cocoar:otp`, `urn:cocoar:magic`, `urn:cocoar:passkey` | Native passwordless grants for first-party mobile/desktop apps (realm must have Native Passwordless Grants enabled under Realm Settings) — see [Native app integration](../integrate/native-apps) |
 
 ::: warning No hybrid user-flow + client-credentials clients
 A client is **either** a user-flow client (`authorization_code` / `refresh_token` / `device_code` / …) **or** a machine-to-machine client (`client_credentials`) — never both. The split is structural, enforced at the create/update endpoint:
