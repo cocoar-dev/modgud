@@ -27,6 +27,19 @@ public static class OAuthPermissions
         public const string PushedAuthorization = "ept:pushed_authorization";
     }
 
+    /// <summary>Per-client requirement flags (OpenIddict application
+    /// <c>Requirements</c>). Mirrors OpenIddict's <c>ft:</c>-prefixed constants;
+    /// inlined to keep OpenIddict.Abstractions out of the Domain/Application
+    /// layers, pinned against drift by the OAuth constants tests.</summary>
+    public static class Requirements
+    {
+        /// <summary>RFC 9126 — when present on a client, that client's
+        /// authorization requests MUST go through <c>/connect/par</c>; a direct
+        /// (non-PAR) authorize request is rejected. OpenIddict's
+        /// <c>Requirements.Features.PushedAuthorizationRequests</c>.</summary>
+        public const string PushedAuthorizationRequests = "ft:par";
+    }
+
     public static class GrantTypes
     {
         public const string AuthorizationCode = "gt:authorization_code";

@@ -151,6 +151,72 @@ public class PushedAuthorizationRequestTests : IntegrationTestBase
         }
     }
 
+    [Fact]
+    public async Task Client_that_requires_par_rejects_a_direct_authorize_but_accepts_a_pushed_one()
+    {
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-par-required-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateConfidentialClientAsync(
+            clientId, clientSecret, redirectUri, ["openid"], requirePar: true);
+
+        await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Par", lastname: "Required", acronym: "pr",
+            email: "pr@test.com", password: "TestPass1234");
+        var cookieClient = await CreateAuthenticatedClientAsync("pr", "TestPass1234");
+
+        var verifier = GeneratePkceVerifier();
+        var challenge = GeneratePkceS256Challenge(verifier);
+        var state = Guid.NewGuid().ToString("N");
+
+        // A direct (non-PAR) authorize request must be rejected for this client.
+        var directUri = "/connect/authorize?" + string.Join("&", new[]
+        {
+            "response_type=code",
+            $"client_id={Uri.EscapeDataString(clientId)}",
+            $"redirect_uri={Uri.EscapeDataString(redirectUri)}",
+            "scope=openid",
+            $"state={state}",
+            $"code_challenge={challenge}",
+            "code_challenge_method=S256",
+        });
+        var directResp = await cookieClient.GetAsync(directUri, TestContext.Current.CancellationToken);
+        if (directResp.Headers.Location is { } loc)
+        {
+            var q = HttpUtility.ParseQueryString(loc.Query);
+            Assert.Null(q["code"]);
+            Assert.False(string.IsNullOrEmpty(q["error"]),
+                $"a PAR-required client's direct authorize must be rejected. Location: {loc}");
+        }
+        else
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, directResp.StatusCode);
+        }
+
+        // The same request pushed through /connect/par is accepted.
+        var backChannel = Factory.CreateClient();
+        var parBody = await PushAsync(backChannel, clientId, clientSecret, new Dictionary<string, string>
+        {
+            ["response_type"] = "code",
+            ["client_id"] = clientId,
+            ["redirect_uri"] = redirectUri,
+            ["scope"] = "openid",
+            ["state"] = state,
+            ["code_challenge"] = challenge,
+            ["code_challenge_method"] = "S256",
+        });
+        using var parJson = JsonDocument.Parse(parBody);
+        var requestUri = parJson.RootElement.GetProperty("request_uri").GetString()!;
+
+        var authResp = await cookieClient.GetAsync(
+            $"/connect/authorize?client_id={Uri.EscapeDataString(clientId)}&request_uri={Uri.EscapeDataString(requestUri)}",
+            TestContext.Current.CancellationToken);
+        Assert.True((int)authResp.StatusCode is 301 or 302 or 303 or 307 or 308,
+            $"the pushed request must be accepted, got {(int)authResp.StatusCode}");
+        var code = HttpUtility.ParseQueryString(authResp.Headers.Location!.Query)["code"];
+        Assert.False(string.IsNullOrEmpty(code), "pushed authorize should yield a code");
+    }
+
     private async Task<string> PushAsync(
         HttpClient client, string clientId, string clientSecret, Dictionary<string, string> form)
     {
@@ -168,7 +234,8 @@ public class PushedAuthorizationRequestTests : IntegrationTestBase
     }
 
     private async Task CreateConfidentialClientAsync(
-        string clientId, string clientSecret, string redirectUri, List<string> scopes)
+        string clientId, string clientSecret, string redirectUri, List<string> scopes,
+        bool requirePar = false)
     {
         using var scope = Factory.Services.CreateScope();
         var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
@@ -185,6 +252,7 @@ public class PushedAuthorizationRequestTests : IntegrationTestBase
             AllowedGrantTypes = ["authorization_code", "refresh_token"],
             RequireConsent = false,
             AccessTokenType = AccessTokenType.Jwt,
+            RequirePushedAuthorizationRequests = requirePar,
         };
         var result = await oauthAdmin.CreateClientAsync(dto, TestContext.Current.CancellationToken);
         if (result.IsError)
