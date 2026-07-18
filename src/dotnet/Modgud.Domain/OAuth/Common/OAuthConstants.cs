@@ -24,6 +24,7 @@ public static class OAuthPermissions
         public const string Introspection = "ept:introspection";
         public const string Revocation = "ept:revocation";
         public const string DeviceAuthorization = "ept:device_authorization";
+        public const string PushedAuthorization = "ept:pushed_authorization";
     }
 
     public static class GrantTypes

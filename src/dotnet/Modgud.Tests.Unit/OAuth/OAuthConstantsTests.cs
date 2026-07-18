@@ -88,6 +88,10 @@ public class OAuthConstantsTests
             Assert.Equal("ept:device_authorization", OAuthPermissions.Endpoints.DeviceAuthorization);
 
         [Fact]
+        public void PushedAuthorization_value_is_pinned() =>
+            Assert.Equal("ept:pushed_authorization", OAuthPermissions.Endpoints.PushedAuthorization);
+
+        [Fact]
         public void All_endpoint_constants_use_the_endpoint_prefix()
         {
             var endpoints = new[]
@@ -98,6 +102,7 @@ public class OAuthConstantsTests
                 OAuthPermissions.Endpoints.Introspection,
                 OAuthPermissions.Endpoints.Revocation,
                 OAuthPermissions.Endpoints.DeviceAuthorization,
+                OAuthPermissions.Endpoints.PushedAuthorization,
             };
 
             foreach (var e in endpoints)
@@ -115,6 +120,7 @@ public class OAuthConstantsTests
                 OAuthPermissions.Endpoints.Introspection,
                 OAuthPermissions.Endpoints.Revocation,
                 OAuthPermissions.Endpoints.DeviceAuthorization,
+                OAuthPermissions.Endpoints.PushedAuthorization,
             };
             Assert.Equal(endpoints.Length, endpoints.Distinct().Count());
         }

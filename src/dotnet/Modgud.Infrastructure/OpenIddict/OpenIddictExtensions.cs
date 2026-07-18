@@ -128,7 +128,23 @@ public static class OpenIddictExtensions
                     .SetIntrospectionEndpointUris("connect/introspect")
                     .SetRevocationEndpointUris("connect/revoke")
                     .SetDeviceAuthorizationEndpointUris("connect/device")
-                    .SetEndUserVerificationEndpointUris("connect/verify");
+                    .SetEndUserVerificationEndpointUris("connect/verify")
+                    // RFC 9126 (#118) — Pushed Authorization Requests. The client
+                    // POSTs the full authorization request to this back-channel
+                    // endpoint (authenticating if confidential) and receives a
+                    // one-time `request_uri` to hand to /connect/authorize, so
+                    // request parameters never traverse the browser/redirect
+                    // chain. OpenIddict handles the endpoint natively — it stores
+                    // each pushed request in the tenant token store and resolves
+                    // the request_uri at the authorize endpoint — and advertises
+                    // `pushed_authorization_request_endpoint` in discovery. PAR is
+                    // offered, not mandated: RequirePushedAuthorizationRequests()
+                    // is deliberately NOT set, so ordinary browser + device flows
+                    // keep working. The RFC 8707 `resource=` a client pushes is
+                    // stored with the request and validated at token time by the
+                    // existing ResourceIndicatorHandler, exactly as for a direct
+                    // authorize request.
+                    .SetPushedAuthorizationEndpointUris("connect/par");
 
                 // RFC 8414 (#136) — also serve the authorization-server
                 // metadata at the bare `/.well-known/oauth-authorization-server`

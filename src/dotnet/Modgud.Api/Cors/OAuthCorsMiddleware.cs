@@ -43,6 +43,10 @@ public sealed class OAuthCorsMiddleware
         "/connect/token",
         "/connect/userinfo",
         "/connect/revoke",
+        // RFC 9126 PAR — a browser PKCE client pushes its authorization
+        // request here before redirecting, so the endpoint must be
+        // reachable cross-origin like the token endpoint.
+        "/connect/par",
     };
 
     private static readonly CorsPolicy PublicMetadataPolicy = new CorsPolicyBuilder()
