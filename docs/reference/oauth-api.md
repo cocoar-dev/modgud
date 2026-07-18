@@ -21,6 +21,7 @@ on demand from admin. The JWKS endpoint exposes the public set.
 | Endpoint | Description |
 |---|---|
 | `GET /.well-known/openid-configuration` | OIDC discovery document for the current realm |
+| `GET /.well-known/oauth-authorization-server` | RFC 8414 authorization-server metadata — the **same document** served at a second path, so a spec-strict MCP client that probes only this alias still discovers the realm |
 | `GET /.well-known/jwks` | JSON Web Key Set (for JWT validation) |
 
 Example discovery for realm `acme.example.com`:

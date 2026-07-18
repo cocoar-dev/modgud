@@ -82,11 +82,19 @@ New clients default to **JWT**. Two options:
 | **JWT** (default) | Self-contained signed token — the claims are inside the token | The resource server validates it locally against the realm's signing key (JWKS); no callback to Modgud |
 | **Reference** | Opaque random string — carries no claims | The resource server must call `/connect/introspect` on every request to resolve it |
 
-A resource server built with ASP.NET Core's `AddJwtBearer` expects a **JWT** — that's the right pick for the common case. Use **Reference** only when you specifically want every token resolvable/revocable at the introspection endpoint and you've wired the RS to call it.
+A resource server built with ASP.NET Core's `AddJwtBearer` expects a **JWT** — that's the right pick for the common case. Use **Reference** only when you specifically want every token resolvable/revocable at the introspection endpoint and you've wired the RS to call it. The [.NET client library](../integrate/resource-server) supports both — `AddModgudClient` for JWT, `AddModgudReferenceTokenClient` for reference tokens.
+
+### Require Pushed Authorization Requests
+
+When set, this client **must** use [Pushed Authorization Requests](../reference/oauth-api#pushed-authorization-requests-par) (RFC 9126): a direct `/connect/authorize` request from it is rejected, and it has to push the request to `/connect/par` first and authorize with the returned `request_uri`. Off by default, and PAR stays available to every client regardless — this only *forces* it for an individual high-security client (e.g. a confidential back-channel client where you never want request parameters on the front channel).
+
+::: info Set via API / provisioning for now
+There's no checkbox for this in the client editor yet ([#142](https://github.com/cocoar-dev/modgud/issues/142)). Set it through the admin API's client create/update payload (`requirePushedAuthorizationRequests: true`) or a declarative provisioning manifest.
+:::
 
 ### Allowed CORS Origins
 
-One origin per line (e.g. `https://app.acme.example.com`). This field is **enforced** — it's not decorative. For a browser-only SPA doing Authorization Code + PKCE with no backend-for-frontend, Modgud emits the CORS headers on the credentialed OIDC endpoints (`/connect/token`, `/connect/userinfo`, `/connect/revoke`) **only** when the request's `Origin` is one of these registered values, so the flow can complete cross-origin. (The public metadata endpoints — `/.well-known/openid-configuration` and `/.well-known/jwks` — are readable from any origin regardless.)
+One origin per line (e.g. `https://app.acme.example.com`). This field is **enforced** — it's not decorative. For a browser-only SPA doing Authorization Code + PKCE with no backend-for-frontend, Modgud emits the CORS headers on the credentialed OIDC endpoints (`/connect/token`, `/connect/userinfo`, `/connect/revoke`, `/connect/par`) **only** when the request's `Origin` is one of these registered values, so the flow can complete cross-origin. (The public metadata endpoints — `/.well-known/openid-configuration` and `/.well-known/jwks` — are readable from any origin regardless.)
 
 ::: tip Changes take effect within ~60 s
 The allowed-origins set is cached per realm for about a minute, so after adding an origin give it up to ~60 s before the browser flow starts succeeding.
