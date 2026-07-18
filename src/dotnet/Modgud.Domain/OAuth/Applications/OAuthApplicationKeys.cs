@@ -4,11 +4,9 @@ namespace Modgud.Domain.OAuth.Applications;
 public static class OAuthApplicationSettingKeys
 {
     public const string AccessTokenType = "modgud:access_token_type";
-    public const string RefreshTokenUsage = "modgud:refresh_token_usage";
     public const string IdentityTokenLifetime = "modgud:identity_token_lifetime";
     public const string AccessTokenLifetime = "modgud:access_token_lifetime";
     public const string AuthorizationCodeLifetime = "modgud:authorization_code_lifetime";
-    public const string AbsoluteRefreshTokenLifetime = "modgud:absolute_refresh_token_lifetime";
     public const string SlidingRefreshTokenLifetime = "modgud:sliding_refresh_token_lifetime";
     public const string ClientClaimsPrefix = "modgud:client_claims_prefix";
 

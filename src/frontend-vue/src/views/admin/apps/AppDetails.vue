@@ -209,7 +209,7 @@ const catalogBuilder = computed(() =>
                 c.placeholder(t('admin.apps.cat.descriptionPlaceholder', {}, 'optional')),
               )
               .editable(() => !isSystem.value)
-              .header(t('admin.apps.cat.description', {}, 'Beschreibung'))
+              .header(t('admin.apps.cat.description', {}, 'Description'))
               .flex(2),
           )
           .right([
@@ -232,7 +232,7 @@ const catalogBuilder = computed(() =>
               icon: 'trash-2',
               size: 's',
               color: 'var(--coar-text-neutral-secondary, #9ca3af)',
-              tooltip: t('admin.apps.cat.removeTitle', {}, 'Eintrag entfernen'),
+              tooltip: t('admin.apps.cat.removeTitle', {}, 'Remove Entry'),
               show: () => !isSystem.value,
               onClick: (row) => removeRow(row),
             },
@@ -242,14 +242,14 @@ const catalogBuilder = computed(() =>
 
 const modalTitle = computed(() =>
   isCreate.value
-    ? t('admin.apps.createTitle', {}, 'Application erstellen')
+    ? t('admin.apps.createTitle', {}, 'Create Application')
     : (form.value.DisplayName || form.value.Slug),
 )
 const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Slug)
 
 const footerButton = computed(() => ({
   visible: true,
-  text: isCreate.value ? t('common.create', {}, 'Erstellen') : t('common.save', {}, 'Speichern'),
+  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: loading.value
     || !form.value.DisplayName.trim()
     || (isCreate.value && !form.value.Slug.trim())
@@ -280,7 +280,7 @@ onMounted(async () => {
   try {
     const loaded = await store.loadOne(id.value)
     if (!loaded) {
-      error.value = t('admin.apps.loadFailed', {}, 'Application konnte nicht geladen werden.')
+      error.value = t('admin.apps.loadFailed', {}, 'Failed to load the application.')
       return
     }
     dto.value = loaded
@@ -339,20 +339,20 @@ async function save() {
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="layout-grid"
     :footer-button="footerButton" :readonly="isSystem" width="56rem">
     <div v-if="loading && !dto && !isCreate" class="flex flex-1 items-center justify-center p-8">
-      <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
+      <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
     </div>
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
       <CoarTabGroup v-model="activeTab" class="tab-bar">
-        <CoarTab id="general">{{ t('admin.apps.tabs.general', {}, 'Allgemein') }}</CoarTab>
+        <CoarTab id="general">{{ t('admin.apps.tabs.general', {}, 'General') }}</CoarTab>
         <CoarTab id="catalog">{{ t('admin.apps.tabs.catalog', {}, 'Permission-Catalog') }}</CoarTab>
-        <CoarTab v-if="!isSystem" id="settings">{{ t('admin.apps.tabs.settings', {}, 'Einstellungen') }}</CoarTab>
+        <CoarTab v-if="!isSystem" id="settings">{{ t('admin.apps.tabs.settings', {}, 'Settings') }}</CoarTab>
       </CoarTabGroup>
 
       <CoarNote v-if="isCreate" variant="info">
-        {{ t('admin.apps.createHint', {}, 'Eine neue App registriert sich für Permission-Resolution. Slug ist nach dem Erstellen unveränderbar.') }}
+        {{ t('admin.apps.createHint', {}, 'A new app registers itself for permission resolution. The slug is immutable after creation.') }}
       </CoarNote>
       <CoarNote v-else-if="isSystem" variant="warning">
-        {{ t('admin.apps.systemHint', {}, 'Dies ist eine System-App des IdP. Slug, Display Name und Permission-Catalog sind im Backend hartkodiert — der Catalog hier ist read-only und nur zur Inspektion. Änderungen an den Strings würden die RequiresPermission-Aufrufe im Backend brechen.') }}
+        {{ t('admin.apps.systemHint', {}, 'This is a system app of the IdP. Slug, display name, and permission catalog are hardcoded in the backend — the catalog here is read-only and for inspection only. Changing the strings would break the RequiresPermission calls in the backend.') }}
       </CoarNote>
 
       <!-- Tab: General -->
@@ -367,7 +367,7 @@ async function save() {
           </CoarFormField>
         </div>
 
-        <CoarFormField :label="t('common.description', {}, 'Beschreibung')">
+        <CoarFormField :label="t('common.description', {}, 'Description')">
           <CoarTextInput v-model="form.Description" :disabled="isSystem" clearable />
         </CoarFormField>
       </div>
@@ -376,12 +376,12 @@ async function save() {
       <div v-show="activeTab === 'catalog'" class="tab-content">
         <p class="catalog-subtitle">
           {{ isSystem
-            ? t('admin.apps.permissionsHintSystem', {}, 'Permission-Catalog der System-App — read-only. Diese Einträge entsprechen 1:1 den RequiresPermission-Aufrufen im Backend-Code.')
-            : t('admin.apps.permissionsHint', {}, 'Resource und Action je 1+ lowercase-Buchstaben/Ziffern/Bindestriche. Ids bleiben über Renames stabil — Role-Grants und RS-Subsets folgen automatisch.') }}
+            ? t('admin.apps.permissionsHintSystem', {}, 'Permission catalog of the system app — read-only. These entries correspond 1:1 to the RequiresPermission calls in the backend code.')
+            : t('admin.apps.permissionsHint', {}, 'Resource and action each need 1+ lowercase letters/digits/hyphens. Ids stay stable across renames — role grants and RS subsets follow automatically.') }}
         </p>
 
         <CoarNote v-if="renamedCount > 0 && !isSystem" variant="warning">
-          {{ t('admin.apps.renamedWarning', { count: renamedCount }, `${renamedCount} Eintrag/Einträge wurden umbenannt. Die String-Form ändert sich (z.B. in UserInfo), aber Role-Grants und RS-Subsets folgen automatisch über die stabile Id.`) }}
+          {{ t('admin.apps.renamedWarning', { count: renamedCount }, `${renamedCount} entry/entries were renamed. The string form changes (e.g. in UserInfo), but role grants and RS subsets follow automatically via the stable id.`) }}
         </CoarNote>
 
         <div class="catalog-grid">
@@ -394,7 +394,7 @@ async function save() {
                 icon-start="plus"
                 @click="addRow"
               >
-                {{ t('admin.apps.cat.add', {}, 'Eintrag hinzufügen') }}
+                {{ t('admin.apps.cat.add', {}, 'Add Entry') }}
               </CoarButton>
             </template>
           </CoarDataGrid>
@@ -404,22 +404,22 @@ async function save() {
             {{ t('admin.apps.cat.invalidSegment', {}, 'Format: ^[a-z0-9-]+$ je Segment.') }}
           </span>
           <span v-else-if="hasIncompleteRows" class="hint-error">
-            {{ t('admin.apps.cat.incomplete', {}, 'Resource und Action sind beide erforderlich.') }}
+            {{ t('admin.apps.cat.incomplete', {}, 'Resource and action are both required.') }}
           </span>
           <span v-else-if="duplicateKeys.size > 0" class="hint-error">
-            {{ t('admin.apps.cat.duplicate', {}, 'Doppelte Einträge: ') + [...duplicateKeys].join(', ') }}
+            {{ t('admin.apps.cat.duplicate', {}, 'Duplicate entries: ') + [...duplicateKeys].join(', ') }}
           </span>
         </div>
 
         <CoarNote v-if="catalogBlockers.length > 0" variant="error">
           <div class="font-semibold mb-1">
-            {{ t('admin.apps.cat.blockedTitle', {}, 'Diese Einträge sind noch in Verwendung:') }}
+            {{ t('admin.apps.cat.blockedTitle', {}, 'These entries are still in use:') }}
           </div>
           <ul class="blocker-list">
             <li v-for="b in catalogBlockers" :key="b.PermissionId">
               <code>{{ b.Permission }}</code>
               <span v-if="b.ReferencedByRoles.length > 0">
-                · {{ t('admin.apps.cat.refRoles', {}, 'Rollen:') }} {{ b.ReferencedByRoles.join(', ') }}
+                · {{ t('admin.apps.cat.refRoles', {}, 'Roles:') }} {{ b.ReferencedByRoles.join(', ') }}
               </span>
               <span v-if="b.ReferencedByResourceServers.length > 0">
                 · {{ t('admin.apps.cat.refRSes', {}, 'Resource Server:') }} {{ b.ReferencedByResourceServers.join(', ') }}

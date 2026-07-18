@@ -47,3 +47,9 @@ the order below — each one builds on the ones above it.
   RFC 7591 for MCP agents and self-onboarding apps.
 - [Sessions & Tokens](./tokens) — what's on a token, where session
   state lives, and how rotation works.
+
+## Security
+
+- [Security model](./security-model) — the aggregated mechanism
+  matrix, trust boundaries, and threat-model pointers for reviewers
+  evaluating Modgud.

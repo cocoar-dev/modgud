@@ -15,7 +15,7 @@ how it rotates, and what breaks if it's lost.
 |---|---|---|---|---|
 | Per-realm RSA signing key | Access & ID tokens (that realm only) | That realm's tenant DB | Manual, 30-day overlap | Fresh key auto-bootstraps; that realm's outstanding access/ID tokens die |
 | OpenIddict signing certificate (`signing.pfx`) | Authorization codes, device codes, refresh tokens (all realms) | Disk volume `data/keys/` | Manual file swap, overlap via `PreviousSigningCertificatePaths` | Auto-regenerates; **every** realm's outstanding codes and refresh tokens fail at once |
-| OpenIddict encryption certificate (`encryption.pfx`) | Same artifacts, wrapped as JWE (access tokens excluded) | Disk volume `data/keys/` (falls back to the signing cert if unset) | Manual file swap, **no overlap today** | Same as above — instantly, with no grace window |
+| OpenIddict encryption certificate (`encryption.pfx`) | Same artifacts, wrapped as JWE (access tokens excluded) | Disk volume `data/keys/` (falls back to the signing cert if unset) | Manual file swap, overlap via `PreviousEncryptionCertificatePaths` | Auto-regenerates; **every** realm's outstanding codes and refresh tokens fail at once |
 | Per-tenant DataProtection key ring | Auth cookies, antiforgery tokens, stored login-provider client secrets | That realm's tenant DB | Automatic, ~90-day framework default | Silent logout + that realm's stored provider secrets become undecryptable |
 | WebAuthn passkey key pairs | Passkey login ceremonies | That realm's tenant DB (public key only — the private key never leaves the authenticator) | None — re-enrolment only | Affected user re-enrols a passkey |
 
@@ -108,17 +108,24 @@ encryption layer) precisely so that any resource server capable of
 validating a JWKS-published signature can verify them locally, without
 needing this certificate at all.
 
-::: danger No rotation overlap today
-Unlike the signing certificate, there is currently **no equivalent
-overlap mechanism** for the encryption certificate. Swapping the file
-takes effect immediately and instance-wide: every live authorization
-code and refresh token across every realm stops decrypting the moment
-the new certificate is loaded, with no grace period. Treat replacing
-`encryption.pfx` as a maintenance window, not a hot-swappable
-operation — plan for the affected users to need to sign in again.
-Tracked for a proper overlap mechanism:
-[#125](https://github.com/cocoar-dev/modgud/issues/125).
-:::
+Rotation is a manual file swap, same as the signing certificate. To
+roll it without invalidating everything in flight, place the new file
+and list the old one in `OpenIddict.PreviousEncryptionCertificatePaths`
+so both are tried when decrypting an incoming artifact during the
+transition, then drop the old path once you're confident nothing still
+depends on it. (Previously this certificate had no overlap mechanism
+at all — every rotation required a maintenance window; resolved by
+[#125](https://github.com/cocoar-dev/modgud/issues/125).)
+
+Because this certificate is shared instance-wide, losing it (or
+letting a container restart regenerate it because the `data/keys/`
+volume wasn't persisted) has an instance-wide effect: a fresh
+self-signed certificate auto-generates, and **every realm's**
+outstanding authorization codes and refresh tokens fail simultaneously
+— affected users re-authenticate, in-flight authorization-code
+exchanges fail. The overlap mechanism above only helps a *planned*
+rotation where the old file is still around to list; it doesn't help
+an unplanned loss of both files.
 
 ## Per-tenant DataProtection key ring
 

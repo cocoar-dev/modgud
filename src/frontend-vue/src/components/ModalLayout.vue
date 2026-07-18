@@ -85,8 +85,8 @@ watch(
       <button
         class="modal-close"
         type="button"
-        :aria-label="t('common.closeModal', {}, 'Dialog schließen')"
-        :title="t('common.closeModal', {}, 'Dialog schließen')"
+        :aria-label="t('common.closeModal', {}, 'Close dialog')"
+        :title="t('common.closeModal', {}, 'Close dialog')"
         @click="close()"
       >
         <CoarIcon name="x" size="m" />

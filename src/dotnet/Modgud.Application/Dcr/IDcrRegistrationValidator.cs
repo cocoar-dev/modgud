@@ -228,7 +228,7 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
             // window that this self-validation trades for.
             AccessTokenType = AccessTokenType.Jwt,
             AccessTokenLifetime = (int)settings.AccessTokenLifetime.TotalSeconds,
-            AbsoluteRefreshTokenLifetime = (int)settings.RefreshTokenLifetime.TotalSeconds,
+            SlidingRefreshTokenLifetime = (int)settings.RefreshTokenLifetime.TotalSeconds,
             Claims = new List<OAuthClientClaimDto>(),
             Roles = new List<string>(),
             AllowedCorsOrigins = new List<string>(),

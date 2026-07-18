@@ -78,7 +78,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<LoginProviderDto>()
       .option('tooltipValueGetter', () => null)
       .header('').width(48).resizable(false),
     (col) => col.field('DisplayName').header('Name', 'admin.loginProviders.displayName').flex(2),
-    (col) => col.field('Type').header('Typ', 'admin.loginProviders.type.label').width(120)
+    (col) => col.field('Type').header('Type', 'admin.loginProviders.type.label').width(120)
       .option('valueGetter', (p: any) => {
         if (!p.data) return ''
         const base = typeLabel(p.data.Type as LoginProviderType)
@@ -87,14 +87,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<LoginProviderDto>()
           : base
       }),
     (col) => col.field('Flavor').header('Flavor', 'admin.loginProviders.flavor').width(140),
-    (col) => col.field('Enabled').header('Aktiv', 'admin.loginProviders.enabled').width(100)
+    (col) => col.field('Enabled').header('Active', 'admin.loginProviders.enabled').width(100)
       .option('valueGetter', (p: any) => p.data?.Enabled
         ? t('common.yes', {}, 'Ja')
         : t('common.no', {}, 'Nein')),
     (col) => col.field('ClientId').header('Client ID', 'admin.loginProviders.clientId').flex(2),
     (col) => col.field('HasClientSecret').header('Secret', 'admin.loginProviders.hasSecret').width(100)
       .option('valueGetter', (p: any) => p.data?.HasClientSecret ? '••••••' : '—'),
-    (col) => col.date('UpdatedAt', { includeTime: true }).header('Aktualisiert', 'admin.loginProviders.updatedAt').width(170),
+    (col) => col.date('UpdatedAt', { includeTime: true }).header('Updated', 'admin.loginProviders.updatedAt').width(170),
   ])
 
 const selectedProvider = computed(() => rows.value.find((p) => p.Id === selectedIds.value[0]))
@@ -103,7 +103,7 @@ async function toggleEnabled() {
   const provider = selectedProvider.value
   if (!provider) return
   if (provider.IsBuiltIn) {
-    alert(t('admin.loginProviders.errors.internalNotEditable', {}, 'Der eingebaute interne Login-Provider kann nicht bearbeitet werden.'))
+    alert(t('admin.loginProviders.errors.internalNotEditable', {}, 'The built-in internal login provider can\'t be edited.'))
     return
   }
   try {
@@ -119,10 +119,10 @@ async function deleteSelected() {
   const provider = selectedProvider.value
   if (!provider) return
   if (provider.IsBuiltIn) {
-    alert(t('admin.loginProviders.errors.internalNotEditable', {}, 'Der eingebaute interne Login-Provider kann nicht bearbeitet werden.'))
+    alert(t('admin.loginProviders.errors.internalNotEditable', {}, 'The built-in internal login provider can\'t be edited.'))
     return
   }
-  if (!confirm(t('admin.loginProviders.confirmDelete', {}, 'Diesen Login-Provider wirklich löschen?'))) return
+  if (!confirm(t('admin.loginProviders.confirmDelete', {}, 'Really delete this login provider?'))) return
   try { await store.remove(provider.Id) } catch (e: any) { alert(e?.message ?? String(e)) }
 }
 
@@ -141,7 +141,7 @@ onMounted(() => store.initialize())
     <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="openAddDialog">
-          {{ t('admin.loginProviders.add', {}, 'Provider hinzufügen') }}
+          {{ t('admin.loginProviders.add', {}, 'Add Provider') }}
         </CoarButton>
       </template>
     </CoarDataGrid>
@@ -151,31 +151,31 @@ onMounted(() => store.initialize())
       icon="log-in"
       :title="t('admin.loginProviders.title', {}, 'Login-Provider')"
       :description="t('admin.loginProviders.emptyHint', {}, 'Login providers are the ways users can sign in — the built-in password login plus external identity providers via OIDC, SAML, LDAP or Kerberos.')"
-      :cta-label="t('admin.loginProviders.add', {}, 'Provider hinzufügen')"
+      :cta-label="t('admin.loginProviders.add', {}, 'Add Provider')"
       @cta="openAddDialog"
     />
 
     <!-- Row context menu -->
     <CoarContextMenu :menu="cellMenu">
-      <CoarMenuItem :label="t('common.open', {}, 'Öffnen')" icon="pencil"
+      <CoarMenuItem :label="t('common.open', {}, 'Open')" icon="pencil"
         @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />
       <CoarMenuItem
         v-if="selectedProvider"
         :label="selectedProvider.Enabled
-          ? t('admin.loginProviders.disable', {}, 'Deaktivieren')
-          : t('admin.loginProviders.enable', {}, 'Aktivieren')"
+          ? t('admin.loginProviders.disable', {}, 'Disable')
+          : t('admin.loginProviders.enable', {}, 'Enable')"
         :icon="selectedProvider.Enabled ? 'circle-pause' : 'circle-play'"
         :disabled="selectedProvider.IsBuiltIn"
         @clicked="toggleEnabled"
       />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Löschen')" icon="trash-2"
+      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2"
         :disabled="!selectedProvider || selectedProvider.IsBuiltIn"
         @clicked="deleteSelected" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
-      <CoarMenuItem :label="t('admin.loginProviders.add', {}, 'Provider hinzufügen')" icon="plus"
+      <CoarMenuItem :label="t('admin.loginProviders.add', {}, 'Add Provider')" icon="plus"
         @clicked="openAddDialog" />
     </CoarContextMenu>
   </div>

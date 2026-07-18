@@ -128,10 +128,12 @@ We prefer **coordinated disclosure**: report → triage → fix → release
 A SAST / CodeQL / dependency-audit sweep closed 31 of 33 findings
 before this policy went into effect. PII masking, CSP, anti-CSRF
 middleware, path-traversal guards, and rate-limiting on credential
-endpoints are documented in the public security model — see
-`docs/concepts/authentication.md` for the relevant cookies +
-middleware. The per-finding hardening history is kept in the
-maintainers' internal notes.
+endpoints are part of that hardening. The OAuth/OIDC-specific posture —
+supported flows, token rotation, tenant isolation, and the CI-gated
+test suites that pin them — is aggregated in the public
+[security model](docs/concepts/security-model.md) page. The
+per-finding hardening history is kept in the maintainers' internal
+notes.
 
 This doesn't mean we're free of bugs — it means we know where to
 look when one is reported.

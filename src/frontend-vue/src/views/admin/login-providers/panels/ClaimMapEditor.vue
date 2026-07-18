@@ -97,7 +97,7 @@ const builder = CoarGridBuilder.create<Row>()
           icon: 'trash-2',
           size: 's',
           color: 'var(--coar-text-neutral-secondary, #9ca3af)',
-          tooltip: t('common.delete', {}, 'Löschen'),
+          tooltip: t('common.delete', {}, 'Delete'),
           onClick: (row) => removeRow(row.id),
         }),
   ])

@@ -193,7 +193,6 @@ interface FormState {
   IdentityTokenLifetime: string
   AccessTokenLifetime: string
   AuthorizationCodeLifetime: string
-  AbsoluteRefreshTokenLifetime: string
   SlidingRefreshTokenLifetime: string
   /** ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys. Empty = realm-scoped. */
   WebAuthnRpId: string
@@ -239,7 +238,6 @@ function emptyForm(): FormState {
     IdentityTokenLifetime: '',
     AccessTokenLifetime: '',
     AuthorizationCodeLifetime: '',
-    AbsoluteRefreshTokenLifetime: '',
     SlidingRefreshTokenLifetime: '',
     WebAuthnRpId: '',
     AppIds: [],
@@ -271,7 +269,6 @@ function fromDto(dto: OAuthClientDto): FormState {
     IdentityTokenLifetime: dto.IdentityTokenLifetime?.toString() ?? '',
     AccessTokenLifetime: dto.AccessTokenLifetime?.toString() ?? '',
     AuthorizationCodeLifetime: dto.AuthorizationCodeLifetime?.toString() ?? '',
-    AbsoluteRefreshTokenLifetime: dto.AbsoluteRefreshTokenLifetime?.toString() ?? '',
     SlidingRefreshTokenLifetime: dto.SlidingRefreshTokenLifetime?.toString() ?? '',
     WebAuthnRpId: dto.WebAuthnRpId ?? '',
     AppIds: [...(dto.AppIds ?? [])],
@@ -286,7 +283,7 @@ function parseInt(input: string): number | null {
 }
 
 const modalTitle = computed(() => {
-  if (isCreate.value) return t('admin.oauthClients.createTitle', {}, 'OAuth-Client erstellen')
+  if (isCreate.value) return t('admin.oauthClients.createTitle', {}, 'Create OAuth Client')
   return form.value.DisplayName || form.value.ClientId
 })
 
@@ -319,7 +316,7 @@ const footerButton = computed(() => {
     }
   return {
     visible: true,
-    text: isCreate.value ? t('common.create', {}, 'Erstellen') : t('common.save', {}, 'Speichern'),
+    text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
     disabled: !form.value.ClientId.trim() || loading.value || createBlockers.value.length > 0,
     loading: loading.value,
     onClick: save,
@@ -345,7 +342,7 @@ onMounted(async () => {
   try {
     const dto = await store.loadOne(props.id)
     if (!dto) {
-      error.value = t('admin.oauthClients.loadFailed', {}, 'Client konnte nicht geladen werden.')
+      error.value = t('admin.oauthClients.loadFailed', {}, 'Failed to load the client.')
       return
     }
     original.value = dto
@@ -427,7 +424,6 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     IdentityTokenLifetime: parseInt(form.value.IdentityTokenLifetime),
     AccessTokenLifetime: parseInt(form.value.AccessTokenLifetime),
     AuthorizationCodeLifetime: parseInt(form.value.AuthorizationCodeLifetime),
-    AbsoluteRefreshTokenLifetime: parseInt(form.value.AbsoluteRefreshTokenLifetime),
     SlidingRefreshTokenLifetime: parseInt(form.value.SlidingRefreshTokenLifetime),
     // ADR-0009 PATCH: send the trimmed value verbatim — "" clears back to
     // realm-scoped, a host sets the per-client RP ID.
@@ -439,7 +435,7 @@ function buildUpdateDto(): UpdateOAuthClientDto {
 
 async function regenerateSecret() {
   if (isCreate.value) return
-  if (!confirm(t('admin.oauthClients.confirmRegen', {}, 'Wirklich neu generieren? Das alte Secret wird sofort ungültig.'))) return
+  if (!confirm(t('admin.oauthClients.confirmRegen', {}, 'Really regenerate? The old secret becomes invalid immediately.'))) return
   loading.value = true
   try {
     const res = await store.regenerateSecret(props.id)
@@ -461,17 +457,17 @@ async function copySecret() {
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="app-window"
     :footer-button="footerButton">
     <div v-if="loading && !original && !isCreate" class="flex flex-1 items-center justify-center p-8">
-      <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
+      <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
     </div>
     <div v-else class="modal-body">
       <!-- New-secret notice — full-width across both columns -->
       <CoarNote v-if="newSecret" variant="warning" class="secret-banner">
         <div class="flex flex-col gap-2">
-          <div class="font-medium">{{ t('admin.oauthClients.secretOnce', {}, 'Bitte Client Secret jetzt kopieren — es wird nicht wieder angezeigt.') }}</div>
+          <div class="font-medium">{{ t('admin.oauthClients.secretOnce', {}, 'Please copy the client secret now — it won\'t be shown again.') }}</div>
           <div class="flex items-center gap-2">
             <code class="flex-1 break-all rounded bg-white/40 px-2 py-1 text-xs">{{ newSecret }}</code>
             <CoarButton size="s" variant="secondary" icon-start="copy" @click="copySecret">
-              {{ t('common.copy', {}, 'Kopieren') }}
+              {{ t('common.copy', {}, 'Copy') }}
             </CoarButton>
           </div>
         </div>
@@ -502,39 +498,39 @@ async function copySecret() {
            is born functional (the create form used to hide them entirely). -->
       <div class="two-col">
         <aside class="col-identity">
-          <h3 class="col-heading">{{ t('admin.oauthClients.tabs.general', {}, 'Allgemein') }}</h3>
+          <h3 class="col-heading">{{ t('admin.oauthClients.tabs.general', {}, 'General') }}</h3>
           <CoarFormField :label="t('admin.oauthClients.clientId', {}, 'Client ID')">
             <CoarTextInput v-model="form.ClientId" :disabled="!isCreate" :clearable="isCreate" class="input-id" />
           </CoarFormField>
           <CoarFormField :label="t('admin.oauthClients.displayName', {}, 'Display Name')">
             <CoarTextInput v-model="form.DisplayName" clearable class="input-name" />
           </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.type', {}, 'Client-Typ')">
+          <CoarFormField :label="t('admin.oauthClients.type', {}, 'Client Type')">
             <CoarSelect v-model="form.ClientType" :options="clientTypeOptions" :disabled="!isCreate" class="input-enum" />
           </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent-Typ')">
+          <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent Type')">
             <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" class="input-enum" />
           </CoarFormField>
           <CoarFormField :label="t('admin.oauthClients.webAuthnRpId', {}, 'WebAuthn RP-ID (Passkeys)')">
             <CoarTextInput v-model="form.WebAuthnRpId" clearable class="input-name"
-              :placeholder="t('admin.oauthClients.webAuthnRpIdPlaceholder', {}, 'leer = Realm-Domain')" />
+              :placeholder="t('admin.oauthClients.webAuthnRpIdPlaceholder', {}, 'empty = realm domain')" />
             <p class="field-hint">
-              {{ t('admin.oauthClients.webAuthnRpIdHint', {}, 'Optional. Eigene Relying-Party-Domain für native Passkeys dieser App (z. B. app.example.com). Leer = Realm-Domain. Achtung: Eine Änderung macht alle bereits registrierten Passkeys dieser App ungültig.') }}
+              {{ t('admin.oauthClients.webAuthnRpIdHint', {}, 'Optional. Dedicated relying-party domain for this app\'s native passkeys (e.g. app.example.com). Empty = realm domain. Warning: changing this invalidates all passkeys already registered for this app.') }}
             </p>
           </CoarFormField>
-          <CoarFormField v-if="isCreate" :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (leer = generieren)')">
+          <CoarFormField v-if="isCreate" :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (empty = generate)')">
             <CoarTextInput v-model="form.ClientSecret" type="password" clearable class="input-name" />
           </CoarFormField>
           <div class="checkbox-stack">
-            <CoarCheckbox v-model="form.Enabled" :label="t('admin.oauthClients.enabled', {}, 'Aktiv')" />
-            <CoarCheckbox v-model="form.RequireClientSecret" :label="t('admin.oauthClients.requireSecret', {}, 'Secret erforderlich')" />
-            <CoarCheckbox v-model="form.RequireConsent" :label="t('admin.oauthClients.requireConsent', {}, 'Zustimmung erforderlich')" />
-            <CoarCheckbox v-if="!isCreate" v-model="form.AllowRememberConsent" :label="t('admin.oauthClients.rememberConsent', {}, 'Zustimmung speichern')" />
-            <CoarCheckbox v-if="!isCreate" v-model="form.AllowAccessTokensViaBrowser" :label="t('admin.oauthClients.tokensInBrowser', {}, 'Token im Browser erlaubt')" />
-            <CoarCheckbox v-if="!isCreate" v-model="form.EnableLocalLogin" :label="t('admin.oauthClients.localLogin', {}, 'Lokaler Login erlaubt')" />
+            <CoarCheckbox v-model="form.Enabled" :label="t('admin.oauthClients.enabled', {}, 'Active')" />
+            <CoarCheckbox v-model="form.RequireClientSecret" :label="t('admin.oauthClients.requireSecret', {}, 'Secret required')" />
+            <CoarCheckbox v-model="form.RequireConsent" :label="t('admin.oauthClients.requireConsent', {}, 'Consent required')" />
+            <CoarCheckbox v-if="!isCreate" v-model="form.AllowRememberConsent" :label="t('admin.oauthClients.rememberConsent', {}, 'Remember consent')" />
+            <CoarCheckbox v-if="!isCreate" v-model="form.AllowAccessTokensViaBrowser" :label="t('admin.oauthClients.tokensInBrowser', {}, 'Access tokens allowed in browser')" />
+            <CoarCheckbox v-if="!isCreate" v-model="form.EnableLocalLogin" :label="t('admin.oauthClients.localLogin', {}, 'Local login allowed')" />
           </div>
           <CoarButton v-if="isExistingClient" size="s" variant="secondary" icon-start="rotate-ccw" :loading="loading" @click="regenerateSecret" class="regen-btn">
-            {{ t('admin.oauthClients.regenerate', {}, 'Client Secret neu generieren') }}
+            {{ t('admin.oauthClients.regenerate', {}, 'Regenerate Client Secret') }}
           </CoarButton>
         </aside>
 
@@ -558,7 +554,7 @@ async function copySecret() {
               {{ t('admin.oauthClients.apps.hint', {}, 'Apps this client may operate in. Empty = realm-wide (only standard OIDC scopes). Multiple apps = Keycloak-style cross-app client.') }}
             </p>
             <p class="tab-hint tab-hint--shortcut">
-              {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
+              {{ t('admin.dualListbox.multiSelectHint', {}, 'Tip: Ctrl/Cmd-click for multi-select · Shift-click for a range · drag and drop between columns.') }}
             </p>
             <section class="flex-section">
               <CoarDualListbox
@@ -581,7 +577,7 @@ async function copySecret() {
               {{ t('admin.oauthClients.scopes.hint', {}, 'OpenIddict rejects /connect/authorize and /connect/token requests for any scope not listed here. Add at minimum openid + roles for OIDC clients.') }}
             </p>
             <p class="tab-hint tab-hint--shortcut">
-              {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
+              {{ t('admin.dualListbox.multiSelectHint', {}, 'Tip: Ctrl/Cmd-click for multi-select · Shift-click for a range · drag and drop between columns.') }}
             </p>
             <section class="flex-section">
               <CoarDualListbox
@@ -604,7 +600,7 @@ async function copySecret() {
               {{ t('admin.oauthClients.grantTypes.hint', {}, 'No silent defaults: leaving this empty produces a client that cannot mint tokens. SPAs / mobile apps: authorization_code + refresh_token. Server-to-server: client_credentials. Pick what the client actually needs.') }}
             </p>
             <p class="tab-hint tab-hint--shortcut">
-              {{ t('admin.dualListbox.multiSelectHint', {}, 'Tipp: Strg/Cmd-Klick für Mehrfachauswahl · Shift-Klick für Bereich · Drag-and-Drop zwischen den Spalten.') }}
+              {{ t('admin.dualListbox.multiSelectHint', {}, 'Tip: Ctrl/Cmd-click for multi-select · Shift-click for a range · drag and drop between columns.') }}
             </p>
             <CoarNote v-if="nativeGrantsEnabled" variant="info">
               {{ t('admin.oauthClients.grantTypes.nativeHint', {}, 'Native passwordless grants (urn:cocoar:otp / :magic / :passkey) are enabled for this realm and available below. Add one here to give this client the matching gt:urn:cocoar:* permission — only then can it exchange a passwordless proof at /connect/token.') }}
@@ -638,7 +634,7 @@ async function copySecret() {
                 v-model="form.PostLogoutRedirectUris"
                 :placeholder="t('admin.oauthClients.postLogoutRedirectUri.placeholder', {}, 'https://app.example.com/signout-callback-oidc')" />
             </CoarFormField>
-            <CoarFormField :label="t('admin.oauthClients.accessTokenType', {}, 'Access-Token-Typ')">
+            <CoarFormField :label="t('admin.oauthClients.accessTokenType', {}, 'Access Token Type')">
               <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" class="input-enum" />
               <p class="text-xs text-gray-500 mt-1">
                 {{ t('admin.oauthClients.accessTokenType.hint', {}, 'JWT: token is self-contained, the resource server validates it locally via signature. Reference: token is opaque, the RS must call /connect/introspect on every request. JWT is the right pick for AddJwtBearer-based RSes.') }}
@@ -654,7 +650,7 @@ async function copySecret() {
           <!-- Lifetimes -->
           <div v-show="activeTab === 'lifetimes'" class="tab-content">
             <p class="text-xs text-gray-500 mb-2">
-              {{ t('admin.oauthClients.lifetimesHint', {}, 'Werte in Sekunden. Leer = Default des IdP.') }}
+              {{ t('admin.oauthClients.lifetimesHint', {}, 'Values in seconds. Empty = the IdP\'s default.') }}
             </p>
             <div class="lifetime-grid">
               <CoarFormField :label="t('admin.oauthClients.identityTokenLifetime', {}, 'Identity-Token')">
@@ -665,9 +661,6 @@ async function copySecret() {
               </CoarFormField>
               <CoarFormField :label="t('admin.oauthClients.authCodeLifetime', {}, 'Authorization-Code')">
                 <CoarTextInput v-model="form.AuthorizationCodeLifetime" type="number" clearable class="input-number" />
-              </CoarFormField>
-              <CoarFormField :label="t('admin.oauthClients.absRefreshLifetime', {}, 'Absolute Refresh-Token')">
-                <CoarTextInput v-model="form.AbsoluteRefreshTokenLifetime" type="number" clearable class="input-number" />
               </CoarFormField>
               <CoarFormField :label="t('admin.oauthClients.slidingRefreshLifetime', {}, 'Sliding Refresh-Token')">
                 <CoarTextInput v-model="form.SlidingRefreshTokenLifetime" type="number" clearable class="input-number" />

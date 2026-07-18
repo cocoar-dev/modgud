@@ -129,7 +129,7 @@ watch(
 )
 
 const modalTitle = computed(() => {
-  if (isCreate.value) return t('admin.loginProviders.createTitle', {}, 'Login-Provider hinzufügen')
+  if (isCreate.value) return t('admin.loginProviders.createTitle', {}, 'Add Login Provider')
   return provider.value?.DisplayName || ''
 })
 
@@ -211,7 +211,7 @@ async function load() {
     const existing = store.providers.find((p) => p.Id === props.id)
       ?? await store.loadOne(props.id)
     if (!existing) {
-      error.value = t('admin.loginProviders.notFound', {}, 'Nicht gefunden')
+      error.value = t('admin.loginProviders.notFound', {}, 'Not found')
       return
     }
     provider.value = existing
@@ -253,13 +253,13 @@ watch(flavorKey, (newKey, oldKey) => {
 
 async function save() {
   if (!form.value.DisplayName.trim()) {
-    error.value = t('admin.loginProviders.nameRequired', {}, 'Name ist erforderlich')
+    error.value = t('admin.loginProviders.nameRequired', {}, 'Name is required')
     return
   }
   // Slug is required + format-checked at create only (immutable afterwards).
   if (isCreate.value && !SLUG_RE.test(form.value.Slug.trim())) {
     error.value = t('admin.loginProviders.slugInvalid', {},
-      'Slug muss 3-64 Zeichen lang sein: Kleinbuchstaben, Ziffern, Bindestriche; Beginn mit Buchstabe, Ende alphanumerisch.')
+      'Slug must be 3-64 characters: lowercase letters, digits, hyphens; must start with a letter and end alphanumerically.')
     return
   }
   error.value = null
@@ -279,7 +279,7 @@ async function save() {
 
 async function createProvider() {
   if (!flavor.value) {
-    error.value = t('admin.loginProviders.flavorRequired', {}, 'Flavor auswählen')
+    error.value = t('admin.loginProviders.flavorRequired', {}, 'Select flavor')
     return
   }
 
@@ -308,7 +308,7 @@ async function createProvider() {
       const names = missing.map((f) => f.Label).join(', ')
       error.value = t(
         'admin.loginProviders.requiredFieldsMissing', {},
-        `Pflichtfelder fehlen im Verbindung-Tab: ${names}`
+        `Required fields missing in the Connection tab: ${names}`
       )
       return
     }
@@ -351,7 +351,7 @@ async function createProvider() {
       // Surface the warning but let the modal transition to Edit mode so the
       // admin sees their saved provider and can retry the secret.
       error.value = t('admin.loginProviders.secretRotationFailed', {},
-        'Provider angelegt, aber Secret konnte nicht gesetzt werden — bitte unter "Verbindung" erneut versuchen.')
+        'Provider created, but the secret could not be set — please retry under "Connection".')
     }
     newSecret.value = ''
   }
@@ -420,8 +420,8 @@ const footerButton = computed(() => ({
   // providers. Built-in (Internal seed) stays read-only.
   visible: isCreate.value || !isBuiltIn.value,
   text: isCreate.value
-    ? t('common.create', {}, 'Erstellen')
-    : t('common.save', {}, 'Speichern'),
+    ? t('common.create', {}, 'Create')
+    : t('common.save', {}, 'Save'),
   disabled: saving.value || loading.value,
   onClick: save,
 }))
@@ -498,13 +498,13 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
     </template>
 
     <div v-if="loading" class="flex items-center justify-center p-8">
-      <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
+      <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
     </div>
 
     <div v-else class="flex flex-col flex-1 min-h-0 gap-3">
       <!-- Built-in banner — hard-block on edits via UI; backend rejects too. -->
       <CoarNote v-if="isBuiltIn" variant="info">
-        {{ t('admin.loginProviders.builtIn.banner', {}, 'Dies ist der eingebaute interne Login-Provider — die Konfiguration wird vom System verwaltet und kann hier nicht geändert werden.') }}
+        {{ t('admin.loginProviders.builtIn.banner', {}, 'This is the built-in internal login provider — its configuration is managed by the system and can\'t be changed here.') }}
       </CoarNote>
 
       <!-- Header row: type/flavor badge, enabled-toggle, error -->
@@ -531,19 +531,19 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
           v-if="provider && !isBuiltIn"
           v-model="form.Enabled"
           :label="form.Enabled
-            ? t('admin.loginProviders.enabled', {}, 'Aktiviert')
-            : t('admin.loginProviders.disabled', {}, 'Deaktiviert')"
+            ? t('admin.loginProviders.enabled', {}, 'Enabled')
+            : t('admin.loginProviders.disabled', {}, 'Disabled')"
         />
         <div v-if="error" class="error-banner flex-1">{{ error }}</div>
       </div>
 
       <CoarTabGroup v-if="showProtocolTabs" v-model="activeTab">
-        <CoarTab id="general">{{ t('admin.loginProviders.tabGeneral', {}, 'Allgemein') }}</CoarTab>
-        <CoarTab id="connection">{{ t('admin.loginProviders.tabConnection', {}, 'Verbindung') }}</CoarTab>
+        <CoarTab id="general">{{ t('admin.loginProviders.tabGeneral', {}, 'General') }}</CoarTab>
+        <CoarTab id="connection">{{ t('admin.loginProviders.tabConnection', {}, 'Connection') }}</CoarTab>
         <CoarTab v-if="hasAdvancedFields" id="advanced">{{ t('admin.loginProviders.tabAdvanced', {}, 'Erweitert') }}</CoarTab>
         <CoarTab v-if="isSaml" id="claim-mapping">{{ t('admin.loginProviders.tabClaimMapping', {}, 'Claim-Mapping') }}</CoarTab>
         <CoarTab id="claims">{{ t('admin.loginProviders.tabUserUpdate', {}, 'User-Update-Script') }}</CoarTab>
-        <CoarTab id="linking">{{ t('admin.loginProviders.tabLinking', {}, 'Verknüpfung & Richtlinien') }}</CoarTab>
+        <CoarTab id="linking">{{ t('admin.loginProviders.tabLinking', {}, 'Linking & Policies') }}</CoarTab>
       </CoarTabGroup>
 
       <!-- General tab (always visible — also the only tab for Internal) -->
@@ -551,7 +551,7 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
         <div class="modal-form">
           <!-- Section: Identität -->
           <section class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.loginProviders.section.identity', {}, 'Identität') }}</h3>
+            <h3 class="form-section-heading">{{ t('admin.loginProviders.section.identity', {}, 'Identity') }}</h3>
             <div class="modal-form-grid">
               <!-- Display Name (left) + Slug (right). The slug is URL-stable +
                    immutable after create; it's hidden for the built-in Internal
@@ -578,13 +578,13 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
                   @update:model-value="onSlugInput" />
                 <p class="field-hint">
                   {{ isCreate
-                    ? t('admin.loginProviders.slugHintCreate', {}, 'Erscheint in den Provider-URLs (z. B. /signin-oidc/<slug>). Nach dem Anlegen nicht mehr änderbar.')
-                    : t('admin.loginProviders.slugHintEdit', {}, 'Nicht änderbar — ein anderer Slug bedeutet löschen + neu anlegen.') }}
+                    ? t('admin.loginProviders.slugHintCreate', {}, 'Appears in the provider URLs (e.g. /signin-oidc/<slug>). Not changeable after creation.')
+                    : t('admin.loginProviders.slugHintEdit', {}, 'Not changeable — a different slug means deleting and recreating.') }}
                 </p>
               </CoarFormField>
-              <CoarFormField class="col-full" :label="t('common.description', {}, 'Beschreibung')">
+              <CoarFormField class="col-full" :label="t('common.description', {}, 'Description')">
                 <CoarTextInput v-model="form.Description" :disabled="isBuiltIn" clearable :rows="2" />
-                <p class="field-hint">{{ t('admin.loginProviders.description.hint', {}, 'Optionale Notiz zur internen Beschreibung dieses Providers.') }}</p>
+                <p class="field-hint">{{ t('admin.loginProviders.description.hint', {}, 'Optional note for the internal description of this provider.') }}</p>
               </CoarFormField>
             </div>
           </section>
@@ -596,11 +596,11 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
             <div class="modal-form-grid">
               <CoarFormField class="col-half" :label="t('admin.loginProviders.iconName', {}, 'Button-Icon')">
                 <CoarTextInput v-model="form.IconName" :disabled="isBuiltIn" placeholder="microsoft" clearable />
-                <p class="field-hint">{{ t('admin.loginProviders.iconName.hint', {}, 'Name eines Lucide-Icons (z. B. microsoft, key, building). Siehe lucide.dev.') }}</p>
+                <p class="field-hint">{{ t('admin.loginProviders.iconName.hint', {}, 'Name of a Lucide icon (e.g. microsoft, key, building). See lucide.dev.') }}</p>
               </CoarFormField>
               <CoarFormField class="col-half" :label="t('admin.loginProviders.buttonColorHex', {}, 'Button-Farbe')">
                 <ColorField v-model="form.ButtonColorHex" :disabled="isBuiltIn" placeholder="#0078D4" />
-                <p class="field-hint">{{ t('admin.loginProviders.buttonColorHex.hint', {}, 'Hex-Farbe des Login-Buttons (optional, z. B. #0078D4).') }}</p>
+                <p class="field-hint">{{ t('admin.loginProviders.buttonColorHex.hint', {}, 'Hex color of the login button (optional, e.g. #0078D4).') }}</p>
               </CoarFormField>
             </div>
           </section>
@@ -617,19 +617,19 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
                   <div class="flex gap-2 items-center">
                     <CoarTextInput :model-value="samlSpMetadataUrl" readonly class="flex-1" />
                     <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlSpMetadataUrl)">
-                      {{ t('common.copy', {}, 'Kopieren') }}
+                      {{ t('common.copy', {}, 'Copy') }}
                     </CoarButton>
                   </div>
-                  <p class="field-hint">{{ t('admin.loginProviders.idpReadOnlyHint', {}, 'Schreibgeschützt — in die App-Registrierung des externen IdP eintragen.') }}</p>
+                  <p class="field-hint">{{ t('admin.loginProviders.idpReadOnlyHint', {}, 'Read-only — enter this in the external IdP\'s app registration.') }}</p>
                 </CoarFormField>
                 <CoarFormField class="col-full" :label="t('admin.loginProviders.samlAcsUrl', {}, 'ACS-URL / Reply-URL')">
                   <div class="flex gap-2 items-center">
                     <CoarTextInput :model-value="samlAcsUrl" readonly class="flex-1" />
                     <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlAcsUrl)">
-                      {{ t('common.copy', {}, 'Kopieren') }}
+                      {{ t('common.copy', {}, 'Copy') }}
                     </CoarButton>
                   </div>
-                  <p class="field-hint">{{ t('admin.loginProviders.idpReadOnlyHint', {}, 'Schreibgeschützt — in die App-Registrierung des externen IdP eintragen.') }}</p>
+                  <p class="field-hint">{{ t('admin.loginProviders.idpReadOnlyHint', {}, 'Read-only — enter this in the external IdP\'s app registration.') }}</p>
                 </CoarFormField>
               </template>
               <!-- OIDC redirect URI is slug-derived (host + /signin-oidc/{slug}). -->
@@ -637,10 +637,10 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
                 <div class="flex gap-2 items-center">
                   <CoarTextInput :model-value="redirectUri" readonly class="flex-1" />
                   <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyRedirect">
-                    {{ t('common.copy', {}, 'Kopieren') }}
+                    {{ t('common.copy', {}, 'Copy') }}
                   </CoarButton>
                 </div>
-                <p class="field-hint">{{ t('admin.loginProviders.idpReadOnlyHint', {}, 'Schreibgeschützt — in die App-Registrierung des externen IdP eintragen.') }}</p>
+                <p class="field-hint">{{ t('admin.loginProviders.idpReadOnlyHint', {}, 'Read-only — enter this in the external IdP\'s app registration.') }}</p>
               </CoarFormField>
             </div>
           </section>
@@ -662,7 +662,7 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
             <CoarFormField :label="t('admin.loginProviders.clientId', {}, 'Client ID')">
               <CoarTextInput v-model="form.ClientId" :disabled="isBuiltIn" placeholder="application-client-id" clearable />
             </CoarFormField>
-            <CoarFormField :label="t('admin.loginProviders.scopes', {}, 'Scopes (leer- oder komma-getrennt)')">
+            <CoarFormField :label="t('admin.loginProviders.scopes', {}, 'Scopes (space- or comma-separated)')">
               <CoarTextInput
                 :model-value="form.Scopes.join(' ')"
                 :disabled="isBuiltIn"
@@ -680,22 +680,22 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
               <template v-if="isCreate">
                 <div class="text-sm secret-status mb-2">
                   <CoarIcon name="shield-alert" size="s" />
-                  <span>{{ t('admin.loginProviders.secretInitial', {}, 'Initiales Secret (optional; kann später unter Verbindung gesetzt werden).') }}</span>
+                  <span>{{ t('admin.loginProviders.secretInitial', {}, 'Initial secret (optional; can be set later under Connection).') }}</span>
                 </div>
                 <CoarTextInput v-model="newSecret" type="password" clearable placeholder="••••••••" />
               </template>
               <template v-else-if="provider">
                 <div class="text-sm secret-status mb-2">
                   <CoarIcon :name="provider.HasClientSecret ? 'shield-check' : 'shield-alert'" size="s" />
-                  <span v-if="provider.HasClientSecret">{{ t('admin.loginProviders.secretSet', {}, 'Secret ist konfiguriert. Neuen Wert eingeben, um zu rotieren.') }}</span>
-                  <span v-else>{{ t('admin.loginProviders.secretMissing', {}, 'Kein Secret gesetzt — setze eines, bevor du den Provider aktivierst.') }}</span>
+                  <span v-if="provider.HasClientSecret">{{ t('admin.loginProviders.secretSet', {}, 'Secret is configured. Enter a new value to rotate it.') }}</span>
+                  <span v-else>{{ t('admin.loginProviders.secretMissing', {}, 'No secret set — set one before activating the provider.') }}</span>
                 </div>
                 <div class="flex gap-2">
                   <CoarTextInput v-model="newSecret" :disabled="isBuiltIn" type="password" class="flex-1" clearable placeholder="••••••••" />
                   <CoarButton :disabled="!newSecret || saving || isBuiltIn" @click="rotateSecret">
                     {{ provider.HasClientSecret
-                      ? t('admin.loginProviders.rotateSecret', {}, 'Rotieren')
-                      : t('admin.loginProviders.setSecret', {}, 'Setzen') }}
+                      ? t('admin.loginProviders.rotateSecret', {}, 'Rotate')
+                      : t('admin.loginProviders.setSecret', {}, 'Set') }}
                   </CoarButton>
                 </div>
               </template>
@@ -726,7 +726,7 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
             :value-label="t('admin.loginProviders.claimUris', {}, 'SAML-Attribut-URIs (komma-getrennt)')"
             key-placeholder="email"
             value-placeholder="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress, email"
-            :add-label="t('admin.loginProviders.addMapping', {}, 'Mapping hinzufügen')"
+            :add-label="t('admin.loginProviders.addMapping', {}, 'Add Mapping')"
             @update:model-value="(v) => form.FlavorData = { ...form.FlavorData, attributeMap: v }"
           />
           <div class="section-heading mt-4">{{ t('admin.loginProviders.amrMapping', {}, 'AMR-Mapping (AuthnContextClassRef → AMR)') }}</div>
@@ -737,7 +737,7 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
             :value-label="t('admin.loginProviders.amrValues', {}, 'AMR-Werte (komma-getrennt)')"
             key-placeholder="urn:oasis:names:tc:SAML:2.0:ac:classes:MultiFactor"
             value-placeholder="mfa"
-            :add-label="t('admin.loginProviders.addMapping', {}, 'Mapping hinzufügen')"
+            :add-label="t('admin.loginProviders.addMapping', {}, 'Add Mapping')"
             @update:model-value="(v) => form.FlavorData = { ...form.FlavorData, amrMapping: v }"
           />
         </div>
@@ -754,11 +754,11 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
         <!-- Linking + policy tab -->
         <div v-show="activeTab === 'linking'" class="tab-content">
           <CoarCheckbox v-model="form.AutoCreateUsers" :disabled="isBuiltIn"
-            :label="t('admin.loginProviders.autoCreate', {}, 'Neue User beim ersten Login automatisch anlegen (JIT)')" />
+            :label="t('admin.loginProviders.autoCreate', {}, 'Automatically create new users on first login (JIT)')" />
           <CoarCheckbox v-model="form.AllowLinking" :disabled="isBuiltIn"
-            :label="t('admin.loginProviders.allowLinking', {}, 'User dürfen diesen Provider im Profil verknüpfen')" />
+            :label="t('admin.loginProviders.allowLinking', {}, 'Users may link this provider in their profile')" />
           <CoarCheckbox v-model="form.TrustForEmailLink" :disabled="isBuiltIn"
-            :label="t('admin.loginProviders.trustForEmailLink', {}, 'Email-basierte Auto-Verknüpfung — bei gleicher Email an bestehenden lokalen User binden (GEFÄHRLICH: nur bei tenant-eigenen Providern)')" />
+            :label="t('admin.loginProviders.trustForEmailLink', {}, 'Email-based auto-linking — bind to an existing local user with the same email (DANGEROUS: only for tenant-owned providers)')" />
 
           <div class="divider"></div>
 
@@ -767,7 +767,7 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
           <CoarCheckbox v-model="form.AuthoritativeForProfile" :disabled="isBuiltIn"
             :label="t('admin.loginProviders.authoritativeForProfile', {}, 'Authoritative for profile — this provider may write the profile fields (first/last name, email, acronym) on every login. Default: off (the creating provider is authoritative by default).')" />
 
-          <CoarFormField :label="t('admin.loginProviders.allowedEmailDomains', {}, 'Erlaubte Email-Domänen (komma-getrennt, leer = kein Filter)')">
+          <CoarFormField :label="t('admin.loginProviders.allowedEmailDomains', {}, 'Allowed email domains (comma-separated, empty = no filter)')">
             <CoarTextInput
               :model-value="form.AllowedEmailDomains.join(', ')"
               :disabled="isBuiltIn"
@@ -780,9 +780,9 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
           <div class="divider"></div>
 
           <CoarCheckbox v-model="form.StoreRawClaims" :disabled="isBuiltIn"
-            :label="t('admin.loginProviders.storeRawClaims', {}, 'Roh-Claim-Snapshots pro Login speichern (für Debugging)')" />
+            :label="t('admin.loginProviders.storeRawClaims', {}, 'Store raw claim snapshots per login (for debugging)')" />
           <CoarFormField v-if="form.StoreRawClaims"
-            :label="t('admin.loginProviders.rawRetentionDays', {}, 'Aufbewahrung der Rohclaims (Tage, leer = unbegrenzt)')">
+            :label="t('admin.loginProviders.rawRetentionDays', {}, 'Raw claim retention (days, empty = unlimited)')">
             <CoarTextInput
               :model-value="form.RawClaimsRetentionDays?.toString() ?? ''"
               :disabled="isBuiltIn"

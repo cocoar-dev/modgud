@@ -36,16 +36,16 @@ interface ChangeRequest {
   ReviewerNote: string | null
 }
 
-const typeLabels: Record<string, string> = {
-  Profile: 'Profiländerung',
-}
+const typeLabels = computed<Record<string, string>>(() => ({
+  Profile: t('admin.changeRequests.typeLabels.profile', {}, 'Profile Change'),
+}))
 
-const fieldLabels: Record<string, string> = {
-  Firstname: 'Vorname',
-  Lastname: 'Nachname',
-  Acronym: 'Kürzel',
-  Email: 'E-Mail',
-}
+const fieldLabels = computed<Record<string, string>>(() => ({
+  Firstname: t('admin.changeRequests.fieldLabels.firstname', {}, 'First Name'),
+  Lastname: t('admin.changeRequests.fieldLabels.lastname', {}, 'Last Name'),
+  Acronym: t('admin.changeRequests.fieldLabels.acronym', {}, 'Acronym'),
+  Email: t('admin.changeRequests.fieldLabels.email', {}, 'Email'),
+}))
 
 const requests = ref<ChangeRequest[]>([])
 const loading = ref(true)
@@ -87,7 +87,7 @@ async function approve() {
     await loadRequests()
     selected.value = null
   } catch (e: any) {
-    actionError.value = e?.body?.Message || t('admin.changeRequests.approveFailed', {}, 'Freigabe fehlgeschlagen.')
+    actionError.value = e?.body?.Message || t('admin.changeRequests.approveFailed', {}, 'Approval failed.')
   } finally { busy.value = false }
 }
 
@@ -103,7 +103,7 @@ async function reject() {
     await loadRequests()
     selected.value = null
   } catch (e: any) {
-    actionError.value = e?.body?.Message || t('admin.changeRequests.rejectFailed', {}, 'Ablehnung fehlgeschlagen.')
+    actionError.value = e?.body?.Message || t('admin.changeRequests.rejectFailed', {}, 'Rejection failed.')
   } finally { busy.value = false }
 }
 
@@ -122,12 +122,12 @@ const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<ChangeRequest>(
   .rowSelection('single')
   .onCellDoubleClicked((event) => { if (event.data) openRow(event.data) })
   .columns([
-    (col) => col.date('UpdatedAt', { includeTime: true }).header('Zuletzt geändert', 'admin.changeRequests.updatedAt').width(170),
-    (col) => col.field('UserLabel').header('Benutzer', 'admin.changeRequests.user').flex(1),
-    (col) => col.field('Type').header('Typ', 'admin.changeRequests.type').width(140)
-      .option('valueGetter', (p: any) => typeLabels[p.data?.Type as string] ?? p.data?.Type),
-    (col) => col.field('Changes').header('Felder', 'admin.changeRequests.fields').flex(1)
-      .option('valueGetter', (p: any) => (p.data?.Changes ?? []).map((c: ChangeItem) => fieldLabels[c.Field] || c.Field).join(', ')),
+    (col) => col.date('UpdatedAt', { includeTime: true }).header('Last changed', 'admin.changeRequests.updatedAt').width(170),
+    (col) => col.field('UserLabel').header('User', 'admin.changeRequests.user').flex(1),
+    (col) => col.field('Type').header('Type', 'admin.changeRequests.type').width(140)
+      .option('valueGetter', (p: any) => typeLabels.value[p.data?.Type as string] ?? p.data?.Type),
+    (col) => col.field('Changes').header('Fields', 'admin.changeRequests.fields').flex(1)
+      .option('valueGetter', (p: any) => (p.data?.Changes ?? []).map((c: ChangeItem) => fieldLabels.value[c.Field] || c.Field).join(', ')),
     (col) => col.field('Status').header('Status', 'admin.changeRequests.status').width(180)
       .option('valueGetter', (p: any) => statusLabels.value[p.data?.Status as keyof typeof statusLabels.value] ?? p.data?.Status),
   ])
@@ -138,9 +138,9 @@ const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<ChangeRequest>(
     <CoarDataGrid v-show="!showEmpty" :builder="gridBuilder" :search-placeholder="searchPlaceholder" class="h-full" show-search bordered elevated>
       <template #toolbar-right>
         <CoarCheckbox v-model="includeTerminal"
-          :label="t('admin.changeRequests.includeTerminal', {}, 'Auch erledigte anzeigen')" />
+          :label="t('admin.changeRequests.includeTerminal', {}, 'Also show completed')" />
         <CoarButton size="s" variant="ghost" icon-start="rotate-ccw" @click="loadRequests">
-          {{ t('common.refresh', {}, 'Neu laden') }}
+          {{ t('common.refresh', {}, 'Refresh') }}
         </CoarButton>
       </template>
     </CoarDataGrid>
@@ -160,9 +160,9 @@ const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<ChangeRequest>(
           :title="t('admin.changeRequests.reviewTitle', {}, 'Review request')" width="36rem">
           <div class="flex flex-col gap-4 p-2 text-sm">
             <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-              <div class="text-gray-600">{{ t('admin.changeRequests.user', {}, 'Benutzer') }}:</div>
+              <div class="text-gray-600">{{ t('admin.changeRequests.user', {}, 'User') }}:</div>
               <div class="font-medium">{{ selected.UserLabel }}</div>
-              <div class="text-gray-600">{{ t('admin.changeRequests.type', {}, 'Typ') }}:</div>
+              <div class="text-gray-600">{{ t('admin.changeRequests.type', {}, 'Type') }}:</div>
               <div class="font-medium">{{ typeLabels[selected.Type] || selected.Type }}</div>
               <div class="text-gray-600">{{ t('admin.changeRequests.status', {}, 'Status') }}:</div>
               <div>{{ statusLabels[selected.Status] }}</div>
@@ -187,23 +187,23 @@ const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<ChangeRequest>(
             </div>
 
             <template v-if="selected.Status !== 'Approved' && selected.Status !== 'Rejected'">
-              <CoarFormField :label="t('admin.changeRequests.rejectReason', {}, 'Ablehnungsgrund (optional)')">
+              <CoarFormField :label="t('admin.changeRequests.rejectReason', {}, 'Rejection reason (optional)')">
                 <CoarTextInput v-model="rejectNote"
-                  :placeholder="t('admin.changeRequests.rejectReasonPlaceholder', {}, 'z.B. Adresse passt nicht zur Firma')" />
+                  :placeholder="t('admin.changeRequests.rejectReasonPlaceholder', {}, 'e.g. address doesn\'t match the company')" />
               </CoarFormField>
               <CoarCheckbox v-model="notifyUser"
-                :label="t('admin.changeRequests.notifyUser', {}, 'Benutzer per E-Mail benachrichtigen')" />
+                :label="t('admin.changeRequests.notifyUser', {}, 'Notify user by email')" />
               <CoarNote v-if="actionError" variant="error">{{ actionError }}</CoarNote>
               <div class="flex gap-2 justify-end pt-2">
                 <CoarButton variant="danger" icon-start="x" :loading="busy"
                   :disabled="selected.Status === 'EmailVerificationPending'"
                   @click="reject">
-                  {{ t('admin.changeRequests.reject', {}, 'Ablehnen') }}
+                  {{ t('admin.changeRequests.reject', {}, 'Reject') }}
                 </CoarButton>
                 <CoarButton variant="primary" icon-start="check" :loading="busy"
                   :disabled="selected.Status !== 'AdminApprovalPending'"
                   @click="approve">
-                  {{ t('admin.changeRequests.approve', {}, 'Freigeben') }}
+                  {{ t('admin.changeRequests.approve', {}, 'Approve') }}
                 </CoarButton>
               </div>
               <CoarNote v-if="selected.Status === 'EmailVerificationPending'" variant="info">

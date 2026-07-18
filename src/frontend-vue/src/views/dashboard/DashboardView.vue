@@ -149,7 +149,7 @@ function deviceLabel(s: SessionDto): string {
   // KPI-style "Browser auf Gerät" — the screenshot's row label uses
   // "Chrome auf Windows" rather than the older "Browser · OS" form.
   const browser = s.Browser || t('dashboard.sessions.unknownBrowser', {}, 'Browser')
-  const os = s.OperatingSystem || s.DeviceType || t('dashboard.sessions.unknownDevice', {}, 'Unbekanntes Gerät')
+  const os = s.OperatingSystem || s.DeviceType || t('dashboard.sessions.unknownDevice', {}, 'Unknown Device')
   return t('dashboard.sessions.deviceLabel', { browser, os }, '{browser} auf {os}')
 }
 
@@ -311,7 +311,7 @@ const personalKpiTiles = computed<KpiTile[]>(() => {
     tone: 'sky',
     value: sessionsValue,
     loading: sessionsLoading.value && !sessionsError.value,
-    caption: t('dashboard.kpi.activeSessions', {}, 'Aktive Sitzungen'),
+    caption: t('dashboard.kpi.activeSessions', {}, 'Active Sessions'),
     onClick: goToProfileSessions,
   })
 
@@ -398,7 +398,7 @@ const opsKpiTiles = computed<KpiTile[]>(() => {
       tone: 'blue',
       value: providersValue,
       loading: providersLoading.value && !providersError.value,
-      caption: t('dashboard.kpi.activeLoginProviders', {}, 'Login-Provider aktiv'),
+      caption: t('dashboard.kpi.activeLoginProviders', {}, 'Active Login Providers'),
       onClick: () => router.push('/admin/login-providers'),
     })
   }
@@ -458,7 +458,7 @@ onMounted(() => {
           <div class="p-4">
             <h3 class="list-card__heading">
               <CoarIcon name="shield-check" size="s" class="mr-1 inline-block align-text-bottom" />
-              {{ t('dashboard.security.title', {}, 'Account-Sicherheit') }}
+              {{ t('dashboard.security.title', {}, 'Account Security') }}
             </h3>
             <div class="space-y-1">
               <button
@@ -480,7 +480,7 @@ onMounted(() => {
             </div>
             <div class="list-card__footer">
               <button type="button" class="list-card__cta" @click="goToProfileSecurity">
-                {{ t('dashboard.security.cta', {}, 'Zum Profil →') }}
+                {{ t('dashboard.security.cta', {}, 'To Profile →') }}
               </button>
             </div>
           </div>
@@ -491,16 +491,16 @@ onMounted(() => {
           <div class="p-4">
             <h3 class="list-card__heading">
               <CoarIcon name="monitor" size="s" class="mr-1 inline-block align-text-bottom" />
-              {{ t('dashboard.sessions.title', {}, 'Aktive Sitzungen') }}
+              {{ t('dashboard.sessions.title', {}, 'Active Sessions') }}
             </h3>
             <div v-if="sessionsLoading" class="list-card__loading">
               <CoarSpinner size="m" />
             </div>
             <CoarNote v-else-if="sessionsError" variant="error">
-              {{ t('dashboard.errors.loadFailed', {}, 'Daten konnten nicht geladen werden.') }}
+              {{ t('dashboard.errors.loadFailed', {}, 'Failed to load the data.') }}
             </CoarNote>
             <div v-else-if="sessions.length === 0" class="list-card__empty">
-              {{ t('dashboard.sessions.none', {}, 'Keine Sitzungen vorhanden.') }}
+              {{ t('dashboard.sessions.none', {}, 'No sessions.') }}
             </div>
             <div v-else class="space-y-1">
               <button
@@ -514,7 +514,7 @@ onMounted(() => {
                 <span class="list-row__label">{{ deviceLabel(s) }}</span>
                 <span class="list-row__meta">
                   <CoarTag v-if="s.IsCurrent" variant="success" size="s">
-                    {{ t('dashboard.sessions.thisDevice', {}, 'Dieses Gerät') }}
+                    {{ t('dashboard.sessions.thisDevice', {}, 'This Device') }}
                   </CoarTag>
                   <CoarTag variant="neutral" size="s">{{ relativeTime(s.LastActiveAt) }}</CoarTag>
                 </span>
@@ -550,16 +550,16 @@ onMounted(() => {
             <div class="p-4">
               <h3 class="list-card__heading">
                 <CoarIcon name="scroll-text" size="s" class="mr-1 inline-block align-text-bottom" />
-                {{ t('dashboard.systemActivity.title', {}, 'System-Aktivität') }}
+                {{ t('dashboard.systemActivity.title', {}, 'System Activity') }}
               </h3>
               <div v-if="authLogLoading" class="list-card__loading">
                 <CoarSpinner size="m" />
               </div>
               <CoarNote v-else-if="authLogError" variant="error">
-                {{ t('dashboard.errors.loadFailed', {}, 'Daten konnten nicht geladen werden.') }}
+                {{ t('dashboard.errors.loadFailed', {}, 'Failed to load the data.') }}
               </CoarNote>
               <div v-else-if="authLog.length === 0" class="list-card__empty">
-                {{ t('dashboard.systemActivity.none', {}, 'Noch keine Ereignisse.') }}
+                {{ t('dashboard.systemActivity.none', {}, 'No events yet.') }}
               </div>
               <div v-else class="space-y-1">
                 <button
@@ -583,7 +583,7 @@ onMounted(() => {
               </div>
               <div class="list-card__footer">
                 <button type="button" class="list-card__cta" @click="goToAuthLog">
-                  {{ t('dashboard.systemActivity.cta', {}, 'Vollständig anzeigen →') }}
+                  {{ t('dashboard.systemActivity.cta', {}, 'View all →') }}
                 </button>
               </div>
             </div>
@@ -600,10 +600,10 @@ onMounted(() => {
                 <CoarSpinner size="m" />
               </div>
               <CoarNote v-else-if="providersError" variant="error">
-                {{ t('dashboard.errors.loadFailed', {}, 'Daten konnten nicht geladen werden.') }}
+                {{ t('dashboard.errors.loadFailed', {}, 'Failed to load the data.') }}
               </CoarNote>
               <div v-else-if="loginProviders.length === 0" class="list-card__empty">
-                {{ t('dashboard.loginProviderStatus.none', {}, 'Keine Provider eingerichtet.') }}
+                {{ t('dashboard.loginProviderStatus.none', {}, 'No providers configured.') }}
               </div>
               <div v-else class="space-y-1">
                 <button
@@ -618,8 +618,8 @@ onMounted(() => {
                       class="provider-dot"
                       :class="p.Enabled ? 'provider-dot--on' : 'provider-dot--off'"
                       :title="p.Enabled
-                        ? t('dashboard.loginProviderStatus.enabled', {}, 'Aktiviert')
-                        : t('dashboard.loginProviderStatus.disabled', {}, 'Deaktiviert')"
+                        ? t('dashboard.loginProviderStatus.enabled', {}, 'Enabled')
+                        : t('dashboard.loginProviderStatus.disabled', {}, 'Disabled')"
                     />
                     <span class="list-row__title">{{ p.DisplayName }}</span>
                   </span>
@@ -627,8 +627,8 @@ onMounted(() => {
                     <!-- Text status next to the colour dot (status not by colour alone). -->
                     <CoarTag :variant="p.Enabled ? 'success' : 'neutral'" size="s">
                       {{ p.Enabled
-                        ? t('dashboard.loginProviderStatus.enabled', {}, 'Aktiviert')
-                        : t('dashboard.loginProviderStatus.disabled', {}, 'Deaktiviert') }}
+                        ? t('dashboard.loginProviderStatus.enabled', {}, 'Enabled')
+                        : t('dashboard.loginProviderStatus.disabled', {}, 'Disabled') }}
                     </CoarTag>
                     <CoarTag v-if="p.Type === 'Internal'" variant="neutral" size="s">
                       {{ t('dashboard.loginProviderStatus.system', {}, 'System') }}

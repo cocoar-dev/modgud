@@ -115,13 +115,13 @@ watch(activeTab, (tab) => {
 
 function effectiveSourceLabel(g: EffectiveGroupDto): string {
   if (g.Source === 'DirectManual') {
-    return t('admin.userDetails.effectiveGroups.sourceDirect', {}, 'Direkt')
+    return t('admin.userDetails.effectiveGroups.sourceDirect', {}, 'Direct')
   }
   if (g.Source === 'InheritedManual') {
     // Show the entry direct group (first hop in the Via chain) so the admin
     // sees how the inherited membership was reached.
     const via = g.Via?.[0]?.Name ?? ''
-    return t('admin.userDetails.effectiveGroups.sourceInherited', { via }, `Vererbt über ${via}`)
+    return t('admin.userDetails.effectiveGroups.sourceInherited', { via }, `Inherited via ${via}`)
   }
   return t('admin.userDetails.effectiveGroups.sourceAuto', {}, 'Auto-Skript')
 }
@@ -364,7 +364,7 @@ watch(() => form.value.UserName, () => {
       :class="{ 'user-edit-frame': !isCreate }">
       <CoarTabGroup v-if="!isCreate" v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.userDetails.tabs.general', {}, 'General') }}</CoarTab>
-        <CoarTab id="groups">{{ t('admin.userDetails.tabs.groups', {}, 'Direkte Gruppen') }}</CoarTab>
+        <CoarTab id="groups">{{ t('admin.userDetails.tabs.groups', {}, 'Direct Groups') }}</CoarTab>
         <CoarTab id="effective">{{ t('admin.userDetails.tabs.effective', {}, 'Effektiv') }}</CoarTab>
         <CoarTab id="security">{{ t('admin.userDetails.tabs.security', {}, 'Security') }}</CoarTab>
       </CoarTabGroup>
@@ -374,7 +374,7 @@ watch(() => form.value.UserName, () => {
         <div class="modal-form">
           <!-- Section: Identity -->
           <section class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.userDetails.section.identity', {}, 'Identität') }}</h3>
+            <h3 class="form-section-heading">{{ t('admin.userDetails.section.identity', {}, 'Identity') }}</h3>
             <div class="modal-form-grid">
               <CoarFormField class="col-half" :label="t('admin.users.firstname', {}, 'First Name')" :required="firstnameRequired">
                 <CoarTextInput v-model="form.Firstname" clearable />
@@ -382,9 +382,9 @@ watch(() => form.value.UserName, () => {
               <CoarFormField class="col-half" :label="t('admin.users.lastname', {}, 'Last Name')" :required="lastnameRequired">
                 <CoarTextInput v-model="form.Lastname" clearable />
               </CoarFormField>
-              <CoarFormField class="col-half" :label="t('admin.users.acronym', {}, 'Kürzel')">
+              <CoarFormField class="col-half" :label="t('admin.users.acronym', {}, 'Acronym')">
                 <CoarTextInput v-model="form.Acronym" clearable />
-                <p class="field-hint">{{ t('admin.userDetails.acronym.hint', {}, 'Initialen; erscheinen im Titel als „Name | Kürzel". Optional.') }}</p>
+                <p class="field-hint">{{ t('admin.userDetails.acronym.hint', {}, 'Initials; appear in the title as "Name | Acronym". Optional.') }}</p>
               </CoarFormField>
             </div>
           </section>
@@ -395,15 +395,15 @@ watch(() => form.value.UserName, () => {
             <div class="modal-form-grid">
               <CoarFormField class="col-half" :label="t('admin.users.email', {}, 'Email')" required>
                 <CoarTextInput v-model="form.Email" clearable />
-                <span v-if="emailInvalid" class="text-xs text-red-600">{{ t('admin.userDetails.emailInvalid', {}, 'Bitte eine gültige E-Mail-Adresse eingeben.') }}</span>
-                <p class="field-hint">{{ t('admin.userDetails.email.hint', {}, 'Primäre Adresse; nötig für Passwort-Zurücksetzen und Magic-Link.') }}</p>
+                <span v-if="emailInvalid" class="text-xs text-red-600">{{ t('admin.userDetails.emailInvalid', {}, 'Please enter a valid email address.') }}</span>
+                <p class="field-hint">{{ t('admin.userDetails.email.hint', {}, 'Primary address; needed for password reset and magic link.') }}</p>
               </CoarFormField>
               <CoarFormField v-if="showUsername" class="col-half" :label="t('admin.users.username', {}, 'Username')" :required="usernameRequired">
                 <CoarTextInput v-model="form.UserName" clearable />
                 <span v-if="userNameError" class="text-xs text-red-600">{{ userNameError }}</span>
                 <p class="field-hint">{{ usernameRequired
-                  ? t('admin.userDetails.username.hintRequired', {}, 'Anmeldename; muss eindeutig sein und ist Pflicht.')
-                  : t('admin.userDetails.username.hint', {}, 'Anmeldename; muss eindeutig sein. Leer = die E-Mail-Adresse wird verwendet.') }}</p>
+                  ? t('admin.userDetails.username.hintRequired', {}, 'Login name; must be unique and is required.')
+                  : t('admin.userDetails.username.hint', {}, 'Login name; must be unique. Empty = the email address is used.') }}</p>
               </CoarFormField>
             </div>
           </section>
@@ -415,12 +415,12 @@ watch(() => form.value.UserName, () => {
             <div class="modal-form-grid">
               <CoarFormField class="col-full" :label="t('admin.userDetails.activeLabel', {}, 'Konto')">
                 <CoarCheckbox v-model="isActive"
-                  :label="t('admin.userDetails.activeCheckbox', {}, 'Benutzer aktiv')" />
-                <p class="field-hint">{{ t('admin.userDetails.activeHint', {}, 'Deaktivierte Benutzer können sich nicht anmelden.') }}</p>
+                  :label="t('admin.userDetails.activeCheckbox', {}, 'User active')" />
+                <p class="field-hint">{{ t('admin.userDetails.activeHint', {}, 'Disabled users can\'t sign in.') }}</p>
               </CoarFormField>
               <!-- Email-verified toggle pinned at the section end with its existing
                    v-if (only meaningful once an email is set). -->
-              <CoarFormField v-if="form.Email" class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'E-Mail-Status')">
+              <CoarFormField v-if="form.Email" class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'Email Status')">
                 <CoarCheckbox v-model="emailConfirmed"
                   :label="t('admin.userDetails.emailVerifiedToggle', {}, 'Mark email address as verified')" />
                 <p class="field-hint">
@@ -437,7 +437,7 @@ watch(() => form.value.UserName, () => {
           <section v-if="isCreate && form.Email" class="form-section">
             <h3 class="form-section-heading">{{ t('admin.userDetails.section.accountStatus', {}, 'Kontostatus') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'E-Mail-Status')">
+              <CoarFormField class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'Email Status')">
                 <CoarCheckbox v-model="emailConfirmed"
                   :label="t('admin.userDetails.emailVerifiedToggle', {}, 'Mark email address as verified')" />
                 <p class="field-hint">
@@ -465,7 +465,7 @@ watch(() => form.value.UserName, () => {
               </span>
               <span v-else-if="exemptLocal" class="status-badge status-exempt">
                 <CoarIcon name="shield-alert" size="s" />
-                {{ t('admin.userDetails.exemptBadge', {}, 'Ausgenommen — 2FA nicht erforderlich') }}
+                {{ t('admin.userDetails.exemptBadge', {}, 'Exempt — 2FA not required') }}
               </span>
               <span v-else class="status-badge status-inactive">
                 <CoarIcon name="x" size="s" />
@@ -501,7 +501,7 @@ watch(() => form.value.UserName, () => {
             <div class="section-heading">{{ t('admin.userDetails.policyHeading', {}, 'Individuelle Richtlinie') }}</div>
             <div class="flex flex-col gap-3">
               <!-- Grace days override -->
-              <CoarFormField :label="t('admin.userDetails.policyDays', {}, 'Individuelle Frist in Tagen (leer = globaler Default)')">
+              <CoarFormField :label="t('admin.userDetails.policyDays', {}, 'Individual deadline in days (empty = global default)')">
                 <CoarTextInput v-model="overrideInput" type="number"
                   :placeholder="t('admin.userDetails.policyDaysPlaceholder', { days: appConfig.config.TwoFactorGracePeriodDays }, `${appConfig.config.TwoFactorGracePeriodDays} (Default)`)"
                   :disabled="exemptLocal" />
@@ -554,7 +554,7 @@ watch(() => form.value.UserName, () => {
             {{ t('admin.userDetails.effectiveGroups.heading', {}, 'Effektive Mitgliedschaft') }}
           </div>
           <p class="tab-hint">
-            {{ t('admin.userDetails.effectiveGroups.hint', {}, 'Materialisierte Sicht aller Gruppen die diesem User aktuell zugewiesen sind — direkt, geerbt über genestete Gruppen, oder per Auto-Skript.') }}
+            {{ t('admin.userDetails.effectiveGroups.hint', {}, 'Materialized view of all groups currently assigned to this user — directly, inherited via nested groups, or via auto-script.') }}
           </p>
           <div class="effective-list">
             <div v-for="g in effectiveGroups" :key="g.Id" class="effective-row">
@@ -570,7 +570,7 @@ watch(() => form.value.UserName, () => {
               </CoarTag>
               <CoarTag v-if="g.Source === 'AutoMatched' && g.MaterializedMatches === false"
                        variant="warning" size="s">
-                {{ t('admin.userDetails.effectiveGroups.driftBadge', {}, 'Drift — neu berechnen?') }}
+                {{ t('admin.userDetails.effectiveGroups.driftBadge', {}, 'Drift — recalculate?') }}
               </CoarTag>
             </div>
           </div>
@@ -582,7 +582,7 @@ watch(() => form.value.UserName, () => {
               <li v-for="d in effectiveDiagnostics" :key="d.GroupId">
                 {{ t('admin.userDetails.effectiveGroups.diagnosticLine',
                      { group: d.GroupName, error: d.Error },
-                     `Skript für Gruppe ${d.GroupName} konnte nicht ausgewertet werden: ${d.Error}`) }}
+                     `Script for group ${d.GroupName} could not be evaluated: ${d.Error}`) }}
               </li>
             </ul>
           </CoarNote>
@@ -590,10 +590,10 @@ watch(() => form.value.UserName, () => {
 
         <section v-if="inheritedGroups.length > 0" class="flex-section">
           <div class="section-heading">
-            {{ t('admin.userDetails.inheritedGroups', {}, 'Geerbt über genestete Gruppen') }}
+            {{ t('admin.userDetails.inheritedGroups', {}, 'Inherited via nested groups') }}
           </div>
           <p class="tab-hint">
-            {{ t('admin.userDetails.inheritedGroups.hint', {}, 'Diese Gruppen sind nicht direkt zugewiesen, aber der User ist über eine andere Gruppe (die diese als Mitglied hat) drin.') }}
+            {{ t('admin.userDetails.inheritedGroups.hint', {}, 'These groups aren\'t assigned directly, but the user is in them via another group (which has them as a member).') }}
           </p>
           <CoarListbox
             :options="inheritedOptions"
@@ -608,7 +608,7 @@ watch(() => form.value.UserName, () => {
 
         <p v-if="effectiveGroups.length === 0 && effectiveDiagnostics.length === 0 && inheritedGroups.length === 0"
            class="text-sm text-gray-500">
-          {{ t('admin.userDetails.effectiveGroups.empty', {}, 'Dieser User ist aktuell in keiner Gruppe — weder direkt noch geerbt noch über Auto-Skripte.') }}
+          {{ t('admin.userDetails.effectiveGroups.empty', {}, 'This user currently isn\'t in any group — neither directly, nor inherited, nor via auto-scripts.') }}
         </p>
       </div>
     </div>

@@ -83,14 +83,14 @@ function fromDto(dto: OAuthScopeDto): FormState {
 
 const modalTitle = computed(() =>
   isCreate.value
-    ? t('admin.oauthScopes.createTitle', {}, 'Scope erstellen')
+    ? t('admin.oauthScopes.createTitle', {}, 'Create Scope')
     : (form.value.DisplayName || form.value.Name)
 )
 const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Name)
 
 const footerButton = computed(() => ({
   visible: true,
-  text: isCreate.value ? t('common.create', {}, 'Erstellen') : t('common.save', {}, 'Speichern'),
+  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: !form.value.Name.trim() || loading.value,
   loading: loading.value,
   onClick: save,
@@ -108,7 +108,7 @@ onMounted(async () => {
   try {
     const dto = await store.loadOne(props.id)
     if (!dto) {
-      error.value = t('admin.oauthScopes.loadFailed', {}, 'Scope konnte nicht geladen werden.')
+      error.value = t('admin.oauthScopes.loadFailed', {}, 'Failed to load the scope.')
       return
     }
     form.value = fromDto(dto)
@@ -164,7 +164,7 @@ async function save() {
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="tags"
     :footer-button="footerButton">
     <div v-if="loading && !isCreate" class="flex flex-1 items-center justify-center p-8">
-      <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
+      <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
     </div>
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1">
       <div class="modal-form">
@@ -180,7 +180,7 @@ async function save() {
               <CoarTextInput v-model="form.DisplayName" clearable />
               <p class="field-hint">{{ t('admin.oauthScopes.displayName.hint', {}, 'Human-readable name shown on the consent screen.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-full" :label="t('admin.oauthScopes.description', {}, 'Beschreibung')">
+            <CoarFormField class="col-full" :label="t('admin.oauthScopes.description', {}, 'Description')">
               <CoarTextInput v-model="form.Description" clearable :rows="2" />
               <p class="field-hint">{{ t('admin.oauthScopes.description.hint', {}, 'Optional explanation shown to users on the consent screen.') }}</p>
             </CoarFormField>
@@ -219,11 +219,11 @@ async function save() {
           <h3 class="form-section-heading">{{ t('admin.oauthScopes.section.options', {}, 'Options') }}</h3>
           <div class="modal-form-grid">
             <CoarFormField class="col-half">
-              <CoarCheckbox v-model="form.Enabled" :label="t('common.enabled', {}, 'Aktiviert')" />
+              <CoarCheckbox v-model="form.Enabled" :label="t('common.enabled', {}, 'Enabled')" />
               <p class="field-hint">{{ t('admin.oauthScopes.enabled.hint', {}, '(Default: on) The scope can be requested.') }}</p>
             </CoarFormField>
             <CoarFormField class="col-half">
-              <CoarCheckbox v-model="form.Required" :label="t('admin.oauthScopes.required', {}, 'Pflicht')" />
+              <CoarCheckbox v-model="form.Required" :label="t('admin.oauthScopes.required', {}, 'Required')" />
               <p class="field-hint">{{ t('admin.oauthScopes.required.hint', {}, 'Cannot be deselected on the consent screen.') }}</p>
             </CoarFormField>
             <CoarFormField class="col-half">
@@ -231,13 +231,13 @@ async function save() {
               <p class="field-hint">{{ t('admin.oauthScopes.emphasize.hint', {}, 'Highlight as security-relevant on the consent screen.') }}</p>
             </CoarFormField>
             <CoarFormField class="col-half">
-              <CoarCheckbox v-model="form.ShowInDiscoveryDocument" :label="t('admin.oauthScopes.showInDiscovery', {}, 'In Discovery anzeigen')" />
+              <CoarCheckbox v-model="form.ShowInDiscoveryDocument" :label="t('admin.oauthScopes.showInDiscovery', {}, 'Show in Discovery')" />
               <p class="field-hint">{{ t('admin.oauthScopes.showInDiscovery.hint', {}, 'Visible in the public OIDC discovery document. (Default: on)') }}</p>
             </CoarFormField>
             <CoarFormField class="col-full" :label="t('admin.oauthScopes.allowDcr', {}, 'Dynamic Client Registration')">
               <CoarCheckbox
                 v-model="form.AllowDynamicRegistrationClients"
-                :label="t('admin.oauthScopes.allowDcr.toggle', {}, 'DCR-Clients dürfen diesen Scope anfordern')" />
+                :label="t('admin.oauthScopes.allowDcr.toggle', {}, 'DCR clients may request this scope')" />
               <p class="field-hint">{{ t('admin.oauthScopes.allowDcr.hint', {}, 'Clients registered via DCR may only request this scope when this is enabled.') }}</p>
             </CoarFormField>
           </div>

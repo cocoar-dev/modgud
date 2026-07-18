@@ -149,7 +149,7 @@ async function save() {
   <ModalLayout :close="close" :title="modalTitle" icon="shield" :footer-button="footerButton">
     <div v-if="!loading" class="flex flex-col min-w-0 min-h-0 flex-1">
       <CoarTabGroup v-model="activeTab" class="tab-bar">
-        <CoarTab id="general">{{ t('admin.roleDetails.tabs.general', {}, 'Allgemein') }}</CoarTab>
+        <CoarTab id="general">{{ t('admin.roleDetails.tabs.general', {}, 'General') }}</CoarTab>
         <CoarTab id="permissions">{{ t('admin.roleDetails.tabs.permissions', {}, 'Permissions') }}</CoarTab>
       </CoarTabGroup>
 
@@ -209,11 +209,11 @@ async function save() {
            because they're admin-functionally the same: nothing to pick. -->
       <div v-show="activeTab === 'permissions'" class="tab-content">
         <p v-if="!form.AppId" class="text-sm text-gray-500">
-          {{ t('admin.roleDetails.permissions.noApp', {}, 'Diese Rolle ist an keine Application gebunden — es gibt nichts zum Vergeben. Im Allgemein-Tab eine App wählen, dann erscheint hier deren Catalog.') }}
+          {{ t('admin.roleDetails.permissions.noApp', {}, 'This role isn\'t bound to any application — there\'s nothing to grant. Choose an app in the General tab, then its catalog will appear here.') }}
         </p>
         <template v-else>
           <p class="tab-hint">
-            {{ t('admin.roleDetails.permissions.hint', {}, 'Subset des App-Catalogs. Diese Rolle vergibt jede angekreuzte Permission an User die sie zugewiesen bekommen (über Direkt- oder Group-Membership).') }}
+            {{ t('admin.roleDetails.permissions.hint', {}, 'Subset of the app catalog. This role grants every checked permission to users assigned to it (via direct or group membership).') }}
           </p>
           <div v-if="linkedAppCatalog.length === 0" class="text-xs text-gray-400 italic">
             {{ t('admin.roleDetails.permissions.empty', {}, 'The selected Application has no entries in its catalog. Add entries via the App admin first.') }}

@@ -246,7 +246,7 @@ function regFieldsFromDto(d: RegistrationFieldsSettingsDto): RegistrationFieldsS
 const requirementOptions: { value: FieldRequirement; label: string }[] = [
   { value: 'Off', label: t('admin.regFields.off', {}, 'Aus') },
   { value: 'Optional', label: t('admin.regFields.optional', {}, 'Optional') },
-  { value: 'Required', label: t('admin.regFields.required', {}, 'Pflicht') },
+  { value: 'Required', label: t('admin.regFields.required', {}, 'Required') },
 ]
 
 function dcrFromDto(d: DcrSettingsDto): DcrFormState {
@@ -655,11 +655,11 @@ async function rotateSigningKey() {
     <CoarCard v-else-if="activeTab === 'registration-fields'" class="p-4">
       <div class="flex flex-col gap-3">
         <p class="text-xs text-gray-500">
-          {{ t('admin.realmSettings.regFields.hint', {}, 'Welche Identitätsfelder bei der Kontoerstellung gefordert sind (Admin-Anlage, Selbstregistrierung, native passwortlose Registrierung). E-Mail ist immer Pflicht. Pro Application überschreibbar.') }}
+          {{ t('admin.realmSettings.regFields.hint', {}, 'Which identity fields are required at account creation (admin creation, self-registration, native passwordless registration). Email is always required. Overridable per application.') }}
         </p>
 
         <CoarFormField :label="t('admin.regFields.email', {}, 'E-Mail')">
-          <CoarTextInput :model-value="t('admin.regFields.required', {}, 'Pflicht')" disabled />
+          <CoarTextInput :model-value="t('admin.regFields.required', {}, 'Required')" disabled />
         </CoarFormField>
         <div class="field-enum">
           <CoarFormField :label="t('admin.regFields.username', {}, 'Benutzername')">

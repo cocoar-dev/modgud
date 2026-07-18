@@ -42,6 +42,16 @@ public class OpenIddictSettings : IOpenIddictSettings
     /// </summary>
     public string? EncryptionCertificatePath { get; set; }
 
+    /// <summary>
+    /// Comma-separated list of paths to previously-active encryption
+    /// certificates. Loaded as decryption-only keys for the rotation-overlap
+    /// window (issue #125) — mirrors <see cref="PreviousSigningCertificatePaths"/>.
+    /// Cleared once the longest-lived in-flight authorization code, device
+    /// code, or refresh token issued under the old cert has expired.
+    /// Passwordless PFX, same convention as <see cref="EncryptionCertificatePath"/>.
+    /// </summary>
+    public string[]? PreviousEncryptionCertificatePaths { get; set; }
+
     // NOTE: there is deliberately no configurable Issuer. Modgud is multi-tenant
     // and the issuer is per-realm, derived from the request host (BaseUri) on
     // every path — discovery, the token `iss` claim, and token validation (see
