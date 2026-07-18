@@ -57,7 +57,7 @@ dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
 
 ### 2. Configure authentication and the Modgud client
 
-`AddJwtBearer` validates the JWT. `AddModgudClient` adds the two pieces vanilla `AddJwtBearer` lacks: it fetches `/connect/userinfo` and merges the `resource_access` block onto the principal (via a post-configure on the JwtBearer scheme — you do **not** set `GetClaimsFromUserInfoEndpoint`, that property is for `AddOpenIdConnect`), and it registers a claims transformation that flattens the per-audience block into native role/permission claims plus the `RequiresModgudPermission` endpoint filter.
+`AddJwtBearer` validates the JWT. `AddModgudClient` adds the two pieces vanilla `AddJwtBearer` lacks: a post-configure on the JwtBearer scheme that makes sure the principal ends up with a `resource_access` claim — preferring the one already embedded in the token and calling `/connect/userinfo` only as a fallback when the token carries none (you do **not** set `GetClaimsFromUserInfoEndpoint`, that property is for `AddOpenIdConnect`) — and a claims transformation that flattens the per-audience block into native role/permission claims, plus the `RequiresModgudPermission` endpoint filter.
 
 ```csharp
 using System.IdentityModel.Tokens.Jwt;
@@ -115,24 +115,24 @@ app.Run();
 
 ## Where permissions come from
 
-`resource_access` is embedded directly in the access token at issuance: for JWT clients it's a claim inside the token itself, for reference tokens the same data lives server-side and is resolvable via introspection. The token you already hold could, in principle, be the sole source of truth for permission gating.
+`resource_access` is baked directly into the access token at issuance — for JWT clients (the type this guide sets up) it's a claim inside the token itself. `Modgud.Client.AspNetCore` prefers that embedded claim: if the JwtBearer-validated principal already carries `resource_access`, the library reads it as-is and never calls the IdP. It falls back to fetching `/connect/userinfo` only when the token carries no such claim — practically, that's tokens from setups predating this behavior, or resource servers validating opaque reference tokens by some means other than local JWT parsing (this guide's JWKS-based `AddJwtBearer` setup always sees the embedded claim, so the fallback path is dead code in practice for it).
 
-`Modgud.Client.AspNetCore` doesn't take that shortcut today — it re-fetches `/connect/userinfo` on every request instead of reading the token's own claims. That yields **live** permissions (a grant or revocation is visible on the very next request) at the cost of the per-request round-trip covered below. Consolidating this — preferring the token's embedded claims, with an optional cached refresh — is tracked in [modgud#116](https://github.com/cocoar-dev/modgud/issues/116).
+This is a pure performance win, not a freshness trade-off: `/connect/userinfo` has always echoed the exact same `resource_access` block already baked into the token, never a wider or narrower one, so preferring the token claim changes nothing about which permissions your resource server sees — it only removes a redundant HTTP round-trip for tokens that already carry the claim.
 
 | Source | Freshness | IdP dependency per request |
 |---|---|---|
-| Embedded in token (JWT `resource_access` claim, or introspection for reference tokens) | As of token issuance — stale until the token itself is refreshed | None for JWT; one introspection call for reference tokens |
-| Live from `/connect/userinfo` (current `Modgud.Client.AspNetCore` behavior) | Live — reflects the latest grant/revocation on every request | One UserInfo call per request |
+| Embedded in token (JWT `resource_access` claim, preferred) | As of token issuance — a grant or revocation takes effect once a new token is minted; propagation is bounded by the access token's lifetime | None |
+| `/connect/userinfo` fallback (only when the token carries no `resource_access` claim) | Same as above — UserInfo echoes the token's baked block, it does not recompute a live view | One UserInfo call per request, only for tokens lacking the claim |
 
 ## Performance and availability
 
-`AddModgudClient` fetches `/connect/userinfo` **once per authenticated request** — there is no response caching yet, so every call into your resource server costs a round-trip to the IdP. Reducing that per-request cost is planned, but there's no firm timeline for it yet.
+For tokens that already carry an embedded `resource_access` claim — every JWT-client token, per the prerequisite above — `AddModgudClient` makes **no IdP call at all**: the claims transformation runs purely against data already on the token, so there is no per-request round-trip and nothing to degrade.
 
-The enrichment **degrades without failing the authentication handler** — a `/connect/userinfo` failure never rejects the request outright. But authorization stays **fail-closed**: if the IdP is unreachable or returns a non-2xx, no `resource_access` claim is added, so any endpoint gated with `RequiresModgudPermission` returns `403` (the principal simply carries no permissions) rather than the API 500ing during an IdP outage.
+The `/connect/userinfo` fallback runs only for tokens without an embedded claim, and the following applies to that path alone. It **degrades without failing the authentication handler** — a `/connect/userinfo` failure never rejects the request outright. But authorization on that path stays **fail-closed**: if the IdP is unreachable or returns a non-2xx, no `resource_access` claim is added, so any endpoint gated with `RequiresModgudPermission` returns `403` (the principal simply carries no permissions) rather than the API 500ing during an IdP outage.
 
-One caveat: that fail-closed behavior only protects endpoints actually gated on a permission. An endpoint secured with a bare `.RequireAuthorization()` and no `RequiresModgudPermission` call has nothing checking `resource_access` in the first place, so it stays reachable straight through an enrichment outage. If that matters for a given endpoint, gate it on a permission too.
+One caveat, still true either way: fail-closed behavior only protects endpoints actually gated on a permission. An endpoint secured with a bare `.RequireAuthorization()` and no `RequiresModgudPermission` call has nothing checking `resource_access` in the first place, so it stays reachable straight through a fallback-path outage. If that matters for a given endpoint, gate it on a permission too.
 
-There is also no negative caching: every request retries `/connect/userinfo` independently, so a principal never carries a stale missing-permissions state past the request that hit the outage. Shortening access-token lifetimes doesn't change any of this — permissions are re-fetched per request rather than cached from the token — so the only real-world effect of an IdP outage is temporary `403`s on permission-gated endpoints for as long as the IdP stays unreachable, clearing on their own the moment UserInfo answers again.
+Because a JWT-client token already carries the claim it needs, an IdP outage no longer 403s requests bearing a still-valid token — those requests never touch the IdP for authorization data in the first place. The fail-closed behavior above only bites setups still on the `/connect/userinfo` fallback path.
 
 ## Reading roles and permissions
 
@@ -155,7 +155,7 @@ app.MapPost("/todos", () => Results.Ok())
 `RequiresModgudPermission("<resource>:<action>")` is an extension on both `RouteHandlerBuilder` (per-endpoint) and `RouteGroupBuilder` (whole group). It does a straight exact-match against the principal's `"permission"` claims: `401` when anonymous, `403` when authenticated but lacking the permission. The permission string is bare 2-segment (`todo:write`) — the app context is implicit from the audience you configured.
 
 ::: tip Roles and permissions compose
-The same user can be `Roles = "Editor"` **and** hold `todo:write`. Pick role gates for coarse buckets (`Admin` / `Editor` / `Viewer`) and `RequiresModgudPermission` for per-action checks. Both flavours read from the same UserInfo-sourced `resource_access` block — there is no separate server-to-server call to wire up.
+The same user can be `Roles = "Editor"` **and** hold `todo:write`. Pick role gates for coarse buckets (`Admin` / `Editor` / `Viewer`) and `RequiresModgudPermission` for per-action checks. Both flavours read from the same `resource_access` block — the token's own embedded copy by default — so there is no separate server-to-server call to wire up.
 :::
 
 ::: warning Groups are not emitted

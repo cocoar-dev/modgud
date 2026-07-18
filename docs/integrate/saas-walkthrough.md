@@ -216,15 +216,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.Audience  = "acme";   // matches the OAuthApi name / aud claim
     });
 
-// AddModgudClient does the /connect/userinfo round-trip (hooks
-// JwtBearerEvents.OnTokenValidated) and registers the ClaimsTransformation
-// that flattens resource_access["acme"] onto the principal:
+// AddModgudClient (hooks JwtBearerEvents.OnTokenValidated) makes sure the
+// principal ends up with resource_access["acme"] — preferring the claim
+// already embedded in the JWT (the normal case for a JWT-typed client
+// like this one) and calling /connect/userinfo only as a fallback for
+// tokens that carry none — then registers the ClaimsTransformation that
+// flattens the block onto the principal:
 //   - resource_access["acme"].roles       → ClaimTypes.Role
 //   - resource_access["acme"].permissions → "permission" claims
 // The IdP pre-expands bypass tiers (realm:admin, <resource>:admin) before
 // emission, so the RS only ever does exact-match — no evaluator on this side.
 // Do NOT set GetClaimsFromUserInfoEndpoint on AddJwtBearer; AddModgudClient
-// owns the UserInfo fetch.
+// owns claim-sourcing (token first, UserInfo fallback).
 builder.Services.AddModgudClient(o =>
 {
     o.Authority = "https://auth.example.com";
@@ -280,9 +283,12 @@ common pitfalls) live in
 4. Consent screen (if `explicit` consent type)
 5. Redirect back to the app with an auth code
 6. The app exchanges the code at `/connect/token`
-7. The app calls `/connect/userinfo`, sees `sub`, `email`, `name`,
+7. The resulting access token already carries `sub`, `email`, `name`,
    and `resource_access.acme.roles = ["Acme Editor"]` plus
-   `resource_access.acme.permissions = ["todo:read", "todo:write"]`
+   `resource_access.acme.permissions = ["todo:read", "todo:write"]` —
+   `AddModgudClient` reads that straight off the validated JWT
+   (`/connect/userinfo` would show the same block, but the library only
+   calls it as a fallback for tokens that don't carry the claim)
 8. `[Authorize(Roles = "Acme Editor")]` lets you in, and
    `.RequiresModgudPermission("todo:write")` passes — the resource
    server validated the JWT against the realm's JWKS (because the client's

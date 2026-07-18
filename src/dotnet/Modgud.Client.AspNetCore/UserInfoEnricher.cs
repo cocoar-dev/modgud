@@ -10,34 +10,67 @@ using Microsoft.Extensions.Options;
 namespace Modgud.Client.AspNetCore;
 
 /// <summary>
-/// Wires <c>JwtBearerEvents.OnTokenValidated</c> to fetch
-/// <c>{Authority}/connect/userinfo</c> with the user's bearer token and
-/// merge the <c>resource_access</c> claim onto the validated principal.
+/// Wires <c>JwtBearerEvents.OnTokenValidated</c> to make sure the validated
+/// principal carries a <c>resource_access</c> claim, preferring the token's
+/// own embedded claim and falling back to
+/// <c>{Authority}/connect/userinfo</c> only when the token carries none.
+///
+/// <para>Preference order and why: since federation v1.1 the IdP bakes
+/// <c>resource_access</c> straight into every access token at issuance —
+/// <c>/connect/userinfo</c> merely echoes that same baked block back
+/// verbatim (see <c>UserInfoPerAudienceTests
+/// .JwtClient_Bakes_ResourceAccess_Into_AccessToken_And_UserInfo_Echoes</c>
+/// on the IdP side). So when the JwtBearer-validated token already has the
+/// claim, fetching UserInfo is a redundant round-trip that returns the exact
+/// same data — this handler skips it. It only falls back to UserInfo for
+/// tokens that don't carry the claim themselves (e.g. opaque/reference
+/// access tokens the host validates via introspection instead of JWT
+/// parsing, or older IdP versions).</para>
 ///
 /// <para>Pure <c>AddJwtBearer</c> only validates the token — it doesn't
-/// fetch UserInfo (that's an <c>AddOpenIdConnect</c> feature). For
-/// resource servers that want the lib's claims-transformation to work,
-/// the <c>resource_access</c> claim must reach the principal somehow.
-/// This handler is the missing piece.</para>
+/// fetch UserInfo on its own (that's an <c>AddOpenIdConnect</c> feature).
+/// For resource servers that want the lib's claims-transformation to work
+/// even when the token itself has no <c>resource_access</c>, the claim must
+/// reach the principal somehow. This handler is the missing piece.</para>
 ///
 /// <para>Network fault tolerance: if UserInfo is unreachable or returns
 /// a non-2xx, the handler logs and silently continues — the request
 /// proceeds with whatever claims the bearer token already carried, and
 /// downstream gates (RequiresModgudPermission, [Authorize(Roles=...)])
 /// will return 403 if those weren't enough. This is the security-positive
-/// default: a transient IdP outage MUST NOT 500 the whole API.</para>
+/// default: a transient IdP outage MUST NOT 500 the whole API. Note this
+/// fail-open behaviour only applies to the fallback path — a token that
+/// already carries the claim never touches the network at all.</para>
 /// </summary>
 internal sealed class ModgudUserInfoEnricher
 {
-    private static readonly HttpClient SharedClient = new();
+    // Settable (not just a readonly field) so unit tests can substitute a
+    // fake HttpMessageHandler and assert on call counts. Production callers
+    // never touch this — it defaults to a real HttpClient.
+    internal static HttpClient SharedClient { get; set; } = new();
 
     public static async Task EnrichAsync(TokenValidatedContext context)
     {
-        var options = context.HttpContext.RequestServices
-            .GetRequiredService<IOptions<ModgudOptions>>().Value;
         var logger = context.HttpContext.RequestServices
             .GetRequiredService<ILoggerFactory>()
             .CreateLogger("Modgud.UserInfoEnricher");
+
+        // Preference order: the validated token's own resource_access claim
+        // wins. /connect/userinfo only ever echoes the same baked block, so
+        // if it's already on the principal there is nothing UserInfo could
+        // add — skip the round-trip entirely.
+        if (context.Principal?.Identity is ClaimsIdentity validatedIdentity &&
+            !string.IsNullOrEmpty(validatedIdentity
+                .FindFirst(ModgudClaimsTransformation.ResourceAccessClaimType)?.Value))
+        {
+            logger.LogDebug(
+                "Modgud: access token already carries a resource_access claim; " +
+                "skipping the /connect/userinfo round-trip.");
+            return;
+        }
+
+        var options = context.HttpContext.RequestServices
+            .GetRequiredService<IOptions<ModgudOptions>>().Value;
 
         // Token was just validated → the bearer string is on the request.
         var rawAuth = context.HttpContext.Request.Headers.Authorization.ToString();
@@ -95,7 +128,8 @@ internal sealed class ModgudUserInfoEnricher
 /// Hooks <see cref="ModgudUserInfoEnricher.EnrichAsync"/> into the
 /// configured JwtBearer scheme via PostConfigure. Composable: the host
 /// can stack additional <c>OnTokenValidated</c> handlers, this one runs
-/// first and just adds a claim.
+/// first and either confirms the token already carries
+/// <c>resource_access</c> or adds the claim from UserInfo as a fallback.
 /// </summary>
 internal sealed class ModgudJwtBearerPostConfigure : IPostConfigureOptions<JwtBearerOptions>
 {
