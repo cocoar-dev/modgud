@@ -86,7 +86,7 @@ and host that metadata document ([RFC 9728](https://datatracker.ietf.org/doc/htm
 - `authorization_servers` points at your **realm root** — the bare host, no realm path segment. Modgud routes realms by Host header, so the issuer *is* the host root.
 
 ::: info Authorization-server discovery
-Modgud publishes its metadata as an OpenID Connect discovery document at `https://auth.example.com/.well-known/openid-configuration` (plus its JWKS at `/.well-known/jwks`). It does not serve the bare RFC 8414 `/.well-known/oauth-authorization-server` alias. Mainstream MCP hosts (claude.ai, Claude Code, Cursor) probe the OpenID Connect document as part of discovery, so this works out of the box; a client that *only* requests the RFC 8414 alias and never falls back would not discover the realm.
+Modgud serves its authorization-server metadata at **both** `https://auth.example.com/.well-known/oauth-authorization-server` (RFC 8414) and `https://auth.example.com/.well-known/openid-configuration` (OpenID Connect discovery) — the identical document at either path — plus its JWKS at `/.well-known/jwks`. An MCP host discovers the realm whether it probes the RFC 8414 alias, the OIDC document, or both.
 :::
 
 ## Step 4 — Turn on CIMD (preferred), with DCR as the fallback
