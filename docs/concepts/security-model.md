@@ -52,5 +52,6 @@ Claims on this page aren't just prose — they're pinned by CI-gated tests that 
 - **PKCE enforcement pin** — `PkceRequirementPinTests` asserts `S256` is present and `plain` is absent from the discovery document's supported code-challenge methods.
 - **CodeQL** — C# and JavaScript, `security-extended` query pack, runs on every pull request plus a weekly scheduled scan. The configuration is public.
 - **Dependency gates** — every pull request blocks on `dotnet list package --vulnerable` and `pnpm audit`; GitHub Dependabot alerts catch new CVEs in between.
+- **Release supply chain** — every release image passes a Trivy vulnerability gate, is signed with cosign (keyless), and ships with build-provenance attestations and per-arch SPDX SBOMs; the NuGet package carries a provenance attestation too. Verification commands: [Supply-chain verification](/operate/supply-chain).
 
 Found something this page doesn't cover, or a gap in the above? See the [security policy](https://github.com/cocoar-dev/modgud/blob/develop/SECURITY.md) for how to report it.

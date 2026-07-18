@@ -12,15 +12,24 @@ name: CD - Release
 #         |
 #         +---> test-backend (unit + integration, ~4 min)
 #         +---> pack-nuget   (build + pack → nupkg artifact)
-#         +---> build-docker (build + push :candidate-<run-id>)
+#         +---> build-docker (build + Trivy vuln gate + push :candidate-<run-id>)
 #         +---> build-docs   (VitePress build → docs.zip artifact)
 #                       |
 #                  release-gate (sync — all above green)
 #                       |
-#         +---> publish-nuget  (download nupkg → nuget.org)
+#         +---> publish-nuget  (download nupkg → nuget.org + provenance attestation)
 #         +---> publish-docker (pull :candidate → retag release tags → push)
 #                       |
-#                  deploy-docs (download docs.zip → Shelf)
+#         +---> supply-chain (cosign sign + provenance attestation + SBOMs)
+#         +---> deploy-docs  (download docs.zip → Shelf)
+#
+# Supply-chain trust artifacts (#117): every release image is scanned
+# by Trivy inside build-docker (fixable CRITICAL/HIGH block the release
+# gate), pushed with BuildKit SBOM + provenance attestations, signed
+# with cosign (keyless, bound to this workflow's OIDC identity) and
+# attested via GitHub build provenance — the NuGet packages too. Per-arch
+# SPDX SBOMs are attached to the GitHub release. Verification commands
+# are documented in docs/operate/supply-chain.md.
 #
 # Why a candidate tag for Docker: building once and pushing to a
 # transient `:candidate-<run-id>` GHCR tag means the image is provably
@@ -42,7 +51,11 @@ on:
   # Manual trigger for iterating on the release pipeline itself
   # without cutting a real release. Defaults to dry-run, which gates
   # every side-effecting step (NuGet push, Docker push of candidate
-  # tag, Docker retag, Shelf upload). A non-dry-run dispatch still
+  # tag, Docker retag, signing/attestation/SBOM publishing, Shelf
+  # upload). The Trivy image scan still runs in dry-run — against an
+  # image loaded into the runner's local daemon instead of a pushed
+  # digest — so the release-gate logic is testable without pushing.
+  # A non-dry-run dispatch still
   # works end-to-end but uses the version_override value — useful
   # for republishing a botched release after fixing pipeline logic,
   # *not* a substitute for cutting a normal release.
@@ -226,9 +239,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Real release / non-dry dispatch: push each arch by digest.
-      # Dry-run dispatch: build only (validates the Dockerfile per arch),
-      # no push — assemble-candidate + publish-docker are skipped anyway.
+      # Real release / non-dry dispatch: push each arch by digest, with
+      # BuildKit SBOM + max provenance attestations baked into the pushed
+      # manifest (imagetools preserves them when assembling :candidate
+      # and again when promoting to the release tags).
+      # Dry-run dispatch: no push — load the image into the local daemon
+      # instead so the Trivy gate below exercises the same image bits.
+      # Attestations are off on that path (the docker exporter can't
+      # carry them).
       - name: Build (and push by digest unless dry-run)
         id: build
         uses: docker/build-push-action@v7
@@ -236,7 +254,26 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           platforms: ${{ matrix.platform }}
-          outputs: ${{ (github.event_name == 'release' || !inputs.dry_run) && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.IMAGE_NAME) || '' }}
+          outputs: ${{ (github.event_name == 'release' || !inputs.dry_run) && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.IMAGE_NAME) || 'type=docker,name=modgud:trivy-scan' }}
+          sbom: ${{ github.event_name == 'release' || !inputs.dry_run }}
+          provenance: ${{ (github.event_name == 'release' || !inputs.dry_run) && 'mode=max' || 'false' }}
+
+      # Release gate (#117): fixable CRITICAL/HIGH vulnerabilities in the
+      # image fail this job → release-gate fails → nothing publishes.
+      # Unfixable findings are reported but don't block (there is nothing
+      # to ship for them); deliberate exceptions go into .trivyignore
+      # with a justification comment. Runs per arch on the native runner,
+      # so both platforms' package sets are actually scanned.
+      - name: Scan image (Trivy — blocks release on fixable CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ (github.event_name == 'release' || !inputs.dry_run) && format('{0}/{1}@{2}', env.REGISTRY, env.IMAGE_NAME, steps.build.outputs.digest) || 'modgud:trivy-scan' }}
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          scanners: vuln
+          trivyignores: .trivyignore
 
       - name: Export digest
         if: github.event_name == 'release' || !inputs.dry_run
@@ -349,6 +386,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write      # sigstore keyless identity for the attestation
+      attestations: write  # GitHub attestation store
 
     steps:
       # Checkout is required so the local composite action below
@@ -378,6 +417,17 @@ jobs:
           for p in "$GITHUB_WORKSPACE"/artifacts/*.nupkg "$GITHUB_WORKSPACE"/artifacts/*.snupkg; do
             dotnet nuget push "$p" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate
           done
+
+      # Provenance attestation for the published packages — verifiable
+      # with `gh attestation verify <file>.nupkg -R cocoar-dev/modgud`.
+      # Runs after the push so an attestation-infrastructure hiccup
+      # can't block the publish itself.
+      - name: Attest build provenance (nupkg)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            ${{ github.workspace }}/artifacts/*.nupkg
+            ${{ github.workspace }}/artifacts/*.snupkg
 
       - name: Summary
         run: |
@@ -450,7 +500,111 @@ jobs:
             echo "**Build candidate (forensic):** \`${{ env.CANDIDATE_TAG }}\` — set a GHCR retention rule on \`candidate-*\` to auto-clean."
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ─── Phase 4: deploy docs (last) ────────────────────────────────────
+  # ─── Phase 4: supply-chain trust artifacts + docs (last) ───────────
+
+  supply-chain:
+    name: Supply chain (sign + attest + SBOM)
+    # Same publish gate as the other side-effecting jobs.
+    if: github.event_name == 'release' || !inputs.dry_run
+    needs: [validate-version, publish-docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # attach SBOMs to the GitHub release
+      packages: write      # push signature + attestation manifests to GHCR
+      id-token: write      # sigstore keyless signing (Fulcio OIDC)
+      attestations: write  # GitHub attestation store
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+      VERSION: ${{ needs.validate-version.outputs.version }}
+
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Every release tag points at the same multi-arch manifest list,
+      # so one signature/attestation on that digest covers all of them
+      # (and the :candidate tag, which promotion copies verbatim).
+      - name: Resolve released image digest
+        id: digest
+        run: |
+          IMG="${REGISTRY}/${IMAGE_NAME}:${VERSION}"
+          DIGEST=$(docker buildx imagetools inspect "$IMG" --format '{{.Manifest.Digest}}')
+          echo "Released digest: $DIGEST"
+          echo "DIGEST=$DIGEST" >> $GITHUB_OUTPUT
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4
+
+      # Keyless (Fulcio/Rekor): the signature is bound to this workflow
+      # run's OIDC identity — no long-lived signing key to manage or
+      # leak. --recursive also signs each per-arch child manifest so
+      # digest-pinned single-platform pulls verify too.
+      - name: Sign image (cosign keyless)
+        run: cosign sign --yes --recursive "${REGISTRY}/${IMAGE_NAME}@${{ steps.digest.outputs.DIGEST }}"
+
+      # GitHub build-provenance attestation for the image — verifiable
+      # with `gh attestation verify oci://<image>:<tag> -R cocoar-dev/modgud`.
+      - name: Attest build provenance (image)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.digest.outputs.DIGEST }}
+          push-to-registry: true
+
+      - name: Install syft
+        id: syft
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Generate SBOMs (SPDX JSON, per arch)
+        run: |
+          mkdir -p sboms
+          for ARCH in amd64 arm64; do
+            "${{ steps.syft.outputs.cmd }}" \
+              "registry:${REGISTRY}/${IMAGE_NAME}@${{ steps.digest.outputs.DIGEST }}" \
+              --platform "linux/${ARCH}" \
+              -o "spdx-json=sboms/modgud-${VERSION}-linux-${ARCH}.spdx.json"
+          done
+          ls -l sboms/
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: sboms-${{ needs.validate-version.outputs.version }}
+          path: sboms/*
+          retention-days: 90
+
+      # Only the release event has a GitHub release to attach to; a
+      # non-dry-run dispatch (botched-release republish) still gets the
+      # SBOMs as the workflow artifact above.
+      - name: Attach SBOMs to GitHub release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" sboms/* --clobber -R "${{ github.repository }}"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Supply chain — ${VERSION}"
+            echo ""
+            echo "**Image digest:** \`${{ steps.digest.outputs.DIGEST }}\` — cosign-signed, provenance-attested, per-arch SPDX SBOMs generated."
+            echo ""
+            echo "Verify:"
+            echo '```bash'
+            echo "cosign verify ${REGISTRY}/${IMAGE_NAME}:${VERSION} \\"
+            echo "  --certificate-identity-regexp '^https://github\\.com/${IMAGE_NAME}/\\.github/workflows/cd-release\\.yml@refs/' \\"
+            echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com"
+            echo "gh attestation verify oci://${REGISTRY}/${IMAGE_NAME}:${VERSION} -R ${IMAGE_NAME}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   deploy-docs:
     name: Deploy Docs

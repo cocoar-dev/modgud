@@ -1,0 +1,12 @@
+# CVE exceptions for the Trivy release gate in cd-release.yml.
+#
+# The gate blocks releases on *fixable* CRITICAL/HIGH findings in the
+# container image. If a finding must be waived deliberately (e.g. a
+# false positive, or a vulnerability that provably doesn't apply to
+# this image), add its ID below with a justification comment and
+# revisit it on the next release.
+#
+# Format — justification comment above, one vulnerability ID per line:
+#
+# # zlib finding is a false positive for the trixie package (2026-07-18)
+# CVE-2026-12345
