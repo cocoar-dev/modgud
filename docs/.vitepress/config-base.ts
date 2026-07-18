@@ -181,6 +181,7 @@ export const baseConfig = {
             { text: 'Observability', link: '/operate/observability' },
             { text: 'Recovery CLI', link: '/operate/recovery-cli' },
             { text: 'Key material', link: '/operate/key-material' },
+            { text: 'Supply-chain verification', link: '/operate/supply-chain' },
             { text: 'Feature Flags', link: '/operate/feature-flags' },
           ],
         },
