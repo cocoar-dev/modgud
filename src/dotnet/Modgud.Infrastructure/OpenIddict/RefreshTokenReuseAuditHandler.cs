@@ -16,16 +16,16 @@ namespace Modgud.Infrastructure.OpenIddict;
 /// entirely silent: no log, no audit trail.
 ///
 /// <para><b>Why here and not in <c>AuthorizationEndpoints.ExchangeAsync</c>.</b>
-/// That file also carries a <c>DetectRefreshTokenReuseAsync</c> helper with a
-/// near-identical docstring, added under OAUTH-10, but it is unreachable for a
-/// genuine reuse attempt: <c>OpenIddictExtensions</c> configures
-/// <c>SetRefreshTokenReuseLeeway(TimeSpan.Zero)</c>, and with zero leeway
-/// OpenIddict's OWN stock <see cref="Protection.ValidateTokenEntry"/> handler
-/// — part of the ASP.NET Core authentication-middleware pass that runs
-/// BEFORE routing reaches our minimal-API endpoint — rejects the request and
-/// revokes the whole token family itself, short-circuiting before the
-/// minimal-API handler (and its helper) ever runs. Hooking the stock pipeline
-/// directly, instead, is guaranteed to run for every reuse rejection
+/// <c>OpenIddictExtensions</c> configures <c>SetRefreshTokenReuseLeeway(TimeSpan.Zero)</c>,
+/// and with zero leeway OpenIddict's OWN stock
+/// <see cref="Protection.ValidateTokenEntry"/> handler — part of the ASP.NET
+/// Core authentication-middleware pass that runs BEFORE routing reaches our
+/// minimal-API endpoint — rejects the request and revokes the whole token
+/// family itself, short-circuiting before the minimal-API handler ever runs.
+/// (An earlier <c>DetectRefreshTokenReuseAsync</c> helper lived in
+/// <c>ExchangeAsync</c> to tear down the chain from there; it was dead code
+/// for the same reason and was removed — issue #130.) Hooking the stock
+/// pipeline directly, instead, is guaranteed to run for every reuse rejection
 /// regardless of grant path.</para>
 ///
 /// <para><b>Precision over <see cref="TokenMintMetricHandler"/>.</b> That

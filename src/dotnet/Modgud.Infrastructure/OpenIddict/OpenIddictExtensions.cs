@@ -151,9 +151,10 @@ public static class OpenIddictExtensions
                 // non-zero leeway window, a refresh token's redeemed-then-
                 // presented event in that window doesn't reject. Zero means
                 // any second presentation after the first redemption fires
-                // invalid_grant — and DetectRefreshTokenReuseAsync (in
-                // AuthorizationEndpoints.ExchangeAsync) tears down the chain
-                // before that rejection happens.
+                // invalid_grant via OpenIddict's own stock
+                // Protection.ValidateTokenEntry handler, which also revokes
+                // the whole token family; RefreshTokenReuseAuditHandler
+                // records the security-audit event just before that runs.
                 options.SetRefreshTokenReuseLeeway(TimeSpan.Zero);
                 options.AllowClientCredentialsFlow();
                 options.AllowDeviceAuthorizationFlow();

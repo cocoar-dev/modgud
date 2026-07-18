@@ -271,7 +271,6 @@ public static class AuthorizationEndpoints
         HttpContext httpContext,
         IOpenIddictApplicationManager applicationManager,
         IOpenIddictAuthorizationManager authorizationManager,
-        IOpenIddictTokenManager tokenManager,
         IOpenIddictScopeManager scopeManager,
         SignInManager<ApplicationUser> signInManager,
         UserManager<ApplicationUser> userManager,
@@ -318,17 +317,14 @@ public static class AuthorizationEndpoints
         if (enabledScopeError is not null) return enabledScopeError;
 
         // OAUTH-10 — RFC 6749 §10.4 / OAuth 2.1 §4.13.2 refresh-token reuse
-        // detection. When a refresh token presented to /token has already been
-        // redeemed, the spec mandates revoking the entire authorization chain
-        // — every sibling token plus the parent authorization — because reuse
-        // is the canonical "compromise" signal. OpenIddict's stock validator
-        // would just return invalid_grant; we additionally tear down the chain
-        // here BEFORE the validator runs, so a single misuse kills every
-        // refresh and access token derived from the same authorization.
-        if (request.IsRefreshTokenGrantType() && !string.IsNullOrEmpty(request.RefreshToken))
-        {
-            await DetectRefreshTokenReuseAsync(request.RefreshToken, tokenManager, authorizationManager);
-        }
+        // detection. With SetRefreshTokenReuseLeeway(TimeSpan.Zero) (see
+        // OpenIddictExtensions), OpenIddict's own stock
+        // Protection.ValidateTokenEntry handler detects a redeemed-token
+        // replay and revokes the whole token family + parent authorization
+        // during authentication-middleware processing — before routing even
+        // reaches this delegate. Auditing (security event + warning log) is
+        // recorded by RefreshTokenReuseAuditHandler, which runs immediately
+        // before that stock handler.
 
         if (request.IsAuthorizationCodeGrantType() || request.IsRefreshTokenGrantType() || request.IsDeviceCodeGrantType())
         {
@@ -1610,59 +1606,6 @@ public static class AuthorizationEndpoints
             new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
     }
 
-    /// <summary>
-    /// OAUTH-10 — refresh-token reuse detection per RFC 6749 §10.4. If the
-    /// presented reference refresh token is already marked redeemed in the
-    /// store, that's the textbook compromise indicator: the legitimate
-    /// holder MUST have moved on to the rotated successor token, so a
-    /// re-presentation means an attacker captured the original. Revoke
-    /// everything — every token in the chain plus the parent authorization
-    /// — so neither the attacker nor any previously-issued sibling can
-    /// continue to act on the user's behalf.
-    /// <para>
-    /// Idempotent: a token already revoked stays revoked. Best-effort: on
-    /// any storage error during the revoke walk we log-and-swallow rather
-    /// than escalate, because the OpenIddict pipeline that runs right
-    /// after this will still reject the request with invalid_grant — the
-    /// chain teardown is hardening, not a correctness gate.
-    /// </para>
-    /// </summary>
-    private static async Task DetectRefreshTokenReuseAsync(
-        string refreshTokenValue,
-        IOpenIddictTokenManager tokenManager,
-        IOpenIddictAuthorizationManager authorizationManager)
-    {
-        var token = await tokenManager.FindByReferenceIdAsync(refreshTokenValue);
-        if (token is null) return;
-
-        var status = await tokenManager.GetStatusAsync(token);
-        if (!string.Equals(status, Statuses.Redeemed, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        var authorizationId = await tokenManager.GetAuthorizationIdAsync(token);
-        if (string.IsNullOrEmpty(authorizationId)) return;
-
-        // Revoke every token in the chain.
-        await foreach (var sibling in tokenManager.FindByAuthorizationIdAsync(authorizationId))
-        {
-            try { await tokenManager.TryRevokeAsync(sibling); }
-            catch { /* best-effort */ }
-        }
-
-        // Revoke the authorization itself so a fresh OAuth flow on the same
-        // client+subject pair must go through the consent + grant cycle
-        // again rather than reusing this compromised authorization.
-        var authorization = await authorizationManager.FindByIdAsync(authorizationId);
-        if (authorization is not null)
-        {
-            try { await authorizationManager.TryRevokeAsync(authorization); }
-            catch { /* best-effort */ }
-        }
-    }
-
-    /// <summary>
     /// <summary>
     /// Stufe-3 scope restriction. Returns <c>null</c> if every requested scope
     /// is allowed for the calling client; otherwise returns a forbid result

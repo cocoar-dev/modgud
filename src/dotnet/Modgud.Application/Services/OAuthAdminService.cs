@@ -172,7 +172,8 @@ public class OAuthAdminService
             // never carries these admin-only fields, so this is a no-op for
             // that path in practice; the explicit guard makes the split clear.
             if (ApplyNativeTokenLifetimes(
-                    settings, dto.IdentityTokenLifetime, dto.AccessTokenLifetime, dto.SlidingRefreshTokenLifetime)
+                    settings, dto.IdentityTokenLifetime, dto.AccessTokenLifetime,
+                    dto.AuthorizationCodeLifetime, dto.SlidingRefreshTokenLifetime)
                 is { } lifetimeError)
                 return lifetimeError;
         }
@@ -322,7 +323,8 @@ public class OAuthAdminService
         // tkn_lft:* override in `newSettings` untouched (MergeClientSettings
         // never touches those keys itself, so they already carry through).
         if (ApplyNativeTokenLifetimes(
-                newSettings, dto.IdentityTokenLifetime, dto.AccessTokenLifetime, dto.SlidingRefreshTokenLifetime)
+                newSettings, dto.IdentityTokenLifetime, dto.AccessTokenLifetime,
+                dto.AuthorizationCodeLifetime, dto.SlidingRefreshTokenLifetime)
             is { } lifetimeError)
             return lifetimeError;
 
@@ -580,6 +582,19 @@ public class OAuthAdminService
                 settings[OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString();
             if (dto.AccessTokenType.HasValue)
                 settings[OAuthApplicationSettingKeys.AccessTokenType] = dto.AccessTokenType.Value.ToString();
+
+            // Issue #130 — also route through ApplyNativeTokenLifetimes so an
+            // AccessTokenLifetime edit on an EXISTING SA credential actually
+            // takes effect. Without this, only the display-only modgud:*
+            // key above was updated and OpenIddict kept minting tokens off
+            // whatever tkn_lft:act value IssueServiceAccountCredentialAsync
+            // (via CreateClientAsync) wrote at creation time — an update was
+            // silently a no-op on the wire. PATCH semantics: the SA-update
+            // DTO has no identity/authorization-code/refresh fields, so
+            // those are passed null and stay untouched.
+            if (ApplyNativeTokenLifetimes(settings, null, dto.AccessTokenLifetime, null, null) is { } lifetimeError)
+                return lifetimeError;
+
             if (!DictEquals(settings, aggregate.Settings))
                 _session.Events.Append(guid, aggregate.SetSettings(settings));
         }

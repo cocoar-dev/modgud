@@ -281,7 +281,9 @@ internal static class OAuthAdminMapping
     // Settings keys, which OpenIddict's EvaluateGeneratedTokens pipeline reads
     // natively at token-issue time (empirically confirmed via decompilation —
     // OpenIddict.Server's per-application settings reader keys off exactly
-    // these three strings). The modgud:* keys are kept so MapClient's
+    // these strings). Issue #130 extended the same wiring to
+    // AuthorizationCodeLifetime, which had shipped as a display-only field
+    // with no effect until then. The modgud:* keys are kept so MapClient's
     // round-trip to the admin UI is unaffected.
     //
     // OpenIddict has no distinct "absolute" vs "sliding" refresh-token
@@ -310,6 +312,13 @@ internal static class OAuthAdminMapping
     /// <see cref="OpenIddictIdentityTokenLifetimeSettingKey"/>.</summary>
     internal const string OpenIddictRefreshTokenLifetimeSettingKey = "tkn_lft:reft";
 
+    /// <summary>OpenIddict's well-known Settings key for per-application
+    /// authorization-code lifetime (<c>OpenIddictConstants.Settings.
+    /// TokenLifetimes.AuthorizationCode</c>, confirmed present via
+    /// reflection against OpenIddict.Abstractions 7.5.0 — issue #130). See
+    /// <see cref="OpenIddictIdentityTokenLifetimeSettingKey"/>.</summary>
+    internal const string OpenIddictAuthorizationCodeLifetimeSettingKey = "tkn_lft:auc";
+
     // Same 1..60 minute bound RealmSettingsService.ValidateTokenLifetimes
     // applies to the realm-wide DCR/CIMD/native-grants access-token
     // lifetime — a per-client override shouldn't be able to create a
@@ -326,23 +335,35 @@ internal static class OAuthAdminMapping
     private const int MinRefreshTokenSeconds = 60 * 60 * 24;
     private const int MaxRefreshTokenSeconds = 60 * 60 * 24 * 30;
 
+    // Authorization codes are single-use and redeemed within the same
+    // browser round-trip (seconds, not minutes, in the common case), so
+    // they get a materially tighter ceiling than the other short-lived
+    // tokens above — the realm-wide default is 5 minutes (see
+    // OpenIddictSettings.AuthorizationCodeLifetimeMinutes). 1..10 minutes
+    // gives admins headroom for slow consent/redirect chains without
+    // letting a per-client override turn an auth code into a long-lived
+    // bearer credential.
+    private const int MinAuthorizationCodeSeconds = 60;
+    private const int MaxAuthorizationCodeSeconds = 60 * 10;
+
     /// <summary>
     /// Validates and writes the OpenIddict-native <c>tkn_lft:*</c> keys for a
-    /// standard client's Identity/Access/Sliding-Refresh token lifetimes
-    /// (admin UI values are seconds) directly into <paramref name="settings"/>.
-    /// PATCH semantics match the surrounding modgud:* keys: a <c>null</c>
-    /// input leaves the corresponding key (and therefore any lifetime
-    /// override already in <paramref name="settings"/>) untouched; a
-    /// provided value is bounds-checked and, on success, overwrites the key.
-    /// Validation runs for every provided value BEFORE any write, so a
-    /// rejection never leaves <paramref name="settings"/> partially mutated.
-    /// Returns the first bounds violation as a validation <see cref="Error"/>;
-    /// <c>null</c> when every provided value is in range.
+    /// standard client's Identity/Access/Authorization-Code/Sliding-Refresh
+    /// token lifetimes (admin UI values are seconds) directly into
+    /// <paramref name="settings"/>. PATCH semantics match the surrounding
+    /// modgud:* keys: a <c>null</c> input leaves the corresponding key (and
+    /// therefore any lifetime override already in <paramref name="settings"/>)
+    /// untouched; a provided value is bounds-checked and, on success,
+    /// overwrites the key. Validation runs for every provided value BEFORE
+    /// any write, so a rejection never leaves <paramref name="settings"/>
+    /// partially mutated. Returns the first bounds violation as a validation
+    /// <see cref="Error"/>; <c>null</c> when every provided value is in range.
     /// </summary>
     internal static Error? ApplyNativeTokenLifetimes(
         Dictionary<string, string> settings,
         int? identityTokenLifetimeSeconds,
         int? accessTokenLifetimeSeconds,
+        int? authorizationCodeLifetimeSeconds,
         int? slidingRefreshTokenLifetimeSeconds)
     {
         if (identityTokenLifetimeSeconds.HasValue &&
@@ -351,6 +372,9 @@ internal static class OAuthAdminMapping
         if (accessTokenLifetimeSeconds.HasValue &&
             ValidateShortLivedSeconds("AccessTokenLifetime", accessTokenLifetimeSeconds.Value) is { } atErr)
             return atErr;
+        if (authorizationCodeLifetimeSeconds.HasValue &&
+            ValidateAuthorizationCodeSeconds(authorizationCodeLifetimeSeconds.Value) is { } acErr)
+            return acErr;
         if (slidingRefreshTokenLifetimeSeconds.HasValue &&
             ValidateRefreshSeconds(slidingRefreshTokenLifetimeSeconds.Value) is { } rtErr)
             return rtErr;
@@ -359,6 +383,8 @@ internal static class OAuthAdminMapping
             settings[OpenIddictIdentityTokenLifetimeSettingKey] = ToLifetimeString(identityTokenLifetimeSeconds.Value);
         if (accessTokenLifetimeSeconds.HasValue)
             settings[OpenIddictAccessTokenLifetimeSettingKey] = ToLifetimeString(accessTokenLifetimeSeconds.Value);
+        if (authorizationCodeLifetimeSeconds.HasValue)
+            settings[OpenIddictAuthorizationCodeLifetimeSettingKey] = ToLifetimeString(authorizationCodeLifetimeSeconds.Value);
         if (slidingRefreshTokenLifetimeSeconds.HasValue)
             settings[OpenIddictRefreshTokenLifetimeSettingKey] = ToLifetimeString(slidingRefreshTokenLifetimeSeconds.Value);
 
@@ -370,6 +396,13 @@ internal static class OAuthAdminMapping
             ? Error.Validation(
                 $"OAuthClient.Invalid{field}",
                 $"{field} must be between {MinShortLivedTokenSeconds} and {MaxShortLivedTokenSeconds} seconds.")
+            : null;
+
+    private static Error? ValidateAuthorizationCodeSeconds(int seconds) =>
+        seconds < MinAuthorizationCodeSeconds || seconds > MaxAuthorizationCodeSeconds
+            ? Error.Validation(
+                "OAuthClient.InvalidAuthorizationCodeLifetime",
+                $"AuthorizationCodeLifetime must be between {MinAuthorizationCodeSeconds} and {MaxAuthorizationCodeSeconds} seconds.")
             : null;
 
     private static Error? ValidateRefreshSeconds(int seconds) =>
