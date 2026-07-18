@@ -257,6 +257,7 @@ export const baseConfig = {
           items: [
             { text: 'Resource server (.NET)', link: '/integrate/resource-server' },
             { text: 'SaaS app walkthrough', link: '/integrate/saas-walkthrough' },
+            { text: 'Secure an MCP server', link: '/integrate/mcp-server' },
             { text: 'Native apps (iOS / mobile)', link: '/integrate/native-apps' },
             { text: 'OAuth / OpenIddict', link: '/integrate/oauth' },
             { text: 'Cookies & sessions', link: '/integrate/cookies-and-sessions' },

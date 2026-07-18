@@ -30,6 +30,8 @@ Typical example: a user adds your MCP server to claude.ai. The MCP authorization
 4. Agent uses its own published metadata URL (e.g. `https://claude.ai/.well-known/oauth-client`) **as the `client_id`** and runs Authorization-Code + PKCE with `resource=<mcp-server-url>`.
 5. Modgud fetches that URL, validates the document, and issues an audience-bound access token.
 
+For the full end-to-end walkthrough — registering the MCP server, wiring discovery, connecting a real agent, and revoking access — see [Secure an MCP server with Modgud](/integrate/mcp-server).
+
 ## How a CIMD `client_id` is resolved
 
 When a client presents an HTTPS-URL `client_id` that isn't a known stored client, and the realm has CIMD enabled, Modgud:
