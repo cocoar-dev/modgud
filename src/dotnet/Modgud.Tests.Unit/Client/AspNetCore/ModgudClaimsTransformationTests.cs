@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Modgud.Client.AspNetCore;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Modgud.Tests.Unit.Client.AspNetCore;
 
@@ -206,6 +207,55 @@ public class ModgudClaimsTransformationTests
             var ex = Assert.Throws<InvalidOperationException>(() =>
                 new ModgudClaimsTransformation(Options.Create(new ModgudOptions { Audience = "" })));
             Assert.Contains("Audience", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Issue #116 (Option A): since the access token now carries
+    /// <c>resource_access</c> itself, the transformer must flatten it
+    /// identically regardless of which path put the claim on the identity.
+    /// ASP.NET Core's JwtBearer (JsonWebTokenHandler) maps a JSON-object JWT
+    /// payload property to a claim whose <c>Value</c> is the raw JSON text
+    /// and whose <c>ValueType</c> is <see cref="JsonClaimValueTypes.Json"/> —
+    /// confirmed empirically (CreateToken + ValidateTokenAsync round-trip)
+    /// rather than assumed. These tests source the claim that way instead of
+    /// the enricher's plain-string shape and expect the exact same output as
+    /// the mirrored <see cref="Roles"/> / <see cref="Permissions"/> tests
+    /// above — the transformer only ever reads <see cref="Claim.Value"/>, so
+    /// <c>ValueType</c> must be irrelevant to it.
+    /// </summary>
+    public class TokenEmbeddedClaimShape
+    {
+        private static Claim TokenMappedResourceAccessClaim(string raw) =>
+            new(ModgudClaimsTransformation.ResourceAccessClaimType, raw, JsonClaimValueTypes.Json);
+
+        [Fact]
+        public async Task Flattens_audience_block_roles_identically_to_the_userinfo_shaped_claim()
+        {
+            var resourceAccess = $$"""{ "{{Audience}}": { "roles": ["Editor", "Viewer"] } }""";
+            var principal = NewAuthenticatedPrincipal(TokenMappedResourceAccessClaim(resourceAccess));
+
+            var transformed = await NewSubject().TransformAsync(principal);
+
+            var roles = transformed.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+            Assert.Contains("Editor", roles);
+            Assert.Contains("Viewer", roles);
+        }
+
+        [Fact]
+        public async Task Flattens_audience_block_permissions_identically_to_the_userinfo_shaped_claim()
+        {
+            var resourceAccess = $$"""{ "{{Audience}}": { "permissions": ["policy:read", "policy:write"] } }""";
+            var principal = NewAuthenticatedPrincipal(TokenMappedResourceAccessClaim(resourceAccess));
+
+            var transformed = await NewSubject().TransformAsync(principal);
+
+            var permissions = transformed
+                .FindAll(ModgudClaimsTransformation.PermissionClaimType)
+                .Select(c => c.Value)
+                .ToList();
+            Assert.Contains("policy:read", permissions);
+            Assert.Contains("policy:write", permissions);
         }
     }
 }

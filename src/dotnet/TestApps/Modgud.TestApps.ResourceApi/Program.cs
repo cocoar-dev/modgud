@@ -17,23 +17,27 @@ JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 //
 //   GET /me            — any authenticated principal (echoes claims +
 //                        the resource_access[<audience>]-flattened
-//                        roles/permissions/groups)
+//                        roles/permissions)
 //   GET /scoped        — token-scope based gate ("demo.read")
 //   GET /admin         — token-scope based gate ("demo.admin")
 //   GET /policy/read   — RequiresModgudPermission("demo:read")
 //                        — exact-match against pre-expanded permissions
 //   POST /policy/write — RequiresModgudPermission("demo:write")
 //
-// What the path proves: the IdP issues a JWT with aud=<this-rs>, the
-// Modgud client library (Modgud.Client.AspNetCore) enriches the principal
-// by fetching /connect/userinfo on JwtBearer's OnTokenValidated event —
-// there's no GetClaimsFromUserInfoEndpoint on JwtBearerOptions, that
-// property only exists on AddOpenIdConnect. UserInfo emits
-// resource_access[<aud>] = { permissions, roles, groups } with bypass
-// tiers (realm:admin, <r>:admin) already pre-expanded to concrete
-// strings, and the lib's claims-transformation flattens that block onto
-// the principal. RequiresModgudPermission then does straight membership
-// match — no HTTP, no cache, no evaluator on the RS side.
+// What the path proves: the IdP issues a JWT with aud=<this-rs>, and the
+// Modgud client library (Modgud.Client.AspNetCore) makes sure the
+// principal ends up with a resource_access claim — preferring the token's
+// own embedded claim (federation v1.1 bakes resource_access into every
+// access token at issuance) and falling back to fetching
+// /connect/userinfo on JwtBearer's OnTokenValidated event only when the
+// token carries none. There's no GetClaimsFromUserInfoEndpoint on
+// JwtBearerOptions for the fallback path — that property only exists on
+// AddOpenIdConnect. Either source emits resource_access[<aud>] =
+// { permissions, roles } with bypass tiers (realm:admin, <r>:admin)
+// already pre-expanded to concrete strings, and the lib's
+// claims-transformation flattens that block onto the principal.
+// RequiresModgudPermission then does straight membership match — no HTTP,
+// no cache, no evaluator on the RS side.
 
 var builder = WebApplication.CreateBuilder(args);
 

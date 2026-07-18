@@ -12,12 +12,24 @@ namespace Modgud.Client.AspNetCore;
 /// <c>"permission"</c> claims so downstream gates work without per-endpoint
 /// plumbing.
 ///
-/// <para>Source of the data: the JWT-bearer middleware populates
-/// <c>resource_access</c> as a string-typed claim when configured with
-/// <c>options.GetClaimsFromUserInfoEndpoint = true</c> (or when the token
-/// itself carries it). Both shapes are tolerated: the value can be a JSON
-/// object string, or already a <see cref="JsonElement"/> from a fancier
-/// validation handler.</para>
+/// <para>Source of the data — preference order: the access token's own
+/// embedded <c>resource_access</c> claim wins (federation v1.1 bakes it in
+/// at issuance), with <c>/connect/userinfo</c> as a fallback for tokens
+/// that don't carry it (see <see cref="ModgudUserInfoEnricher"/>). Both
+/// paths land the claim on the identity the exact same way: JwtBearer's
+/// token handler maps a JSON payload property to a claim of type
+/// <c>"resource_access"</c> whose <c>Value</c> is the raw JSON text and
+/// whose <c>ValueType</c> is
+/// <c>Microsoft.IdentityModel.JsonWebTokens.JsonClaimValueTypes.Json</c>
+/// (<c>"JSON"</c>); the enricher's UserInfo fallback adds a claim with the
+/// same type and a raw-JSON-text value. This transformer only ever reads
+/// <see cref="Claim.Value"/>, so it is indifferent to which path populated
+/// the claim or to <see cref="Claim.ValueType"/> — it just needs valid JSON
+/// text under the <c>"resource_access"</c> claim type. Because UserInfo
+/// only ever echoes the same block the token already carries (never a wider
+/// or narrower one), preferring the token claim changes nothing about what
+/// ends up on the principal — it only removes a redundant HTTP round-trip
+/// for tokens that already have the claim.</para>
 ///
 /// <para>Idempotent: a second pass on the same identity does not duplicate
 /// claims.</para>
