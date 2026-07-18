@@ -633,6 +633,127 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         Assert.DoesNotContain("realm:admin", permissions);
     }
 
+    [Fact]
+    public async Task Introspection_Carries_ResourceAccess_Only_For_Audience_Or_Presenter_Client()
+    {
+        // #132 step 1 — pin whether /connect/introspect echoes the per-audience
+        // resource_access block, and to which callers. This decides the
+        // reference-token client-lib design: if a resource server can introspect
+        // and read the permission block in one call, the lib needs no separate
+        // /connect/userinfo round-trip. Nothing in-repo pinned this before (the
+        // #132 issue explicitly flags the gap).
+        //
+        // OpenIddict's stock introspection handler only reveals a token — at all,
+        // including active:true and any non-standard claims — to a caller that is
+        // one of the token's audiences or its authorized presenter (azp). We pin
+        // three caller identities:
+        //   A. a separate RS client (neither aud nor azp)        → active:false
+        //   B. the token's own presenter client (azp)            → active + block
+        //   C. a client whose client_id == the audience URL      → active + block
+        // C is the Modgud-idiomatic RS identity: the audience is the RS URL, which
+        // RFC 8707 already put in the token's aud, so a client registered under
+        // that same id is authorised to introspect and receives resource_access
+        // in a single call.
+        var appAlpha = await CreateAppAsync("app-alpha", "App Alpha",
+            permissions: [("policy", "read"), ("policy", "write"), ("policy", "admin")]);
+        const string alphaAudience = "https://alpha-api.example.com";
+        await CreateOAuthApiAsync(alphaAudience, appAlpha.Id);
+        const string alphaScopeName = "alpha-api";
+        await CreateScopeAsync(name: alphaScopeName, resources: [alphaAudience], appId: appAlpha.Id);
+
+        // The user-facing client that obtains an opaque REFERENCE token.
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-ref-introspect-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [appAlpha.Id], scopes: ["openid", "roles", "permissions", alphaScopeName],
+            accessTokenType: AccessTokenType.Reference);
+
+        // A separate confidential client standing in for the resource server
+        // calling /connect/introspect with its own credentials.
+        var rsSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var rsClientId = "test-rs-introspector-" + Guid.NewGuid().ToString("N");
+        await CreateOAuthClientAsync(
+            clientId: rsClientId, clientSecret: rsSecret, redirectUri: "http://localhost/rs-callback",
+            appIds: [appAlpha.Id], scopes: ["openid"]);
+
+        var testUser = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Introspect", lastname: "Ref", acronym: "ir",
+            email: "ir@test.com", password: "TestPass1234");
+        await GrantAsync(testUser.Id, roleAppSlug: "app-alpha", resourceType: "policy",
+            actions: ["write"], groupBoundTo: ["app-alpha"]);
+
+        var accessToken = await DriveAuthCodeFlowAsync(
+            username: "ir", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri, scope: $"openid roles permissions {alphaScopeName}",
+            resources: [alphaAudience]);
+
+        // Identity C — a confidential client whose client_id IS the audience URL
+        // (the RS URL is already in the token's aud via RFC 8707 resource=).
+        var audSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        await CreateOAuthClientAsync(
+            clientId: alphaAudience, clientSecret: audSecret, redirectUri: "http://localhost/aud-callback",
+            appIds: [appAlpha.Id], scopes: ["openid"]);
+
+        // A — a stranger client (neither aud nor azp) can't introspect at all.
+        var bodyRs = await IntrospectAsync(rsClientId, rsSecret, accessToken);
+        using (var docA = JsonDocument.Parse(bodyRs))
+            Assert.False(docA.RootElement.GetProperty("active").GetBoolean(),
+                $"A client that is neither audience nor presenter must get active:false.\n{bodyRs}");
+
+        // B — the token's own presenter sees active:true + the full block.
+        var bodyPresenter = await IntrospectAsync(clientId, clientSecret, accessToken);
+        AssertActiveWithWritePermission(bodyPresenter, alphaAudience);
+
+        // C — a client whose client_id == the audience URL likewise sees it
+        // (form-body auth: a URL client_id collides with HTTP Basic's colon).
+        var bodyAud = await IntrospectAsync(alphaAudience, audSecret, accessToken, bodyAuth: true);
+        AssertActiveWithWritePermission(bodyAud, alphaAudience);
+    }
+
+    private static void AssertActiveWithWritePermission(string introspectionBody, string audience)
+    {
+        using var doc = JsonDocument.Parse(introspectionBody);
+        Assert.True(doc.RootElement.TryGetProperty("active", out var active) && active.GetBoolean(),
+            $"token should introspect as active:\n{introspectionBody}");
+        Assert.True(
+            doc.RootElement.TryGetProperty("resource_access", out var ra)
+                && ra.TryGetProperty(audience, out var block)
+                && block.TryGetProperty("permissions", out var perms)
+                && perms.EnumerateArray().Any(e => e.GetString() == "policy:write"),
+            $"introspection must carry resource_access['{audience}'].permissions incl. policy:write.\n{introspectionBody}");
+    }
+
+    private async Task<string> IntrospectAsync(
+        string clientId, string clientSecret, string token, bool bodyAuth = false)
+    {
+        var client = Factory.CreateClient();
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("token", token),
+            new("token_type_hint", "access_token"),
+        };
+        if (bodyAuth)
+        {
+            form.Add(new("client_id", clientId));
+            form.Add(new("client_secret", clientSecret));
+        }
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/connect/introspect")
+        {
+            Content = new FormUrlEncodedContent(form),
+        };
+        if (!bodyAuth)
+        {
+            var basic = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{clientId}:{clientSecret}"));
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", basic);
+        }
+        var resp = await client.SendAsync(req, TestContext.Current.CancellationToken);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(resp.IsSuccessStatusCode, $"/connect/introspect failed ({(int)resp.StatusCode}): {body}");
+        return body;
+    }
+
     // ─── shared flow helper ──────────────────────────────────────────────
 
     private async Task<JsonElement> DriveFlowAndReadAlphaBlockAsync(
