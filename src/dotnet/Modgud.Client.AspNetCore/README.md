@@ -3,17 +3,26 @@
 ASP.NET Core integration for resource servers that authenticate against a
 [Modgud](https://github.com/cocoar-dev/modgud) identity provider.
 
-The lib does two things on top of vanilla `AddJwtBearer`:
-
-1. Fetches `{Authority}/connect/userinfo` on token validation and merges
-   the `resource_access[<audience>]` block onto the principal.
-2. Flattens that block into native `ClaimTypes.Role` / `"permission"` /
-   `"group"` claims so `[Authorize(Roles = "...")]` and an
-   `.RequiresModgudPermission("...")` endpoint filter work natively.
-
+Whichever token format your OAuth client issues, the lib flattens the
+per-audience `resource_access[<audience>]` block into native
+`ClaimTypes.Role` / `"permission"` claims so `[Authorize(Roles = "...")]`
+and an `.RequiresModgudPermission("...")` endpoint filter work natively.
 Bypass tiers (`realm:admin`, `<resource>:admin`) are pre-expanded
-**IdP-side** before emission, so the client lib does pure
-exact-match — no evaluator logic, no HTTP client, no caching.
+**IdP-side** before emission, so the lib does pure exact-match — no
+evaluator logic.
+
+It supports both Modgud access-token formats:
+
+- **JWT access tokens** — `AddModgudClient` on top of `AddJwtBearer`.
+  JwtBearer validates the token locally against the realm JWKS; the lib
+  reads `resource_access` from the token itself, falling back to
+  `{Authority}/connect/userinfo` only for tokens that don't carry it.
+- **Reference (opaque) access tokens** — `AddModgudReferenceTokenClient`.
+  This is Modgud's **default** token format. Each request validates the
+  token via `{Authority}/connect/introspect` (RFC 7662) and reads
+  `resource_access` from the introspection response — one call, no
+  separate UserInfo round-trip. Validation is fail-closed and there is no
+  cache, so revocation is instant.
 
 ## Install
 
@@ -21,7 +30,9 @@ exact-match — no evaluator logic, no HTTP client, no caching.
 dotnet add package Modgud.Client.AspNetCore
 ```
 
-## Quickstart
+## Quickstart — JWT access tokens
+
+Requires the OAuth client's **Access Token Type** to be **JWT (self-contained)**.
 
 ```csharp
 using Modgud.Client.AspNetCore;
@@ -61,6 +72,34 @@ app.MapPost("/calendars/{id}", (string id) => Results.Ok())
 app.Run();
 ```
 
+## Quickstart — reference (opaque) access tokens
+
+Works with Modgud's **default** token format — no need to switch the client
+to JWT. The endpoint gates (`RequireRole`, `RequiresModgudPermission`) are
+identical to the JWT quickstart; only the authentication registration differs:
+
+```csharp
+using Modgud.Client.AspNetCore;
+
+builder.Services
+    .AddAuthentication(ModgudReferenceTokenDefaults.AuthenticationScheme)
+    .AddModgudReferenceTokenClient(o =>
+    {
+        o.Authority = "https://auth.example.com";
+        o.Audience  = "event-tree-api";   // == the introspection client_id
+        o.IntrospectionClientSecret = builder.Configuration["Modgud:IntrospectionSecret"];
+    });
+```
+
+**Setup requirement.** The resource server introspects with a confidential
+OAuth client whose **`client_id` equals its `Audience`**. The IdP only
+reveals a token — its `active` status and `resource_access` block — to a
+caller that is one of the token's audiences (or its presenter); the audience
+is the RS's own id (the RFC 8707 `resource=` value), so registering the
+introspection client under that same id is what authorises it. Credentials
+are sent as form-body parameters (`client_secret_post`), which also handles a
+URL-shaped audience id that HTTP Basic can't (it splits on the scheme colon).
+
 ## How the claims land on the principal
 
 The IdP emits permissions per audience in Keycloak shape:
@@ -94,11 +133,22 @@ var perms = ctx.User.FindAll("permission").Select(c => c.Value);
 
 ## Configuration reference
 
+`AddModgudClient` (JWT mode) — `ModgudOptions`:
+
 | Option | Description |
 | --- | --- |
 | `Authority` | IdP base URL. Used to fetch `{Authority}/connect/userinfo`. Same value as `JwtBearerOptions.Authority`. |
 | `Audience` | The audience this resource server identifies as — same value as `JwtBearerOptions.Audience`. Looked up against `resource_access[…]`. |
 | `JwtBearerScheme` | Scheme name to attach to. Defaults to `"Bearer"`. |
+
+`AddModgudReferenceTokenClient` (introspection mode) — `ModgudReferenceTokenOptions`:
+
+| Option | Description |
+| --- | --- |
+| `Authority` | IdP base URL. Used to build `{Authority}/connect/introspect`. |
+| `Audience` | The RS's audience — the `resource_access[…]` key, and the default introspection `client_id`. |
+| `IntrospectionClientSecret` | Secret for the introspection client. Required. |
+| `IntrospectionClientId` | Overrides the introspection `client_id`. Defaults to `Audience`. |
 
 ## License
 

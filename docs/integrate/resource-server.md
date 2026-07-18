@@ -19,11 +19,14 @@ Before wiring code, finish the admin setup in Modgud. The full admin walkthrough
 3. Create an OAuth client (e.g. `acme-web`) for the app's frontend. Set its **Access Token Type** to **JWT (self-contained)** — see the prerequisite below.
 4. Set up at least one role + group with `BoundTo: ["acme"]` and assign your test user.
 
-### Prerequisite: the client must issue JWT access tokens
+### Two token modes — pick one
 
-Modgud's default access-token format is **Reference** (opaque) — an opaque handle the resource server would have to resolve via `/connect/introspect`. The integration in this guide is **JWKS-based**: `AddJwtBearer` validates the token's signature locally and never calls introspection. Opaque reference tokens cannot be validated that way.
+Modgud issues access tokens in one of two formats, and `Modgud.Client.AspNetCore` supports both. Choose per resource server:
 
-So the OAuth client must have its **Access Token Type** set to **JWT (self-contained)** (the **Access Token Type** field in the OAuth client editor, default `Reference`). With JWT selected, the access token is a signed bearer JWT carrying `aud`, `scope`, and the standard claims, which `AddJwtBearer` validates against the realm's JWKS.
+- **JWT (self-contained)** — a signed bearer JWT carrying `aud`, `scope`, and the standard claims, validated locally against the realm's JWKS with no per-request IdP call. **This guide uses JWT.** It requires setting the OAuth client's **Access Token Type** to **JWT (self-contained)** (the field defaults to `Reference` in the client editor).
+- **Reference (opaque)** — Modgud's **default** format: an opaque handle with no embedded claims, validated by calling `/connect/introspect` (RFC 7662). No client reconfiguration needed. Wire it with `AddModgudReferenceTokenClient` instead of `AddJwtBearer` + `AddModgudClient` — see [Reference-token mode](#reference-token-mode-opaque-tokens) below.
+
+The endpoint gates (`[Authorize(Roles=…)]`, `RequiresModgudPermission`) and the projected role/permission claims are identical in both modes — only the authentication registration differs.
 
 ### Prerequisite: request the right scopes
 
@@ -168,6 +171,38 @@ The IdP does two transformations before emitting the per-audience block, so your
 
 - **Bypass pre-expansion**: bypass tiers are resolved to concrete catalog strings before emission. `realm:admin` expands to every concrete catalog entry of every reachable app; an `<app>:admin` grant expands to every entry in that app's catalog; a `<resource>:admin` grant expands to every `<resource>:<action>` in the app's catalog. Your check is always exact-match.
 - **Per-RS subset narrowing**: each audience block is narrowed to the calling OAuth API's declared `PermissionIds`. A resource server within a multi-RS app sees only its own permissions, never a sibling's.
+
+## Reference-token mode (opaque tokens)
+
+If you'd rather leave the OAuth client on Modgud's default **Reference** token type, validate via introspection instead of JWKS. Everything downstream — the claims transformation, `RequiresModgudPermission`, role gates — is unchanged; only the authentication registration differs:
+
+```csharp
+using Modgud.Client.AspNetCore;
+
+builder.Services
+    .AddAuthentication(ModgudReferenceTokenDefaults.AuthenticationScheme)
+    .AddModgudReferenceTokenClient(o =>
+    {
+        o.Authority = "https://auth.example.com";   // realm host root
+        o.Audience  = "acme";                        // the OAuthApi name == introspection client_id
+        o.IntrospectionClientSecret = builder.Configuration["Modgud:IntrospectionSecret"];
+    });
+```
+
+Each request calls `/connect/introspect`, and the introspection response carries the same per-audience `resource_access` block a JWT would — so a single call both validates the token and yields the permissions. Validation is **fail-closed** (an inactive token, a non-2xx, or an IdP outage rejects the request) and there is **no cache**, so a revoked reference token stops working immediately.
+
+### Setup: register the introspection client
+
+The IdP only reveals a token — its `active` status and its `resource_access` — to a caller that is one of the token's audiences or its presenter. So the resource server introspects with a confidential OAuth client whose **`client_id` equals its audience** (the RS's `OAuthApi` name, which RFC 8707 already puts in the token's `aud`):
+
+1. In Modgud admin, create a **confidential OAuth Client** whose **Client ID** is exactly your audience (e.g. `acme`, or `https://mcp.acme.example` for the MCP case). Give it a secret; it needs no redirect URIs or grant types beyond existing to authenticate.
+2. Pass that secret as `IntrospectionClientSecret`. `IntrospectionClientId` defaults to `Audience`, so you don't set it unless the introspection client is registered under a different (still audience-matching) id.
+
+Credentials go in the request body (`client_secret_post`), which also covers a URL-shaped audience id — HTTP Basic would break on the scheme colon.
+
+::: warning A separate introspection identity won't work
+A confidential client whose `client_id` is *not* one of the token's audiences gets `active: false` from `/connect/introspect` — the IdP reveals nothing to a stranger. The `client_id == audience` registration above is what makes introspection return an active status and the `resource_access` block.
+:::
 
 ## Common pitfalls
 

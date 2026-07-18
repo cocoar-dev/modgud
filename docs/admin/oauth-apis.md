@@ -114,12 +114,28 @@ IdP-side filtering mechanisms; for most setups, leave empty.
 ## How a resource server authenticates against Modgud
 
 An OAuth API has **no credential surface of its own**. When the
-resource server needs to call Modgud directly (e.g. token
-introspection), it does so via OAuth using a confidential
-[OAuth Client](./oauth-clients) linked to a
+resource server needs to call Modgud's own APIs directly (e.g. an
+admin or distribution endpoint), it does so via OAuth using a
+confidential [OAuth Client](./oauth-clients) linked to a
 [Service Account](./service-accounts): the client requests an
 access token via Client-Credentials and uses it as a bearer like any
 other token. There is no per-API shared secret to rotate.
+
+### Token introspection is a special case
+
+Validating an opaque **reference** access token via
+`/connect/introspect` is different, because the IdP only reveals a
+token — its `active` status and its `resource_access` block — to a
+caller that is one of the token's **audiences** or its presenter. A
+generic Service-Account client is neither, and gets `active: false`.
+
+So an introspecting resource server registers a confidential OAuth
+Client whose **Client ID equals its own audience** (this API's name —
+the RFC 8707 `resource=` value already carried in the token's `aud`),
+and authenticates the introspection call with that client's own
+credentials (sent as form-body parameters, so a URL-shaped audience id
+works). The [.NET client library](/integrate/resource-server#reference-token-mode-opaque-tokens)
+does this for you via `AddModgudReferenceTokenClient`.
 
 ## Editing
 
