@@ -130,6 +130,21 @@ public static class OpenIddictExtensions
                     .SetDeviceAuthorizationEndpointUris("connect/device")
                     .SetEndUserVerificationEndpointUris("connect/verify");
 
+                // RFC 8414 (#136) — also serve the authorization-server
+                // metadata at the bare `/.well-known/oauth-authorization-server`
+                // alias, not only the OpenID Connect discovery document. A
+                // spec-strict MCP client may probe only the RFC 8414 path and
+                // never fall back to `openid-configuration`; without the alias
+                // it can't discover the realm. Same document either way — the
+                // per-realm handlers (RealmIssuerHandler, RealmScopesSupportedHandler,
+                // DcrRegistrationEndpointHandler, CimdMetadataDocumentSupportedHandler)
+                // hook HandleConfigurationRequest, which is path-agnostic. This
+                // call REPLACES the endpoint's URI set rather than appending, so
+                // the OIDC default must be listed explicitly to keep it live.
+                options.SetConfigurationEndpointUris(
+                    "/.well-known/openid-configuration",
+                    "/.well-known/oauth-authorization-server");
+
                 options.AllowAuthorizationCodeFlow()
                     .RequireProofKeyForCodeExchange();
                 options.AllowRefreshTokenFlow();
