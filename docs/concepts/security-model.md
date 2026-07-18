@@ -19,7 +19,7 @@ This page is one aggregated, honest view of Modgud's OAuth 2.0 / OpenID Connect 
 | Redirect URI validation | Supported | Exact string match | Applies to `redirect_uri` and `post_logout_redirect_uri` alike; no prefix or wildcard matching. |
 | RP-initiated logout | Supported | `id_token_hint` mandatory | Stricter than the OIDC baseline, where the hint is optional. Logout also fully revokes the session's tokens, not just the cookie. |
 | Back-channel / front-channel logout | Not supported | — | No server-initiated logout propagation to relying parties yet. Tracked in [#118](https://github.com/cocoar-dev/modgud/issues/118). |
-| PAR (RFC 9126) | Not supported | — | Pushed authorization requests. Tracked in [#118](https://github.com/cocoar-dev/modgud/issues/118). |
+| [PAR (RFC 9126)](/reference/oauth-api#pushed-authorization-requests-par) | Supported | Available, not required | Pushed authorization requests at `/connect/par`. Any client may push its authorization request and hand `/connect/authorize` only a one-time `request_uri`; no client is forced to, so direct browser and device flows keep working. |
 | DPoP (RFC 9449) | Not supported | — | Sender-constrained tokens. Tracked in [#118](https://github.com/cocoar-dev/modgud/issues/118) as the intended complement to rejecting mTLS client auth. |
 | mTLS client authentication | Not supported | — | Deliberately rejected, not merely unimplemented. |
 | Token Exchange (RFC 8693) | Not supported | — | No delegation or impersonation grant today. |

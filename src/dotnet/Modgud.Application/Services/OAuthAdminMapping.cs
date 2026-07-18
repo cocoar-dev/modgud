@@ -45,6 +45,10 @@ internal static class OAuthAdminMapping
             OAuthPermissions.Endpoints.Introspection,
             OAuthPermissions.Endpoints.Revocation,
             OAuthPermissions.Endpoints.DeviceAuthorization,
+            // RFC 9126 (#118) — every client may use Pushed Authorization
+            // Requests. PAR strictly hardens the front channel, so there's no
+            // reason to gate it: grant it alongside the authorization endpoint.
+            OAuthPermissions.Endpoints.PushedAuthorization,
         };
 
         // Empty input stays empty: a client created without explicit

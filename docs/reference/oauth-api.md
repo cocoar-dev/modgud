@@ -49,7 +49,8 @@ All under `/connect/...`, all realm-scoped via the domain:
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/connect/authorize` | `GET`/`POST` | Authorization endpoint (Code + PKCE) |
+| `/connect/authorize` | `GET`/`POST` | Authorization endpoint (Code + PKCE). Also accepts a `request_uri` from `/connect/par`. |
+| `/connect/par` | `POST` | Pushed Authorization Request endpoint (RFC 9126). Back-channel; returns a one-time `request_uri`. |
 | `/connect/token` | `POST` | Token endpoint (code exchange, client credentials, refresh, device) |
 | `/connect/userinfo` | `GET`/`POST` | UserInfo endpoint (claims + per-Audience `resource_access`) |
 | `/connect/introspect` | `POST` | Token introspection |
@@ -127,6 +128,46 @@ Response:
   "id_token": "…"           // if openid requested
 }
 ```
+
+## Pushed Authorization Requests (PAR)
+
+[RFC 9126](https://datatracker.ietf.org/doc/html/rfc9126). Instead of putting the full authorization request in the browser's address bar, the client **pushes** it to the back-channel `/connect/par` endpoint and receives a one-time `request_uri`. It then sends only `client_id` + `request_uri` to `/connect/authorize`, so request parameters (scopes, `resource`, `redirect_uri`, PKCE challenge) never traverse the front channel where they could be logged, tampered with, or leaked via the referrer.
+
+PAR is **offered, not required** — every realm advertises `pushed_authorization_request_endpoint` in discovery, but `require_pushed_authorization_requests` is not set, so direct browser and device flows keep working unchanged. Every client is permitted to use it.
+
+### 1. Push the request
+
+```http
+POST /connect/par
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(client_id:client_secret)>   # confidential clients
+
+response_type=code
+client_id=acme-web
+redirect_uri=https://acme.example.com/callback
+scope=openid+profile+permissions
+resource=https://acme-api.example.com
+state=<csrf>
+code_challenge=<base64url(sha256(verifier))>
+code_challenge_method=S256
+```
+
+Public PKCE clients omit the `Authorization` header and send `client_id` in the body. Response (`201 Created`):
+
+```json
+{
+  "request_uri": "urn:ietf:params:oauth:request_uri:6esc_11ACC5bwc014ltc14eY22c",
+  "expires_in": 90
+}
+```
+
+### 2. Authorize with the request_uri
+
+```http
+GET /connect/authorize?client_id=acme-web&request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3A6esc_11ACC5bwc014ltc14eY22c
+```
+
+The server resolves the stored request, runs login + consent as usual, and redirects to the `redirect_uri` with `?code=…&state=…`. The `request_uri` is single-use and short-lived; an unknown or expired one is rejected. From here, the token exchange is identical to the [Authorization Code + PKCE](#authorization-code-pkce) flow above — the same `code_verifier` and `resource` apply.
 
 ## Client Credentials
 
