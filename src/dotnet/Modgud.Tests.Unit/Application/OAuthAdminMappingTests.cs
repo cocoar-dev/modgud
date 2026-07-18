@@ -1021,7 +1021,7 @@ public class OAuthAdminMappingTests
         {
             var settings = new Dictionary<string, string>();
 
-            var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, null, null);
+            var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, null, null, null);
 
             Assert.Null(err);
             Assert.Empty(settings);
@@ -1036,11 +1036,13 @@ public class OAuthAdminMappingTests
                 settings,
                 identityTokenLifetimeSeconds: 300,
                 accessTokenLifetimeSeconds: 1800,
+                authorizationCodeLifetimeSeconds: 300,
                 slidingRefreshTokenLifetimeSeconds: 86400);
 
             Assert.Null(err);
             Assert.Equal("00:05:00", settings[OAuthAdminMapping.OpenIddictIdentityTokenLifetimeSettingKey]);
             Assert.Equal("00:30:00", settings[OAuthAdminMapping.OpenIddictAccessTokenLifetimeSettingKey]);
+            Assert.Equal("00:05:00", settings[OAuthAdminMapping.OpenIddictAuthorizationCodeLifetimeSettingKey]);
             Assert.Equal("1.00:00:00", settings[OAuthAdminMapping.OpenIddictRefreshTokenLifetimeSettingKey]);
         }
 
@@ -1049,8 +1051,8 @@ public class OAuthAdminMappingTests
         {
             var settings = new Dictionary<string, string>();
 
-            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, 60, null));
-            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, 3600, null));
+            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, 60, null, null));
+            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, 3600, null, null));
         }
 
         [Theory]
@@ -1061,7 +1063,8 @@ public class OAuthAdminMappingTests
             var settings = new Dictionary<string, string>();
 
             var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(
-                settings, identityTokenLifetimeSeconds: null, accessTokenLifetimeSeconds: seconds, slidingRefreshTokenLifetimeSeconds: null);
+                settings, identityTokenLifetimeSeconds: null, accessTokenLifetimeSeconds: seconds,
+                authorizationCodeLifetimeSeconds: null, slidingRefreshTokenLifetimeSeconds: null);
 
             Assert.NotNull(err);
             Assert.Equal("OAuthClient.InvalidAccessTokenLifetime", err!.Value.Code);
@@ -1076,11 +1079,37 @@ public class OAuthAdminMappingTests
             var settings = new Dictionary<string, string>();
 
             var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(
-                settings, identityTokenLifetimeSeconds: seconds, accessTokenLifetimeSeconds: null, slidingRefreshTokenLifetimeSeconds: null);
+                settings, identityTokenLifetimeSeconds: seconds, accessTokenLifetimeSeconds: null,
+                authorizationCodeLifetimeSeconds: null, slidingRefreshTokenLifetimeSeconds: null);
 
             Assert.NotNull(err);
             Assert.Equal("OAuthClient.InvalidIdentityTokenLifetime", err!.Value.Code);
             Assert.False(settings.ContainsKey(OAuthAdminMapping.OpenIddictIdentityTokenLifetimeSettingKey));
+        }
+
+        [Fact]
+        public void Boundary_values_are_accepted_1_minute_and_10_minutes_authorization_code()
+        {
+            var settings = new Dictionary<string, string>();
+
+            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, null, 60, null));
+            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, null, 600, null));
+        }
+
+        [Theory]
+        [InlineData(59)]  // just under 1 minute
+        [InlineData(601)] // just over 10 minutes
+        public void AuthorizationCodeLifetime_outside_1_to_10_minutes_is_rejected(int seconds)
+        {
+            var settings = new Dictionary<string, string>();
+
+            var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(
+                settings, identityTokenLifetimeSeconds: null, accessTokenLifetimeSeconds: null,
+                authorizationCodeLifetimeSeconds: seconds, slidingRefreshTokenLifetimeSeconds: null);
+
+            Assert.NotNull(err);
+            Assert.Equal("OAuthClient.InvalidAuthorizationCodeLifetime", err!.Value.Code);
+            Assert.False(settings.ContainsKey(OAuthAdminMapping.OpenIddictAuthorizationCodeLifetimeSettingKey));
         }
 
         [Theory]
@@ -1091,7 +1120,8 @@ public class OAuthAdminMappingTests
             var settings = new Dictionary<string, string>();
 
             var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(
-                settings, identityTokenLifetimeSeconds: null, accessTokenLifetimeSeconds: null, slidingRefreshTokenLifetimeSeconds: seconds);
+                settings, identityTokenLifetimeSeconds: null, accessTokenLifetimeSeconds: null,
+                authorizationCodeLifetimeSeconds: null, slidingRefreshTokenLifetimeSeconds: seconds);
 
             Assert.NotNull(err);
             Assert.Equal("OAuthClient.InvalidSlidingRefreshTokenLifetime", err!.Value.Code);
@@ -1101,15 +1131,17 @@ public class OAuthAdminMappingTests
         [Fact]
         public void Rejection_of_a_later_field_does_not_leave_earlier_fields_partially_written()
         {
-            // Access + Identity are individually valid, but the refresh value
-            // is out of range — the whole call must be atomic w.r.t. `settings`
-            // so a 400 response never corresponds to a half-applied write.
+            // Access + Identity + AuthorizationCode are individually valid, but
+            // the refresh value is out of range — the whole call must be atomic
+            // w.r.t. `settings` so a 400 response never corresponds to a
+            // half-applied write.
             var settings = new Dictionary<string, string>();
 
             var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(
                 settings,
                 identityTokenLifetimeSeconds: 300,
                 accessTokenLifetimeSeconds: 1800,
+                authorizationCodeLifetimeSeconds: 300,
                 slidingRefreshTokenLifetimeSeconds: 1); // way below the 1-day floor
 
             Assert.NotNull(err);
@@ -1126,7 +1158,7 @@ public class OAuthAdminMappingTests
                 [OAuthAdminMapping.OpenIddictAccessTokenLifetimeSettingKey] = "0.00:10:00",
             };
 
-            var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, null, null);
+            var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, null, null, null);
 
             Assert.Null(err);
             Assert.Equal("0.00:10:00", settings[OAuthAdminMapping.OpenIddictAccessTokenLifetimeSettingKey]);
