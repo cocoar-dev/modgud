@@ -77,6 +77,47 @@ public class OpenIdDiscoveryTests : IntegrationTestBase
         Assert.Equal(discoveryIssuer, tokenIssuer);
     }
 
+    [Fact]
+    public async Task Rfc8414_alias_serves_the_same_metadata_as_openid_configuration()
+    {
+        // #136 — MCP discovery robustness. A spec-strict client may probe only
+        // /.well-known/oauth-authorization-server (RFC 8414) and never fall back
+        // to the OIDC document; the alias must resolve and return the same
+        // realm-scoped metadata.
+        var client = Factory.CreateClient();
+
+        var oidcResp = await client.GetAsync("/.well-known/openid-configuration",
+            TestContext.Current.CancellationToken);
+        var aliasResp = await client.GetAsync("/.well-known/oauth-authorization-server",
+            TestContext.Current.CancellationToken);
+
+        // A 200 here also proves WellKnownAttackPathsMiddleware doesn't 404 the
+        // new path — it isn't an attack-probe pattern, and /.well-known/* is
+        // meant to pass through untouched.
+        Assert.True(oidcResp.IsSuccessStatusCode,
+            $"openid-configuration failed ({(int)oidcResp.StatusCode})");
+        Assert.True(aliasResp.IsSuccessStatusCode,
+            $"oauth-authorization-server alias failed ({(int)aliasResp.StatusCode})");
+
+        var oidcBody = await oidcResp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        var aliasBody = await aliasResp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        using var oidcDoc = JsonDocument.Parse(oidcBody);
+        using var aliasDoc = JsonDocument.Parse(aliasBody);
+
+        // The document is generated from the issuer + registered endpoints/scopes
+        // and never embeds the request path, so both paths yield byte-identical
+        // metadata. Assert on the load-bearing fields rather than raw-string
+        // equality to stay robust against incidental property ordering.
+        foreach (var key in new[] { "issuer", "authorization_endpoint", "token_endpoint", "jwks_uri" })
+        {
+            var oidcValue = oidcDoc.RootElement.GetProperty(key).GetString();
+            var aliasValue = aliasDoc.RootElement.GetProperty(key).GetString();
+            Assert.False(string.IsNullOrEmpty(aliasValue), $"alias metadata missing '{key}'");
+            Assert.Equal(oidcValue, aliasValue);
+        }
+    }
+
     private async Task CreateScopeAsync(string name)
     {
         using var scope = Factory.Services.CreateScope();

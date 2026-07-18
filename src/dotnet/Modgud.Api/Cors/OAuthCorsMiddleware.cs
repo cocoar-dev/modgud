@@ -34,6 +34,7 @@ public sealed class OAuthCorsMiddleware
     private static readonly string[] PublicMetadataPaths =
     {
         "/.well-known/openid-configuration",
+        "/.well-known/oauth-authorization-server",
         "/.well-known/jwks",
     };
 
