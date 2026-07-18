@@ -32,6 +32,8 @@ Typical example: a user pastes your MCP server's URL into Claude Code, Cursor, C
 
 Without DCR **or** [CIMD](/admin/client-id-metadata-documents), step 4 isn't possible and every agent has to be onboarded manually. DCR is the stored-client fallback for agents that don't support CIMD; with one pre-registered client an admin can pilot the integration, but "anyone with an agent attaches" needs DCR or CIMD.
 
+For the full end-to-end walkthrough — registering the MCP server, wiring discovery, connecting a real agent, and revoking access — see [Secure an MCP server with Modgud](/integrate/mcp-server).
+
 ## Triple opt-in design
 
 Anonymous registration is gated **three times**. All three must be on for a DCR-registered client to be able to mint usable tokens.
