@@ -126,6 +126,18 @@ public class OAuthConstantsTests
         }
     }
 
+    public class Requirements
+    {
+        [Fact]
+        public void PushedAuthorizationRequests_value_is_pinned()
+        {
+            // Must equal OpenIddict's Requirements.Features.PushedAuthorizationRequests
+            // — OpenIddict silently ignores an unknown requirement string, so a drift
+            // here would disable per-client PAR enforcement without any error.
+            Assert.Equal("ft:par", OAuthPermissions.Requirements.PushedAuthorizationRequests);
+        }
+    }
+
     public class GrantTypes
     {
         [Fact]

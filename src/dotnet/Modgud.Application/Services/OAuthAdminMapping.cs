@@ -77,6 +77,16 @@ internal static class OAuthAdminMapping
         return permissions;
     }
 
+    /// <summary>Builds the OpenIddict <c>Requirements</c> list from the client's
+    /// requirement toggles. Currently only the RFC 9126 PAR requirement.</summary>
+    internal static List<string> BuildClientRequirements(bool requirePushedAuthorizationRequests)
+    {
+        var requirements = new List<string>();
+        if (requirePushedAuthorizationRequests)
+            requirements.Add(OAuthPermissions.Requirements.PushedAuthorizationRequests);
+        return requirements;
+    }
+
     internal static List<string> ExtractGrantTypes(IReadOnlyList<string> permissions) =>
         permissions
             .Where(p => p.StartsWith(OAuthPermissions.Prefixes.GrantType))
@@ -483,6 +493,8 @@ internal static class OAuthAdminMapping
             EnableLocalLogin = GetBoolProp(props, OAuthApplicationPropertyKeys.EnableLocalLogin, true),
             RequireConsent = GetBoolProp(props, OAuthApplicationPropertyKeys.RequireConsent, false),
             AllowRememberConsent = GetBoolProp(props, OAuthApplicationPropertyKeys.AllowRememberConsent, true),
+            RequirePushedAuthorizationRequests =
+                s.Requirements.Contains(OAuthPermissions.Requirements.PushedAuthorizationRequests),
             AllowedGrantTypes = ExtractGrantTypes(s.Permissions),
             AllowedCorsOrigins = GetStringListProp(props, OAuthApplicationPropertyKeys.AllowedCorsOrigins),
             IdentityTokenLifetime = GetIntSetting(OAuthApplicationSettingKeys.IdentityTokenLifetime),

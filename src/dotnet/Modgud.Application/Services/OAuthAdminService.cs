@@ -154,7 +154,7 @@ public class OAuthAdminService
             redirectUris: dto.RedirectUris,
             postLogoutRedirectUris: dto.PostLogoutRedirectUris,
             permissions: permissions,
-            requirements: Array.Empty<string>());
+            requirements: BuildClientRequirements(dto.RequirePushedAuthorizationRequests));
 
         _session.Events.StartStream<OAuthApplicationAggregate>(id, createdEvent);
 
@@ -312,6 +312,18 @@ public class OAuthAdminService
             var scopes = dto.Scopes ?? ExtractScopes(aggregate.Permissions);
             var permissions = BuildClientPermissions(grants, scopes, aggregate.ClientType ?? OAuthClientTypes.Public);
             _session.Events.Append(guid, aggregate.SetPermissions(permissions));
+        }
+
+        // RFC 9126 — per-client PAR requirement patch. null = omitted (no change).
+        if (dto.RequirePushedAuthorizationRequests is { } requirePar)
+        {
+            var requirements = aggregate.Requirements
+                .Where(r => r != OAuthPermissions.Requirements.PushedAuthorizationRequests)
+                .ToList();
+            if (requirePar)
+                requirements.Add(OAuthPermissions.Requirements.PushedAuthorizationRequests);
+            if (!requirements.SequenceEqual(aggregate.Requirements))
+                _session.Events.Append(guid, aggregate.SetRequirements(requirements));
         }
 
         // Settings — partial-PATCH merge; only emit the event when the merge
