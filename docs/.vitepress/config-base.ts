@@ -166,6 +166,7 @@ export const baseConfig = {
             { text: 'OAuth & OIDC', link: '/concepts/oauth' },
             { text: 'Dynamic Client Registration', link: '/concepts/dynamic-client-registration' },
             { text: 'Sessions & Tokens', link: '/concepts/tokens' },
+            { text: 'Security model', link: '/concepts/security-model' },
           ],
         },
       ],

@@ -13,7 +13,7 @@ const ui = useUI()
 
 watch(language, () => ui.set((ctx) => {
   ctx.header.title = t('nav.platform', {}, 'Platform')
-  ctx.header.subTitle = t('admin.inboxSettings.title', {}, 'Inbox-Einstellungen')
+  ctx.header.subTitle = t('admin.inboxSettings.title', {}, 'Inbox Settings')
   ctx.header.icon = 'inbox'
   ctx.content.container = false
 }), { immediate: true })
@@ -51,9 +51,9 @@ async function save() {
   saveResult.value = null
   try {
     await store.save(form.value)
-    saveResult.value = { ok: true, message: t('admin.inboxSettings.saved', {}, 'Einstellungen gespeichert.') }
+    saveResult.value = { ok: true, message: t('admin.inboxSettings.saved', {}, 'Settings saved.') }
   } catch (e: any) {
-    saveResult.value = { ok: false, message: e?.data?.Message || t('admin.inboxSettings.saveFailed', {}, 'Speichern fehlgeschlagen.') }
+    saveResult.value = { ok: false, message: e?.data?.Message || t('admin.inboxSettings.saveFailed', {}, 'Save failed.') }
   } finally {
     saving.value = false
     setTimeout(() => saveResult.value = null, 5000)
@@ -73,12 +73,12 @@ async function save() {
         <template #header>
           <div class="flex items-center gap-2">
             <CoarIcon name="clipboard-list" size="s" />
-            <span class="font-semibold">{{ t('admin.inboxSettings.adminCr.title', {}, 'Änderungsanträge (Admin-Inbox)') }}</span>
+            <span class="font-semibold">{{ t('admin.inboxSettings.adminCr.title', {}, 'Change Requests (Admin Inbox)') }}</span>
           </div>
         </template>
         <p class="text-xs text-surface-500 mb-4">
           {{ t('admin.inboxSettings.adminCr.description', {},
-            'Offene Anträge bleiben so lange in der Admin-Inbox, bis ein Admin sie approved oder rejected. Diese Einstellung steuert nur, wie lange erledigte Items für die Nachvollziehbarkeit bestehen bleiben.') }}
+            'Open requests stay in the admin inbox until an admin approves or rejects them. This setting only controls how long completed items remain for traceability.') }}
         </p>
         <div class="grid grid-cols-2 gap-4">
           <CoarFormField :label="t('admin.inboxSettings.hardDeleteDaysAfterDismissed', {}, 'Hard-delete N Tage nach Erledigung')">
@@ -91,7 +91,7 @@ async function save() {
             <template #help>
               <span class="text-xs text-surface-500">
                 {{ t('admin.inboxSettings.help.hardDeleteDaysAfterDismissed', {},
-                  'Items, die durch Approve/Reject erledigt wurden, werden nach so vielen Tagen endgültig gelöscht. Leer = nie löschen.') }}
+                  'Items completed via approve/reject are permanently deleted after this many days. Empty = never delete.') }}
               </span>
             </template>
           </CoarFormField>
@@ -107,7 +107,7 @@ async function save() {
           </div>
         </template>
         <p class="text-xs text-surface-500 mb-4">
-          {{ t('admin.inboxSettings.feedback.description', {}, 'Bestätigungen / Ablehnungen, die der Antragsteller bekommt.') }}
+          {{ t('admin.inboxSettings.feedback.description', {}, 'Confirmations / rejections the requester receives.') }}
         </p>
         <div class="grid grid-cols-2 gap-4">
           <CoarFormField :label="t('admin.inboxSettings.maxUnreadDays', {}, 'Max. Tage ungelesen')">
@@ -139,7 +139,7 @@ async function save() {
         </template>
         <p class="text-xs text-surface-500 mb-4">
           {{ t('admin.inboxSettings.jobFeedback.description', {},
-            'Operative Job-Signale (Failures an Admins, manuelle Trigger-Bestätigungen an den auslösenden User). Kürzere Defaults, weil operative Signale schneller veralten.') }}
+            'Operational job signals (failures to admins, manual-trigger confirmations to the triggering user). Shorter defaults because operational signals age faster.') }}
         </p>
         <div class="grid grid-cols-2 gap-4">
           <CoarFormField :label="t('admin.inboxSettings.maxUnreadDays', {}, 'Max. Tage ungelesen')">

@@ -50,7 +50,7 @@ function saNameFor(client: OAuthClientDto): string | null {
 const ui = useUI()
 watch(language, () => ui.set((ctx) => {
   ctx.header.title = t('nav.administration', {}, 'Administration')
-  ctx.header.subTitle = t('admin.oauthClients.title', {}, 'OAuth-Clients')
+  ctx.header.subTitle = t('admin.oauthClients.title', {}, 'OAuth Clients')
   ctx.header.icon = 'app-window'
   ctx.content.container = false
 }), { immediate: true })
@@ -109,7 +109,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthClientDto>(), 
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
-  if (!confirm(t('common.confirmDelete', {}, 'Wirklich löschen?'))) return
+  if (!confirm(t('common.confirmDelete', {}, 'Really delete?'))) return
   try {
     await store.remove(id)
   } catch (e: any) {
@@ -165,7 +165,7 @@ function openClient(client: OAuthClientDto) {
           {{ t('common.refresh', {}, 'Refresh') }}
         </CoarButton>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">
-          {{ t('common.create', {}, 'Erstellen') }}
+          {{ t('common.create', {}, 'Create') }}
         </CoarButton>
       </template>
     </CoarDataGrid>
@@ -173,30 +173,30 @@ function openClient(client: OAuthClientDto) {
     <GridEmptyState
       v-if="showEmpty"
       icon="app-window"
-      :title="t('admin.oauthClients.title', {}, 'OAuth-Clients')"
+      :title="t('admin.oauthClients.title', {}, 'OAuth Clients')"
       :description="t('admin.oauthClients.emptyHint', {}, 'An OAuth client is an application that signs users in through this IdP or calls its APIs. Register your first app to obtain a client ID and secret.')"
-      :cta-label="t('common.create', {}, 'Erstellen')"
+      :cta-label="t('common.create', {}, 'Create')"
       @cta="navigateToModal('create')"
     />
 
     <CoarContextMenu :menu="cellMenu">
-      <CoarMenuItem :label="t('common.open', {}, 'Öffnen')" icon="pencil"
+      <CoarMenuItem :label="t('common.open', {}, 'Open')" icon="pencil"
         @clicked="(() => {
           const id = selectedIds[0]
           if (!id) return
           const client = store.clients.find((c) => c.Id === id)
           if (client) openClient(client)
         })()" />
-      <CoarMenuItem :label="t('common.create', {}, 'Erstellen')" icon="plus"
+      <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus"
         @clicked="navigateToModal('create')" />
       <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy"
         @clicked="cloneSelected" />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Löschen')" icon="trash-2" @clicked="deleteSelected" />
+      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteSelected" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
-      <CoarMenuItem :label="t('common.create', {}, 'Erstellen')" icon="plus"
+      <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus"
         @clicked="navigateToModal('create')" />
     </CoarContextMenu>
   </div>

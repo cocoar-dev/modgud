@@ -106,10 +106,10 @@ async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
   if (selectedIsSystem.value) {
-    alert(t('admin.apps.cannotDeleteSystem', {}, 'Die System-App kann nicht gelöscht werden.'))
+    alert(t('admin.apps.cannotDeleteSystem', {}, 'The system app can\'t be deleted.'))
     return
   }
-  if (!confirm(t('admin.apps.confirmDelete', {}, 'App wirklich löschen?'))) return
+  if (!confirm(t('admin.apps.confirmDelete', {}, 'Really delete this app?'))) return
   try { await store.remove(id) } catch (e: any) { alert(e?.message ?? String(e)) }
 }
 
@@ -121,7 +121,7 @@ onMounted(() => store.initialize())
     <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">
-          {{ t('common.create', {}, 'Erstellen') }}
+          {{ t('common.create', {}, 'Create') }}
         </CoarButton>
       </template>
     </CoarDataGrid>
@@ -131,24 +131,24 @@ onMounted(() => store.initialize())
       icon="layout-grid"
       :title="t('admin.apps.title', {}, 'Applications')"
       :description="t('admin.apps.emptyHint', {}, 'An application groups the resources, roles and OAuth clients that belong to one product, so permissions can be scoped per app.')"
-      :cta-label="t('common.create', {}, 'Erstellen')"
+      :cta-label="t('common.create', {}, 'Create')"
       @cta="navigateToModal('create')"
     />
 
     <CoarContextMenu :menu="cellMenu">
-      <CoarMenuItem :label="t('common.open', {}, 'Öffnen')" icon="pencil"
+      <CoarMenuItem :label="t('common.open', {}, 'Open')" icon="pencil"
         @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />
-      <CoarMenuItem :label="t('common.create', {}, 'Erstellen')" icon="plus"
+      <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus"
         @clicked="navigateToModal('create')" />
       <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy"
         @clicked="cloneSelected" />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Löschen')" icon="trash-2"
+      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2"
         :disabled="selectedIsSystem" @clicked="deleteSelected" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
-      <CoarMenuItem :label="t('common.create', {}, 'Erstellen')" icon="plus"
+      <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus"
         @clicked="navigateToModal('create')" />
     </CoarContextMenu>
   </div>

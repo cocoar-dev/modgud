@@ -109,6 +109,15 @@ public static class AuditEvents
     /// <summary>A rate limit was triggered (DCR or login surface). Actor = Ip.</summary>
     public const string RateLimitTriggered = "security.rate_limit_triggered";
 
+    /// <summary>An already-redeemed refresh token was re-presented at
+    /// <c>/connect/token</c> (RFC 6749 §10.4 reuse signal) — the canonical
+    /// indicator that the token was captured by an attacker. The whole
+    /// authorization's token chain is revoked as teardown; this event is the
+    /// forensic record of that revoke. Actor = UserId (subject on the reused
+    /// token). <c>Reason</c> carries the client id, authorization id, and the
+    /// count of sibling tokens revoked.</summary>
+    public const string RefreshTokenReuseDetected = "security.refresh_token_reuse_detected";
+
     /// <summary>A DCR client registration was rejected (policy / validation).</summary>
     public const string DcrRegistrationRejected = "security.dcr_registration_rejected";
 

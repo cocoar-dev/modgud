@@ -105,7 +105,7 @@ const builder = CoarGridBuilder.create<Row>()
           icon: 'trash-2',
           size: 's',
           color: 'var(--coar-text-neutral-secondary, #9ca3af)',
-          tooltip: t('common.delete', {}, 'Löschen'),
+          tooltip: t('common.delete', {}, 'Delete'),
           show: () => !(props.disabled || props.readonly),
           onClick: (row) => removeRow(row.id),
         }),
@@ -124,7 +124,7 @@ const builder = CoarGridBuilder.create<Row>()
           variant="ghost"
           @click="addRow"
         >
-          {{ addLabel ?? t('common.add', {}, 'Hinzufügen') }}
+          {{ addLabel ?? t('common.add', {}, 'Add') }}
         </CoarButton>
       </template>
     </CoarDataGrid>

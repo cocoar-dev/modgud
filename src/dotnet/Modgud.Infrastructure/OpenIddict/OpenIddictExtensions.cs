@@ -42,6 +42,21 @@ public interface IOpenIddictSettings
     /// </summary>
     string? EncryptionCertificatePath { get; }
 
+    /// <summary>
+    /// Optional list of additional encryption certificates for rotation
+    /// overlap (issue #125, the encryption-side follow-up to CERT-01).
+    /// Loaded as decryption-only keys after the active one — an
+    /// authorization code, device code, or refresh token that was
+    /// JWE-encrypted just before the rotation still decrypts, because
+    /// OpenIddict tries every registered encryption credential against an
+    /// incoming token rather than only the active one. Unlike
+    /// <see cref="PreviousSigningCertificatePaths"/>, none of this is ever
+    /// published externally — encryption certs never appear in a JWKS —
+    /// so this purely extends the server's own decrypt-attempt list. Same
+    /// rotation procedure and passwordless-PFX convention as the active key.
+    /// </summary>
+    string[]? PreviousEncryptionCertificatePaths { get; }
+
     int AccessTokenLifetimeMinutes { get; }
     int RefreshTokenLifetimeDays { get; }
     int AuthorizationCodeLifetimeMinutes { get; }
@@ -222,17 +237,26 @@ public static class OpenIddictExtensions
                     // password support, rotation-overlap, and separate
                     // signing/encryption certs.
                     //
-                    // The first AddSigningCertificate call sets the active
-                    // signing key (used for new tokens); subsequent
-                    // AddSigningCertificate calls add validation-only keys
-                    // for in-flight tokens issued by previous certs in the
-                    // rotation overlap window.
+                    // The first AddSigningCertificate/AddEncryptionCertificate
+                    // call on each axis sets the active key (used for new
+                    // tokens); every subsequent call on the same axis adds a
+                    // validation/decryption-only key for artifacts issued
+                    // under a previous cert during the rotation overlap
+                    // window. (OpenIddict actually re-sorts each credential
+                    // list by X.509 expiration once configuration is
+                    // finalized and picks the furthest-expiring cert as
+                    // active, rather than literally the first call — but
+                    // that always agrees with "first call" here in practice,
+                    // because a freshly rotated cert is generated with a
+                    // later expiration than the one it's replacing. See
+                    // OpenIddictServerConfiguration's Compare/Sort of
+                    // EncryptionCredentials / SigningCredentials.)
                     var signingCert = LoadCertificate(settings.SigningCertificatePath);
                     options.AddSigningCertificate(signingCert);
 
-                    if (settings.PreviousSigningCertificatePaths is { Length: > 0 } previous)
+                    if (settings.PreviousSigningCertificatePaths is { Length: > 0 } previousSigningPaths)
                     {
-                        foreach (var previousPath in previous)
+                        foreach (var previousPath in previousSigningPaths)
                         {
                             if (string.IsNullOrWhiteSpace(previousPath)) continue;
                             var previousCert = LoadCertificate(previousPath);
@@ -249,6 +273,21 @@ public static class OpenIddictExtensions
                         ? LoadCertificate(settings.EncryptionCertificatePath)
                         : signingCert;
                     options.AddEncryptionCertificate(encryptionCert);
+
+                    // Rotation overlap for the encryption axis (issue #125),
+                    // symmetric to PreviousSigningCertificatePaths above.
+                    // Without this, replacing encryption.pfx instantly fails
+                    // every live JWE-wrapped authorization code, device code,
+                    // and refresh token instance-wide with no grace window.
+                    if (settings.PreviousEncryptionCertificatePaths is { Length: > 0 } previousEncryptionPaths)
+                    {
+                        foreach (var previousPath in previousEncryptionPaths)
+                        {
+                            if (string.IsNullOrWhiteSpace(previousPath)) continue;
+                            var previousCert = LoadCertificate(previousPath);
+                            options.AddEncryptionCertificate(previousCert);
+                        }
+                    }
                 }
 
                 var aspNetCore = options.UseAspNetCore()
@@ -279,6 +318,7 @@ public static class OpenIddictExtensions
                 options.AddEventHandler(RealmSigningKeyHandler.Descriptor);
                 options.AddEventHandler(RealmJwksHandler.Descriptor);
                 options.AddEventHandler(RealmTokenValidationHandler.Descriptor);
+                options.AddEventHandler(RefreshTokenReuseAuditHandler.Descriptor);
                 options.AddEventHandler(RealmClaimHandler.Descriptor);
             })
             .AddValidation(options =>

@@ -306,12 +306,12 @@ async function copySecret() {
         <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" />
         <p class="mt-1 text-xs text-surface-500">
           {{ t('admin.serviceAccountCredentials.accessTokenTypeHint', {},
-            'Reference-Tokens sind sofort widerrufbar (Deaktivieren/Löschen/Rotieren wirkt direkt); der Resource-Server muss introspecten. JWT validiert sich selbst, überlebt einen Revoke aber bis zum Ablauf — Lebenszeit dann kurz halten.') }}
+            'Reference tokens are revoked immediately (disabling/deleting/rotating takes effect right away); the resource server must introspect. A JWT validates itself but survives a revoke until it expires — keep the lifetime short in that case.') }}
         </p>
       </CoarFormField>
 
       <div v-if="!isCreate" class="mt-1">
-        <CoarCheckbox v-model="form.Enabled" :label="t('admin.serviceAccountCredentials.enabled', {}, 'Aktiv')" />
+        <CoarCheckbox v-model="form.Enabled" :label="t('admin.serviceAccountCredentials.enabled', {}, 'Active')" />
       </div>
 
       <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>

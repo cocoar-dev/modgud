@@ -67,7 +67,7 @@ async function loadLast() {
   try {
     const raw = await store.getLastRawClaims(props.loginProviderId)
     if (raw) sampleClaims.value = JSON.stringify(raw, null, 2)
-    else testError.value = t('admin.loginProviders.noLastClaims', {}, 'Noch kein gespeichertes Login-Sample verfügbar.')
+    else testError.value = t('admin.loginProviders.noLastClaims', {}, 'No saved login sample available yet.')
   } catch (e: any) {
     testError.value = e?.message ?? String(e)
   }
@@ -79,14 +79,14 @@ async function runTest() {
   let parsed: Record<string, unknown>
   try { parsed = JSON.parse(sampleClaims.value) }
   catch (e: any) {
-    testError.value = t('admin.loginProviders.invalidJson', {}, 'Ungültiges JSON: ') + (e?.message ?? String(e))
+    testError.value = t('admin.loginProviders.invalidJson', {}, 'Invalid JSON: ') + (e?.message ?? String(e))
     return
   }
 
   testing.value = true
   try {
     if (props.isNew || !props.loginProviderId) {
-      testError.value = t('admin.loginProviders.testAfterSave', {}, 'Speichere die Konfiguration zuerst, dann kannst du das Script testen.')
+      testError.value = t('admin.loginProviders.testAfterSave', {}, 'Save the configuration first, then you can test the script.')
       return
     }
     const res = await store.testUserUpdate(props.loginProviderId, {
@@ -124,10 +124,10 @@ async function runTest() {
         <span>{{ t('admin.loginProviders.testPanel', {}, 'Test') }}</span>
         <div class="flex gap-1">
           <CoarButton size="xs" variant="ghost" icon-start="download" :disabled="isNew" @click="loadLast">
-            {{ t('admin.loginProviders.loadLastClaims', {}, 'Letzter Login') }}
+            {{ t('admin.loginProviders.loadLastClaims', {}, 'Last Login') }}
           </CoarButton>
           <CoarButton size="xs" icon-start="play" :disabled="testing" @click="runTest">
-            {{ t('admin.loginProviders.runTest', {}, 'Ausführen') }}
+            {{ t('admin.loginProviders.runTest', {}, 'Run') }}
           </CoarButton>
         </div>
       </div>
@@ -149,7 +149,7 @@ async function runTest() {
         <div v-if="testError" class="error-banner">{{ testError }}</div>
         <pre v-if="result" class="output-pre">{{ JSON.stringify(result, null, 2) }}</pre>
         <div v-else-if="!testError" class="text-sm text-gray-400 p-3">
-          {{ t('admin.loginProviders.noResult', {}, 'Klick "Ausführen", um das berechnete Patch zu sehen.') }}
+          {{ t('admin.loginProviders.noResult', {}, 'Click "Run" to see the computed patch.') }}
         </div>
       </div>
 

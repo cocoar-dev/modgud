@@ -9,19 +9,19 @@ export interface MembershipScriptExample {
 
 export const membershipExamples: MembershipScriptExample[] = [
   {
-    description: "Alle aktiven Personen",
+    description: "All active people",
     code: "(p) => Type.Is(p, 'person') && p.IsActive",
   },
   {
-    description: "Personen mit bestimmtem Vornamen-Prefix",
+    description: "People with a specific first-name prefix",
     code: "(p) => Type.Is(p, 'person') && p.IsActive && p.Firstname?.startsWith('A')",
   },
   {
-    description: "Service-Accounts (AccountName startet mit 'svc-')",
+    description: "Service accounts (AccountName starts with 'svc-')",
     code: "(p) => Type.Is(p, 'service-account') && p.AccountName?.startsWith('svc-')",
   },
   {
-    description: "Nur bestimmte E-Mail-Domäne",
+    description: "Only a specific email domain",
     code: "(p) => Type.Is(p, 'person') && p.Email?.endsWith('@example.com')",
   },
   {

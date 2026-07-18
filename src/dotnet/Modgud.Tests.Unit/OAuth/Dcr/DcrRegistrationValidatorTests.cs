@@ -245,7 +245,7 @@ public class DcrRegistrationValidatorTests
         };
         var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(ValidRequest(), settings, "ip"));
         Assert.Equal(420, allow.Normalized.AccessTokenLifetime); // seconds
-        Assert.Equal(3 * 86400, allow.Normalized.AbsoluteRefreshTokenLifetime);
+        Assert.Equal(3 * 86400, allow.Normalized.SlidingRefreshTokenLifetime);
     }
 
     [Fact]

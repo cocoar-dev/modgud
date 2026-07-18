@@ -120,7 +120,6 @@ The **Token Lifetimes** tab is edit-only (it appears once a client exists, not o
 | --- | --- | --- |
 | **Access Token Lifetime** | 60 min | `3600` |
 | **Authorization Code Lifetime** | 5 min | `300` |
-| **Absolute Refresh Token Lifetime** | 14 days | `1209600` |
 | **Identity Token Lifetime** | OpenIddict default (no Modgud override) | — |
 | **Sliding Refresh Token Lifetime** | OpenIddict default (no Modgud override) | — |
 

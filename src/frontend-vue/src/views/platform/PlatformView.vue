@@ -23,7 +23,7 @@ const appConfig = useAppConfigStore()
 
 const groups = computed<SubNavGroup[]>(() => [
   {
-    title: t('admin.section.customization', {}, 'Anpassung'),
+    title: t('admin.section.customization', {}, 'Customization'),
     items: [
       {
         label: t('admin.customization.branding.title', {}, 'Branding'),
@@ -46,7 +46,7 @@ const groups = computed<SubNavGroup[]>(() => [
     ],
   },
   {
-    title: t('platform.section.operations', {}, 'Betrieb'),
+    title: t('platform.section.operations', {}, 'Operations'),
     items: [
       {
         label: t('admin.observability.title', {}, 'Observability'),
@@ -55,13 +55,13 @@ const groups = computed<SubNavGroup[]>(() => [
         visible: authStore.hasPermission('observability:read'),
       } satisfies SubNavItem,
       {
-        label: t('admin.inboxSettings.title', {}, 'Inbox-Einstellungen'),
+        label: t('admin.inboxSettings.title', {}, 'Inbox Settings'),
         icon: 'inbox',
         to: '/platform/inbox-settings',
         visible: authStore.hasPermission('inbox-settings:read'),
       } satisfies SubNavItem,
       {
-        label: t('nav.settings', {}, 'Einstellungen'),
+        label: t('nav.settings', {}, 'Settings'),
         icon: 'settings',
         to: '/platform/settings',
         visible: authStore.hasPermission('realm:admin'),

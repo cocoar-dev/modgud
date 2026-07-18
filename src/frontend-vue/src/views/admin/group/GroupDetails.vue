@@ -202,9 +202,10 @@ function mapEffectiveMember(m: import('@/stores/group.store').EffectiveMemberDto
     ? t('admin.groupDetails.serviceAccountsLabel', {}, 'Service accounts')
     : t('admin.groupDetails.usersLabel', {}, 'Users')
   const via = includeVia && m.ViaName ? m.ViaName : null
+  const viaLabel = t('admin.groupDetails.via', {}, 'via')
   if (m.Type === 'group') {
     const desc = m.Description ?? ''
-    const sub = via ? (desc ? `${desc} · über: ${via}` : `über: ${via}`) : desc
+    const sub = via ? (desc ? `${desc} · ${viaLabel}: ${via}` : `${viaLabel}: ${via}`) : desc
     return {
       value: m.Id,
       label: m.Label,
@@ -216,7 +217,7 @@ function mapEffectiveMember(m: import('@/stores/group.store').EffectiveMemberDto
   }
   if (m.Type === 'service-account') {
     const desc = m.Description ?? ''
-    const sub = via ? (desc ? `${desc} · über: ${via}` : `über: ${via}`) : desc
+    const sub = via ? (desc ? `${desc} · ${viaLabel}: ${via}` : `${viaLabel}: ${via}`) : desc
     return {
       value: m.Id,
       label: m.Label,
@@ -228,7 +229,7 @@ function mapEffectiveMember(m: import('@/stores/group.store').EffectiveMemberDto
   }
   const fullName = [m.Firstname, m.Lastname].filter(Boolean).join(' ')
   const directPart = [m.Acronym, fullName].filter(Boolean).join(' | ')
-  const sub = via ? (directPart ? `${directPart} · über: ${via}` : `über: ${via}`) : directPart
+  const sub = via ? (directPart ? `${directPart} · ${viaLabel}: ${via}` : `${viaLabel}: ${via}`) : directPart
   return {
     value: m.Id,
     label: m.UserName || m.Label,

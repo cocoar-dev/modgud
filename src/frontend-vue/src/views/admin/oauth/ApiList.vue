@@ -77,7 +77,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthApiDto>(), { o
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
-  if (!confirm(t('common.confirmDelete', {}, 'Wirklich löschen?'))) return
+  if (!confirm(t('common.confirmDelete', {}, 'Really delete?'))) return
   try { await store.remove(id) } catch (e: any) { alert(e?.message ?? String(e)) }
 }
 
@@ -104,7 +104,7 @@ onMounted(() => store.initialize())
     <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">
-          {{ t('common.create', {}, 'Erstellen') }}
+          {{ t('common.create', {}, 'Create') }}
         </CoarButton>
       </template>
     </CoarDataGrid>
@@ -114,23 +114,23 @@ onMounted(() => store.initialize())
       icon="server"
       :title="t('admin.oauthApis.title', {}, 'OAuth-APIs')"
       :description="t('admin.oauthApis.emptyHint', {}, 'An API is a protected backend resource clients request tokens for. It owns the scopes a client may ask for to reach your services. Define your first API here.')"
-      :cta-label="t('common.create', {}, 'Erstellen')"
+      :cta-label="t('common.create', {}, 'Create')"
       @cta="navigateToModal('create')"
     />
 
     <CoarContextMenu :menu="cellMenu">
-      <CoarMenuItem :label="t('common.open', {}, 'Öffnen')" icon="pencil"
+      <CoarMenuItem :label="t('common.open', {}, 'Open')" icon="pencil"
         @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />
-      <CoarMenuItem :label="t('common.create', {}, 'Erstellen')" icon="plus"
+      <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus"
         @clicked="navigateToModal('create')" />
       <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy"
         @clicked="cloneSelected" />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Löschen')" icon="trash-2" @clicked="deleteSelected" />
+      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteSelected" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
-      <CoarMenuItem :label="t('common.create', {}, 'Erstellen')" icon="plus"
+      <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus"
         @clicked="navigateToModal('create')" />
     </CoarContextMenu>
   </div>

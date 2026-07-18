@@ -6,26 +6,38 @@ namespace Modgud.Tests.Unit.OAuth.Dcr;
 /// <summary>
 /// Drift-pin between the OpenIddict-recognized Settings keys for
 /// per-application token lifetimes and the string-literal copies
-/// inlined in <see cref="OAuthAdminService"/>.
+/// inlined in <see cref="OAuthAdminMapping"/>.
 ///
-/// <para>The OAuthAdminService writes <c>"tkn_lft:act"</c> /
+/// <para><see cref="OAuthAdminService"/> writes <c>"tkn_lft:act"</c> /
 /// <c>"tkn_lft:reft"</c> into the DCR-created OAuth application's
 /// Settings dict so OpenIddict's pipeline reads them natively at
-/// token-issue time (manual-smoke bug #30). The Application layer
-/// intentionally does NOT reference OpenIddict.Abstractions, so the
-/// keys are inlined; this test enforces that the inline copies and
-/// the OpenIddict constants stay in lock-step. If OpenIddict ever
-/// renames the constants, this test fails loudly instead of
-/// silently disabling the per-realm lifetime override.</para>
+/// token-issue time (manual-smoke bug #30), and — since issue #115 —
+/// also writes <c>"tkn_lft:act"</c> / <c>"tkn_lft:idt"</c> /
+/// <c>"tkn_lft:reft"</c> for standard (admin-created) clients whose
+/// Identity/Access/Sliding-Refresh lifetime fields are set. The
+/// Application layer intentionally does NOT reference
+/// OpenIddict.Abstractions, so the keys are inlined on
+/// <see cref="OAuthAdminMapping"/>; this test enforces that the inline
+/// copies and the OpenIddict constants stay in lock-step. If OpenIddict
+/// ever renames the constants, this test fails loudly instead of
+/// silently disabling a lifetime override.</para>
 /// </summary>
 public class OpenIddictLifetimeSettingKeysTests
 {
+    [Fact]
+    public void IdentityToken_key_matches_OpenIddict_constant()
+    {
+        Assert.Equal(
+            OpenIddictConstants.Settings.TokenLifetimes.IdentityToken,
+            OAuthAdminMapping.OpenIddictIdentityTokenLifetimeSettingKey);
+    }
+
     [Fact]
     public void AccessToken_key_matches_OpenIddict_constant()
     {
         Assert.Equal(
             OpenIddictConstants.Settings.TokenLifetimes.AccessToken,
-            OAuthAdminService.OpenIddictAccessTokenLifetimeSettingKey);
+            OAuthAdminMapping.OpenIddictAccessTokenLifetimeSettingKey);
     }
 
     [Fact]
@@ -33,6 +45,6 @@ public class OpenIddictLifetimeSettingKeysTests
     {
         Assert.Equal(
             OpenIddictConstants.Settings.TokenLifetimes.RefreshToken,
-            OAuthAdminService.OpenIddictRefreshTokenLifetimeSettingKey);
+            OAuthAdminMapping.OpenIddictRefreshTokenLifetimeSettingKey);
     }
 }

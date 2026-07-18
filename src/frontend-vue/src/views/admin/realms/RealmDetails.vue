@@ -78,7 +78,7 @@ function fromDto(dto: RealmDto): FormState {
 
 const modalTitle = computed(() =>
   isCreate.value
-    ? t('admin.realms.createTitle', {}, 'Realm erstellen')
+    ? t('admin.realms.createTitle', {}, 'Create Realm')
     : (form.value.DisplayName || form.value.Slug)
 )
 const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Slug)
@@ -120,12 +120,12 @@ const primaryChanged = computed(() =>
 const footerButton = computed(() => (issuedInvite.value || transferResult.value)
   ? {
       visible: true,
-      text: t('common.close', {}, 'Schließen'),
+      text: t('common.close', {}, 'Close'),
       onClick: () => props.close(),
     }
   : {
       visible: true,
-      text: isCreate.value ? t('common.create', {}, 'Erstellen') : t('common.save', {}, 'Speichern'),
+      text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
       disabled: !canSubmit.value,
       loading: loading.value,
       onClick: save,
@@ -137,7 +137,7 @@ onMounted(async () => {
   try {
     const loaded = await store.loadOne(slug.value)
     if (!loaded) {
-      error.value = t('admin.realms.loadFailed', {}, 'Realm konnte nicht geladen werden.')
+      error.value = t('admin.realms.loadFailed', {}, 'Failed to load the realm.')
       return
     }
     dto.value = loaded
@@ -237,32 +237,32 @@ async function copyLink() {
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="globe"
     :footer-button="footerButton">
     <div v-if="loading && !dto && !isCreate" class="flex flex-1 items-center justify-center p-8">
-      <span class="text-gray-400">{{ t('common.loading', {}, 'Laden...') }}</span>
+      <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
     </div>
 
     <!-- Invite-reveal screen — replaces the form after successful create/resend. -->
     <div v-else-if="issuedInvite" class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
       <CoarNote variant="success">
         {{ inviteSource === 'resent'
-            ? t('admin.realms.inviteResentTitle', {}, 'Bootstrap-Invite neu ausgestellt — alter Token wurde widerrufen.')
-            : t('admin.realms.inviteIssuedTitle', {}, 'Realm angelegt — Bootstrap-Invite ausgestellt.') }}
+            ? t('admin.realms.inviteResentTitle', {}, 'Bootstrap invite reissued — the old token has been revoked.')
+            : t('admin.realms.inviteIssuedTitle', {}, 'Realm created — bootstrap invite issued.') }}
       </CoarNote>
       <CoarNote variant="warning">
-        {{ t('admin.realms.inviteIssuedHint', {}, 'Diese Magic-Link-URL wird genau einmal angezeigt. Falls die Email nicht zugestellt wird (z. B. lokale Entwicklung ohne SMTP), kopieren Sie sie jetzt — danach geht es nur noch über "Resend".') }}
+        {{ t('admin.realms.inviteIssuedHint', {}, 'This magic link URL is shown exactly once. If the email isn\'t delivered (e.g. local development without SMTP), copy it now — afterwards it\'s only available via "Resend".') }}
       </CoarNote>
       <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
         <span class="text-gray-500">{{ t('admin.realms.inviteUserName', {}, 'Benutzername') }}</span>
         <span class="font-medium">{{ issuedInvite.UserName }}</span>
         <span class="text-gray-500">{{ t('admin.realms.inviteEmail', {}, 'E-Mail') }}</span>
         <span>{{ issuedInvite.Email }}</span>
-        <span class="text-gray-500">{{ t('admin.realms.inviteExpiresAt', {}, 'Gültig bis') }}</span>
+        <span class="text-gray-500">{{ t('admin.realms.inviteExpiresAt', {}, 'Valid until') }}</span>
         <span>{{ new Date(issuedInvite.ExpiresAt).toLocaleString() }}</span>
       </div>
       <CoarFormField :label="t('admin.realms.inviteLink', {}, 'Magic-Link')">
         <div class="flex gap-2">
           <input :value="issuedInvite.MagicLinkUrl" readonly class="textarea !font-mono !text-xs" />
           <CoarButton @click="copyLink">
-            {{ linkCopied ? t('common.copied', {}, 'Kopiert!') : t('common.copy', {}, 'Kopieren') }}
+            {{ linkCopied ? t('common.copied', {}, 'Kopiert!') : t('common.copy', {}, 'Copy') }}
           </CoarButton>
         </div>
       </CoarFormField>
@@ -289,7 +289,7 @@ async function copyLink() {
     <!-- Edit/Create form -->
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
       <CoarNote v-if="isCreate" variant="info">
-        {{ t('admin.realms.createHint', {}, 'Beim Anlegen wird automatisch eine eigene Datenbank provisioniert und mit Default-OAuth-Scopes geseedet.') }}
+        {{ t('admin.realms.createHint', {}, 'Creating it automatically provisions a dedicated database and seeds it with the default OAuth scopes.') }}
       </CoarNote>
 
       <div class="modal-form">
@@ -306,7 +306,7 @@ async function copyLink() {
               <CoarTextInput v-model="form.DisplayName" clearable />
               <p class="field-hint">{{ t('admin.realms.displayName.hint', {}, 'Human-friendly name shown in the realm switcher and headers.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-full" :label="t('common.description', {}, 'Beschreibung')">
+            <CoarFormField class="col-full" :label="t('common.description', {}, 'Description')">
               <CoarTextInput v-model="form.Description" clearable :rows="2" />
               <p class="field-hint">{{ t('admin.realms.description.hint', {}, 'Optional note describing this realm\'s purpose.') }}</p>
             </CoarFormField>
@@ -327,11 +327,11 @@ async function copyLink() {
 
         <!-- Section: InitialAdmin (create-only) -->
         <section v-if="isCreate" class="form-section">
-          <h3 class="form-section-heading">{{ t('admin.realms.initialAdminTitle', {}, 'Erster Admin') }}</h3>
+          <h3 class="form-section-heading">{{ t('admin.realms.initialAdminTitle', {}, 'First Admin') }}</h3>
           <div class="modal-form-grid">
             <CoarFormField class="col-full">
               <p class="field-hint">
-                {{ t('admin.realms.initialAdminHint', {}, 'Wird per Magic-Link zum Aktivieren eingeladen — der Empfänger setzt sein Passwort selbst. Pflichtfelder: Benutzername und E-Mail.') }}
+                {{ t('admin.realms.initialAdminHint', {}, 'Invited via magic link to activate — the recipient sets their own password. Required fields: username and email.') }}
               </p>
             </CoarFormField>
             <CoarFormField class="col-half" :label="t('admin.realms.initialAdminUserName', {}, 'Benutzername')" required>
@@ -357,7 +357,7 @@ async function copyLink() {
           <h3 class="form-section-heading">{{ t('admin.realms.section.status', {}, 'Status') }}</h3>
           <div class="modal-form-grid">
             <CoarFormField class="col-full">
-              <CoarCheckbox v-model="form.IsActive" :label="t('common.active', {}, 'Aktiv')" />
+              <CoarCheckbox v-model="form.IsActive" :label="t('common.active', {}, 'Active')" />
               <p class="field-hint">{{ t('admin.realms.isActive.hint', {}, 'Inactive realms cannot sign in and cannot become the control plane.') }}</p>
             </CoarFormField>
           </div>
@@ -367,10 +367,10 @@ async function copyLink() {
       <!-- Resend (edit-only) -->
       <div v-if="!isCreate" class="mt-2 border-t pt-3 flex items-center gap-3">
         <span class="text-xs text-gray-500 flex-1">
-          {{ t('admin.realms.resendHint', {}, 'Bootstrap-Invite erneut ausstellen (z. B. wenn Token abgelaufen oder Email nie zugestellt).') }}
+          {{ t('admin.realms.resendHint', {}, 'Reissue the bootstrap invite (e.g. if the token expired or the email was never delivered).') }}
         </span>
         <CoarButton variant="secondary" :loading="loading" @click="resendInvite">
-          {{ t('admin.realms.resendInvite', {}, 'Invite erneut senden') }}
+          {{ t('admin.realms.resendInvite', {}, 'Resend Invite') }}
         </CoarButton>
       </div>
 

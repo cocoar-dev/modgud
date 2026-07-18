@@ -16,7 +16,7 @@ const ui = useUI()
 
 watch(language, () => ui.set((ctx) => {
   ctx.header.title = t('nav.platform', {}, 'Platform')
-  ctx.header.subTitle = t('nav.settings', {}, 'Einstellungen')
+  ctx.header.subTitle = t('nav.settings', {}, 'Settings')
   ctx.header.icon = 'settings'
   ctx.content.container = false
 }), { immediate: true })

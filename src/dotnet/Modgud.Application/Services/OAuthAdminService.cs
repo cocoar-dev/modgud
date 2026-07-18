@@ -28,21 +28,6 @@ namespace Modgud.Application.Services;
 /// </summary>
 public class OAuthAdminService
 {
-    /// <summary>OpenIddict's well-known Settings key for per-application
-    /// access-token lifetime. Mirrors
-    /// <c>OpenIddictConstants.Settings.TokenLifetimes.AccessToken</c> —
-    /// inlined here to avoid pulling OpenIddict.Abstractions into the
-    /// Application layer. Drift against the OpenIddict value would
-    /// silently disable the DCR per-realm lifetime override — pinned
-    /// by a unit test that uses reflection to fetch the OpenIddict
-    /// constant and asserts equality.</summary>
-    internal const string OpenIddictAccessTokenLifetimeSettingKey = "tkn_lft:act";
-
-    /// <summary>OpenIddict's well-known Settings key for per-application
-    /// refresh-token lifetime. See
-    /// <see cref="OpenIddictAccessTokenLifetimeSettingKey"/>.</summary>
-    internal const string OpenIddictRefreshTokenLifetimeSettingKey = "tkn_lft:reft";
-
     private readonly IDocumentSession _session;
 
     public OAuthAdminService(IDocumentSession session)
@@ -175,6 +160,22 @@ public class OAuthAdminService
 
         // Settings (primitive lifetime + token-type values).
         var settings = BuildClientSettings(dto);
+        if (dcrMetadata is null)
+        {
+            // Issue #115 — standard (non-DCR) clients: wire the admin's
+            // Identity/Access/Sliding-Refresh lifetime fields onto
+            // OpenIddict's native tkn_lft:* keys (see ApplyNativeTokenLifetimes)
+            // so they actually take effect at token-issue time instead of
+            // only ever landing in the display-only modgud:* keys above. DCR
+            // clients get their tkn_lft:act/reft from the realm-wide
+            // DcrSettings override below instead — the DCR registration DTO
+            // never carries these admin-only fields, so this is a no-op for
+            // that path in practice; the explicit guard makes the split clear.
+            if (ApplyNativeTokenLifetimes(
+                    settings, dto.IdentityTokenLifetime, dto.AccessTokenLifetime, dto.SlidingRefreshTokenLifetime)
+                is { } lifetimeError)
+                return lifetimeError;
+        }
         if (dcrMetadata is not null)
         {
             // Per-realm DCR token-lifetime override. Written as OpenIddict's
@@ -315,6 +316,16 @@ public class OAuthAdminService
         // Settings — partial-PATCH merge; only emit the event when the merge
         // actually produced a different dictionary.
         var newSettings = MergeClientSettings(aggregate.Settings, dto);
+
+        // Issue #115 — same native tkn_lft:* wiring as CreateClientAsync, PATCH
+        // semantics: a field omitted from the DTO leaves any existing
+        // tkn_lft:* override in `newSettings` untouched (MergeClientSettings
+        // never touches those keys itself, so they already carry through).
+        if (ApplyNativeTokenLifetimes(
+                newSettings, dto.IdentityTokenLifetime, dto.AccessTokenLifetime, dto.SlidingRefreshTokenLifetime)
+            is { } lifetimeError)
+            return lifetimeError;
+
         if (!DictEquals(newSettings, aggregate.Settings))
             _session.Events.Append(guid, aggregate.SetSettings(newSettings));
 

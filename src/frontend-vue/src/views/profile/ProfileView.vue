@@ -55,7 +55,7 @@ async function loadSessions() {
 }
 
 async function revokeSession(id: string) {
-  if (!confirm(t('profile.sessions.confirmRevoke', {}, 'Diese Sitzung wirklich beenden?'))) return
+  if (!confirm(t('profile.sessions.confirmRevoke', {}, 'Really end this session?'))) return
   revokingSessionId.value = id
   try {
     await sessionsHttp.addPath(id).delete()
@@ -68,7 +68,7 @@ async function revokeSession(id: string) {
 }
 
 async function revokeAllSessions() {
-  if (!confirm(t('profile.sessions.confirmRevokeAll', {}, 'Wirklich überall abmelden? Du wirst neu angemeldet.'))) return
+  if (!confirm(t('profile.sessions.confirmRevokeAll', {}, 'Really sign out everywhere? You\'ll be signed in again.'))) return
   revokingAll.value = true
   try {
     await sessionsHttp.delete()
@@ -130,7 +130,7 @@ async function exportMyData() {
 async function requestDeletion() {
   if (deleteRequestRunning.value) return
   if (!deletePassword.value) {
-    privacyError.value = t('profile.privacy.passwordRequired', {}, 'Passwort ist erforderlich.')
+    privacyError.value = t('profile.privacy.passwordRequired', {}, 'Password is required.')
     return
   }
   deleteRequestRunning.value = true
@@ -156,12 +156,12 @@ async function requestDeletion() {
 
 async function cancelDeletion() {
   if (deleteCancelRunning.value) return
-  if (!confirm(t('profile.privacy.confirmCancel', {}, 'Löschanfrage zurückziehen?'))) return
+  if (!confirm(t('profile.privacy.confirmCancel', {}, 'Withdraw deletion request?'))) return
   deleteCancelRunning.value = true
   privacyError.value = ''
   try {
     await gdprHttp.addPath('cancel-deletion').post({})
-    privacyMessage.value = t('profile.privacy.cancelled', {}, 'Löschanfrage zurückgezogen.')
+    privacyMessage.value = t('profile.privacy.cancelled', {}, 'Deletion request withdrawn.')
     await loadDeletionStatus()
   } catch (e: any) {
     privacyError.value = e?.body?.Message ?? e?.message ?? String(e)
@@ -180,7 +180,7 @@ function deviceIcon(s: SessionDto): string {
 function deviceLabel(s: SessionDto): string {
   const browser = [s.Browser, s.BrowserVersion].filter(Boolean).join(' ')
   const os = [s.OperatingSystem, s.OsVersion].filter(Boolean).join(' ')
-  return [browser, os].filter(Boolean).join(' · ') || (s.DeviceType ?? t('profile.sessions.unknownDevice', {}, 'Unbekanntes Gerät'))
+  return [browser, os].filter(Boolean).join(' · ') || (s.DeviceType ?? t('profile.sessions.unknownDevice', {}, 'Unknown Device'))
 }
 
 // MFA state
@@ -573,7 +573,7 @@ function onMfaSetupClose(enabled: boolean) {
         />
         <CoarMenuItem
           icon="monitor"
-          :label="t('profile.tabSessions', {}, 'Sitzungen')"
+          :label="t('profile.tabSessions', {}, 'Sessions')"
           :class="{ 'profile-menu-item--active': activeSection === 'sessions' }"
           @clicked="activeSection = 'sessions'"
         />
@@ -655,7 +655,7 @@ function onMfaSetupClose(enabled: boolean) {
                     <span>
                       <template v-if="openRequest?.Status === 'EmailVerificationPending'">
                         {{ t('profile.pendingEmailVerify', { email: pendingFor('Email')?.NewValue || '—' },
-                            'Bestätigung an {email} ausstehend — bitte Posteingang prüfen') }}
+                            'Confirmation pending for {email} — please check your inbox') }}
                       </template>
                       <template v-else>
                         {{ t('profile.pending', { value: pendingFor('Email')?.NewValue || '—' }, 'Angefragt: {value}') }}
@@ -673,10 +673,10 @@ function onMfaSetupClose(enabled: boolean) {
 
               <div class="flex items-center gap-3 flex-wrap">
                 <CoarButton :disabled="!profileDirty || emailUnverified" :loading="profileSaving" @click="saveProfile">
-                  {{ t('common.save', {}, 'Speichern') }}
+                  {{ t('common.save', {}, 'Save') }}
                 </CoarButton>
                 <span v-if="profileSavedHint" class="text-sm text-green-700">
-                  <CoarIcon name="check" size="s" class="inline-block" /> {{ t('profile.saved', {}, 'Gespeichert') }}
+                  <CoarIcon name="check" size="s" class="inline-block" /> {{ t('profile.saved', {}, 'Saved') }}
                 </span>
                 <span v-if="profileError" class="text-sm text-red-600">{{ profileError }}</span>
 
@@ -910,23 +910,23 @@ function onMfaSetupClose(enabled: boolean) {
                 <div class="flex items-center gap-3">
                   <CoarIcon name="monitor" size="m" class="text-surface-500" />
                   <div>
-                    <h2 class="text-lg font-semibold">{{ t('profile.sessions.title', {}, 'Aktive Sitzungen') }}</h2>
-                    <p class="text-sm text-surface-500">{{ t('profile.sessions.description', {}, 'Geräte, mit denen du derzeit angemeldet bist.') }}</p>
+                    <h2 class="text-lg font-semibold">{{ t('profile.sessions.title', {}, 'Active Sessions') }}</h2>
+                    <p class="text-sm text-surface-500">{{ t('profile.sessions.description', {}, 'Devices you\'re currently signed in on.') }}</p>
                   </div>
                 </div>
                 <CoarButton variant="danger" :loading="revokingAll"
                   :disabled="sessionsLoading || sessions.length === 0"
                   @click="revokeAllSessions">
-                  {{ t('profile.sessions.revokeAll', {}, 'Überall abmelden') }}
+                  {{ t('profile.sessions.revokeAll', {}, 'Sign out everywhere') }}
                 </CoarButton>
               </div>
 
               <div v-if="sessionsLoading && sessions.length === 0" class="text-sm text-surface-400">
-                {{ t('common.loading', {}, 'Laden...') }}
+                {{ t('common.loading', {}, 'Loading...') }}
               </div>
               <div v-else-if="sessionsError" class="text-sm text-red-600">{{ sessionsError }}</div>
               <div v-else-if="sessions.length === 0" class="text-sm text-surface-400">
-                {{ t('profile.sessions.none', {}, 'Keine Sitzungen vorhanden.') }}
+                {{ t('profile.sessions.none', {}, 'No sessions.') }}
               </div>
               <div v-else class="space-y-2">
                 <div v-for="s in sessions" :key="s.Id"
@@ -937,22 +937,22 @@ function onMfaSetupClose(enabled: boolean) {
                     <div class="text-sm font-medium flex items-center gap-2">
                       {{ deviceLabel(s) }}
                       <span v-if="s.IsCurrent" class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-                        {{ t('profile.sessions.current', {}, 'Aktuelle Sitzung') }}
+                        {{ t('profile.sessions.current', {}, 'Current Session') }}
                       </span>
                     </div>
                     <div class="text-xs text-surface-500 truncate">
                       <span v-if="s.IpAddress">IP: {{ s.IpAddress }} · </span>
-                      {{ t('profile.sessions.lastActive', {}, 'Zuletzt aktiv:') }}
+                      {{ t('profile.sessions.lastActive', {}, 'Last active:') }}
                       {{ new Date(s.LastActiveAt).toLocaleString() }}
-                      · {{ t('profile.sessions.created', {}, 'Erstellt:') }}
+                      · {{ t('profile.sessions.created', {}, 'Created:') }}
                       {{ new Date(s.CreatedAt).toLocaleDateString() }}
                     </div>
                   </div>
                   <button class="text-surface-400 hover:text-red-600 transition"
                     :disabled="s.IsCurrent || revokingSessionId === s.Id"
                     :title="s.IsCurrent
-                      ? t('profile.sessions.cantRevokeCurrent', {}, 'Aktuelle Sitzung kann hier nicht beendet werden — bitte abmelden.')
-                      : t('profile.sessions.revoke', {}, 'Beenden')"
+                      ? t('profile.sessions.cantRevokeCurrent', {}, 'The current session can\'t be ended here — please log out instead.')
+                      : t('profile.sessions.revoke', {}, 'End Session')"
                     @click="revokeSession(s.Id)">
                     <CoarIcon name="log-out" size="s" />
                   </button>
@@ -974,10 +974,10 @@ function onMfaSetupClose(enabled: boolean) {
                 </div>
                 <p class="text-sm text-surface-600">
                   {{ t('profile.privacy.exportDescription', {},
-                    'Alle Daten, die wir über dich gespeichert haben (Profil, Sicherheit, Sitzungen, Login-Historie), als JSON-Download.') }}
+                    'All data we have stored about you (profile, security, sessions, login history), as a JSON download.') }}
                 </p>
                 <CoarButton :loading="exportRunning" @click="exportMyData">
-                  {{ t('profile.privacy.exportButton', {}, 'Export herunterladen') }}
+                  {{ t('profile.privacy.exportButton', {}, 'Download Export') }}
                 </CoarButton>
               </div>
             </CoarCard>
@@ -987,7 +987,7 @@ function onMfaSetupClose(enabled: boolean) {
               <div class="p-6 space-y-3">
                 <div class="flex items-center gap-3">
                   <CoarIcon name="user-x" size="m" class="text-red-600" />
-                  <h2 class="text-lg font-semibold">{{ t('profile.privacy.deleteTitle', {}, 'Konto löschen') }}</h2>
+                  <h2 class="text-lg font-semibold">{{ t('profile.privacy.deleteTitle', {}, 'Delete Account') }}</h2>
                 </div>
 
                 <CoarNote v-if="deletionStatus?.IsPending && deletionStatus.Initiator === 'Admin'" variant="error">
@@ -1003,7 +1003,7 @@ function onMfaSetupClose(enabled: boolean) {
                   </span>
                 </CoarNote>
                 <CoarNote v-else-if="deletionStatus?.IsDataMasked" variant="info">
-                  {{ t('profile.privacy.statusMasked', {}, 'Personenbezogene Daten wurden bereits maskiert.') }}
+                  {{ t('profile.privacy.statusMasked', {}, 'Personal data has already been masked.') }}
                 </CoarNote>
                 <p v-else class="text-sm text-surface-600">
                   {{ t('profile.privacy.deleteDescription', {},
@@ -1020,14 +1020,14 @@ function onMfaSetupClose(enabled: boolean) {
                 <div v-else-if="!deletionStatus?.IsDeleted">
                   <div v-if="!showDeleteForm">
                     <CoarButton variant="danger" @click="showDeleteForm = true">
-                      {{ t('profile.privacy.deleteButton', {}, 'Konto löschen anfragen') }}
+                      {{ t('profile.privacy.deleteButton', {}, 'Request Account Deletion') }}
                     </CoarButton>
                   </div>
                   <div v-else class="space-y-2">
-                    <CoarFormField :label="t('profile.privacy.password', {}, 'Aktuelles Passwort')">
+                    <CoarFormField :label="t('profile.privacy.password', {}, 'Current Password')">
                       <CoarTextInput v-model="deletePassword" type="password" />
                     </CoarFormField>
-                    <CoarFormField :label="t('profile.privacy.reason', {}, 'Grund (optional)')">
+                    <CoarFormField :label="t('profile.privacy.reason', {}, 'Reason (optional)')">
                       <CoarTextInput v-model="deleteReason" />
                     </CoarFormField>
                     <div class="flex gap-2">
@@ -1035,7 +1035,7 @@ function onMfaSetupClose(enabled: boolean) {
                         {{ t('profile.privacy.confirmDelete', {}, 'Schedule deletion') }}
                       </CoarButton>
                       <CoarButton variant="ghost" @click="showDeleteForm = false; deletePassword = ''; deleteReason = ''">
-                        {{ t('common.cancel', {}, 'Abbrechen') }}
+                        {{ t('common.cancel', {}, 'Cancel') }}
                       </CoarButton>
                     </div>
                   </div>

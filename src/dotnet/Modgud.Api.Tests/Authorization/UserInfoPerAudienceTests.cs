@@ -12,6 +12,7 @@ using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Common;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Permissions.Abstractions;
 using Marten;
@@ -199,6 +200,93 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         Assert.True(doc.RootElement.TryGetProperty("resource_access", out var ra)
             && ra.TryGetProperty(alphaAudience, out _),
             $"resource_access['{alphaAudience}'] missing after refresh.\nBody:\n{body}");
+    }
+
+    // Issue #124 — reuse of an already-redeemed refresh token (RFC 6749 §10.4) is
+    // OpenIddict's own SetRefreshTokenReuseLeeway(TimeSpan.Zero) compromise signal:
+    // its stock Protection.ValidateTokenEntry handler rejects the replay and revokes
+    // the whole authorization's token family itself (RefreshTokenReuseAuditHandler
+    // runs immediately before it in the same ValidateTokenContext pipeline). This was
+    // previously silent (no log, no audit trail); it must now land a
+    // security.refresh_token_reuse_detected row in the streamless audit store.
+    [Fact]
+    public async Task RefreshToken_Reuse_RevokesChain_And_RecordsSecurityEvent()
+    {
+        var appAlpha = await CreateAppAsync("app-reuse", "App Reuse",
+            permissions: [("policy", "read")]);
+        const string alphaAudience = "https://reuse-api.example.com";
+        await CreateOAuthApiAsync(alphaAudience, appAlpha.Id);
+
+        const string alphaScopeName = "reuse-api";
+        await CreateScopeAsync(name: alphaScopeName, resources: [alphaAudience], appId: appAlpha.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-reuse-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            appIds: [appAlpha.Id],
+            scopes: ["openid", "offline_access", alphaScopeName]);
+
+        var testUser = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Reuse", lastname: "Detect", acronym: "rd",
+            email: "rd@test.com", password: "TestPass1234");
+
+        // authorize → token (offline_access so a refresh token is issued)
+        using var tokens = await DriveAuthCodeFlowForTokensAsync(
+            username: "rd", password: "TestPass1234",
+            clientId: clientId, clientSecret: clientSecret, redirectUri: redirectUri,
+            scope: $"openid offline_access {alphaScopeName}",
+            resources: [alphaAudience]);
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
+
+        // First redemption is legitimate rotation — marks the token Redeemed.
+        await RedeemRefreshTokenAsync(refreshToken, clientId, clientSecret, [alphaAudience]);
+
+        // Second redemption of the SAME (already-redeemed) token is the reuse signal.
+        var replayClient = Factory.CreateClient();
+        var replayForm = new List<KeyValuePair<string, string>>
+        {
+            new("grant_type", "refresh_token"),
+            new("refresh_token", refreshToken),
+            new("client_id", clientId),
+            new("client_secret", clientSecret),
+            new("resource", alphaAudience),
+        };
+        var replayResponse = await replayClient.PostAsync(
+            "/connect/token", new FormUrlEncodedContent(replayForm), TestContext.Current.CancellationToken);
+        var replayBody = await replayResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.False(replayResponse.IsSuccessStatusCode,
+            $"Replayed refresh token should have been rejected: {replayBody}");
+        Assert.Contains("invalid_grant", replayBody);
+
+        // The reuse rejection emits a best-effort security event on the async
+        // writer — poll briefly for it to land in the system-tenant streamless store.
+        var recorded = await PollForSecurityAuditEntryAsync(
+            e => e.EventType == AuditEvents.RefreshTokenReuseDetected,
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(recorded);
+        Assert.Equal("Warning", recorded!.Level);
+        Assert.Equal("revoked", recorded.Status);
+        Assert.Contains(clientId, recorded.Reason ?? "", StringComparison.Ordinal);
+        Assert.Equal(testUser.Id.ToString(), recorded.Actor);
+    }
+
+    private async Task<SecurityAuditEntry?> PollForSecurityAuditEntryAsync(
+        Func<SecurityAuditEntry, bool> predicate, CancellationToken ct)
+    {
+        for (var i = 0; i < 25; i++)
+        {
+            await using (var read = GetTenantedDocumentSession("system"))
+            {
+                var hit = (await read.Query<SecurityAuditEntry>().ToListAsync(ct))
+                    .FirstOrDefault(predicate);
+                if (hit is not null) return hit;
+            }
+            await Task.Delay(200, ct);
+        }
+        return null;
     }
 
     [Fact]

@@ -329,6 +329,14 @@ The TLS cert and the OpenIddict signing cert are different files;
 don't reuse one for both. The OpenIddict ones are passwordless by
 convention; the Kestrel TLS cert can have a password (legacy
 support — Let's Encrypt typically delivers passwordless).
+
+Both OpenIddict certs support zero-downtime rotation: list the
+outgoing file's path in `OpenIddict.PreviousSigningCertificatePaths` /
+`OpenIddict.PreviousEncryptionCertificatePaths` (comma-separated env
+vars) alongside the new active path, and it stays trusted for
+validation/decryption during the overlap window — see
+[Key material](./key-material#global-openiddict-signing-certificate)
+for the full rotation procedure.
 :::
 
 ### Reverse proxy (Nginx)

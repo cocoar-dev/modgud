@@ -16,7 +16,6 @@ public record OAuthClientDto
     public DateTimeOffset? CreatedAt { get; init; }
 
     public bool Enabled { get; init; } = true;
-    public RefreshTokenUsage RefreshTokenUsage { get; init; } = RefreshTokenUsage.OneTimeOnly;
     public bool AllowAccessTokensViaBrowser { get; init; }
     public bool RequireClientSecret { get; init; } = true;
     public bool EnableLocalLogin { get; init; } = true;
@@ -28,7 +27,6 @@ public record OAuthClientDto
     public int? IdentityTokenLifetime { get; init; }
     public int? AccessTokenLifetime { get; init; }
     public int? AuthorizationCodeLifetime { get; init; }
-    public int? AbsoluteRefreshTokenLifetime { get; init; }
     public int? SlidingRefreshTokenLifetime { get; init; }
 
     public bool AlwaysSendClientClaims { get; init; }
@@ -107,7 +105,6 @@ public record CreateOAuthClientDto
     public AccessTokenType AccessTokenType { get; init; } = AccessTokenType.Reference;
 
     public bool Enabled { get; init; } = true;
-    public RefreshTokenUsage RefreshTokenUsage { get; init; } = RefreshTokenUsage.OneTimeOnly;
     public bool AllowAccessTokensViaBrowser { get; init; }
     public bool RequireClientSecret { get; init; } = true;
     public bool EnableLocalLogin { get; init; } = true;
@@ -119,7 +116,6 @@ public record CreateOAuthClientDto
     public int? IdentityTokenLifetime { get; init; }
     public int? AccessTokenLifetime { get; init; }
     public int? AuthorizationCodeLifetime { get; init; }
-    public int? AbsoluteRefreshTokenLifetime { get; init; }
     public int? SlidingRefreshTokenLifetime { get; init; }
 
     public bool AlwaysSendClientClaims { get; init; }
@@ -158,7 +154,6 @@ public record UpdateOAuthClientDto
     public AccessTokenType? AccessTokenType { get; init; }
 
     public bool? Enabled { get; init; }
-    public RefreshTokenUsage? RefreshTokenUsage { get; init; }
     public bool? AllowAccessTokensViaBrowser { get; init; }
     public bool? RequireClientSecret { get; init; }
     public bool? EnableLocalLogin { get; init; }
@@ -170,7 +165,6 @@ public record UpdateOAuthClientDto
     public int? IdentityTokenLifetime { get; init; }
     public int? AccessTokenLifetime { get; init; }
     public int? AuthorizationCodeLifetime { get; init; }
-    public int? AbsoluteRefreshTokenLifetime { get; init; }
     public int? SlidingRefreshTokenLifetime { get; init; }
 
     public bool? AlwaysSendClientClaims { get; init; }

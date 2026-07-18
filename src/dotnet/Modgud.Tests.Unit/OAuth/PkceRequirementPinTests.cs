@@ -70,6 +70,7 @@ public class PkceRequirementPinTests
         public string? SigningCertificatePath { get; set; }
         public string[]? PreviousSigningCertificatePaths { get; set; }
         public string? EncryptionCertificatePath { get; set; }
+        public string[]? PreviousEncryptionCertificatePaths { get; set; }
         public int AccessTokenLifetimeMinutes { get; set; } = 60;
         public int RefreshTokenLifetimeDays { get; set; } = 14;
         public int AuthorizationCodeLifetimeMinutes { get; set; } = 5;

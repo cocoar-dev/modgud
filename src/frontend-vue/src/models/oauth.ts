@@ -8,7 +8,6 @@ export interface OAuthClientClaimDto {
 }
 
 export type AccessTokenType = 'Reference' | 'Jwt'
-export type RefreshTokenUsage = 'OneTimeOnly' | 'ReUse'
 
 export interface OAuthClientDto {
   Id: string
@@ -22,7 +21,6 @@ export interface OAuthClientDto {
   AccessTokenType?: AccessTokenType | string
   CreatedAt?: string | null
   Enabled: boolean
-  RefreshTokenUsage?: RefreshTokenUsage | string
   AllowAccessTokensViaBrowser: boolean
   RequireClientSecret: boolean
   EnableLocalLogin: boolean
@@ -33,7 +31,6 @@ export interface OAuthClientDto {
   IdentityTokenLifetime?: number | null
   AccessTokenLifetime?: number | null
   AuthorizationCodeLifetime?: number | null
-  AbsoluteRefreshTokenLifetime?: number | null
   SlidingRefreshTokenLifetime?: number | null
   AlwaysSendClientClaims: boolean
   UpdateAccessTokenClaimsOnRefresh: boolean
@@ -85,7 +82,6 @@ export interface CreateOAuthClientDto {
   PostLogoutRedirectUris?: string[]
   Scopes?: string[]
   AccessTokenType?: AccessTokenType
-  RefreshTokenUsage?: RefreshTokenUsage
   Enabled?: boolean
   RequireClientSecret?: boolean
   RequireConsent?: boolean
@@ -107,7 +103,6 @@ export interface UpdateOAuthClientDto {
   PostLogoutRedirectUris?: string[] | null
   Scopes?: string[] | null
   AccessTokenType?: AccessTokenType | null
-  RefreshTokenUsage?: RefreshTokenUsage | null
   Enabled?: boolean | null
   AllowAccessTokensViaBrowser?: boolean | null
   RequireClientSecret?: boolean | null
@@ -119,7 +114,6 @@ export interface UpdateOAuthClientDto {
   IdentityTokenLifetime?: number | null
   AccessTokenLifetime?: number | null
   AuthorizationCodeLifetime?: number | null
-  AbsoluteRefreshTokenLifetime?: number | null
   SlidingRefreshTokenLifetime?: number | null
   Claims?: OAuthClientClaimDto[] | null
   Roles?: string[] | null

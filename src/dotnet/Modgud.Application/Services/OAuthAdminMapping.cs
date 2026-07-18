@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using BuildingBlocks.Helper;
@@ -123,12 +124,10 @@ internal static class OAuthAdminMapping
         var settings = new Dictionary<string, string>
         {
             [OAuthApplicationSettingKeys.AccessTokenType] = dto.AccessTokenType.ToString(),
-            [OAuthApplicationSettingKeys.RefreshTokenUsage] = dto.RefreshTokenUsage.ToString(),
         };
         if (dto.IdentityTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.IdentityTokenLifetime] = dto.IdentityTokenLifetime.Value.ToString();
         if (dto.AccessTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString();
         if (dto.AuthorizationCodeLifetime.HasValue) settings[OAuthApplicationSettingKeys.AuthorizationCodeLifetime] = dto.AuthorizationCodeLifetime.Value.ToString();
-        if (dto.AbsoluteRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.AbsoluteRefreshTokenLifetime] = dto.AbsoluteRefreshTokenLifetime.Value.ToString();
         if (dto.SlidingRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime] = dto.SlidingRefreshTokenLifetime.Value.ToString();
         if (dto.ClientClaimsPrefix is not null) settings[OAuthApplicationSettingKeys.ClientClaimsPrefix] = dto.ClientClaimsPrefix;
         // ADR-0009 — store the normalized (trimmed, lowercased) per-client RP ID; a
@@ -254,11 +253,9 @@ internal static class OAuthAdminMapping
     {
         var settings = new Dictionary<string, string>(current);
         if (dto.AccessTokenType.HasValue) settings[OAuthApplicationSettingKeys.AccessTokenType] = dto.AccessTokenType.Value.ToString();
-        if (dto.RefreshTokenUsage.HasValue) settings[OAuthApplicationSettingKeys.RefreshTokenUsage] = dto.RefreshTokenUsage.Value.ToString();
         if (dto.IdentityTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.IdentityTokenLifetime] = dto.IdentityTokenLifetime.Value.ToString();
         if (dto.AccessTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString();
         if (dto.AuthorizationCodeLifetime.HasValue) settings[OAuthApplicationSettingKeys.AuthorizationCodeLifetime] = dto.AuthorizationCodeLifetime.Value.ToString();
-        if (dto.AbsoluteRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.AbsoluteRefreshTokenLifetime] = dto.AbsoluteRefreshTokenLifetime.Value.ToString();
         if (dto.SlidingRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime] = dto.SlidingRefreshTokenLifetime.Value.ToString();
         if (dto.ClientClaimsPrefix is not null) settings[OAuthApplicationSettingKeys.ClientClaimsPrefix] = dto.ClientClaimsPrefix;
         // ADR-0009 PATCH: null = omit; empty/blank = clear back to realm-scoped;
@@ -272,6 +269,118 @@ internal static class OAuthAdminMapping
         }
         return settings;
     }
+
+    // ───────────────────────────── Native token-lifetime wiring (issue #115) ──
+    //
+    // The admin UI collects Identity/Access/Sliding-Refresh token lifetimes
+    // for standard (manually created) clients in SECONDS (see ClientDetails.
+    // vue's "Werte in Sekunden" hint) and, until issue #115, only ever wrote
+    // them into the display-only modgud:* Settings keys above — no OpenIddict
+    // handler reads those, so the values had zero effect. This mirrors the
+    // DCR/CIMD/native-grants path by ALSO writing OpenIddict's own tkn_lft:*
+    // Settings keys, which OpenIddict's EvaluateGeneratedTokens pipeline reads
+    // natively at token-issue time (empirically confirmed via decompilation —
+    // OpenIddict.Server's per-application settings reader keys off exactly
+    // these three strings). The modgud:* keys are kept so MapClient's
+    // round-trip to the admin UI is unaffected.
+    //
+    // OpenIddict has no distinct "absolute" vs "sliding" refresh-token
+    // concept — a single tkn_lft:reft governs the lifetime applied at each
+    // (rolling, one-time-use) refresh-token mint, which is a sliding window
+    // by construction. That's why only SlidingRefreshTokenLifetime survives
+    // as a DTO field; AbsoluteRefreshTokenLifetime was removed (no native
+    // equivalent to wire it to).
+
+    /// <summary>OpenIddict's well-known Settings key for per-application
+    /// identity-token lifetime (<c>OpenIddictConstants.Settings.
+    /// TokenLifetimes.IdentityToken</c>). Inlined to avoid pulling
+    /// OpenIddict.Abstractions into the Application layer; pinned against
+    /// drift by <c>OpenIddictLifetimeSettingKeysTests</c>.</summary>
+    internal const string OpenIddictIdentityTokenLifetimeSettingKey = "tkn_lft:idt";
+
+    /// <summary>OpenIddict's well-known Settings key for per-application
+    /// access-token lifetime (<c>OpenIddictConstants.Settings.
+    /// TokenLifetimes.AccessToken</c>). See
+    /// <see cref="OpenIddictIdentityTokenLifetimeSettingKey"/>.</summary>
+    internal const string OpenIddictAccessTokenLifetimeSettingKey = "tkn_lft:act";
+
+    /// <summary>OpenIddict's well-known Settings key for per-application
+    /// refresh-token lifetime (<c>OpenIddictConstants.Settings.
+    /// TokenLifetimes.RefreshToken</c>). See
+    /// <see cref="OpenIddictIdentityTokenLifetimeSettingKey"/>.</summary>
+    internal const string OpenIddictRefreshTokenLifetimeSettingKey = "tkn_lft:reft";
+
+    // Same 1..60 minute bound RealmSettingsService.ValidateTokenLifetimes
+    // applies to the realm-wide DCR/CIMD/native-grants access-token
+    // lifetime — a per-client override shouldn't be able to create a
+    // materially different security posture than the realm-wide knobs.
+    // Reused for the identity token too: both are short-lived, minted fresh
+    // per-authentication, and neither is independently revocable.
+    // Modgud.Application cannot reference Modgud.Authentication (see
+    // RealmSettingsService), so the bound is duplicated rather than shared.
+    private const int MinShortLivedTokenSeconds = 60;
+    private const int MaxShortLivedTokenSeconds = 60 * 60;
+
+    // Same 1..30 day bound RealmSettingsService.ValidateTokenLifetimes
+    // applies to the realm-wide refresh-token lifetime.
+    private const int MinRefreshTokenSeconds = 60 * 60 * 24;
+    private const int MaxRefreshTokenSeconds = 60 * 60 * 24 * 30;
+
+    /// <summary>
+    /// Validates and writes the OpenIddict-native <c>tkn_lft:*</c> keys for a
+    /// standard client's Identity/Access/Sliding-Refresh token lifetimes
+    /// (admin UI values are seconds) directly into <paramref name="settings"/>.
+    /// PATCH semantics match the surrounding modgud:* keys: a <c>null</c>
+    /// input leaves the corresponding key (and therefore any lifetime
+    /// override already in <paramref name="settings"/>) untouched; a
+    /// provided value is bounds-checked and, on success, overwrites the key.
+    /// Validation runs for every provided value BEFORE any write, so a
+    /// rejection never leaves <paramref name="settings"/> partially mutated.
+    /// Returns the first bounds violation as a validation <see cref="Error"/>;
+    /// <c>null</c> when every provided value is in range.
+    /// </summary>
+    internal static Error? ApplyNativeTokenLifetimes(
+        Dictionary<string, string> settings,
+        int? identityTokenLifetimeSeconds,
+        int? accessTokenLifetimeSeconds,
+        int? slidingRefreshTokenLifetimeSeconds)
+    {
+        if (identityTokenLifetimeSeconds.HasValue &&
+            ValidateShortLivedSeconds("IdentityTokenLifetime", identityTokenLifetimeSeconds.Value) is { } idErr)
+            return idErr;
+        if (accessTokenLifetimeSeconds.HasValue &&
+            ValidateShortLivedSeconds("AccessTokenLifetime", accessTokenLifetimeSeconds.Value) is { } atErr)
+            return atErr;
+        if (slidingRefreshTokenLifetimeSeconds.HasValue &&
+            ValidateRefreshSeconds(slidingRefreshTokenLifetimeSeconds.Value) is { } rtErr)
+            return rtErr;
+
+        if (identityTokenLifetimeSeconds.HasValue)
+            settings[OpenIddictIdentityTokenLifetimeSettingKey] = ToLifetimeString(identityTokenLifetimeSeconds.Value);
+        if (accessTokenLifetimeSeconds.HasValue)
+            settings[OpenIddictAccessTokenLifetimeSettingKey] = ToLifetimeString(accessTokenLifetimeSeconds.Value);
+        if (slidingRefreshTokenLifetimeSeconds.HasValue)
+            settings[OpenIddictRefreshTokenLifetimeSettingKey] = ToLifetimeString(slidingRefreshTokenLifetimeSeconds.Value);
+
+        return null;
+    }
+
+    private static Error? ValidateShortLivedSeconds(string field, int seconds) =>
+        seconds < MinShortLivedTokenSeconds || seconds > MaxShortLivedTokenSeconds
+            ? Error.Validation(
+                $"OAuthClient.Invalid{field}",
+                $"{field} must be between {MinShortLivedTokenSeconds} and {MaxShortLivedTokenSeconds} seconds.")
+            : null;
+
+    private static Error? ValidateRefreshSeconds(int seconds) =>
+        seconds < MinRefreshTokenSeconds || seconds > MaxRefreshTokenSeconds
+            ? Error.Validation(
+                "OAuthClient.InvalidSlidingRefreshTokenLifetime",
+                $"SlidingRefreshTokenLifetime must be between {MinRefreshTokenSeconds} and {MaxRefreshTokenSeconds} seconds.")
+            : null;
+
+    private static string ToLifetimeString(int seconds) =>
+        TimeSpan.FromSeconds(seconds).ToString("c", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Merges an <see cref="UpdateOAuthClientDto"/> over the client's
@@ -314,11 +423,6 @@ internal static class OAuthAdminMapping
             Enum.TryParse<AccessTokenType>(v1, out var parsed1))
             accessTokenType = parsed1;
 
-        var refreshTokenUsage = RefreshTokenUsage.OneTimeOnly;
-        if (settings.TryGetValue(OAuthApplicationSettingKeys.RefreshTokenUsage, out var v2) &&
-            Enum.TryParse<RefreshTokenUsage>(v2, out var parsed2))
-            refreshTokenUsage = parsed2;
-
         int? GetIntSetting(string key) =>
             settings.TryGetValue(key, out var sv) && int.TryParse(sv, out var iv) ? iv : null;
 
@@ -337,7 +441,6 @@ internal static class OAuthAdminMapping
             PostLogoutRedirectUris = s.PostLogoutRedirectUris.ToList(),
             AccessTokenType = accessTokenType,
             Enabled = GetBoolProp(props, OAuthApplicationPropertyKeys.Enabled, true),
-            RefreshTokenUsage = refreshTokenUsage,
             AllowAccessTokensViaBrowser = GetBoolProp(props, OAuthApplicationPropertyKeys.AllowAccessTokensViaBrowser, false),
             RequireClientSecret = GetBoolProp(props, OAuthApplicationPropertyKeys.RequireClientSecret, true),
             EnableLocalLogin = GetBoolProp(props, OAuthApplicationPropertyKeys.EnableLocalLogin, true),
@@ -348,7 +451,6 @@ internal static class OAuthAdminMapping
             IdentityTokenLifetime = GetIntSetting(OAuthApplicationSettingKeys.IdentityTokenLifetime),
             AccessTokenLifetime = GetIntSetting(OAuthApplicationSettingKeys.AccessTokenLifetime),
             AuthorizationCodeLifetime = GetIntSetting(OAuthApplicationSettingKeys.AuthorizationCodeLifetime),
-            AbsoluteRefreshTokenLifetime = GetIntSetting(OAuthApplicationSettingKeys.AbsoluteRefreshTokenLifetime),
             SlidingRefreshTokenLifetime = GetIntSetting(OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime),
             AlwaysSendClientClaims = GetBoolProp(props, OAuthApplicationPropertyKeys.AlwaysSendClientClaims, false),
             UpdateAccessTokenClaimsOnRefresh = GetBoolProp(props, OAuthApplicationPropertyKeys.UpdateAccessTokenClaimsOnRefresh, false),

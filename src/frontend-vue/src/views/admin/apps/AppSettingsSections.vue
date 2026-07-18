@@ -55,18 +55,18 @@ const f = reactive({
 })
 
 const postureOptions = [
-  { value: '', label: t('admin.appSettings.inherit', {}, '(vom Realm erben)') },
-  { value: 'Off', label: t('admin.appSettings.posture.off', {}, 'Off — keine Selbstregistrierung') },
+  { value: '', label: t('admin.appSettings.inherit', {}, '(inherit from realm)') },
+  { value: 'Off', label: t('admin.appSettings.posture.off', {}, 'Off — no self-registration') },
   { value: 'JitOnOtp', label: t('admin.appSettings.posture.jit', {}, 'JIT-on-OTP (passwortlos)') },
   { value: 'ExplicitEndpoint', label: t('admin.appSettings.posture.explicit', {}, 'Expliziter Endpoint') },
   { value: 'InviteCode', label: t('admin.appSettings.posture.inviteCode', {}, 'Invite code (invite-only)') },
 ]
 
 const requirementOptions = [
-  { value: '', label: t('admin.appSettings.inherit', {}, '(vom Realm erben)') },
+  { value: '', label: t('admin.appSettings.inherit', {}, '(inherit from realm)') },
   { value: 'Off', label: t('admin.regFields.off', {}, 'Aus') },
   { value: 'Optional', label: t('admin.regFields.optional', {}, 'Optional') },
-  { value: 'Required', label: t('admin.regFields.required', {}, 'Pflicht') },
+  { value: 'Required', label: t('admin.regFields.required', {}, 'Required') },
 ]
 
 function numStr(n?: number | null): string {
@@ -213,7 +213,7 @@ defineExpose({ build })
 <template>
   <div class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
     <CoarNote variant="info">
-      {{ t('admin.appSettings.hint', {}, 'Diese Einstellungen überschreiben die Realm-Defaults nur für diese App. Ein deaktivierter Abschnitt erbt vom Realm.') }}
+      {{ t('admin.appSettings.hint', {}, 'These settings override the realm defaults only for this app. A disabled section inherits from the realm.') }}
     </CoarNote>
 
     <CoarTabGroup v-model="activeTab" class="tab-bar">
@@ -225,22 +225,22 @@ defineExpose({ build })
 
     <!-- Origin & Branding -->
     <div v-show="activeTab === 'origin'" class="tab-content">
-      <CoarCheckbox v-model="f.origin.override" :label="t('admin.appSettings.origin.override', {}, 'Eigene Subdomain für diese App')" />
+      <CoarCheckbox v-model="f.origin.override" :label="t('admin.appSettings.origin.override', {}, 'Dedicated subdomain for this app')" />
       <CoarFormField v-if="f.origin.override" :label="t('admin.appSettings.origin.subdomain', {}, 'Subdomain (Child der Realm-Primary-Domain)')">
         <CoarTextInput v-model="f.origin.subdomain" clearable placeholder="amzettel.cocoar.app" />
       </CoarFormField>
 
-      <CoarCheckbox v-model="f.branding.override" :label="t('admin.appSettings.branding.override', {}, 'Eigenes Branding (Login/SPA)')" />
+      <CoarCheckbox v-model="f.branding.override" :label="t('admin.appSettings.branding.override', {}, 'Custom Branding (Login/SPA)')" />
       <template v-if="f.branding.override">
         <CoarFormField :label="t('admin.appSettings.branding.productName', {}, 'Produktname')">
           <CoarTextInput v-model="f.branding.productName" clearable />
         </CoarFormField>
-        <CoarFormField :label="t('admin.appSettings.branding.primaryColor', {}, 'Primärfarbe (CSS)')">
+        <CoarFormField :label="t('admin.appSettings.branding.primaryColor', {}, 'Primary Color (CSS)')">
           <CoarTextInput v-model="f.branding.primaryColor" clearable placeholder="#1077be" />
         </CoarFormField>
       </template>
 
-      <CoarCheckbox v-model="f.emailBranding.override" :label="t('admin.appSettings.email.override', {}, 'Eigenes E-Mail-Branding')" />
+      <CoarCheckbox v-model="f.emailBranding.override" :label="t('admin.appSettings.email.override', {}, 'Custom Email Branding')" />
       <CoarFormField v-if="f.emailBranding.override" :label="t('admin.appSettings.email.productName', {}, 'Produktname in E-Mails')">
         <CoarTextInput v-model="f.emailBranding.productName" clearable />
       </CoarFormField>
@@ -248,7 +248,7 @@ defineExpose({ build })
 
     <!-- Registration -->
     <div v-show="activeTab === 'registration'" class="tab-content">
-      <CoarCheckbox v-model="f.selfReg.override" :label="t('admin.appSettings.selfReg.override', {}, 'Eigene Registrierungs-Policy')" />
+      <CoarCheckbox v-model="f.selfReg.override" :label="t('admin.appSettings.selfReg.override', {}, 'Custom Registration Policy')" />
       <template v-if="f.selfReg.override">
         <CoarFormField :label="t('admin.appSettings.selfReg.posture', {}, 'Posture (passwortlose Registrierung)')">
           <CoarSelect v-model="f.selfReg.posture" :options="postureOptions" />
@@ -261,19 +261,19 @@ defineExpose({ build })
           <p>{{ t('admin.appSettings.posture.inviteCode.m2m', {}, 'For automatic minting by the backend app (M2M): create an OAuth scope “invite:write” bound to this app (App-ID set), and give a ServiceAccount a credential carrying that scope. The app then calls POST /api/app/{appId}/invite-codes with its client_credentials token.') }}</p>
           <p class="text-gray-500">{{ t('admin.appSettings.posture.inviteCode.redeem', {}, 'Redemption: the code travels on the native sign-up request (InviteCode field); unknown emails become users only with a valid, unused code. Existing confirmed users sign in normally (the code is ignored).') }}</p>
         </div>
-        <CoarCheckbox v-model="f.selfReg.enabled" :label="t('admin.appSettings.selfReg.enabled', {}, 'Self-Registration aktiv')" />
-        <CoarCheckbox v-model="f.selfReg.requireEmailVerification" :label="t('admin.appSettings.selfReg.verify', {}, 'E-Mail-Verifizierung erforderlich')" />
-        <CoarCheckbox v-model="f.selfReg.requireAdminApproval" :label="t('admin.appSettings.selfReg.approval', {}, 'Admin-Freigabe erforderlich')" />
-        <CoarFormField :label="t('admin.appSettings.selfReg.domains', {}, 'Erlaubte E-Mail-Domains (leer = alle)')">
+        <CoarCheckbox v-model="f.selfReg.enabled" :label="t('admin.appSettings.selfReg.enabled', {}, 'Self-registration active')" />
+        <CoarCheckbox v-model="f.selfReg.requireEmailVerification" :label="t('admin.appSettings.selfReg.verify', {}, 'Email verification required')" />
+        <CoarCheckbox v-model="f.selfReg.requireAdminApproval" :label="t('admin.appSettings.selfReg.approval', {}, 'Admin approval required')" />
+        <CoarFormField :label="t('admin.appSettings.selfReg.domains', {}, 'Allowed email domains (empty = all)')">
           <EditableStringList v-model="f.selfReg.allowedEmailDomains" />
         </CoarFormField>
-        <CoarFormField :label="t('admin.appSettings.selfReg.defaultGroups', {}, 'Standard-Gruppen (Auto-Mitgliedschaft nach Verifizierung)')">
+        <CoarFormField :label="t('admin.appSettings.selfReg.defaultGroups', {}, 'Default Groups (auto-membership after verification)')">
           <CoarMultiSelect
             v-model="f.selfReg.defaultGroupIds"
             :options="groupOptions"
             searchable
             clearable
-            :placeholder="t('admin.appSettings.selfReg.defaultGroups.placeholder', {}, 'Gruppen wählen…')" />
+            :placeholder="t('admin.appSettings.selfReg.defaultGroups.placeholder', {}, 'Select groups…')" />
         </CoarFormField>
         <CoarFormField :label="t('admin.appSettings.selfReg.tos', {}, 'AGB-URL')">
           <CoarTextInput v-model="f.selfReg.termsOfServiceUrl" clearable />
@@ -283,10 +283,10 @@ defineExpose({ build })
         </CoarFormField>
       </template>
 
-      <CoarCheckbox v-model="f.registrationFields.override" :label="t('admin.appSettings.regFields.override', {}, 'Eigene Pflichtfelder bei Registrierung')" />
+      <CoarCheckbox v-model="f.registrationFields.override" :label="t('admin.appSettings.regFields.override', {}, 'Custom Required Fields at Registration')" />
       <template v-if="f.registrationFields.override">
         <CoarNote variant="info">
-          {{ t('admin.appSettings.regFields.hint', {}, 'Welche Identitätsfelder bei der Kontoerstellung gefordert sind. E-Mail ist immer Pflicht. Native Clients müssen geforderte Felder erfassen.') }}
+          {{ t('admin.appSettings.regFields.hint', {}, 'Which identity fields are required at account creation. Email is always required. Native clients must collect required fields.') }}
         </CoarNote>
         <CoarFormField :label="t('admin.regFields.username', {}, 'Benutzername')">
           <CoarSelect v-model="f.registrationFields.username" :options="requirementOptions" />
@@ -302,9 +302,9 @@ defineExpose({ build })
 
     <!-- Native Grants -->
     <div v-show="activeTab === 'grants'" class="tab-content">
-      <CoarCheckbox v-model="f.nativeGrants.override" :label="t('admin.appSettings.grants.override', {}, 'Eigene Native-Grant-Settings')" />
+      <CoarCheckbox v-model="f.nativeGrants.override" :label="t('admin.appSettings.grants.override', {}, 'Custom Native Grant Settings')" />
       <template v-if="f.nativeGrants.override">
-        <CoarCheckbox v-model="f.nativeGrants.enabled" :label="t('admin.appSettings.grants.enabled', {}, 'Native Grants aktiv')" />
+        <CoarCheckbox v-model="f.nativeGrants.enabled" :label="t('admin.appSettings.grants.enabled', {}, 'Native Grants active')" />
         <div class="grid grid-cols-2 gap-3">
           <CoarFormField :label="t('admin.appSettings.access', {}, 'Access-Token (Min, 1–60)')">
             <CoarTextInput v-model="f.nativeGrants.access" clearable placeholder="15" />
@@ -318,9 +318,9 @@ defineExpose({ build })
 
     <!-- OAuth (DCR / CIMD) -->
     <div v-show="activeTab === 'oauth'" class="tab-content">
-      <CoarCheckbox v-model="f.dcr.override" :label="t('admin.appSettings.dcr.override', {}, 'Eigene DCR-Settings')" />
+      <CoarCheckbox v-model="f.dcr.override" :label="t('admin.appSettings.dcr.override', {}, 'Custom DCR Settings')" />
       <template v-if="f.dcr.override">
-        <CoarCheckbox v-model="f.dcr.enabled" :label="t('admin.appSettings.dcr.enabled', {}, 'Dynamic Client Registration aktiv')" />
+        <CoarCheckbox v-model="f.dcr.enabled" :label="t('admin.appSettings.dcr.enabled', {}, 'Dynamic Client Registration active')" />
         <div class="grid grid-cols-2 gap-3">
           <CoarFormField :label="t('admin.appSettings.access', {}, 'Access-Token (Min, 1–60)')">
             <CoarTextInput v-model="f.dcr.access" clearable placeholder="15" />
@@ -342,9 +342,9 @@ defineExpose({ build })
         </CoarFormField>
       </template>
 
-      <CoarCheckbox v-model="f.cimd.override" :label="t('admin.appSettings.cimd.override', {}, 'Eigene CIMD-Settings')" />
+      <CoarCheckbox v-model="f.cimd.override" :label="t('admin.appSettings.cimd.override', {}, 'Custom CIMD Settings')" />
       <template v-if="f.cimd.override">
-        <CoarCheckbox v-model="f.cimd.enabled" :label="t('admin.appSettings.cimd.enabled', {}, 'CIMD aktiv')" />
+        <CoarCheckbox v-model="f.cimd.enabled" :label="t('admin.appSettings.cimd.enabled', {}, 'CIMD active')" />
         <div class="grid grid-cols-2 gap-3">
           <CoarFormField :label="t('admin.appSettings.access', {}, 'Access-Token (Min, 1–60)')">
             <CoarTextInput v-model="f.cimd.access" clearable placeholder="15" />

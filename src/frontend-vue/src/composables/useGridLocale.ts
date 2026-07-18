@@ -27,12 +27,12 @@ import { CoarGridBuilder, type ColDef } from '@cocoar/vue-data-grid'
 export function useGridLocale() {
   const { t } = useI18n()
 
-  const searchPlaceholder = t('grid.search', {}, 'Suchen…')
+  const searchPlaceholder = t('grid.search', {}, 'Search…')
 
   // AG-Grid `localeText` overrides — only the keys that actually surface in
   // these list grids. Unset keys fall back to AG-Grid's built-in English.
   const gridLocaleText: Record<string, string> = {
-    noRowsToShow: t('grid.noRowsToShow', {}, 'Keine Einträge vorhanden'),
+    noRowsToShow: t('grid.noRowsToShow', {}, 'No entries'),
   }
 
   // Shared default column definition applied to every admin list grid.

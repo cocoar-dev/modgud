@@ -17,17 +17,5 @@ public enum AccessTokenType
     Jwt = 1
 }
 
-/// <summary>
-/// Specifies how refresh tokens are handled.
-/// </summary>
-public enum RefreshTokenUsage
-{
-    /// <summary>Refresh handle is rotated on each use (default, recommended).</summary>
-    OneTimeOnly = 0,
-
-    /// <summary>Refresh handle stays the same across refreshes.</summary>
-    ReUse = 1
-}
-
 /// <summary>Claim attached to an OAuth client for token issuance.</summary>
 public record OAuthClientClaim(string Type, string Value);

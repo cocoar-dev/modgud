@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { CoarSelect } from '@cocoar/vue-ui'
+import { useI18n } from '@cocoar/vue-localization'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useAppContextStore } from '@/stores/appContext.store'
 
@@ -9,12 +10,13 @@ import { useAppContextStore } from '@/stores/appContext.store'
  * Scopes / APIs / Clients / Roles / Groups grids should filter on.
  *
  * <para>Empty-state friendly: even with zero user-defined apps, the
- * dropdown still offers <c>Alle anzeigen</c>, <c>Realm-wide</c>, and
+ * dropdown still offers <c>Show all</c>, <c>Realm-wide</c>, and
  * the system apps. Default selection on first load is <c>all</c>
  * (unfiltered) — same view as before this control existed.</para>
  */
 const appsStore = useApplicationsStore()
 const ctx = useAppContextStore()
+const { t } = useI18n()
 
 onMounted(() => appsStore.initialize())
 
@@ -22,8 +24,8 @@ const options = computed(() => {
   const apps = [...appsStore.apps].sort((a, b) =>
     Number(b.IsSystem) - Number(a.IsSystem) || a.DisplayName.localeCompare(b.DisplayName))
   return [
-    { value: 'all',    label: 'Alle anzeigen' },
-    { value: 'global', label: 'Realm-wide (Global)' },
+    { value: 'all',    label: t('admin.appContext.showAll', {}, 'Show all') },
+    { value: 'global', label: t('admin.appContext.realmWide', {}, 'Realm-wide (Global)') },
     ...apps.map((a) => ({
       value: a.Id,
       label: a.IsSystem ? `${a.DisplayName} · System` : a.DisplayName,

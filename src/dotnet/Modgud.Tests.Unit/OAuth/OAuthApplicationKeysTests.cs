@@ -18,10 +18,6 @@ public class OAuthApplicationKeysTests
             Assert.Equal("modgud:access_token_type", OAuthApplicationSettingKeys.AccessTokenType);
 
         [Fact]
-        public void RefreshTokenUsage_value_is_pinned() =>
-            Assert.Equal("modgud:refresh_token_usage", OAuthApplicationSettingKeys.RefreshTokenUsage);
-
-        [Fact]
         public void IdentityTokenLifetime_value_is_pinned() =>
             Assert.Equal("modgud:identity_token_lifetime", OAuthApplicationSettingKeys.IdentityTokenLifetime);
 
@@ -32,10 +28,6 @@ public class OAuthApplicationKeysTests
         [Fact]
         public void AuthorizationCodeLifetime_value_is_pinned() =>
             Assert.Equal("modgud:authorization_code_lifetime", OAuthApplicationSettingKeys.AuthorizationCodeLifetime);
-
-        [Fact]
-        public void AbsoluteRefreshTokenLifetime_value_is_pinned() =>
-            Assert.Equal("modgud:absolute_refresh_token_lifetime", OAuthApplicationSettingKeys.AbsoluteRefreshTokenLifetime);
 
         [Fact]
         public void SlidingRefreshTokenLifetime_value_is_pinned() =>
@@ -54,11 +46,9 @@ public class OAuthApplicationKeysTests
             var keys = new[]
             {
                 OAuthApplicationSettingKeys.AccessTokenType,
-                OAuthApplicationSettingKeys.RefreshTokenUsage,
                 OAuthApplicationSettingKeys.IdentityTokenLifetime,
                 OAuthApplicationSettingKeys.AccessTokenLifetime,
                 OAuthApplicationSettingKeys.AuthorizationCodeLifetime,
-                OAuthApplicationSettingKeys.AbsoluteRefreshTokenLifetime,
                 OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime,
                 OAuthApplicationSettingKeys.ClientClaimsPrefix,
             };
@@ -73,11 +63,9 @@ public class OAuthApplicationKeysTests
             var keys = new[]
             {
                 OAuthApplicationSettingKeys.AccessTokenType,
-                OAuthApplicationSettingKeys.RefreshTokenUsage,
                 OAuthApplicationSettingKeys.IdentityTokenLifetime,
                 OAuthApplicationSettingKeys.AccessTokenLifetime,
                 OAuthApplicationSettingKeys.AuthorizationCodeLifetime,
-                OAuthApplicationSettingKeys.AbsoluteRefreshTokenLifetime,
                 OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime,
                 OAuthApplicationSettingKeys.ClientClaimsPrefix,
             };
@@ -187,11 +175,9 @@ public class OAuthApplicationKeysTests
             var settings = new[]
             {
                 OAuthApplicationSettingKeys.AccessTokenType,
-                OAuthApplicationSettingKeys.RefreshTokenUsage,
                 OAuthApplicationSettingKeys.IdentityTokenLifetime,
                 OAuthApplicationSettingKeys.AccessTokenLifetime,
                 OAuthApplicationSettingKeys.AuthorizationCodeLifetime,
-                OAuthApplicationSettingKeys.AbsoluteRefreshTokenLifetime,
                 OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime,
                 OAuthApplicationSettingKeys.ClientClaimsPrefix,
             };
