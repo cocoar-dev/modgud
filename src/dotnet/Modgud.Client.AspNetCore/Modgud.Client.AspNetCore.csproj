@@ -3,12 +3,14 @@
   <PropertyGroup>
     <RootNamespace>Modgud.Client.AspNetCore</RootNamespace>
     <Description>
-      ASP.NET Core integration for Modgud resource servers. Reads
-      Modgud's resource_access[audience] claim from the JWT/UserInfo
-      and surfaces roles/permissions/groups as flat claims so
+      ASP.NET Core integration for Modgud resource servers. Validates
+      either JWT access tokens (AddModgudClient, on top of AddJwtBearer)
+      or Modgud's default opaque reference tokens via introspection
+      (AddModgudReferenceTokenClient), then surfaces the per-audience
+      resource_access roles/permissions as flat claims so
       [Authorize(Roles="...")] and .RequiresModgudPermission("...") work
       natively. Bypass tiers are pre-expanded by the IdP, so the lib does
-      pure exact-match — no evaluator logic, no HTTP client, no caching.
+      pure exact-match — no evaluator logic.
     </Description>
   </PropertyGroup>
 
