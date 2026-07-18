@@ -190,6 +190,8 @@ interface FormState {
   AllowRememberConsent: boolean
   AllowAccessTokensViaBrowser: boolean
   EnableLocalLogin: boolean
+  /** RFC 9126 — reject this client's direct (non-PAR) /connect/authorize requests. */
+  RequirePushedAuthorizationRequests: boolean
   IdentityTokenLifetime: string
   AccessTokenLifetime: string
   AuthorizationCodeLifetime: string
@@ -235,6 +237,7 @@ function emptyForm(): FormState {
     AllowRememberConsent: true,
     AllowAccessTokensViaBrowser: false,
     EnableLocalLogin: true,
+    RequirePushedAuthorizationRequests: false,
     IdentityTokenLifetime: '',
     AccessTokenLifetime: '',
     AuthorizationCodeLifetime: '',
@@ -266,6 +269,7 @@ function fromDto(dto: OAuthClientDto): FormState {
     AllowRememberConsent: dto.AllowRememberConsent,
     AllowAccessTokensViaBrowser: dto.AllowAccessTokensViaBrowser,
     EnableLocalLogin: dto.EnableLocalLogin,
+    RequirePushedAuthorizationRequests: dto.RequirePushedAuthorizationRequests,
     IdentityTokenLifetime: dto.IdentityTokenLifetime?.toString() ?? '',
     AccessTokenLifetime: dto.AccessTokenLifetime?.toString() ?? '',
     AuthorizationCodeLifetime: dto.AuthorizationCodeLifetime?.toString() ?? '',
@@ -392,6 +396,7 @@ function buildCreateDto(): CreateOAuthClientDto {
     AccessTokenType: form.value.AccessTokenType,
     RequireClientSecret: form.value.RequireClientSecret,
     RequireConsent: form.value.RequireConsent,
+    RequirePushedAuthorizationRequests: form.value.RequirePushedAuthorizationRequests,
     RedirectUris: [...form.value.RedirectUris],
     PostLogoutRedirectUris: [...form.value.PostLogoutRedirectUris],
     AllowedGrantTypes: [...form.value.AllowedGrantTypes],
@@ -421,6 +426,7 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     AllowRememberConsent: form.value.AllowRememberConsent,
     AllowAccessTokensViaBrowser: form.value.AllowAccessTokensViaBrowser,
     EnableLocalLogin: form.value.EnableLocalLogin,
+    RequirePushedAuthorizationRequests: form.value.RequirePushedAuthorizationRequests,
     IdentityTokenLifetime: parseInt(form.value.IdentityTokenLifetime),
     AccessTokenLifetime: parseInt(form.value.AccessTokenLifetime),
     AuthorizationCodeLifetime: parseInt(form.value.AuthorizationCodeLifetime),
@@ -525,6 +531,12 @@ async function copySecret() {
             <CoarCheckbox v-model="form.Enabled" :label="t('admin.oauthClients.enabled', {}, 'Active')" />
             <CoarCheckbox v-model="form.RequireClientSecret" :label="t('admin.oauthClients.requireSecret', {}, 'Secret required')" />
             <CoarCheckbox v-model="form.RequireConsent" :label="t('admin.oauthClients.requireConsent', {}, 'Consent required')" />
+            <div class="par-field">
+              <CoarCheckbox v-model="form.RequirePushedAuthorizationRequests" :label="t('admin.oauthClients.requirePar', {}, 'Require Pushed Authorization Requests (PAR)')" />
+              <p class="field-hint">
+                {{ t('admin.oauthClients.requireParHint', {}, 'RFC 9126 — reject this client\'s direct /connect/authorize requests; parameters must be pushed through /connect/par first.') }}
+              </p>
+            </div>
             <CoarCheckbox v-if="!isCreate" v-model="form.AllowRememberConsent" :label="t('admin.oauthClients.rememberConsent', {}, 'Remember consent')" />
             <CoarCheckbox v-if="!isCreate" v-model="form.AllowAccessTokensViaBrowser" :label="t('admin.oauthClients.tokensInBrowser', {}, 'Access tokens allowed in browser')" />
             <CoarCheckbox v-if="!isCreate" v-model="form.EnableLocalLogin" :label="t('admin.oauthClients.localLogin', {}, 'Local login allowed')" />
@@ -718,6 +730,13 @@ async function copySecret() {
   flex-direction: column;
   gap: 0.4rem;
   margin-top: 0.25rem;
+}
+/* Group the PAR checkbox with its helper text so the stack's gap doesn't
+   orphan the hint between two checkboxes. */
+.par-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
 }
 
 /* EDIT mode — master-detail. Identity stays visible while tabs change. */

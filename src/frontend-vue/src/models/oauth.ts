@@ -36,6 +36,12 @@ export interface OAuthClientDto {
   UpdateAccessTokenClaimsOnRefresh: boolean
   ClientClaimsPrefix?: string | null
   /**
+   * RFC 9126 — when `true`, this client MUST use Pushed Authorization
+   * Requests: a direct (non-PAR) `/connect/authorize` request is rejected.
+   * Off by default; PAR stays available to every client either way.
+   */
+  RequirePushedAuthorizationRequests: boolean
+  /**
    * ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys.
    * Null/blank = realm-scoped (the realm's primary domain). Changing it
    * invalidates all passkeys already enrolled for this client.
@@ -87,6 +93,8 @@ export interface CreateOAuthClientDto {
   RequireConsent?: boolean
   AllowedGrantTypes?: string[]
   AllowedCorsOrigins?: string[]
+  /** RFC 9126 — require this client to use Pushed Authorization Requests. Off by default. */
+  RequirePushedAuthorizationRequests?: boolean
   /** ADR-0009 — admin-set per-client WebAuthn RP ID. Blank = realm-scoped. */
   WebAuthnRpId?: string | null
   /**
@@ -117,6 +125,8 @@ export interface UpdateOAuthClientDto {
   SlidingRefreshTokenLifetime?: number | null
   Claims?: OAuthClientClaimDto[] | null
   Roles?: string[] | null
+  /** RFC 9126 PAR-requirement patch: null/missing = no change, true/false sets it. */
+  RequirePushedAuthorizationRequests?: boolean | null
   /**
    * ADR-0009 per-client WebAuthn RP ID patch:
    *   undefined/missing → no change
