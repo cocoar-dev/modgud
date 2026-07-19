@@ -75,6 +75,12 @@ public static class OAuthMartenSetup
             .Index(x => x.ReferenceId)
             .Index(x => x.Status);
 
+        // DPoP proof replay ledger (RFC 9449 §11.1) — string id (the proof jti),
+        // ExpiresAt indexed for the opportunistic prune of spent entries.
+        options.Schema.For<DpopReplayEntry>()
+            .Identity(x => x.Id)
+            .Index(x => x.ExpiresAt);
+
         // Stable event-type aliases — copied verbatim from the legacy backend so
         // re-using a legacy DB would also work, and so renames are safe forever.
         options.Events.MapEventType<OAuthApplicationCreated>("oauth_application_created");

@@ -1,0 +1,262 @@
+using System.Buffers.Text;
+using System.Net;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Web;
+using Modgud.Api.Tests.Infrastructure;
+using Modgud.Application.DTOs.OAuth;
+using Modgud.Application.Services;
+using Modgud.Domain.OAuth.Common;
+using Modgud.Infrastructure.OpenIddict.Dpop;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Modgud.Api.Tests.Authorization;
+
+/// <summary>
+/// End-to-end verification of DPoP issuance (RFC 9449, #118): a client that
+/// presents a valid proof at <c>/connect/token</c> gets an access token bound to
+/// the proof key (<c>cnf.jkt</c>) and returned as <c>token_type=DPoP</c>. DPoP is
+/// offered, not required — a request with no proof yields an ordinary bearer
+/// token. Invalid and replayed proofs are rejected with <c>invalid_dpop_proof</c>.
+/// </summary>
+[Collection(IntegrationTestCollection.Name)]
+public class DpopIssuanceTests : IntegrationTestBase
+{
+    // The absolute token-endpoint URL as the test host sees it — the proof's htu
+    // must match what OpenIddict reconstructs from the request.
+    private const string TokenEndpoint = "http://localhost/connect/token";
+
+    public DpopIssuanceTests(SharedPostgresFixture fixture) : base(fixture) { }
+
+    [Fact]
+    public async Task A_valid_proof_binds_the_access_token_and_marks_it_dpop()
+    {
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-ok");
+        var (user, pass) = await NewUserAsync("do", "do@test.com");
+
+        using var proofKey = new DpopProofBuilder();
+        var proof = proofKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow);
+
+        var (tokenResp, tokenJson) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass, proof);
+
+        Assert.True(tokenResp.IsSuccessStatusCode,
+            $"/connect/token failed: {tokenJson.RootElement}");
+
+        var payload = DecodeJwtPayload(tokenJson.RootElement.GetProperty("access_token").GetString()!);
+        Assert.True(payload.TryGetProperty("cnf", out var cnf), $"access token has no cnf claim: {payload}");
+        Assert.Equal(JsonValueKind.Object, cnf.ValueKind);
+        Assert.Equal(proofKey.Jkt, cnf.GetProperty("jkt").GetString());
+
+        Assert.Equal("DPoP", tokenJson.RootElement.GetProperty("token_type").GetString());
+    }
+
+    [Fact]
+    public async Task A_request_without_a_proof_yields_an_unbound_bearer_token()
+    {
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-none");
+        var (user, pass) = await NewUserAsync("dn", "dn@test.com");
+
+        var (tokenResp, tokenJson) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass, dpopProof: null);
+
+        Assert.True(tokenResp.IsSuccessStatusCode, $"/connect/token failed: {tokenJson.RootElement}");
+        Assert.Equal("Bearer", tokenJson.RootElement.GetProperty("token_type").GetString());
+
+        var payload = DecodeJwtPayload(tokenJson.RootElement.GetProperty("access_token").GetString()!);
+        Assert.False(payload.TryGetProperty("cnf", out _),
+            "an unbound token must not carry a cnf claim");
+    }
+
+    [Fact]
+    public async Task An_invalid_proof_is_rejected()
+    {
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-bad");
+        var (user, pass) = await NewUserAsync("db", "db@test.com");
+
+        using var proofKey = new DpopProofBuilder();
+        // Wrong htu — bound to a different URL than the actual token endpoint.
+        var proof = proofKey.CreateProof("POST", "https://evil.example/token", DateTimeOffset.UtcNow);
+
+        var (tokenResp, tokenJson) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass, proof);
+
+        Assert.Equal(HttpStatusCode.BadRequest, tokenResp.StatusCode);
+        Assert.Equal("invalid_dpop_proof", tokenJson.RootElement.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task A_replayed_proof_is_rejected()
+    {
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-replay");
+        var (user, pass) = await NewUserAsync("dr", "dr@test.com");
+
+        using var proofKey = new DpopProofBuilder();
+        // One proof (one jti), reused across two independent code exchanges.
+        var proof = proofKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow);
+
+        var (firstResp, firstJson) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass, proof);
+        Assert.True(firstResp.IsSuccessStatusCode, $"first exchange failed: {firstJson.RootElement}");
+        Assert.Equal("DPoP", firstJson.RootElement.GetProperty("token_type").GetString());
+
+        var (secondResp, secondJson) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass, proof);
+        Assert.Equal(HttpStatusCode.BadRequest, secondResp.StatusCode);
+        Assert.Equal("invalid_dpop_proof", secondJson.RootElement.GetProperty("error").GetString());
+    }
+
+    // ── flow helper ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Runs authorize → code → token once and returns the token response. When
+    /// <paramref name="dpopProof"/> is non-null it is sent as the <c>DPoP</c>
+    /// header on the token exchange.
+    /// </summary>
+    private async Task<(HttpResponseMessage, JsonDocument)> RunCodeFlowAsync(
+        string clientId, string clientSecret, string redirectUri,
+        string username, string password, string? dpopProof)
+    {
+        var verifier = GeneratePkceVerifier();
+        var challenge = GeneratePkceS256Challenge(verifier);
+        var state = Guid.NewGuid().ToString("N");
+
+        var cookieClient = await CreateAuthenticatedClientAsync(username, password);
+        var authorizeUri = "/connect/authorize?" + string.Join("&", new[]
+        {
+            "response_type=code",
+            $"client_id={Uri.EscapeDataString(clientId)}",
+            $"redirect_uri={Uri.EscapeDataString(redirectUri)}",
+            "scope=openid",
+            $"state={state}",
+            $"code_challenge={challenge}",
+            "code_challenge_method=S256",
+        });
+        var authResp = await cookieClient.GetAsync(authorizeUri, TestContext.Current.CancellationToken);
+        var code = HttpUtility.ParseQueryString(authResp.Headers.Location!.Query)["code"];
+        Assert.False(string.IsNullOrEmpty(code), "authorize did not yield a code");
+
+        var backChannel = Factory.CreateClient();
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "authorization_code",
+                ["code"] = code!,
+                ["client_id"] = clientId,
+                ["client_secret"] = clientSecret,
+                ["redirect_uri"] = redirectUri,
+                ["code_verifier"] = verifier,
+            }),
+        };
+        if (dpopProof is not null)
+            req.Headers.TryAddWithoutValidation("DPoP", dpopProof);
+
+        var resp = await backChannel.SendAsync(req, TestContext.Current.CancellationToken);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        return (resp, JsonDocument.Parse(body));
+    }
+
+    // ── setup helpers ───────────────────────────────────────────────────────
+
+    private async Task<(string clientId, string secret, string redirectUri)> NewClientAsync(string prefix)
+    {
+        var clientId = $"test-{prefix}-" + Guid.NewGuid().ToString("N");
+        var secret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+
+        using var scope = Factory.Services.CreateScope();
+        var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
+        var result = await oauthAdmin.CreateClientAsync(new CreateOAuthClientDto
+        {
+            ClientId = clientId,
+            ClientSecret = secret,
+            ClientType = OAuthClientTypes.Confidential,
+            ConsentType = OAuthConsentTypes.Implicit,
+            DisplayName = clientId,
+            RedirectUris = [redirectUri],
+            PostLogoutRedirectUris = [],
+            Scopes = ["openid"],
+            AllowedGrantTypes = ["authorization_code", "refresh_token"],
+            RequireConsent = false,
+            // JWT so the test can decode the access token and read cnf.jkt directly.
+            AccessTokenType = AccessTokenType.Jwt,
+        }, TestContext.Current.CancellationToken);
+
+        if (result.IsError)
+            throw new InvalidOperationException(
+                $"CreateClientAsync failed: {string.Join(", ", result.Errors.Select(e => $"{e.Code}: {e.Description}"))}");
+        return (clientId, secret, redirectUri);
+    }
+
+    private async Task<(string username, string password)> NewUserAsync(string acronym, string email)
+    {
+        const string password = "TestPass1234";
+        await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Dpop", lastname: acronym.ToUpperInvariant(), acronym: acronym,
+            email: email, password: password);
+        return (acronym, password);
+    }
+
+    // ── crypto helpers ──────────────────────────────────────────────────────
+
+    /// <summary>Mints ES256 (P-256) DPoP proofs for one ephemeral key.</summary>
+    private sealed class DpopProofBuilder : IDisposable
+    {
+        private static readonly JsonSerializerOptions JsonOptions =
+            new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+        private readonly ECDsa _ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        public string Jkt { get; }
+
+        public DpopProofBuilder()
+        {
+            var p = _ec.ExportParameters(false);
+            Jkt = JwkThumbprint.ForEc("P-256", p.Q.X!, p.Q.Y!);
+        }
+
+        public string CreateProof(string htm, string htu, DateTimeOffset iat, string? jti = null)
+        {
+            var p = _ec.ExportParameters(false);
+            var jwk = new { kty = "EC", crv = "P-256", x = B64(p.Q.X!), y = B64(p.Q.Y!) };
+            var header = new { typ = "dpop+jwt", alg = "ES256", jwk };
+            var payload = new Dictionary<string, object>
+            {
+                ["jti"] = jti ?? Guid.NewGuid().ToString("N"),
+                ["htm"] = htm,
+                ["htu"] = htu,
+                ["iat"] = iat.ToUnixTimeSeconds(),
+            };
+            var signingInput = $"{Seg(header)}.{Seg(payload)}";
+            var sig = _ec.SignData(
+                Encoding.ASCII.GetBytes(signingInput),
+                HashAlgorithmName.SHA256,
+                DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+            return $"{signingInput}.{B64(sig)}";
+        }
+
+        private static string Seg(object o) => B64(JsonSerializer.SerializeToUtf8Bytes(o, JsonOptions));
+        private static string B64(byte[] b) => Base64Url.EncodeToString(b);
+
+        public void Dispose() => _ec.Dispose();
+    }
+
+    private static JsonElement DecodeJwtPayload(string jwt)
+    {
+        var parts = jwt.Split('.');
+        using var doc = JsonDocument.Parse(Base64Url.DecodeFromChars(parts[1]));
+        return doc.RootElement.Clone();
+    }
+
+    private static string GeneratePkceVerifier()
+    {
+        Span<byte> bytes = stackalloc byte[32];
+        RandomNumberGenerator.Fill(bytes);
+        return Base64Url.EncodeToString(bytes);
+    }
+
+    private static string GeneratePkceS256Challenge(string verifier)
+        => Base64Url.EncodeToString(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+}
