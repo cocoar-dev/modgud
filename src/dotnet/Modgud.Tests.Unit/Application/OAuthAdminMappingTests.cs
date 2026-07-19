@@ -695,6 +695,30 @@ public class OAuthAdminMappingTests
             var dto = OAuthAdminMapping.MapClient(s);
             Assert.Null(dto.LinkedServiceAccountId);
         }
+
+        [Fact]
+        public void RequireDpop_defaults_false_when_property_missing()
+        {
+            // Clients created before #118 carry no RequireDpop key — the read
+            // must default to "not required" so DPoP stays offered-not-required.
+            var s = new OAuthApplicationState { Id = Guid.NewGuid(), ClientId = "c" };
+            Assert.False(OAuthAdminMapping.MapClient(s).RequireDpop);
+        }
+
+        [Fact]
+        public void RequireDpop_round_trips_true_through_BuildClientProperties()
+        {
+            var props = OAuthAdminMapping.BuildClientProperties(
+                enabled: true, allowBrowser: false, requireSecret: true, enableLocal: true,
+                requireConsent: false, allowRemember: true, corsOrigins: Array.Empty<string>(),
+                alwaysSend: false, updateClaims: false,
+                claims: Array.Empty<OAuthClientClaimDto>(), roles: Array.Empty<string>(),
+                requireDpop: true);
+
+            var s = new OAuthApplicationState { Id = Guid.NewGuid(), ClientId = "c", Properties = props };
+
+            Assert.True(OAuthAdminMapping.MapClient(s).RequireDpop);
+        }
     }
 
     public class ValidateServiceAccountLinkInvariant
@@ -1333,6 +1357,49 @@ public class OAuthAdminMappingTests
 
             Assert.True(OAuthAdminMapping.GetBoolProp(current, OAuthApplicationPropertyKeys.Enabled, false));
             Assert.True(snapshotKeys.SetEquals(current.Keys));
+        }
+
+        // RFC 9449 (#118) — RequireDpop follows the same null=preserve / value=set
+        // PATCH contract as the other booleans.
+
+        [Fact]
+        public void RequireDpop_null_patch_preserves_existing_true()
+        {
+            var current = OAuthAdminMapping.BuildClientProperties(
+                enabled: true, allowBrowser: false, requireSecret: true, enableLocal: true,
+                requireConsent: false, allowRemember: true, corsOrigins: Array.Empty<string>(),
+                alwaysSend: false, updateClaims: false,
+                claims: Array.Empty<OAuthClientClaimDto>(), roles: Array.Empty<string>(),
+                requireDpop: true);
+
+            var merged = OAuthAdminMapping.MergeClientProperties(current, new UpdateOAuthClientDto());
+
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.RequireDpop, false));
+        }
+
+        [Fact]
+        public void RequireDpop_false_patch_overrides_existing_true()
+        {
+            var current = OAuthAdminMapping.BuildClientProperties(
+                enabled: true, allowBrowser: false, requireSecret: true, enableLocal: true,
+                requireConsent: false, allowRemember: true, corsOrigins: Array.Empty<string>(),
+                alwaysSend: false, updateClaims: false,
+                claims: Array.Empty<OAuthClientClaimDto>(), roles: Array.Empty<string>(),
+                requireDpop: true);
+
+            var merged = OAuthAdminMapping.MergeClientProperties(
+                current, new UpdateOAuthClientDto { RequireDpop = false });
+
+            Assert.False(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.RequireDpop, true));
+        }
+
+        [Fact]
+        public void RequireDpop_true_patch_sets_it_from_default()
+        {
+            var merged = OAuthAdminMapping.MergeClientProperties(
+                new Dictionary<string, object?>(), new UpdateOAuthClientDto { RequireDpop = true });
+
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.RequireDpop, false));
         }
     }
 

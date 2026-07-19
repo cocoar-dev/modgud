@@ -36,6 +36,16 @@ public static class OAuthApplicationPropertyKeys
     public const string ClientClaims = "modgud:client_claims";
     public const string Roles = "modgud:roles";
 
+    /// <summary>
+    /// RFC 9449 (#118) — boolean. When <c>true</c>, this client MUST present a
+    /// valid DPoP proof at <c>/connect/token</c>; a tokenless request is rejected
+    /// with <c>invalid_dpop_proof</c>. Off by default (DPoP stays offered-not-
+    /// required for every client either way). Stored as a Property rather than an
+    /// OpenIddict <c>Requirement</c> because OpenIddict has no DPoP requirement to
+    /// hang it off (unlike RFC 9126 PAR, which uses <c>ft:par</c>).
+    /// </summary>
+    public const string RequireDpop = "modgud:require_dpop";
+
     // ─────── Dynamic Client Registration (RFC 7591) ────────
     // Set on creation by the /connect/register handler — admin-created
     // clients never carry these keys, which is how the rest of the
