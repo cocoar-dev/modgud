@@ -116,6 +116,12 @@ app.Run();
 
 `ModgudOptions` has exactly two required properties — `Authority` and `Audience` — plus an optional `JwtBearerScheme` (default `"Bearer"`) if you registered JwtBearer under a custom scheme name. Both `Authority` and `Audience` must match the values you passed to `AddJwtBearer`.
 
+### DPoP-bound tokens are enforced automatically
+
+If a client obtains a [DPoP](../reference/oauth-api#dpop-sender-constrained-tokens)-bound access token (one carrying a `cnf.jkt` confirmation claim), `AddModgudClient` enforces the binding for you — no extra configuration. It accepts the token under the `DPoP` auth scheme (lifting it into JwtBearer, which only reads `Bearer` on its own), then requires a valid DPoP proof whose key matches `cnf.jkt` and whose `ath` hashes the presented token. A bound token replayed as a plain `Bearer`, or with a proof for the wrong key, is rejected. Unbound tokens are unaffected and keep working as bearer tokens. The same enforcement applies on the [reference-token path](#reference-token-mode-opaque-tokens) — the `cnf.jkt` is read from the introspection response instead of the JWT.
+
+Behind a reverse proxy, wire up `UseForwardedHeaders` so the request's scheme + host match what the client signed into the proof's `htu`, or every proof fails the URL check.
+
 ## Where permissions come from
 
 `resource_access` is baked directly into the access token at issuance — for JWT clients (the type this guide sets up) it's a claim inside the token itself. `Modgud.Client.AspNetCore` prefers that embedded claim: if the JwtBearer-validated principal already carries `resource_access`, the library reads it as-is and never calls the IdP. It falls back to fetching `/connect/userinfo` only when the token carries no such claim — practically, that's tokens from setups predating this behavior, or resource servers validating opaque reference tokens by some means other than local JWT parsing (this guide's JWKS-based `AddJwtBearer` setup always sees the embedded claim, so the fallback path is dead code in practice for it).
