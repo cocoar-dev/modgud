@@ -86,11 +86,16 @@ A resource server built with ASP.NET Core's `AddJwtBearer` expects a **JWT** —
 
 ### Require Pushed Authorization Requests
 
-When set, this client **must** use [Pushed Authorization Requests](../reference/oauth-api#pushed-authorization-requests-par) (RFC 9126): a direct `/connect/authorize` request from it is rejected, and it has to push the request to `/connect/par` first and authorize with the returned `request_uri`. Off by default, and PAR stays available to every client regardless — this only *forces* it for an individual high-security client (e.g. a confidential back-channel client where you never want request parameters on the front channel).
+Toggle the **Require Pushed Authorization Requests (PAR)** checkbox in the client editor. When set, this client **must** use [Pushed Authorization Requests](../reference/oauth-api#pushed-authorization-requests-par) (RFC 9126): a direct `/connect/authorize` request from it is rejected, and it has to push the request to `/connect/par` first and authorize with the returned `request_uri`. Off by default, and PAR stays available to every client regardless — this only *forces* it for an individual high-security client (e.g. a confidential back-channel client where you never want request parameters on the front channel). Also settable via the admin API (`requirePushedAuthorizationRequests: true`) or a declarative provisioning manifest.
 
-::: info Set via API / provisioning for now
-There's no checkbox for this in the client editor yet ([#142](https://github.com/cocoar-dev/modgud/issues/142)). Set it through the admin API's client create/update payload (`requirePushedAuthorizationRequests: true`) or a declarative provisioning manifest.
-:::
+### Sender-constrained tokens (DPoP)
+
+DPoP ([RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449)) binds an access token to a key the client proves it holds, so a stolen token is useless without the private key. Two checkboxes in the client editor harden a client that supports DPoP; both are **off by default** and independent of each other. See the [DPoP reference](../reference/oauth-api#dpop-sender-constrained-tokens) for the protocol detail.
+
+- **Require DPoP** — reject this client's token requests that carry no DPoP proof (`invalid_dpop_proof`). Without it, DPoP is still *offered*: a client that sends a proof gets a bound token, one that doesn't gets an ordinary bearer token. Turn it on to forbid the unbound fallback for a high-security client.
+- **Require DPoP nonce** — additionally require a server-issued nonce in the client's proofs. The first proof (which has none) is answered with a `use_dpop_nonce` error plus a fresh `DPoP-Nonce` header, and the client retries with the nonce embedded. This stops a client from pre-computing proofs and gives the server a freshness lever. Only meaningful alongside DPoP use — pair it with **Require DPoP** to force the whole handshake.
+
+Both are also settable via the admin API (`requireDpop`, `requireDpopNonce`) or a provisioning manifest. Refresh tokens issued to a DPoP client are bound to the same key automatically — no toggle needed.
 
 ### Allowed CORS Origins
 

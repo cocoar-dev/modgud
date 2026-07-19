@@ -44,6 +44,11 @@ don't leak the realm's resource-server inventory. See
 [Concepts: OAuth](../concepts/oauth) for the
 `RealmScopesSupportedHandler` rationale.
 
+It also advertises `pushed_authorization_request_endpoint`
+([PAR](#pushed-authorization-requests-par)) and
+`dpop_signing_alg_values_supported`
+([DPoP](#dpop-sender-constrained-tokens)).
+
 ## Endpoint map
 
 All under `/connect/...`, all realm-scoped via the domain:
@@ -169,6 +174,52 @@ GET /connect/authorize?client_id=acme-web&request_uri=urn%3Aietf%3Aparams%3Aoaut
 ```
 
 The server resolves the stored request, runs login + consent as usual, and redirects to the `redirect_uri` with `?code=…&state=…`. The `request_uri` is single-use and short-lived; an unknown or expired one is rejected. From here, the token exchange is identical to the [Authorization Code + PKCE](#authorization-code-pkce) flow above — the same `code_verifier` and `resource` apply.
+
+## DPoP (sender-constrained tokens)
+
+[RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449). DPoP binds an access token to a public key the client proves possession of, so a leaked token is worthless without the matching private key. The realm advertises the signing algorithms it accepts in discovery as `dpop_signing_alg_values_supported` (the EC + RSA family: `ES256/384/512`, `RS256/384/512`, `PS256/384/512`).
+
+DPoP is **offered, not required** by default — a client that presents a proof gets a bound token, one that doesn't gets an ordinary bearer token. Two per-client opt-ins tighten that (set in the [client editor](../admin/oauth-clients#sender-constrained-tokens-dpop) or via the admin API): **Require DPoP** rejects a tokenless request, and **Require DPoP nonce** additionally demands a server nonce.
+
+### 1. Present a proof at the token endpoint
+
+The client signs a short-lived proof JWT (`typ: dpop+jwt`, header `jwk` = its public key, payload `htm`/`htu`/`iat`/`jti`) and sends it in the `DPoP` header of the token request:
+
+```http
+POST /connect/token
+Content-Type: application/x-www-form-urlencoded
+DPoP: <proof-jwt>
+
+grant_type=authorization_code&code=…&code_verifier=…&client_id=…
+```
+
+The access token comes back with `token_type: DPoP` and a confirmation claim binding it to the proof key's RFC 7638 thumbprint:
+
+```json
+{ "token_type": "DPoP", "access_token": "…", "cnf": { "jkt": "<thumbprint>" } }
+```
+
+A malformed, stale, or replayed proof (`jti` is single-use within its window) is rejected with `error: invalid_dpop_proof`.
+
+### 2. Call the resource server
+
+The client presents the token under the `DPoP` auth scheme and a **fresh** proof — this one adds `ath` (a hash of the access token) and targets the RS's method + URL:
+
+```http
+GET /todos
+Authorization: DPoP <access-token>
+DPoP: <proof-jwt-with-ath>
+```
+
+The [.NET client library](../integrate/resource-server) enforces the binding on both token formats: a bound token presented as a plain `Bearer`, or with a proof whose key doesn't match `cnf.jkt`, is rejected.
+
+### 3. Refresh tokens are bound too
+
+A refresh token issued to a DPoP client is bound to the same key. Redeeming it requires a proof for that key — a refresh with no proof, or a proof for a different key, is rejected with `invalid_dpop_proof`. Rotation preserves the binding.
+
+### Server nonces
+
+When **Require DPoP nonce** is set, a proof must also carry a valid server-issued nonce. The first proof has none, so the token endpoint answers `400` with a `DPoP-Nonce` response header and `error: use_dpop_nonce`; the client retries the **same** request with the nonce embedded in a new proof (the authorization code / refresh token is **not** consumed by the challenge, so the retry works). A nonce is valid for a few minutes and reused across requests until it lapses, then re-challenged.
 
 ## Client Credentials
 
