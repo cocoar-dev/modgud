@@ -352,6 +352,14 @@ public static class OpenIddictExtensions
                 options.AddEventHandler(RealmTokenValidationHandler.Descriptor);
                 options.AddEventHandler(RefreshTokenReuseAuditHandler.Descriptor);
                 options.AddEventHandler(RealmClaimHandler.Descriptor);
+
+                // DPoP (RFC 9449, #118) — validate a proof at the token endpoint,
+                // bind the access token to the proof key (cnf.jkt), and announce
+                // token_type=DPoP. Offered, not required; clients that send no
+                // proof are unaffected.
+                options.AddEventHandler(Dpop.DpopProofValidationHandler.Descriptor);
+                options.AddEventHandler(Dpop.DpopConfirmationClaimHandler.Descriptor);
+                options.AddEventHandler(Dpop.DpopTokenTypeHandler.Descriptor);
             })
             .AddValidation(options =>
             {
@@ -364,6 +372,10 @@ public static class OpenIddictExtensions
                 // rejected as invalid_token ("issuer not valid", ID2088).
                 options.AddEventHandler(RealmValidationTokenHandler.Descriptor);
             });
+
+        // DPoP proof replay store — tenant-scoped Marten session, so the jti
+        // uniqueness check is shared across every instance on the same realm DB.
+        services.AddScoped<Dpop.IDpopReplayStore, Dpop.MartenDpopReplayStore>();
 
         return services;
     }
