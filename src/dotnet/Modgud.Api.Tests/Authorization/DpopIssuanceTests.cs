@@ -165,6 +165,69 @@ public class DpopIssuanceTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task A_nonce_required_client_challenges_a_proof_without_a_nonce()
+    {
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-nonce", requireDpopNonce: true);
+        var (user, pass) = await NewUserAsync("nc", "nc@test.com");
+
+        using var proofKey = new DpopProofBuilder();
+        var proof = proofKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow); // no nonce
+
+        var (resp, json) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass, proof, scope: "openid");
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        Assert.Equal("use_dpop_nonce", json.RootElement.GetProperty("error").GetString());
+        Assert.True(resp.Headers.TryGetValues("DPoP-Nonce", out var nonces), "response is missing the DPoP-Nonce header");
+        Assert.False(string.IsNullOrEmpty(nonces!.FirstOrDefault()), "DPoP-Nonce header is empty");
+    }
+
+    [Fact]
+    public async Task A_nonce_required_client_accepts_the_proof_after_the_nonce_handshake()
+    {
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-nonce-ok", requireDpopNonce: true);
+        var (user, pass) = await NewUserAsync("nk", "nk@test.com");
+
+        using var proofKey = new DpopProofBuilder();
+
+        // One authorization code, exchanged twice — the use_dpop_nonce rejection
+        // must NOT consume the code, so the client can retry with the nonce.
+        var (code, verifier) = await AuthorizeToCodeAsync(clientId, redirectUri, user, pass, "openid");
+
+        var (firstResp, firstJson) = await TokenWithCodeAsync(
+            clientId, secret, redirectUri, code, verifier,
+            proofKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow));
+        Assert.Equal(HttpStatusCode.BadRequest, firstResp.StatusCode);
+        Assert.Equal("use_dpop_nonce", firstJson.RootElement.GetProperty("error").GetString());
+        var nonce = firstResp.Headers.GetValues("DPoP-Nonce").First();
+
+        // Retry the SAME code with a fresh proof carrying the issued nonce.
+        var (secondResp, secondJson) = await TokenWithCodeAsync(
+            clientId, secret, redirectUri, code, verifier,
+            proofKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow, nonce: nonce));
+
+        Assert.True(secondResp.IsSuccessStatusCode, $"nonce retry failed: {secondJson.RootElement}");
+        Assert.Equal("DPoP", secondJson.RootElement.GetProperty("token_type").GetString());
+    }
+
+    [Fact]
+    public async Task A_nonce_required_client_rejects_an_unrecognised_nonce()
+    {
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-nonce-bad", requireDpopNonce: true);
+        var (user, pass) = await NewUserAsync("nb", "nb@test.com");
+
+        using var proofKey = new DpopProofBuilder();
+        // A nonce the server never issued must not satisfy the requirement.
+        var proof = proofKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow, nonce: "not-a-real-nonce");
+
+        var (resp, json) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass, proof, scope: "openid");
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        Assert.Equal("use_dpop_nonce", json.RootElement.GetProperty("error").GetString());
+    }
+
+    [Fact]
     public async Task A_dpop_bound_refresh_token_is_redeemable_with_the_same_key()
     {
         var (clientId, secret, redirectUri) = await NewClientAsync("dpop-rt-ok", offlineAccess: true);
@@ -338,6 +401,15 @@ public class DpopIssuanceTests : IntegrationTestBase
         string clientId, string clientSecret, string redirectUri,
         string username, string password, string? dpopProof, string scope = "openid")
     {
+        var (code, verifier) = await AuthorizeToCodeAsync(clientId, redirectUri, username, password, scope);
+        return await TokenWithCodeAsync(clientId, clientSecret, redirectUri, code, verifier, dpopProof);
+    }
+
+    /// <summary>Drives authorize → code and returns the code + its PKCE verifier so
+    /// the same code can be exchanged (and re-exchanged, e.g. a nonce retry).</summary>
+    private async Task<(string code, string verifier)> AuthorizeToCodeAsync(
+        string clientId, string redirectUri, string username, string password, string scope)
+    {
         var verifier = GeneratePkceVerifier();
         var challenge = GeneratePkceS256Challenge(verifier);
         var state = Guid.NewGuid().ToString("N");
@@ -356,14 +428,21 @@ public class DpopIssuanceTests : IntegrationTestBase
         var authResp = await cookieClient.GetAsync(authorizeUri, TestContext.Current.CancellationToken);
         var code = HttpUtility.ParseQueryString(authResp.Headers.Location!.Query)["code"];
         Assert.False(string.IsNullOrEmpty(code), "authorize did not yield a code");
+        return (code!, verifier);
+    }
 
+    /// <summary>Exchanges an authorization code, optionally presenting a <c>DPoP</c>
+    /// proof. Returns the raw response so callers can inspect status + headers.</summary>
+    private async Task<(HttpResponseMessage, JsonDocument)> TokenWithCodeAsync(
+        string clientId, string clientSecret, string redirectUri, string code, string verifier, string? dpopProof)
+    {
         var backChannel = Factory.CreateClient();
         using var req = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
         {
             Content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["grant_type"] = "authorization_code",
-                ["code"] = code!,
+                ["code"] = code,
                 ["client_id"] = clientId,
                 ["client_secret"] = clientSecret,
                 ["redirect_uri"] = redirectUri,
@@ -382,7 +461,7 @@ public class DpopIssuanceTests : IntegrationTestBase
 
     private async Task<(string clientId, string secret, string redirectUri)> NewClientAsync(
         string prefix, AccessTokenType tokenType = AccessTokenType.Jwt, bool requireDpop = false,
-        bool offlineAccess = false)
+        bool offlineAccess = false, bool requireDpopNonce = false)
     {
         var clientId = $"test-{prefix}-" + Guid.NewGuid().ToString("N");
         var secret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
@@ -408,6 +487,8 @@ public class DpopIssuanceTests : IntegrationTestBase
             AccessTokenType = tokenType,
             // #118 — per-client "DPoP required" enforcement.
             RequireDpop = requireDpop,
+            // #118 — per-client "DPoP server-nonce required" enforcement.
+            RequireDpopNonce = requireDpopNonce,
         }, TestContext.Current.CancellationToken);
 
         if (result.IsError)
@@ -442,7 +523,8 @@ public class DpopIssuanceTests : IntegrationTestBase
             Jkt = JwkThumbprint.ForEc("P-256", p.Q.X!, p.Q.Y!);
         }
 
-        public string CreateProof(string htm, string htu, DateTimeOffset iat, string? jti = null)
+        public string CreateProof(
+            string htm, string htu, DateTimeOffset iat, string? jti = null, string? nonce = null)
         {
             var p = _ec.ExportParameters(false);
             var jwk = new { kty = "EC", crv = "P-256", x = B64(p.Q.X!), y = B64(p.Q.Y!) };
@@ -454,6 +536,7 @@ public class DpopIssuanceTests : IntegrationTestBase
                 ["htu"] = htu,
                 ["iat"] = iat.ToUnixTimeSeconds(),
             };
+            if (nonce is not null) payload["nonce"] = nonce;
             var signingInput = $"{Seg(header)}.{Seg(payload)}";
             var sig = _ec.SignData(
                 Encoding.ASCII.GetBytes(signingInput),

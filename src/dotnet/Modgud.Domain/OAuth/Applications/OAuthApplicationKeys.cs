@@ -46,6 +46,15 @@ public static class OAuthApplicationPropertyKeys
     /// </summary>
     public const string RequireDpop = "modgud:require_dpop";
 
+    /// <summary>
+    /// RFC 9449 §8-9 (#118) — boolean. When <c>true</c>, a DPoP proof this client
+    /// presents at <c>/connect/token</c> must carry a valid server-issued
+    /// <c>nonce</c>; a first proof without one is answered with <c>use_dpop_nonce</c>
+    /// and a fresh <c>DPoP-Nonce</c> header, and the client retries. Off by default;
+    /// server-nonce hardening on top of DPoP, independent of <see cref="RequireDpop"/>.
+    /// </summary>
+    public const string RequireDpopNonce = "modgud:require_dpop_nonce";
+
     // ─────── Dynamic Client Registration (RFC 7591) ────────
     // Set on creation by the /connect/register handler — admin-created
     // clients never carry these keys, which is how the rest of the
