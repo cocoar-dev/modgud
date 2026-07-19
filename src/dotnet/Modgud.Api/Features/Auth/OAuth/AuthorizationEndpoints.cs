@@ -1459,6 +1459,22 @@ public static class AuthorizationEndpoints
             {
                 identity.AddClaim(new Claim(FederationClaimTypes.SessionGroup, carrier.Value));
             }
+
+            // RFC 9449 §5 — carry the DPoP refresh-token binding forward. On the
+            // refresh path cookiePrincipal is the rehydrated reference-token
+            // principal; re-copying its bound-key thumbprint onto this grant keeps
+            // the rotated refresh token sender-constrained, and lets
+            // DpopRefreshTokenBindingHandler compare it against the proof presented
+            // at this refresh. GetDestinations yields nothing for it (hub-internal,
+            // like the session-group carrier). Nothing to copy on the initial
+            // authorize/code path — the binding is established at the token exchange.
+            var boundJkt = cookiePrincipal.FindFirstValue(
+                Modgud.Infrastructure.OpenIddict.Dpop.DpopConstants.RefreshBindingClaimType);
+            if (!string.IsNullOrEmpty(boundJkt))
+            {
+                identity.AddClaim(new Claim(
+                    Modgud.Infrastructure.OpenIddict.Dpop.DpopConstants.RefreshBindingClaimType, boundJkt));
+            }
         }
 
         principal.SetDestinations(GetDestinations);
@@ -1845,6 +1861,13 @@ internal static class AuthorizationEndpointHelpers
             // into resource_access at UserInfo/token time, but must NEVER reach the
             // wire. Yield nothing for either token (exactly like SecurityStamp).
             case FederationClaimTypes.SessionGroup:
+                yield break;
+
+            // RFC 9449 §5 — the DPoP refresh-token binding carrier. Internal: it is
+            // persisted in the server-side refresh token so the binding survives
+            // rotation, but must never reach an access/id token (a resource server
+            // reads the binding from cnf.jkt). Yield nothing (like SecurityStamp).
+            case Modgud.Infrastructure.OpenIddict.Dpop.DpopConstants.RefreshBindingClaimType:
                 yield break;
 
             default:

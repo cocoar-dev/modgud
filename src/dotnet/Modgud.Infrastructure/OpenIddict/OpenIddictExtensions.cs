@@ -358,7 +358,9 @@ public static class OpenIddictExtensions
                 // token_type=DPoP. Offered, not required; clients that send no
                 // proof are unaffected.
                 options.AddEventHandler(Dpop.DpopProofValidationHandler.Descriptor);
+                options.AddEventHandler(Dpop.DpopRefreshTokenBindingHandler.Descriptor);
                 options.AddEventHandler(Dpop.DpopConfirmationClaimHandler.Descriptor);
+                options.AddEventHandler(Dpop.DpopRefreshTokenBindingStampHandler.Descriptor);
                 options.AddEventHandler(Dpop.DpopTokenTypeHandler.Descriptor);
                 options.AddEventHandler(Dpop.DpopDiscoveryMetadataHandler.Descriptor);
             })

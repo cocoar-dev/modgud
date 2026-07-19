@@ -40,4 +40,15 @@ public static class DpopConstants
     /// not as an escaped string).
     /// </summary>
     public const string JsonClaimValueType = "JSON";
+
+    /// <summary>
+    /// Internal carrier claim recording the DPoP key thumbprint a refresh token is
+    /// bound to (RFC 9449 §5). Set once at the DPoP-proofed issuance that mints the
+    /// refresh token, then re-copied onto each rotated refresh token so the chain
+    /// stays bound. Persisted in the server-side reference token but yields NO
+    /// destination — it never reaches an access/id token on the wire (a resource
+    /// server reads the binding from <c>cnf.jkt</c>, not this). At the refresh grant
+    /// the presented proof's thumbprint must equal it, or the grant is rejected.
+    /// </summary>
+    public const string RefreshBindingClaimType = "modgud:dpop:rt_jkt";
 }

@@ -165,6 +165,124 @@ public class DpopIssuanceTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task A_dpop_bound_refresh_token_is_redeemable_with_the_same_key()
+    {
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-rt-ok", offlineAccess: true);
+        var (user, pass) = await NewUserAsync("ro", "ro@test.com");
+
+        using var proofKey = new DpopProofBuilder();
+
+        // Initial DPoP exchange with offline_access → bound access + refresh token.
+        var (tokenResp, tokenJson) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass,
+            proofKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow),
+            scope: "openid offline_access");
+        Assert.True(tokenResp.IsSuccessStatusCode, $"initial /connect/token failed: {tokenJson.RootElement}");
+        var refreshToken = tokenJson.RootElement.GetProperty("refresh_token").GetString();
+        Assert.False(string.IsNullOrEmpty(refreshToken), "offline_access should yield a refresh token");
+
+        // Refresh with a FRESH proof from the SAME key → accepted, still bound.
+        var (refreshResp, refreshJson) = await RefreshAsync(
+            clientId, secret, refreshToken!,
+            proofKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow));
+
+        Assert.True(refreshResp.IsSuccessStatusCode, $"refresh failed: {refreshJson.RootElement}");
+        Assert.Equal("DPoP", refreshJson.RootElement.GetProperty("token_type").GetString());
+        var payload = DecodeJwtPayload(refreshJson.RootElement.GetProperty("access_token").GetString()!);
+        Assert.True(payload.TryGetProperty("cnf", out var cnf), $"refreshed token has no cnf: {payload}");
+        Assert.Equal(proofKey.Jkt, cnf.GetProperty("jkt").GetString());
+    }
+
+    [Fact]
+    public async Task A_dpop_bound_refresh_token_is_rejected_when_redeemed_with_a_different_key()
+    {
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-rt-key", offlineAccess: true);
+        var (user, pass) = await NewUserAsync("rk", "rk@test.com");
+
+        using var proofKey = new DpopProofBuilder();
+        var (tokenResp, tokenJson) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass,
+            proofKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow),
+            scope: "openid offline_access");
+        Assert.True(tokenResp.IsSuccessStatusCode, $"initial /connect/token failed: {tokenJson.RootElement}");
+        var refreshToken = tokenJson.RootElement.GetProperty("refresh_token").GetString()!;
+
+        // A different key's proof is structurally valid but must not redeem a
+        // token bound to another key (RFC 9449 §5).
+        using var attackerKey = new DpopProofBuilder();
+        var (refreshResp, refreshJson) = await RefreshAsync(
+            clientId, secret, refreshToken,
+            attackerKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow));
+
+        Assert.Equal(HttpStatusCode.BadRequest, refreshResp.StatusCode);
+        Assert.Equal("invalid_dpop_proof", refreshJson.RootElement.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task A_dpop_bound_refresh_token_is_rejected_when_redeemed_without_a_proof()
+    {
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-rt-none", offlineAccess: true);
+        var (user, pass) = await NewUserAsync("rn", "rn@test.com");
+
+        using var proofKey = new DpopProofBuilder();
+        var (tokenResp, tokenJson) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass,
+            proofKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow),
+            scope: "openid offline_access");
+        Assert.True(tokenResp.IsSuccessStatusCode, $"initial /connect/token failed: {tokenJson.RootElement}");
+        var refreshToken = tokenJson.RootElement.GetProperty("refresh_token").GetString()!;
+
+        // A stolen bound refresh token replayed without the key must be rejected.
+        var (refreshResp, refreshJson) = await RefreshAsync(clientId, secret, refreshToken, dpopProof: null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, refreshResp.StatusCode);
+        Assert.Equal("invalid_dpop_proof", refreshJson.RootElement.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task An_unbound_refresh_token_is_redeemable_without_a_proof()
+    {
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-rt-unbound", offlineAccess: true);
+        var (user, pass) = await NewUserAsync("ru", "ru@test.com");
+
+        // No proof at issuance → an ordinary (unbound) refresh token.
+        var (tokenResp, tokenJson) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass, dpopProof: null, scope: "openid offline_access");
+        Assert.True(tokenResp.IsSuccessStatusCode, $"initial /connect/token failed: {tokenJson.RootElement}");
+        Assert.Equal("Bearer", tokenJson.RootElement.GetProperty("token_type").GetString());
+        var refreshToken = tokenJson.RootElement.GetProperty("refresh_token").GetString()!;
+
+        // An unbound refresh token keeps working as a plain bearer credential.
+        var (refreshResp, refreshJson) = await RefreshAsync(clientId, secret, refreshToken, dpopProof: null);
+
+        Assert.True(refreshResp.IsSuccessStatusCode, $"unbound refresh failed: {refreshJson.RootElement}");
+        Assert.Equal("Bearer", refreshJson.RootElement.GetProperty("token_type").GetString());
+    }
+
+    /// <summary>Redeems a refresh token, optionally presenting a <c>DPoP</c> proof.</summary>
+    private async Task<(HttpResponseMessage, JsonDocument)> RefreshAsync(
+        string clientId, string clientSecret, string refreshToken, string? dpopProof)
+    {
+        var backChannel = Factory.CreateClient();
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "refresh_token",
+                ["refresh_token"] = refreshToken,
+                ["client_id"] = clientId,
+                ["client_secret"] = clientSecret,
+            }),
+        };
+        if (dpopProof is not null)
+            req.Headers.TryAddWithoutValidation("DPoP", dpopProof);
+
+        var resp = await backChannel.SendAsync(req, TestContext.Current.CancellationToken);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        return (resp, JsonDocument.Parse(body));
+    }
+
+    [Fact]
     public async Task Introspection_of_a_dpop_bound_reference_token_echoes_cnf_jkt()
     {
         // The resource-server client library reads cnf.jkt out of the
@@ -218,7 +336,7 @@ public class DpopIssuanceTests : IntegrationTestBase
     /// </summary>
     private async Task<(HttpResponseMessage, JsonDocument)> RunCodeFlowAsync(
         string clientId, string clientSecret, string redirectUri,
-        string username, string password, string? dpopProof)
+        string username, string password, string? dpopProof, string scope = "openid")
     {
         var verifier = GeneratePkceVerifier();
         var challenge = GeneratePkceS256Challenge(verifier);
@@ -230,7 +348,7 @@ public class DpopIssuanceTests : IntegrationTestBase
             "response_type=code",
             $"client_id={Uri.EscapeDataString(clientId)}",
             $"redirect_uri={Uri.EscapeDataString(redirectUri)}",
-            "scope=openid",
+            $"scope={Uri.EscapeDataString(scope)}",
             $"state={state}",
             $"code_challenge={challenge}",
             "code_challenge_method=S256",
@@ -263,7 +381,8 @@ public class DpopIssuanceTests : IntegrationTestBase
     // ── setup helpers ───────────────────────────────────────────────────────
 
     private async Task<(string clientId, string secret, string redirectUri)> NewClientAsync(
-        string prefix, AccessTokenType tokenType = AccessTokenType.Jwt, bool requireDpop = false)
+        string prefix, AccessTokenType tokenType = AccessTokenType.Jwt, bool requireDpop = false,
+        bool offlineAccess = false)
     {
         var clientId = $"test-{prefix}-" + Guid.NewGuid().ToString("N");
         var secret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
@@ -280,7 +399,8 @@ public class DpopIssuanceTests : IntegrationTestBase
             DisplayName = clientId,
             RedirectUris = [redirectUri],
             PostLogoutRedirectUris = [],
-            Scopes = ["openid"],
+            // offline_access is what makes OpenIddict mint a refresh token.
+            Scopes = offlineAccess ? ["openid", "offline_access"] : ["openid"],
             AllowedGrantTypes = ["authorization_code", "refresh_token"],
             RequireConsent = false,
             // JWT clients let the test decode the access token; Reference clients
