@@ -64,12 +64,12 @@
     <!-- SourceLink for published NuGet packages -->
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.301" />
     <!-- OpenIddict (custom Marten stores, no EF Core) -->
-    <PackageVersion Include="OpenIddict" Version="7.5.0" />
-    <PackageVersion Include="OpenIddict.Abstractions" Version="7.5.0" />
-    <PackageVersion Include="OpenIddict.AspNetCore" Version="7.5.0" />
-    <PackageVersion Include="OpenIddict.Server" Version="7.5.0" />
-    <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.5.0" />
-    <PackageVersion Include="OpenIddict.Validation" Version="7.5.0" />
+    <PackageVersion Include="OpenIddict" Version="7.6.0" />
+    <PackageVersion Include="OpenIddict.Abstractions" Version="7.6.0" />
+    <PackageVersion Include="OpenIddict.AspNetCore" Version="7.6.0" />
+    <PackageVersion Include="OpenIddict.Server" Version="7.6.0" />
+    <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.6.0" />
+    <PackageVersion Include="OpenIddict.Validation" Version="7.6.0" />
     <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.2" />
     <!-- Testing -->
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
