@@ -208,7 +208,7 @@ public class OAuthAdminService
             dto.EnableLocalLogin, dto.RequireConsent, dto.AllowRememberConsent,
             dto.AllowedCorsOrigins, dto.AlwaysSendClientClaims,
             dto.UpdateAccessTokenClaimsOnRefresh, dto.Claims, dto.Roles,
-            requireDpop: dto.RequireDpop);
+            requireDpop: dto.RequireDpop, requireDpopNonce: dto.RequireDpopNonce);
         if (dcrMetadata is not null)
         {
             properties[OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered] = JsonSerializer.SerializeToElement(true);

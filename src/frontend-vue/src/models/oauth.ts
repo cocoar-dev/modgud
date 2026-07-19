@@ -48,6 +48,12 @@ export interface OAuthClientDto {
    */
   RequireDpop: boolean
   /**
+   * RFC 9449 §8-9 (#118) — when `true`, this client's DPoP proofs at the token
+   * endpoint must carry a valid server-issued nonce (first proof gets a
+   * `use_dpop_nonce` challenge + `DPoP-Nonce` header, then retries). Off by default.
+   */
+  RequireDpopNonce: boolean
+  /**
    * ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys.
    * Null/blank = realm-scoped (the realm's primary domain). Changing it
    * invalidates all passkeys already enrolled for this client.
@@ -103,6 +109,8 @@ export interface CreateOAuthClientDto {
   RequirePushedAuthorizationRequests?: boolean
   /** RFC 9449 (#118) — require this client to present a DPoP proof at the token endpoint. Off by default. */
   RequireDpop?: boolean
+  /** RFC 9449 §8-9 (#118) — require this client's DPoP proofs to carry a server-issued nonce. Off by default. */
+  RequireDpopNonce?: boolean
   /** ADR-0009 — admin-set per-client WebAuthn RP ID. Blank = realm-scoped. */
   WebAuthnRpId?: string | null
   /**
@@ -137,6 +145,8 @@ export interface UpdateOAuthClientDto {
   RequirePushedAuthorizationRequests?: boolean | null
   /** RFC 9449 (#118) DPoP-requirement patch: null/missing = no change, true/false sets it. */
   RequireDpop?: boolean | null
+  /** RFC 9449 §8-9 (#118) DPoP-nonce-requirement patch: null/missing = no change, true/false sets it. */
+  RequireDpopNonce?: boolean | null
   /**
    * ADR-0009 per-client WebAuthn RP ID patch:
    *   undefined/missing → no change

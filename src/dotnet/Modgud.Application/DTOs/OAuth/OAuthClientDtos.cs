@@ -49,6 +49,14 @@ public record OAuthClientDto
     public bool RequireDpop { get; init; }
 
     /// <summary>
+    /// RFC 9449 §8-9 (#118) — when <c>true</c>, a DPoP proof this client presents at
+    /// the token endpoint must carry a valid server-issued nonce (the client is
+    /// answered with <c>use_dpop_nonce</c> + a <c>DPoP-Nonce</c> header on the first
+    /// proof and retries). Off by default.
+    /// </summary>
+    public bool RequireDpopNonce { get; init; }
+
+    /// <summary>
     /// ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys. Null/blank
     /// ⇒ realm-scoped (the realm's PrimaryDomain). Changing it invalidates all passkeys
     /// already enrolled for this client.
@@ -146,6 +154,10 @@ public record CreateOAuthClientDto
     /// valid DPoP proof at the token endpoint. Off by default.</summary>
     public bool RequireDpop { get; init; }
 
+    /// <summary>RFC 9449 §8-9 (#118) — when <c>true</c>, this client's DPoP proofs
+    /// must carry a valid server-issued nonce. Off by default.</summary>
+    public bool RequireDpopNonce { get; init; }
+
     /// <summary>ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys.
     /// Null/blank ⇒ realm-scoped (the realm's PrimaryDomain).</summary>
     public string? WebAuthnRpId { get; init; }
@@ -202,6 +214,10 @@ public record UpdateOAuthClientDto
     /// <summary>RFC 9449 (#118) DPoP requirement patch. <c>null</c> = field omitted
     /// (no change); <c>true</c>/<c>false</c> sets it.</summary>
     public bool? RequireDpop { get; init; }
+
+    /// <summary>RFC 9449 §8-9 (#118) DPoP-nonce requirement patch. <c>null</c> = field
+    /// omitted (no change); <c>true</c>/<c>false</c> sets it.</summary>
+    public bool? RequireDpopNonce { get; init; }
 
     /// <summary>
     /// ADR-0009 per-client WebAuthn RP ID patch. <c>null</c> = field omitted (no

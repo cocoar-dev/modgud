@@ -26,6 +26,12 @@ public static class DpopConstants
     /// <summary>AS-metadata field listing the JWS algs accepted in a proof (§5.1).</summary>
     public const string SigningAlgValuesMetadataKey = "dpop_signing_alg_values_supported";
 
+    /// <summary>Response header carrying a server-issued DPoP nonce (RFC 9449 §8-9).</summary>
+    public const string NonceHeaderName = "DPoP-Nonce";
+
+    /// <summary>The OAuth error telling the client to retry with the supplied nonce (§9).</summary>
+    public const string UseNonceError = "use_dpop_nonce";
+
     /// <summary>
     /// <c>HttpContext.Items</c> key used to hand the validated proof's thumbprint
     /// from the proof-validation handler to the claim-stamping and token-type

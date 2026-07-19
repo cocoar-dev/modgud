@@ -1,3 +1,4 @@
+using System.Buffers.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore; // OpenIddictServerAspNetCoreHelpers.GetHttpRequest(this transaction)
 using Marten;
@@ -33,18 +34,25 @@ public sealed class DpopProofValidationHandler : IOpenIddictServerHandler<Proces
     public static OpenIddictServerHandlerDescriptor Descriptor { get; }
         = OpenIddictServerHandlerDescriptor.CreateBuilder<ProcessSignInContext>()
             .UseScopedHandler<DpopProofValidationHandler>()
-            // Before the access token is generated (so the binding is in place),
-            // and before ResourceIndicatorHandler's slot is irrelevant to us.
-            .SetOrder(GenerateAccessToken.Descriptor.Order - 10)
+            // Before RedeemTokenEntry consumes the incoming authorization code /
+            // refresh token — so a rejection here (invalid proof, replay, or the
+            // use_dpop_nonce challenge) does NOT burn the code, and the client can
+            // retry the nonce handshake with the same code (RFC 9449 §8-9). Still
+            // well before the access token is generated, so the cnf.jkt binding
+            // stashed for the GenerateToken handlers is in place.
+            .SetOrder(RedeemTokenEntry.Descriptor.Order - 1)
             .SetType(OpenIddictServerHandlerType.Custom)
             .Build();
 
     private readonly IDpopReplayStore _replayStore;
+    private readonly IDpopNonceStore _nonceStore;
     private readonly IQuerySession _querySession;
 
-    public DpopProofValidationHandler(IDpopReplayStore replayStore, IQuerySession querySession)
+    public DpopProofValidationHandler(
+        IDpopReplayStore replayStore, IDpopNonceStore nonceStore, IQuerySession querySession)
     {
         _replayStore = replayStore;
+        _nonceStore = nonceStore;
         _querySession = querySession;
     }
 
@@ -67,7 +75,8 @@ public sealed class DpopProofValidationHandler : IOpenIddictServerHandler<Proces
             // No proof. Offered-not-required by default → ordinary bearer token.
             // But a client flagged RequireDpop must present one (RFC 9449 §5): a
             // tokenless request is rejected rather than silently downgraded.
-            if (await ClientRequiresDpopAsync(context.ClientId, context.CancellationToken))
+            var noProofPolicy = await GetClientDpopPolicyAsync(context.ClientId, context.CancellationToken);
+            if (noProofPolicy.RequireDpop)
                 context.Reject(DpopConstants.InvalidProofError,
                     "This client requires a DPoP proof on the token request.");
             return;
@@ -90,6 +99,27 @@ public sealed class DpopProofValidationHandler : IOpenIddictServerHandler<Proces
             return;
         }
 
+        // Server nonce (RFC 9449 §8-9): a client flagged RequireDpopNonce must carry
+        // a valid, server-issued nonce in its proof. The first proof carries none —
+        // answer with a fresh DPoP-Nonce header + use_dpop_nonce so the client
+        // retries. Checked before the replay ledger so a nonce-less first proof
+        // doesn't burn a jti. (Structurally invalid proofs are already rejected
+        // above, so we never mint a nonce for garbage.)
+        var proofPolicy = await GetClientDpopPolicyAsync(context.ClientId, context.CancellationToken);
+        if (proofPolicy.RequireDpopNonce)
+        {
+            var presentedNonce = ReadProofNonce(header.ToString());
+            if (presentedNonce is null ||
+                !await _nonceStore.IsValidAsync(presentedNonce, now, context.CancellationToken))
+            {
+                var freshNonce = await _nonceStore.IssueAsync(now, context.CancellationToken);
+                httpRequest.HttpContext.Response.Headers[DpopConstants.NonceHeaderName] = freshNonce;
+                context.Reject(DpopConstants.UseNonceError,
+                    "A DPoP nonce is required; retry the proof with the nonce from the DPoP-Nonce header.");
+                return;
+            }
+        }
+
         // Replay: the jti must be first-seen within its acceptance window.
         var expiresAt = (result.IssuedAt ?? now)
             + DpopProofValidator.DefaultMaxAge + DpopProofValidator.DefaultClockSkew;
@@ -110,15 +140,38 @@ public sealed class DpopProofValidationHandler : IOpenIddictServerHandler<Proces
     /// flag. Mirrors <c>AccessTokenTypeHandler</c>'s per-client query. CIMD clients
     /// are non-persisted and never carry the flag, so a query miss ⇒ not required.
     /// </summary>
-    private async ValueTask<bool> ClientRequiresDpopAsync(string? clientId, CancellationToken ct)
+    private async ValueTask<(bool RequireDpop, bool RequireDpopNonce)> GetClientDpopPolicyAsync(
+        string? clientId, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(clientId)) return false;
+        if (string.IsNullOrEmpty(clientId)) return (false, false);
 
         var app = await _querySession.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(a => a.ClientId == clientId && !a.IsDeleted, ct);
-        if (app is null) return false;
+        if (app is null) return (false, false);
 
-        return ReadBool(app.Properties, OAuthApplicationPropertyKeys.RequireDpop);
+        return (
+            ReadBool(app.Properties, OAuthApplicationPropertyKeys.RequireDpop),
+            ReadBool(app.Properties, OAuthApplicationPropertyKeys.RequireDpopNonce));
+    }
+
+    /// <summary>Reads the <c>nonce</c> claim out of a proof's payload without
+    /// re-validating it (the proof's signature/claims were already checked).</summary>
+    private static string? ReadProofNonce(string proof)
+    {
+        var parts = proof.Split('.');
+        if (parts.Length != 3 || parts[1].Length == 0) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(Base64Url.DecodeFromChars(parts[1]));
+            return doc.RootElement.ValueKind == JsonValueKind.Object &&
+                   doc.RootElement.TryGetProperty("nonce", out var n) && n.ValueKind == JsonValueKind.String
+                ? n.GetString()
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // Local decode of a persisted boolean property. Marten may hand the value back

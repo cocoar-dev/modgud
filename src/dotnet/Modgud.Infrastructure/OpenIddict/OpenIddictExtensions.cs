@@ -380,6 +380,11 @@ public static class OpenIddictExtensions
         // uniqueness check is shared across every instance on the same realm DB.
         services.AddScoped<Dpop.IDpopReplayStore, Dpop.MartenDpopReplayStore>();
 
+        // DPoP server-nonce store (RFC 9449 §8-9) — same tenant-scoped Marten
+        // backing as the replay store, so an issued nonce is honoured across every
+        // instance on the realm DB.
+        services.AddScoped<Dpop.IDpopNonceStore, Dpop.MartenDpopNonceStore>();
+
         return services;
     }
 

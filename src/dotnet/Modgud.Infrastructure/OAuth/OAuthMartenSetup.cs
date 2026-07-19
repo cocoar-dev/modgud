@@ -81,6 +81,12 @@ public static class OAuthMartenSetup
             .Identity(x => x.Id)
             .Index(x => x.ExpiresAt);
 
+        // DPoP server-nonce ledger (RFC 9449 §8-9) — string id (the nonce value),
+        // ExpiresAt indexed for the opportunistic prune of lapsed nonces.
+        options.Schema.For<DpopNonceEntry>()
+            .Identity(x => x.Id)
+            .Index(x => x.ExpiresAt);
+
         // Stable event-type aliases — copied verbatim from the legacy backend so
         // re-using a legacy DB would also work, and so renames are safe forever.
         options.Events.MapEventType<OAuthApplicationCreated>("oauth_application_created");

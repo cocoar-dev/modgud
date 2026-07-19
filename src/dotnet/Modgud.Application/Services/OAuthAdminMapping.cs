@@ -159,7 +159,8 @@ internal static class OAuthAdminMapping
         // tests that don't care about DPoP) keep compiling; the two real callers
         // pass it explicitly. Always written (like the other flags) so it's
         // queryable regardless of when it was set.
-        bool requireDpop = false)
+        bool requireDpop = false,
+        bool requireDpopNonce = false)
         => new()
         {
             [OAuthApplicationPropertyKeys.Enabled] = JsonSerializer.SerializeToElement(enabled),
@@ -174,6 +175,7 @@ internal static class OAuthAdminMapping
             [OAuthApplicationPropertyKeys.ClientClaims] = JsonSerializer.SerializeToElement(claims),
             [OAuthApplicationPropertyKeys.Roles] = JsonSerializer.SerializeToElement(roles),
             [OAuthApplicationPropertyKeys.RequireDpop] = JsonSerializer.SerializeToElement(requireDpop),
+            [OAuthApplicationPropertyKeys.RequireDpopNonce] = JsonSerializer.SerializeToElement(requireDpopNonce),
         };
 
     internal static Dictionary<string, object?> BuildScopeProperties(
@@ -463,7 +465,8 @@ internal static class OAuthAdminMapping
             updateClaims: dto.UpdateAccessTokenClaimsOnRefresh ?? GetBoolProp(current, OAuthApplicationPropertyKeys.UpdateAccessTokenClaimsOnRefresh, false),
             claims: dto.Claims ?? GetClaimsProp(current),
             roles: dto.Roles ?? GetStringListProp(current, OAuthApplicationPropertyKeys.Roles),
-            requireDpop: dto.RequireDpop ?? GetBoolProp(current, OAuthApplicationPropertyKeys.RequireDpop, false));
+            requireDpop: dto.RequireDpop ?? GetBoolProp(current, OAuthApplicationPropertyKeys.RequireDpop, false),
+            requireDpopNonce: dto.RequireDpopNonce ?? GetBoolProp(current, OAuthApplicationPropertyKeys.RequireDpopNonce, false));
 
     // ───────────────────────────────────────────── State → DTO ────────────────
 
@@ -503,6 +506,7 @@ internal static class OAuthAdminMapping
             RequirePushedAuthorizationRequests =
                 s.Requirements.Contains(OAuthPermissions.Requirements.PushedAuthorizationRequests),
             RequireDpop = GetBoolProp(props, OAuthApplicationPropertyKeys.RequireDpop, false),
+            RequireDpopNonce = GetBoolProp(props, OAuthApplicationPropertyKeys.RequireDpopNonce, false),
             AllowedGrantTypes = ExtractGrantTypes(s.Permissions),
             AllowedCorsOrigins = GetStringListProp(props, OAuthApplicationPropertyKeys.AllowedCorsOrigins),
             IdentityTokenLifetime = GetIntSetting(OAuthApplicationSettingKeys.IdentityTokenLifetime),

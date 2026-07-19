@@ -194,6 +194,8 @@ interface FormState {
   RequirePushedAuthorizationRequests: boolean
   /** RFC 9449 (#118) — require a valid DPoP proof at the token endpoint. */
   RequireDpop: boolean
+  /** RFC 9449 §8-9 (#118) — require the client's DPoP proofs to carry a server nonce. */
+  RequireDpopNonce: boolean
   IdentityTokenLifetime: string
   AccessTokenLifetime: string
   AuthorizationCodeLifetime: string
@@ -241,6 +243,7 @@ function emptyForm(): FormState {
     EnableLocalLogin: true,
     RequirePushedAuthorizationRequests: false,
     RequireDpop: false,
+    RequireDpopNonce: false,
     IdentityTokenLifetime: '',
     AccessTokenLifetime: '',
     AuthorizationCodeLifetime: '',
@@ -274,6 +277,7 @@ function fromDto(dto: OAuthClientDto): FormState {
     EnableLocalLogin: dto.EnableLocalLogin,
     RequirePushedAuthorizationRequests: dto.RequirePushedAuthorizationRequests,
     RequireDpop: dto.RequireDpop,
+    RequireDpopNonce: dto.RequireDpopNonce,
     IdentityTokenLifetime: dto.IdentityTokenLifetime?.toString() ?? '',
     AccessTokenLifetime: dto.AccessTokenLifetime?.toString() ?? '',
     AuthorizationCodeLifetime: dto.AuthorizationCodeLifetime?.toString() ?? '',
@@ -402,6 +406,7 @@ function buildCreateDto(): CreateOAuthClientDto {
     RequireConsent: form.value.RequireConsent,
     RequirePushedAuthorizationRequests: form.value.RequirePushedAuthorizationRequests,
     RequireDpop: form.value.RequireDpop,
+    RequireDpopNonce: form.value.RequireDpopNonce,
     RedirectUris: [...form.value.RedirectUris],
     PostLogoutRedirectUris: [...form.value.PostLogoutRedirectUris],
     AllowedGrantTypes: [...form.value.AllowedGrantTypes],
@@ -433,6 +438,7 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     EnableLocalLogin: form.value.EnableLocalLogin,
     RequirePushedAuthorizationRequests: form.value.RequirePushedAuthorizationRequests,
     RequireDpop: form.value.RequireDpop,
+    RequireDpopNonce: form.value.RequireDpopNonce,
     IdentityTokenLifetime: parseInt(form.value.IdentityTokenLifetime),
     AccessTokenLifetime: parseInt(form.value.AccessTokenLifetime),
     AuthorizationCodeLifetime: parseInt(form.value.AuthorizationCodeLifetime),
@@ -547,6 +553,12 @@ async function copySecret() {
               <CoarCheckbox v-model="form.RequireDpop" :label="t('admin.oauthClients.requireDpop', {}, 'Require DPoP')" />
               <p class="field-hint">
                 {{ t('admin.oauthClients.requireDpopHint', {}, 'RFC 9449 — reject this client\'s token requests that carry no DPoP proof; the access token is bound to the proof key (cnf.jkt).') }}
+              </p>
+            </div>
+            <div class="par-field">
+              <CoarCheckbox v-model="form.RequireDpopNonce" :label="t('admin.oauthClients.requireDpopNonce', {}, 'Require DPoP nonce')" />
+              <p class="field-hint">
+                {{ t('admin.oauthClients.requireDpopNonceHint', {}, 'RFC 9449 — require a server-issued nonce in this client\'s DPoP proofs; the first proof is answered with use_dpop_nonce + a DPoP-Nonce header and the client retries.') }}
               </p>
             </div>
             <CoarCheckbox v-if="!isCreate" v-model="form.AllowRememberConsent" :label="t('admin.oauthClients.rememberConsent', {}, 'Remember consent')" />
