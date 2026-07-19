@@ -65,6 +65,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Modgud.Tests.Unit" />
+    <!-- Modgud.Api.Tests boots a minimal resource-server host over this library
+         and points ModgudTokenIntrospection.SharedClient at the in-memory IdP. -->
+    <InternalsVisibleTo Include="Modgud.Api.Tests" />
   </ItemGroup>
 
 </Project>

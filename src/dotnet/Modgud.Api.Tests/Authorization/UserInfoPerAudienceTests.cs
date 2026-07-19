@@ -15,11 +15,17 @@ using Modgud.Domain.OAuth.Common;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Permissions.Abstractions;
+using Modgud.Client.AspNetCore;
 using Marten;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
 
@@ -1046,5 +1052,137 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             memberIds: [userId],
             roleIds: [role.Id],
             boundTo: groupBoundTo.ToList());
+    }
+
+    // ── #139: end-to-end reference-token resource server (client library) ───────
+
+    [Fact]
+    public async Task ReferenceToken_ResourceServer_Gates_On_Introspected_Permission()
+    {
+        // #139 — the runnable reference-token sample's path, proven end-to-end
+        // through the client library: an opaque access token is validated by
+        // `AddModgudReferenceTokenClient` via /connect/introspect, the per-audience
+        // resource_access block is projected onto the principal, and a
+        // `RequiresModgudPermission` gate does exact-match. The IdP side (which
+        // callers get resource_access) is pinned separately by
+        // Introspection_Carries_ResourceAccess_Only_For_Audience_Or_Presenter_Client;
+        // this pins the resource-server half.
+        var app = await CreateAppAsync("rs-refapp", "RS Reference App",
+            permissions: [("policy", "read"), ("policy", "admin")]);
+        const string audience = "https://rs-reftoken.example.com";
+        await CreateOAuthApiAsync(audience, app.Id);
+        const string scopeName = "rs-reftoken-api";
+        await CreateScopeAsync(scopeName, [audience], app.Id);
+
+        // The user-facing client that obtains an opaque REFERENCE token.
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-refrs-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId, clientSecret, redirectUri, [app.Id],
+            ["openid", "roles", "permissions", scopeName], AccessTokenType.Reference);
+
+        // The resource server's introspection client — client_id == its audience
+        // (the OAuthApi name, already in the token's aud via RFC 8707), the setup
+        // the docs describe.
+        var introspectionSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        await CreateOAuthClientAsync(
+            audience, introspectionSecret, "http://localhost/rs-callback", [app.Id], ["openid"]);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Ref", lastname: "RS", acronym: "rr", email: "rr@test.com", password: "TestPass1234");
+        // Grant policy:read only — policy:admin stays absent so the gate can be seen to deny.
+        await GrantAsync(user.Id, roleAppSlug: "rs-refapp", resourceType: "policy",
+            actions: ["read"], groupBoundTo: ["rs-refapp"]);
+
+        // The client is configured for opaque reference tokens; the resource server
+        // below validates whatever it receives via /connect/introspect regardless of
+        // the token's on-the-wire format, which is exactly the reference-mode path.
+        var referenceToken = await DriveAuthCodeFlowAsync(
+            username: "rr", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri, scope: $"openid roles permissions {scopeName}", resources: [audience]);
+
+        // Point the library's introspection HttpClient at the in-memory IdP (its
+        // Authority is http://localhost, so the introspection Host resolves to the
+        // same realm the fixtures were created in).
+        ModgudTokenIntrospection.SharedClient = Factory.CreateClient();
+
+        using var rsHost = await BuildReferenceTokenResourceServerAsync(audience, introspectionSecret);
+        var rs = rsHost.GetTestClient();
+
+        // Granted permission → 200.
+        Assert.Equal(HttpStatusCode.OK, (await SendWithTokenAsync(rs, "/policy/read", referenceToken)).StatusCode);
+
+        // The principal carries the flattened permission.
+        var meResp = await SendWithTokenAsync(rs, "/me", referenceToken);
+        Assert.Equal(HttpStatusCode.OK, meResp.StatusCode);
+        var meBody = await meResp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        using (var meDoc = JsonDocument.Parse(meBody))
+            Assert.Contains(meDoc.RootElement.GetProperty("permissions").EnumerateArray().Select(e => e.GetString()),
+                p => p == "policy:read");
+
+        // Missing permission → 403 (authenticated, but not granted policy:admin).
+        Assert.Equal(HttpStatusCode.Forbidden, (await SendWithTokenAsync(rs, "/policy/admin", referenceToken)).StatusCode);
+
+        // No credentials → 401.
+        Assert.Equal(HttpStatusCode.Unauthorized, (await rs.GetAsync("/policy/read", TestContext.Current.CancellationToken)).StatusCode);
+    }
+
+    private static async Task<HttpResponseMessage> SendWithTokenAsync(HttpClient client, string path, string token)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, path);
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        return await client.SendAsync(req, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Boots a minimal in-memory resource-server host over the published client
+    /// library exactly as the reference-token sample (Modgud.TestApps.ResourceApi
+    /// with TESTAPPS:TOKENMODE=reference) does — <c>AddModgudReferenceTokenClient</c>
+    /// plus <c>RequiresModgudPermission</c> gates — so the opaque-token path is
+    /// exercised end-to-end against the in-memory IdP.
+    /// </summary>
+    private static async Task<IHost> BuildReferenceTokenResourceServerAsync(string audience, string introspectionSecret)
+    {
+        var host = new HostBuilder()
+            .ConfigureWebHost(web => web
+                .UseTestServer()
+                .ConfigureServices(services =>
+                {
+                    services.AddRouting();
+                    services
+                        .AddAuthentication(ModgudReferenceTokenDefaults.AuthenticationScheme)
+                        .AddModgudReferenceTokenClient(o =>
+                        {
+                            o.Authority = "http://localhost"; // introspection Host = the test realm
+                            o.Audience = audience;            // == the introspection client_id
+                            o.IntrospectionClientSecret = introspectionSecret;
+                        });
+                    services.AddAuthorization();
+                })
+                .Configure(builder =>
+                {
+                    builder.UseRouting();
+                    builder.UseAuthentication();
+                    builder.UseAuthorization();
+                    builder.UseEndpoints(endpoints =>
+                    {
+                        endpoints.MapGet("/me", (ClaimsPrincipal user) => Results.Ok(new
+                        {
+                            permissions = user.FindAll(ModgudClaimsTransformation.PermissionClaimType)
+                                .Select(c => c.Value).ToArray(),
+                        })).RequireAuthorization();
+
+                        endpoints.MapGet("/policy/read", () => Results.Ok())
+                            .RequireAuthorization().RequiresModgudPermission("policy:read");
+
+                        endpoints.MapGet("/policy/admin", () => Results.Ok())
+                            .RequireAuthorization().RequiresModgudPermission("policy:admin");
+                    });
+                }))
+            .Build();
+
+        await host.StartAsync();
+        return host;
     }
 }
