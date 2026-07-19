@@ -47,26 +47,51 @@ var builder = WebApplication.CreateBuilder(args);
 var authority = builder.Configuration["TESTAPPS:AUTHORITY"] ?? "http://localhost:9099";
 var audience = builder.Configuration["TESTAPPS:AUDIENCE"] ?? "demo-api";
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.Authority = authority;
-        options.Audience = audience;
-        options.RequireHttpsMetadata = false; // dev only
-        options.MapInboundClaims = false;
-        options.TokenValidationParameters.NameClaimType = "name";
-        options.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
-    });
+// TESTAPPS:TOKENMODE selects how this sample validates access tokens:
+//   "jwt"        (default) — self-contained JWT validated locally against the
+//                realm's JWKS (AddJwtBearer + AddModgudClient).
+//   "reference"  — Modgud's DEFAULT opaque token, validated per-request via
+//                /connect/introspect (AddModgudReferenceTokenClient). The RS
+//                introspects with a confidential client whose client_id equals
+//                its audience; supply its secret via TESTAPPS:INTROSPECTIONSECRET.
+// Everything downstream — the resource_access projection, RequiresModgudPermission,
+// role gates — is identical either way; only the registration differs.
+var tokenMode = (builder.Configuration["TESTAPPS:TOKENMODE"] ?? "jwt").Trim().ToLowerInvariant();
 
-// Lib hooks JwtBearer.OnTokenValidated to fetch /connect/userinfo and
-// merge resource_access onto the principal, then a ClaimsTransformation
-// flattens the matching audience block to ClaimTypes.Role / "permission"
-// / "group" claims. Plus the RequiresModgudPermission endpoint filter.
-builder.Services.AddModgudClient(o =>
+if (tokenMode == "reference")
 {
-    o.Authority = authority;
-    o.Audience  = audience;  // must match JwtBearerOptions.Audience above
-});
+    builder.Services
+        .AddAuthentication(ModgudReferenceTokenDefaults.AuthenticationScheme)
+        .AddModgudReferenceTokenClient(o =>
+        {
+            o.Authority = authority;
+            o.Audience  = audience;   // == the introspection client_id (an OAuthApi name)
+            o.IntrospectionClientSecret = builder.Configuration["TESTAPPS:INTROSPECTIONSECRET"];
+        });
+}
+else
+{
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
+        {
+            options.Authority = authority;
+            options.Audience = audience;
+            options.RequireHttpsMetadata = false; // dev only
+            options.MapInboundClaims = false;
+            options.TokenValidationParameters.NameClaimType = "name";
+            options.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
+        });
+
+    // Lib hooks JwtBearer.OnTokenValidated to fetch /connect/userinfo and
+    // merge resource_access onto the principal, then a ClaimsTransformation
+    // flattens the matching audience block to ClaimTypes.Role / "permission"
+    // / "group" claims. Plus the RequiresModgudPermission endpoint filter.
+    builder.Services.AddModgudClient(o =>
+    {
+        o.Authority = authority;
+        o.Audience  = audience;  // must match JwtBearerOptions.Audience above
+    });
+}
 
 builder.Services.AddAuthorization(options =>
 {

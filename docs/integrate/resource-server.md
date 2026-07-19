@@ -8,7 +8,7 @@ This guide walks through wiring an ASP.NET Core resource server to Modgud so it 
 
 The reference scenario is a fictional `acme` app with a `todo` resource — replace the slugs with yours throughout.
 
-A runnable end-to-end sample lives in the Modgud source tree at `src/dotnet/TestApps/Modgud.TestApps.ResourceApi/Program.cs` (the protected API) and `src/dotnet/TestApps/Modgud.TestApps.Bff/Program.cs` (a cookie-based BFF that obtains and forwards the token). The code below mirrors those samples; when in doubt, read them — they are exercised by the integration test rig.
+A runnable end-to-end sample lives in the Modgud source tree at `src/dotnet/TestApps/Modgud.TestApps.ResourceApi/Program.cs` (the protected API) and `src/dotnet/TestApps/Modgud.TestApps.Bff/Program.cs` (a cookie-based BFF that obtains and forwards the token). The ResourceApi sample validates JWTs by default and switches to reference-token introspection with `TESTAPPS:TOKENMODE=reference` (+ `TESTAPPS:INTROSPECTIONSECRET`). The code below mirrors those samples; when in doubt, read them. Both library paths they use — JWT-bearer and reference-token introspection — are covered end-to-end by the integration-test rig (opaque/JWT token in → validation → `resource_access` → `RequiresModgudPermission` gate).
 
 ## Prerequisites
 
@@ -221,7 +221,7 @@ A confidential client whose `client_id` is *not* one of the token's audiences ge
 
 ## Reference
 
-- Working sample: `src/dotnet/TestApps/Modgud.TestApps.ResourceApi/Program.cs` (+ BFF at `src/dotnet/TestApps/Modgud.TestApps.Bff/Program.cs`)
+- Working sample: `src/dotnet/TestApps/Modgud.TestApps.ResourceApi/Program.cs` (+ BFF at `src/dotnet/TestApps/Modgud.TestApps.Bff/Program.cs`). Runs in JWT mode by default; set `TESTAPPS:TOKENMODE=reference` (+ `TESTAPPS:INTROSPECTIONSECRET`) for the reference-token introspection path.
 - Admin walkthrough: [SaaS App Integration Walkthrough](./saas-walkthrough)
 - Concept overview: [Apps and resource_access](../concepts/apps-and-resource-access.md)
 - Permissions reference: [Permissions & gating](../concepts/permissions.md)
