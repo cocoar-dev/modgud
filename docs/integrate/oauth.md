@@ -89,22 +89,35 @@ can't accept them cross-realm.
 ### AccessTokenTypeHandler
 
 OpenIddict has `UseReferenceAccessTokens()` globally. We want to choose
-between reference and JWT **per client**:
+between reference and JWT **per client**. The switch is a per-request
+`GenerateTokenContext` handler that, for JWT clients, flips the access
+token's per-request `IsReferenceToken` / `PersistTokenPayload` off:
 
 ```csharp
-public async ValueTask HandleAsync(ProcessSignInContext context)
+public async ValueTask HandleAsync(GenerateTokenContext context)
 {
+    // Access tokens only — refresh tokens keep the global setting.
+    if (context.TokenType != OpenIddictConstants.TokenTypeIdentifiers.AccessToken) return;
+
     var app = await _querySession.Query<OAuthApplicationState>()
-        .FirstOrDefaultAsync(a => a.ClientId == clientId && !a.IsDeleted);
+        .FirstOrDefaultAsync(a => a.ClientId == context.ClientId && !a.IsDeleted);
 
     if (app?.AccessTokenType == AccessTokenType.Jwt)
     {
-        // Disable reference token storage for this request.
-        // OpenIddict generates a self-contained JWT instead.
-        context.Options.UseReferenceAccessTokens = false;
+        // Emit a self-contained JWT for this request instead of an
+        // opaque, server-stored reference identifier.
+        context.IsReferenceToken = false;
+        context.PersistTokenPayload = false;
     }
 }
 ```
+
+It hooks `GenerateTokenContext` (a per-request context) and must **never**
+mutate `context.Options`: that object is the process-wide
+`OpenIddictServerOptions` singleton (`IOptionsMonitor.CurrentValue`), so
+writing `Options.UseReferenceAccessTokens` there leaks across requests — one
+JWT client's sign-in would flip the global default off for every later
+reference client — and races concurrent requests.
 
 Tokens default to reference (= server-side stored, opaque, revocable).
 Per client this can be switched to JWT when the round-trip profile is
@@ -159,8 +172,8 @@ For authorization-code exchange:
 1. POST /connect/token with grant_type=authorization_code + code + verifier
 2. OpenIddict validates the code (exists, not expired, not used)
 3. PKCE challenge is verified
-4. ProcessSignIn fires → AccessTokenTypeHandler decides
-   reference vs. JWT
+4. Token generation fires → AccessTokenTypeHandler decides
+   reference vs. JWT (per access token)
 5. Tokens are issued:
    - Reference: OpenIddictTokenDocument(s) created, reference IDs returned
    - JWT: signed JWTs returned, no DB entry

@@ -1128,6 +1128,65 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.Unauthorized, (await rs.GetAsync("/policy/read", TestContext.Current.CancellationToken)).StatusCode);
     }
 
+    [Fact]
+    public async Task ReferenceClient_TokenFormat_IsNotLeaked_By_A_Prior_JwtClient()
+    {
+        // Regression for a cross-request state-leak in AccessTokenTypeHandler. It
+        // used to switch a JWT client onto self-contained tokens by mutating the
+        // SHARED OpenIddictServerOptions singleton
+        // (context.Options.UseReferenceAccessTokens = false) and never restoring
+        // it. Because IOptionsMonitor.CurrentValue hands every request the same
+        // options instance, the first JWT-client sign-in flipped the global
+        // reference default OFF process-wide — so every Reference-configured
+        // client that authenticated afterwards silently received a self-contained
+        // JWT instead of an opaque reference token, losing instant revocation.
+        //
+        // This drives a JWT client FIRST (to flip the flag under the old code)
+        // then a Reference client in the SAME process, and asserts the reference
+        // client's token is still opaque.
+        var app = await CreateAppAsync("leak-app", "Leak App",
+            permissions: [("policy", "read"), ("policy", "write")]);
+        const string audience = "https://leak-api.example.com";
+        await CreateOAuthApiAsync(audience, app.Id);
+        const string scopeName = "leak-api";
+        await CreateScopeAsync(scopeName, [audience], app.Id);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Leak", lastname: "Guard", acronym: "lg",
+            email: "lg@test.com", password: "TestPass1234");
+        await GrantAsync(user.Id, roleAppSlug: "leak-app", resourceType: "policy",
+            actions: ["write"], groupBoundTo: ["leak-app"]);
+
+        // 1) JWT client authenticates first — under the bug this flips the shared
+        //    singleton's UseReferenceAccessTokens to false for the whole process.
+        var jwtSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var jwtClientId = "test-jwt-leaker-" + Guid.NewGuid().ToString("N");
+        await CreateOAuthClientAsync(
+            jwtClientId, jwtSecret, "http://localhost/jwt-callback", [app.Id],
+            ["openid", "roles", "permissions", scopeName], AccessTokenType.Jwt);
+        var jwtToken = await DriveAuthCodeFlowAsync(
+            username: "lg", password: "TestPass1234", clientId: jwtClientId, clientSecret: jwtSecret,
+            redirectUri: "http://localhost/jwt-callback",
+            scope: $"openid roles permissions {scopeName}", resources: [audience]);
+        Assert.Contains('.', jwtToken); // sanity: the JWT client really got a JWT.
+
+        // 2) Reference client authenticates AFTER — its token MUST stay opaque.
+        var refSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var refClientId = "test-ref-victim-" + Guid.NewGuid().ToString("N");
+        await CreateOAuthClientAsync(
+            refClientId, refSecret, "http://localhost/ref-callback", [app.Id],
+            ["openid", "roles", "permissions", scopeName], AccessTokenType.Reference);
+        var refToken = await DriveAuthCodeFlowAsync(
+            username: "lg", password: "TestPass1234", clientId: refClientId, clientSecret: refSecret,
+            redirectUri: "http://localhost/ref-callback",
+            scope: $"openid roles permissions {scopeName}", resources: [audience]);
+
+        // An OpenIddict reference access token is Base64Url(random 256 bytes) —
+        // opaque, no dots. A dot means the client was handed a self-contained JWT
+        // (the leak); the Base64Url alphabet (A–Z a–z 0–9 - _) never contains one.
+        Assert.DoesNotContain('.', refToken);
+    }
+
     private static async Task<HttpResponseMessage> SendWithTokenAsync(HttpClient client, string path, string token)
     {
         using var req = new HttpRequestMessage(HttpMethod.Get, path);
