@@ -360,6 +360,7 @@ public static class OpenIddictExtensions
                 options.AddEventHandler(Dpop.DpopProofValidationHandler.Descriptor);
                 options.AddEventHandler(Dpop.DpopConfirmationClaimHandler.Descriptor);
                 options.AddEventHandler(Dpop.DpopTokenTypeHandler.Descriptor);
+                options.AddEventHandler(Dpop.DpopDiscoveryMetadataHandler.Descriptor);
             })
             .AddValidation(options =>
             {

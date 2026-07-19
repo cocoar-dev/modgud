@@ -31,6 +31,26 @@ public class DpopIssuanceTests : IntegrationTestBase
     public DpopIssuanceTests(SharedPostgresFixture fixture) : base(fixture) { }
 
     [Fact]
+    public async Task Discovery_advertises_the_dpop_signing_algorithms()
+    {
+        var client = Factory.CreateClient();
+        var resp = await client.GetAsync("/.well-known/openid-configuration",
+            TestContext.Current.CancellationToken);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        using var doc = JsonDocument.Parse(body);
+
+        Assert.True(
+            doc.RootElement.TryGetProperty("dpop_signing_alg_values_supported", out var algs),
+            $"discovery is missing dpop_signing_alg_values_supported.\n{body}");
+        Assert.Equal(JsonValueKind.Array, algs.ValueKind);
+        var values = algs.EnumerateArray().Select(e => e.GetString()).ToList();
+        // The advertised set must include the common EC + RSA proof algorithms.
+        Assert.Contains("ES256", values);
+        Assert.Contains("RS256", values);
+        Assert.Contains("PS256", values);
+    }
+
+    [Fact]
     public async Task A_valid_proof_binds_the_access_token_and_marks_it_dpop()
     {
         var (clientId, secret, redirectUri) = await NewClientAsync("dpop-ok");
