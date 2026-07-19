@@ -42,6 +42,13 @@ public record OAuthClientDto
     public bool RequirePushedAuthorizationRequests { get; init; }
 
     /// <summary>
+    /// RFC 9449 (#118) — when <c>true</c>, this client MUST present a valid DPoP
+    /// proof at the token endpoint; a tokenless request is rejected. Off by
+    /// default; DPoP stays offered (bound on request) to every client either way.
+    /// </summary>
+    public bool RequireDpop { get; init; }
+
+    /// <summary>
     /// ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys. Null/blank
     /// ⇒ realm-scoped (the realm's PrimaryDomain). Changing it invalidates all passkeys
     /// already enrolled for this client.
@@ -135,6 +142,10 @@ public record CreateOAuthClientDto
     /// default.</summary>
     public bool RequirePushedAuthorizationRequests { get; init; }
 
+    /// <summary>RFC 9449 (#118) — when <c>true</c>, this client must present a
+    /// valid DPoP proof at the token endpoint. Off by default.</summary>
+    public bool RequireDpop { get; init; }
+
     /// <summary>ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys.
     /// Null/blank ⇒ realm-scoped (the realm's PrimaryDomain).</summary>
     public string? WebAuthnRpId { get; init; }
@@ -187,6 +198,10 @@ public record UpdateOAuthClientDto
     /// <summary>RFC 9126 PAR requirement patch. <c>null</c> = field omitted (no
     /// change); <c>true</c>/<c>false</c> sets it.</summary>
     public bool? RequirePushedAuthorizationRequests { get; init; }
+
+    /// <summary>RFC 9449 (#118) DPoP requirement patch. <c>null</c> = field omitted
+    /// (no change); <c>true</c>/<c>false</c> sets it.</summary>
+    public bool? RequireDpop { get; init; }
 
     /// <summary>
     /// ADR-0009 per-client WebAuthn RP ID patch. <c>null</c> = field omitted (no

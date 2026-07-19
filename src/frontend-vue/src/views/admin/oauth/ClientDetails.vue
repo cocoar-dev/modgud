@@ -192,6 +192,8 @@ interface FormState {
   EnableLocalLogin: boolean
   /** RFC 9126 — reject this client's direct (non-PAR) /connect/authorize requests. */
   RequirePushedAuthorizationRequests: boolean
+  /** RFC 9449 (#118) — require a valid DPoP proof at the token endpoint. */
+  RequireDpop: boolean
   IdentityTokenLifetime: string
   AccessTokenLifetime: string
   AuthorizationCodeLifetime: string
@@ -238,6 +240,7 @@ function emptyForm(): FormState {
     AllowAccessTokensViaBrowser: false,
     EnableLocalLogin: true,
     RequirePushedAuthorizationRequests: false,
+    RequireDpop: false,
     IdentityTokenLifetime: '',
     AccessTokenLifetime: '',
     AuthorizationCodeLifetime: '',
@@ -270,6 +273,7 @@ function fromDto(dto: OAuthClientDto): FormState {
     AllowAccessTokensViaBrowser: dto.AllowAccessTokensViaBrowser,
     EnableLocalLogin: dto.EnableLocalLogin,
     RequirePushedAuthorizationRequests: dto.RequirePushedAuthorizationRequests,
+    RequireDpop: dto.RequireDpop,
     IdentityTokenLifetime: dto.IdentityTokenLifetime?.toString() ?? '',
     AccessTokenLifetime: dto.AccessTokenLifetime?.toString() ?? '',
     AuthorizationCodeLifetime: dto.AuthorizationCodeLifetime?.toString() ?? '',
@@ -397,6 +401,7 @@ function buildCreateDto(): CreateOAuthClientDto {
     RequireClientSecret: form.value.RequireClientSecret,
     RequireConsent: form.value.RequireConsent,
     RequirePushedAuthorizationRequests: form.value.RequirePushedAuthorizationRequests,
+    RequireDpop: form.value.RequireDpop,
     RedirectUris: [...form.value.RedirectUris],
     PostLogoutRedirectUris: [...form.value.PostLogoutRedirectUris],
     AllowedGrantTypes: [...form.value.AllowedGrantTypes],
@@ -427,6 +432,7 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     AllowAccessTokensViaBrowser: form.value.AllowAccessTokensViaBrowser,
     EnableLocalLogin: form.value.EnableLocalLogin,
     RequirePushedAuthorizationRequests: form.value.RequirePushedAuthorizationRequests,
+    RequireDpop: form.value.RequireDpop,
     IdentityTokenLifetime: parseInt(form.value.IdentityTokenLifetime),
     AccessTokenLifetime: parseInt(form.value.AccessTokenLifetime),
     AuthorizationCodeLifetime: parseInt(form.value.AuthorizationCodeLifetime),
@@ -535,6 +541,12 @@ async function copySecret() {
               <CoarCheckbox v-model="form.RequirePushedAuthorizationRequests" :label="t('admin.oauthClients.requirePar', {}, 'Require Pushed Authorization Requests (PAR)')" />
               <p class="field-hint">
                 {{ t('admin.oauthClients.requireParHint', {}, 'RFC 9126 — reject this client\'s direct /connect/authorize requests; parameters must be pushed through /connect/par first.') }}
+              </p>
+            </div>
+            <div class="par-field">
+              <CoarCheckbox v-model="form.RequireDpop" :label="t('admin.oauthClients.requireDpop', {}, 'Require DPoP')" />
+              <p class="field-hint">
+                {{ t('admin.oauthClients.requireDpopHint', {}, 'RFC 9449 — reject this client\'s token requests that carry no DPoP proof; the access token is bound to the proof key (cnf.jkt).') }}
               </p>
             </div>
             <CoarCheckbox v-if="!isCreate" v-model="form.AllowRememberConsent" :label="t('admin.oauthClients.rememberConsent', {}, 'Remember consent')" />

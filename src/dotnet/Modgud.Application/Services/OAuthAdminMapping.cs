@@ -154,7 +154,12 @@ internal static class OAuthAdminMapping
         bool enabled, bool allowBrowser, bool requireSecret, bool enableLocal,
         bool requireConsent, bool allowRemember, IReadOnlyList<string> corsOrigins,
         bool alwaysSend, bool updateClaims,
-        IReadOnlyList<OAuthClientClaimDto> claims, IReadOnlyList<string> roles)
+        IReadOnlyList<OAuthClientClaimDto> claims, IReadOnlyList<string> roles,
+        // RFC 9449 (#118) — trailing optional so existing call sites (and the pin
+        // tests that don't care about DPoP) keep compiling; the two real callers
+        // pass it explicitly. Always written (like the other flags) so it's
+        // queryable regardless of when it was set.
+        bool requireDpop = false)
         => new()
         {
             [OAuthApplicationPropertyKeys.Enabled] = JsonSerializer.SerializeToElement(enabled),
@@ -168,6 +173,7 @@ internal static class OAuthAdminMapping
             [OAuthApplicationPropertyKeys.UpdateAccessTokenClaimsOnRefresh] = JsonSerializer.SerializeToElement(updateClaims),
             [OAuthApplicationPropertyKeys.ClientClaims] = JsonSerializer.SerializeToElement(claims),
             [OAuthApplicationPropertyKeys.Roles] = JsonSerializer.SerializeToElement(roles),
+            [OAuthApplicationPropertyKeys.RequireDpop] = JsonSerializer.SerializeToElement(requireDpop),
         };
 
     internal static Dictionary<string, object?> BuildScopeProperties(
@@ -456,7 +462,8 @@ internal static class OAuthAdminMapping
             alwaysSend: dto.AlwaysSendClientClaims ?? GetBoolProp(current, OAuthApplicationPropertyKeys.AlwaysSendClientClaims, false),
             updateClaims: dto.UpdateAccessTokenClaimsOnRefresh ?? GetBoolProp(current, OAuthApplicationPropertyKeys.UpdateAccessTokenClaimsOnRefresh, false),
             claims: dto.Claims ?? GetClaimsProp(current),
-            roles: dto.Roles ?? GetStringListProp(current, OAuthApplicationPropertyKeys.Roles));
+            roles: dto.Roles ?? GetStringListProp(current, OAuthApplicationPropertyKeys.Roles),
+            requireDpop: dto.RequireDpop ?? GetBoolProp(current, OAuthApplicationPropertyKeys.RequireDpop, false));
 
     // ───────────────────────────────────────────── State → DTO ────────────────
 
@@ -495,6 +502,7 @@ internal static class OAuthAdminMapping
             AllowRememberConsent = GetBoolProp(props, OAuthApplicationPropertyKeys.AllowRememberConsent, true),
             RequirePushedAuthorizationRequests =
                 s.Requirements.Contains(OAuthPermissions.Requirements.PushedAuthorizationRequests),
+            RequireDpop = GetBoolProp(props, OAuthApplicationPropertyKeys.RequireDpop, false),
             AllowedGrantTypes = ExtractGrantTypes(s.Permissions),
             AllowedCorsOrigins = GetStringListProp(props, OAuthApplicationPropertyKeys.AllowedCorsOrigins),
             IdentityTokenLifetime = GetIntSetting(OAuthApplicationSettingKeys.IdentityTokenLifetime),

@@ -129,6 +129,42 @@ public class DpopIssuanceTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task A_client_that_requires_dpop_rejects_a_tokenless_request()
+    {
+        // RequireDpop flips the offered-not-required default for this client: a
+        // token exchange with no DPoP header is rejected instead of downgraded to
+        // an ordinary bearer token (RFC 9449 §5, #118).
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-req", requireDpop: true);
+        var (user, pass) = await NewUserAsync("dq", "dq@test.com");
+
+        var (tokenResp, tokenJson) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass, dpopProof: null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, tokenResp.StatusCode);
+        Assert.Equal("invalid_dpop_proof", tokenJson.RootElement.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task A_client_that_requires_dpop_still_accepts_a_valid_proof()
+    {
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-req-ok", requireDpop: true);
+        var (user, pass) = await NewUserAsync("dw", "dw@test.com");
+
+        using var proofKey = new DpopProofBuilder();
+        var proof = proofKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow);
+
+        var (tokenResp, tokenJson) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass, proof);
+
+        Assert.True(tokenResp.IsSuccessStatusCode, $"/connect/token failed: {tokenJson.RootElement}");
+        Assert.Equal("DPoP", tokenJson.RootElement.GetProperty("token_type").GetString());
+
+        var payload = DecodeJwtPayload(tokenJson.RootElement.GetProperty("access_token").GetString()!);
+        Assert.True(payload.TryGetProperty("cnf", out var cnf), $"access token has no cnf claim: {payload}");
+        Assert.Equal(proofKey.Jkt, cnf.GetProperty("jkt").GetString());
+    }
+
+    [Fact]
     public async Task Introspection_of_a_dpop_bound_reference_token_echoes_cnf_jkt()
     {
         // The resource-server client library reads cnf.jkt out of the
@@ -227,7 +263,7 @@ public class DpopIssuanceTests : IntegrationTestBase
     // ── setup helpers ───────────────────────────────────────────────────────
 
     private async Task<(string clientId, string secret, string redirectUri)> NewClientAsync(
-        string prefix, AccessTokenType tokenType = AccessTokenType.Jwt)
+        string prefix, AccessTokenType tokenType = AccessTokenType.Jwt, bool requireDpop = false)
     {
         var clientId = $"test-{prefix}-" + Guid.NewGuid().ToString("N");
         var secret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
@@ -250,6 +286,8 @@ public class DpopIssuanceTests : IntegrationTestBase
             // JWT clients let the test decode the access token; Reference clients
             // exercise the introspection path.
             AccessTokenType = tokenType,
+            // #118 — per-client "DPoP required" enforcement.
+            RequireDpop = requireDpop,
         }, TestContext.Current.CancellationToken);
 
         if (result.IsError)

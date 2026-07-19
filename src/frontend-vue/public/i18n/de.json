@@ -1001,6 +1001,8 @@
       "requireConsent": "Zustimmung erforderlich",
       "requirePar": "Pushed Authorization Requests (PAR) erforderlich",
       "requireParHint": "RFC 9126 — direkte /connect/authorize-Anfragen dieses Clients werden abgelehnt; die Parameter müssen zuerst über /connect/par gepusht werden.",
+      "requireDpop": "DPoP erforderlich",
+      "requireDpopHint": "RFC 9449 — Token-Anfragen dieses Clients ohne DPoP-Proof werden abgelehnt; das Access-Token wird an den Proof-Schlüssel gebunden (cnf.jkt).",
       "rememberConsent": "Zustimmung speichern",
       "tokensInBrowser": "Token im Browser erlaubt",
       "localLogin": "Lokaler Login erlaubt",
