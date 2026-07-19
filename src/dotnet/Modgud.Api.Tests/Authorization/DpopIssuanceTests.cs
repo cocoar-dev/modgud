@@ -108,6 +108,51 @@ public class DpopIssuanceTests : IntegrationTestBase
         Assert.Equal("invalid_dpop_proof", secondJson.RootElement.GetProperty("error").GetString());
     }
 
+    [Fact]
+    public async Task Introspection_of_a_dpop_bound_reference_token_echoes_cnf_jkt()
+    {
+        // The resource-server client library reads cnf.jkt out of the
+        // introspection response to enforce the DPoP binding on opaque reference
+        // tokens — this pins that the AS actually surfaces it.
+        var (clientId, secret, redirectUri) = await NewClientAsync("dpop-ref", AccessTokenType.Reference);
+        var (user, pass) = await NewUserAsync("df", "df@test.com");
+
+        using var proofKey = new DpopProofBuilder();
+        var proof = proofKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow);
+
+        var (tokenResp, tokenJson) = await RunCodeFlowAsync(
+            clientId, secret, redirectUri, user, pass, proof);
+        Assert.True(tokenResp.IsSuccessStatusCode, $"/connect/token failed: {tokenJson.RootElement}");
+        Assert.Equal("DPoP", tokenJson.RootElement.GetProperty("token_type").GetString());
+        var accessToken = tokenJson.RootElement.GetProperty("access_token").GetString()!;
+
+        // Introspect with the token's own presenter client (authorised caller).
+        var introBody = await IntrospectAsync(clientId, secret, accessToken);
+        using var introJson = JsonDocument.Parse(introBody);
+        Assert.True(introJson.RootElement.GetProperty("active").GetBoolean(),
+            $"reference token should introspect as active: {introBody}");
+        Assert.True(introJson.RootElement.TryGetProperty("cnf", out var cnf),
+            $"introspection response is missing cnf: {introBody}");
+        Assert.Equal(proofKey.Jkt, cnf.GetProperty("jkt").GetString());
+    }
+
+    private async Task<string> IntrospectAsync(string clientId, string clientSecret, string token)
+    {
+        var client = Factory.CreateClient();
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/connect/introspect")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["token"] = token,
+                ["token_type_hint"] = "access_token",
+                ["client_id"] = clientId,
+                ["client_secret"] = clientSecret,
+            }),
+        };
+        var resp = await client.SendAsync(req, TestContext.Current.CancellationToken);
+        return await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+    }
+
     // ── flow helper ─────────────────────────────────────────────────────────
 
     /// <summary>
@@ -161,7 +206,8 @@ public class DpopIssuanceTests : IntegrationTestBase
 
     // ── setup helpers ───────────────────────────────────────────────────────
 
-    private async Task<(string clientId, string secret, string redirectUri)> NewClientAsync(string prefix)
+    private async Task<(string clientId, string secret, string redirectUri)> NewClientAsync(
+        string prefix, AccessTokenType tokenType = AccessTokenType.Jwt)
     {
         var clientId = $"test-{prefix}-" + Guid.NewGuid().ToString("N");
         var secret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
@@ -181,8 +227,9 @@ public class DpopIssuanceTests : IntegrationTestBase
             Scopes = ["openid"],
             AllowedGrantTypes = ["authorization_code", "refresh_token"],
             RequireConsent = false,
-            // JWT so the test can decode the access token and read cnf.jkt directly.
-            AccessTokenType = AccessTokenType.Jwt,
+            // JWT clients let the test decode the access token; Reference clients
+            // exercise the introspection path.
+            AccessTokenType = tokenType,
         }, TestContext.Current.CancellationToken);
 
         if (result.IsError)

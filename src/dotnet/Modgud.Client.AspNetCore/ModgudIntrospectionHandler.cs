@@ -38,21 +38,47 @@ internal sealed class ModgudIntrospectionHandler : AuthenticationHandler<ModgudR
         var rawAuth = Request.Headers.Authorization.ToString();
         if (string.IsNullOrEmpty(rawAuth) ||
             !AuthenticationHeaderValue.TryParse(rawAuth, out var header) ||
-            !string.Equals(header.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
             string.IsNullOrEmpty(header.Parameter))
         {
-            // No bearer token → this handler has no opinion; the pipeline
-            // treats the request as anonymous (a 401 challenge follows only
-            // if the endpoint requires authorization).
+            // No credentials → this handler has no opinion; the pipeline treats
+            // the request as anonymous (a 401 challenge follows only if the
+            // endpoint requires authorization).
             return AuthenticateResult.NoResult();
         }
 
+        var isBearer = string.Equals(header.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase);
+        var isDpop = string.Equals(header.Scheme, Dpop.DpopResource.Scheme, StringComparison.OrdinalIgnoreCase);
+        if (!isBearer && !isDpop)
+            return AuthenticateResult.NoResult();
+
         var principal = await ModgudTokenIntrospection.IntrospectAsync(
             Options, header.Parameter!, Scheme.Name, Logger, Context.RequestAborted);
+        if (principal is null)
+            return AuthenticateResult.Fail("Modgud introspection did not affirmatively validate the token.");
 
-        return principal is null
-            ? AuthenticateResult.Fail("Modgud introspection did not affirmatively validate the token.")
-            : AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
+        // Enforce DPoP binding (RFC 9449 §7.1): a sender-constrained token
+        // (cnf.jkt present) MUST be presented with the DPoP scheme AND a proof
+        // whose key matches; a bound token used as a plain bearer token is
+        // rejected. A DPoP-scheme request against an unbound token is likewise
+        // rejected — the client is asserting a possession the token doesn't carry.
+        var boundJkt = principal.FindFirst(Dpop.DpopResource.ConfirmationJktClaimType)?.Value;
+        if (isDpop)
+        {
+            if (string.IsNullOrEmpty(boundJkt))
+                return AuthenticateResult.Fail("The DPoP scheme was used but the token is not DPoP-bound.");
+
+            var outcome = Dpop.DpopResourceValidator.Validate(
+                Request, header.Parameter!, boundJkt, DateTimeOffset.UtcNow);
+            if (outcome != Dpop.DpopResourceResult.Valid)
+                return AuthenticateResult.Fail($"The DPoP proof did not validate ({outcome}).");
+        }
+        else if (!string.IsNullOrEmpty(boundJkt))
+        {
+            return AuthenticateResult.Fail(
+                "This access token is DPoP-bound and must be presented with the DPoP scheme.");
+        }
+
+        return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
     }
 }
 
@@ -168,6 +194,14 @@ internal static class ModgudTokenIntrospection
                         ModgudClaimsTransformation.ResourceAccessClaimType,
                         property.Value.GetRawText(),
                         Microsoft.IdentityModel.JsonWebTokens.JsonClaimValueTypes.Json));
+                    break;
+
+                // RFC 9449 §6 — a DPoP-bound token carries cnf={"jkt":…}. Surface
+                // the thumbprint so the handler can require a matching proof.
+                case "cnf" when property.Value.ValueKind == JsonValueKind.Object &&
+                                property.Value.TryGetProperty("jkt", out var jkt) &&
+                                jkt.ValueKind == JsonValueKind.String:
+                    identity.AddClaim(new Claim(Dpop.DpopResource.ConfirmationJktClaimType, jkt.GetString()!));
                     break;
 
                 // Standard string scalars worth surfacing on the principal.
