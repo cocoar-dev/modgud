@@ -43,16 +43,22 @@ public static class DpopProofValidator
     // Upper bound on a proof's RSA modulus (8192-bit) — a DoS guard, see usage.
     private const int MaxRsaModulusBytes = 1024;
 
-    // Asymmetric JWS algorithms only. "none" and all symmetric (HS*) algorithms
-    // are intentionally excluded: a DPoP proof is self-signed by a key the client
-    // reveals, so only public-key signatures make sense — and accepting "none"
-    // would defeat the entire mechanism.
-    private static readonly HashSet<string> AllowedAlgorithms = new(StringComparer.Ordinal)
+    /// <summary>
+    /// The asymmetric JWS algorithms accepted in a DPoP proof, in the order the
+    /// AS advertises them as <c>dpop_signing_alg_values_supported</c>. "none" and
+    /// all symmetric (HS*) algorithms are intentionally excluded: a DPoP proof is
+    /// self-signed by a key the client reveals, so only public-key signatures make
+    /// sense — and accepting "none" would defeat the entire mechanism.
+    /// </summary>
+    public static readonly IReadOnlyList<string> SupportedSigningAlgorithms = new[]
     {
+        "ES256", "ES384", "ES512",
         "RS256", "RS384", "RS512",
         "PS256", "PS384", "PS512",
-        "ES256", "ES384", "ES512",
     };
+
+    private static readonly HashSet<string> AllowedAlgorithms =
+        new(SupportedSigningAlgorithms, StringComparer.Ordinal);
 
     /// <summary>
     /// Validate a proof against the request it is supposed to authorise.

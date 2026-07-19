@@ -23,6 +23,9 @@ public static class DpopConstants
     /// <summary>The OAuth error returned for a missing/invalid proof (§5 / §7.1).</summary>
     public const string InvalidProofError = "invalid_dpop_proof";
 
+    /// <summary>AS-metadata field listing the JWS algs accepted in a proof (§5.1).</summary>
+    public const string SigningAlgValuesMetadataKey = "dpop_signing_alg_values_supported";
+
     /// <summary>
     /// <c>HttpContext.Items</c> key used to hand the validated proof's thumbprint
     /// from the proof-validation handler to the claim-stamping and token-type
