@@ -125,11 +125,17 @@ internal sealed class ModgudUserInfoEnricher
 }
 
 /// <summary>
-/// Hooks <see cref="ModgudUserInfoEnricher.EnrichAsync"/> into the
-/// configured JwtBearer scheme via PostConfigure. Composable: the host
-/// can stack additional <c>OnTokenValidated</c> handlers, this one runs
-/// first and either confirms the token already carries
-/// <c>resource_access</c> or adds the claim from UserInfo as a fallback.
+/// Hooks the lib's JwtBearer behaviour in via PostConfigure. Two composable
+/// event handlers, each preserving any handler the host already set:
+/// <list type="bullet">
+///   <item><c>OnMessageReceived</c> — lifts a DPoP-bound token out of the
+///   <c>Authorization: DPoP …</c> header so JwtBearer validates the JWT it
+///   carries (RFC 9449, #118); a plain <c>Bearer</c> request is untouched.</item>
+///   <item><c>OnTokenValidated</c> — enforces the DPoP <c>cnf.jkt</c> binding
+///   (<see cref="ModgudDpopJwtBearer.EnforceBinding"/>), then, if the token was
+///   accepted, ensures the principal carries <c>resource_access</c>
+///   (<see cref="ModgudUserInfoEnricher.EnrichAsync"/>).</item>
+/// </list>
 /// </summary>
 internal sealed class ModgudJwtBearerPostConfigure : IPostConfigureOptions<JwtBearerOptions>
 {
@@ -150,12 +156,34 @@ internal sealed class ModgudJwtBearerPostConfigure : IPostConfigureOptions<JwtBe
                 "(e.g. \"https://auth.example.com\") so the lib can fetch /connect/userinfo. " +
                 "Configure it via AddModgudClient.");
 
-        var existing = options.Events?.OnTokenValidated;
         options.Events ??= new JwtBearerEvents();
+
+        // Accept a DPoP-scheme JWT: JwtBearer only reads `Bearer`, so lift the
+        // token out of the `DPoP` header for it. Only sets the token when the
+        // host hasn't already resolved one and the scheme is DPoP.
+        var existingReceived = options.Events.OnMessageReceived;
+        options.Events.OnMessageReceived = async ctx =>
+        {
+            if (existingReceived is not null) await existingReceived(ctx);
+            if (string.IsNullOrEmpty(ctx.Token) &&
+                ModgudDpopJwtBearer.ExtractDpopSchemeToken(ctx.HttpContext.Request) is { } dpopToken)
+            {
+                ctx.Token = dpopToken;
+            }
+        };
+
+        var existingValidated = options.Events.OnTokenValidated;
         options.Events.OnTokenValidated = async ctx =>
         {
-            if (existing is not null) await existing(ctx);
-            await ModgudUserInfoEnricher.EnrichAsync(ctx);
+            if (existingValidated is not null) await existingValidated(ctx);
+
+            // Enforce the DPoP binding BEFORE enrichment: a bound token presented
+            // wrong (as bearer, or with an invalid/mismatched proof) must be
+            // rejected regardless of its claims, and there's no point fetching
+            // UserInfo for a request we're about to fail.
+            ModgudDpopJwtBearer.EnforceBinding(ctx);
+            if (ctx.Result is null)
+                await ModgudUserInfoEnricher.EnrichAsync(ctx);
         };
     }
 }
