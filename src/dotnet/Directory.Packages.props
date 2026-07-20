@@ -38,10 +38,20 @@
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <!-- Marten & Wolverine — Critter Stack 2026 (Marten 9 + Wolverine 6 +
          JasperFx 2). Migrated from 8.37 / 5.32 in chore/critter-stack-2026.
-         Gotchas: the maintainers' 'critter-stack-2026' engineering note -->
-    <PackageVersion Include="Marten" Version="9.8.0" />
-    <PackageVersion Include="Marten.AspNetCore" Version="9.8.0" />
-    <PackageVersion Include="WolverineFx.Marten" Version="6.9.0" />
+         Gotchas: the maintainers' 'critter-stack-2026' engineering note.
+         9.8 → 9.11 (Wolverine 6.9 → 6.16): a partial bump that stays BELOW the
+         9.12 regression. Marten 9.12 broke async-projection catch-up under
+         MasterTableTenancy (which modgud uses) — identity read-models never
+         materialize — via the JasperFx.Events 2.18 "DI-projection partial-class
+         dispatch" refactor; still unfixed in 9.16.1 (verified: 41/517 integration
+         failures). 9.11.0 is the highest known-good (AppTemplate pins it too).
+         WolverineFx.Marten 6.16 is the last 6.x that pins Marten 9.11 (6.17 jumps
+         to 9.14). Do NOT lift Marten past 9.11 without running the integration
+         suite — it provisions per-realm DBs and asserts on projected read-models,
+         so the regression fails it. -->
+    <PackageVersion Include="Marten" Version="9.11.0" />
+    <PackageVersion Include="Marten.AspNetCore" Version="9.11.0" />
+    <PackageVersion Include="WolverineFx.Marten" Version="6.16.0" />
     <!-- Marten 9.8+ bundles the JasperFx events source generator as an analyzer
          (analyzers/dotnet/cs/JasperFx.Events.SourceGenerator.dll inside the
          Marten package), so no standalone JasperFx.Events.SourceGenerator
@@ -49,11 +59,12 @@
          and broke the build with duplicate *.Evolver.g.cs (CS0101/CS0111). -->
     <!-- Wolverine 6 decoupled the Roslyn runtime codegen from core;
          IMessageBus.InvokeAsync<T> needs it in the host project. -->
-    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.9.0" />
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.16.0" />
     <!-- Other packages -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
-    <PackageVersion Include="System.Reactive" Version="6.1.0" />
-    <PackageVersion Include="System.Reactive.Linq" Version="6.1.0" />
+    <!-- Rx 7 collapsed the facade packages (System.Reactive.Linq / .Core / …)
+         into the single System.Reactive package — no 7.x facade exists. -->
+    <PackageVersion Include="System.Reactive" Version="7.0.0" />
     <PackageVersion Include="System.Linq.Async.Queryable" Version="7.0.1" />
     <PackageVersion Include="Riok.Mapperly" Version="4.3.1" />
     <PackageVersion Include="ErrorOr" Version="2.1.1" />
@@ -64,12 +75,12 @@
     <!-- SourceLink for published NuGet packages -->
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.301" />
     <!-- OpenIddict (custom Marten stores, no EF Core) -->
-    <PackageVersion Include="OpenIddict" Version="7.5.0" />
-    <PackageVersion Include="OpenIddict.Abstractions" Version="7.5.0" />
-    <PackageVersion Include="OpenIddict.AspNetCore" Version="7.5.0" />
-    <PackageVersion Include="OpenIddict.Server" Version="7.5.0" />
-    <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.5.0" />
-    <PackageVersion Include="OpenIddict.Validation" Version="7.5.0" />
+    <PackageVersion Include="OpenIddict" Version="7.6.0" />
+    <PackageVersion Include="OpenIddict.Abstractions" Version="7.6.0" />
+    <PackageVersion Include="OpenIddict.AspNetCore" Version="7.6.0" />
+    <PackageVersion Include="OpenIddict.Server" Version="7.6.0" />
+    <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.6.0" />
+    <PackageVersion Include="OpenIddict.Validation" Version="7.6.0" />
     <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.2" />
     <!-- Testing -->
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
@@ -90,12 +101,12 @@
     <!-- OpenTelemetry (Audit-Followup 2026-05-13, Phase 1 foundation).
          Prometheus AspNetCore exporter stays officially beta in upstream
          OTel-dotnet but is widely used; OTLP exporter is GA. -->
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
-    <PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.15.3-beta.1" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.17.0-beta.1" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
     <!-- OpenTelemetry Phase 4: Serilog → OTLP log export. The sink owns its own
          OTLP client (gRPC/HTTP), so it is independent of the OTel SDK exporter
          version line above; it is wired as a Serilog sink because the app uses

@@ -5,7 +5,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Reactive.Linq" />
+    <!-- Rx 7 discontinued the facade packages (System.Reactive.Linq etc.);
+         all operators now ship in the single System.Reactive package. -->
+    <PackageReference Include="System.Reactive" />
   </ItemGroup>
 
 </Project>
