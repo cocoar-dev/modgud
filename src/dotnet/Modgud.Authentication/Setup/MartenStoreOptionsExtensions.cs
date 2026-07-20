@@ -200,6 +200,17 @@ public static class MartenStoreOptionsExtensions
         options.Schema.For<SamlSpCertificateDocument>()
             .Identity(x => x.Id);
 
+        // SAML request correlation — the AuthnRequests we've issued and are still
+        // willing to accept a Response for. Same one-time-use reasoning as
+        // MagicLinkChallenge/EmailOtpChallenge: the consume is a version-checked
+        // Store of ConsumedAt (Marten does NOT version-check deletes), so two
+        // concurrent presentations of one captured Response cannot both sign in.
+        // Indexed on ExpiresAt for the opportunistic prune on each new request.
+        options.Schema.For<SamlPendingAuthnRequest>()
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Index(x => x.ExpiresAt);
+
         // Identity events
         options.Events.MapEventType<UserIdentitySetupEvent>("user_identity_setup");
         options.Events.MapEventType<UserUserNameChangedEvent>("user_username_changed");

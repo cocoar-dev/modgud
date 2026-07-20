@@ -54,6 +54,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Modgud.Tests.Unit" />
+    <InternalsVisibleTo Include="Modgud.Api.Tests" />
   </ItemGroup>
 
 </Project>
