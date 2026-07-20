@@ -64,6 +64,10 @@ public static class SamlSetup
         services.AddScoped<SamlContextBuilder>();
         services.AddScoped<SamlLoginFlow>();
 
+        // AuthnRequest correlation store (InResponseTo + single use). Scoped —
+        // it consumes the tenant-scoped IDocumentSession.
+        services.AddScoped<ISamlAuthnRequestStore, MartenSamlAuthnRequestStore>();
+
         // SamlContextBuilder needs IHttpContextAccessor to derive the SP
         // EntityID + ACS URL from the current request — register if not
         // already done elsewhere in the host setup (it's idempotent).

@@ -34,6 +34,7 @@ public class SamlLoginFlow(
     SamlSpCertificateService spCertService,
     ExternalLoginProcessor processor,
     SignInManager<ApplicationUser> signInManager,
+    ISamlAuthnRequestStore authnRequestStore,
     ISessionService sessionService,
     ISecurityAuditLog securityAudit,
     ILogger<SamlLoginFlow> logger)
@@ -106,6 +107,14 @@ public class SamlLoginFlow(
             binding.RelayState = returnUrl;
 
         binding.Bind(authnRequest);
+
+        // Remember the request BEFORE handing the browser to the IdP. This record
+        // is what makes the Response's InResponseTo checkable at the ACS — without
+        // it, any correctly-signed Response is acceptable at any time, which is
+        // precisely the precondition for replay. Recorded after Bind so we persist
+        // the exact ID that went onto the wire.
+        await authnRequestStore.RecordAsync(
+            authnRequest.Id.Value, provider.LoginProviderId, ct);
 
         logger.LogInformation(
             "SAML AuthnRequest built for provider {Id} → IdP {IdpEntity}",
@@ -218,6 +227,48 @@ public class SamlLoginFlow(
             });
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
             return Results.Redirect($"/login?error=saml-{Uri.EscapeDataString(sigError)}");
+        }
+
+        // Request correlation + single use. Deliberately AFTER the signature
+        // checks: consuming first would let an unauthenticated attacker burn a
+        // victim's pending request by POSTing a garbage Response with a guessed
+        // InResponseTo, turning a replay defense into a login-denial lever. The
+        // signature is what proves the Response actually came from the IdP; only
+        // then is it worth spending the pending request on it.
+        //
+        // This is the replay defense proper: signature validation alone accepts a
+        // GENUINE, correctly-signed Response any number of times within its
+        // NotOnOrAfter window (login-CSRF, session swapping). Claiming the
+        // AuthnRequest we issued makes each Response answerable exactly once, and
+        // only at the provider it was solicited from.
+        var correlation = await authnRequestStore.TryConsumeAsync(
+            saml2Response.InResponseToAsString, provider.LoginProviderId, ct);
+        if (correlation != SamlAuthnRequestConsumeResult.Consumed)
+        {
+            var reason = correlation switch
+            {
+                SamlAuthnRequestConsumeResult.Unsolicited => "unsolicited",
+                SamlAuthnRequestConsumeResult.AlreadyConsumed => "replayed",
+                SamlAuthnRequestConsumeResult.Expired => "expired",
+                SamlAuthnRequestConsumeResult.ProviderMismatch => "provider-mismatch",
+                _ => "unknown-request",
+            };
+
+            logger.LogWarning(
+                "SAML response rejected ({Reason}) for provider {Id} — InResponseTo={InResponseTo}",
+                reason, provider.LoginProviderId, saml2Response.InResponseToAsString);
+
+            securityAudit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.ExternalLoginRejected,
+                Level = "Warning",
+                Ip = ip,
+                Status = "rejected",
+                Reason = $"SAML: request correlation failed ({reason}) for provider {provider.LoginProviderId}",
+                Message = $"SAML response refused for provider {provider.Slug} — request correlation failed ({reason})",
+            });
+            ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
+            return Results.Redirect($"/login?error=saml-{reason}");
         }
 
         // ITfoxtec's response builds its own ClaimsIdentity from the
