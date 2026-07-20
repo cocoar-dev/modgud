@@ -46,7 +46,18 @@ public class PasskeyCeremony
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
+    /// <summary>
+    /// Set when the ceremony was consumed. Consuming is a version-checked
+    /// <c>Store</c> of this marker rather than a Delete — Marten does NOT
+    /// enforce optimistic concurrency on deletes, so two concurrent
+    /// redemptions of the same <c>ceremony_id</c> would both delete-and-proceed
+    /// and each mint a token. A later replay is rejected by the
+    /// <see cref="IsConsumed"/> gate; the row is reaped by expiry.
+    /// </summary>
+    public DateTimeOffset? ConsumedAt { get; set; }
+
     public const int ExpirationMinutes = 5;
 
     public bool IsExpired => DateTimeOffset.UtcNow >= ExpiresAt;
+    public bool IsConsumed => ConsumedAt is not null;
 }

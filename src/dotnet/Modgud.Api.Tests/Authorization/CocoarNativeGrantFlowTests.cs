@@ -259,6 +259,41 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
         Assert.Contains("invalid_grant", body);
     }
 
+    [Fact]
+    public async Task Magic_Grant_LinkAlreadyConsumedInWebFlow_Rejected()
+    {
+        // Cross-channel replay guard. The WEB redemption marks the challenge
+        // consumed (ConsumedAt) rather than deleting it — it has to, because
+        // Marten does not version-check deletes and only a version-checked Store
+        // makes the one-time use win a concurrency race. This native grant used to
+        // query by user+token-hash and check nothing but expiry, so a link already
+        // used in the browser stayed fully redeemable here.
+        await EnableNativeGrantsAsync();
+        await SeedNativeClientAsync("native-magic-app");
+
+        var (userId, token) = await SeedMagicLinkAsync(DefaultUser!.Id);
+
+        // Consume it exactly as the web flow does, without touching this grant.
+        var ct = TestContext.Current.CancellationToken;
+        using (var scope = NewSystemTenantScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            var hash = MagicLinkChallenge.HashToken(token);
+            var challenge = await session.Query<MagicLinkChallenge>()
+                .FirstOrDefaultAsync(c => c.TokenHash == hash, ct);
+            Assert.NotNull(challenge);
+            challenge!.ConsumedAt = DateTimeOffset.UtcNow;
+            session.Store(challenge);
+            await session.SaveChangesAsync(ct);
+        }
+
+        var response = await PostMagicAsync(userId, token);
+
+        Assert.False(response.IsSuccessStatusCode);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        Assert.Contains("invalid_grant", body);
+    }
+
     // ─────────────────────── Settings lifetime validation ─────────────────────
 
     [Fact]

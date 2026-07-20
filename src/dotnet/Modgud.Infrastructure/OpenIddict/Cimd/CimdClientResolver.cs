@@ -38,7 +38,8 @@ namespace Modgud.Infrastructure.OpenIddict.Cimd;
 public sealed class CimdClientResolver
 {
     /// <summary>Named <see cref="IHttpClientFactory"/> client whose primary
-    /// handler carries the SSRF guard (<see cref="CimdHttpMessageHandlerFactory"/>).</summary>
+    /// handler carries the SSRF guard
+    /// (<see cref="Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory"/>).</summary>
     public const string HttpClientName = "Modgud.Cimd.MetadataFetcher";
 
     private const int MaxBodyBytes = 5 * 1024;

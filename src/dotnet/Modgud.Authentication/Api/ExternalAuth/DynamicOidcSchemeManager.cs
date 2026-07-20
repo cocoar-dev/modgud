@@ -149,7 +149,16 @@ public class DynamicOidcSchemeManager(
         {
             if (!options.Scope.Contains(scope)) options.Scope.Add(scope);
         }
-        options.Backchannel ??= new HttpClient();
+        // Authority/MetadataAddress are admin-supplied, so discovery + the
+        // token/userinfo backchannel are SSRF sinks. Use the same transport
+        // guard as the CIMD and SAML metadata fetchers (DNS resolved and
+        // validated before connect — closing the rebinding window — redirects
+        // off, tight timeouts) instead of a bare HttpClient.
+        options.Backchannel ??= new HttpClient(
+            Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create("OIDC metadata/backchannel fetch"))
+        {
+            Timeout = TimeSpan.FromSeconds(15),
+        };
 
         // Cookie + response-mode interaction, two cases:
         //

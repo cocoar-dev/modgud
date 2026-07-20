@@ -1,15 +1,16 @@
 using System.Net;
-using Modgud.Infrastructure.OpenIddict.Cimd;
+using Modgud.Infrastructure.Http;
 
-namespace Modgud.Tests.Unit.OAuth.Cimd;
+namespace Modgud.Tests.Unit.Infrastructure.Http;
 
 /// <summary>
-/// Pins the SSRF address classifier. The CIMD fetcher resolves
-/// DNS itself and refuses any non-public resolved address before connecting;
-/// a gap here would re-open the server-side-request-forgery surface the whole
-/// CIMD design is gated behind.
+/// Pins the SSRF address classifier shared by every admin-supplied-URL fetch
+/// (CIMD client metadata, SAML IdP metadata, OIDC discovery/backchannel). Each
+/// resolves DNS itself and refuses any non-public resolved address before
+/// connecting; a gap here would re-open the server-side-request-forgery surface
+/// all three are gated behind.
 /// </summary>
-public class CimdIpGuardTests
+public class SsrfIpGuardTests
 {
     [Theory]
     // IPv4 special-use / non-routable
@@ -44,7 +45,7 @@ public class CimdIpGuardTests
     [InlineData("::ffff:169.254.169.254")]
     public void Blocks_non_public_addresses(string address)
     {
-        Assert.True(CimdIpGuard.IsBlocked(IPAddress.Parse(address)),
+        Assert.True(SsrfIpGuard.IsBlocked(IPAddress.Parse(address)),
             $"{address} is non-public and must be blocked.");
     }
 
@@ -57,7 +58,7 @@ public class CimdIpGuardTests
     [InlineData("2606:2800:220:1:248:1893:25c8:1946")] // example.com v6
     public void Allows_routable_public_addresses(string address)
     {
-        Assert.False(CimdIpGuard.IsBlocked(IPAddress.Parse(address)),
+        Assert.False(SsrfIpGuard.IsBlocked(IPAddress.Parse(address)),
             $"{address} is a routable public address and must be allowed.");
     }
 }

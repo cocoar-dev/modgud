@@ -74,9 +74,14 @@ public class EmailOtpService(
     // (2FA opt-in vs. native confirmed-mailbox) run before this is reached.
     private async Task<ErrorOr<bool>> IssueChallengeAsync(ApplicationUser user, CancellationToken ct)
     {
-        // Rate limiting: check if a recent challenge exists
+        // Rate limiting: check if a recent challenge exists. A CONSUMED challenge
+        // must not throttle the next request — consuming now leaves the row in
+        // place (a version-checked Store is what makes the one-time use atomic;
+        // see VerifyOtpAsync), whereas it used to be deleted. Without the
+        // IsConsumed exemption a user who just logged in with a code would be
+        // locked out of requesting a new one for the whole rate-limit window.
         var existing = await session.LoadAsync<EmailOtpChallenge>(user.Id, ct);
-        if (existing is not null && !existing.IsExpired)
+        if (existing is not null && !existing.IsExpired && !existing.IsConsumed)
         {
             var timeSinceCreation = DateTimeOffset.UtcNow - existing.CreatedAt;
             if (timeSinceCreation.TotalMinutes < config.RateLimitMinutes)
@@ -88,18 +93,46 @@ public class EmailOtpService(
         var code = GenerateOtpCode();
         var codeHash = HashCode(code);
 
-        // Store challenge (overwrites existing)
-        var challenge = new EmailOtpChallenge
+        // Store the challenge, overwriting any existing one for this user. The
+        // document is version-checked (see MartenStoreOptionsExtensions), so a
+        // re-issue MUST mutate the row we just loaded rather than storing a
+        // fresh instance — a fresh instance carries no version and the update
+        // would be rejected. Resetting ConsumedAt/Attempts is what makes the
+        // new code usable after a previous one was consumed.
+        if (existing is not null)
         {
-            Id = user.Id,
-            CodeHash = codeHash,
-            Attempts = 0,
-            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(config.ExpirationMinutes),
-            CreatedAt = DateTimeOffset.UtcNow,
-            Email = user.Email!,
-        };
-        session.Store(challenge);
-        await session.SaveChangesAsync(ct);
+            existing.CodeHash = codeHash;
+            existing.Attempts = 0;
+            existing.ConsumedAt = null;
+            existing.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(config.ExpirationMinutes);
+            existing.CreatedAt = DateTimeOffset.UtcNow;
+            existing.Email = user.Email!;
+            session.Store(existing);
+        }
+        else
+        {
+            session.Store(new EmailOtpChallenge
+            {
+                Id = user.Id,
+                CodeHash = codeHash,
+                Attempts = 0,
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(config.ExpirationMinutes),
+                CreatedAt = DateTimeOffset.UtcNow,
+                Email = user.Email!,
+            });
+        }
+
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (JasperFx.ConcurrencyException)
+        {
+            // Two issue requests raced. The other one won and its code is already
+            // in the user's mailbox — don't send a second, conflicting code.
+            return Error.Validation("EmailOtp.AlreadySent",
+                "A verification code was recently sent. Please wait before requesting a new one.");
+        }
 
         // Send email
         await emailService.SendTemplatedEmailAsync(
@@ -121,7 +154,7 @@ public class EmailOtpService(
     {
         var challenge = await session.LoadAsync<EmailOtpChallenge>(userId, ct);
 
-        if (challenge is null)
+        if (challenge is null || challenge.IsConsumed)
             return Error.Validation("EmailOtp.NoPendingChallenge",
                 "No pending verification code found. Please request a new one.");
 
@@ -157,9 +190,23 @@ public class EmailOtpService(
                 "The verification code is invalid.");
         }
 
-        // Success — delete challenge
-        session.Delete(challenge);
-        await session.SaveChangesAsync(ct);
+        // Success — consume the challenge with a VERSION-CHECKED Store rather than
+        // a Delete. Marten does not enforce optimistic concurrency on deletes, so
+        // two concurrent redemptions of the same correct code would both
+        // delete-and-proceed and both authenticate. Storing ConsumedAt makes the
+        // losing racer's SaveChangesAsync throw, and any later replay is rejected
+        // by the IsConsumed gate above.
+        challenge.ConsumedAt = DateTimeOffset.UtcNow;
+        session.Store(challenge);
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (JasperFx.ConcurrencyException)
+        {
+            return Error.Validation("EmailOtp.InvalidCode",
+                "The verification code is invalid.");
+        }
 
         return true;
     }
