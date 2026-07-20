@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Json;
 using JasperFx;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
@@ -105,6 +107,56 @@ public class OneTimeCredentialAtomicityTests : IntegrationTestBase
         sB.Store(b);
         await Assert.ThrowsAsync<ConcurrencyException>(async () => await sB.SaveChangesAsync(ct));
     }
+
+    // ── web passkey ceremony state must not be client-held ───────────────────
+
+    [Fact]
+    public async Task WebPasskeyLoginOptions_KeepsCeremonyServerSide_AndIgnoresForgedCookieState()
+    {
+        // The web login ceremony used to ship the FULL AssertionOptions to the
+        // browser as plain Base64 (no signature, no encryption) and parse it back
+        // as trusted input — so a client could rewrite the ceremony or replay an
+        // old challenge. The cookie must now carry nothing but an opaque id, with
+        // the authoritative state server-side, exactly like the native flow.
+        var ct = TestContext.Current.CancellationToken;
+        var client = Factory.CreateClient();
+
+        var resp = await client.PostAsJsonAsync("/api/account/passkey/login-options", new { }, ct);
+        Assert.True(resp.IsSuccessStatusCode,
+            $"login-options failed ({(int)resp.StatusCode}): {await resp.Content.ReadAsStringAsync(ct)}");
+
+        var setCookie = Assert.Single(
+            resp.Headers.GetValues("Set-Cookie").Where(c => c.StartsWith(CookieName, StringComparison.Ordinal)));
+        var cookieValue = setCookie[(CookieName.Length + 1)..].Split(';')[0];
+
+        // Opaque id, not ceremony state.
+        Assert.True(Guid.TryParse(cookieValue, out var ceremonyId),
+            $"cookie must carry only a ceremony id, got: {cookieValue[..Math.Min(40, cookieValue.Length)]}");
+
+        // The real options live server-side and the ceremony is still redeemable.
+        await using (var read = GetTenantedDocumentSession())
+        {
+            var ceremony = await read.LoadAsync<PasskeyCeremony>(ceremonyId, ct);
+            Assert.NotNull(ceremony);
+            Assert.False(ceremony!.IsConsumed);
+            Assert.Contains("challenge", ceremony.OptionsJson, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // A cookie in the OLD client-held format (Base64 of attacker-chosen
+        // options) must not authenticate anything — it isn't a ceremony id, so it
+        // never resolves to server state.
+        var forged = Convert.ToBase64String(
+            System.Text.Encoding.UTF8.GetBytes("""{"challenge":"AAAA","rpId":"localhost"}"""));
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/account/passkey/login")
+        {
+            Content = JsonContent.Create(new { id = "x", response = new { } }),
+        };
+        req.Headers.Add("Cookie", $"{CookieName}={forged}");
+        var forgedResp = await client.SendAsync(req, ct);
+        Assert.Equal(HttpStatusCode.Unauthorized, forgedResp.StatusCode);
+    }
+
+    private const string CookieName = "Modgud.Passkey.Challenge";
 
     // ── the consumed marker must actually gate redemption ────────────────────
 
