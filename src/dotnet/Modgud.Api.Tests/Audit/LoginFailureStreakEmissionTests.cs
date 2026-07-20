@@ -8,7 +8,9 @@ using Modgud.Authentication.Events;
 namespace Modgud.Api.Tests.Audit;
 
 /// <summary>
-/// Proves the Phase 1 emission logic in <c>EventSourcedUserStore.AppendSecurityChangeEvents</c>:
+/// Proves the Phase 1 emission logic in <c>EventSourcedUserStore.ResetAccessFailedCountAsync</c>
+/// (it moved there from the former <c>AppendSecurityChangeEvents</c> diff when the
+/// lockout counter was made concurrency-safe — see P0-4 / LockoutConcurrencyTests):
 /// a known-user failure streak is recorded as exactly ONE aggregated
 /// <see cref="UserLoginFailuresObservedEvent"/> when the access-failed counter
 /// resolves (>0 → 0), not one event per attempt (Decision (b)).

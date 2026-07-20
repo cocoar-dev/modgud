@@ -1,4 +1,5 @@
 using Marten;
+using Marten.Patching;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Events;
@@ -112,20 +113,29 @@ public class EventSourcedUserStore(IDocumentSession session)
         var securityData = await session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
         if (securityData is not null)
         {
-            // Detect and append security-related events by comparing
-            // the user's transient properties against the persisted UserSecurityData
-            AppendSecurityChangeEvents(user, securityData);
-
-            // Sync security data
-            securityData.PasswordHash = user.PasswordHash;
-            securityData.SecurityStamp = user.SecurityStamp ?? securityData.SecurityStamp;
-            securityData.AccessFailedCount = user.AccessFailedCount;
-            securityData.LockoutEnd = user.LockoutEnd;
-            securityData.TwoFactorEnabled = user.TwoFactorEnabled;
-            securityData.AuthenticatorKey = user.AuthenticatorKey;
-            securityData.UpdateConcurrencyStamp();
-            user.ConcurrencyStamp = securityData.ConcurrencyStamp;
-            session.Store(securityData);
+            // P0-4 — patch ONLY the fields this round-trip actually owns instead of
+            // storing the whole document. ASP.NET Identity calls UpdateAsync after
+            // EVERY AccessFailedAsync, so a full Store here rewrote the lockout
+            // fields from a load-time snapshot and silently undid whatever a
+            // concurrent request had just incremented: the five-attempt lockout was
+            // bypassable by firing attempts in parallel. AccessFailedCount and
+            // LockoutEnd are now written exclusively by the IUserLockoutStore
+            // methods below, via atomic jsonb patches, and are deliberately absent
+            // from this write set. The same reasoning protects the grace-period
+            // fields (SecureSetupDueAt, GracePeriodDaysOverride, TwoFactorExempt),
+            // which are owned by their own admin/2FA paths.
+            var newConcurrencyStamp = Guid.NewGuid().ToString();
+            session.Patch<UserSecurityData>(user.Id)
+                .Set(x => x.PasswordHash, user.PasswordHash);
+            session.Patch<UserSecurityData>(user.Id)
+                .Set(x => x.SecurityStamp, user.SecurityStamp ?? securityData.SecurityStamp);
+            session.Patch<UserSecurityData>(user.Id)
+                .Set(x => x.TwoFactorEnabled, user.TwoFactorEnabled);
+            session.Patch<UserSecurityData>(user.Id)
+                .Set(x => x.AuthenticatorKey, user.AuthenticatorKey);
+            session.Patch<UserSecurityData>(user.Id)
+                .Set(x => x.ConcurrencyStamp, newConcurrencyStamp);
+            user.ConcurrencyStamp = newConcurrencyStamp;
         }
         else
         {
@@ -296,32 +306,124 @@ public class EventSourcedUserStore(IDocumentSession session)
 
     // IUserLockoutStore<ApplicationUser>
 
-    public Task<DateTimeOffset?> GetLockoutEndDateAsync(ApplicationUser user, CancellationToken cancellationToken)
+    // P0-4 — the lockout counter and the lockout window are DB-authoritative.
+    // Both are read straight from UserSecurityData (the same "authoritative
+    // re-fetch" idiom as GetSecurityStampAsync / GetTwoFactorEnabledAsync) and
+    // written only through atomic jsonb patches, never as part of a whole-document
+    // Store. The transient mirrors on ApplicationUser are kept in sync so callers
+    // that inspect the user object still see the truth, but nothing depends on
+    // them for the lockout decision.
+
+    public async Task<DateTimeOffset?> GetLockoutEndDateAsync(ApplicationUser user, CancellationToken cancellationToken)
     {
-        return Task.FromResult(user.LockoutEnd);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // This is the predicate behind UserManager.IsLockedOutAsync. Reading the
+        // in-memory mirror meant a lockout set by a CONCURRENT request after this
+        // user was loaded went unseen for the rest of the request.
+        var securityData = await session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
+        if (securityData is null)
+            return user.LockoutEnd;
+
+        user.LockoutEnd = securityData.LockoutEnd;
+        return securityData.LockoutEnd;
     }
 
-    public Task SetLockoutEndDateAsync(ApplicationUser user, DateTimeOffset? lockoutEnd, CancellationToken cancellationToken)
+    public async Task SetLockoutEndDateAsync(ApplicationUser user, DateTimeOffset? lockoutEnd, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var securityData = await session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
         user.LockoutEnd = lockoutEnd;
-        return Task.CompletedTask;
+
+        if (securityData is null)
+            return; // No document yet — UpdateAsync's create branch persists the mirror.
+
+        // Lock/unlock audit events used to be derived inside UpdateAsync by diffing
+        // the in-memory user against the loaded document. That diff is gone with the
+        // whole-document Store, so the transition is detected here, at the only place
+        // that actually changes the value.
+        if (securityData.LockoutEnd != lockoutEnd)
+        {
+            if (lockoutEnd.HasValue && lockoutEnd > DateTimeOffset.UtcNow)
+                session.Events.Append(user.Id, new UserLockedOutEvent(user.Id, lockoutEnd.Value));
+            else if (securityData.LockoutEnd.HasValue && !lockoutEnd.HasValue)
+                session.Events.Append(user.Id, new UserUnlockedEvent(user.Id));
+        }
+
+        session.Patch<UserSecurityData>(user.Id).Set(x => x.LockoutEnd, lockoutEnd);
     }
 
-    public Task<int> GetAccessFailedCountAsync(ApplicationUser user, CancellationToken cancellationToken)
+    public async Task<int> GetAccessFailedCountAsync(ApplicationUser user, CancellationToken cancellationToken)
     {
-        return Task.FromResult(user.AccessFailedCount);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var securityData = await session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
+        if (securityData is null)
+            return user.AccessFailedCount;
+
+        user.AccessFailedCount = securityData.AccessFailedCount;
+        return securityData.AccessFailedCount;
     }
 
-    public Task<int> IncrementAccessFailedCountAsync(ApplicationUser user, CancellationToken cancellationToken)
+    public async Task<int> IncrementAccessFailedCountAsync(ApplicationUser user, CancellationToken cancellationToken)
     {
-        user.AccessFailedCount++;
-        return Task.FromResult(user.AccessFailedCount);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Server-side jsonb increment — the "Audit #24" pattern already used for the
+        // email-OTP attempt counter. A read-then-write increment lets N concurrent
+        // failed logins all read the same value and write value+1, so only ONE
+        // attempt in the burst is ever recorded and MaxFailedAccessAttempts never
+        // trips. The patch lands every attempt regardless of concurrency.
+        //
+        // The flush is required, not incidental: UserManager compares this return
+        // value against MaxFailedAccessAttempts to decide whether to lock, so we
+        // must read back a value that includes our own increment.
+        session.Patch<UserSecurityData>(user.Id).Increment(x => x.AccessFailedCount, 1);
+        await session.SaveChangesAsync(cancellationToken);
+
+        var securityData = await session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
+        if (securityData is null)
+        {
+            // Migration-created user with no security document yet — fall back to the
+            // pre-existing in-memory behaviour; UpdateAsync's create branch persists it.
+            user.AccessFailedCount++;
+            return user.AccessFailedCount;
+        }
+
+        // A racer may have incremented further between our commit and this read, so
+        // this can be HIGHER than our own increment. That direction is fail-closed
+        // (the burst locks out at least as early as it should), which is exactly the
+        // bias we want on a brute-force counter.
+        user.AccessFailedCount = securityData.AccessFailedCount;
+        return securityData.AccessFailedCount;
     }
 
-    public Task ResetAccessFailedCountAsync(ApplicationUser user, CancellationToken cancellationToken)
+    public async Task ResetAccessFailedCountAsync(ApplicationUser user, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var securityData = await session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
         user.AccessFailedCount = 0;
-        return Task.CompletedTask;
+
+        if (securityData is null)
+            return; // No document yet — UpdateAsync's create branch persists the mirror.
+
+        // A failure streak just resolved — the counter went from >0 back to 0 (a
+        // successful sign-in or an unlock). Record it as ONE aggregated audit event
+        // (Decision (b)), not one per attempt: no stream spam, and an attacker
+        // spraying a victim can't inflate that victim's stream. No IP (the aggregate
+        // has no single source); erasable with the user's stream. This detector used
+        // to live in UpdateAsync as a stale-vs-fresh diff; it now sits on the only
+        // path that actually resets the counter, and reads the authoritative value
+        // rather than the possibly-stale mirror.
+        if (securityData.AccessFailedCount > 0)
+        {
+            session.Events.Append(user.Id, new UserLoginFailuresObservedEvent(
+                user.Id, securityData.AccessFailedCount, DateTimeOffset.UtcNow));
+        }
+
+        session.Patch<UserSecurityData>(user.Id).Set(x => x.AccessFailedCount, 0);
     }
 
     public Task<bool> GetLockoutEnabledAsync(ApplicationUser user, CancellationToken cancellationToken)
@@ -386,40 +488,12 @@ public class EventSourcedUserStore(IDocumentSession session)
     public Task SetPhoneNumberConfirmedAsync(ApplicationUser user, bool confirmed, CancellationToken cancellationToken)
         => Task.CompletedTask;
 
-    private void AppendSecurityChangeEvents(ApplicationUser user, UserSecurityData securityData)
-    {
-        var events = new List<object>();
-
-        // Lockout changed — detected by comparing user's transient properties
-        // against the persisted UserSecurityData document
-        if (user.LockoutEnd != securityData.LockoutEnd)
-        {
-            if (user.LockoutEnd.HasValue && user.LockoutEnd > DateTimeOffset.UtcNow)
-            {
-                events.Add(new UserLockedOutEvent(user.Id, user.LockoutEnd.Value));
-            }
-            else if (securityData.LockoutEnd.HasValue && !user.LockoutEnd.HasValue)
-            {
-                events.Add(new UserUnlockedEvent(user.Id));
-            }
-        }
-
-        // A failure streak just resolved — the access-failed counter went from >0
-        // back to 0 (a successful sign-in or an unlock reset it). Record it as ONE
-        // aggregated audit event (Decision (b)), not one per attempt: no stream spam,
-        // and an attacker spraying a victim can't inflate that victim's stream. No IP
-        // (the aggregate has no single source); erasable with the user's stream.
-        if (securityData.AccessFailedCount > 0 && user.AccessFailedCount == 0)
-        {
-            events.Add(new UserLoginFailuresObservedEvent(
-                user.Id, securityData.AccessFailedCount, DateTimeOffset.UtcNow));
-        }
-
-        if (events.Count > 0)
-        {
-            session.Events.Append(user.Id, events.ToArray());
-        }
-    }
+    // The former AppendSecurityChangeEvents lived here. Both of its detectors
+    // (lockout transition, resolved failure streak) were stale-vs-fresh diffs that
+    // only worked because UpdateAsync wrote the whole security document from the
+    // in-memory user — the very pattern that made the lockout counter racy (P0-4).
+    // They now sit on SetLockoutEndDateAsync / ResetAccessFailedCountAsync, the
+    // only paths that actually change those values.
 
     private async Task PopulateSecurityDataAsync(ApplicationUser user, CancellationToken cancellationToken)
     {
