@@ -36,7 +36,17 @@ public static class SamlSetup
         // so the fetcher itself can stay singleton (matches the singleton-
         // DynamicSamlSchemeManager that uses it) while still benefiting
         // from the framework's connection pooling + handler rotation.
-        services.AddHttpClient(SamlMetadataFetcher.HttpClientName);
+        // The metadata URL is admin-supplied, so the fetch is an SSRF sink: it
+        // gets the same transport-level guard as the CIMD fetcher (DNS resolved
+        // + validated before connect, redirects off, tight timeouts). A realm
+        // admin is a lower-trust tier than the platform operator, so
+        // "an admin configured it" is not a reason to skip this.
+        services.AddHttpClient(SamlMetadataFetcher.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(5);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() =>
+                Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create("SAML metadata fetch"));
         services.AddSingleton<SamlMetadataFetcher>();
 
         services.AddSingleton<DynamicSamlSchemeManager>();

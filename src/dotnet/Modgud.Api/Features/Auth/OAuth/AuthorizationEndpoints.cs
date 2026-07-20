@@ -729,9 +729,13 @@ public static class AuthorizationEndpoints
             return ForbidNativeGrant(Errors.InvalidGrant, "Invalid or expired link.");
 
         var hash = MagicLinkChallenge.HashToken(token);
+        // IsConsumed must be checked HERE too, not just in the web flow: the web
+        // redemption marks the challenge consumed rather than deleting it (so the
+        // version-checked Store can win the concurrency race), which left a link
+        // already used in the browser still redeemable through this native grant.
         var challenge = await session.Query<MagicLinkChallenge>()
             .FirstOrDefaultAsync(c => c.UserId == userId && c.TokenHash == hash, ct);
-        if (challenge is null || challenge.IsExpired)
+        if (challenge is null || challenge.IsExpired || challenge.IsConsumed)
         {
             if (challenge is not null) { session.Delete(challenge); await session.SaveChangesAsync(ct); }
             return ForbidNativeGrant(Errors.InvalidGrant, "Invalid or expired link.");
@@ -809,18 +813,33 @@ public static class AuthorizationEndpoints
             return await ForbidFactorFailureAsync("Invalid or expired passkey ceremony.");
 
         var ceremony = await session.LoadAsync<PasskeyCeremony>(ceremonyId, ct);
-        if (ceremony is null || ceremony.IsExpired)
+        if (ceremony is null || ceremony.IsExpired || ceremony.IsConsumed)
         {
-            if (ceremony is not null) { session.Delete(ceremony); await session.SaveChangesAsync(ct); }
+            if (ceremony is not null && ceremony.IsExpired)
+            {
+                session.Delete(ceremony);
+                await session.SaveChangesAsync(ct);
+            }
             return await ForbidFactorFailureAsync("Invalid or expired passkey ceremony.");
         }
 
         // Single-use: consume ANY presented live ceremony as soon as it resolves —
         // before the assertion-presence check and the verify — so a captured
         // ceremony_id can never be replayed, even when paired with a
-        // missing/garbage assertion.
-        session.Delete(ceremony);
-        await session.SaveChangesAsync(ct);
+        // missing/garbage assertion. This is a VERSION-CHECKED Store of the
+        // ConsumedAt marker, not a Delete: Marten does not version-check deletes,
+        // so two concurrent redemptions of one ceremony_id would otherwise both
+        // proceed and each mint a token. The loser's SaveChangesAsync throws.
+        ceremony.ConsumedAt = DateTimeOffset.UtcNow;
+        session.Store(ceremony);
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (JasperFx.ConcurrencyException)
+        {
+            return await ForbidFactorFailureAsync("Invalid or expired passkey ceremony.");
+        }
 
         // ADR-0009 per-client RP-ID: a ceremony begun for a specific client may only
         // be redeemed by that same client. Skipped for a legacy/realm-scoped ceremony

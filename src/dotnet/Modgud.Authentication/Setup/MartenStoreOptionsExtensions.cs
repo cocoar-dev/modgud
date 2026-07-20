@@ -63,8 +63,15 @@ public static class MartenStoreOptionsExtensions
         options.Schema.For<UserSecurityData>()
             .Identity(x => x.Id);
 
+        // Same one-time-use reasoning as MagicLinkChallenge below: the consume is
+        // a version-checked Store of ConsumedAt (Marten does not version-check
+        // deletes), so exactly one of two concurrent redemptions of the same code
+        // wins and the loser gets a ConcurrencyException. Re-issuing a code for a
+        // user mutates the loaded row rather than storing a fresh instance, so the
+        // version chain stays intact.
         options.Schema.For<EmailOtpChallenge>()
-            .Identity(x => x.Id);
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true);
 
         // Audit #25 — optimistic concurrency makes the "one-time use" consume
         // atomic. Login loads the challenge then deletes it; two concurrent
@@ -121,9 +128,14 @@ public static class MartenStoreOptionsExtensions
         // ADR-0010 Phase 2 — cookieless WebAuthn assertion ceremony for the
         // native urn:cocoar:passkey grant. Single-use, short-TTL; keyed by the
         // server-generated ceremonyId. Indexed by ExpiresAt for an optional sweep.
+        // Optimistic concurrency + a ConsumedAt marker make the single-use
+        // guarantee real: the redeem path version-checks its Store, so two
+        // concurrent redemptions of one ceremony_id cannot both mint a token
+        // (a Delete would not be version-checked).
         options.Schema.For<PasskeyCeremony>()
             .Identity(x => x.Id)
-            .Index(x => x.ExpiresAt);
+            .Index(x => x.ExpiresAt)
+            .UseOptimisticConcurrency(true);
 
         // ADR-0009 — cookieless WebAuthn ATTESTATION ceremony for native per-client
         // passkey enrollment (Bearer-authenticated; a native client has no session

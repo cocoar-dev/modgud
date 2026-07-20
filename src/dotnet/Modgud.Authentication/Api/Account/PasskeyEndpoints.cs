@@ -25,6 +25,14 @@ public static class PasskeyEndpoints
 
     private const string RegistrationCacheKey = "fido2.attestationOptions";
 
+    /// <summary>Carries only the server-side ceremony id — never the ceremony
+    /// state itself.</summary>
+    private const string PasskeyChallengeCookie = "Modgud.Passkey.Challenge";
+
+    /// <summary>The cookie is scoped to the passkey endpoints; every Append AND
+    /// Delete must use this exact path or the delete silently does nothing.</summary>
+    private const string PasskeyCookiePath = "/api/account/passkey";
+
     public static WebApplication MapPasskeyEndpoints(this WebApplication application, string path)
     {
         var group = application.MapGroup($"{path}/account/passkey")
@@ -296,23 +304,51 @@ public static class PasskeyEndpoints
                 UserVerification = UserVerificationRequirement.Required,
             });
 
-            // Store challenge in a secure cookie (anonymous users don't have sessions).
+            // The ceremony state lives SERVER-SIDE, exactly like the native
+            // /connect/passkey/begin flow — the cookie only carries an opaque
+            // ceremony id. It used to carry the whole AssertionOptions as plain
+            // Base64 (no signature, no encryption) and the login endpoint parsed it
+            // back as trusted input, so a client could rewrite the ceremony options
+            // and replay an old challenge. Anonymous users have no session, but they
+            // don't need one: the id is a lookup key, and tampering with it merely
+            // fails to resolve.
+            //
+            // Opportunistic cleanup on the same traffic that creates the docs, as
+            // the native begin endpoint does — bounds orphaned-ceremony growth
+            // without a scheduled job (backed by the ExpiresAt index).
+            session.DeleteWhere<PasskeyCeremony>(c => c.ExpiresAt < DateTimeOffset.UtcNow);
+
+            var optionsJson = options.ToJson();
+            var ceremony = new PasskeyCeremony
+            {
+                Id = Guid.NewGuid(),
+                OptionsJson = optionsJson,
+                // Realm-scoped web login: no per-client binding, and the RP ID is
+                // pinned so an admin editing the setting mid-ceremony can't cause a
+                // begin/redeem drift (same rationale as the native flow).
+                ClientId = null,
+                RpId = await rpIdResolver.GetPrimaryDomainAsync(ct),
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(PasskeyCeremony.ExpirationMinutes),
+                CreatedAt = DateTimeOffset.UtcNow,
+            };
+            session.Store(ceremony);
+            await session.SaveChangesAsync(ct);
+
             // Secure=Request.IsHttps mirrors CookieSecurePolicy.SameAsRequest:
             // the cookie carries Secure on HTTPS requests and not on plain HTTP
             // (dev only). With ForwardedHeaders middleware behind the reverse
             // proxy, IsHttps reflects the public scheme, so production deploys
             // always get Secure even when Kestrel itself listens on HTTP behind
             // the proxy.
-            var optionsJson = options.ToJson();
-            context.Response.Cookies.Append("Modgud.Passkey.Challenge",
-                Convert.ToBase64String(Encoding.UTF8.GetBytes(optionsJson)),
+            context.Response.Cookies.Append(PasskeyChallengeCookie,
+                ceremony.Id.ToString(),
                 new CookieOptions
                 {
                     HttpOnly = true,
                     Secure = context.Request.IsHttps,
                     SameSite = SameSiteMode.Strict,
-                    MaxAge = TimeSpan.FromMinutes(5),
-                    Path = "/api/account/passkey",
+                    MaxAge = TimeSpan.FromMinutes(PasskeyCeremony.ExpirationMinutes),
+                    Path = PasskeyCookiePath,
                 });
 
             return Results.Content(optionsJson, "application/json");
@@ -334,33 +370,57 @@ public static class PasskeyEndpoints
         {
             var fido2 = await fido2Factory.CreateAsync(ct);
 
-            // Retrieve challenge from cookie
-            var challengeCookie = context.Request.Cookies["Modgud.Passkey.Challenge"];
-            if (string.IsNullOrEmpty(challengeCookie))
+            // The cookie carries only the ceremony id; the authoritative options
+            // come from the server-side record. Delete MUST repeat the Path the
+            // cookie was set with — a pathless Delete does not match it and the
+            // stale cookie survives in the browser.
+            var challengeCookie = context.Request.Cookies[PasskeyChallengeCookie];
+            context.Response.Cookies.Delete(PasskeyChallengeCookie,
+                new CookieOptions { Path = PasskeyCookiePath });
+
+            if (!Guid.TryParse(challengeCookie, out var ceremonyId))
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+
+            var ceremony = await session.LoadAsync<PasskeyCeremony>(ceremonyId, ct);
+            if (ceremony is null || ceremony.IsExpired || ceremony.IsConsumed)
+                return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+
+            // Single-use: consume before verifying, via a version-checked Store of
+            // ConsumedAt (Marten does not version-check deletes), so a captured
+            // ceremony can never be replayed and two concurrent logins cannot both
+            // redeem one challenge.
+            ceremony.ConsumedAt = DateTimeOffset.UtcNow;
+            session.Store(ceremony);
+            try
+            {
+                await session.SaveChangesAsync(ct);
+            }
+            catch (JasperFx.ConcurrencyException)
+            {
+                return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+            }
 
             AssertionOptions options;
             try
             {
-                var optionsJson = Encoding.UTF8.GetString(Convert.FromBase64String(challengeCookie));
-                options = AssertionOptions.FromJson(optionsJson);
+                options = AssertionOptions.FromJson(ceremony.OptionsJson);
             }
             catch
             {
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
             }
 
-            context.Response.Cookies.Delete("Modgud.Passkey.Challenge");
-
             // Verify the assertion via the shared verifier (the SAME FIDO2 verify
-            // the native urn:cocoar:passkey grant uses — no fork). Only the
-            // challenge transport differs: web reads AssertionOptions from the
-            // cookie above, native from the server-side ceremony doc. The web flow
-            // is realm-scoped: RP ID = PrimaryDomain (the fido2 above was built with
-            // it), so legacy null-RpId credentials resolve to it and still verify.
+            // the native urn:cocoar:passkey grant uses — no fork). Both flows now
+            // also share the challenge transport: a server-side ceremony doc. The
+            // web flow is realm-scoped: RP ID = PrimaryDomain (the fido2 above was
+            // built with it), so legacy null-RpId credentials resolve to it and
+            // still verify. Prefer the RP ID pinned at begin-time so an admin
+            // changing PrimaryDomain mid-ceremony can't cause a begin/redeem drift.
             var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
+            var ceremonyRpId = ceremony.RpId ?? primaryDomain;
             var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(
-                fido2, options, body.GetRawText(), session, primaryDomain, primaryDomain, ct);
+                fido2, options, body.GetRawText(), session, ceremonyRpId, ceremonyRpId, ct);
             if (storedCredential is null)
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
 

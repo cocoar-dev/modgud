@@ -1,21 +1,23 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace Modgud.Infrastructure.OpenIddict.Cimd;
+namespace Modgud.Infrastructure.Http;
 
 /// <summary>
-/// SSRF address guard for the CIMD metadata fetcher. Classifies a resolved
-/// <see cref="IPAddress"/> as routable-public (allowed) or
-/// non-public/special-use (blocked). Pure + dependency-free so the full
-/// range table is unit-testable.
+/// SSRF address guard for every server-side fetch of an operator- or
+/// admin-supplied URL (CIMD client metadata, SAML IdP metadata, OIDC discovery
+/// + backchannel). Classifies a resolved <see cref="IPAddress"/> as
+/// routable-public (allowed) or non-public/special-use (blocked). Pure +
+/// dependency-free so the full range table is unit-testable.
 ///
-/// <para>The fetcher resolves DNS itself and connects to a validated IP via
-/// <c>SocketsHttpHandler.ConnectCallback</c> — checking the <em>resolved</em>
+/// <para>Callers resolve DNS themselves and connect to a validated IP via
+/// <c>SocketsHttpHandler.ConnectCallback</c> (see
+/// <see cref="SsrfSafeHttpHandlerFactory"/>) — checking the <em>resolved</em>
 /// address (not the hostname) and connecting to exactly that address closes
 /// the DNS-rebinding window where a name resolves "public" at validation
 /// time and "private" at connect time.</para>
 /// </summary>
-public static class CimdIpGuard
+public static class SsrfIpGuard
 {
     /// <summary>
     /// True if <paramref name="address"/> must NOT be connected to (loopback,

@@ -55,7 +55,7 @@ public partial class CocoarPasskeyGrantFlowTests : IntegrationTestBase
         Assert.False(string.IsNullOrEmpty(options.GetProperty("challenge").GetString()));
 
         // A single-use ceremony doc was persisted for the realm.
-        Assert.True(await CeremonyExistsAsync(ceremonyId));
+        Assert.True(await CeremonyIsRedeemableAsync(ceremonyId));
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public partial class CocoarPasskeyGrantFlowTests : IntegrationTestBase
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("invalid_grant", body);
         // An expired ceremony is consumed (deleted) on the rejected path.
-        Assert.False(await CeremonyExistsAsync(ceremonyId));
+        Assert.False(await CeremonyIsRedeemableAsync(ceremonyId));
     }
 
     [Fact]
@@ -162,7 +162,7 @@ public partial class CocoarPasskeyGrantFlowTests : IntegrationTestBase
         Assert.False(response.IsSuccessStatusCode);
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("invalid_grant", body);
-        Assert.False(await CeremonyExistsAsync(ceremonyId));
+        Assert.False(await CeremonyIsRedeemableAsync(ceremonyId));
     }
 
     [Fact]
@@ -189,7 +189,7 @@ public partial class CocoarPasskeyGrantFlowTests : IntegrationTestBase
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("invalid_grant", body);
         // The ceremony is single-use — consumed even on this rejected path.
-        Assert.False(await CeremonyExistsAsync(ceremonyId));
+        Assert.False(await CeremonyIsRedeemableAsync(ceremonyId));
     }
 
     // ─────────────────── crypto success path (software authenticator) ─────────
@@ -221,8 +221,8 @@ public partial class CocoarPasskeyGrantFlowTests : IntegrationTestBase
         Assert.True(json.RootElement.TryGetProperty("refresh_token", out var rt) && !string.IsNullOrEmpty(rt.GetString()));
         Assert.False(response.Headers.Contains("Set-Cookie"));
 
-        // The ceremony is single-use — gone even on the success path.
-        Assert.False(await CeremonyExistsAsync(Guid.Parse(ceremonyId)));
+        // The ceremony is single-use — no longer redeemable, even on success.
+        Assert.False(await CeremonyIsRedeemableAsync(Guid.Parse(ceremonyId)));
     }
 
     [Fact]
@@ -466,12 +466,19 @@ public partial class CocoarPasskeyGrantFlowTests : IntegrationTestBase
         return all.FirstOrDefault(c => c.CredentialId.SequenceEqual(credentialId));
     }
 
-    private async Task<bool> CeremonyExistsAsync(Guid ceremonyId)
+    /// <summary>
+    /// Asserts the security property (the ceremony can still be redeemed) rather
+    /// than the storage mechanism. Consuming is a version-checked Store of
+    /// <c>ConsumedAt</c>, not a Delete — Marten does not version-check deletes, so
+    /// a Delete would let two concurrent redemptions of one ceremony_id both mint
+    /// a token. A consumed row therefore still exists but must never be usable.
+    /// </summary>
+    private async Task<bool> CeremonyIsRedeemableAsync(Guid ceremonyId)
     {
         using var scope = NewSystemTenantScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
         var doc = await session.LoadAsync<PasskeyCeremony>(ceremonyId, TestContext.Current.CancellationToken);
-        return doc is not null;
+        return doc is not null && !doc.IsConsumed && !doc.IsExpired;
     }
 
     private Task SeedPasskeyClientAsync(string clientId, string? rpId = null) =>

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Modgud.Infrastructure.Persistence.Tenancy;
@@ -93,9 +94,21 @@ public static class SamlEndpoints
         [FromServices] SamlLoginFlow flow,
         CancellationToken ct)
     {
+        // This endpoint is anonymous and does real work per request (XML parse +
+        // signature validation over the whole document), so cap the body well
+        // below ASP.NET Core's 30 MB default — a SAMLResponse form post is a few
+        // KB. Same tightening AssetsEndpoints applies for the same reason.
+        http.Features.Get<IHttpMaxRequestBodySizeFeature>()
+            ?.MaxRequestBodySize = MaxAcsBodyBytes;
+
         if (!manager.TryGetBySlug(TenantContext.Current, slug, out var provider) || provider is null)
             return Results.NotFound();
 
         return await flow.HandleAcsAsync(provider, http, ct);
     }
+
+    /// <summary>512 KB — a signed SAMLResponse (base64, possibly with an
+    /// embedded encrypted assertion and a cert chain) is comfortably under this;
+    /// anything larger is abuse, not a login.</summary>
+    private const long MaxAcsBodyBytes = 512 * 1024;
 }

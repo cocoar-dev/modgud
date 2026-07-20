@@ -17,6 +17,17 @@ public class EmailOtpChallenge
     public const int ExpirationMinutes = 10;
     public const int RateLimitMinutes = 2;
 
+    /// <summary>
+    /// Set when the code was successfully redeemed. Consuming is a
+    /// version-checked <c>Store</c> of this marker rather than a Delete —
+    /// Marten does NOT enforce optimistic concurrency on deletes, so two
+    /// concurrent redemptions of the same code would both delete-and-proceed.
+    /// A later replay is rejected by the <see cref="IsConsumed"/> gate. The row
+    /// is reaped by expiry / the next issue for this user.
+    /// </summary>
+    public DateTimeOffset? ConsumedAt { get; set; }
+
     public bool IsExpired => DateTimeOffset.UtcNow >= ExpiresAt;
+    public bool IsConsumed => ConsumedAt is not null;
     public bool HasExceededAttempts => Attempts >= MaxAttempts;
 }

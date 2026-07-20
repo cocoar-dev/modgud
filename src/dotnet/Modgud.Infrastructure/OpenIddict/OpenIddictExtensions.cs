@@ -102,7 +102,8 @@ public static class OpenIddictExtensions
             {
                 client.Timeout = TimeSpan.FromSeconds(5);
             })
-            .ConfigurePrimaryHttpMessageHandler(() => Cimd.CimdHttpMessageHandlerFactory.Create());
+            .ConfigurePrimaryHttpMessageHandler(() =>
+                Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create("CIMD metadata fetch"));
 
         // Custom Marten stores (OpenIddict 7 pattern: register the store directly,
         // not the entity → store mapping)
