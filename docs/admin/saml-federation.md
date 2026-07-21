@@ -79,12 +79,13 @@ Use the IdP's normal test users — sign in with an account that already exists 
 When a user signs in via the SAML provider, Modgud:
 
 1. Validates the SAML Response signature against the IdP's signing certs (from the imported / fetched metadata).
-2. Verifies the audience matches our SP EntityID.
-3. Extracts NameID (→ Modgud `sub`) and attributes.
-4. Applies the provider's **AttributeMap** to translate IdP-specific claim URIs (e.g. Microsoft's `http://schemas.xmlsoap.org/.../emailaddress`) to stable logical names (`email`).
-5. Runs the **User-Update-Script** to derive `firstname`, `lastname`, `email`, `acronym` from the claims.
-6. Links the external identity to an existing Modgud user (by email-domain match or auto-link rule) **or** creates a new user via JIT provisioning if enabled.
-7. Signs the user into the Modgud cookie.
+2. Correlates the Response to the exact login it started: the `InResponseTo` in the assertion must match an AuthnRequest Modgud actually sent for this provider, and each such request is accepted **once**. This is what stops a captured, still-valid assertion from being replayed within its lifetime. A Response that answers no request Modgud sent — including an IdP-initiated ("unsolicited") one — is refused (see [Out of scope](#out-of-scope-v1)).
+3. Verifies the audience matches our SP EntityID.
+4. Extracts NameID (→ Modgud `sub`) and attributes.
+5. Applies the provider's **AttributeMap** to translate IdP-specific claim URIs (e.g. Microsoft's `http://schemas.xmlsoap.org/.../emailaddress`) to stable logical names (`email`).
+6. Runs the **User-Update-Script** to derive `firstname`, `lastname`, `email`, `acronym` from the claims.
+7. Links the external identity to an existing Modgud user (by email-domain match or auto-link rule) **or** creates a new user via JIT provisioning if enabled.
+8. Signs the user into the Modgud cookie.
 
 Group / role / permission membership stays under Modgud's control — see [Permission-Modell](../concepts/permissions) for the design rationale. Group-claim → Modgud-Group translation is handled by [auto-membership scripts on Groups](./groups#auto-membership-membership-scripts).
 
@@ -104,6 +105,7 @@ Two halves:
 ## Out of scope (v1)
 
 - **Single-Logout (SLO)** — logout in Modgud only clears Modgud's cookie. The customer-IdP session stays alive. SLO is on the roadmap.
+- **IdP-initiated SSO** — Modgud only accepts a SAML Response that answers a login it started (SP-initiated). Starting the flow from the IdP's app dashboard (an "unsolicited" Response, with no `InResponseTo`) is refused by design — that correlation is what enforces replay protection. Always link to Modgud's login page (or the provider's SP-initiated login URL), not to an IdP-initiated tile.
 - **Modgud as SAML IdP** — Modgud is SP-only in v1. If you have a legacy app that speaks only SAML and you want Modgud to authenticate it, that's a future capability; today the answer is "use a SAML→OIDC bridge" or "use Modgud's OIDC".
 - **Encrypted assertions** — supported in the FlavorData config but off by default. Most IdPs only sign; they don't encrypt at the assertion level (TLS is enough).
 - **Artifact binding** — HTTP-Redirect and HTTP-POST only. Add on demand.
@@ -113,4 +115,7 @@ Two halves:
 - **"Cannot enable a SAML provider without IdP metadata"** — set either MetadataUrl or MetadataXml in the Connection tab and save, then enable.
 - **IdP error: "Unable to locate metadata for ..."** — the IdP doesn't know about our SP EntityID. Re-import our SP metadata at `https://<modgud-host>/saml/<slug>/sp-metadata` into the IdP setup.
 - **Login redirects to error page** — check the backend log around the time of the failed login. Common causes: clock skew (assertion's NotBefore/NotOnOrAfter outside the validation window), wrong audience (SP EntityID mismatch), or signature validation failure (IdP rotated its key but Modgud's cache is stale — hit "Refresh metadata" or wait for the next scheduled refresh).
+- **`error=saml-unsolicited` / `error=saml-unknown-request`** — the Response didn't answer a login Modgud started. The usual cause is an **IdP-initiated** login (started from the IdP's app tile) — not supported, see [Out of scope](#out-of-scope-v1); send users to Modgud's login page instead. `saml-unknown-request` can also mean the login took longer than the 15-minute correlation window, or the app instance that started it and the one that received the Response don't share a database.
+- **`error=saml-replayed`** — the Response was already consumed. A single sign-in issues one assertion that Modgud accepts once; a second submission of the same assertion (browser back/refresh on the ACS POST, or an actual replay attempt) lands here. Start a fresh login.
+- **`error=saml-provider-mismatch`** — the Response arrived at a different provider's ACS than the one that sent the AuthnRequest. Usually a mis-wired ACS URL in the IdP config — re-check the `<slug>` in the ACS URL you gave the IdP.
 - **User signed in but with wrong identity** — check the Linking & Policies tab. Email-based auto-linking can bind an incoming SAML identity to an existing Modgud user whose email matches. Turn off "Email-based auto-linking" if you want SAML logins to JIT-create users instead.
