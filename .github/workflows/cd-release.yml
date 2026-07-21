@@ -551,7 +551,7 @@ jobs:
           echo "DIGEST=$DIGEST" >> $GITHUB_OUTPUT
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4
+        uses: sigstore/cosign-installer@v3
 
       # Keyless (Fulcio/Rekor): the signature is bound to this workflow
       # run's OIDC identity — no long-lived signing key to manage or
