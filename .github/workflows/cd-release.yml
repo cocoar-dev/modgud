@@ -266,6 +266,16 @@ jobs:
       # so both platforms' package sets are actually scanned.
       - name: Scan image (Trivy — blocks release on fixable CRITICAL/HIGH)
         uses: aquasecurity/trivy-action@v0.36.0
+        # Pin the platform to this arch. On a real release the build pushes
+        # by digest with SBOM + provenance (mode=max), so buildx wraps the
+        # single-arch image in an index (image manifest + attestation
+        # manifests). Given an index, Trivy resolves to its default platform
+        # linux/amd64 REGARDLESS of the runner arch — so the arm64 job asked
+        # for a linux/amd64 child that an arm64-only index doesn't have and
+        # failed ("no child with platform linux/amd64 in index"). amd64 passed
+        # only by coincidence. TRIVY_PLATFORM makes each job scan its own arch.
+        env:
+          TRIVY_PLATFORM: ${{ matrix.platform }}
         with:
           image-ref: ${{ (github.event_name == 'release' || !inputs.dry_run) && format('{0}/{1}@{2}', env.REGISTRY, env.IMAGE_NAME, steps.build.outputs.digest) || 'modgud:trivy-scan' }}
           format: table
