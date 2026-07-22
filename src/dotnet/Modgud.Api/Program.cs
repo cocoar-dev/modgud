@@ -659,6 +659,11 @@ try
     // renames a realm's legacy "Administratoren" admin group to "Administrators".
     // Same cold-start-walks-every-realm pattern as OidcSchemeBootstrap below.
     builder.Services.AddHostedService<Modgud.Authentication.Setup.LegacyAdminGroupRenameBootstrap>();
+    // RFC 9126 (2026-07) — one-time, idempotent boot migration that backfills the
+    // ept:pushed_authorization endpoint permission onto pre-existing OAuth clients
+    // so they can use the advertised /connect/par endpoint (fixes unauthorized_client
+    // / ID2183 without a manual re-save). Same cold-start-walks-every-realm pattern.
+    builder.Services.AddHostedService<Modgud.Authentication.Setup.PushedAuthorizationPermissionBackfill>();
     builder.Services.AddSingleton<UserUpdateScriptRunner>();
     builder.Services.AddSingleton<Modgud.Authentication.Api.ExternalAuth.OidcSchemeRealmRegistry>();
     builder.Services.AddSingleton<DynamicOidcSchemeManager>();
