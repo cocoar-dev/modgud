@@ -257,36 +257,17 @@ public class EffectiveSettingsTests
         }
 
         [Fact]
-        public void Pages_are_overlaid_per_slot_and_missing_slots_inherit()
+        public void Realm_legacy_pages_pass_through_and_app_inherits()
         {
+            // Un-migrated legacy realm schemas still resolve; an App with no
+            // selection inherits them (Apps no longer author their own schemas).
             var realm = Realm();
             realm.Pages!["password-forgot"] = "realm-forgot";
-            var app = new ApplicationSettings
-            {
-                Pages = new Dictionary<string, string>
-                {
-                    ["login"] = "app-login",
-                },
-            };
+            var app = new ApplicationSettings();
 
             var eff = EffectiveSettings.Merge(realm, app);
 
-            Assert.Equal("app-login", eff.Pages!["login"]);
-            Assert.Equal("realm-forgot", eff.Pages["password-forgot"]);
-            Assert.NotSame(realm.Pages, eff.Pages);
-        }
-
-        [Fact]
-        public void Pages_without_a_realm_default_can_be_application_only()
-        {
-            var app = new ApplicationSettings
-            {
-                Pages = new Dictionary<string, string> { ["login"] = "app-login" },
-            };
-
-            var eff = EffectiveSettings.Merge(new RealmSettingsDoc(), app);
-
-            Assert.Equal("app-login", eff.Pages!["login"]);
+            Assert.Equal("realm-forgot", eff.Pages!["password-forgot"]);
         }
 
         [Fact]
@@ -359,7 +340,34 @@ public class EffectiveSettingsTests
         }
 
         [Fact]
-        public void App_override_variant_wins_over_realm()
+        public void App_selects_a_different_realm_variant_than_the_realm_active()
+        {
+            // Realm library has two variants; realm activates "r", the App picks
+            // "x" (also a realm variant) — Apps select from the realm library.
+            var realm = RealmWithSlot("login", new RealmPageSlot
+            {
+                Variants =
+                [
+                    new PageVariant { Id = "r", Name = "R", Schema = "realm-login" },
+                    new PageVariant { Id = "x", Name = "X", Schema = "other-login" },
+                ],
+                ActiveVariantId = "r",
+            });
+            var app = new ApplicationSettings
+            {
+                PageSlots = new Dictionary<string, AppPageSlot>
+                {
+                    ["login"] = new AppPageSlot { InheritActive = false, ActiveVariantId = "x" },
+                },
+            };
+
+            var eff = EffectiveSettings.Merge(realm, app);
+
+            Assert.Equal("other-login", eff.Pages!["login"]);
+        }
+
+        [Fact]
+        public void App_selecting_an_unknown_variant_falls_back_to_builtin()
         {
             var realm = RealmWithSlot("login", new RealmPageSlot
             {
@@ -370,18 +378,13 @@ public class EffectiveSettingsTests
             {
                 PageSlots = new Dictionary<string, AppPageSlot>
                 {
-                    ["login"] = new AppPageSlot
-                    {
-                        InheritActive = false,
-                        Variants = [new PageVariant { Id = "x", Name = "X", Schema = "app-login" }],
-                        ActiveVariantId = "x",
-                    },
+                    ["login"] = new AppPageSlot { InheritActive = false, ActiveVariantId = "ghost" },
                 },
             };
 
             var eff = EffectiveSettings.Merge(realm, app);
 
-            Assert.Equal("app-login", eff.Pages!["login"]);
+            Assert.True(eff.Pages is null || !eff.Pages.ContainsKey("login"));
         }
 
         [Fact]
@@ -426,8 +429,16 @@ public class EffectiveSettingsTests
         }
 
         [Fact]
-        public void App_migration_marks_legacy_override_as_non_inheriting_active()
+        public void App_migration_drops_legacy_authored_schema_and_inherits()
         {
+            // Apps no longer author their own schemas (the library is realm-global),
+            // so a legacy App page override cannot be represented — migration drops
+            // it and the slot inherits the realm.
+            var realm = RealmWithSlot("login", new RealmPageSlot
+            {
+                Variants = [new PageVariant { Id = "r", Name = "R", Schema = "realm-login" }],
+                ActiveVariantId = "r",
+            });
             var app = new ApplicationSettings
             {
                 Pages = new Dictionary<string, string> { ["login"] = "legacy-app-login" },
@@ -437,10 +448,9 @@ public class EffectiveSettingsTests
 
             Assert.True(changed);
             Assert.Null(app.Pages);
-            var slot = app.PageSlots!["login"];
-            Assert.False(slot.InheritActive);
-            Assert.Equal(slot.Variants[0].Id, slot.ActiveVariantId);
-            Assert.Equal("legacy-app-login", EffectiveSettings.Merge(new RealmSettingsDoc(), app).Pages!["login"]);
+            Assert.True(app.PageSlots is null || !app.PageSlots.ContainsKey("login"));
+            // Inherits the realm active variant.
+            Assert.Equal("realm-login", EffectiveSettings.Merge(realm, app).Pages!["login"]);
         }
     }
 }

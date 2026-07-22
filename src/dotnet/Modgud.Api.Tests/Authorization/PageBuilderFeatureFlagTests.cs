@@ -227,10 +227,10 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
         finally { settings.Features.PageBuilder = false; }
     }
 
-    // ── application inheritance / override / deactivate ──
+    // ── application: select from realm variants ──
 
     [Fact]
-    public async Task Application_inherits_then_overrides_then_deactivates_and_survives_settings_save()
+    public async Task Application_selects_a_realm_variant_and_survives_settings_save()
     {
         var settings = Factory.Services.GetRequiredService<AppSettings>();
         settings.Features.PageBuilder = true;
@@ -238,9 +238,14 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
         try
         {
             const string realmSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[]}";
-            const string appSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[{\"id\":\"t\",\"type\":\"heading\",\"props\":{\"text\":\"App\"}}]}";
+            const string altSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[{\"id\":\"t\",\"type\":\"heading\",\"props\":{\"text\":\"Alt\"}}]}";
 
             await SeedRealmActive("logout", "Realm", realmSchema, ct);
+            // A second, non-active realm variant the App can pick.
+            var altPost = await Client.PostAsJsonAsync("/api/admin/customization/pages/logout/variants",
+                new { Name = "Alt", Schema = altSchema }, ct);
+            using var altCreated = JsonDocument.Parse(await altPost.Content.ReadAsStringAsync(ct));
+            var altId = altCreated.RootElement.GetProperty("Id").GetString();
 
             var slug = $"pb-{Guid.NewGuid():N}";
             var createdResponse = await Client.PostAsJsonAsync("/api/app",
@@ -250,22 +255,21 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
             var appId = created.RootElement.GetProperty("Id").GetString();
             var basePath = $"/api/app/{appId}/pages";
 
-            // Fresh app inherits: its slot list is empty.
+            // Fresh app inherits, and can see the realm variants as options.
             using (var list = JsonDocument.Parse(await (await Client.GetAsync(basePath, ct)).Content.ReadAsStringAsync(ct)))
             {
-                Assert.Empty(list.RootElement.GetProperty("Slots").EnumerateArray());
+                var slot = list.RootElement.GetProperty("Slots").EnumerateArray()
+                    .Single(s => s.GetProperty("Slug").GetString() == "logout");
+                Assert.True(slot.GetProperty("InheritActive").GetBoolean());
+                Assert.Equal(2, slot.GetProperty("AvailableVariants").EnumerateArray().Count());
             }
 
-            // App authors its own variant and activates it (non-inheriting).
-            var post = await Client.PostAsJsonAsync($"{basePath}/logout/variants",
-                new { Name = "App", Schema = appSchema }, ct);
-            using var appVariant = JsonDocument.Parse(await post.Content.ReadAsStringAsync(ct));
-            var appVariantId = appVariant.RootElement.GetProperty("Id").GetString();
+            // App overrides to the Alt realm variant.
             var setActive = await Client.PutAsJsonAsync($"{basePath}/logout/active",
-                new { Inherit = false, ActiveVariantId = appVariantId }, ct);
+                new { Inherit = false, ActiveVariantId = altId }, ct);
             Assert.Equal(HttpStatusCode.OK, setActive.StatusCode);
 
-            // A regular App settings replace must leave the page tree intact.
+            // A regular App settings replace must leave the page selection intact.
             var appUpdate = await Client.PutAsJsonAsync($"/api/app/{appId}",
                 new UpdateAppDto("PageBuilder App", null, [], new ApplicationSettingsDto
                 {
@@ -275,28 +279,58 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
 
             using (var list = JsonDocument.Parse(await (await Client.GetAsync(basePath, ct)).Content.ReadAsStringAsync(ct)))
             {
-                var slot = list.RootElement.GetProperty("Slots").EnumerateArray().Single();
+                var slot = list.RootElement.GetProperty("Slots").EnumerateArray()
+                    .Single(s => s.GetProperty("Slug").GetString() == "logout");
                 Assert.False(slot.GetProperty("InheritActive").GetBoolean());
-                Assert.Equal(appVariantId, slot.GetProperty("ActiveVariantId").GetString());
-                Assert.Single(slot.GetProperty("Variants").EnumerateArray());
+                Assert.Equal(altId, slot.GetProperty("ActiveVariantId").GetString());
             }
 
-            // Back to inherit — app variant is retained, realm selection stands.
+            // The realm grid shows the Alt variant is used by this app.
+            using (var realmSlot = JsonDocument.Parse(await (await Client.GetAsync(
+                "/api/admin/customization/pages/logout", ct)).Content.ReadAsStringAsync(ct)))
+            {
+                var alt = realmSlot.RootElement.GetProperty("Variants").EnumerateArray()
+                    .Single(v => v.GetProperty("Id").GetString() == altId);
+                Assert.Contains("PageBuilder App", alt.GetProperty("UsedByApps").EnumerateArray().Select(x => x.GetString()));
+            }
+
+            // Back to inherit.
             var inherit = await Client.PutAsJsonAsync($"{basePath}/logout/active",
                 new { Inherit = true, ActiveVariantId = (string?)null }, ct);
             Assert.Equal(HttpStatusCode.OK, inherit.StatusCode);
             using (var list = JsonDocument.Parse(await (await Client.GetAsync(basePath, ct)).Content.ReadAsStringAsync(ct)))
             {
-                var slot = list.RootElement.GetProperty("Slots").EnumerateArray().Single();
+                var slot = list.RootElement.GetProperty("Slots").EnumerateArray()
+                    .Single(s => s.GetProperty("Slug").GetString() == "logout");
                 Assert.True(slot.GetProperty("InheritActive").GetBoolean());
-                Assert.Single(slot.GetProperty("Variants").EnumerateArray()); // retained
             }
         }
         finally { settings.Features.PageBuilder = false; }
     }
 
     [Fact]
-    public async Task AppInfo_resolves_app_override_from_local_authorize_client_context()
+    public async Task Application_activating_a_non_realm_variant_is_rejected()
+    {
+        var settings = Factory.Services.GetRequiredService<AppSettings>();
+        settings.Features.PageBuilder = true;
+        var ct = TestContext.Current.CancellationToken;
+        try
+        {
+            var slug = $"pb-{Guid.NewGuid():N}";
+            var createdResponse = await Client.PostAsJsonAsync("/api/app",
+                new CreateAppDto(slug, "PB App 2", null, [], null), JsonOptions, ct);
+            using var created = JsonDocument.Parse(await createdResponse.Content.ReadAsStringAsync(ct));
+            var appId = created.RootElement.GetProperty("Id").GetString();
+
+            var resp = await Client.PutAsJsonAsync($"/api/app/{appId}/pages/login/active",
+                new { Inherit = false, ActiveVariantId = "not-a-realm-variant" }, ct);
+            Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        }
+        finally { settings.Features.PageBuilder = false; }
+    }
+
+    [Fact]
+    public async Task AppInfo_resolves_app_selected_realm_variant_from_local_authorize_client_context()
     {
         var settings = Factory.Services.GetRequiredService<AppSettings>();
         settings.Features.PageBuilder = true;
@@ -304,12 +338,16 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
         try
         {
             const string realmSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[]}";
-            const string appSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[{\"id\":\"a\",\"type\":\"paragraph\",\"props\":{\"text\":\"App login\"}}]}";
+            const string altSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[{\"id\":\"a\",\"type\":\"paragraph\",\"props\":{\"text\":\"Alt login\"}}]}";
             await SeedRealmActive("login", "Realm", realmSchema, ct);
+            // A second realm variant the App will select.
+            var altPost = await Client.PostAsJsonAsync("/api/admin/customization/pages/login/variants",
+                new { Name = "Alt", Schema = altSchema }, ct);
+            using var altCreated = JsonDocument.Parse(await altPost.Content.ReadAsStringAsync(ct));
+            var altId = altCreated.RootElement.GetProperty("Id").GetString();
 
             var appId = Guid.NewGuid();
             var clientId = $"page-client-{Guid.NewGuid():N}";
-            var appVariantId = Guid.NewGuid().ToString("N");
             using (var scope = Factory.Services.CreateScope())
             {
                 var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
@@ -319,12 +357,8 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
                     CreatedAt = DateTimeOffset.UtcNow,
                     PageSlots = new Dictionary<string, AppPageSlot>
                     {
-                        ["login"] = new AppPageSlot
-                        {
-                            InheritActive = false,
-                            Variants = [new PageVariant { Id = appVariantId, Name = "App", Schema = appSchema }],
-                            ActiveVariantId = appVariantId,
-                        },
+                        // App selects the Alt *realm* variant (no app-owned variants).
+                        ["login"] = new AppPageSlot { InheritActive = false, ActiveVariantId = altId },
                     },
                 });
                 session.Store(new OAuthApplicationState { Id = Guid.NewGuid(), ClientId = clientId, AppIds = [appId] });
@@ -332,7 +366,7 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
             }
 
             var continuation = Uri.EscapeDataString($"/connect/authorize?client_id={clientId}&scope=openid");
-            Assert.Equal(appSchema, await AppInfoActiveSchema("login", ct, continuation));
+            Assert.Equal(altSchema, await AppInfoActiveSchema("login", ct, continuation));
 
             // An absolute URL is not accepted as presentation context → realm schema.
             var untrusted = Uri.EscapeDataString($"https://evil.example/connect/authorize?client_id={clientId}");

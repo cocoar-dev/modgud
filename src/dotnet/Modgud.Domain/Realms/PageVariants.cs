@@ -39,24 +39,22 @@ public class RealmPageSlot
 }
 
 /// <summary>
-/// Application-level configuration for one page slot (ADR-0001). Mirrors
-/// <see cref="RealmPageSlot"/> but adds an inherit switch: when
-/// <see cref="InheritActive"/> is <c>true</c> (default) the effective active
-/// page is resolved from the realm; when <c>false</c> the Application overrides
-/// it — <see cref="ActiveVariantId"/> <c>null</c> ⇒ built-in, else an
-/// Application variant.
+/// Application-level selection for one page slot (ADR-0001). An Application does
+/// not author its own variants — the variant library is realm-global; the App
+/// merely *selects* which realm variant is live for it. When
+/// <see cref="InheritActive"/> is <c>true</c> (default) the effective page is
+/// the realm's active selection; when <c>false</c> the App overrides it —
+/// <see cref="ActiveVariantId"/> <c>null</c> ⇒ built-in, else a realm variant id.
 /// </summary>
 public class AppPageSlot
 {
-    public List<PageVariant> Variants { get; set; } = new();
-
     /// <summary>When <c>true</c> the Application defers to the realm's active
     /// selection for this slot. When <c>false</c> the Application's own
     /// selection (<see cref="ActiveVariantId"/>) wins.</summary>
     public bool InheritActive { get; set; } = true;
 
     /// <summary>Only meaningful when <see cref="InheritActive"/> is
-    /// <c>false</c>. <c>null</c> ⇒ built-in hardcoded view; else an
-    /// Application variant id.</summary>
+    /// <c>false</c>. <c>null</c> ⇒ built-in hardcoded view; else a *realm*
+    /// variant id (Applications select from the realm library).</summary>
     public string? ActiveVariantId { get; set; }
 }

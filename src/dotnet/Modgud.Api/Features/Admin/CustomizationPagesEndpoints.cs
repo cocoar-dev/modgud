@@ -10,26 +10,17 @@ using Marten;
 namespace Modgud.Api.Features.Admin;
 
 /// <summary>
-/// Per-realm and per-Application PageBuilder configuration (ADR-0001). Each SPA
-/// page-slug (<c>login</c>, <c>logout</c>, <c>password-forgot</c>, …) owns a
-/// library of named <see cref="PageVariant"/>s plus an active selection. The
-/// schema of a variant is opaque to the backend — a JSON string the
-/// <c>@cocoar/vue-page-builder</c> renderer interprets in the SPA.
-///
-/// <para>Stored on the tenant-DB <see cref="RealmSettings"/> singleton
-/// (<see cref="RealmSettings.PageSlots"/>) and per-App
-/// <see cref="ApplicationSettings.PageSlots"/>. Legacy single-schema data is
-/// migrated in-place on first touch via <c>MigratePagesToSlots</c>.</para>
+/// PageBuilder configuration (ADR-0001). The variant library is <b>realm-global</b>:
+/// each SPA page-slug (<c>login</c>, <c>logout</c>, <c>password-forgot</c>) owns a
+/// set of named <see cref="PageVariant"/>s on the tenant <see cref="RealmSettings"/>.
+/// The realm picks which variant is active for itself; each Application only
+/// *selects* one of those realm variants (or inherits / built-in). Schemas are
+/// opaque JSON the <c>@cocoar/vue-page-builder</c> renderer interprets in the SPA.
 /// </summary>
 public static class CustomizationPagesEndpoints
 {
-    /// <summary>Max-length on a stored schema. JSON page-trees are tiny; 256 KB
-    /// is far more than needed and caps abuse via the admin endpoint.</summary>
     private const int MaxSchemaBytes = 256 * 1024;
-
     private const int MaxVariantNameLength = 80;
-
-    /// <summary>Guard against unbounded variant libraries per slot.</summary>
     private const int MaxVariantsPerSlot = 50;
 
     public static WebApplication MapCustomizationPagesEndpoints(this WebApplication app, string path)
@@ -47,8 +38,7 @@ public static class CustomizationPagesEndpoints
             .WithTags("Admin Customization Pages")
             .RequireAuthorization();
 
-        // GET / — every slot's variant library + active selection. The schema
-        // bodies are omitted (list view); fetch a single variant for editing.
+        // GET / — every slot's variant library + active selection + usage.
         group.MapGet("", async (
             AppSettings settings,
             IDocumentSession session,
@@ -56,19 +46,18 @@ public static class CustomizationPagesEndpoints
         {
             if (!settings.Features.PageBuilder) return Results.NotFound();
 
-            var doc = await session.LoadAsync<RealmSettings>(RealmSettings.SingletonId, ct);
-            if (doc is not null && doc.MigratePagesToSlots())
-            {
-                session.Store(doc);
-                await session.SaveChangesAsync(ct);
-            }
+            var (doc, changed) = await LoadRealmMigrated(session, ct);
+            if (changed) { session.Store(doc!); await session.SaveChangesAsync(ct); }
 
+            var usage = await ComputeAppUsage(session, ct);
             var slots = (doc?.PageSlots ?? new())
                 .Select(kv => new
                 {
                     Slug = kv.Key,
                     kv.Value.ActiveVariantId,
-                    Variants = kv.Value.Variants.Select(SummariseVariant).ToArray(),
+                    Variants = kv.Value.Variants
+                        .Select(v => SummariseVariant(v, kv.Key, kv.Value.ActiveVariantId, usage))
+                        .ToArray(),
                 })
                 .ToArray();
             return Results.Ok(new { Slots = slots });
@@ -76,7 +65,7 @@ public static class CustomizationPagesEndpoints
         .RequiresPermission("realm-settings:read")
         .WithName("Admin_Customization_ListPages");
 
-        // GET /{slug} — one slot's variants + active selection.
+        // GET /{slug} — one slot's variants + active selection + usage.
         group.MapGet("{slug}", async (
             string slug,
             AppSettings settings,
@@ -90,11 +79,14 @@ public static class CustomizationPagesEndpoints
             if (changed) { session.Store(doc!); await session.SaveChangesAsync(ct); }
 
             var slot = doc?.PageSlots?.GetValueOrDefault(slug);
+            var usage = await ComputeAppUsage(session, ct);
             return Results.Ok(new
             {
                 Slug = slug,
                 ActiveVariantId = slot?.ActiveVariantId,
-                Variants = (slot?.Variants ?? new()).Select(SummariseVariant).ToArray(),
+                Variants = (slot?.Variants ?? new())
+                    .Select(v => SummariseVariant(v, slug, slot?.ActiveVariantId, usage))
+                    .ToArray(),
             });
         })
         .RequiresPermission("realm-settings:read")
@@ -114,16 +106,14 @@ public static class CustomizationPagesEndpoints
             var (doc, changed) = await LoadRealmMigrated(session, ct);
             if (changed) { session.Store(doc!); await session.SaveChangesAsync(ct); }
 
-            var variant = doc?.PageSlots?.GetValueOrDefault(slug)?.Variants
-                .FirstOrDefault(v => v.Id == variantId);
+            var variant = doc?.PageSlots?.GetValueOrDefault(slug)?.Variants.FirstOrDefault(v => v.Id == variantId);
             if (variant is null) return Results.NotFound();
             return Results.Ok(new { variant.Id, variant.Name, variant.Schema });
         })
         .RequiresPermission("realm-settings:read")
         .WithName("Admin_Customization_GetPageVariant");
 
-        // POST /{slug}/variants — create a named variant. Does NOT activate it;
-        // activation is a separate settings decision (ADR-0001).
+        // POST /{slug}/variants — create a named variant (does not activate it).
         group.MapPost("{slug}/variants", async (
             string slug,
             SaveVariantRequest body,
@@ -188,8 +178,9 @@ public static class CustomizationPagesEndpoints
         .RequiresPermission("realm-settings:write")
         .WithName("Admin_Customization_UpdatePageVariant");
 
-        // DELETE /{slug}/variants/{variantId} — remove a variant. If it was the
-        // active one, the slot reverts to the built-in view.
+        // DELETE /{slug}/variants/{variantId} — remove a variant. Clears the
+        // realm active pointer if it targeted this variant; Application selections
+        // that pointed here fall back to built-in at resolution time.
         group.MapDelete("{slug}/variants/{variantId}", async (
             string slug,
             string variantId,
@@ -216,7 +207,7 @@ public static class CustomizationPagesEndpoints
         .RequiresPermission("realm-settings:write")
         .WithName("Admin_Customization_DeletePageVariant");
 
-        // PUT /{slug}/active — set which variant is live (null = built-in).
+        // PUT /{slug}/active — set which realm variant is live (null = built-in).
         group.MapPut("{slug}/active", async (
             string slug,
             SetRealmActiveRequest body,
@@ -233,8 +224,7 @@ public static class CustomizationPagesEndpoints
             doc.PageSlots ??= new Dictionary<string, RealmPageSlot>(StringComparer.Ordinal);
             var slot = doc.PageSlots.TryGetValue(slug, out var s) ? s : (doc.PageSlots[slug] = new RealmPageSlot());
 
-            if (body.ActiveVariantId is not null &&
-                slot.Variants.All(v => v.Id != body.ActiveVariantId))
+            if (body.ActiveVariantId is not null && slot.Variants.All(v => v.Id != body.ActiveVariantId))
                 return Results.BadRequest(new { Message = "No such variant for this slot." });
 
             slot.ActiveVariantId = body.ActiveVariantId;
@@ -251,12 +241,12 @@ public static class CustomizationPagesEndpoints
 
     private static void MapApplicationPageEndpoints(WebApplication app, string path)
     {
-        // App page config uses app:read/write — the pages are part of the App
-        // resource, not the Realm settings resource.
         var group = app.MapGroup($"{path}/app/{{applicationId}}/pages")
             .WithTags("Admin Application Customization Pages")
             .RequireAuthorization();
 
+        // GET / — the App's per-slot selection plus the realm variants it can
+        // choose from (Applications do not author their own variants).
         group.MapGet("", async (
             ShortGuid applicationId,
             AppSettings settings,
@@ -267,20 +257,30 @@ public static class CustomizationPagesEndpoints
             var owningApp = await session.LoadAsync<App>(applicationId.Guid, ct);
             if (owningApp is null || owningApp.IsDeleted) return Results.NotFound();
 
-            var doc = await session.LoadAsync<ApplicationSettings>(applicationId.Guid, ct);
-            if (doc is not null && doc.MigratePagesToSlots())
+            var appDoc = await session.LoadAsync<ApplicationSettings>(applicationId.Guid, ct);
+            if (appDoc is not null && appDoc.MigratePagesToSlots())
             {
-                session.Store(doc);
+                session.Store(appDoc);
                 await session.SaveChangesAsync(ct);
             }
 
-            var slots = (doc?.PageSlots ?? new())
-                .Select(kv => new
+            var (realm, realmChanged) = await LoadRealmMigrated(session, ct);
+            if (realmChanged) { session.Store(realm!); await session.SaveChangesAsync(ct); }
+
+            var slots = (realm?.PageSlots ?? new()).Keys
+                .Union(appDoc?.PageSlots?.Keys ?? Enumerable.Empty<string>())
+                .Distinct()
+                .Select(slug =>
                 {
-                    Slug = kv.Key,
-                    kv.Value.InheritActive,
-                    kv.Value.ActiveVariantId,
-                    Variants = kv.Value.Variants.Select(SummariseVariant).ToArray(),
+                    var appSlot = appDoc?.PageSlots?.GetValueOrDefault(slug);
+                    var realmVariants = realm?.PageSlots?.GetValueOrDefault(slug)?.Variants ?? new();
+                    return new
+                    {
+                        Slug = slug,
+                        InheritActive = appSlot?.InheritActive ?? true,
+                        ActiveVariantId = appSlot?.ActiveVariantId,
+                        AvailableVariants = realmVariants.Select(v => new { v.Id, v.Name }).ToArray(),
+                    };
                 })
                 .ToArray();
             return Results.Ok(new { Slots = slots });
@@ -288,127 +288,8 @@ public static class CustomizationPagesEndpoints
         .RequiresPermission("app:read")
         .WithName("Admin_ApplicationCustomization_ListPages");
 
-        group.MapGet("{slug}/variants/{variantId}", async (
-            ShortGuid applicationId,
-            string slug,
-            string variantId,
-            AppSettings settings,
-            IDocumentSession session,
-            CancellationToken ct) =>
-        {
-            if (!settings.Features.PageBuilder) return Results.NotFound();
-            if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
-            var owningApp = await session.LoadAsync<App>(applicationId.Guid, ct);
-            if (owningApp is null || owningApp.IsDeleted) return Results.NotFound();
-
-            var doc = await session.LoadAsync<ApplicationSettings>(applicationId.Guid, ct);
-            doc?.MigratePagesToSlots();
-            var variant = doc?.PageSlots?.GetValueOrDefault(slug)?.Variants.FirstOrDefault(v => v.Id == variantId);
-            if (variant is null) return Results.NotFound();
-            return Results.Ok(new { variant.Id, variant.Name, variant.Schema });
-        })
-        .RequiresPermission("app:read")
-        .WithName("Admin_ApplicationCustomization_GetPageVariant");
-
-        group.MapPost("{slug}/variants", async (
-            ShortGuid applicationId,
-            string slug,
-            SaveVariantRequest body,
-            AppSettings settings,
-            IDocumentSession session,
-            CancellationToken ct) =>
-        {
-            if (!settings.Features.PageBuilder) return Results.NotFound();
-            if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
-            if (ValidateVariant(body, out var err) is false) return Results.BadRequest(new { Message = err });
-            var owningApp = await session.LoadAsync<App>(applicationId.Guid, ct);
-            if (owningApp is null || owningApp.IsDeleted) return Results.NotFound();
-
-            var doc = await session.LoadAsync<ApplicationSettings>(applicationId.Guid, ct)
-                ?? new ApplicationSettings { Id = applicationId.Guid, CreatedAt = DateTimeOffset.UtcNow };
-            doc.MigratePagesToSlots();
-            doc.PageSlots ??= new Dictionary<string, AppPageSlot>(StringComparer.Ordinal);
-            var slot = doc.PageSlots.TryGetValue(slug, out var s) ? s : (doc.PageSlots[slug] = new AppPageSlot());
-            if (slot.Variants.Count >= MaxVariantsPerSlot)
-                return Results.BadRequest(new { Message = $"Too many variants (max {MaxVariantsPerSlot})." });
-
-            var variant = new PageVariant
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                Name = body.Name!.Trim(),
-                Schema = body.Schema!,
-                CreatedAt = DateTimeOffset.UtcNow,
-            };
-            slot.Variants.Add(variant);
-            doc.UpdatedAt = DateTimeOffset.UtcNow;
-            session.Store(doc);
-            await session.SaveChangesAsync(ct);
-            return Results.Ok(new { variant.Id, variant.Name });
-        })
-        .RequiresPermission("app:write")
-        .WithName("Admin_ApplicationCustomization_CreatePageVariant");
-
-        group.MapPut("{slug}/variants/{variantId}", async (
-            ShortGuid applicationId,
-            string slug,
-            string variantId,
-            SaveVariantRequest body,
-            AppSettings settings,
-            IDocumentSession session,
-            CancellationToken ct) =>
-        {
-            if (!settings.Features.PageBuilder) return Results.NotFound();
-            if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
-            if (ValidateVariant(body, out var err) is false) return Results.BadRequest(new { Message = err });
-            var owningApp = await session.LoadAsync<App>(applicationId.Guid, ct);
-            if (owningApp is null || owningApp.IsDeleted) return Results.NotFound();
-
-            var doc = await session.LoadAsync<ApplicationSettings>(applicationId.Guid, ct);
-            doc?.MigratePagesToSlots();
-            var variant = doc?.PageSlots?.GetValueOrDefault(slug)?.Variants.FirstOrDefault(v => v.Id == variantId);
-            if (variant is null) return Results.NotFound();
-
-            variant.Name = body.Name!.Trim();
-            variant.Schema = body.Schema!;
-            variant.UpdatedAt = DateTimeOffset.UtcNow;
-            doc!.UpdatedAt = DateTimeOffset.UtcNow;
-            session.Store(doc);
-            await session.SaveChangesAsync(ct);
-            return Results.Ok(new { variant.Id, variant.Name });
-        })
-        .RequiresPermission("app:write")
-        .WithName("Admin_ApplicationCustomization_UpdatePageVariant");
-
-        group.MapDelete("{slug}/variants/{variantId}", async (
-            ShortGuid applicationId,
-            string slug,
-            string variantId,
-            AppSettings settings,
-            IDocumentSession session,
-            CancellationToken ct) =>
-        {
-            if (!settings.Features.PageBuilder) return Results.NotFound();
-            if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
-            var owningApp = await session.LoadAsync<App>(applicationId.Guid, ct);
-            if (owningApp is null || owningApp.IsDeleted) return Results.NotFound();
-
-            var doc = await session.LoadAsync<ApplicationSettings>(applicationId.Guid, ct);
-            doc?.MigratePagesToSlots();
-            var slot = doc?.PageSlots?.GetValueOrDefault(slug);
-            var removed = slot?.Variants.RemoveAll(v => v.Id == variantId) > 0;
-            if (removed)
-            {
-                if (slot!.ActiveVariantId == variantId) slot.ActiveVariantId = null;
-                doc!.UpdatedAt = DateTimeOffset.UtcNow;
-                session.Store(doc);
-                await session.SaveChangesAsync(ct);
-            }
-            return Results.NoContent();
-        })
-        .RequiresPermission("app:write")
-        .WithName("Admin_ApplicationCustomization_DeletePageVariant");
-
-        // PUT /{slug}/active — inherit the realm, or override (built-in / app variant).
+        // PUT /{slug}/active — inherit the realm, or override to built-in / a
+        // realm variant. The App selects from the realm library, never its own.
         group.MapPut("{slug}/active", async (
             ShortGuid applicationId,
             string slug,
@@ -422,15 +303,20 @@ public static class CustomizationPagesEndpoints
             var owningApp = await session.LoadAsync<App>(applicationId.Guid, ct);
             if (owningApp is null || owningApp.IsDeleted) return Results.NotFound();
 
+            if (!body.Inherit && body.ActiveVariantId is not null)
+            {
+                var realm = await session.LoadAsync<RealmSettings>(RealmSettings.SingletonId, ct);
+                realm?.MigratePagesToSlots();
+                var realmVariants = realm?.PageSlots?.GetValueOrDefault(slug)?.Variants;
+                if (realmVariants is null || realmVariants.All(v => v.Id != body.ActiveVariantId))
+                    return Results.BadRequest(new { Message = "No such realm variant for this slot." });
+            }
+
             var doc = await session.LoadAsync<ApplicationSettings>(applicationId.Guid, ct)
                 ?? new ApplicationSettings { Id = applicationId.Guid, CreatedAt = DateTimeOffset.UtcNow };
             doc.MigratePagesToSlots();
             doc.PageSlots ??= new Dictionary<string, AppPageSlot>(StringComparer.Ordinal);
             var slot = doc.PageSlots.TryGetValue(slug, out var s) ? s : (doc.PageSlots[slug] = new AppPageSlot());
-
-            if (!body.Inherit && body.ActiveVariantId is not null &&
-                slot.Variants.All(v => v.Id != body.ActiveVariantId))
-                return Results.BadRequest(new { Message = "No such variant for this slot." });
 
             slot.InheritActive = body.Inherit;
             slot.ActiveVariantId = body.Inherit ? null : body.ActiveVariantId;
@@ -453,48 +339,67 @@ public static class CustomizationPagesEndpoints
         return (doc, changed);
     }
 
-    private static object SummariseVariant(PageVariant v) => new
+    /// <summary>slug → variantId → Application display-names that activate it
+    /// (non-inheriting). Drives the "Used By" column on the realm grid.</summary>
+    private static async Task<Dictionary<string, Dictionary<string, List<string>>>> ComputeAppUsage(
+        IDocumentSession session, CancellationToken ct)
     {
-        v.Id,
-        v.Name,
-        v.CreatedAt,
-        v.UpdatedAt,
-    };
+        var result = new Dictionary<string, Dictionary<string, List<string>>>(StringComparer.Ordinal);
+        var appSettings = await session.Query<ApplicationSettings>().ToListAsync(ct);
+        if (appSettings.Count == 0) return result;
+
+        var referenced = appSettings.Where(a => a.PageSlots is not null).Select(a => a.Id).ToArray();
+        if (referenced.Length == 0) return result;
+        var apps = await session.Query<App>().Where(a => referenced.Contains(a.Id) && !a.IsDeleted).ToListAsync(ct);
+        var nameById = apps.ToDictionary(a => a.Id, a => a.DisplayName);
+
+        foreach (var s in appSettings)
+        {
+            if (s.PageSlots is null || !nameById.TryGetValue(s.Id, out var name)) continue;
+            foreach (var (slug, slot) in s.PageSlots)
+            {
+                if (slot.InheritActive || slot.ActiveVariantId is null) continue;
+                var perSlug = result.TryGetValue(slug, out var m) ? m : (result[slug] = new(StringComparer.Ordinal));
+                var list = perSlug.TryGetValue(slot.ActiveVariantId, out var l) ? l : (perSlug[slot.ActiveVariantId] = new());
+                list.Add(name);
+            }
+        }
+        return result;
+    }
+
+    private static object SummariseVariant(
+        PageVariant v,
+        string slug,
+        string? realmActiveId,
+        Dictionary<string, Dictionary<string, List<string>>> usage)
+    {
+        var apps = usage.TryGetValue(slug, out var m) && m.TryGetValue(v.Id, out var list)
+            ? list
+            : new List<string>();
+        return new
+        {
+            v.Id,
+            v.Name,
+            v.CreatedAt,
+            v.UpdatedAt,
+            RealmActive = realmActiveId == v.Id,
+            UsedByApps = apps.ToArray(),
+        };
+    }
 
     private static bool ValidateVariant(SaveVariantRequest body, out string error)
     {
-        if (string.IsNullOrWhiteSpace(body.Name))
-        {
-            error = "Name required.";
-            return false;
-        }
-        if (body.Name.Trim().Length > MaxVariantNameLength)
-        {
-            error = $"Name too long (max {MaxVariantNameLength}).";
-            return false;
-        }
-        if (body.Schema is null)
-        {
-            error = "Schema required.";
-            return false;
-        }
-        if (Encoding.UTF8.GetByteCount(body.Schema) > MaxSchemaBytes)
-        {
-            error = $"Schema too large (max {MaxSchemaBytes} bytes).";
-            return false;
-        }
+        if (string.IsNullOrWhiteSpace(body.Name)) { error = "Name required."; return false; }
+        if (body.Name.Trim().Length > MaxVariantNameLength) { error = $"Name too long (max {MaxVariantNameLength})."; return false; }
+        if (body.Schema is null) { error = "Schema required."; return false; }
+        if (Encoding.UTF8.GetByteCount(body.Schema) > MaxSchemaBytes) { error = $"Schema too large (max {MaxSchemaBytes} bytes)."; return false; }
         try { System.Text.Json.JsonDocument.Parse(body.Schema); }
-        catch (System.Text.Json.JsonException ex)
-        {
-            error = $"Schema is not valid JSON: {ex.Message}";
-            return false;
-        }
+        catch (System.Text.Json.JsonException ex) { error = $"Schema is not valid JSON: {ex.Message}"; return false; }
         error = string.Empty;
         return true;
     }
 
-    /// <summary>Allow lowercase ASCII + hyphens, length 1-32. Keeps URL-pretty
-    /// and rejects anything that could route-inject.</summary>
+    /// <summary>Allow lowercase ASCII + hyphens, length 1-32.</summary>
     private static bool IsValidSlug(string slug)
     {
         if (string.IsNullOrEmpty(slug) || slug.Length > 32) return false;

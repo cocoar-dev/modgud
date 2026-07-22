@@ -226,26 +226,19 @@ public sealed record EffectiveSettings
             foreach (var (slug, slot) in app.PageSlots)
             {
                 if (slot.InheritActive) continue; // realm selection stands
-                var schema = ActiveSchema(slot.Variants, slot.ActiveVariantId);
+                // Applications select from the REALM variant library.
+                var realmVariants = realm.PageSlots?.GetValueOrDefault(slug)?.Variants;
+                var schema = ActiveSchema(realmVariants, slot.ActiveVariantId);
                 if (schema is not null) result[slug] = schema;
                 else result.Remove(slug); // explicit built-in override
-            }
-        }
-        if (app.Pages is not null)
-        {
-            foreach (var (slug, schema) in app.Pages)
-            {
-                if (string.IsNullOrWhiteSpace(schema)) continue;
-                if (app.PageSlots?.ContainsKey(slug) == true) continue;
-                result[slug] = schema; // legacy App override
             }
         }
         return result.Count == 0 ? null : result;
     }
 
-    private static string? ActiveSchema(List<PageVariant> variants, string? activeId)
+    private static string? ActiveSchema(List<PageVariant>? variants, string? activeId)
     {
-        if (activeId is null) return null; // built-in
+        if (activeId is null || variants is null) return null; // built-in
         var v = variants.FirstOrDefault(x => x.Id == activeId);
         return string.IsNullOrWhiteSpace(v?.Schema) ? null : v!.Schema;
     }
