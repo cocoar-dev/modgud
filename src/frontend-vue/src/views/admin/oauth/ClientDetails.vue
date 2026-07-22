@@ -85,12 +85,8 @@ const standardGrantTypeOptions = [
   { value: 'urn:ietf:params:oauth:grant-type:device_code', label: 'device_code',
     subtitle: 'TVs, CLIs, anything without a browser',
     icon: 'monitor', group: 'Standard flows' },
-  { value: 'implicit', label: 'implicit',
-    subtitle: 'DEPRECATED — superseded by authorization_code+PKCE',
-    icon: 'circle-alert', group: 'Deprecated' },
-  { value: 'password', label: 'password',
-    subtitle: 'DEPRECATED — resource-owner password credentials',
-    icon: 'circle-alert', group: 'Deprecated' },
+  // No implicit / password grants: OAuth 2.1 removes both and the backend
+  // rejects them (OAuth.UnsupportedGrantType), so they are not offered here.
 ]
 
 // Native passwordless grants (ADR-0010) — cookieless proofs exchanged

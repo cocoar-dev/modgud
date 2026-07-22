@@ -20,6 +20,13 @@ public static class OAuthErrors
         code: "OAuth.InvalidConsentType",
         description: $"Invalid consent type '{consentType}'. Must be 'explicit', 'implicit', or 'external'.");
 
+    public static Error UnsupportedGrantType(string grantType) => Error.Validation(
+        code: "OAuth.UnsupportedGrantType",
+        description: $"Grant type '{grantType}' is not supported. Allowed: authorization_code, "
+                   + "client_credentials, refresh_token, urn:ietf:params:oauth:grant-type:device_code, "
+                   + "and the native urn:cocoar:* grants. The OAuth 2.1-removed 'implicit' and 'password' "
+                   + "grants are rejected.");
+
     public static Error InvalidWebAuthnRpId(string value) => Error.Validation(
         code: "OAuth.InvalidWebAuthnRpId",
         description: $"Invalid WebAuthn RP ID '{value}'. Must be a bare hostname (e.g. 'app.example.com') "
@@ -67,7 +74,7 @@ public static class OAuthErrors
 
     public static Error ServiceAccountLinkRequiresClientCredentialsOnly => Error.Validation(
         code: "OAuth.ServiceAccountLinkRequiresClientCredentialsOnly",
-        description: "A ServiceAccount-linked client must use only the 'client_credentials' grant. User-flow grants (authorization_code, implicit, password, refresh_token, device_code) are forbidden — strict separation between user-flow and machine-to-machine clients.");
+        description: "A ServiceAccount-linked client must use only the 'client_credentials' grant. User-flow grants (authorization_code, refresh_token, device_code) are forbidden — strict separation between user-flow and machine-to-machine clients.");
 
     public static Error CannotMutateServiceAccountManagedClient(string clientId) => Error.Validation(
         code: "OAuth.CannotMutateServiceAccountManagedClient",

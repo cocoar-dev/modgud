@@ -133,6 +133,11 @@ public class OAuthAdminService
         if (ValidateServiceAccountLinkInvariant(dto.AllowedGrantTypes, linkedServiceAccountId) is { } createLinkErr)
             return createLinkErr;
 
+        // Reject unsupported / removed grant types (implicit, password, typos)
+        // up front rather than silently dropping them while building permissions.
+        if (ValidateGrantTypes(dto.AllowedGrantTypes) is { } createGrantErr)
+            return createGrantErr;
+
         // Confidential clients must have a secret (generated if not supplied).
         string? clientSecret = null;
         if (dto.ClientType == OAuthClientTypes.Confidential)
@@ -286,6 +291,12 @@ public class OAuthAdminService
         if (dto.AllowedGrantTypes is not null &&
             ValidateServiceAccountLinkInvariant(dto.AllowedGrantTypes, linkedServiceAccountId: null) is { } updLinkErr)
             return updLinkErr;
+
+        // Reject unsupported / removed grant types (implicit, password, typos)
+        // on update too — the guard is only meaningful if it can't be bypassed
+        // by editing an existing client.
+        if (ValidateGrantTypes(dto.AllowedGrantTypes) is { } updGrantErr)
+            return updGrantErr;
 
         if (ValidateWebAuthnRpId(dto.WebAuthnRpId) is { } updRpIdErr)
             return updRpIdErr;
