@@ -2,7 +2,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { useI18n } from '@cocoar/vue-localization'
 import {
-  CoarCard, CoarTextInput, CoarFormField, CoarButton, CoarIcon,
+  CoarCard, CoarNumberInput, CoarFormField, CoarButton, CoarIcon,
 } from '@cocoar/vue-ui'
 import { useUI } from '@/composables/useUI'
 import { useInboxSettingsStore } from '@/stores/inboxSettings.store'
@@ -35,13 +35,8 @@ onMounted(async () => {
  */
 function numModel(getter: () => number | null, setter: (v: number | null) => void) {
   return {
-    get: () => (getter() == null ? '' : String(getter())),
-    set: (v: string) => {
-      const trimmed = v.trim()
-      if (trimmed === '') { setter(null); return }
-      const n = Number(trimmed)
-      setter(Number.isFinite(n) ? n : null)
-    },
+    get: () => getter(),
+    set: (v: number | null) => setter(v),
   }
 }
 
@@ -82,8 +77,7 @@ async function save() {
         </p>
         <div class="grid grid-cols-2 gap-4">
           <CoarFormField :label="t('admin.inboxSettings.hardDeleteDaysAfterDismissed', {}, 'Hard-delete N Tage nach Erledigung')">
-            <CoarTextInput
-              type="number"
+            <CoarNumberInput
               :model-value="numModel(() => form!.AdminChangeRequest.HardDeleteDaysAfterDismissed, v => form!.AdminChangeRequest.HardDeleteDaysAfterDismissed = v).get()"
               @update:model-value="numModel(() => form!.AdminChangeRequest.HardDeleteDaysAfterDismissed, v => form!.AdminChangeRequest.HardDeleteDaysAfterDismissed = v).set($event)"
               placeholder="leer = nie"
@@ -111,16 +105,14 @@ async function save() {
         </p>
         <div class="grid grid-cols-2 gap-4">
           <CoarFormField :label="t('admin.inboxSettings.maxUnreadDays', {}, 'Max. Tage ungelesen')">
-            <CoarTextInput
-              type="number"
+            <CoarNumberInput
               :model-value="numModel(() => form!.ChangeRequestFeedback.MaxUnreadDays, v => form!.ChangeRequestFeedback.MaxUnreadDays = v).get()"
               @update:model-value="numModel(() => form!.ChangeRequestFeedback.MaxUnreadDays, v => form!.ChangeRequestFeedback.MaxUnreadDays = v).set($event)"
               placeholder="leer = nie"
             />
           </CoarFormField>
           <CoarFormField :label="t('admin.inboxSettings.autoExpireDaysAfterRead', {}, 'Max. Tage nach Lesen')">
-            <CoarTextInput
-              type="number"
+            <CoarNumberInput
               :model-value="numModel(() => form!.ChangeRequestFeedback.AutoExpireDaysAfterRead, v => form!.ChangeRequestFeedback.AutoExpireDaysAfterRead = v).get()"
               @update:model-value="numModel(() => form!.ChangeRequestFeedback.AutoExpireDaysAfterRead, v => form!.ChangeRequestFeedback.AutoExpireDaysAfterRead = v).set($event)"
               placeholder="leer = nie"
@@ -143,16 +135,14 @@ async function save() {
         </p>
         <div class="grid grid-cols-2 gap-4">
           <CoarFormField :label="t('admin.inboxSettings.maxUnreadDays', {}, 'Max. Tage ungelesen')">
-            <CoarTextInput
-              type="number"
+            <CoarNumberInput
               :model-value="numModel(() => form!.ScheduledJobFeedback.MaxUnreadDays, v => form!.ScheduledJobFeedback.MaxUnreadDays = v).get()"
               @update:model-value="numModel(() => form!.ScheduledJobFeedback.MaxUnreadDays, v => form!.ScheduledJobFeedback.MaxUnreadDays = v).set($event)"
               placeholder="leer = nie"
             />
           </CoarFormField>
           <CoarFormField :label="t('admin.inboxSettings.autoExpireDaysAfterRead', {}, 'Max. Tage nach Lesen')">
-            <CoarTextInput
-              type="number"
+            <CoarNumberInput
               :model-value="numModel(() => form!.ScheduledJobFeedback.AutoExpireDaysAfterRead, v => form!.ScheduledJobFeedback.AutoExpireDaysAfterRead = v).get()"
               @update:model-value="numModel(() => form!.ScheduledJobFeedback.AutoExpireDaysAfterRead, v => form!.ScheduledJobFeedback.AutoExpireDaysAfterRead = v).set($event)"
               placeholder="leer = nie"

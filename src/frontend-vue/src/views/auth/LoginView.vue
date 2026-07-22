@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, provide } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
@@ -17,6 +17,18 @@ import {
   CoarOtpInput,
 } from '@cocoar/vue-ui'
 import SecureSetupModal from './SecureSetupModal.vue'
+import {
+  CoarPageRenderer,
+  normalizePageSchema,
+  type ActionHandler,
+  type ActionValues,
+  type PageNode,
+} from '@cocoar/vue-page-builder'
+import { createAuthPageConfig } from '@/page-builder/authPageConfig'
+import {
+  LOGIN_PAGE_RUNTIME_KEY,
+  type ExternalLoginDto,
+} from '@/page-builder/loginPageRuntime'
 
 const { t, language } = useI18n()
 const localization = useLocalization()!
@@ -30,6 +42,7 @@ async function toggleLanguage() {
 }
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 
 // Post-login continuation — reads ?redirect= (same-origin-guarded) and
@@ -57,7 +70,6 @@ const error = ref('')
 
 // External auth (OIDC + SAML) — fetched anonymously, enabled providers only.
 // Kind decides the entry-point URL (OIDC challenge vs SAML SP-initiated).
-interface ExternalLoginDto { Id: string; Kind: string; Slug: string; DisplayName: string; Flavor: string; IconName?: string | null; ButtonColorHex?: string | null }
 const externalLogins = ref<ExternalLoginDto[]>([])
 async function loadExternalLogins() {
   try {
@@ -93,6 +105,7 @@ function startExternalLogin(idp: ExternalLoginDto) {
     : `/api/account/external-login/${idp.Id}/start?returnUrl=${encodeURIComponent(returnUrl)}`
   window.location.href = target
 }
+provide(LOGIN_PAGE_RUNTIME_KEY, { branding, externalLogins, startExternalLogin })
 loadExternalLogins()
 
 // External IdP errors ride back on /login via ?error=<code> — the backend
@@ -133,13 +146,41 @@ const secureSetupDueAt = ref<string | null>(null)
 
 const isPasswordless = () => appConfig.config.AuthenticationMinimumLevel >= 2
 
-async function handleLogin() {
-  if (!userName.value.trim() || !password.value || submitting.value) return
-  submitting.value = true
-  error.value = ''
+const loginPageConfig = createAuthPageConfig('login')
+const customLoginSchema = ref<PageNode | null>(null)
+const loginPageReady = ref(false)
 
+onMounted(async () => {
   try {
-    const result = await authStore.login(userName.value.trim(), password.value, rememberMe.value)
+    await appConfig.loadForLogin(redirectTarget.value)
+    if (!appConfig.config.Features.PageBuilder || route.query.safemode === '1') return
+    const stored = appConfig.config.Pages.login
+    if (!stored) return
+    const normalized = normalizePageSchema(JSON.parse(stored), { elements: loginPageConfig.elements })
+    customLoginSchema.value = normalized.schema
+  } catch {
+    // A broken or unreachable customization must never make authentication
+    // unavailable. The fixed login below remains the emergency-safe fallback.
+    customLoginSchema.value = null
+  } finally {
+    loginPageReady.value = true
+  }
+})
+
+function loginErrorMessage(e: unknown): string {
+  if (e instanceof HttpClientError) {
+    return e.status === 401
+      ? t('auth.login.invalidCredentials', {}, 'Invalid username or password.')
+      : e.status === 403
+        ? t('auth.login.passwordDisabled', {}, 'Password login is disabled.')
+        : t('auth.login.error', { detail: e.statusText }, 'Error: {detail}')
+  }
+  return t('common.connectionError', {}, 'Connection to server failed.')
+}
+
+async function performCredentialLogin(name: string, secret: string, remember: boolean) {
+  try {
+    const result = await authStore.login(name.trim(), secret, remember)
     if (result?.RequiresSecureSetup) {
       secureSetupInGrace.value = result.GracePeriod === true
       secureSetupDueAt.value = result.SecureSetupDueAt ?? null
@@ -161,18 +202,58 @@ async function handleLogin() {
       finishLogin()
     }
   } catch (e) {
-    if (e instanceof HttpClientError) {
-      error.value = e.status === 401
-        ? t('auth.login.invalidCredentials', {}, 'Invalid username or password.')
-        : e.status === 403
-          ? t('auth.login.passwordDisabled', {}, 'Password login is disabled.')
-          : t('auth.login.error', { detail: e.statusText }, 'Error: {detail}')
-    } else {
-      error.value = t('common.connectionError', {}, 'Connection to server failed.')
-    }
+    throw new Error(loginErrorMessage(e))
+  }
+}
+
+async function handleLogin() {
+  if (!userName.value.trim() || !password.value || submitting.value) return
+  submitting.value = true
+  error.value = ''
+
+  try {
+    await performCredentialLogin(userName.value, password.value, rememberMe.value)
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : loginErrorMessage(e)
   } finally {
     submitting.value = false
   }
+}
+
+function requiredString(values: ActionValues, name: string): string {
+  const value = values[name]
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(t('auth.login.missingFields', {}, 'Please complete all required fields.'))
+  }
+  return value
+}
+
+const customLoginActions: Record<string, ActionHandler> = {
+  'auth:login': async (values) => {
+    error.value = ''
+    userName.value = requiredString(values, 'username')
+    password.value = requiredString(values, 'password')
+    rememberMe.value = values.rememberMe === true
+    await performCredentialLogin(userName.value, password.value, rememberMe.value)
+  },
+  'auth:passkey': async (values) => {
+    error.value = ''
+    rememberMe.value = values.rememberMe === true
+    await handlePasskeyLogin(true)
+  },
+  'auth:magic-link': () => {
+    if (!appConfig.config.MagicLinkSelfService) {
+      throw new Error(t('auth.magicLink.notAvailable', {}, 'Magic-link login is not available.'))
+    }
+    step.value = 'magic-link'
+  },
+  'auth:forgot-password': () => router.push({ path: '/forgot-password', query: { redirect: route.query.redirect } }),
+  'auth:register': () => {
+    if (!selfRegistrationEnabled.value) {
+      throw new Error(t('auth.registration.notAvailable', {}, 'Registration is not available.'))
+    }
+    return router.push({ path: '/register', query: { redirect: route.query.redirect } })
+  },
 }
 
 async function chooseMfaMethod(method: string) {
@@ -294,7 +375,7 @@ async function onSecureSetupLogout() {
 const passkeyHttp = useHttpClient('/api/account/passkey')
 const passkeyLoading = ref(false)
 
-async function handlePasskeyLogin() {
+async function handlePasskeyLogin(reportToRenderer = false) {
   passkeyLoading.value = true
   error.value = ''
   try {
@@ -338,9 +419,13 @@ async function handlePasskeyLogin() {
     if (e.name === 'NotAllowedError') {
       // User cancelled
     } else if (e instanceof HttpClientError) {
-      error.value = t('auth.login.passkeyFailed', {}, 'Passkey login failed.')
+      const message = t('auth.login.passkeyFailed', {}, 'Passkey login failed.')
+      if (reportToRenderer) throw new Error(message)
+      error.value = message
     } else {
-      error.value = e.message || t('auth.login.passkeyFailed', {}, 'Passkey login failed.')
+      const message = e.message || t('auth.login.passkeyFailed', {}, 'Passkey login failed.')
+      if (reportToRenderer) throw new Error(message)
+      error.value = message
     }
   } finally {
     passkeyLoading.value = false
@@ -365,14 +450,29 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-surface-50 p-4 relative">
+  <div class="min-h-screen bg-surface-50 relative">
     <button
-      class="absolute top-4 right-4 text-xs text-surface-400 hover:text-surface-600 transition"
+      class="absolute z-10 top-4 right-4 text-xs text-surface-400 hover:text-surface-600 transition"
       @click="toggleLanguage"
     >
       {{ language === 'de' ? 'EN' : 'DE' }}
     </button>
-    <div class="w-full max-w-sm">
+
+    <div v-if="step === 'credentials' && !loginPageReady" class="flex min-h-screen items-center justify-center text-sm text-surface-400">
+      {{ t('common.loading', {}, 'Loading…') }}
+    </div>
+
+    <template v-else-if="step === 'credentials' && customLoginSchema && !isPasswordless()">
+      <CoarNote v-if="error" variant="error" class="custom-login-error">{{ error }}</CoarNote>
+      <CoarPageRenderer
+        :schema="customLoginSchema"
+        :config="loginPageConfig"
+        :actions="customLoginActions"
+      />
+    </template>
+
+    <div v-else class="flex min-h-screen items-center justify-center p-4">
+      <div class="w-full max-w-sm">
       <!-- Logo + Title -->
       <div class="mb-8 text-center">
         <img :src="branding.LogoUrl ?? '/idp-logo.svg'" :alt="branding.ProductName ?? 'Modgud'" class="mx-auto mb-1 h-16 w-auto" />
@@ -459,7 +559,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
             variant="secondary"
             :loading="passkeyLoading"
             full-width
-            @click="handlePasskeyLogin"
+            @click="handlePasskeyLogin()"
           >
             {{ t('auth.login.passkeyLogin', {}, 'Sign in with Passkey') }}
           </CoarButton>
@@ -581,6 +681,18 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
           </div>
         </div>
       </CoarCard>
+      </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.custom-login-error {
+  position: fixed;
+  z-index: 5;
+  top: 3.25rem;
+  left: 50%;
+  width: min(25rem, calc(100vw - 2rem));
+  transform: translateX(-50%);
+}
+</style>

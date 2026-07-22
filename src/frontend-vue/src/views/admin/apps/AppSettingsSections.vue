@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { onMounted, reactive, watch } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarNote,
-  CoarTabGroup, CoarTab, CoarMultiSelect,
+  CoarTabGroup, CoarTab, CoarMultiSelect, CoarButton,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
-import { ref } from 'vue'
 import EditableStringList from '@/components/EditableStringList.vue'
 import { useGroupStore } from '@/stores/group.store'
+import { useAppConfigStore } from '@/stores/appconfig.store'
 import type { ApplicationSettingsDto } from '@/models/application'
 
 // ADR-0011 per-App settings override sections, extracted from the old standalone
@@ -16,10 +17,16 @@ import type { ApplicationSettingsDto } from '@/models/application'
 // `modelValue` prop (the App's current Settings) and read it back via the exposed
 // `build()` — the exact same override/inherit shape the per-App settings doc uses.
 const { t } = useI18n()
-const props = defineProps<{ modelValue?: ApplicationSettingsDto | null }>()
+const props = defineProps<{
+  modelValue?: ApplicationSettingsDto | null
+  applicationId?: string
+  applicationName?: string
+}>()
 
 const groupStore = useGroupStore()
-const activeTab = ref<'origin' | 'registration' | 'grants' | 'oauth'>('origin')
+const appConfig = useAppConfigStore()
+const router = useRouter()
+const activeTab = ref<'origin' | 'registration' | 'grants' | 'oauth' | 'pages'>('origin')
 
 const groupOptions = ref<{ value: string; label: string }[]>([])
 
@@ -208,6 +215,17 @@ onMounted(async () => {
 })
 
 defineExpose({ build })
+
+function editPage(slug: string) {
+  if (!props.applicationId) return
+  router.push({
+    path: `/platform/customization/pages/${slug}`,
+    query: {
+      appId: props.applicationId,
+      ...(props.applicationName ? { appName: props.applicationName } : {}),
+    },
+  })
+}
 </script>
 
 <template>
@@ -221,6 +239,9 @@ defineExpose({ build })
       <CoarTab id="registration">{{ t('admin.appSettings.tabs.registration', {}, 'Registrierung') }}</CoarTab>
       <CoarTab id="grants">{{ t('admin.appSettings.tabs.grants', {}, 'Native Grants') }}</CoarTab>
       <CoarTab id="oauth">{{ t('admin.appSettings.tabs.oauth', {}, 'OAuth (DCR/CIMD)') }}</CoarTab>
+      <CoarTab v-if="appConfig.config.Features.PageBuilder" id="pages">
+        {{ t('admin.appSettings.tabs.pages', {}, 'Pages') }}
+      </CoarTab>
     </CoarTabGroup>
 
     <!-- Origin & Branding -->
@@ -355,10 +376,67 @@ defineExpose({ build })
         </div>
       </template>
     </div>
+
+    <!-- PageBuilder schemas live behind dedicated endpoints so regular settings
+         saves cannot accidentally overwrite a large page tree. -->
+    <div v-if="appConfig.config.Features.PageBuilder" v-show="activeTab === 'pages'" class="tab-content">
+      <CoarNote v-if="!applicationId" variant="info">
+        {{ t('admin.appSettings.pages.saveFirst', {}, 'Save the application first, then you can give its authentication pages their own layout.') }}
+      </CoarNote>
+      <template v-else>
+        <CoarNote variant="info">
+          {{ t('admin.appSettings.pages.hint', {}, 'Each page inherits the realm layout until you save an application-specific override.') }}
+        </CoarNote>
+        <div class="page-links">
+          <div class="page-link">
+            <div>
+              <strong>{{ t('admin.customization.pages.login.title', {}, 'Login') }}</strong>
+              <p>{{ t('admin.customization.pages.login.hint', {}, 'Username, password, passkey and provider actions.') }}</p>
+            </div>
+            <CoarButton size="s" variant="secondary" @click="editPage('login')">
+              {{ t('common.edit', {}, 'Edit') }}
+            </CoarButton>
+          </div>
+          <div class="page-link">
+            <div>
+              <strong>{{ t('admin.customization.pages.passwordForgot.title', {}, 'Forgot password') }}</strong>
+              <p>{{ t('admin.customization.pages.passwordForgot.hint', {}, 'Request a password reset link.') }}</p>
+            </div>
+            <CoarButton size="s" variant="secondary" @click="editPage('password-forgot')">
+              {{ t('common.edit', {}, 'Edit') }}
+            </CoarButton>
+          </div>
+          <div class="page-link">
+            <div>
+              <strong>{{ t('admin.customization.pages.logout.title', {}, 'Logout') }}</strong>
+              <p>{{ t('admin.customization.pages.logout.hint', {}, 'The signed-out confirmation page.') }}</p>
+            </div>
+            <CoarButton size="s" variant="secondary" @click="editPage('logout')">
+              {{ t('common.edit', {}, 'Edit') }}
+            </CoarButton>
+          </div>
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .tab-bar { margin-bottom: 8px; }
 .tab-content { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.page-links { display: flex; flex-direction: column; gap: 8px; }
+.page-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--coar-border-neutral-secondary);
+  border-radius: var(--coar-radius-m, 6px);
+}
+.page-link p {
+  margin: 2px 0 0;
+  color: var(--coar-text-neutral-secondary);
+  font-size: 0.8rem;
+}
 </style>

@@ -257,6 +257,39 @@ public class EffectiveSettingsTests
         }
 
         [Fact]
+        public void Pages_are_overlaid_per_slot_and_missing_slots_inherit()
+        {
+            var realm = Realm();
+            realm.Pages!["password-forgot"] = "realm-forgot";
+            var app = new ApplicationSettings
+            {
+                Pages = new Dictionary<string, string>
+                {
+                    ["login"] = "app-login",
+                },
+            };
+
+            var eff = EffectiveSettings.Merge(realm, app);
+
+            Assert.Equal("app-login", eff.Pages!["login"]);
+            Assert.Equal("realm-forgot", eff.Pages["password-forgot"]);
+            Assert.NotSame(realm.Pages, eff.Pages);
+        }
+
+        [Fact]
+        public void Pages_without_a_realm_default_can_be_application_only()
+        {
+            var app = new ApplicationSettings
+            {
+                Pages = new Dictionary<string, string> { ["login"] = "app-login" },
+            };
+
+            var eff = EffectiveSettings.Merge(new RealmSettingsDoc(), app);
+
+            Assert.Equal("app-login", eff.Pages!["login"]);
+        }
+
+        [Fact]
         public void Origin_and_email_branding_pass_through_from_application()
         {
             var app = new ApplicationSettings

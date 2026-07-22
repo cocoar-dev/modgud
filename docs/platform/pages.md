@@ -1,22 +1,22 @@
 # Customization — Pages
 
-Per-realm drag-and-drop editor for the SPA's login / logout / forgot-password screens. Editor stores a JSON schema per page-slot in the tenant DB; a future runtime sprint hooks `<CoarPageRenderer>` into those routes so the schemas actually render at login time.
+Drag-and-drop editor for the SPA's login, signed-out, and forgot-password screens. Schemas can be defined as Realm defaults and overridden per Application. The SPA renders them with `<CoarPageRenderer>` at runtime.
 
 ::: warning Beta — gated behind an operator feature flag
 This surface is **disabled by default**. The Pages tile in the sidebar is hidden, the routes redirect away, and the underlying API returns 404 until the operator flips `AppSettings.Features.PageBuilder = true`. See [Feature Flags](../operate/feature-flags) for how to turn it on in your environment.
 
-The editor itself is functional and persists schemas. **Runtime rendering of stored schemas on `/login` / `/logout` / `/forgot-password` is not yet wired** — saving a schema in the editor does not currently change what end-users see. That second half is a separate sprint, planned but unscheduled.
+The flag gates the editor, persistence endpoints, anonymous schema delivery, and runtime rendering together. Stored schemas remain in the database while the flag is off.
 :::
 
 ## When it's safe to enable
 
-Today, **never in production** — the editor can produce schemas that the runtime can't yet render. Enable it in dev to:
+The end-to-end path is wired, but remains opt-in while the PageBuilder integration is beta. Enable it first in a test realm and verify each saved page at desktop and mobile widths before enabling it in production.
 
-- preview the editor flow and the per-slot palette
-- pin down which page-slots you'd want to customise once the runtime ships
-- give early feedback into `@cocoar/vue-page-builder` (Modgud is the first beta integration)
+- Realm pages require `realm-settings:read` / `realm-settings:write`.
+- Application overrides require `app:read` / `app:write` and are opened from the Application's Settings → Pages tab.
+- `?safemode=1` on `/login`, `/forgot-password`, or `/logged-out` bypasses a stored schema for UX recovery.
 
-Permissions when the flag is on: `realm-settings:read` / `realm-settings:write`. The `realm:admin` bypass grants both. The flag itself is operator-level — realm admins cannot turn it on.
+The flag itself is operator-level — realm admins cannot turn it on.
 
 ## Page slots (today)
 
@@ -25,23 +25,24 @@ Three hardcoded slugs. Adding more is a code change (slug allowlist + per-slot a
 | Slug | Purpose |
 | --- | --- |
 | `login` | Username + password + provider buttons. Hosts MFA-prompt actions too. |
-| `logout` | Post-sign-out screen. |
+| `logout` | `/logged-out` confirmation after local or federated sign-out. |
 | `password-forgot` | Email-address entry for the password-reset flow. |
 
 ## What the editor lets you compose
 
-The page-builder is **headless** — you choose elements from a palette and arrange them in a stack/card/section layout. Per-slot whitelists keep the surface tight:
+The page-builder is **headless** — you choose elements from a palette and arrange them in a stack/card/section layout. The shared editor/runtime allowlist keeps the surface tight:
 
-- **Containers**: stack, card, section, divider
-- **Static content**: heading, paragraph
-- **Inputs**: text-input, checkbox
-- **Interactive**: button (with an action id), link, image (from the asset library)
+- **Containers**: stack, card, section, divider, spacer
+- **Static content**: heading, paragraph, note, Application-brand header
+- **Inputs**: text, password, checkbox — bound only to the slot's declared fields
+- **Interactive**: button/link with an allowlisted action, image from the asset library
+- **Login only**: a live external-login-provider block
 
-Each slot defines its own list of **available actions** for buttons. For `login` that's `auth:login`, `auth:passkey`, `auth:magic-link`, `auth:forgot-password`, `auth:register`, `auth:mfa-totp`, `auth:mfa-email-otp`. The renderer dispatches the action when the button is clicked; unknown action ids are ignored by design (forward compat).
+Each slot defines its own list of **available actions**. Login supports credentials, passkey, magic-link, forgot-password, and register; forgot-password supports submit/back; logout supports back-to-login. The runtime only provides handlers for that fixed list. MFA choice, TOTP/email OTP, and secure-setup screens intentionally remain fixed UI: a schema cannot weaken or skip those transitions.
 
 ## Storage
 
-Schemas live as a `Dictionary<string, string>` sub-document on the singleton `RealmSettings` record — keyed by slug, value is the serialised PageNode JSON. New slot additions don't need a schema migration; the dictionary grows implicitly.
+Realm schemas live in `RealmSettings.Pages`; Application overrides live in `ApplicationSettings.Pages`. Both are dictionaries keyed by slot. Effective settings overlay Application keys over Realm keys, so an Application can override only `login` and inherit the other slots.
 
 Endpoints (all admin-gated, all return 404 when the feature flag is off):
 
@@ -51,15 +52,12 @@ Endpoints (all admin-gated, all return 404 when the feature flag is off):
 | `PUT` | `/api/admin/customization/pages/{slug}` | Persists. Body: `{Schema: "<json>"}`. Server validates as JSON (rejects malformed) and caps at 256 KB. |
 | `DELETE` | `/api/admin/customization/pages/{slug}` | Clears the slot. Runtime falls back to the hardcoded default view. |
 
+Application endpoints use `/api/app/{applicationId}/pages/{slug}` with the same methods. Application `GET` also returns `EffectiveSchema` and `InheritsRealm`; `DELETE` removes the override and resumes Realm inheritance. Regular Application-settings saves do not replace page schemas.
+
 Slug charset: `a-z0-9-`, length 1–32. Anything else is a 400.
 
 ## Customisation vs. security
 
 **The page-builder schema describes UI, never security policy.** MFA enforcement, password policy, account-lockout, login-provider allowlist, rate limits, captcha — all of those live server-side in `RealmSettings` and `AppSettings`, completely independent of the schema. A customised login and the hardcoded default login enforce identical security; only the visual layout differs.
 
-That property means a future safe-mode URL (`/login?safemode=1`) that bypasses the schema is a pure UX recovery, not a security bypass — the same backend policies apply whichever rendering path the page takes.
-
-## What ships next
-
-Runtime rendering of stored schemas is the next sprint and is
-deferred — until it lands, leave the feature flag off in production.
+Stored JSON is normalized to the current v2 schema before rendering. Unknown or disallowed elements are skipped, action IDs are matched against host-owned handlers, and invalid/unavailable schemas fall back to the fixed screen. Safe mode is therefore a UX recovery path, not a security bypass — the same backend policies apply whichever rendering path the page takes.

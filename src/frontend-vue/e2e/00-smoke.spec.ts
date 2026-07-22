@@ -58,7 +58,7 @@ test.describe('§2 Login & sign-out', () => {
     expect((await me.json()).UserName).toBe(ADMIN_USER)
   })
 
-  test('sign-out clears the cookie and lands on /login', async ({ page }) => {
+  test('sign-out clears the cookie and lands on the signed-out page', async ({ page }) => {
     await apiLogin(page, ADMIN_USER, ADMIN_PASSWORD)
     await page.goto('/dashboard')
 
@@ -69,7 +69,7 @@ test.describe('§2 Login & sign-out', () => {
     // selector (/^AD$|admin/i) misfired onto an "Administration" nav element.
     await page.getByRole('banner').getByTitle(/admin/i).click()
     await page.getByRole('menuitem', { name: /Abmelden|Sign out|Logout/i }).click()
-    await page.waitForURL(/\/login/, { timeout: 10_000 })
+    await page.waitForURL(/\/logged-out/, { timeout: 10_000 })
 
     // Cookie should be gone.
     const me = await page.request.get('/api/account/me')

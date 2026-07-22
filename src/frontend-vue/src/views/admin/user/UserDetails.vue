@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useUserStore, type UserGroupDto, type InheritedUserGroupDto, type EffectiveGroupDto, type EffectiveGroupDiagnostic } from '@/stores/user.store'
 import { useGroupStore } from '@/stores/group.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
-import { CoarTextInput, CoarFormField, CoarIcon, CoarTabGroup, CoarTab, CoarListbox, CoarDualListbox, CoarButton, CoarCheckbox, CoarNote, CoarTag } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarNumberInput, CoarFormField, CoarIcon, CoarTabGroup, CoarTab, CoarListbox, CoarDualListbox, CoarButton, CoarCheckbox, CoarNote, CoarTag } from '@cocoar/vue-ui'
 import type { CoarListboxOption } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -35,7 +35,7 @@ const graceBusy = ref(false)
 // Local editable state for the Sicherheit-Tab. The main "Speichern" button commits any
 // changes to these in a single save() call. We track originals so we can skip the
 // backend write when nothing changed.
-const overrideInput = ref<string>('')  // empty = no override / fall back to global default
+const overrideInput = ref<number | null>(null)  // empty = no override / fall back to global default
 const exemptLocal = ref<boolean>(false)
 const originalOverride = ref<number | null>(null)
 const originalExempt = ref<boolean>(false)
@@ -48,10 +48,8 @@ const graceDaysRemaining = computed(() => {
 })
 
 const parsedOverride = computed<number | null>(() => {
-  const raw = overrideInput.value.trim()
-  if (raw === '') return null
-  const n = Number.parseInt(raw, 10)
-  return Number.isFinite(n) ? Math.max(0, n) : null
+  const value = overrideInput.value
+  return value == null || !Number.isFinite(value) ? null : Math.max(0, Math.trunc(value))
 })
 
 const policyDirty = computed(() => {
@@ -275,7 +273,7 @@ onMounted(async () => {
       isActive.value = user.IsActive
       originalActive.value = user.IsActive
       securityInfo.value = sec
-      overrideInput.value = sec.GracePeriodDaysOverride?.toString() ?? ''
+      overrideInput.value = sec.GracePeriodDaysOverride ?? null
       exemptLocal.value = sec.TwoFactorExempt
       originalOverride.value = sec.GracePeriodDaysOverride
       originalExempt.value = sec.TwoFactorExempt
@@ -502,7 +500,7 @@ watch(() => form.value.UserName, () => {
             <div class="flex flex-col gap-3">
               <!-- Grace days override -->
               <CoarFormField :label="t('admin.userDetails.policyDays', {}, 'Individual deadline in days (empty = global default)')">
-                <CoarTextInput v-model="overrideInput" type="number"
+                <CoarNumberInput v-model="overrideInput" :min="0"
                   :placeholder="t('admin.userDetails.policyDaysPlaceholder', { days: appConfig.config.TwoFactorGracePeriodDays }, `${appConfig.config.TwoFactorGracePeriodDays} (Default)`)"
                   :disabled="exemptLocal" />
               </CoarFormField>
