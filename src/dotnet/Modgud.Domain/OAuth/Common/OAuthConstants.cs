@@ -45,8 +45,10 @@ public static class OAuthPermissions
         public const string AuthorizationCode = "gt:authorization_code";
         public const string ClientCredentials = "gt:client_credentials";
         public const string RefreshToken = "gt:refresh_token";
-        public const string Implicit = "gt:implicit";
-        public const string Password = "gt:password";
+        // NB: no Implicit or Password grant. OAuth 2.1 removes both, and the
+        // OpenIddict server never enables their flows — they were also removed
+        // from the admin surface so a client can't even be configured with them
+        // (rejected by OAuthAdminMapping.ValidateGrantTypes).
         public const string DeviceCode = "gt:urn:ietf:params:oauth:grant-type:device_code";
 
         // ADR-0010 — native (cookieless) passwordless token grants. The per-client

@@ -153,14 +153,6 @@ public class OAuthConstantsTests
             Assert.Equal("gt:refresh_token", OAuthPermissions.GrantTypes.RefreshToken);
 
         [Fact]
-        public void Implicit_value_is_pinned() =>
-            Assert.Equal("gt:implicit", OAuthPermissions.GrantTypes.Implicit);
-
-        [Fact]
-        public void Password_value_is_pinned() =>
-            Assert.Equal("gt:password", OAuthPermissions.GrantTypes.Password);
-
-        [Fact]
         public void DeviceCode_value_is_the_full_oauth_urn()
         {
             // RFC 8628 specifies the device-code grant type as a URN, not a short alias.
@@ -177,8 +169,6 @@ public class OAuthConstantsTests
                 OAuthPermissions.GrantTypes.AuthorizationCode,
                 OAuthPermissions.GrantTypes.ClientCredentials,
                 OAuthPermissions.GrantTypes.RefreshToken,
-                OAuthPermissions.GrantTypes.Implicit,
-                OAuthPermissions.GrantTypes.Password,
                 OAuthPermissions.GrantTypes.DeviceCode,
             };
 
@@ -194,8 +184,6 @@ public class OAuthConstantsTests
                 OAuthPermissions.GrantTypes.AuthorizationCode,
                 OAuthPermissions.GrantTypes.ClientCredentials,
                 OAuthPermissions.GrantTypes.RefreshToken,
-                OAuthPermissions.GrantTypes.Implicit,
-                OAuthPermissions.GrantTypes.Password,
                 OAuthPermissions.GrantTypes.DeviceCode,
             };
             Assert.Equal(grants.Length, grants.Distinct().Count());

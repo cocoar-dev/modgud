@@ -129,8 +129,6 @@ public class OAuthAdminMappingTests
         [InlineData("authorization_code")]
         [InlineData("client_credentials")]
         [InlineData("refresh_token")]
-        [InlineData("implicit")]
-        [InlineData("password")]
         [InlineData("urn:ietf:params:oauth:grant-type:device_code")]
         public void Maps_grant_type_to_permission_and_back(string grantType)
         {
@@ -139,6 +137,16 @@ public class OAuthAdminMappingTests
 
             var roundTripped = OAuthAdminMapping.MapPermissionToGrantType(permission!);
             Assert.Equal(grantType, roundTripped);
+        }
+
+        [Theory]
+        [InlineData("implicit")]
+        [InlineData("password")]
+        public void Implicit_and_password_are_removed_and_map_to_null(string removedGrant)
+        {
+            // OAuth 2.1 removes both grants. They must not map to a permission, so
+            // ValidateGrantTypes rejects them and BuildClientPermissions can't add them.
+            Assert.Null(OAuthAdminMapping.MapGrantTypeToPermission(removedGrant));
         }
 
         [Fact]
@@ -151,6 +159,43 @@ public class OAuthAdminMappingTests
         public void Unknown_permission_maps_to_null()
         {
             Assert.Null(OAuthAdminMapping.MapPermissionToGrantType("gt:unknown"));
+        }
+    }
+
+    public class ValidateGrantTypes
+    {
+        [Theory]
+        [InlineData("authorization_code")]
+        [InlineData("client_credentials")]
+        [InlineData("refresh_token")]
+        [InlineData("urn:ietf:params:oauth:grant-type:device_code")]
+        [InlineData("urn:cocoar:otp")]
+        [InlineData("urn:cocoar:magic")]
+        [InlineData("urn:cocoar:passkey")]
+        public void Supported_grant_types_are_accepted(string grant)
+        {
+            Assert.Null(OAuthAdminMapping.ValidateGrantTypes(new[] { grant }));
+        }
+
+        [Theory]
+        [InlineData("implicit")]
+        [InlineData("password")]
+        [InlineData("xyz")]
+        public void Unsupported_grant_types_are_rejected(string grant)
+        {
+            var err = OAuthAdminMapping.ValidateGrantTypes(new[] { "authorization_code", grant });
+            Assert.NotNull(err);
+            Assert.Equal("OAuth.UnsupportedGrantType", err!.Value.Code);
+            Assert.Contains(grant, err.Value.Description);
+        }
+
+        [Fact]
+        public void Null_and_empty_are_valid()
+        {
+            // A client with no token-flow grants is a legitimate (if useless) state
+            // — BuildClientPermissions leaves it unable to mint tokens.
+            Assert.Null(OAuthAdminMapping.ValidateGrantTypes(null));
+            Assert.Null(OAuthAdminMapping.ValidateGrantTypes(System.Array.Empty<string>()));
         }
     }
 
@@ -799,8 +844,6 @@ public class OAuthAdminMappingTests
 
         [Theory]
         [InlineData("authorization_code")]
-        [InlineData("implicit")]
-        [InlineData("password")]
         [InlineData("refresh_token")]
         [InlineData("urn:ietf:params:oauth:grant-type:device_code")]
         public void All_user_flow_grants_violate_R3_when_link_set(string userFlowGrant)

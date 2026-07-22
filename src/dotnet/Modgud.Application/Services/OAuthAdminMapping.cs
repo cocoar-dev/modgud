@@ -106,8 +106,9 @@ internal static class OAuthAdminMapping
         "authorization_code" => OAuthPermissions.GrantTypes.AuthorizationCode,
         "client_credentials" => OAuthPermissions.GrantTypes.ClientCredentials,
         "refresh_token" => OAuthPermissions.GrantTypes.RefreshToken,
-        "implicit" => OAuthPermissions.GrantTypes.Implicit,
-        "password" => OAuthPermissions.GrantTypes.Password,
+        // No "implicit"/"password" cases: OAuth 2.1 removes both and they are
+        // rejected up front by ValidateGrantTypes. An unmapped grant returns null,
+        // which ValidateGrantTypes turns into a hard error.
         "urn:ietf:params:oauth:grant-type:device_code" => OAuthPermissions.GrantTypes.DeviceCode,
         // ADR-0010 — native (cookieless) passwordless grants. Admin-set per-client
         // opt-in surfaces here so the OAuth-client admin CRUD can grant them.
@@ -122,14 +123,38 @@ internal static class OAuthAdminMapping
         OAuthPermissions.GrantTypes.AuthorizationCode => "authorization_code",
         OAuthPermissions.GrantTypes.ClientCredentials => "client_credentials",
         OAuthPermissions.GrantTypes.RefreshToken => "refresh_token",
-        OAuthPermissions.GrantTypes.Implicit => "implicit",
-        OAuthPermissions.GrantTypes.Password => "password",
+        // A legacy client that somehow carries gt:implicit / gt:password (they
+        // were never functional — no server flow) maps to null here, so it is
+        // dropped from the DTO and stripped on the next save.
         OAuthPermissions.GrantTypes.DeviceCode => "urn:ietf:params:oauth:grant-type:device_code",
         OAuthPermissions.GrantTypes.CocoarOtp => CocoarGrantTypes.Otp,
         OAuthPermissions.GrantTypes.CocoarMagic => CocoarGrantTypes.Magic,
         OAuthPermissions.GrantTypes.CocoarPasskey => CocoarGrantTypes.Passkey,
         _ => null,
     };
+
+    /// <summary>
+    /// Rejects any grant type the server does not support, so a client can never
+    /// be configured with a dead or forbidden grant. The supported set is exactly
+    /// what <see cref="MapGrantTypeToPermission"/> maps to a permission; anything
+    /// unmapped — <c>implicit</c> and <c>password</c> (removed per OAuth 2.1), a
+    /// typo, or a future grant we haven't wired — returns
+    /// <see cref="OAuthErrors.UnsupportedGrantType"/>. Previously an unknown grant
+    /// was silently dropped when building permissions, so the admin got a client
+    /// that quietly lacked what they asked for; this makes the rejection explicit
+    /// and moves it to config time instead of the token endpoint. Null/empty input
+    /// is valid (a client with no token-flow grants — see BuildClientPermissions).
+    /// </summary>
+    internal static Error? ValidateGrantTypes(IReadOnlyList<string>? grantTypes)
+    {
+        if (grantTypes is null) return null;
+        foreach (var g in grantTypes)
+        {
+            if (MapGrantTypeToPermission(g) is null)
+                return OAuthErrors.UnsupportedGrantType(g);
+        }
+        return null;
+    }
 
     // ───────────────────────────────────────────── Settings / Properties ──────
 
