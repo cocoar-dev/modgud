@@ -465,7 +465,8 @@ const routes = [
               beforeEnter: pageBuilderFeatureGate,
             },
             {
-              path: 'customization/pages/:slug',
+              // :variantId is a variant GUID, or the literal "new" to author one.
+              path: 'customization/pages/:slug/:variantId',
               component: () => import('@/views/admin/customization/PageEditorView.vue'),
               beforeEnter: [pageBuilderFeatureGate, authPageSlotGate],
             },

@@ -54,7 +54,7 @@ public sealed record EffectiveSettings
         RegistrationFields = realm.RegistrationFields,
         Deletion = realm.Deletion,
         Audit = realm.Audit,
-        Pages = realm.Pages,
+        Pages = ResolveRealmActivePages(realm),
         SelfRegPosture = null,
         Origin = null,
         EmailBranding = null,
@@ -78,8 +78,10 @@ public sealed record EffectiveSettings
         Deletion = realm.Deletion,
         Audit = realm.Audit,
 
-        // Page schemas overlay per slot; an absent App key inherits the Realm slot.
-        Pages = MergePages(realm.Pages, app.Pages),
+        // Effective active page schema per slot: App selection (variant /
+        // built-in) overrides the Realm selection when the App does not inherit
+        // that slot; otherwise the Realm's active selection stands (ADR-0001).
+        Pages = ResolveEffectivePages(realm, app),
 
         // New per-App facets:
         SelfRegPosture = app.SelfRegistration?.Posture ?? Applications.SelfRegPosture.JitOnOtp,
@@ -180,16 +182,71 @@ public sealed record EffectiveSettings
         };
     }
 
-    private static Dictionary<string, string>? MergePages(
-        Dictionary<string, string>? realm,
-        Dictionary<string, string>? app)
+    /// <summary>The realm's active schema per slot: the schema of each slot's
+    /// active variant. Slots with no active variant (built-in) are omitted, so
+    /// the SPA falls back to its hardcoded view. Legacy <see cref="RealmSettings.Pages"/>
+    /// entries (pre-ADR-0001, not yet migrated) are honoured for any slug the
+    /// new <c>PageSlots</c> does not cover.</summary>
+    private static Dictionary<string, string>? ResolveRealmActivePages(RealmSettingsDoc realm)
     {
-        if (app is null || app.Count == 0) return realm;
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (realm.PageSlots is not null)
+        {
+            foreach (var (slug, slot) in realm.PageSlots)
+            {
+                var schema = ActiveSchema(slot.Variants, slot.ActiveVariantId);
+                if (schema is not null) result[slug] = schema;
+            }
+        }
+        if (realm.Pages is not null)
+        {
+            foreach (var (slug, schema) in realm.Pages)
+            {
+                if (string.IsNullOrWhiteSpace(schema)) continue;
+                if (realm.PageSlots?.ContainsKey(slug) == true) continue;
+                result.TryAdd(slug, schema);
+            }
+        }
+        return result.Count == 0 ? null : result;
+    }
 
-        var merged = realm is null
-            ? new Dictionary<string, string>(StringComparer.Ordinal)
-            : new Dictionary<string, string>(realm, StringComparer.Ordinal);
-        foreach (var (slug, schema) in app) merged[slug] = schema;
-        return merged;
+    /// <summary>Effective active schema per slot with an Application in context:
+    /// start from the realm's active pages, then apply the App's non-inherited
+    /// slot selections (a variant, or built-in which removes the slot).</summary>
+    private static Dictionary<string, string>? ResolveEffectivePages(
+        RealmSettingsDoc realm,
+        ApplicationSettings app)
+    {
+        var result = ResolveRealmActivePages(realm) is { } r
+            ? new Dictionary<string, string>(r, StringComparer.Ordinal)
+            : new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (app.PageSlots is not null)
+        {
+            foreach (var (slug, slot) in app.PageSlots)
+            {
+                if (slot.InheritActive) continue; // realm selection stands
+                var schema = ActiveSchema(slot.Variants, slot.ActiveVariantId);
+                if (schema is not null) result[slug] = schema;
+                else result.Remove(slug); // explicit built-in override
+            }
+        }
+        if (app.Pages is not null)
+        {
+            foreach (var (slug, schema) in app.Pages)
+            {
+                if (string.IsNullOrWhiteSpace(schema)) continue;
+                if (app.PageSlots?.ContainsKey(slug) == true) continue;
+                result[slug] = schema; // legacy App override
+            }
+        }
+        return result.Count == 0 ? null : result;
+    }
+
+    private static string? ActiveSchema(List<PageVariant> variants, string? activeId)
+    {
+        if (activeId is null) return null; // built-in
+        var v = variants.FirstOrDefault(x => x.Id == activeId);
+        return string.IsNullOrWhiteSpace(v?.Schema) ? null : v!.Schema;
     }
 }

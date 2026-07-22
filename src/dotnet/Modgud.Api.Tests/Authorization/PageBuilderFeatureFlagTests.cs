@@ -8,29 +8,59 @@ using Modgud.Application.DTOs.Applications;
 using Marten;
 using Modgud.Domain.Applications;
 using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.Realms;
+using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
-/// Pins the <c>AppSettings.Features.PageBuilder</c> gate on the
-/// customization-pages surface. While the flag is off (default) the
-/// endpoints look invisible (404), and the RealmSettings DTO emits an
-/// empty Pages dictionary so the SPA never sees stored schemas.
+/// Pins the <c>AppSettings.Features.PageBuilder</c> gate and the ADR-0001
+/// variant + activation model on the customization-pages surface. While the
+/// flag is off (default) every endpoint is invisible (404). While on, a slot
+/// owns a variant library plus an active selection; the effective active
+/// schema is what <c>/api/app-info</c> publishes and the runtime renders.
 ///
-/// <para>Mutates the AppSettings singleton in-process. The fixture
-/// uses <c>[Collection]</c> so tests run sequentially within the
-/// collection — each test restores the flag in its finally block.</para>
+/// <para>Mutates the AppSettings singleton in-process. The fixture uses
+/// <c>[Collection]</c> so tests run sequentially — each test restores the flag
+/// in its finally block.</para>
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
 public class PageBuilderFeatureFlagTests : IntegrationTestBase
 {
     public PageBuilderFeatureFlagTests(SharedPostgresFixture fixture) : base(fixture) { }
 
-    [Fact]
-    public async Task GetPage_returns_404_when_feature_off()
+    // ── helpers ──
+
+    /// <summary>Create a realm variant for the slot and activate it. Returns the
+    /// new variant id.</summary>
+    private async Task<string> SeedRealmActive(string slug, string name, string schema, CancellationToken ct)
     {
-        var settings = Factory.Services.GetRequiredService<AppSettings>();
-        settings.Features.PageBuilder = false;
+        var post = await Client.PostAsJsonAsync($"/api/admin/customization/pages/{slug}/variants",
+            new { Name = name, Schema = schema }, ct);
+        Assert.Equal(HttpStatusCode.OK, post.StatusCode);
+        using var created = JsonDocument.Parse(await post.Content.ReadAsStringAsync(ct));
+        var id = created.RootElement.GetProperty("Id").GetString()!;
+
+        var active = await Client.PutAsJsonAsync($"/api/admin/customization/pages/{slug}/active",
+            new { ActiveVariantId = id }, ct);
+        Assert.Equal(HttpStatusCode.OK, active.StatusCode);
+        return id;
+    }
+
+    private async Task<string?> AppInfoActiveSchema(string slug, CancellationToken ct, string? returnUrl = null)
+    {
+        var url = returnUrl is null ? "/api/app-info" : $"/api/app-info?returnUrl={returnUrl}";
+        using var doc = JsonDocument.Parse(await (await Client.GetAsync(url, ct)).Content.ReadAsStringAsync(ct));
+        var pages = doc.RootElement.GetProperty("Pages");
+        return pages.TryGetProperty(slug, out var s) ? s.GetString() : null;
+    }
+
+    // ── feature-flag gating ──
+
+    [Fact]
+    public async Task GetPageSlot_returns_404_when_feature_off()
+    {
+        Factory.Services.GetRequiredService<AppSettings>().Features.PageBuilder = false;
 
         var resp = await Client.GetAsync("/api/admin/customization/pages/login",
             TestContext.Current.CancellationToken);
@@ -39,20 +69,21 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task PutPage_returns_404_when_feature_off()
+    public async Task CreateVariant_returns_404_when_feature_off()
     {
-        var settings = Factory.Services.GetRequiredService<AppSettings>();
-        settings.Features.PageBuilder = false;
+        Factory.Services.GetRequiredService<AppSettings>().Features.PageBuilder = false;
 
-        var resp = await Client.PutAsJsonAsync("/api/admin/customization/pages/login",
-            new { Schema = "{\"type\":\"page\",\"children\":[]}" },
+        var resp = await Client.PostAsJsonAsync("/api/admin/customization/pages/login/variants",
+            new { Name = "X", Schema = "{\"type\":\"page\",\"children\":[]}" },
             TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
     }
 
+    // ── variant CRUD + activation ──
+
     [Fact]
-    public async Task GetPage_works_when_feature_on()
+    public async Task GetPageSlot_works_when_feature_on()
     {
         var settings = Factory.Services.GetRequiredService<AppSettings>();
         settings.Features.PageBuilder = true;
@@ -62,104 +93,144 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
                 TestContext.Current.CancellationToken);
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
-            var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
-            using var doc = JsonDocument.Parse(body);
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
             Assert.Equal("login", doc.RootElement.GetProperty("Slug").GetString());
         }
-        finally
-        {
-            settings.Features.PageBuilder = false;
-        }
+        finally { settings.Features.PageBuilder = false; }
     }
 
     [Fact]
-    public async Task PutPage_persists_when_feature_on()
+    public async Task Create_activate_persists_and_surfaces_effective_schema()
     {
         var settings = Factory.Services.GetRequiredService<AppSettings>();
         settings.Features.PageBuilder = true;
+        var ct = TestContext.Current.CancellationToken;
         try
         {
             var schema = "{\"type\":\"page\",\"children\":[{\"type\":\"heading\",\"level\":1}]}";
-            var put = await Client.PutAsJsonAsync("/api/admin/customization/pages/login",
-                new { Schema = schema },
-                TestContext.Current.CancellationToken);
-            Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+            var id = await SeedRealmActive("login", "Primary", schema, ct);
 
-            var get = await Client.GetAsync("/api/admin/customization/pages/login",
-                TestContext.Current.CancellationToken);
-            var body = await get.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
-            using var doc = JsonDocument.Parse(body);
-            Assert.Equal(schema, doc.RootElement.GetProperty("Schema").GetString());
+            // The variant round-trips with its schema.
+            using (var variant = JsonDocument.Parse(await (await Client.GetAsync(
+                $"/api/admin/customization/pages/login/variants/{id}", ct)).Content.ReadAsStringAsync(ct)))
+            {
+                Assert.Equal(schema, variant.RootElement.GetProperty("Schema").GetString());
+            }
+
+            // The slot reports it as active.
+            using (var slot = JsonDocument.Parse(await (await Client.GetAsync(
+                "/api/admin/customization/pages/login", ct)).Content.ReadAsStringAsync(ct)))
+            {
+                Assert.Equal(id, slot.RootElement.GetProperty("ActiveVariantId").GetString());
+                Assert.Single(slot.RootElement.GetProperty("Variants").EnumerateArray());
+            }
+
+            Assert.Equal(schema, await AppInfoActiveSchema("login", ct));
         }
-        finally
+        finally { settings.Features.PageBuilder = false; }
+    }
+
+    [Fact]
+    public async Task Variant_without_activation_stays_builtin()
+    {
+        var settings = Factory.Services.GetRequiredService<AppSettings>();
+        settings.Features.PageBuilder = true;
+        var ct = TestContext.Current.CancellationToken;
+        try
         {
-            settings.Features.PageBuilder = false;
+            // Creating a variant does NOT activate it — the slot stays built-in
+            // until explicitly activated (ADR-0001: existence ≠ active).
+            var post = await Client.PostAsJsonAsync("/api/admin/customization/pages/logout/variants",
+                new { Name = "Draft", Schema = "{\"type\":\"page\",\"children\":[]}" }, ct);
+            Assert.Equal(HttpStatusCode.OK, post.StatusCode);
+
+            Assert.Null(await AppInfoActiveSchema("logout", ct));
         }
+        finally { settings.Features.PageBuilder = false; }
     }
 
     [Fact]
-    public async Task RealmSettings_DTO_emits_empty_Pages_when_feature_off()
-    {
-        var settings = Factory.Services.GetRequiredService<AppSettings>();
-
-        // Seed a schema while the flag is on, then turn it off and read.
-        settings.Features.PageBuilder = true;
-        var schema = "{\"type\":\"page\",\"children\":[]}";
-        var put = await Client.PutAsJsonAsync("/api/admin/customization/pages/login",
-            new { Schema = schema },
-            TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
-
-        settings.Features.PageBuilder = false;
-        var resp = await Client.GetAsync("/api/admin/realm-settings",
-            TestContext.Current.CancellationToken);
-        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
-        using var doc = JsonDocument.Parse(body);
-
-        Assert.True(doc.RootElement.TryGetProperty("Pages", out var pages));
-        Assert.Equal(JsonValueKind.Object, pages.ValueKind);
-        Assert.Empty(pages.EnumerateObject());
-
-        var anonymous = await Client.GetAsync("/api/app-info", TestContext.Current.CancellationToken);
-        using var appInfo = JsonDocument.Parse(await anonymous.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
-        Assert.Empty(appInfo.RootElement.GetProperty("Pages").EnumerateObject());
-    }
-
-    [Fact]
-    public async Task RealmSettings_DTO_includes_Pages_when_feature_on()
+    public async Task Deactivating_reverts_to_builtin_without_deleting_the_variant()
     {
         var settings = Factory.Services.GetRequiredService<AppSettings>();
         settings.Features.PageBuilder = true;
+        var ct = TestContext.Current.CancellationToken;
         try
         {
             var schema = "{\"type\":\"page\",\"children\":[]}";
-            var put = await Client.PutAsJsonAsync("/api/admin/customization/pages/login",
-                new { Schema = schema },
-                TestContext.Current.CancellationToken);
-            Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+            var id = await SeedRealmActive("password-forgot", "V", schema, ct);
+            Assert.Equal(schema, await AppInfoActiveSchema("password-forgot", ct));
 
-            var resp = await Client.GetAsync("/api/admin/realm-settings",
-                TestContext.Current.CancellationToken);
-            var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
-            using var doc = JsonDocument.Parse(body);
+            // Deactivate (built-in) — variant stays in the library.
+            var deactivate = await Client.PutAsJsonAsync("/api/admin/customization/pages/password-forgot/active",
+                new { ActiveVariantId = (string?)null }, ct);
+            Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
 
-            Assert.True(doc.RootElement.TryGetProperty("Pages", out var pages));
-            Assert.Equal(JsonValueKind.Object, pages.ValueKind);
-            Assert.True(pages.TryGetProperty("login", out _),
-                "Pages dictionary must surface stored slug when flag is on");
-
-            var anonymous = await Client.GetAsync("/api/app-info", TestContext.Current.CancellationToken);
-            using var appInfo = JsonDocument.Parse(await anonymous.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
-            Assert.Equal(schema, appInfo.RootElement.GetProperty("Pages").GetProperty("login").GetString());
+            Assert.Null(await AppInfoActiveSchema("password-forgot", ct));
+            using var slot = JsonDocument.Parse(await (await Client.GetAsync(
+                "/api/admin/customization/pages/password-forgot", ct)).Content.ReadAsStringAsync(ct));
+            Assert.Single(slot.RootElement.GetProperty("Variants").EnumerateArray()); // not deleted
+            Assert.Equal(id, slot.RootElement.GetProperty("Variants")[0].GetProperty("Id").GetString());
         }
-        finally
-        {
-            settings.Features.PageBuilder = false;
-        }
+        finally { settings.Features.PageBuilder = false; }
     }
 
     [Fact]
-    public async Task Application_page_override_inherits_overrides_survives_settings_save_and_can_reset()
+    public async Task Activating_unknown_variant_is_rejected()
+    {
+        var settings = Factory.Services.GetRequiredService<AppSettings>();
+        settings.Features.PageBuilder = true;
+        var ct = TestContext.Current.CancellationToken;
+        try
+        {
+            var resp = await Client.PutAsJsonAsync("/api/admin/customization/pages/login/active",
+                new { ActiveVariantId = "does-not-exist" }, ct);
+            Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        }
+        finally { settings.Features.PageBuilder = false; }
+    }
+
+    // ── legacy migration ──
+
+    [Fact]
+    public async Task Legacy_single_schema_migrates_to_an_active_variant()
+    {
+        var settings = Factory.Services.GetRequiredService<AppSettings>();
+        settings.Features.PageBuilder = true;
+        var ct = TestContext.Current.CancellationToken;
+        try
+        {
+            const string legacy = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[{\"id\":\"x\",\"type\":\"heading\",\"props\":{\"text\":\"Legacy\"}}]}";
+            using (var scope = Factory.Services.CreateScope())
+            {
+                var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+                var existing = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct)
+                    ?? new RealmSettingsDoc { Id = RealmSettingsDoc.SingletonId, CreatedAt = DateTimeOffset.UtcNow };
+                existing.Pages = new Dictionary<string, string> { ["login"] = legacy };
+                existing.PageSlots = null;
+                session.Store(existing);
+                await session.SaveChangesAsync(ct);
+            }
+
+            // Listing the slot migrates it: one active "Custom" variant.
+            using (var slot = JsonDocument.Parse(await (await Client.GetAsync(
+                "/api/admin/customization/pages/login", ct)).Content.ReadAsStringAsync(ct)))
+            {
+                var variants = slot.RootElement.GetProperty("Variants").EnumerateArray().ToArray();
+                Assert.Single(variants);
+                Assert.Equal(slot.RootElement.GetProperty("ActiveVariantId").GetString(),
+                    variants[0].GetProperty("Id").GetString());
+            }
+
+            Assert.Equal(legacy, await AppInfoActiveSchema("login", ct));
+        }
+        finally { settings.Features.PageBuilder = false; }
+    }
+
+    // ── application inheritance / override / deactivate ──
+
+    [Fact]
+    public async Task Application_inherits_then_overrides_then_deactivates_and_survives_settings_save()
     {
         var settings = Factory.Services.GetRequiredService<AppSettings>();
         settings.Features.PageBuilder = true;
@@ -167,11 +238,9 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
         try
         {
             const string realmSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[]}";
-            const string appSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[{\"id\":\"title\",\"type\":\"heading\",\"props\":{\"text\":\"App\"}}]}";
+            const string appSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[{\"id\":\"t\",\"type\":\"heading\",\"props\":{\"text\":\"App\"}}]}";
 
-            var realmPut = await Client.PutAsJsonAsync("/api/admin/customization/pages/logout",
-                new { Schema = realmSchema }, ct);
-            Assert.Equal(HttpStatusCode.OK, realmPut.StatusCode);
+            await SeedRealmActive("logout", "Realm", realmSchema, ct);
 
             var slug = $"pb-{Guid.NewGuid():N}";
             var createdResponse = await Client.PostAsJsonAsync("/api/app",
@@ -179,20 +248,24 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
             Assert.Equal(HttpStatusCode.OK, createdResponse.StatusCode);
             using var created = JsonDocument.Parse(await createdResponse.Content.ReadAsStringAsync(ct));
             var appId = created.RootElement.GetProperty("Id").GetString();
-            Assert.False(string.IsNullOrWhiteSpace(appId));
-            var endpoint = $"/api/app/{appId}/pages/logout";
+            var basePath = $"/api/app/{appId}/pages";
 
-            using (var inherited = JsonDocument.Parse(await (await Client.GetAsync(endpoint, ct)).Content.ReadAsStringAsync(ct)))
+            // Fresh app inherits: its slot list is empty.
+            using (var list = JsonDocument.Parse(await (await Client.GetAsync(basePath, ct)).Content.ReadAsStringAsync(ct)))
             {
-                Assert.True(inherited.RootElement.GetProperty("InheritsRealm").GetBoolean());
-                Assert.False(inherited.RootElement.TryGetProperty("Schema", out _));
-                Assert.Equal(realmSchema, inherited.RootElement.GetProperty("EffectiveSchema").GetString());
+                Assert.Empty(list.RootElement.GetProperty("Slots").EnumerateArray());
             }
 
-            var appPut = await Client.PutAsJsonAsync(endpoint, new { Schema = appSchema }, ct);
-            Assert.Equal(HttpStatusCode.OK, appPut.StatusCode);
+            // App authors its own variant and activates it (non-inheriting).
+            var post = await Client.PostAsJsonAsync($"{basePath}/logout/variants",
+                new { Name = "App", Schema = appSchema }, ct);
+            using var appVariant = JsonDocument.Parse(await post.Content.ReadAsStringAsync(ct));
+            var appVariantId = appVariant.RootElement.GetProperty("Id").GetString();
+            var setActive = await Client.PutAsJsonAsync($"{basePath}/logout/active",
+                new { Inherit = false, ActiveVariantId = appVariantId }, ct);
+            Assert.Equal(HttpStatusCode.OK, setActive.StatusCode);
 
-            // A regular App settings replace must leave the separately-managed page tree intact.
+            // A regular App settings replace must leave the page tree intact.
             var appUpdate = await Client.PutAsJsonAsync($"/api/app/{appId}",
                 new UpdateAppDto("PageBuilder App", null, [], new ApplicationSettingsDto
                 {
@@ -200,28 +273,30 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
                 }), JsonOptions, ct);
             Assert.Equal(HttpStatusCode.OK, appUpdate.StatusCode);
 
-            using (var overridden = JsonDocument.Parse(await (await Client.GetAsync(endpoint, ct)).Content.ReadAsStringAsync(ct)))
+            using (var list = JsonDocument.Parse(await (await Client.GetAsync(basePath, ct)).Content.ReadAsStringAsync(ct)))
             {
-                Assert.False(overridden.RootElement.GetProperty("InheritsRealm").GetBoolean());
-                Assert.Equal(appSchema, overridden.RootElement.GetProperty("Schema").GetString());
-                Assert.Equal(appSchema, overridden.RootElement.GetProperty("EffectiveSchema").GetString());
+                var slot = list.RootElement.GetProperty("Slots").EnumerateArray().Single();
+                Assert.False(slot.GetProperty("InheritActive").GetBoolean());
+                Assert.Equal(appVariantId, slot.GetProperty("ActiveVariantId").GetString());
+                Assert.Single(slot.GetProperty("Variants").EnumerateArray());
             }
 
-            var delete = await Client.DeleteAsync(endpoint, ct);
-            Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
-
-            using var reset = JsonDocument.Parse(await (await Client.GetAsync(endpoint, ct)).Content.ReadAsStringAsync(ct));
-            Assert.True(reset.RootElement.GetProperty("InheritsRealm").GetBoolean());
-            Assert.Equal(realmSchema, reset.RootElement.GetProperty("EffectiveSchema").GetString());
+            // Back to inherit — app variant is retained, realm selection stands.
+            var inherit = await Client.PutAsJsonAsync($"{basePath}/logout/active",
+                new { Inherit = true, ActiveVariantId = (string?)null }, ct);
+            Assert.Equal(HttpStatusCode.OK, inherit.StatusCode);
+            using (var list = JsonDocument.Parse(await (await Client.GetAsync(basePath, ct)).Content.ReadAsStringAsync(ct)))
+            {
+                var slot = list.RootElement.GetProperty("Slots").EnumerateArray().Single();
+                Assert.True(slot.GetProperty("InheritActive").GetBoolean());
+                Assert.Single(slot.GetProperty("Variants").EnumerateArray()); // retained
+            }
         }
-        finally
-        {
-            settings.Features.PageBuilder = false;
-        }
+        finally { settings.Features.PageBuilder = false; }
     }
 
     [Fact]
-    public async Task AppInfo_resolves_page_override_from_local_authorize_client_context()
+    public async Task AppInfo_resolves_app_override_from_local_authorize_client_context()
     {
         var settings = Factory.Services.GetRequiredService<AppSettings>();
         settings.Features.PageBuilder = true;
@@ -229,13 +304,12 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
         try
         {
             const string realmSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[]}";
-            const string appSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[{\"id\":\"app\",\"type\":\"paragraph\",\"props\":{\"text\":\"App login\"}}]}";
-            var realmPut = await Client.PutAsJsonAsync("/api/admin/customization/pages/login",
-                new { Schema = realmSchema }, ct);
-            Assert.Equal(HttpStatusCode.OK, realmPut.StatusCode);
+            const string appSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[{\"id\":\"a\",\"type\":\"paragraph\",\"props\":{\"text\":\"App login\"}}]}";
+            await SeedRealmActive("login", "Realm", realmSchema, ct);
 
             var appId = Guid.NewGuid();
             var clientId = $"page-client-{Guid.NewGuid():N}";
+            var appVariantId = Guid.NewGuid().ToString("N");
             using (var scope = Factory.Services.CreateScope())
             {
                 var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
@@ -243,32 +317,27 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
                 {
                     Id = appId,
                     CreatedAt = DateTimeOffset.UtcNow,
-                    Pages = new Dictionary<string, string> { ["login"] = appSchema },
+                    PageSlots = new Dictionary<string, AppPageSlot>
+                    {
+                        ["login"] = new AppPageSlot
+                        {
+                            InheritActive = false,
+                            Variants = [new PageVariant { Id = appVariantId, Name = "App", Schema = appSchema }],
+                            ActiveVariantId = appVariantId,
+                        },
+                    },
                 });
-                session.Store(new OAuthApplicationState
-                {
-                    Id = Guid.NewGuid(),
-                    ClientId = clientId,
-                    AppIds = [appId],
-                });
+                session.Store(new OAuthApplicationState { Id = Guid.NewGuid(), ClientId = clientId, AppIds = [appId] });
                 await session.SaveChangesAsync(ct);
             }
 
             var continuation = Uri.EscapeDataString($"/connect/authorize?client_id={clientId}&scope=openid");
-            var appInfoResponse = await Client.GetAsync($"/api/app-info?returnUrl={continuation}", ct);
-            Assert.Equal(HttpStatusCode.OK, appInfoResponse.StatusCode);
-            using var appInfo = JsonDocument.Parse(await appInfoResponse.Content.ReadAsStringAsync(ct));
-            Assert.Equal(appSchema, appInfo.RootElement.GetProperty("Pages").GetProperty("login").GetString());
+            Assert.Equal(appSchema, await AppInfoActiveSchema("login", ct, continuation));
 
-            // An absolute URL is not accepted as presentation context.
+            // An absolute URL is not accepted as presentation context → realm schema.
             var untrusted = Uri.EscapeDataString($"https://evil.example/connect/authorize?client_id={clientId}");
-            using var realmInfo = JsonDocument.Parse(await (await Client.GetAsync($"/api/app-info?returnUrl={untrusted}", ct))
-                .Content.ReadAsStringAsync(ct));
-            Assert.Equal(realmSchema, realmInfo.RootElement.GetProperty("Pages").GetProperty("login").GetString());
+            Assert.Equal(realmSchema, await AppInfoActiveSchema("login", ct, untrusted));
         }
-        finally
-        {
-            settings.Features.PageBuilder = false;
-        }
+        finally { settings.Features.PageBuilder = false; }
     }
 }

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CoarPageBuilder, type PageNode } from '@cocoar/vue-page-builder'
-import { CoarButton, CoarNote, useDialog } from '@cocoar/vue-ui'
+import { CoarButton, CoarNote, CoarTextInput, CoarFormField, useDialog } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import AssetPicker from '@/components/AssetPicker.vue'
@@ -13,6 +13,7 @@ import {
   createDefaultAuthPageSchema,
   type AuthPageSlot,
 } from '@/page-builder/authPageConfig'
+import { useRealmPagesApi, useAppPagesApi, type VariantPayload } from '@/composables/usePagesApi'
 
 const { t, language } = useI18n()
 const ui = useUI()
@@ -22,15 +23,18 @@ const dialog = useDialog()
 
 const slug = computed(() => (route.params.slug as string) ?? '')
 const slot = computed<AuthPageSlot>(() =>
-  AUTH_PAGE_SLOTS.includes(slug.value as AuthPageSlot)
-    ? slug.value as AuthPageSlot
-    : 'login')
+  AUTH_PAGE_SLOTS.includes(slug.value as AuthPageSlot) ? slug.value as AuthPageSlot : 'login')
+const variantId = computed(() => (route.params.variantId as string) ?? 'new')
+const isNew = computed(() => variantId.value === 'new')
+
 const applicationId = computed(() => typeof route.query.appId === 'string' ? route.query.appId : null)
 const applicationName = computed(() => typeof route.query.appName === 'string' ? route.query.appName : null)
 const isApplicationPage = computed(() => !!applicationId.value)
-const endpoint = computed(() => isApplicationPage.value
-  ? `/api/app/${encodeURIComponent(applicationId.value!)}/pages/${encodeURIComponent(slot.value)}`
-  : `/api/admin/customization/pages/${encodeURIComponent(slot.value)}`)
+
+// The right API surface (realm vs application) for this editor instance.
+const api = computed(() => applicationId.value
+  ? useAppPagesApi(applicationId.value)
+  : useRealmPagesApi())
 
 const pageConfig = computed(() => createAuthPageConfig(slot.value, async (currentId?: string) => {
   const ref$ = dialog.open<AssetDto>(AssetPicker, {
@@ -55,36 +59,28 @@ watch([language, slug, applicationName], () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
+const name = ref('')
 const schema = ref<PageNode>(createDefaultAuthPageSchema(slot.value))
 const loading = ref(true)
 const saving = ref(false)
 const savedFlash = ref(false)
 const error = ref<string | null>(null)
-const inheritsRealm = ref(false)
+const resetHint = ref(false)
 
-async function loadSchema() {
+async function load() {
   loading.value = true
   error.value = null
+  resetHint.value = false
   try {
-    const res = await fetch(endpoint.value, { headers: { Accept: 'application/json' } })
-    if (!res.ok) {
-      error.value = `Failed to load (HTTP ${res.status})`
-      return
-    }
-    const body = await res.json() as {
-      Slug: string
-      Schema: string | null
-      EffectiveSchema?: string | null
-      InheritsRealm?: boolean
-    }
-    inheritsRealm.value = body.InheritsRealm ?? false
-    const effectiveSchema = body.Schema ?? body.EffectiveSchema
-    if (!effectiveSchema) {
+    if (isNew.value) {
+      name.value = ''
       schema.value = createDefaultAuthPageSchema(slot.value)
       return
     }
+    const variant = await api.value.getVariant(slot.value, variantId.value)
+    name.value = variant.Name
     try {
-      schema.value = JSON.parse(effectiveSchema) as PageNode
+      schema.value = JSON.parse(variant.Schema) as PageNode
     } catch (e: any) {
       error.value = `Stored schema is invalid JSON: ${e?.message ?? e}`
       schema.value = createDefaultAuthPageSchema(slot.value)
@@ -97,21 +93,28 @@ async function loadSchema() {
 }
 
 async function save() {
+  if (!name.value.trim()) {
+    error.value = t('admin.customization.pages.nameRequired', {}, 'Give this variant a name first.')
+    return
+  }
   saving.value = true
   error.value = null
+  resetHint.value = false
   try {
-    const res = await fetch(endpoint.value, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ Schema: JSON.stringify(schema.value) }),
-    })
-    if (!res.ok) {
-      const body = await res.json().catch(() => null) as { Message?: string } | null
-      error.value = body?.Message ?? `Save failed (HTTP ${res.status})`
-      return
+    const payload: VariantPayload = { Name: name.value.trim(), Schema: JSON.stringify(schema.value) }
+    if (isNew.value) {
+      const created = await api.value.createVariant(slot.value, payload)
+      flashSaved()
+      // Swap the URL to the freshly-created variant so subsequent saves update it.
+      const query = isApplicationPage.value ? { ...route.query } : undefined
+      await router.replace({
+        path: `/platform/customization/pages/${slot.value}/${created.Id}`,
+        query,
+      })
+    } else {
+      await api.value.updateVariant(slot.value, variantId.value, payload)
+      flashSaved()
     }
-    inheritsRealm.value = false
-    flashSaved()
   } catch (e: any) {
     error.value = e?.message ?? String(e)
   } finally {
@@ -119,22 +122,11 @@ async function save() {
   }
 }
 
-async function resetToDefault() {
-  saving.value = true
-  error.value = null
-  try {
-    const res = await fetch(endpoint.value, { method: 'DELETE', headers: { Accept: 'application/json' } })
-    if (!res.ok) {
-      error.value = `Reset failed (HTTP ${res.status})`
-      return
-    }
-    await loadSchema()
-    flashSaved()
-  } catch (e: any) {
-    error.value = e?.message ?? String(e)
-  } finally {
-    saving.value = false
-  }
+// UI-only: load the built-in default template into the editor buffer. Nothing is
+// persisted until Save (ADR-0001 — reset is non-destructive).
+function loadDefaultTemplate() {
+  schema.value = createDefaultAuthPageSchema(slot.value)
+  resetHint.value = true
 }
 
 function flashSaved() {
@@ -143,15 +135,11 @@ function flashSaved() {
 }
 
 function back() {
-  if (isApplicationPage.value) {
-    router.back()
-    return
-  }
+  if (isApplicationPage.value) { router.back(); return }
   router.push('/platform/customization/pages')
 }
 
-onMounted(loadSchema)
-watch([slot, applicationId], loadSchema)
+watch([slot, variantId, applicationId], load, { immediate: true })
 </script>
 
 <template>
@@ -160,20 +148,24 @@ watch([slot, applicationId], loadSchema)
       <CoarButton size="s" variant="ghost" icon-start="arrow-left" @click="back">
         {{ t('common.back', {}, 'Back') }}
       </CoarButton>
+      <CoarFormField class="name-field">
+        <CoarTextInput
+          v-model="name"
+          size="s"
+          :placeholder="t('admin.customization.pages.variantName', {}, 'Variant name')" />
+      </CoarFormField>
       <div class="toolbar-spacer" />
-      <CoarButton size="s" variant="ghost" :loading="saving" @click="resetToDefault">
-        {{ isApplicationPage
-          ? t('admin.customization.pages.inherit', {}, 'Inherit realm page')
-          : t('admin.customization.pages.reset', {}, 'Reset to default') }}
+      <CoarButton size="s" variant="ghost" @click="loadDefaultTemplate">
+        {{ t('admin.customization.pages.loadDefault', {}, 'Load built-in template') }}
       </CoarButton>
       <CoarButton size="s" :loading="saving" @click="save">
-        {{ t('common.save', {}, 'Save') }}
+        {{ isNew ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save') }}
       </CoarButton>
     </div>
 
     <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
-    <CoarNote v-if="isApplicationPage && inheritsRealm" variant="info">
-      {{ t('admin.customization.pages.inheritsRealm', {}, 'This application currently uses the realm page. Saving creates an application-specific override.') }}
+    <CoarNote v-if="resetHint" variant="info">
+      {{ t('admin.customization.pages.resetHint', {}, 'Loaded the built-in template into the editor. Nothing is saved until you click Save.') }}
     </CoarNote>
     <CoarNote v-if="savedFlash" variant="success">
       {{ t('admin.realmSettings.saved', {}, 'Saved.') }}
@@ -201,6 +193,7 @@ watch([slot, applicationId], loadSchema)
   padding: 0.25rem 0;
 }
 
+.name-field { margin: 0; min-width: 220px; }
 .toolbar-spacer { flex: 1; }
 
 .builder {

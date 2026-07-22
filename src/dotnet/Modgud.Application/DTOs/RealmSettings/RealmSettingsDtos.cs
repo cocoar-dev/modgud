@@ -22,11 +22,9 @@ public record RealmSettingsDto
     public DeletionSettingsDto Deletion { get; init; } = new();
     public AuditSettingsDto Audit { get; init; } = new();
 
-    /// <summary>Page-builder schemas keyed by slug. Read-only via the bulk
-    /// GET; writes go through the dedicated <c>/api/admin/customization/pages/{slug}</c>
-    /// endpoints. Empty dict = no slot customised yet.</summary>
-    public IReadOnlyDictionary<string, string> Pages { get; init; }
-        = new Dictionary<string, string>();
+    // PageBuilder page config (variants + active selection) is served by the
+    // dedicated /api/admin/customization/pages endpoints (ADR-0001), not this
+    // bulk settings DTO — the schemas are large and independently managed.
 }
 
 /// <summary>Patch payload for <c>PATCH /api/admin/realm-settings</c>.
