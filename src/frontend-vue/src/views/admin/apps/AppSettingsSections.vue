@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import {
   CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarNote,
-  CoarTabGroup, CoarTab, CoarMultiSelect, CoarButton,
+  CoarTabGroup, CoarTab, CoarMultiSelect,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import EditableStringList from '@/components/EditableStringList.vue'
@@ -26,7 +25,6 @@ const props = defineProps<{
 
 const groupStore = useGroupStore()
 const appConfig = useAppConfigStore()
-const router = useRouter()
 const activeTab = ref<'origin' | 'registration' | 'grants' | 'oauth' | 'pages'>('origin')
 
 const groupOptions = ref<{ value: string; label: string }[]>([])
@@ -217,7 +215,7 @@ onMounted(async () => {
 
 defineExpose({ build })
 
-// ── Application PageBuilder variants + activation (ADR-0001) ──
+// ── Application page selection (ADR-0001): pick a realm variant per slot ──
 const PAGE_SLOT_META = [
   { slug: 'login', label: t('admin.customization.pages.login.title', {}, 'Login') },
   { slug: 'password-forgot', label: t('admin.customization.pages.passwordForgot.title', {}, 'Forgot password') },
@@ -229,7 +227,7 @@ const pagesError = ref<string | null>(null)
 const pagesBusy = ref(false)
 
 function appSlotOf(slug: string): AppSlotDto {
-  return appSlots[slug] ?? { Slug: slug, InheritActive: true, ActiveVariantId: null, Variants: [] }
+  return appSlots[slug] ?? { Slug: slug, InheritActive: true, ActiveVariantId: null, AvailableVariants: [] }
 }
 
 function appPagesApi() {
@@ -244,12 +242,12 @@ async function loadAppPages() {
     const bySlug = new Map(Slots.map((s) => [s.Slug, s]))
     for (const m of PAGE_SLOT_META) {
       appSlots[m.slug] = bySlug.get(m.slug)
-        ?? { Slug: m.slug, InheritActive: true, ActiveVariantId: null, Variants: [] }
+        ?? { Slug: m.slug, InheritActive: true, ActiveVariantId: null, AvailableVariants: [] }
     }
   } catch (e: any) { pagesError.value = e?.message ?? String(e) }
 }
 
-// Active dropdown value: 'inherit' | '__builtin__' | variantId.
+// Active dropdown value: 'inherit' | '__builtin__' | realm-variantId.
 function appActiveValue(slot: AppSlotDto): string {
   if (slot.InheritActive) return 'inherit'
   return slot.ActiveVariantId ?? APP_BUILT_IN
@@ -259,7 +257,7 @@ function appActiveOptions(slot: AppSlotDto) {
   return [
     { value: 'inherit', label: t('admin.appSettings.pages.inheritRealm', {}, 'Inherit realm') },
     { value: APP_BUILT_IN, label: t('admin.customization.pages.builtin', {}, 'Built-in (default)') },
-    ...slot.Variants.map((v) => ({ value: v.Id, label: v.Name })),
+    ...slot.AvailableVariants.map((v) => ({ value: v.Id, label: v.Name })),
   ]
 }
 
@@ -269,39 +267,9 @@ async function setAppActive(slug: string, value: string | null) {
   pagesBusy.value = true
   pagesError.value = null
   try {
-    if (value === 'inherit') await client.setActive(slug, true, null)
+    if (value === 'inherit' || value === null) await client.setActive(slug, true, null)
     else if (value === APP_BUILT_IN) await client.setActive(slug, false, null)
     else await client.setActive(slug, false, value)
-    await loadAppPages()
-  } catch (e: any) { pagesError.value = e?.message ?? String(e) } finally { pagesBusy.value = false }
-}
-
-function pageEditorTarget(slug: string, variantId: string) {
-  return {
-    path: `/platform/customization/pages/${slug}/${variantId}`,
-    query: {
-      appId: props.applicationId!,
-      ...(props.applicationName ? { appName: props.applicationName } : {}),
-    },
-  }
-}
-
-function newAppVariant(slug: string) {
-  if (!props.applicationId) return
-  router.push(pageEditorTarget(slug, 'new'))
-}
-
-function editAppVariant(slug: string, variantId: string) {
-  if (!props.applicationId) return
-  router.push(pageEditorTarget(slug, variantId))
-}
-
-async function deleteAppVariant(slug: string, variantId: string) {
-  const client = appPagesApi()
-  if (!client) return
-  pagesBusy.value = true
-  try {
-    await client.deleteVariant(slug, variantId)
     await loadAppPages()
   } catch (e: any) { pagesError.value = e?.message ?? String(e) } finally { pagesBusy.value = false }
 }
@@ -468,46 +436,17 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
       </CoarNote>
       <template v-else>
         <CoarNote variant="info">
-          {{ t('admin.appSettings.pages.hintV2', {}, 'Each slot inherits the realm page unless you override it here. Author app-specific variants and pick which is live for this application.') }}
+          {{ t('admin.appSettings.pages.hintV3', {}, 'Pick which authentication page this application uses. Inherit follows the realm; variants are authored in Platform → Pages.') }}
         </CoarNote>
         <CoarNote v-if="pagesError" variant="error">{{ pagesError }}</CoarNote>
 
-        <div class="app-page-slots">
-          <div v-for="m in PAGE_SLOT_META" :key="m.slug" class="app-slot">
-            <div class="app-slot-head">
-              <strong>{{ m.label }}</strong>
-              <div class="app-slot-active">
-                <label class="active-label">{{ t('admin.appSettings.pages.activeForApp', {}, 'Active for this app') }}</label>
-                <CoarSelect
-                  :model-value="appActiveValue(appSlotOf(m.slug))"
-                  :options="appActiveOptions(appSlotOf(m.slug))"
-                  :disabled="pagesBusy"
-                  size="s"
-                  @update:model-value="(v: string | null) => setAppActive(m.slug, v)" />
-              </div>
-            </div>
-            <div class="app-variants">
-              <div
-                v-for="v in appSlotOf(m.slug).Variants"
-                :key="v.Id"
-                class="app-variant"
-                :class="{ 'app-variant-active': !appSlotOf(m.slug).InheritActive && v.Id === appSlotOf(m.slug).ActiveVariantId }">
-                <span class="app-variant-name">{{ v.Name }}</span>
-                <div class="app-variant-actions">
-                  <CoarButton size="s" variant="secondary" icon-start="pencil" @click="editAppVariant(m.slug, v.Id)">
-                    {{ t('common.edit', {}, 'Edit') }}
-                  </CoarButton>
-                  <CoarButton size="s" variant="ghost" icon-start="trash-2" :disabled="pagesBusy" @click="deleteAppVariant(m.slug, v.Id)">
-                    {{ t('common.delete', {}, 'Delete') }}
-                  </CoarButton>
-                </div>
-              </div>
-              <CoarButton size="s" variant="ghost" icon-start="plus" @click="newAppVariant(m.slug)">
-                {{ t('admin.customization.pages.newVariant', {}, 'New variant') }}
-              </CoarButton>
-            </div>
-          </div>
-        </div>
+        <CoarFormField v-for="m in PAGE_SLOT_META" :key="m.slug" :label="m.label">
+          <CoarSelect
+            :model-value="appActiveValue(appSlotOf(m.slug))"
+            :options="appActiveOptions(appSlotOf(m.slug))"
+            :disabled="pagesBusy"
+            @update:model-value="(v: string | null) => setAppActive(m.slug, v)" />
+        </CoarFormField>
       </template>
     </div>
   </div>

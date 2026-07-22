@@ -1,13 +1,14 @@
-// PageBuilder variant + activation API (ADR-0001). Thin fetch wrappers over the
-// realm (`/api/admin/customization/pages`) and application
-// (`/api/app/{appId}/pages`) endpoints. Realm and app share the variant CRUD
-// shape; only the active-selection payload differs (the app can inherit).
+// PageBuilder variant + activation API (ADR-0001). The variant library is
+// realm-global (`/api/admin/customization/pages`); Applications only *select*
+// one of those realm variants per slot (`/api/app/{appId}/pages`).
 
 export interface PageVariantSummary {
   Id: string
   Name: string
   CreatedAt: string
   UpdatedAt: string | null
+  RealmActive: boolean
+  UsedByApps: string[]
 }
 
 export interface PageVariantFull {
@@ -22,8 +23,13 @@ export interface RealmSlotDto {
   Variants: PageVariantSummary[]
 }
 
-export interface AppSlotDto extends RealmSlotDto {
+export interface VariantOption { Id: string; Name: string }
+
+export interface AppSlotDto {
+  Slug: string
   InheritActive: boolean
+  ActiveVariantId: string | null
+  AvailableVariants: VariantOption[]
 }
 
 export interface VariantPayload { Name: string; Schema: string }
@@ -56,7 +62,6 @@ export function useRealmPagesApi() {
   const base = '/api/admin/customization/pages'
   return {
     listSlots: async () => ok<{ Slots: RealmSlotDto[] }>(await fetch(base, acceptJson)),
-    getSlot: async (slug: string) => ok<RealmSlotDto>(await fetch(`${base}/${enc(slug)}`, acceptJson)),
     getVariant: async (slug: string, id: string) =>
       ok<PageVariantFull>(await fetch(`${base}/${enc(slug)}/variants/${enc(id)}`, acceptJson)),
     createVariant: async (slug: string, body: VariantPayload) =>
@@ -74,14 +79,6 @@ export function useAppPagesApi(applicationId: string) {
   const base = `/api/app/${enc(applicationId)}/pages`
   return {
     listSlots: async () => ok<{ Slots: AppSlotDto[] }>(await fetch(base, acceptJson)),
-    getVariant: async (slug: string, id: string) =>
-      ok<PageVariantFull>(await fetch(`${base}/${enc(slug)}/variants/${enc(id)}`, acceptJson)),
-    createVariant: async (slug: string, body: VariantPayload) =>
-      ok<{ Id: string; Name: string }>(await fetch(`${base}/${enc(slug)}/variants`, jsonInit('POST', body))),
-    updateVariant: async (slug: string, id: string, body: VariantPayload) =>
-      ok<{ Id: string; Name: string }>(await fetch(`${base}/${enc(slug)}/variants/${enc(id)}`, jsonInit('PUT', body))),
-    deleteVariant: async (slug: string, id: string) =>
-      okEmpty(await fetch(`${base}/${enc(slug)}/variants/${enc(id)}`, { method: 'DELETE', ...acceptJson })),
     setActive: async (slug: string, inherit: boolean, activeVariantId: string | null) =>
       okEmpty(await fetch(`${base}/${enc(slug)}/active`, jsonInit('PUT', { Inherit: inherit, ActiveVariantId: activeVariantId }))),
   }

@@ -42,34 +42,38 @@ Each slot defines its own list of **available actions**. Login supports credenti
 
 ## Variants and activation
 
-Each slot owns a **library of named variants** plus an **active selection** — three separate concepts (ADR-0001): *a variant exists*, *a variant is live*, and *the built-in fixed view*. This means you can:
+The variant library is **realm-global** (ADR-0001): each slot owns a set of named variants, authored in **Platform → Pages**. Three concepts stay separate — *a variant exists*, *a variant is live*, and *the built-in fixed view* — so you can:
 
 - author several variants for one slot (e.g. two login layouts) and switch which is live,
 - **deactivate** a variant (set the slot back to Built-in) without deleting it, and
 - reset the editor to the built-in template as a purely local action — nothing is persisted until you Save, and Saving creates/updates a variant, it never deletes.
 
-**Activation is a settings decision, not an editor action.** In the Pages overview each slot has an *Active for realm* selector (Built-in / a variant). The overview also badges which variant is live so you can see the blast-radius before editing one. Applications set their own *Active for this app* selector (Inherit realm / Built-in / an app variant) in **Settings → Pages**.
+**Where you do what:**
+
+- **Platform → Pages** is a grid of all variants (name, type, *Used By* count with a hover of the exact consumers, last-updated). Right-click (or the toolbar button) creates a new Login / Logout / Forgot-password page; double-click edits; the context menu deletes.
+- **Realm settings → Pages** has three selectors (login / logout / forgot) choosing the realm's live variant per slot — **Built-in** or a variant.
+- An **Application → Settings → Pages** has the same three selectors, each **Inherit realm** (default) / **Built-in** / one of the realm variants. An App never authors its own variant — it only *selects* from the realm library.
 
 Effective resolution per slot: **app selection → realm selection → built-in**. A slot resolved to Built-in is simply absent from the schema the SPA receives, so the runtime renders the hardcoded view.
 
 ## Storage
 
-Realm variants + activation live in `RealmSettings.PageSlots`; Application variants + activation live in `ApplicationSettings.PageSlots` (both keyed by slot). Legacy single-schema `Pages` dictionaries are migrated to a single active "Custom" variant on first touch.
+The realm variant library + the realm's active selection live in `RealmSettings.PageSlots` (keyed by slot). Each Application's per-slot selection (inherit / built-in / a realm variant id) lives in `ApplicationSettings.PageSlots`. Legacy single-schema `Pages` data migrates on first touch — a realm entry becomes an active "Custom" variant; an App entry (which can no longer be represented) is dropped, so the App inherits.
 
 Endpoints (all admin-gated, all return 404 when the feature flag is off):
 
 | Method | Path | Behaviour |
 | --- | --- | --- |
-| `GET` | `/api/admin/customization/pages` | Lists every slot with its variants (summaries) + active variant id. |
+| `GET` | `/api/admin/customization/pages` | Lists every slot with its variant summaries (incl. `RealmActive` + `UsedByApps`) + active id. |
 | `GET` | `/api/admin/customization/pages/{slug}/variants/{id}` | Returns `{Id, Name, Schema}` for one variant. |
 | `POST` | `/api/admin/customization/pages/{slug}/variants` | Creates a variant. Body: `{Name, Schema}`. Does **not** activate it. |
 | `PUT` | `/api/admin/customization/pages/{slug}/variants/{id}` | Updates a variant's name/schema. |
-| `DELETE` | `/api/admin/customization/pages/{slug}/variants/{id}` | Removes a variant; if it was active the slot reverts to Built-in. |
-| `PUT` | `/api/admin/customization/pages/{slug}/active` | Sets the live variant. Body: `{ActiveVariantId: "<id>" \| null}` (null = Built-in). |
+| `DELETE` | `/api/admin/customization/pages/{slug}/variants/{id}` | Removes a variant; the realm active pointer clears if it targeted it. |
+| `PUT` | `/api/admin/customization/pages/{slug}/active` | Sets the realm's live variant. Body: `{ActiveVariantId: "<id>" \| null}` (null = Built-in). |
 
 Schemas validate as JSON (malformed rejected) and cap at 256 KB; variant names cap at 80 chars; max 50 variants per slot.
 
-Application endpoints use `/api/app/{applicationId}/pages/...` with the same variant CRUD, plus `PUT /{slug}/active` taking `{Inherit: bool, ActiveVariantId: "<id>" \| null}` — `Inherit: true` defers to the realm; `false` + `null` forces Built-in; `false` + an id activates an app variant. Regular Application-settings saves do not touch page variants.
+Application endpoints under `/api/app/{applicationId}/pages`: `GET` returns each slot's selection (`InheritActive`, `ActiveVariantId`) plus the `AvailableVariants` (the realm library) to choose from; `PUT /{slug}/active` takes `{Inherit: bool, ActiveVariantId: "<id>" \| null}` where the id must be a **realm** variant — `Inherit: true` defers to the realm, `false` + `null` forces Built-in, `false` + an id selects that realm variant. Regular Application-settings saves do not touch the page selection.
 
 Slug charset: `a-z0-9-`, length 1–32. Anything else is a 400.
 

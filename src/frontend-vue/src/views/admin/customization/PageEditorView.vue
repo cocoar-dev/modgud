@@ -13,28 +13,20 @@ import {
   createDefaultAuthPageSchema,
   type AuthPageSlot,
 } from '@/page-builder/authPageConfig'
-import { useRealmPagesApi, useAppPagesApi, type VariantPayload } from '@/composables/usePagesApi'
+import { useRealmPagesApi, type VariantPayload } from '@/composables/usePagesApi'
 
 const { t, language } = useI18n()
 const ui = useUI()
 const route = useRoute()
 const router = useRouter()
 const dialog = useDialog()
+const api = useRealmPagesApi()
 
 const slug = computed(() => (route.params.slug as string) ?? '')
 const slot = computed<AuthPageSlot>(() =>
   AUTH_PAGE_SLOTS.includes(slug.value as AuthPageSlot) ? slug.value as AuthPageSlot : 'login')
 const variantId = computed(() => (route.params.variantId as string) ?? 'new')
 const isNew = computed(() => variantId.value === 'new')
-
-const applicationId = computed(() => typeof route.query.appId === 'string' ? route.query.appId : null)
-const applicationName = computed(() => typeof route.query.appName === 'string' ? route.query.appName : null)
-const isApplicationPage = computed(() => !!applicationId.value)
-
-// The right API surface (realm vs application) for this editor instance.
-const api = computed(() => applicationId.value
-  ? useAppPagesApi(applicationId.value)
-  : useRealmPagesApi())
 
 const pageConfig = computed(() => createAuthPageConfig(slot.value, async (currentId?: string) => {
   const ref$ = dialog.open<AssetDto>(AssetPicker, {
@@ -51,9 +43,9 @@ const labelBySlot: Record<string, string> = {
   'password-forgot': t('admin.customization.pages.passwordForgot.title', {}, 'Forgot password'),
 }
 
-watch([language, slug, applicationName], () => ui.set((ctx) => {
+watch([language, slug], () => ui.set((ctx) => {
   ctx.header.title = t('nav.platform', {}, 'Platform')
-  const scope = applicationName.value ?? t('admin.customization.pages.title', {}, 'Pages')
+  const scope = t('admin.customization.pages.title', {}, 'Pages')
   ctx.header.subTitle = `${scope} · ${labelBySlot[slug.value] ?? slug.value}`
   ctx.header.icon = 'layout-template'
   ctx.content.container = false
@@ -77,7 +69,7 @@ async function load() {
       schema.value = createDefaultAuthPageSchema(slot.value)
       return
     }
-    const variant = await api.value.getVariant(slot.value, variantId.value)
+    const variant = await api.getVariant(slot.value, variantId.value)
     name.value = variant.Name
     try {
       schema.value = JSON.parse(variant.Schema) as PageNode
@@ -103,16 +95,12 @@ async function save() {
   try {
     const payload: VariantPayload = { Name: name.value.trim(), Schema: JSON.stringify(schema.value) }
     if (isNew.value) {
-      const created = await api.value.createVariant(slot.value, payload)
+      const created = await api.createVariant(slot.value, payload)
       flashSaved()
       // Swap the URL to the freshly-created variant so subsequent saves update it.
-      const query = isApplicationPage.value ? { ...route.query } : undefined
-      await router.replace({
-        path: `/platform/customization/pages/${slot.value}/${created.Id}`,
-        query,
-      })
+      await router.replace(`/platform/customization/pages/${slot.value}/${created.Id}`)
     } else {
-      await api.value.updateVariant(slot.value, variantId.value, payload)
+      await api.updateVariant(slot.value, variantId.value, payload)
       flashSaved()
     }
   } catch (e: any) {
@@ -135,11 +123,10 @@ function flashSaved() {
 }
 
 function back() {
-  if (isApplicationPage.value) { router.back(); return }
   router.push('/platform/customization/pages')
 }
 
-watch([slot, variantId, applicationId], load, { immediate: true })
+watch([slot, variantId], load, { immediate: true })
 </script>
 
 <template>

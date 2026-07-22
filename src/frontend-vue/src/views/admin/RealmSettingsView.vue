@@ -20,6 +20,8 @@ import EditableStringList from '@/components/EditableStringList.vue'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
 import { useGroupStore } from '@/stores/group.store'
 import { useAuthStore } from '@/stores/auth.store'
+import { useAppConfigStore } from '@/stores/appconfig.store'
+import { useRealmPagesApi, type RealmSlotDto } from '@/composables/usePagesApi'
 import type {
   SelfRegistrationDto,
   UpdateSelfRegistrationDto,
@@ -53,11 +55,60 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.hasSubNav = true
 }), { immediate: true })
 
-type TabId = 'self-registration' | 'registration-fields' | 'dcr' | 'cimd' | 'native-grants' | 'auth-rate-limits' | 'deletion' | 'signing-keys'
+type TabId = 'self-registration' | 'registration-fields' | 'dcr' | 'cimd' | 'native-grants' | 'auth-rate-limits' | 'deletion' | 'signing-keys' | 'pages'
 const activeTab = ref<TabId>('self-registration')
 
 const canRotateSigningKey = computed(() => authStore.hasPermission('realm-settings:write'))
 const rotating = ref(false)
+
+// ── PageBuilder: pick the active page variant per slot (ADR-0001) ──
+const appConfig = useAppConfigStore()
+const pageBuilderOn = computed(() => appConfig.config.Features.PageBuilder)
+const pagesApi = useRealmPagesApi()
+const PAGE_BUILT_IN = '__builtin__'
+const PAGE_SLOT_META = [
+  { slug: 'login', label: t('admin.customization.pages.login.title', {}, 'Login') },
+  { slug: 'logout', label: t('admin.customization.pages.logout.title', {}, 'Logout') },
+  { slug: 'password-forgot', label: t('admin.customization.pages.passwordForgot.title', {}, 'Forgot password') },
+]
+const pageSlots = ref<Record<string, RealmSlotDto>>({})
+const pagesError = ref<string | null>(null)
+const pagesBusy = ref(false)
+
+function pageSlotOf(slug: string): RealmSlotDto {
+  return pageSlots.value[slug] ?? { Slug: slug, ActiveVariantId: null, Variants: [] }
+}
+
+function pageActiveOptions(slot: RealmSlotDto) {
+  return [
+    { value: PAGE_BUILT_IN, label: t('admin.customization.pages.builtin', {}, 'Built-in (default)') },
+    ...slot.Variants.map((v) => ({ value: v.Id, label: v.Name })),
+  ]
+}
+
+async function loadRealmPages() {
+  if (!pageBuilderOn.value) return
+  try {
+    const { Slots } = await pagesApi.listSlots()
+    const bySlug = new Map((Slots as RealmSlotDto[]).map((s) => [s.Slug, s]))
+    const next: Record<string, RealmSlotDto> = {}
+    for (const m of PAGE_SLOT_META) {
+      next[m.slug] = bySlug.get(m.slug) ?? { Slug: m.slug, ActiveVariantId: null, Variants: [] }
+    }
+    pageSlots.value = next
+  } catch (e: any) { pagesError.value = e?.message ?? String(e) }
+}
+
+async function setRealmPageActive(slug: string, value: string | null) {
+  pagesBusy.value = true
+  pagesError.value = null
+  try {
+    await pagesApi.setActive(slug, (value === null || value === PAGE_BUILT_IN) ? null : value)
+    await loadRealmPages()
+  } catch (e: any) { pagesError.value = e?.message ?? String(e) } finally { pagesBusy.value = false }
+}
+
+watch(activeTab, (tab) => { if (tab === 'pages') loadRealmPages() })
 
 // ── Self-Registration form state ─────────────────────────────────────
 interface SelfRegFormState {
@@ -548,6 +599,9 @@ async function rotateSigningKey() {
       <CoarTab v-if="canRotateSigningKey" id="signing-keys">
         {{ t('admin.realmSettings.tabs.signingKeys', {}, 'Signing Keys') }}
       </CoarTab>
+      <CoarTab v-if="pageBuilderOn" id="pages">
+        {{ t('admin.realmSettings.tabs.pages', {}, 'Pages') }}
+      </CoarTab>
     </CoarTabGroup>
 
     <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
@@ -930,6 +984,23 @@ async function rotateSigningKey() {
             </CoarButton>
           </CoarPopconfirm>
         </div>
+      </div>
+    </CoarCard>
+
+    <CoarCard v-else-if="activeTab === 'pages'" class="p-4">
+      <div class="flex flex-col gap-3">
+        <p class="text-xs text-gray-500">
+          {{ t('admin.realmSettings.pages.hint', {}, 'Choose which authentication page is live for this realm. "Built-in" renders the fixed default. Variants are authored in Platform → Pages.') }}
+        </p>
+        <CoarNote v-if="pagesError" variant="error">{{ pagesError }}</CoarNote>
+
+        <CoarFormField v-for="m in PAGE_SLOT_META" :key="m.slug" :label="m.label">
+          <CoarSelect
+            :model-value="pageSlotOf(m.slug).ActiveVariantId ?? PAGE_BUILT_IN"
+            :options="pageActiveOptions(pageSlotOf(m.slug))"
+            :disabled="pagesBusy"
+            @update:model-value="(v: string | null) => setRealmPageActive(m.slug, v)" />
+        </CoarFormField>
       </div>
     </CoarCard>
   </div>

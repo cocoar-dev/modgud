@@ -79,43 +79,23 @@ public class ApplicationSettings
     /// <see cref="PageSlots"/>.</summary>
     public Dictionary<string, string>? Pages { get; set; }
 
-    /// <summary>Per-Application PageBuilder configuration keyed by SPA page slot
-    /// (ADR-0001). Each entry is the Application's own variant library plus an
-    /// inherit switch + active selection. A missing slot, or one with
-    /// <see cref="AppPageSlot.InheritActive"/> true, inherits the realm's active
-    /// selection for that slot. Managed through the dedicated Application page
-    /// endpoints so an ordinary App settings update cannot erase pages.</summary>
+    /// <summary>Per-Application PageBuilder selection keyed by SPA page slot
+    /// (ADR-0001). An App does not own variants — the library is realm-global;
+    /// each entry only records whether the App inherits the realm selection or
+    /// overrides it (built-in / a realm variant id). Managed through the
+    /// dedicated Application page endpoints so an ordinary App settings update
+    /// cannot erase the selection.</summary>
     public Dictionary<string, AppPageSlot>? PageSlots { get; set; }
 
-    /// <summary>Lazily migrate the legacy single-schema <see cref="Pages"/>
-    /// dictionary into <see cref="PageSlots"/> (ADR-0001). Each legacy
-    /// <c>Pages[slug] = schema</c> becomes one active Application variant named
-    /// "Custom" with <see cref="AppPageSlot.InheritActive"/> false (the legacy
-    /// entry was an explicit App override). Returns <c>true</c> when it changed
-    /// the document.</summary>
+    /// <summary>Lazily drop the legacy single-schema <see cref="Pages"/>
+    /// dictionary (ADR-0001). Applications no longer author their own page
+    /// schemas — the variant library is realm-global — so a legacy App override
+    /// cannot be represented; the slot falls back to inheriting the realm.
+    /// Returns <c>true</c> when it changed the document.</summary>
     public bool MigratePagesToSlots()
     {
-        if (Pages is null || Pages.Count == 0)
-        {
-            if (Pages is not null) { Pages = null; return true; }
-            return false;
-        }
-
-        PageSlots ??= new Dictionary<string, AppPageSlot>(StringComparer.Ordinal);
-        foreach (var (slug, schema) in Pages)
-        {
-            if (string.IsNullOrWhiteSpace(schema)) continue;
-            if (PageSlots.ContainsKey(slug)) continue;
-            var id = Guid.NewGuid().ToString("N");
-            PageSlots[slug] = new AppPageSlot
-            {
-                Variants = [new PageVariant { Id = id, Name = "Custom", Schema = schema, CreatedAt = CreatedAt }],
-                InheritActive = false,
-                ActiveVariantId = id,
-            };
-        }
-        Pages = null;
-        return true;
+        if (Pages is not null) { Pages = null; return true; }
+        return false;
     }
 }
 
