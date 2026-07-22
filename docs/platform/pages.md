@@ -40,19 +40,36 @@ The page-builder is **headless** — you choose elements from a palette and arra
 
 Each slot defines its own list of **available actions**. Login supports credentials, passkey, magic-link, forgot-password, and register; forgot-password supports submit/back; logout supports back-to-login. The runtime only provides handlers for that fixed list. MFA choice, TOTP/email OTP, and secure-setup screens intentionally remain fixed UI: a schema cannot weaken or skip those transitions.
 
+## Variants and activation
+
+Each slot owns a **library of named variants** plus an **active selection** — three separate concepts (ADR-0001): *a variant exists*, *a variant is live*, and *the built-in fixed view*. This means you can:
+
+- author several variants for one slot (e.g. two login layouts) and switch which is live,
+- **deactivate** a variant (set the slot back to Built-in) without deleting it, and
+- reset the editor to the built-in template as a purely local action — nothing is persisted until you Save, and Saving creates/updates a variant, it never deletes.
+
+**Activation is a settings decision, not an editor action.** In the Pages overview each slot has an *Active for realm* selector (Built-in / a variant). The overview also badges which variant is live so you can see the blast-radius before editing one. Applications set their own *Active for this app* selector (Inherit realm / Built-in / an app variant) in **Settings → Pages**.
+
+Effective resolution per slot: **app selection → realm selection → built-in**. A slot resolved to Built-in is simply absent from the schema the SPA receives, so the runtime renders the hardcoded view.
+
 ## Storage
 
-Realm schemas live in `RealmSettings.Pages`; Application overrides live in `ApplicationSettings.Pages`. Both are dictionaries keyed by slot. Effective settings overlay Application keys over Realm keys, so an Application can override only `login` and inherit the other slots.
+Realm variants + activation live in `RealmSettings.PageSlots`; Application variants + activation live in `ApplicationSettings.PageSlots` (both keyed by slot). Legacy single-schema `Pages` dictionaries are migrated to a single active "Custom" variant on first touch.
 
 Endpoints (all admin-gated, all return 404 when the feature flag is off):
 
 | Method | Path | Behaviour |
 | --- | --- | --- |
-| `GET` | `/api/admin/customization/pages/{slug}` | Returns `{Slug, Schema}` or `Schema: null` if never saved. |
-| `PUT` | `/api/admin/customization/pages/{slug}` | Persists. Body: `{Schema: "<json>"}`. Server validates as JSON (rejects malformed) and caps at 256 KB. |
-| `DELETE` | `/api/admin/customization/pages/{slug}` | Clears the slot. Runtime falls back to the hardcoded default view. |
+| `GET` | `/api/admin/customization/pages` | Lists every slot with its variants (summaries) + active variant id. |
+| `GET` | `/api/admin/customization/pages/{slug}/variants/{id}` | Returns `{Id, Name, Schema}` for one variant. |
+| `POST` | `/api/admin/customization/pages/{slug}/variants` | Creates a variant. Body: `{Name, Schema}`. Does **not** activate it. |
+| `PUT` | `/api/admin/customization/pages/{slug}/variants/{id}` | Updates a variant's name/schema. |
+| `DELETE` | `/api/admin/customization/pages/{slug}/variants/{id}` | Removes a variant; if it was active the slot reverts to Built-in. |
+| `PUT` | `/api/admin/customization/pages/{slug}/active` | Sets the live variant. Body: `{ActiveVariantId: "<id>" \| null}` (null = Built-in). |
 
-Application endpoints use `/api/app/{applicationId}/pages/{slug}` with the same methods. Application `GET` also returns `EffectiveSchema` and `InheritsRealm`; `DELETE` removes the override and resumes Realm inheritance. Regular Application-settings saves do not replace page schemas.
+Schemas validate as JSON (malformed rejected) and cap at 256 KB; variant names cap at 80 chars; max 50 variants per slot.
+
+Application endpoints use `/api/app/{applicationId}/pages/...` with the same variant CRUD, plus `PUT /{slug}/active` taking `{Inherit: bool, ActiveVariantId: "<id>" \| null}` — `Inherit: true` defers to the realm; `false` + `null` forces Built-in; `false` + an id activates an app variant. Regular Application-settings saves do not touch page variants.
 
 Slug charset: `a-z0-9-`, length 1–32. Anything else is a 400.
 

@@ -94,11 +94,47 @@ public class RealmSettings
     /// erase).</summary>
     public AuditSettings? Audit { get; set; }
 
-    /// <summary>Page-builder schemas keyed by SPA-page-slug
-    /// (<c>login</c>, <c>logout</c>, <c>password-forgot</c>, …). Each
-    /// value is the serialised <c>PageNode</c> tree as JSON. Missing key
-    /// or empty value = render the SPA's hardcoded view for that page.
-    /// Dictionary keeps the slug-set extensible without a schema change
-    /// when more page-slots get adopted.</summary>
+    /// <summary>LEGACY (pre-ADR-0001): single page-builder schema per
+    /// SPA-page-slug. Retained only so <see cref="MigratePagesToSlots"/> can
+    /// convert existing data into <see cref="PageSlots"/> on load; cleared on
+    /// the next save. New reads/writes use <see cref="PageSlots"/>.</summary>
     public Dictionary<string, string>? Pages { get; set; }
+
+    /// <summary>Page-builder configuration keyed by SPA-page-slug
+    /// (<c>login</c>, <c>logout</c>, <c>password-forgot</c>, …). Each entry is
+    /// a library of named variants plus which one is active (ADR-0001). A
+    /// missing slot, or a slot whose <see cref="RealmPageSlot.ActiveVariantId"/>
+    /// is null, renders the SPA's built-in hardcoded view.</summary>
+    public Dictionary<string, RealmPageSlot>? PageSlots { get; set; }
+
+    /// <summary>Lazily migrate the legacy single-schema <see cref="Pages"/>
+    /// dictionary into <see cref="PageSlots"/> (ADR-0001). Idempotent and
+    /// side-effect-only-when-needed: does nothing once migrated. Each legacy
+    /// <c>Pages[slug] = schema</c> becomes one active variant named "Custom".
+    /// Returns <c>true</c> when it changed the document (caller should persist).</summary>
+    public bool MigratePagesToSlots()
+    {
+        if (Pages is null || Pages.Count == 0)
+        {
+            // Nothing legacy to migrate; drop the empty dictionary so it
+            // doesn't linger in storage.
+            if (Pages is not null) { Pages = null; return true; }
+            return false;
+        }
+
+        PageSlots ??= new Dictionary<string, RealmPageSlot>(StringComparer.Ordinal);
+        foreach (var (slug, schema) in Pages)
+        {
+            if (string.IsNullOrWhiteSpace(schema)) continue;
+            if (PageSlots.ContainsKey(slug)) continue; // never clobber new data
+            var id = Guid.NewGuid().ToString("N");
+            PageSlots[slug] = new RealmPageSlot
+            {
+                Variants = [new PageVariant { Id = id, Name = "Custom", Schema = schema, CreatedAt = CreatedAt }],
+                ActiveVariantId = id,
+            };
+        }
+        Pages = null;
+        return true;
+    }
 }

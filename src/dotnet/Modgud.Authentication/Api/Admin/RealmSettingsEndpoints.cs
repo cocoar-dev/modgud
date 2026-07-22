@@ -33,16 +33,10 @@ public static class RealmSettingsEndpoints
             IFeatureFlags features,
             CancellationToken ct) =>
         {
+            // PageBuilder config is no longer part of this DTO (ADR-0001) — it
+            // is served by the /api/admin/customization/pages endpoints, which
+            // already 404 while the feature flag is off, so nothing to mask here.
             var dto = await svc.GetDtoAsync(ct);
-            // Mask Pages when the page-builder feature is off so the SPA
-            // (and any direct curl-caller) can't fingerprint stored
-            // schemas — the editor is dark, the data is invisible. The
-            // schemas themselves persist in the tenant DB and resurface
-            // when the flag is flipped back on.
-            if (!features.PageBuilder)
-            {
-                dto = dto with { Pages = new Dictionary<string, string>() };
-            }
             return Results.Ok(dto);
         })
         .WithName("RealmSettings_Get")

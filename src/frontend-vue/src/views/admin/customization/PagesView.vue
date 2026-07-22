@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { CoarCard, CoarTag } from '@cocoar/vue-ui'
+import { CoarButton, CoarNote, CoarSelect, CoarTag, useDialog } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
-import { useRealmSettingsStore } from '@/stores/realmSettings.store'
+import { useRealmPagesApi, type RealmSlotDto } from '@/composables/usePagesApi'
 
 const { t, language } = useI18n()
 const ui = useUI()
 const router = useRouter()
-const settingsStore = useRealmSettingsStore()
+const dialog = useDialog()
+const api = useRealmPagesApi()
 
 watch(language, () => ui.set((ctx) => {
   ctx.header.title = t('nav.platform', {}, 'Platform')
@@ -18,79 +19,134 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-interface PageSlot {
-  slug: string
-  label: string
-  description: string
-  icon: string
-}
+interface PageSlotMeta { slug: string; label: string; description: string }
 
-// Hard-coded list of the SPA's customisable page-slots. As more pages
-// become builder-eligible (register, mfa, etc.) add them here — backend
-// stores a dictionary so no API change is needed.
-const slots: PageSlot[] = [
+const slotMeta: PageSlotMeta[] = [
   { slug: 'login', label: t('admin.customization.pages.login.title', {}, 'Login'),
-    description: t('admin.customization.pages.login.hint', {}, 'Username + password + provider buttons.'),
-    icon: 'log-in' },
+    description: t('admin.customization.pages.login.hint', {}, 'Username + password + provider buttons.') },
   { slug: 'logout', label: t('admin.customization.pages.logout.title', {}, 'Logout'),
-    description: t('admin.customization.pages.logout.hint', {}, 'Goodbye screen after sign-out.'),
-    icon: 'log-out' },
+    description: t('admin.customization.pages.logout.hint', {}, 'Goodbye screen after sign-out.') },
   { slug: 'password-forgot', label: t('admin.customization.pages.passwordForgot.title', {}, 'Forgot password'),
-    description: t('admin.customization.pages.passwordForgot.hint', {}, 'Email address to receive a reset link.'),
-    icon: 'key' },
+    description: t('admin.customization.pages.passwordForgot.hint', {}, 'Email address to receive a reset link.') },
 ]
 
-const customisedSlugs = ref<Set<string>>(new Set())
+const slots = reactive<Record<string, RealmSlotDto>>({})
+const error = ref<string | null>(null)
+const busy = ref(false)
 
-onMounted(async () => {
+const BUILT_IN = '__builtin__'
+
+function slotOf(slug: string): RealmSlotDto {
+  return slots[slug] ?? { Slug: slug, ActiveVariantId: null, Variants: [] }
+}
+
+async function reload() {
   try {
-    const dto = await settingsStore.load()
-    const set = new Set<string>()
-    if (dto.Pages) {
-      for (const [slug, schema] of Object.entries(dto.Pages)) {
-        if (schema && schema.trim().length > 0) set.add(slug)
-      }
+    const { Slots } = await api.listSlots()
+    const bySlug = new Map(Slots.map((s) => [s.Slug, s]))
+    for (const m of slotMeta) {
+      slots[m.slug] = bySlug.get(m.slug) ?? { Slug: m.slug, ActiveVariantId: null, Variants: [] }
     }
-    customisedSlugs.value = set
-  } catch { /* ignore — show all as default */ }
-})
+  } catch (e: any) { error.value = e?.message ?? String(e) }
+}
 
-const tiles = computed(() => slots.map((s) => ({
-  ...s,
-  customised: customisedSlugs.value.has(s.slug),
-})))
+onMounted(reload)
 
-function open(slug: string) {
-  router.push(`/platform/customization/pages/${slug}`)
+function activeOptions(slot: RealmSlotDto) {
+  return [
+    { value: BUILT_IN, label: t('admin.customization.pages.builtin', {}, 'Built-in (default)') },
+    ...slot.Variants.map((v) => ({ value: v.Id, label: v.Name })),
+  ]
+}
+
+async function setActive(slug: string, value: string | null) {
+  busy.value = true
+  error.value = null
+  try {
+    await api.setActive(slug, (value === null || value === BUILT_IN) ? null : value)
+    await reload()
+  } catch (e: any) { error.value = e?.message ?? String(e) } finally { busy.value = false }
+}
+
+function newVariant(slug: string) {
+  router.push(`/platform/customization/pages/${slug}/new`)
+}
+
+function editVariant(slug: string, id: string) {
+  router.push(`/platform/customization/pages/${slug}/${id}`)
+}
+
+async function removeVariant(slot: RealmSlotDto, id: string, name: string) {
+  const confirmed = await dialog.confirm({
+    title: t('admin.customization.pages.deleteTitle', {}, 'Delete variant'),
+    message: t('admin.customization.pages.deleteMessage', { name },
+      `Delete "${name}"? If it is the active page, the slot reverts to the built-in view.`),
+    confirmText: t('common.delete', {}, 'Delete'),
+    confirmVariant: 'danger',
+  }).result
+  if (!confirmed) return
+  busy.value = true
+  try {
+    await api.deleteVariant(slot.Slug, id)
+    await reload()
+  } catch (e: any) { error.value = e?.message ?? String(e) } finally { busy.value = false }
 }
 </script>
 
 <template>
   <div class="pages-view">
     <p class="hint">
-      {{ t('admin.customization.pages.hint', {}, 'Compose the authentication pages your users see. Saved schemas render immediately; an unsaved or invalid schema falls back to the fixed view.') }}
+      {{ t('admin.customization.pages.hintV2', {}, 'Author one or more variants per page, then choose which is live for this realm. Slots set to "Built-in" render the fixed default. Applications can override each slot in their own settings.') }}
     </p>
 
-    <div class="tile-grid">
-      <CoarCard
-        v-for="tile in tiles"
-        :key="tile.slug"
-        class="page-tile"
-        :class="{ 'page-tile-customised': tile.customised }"
-        @click="open(tile.slug)">
-        <div class="tile-icon">
-          <span class="icon-fallback">{{ tile.label.charAt(0) }}</span>
+    <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+
+    <div v-for="m in slotMeta" :key="m.slug" class="slot">
+      <div class="slot-head">
+        <div class="slot-meta">
+          <div class="slot-label">{{ m.label }}</div>
+          <div class="slot-desc">{{ m.description }}</div>
         </div>
-        <div class="tile-meta">
-          <div class="tile-label">{{ tile.label }}</div>
-          <div class="tile-desc">{{ tile.description }}</div>
-          <CoarTag :variant="tile.customised ? 'success' : 'neutral'" class="tile-badge">
-            {{ tile.customised
-              ? t('admin.customization.pages.customised', {}, 'Customised')
-              : t('admin.customization.pages.default', {}, 'Default') }}
-          </CoarTag>
+        <div class="slot-active">
+          <label class="active-label">{{ t('admin.customization.pages.activeForRealm', {}, 'Active for realm') }}</label>
+          <CoarSelect
+            :model-value="slotOf(m.slug).ActiveVariantId ?? BUILT_IN"
+            :options="activeOptions(slotOf(m.slug))"
+            :disabled="busy"
+            size="s"
+            @update:model-value="(v: string | null) => setActive(m.slug, v)" />
         </div>
-      </CoarCard>
+      </div>
+
+      <div class="variants">
+        <div
+          v-for="v in slotOf(m.slug).Variants"
+          :key="v.Id"
+          class="variant"
+          :class="{ 'variant-active': v.Id === slotOf(m.slug).ActiveVariantId }">
+          <div class="variant-meta">
+            <span class="variant-name">{{ v.Name }}</span>
+            <CoarTag v-if="v.Id === slotOf(m.slug).ActiveVariantId" variant="success" class="variant-badge">
+              {{ t('admin.customization.pages.liveRealm', {}, 'Live · realm') }}
+            </CoarTag>
+            <CoarTag v-else variant="neutral" class="variant-badge">
+              {{ t('admin.customization.pages.unused', {}, 'Not active') }}
+            </CoarTag>
+          </div>
+          <div class="variant-actions">
+            <CoarButton size="s" variant="secondary" icon-start="pencil" @click="editVariant(m.slug, v.Id)">
+              {{ t('common.edit', {}, 'Edit') }}
+            </CoarButton>
+            <CoarButton size="s" variant="ghost" icon-start="trash-2" :disabled="busy" @click="removeVariant(slotOf(m.slug), v.Id, v.Name)">
+              {{ t('common.delete', {}, 'Delete') }}
+            </CoarButton>
+          </div>
+        </div>
+
+        <CoarButton size="s" variant="ghost" icon-start="plus" class="add-variant" @click="newVariant(m.slug)">
+          {{ t('admin.customization.pages.newVariant', {}, 'New variant') }}
+        </CoarButton>
+      </div>
     </div>
   </div>
 </template>
@@ -111,68 +167,48 @@ function open(slug: string) {
   color: var(--coar-text-neutral-secondary);
 }
 
-.tile-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 0.75rem;
-}
-
-.page-tile {
-  display: flex;
-  gap: 0.75rem;
-  align-items: stretch;
-  padding: 0.75rem;
-  cursor: pointer;
-  transition: transform 80ms ease, box-shadow 80ms ease;
+.slot {
   border: 1px solid var(--coar-border-neutral-secondary);
-}
-
-.page-tile:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-.page-tile-customised {
-  border-color: var(--coar-text-accent-primary, #4f46e5);
-}
-
-.tile-icon {
-  width: 56px;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--coar-background-neutral-primary);
   border-radius: 0.5rem;
-  flex-shrink: 0;
-}
-
-.icon-fallback {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--coar-text-neutral-secondary);
-}
-
-.tile-meta {
+  padding: 0.75rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-  flex: 1;
+  gap: 0.75rem;
 }
 
-.tile-label {
-  font-size: 0.95rem;
-  font-weight: 600;
+.slot-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
-.tile-desc {
-  font-size: 0.78rem;
-  color: var(--coar-text-neutral-secondary);
-  flex: 1;
+.slot-label { font-size: 0.95rem; font-weight: 600; }
+.slot-desc { font-size: 0.78rem; color: var(--coar-text-neutral-secondary); }
+
+.slot-active { display: flex; flex-direction: column; gap: 0.15rem; min-width: 220px; }
+.active-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--coar-text-neutral-secondary); }
+
+.variants { display: flex; flex-direction: column; gap: 0.4rem; }
+
+.variant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--coar-border-neutral-secondary);
+  border-radius: 0.4rem;
+  background: var(--coar-background-neutral-primary);
 }
 
-.tile-badge {
-  align-self: flex-start;
-}
+.variant-active { border-color: var(--coar-text-accent-primary, #4f46e5); }
+
+.variant-meta { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.variant-name { font-size: 0.88rem; font-weight: 500; }
+.variant-badge { flex-shrink: 0; }
+.variant-actions { display: flex; gap: 0.25rem; flex-shrink: 0; }
+
+.add-variant { align-self: flex-start; }
 </style>

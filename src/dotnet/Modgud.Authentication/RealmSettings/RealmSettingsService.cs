@@ -158,9 +158,6 @@ public sealed class RealmSettingsService(
         RegistrationFields = MapRegistrationFieldsToDto(doc.RegistrationFields),
         Deletion = MapDeletionToDto(doc.Deletion),
         Audit = MapAuditToDto(doc.Audit),
-        Pages = doc.Pages is null
-            ? new Dictionary<string, string>()
-            : new Dictionary<string, string>(doc.Pages),
     };
 
     private static ErrorOr<BrandingSettings> ApplyBrandingPatch(

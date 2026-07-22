@@ -73,15 +73,50 @@ public class ApplicationSettings
     /// while an Enterprise App in the same tenant requires given/family name.</summary>
     public ApplicationRegistrationFieldsOverrides? RegistrationFields { get; set; }
 
-    /// <summary>
-    /// Per-page PageBuilder overrides keyed by SPA page slot (<c>login</c>,
-    /// <c>password-forgot</c>, …). Missing keys inherit the realm schema for
-    /// that slot; deleting an entry therefore restores inheritance without
-    /// touching the realm default. Values are opaque serialized PageNode JSON.
-    /// Managed through the dedicated Application page endpoints rather than
-    /// the ordinary App settings form so an App update cannot erase pages.
-    /// </summary>
+    /// <summary>LEGACY (pre-ADR-0001): single per-Application PageBuilder
+    /// schema per slot. Retained only for <see cref="MigratePagesToSlots"/> to
+    /// convert on load; cleared on the next save. New reads/writes use
+    /// <see cref="PageSlots"/>.</summary>
     public Dictionary<string, string>? Pages { get; set; }
+
+    /// <summary>Per-Application PageBuilder configuration keyed by SPA page slot
+    /// (ADR-0001). Each entry is the Application's own variant library plus an
+    /// inherit switch + active selection. A missing slot, or one with
+    /// <see cref="AppPageSlot.InheritActive"/> true, inherits the realm's active
+    /// selection for that slot. Managed through the dedicated Application page
+    /// endpoints so an ordinary App settings update cannot erase pages.</summary>
+    public Dictionary<string, AppPageSlot>? PageSlots { get; set; }
+
+    /// <summary>Lazily migrate the legacy single-schema <see cref="Pages"/>
+    /// dictionary into <see cref="PageSlots"/> (ADR-0001). Each legacy
+    /// <c>Pages[slug] = schema</c> becomes one active Application variant named
+    /// "Custom" with <see cref="AppPageSlot.InheritActive"/> false (the legacy
+    /// entry was an explicit App override). Returns <c>true</c> when it changed
+    /// the document.</summary>
+    public bool MigratePagesToSlots()
+    {
+        if (Pages is null || Pages.Count == 0)
+        {
+            if (Pages is not null) { Pages = null; return true; }
+            return false;
+        }
+
+        PageSlots ??= new Dictionary<string, AppPageSlot>(StringComparer.Ordinal);
+        foreach (var (slug, schema) in Pages)
+        {
+            if (string.IsNullOrWhiteSpace(schema)) continue;
+            if (PageSlots.ContainsKey(slug)) continue;
+            var id = Guid.NewGuid().ToString("N");
+            PageSlots[slug] = new AppPageSlot
+            {
+                Variants = [new PageVariant { Id = id, Name = "Custom", Schema = schema, CreatedAt = CreatedAt }],
+                InheritActive = false,
+                ActiveVariantId = id,
+            };
+        }
+        Pages = null;
+        return true;
+    }
 }
 
 /// <summary>An Application's own origin. Phase-1 resolution maps a host to an

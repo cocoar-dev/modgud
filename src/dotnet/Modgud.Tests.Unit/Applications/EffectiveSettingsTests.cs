@@ -303,5 +303,144 @@ public class EffectiveSettingsTests
             Assert.Equal("amzettel.cocoar.app", eff.Origin!.Subdomain);
             Assert.Equal("amZettel", eff.EmailBranding!.ProductName);
         }
+
+        // ─────────────── ADR-0001: variants + activation ───────────────
+
+        private static RealmSettingsDoc RealmWithSlot(string slug, RealmPageSlot slot)
+            => new() { PageSlots = new Dictionary<string, RealmPageSlot> { [slug] = slot } };
+
+        [Fact]
+        public void Realm_active_variant_resolves_to_its_schema()
+        {
+            var realm = RealmWithSlot("login", new RealmPageSlot
+            {
+                Variants =
+                [
+                    new PageVariant { Id = "a", Name = "A", Schema = "schema-a" },
+                    new PageVariant { Id = "b", Name = "B", Schema = "schema-b" },
+                ],
+                ActiveVariantId = "b",
+            });
+
+            var eff = EffectiveSettings.From(realm);
+
+            Assert.Equal("schema-b", eff.Pages!["login"]);
+        }
+
+        [Fact]
+        public void Realm_builtin_when_no_active_variant_omits_the_slot()
+        {
+            // Variants exist but none is active → the slot falls back to the
+            // built-in hardcoded view (absent from the effective Pages).
+            var realm = RealmWithSlot("login", new RealmPageSlot
+            {
+                Variants = [new PageVariant { Id = "a", Name = "A", Schema = "schema-a" }],
+                ActiveVariantId = null,
+            });
+
+            var eff = EffectiveSettings.From(realm);
+
+            Assert.True(eff.Pages is null || !eff.Pages.ContainsKey("login"));
+        }
+
+        [Fact]
+        public void App_inherits_realm_active_by_default()
+        {
+            var realm = RealmWithSlot("login", new RealmPageSlot
+            {
+                Variants = [new PageVariant { Id = "r", Name = "R", Schema = "realm-login" }],
+                ActiveVariantId = "r",
+            });
+            var app = new ApplicationSettings(); // no PageSlots → inherit
+
+            var eff = EffectiveSettings.Merge(realm, app);
+
+            Assert.Equal("realm-login", eff.Pages!["login"]);
+        }
+
+        [Fact]
+        public void App_override_variant_wins_over_realm()
+        {
+            var realm = RealmWithSlot("login", new RealmPageSlot
+            {
+                Variants = [new PageVariant { Id = "r", Name = "R", Schema = "realm-login" }],
+                ActiveVariantId = "r",
+            });
+            var app = new ApplicationSettings
+            {
+                PageSlots = new Dictionary<string, AppPageSlot>
+                {
+                    ["login"] = new AppPageSlot
+                    {
+                        InheritActive = false,
+                        Variants = [new PageVariant { Id = "x", Name = "X", Schema = "app-login" }],
+                        ActiveVariantId = "x",
+                    },
+                },
+            };
+
+            var eff = EffectiveSettings.Merge(realm, app);
+
+            Assert.Equal("app-login", eff.Pages!["login"]);
+        }
+
+        [Fact]
+        public void App_override_builtin_removes_the_inherited_slot()
+        {
+            var realm = RealmWithSlot("login", new RealmPageSlot
+            {
+                Variants = [new PageVariant { Id = "r", Name = "R", Schema = "realm-login" }],
+                ActiveVariantId = "r",
+            });
+            var app = new ApplicationSettings
+            {
+                PageSlots = new Dictionary<string, AppPageSlot>
+                {
+                    // Override to built-in: not inheriting, no active variant.
+                    ["login"] = new AppPageSlot { InheritActive = false, ActiveVariantId = null },
+                },
+            };
+
+            var eff = EffectiveSettings.Merge(realm, app);
+
+            Assert.True(eff.Pages is null || !eff.Pages.ContainsKey("login"));
+        }
+
+        [Fact]
+        public void Realm_migration_converts_legacy_pages_to_active_variant()
+        {
+            var realm = new RealmSettingsDoc
+            {
+                Pages = new Dictionary<string, string> { ["login"] = "legacy-login" },
+            };
+
+            var changed = realm.MigratePagesToSlots();
+
+            Assert.True(changed);
+            Assert.Null(realm.Pages);
+            var slot = realm.PageSlots!["login"];
+            Assert.Single(slot.Variants);
+            Assert.Equal("legacy-login", slot.Variants[0].Schema);
+            Assert.Equal(slot.Variants[0].Id, slot.ActiveVariantId); // migrated as active
+            Assert.Equal("legacy-login", EffectiveSettings.From(realm).Pages!["login"]);
+        }
+
+        [Fact]
+        public void App_migration_marks_legacy_override_as_non_inheriting_active()
+        {
+            var app = new ApplicationSettings
+            {
+                Pages = new Dictionary<string, string> { ["login"] = "legacy-app-login" },
+            };
+
+            var changed = app.MigratePagesToSlots();
+
+            Assert.True(changed);
+            Assert.Null(app.Pages);
+            var slot = app.PageSlots!["login"];
+            Assert.False(slot.InheritActive);
+            Assert.Equal(slot.Variants[0].Id, slot.ActiveVariantId);
+            Assert.Equal("legacy-app-login", EffectiveSettings.Merge(new RealmSettingsDoc(), app).Pages!["login"]);
+        }
     }
 }

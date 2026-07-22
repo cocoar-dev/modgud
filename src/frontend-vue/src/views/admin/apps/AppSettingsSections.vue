@@ -9,6 +9,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import EditableStringList from '@/components/EditableStringList.vue'
 import { useGroupStore } from '@/stores/group.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
+import { useAppPagesApi, type AppSlotDto } from '@/composables/usePagesApi'
 import type { ApplicationSettingsDto } from '@/models/application'
 
 // ADR-0011 per-App settings override sections, extracted from the old standalone
@@ -216,16 +217,98 @@ onMounted(async () => {
 
 defineExpose({ build })
 
-function editPage(slug: string) {
-  if (!props.applicationId) return
-  router.push({
-    path: `/platform/customization/pages/${slug}`,
+// ── Application PageBuilder variants + activation (ADR-0001) ──
+const PAGE_SLOT_META = [
+  { slug: 'login', label: t('admin.customization.pages.login.title', {}, 'Login') },
+  { slug: 'password-forgot', label: t('admin.customization.pages.passwordForgot.title', {}, 'Forgot password') },
+  { slug: 'logout', label: t('admin.customization.pages.logout.title', {}, 'Logout') },
+]
+const APP_BUILT_IN = '__builtin__'
+const appSlots = reactive<Record<string, AppSlotDto>>({})
+const pagesError = ref<string | null>(null)
+const pagesBusy = ref(false)
+
+function appSlotOf(slug: string): AppSlotDto {
+  return appSlots[slug] ?? { Slug: slug, InheritActive: true, ActiveVariantId: null, Variants: [] }
+}
+
+function appPagesApi() {
+  return props.applicationId ? useAppPagesApi(props.applicationId) : null
+}
+
+async function loadAppPages() {
+  const client = appPagesApi()
+  if (!client || !appConfig.config.Features.PageBuilder) return
+  try {
+    const { Slots } = await client.listSlots()
+    const bySlug = new Map(Slots.map((s) => [s.Slug, s]))
+    for (const m of PAGE_SLOT_META) {
+      appSlots[m.slug] = bySlug.get(m.slug)
+        ?? { Slug: m.slug, InheritActive: true, ActiveVariantId: null, Variants: [] }
+    }
+  } catch (e: any) { pagesError.value = e?.message ?? String(e) }
+}
+
+// Active dropdown value: 'inherit' | '__builtin__' | variantId.
+function appActiveValue(slot: AppSlotDto): string {
+  if (slot.InheritActive) return 'inherit'
+  return slot.ActiveVariantId ?? APP_BUILT_IN
+}
+
+function appActiveOptions(slot: AppSlotDto) {
+  return [
+    { value: 'inherit', label: t('admin.appSettings.pages.inheritRealm', {}, 'Inherit realm') },
+    { value: APP_BUILT_IN, label: t('admin.customization.pages.builtin', {}, 'Built-in (default)') },
+    ...slot.Variants.map((v) => ({ value: v.Id, label: v.Name })),
+  ]
+}
+
+async function setAppActive(slug: string, value: string | null) {
+  const client = appPagesApi()
+  if (!client) return
+  pagesBusy.value = true
+  pagesError.value = null
+  try {
+    if (value === 'inherit') await client.setActive(slug, true, null)
+    else if (value === APP_BUILT_IN) await client.setActive(slug, false, null)
+    else await client.setActive(slug, false, value)
+    await loadAppPages()
+  } catch (e: any) { pagesError.value = e?.message ?? String(e) } finally { pagesBusy.value = false }
+}
+
+function pageEditorTarget(slug: string, variantId: string) {
+  return {
+    path: `/platform/customization/pages/${slug}/${variantId}`,
     query: {
-      appId: props.applicationId,
+      appId: props.applicationId!,
       ...(props.applicationName ? { appName: props.applicationName } : {}),
     },
-  })
+  }
 }
+
+function newAppVariant(slug: string) {
+  if (!props.applicationId) return
+  router.push(pageEditorTarget(slug, 'new'))
+}
+
+function editAppVariant(slug: string, variantId: string) {
+  if (!props.applicationId) return
+  router.push(pageEditorTarget(slug, variantId))
+}
+
+async function deleteAppVariant(slug: string, variantId: string) {
+  const client = appPagesApi()
+  if (!client) return
+  pagesBusy.value = true
+  try {
+    await client.deleteVariant(slug, variantId)
+    await loadAppPages()
+  } catch (e: any) { pagesError.value = e?.message ?? String(e) } finally { pagesBusy.value = false }
+}
+
+watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
+  if (tab === 'pages') loadAppPages()
+})
 </script>
 
 <template>
@@ -385,35 +468,44 @@ function editPage(slug: string) {
       </CoarNote>
       <template v-else>
         <CoarNote variant="info">
-          {{ t('admin.appSettings.pages.hint', {}, 'Each page inherits the realm layout until you save an application-specific override.') }}
+          {{ t('admin.appSettings.pages.hintV2', {}, 'Each slot inherits the realm page unless you override it here. Author app-specific variants and pick which is live for this application.') }}
         </CoarNote>
-        <div class="page-links">
-          <div class="page-link">
-            <div>
-              <strong>{{ t('admin.customization.pages.login.title', {}, 'Login') }}</strong>
-              <p>{{ t('admin.customization.pages.login.hint', {}, 'Username, password, passkey and provider actions.') }}</p>
+        <CoarNote v-if="pagesError" variant="error">{{ pagesError }}</CoarNote>
+
+        <div class="app-page-slots">
+          <div v-for="m in PAGE_SLOT_META" :key="m.slug" class="app-slot">
+            <div class="app-slot-head">
+              <strong>{{ m.label }}</strong>
+              <div class="app-slot-active">
+                <label class="active-label">{{ t('admin.appSettings.pages.activeForApp', {}, 'Active for this app') }}</label>
+                <CoarSelect
+                  :model-value="appActiveValue(appSlotOf(m.slug))"
+                  :options="appActiveOptions(appSlotOf(m.slug))"
+                  :disabled="pagesBusy"
+                  size="s"
+                  @update:model-value="(v: string | null) => setAppActive(m.slug, v)" />
+              </div>
             </div>
-            <CoarButton size="s" variant="secondary" @click="editPage('login')">
-              {{ t('common.edit', {}, 'Edit') }}
-            </CoarButton>
-          </div>
-          <div class="page-link">
-            <div>
-              <strong>{{ t('admin.customization.pages.passwordForgot.title', {}, 'Forgot password') }}</strong>
-              <p>{{ t('admin.customization.pages.passwordForgot.hint', {}, 'Request a password reset link.') }}</p>
+            <div class="app-variants">
+              <div
+                v-for="v in appSlotOf(m.slug).Variants"
+                :key="v.Id"
+                class="app-variant"
+                :class="{ 'app-variant-active': !appSlotOf(m.slug).InheritActive && v.Id === appSlotOf(m.slug).ActiveVariantId }">
+                <span class="app-variant-name">{{ v.Name }}</span>
+                <div class="app-variant-actions">
+                  <CoarButton size="s" variant="secondary" icon-start="pencil" @click="editAppVariant(m.slug, v.Id)">
+                    {{ t('common.edit', {}, 'Edit') }}
+                  </CoarButton>
+                  <CoarButton size="s" variant="ghost" icon-start="trash-2" :disabled="pagesBusy" @click="deleteAppVariant(m.slug, v.Id)">
+                    {{ t('common.delete', {}, 'Delete') }}
+                  </CoarButton>
+                </div>
+              </div>
+              <CoarButton size="s" variant="ghost" icon-start="plus" @click="newAppVariant(m.slug)">
+                {{ t('admin.customization.pages.newVariant', {}, 'New variant') }}
+              </CoarButton>
             </div>
-            <CoarButton size="s" variant="secondary" @click="editPage('password-forgot')">
-              {{ t('common.edit', {}, 'Edit') }}
-            </CoarButton>
-          </div>
-          <div class="page-link">
-            <div>
-              <strong>{{ t('admin.customization.pages.logout.title', {}, 'Logout') }}</strong>
-              <p>{{ t('admin.customization.pages.logout.hint', {}, 'The signed-out confirmation page.') }}</p>
-            </div>
-            <CoarButton size="s" variant="secondary" @click="editPage('logout')">
-              {{ t('common.edit', {}, 'Edit') }}
-            </CoarButton>
           </div>
         </div>
       </template>
@@ -439,4 +531,42 @@ function editPage(slug: string) {
   color: var(--coar-text-neutral-secondary);
   font-size: 0.8rem;
 }
+
+.app-page-slots { display: flex; flex-direction: column; gap: 12px; }
+.app-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--coar-border-neutral-secondary);
+  border-radius: var(--coar-radius-m, 6px);
+}
+.app-slot-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.app-slot-active { display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
+.active-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--coar-text-neutral-secondary);
+}
+.app-variants { display: flex; flex-direction: column; gap: 6px; }
+.app-variant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--coar-border-neutral-secondary);
+  border-radius: 4px;
+  background: var(--coar-background-neutral-primary);
+}
+.app-variant-active { border-color: var(--coar-text-accent-primary, #4f46e5); }
+.app-variant-name { font-size: 0.85rem; font-weight: 500; }
+.app-variant-actions { display: flex; gap: 4px; flex-shrink: 0; }
 </style>
