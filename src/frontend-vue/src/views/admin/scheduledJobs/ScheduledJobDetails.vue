@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from '@cocoar/vue-localization'
 import {
   CoarTextInput,
+  CoarNumberInput,
   CoarCheckbox,
   CoarFormField,
   CoarButton,
@@ -41,9 +42,9 @@ const activeTab = ref<'schedule' | 'config' | 'history'>('schedule')
 const form = ref({
   cronOverride: '',
   enabled: true,
-  // Parameter values keyed by ParameterField.Key. Stored as strings while
-  // editing so empty input == empty string == "use default" for the backend.
-  params: {} as Record<string, string | boolean>,
+  // Parameter values keyed by ParameterField.Key. NumberInput keeps numbers
+  // numeric; null/empty means "use default" for the backend.
+  params: {} as Record<string, string | number | boolean | null>,
 })
 
 async function load() {
@@ -67,12 +68,15 @@ async function load() {
 }
 
 /** Seed form.params from persisted Parameters + schema defaults. */
-function seedParams(j: ScheduledJobDto): Record<string, string | boolean> {
-  const out: Record<string, string | boolean> = {}
+function seedParams(j: ScheduledJobDto): Record<string, string | number | boolean | null> {
+  const out: Record<string, string | number | boolean | null> = {}
   for (const field of j.ParameterSchema) {
     const v = j.Parameters[field.Key]
     if (field.Type === 'Boolean') {
       out[field.Key] = typeof v === 'boolean' ? v : Boolean(field.Default)
+    } else if (field.Type === 'Number') {
+      const numberValue = v == null || v === '' ? field.Default : v
+      out[field.Key] = numberValue == null || numberValue === '' ? null : Number(numberValue)
     } else {
       out[field.Key] = v == null || v === '' ? '' : String(v)
     }
@@ -247,11 +251,15 @@ watch(jobKey, load)
                   v-model="(form.params[field.Key] as boolean)"
                   :label="field.Label"
                 />
+                <CoarNumberInput
+                  v-else-if="field.Type === 'Number'"
+                  v-model="(form.params[field.Key] as number | null)"
+                  :placeholder="field.Placeholder ?? (field.Default != null ? String(field.Default) : '')"
+                />
                 <CoarTextInput
                   v-else
                   v-model="(form.params[field.Key] as string)"
                   :placeholder="field.Placeholder ?? (field.Default != null ? String(field.Default) : '')"
-                  :type="field.Type === 'Number' ? 'number' : 'text'"
                 />
                 <template v-if="field.Description" #help>
                   <span class="text-xs text-surface-500">{{ field.Description }}</span>

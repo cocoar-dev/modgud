@@ -189,7 +189,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function logout(endIdpSession: boolean = true): Promise<void> {
     const response = await http.addPath('logout').post<{ Message: string; ExternalLogoutUrl?: string | null }>({ EndIdpSession: endIdpSession })
     user.value = null
-    const target = response?.ExternalLogoutUrl ?? '/login'
+    const target = response?.ExternalLogoutUrl ?? '/logged-out'
     window.location.assign(target)
   }
 

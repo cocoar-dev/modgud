@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import {
-  CoarTextInput, CoarFormField, CoarCheckbox, CoarTabGroup, CoarTab,
+  CoarTextInput, CoarPasswordInput, CoarNumberInput, CoarFormField, CoarCheckbox, CoarTabGroup, CoarTab,
   CoarButton, CoarIcon, CoarNote, CoarSelect, CoarSwitch,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
@@ -682,7 +682,7 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
                   <CoarIcon name="shield-alert" size="s" />
                   <span>{{ t('admin.loginProviders.secretInitial', {}, 'Initial secret (optional; can be set later under Connection).') }}</span>
                 </div>
-                <CoarTextInput v-model="newSecret" type="password" clearable placeholder="••••••••" />
+                <CoarPasswordInput v-model="newSecret" clearable placeholder="••••••••" />
               </template>
               <template v-else-if="provider">
                 <div class="text-sm secret-status mb-2">
@@ -691,7 +691,7 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
                   <span v-else>{{ t('admin.loginProviders.secretMissing', {}, 'No secret set — set one before activating the provider.') }}</span>
                 </div>
                 <div class="flex gap-2">
-                  <CoarTextInput v-model="newSecret" :disabled="isBuiltIn" type="password" class="flex-1" clearable placeholder="••••••••" />
+                  <CoarPasswordInput v-model="newSecret" :disabled="isBuiltIn" class="flex-1" clearable placeholder="••••••••" />
                   <CoarButton :disabled="!newSecret || saving || isBuiltIn" @click="rotateSecret">
                     {{ provider.HasClientSecret
                       ? t('admin.loginProviders.rotateSecret', {}, 'Rotate')
@@ -783,12 +783,10 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
             :label="t('admin.loginProviders.storeRawClaims', {}, 'Store raw claim snapshots per login (for debugging)')" />
           <CoarFormField v-if="form.StoreRawClaims"
             :label="t('admin.loginProviders.rawRetentionDays', {}, 'Raw claim retention (days, empty = unlimited)')">
-            <CoarTextInput
-              :model-value="form.RawClaimsRetentionDays?.toString() ?? ''"
+            <CoarNumberInput
+              v-model="form.RawClaimsRetentionDays"
               :disabled="isBuiltIn"
-              type="number"
               clearable
-              @update:model-value="(v: string) => form.RawClaimsRetentionDays = v ? Number(v) : null"
             />
           </CoarFormField>
         </div>

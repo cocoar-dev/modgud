@@ -102,7 +102,7 @@ public static class ExternalAuthEndpoints
                 }
 
                 var schemeName = DynamicOidcSchemeManager.SchemeNameFor(loginProviderId);
-                var props = new AuthenticationProperties { RedirectUri = "/login" };
+                var props = new AuthenticationProperties { RedirectUri = "/logged-out" };
                 return Results.SignOut(props, [schemeName]);
             }).AllowAnonymous();
 

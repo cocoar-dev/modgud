@@ -42,8 +42,8 @@ Modgud is not just a login frontend — it's a full **OAuth 2.0 / OpenID Connect
 Per-realm look and feel. SPA-shell branding plus a beta page-builder editor.
 
 - [Branding](../platform/branding) — product name, primary color, logo, favicon
-- [Asset Library](../platform/assets) — upload images for branding (and, later, page schemas); SVG sanitisation built in
-- [Pages (Beta)](../platform/pages) — drag-and-drop editor for login / logout / forgot-password; gated behind a [feature flag](../operate/feature-flags) while the runtime renderer is still being built
+- [Asset Library](../platform/assets) — upload images for branding and page schemas; SVG sanitisation built in
+- [Pages (Beta)](../platform/pages) — Realm defaults plus per-Application overrides for login / signed-out / forgot-password; end-to-end gated by a [feature flag](../operate/feature-flags)
 
 ### Operations
 

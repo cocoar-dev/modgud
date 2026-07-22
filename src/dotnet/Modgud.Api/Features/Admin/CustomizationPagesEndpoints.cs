@@ -1,4 +1,8 @@
+using System.Text;
+using BuildingBlocks.Helper;
 using Modgud.Authorization.AspNetCore;
+using Modgud.Authorization.Apps;
+using Modgud.Domain.Applications;
 using Modgud.Domain.RealmSettings;
 using Marten;
 
@@ -61,7 +65,7 @@ public static class CustomizationPagesEndpoints
             if (!settings.Features.PageBuilder) return Results.NotFound();
             if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
             if (body.Schema is null) return Results.BadRequest(new { Message = "Schema required." });
-            if (body.Schema.Length > MaxSchemaBytes)
+            if (Encoding.UTF8.GetByteCount(body.Schema) > MaxSchemaBytes)
                 return Results.BadRequest(new { Message = $"Schema too large (max {MaxSchemaBytes} bytes)." });
 
             // Validate it parses as JSON — anything else is a developer
@@ -109,6 +113,109 @@ public static class CustomizationPagesEndpoints
         })
         .RequiresPermission("realm-settings:write")
         .WithName("Admin_Customization_DeletePage");
+
+        // Per-Application overrides. A missing App slot inherits the Realm slot;
+        // DELETE therefore restores inheritance rather than forcing the system
+        // hardcoded page. These routes deliberately use app:read/write because
+        // the page is part of the App resource, not the Realm settings resource.
+        var appPages = app.MapGroup($"{path}/app/{{applicationId}}/pages")
+            .WithTags("Admin Application Customization Pages")
+            .RequireAuthorization();
+
+        appPages.MapGet("{slug}", async (
+            ShortGuid applicationId,
+            string slug,
+            AppSettings settings,
+            IQuerySession session,
+            CancellationToken ct) =>
+        {
+            if (!settings.Features.PageBuilder) return Results.NotFound();
+            if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
+
+            var owningApp = await session.LoadAsync<App>(applicationId.Guid, ct);
+            if (owningApp is null || owningApp.IsDeleted) return Results.NotFound();
+
+            var doc = await session.LoadAsync<ApplicationSettings>(applicationId.Guid, ct);
+            var schema = doc?.Pages?.TryGetValue(slug, out var value) == true ? value : null;
+            var realm = await session.LoadAsync<RealmSettings>(RealmSettings.SingletonId, ct);
+            var inherited = realm?.Pages?.TryGetValue(slug, out var realmValue) == true ? realmValue : null;
+            return Results.Ok(new
+            {
+                Slug = slug,
+                Schema = schema,
+                EffectiveSchema = schema ?? inherited,
+                InheritsRealm = schema is null,
+            });
+        })
+        .RequiresPermission("app:read")
+        .WithName("Admin_ApplicationCustomization_GetPage");
+
+        appPages.MapPut("{slug}", async (
+            ShortGuid applicationId,
+            string slug,
+            UpdatePageRequest body,
+            AppSettings settings,
+            IDocumentSession session,
+            CancellationToken ct) =>
+        {
+            if (!settings.Features.PageBuilder) return Results.NotFound();
+            if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
+            if (body.Schema is null) return Results.BadRequest(new { Message = "Schema required." });
+            if (Encoding.UTF8.GetByteCount(body.Schema) > MaxSchemaBytes)
+                return Results.BadRequest(new { Message = $"Schema too large (max {MaxSchemaBytes} bytes)." });
+
+            try { System.Text.Json.JsonDocument.Parse(body.Schema); }
+            catch (System.Text.Json.JsonException ex)
+            {
+                return Results.BadRequest(new { Message = $"Schema is not valid JSON: {ex.Message}" });
+            }
+
+            var owningApp = await session.LoadAsync<App>(applicationId.Guid, ct);
+            if (owningApp is null || owningApp.IsDeleted) return Results.NotFound();
+
+            var doc = await session.LoadAsync<ApplicationSettings>(applicationId.Guid, ct)
+                      ?? new ApplicationSettings
+                      {
+                          Id = applicationId.Guid,
+                          CreatedAt = DateTimeOffset.UtcNow,
+                      };
+            doc.Pages ??= new Dictionary<string, string>(StringComparer.Ordinal);
+            doc.Pages[slug] = body.Schema;
+            doc.UpdatedAt = DateTimeOffset.UtcNow;
+            session.Store(doc);
+            await session.SaveChangesAsync(ct);
+
+            return Results.Ok(new { Slug = slug, Schema = body.Schema, InheritsRealm = false });
+        })
+        .RequiresPermission("app:write")
+        .WithName("Admin_ApplicationCustomization_PutPage");
+
+        appPages.MapDelete("{slug}", async (
+            ShortGuid applicationId,
+            string slug,
+            AppSettings settings,
+            IDocumentSession session,
+            CancellationToken ct) =>
+        {
+            if (!settings.Features.PageBuilder) return Results.NotFound();
+            if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
+
+            var owningApp = await session.LoadAsync<App>(applicationId.Guid, ct);
+            if (owningApp is null || owningApp.IsDeleted) return Results.NotFound();
+
+            var doc = await session.LoadAsync<ApplicationSettings>(applicationId.Guid, ct);
+            if (doc?.Pages?.Remove(slug) == true)
+            {
+                if (doc.Pages.Count == 0) doc.Pages = null;
+                doc.UpdatedAt = DateTimeOffset.UtcNow;
+                session.Store(doc);
+                await session.SaveChangesAsync(ct);
+            }
+
+            return Results.NoContent();
+        })
+        .RequiresPermission("app:write")
+        .WithName("Admin_ApplicationCustomization_DeletePage");
 
         return app;
     }

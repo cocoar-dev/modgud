@@ -32,7 +32,7 @@ Flags are read at startup; no hot-reload. A flip requires a restart.
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `PageBuilder` | `false` | Visibility of the [Customization → Pages](../platform/pages) editor. While off: sidebar tile hidden, `/platform/customization/pages` routes redirect to Branding, `/api/admin/customization/pages/*` returns 404, `RealmSettingsDto` omits the Pages section. While on: editor mounts and persists. **Runtime rendering of stored schemas on /login etc. is a separate future feature and is not gated by this flag.** |
+| `PageBuilder` | `false` | End-to-end [custom authentication pages](../platform/pages). While off: editor routes are hidden/redirected, Realm/Application page endpoints return 404, DTO/app-info schemas are masked, and auth routes use fixed screens. While on: Realm defaults and Application overrides are editable and rendered on login, forgot-password, and signed-out routes. |
 
 ## Defense in depth
 
@@ -41,7 +41,8 @@ For each gated feature the flag fires at every layer the surface touches:
 1. **SPA sidebar** — the navigation entry is hidden via `requireFeature` in `AdminView.vue`.
 2. **Vue-router** — `beforeEnter` guards on the gated routes redirect to a visible sibling so deep-links don't dead-end on a blank screen.
 3. **Backend endpoints** — return **404 Not Found** (not 403 / 401) so curl-callers see "no such endpoint", not "permission denied".
-4. **DTO masking** — surfaces that aggregate multiple sub-documents (e.g. `GET /api/admin/realm-settings`) emit the gated section as empty so the SPA can't fingerprint stored data.
+4. **DTO masking** — aggregate and anonymous surfaces (`GET /api/admin/realm-settings`, `GET /api/app-info`) emit the gated section as empty so the SPA can't fingerprint stored data.
+5. **Runtime fallback** — auth routes render the fixed screen whenever the flag is off, a schema is absent/invalid, or `?safemode=1` is present.
 
 The stored data itself persists across flips — turning a flag off doesn't delete anything from the tenant DB. Flipping it back on surfaces the existing data unchanged.
 

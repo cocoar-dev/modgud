@@ -68,7 +68,7 @@ function open(slug: string) {
 <template>
   <div class="pages-view">
     <p class="hint">
-      {{ t('admin.customization.pages.hint', {}, 'Compose the SPA pages your users land on. Pages without a saved schema fall back to the hardcoded view. Drag elements, configure them, save — the renderer (still WIP) will pick them up at runtime.') }}
+      {{ t('admin.customization.pages.hint', {}, 'Compose the authentication pages your users see. Saved schemas render immediately; an unsaved or invalid schema falls back to the fixed view.') }}
     </p>
 
     <div class="tile-grid">

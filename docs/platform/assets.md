@@ -1,6 +1,6 @@
 # Customization — Asset Library
 
-Per-realm image library for branding (and, later, page-builder schemas). Upload once, reference by ID from any branding field. Each realm's library is fully isolated — assets live in the tenant DB and can never be referenced from another realm.
+Per-realm image library for branding and page-builder schemas. Upload once, reference by ID from any branding field or custom page. Each realm's library is fully isolated — assets live in the tenant DB and can never be referenced from another realm.
 
 ::: warning Trust boundary: SVG and image MIME
 The asset library accepts SVG, but every upload is sanitised on the server before the bytes touch storage. The MIME type is sniffed from the leading magic bytes — **the client's `Content-Type` header is never trusted**. Anything that doesn't match the allowlist is rejected outright.

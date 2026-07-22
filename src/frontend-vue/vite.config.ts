@@ -15,11 +15,6 @@ export default defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       '@cocoar/vue-data-grid/styles': fileURLToPath(new URL('./node_modules/@cocoar/vue-data-grid/dist/index.css', import.meta.url)),
-      // @cocoar/vue-page-builder 2.1.0 ships dist/index.css but its
-      // package.json exports map only exposes `.` (JS only). Alias
-      // matches the data-grid pattern so we can @import "/styles" from
-      // the consumer side as if the export were canonical.
-      '@cocoar/vue-page-builder/styles': fileURLToPath(new URL('./node_modules/@cocoar/vue-page-builder/dist/index.css', import.meta.url)),
     },
   },
   server: {

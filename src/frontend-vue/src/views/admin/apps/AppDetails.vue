@@ -431,7 +431,12 @@ async function save() {
 
       <!-- Tab: Settings (ADR-0011 per-App override) — one App, one modal -->
       <div v-if="!isSystem" v-show="activeTab === 'settings'" class="tab-content">
-        <AppSettingsSections ref="settingsRef" :model-value="isCreate ? clonePrefillSettings : dto?.Settings" />
+        <AppSettingsSections
+          ref="settingsRef"
+          :model-value="isCreate ? clonePrefillSettings : dto?.Settings"
+          :application-id="isCreate ? undefined : id"
+          :application-name="form.DisplayName || form.Slug"
+        />
       </div>
 
       <p v-if="error" class="text-sm text-red-600">{{ error }}</p>

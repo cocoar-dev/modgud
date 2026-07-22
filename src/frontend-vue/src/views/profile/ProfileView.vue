@@ -6,7 +6,7 @@ import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
 import { usePreferences, localeOptions } from '@/composables/usePreferences'
 import { useI18n } from '@cocoar/vue-localization'
-import { CoarCard, CoarButton, CoarIcon, CoarMenu, CoarMenuItem, CoarSelect, CoarTextInput, CoarFormField, CoarNote } from '@cocoar/vue-ui'
+import { CoarCard, CoarButton, CoarIcon, CoarMenu, CoarMenuItem, CoarSelect, CoarTextInput, CoarPasswordInput, CoarFormField, CoarNote } from '@cocoar/vue-ui'
 import type { CoarSelectOption } from '@cocoar/vue-ui'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import MfaSetupModal from '../auth/MfaSetupModal.vue'
@@ -1025,7 +1025,7 @@ function onMfaSetupClose(enabled: boolean) {
                   </div>
                   <div v-else class="space-y-2">
                     <CoarFormField :label="t('profile.privacy.password', {}, 'Current Password')">
-                      <CoarTextInput v-model="deletePassword" type="password" />
+                      <CoarPasswordInput v-model="deletePassword" />
                     </CoarFormField>
                     <CoarFormField :label="t('profile.privacy.reason', {}, 'Reason (optional)')">
                       <CoarTextInput v-model="deleteReason" />

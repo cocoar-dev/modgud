@@ -2,6 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import {
   CoarTextInput,
+  CoarPasswordInput,
+  CoarNumberInput,
   CoarFormField,
   CoarSelect,
   CoarCheckbox,
@@ -192,10 +194,10 @@ interface FormState {
   RequireDpop: boolean
   /** RFC 9449 §8-9 (#118) — require the client's DPoP proofs to carry a server nonce. */
   RequireDpopNonce: boolean
-  IdentityTokenLifetime: string
-  AccessTokenLifetime: string
-  AuthorizationCodeLifetime: string
-  SlidingRefreshTokenLifetime: string
+  IdentityTokenLifetime: number | null
+  AccessTokenLifetime: number | null
+  AuthorizationCodeLifetime: number | null
+  SlidingRefreshTokenLifetime: number | null
   /** ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys. Empty = realm-scoped. */
   WebAuthnRpId: string
   /** Selected App.Ids. Empty list = realm-wide. */
@@ -240,10 +242,10 @@ function emptyForm(): FormState {
     RequirePushedAuthorizationRequests: false,
     RequireDpop: false,
     RequireDpopNonce: false,
-    IdentityTokenLifetime: '',
-    AccessTokenLifetime: '',
-    AuthorizationCodeLifetime: '',
-    SlidingRefreshTokenLifetime: '',
+    IdentityTokenLifetime: null,
+    AccessTokenLifetime: null,
+    AuthorizationCodeLifetime: null,
+    SlidingRefreshTokenLifetime: null,
     WebAuthnRpId: '',
     AppIds: [],
   }
@@ -274,20 +276,13 @@ function fromDto(dto: OAuthClientDto): FormState {
     RequirePushedAuthorizationRequests: dto.RequirePushedAuthorizationRequests,
     RequireDpop: dto.RequireDpop,
     RequireDpopNonce: dto.RequireDpopNonce,
-    IdentityTokenLifetime: dto.IdentityTokenLifetime?.toString() ?? '',
-    AccessTokenLifetime: dto.AccessTokenLifetime?.toString() ?? '',
-    AuthorizationCodeLifetime: dto.AuthorizationCodeLifetime?.toString() ?? '',
-    SlidingRefreshTokenLifetime: dto.SlidingRefreshTokenLifetime?.toString() ?? '',
+    IdentityTokenLifetime: dto.IdentityTokenLifetime ?? null,
+    AccessTokenLifetime: dto.AccessTokenLifetime ?? null,
+    AuthorizationCodeLifetime: dto.AuthorizationCodeLifetime ?? null,
+    SlidingRefreshTokenLifetime: dto.SlidingRefreshTokenLifetime ?? null,
     WebAuthnRpId: dto.WebAuthnRpId ?? '',
     AppIds: [...(dto.AppIds ?? [])],
   }
-}
-
-function parseInt(input: string): number | null {
-  const trimmed = input.trim()
-  if (!trimmed) return null
-  const n = Number.parseInt(trimmed, 10)
-  return Number.isFinite(n) ? n : null
 }
 
 const modalTitle = computed(() => {
@@ -435,10 +430,10 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     RequirePushedAuthorizationRequests: form.value.RequirePushedAuthorizationRequests,
     RequireDpop: form.value.RequireDpop,
     RequireDpopNonce: form.value.RequireDpopNonce,
-    IdentityTokenLifetime: parseInt(form.value.IdentityTokenLifetime),
-    AccessTokenLifetime: parseInt(form.value.AccessTokenLifetime),
-    AuthorizationCodeLifetime: parseInt(form.value.AuthorizationCodeLifetime),
-    SlidingRefreshTokenLifetime: parseInt(form.value.SlidingRefreshTokenLifetime),
+    IdentityTokenLifetime: form.value.IdentityTokenLifetime,
+    AccessTokenLifetime: form.value.AccessTokenLifetime,
+    AuthorizationCodeLifetime: form.value.AuthorizationCodeLifetime,
+    SlidingRefreshTokenLifetime: form.value.SlidingRefreshTokenLifetime,
     // ADR-0009 PATCH: send the trimmed value verbatim — "" clears back to
     // realm-scoped, a host sets the per-client RP ID.
     WebAuthnRpId: form.value.WebAuthnRpId.trim(),
@@ -533,7 +528,7 @@ async function copySecret() {
             </p>
           </CoarFormField>
           <CoarFormField v-if="isCreate" :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (empty = generate)')">
-            <CoarTextInput v-model="form.ClientSecret" type="password" clearable class="input-name" />
+            <CoarPasswordInput v-model="form.ClientSecret" clearable class="input-name" />
           </CoarFormField>
           <div class="checkbox-stack">
             <CoarCheckbox v-model="form.Enabled" :label="t('admin.oauthClients.enabled', {}, 'Active')" />
@@ -686,16 +681,16 @@ async function copySecret() {
             </p>
             <div class="lifetime-grid">
               <CoarFormField :label="t('admin.oauthClients.identityTokenLifetime', {}, 'Identity-Token')">
-                <CoarTextInput v-model="form.IdentityTokenLifetime" type="number" clearable class="input-number" />
+                <CoarNumberInput v-model="form.IdentityTokenLifetime" clearable class="input-number" />
               </CoarFormField>
               <CoarFormField :label="t('admin.oauthClients.accessTokenLifetime', {}, 'Access-Token')">
-                <CoarTextInput v-model="form.AccessTokenLifetime" type="number" clearable class="input-number" />
+                <CoarNumberInput v-model="form.AccessTokenLifetime" clearable class="input-number" />
               </CoarFormField>
               <CoarFormField :label="t('admin.oauthClients.authCodeLifetime', {}, 'Authorization-Code')">
-                <CoarTextInput v-model="form.AuthorizationCodeLifetime" type="number" clearable class="input-number" />
+                <CoarNumberInput v-model="form.AuthorizationCodeLifetime" clearable class="input-number" />
               </CoarFormField>
               <CoarFormField :label="t('admin.oauthClients.slidingRefreshLifetime', {}, 'Sliding Refresh-Token')">
-                <CoarTextInput v-model="form.SlidingRefreshTokenLifetime" type="number" clearable class="input-number" />
+                <CoarNumberInput v-model="form.SlidingRefreshTokenLifetime" clearable class="input-number" />
               </CoarFormField>
             </div>
           </div>

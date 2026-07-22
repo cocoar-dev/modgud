@@ -72,6 +72,16 @@ public class ApplicationSettings
     /// Null = inherit the realm policy. Lets a Consumer App stay email-only
     /// while an Enterprise App in the same tenant requires given/family name.</summary>
     public ApplicationRegistrationFieldsOverrides? RegistrationFields { get; set; }
+
+    /// <summary>
+    /// Per-page PageBuilder overrides keyed by SPA page slot (<c>login</c>,
+    /// <c>password-forgot</c>, …). Missing keys inherit the realm schema for
+    /// that slot; deleting an entry therefore restores inheritance without
+    /// touching the realm default. Values are opaque serialized PageNode JSON.
+    /// Managed through the dedicated Application page endpoints rather than
+    /// the ordinary App settings form so an App update cannot erase pages.
+    /// </summary>
+    public Dictionary<string, string>? Pages { get; set; }
 }
 
 /// <summary>An Application's own origin. Phase-1 resolution maps a host to an

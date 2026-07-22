@@ -74,10 +74,12 @@ public sealed record EffectiveSettings
         Cimd = MergeCimd(realm.Cimd, app.Cimd),
         RegistrationFields = MergeRegistrationFields(realm.RegistrationFields, app.RegistrationFields),
 
-        // Realm-owned sections with no per-App override (operational / GDPR) — passthrough:
+        // Realm-owned operational / GDPR sections have no per-App override:
         Deletion = realm.Deletion,
         Audit = realm.Audit,
-        Pages = realm.Pages,
+
+        // Page schemas overlay per slot; an absent App key inherits the Realm slot.
+        Pages = MergePages(realm.Pages, app.Pages),
 
         // New per-App facets:
         SelfRegPosture = app.SelfRegistration?.Posture ?? Applications.SelfRegPosture.JitOnOtp,
@@ -176,5 +178,18 @@ public sealed record EffectiveSettings
             Firstname = app.Firstname ?? r.Firstname,
             Lastname = app.Lastname ?? r.Lastname,
         };
+    }
+
+    private static Dictionary<string, string>? MergePages(
+        Dictionary<string, string>? realm,
+        Dictionary<string, string>? app)
+    {
+        if (app is null || app.Count == 0) return realm;
+
+        var merged = realm is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(realm, StringComparer.Ordinal);
+        foreach (var (slug, schema) in app) merged[slug] = schema;
+        return merged;
     }
 }

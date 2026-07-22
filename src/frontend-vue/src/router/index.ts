@@ -19,6 +19,13 @@ const pageBuilderFeatureGate: NavigationGuard = () => {
   return true
 }
 
+const authPageSlotGate: NavigationGuard = (to) => {
+  const slug = typeof to.params.slug === 'string' ? to.params.slug : ''
+  return ['login', 'logout', 'password-forgot'].includes(slug)
+    ? true
+    : { path: '/platform/customization/pages', replace: true }
+}
+
 /**
  * Per-modal sizes for routedFragments. The Admin UI is desktop-only —
  * each modal gets a size tailored to its own content density (Scope
@@ -149,6 +156,11 @@ const routes = [
     {
       path: '/forgot-password',
       component: () => import('@/views/auth/ForgotPasswordView.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/logged-out',
+      component: () => import('@/views/auth/LoggedOutView.vue'),
       meta: { public: true },
     },
     {
@@ -455,7 +467,7 @@ const routes = [
             {
               path: 'customization/pages/:slug',
               component: () => import('@/views/admin/customization/PageEditorView.vue'),
-              beforeEnter: pageBuilderFeatureGate,
+              beforeEnter: [pageBuilderFeatureGate, authPageSlotGate],
             },
             {
               path: 'customization/assets',

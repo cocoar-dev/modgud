@@ -1,4 +1,5 @@
 using BuildingBlocks.Helper;
+using Microsoft.AspNetCore.WebUtilities;
 using Modgud.Api;
 using Modgud.Authentication.Applications;
 using Modgud.Domain.Realms;
@@ -24,14 +25,20 @@ public static class AppSettingsEndpoints
         // is metadata, no secrets — same disclosure surface as the existing
         // public realm settings.
         application.MapGet($"{path}/app-info",
-            async (HttpContext http, AppSettings settings, IApplicationSettingsResolver settingsResolver) =>
+            async (HttpContext http, AppSettings settings, IApplicationSettingsResolver settingsResolver, string? returnUrl) =>
             {
                 var tenant = http.Items[TenantConstants.HttpContextTenantInfoKey] as TenantInfo;
                 // ADR-0011 — Host-time: on an Application subdomain the branding is
                 // the App's overrides merged over the realm branding, so the login
                 // page renders App-branded; on a plain tenant host this resolves to
                 // the realm branding unchanged.
-                var effective = await settingsResolver.ResolveForRequestAsync(http, clientId: null, http.RequestAborted);
+                // On an App subdomain the Host already pins the Application. On the
+                // canonical Realm host, the login challenge keeps the original
+                // /connect/authorize URL in ?redirect=. Accept that local continuation
+                // as a second signal so App branding/pages also work without a custom
+                // subdomain. ResolveForRequestAsync still gives the Host pin precedence.
+                var clientId = ExtractAuthorizeClientId(returnUrl);
+                var effective = await settingsResolver.ResolveForRequestAsync(http, clientId, http.RequestAborted);
                 var branding = effective.Branding;
                 // ADR-0011 — publish the resolved (App⊕realm) registration-field
                 // policy so native apps + the web register form render exactly the
@@ -64,6 +71,9 @@ public static class AppSettingsEndpoints
                     {
                         settings.Features.PageBuilder,
                     },
+                    Pages = settings.Features.PageBuilder
+                        ? effective.Pages ?? new Dictionary<string, string>()
+                        : new Dictionary<string, string>(),
                     RegistrationFields = new
                     {
                         Email = nameof(FieldRequirement.Required), // always required (the anchor)
@@ -77,5 +87,27 @@ public static class AppSettingsEndpoints
         .AllowAnonymous();
 
         return application;
+    }
+
+    /// <summary>
+    /// Extracts a client id only from a bounded, same-origin authorization
+    /// continuation. Arbitrary paths/URLs never influence anonymous branding.
+    /// Full OAuth request validation still happens at /connect/authorize; this
+    /// helper merely selects the effective App presentation before login.
+    /// </summary>
+    internal static string? ExtractAuthorizeClientId(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl) || returnUrl.Length > 8192) return null;
+        if (returnUrl.IndexOfAny(['\r', '\n', '\0', '\\']) >= 0) return null;
+
+        var queryStart = returnUrl.IndexOf('?');
+        var path = queryStart < 0 ? returnUrl : returnUrl[..queryStart];
+        if (!string.Equals(path, "/connect/authorize", StringComparison.OrdinalIgnoreCase)) return null;
+        if (queryStart < 0 || queryStart == returnUrl.Length - 1) return null;
+
+        var query = QueryHelpers.ParseQuery(returnUrl[queryStart..]);
+        if (!query.TryGetValue("client_id", out var clientIds) || clientIds.Count != 1) return null;
+        var clientId = clientIds[0];
+        return string.IsNullOrWhiteSpace(clientId) ? null : clientId;
     }
 }

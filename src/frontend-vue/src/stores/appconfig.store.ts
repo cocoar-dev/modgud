@@ -47,6 +47,8 @@ export interface AppConfig {
   Branding: BrandingConfig
   Features: FeatureFlags
   RegistrationFields: RegistrationFieldsConfig
+  /** Effective PageBuilder schemas for the current Host/OAuth client context. */
+  Pages: Record<string, string>
 }
 
 const defaults: AppConfig = {
@@ -70,6 +72,7 @@ const defaults: AppConfig = {
     Firstname: 'Optional',
     Lastname: 'Optional',
   },
+  Pages: {},
 }
 
 /**
@@ -106,10 +109,12 @@ export const useAppConfigStore = defineStore('appConfig', () => {
   const config = ref<AppConfig>({ ...defaults })
   const loaded = ref(false)
 
-  async function load() {
-    if (loaded.value) return
+  async function fetchConfig(returnUrl?: string) {
     try {
-      const result = await http.get<AppConfig>()
+      const request = returnUrl
+        ? http.setQueryParameter('returnUrl', returnUrl)
+        : http
+      const result = await request.get<AppConfig>()
       if (result) {
         config.value = {
           ...defaults,
@@ -117,6 +122,7 @@ export const useAppConfigStore = defineStore('appConfig', () => {
           Branding: { ...defaults.Branding, ...(result.Branding ?? {}) },
           Features: { ...defaults.Features, ...(result.Features ?? {}) },
           RegistrationFields: { ...defaults.RegistrationFields, ...(result.RegistrationFields ?? {}) },
+          Pages: { ...(result.Pages ?? {}) },
         }
         applyBranding(config.value.Branding)
       }
@@ -124,5 +130,15 @@ export const useAppConfigStore = defineStore('appConfig', () => {
     finally { loaded.value = true }
   }
 
-  return { config, loaded, load }
+  async function load() {
+    if (loaded.value) return
+    await fetchConfig()
+  }
+
+  /** Refresh presentation for a local /connect/authorize continuation. */
+  async function loadForLogin(returnUrl: string) {
+    await fetchConfig(returnUrl)
+  }
+
+  return { config, loaded, load, loadForLogin }
 })
