@@ -268,11 +268,22 @@ body {
   font-weight: 460;
 }
 
-.hero-lede {
+.hero-thesis {
   max-width: 66ch;
   margin-top: 28px;
+  color: var(--ink-soft);
+  font-family: var(--font-display);
+  font-size: clamp(1.18rem, 2vw, 1.5rem);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.35;
+}
+
+.hero-lede {
+  max-width: 66ch;
+  margin-top: 12px;
   color: var(--steel);
-  font-size: clamp(1.08rem, 1.7vw, 1.28rem);
+  font-size: clamp(1.02rem, 1.45vw, 1.16rem);
   line-height: 1.6;
 }
 
@@ -740,24 +751,36 @@ body {
 
 .standards-inner {
   display: grid;
-  grid-template-columns: auto 1fr;
-  min-height: 102px;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
+  min-height: 116px;
   align-items: center;
   gap: clamp(30px, 6vw, 74px);
 }
 
-.standards p {
+.standards-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.standards-copy p {
+  color: var(--ink-soft);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 670;
+  letter-spacing: -0.02em;
+}
+
+.standards-copy span {
   color: var(--muted);
-  font-size: 0.77rem;
-  font-weight: 610;
-  white-space: nowrap;
+  font-size: 0.72rem;
 }
 
 .standards ul {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 18px;
+  justify-content: flex-end;
+  gap: 12px clamp(18px, 2.4vw, 30px);
 }
 
 .standards li {
