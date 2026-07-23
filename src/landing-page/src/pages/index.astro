@@ -1,0 +1,506 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import RevealScript from '../components/RevealScript.astro';
+
+const docsUrl = 'https://docs.cocoar.dev/modgud/';
+const quickstartUrl = `${docsUrl}getting-started/quickstart.html`;
+const githubUrl = 'https://github.com/cocoar-dev/modgud';
+const roadmapUrl = `${githubUrl}/blob/develop/docs/roadmap.md`;
+
+const standards = ['OAuth 2.0', 'OpenID Connect', 'WebAuthn', 'DPoP', 'SAML federation', 'OpenTelemetry'];
+
+const accessMethods = [
+  {
+    name: 'Passkeys',
+    note: 'Phishing-resistant sign-in with Touch ID, Windows Hello or a hardware key.',
+    icon: 'fingerprint',
+  },
+  {
+    name: 'Passwordless',
+    note: 'Magic links and email OTP when a password is one credential too many.',
+    icon: 'spark',
+  },
+  {
+    name: 'Authenticator apps',
+    note: 'Standards-based TOTP for users who already have a trusted setup.',
+    icon: 'dial',
+  },
+  {
+    name: 'Enterprise SSO',
+    note: 'Connect Microsoft Entra ID, any OIDC provider or SAML identity provider.',
+    icon: 'building',
+  },
+];
+
+const operations = [
+  {
+    eyebrow: 'See',
+    title: 'Live operations',
+    text: 'OpenTelemetry metrics and traces, security events and a live activity feed keep the control plane observable.',
+  },
+  {
+    eyebrow: 'Control',
+    title: 'Active sessions',
+    text: 'Device-aware session tracking gives users and admins a clear view of where an account is signed in.',
+  },
+  {
+    eyebrow: 'Recover',
+    title: 'Break-glass CLI',
+    text: 'Bootstrap an admin, reset 2FA or rebuild projections even when the browser path is unavailable.',
+  },
+  {
+    eyebrow: 'Respect',
+    title: 'GDPR workflows',
+    text: 'Self-service export and irreversible PII erasure preserve the audit chain without preserving the person.',
+  },
+];
+---
+
+<BaseLayout
+  title="Modgud — identity boundaries for multi-tenant applications"
+  description="Self-hosted OAuth 2.0 and OpenID Connect for multi-tenant applications. Database-per-realm isolation, app-aware RBAC, passkeys, federation and an ASP.NET Core client."
+>
+  <a class="skip-link" href="#content">Skip to content</a>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="Modgud home">
+        <img src="/shield.svg" alt="" width="28" height="37" />
+        <span>Modgud</span>
+      </a>
+
+      <nav class="primary-nav" aria-label="Main navigation">
+        <a href="#boundaries">Boundaries</a>
+        <a href="#access">Sign-in</a>
+        <a href="#integrate">Integrate</a>
+        <a href="#operations">Operate</a>
+        <a href={docsUrl}>Docs</a>
+      </nav>
+
+      <a class="header-github" href={githubUrl} aria-label="Modgud on GitHub">
+        <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
+          <path fill="currentColor" d="M12 .7A11.5 11.5 0 0 0 8.36 23.1c.58.1.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.17.08 1.78 1.2 1.78 1.2 1.04 1.78 2.72 1.26 3.39.97.1-.75.4-1.27.74-1.56-2.57-.3-5.27-1.29-5.27-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.75 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05a4.45 4.45 0 0 1 1.19 3.09c0 4.41-2.71 5.39-5.29 5.68.42.36.79 1.06.79 2.14v3.26c0 .31.21.67.79.56A11.5 11.5 0 0 0 12 .7Z" />
+        </svg>
+        <span>GitHub</span>
+      </a>
+    </div>
+  </header>
+
+  <main id="content">
+    <section class="hero">
+      <div class="hero-inner">
+        <div class="hero-copy" data-reveal>
+          <p class="eyebrow"><span></span> Self-hosted identity control plane</p>
+          <h1>Identity, isolated by realm.<br /> <em>Access, shaped for every app.</em></h1>
+          <p class="hero-lede">
+            Modgud is an OAuth 2.0 and OpenID Connect server for multi-tenant applications — with physical tenant isolation, app-aware permissions and every modern way in.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href={quickstartUrl}>
+              Start in 10 minutes
+              <svg aria-hidden="true" viewBox="0 0 20 20" width="18" height="18">
+                <path d="m7 4 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </a>
+            <a class="button button-secondary" href={githubUrl}>Explore the source</a>
+          </div>
+          <p class="hero-status">
+            <span>Pre-1.0</span>
+            Active development · Apache 2.0
+            <a class="hero-status-link" href={roadmapUrl}>What ships today</a>
+          </p>
+        </div>
+
+        <div class="identity-bridge" role="img" aria-label="Two isolated realms route identities through Modgud to an app, API and admin surface" data-reveal style="--reveal-delay: 120ms">
+          <div class="bridge-caption">
+            <span>Identity traffic</span>
+            <span class="bridge-live"><i></i> Policy online</span>
+          </div>
+
+          <div class="topology">
+            <div class="topology-column topology-realms">
+              <p class="topology-label">Isolated realms</p>
+              <div class="realm-node node-acme">
+                <span class="node-icon">
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <ellipse cx="12" cy="5" rx="7" ry="3"></ellipse>
+                    <path d="M5 5v6c0 1.65 3.13 3 7 3s7-1.35 7-3V5"></path>
+                    <path d="M5 11v6c0 1.65 3.13 3 7 3s7-1.35 7-3v-6"></path>
+                  </svg>
+                </span>
+                <span><strong>Acme</strong><small>acme_db</small></span>
+                <i class="node-state"></i>
+              </div>
+              <div class="realm-node node-northwind">
+                <span class="node-icon">
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <ellipse cx="12" cy="5" rx="7" ry="3"></ellipse>
+                    <path d="M5 5v6c0 1.65 3.13 3 7 3s7-1.35 7-3V5"></path>
+                    <path d="M5 11v6c0 1.65 3.13 3 7 3s7-1.35 7-3v-6"></path>
+                  </svg>
+                </span>
+                <span><strong>Northwind</strong><small>northwind_db</small></span>
+                <i class="node-state"></i>
+              </div>
+            </div>
+
+            <div class="bridge-span" aria-hidden="true">
+              <div class="bridge-deck bridge-deck-top">
+                <span class="packet packet-one"></span>
+                <span class="bridge-permission">orders:read</span>
+              </div>
+              <div class="bridge-deck bridge-deck-bottom">
+                <span class="packet packet-two"></span>
+                <span class="bridge-permission">profile:write</span>
+              </div>
+              <div class="bridge-gate">
+                <span class="gate-halo"></span>
+                <img src="/shield.svg" alt="" width="54" height="71" />
+                <strong>MODGUD</strong>
+                <small>OIDC · RBAC</small>
+              </div>
+            </div>
+
+            <div class="topology-column topology-apps">
+              <p class="topology-label">Audience-scoped access</p>
+              <div class="app-node">
+                <span class="app-glyph app-glyph-portal">
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                    <path d="M3 9h18"></path><path d="M8 13h3v3H8z"></path>
+                  </svg>
+                </span>
+                <span><strong>Portal</strong><small>OpenID Connect</small></span>
+              </div>
+              <div class="app-node">
+                <span class="app-glyph app-glyph-api">
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="m8 8-4 4 4 4"></path><path d="m16 8 4 4-4 4"></path><path d="m14 4-4 16"></path>
+                  </svg>
+                </span>
+                <span><strong>Orders API</strong><small>orders:read</small></span>
+              </div>
+              <div class="app-node">
+                <span class="app-glyph app-glyph-admin">
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="M12 3 4 7v5c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V7l-8-4Z"></path>
+                    <path d="m9 12 2 2 4-4"></path>
+                  </svg>
+                </span>
+                <span><strong>Admin</strong><small>realm:admin</small></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="bridge-footer">
+            <span><i class="footer-dot footer-dot-blue"></i> Host-routed tenant context</span>
+            <span><i class="footer-dot footer-dot-copper"></i> Per-audience permissions</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="standards" aria-label="Supported standards and technologies">
+      <div class="standards-inner">
+        <p>Built on standards, not lock-in</p>
+        <ul>
+          {standards.map((standard) => <li>{standard}</li>)}
+        </ul>
+      </div>
+    </section>
+
+    <section id="boundaries" class="section section-intro">
+      <div class="section-inner intro-grid" data-reveal>
+        <p class="section-kicker">Boundaries before features</p>
+        <div>
+          <h2>One identity layer.<br />Clean lines everywhere else.</h2>
+          <p>
+            Multi-tenant identity is easy to start and hard to keep honest. Modgud makes realm, app and resource boundaries visible in the model — and enforceable in the architecture.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="feature-section feature-isolation">
+      <div class="section-inner feature-grid">
+        <div class="feature-copy" data-reveal>
+          <p class="section-kicker">Realm isolation</p>
+          <h2>A database boundary, not a filter.</h2>
+          <p>
+            Every realm gets its own PostgreSQL database. Host-based routing selects the realm before a document session opens, so tenant separation does not depend on remembering a <code>tenant_id</code> predicate.
+          </p>
+          <ul class="check-list">
+            <li>
+              <svg aria-hidden="true" viewBox="0 0 20 20"><path d="m5 10 3 3 7-7"></path></svg>
+              Physical database per realm
+            </li>
+            <li>
+              <svg aria-hidden="true" viewBox="0 0 20 20"><path d="m5 10 3 3 7-7"></path></svg>
+              Domain-based realm resolution
+            </li>
+            <li>
+              <svg aria-hidden="true" viewBox="0 0 20 20"><path d="m5 10 3 3 7-7"></path></svg>
+              Fresh defaults provisioned automatically
+            </li>
+          </ul>
+        </div>
+
+        <div class="isolation-visual" aria-label="Three realms, each with a separate database" role="img" data-reveal style="--reveal-delay: 100ms">
+          <div class="isolation-header">
+            <span>Realm directory</span>
+            <small>3 active</small>
+          </div>
+          <div class="realm-row">
+            <span class="realm-letter realm-letter-a">A</span>
+            <span class="realm-info"><strong>Acme</strong><small>id.acme.example</small></span>
+            <span class="database-pill"><i></i> modgud_acme</span>
+          </div>
+          <div class="realm-row">
+            <span class="realm-letter realm-letter-n">N</span>
+            <span class="realm-info"><strong>Northwind</strong><small>login.northwind.example</small></span>
+            <span class="database-pill"><i></i> modgud_northwind</span>
+          </div>
+          <div class="realm-row">
+            <span class="realm-letter realm-letter-c">C</span>
+            <span class="realm-info"><strong>Contoso</strong><small>identity.contoso.example</small></span>
+            <span class="database-pill"><i></i> modgud_contoso</span>
+          </div>
+          <p class="isolation-note">
+            <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M10 2 4 5v4c0 4 2.5 6.5 6 8 3.5-1.5 6-4 6-8V5l-6-3Z"></path><path d="m7.5 9.5 1.7 1.7 3.5-3.7"></path></svg>
+            No shared tenant tables
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="feature-section feature-permissions">
+      <div class="section-inner feature-grid feature-grid-reverse">
+        <div class="permission-visual" aria-label="Roles and permissions narrowed to the target application" role="img" data-reveal>
+          <div class="permission-sidebar">
+            <p>ACME REALM</p>
+            <span class="permission-person">
+              <i>EM</i>
+              <span><strong>Erika Muster</strong><small>3 groups · 4 roles</small></span>
+            </span>
+            <span class="permission-path active"><i></i> App access</span>
+            <span class="permission-path"><i></i> Groups</span>
+            <span class="permission-path"><i></i> Sessions</span>
+          </div>
+          <div class="permission-main">
+            <div class="permission-main-head">
+              <span><small>AUDIENCE</small><strong>orders-api</strong></span>
+              <i>Resolved</i>
+            </div>
+            <div class="claim-block">
+              <p><span class="code-key">"resource_access"</span>: {`{`}</p>
+              <p class="code-indent"><span class="code-key">"orders-api"</span>: {`{`}</p>
+              <p class="code-indent-2"><span class="code-key">"roles"</span>: [<span class="code-value">"fulfilment"</span>],</p>
+              <p class="code-indent-2"><span class="code-key">"permissions"</span>: [</p>
+              <p class="code-indent-3"><span class="code-value">"orders:read"</span>,</p>
+              <p class="code-indent-3"><span class="code-value">"orders:write"</span></p>
+              <p class="code-indent-2">]</p>
+              <p class="code-indent">{`}`}</p>
+              <p>{`}`}</p>
+            </div>
+            <p class="claim-note"><span></span> Narrowed to the API's declared permission set</p>
+          </div>
+        </div>
+
+        <div class="feature-copy" data-reveal style="--reveal-delay: 100ms">
+          <p class="section-kicker">App-aware authorization</p>
+          <h2>Permissions arrive where they belong.</h2>
+          <p>
+            Apps own resource catalogs. Roles bind to an app. Tokens carry a familiar <code>resource_access</code> block narrowed to the current audience — not a bag of global claims every service has to interpret.
+          </p>
+          <ul class="check-list">
+            <li>
+              <svg aria-hidden="true" viewBox="0 0 20 20"><path d="m5 10 3 3 7-7"></path></svg>
+              Granular <code>resource:action</code> permissions
+            </li>
+            <li>
+              <svg aria-hidden="true" viewBox="0 0 20 20"><path d="m5 10 3 3 7-7"></path></svg>
+              Exact, resource-admin and realm-admin gates
+            </li>
+            <li>
+              <svg aria-hidden="true" viewBox="0 0 20 20"><path d="m5 10 3 3 7-7"></path></svg>
+              Humans and service accounts share one model
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="access" class="access-section">
+      <div class="section-inner">
+        <header class="access-heading" data-reveal>
+          <p class="section-kicker">Every trusted way in</p>
+          <h2>Let people sign in like it’s 2026.</h2>
+          <p>
+            Start with local accounts. Add passwordless, phishing-resistant authentication or your organisation’s existing identity provider — per realm, without changing the apps behind it.
+          </p>
+        </header>
+
+        <div class="access-grid">
+          {accessMethods.map((method, index) => (
+            <article class="access-card" data-reveal style={`--reveal-delay: ${index * 60}ms`}>
+              <span class={`access-icon access-icon-${method.icon}`}>
+                {method.icon === 'fingerprint' && (
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="M12 10a2 2 0 0 0-2 2c0 1.8-.2 4.4-.8 6.7"></path>
+                    <path d="M15 12c0 3.5-.1 6.1-1 8.5"></path>
+                    <path d="M18 17c.3-2 .2-4.5.2-5A6.2 6.2 0 0 0 6 10"></path>
+                    <path d="M5 14c0 2-.3 4.1-1 6"></path><path d="M8.7 21c.4-1.3.8-3.6.8-5.8"></path>
+                  </svg>
+                )}
+                {method.icon === 'spark' && (
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="m12 3 1.1 4.1L17 8.5l-3.9 1.4L12 14l-1.1-4.1L7 8.5l3.9-1.4L12 3Z"></path>
+                    <path d="m18.5 14 .7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3Z"></path>
+                    <path d="M4 13v7h7"></path>
+                  </svg>
+                )}
+                {method.icon === 'dial' && (
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="8"></circle><path d="M12 7v5l3 2"></path>
+                    <path d="M7 3.8 5.8 2.5M17 3.8l1.2-1.3"></path>
+                  </svg>
+                )}
+                {method.icon === 'building' && (
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="M4 21V6l8-3 8 3v15"></path><path d="M2 21h20"></path>
+                    <path d="M8 8h2M14 8h2M8 12h2M14 12h2M8 16h2M14 16h2"></path>
+                  </svg>
+                )}
+              </span>
+              <h3>{method.name}</h3>
+              <p>{method.note}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <section id="integrate" class="integration-section">
+      <div class="section-inner integration-grid">
+        <div class="integration-copy" data-reveal>
+          <p class="section-kicker">The .NET path is short</p>
+          <h2>Your API already speaks the language.</h2>
+          <p>
+            Modgud uses standard JWT bearer validation and ships a small ASP.NET Core client that selects the current audience, projects roles and permissions, and adds a readable endpoint gate.
+          </p>
+          <a class="text-link" href={`${docsUrl}integrate/resource-server.html`}>
+            Read the resource server guide
+            <svg aria-hidden="true" viewBox="0 0 20 20" width="18" height="18"><path d="M4 10h12M11 5l5 5-5 5"></path></svg>
+          </a>
+        </div>
+
+        <div class="code-window" data-reveal style="--reveal-delay: 100ms">
+          <div class="code-window-head">
+            <div><i></i><i></i><i></i></div>
+            <span>Program.cs</span>
+            <small>ASP.NET Core</small>
+          </div>
+          <pre aria-label="ASP.NET Core integration example"><code><span class="code-muted">// One audience. One projection.</span>
+builder.Services.<span class="code-function">AddModgudClient</span>(options =>
+&#123;
+    options.Authority = <span class="code-string">"https://id.acme.example"</span>;
+    options.Audience = <span class="code-string">"orders-api"</span>;
+&#125;);
+
+app.MapPost(<span class="code-string">"/orders"</span>, CreateOrder)
+   .<span class="code-function">RequiresModgudPermission</span>(
+       <span class="code-string">"orders:write"</span>);</code></pre>
+          <div class="code-result">
+            <span><i></i> JWT or reference token</span>
+            <span>401 anonymous · 403 forbidden</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="operations" class="operations-section">
+      <div class="section-inner">
+        <header class="operations-heading" data-reveal>
+          <p class="section-kicker">Built for the day after launch</p>
+          <h2>Identity is an operation,<br />not a login screen.</h2>
+        </header>
+        <div class="operations-grid">
+          {operations.map((item, index) => (
+            <article class="operation-card" data-reveal style={`--reveal-delay: ${index * 50}ms`}>
+              <p>{item.eyebrow}</p>
+              <h3>{item.title}</h3>
+              <span>{item.text}</span>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <section class="name-section">
+      <div class="section-inner name-grid" data-reveal>
+        <div class="name-mark">
+          <span class="name-ring"></span>
+          <img src="/shield.svg" alt="" width="148" height="194" loading="lazy" />
+        </div>
+        <div class="name-copy">
+          <p class="section-kicker">The watcher of the bridge</p>
+          <h2>“Who are you, and what brings you here?”</h2>
+          <p>
+            Modgud takes its name from <em>Móðguðr</em>, the guardian of Gjallarbrú in Norse mythology. She challenged every traveller crossing the bridge — a fitting namesake for the service deciding who may pass, and where.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="final-cta">
+      <div class="section-inner cta-inner" data-reveal>
+        <p class="section-kicker">Take control of the crossing</p>
+        <h2>Give every realm a boundary.<br />Give every app the right access.</h2>
+        <div class="cta-actions">
+          <a class="button button-light" href={quickstartUrl}>
+            Open the quickstart
+            <svg aria-hidden="true" viewBox="0 0 20 20" width="18" height="18">
+              <path d="m7 4 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </a>
+          <a class="button button-dark-ghost" href={roadmapUrl}>See what ships today</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <a class="brand footer-brand" href="/">
+          <img src="/shield.svg" alt="" width="24" height="31" loading="lazy" />
+          <span>Modgud</span>
+        </a>
+        <p>Self-hosted identity boundaries for multi-tenant applications.</p>
+      </div>
+      <nav aria-label="Product links">
+        <strong>Product</strong>
+        <a href={quickstartUrl}>Quickstart</a>
+        <a href={docsUrl}>Documentation</a>
+        <a href={roadmapUrl}>Roadmap</a>
+      </nav>
+      <nav aria-label="Project links">
+        <strong>Project</strong>
+        <a href={githubUrl}>GitHub</a>
+        <a href={`${githubUrl}/blob/develop/SECURITY.md`}>Security</a>
+        <a href={`${githubUrl}/blob/develop/LICENSE`}>License</a>
+      </nav>
+      <nav aria-label="Company links">
+        <strong>COCOAR</strong>
+        <a href="https://cocoar.dev">About</a>
+        <a href={`${githubUrl}/blob/develop/TRADEMARK.md`}>Trademark</a>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2025–2026 COCOAR e.U., Vienna</span>
+      <span>Built in the open · Apache 2.0</span>
+    </div>
+  </footer>
+
+  <RevealScript />
+</BaseLayout>
