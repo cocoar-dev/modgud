@@ -73,7 +73,8 @@ builder.Services.AddAuthentication(options =>
         // Authz-claim opt-ins per permission-modell: `roles` is the OIDC
         // standard convention for role names, `permissions` is Cocoar's
         // matching opt-in for the per-RS permission array. The BFF wants
-        // both so /connect/userinfo emits a full resource_access block.
+        // both so the token principal and /connect/userinfo expose the full
+        // eligible resource_access block.
         options.Scope.Add("roles");
         options.Scope.Add("permissions");
         options.Scope.Add("demo.read");

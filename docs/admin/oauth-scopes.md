@@ -15,8 +15,8 @@ realm provisioning and you don't need to manage them:
 | `profile` | First/last name, preferred username |
 | `email` | Email address + `email_verified` flag |
 | `offline_access` | Allows issuing refresh tokens |
-| `roles` | Triggers the `resource_access` block with the user's roles per Audience |
-| `permissions` | Triggers the `resource_access` block with the user's bypass-pre-expanded permissions narrowed to the calling RS's subset |
+| `roles` | Adds the user's App roles to each matching registered `resource_access[<audience>]` block |
+| `permissions` | Adds bypass-pre-expanded permissions, narrowed to each matching OAuth API's declared subset |
 
 The OIDC-standard `phone` and `address` scopes are recognised by
 OpenIddict but **not** auto-seeded — add them manually per realm if

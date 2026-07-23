@@ -12,8 +12,8 @@ public static class FederationClaimTypes
     /// Carries a session-derived ExternallyDrivable group GUID. One claim per
     /// group. Set on the sign-in cookie (ExternalLoginProcessor.Success), copied
     /// into the OpenIddict grant with NO destination, and unioned into
-    /// resource_access at token/UserInfo time — NEVER emitted to the wire (the
-    /// hub boundary). The session is the lease (decision D/E).
+    /// resource_access at token-issuance/UserInfo time — NEVER itself emitted
+    /// to the wire (the hub boundary). The session is the lease (decision D/E).
     /// </summary>
     public const string SessionGroup = "modgud:session-group";
 }

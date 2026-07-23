@@ -20,8 +20,9 @@ own API as an API).
 
 For most cases — a SaaS app that validates Modgud tokens — yes, you
 register an OAuth API for it. The registration is what lets Modgud
-emit a tailored `resource_access` block for this RS on
-`/connect/userinfo`. Specifically, it's required when:
+emit a tailored `resource_access[<audience>]` block for this resource
+server in JWT access tokens, UserInfo and authorized introspection
+responses. Specifically, it's required when:
 
 - You want **per-Audience permission narrowing** in `resource_access`
   blocks. The RS declares its `PermissionIds` subset of the App's
@@ -39,7 +40,9 @@ A microservice architecture under one app — e.g. `acme-api`,
 `acme-search`, `acme-files` all linked to the App `acme` — works
 because permissions stay app-centric: each microservice gets its own
 `PermissionIds` subset of the same App catalog, and the IdP narrows
-its `resource_access[acme]` emission accordingly.
+the separate `resource_access["acme-api"]`,
+`resource_access["acme-search"]` and
+`resource_access["acme-files"]` blocks accordingly.
 
 ## Creating an API
 
@@ -57,9 +60,9 @@ Administration → **OAuth → APIs** → **Create**.
 ### PermissionIds
 
 The subset of the linked App's catalog this RS gates on. Used by the
-IdP to narrow the `resource_access` block in UserInfo for this
-audience — sibling RSs under the same App don't see each other's
-permissions in the user's claims.
+IdP to narrow `resource_access[<this API's Audience>].permissions` —
+sibling resource servers under the same App get their own Audience
+keys and do not project each other's permissions.
 
 Default at creation: full catalog. Tighten to a strict subset for
 microservices that only need a slice.
@@ -169,9 +172,10 @@ slug, link it to the App, and pick the catalog subset it gates on.
 
 Each microservice gets its own OAuth API entry with its own narrower
 `PermissionIds` subset of the App's catalog. All link to the same
-App. Per-Audience narrowing in UserInfo means a token used against
-microservice A only carries A's permission subset, not B's — even
-when both are under the same App.
+App. Per-Audience narrowing means each block contains only its API's
+permission subset. A multi-audience token may carry multiple blocks
+side-by-side, but each resource-server scheme projects only its
+configured Audience.
 
 ### Multi-tenant API
 

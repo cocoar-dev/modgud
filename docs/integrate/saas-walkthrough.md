@@ -2,7 +2,8 @@
 
 This page takes you from a freshly installed Modgud all the way to a
 working external app doing single-sign-on against Modgud and reading
-per-Audience permission claims out of `/connect/userinfo`.
+audience-keyed authorization claims from an access token, UserInfo or
+authorized introspection response.
 
 > **Audience:** realm admins and developers integrating a SaaS app.
 > Regular end-user onboarding is documented in
@@ -89,7 +90,7 @@ Navigate to **Administration → OAuth Clients**. Click **Create**. The Create m
 | Post-Logout Redirect URIs | `https://acme.dev.local/` | One per line |
 | Allowed Grant Types | `authorization_code` + `refresh_token` | For a web app pick `authorization_code` and `refresh_token`. There are no silent defaults — a client with no grant types cannot mint tokens. |
 | Allowed Scopes | `openid email profile roles permissions acme` | The OIDC scopes plus the resource-bearing `acme` scope you create in Station 3. Request `roles` to get the per-audience role list, `permissions` for the `<resource>:<action>` list. |
-| **Access Token Type** | `JWT` | **Required for local JWKS validation.** The default is `Reference` (opaque — the resource server would have to call `/connect/introspect` on every request). `AddJwtBearer` validates JWTs by signature, so choose **JWT** here. |
+| **Access Token Type** | `JWT` | **Required for the local JWKS-validation path in this walkthrough.** Modgud's token-format default is Reference (opaque and resolved via `/connect/introspect`); explicitly choose JWT here because the resource server below uses `OnlyJwt`. |
 
 Click **Create**. The client secret is shown — copy it and store it
 safely; you'll never see it again.
@@ -99,19 +100,21 @@ If your frontend is a pure SPA that talks to the IDP directly (PKCE, no server-s
 :::
 
 ::: info What does the apps choice change?
-On `/connect/userinfo` the access token's principal gets a
-`resource_access` block per linked app, with the user's app-specific
-roles (with `scope=roles`) and bypass-pre-expanded permissions narrowed
-to the calling OAuthApi's `PermissionIds` (with `scope=permissions`).
-The client may also only request scopes that belong to one of its apps
-(plus the standard OIDC scopes).
+The App selection controls which App-scoped scopes the client may
+request. It does not itself create claim blocks. Requested
+resource-bearing scopes create token audiences; each audience that
+resolves to a registered OAuth API gets
+`resource_access[<audience>]`, using that API's linked App for roles
+(`scope=roles`) and its `PermissionIds` subset for permissions
+(`scope=permissions`).
 :::
 
 ## Station 3: create the resource server
 
 The resource server is the identity Modgud uses to compute the
-per-Audience subset narrowing in `resource_access` UserInfo blocks.
-Each App needs at least one.
+per-Audience subset narrowing in `resource_access` blocks.
+Each App whose authorization data must reach a downstream API needs
+at least one OAuth API registration.
 
 Go to **Administration → OAuth → APIs** and click **Create**:
 
@@ -232,7 +235,7 @@ app.MapGet("/admin", () => "Admin only")
 ```
 
 `[Authorize(Roles = "Acme Editor")]` works the same way — the
-transformation surfaces `resource_access["acme"].roles` as
+authentication scheme projects `resource_access["acme"].roles` as
 `ClaimTypes.Role` claims.
 
 ### Granular permission check
@@ -285,9 +288,10 @@ Made it through? **Done. First SaaS app integrated.**
 ## What comes next
 
 - **Multiple apps in one client:** a frontend that bundles two apps
-  assigns its OAuth client to both. The user's UserInfo response then
-  carries a `resource_access[<a>]` block and a
-  `resource_access[<b>]` block. Each backend reads its own block.
+  assigns its OAuth client to both, then requests resource-bearing
+  scopes targeting APIs in each App. The resulting principal can
+  carry one block per targeted API Audience. Each backend projects
+  its own block.
 - **Microservice apps:** several resource servers under one app —
   create more OAuth APIs in the **OAuth APIs** admin and link them
   all to the same App, each with its own narrower `PermissionIds`
@@ -327,9 +331,10 @@ Made it through? **Done. First SaaS app integrated.**
   `RequireModgudPermission(…)` check sees nothing. Same for `roles`
   and the role list. Add the scope to the client's allowed-scopes list
   and to every authorization request.
-- **Access Token Type left as Reference.** `AddJwtBearer` can only
-  validate JWTs locally. A Reference (opaque) token has nothing to
-  validate by signature — switch the client to **JWT** (Station 2).
+- **Access Token Type set to Reference while the resource server uses
+  `OnlyJwt`.** A Reference token is opaque and has nothing to validate
+  by signature — switch the client to **JWT**, or configure
+  `AddModgudResourceServer` for reference-token introspection.
 - **Authority has a realm path.** `Authority` must be the host root
   (`https://auth.example.com`), never `…/system` or `…/<realm>`. Realms
   resolve by Host header; a path-suffixed Authority breaks discovery and

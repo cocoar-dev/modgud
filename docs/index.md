@@ -25,11 +25,11 @@ features:
     title: Multi-app permission model
     details: Apps are first-class. Permissions are two-segment `<resource>:<action>` strings (e.g. `todo:write`) scoped through the role→App relationship. Application roles bind to one app; a pure `realm:admin` role is the explicit realm-local exception. Groups carry an activation list (BoundTo), and the resolver answers per-app permission queries in-memory.
   - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M16 10h2"/><path d="M16 14h2"/><path d="M6.17 15a3 3 0 0 1 5.66 0"/><circle cx="9" cy="11" r="2"/></svg>'
-    title: Per-app resource_access claim
-    details: Tokens carry resource_access keyed by app slug, shaped like Keycloak's nested claim for familiarity. The ASP.NET Core resource-server handlers project the selected audience block into native role and permission claims.
+    title: Per-audience resource_access claim
+    details: When the corresponding OAuth API audience and `roles` and/or `permissions` scopes are present, tokens can carry a resource_access block keyed by that exact audience. The ASP.NET Core resource-server handlers project only their configured audience block into native role and permission claims.
   - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="11.49"/></svg>'
-    title: Permissions on UserInfo
-    details: 'Per-Audience resource_access blocks are bypass-pre-expanded and narrowed to each resource server. They travel in JWT, UserInfo, and introspection responses; Modgud.AspNetCore.ResourceServer adds scheme-local audience selection and claims projection.'
+    title: Permissions at the token boundary
+    details: 'Per-audience resource_access blocks are bypass-pre-expanded and narrowed to each resource server. They can travel in JWT access tokens, UserInfo and authorized introspection responses; Modgud.AspNetCore.ResourceServer adds scheme-local audience selection and claims projection.'
   - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12c0-.7.12-1.37.34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/></svg>'
     title: Full 2FA spectrum + WebAuthn
     details: TOTP, email-OTP, FIDO2/Passkey, magic-link. 2FA enforcement middleware with grace period and per-user override.

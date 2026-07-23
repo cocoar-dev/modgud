@@ -2,9 +2,10 @@
 
 This page explains the mental model behind Modgud's permission system:
 what an "App" is, how it relates to OAuth concepts, how Modgud's own
-per-audience authorization claim — shaped like Keycloak's nested
-`resource_access` format for familiarity — works, and how the
-permission resolver gets from a logged-in user to a concrete answer.
+audience-keyed authorization claim — shaped like Keycloak's nested
+`resource_access` format for familiarity — works at the token boundary,
+and how the permission resolver gets from a logged-in user to a
+concrete answer.
 
 ## The four-axis model
 
@@ -91,9 +92,11 @@ request.
 **Multi-app frontends.** A unified webshop frontend might call into a
 `shop` app, a `payments` app, and an `inventory` app. The frontend has
 *one* OAuth Client (one user-facing identity), but the client is
-linked to all three Apps via its `AppIds` list. The issued token then
-carries `resource_access` blocks for all three; each backend reads its
-own block.
+linked to all three Apps via its `AppIds` list. That link makes the
+Apps' scopes requestable; when the request targets registered OAuth
+APIs in those Apps and includes `roles` and/or `permissions`, the
+issued token can carry one `resource_access` block per targeted API
+Audience. Each backend reads its own block.
 
 The two flexibilities together let Modgud represent any reasonable
 architecture without forcing you into "everything is one app" or
@@ -128,16 +131,17 @@ are handled differently by each:
   markers back from the resolver and check them lazily at gate time —
   `realm:admin` or `<r>:admin` in the user's permission set is enough
   to pass, with no expansion into concrete strings.
-- **The per-Audience `resource_access` block** on
-  `/connect/userinfo` bypass-pre-expands those same markers into
-  concrete catalog strings before the token is emitted (see below),
-  so token consumers never have to special-case them.
+- **The per-Audience `resource_access` block** at the token boundary
+  bypass-pre-expands those same markers into concrete catalog strings
+  before emission (see below), so token consumers never have to
+  special-case them.
 
 ## The token shape
 
-When a user logs in via an OAuth Client linked to apps `[billing,
-shipping]`, the access token's `/connect/userinfo` response (with
-appropriate scopes granted) contains a nested claim shaped like
+When a user logs in via an OAuth Client entitled to the `billing` and
+`shipping` Apps, requests scopes targeting the registered audiences
+`billing-api` and `shipping-api`, and receives the appropriate claim
+scopes, the access-token principal contains a nested claim shaped like
 Keycloak's `resource_access` format:
 
 ```json
@@ -147,11 +151,11 @@ Keycloak's `resource_access` format:
   "name":  "Alice",
 
   "resource_access": {
-    "billing": {
+    "billing-api": {
       "roles": ["Editor"],
       "permissions": ["invoice:read", "invoice:write"]
     },
-    "shipping": {
+    "shipping-api": {
       "roles": ["Viewer"],
       "permissions": ["shipment:read"]
     }
@@ -159,11 +163,11 @@ Keycloak's `resource_access` format:
 }
 ```
 
-Each resource server reads its own block. The Billing-API sees
-`resource_access["billing"]`; the Shipping-API sees
-`resource_access["shipping"]`. Neither sees the other's data
-magnified — they each have it side-by-side, but consume just their
-own.
+Each resource server reads its own exact Audience block. The Billing
+API sees `resource_access["billing-api"]`; the Shipping API sees
+`resource_access["shipping-api"]`. Both blocks may be present
+side-by-side in a multi-audience claim, but each authentication scheme
+projects only its configured Audience.
 
 The `Modgud.AspNetCore.ResourceServer` authentication handlers take the
 matching audience block and project its roles onto `ClaimTypes.Role`, so
@@ -172,13 +176,19 @@ state or per-endpoint plumbing.
 
 ### What gets emitted is opt-in by scope
 
+- A block is considered only when an `aud` value resolves to a
+  registered OAuth API linked to an App.
 - `scope=roles` → emit the `roles` array per Audience block.
 - `scope=permissions` → emit the `permissions` array per Audience
   block (bypass-pre-expanded and narrowed to that RS's
   `OAuthApi.PermissionIds` subset).
 
-Without those scopes, the block is omitted (or empty). Clients ask
-for exactly what they need; tokens stay lean.
+Without either claim scope, or without a matching registered API
+audience, the entire `resource_access` claim is omitted. Clients ask
+for exactly what they need; tokens stay lean. JWT access tokens carry
+the claim directly, reference tokens retain it in their server-side
+payload for authorized introspection, and UserInfo returns the same
+eligible block.
 
 ### Per-RS subset narrowing
 
@@ -195,9 +205,10 @@ A few things are deliberately absent from UserInfo:
 - **Group memberships.** Organisational signal, not authorisation.
   Also app-scoped via BoundTo, which UserInfo's flat shape can't
   express cleanly. Groups stay IAM-side.
-- **Cross-app roles for apps the calling client isn't linked to.**
-  The token only carries `resource_access` blocks for the apps the
-  issuing client knows about.
+- **Blocks for audiences the token does not target.** An App link
+  controls which App-scoped scopes the client may request; only the
+  resulting registered OAuth API audiences become `resource_access`
+  keys.
 - **`realm:admin` as a literal string.** It's bypass-pre-expanded
   into concrete catalog strings before emission, so consumers do
   straight exact-match without needing to mirror the evaluator's
@@ -231,11 +242,13 @@ see `realm:admin` or `<r>:admin` as literal strings — Modgud expands
 them into the concrete catalog entries before emission. The client
 just checks `permissions.includes("invoice:write")` and is done.
 
-**`OAuthApplication.AppIds` is `n:m` (a client can be linked to many
-apps).** **`OAuthApi.AppId` is `1:1` (a resource server belongs to
-one app).** Asymmetric on purpose: client-side aggregation (one
-frontend, many resource servers) is normal; server-side aggregation
-would muddle the audit trail.
+**`OAuthApplication.AppIds` is `n:m` (a client can be entitled to
+scopes from many apps).** **`OAuthApi.AppId` is `1:1` (a resource
+server belongs to one app).** The client link does not itself create
+claim blocks; requested scopes/resources create token audiences, and
+each registered audience resolves through its API to exactly one App.
+The asymmetry supports one frontend calling many resource servers
+without muddling each server's catalog and audit context.
 
 ## Glossary
 
@@ -254,6 +267,7 @@ would muddle the audit trail.
   (null when `IsRealmAdmin = true`).
 - **Permission** — `<resource>:<action>` string within one App's
   catalog. App context is implicit from the catalog container.
-- **`resource_access`** — Modgud's own per-audience UserInfo claim,
-  shaped like Keycloak's nested format, keyed by app slug, with
-  bypass-pre-expanded permissions narrowed per-RS.
+- **`resource_access`** — Modgud's own token-bound authorization
+  claim, shaped like Keycloak's nested format and keyed by exact OAuth
+  API Audience, with scope-gated roles and bypass-pre-expanded
+  permissions narrowed per resource server.

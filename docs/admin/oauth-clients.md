@@ -15,10 +15,14 @@ Examples:
 
 Every OAuth client can be linked to **zero, one, or more [Applications](./applications)** (n:m, multi-select dropdown in the detail modal). The link controls two things:
 
-1. **Token contents** — on `/connect/userinfo`, the issued token carries a `resource_access` block per linked app, with the user's app-specific roles. Resource servers read their own block (Keycloak convention).
-2. **Scope restriction** — the client may only request scopes that belong to one of its apps (or are global, like the OIDC standard scopes `openid`, `email`, `profile`, `roles`, `offline_access`).
+1. **Scope entitlement** — the client may only request scopes that belong to one of its apps (or are global, like the OIDC standard scopes `openid`, `email`, `profile`, `roles`, `permissions`, `offline_access`).
+2. **App context for targeted APIs** — a requested resource-bearing scope produces one or more token audiences. Each audience must resolve to an OAuth API, whose `AppId` selects the catalog used for its `resource_access[<audience>]` block.
 
 The default case is **one client → one app** (`acme-web` belongs to `acme`). Multi-app clients exist for bundle frontends that talk to several resource servers at once.
+
+Selecting an App does **not** automatically add a claim block. A block
+exists only when the token actually targets a registered OAuth API in
+that App and the request includes `roles` and/or `permissions`.
 
 ::: tip First time?
 Use the [SaaS App Integration Walkthrough](../integrate/saas-walkthrough) for the linear path through your first integration.
@@ -63,9 +67,14 @@ There is no separate "service" client type. For server-to-server flows with no u
 
 ### Applications
 
-The **Applications** multi-select binds the client to one or more apps. Empty means realm-wide (no app context — good for a tool that genuinely doesn't belong to any specific app).
+The **Applications** multi-select binds the client to one or more apps. Empty means realm-wide/unassigned for App-scope entitlement; it does not mean that tokens automatically receive every App's permissions.
 
-Picking multiple apps means: when this client requests a token and asks for the `roles` scope, the issued token's UserInfo carries a `resource_access` block for each picked app. That's how multi-app frontends work.
+Picking multiple apps means the client may request resource-bearing
+scopes from each of them. If a request targets `orders-api` and
+`billing-api` and includes the `roles` scope, the resulting principal
+can contain `resource_access["orders-api"].roles` and
+`resource_access["billing-api"].roles`. The keys are API Audiences,
+never App slugs inferred from the multi-select.
 
 ### Redirect URIs
 
@@ -75,14 +84,19 @@ For SPAs and mobile use a deep link (`com.example.app:/oauth/callback`) or a HTT
 
 ### Access Token Type
 
-New clients default to **JWT**. Two options:
+New clients default to **Reference**. Two options:
 
 | Type | What it is | Validation |
 | --- | --- | --- |
-| **JWT** (default) | Self-contained signed token — the claims are inside the token | The resource server validates it locally against the realm's signing key (JWKS); no callback to Modgud |
-| **Reference** | Opaque random string — carries no claims | The resource server must call `/connect/introspect` on every request to resolve it |
+| **Reference** (default) | Opaque random string — carries no claims on the wire | The resource server must call `/connect/introspect` on every request to resolve it |
+| **JWT** | Self-contained signed token — the claims are inside the token | The resource server validates it locally against the realm's signing key (JWKS); no callback to Modgud |
 
-A resource server built with ASP.NET Core's JWT bearer handler expects a **JWT** — that's the right pick for the common case. Use **Reference** only when you specifically want every token resolvable/revocable at the introspection endpoint and you've wired the RS to call it. The [.NET resource-server library](../integrate/resource-server) uses one `AddModgudResourceServer` method; its `TokenMode` accepts JWTs, reference tokens, or both.
+A resource server configured for local JWT validation expects a
+**JWT**. Keep the default **Reference** format when you want every
+token resolved and immediately revocable at the introspection endpoint.
+The [.NET resource-server library](../integrate/resource-server) uses
+one `AddModgudResourceServer` method; its `TokenMode` accepts JWTs,
+reference tokens, or both.
 
 ### Require Pushed Authorization Requests
 

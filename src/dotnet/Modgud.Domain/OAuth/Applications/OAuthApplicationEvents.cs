@@ -25,10 +25,12 @@ public record OAuthApplicationAppIdChanged(Guid ApplicationId, Guid? AppId);
 /// <summary>
 /// Sets the n:m link between this OAuth client and Applications. The list
 /// can be empty (realm-wide / unassigned), have one entry (typical web
-/// SPA bound to a single app), or many (a frontend that bundles multiple
-/// resource servers — Keycloak-style <c>resource_access</c>). Realm-admin
-/// endpoints validate that every <see cref="AppIds"/> entry references a
-/// non-deleted <c>App</c> at append time.
+/// SPA bound to a single app), or many (a frontend entitled to scopes from
+/// several Apps). The link does not directly create
+/// <c>resource_access</c> blocks: requested scopes produce audiences, and
+/// each registered OAuth API Audience resolves its own App context.
+/// Realm-admin endpoints validate that every <see cref="AppIds"/> entry
+/// references a non-deleted <c>App</c> at append time.
 /// </summary>
 public record OAuthApplicationAppIdsChanged(Guid ApplicationId, IReadOnlyList<Guid> AppIds);
 

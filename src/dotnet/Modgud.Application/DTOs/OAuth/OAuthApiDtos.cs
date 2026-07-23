@@ -11,8 +11,8 @@ public record OAuthApiDto
     public required List<string> UserClaims { get; init; }
     /// <summary>
     /// FK to <c>App.Id</c> (Guid string). Null = unassigned (the RS exists
-    /// but <c>/connect/userinfo</c> emits no <c>resource_access</c> block
-    /// for this audience).
+    /// but no JWT/UserInfo/introspection <c>resource_access</c> block is
+    /// emitted for this audience).
     /// </summary>
     public string? AppId { get; init; }
 

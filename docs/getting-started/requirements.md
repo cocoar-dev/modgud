@@ -107,8 +107,9 @@ The realm domain must reach the browser end-to-end via HTTPS. Common pitfalls:
 
 Resource servers reaching out to Modgud (e.g. for `/connect/userinfo`
 or `/connect/introspect`) need network reachability to the Modgud API
-endpoint, with the bearer token's audience matching their App slug.
-No special CORS — server-to-server.
+endpoint, with the bearer token's audience matching their registered
+OAuth API Audience. The linked App may have a different slug. No
+special CORS — server-to-server.
 
 ## Browser support
 

@@ -69,9 +69,10 @@ public record OAuthClientDto
     /// <summary>
     /// Apps this client is linked to (Guid strings). Empty = realm-wide /
     /// unassigned. One id = typical SPA. Many = a frontend that bundles
-    /// multiple resource servers (Keycloak-style <c>resource_access</c> in
-    /// the issued token's UserInfo claims). The frontend joins these
-    /// against its apps store to resolve slugs.
+    /// scopes from several Apps. The link controls App-scope entitlement;
+    /// requested registered OAuth API Audiences, not these ids, determine
+    /// <c>resource_access</c> keys. The frontend joins these against its
+    /// apps store to resolve slugs.
     /// </summary>
     public List<string> AppIds { get; init; } = [];
 
