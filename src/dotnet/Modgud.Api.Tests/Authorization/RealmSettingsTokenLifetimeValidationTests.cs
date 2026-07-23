@@ -84,6 +84,37 @@ public class RealmSettingsTokenLifetimeValidationTests : IntegrationTestBase
         Assert.False(ok.IsError);
     }
 
+    [Fact]
+    public async Task SecurityAuditRetention_OutsideRealmBounds_IsRejected()
+    {
+        using var scope = NewSystemTenantScope();
+        var settings = scope.ServiceProvider.GetRequiredService<IRealmSettingsService>();
+        var ct = TestContext.Current.CancellationToken;
+
+        foreach (var invalidDays in new[] { 0, 366 })
+        {
+            var invalid = await settings.PatchAsync(new UpdateRealmSettingsDto
+            {
+                Audit = new UpdateAuditSettingsDto
+                {
+                    SecurityRetentionDays = invalidDays,
+                },
+            }, ct);
+            Assert.True(invalid.IsError);
+        }
+
+        var valid = await settings.PatchAsync(new UpdateRealmSettingsDto
+        {
+            Audit = new UpdateAuditSettingsDto
+            {
+                SecurityRetentionDays = 30,
+            },
+        }, ct);
+
+        Assert.False(valid.IsError);
+        Assert.Equal(30, valid.Value.Audit.SecurityRetentionDays);
+    }
+
     private IServiceScope NewSystemTenantScope()
     {
         var scope = Factory.Services.CreateScope();

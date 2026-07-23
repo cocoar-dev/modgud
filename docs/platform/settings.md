@@ -100,11 +100,10 @@ email-verification steps work.
 
 ## Auth-log retention
 
-The auth log is hard-pruned to a fixed **7-day** window by a daily
-scheduled job (visible and manually triggerable from
-[Scheduled jobs](../admin/scheduled-jobs)). This window is not
-currently runtime-configurable; it applies across every realm. See
-[Auth Log](../admin/auth-log).
+Each realm configures its own Security-log retention under **Realm settings →
+Logs**. The default is **7 days**, the allowed range is **1–365 days**, and the
+realm-owned `security-audit-prune` job hard-deletes only expired entries in
+that realm DB. See [Security and platform logs](../admin/auth-log).
 
 ## Tips
 

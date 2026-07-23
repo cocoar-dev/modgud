@@ -10,10 +10,9 @@ namespace Modgud.Infrastructure.Audit;
 /// federation.* / admin.*</c> codes name occurrences on the <i>user- and config-
 /// aggregate streams</i> (projected into the per-realm GDPR-audit view). The
 /// <c>security.* / ops.* / audit.*</c> codes name <i>streamless</i> occurrences
-/// (no aggregate to attach to) routed to the cross-realm
-/// <c>SecurityAuditEntry</c> store under a legitimate-interest basis with short
-/// retention. The boundary is about whether a stream exists, not whether the data
-/// is personal — see the maintainers' <c>logging-audit-redesign</c> design note.</para>
+/// routed either to the owning realm's <c>RealmSecurityAuditEvent</c> store or,
+/// for genuinely deployment-wide work, to the PII-free Global Store
+/// <c>PlatformAuditEvent</c>.</para>
 ///
 /// <para><b>PII discipline:</b> these name <i>occurrences</i>, not payloads. The
 /// stream-backed rows store only metadata (who/when/what-kind/realm) and inherit
@@ -69,7 +68,7 @@ public static class AuditEvents
     public const string LoginProviderDeleted = "admin.login_provider_deleted";
 
     // ─────────────────────────────────────────────────────────────────────
-    // Streamless (Track A — SecurityAuditEntry, legitimate interest + retention)
+    // Streamless realm/platform security events
     // ─────────────────────────────────────────────────────────────────────
 
     // ── Security: streamless threats (tenant-visible) ────────────────
@@ -126,12 +125,11 @@ public static class AuditEvents
     public const string BootstrapInviteRejected = "security.bootstrap_invite_rejected";
 
     // ── Audit-of-the-audit (tenant-visible) ──────────────────────────
-    /// <summary>The audit/security log was cleared by an operator. Records WHO +
-    /// when + realm — a forensic record of the destructive action itself.</summary>
-    public const string AuditLogCleared = "audit.log_cleared";
-
     /// <summary>The audit/security log was exported by an operator.</summary>
     public const string AuditLogExported = "audit.log_exported";
+
+    /// <summary>A realm admin changed the hard retention of realm security events.</summary>
+    public const string SecurityRetentionChanged = "audit.security_retention_changed";
 
     // ── Operations: realm/platform actions ───────────────────────────
     /// <summary>A realm signing key was rotated by an admin (tenant-visible).</summary>
@@ -164,6 +162,9 @@ public static class AuditEvents
     /// (platform-only).</summary>
     public const string ControlPlaneTransferred = "ops.control_plane_transferred";
 
+    /// <summary>A Control-Plane actor changed one explicitly selected realm.</summary>
+    public const string ControlPlaneRealmOperation = "ops.control_plane_realm_operation";
+
     /// <summary>A per-realm account-lifecycle sweep ran (reminders / self-erase /
     /// auto-purge counts). Platform-only operational summary.</summary>
     public const string AccountLifecycleSwept = "ops.account_lifecycle_swept";
@@ -183,9 +184,8 @@ public static class AuditEvents
     public const string DcrClientGarbageCollected = "ops.dcr_client_garbage_collected";
 
     // ─────────────────────────────────────────────────────────────────────
-    // Routing helpers (the taxonomy is the source of truth for category +
-    // visibility, so a call site passes only the EventType — it cannot mark a
-    // platform-only event tenant-visible by mistake).
+    // Taxonomy helper. Store ownership is selected through separate realm and
+    // platform record types, never inferred from this event code.
     // ─────────────────────────────────────────────────────────────────────
 
     /// <summary>The <see cref="AuditCategories"/> code an event type belongs to,
@@ -201,24 +201,4 @@ public static class AuditEvents
         _ => AuditCategories.Authentication, // auth.*
     };
 
-    /// <summary>
-    /// Streamless event types that are <b>control-plane-only</b> — cross-realm infra
-    /// or platform operations a tenant realm-admin must NOT see. Everything else in
-    /// the streamless store is tenant-visible (a realm-admin sees their own realm's
-    /// rows). The read endpoint filters on the resolved flag stored on each row.
-    /// </summary>
-    private static readonly HashSet<string> PlatformOnlyEvents =
-    [
-        SigningKeyPurged,
-        SamlMetadataRefreshed,
-        RecoveryCliInvoked,
-        RealmProvisioned,
-        RealmAdopted,
-        ControlPlaneTransferred,
-        AccountLifecycleSwept,
-    ];
-
-    /// <summary>True if the event type is control-plane-only (see
-    /// <see cref="PlatformOnlyEvents"/>).</summary>
-    public static bool IsPlatformOnly(string eventType) => PlatformOnlyEvents.Contains(eventType);
 }

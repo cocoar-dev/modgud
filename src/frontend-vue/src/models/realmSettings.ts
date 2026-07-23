@@ -14,6 +14,7 @@ export interface RealmSettingsDto {
   Branding: BrandingSettingsDto
   RegistrationFields: RegistrationFieldsSettingsDto
   Deletion: DeletionSettingsDto
+  Audit: AuditSettingsDto
   /** Page-builder schemas keyed by slug. Read-only here — writes use
    * the dedicated /api/admin/customization/pages/{slug} endpoints. */
   Pages: Record<string, string>
@@ -30,6 +31,7 @@ export interface UpdateRealmSettingsDto {
   Branding?: UpdateBrandingSettingsDto | null
   RegistrationFields?: UpdateRegistrationFieldsSettingsDto | null
   Deletion?: UpdateDeletionSettingsDto | null
+  Audit?: UpdateAuditSettingsDto | null
 }
 
 export interface BrowserSessionPolicyDto {
@@ -87,6 +89,16 @@ export interface UpdateDeletionSettingsDto {
   ReminderLeadDays?: number
   AdminRetentionDays?: number
   AutoPurgeEnabled?: boolean
+}
+
+export interface AuditSettingsDto {
+  VisibilityWindowDays: number
+  SecurityRetentionDays: number
+}
+
+export interface UpdateAuditSettingsDto {
+  VisibilityWindowDays?: number
+  SecurityRetentionDays?: number
 }
 
 // Read shape for the Branding sub-section. LogoUrl/FaviconUrl are

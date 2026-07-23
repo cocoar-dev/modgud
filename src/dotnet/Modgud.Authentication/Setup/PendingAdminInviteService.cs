@@ -171,11 +171,11 @@ public sealed class PendingAdminInviteService(
         securityAudit.Record(new SecurityAuditRecord
         {
             EventType = AuditEvents.BootstrapInviteIssued,
-            Level = "Info",
-            Actor = LogPiiMasking.MaskEmail(normalizedEmail),
-            Status = "issued",
-            Reason = $"expires {invite.ExpiresAt}, issued by {issuedBy ?? "(self/CLI)"}",
-            Message = "Bootstrap invite issued",
+            ActorKind = AuditActorKind.AnonymousIdentifier,
+            UnknownIdentifier = normalizedEmail,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "issue",
+            EffectiveAt = invite.ExpiresAt,
         });
 
         return new IssuedInvite(invite.Id, token, url, invite.ExpiresAt, normalizedEmail, normalizedUserName);

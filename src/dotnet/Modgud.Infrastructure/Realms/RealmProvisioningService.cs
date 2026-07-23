@@ -242,14 +242,12 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
 #pragma warning restore CA2100
                 await createDbCmd.ExecuteNonQueryAsync(ct);
                 _logger.LogInformation("Created database {DbName} for realm {Slug}", tenantDbName, dto.Slug);
-                _securityAudit.Record(new SecurityAuditRecord
+                _securityAudit.RecordPlatform(new PlatformAuditRecord
                 {
                     EventType = AuditEvents.RealmProvisioned,
-                    Level = "Info",
-                    Realm = dto.Slug,
-                    Status = "provisioned",
-                    Reason = $"database {tenantDbName}",
-                    Message = $"Created database {tenantDbName} for realm {dto.Slug}",
+                    TargetRealmSlug = dto.Slug,
+                    OutcomeCode = AuditOutcomes.Succeeded,
+                    OperationCode = "create-database",
                 });
             }
         }
@@ -529,14 +527,14 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             "Irreversible — event streams, signing keys and the OpenIddict token store are gone.",
             slug, tenantDbName);
 
-        _securityAudit.Record(new SecurityAuditRecord
+        _securityAudit.RecordPlatform(new PlatformAuditRecord
         {
             EventType = AuditEvents.RealmProvisioned,
-            Level = "Warning",
-            Realm = slug,
-            Status = "hard-deleted",
-            Reason = "operator hard-delete",
-            Message = $"Hard-deleted realm {slug} (tenant database {tenantDbName} dropped)",
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Completed,
+            OperationCode = "hard-delete",
+            ReasonCode = "operator-request",
         });
 
         return true;
@@ -574,14 +572,14 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             "Rolled back partially-provisioned realm {Slug} after a post-create bootstrap failure. " +
             "The tenant database is left in place for idempotent reuse on retry.",
             slug);
-        _securityAudit.Record(new SecurityAuditRecord
+        _securityAudit.RecordPlatform(new PlatformAuditRecord
         {
             EventType = AuditEvents.RealmProvisioned,
-            Level = "Warning",
-            Realm = slug,
-            Status = "rolled-back",
-            Reason = "bootstrap-invite issuance failed after realm creation",
-            Message = $"Rolled back partially-provisioned realm {slug} (tenant DB retained for retry)",
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Completed,
+            OperationCode = "rollback-provisioning",
+            ReasonCode = "bootstrap-invite-failed",
         });
     }
 
@@ -745,14 +743,14 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         _logger.LogWarning(
             "Control plane transferred to realm {Slug} (cleared {Count} previous holder(s))",
             targetSlug, otherHolders.Count);
-        _securityAudit.Record(new SecurityAuditRecord
+        _securityAudit.RecordPlatform(new PlatformAuditRecord
         {
             EventType = AuditEvents.ControlPlaneTransferred,
-            Level = "Warning",
-            Realm = targetSlug,
-            Status = "transferred",
-            Reason = $"to realm {targetSlug}, {otherHolders.Count} previous holder(s)",
-            Message = $"Control plane transferred to realm {targetSlug} (cleared {otherHolders.Count} previous holder(s))",
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = targetSlug,
+            OutcomeCode = AuditOutcomes.Completed,
+            OperationCode = "transfer",
+            Count = otherHolders.Count,
         });
 
         return target;
@@ -852,14 +850,12 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         _realmCache.Invalidate();
         await ReconcileJobSchedulesAsync(ct);
         _logger.LogInformation("Adopted existing database {DbName} as realm {Slug}", tenantDbName, slug);
-        _securityAudit.Record(new SecurityAuditRecord
+        _securityAudit.RecordPlatform(new PlatformAuditRecord
         {
             EventType = AuditEvents.RealmAdopted,
-            Level = "Info",
-            Realm = slug,
-            Status = "adopted",
-            Reason = $"database {tenantDbName}",
-            Message = $"Adopted existing database {tenantDbName} as realm {slug}",
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "adopt-database",
         });
         return realm;
     }

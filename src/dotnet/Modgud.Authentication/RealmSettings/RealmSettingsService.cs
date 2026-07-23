@@ -376,17 +376,28 @@ public sealed class RealmSettingsService(
     private static ErrorOr<AuditSettings> ApplyAuditPatch(AuditSettings? current, UpdateAuditSettingsDto patch)
     {
         var s = current ?? new AuditSettings();
-        var merged = s with { VisibilityWindowDays = patch.VisibilityWindowDays ?? s.VisibilityWindowDays };
+        var merged = s with
+        {
+            VisibilityWindowDays = patch.VisibilityWindowDays ?? s.VisibilityWindowDays,
+            SecurityRetentionDays = patch.SecurityRetentionDays ?? s.SecurityRetentionDays,
+        };
         if (merged.VisibilityWindowDays < 1)
             return Error.Validation("Audit.InvalidVisibilityWindowDays",
                 "VisibilityWindowDays must be at least 1.");
+        if (merged.SecurityRetentionDays is < 1 or > 365)
+            return Error.Validation("Audit.InvalidSecurityRetentionDays",
+                "SecurityRetentionDays must be between 1 and 365.");
         return merged;
     }
 
     internal static AuditSettingsDto MapAuditToDto(AuditSettings? s)
     {
         s ??= AuditSettings.Defaults;
-        return new AuditSettingsDto { VisibilityWindowDays = s.VisibilityWindowDays };
+        return new AuditSettingsDto
+        {
+            VisibilityWindowDays = s.VisibilityWindowDays,
+            SecurityRetentionDays = s.SecurityRetentionDays,
+        };
     }
 
     internal static DcrSettingsDto MapDcrToDto(DcrSettings? s)

@@ -5,8 +5,10 @@ import { CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import { useAuthStore } from '@/stores/auth.store'
+import { useAppConfigStore } from '@/stores/appconfig.store'
 import AuditLogView from './AuditLogView.vue'
 import AuthLogView from './AuthLogView.vue'
+import PlatformAuditLogView from './PlatformAuditLogView.vue'
 
 // Combined "Logs" home for the two tenant-admin log surfaces (logging/audit
 // redesign): the GDPR audit trail (audit-log:read, /api/admin/audit) and the
@@ -20,6 +22,7 @@ const ui = useUI()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const appConfig = useAppConfigStore()
 
 watch(language, () => ui.set((ctx) => {
   ctx.header.title = t('nav.administration', {}, 'Administration')
@@ -28,10 +31,12 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-type TabId = 'audit' | 'security'
+type TabId = 'audit' | 'security' | 'platform'
 
 const canAudit = computed(() => authStore.hasPermission('audit-log:read'))
 const canSecurity = computed(() => authStore.hasPermission('auth-log:read'))
+const canPlatform = computed(() =>
+  appConfig.config.IsControlPlane && authStore.hasPermission('platform-audit:read'))
 
 // Resolve the requested tab if the caller may see it, else fall back to the
 // first tab they can (audit preferred). Guards against deep-linking a tab the
@@ -39,7 +44,9 @@ const canSecurity = computed(() => authStore.hasPermission('auth-log:read'))
 function resolveTab(requested: unknown): TabId {
   if (requested === 'audit' && canAudit.value) return 'audit'
   if (requested === 'security' && canSecurity.value) return 'security'
-  return canAudit.value ? 'audit' : 'security'
+  if (requested === 'platform' && canPlatform.value) return 'platform'
+  if (canAudit.value) return 'audit'
+  return canSecurity.value ? 'security' : 'platform'
 }
 
 const activeTab = ref<TabId>(resolveTab(route.query.tab))
@@ -64,11 +71,15 @@ watch(() => route.query.tab, (q) => {
       <CoarTab v-if="canSecurity" id="security">
         {{ t('admin.logs.tabs.security', {}, 'Security') }}
       </CoarTab>
+      <CoarTab v-if="canPlatform" id="platform">
+        {{ t('admin.logs.tabs.platform', {}, 'Platform') }}
+      </CoarTab>
     </CoarTabGroup>
 
     <!-- Lazy-mounted: only the active tab's grid runs (and polls). -->
     <AuditLogView v-if="activeTab === 'audit' && canAudit" />
     <AuthLogView v-else-if="activeTab === 'security' && canSecurity" />
+    <PlatformAuditLogView v-else-if="activeTab === 'platform' && canPlatform" />
   </div>
 </template>
 

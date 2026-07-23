@@ -46,16 +46,21 @@ public class ScheduledJobsTenancyTests(ColdStartFixture fixture) : ColdStartTest
 
         var controlPlaneRealmKey = new JobKey(DcrGcJob.Key, "realm:system");
         var tenantRealmKey = new JobKey(DcrGcJob.Key, $"realm:{tenantSlug}");
-        var singletonSystemKey = new JobKey(SecurityAuditPruneJob.Key, "system");
+        var controlPlaneSecurityKey =
+            new JobKey(SecurityAuditPruneJob.Key, "realm:system");
+        var tenantSecurityKey =
+            new JobKey(SecurityAuditPruneJob.Key, $"realm:{tenantSlug}");
+        var singletonPlatformAuditKey =
+            new JobKey(PlatformAuditPruneJob.Key, "system");
         var singletonSystemRetentionKey =
             new JobKey(SystemJobRunHistoryRetentionJob.Key, "system");
 
         Assert.True(await scheduler.CheckExists(controlPlaneRealmKey, ct));
         Assert.True(await scheduler.CheckExists(tenantRealmKey, ct));
-        Assert.True(await scheduler.CheckExists(singletonSystemKey, ct));
+        Assert.True(await scheduler.CheckExists(controlPlaneSecurityKey, ct));
+        Assert.True(await scheduler.CheckExists(tenantSecurityKey, ct));
+        Assert.True(await scheduler.CheckExists(singletonPlatformAuditKey, ct));
         Assert.True(await scheduler.CheckExists(singletonSystemRetentionKey, ct));
-        Assert.False(await scheduler.CheckExists(
-            new JobKey(SecurityAuditPruneJob.Key, $"realm:{tenantSlug}"), ct));
         Assert.False(await scheduler.CheckExists(
             new JobKey(SystemJobRunHistoryRetentionJob.Key, $"realm:{tenantSlug}"), ct));
         var globalStore = factory.Services.GetRequiredService<IGlobalStore>();
@@ -64,7 +69,9 @@ public class ScheduledJobsTenancyTests(ColdStartFixture fixture) : ColdStartTest
         {
             var visible = await jobs.GetAllAsync(ct);
             Assert.Contains(visible,
-                j => j.Key == SecurityAuditPruneJob.Key && j.Scope == nameof(JobScope.System));
+                j => j.Key == SecurityAuditPruneJob.Key && j.Scope == nameof(JobScope.Realm));
+            Assert.Contains(visible,
+                j => j.Key == PlatformAuditPruneJob.Key && j.Scope == nameof(JobScope.System));
             Assert.Contains(visible,
                 j => j.Key == SystemJobRunHistoryRetentionJob.Key
                     && j.Scope == nameof(JobScope.System));
@@ -80,19 +87,30 @@ public class ScheduledJobsTenancyTests(ColdStartFixture fixture) : ColdStartTest
                 CronOverride = "0 17 1 * * ?",
                 Enabled = true,
             }, ct);
-            await jobs.TriggerNowAsync(SecurityAuditPruneJob.Key, ct: ct);
+            await jobs.UpdateAsync(PlatformAuditPruneJob.Key, new JobUpdateDto
+            {
+                CronOverride = "0 18 1 * * ?",
+                Enabled = true,
+            }, ct);
+            await jobs.TriggerNowAsync(PlatformAuditPruneJob.Key, ct: ct);
         });
 
         await InTenantAsync(factory, tenantSlug, async jobs =>
         {
             var visible = await jobs.GetAllAsync(ct);
             Assert.DoesNotContain(visible, j => j.Scope == nameof(JobScope.System));
-            Assert.Null(await jobs.GetAsync(SecurityAuditPruneJob.Key, ct));
+            Assert.NotNull(await jobs.GetAsync(SecurityAuditPruneJob.Key, ct));
+            Assert.Null(await jobs.GetAsync(PlatformAuditPruneJob.Key, ct));
             Assert.Null(await jobs.GetAsync(SystemJobRunHistoryRetentionJob.Key, ct));
 
             await jobs.UpdateAsync(DcrGcJob.Key, new JobUpdateDto
             {
                 CronOverride = "0 0 18 * * ?",
+                Enabled = true,
+            }, ct);
+            await jobs.UpdateAsync(SecurityAuditPruneJob.Key, new JobUpdateDto
+            {
+                CronOverride = "0 19 1 * * ?",
                 Enabled = true,
             }, ct);
         });
@@ -103,25 +121,32 @@ public class ScheduledJobsTenancyTests(ColdStartFixture fixture) : ColdStartTest
         Assert.Equal(
             "0 0 18 * * ?",
             await GetCronAsync(scheduler, tenantRealmKey, ct));
+        Assert.Equal(
+            "0 17 1 * * ?",
+            await GetCronAsync(scheduler, controlPlaneSecurityKey, ct));
+        Assert.Equal(
+            "0 19 1 * * ?",
+            await GetCronAsync(scheduler, tenantSecurityKey, ct));
 
         var systemRun = await WaitForGlobalManualRunAsync(
-            factory, SecurityAuditPruneJob.Key, ct);
+            factory, PlatformAuditPruneJob.Key, ct);
         Assert.NotNull(systemRun);
         await using (var globalSession = globalStore.QuerySession())
         {
             var systemConfig = await globalSession.LoadAsync<JobConfig>(
-                SecurityAuditPruneJob.Key, ct);
-            Assert.Equal("0 17 1 * * ?", systemConfig?.CronOverride);
+                PlatformAuditPruneJob.Key, ct);
+            Assert.Equal("0 18 1 * * ?", systemConfig?.CronOverride);
         }
 
         await using (var tenantMetadataSession = factory.Services
                          .GetRequiredService<IDocumentStore>()
                          .QuerySession(TenantConstants.SystemTenantId))
         {
-            Assert.Null(await tenantMetadataSession.LoadAsync<JobConfig>(
-                SecurityAuditPruneJob.Key, ct));
+            var realmConfig = await tenantMetadataSession.LoadAsync<JobConfig>(
+                SecurityAuditPruneJob.Key, ct);
+            Assert.Equal("0 17 1 * * ?", realmConfig?.CronOverride);
             Assert.False(await tenantMetadataSession.Query<JobRunHistoryEntry>()
-                .AnyAsync(h => h.JobKey == SecurityAuditPruneJob.Key, ct));
+                .AnyAsync(h => h.JobKey == PlatformAuditPruneJob.Key, ct));
         }
 
         // Disabled means manual-only: the durable realm job remains, but its
@@ -171,7 +196,7 @@ public class ScheduledJobsTenancyTests(ColdStartFixture fixture) : ColdStartTest
         // while the reserved Quartz identity remains a single instance.
         var transferred = await realms.TransferControlPlaneAsync(tenantSlug, ct);
         Assert.False(transferred.IsError);
-        var systemDetail = await scheduler.GetJobDetail(singletonSystemKey, ct);
+        var systemDetail = await scheduler.GetJobDetail(singletonPlatformAuditKey, ct);
         Assert.NotNull(systemDetail);
         Assert.Equal(
             tenantSlug,
@@ -187,9 +212,13 @@ public class ScheduledJobsTenancyTests(ColdStartFixture fixture) : ColdStartTest
         {
             var visible = await jobs.GetAllAsync(ct);
             Assert.Contains(visible,
-                j => j.Key == SecurityAuditPruneJob.Key
+                j => j.Key == PlatformAuditPruneJob.Key
                     && j.Scope == nameof(JobScope.System)
-                    && j.EffectiveCron == "0 17 1 * * ?");
+                    && j.EffectiveCron == "0 18 1 * * ?");
+            Assert.Contains(visible,
+                j => j.Key == SecurityAuditPruneJob.Key
+                    && j.Scope == nameof(JobScope.Realm)
+                    && j.EffectiveCron == "0 19 1 * * ?");
         });
     }
 

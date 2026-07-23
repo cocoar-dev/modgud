@@ -10,13 +10,11 @@ namespace Modgud.Authentication.Api.Admin;
 /// <summary>
 /// Tenant audit read surface (logging/audit redesign Track A — the GDPR-audit half).
 ///
-/// <para>Unlike the legacy <c>AuthLog</c> (cross-realm in the system DB, scoped at
-/// read via <c>ScopeToCallerRealm</c>), <see cref="AuthAuditView"/> lives
-/// <b>per-realm in the tenant DB</b>. So the tenant-scoped <see cref="IDocumentSession"/>
+/// <para>Like the realm security log, <see cref="AuthAuditView"/> lives
+/// <b>per-realm in the tenant DB</b>. The tenant-scoped <see cref="IDocumentSession"/>
 /// returns only the caller's realm by <b>physical isolation</b> — no
 /// <c>WHERE Realm =</c> filter is needed and a filter bug cannot leak cross-realm.
-/// Control-plane cross-realm fan-out across realm DBs is deferred; the platform-wide
-/// surface is the streamless security store (Phase 3).</para>
+/// The separate Platform log contains only PII-free deployment events.</para>
 /// </summary>
 public static class AuditEndpoints
 {

@@ -7,6 +7,7 @@ namespace Modgud.Application.DTOs.RealmSettings;
 public record AuditSettingsDto
 {
     public int VisibilityWindowDays { get; init; } = 90;
+    public int SecurityRetentionDays { get; init; } = 7;
 }
 
 /// <summary>Patch payload for the tenant-audit sub-section. Nullable = no change on
@@ -15,4 +16,5 @@ public record AuditSettingsDto
 public record UpdateAuditSettingsDto
 {
     public int? VisibilityWindowDays { get; init; }
+    public int? SecurityRetentionDays { get; init; }
 }

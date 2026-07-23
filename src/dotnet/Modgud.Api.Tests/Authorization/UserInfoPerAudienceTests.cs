@@ -280,26 +280,26 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         }
 
         // The reuse rejection emits a best-effort security event on the async
-        // writer — poll briefly for it to land in the system-tenant streamless store.
-        var recorded = await PollForSecurityAuditEntryAsync(
+        // writer — poll briefly for it to land in the owning realm database.
+        var recorded = await PollForRealmSecurityAuditEventAsync(
             e => e.EventType == AuditEvents.RefreshTokenReuseDetected,
             TestContext.Current.CancellationToken);
 
         Assert.NotNull(recorded);
-        Assert.Equal("Warning", recorded!.Level);
-        Assert.Equal("revoked", recorded.Status);
-        Assert.Contains(clientId, recorded.Reason ?? "", StringComparison.Ordinal);
-        Assert.Equal(testUser.Id.ToString(), recorded.Actor);
+        Assert.Equal(AuditSeverity.Warning, recorded!.Severity);
+        Assert.Equal(AuditOutcomes.Blocked, recorded.OutcomeCode);
+        Assert.Equal(clientId, recorded.OAuthClientId);
+        Assert.Equal(testUser.Id, recorded.ActorSubjectId);
     }
 
-    private async Task<SecurityAuditEntry?> PollForSecurityAuditEntryAsync(
-        Func<SecurityAuditEntry, bool> predicate, CancellationToken ct)
+    private async Task<RealmSecurityAuditEvent?> PollForRealmSecurityAuditEventAsync(
+        Func<RealmSecurityAuditEvent, bool> predicate, CancellationToken ct)
     {
         for (var i = 0; i < 25; i++)
         {
             await using (var read = GetTenantedDocumentSession("system"))
             {
-                var hit = (await read.Query<SecurityAuditEntry>().ToListAsync(ct))
+                var hit = (await read.Query<RealmSecurityAuditEvent>().ToListAsync(ct))
                     .FirstOrDefault(predicate);
                 if (hit is not null) return hit;
             }

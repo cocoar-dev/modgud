@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Authorization.AspNetCore;
@@ -45,9 +44,22 @@ public static class RealmSettingsEndpoints
         group.MapPatch("", async (
             UpdateRealmSettingsDto dto,
             IRealmSettingsService svc,
+            ISecurityAuditLog securityAudit,
             CancellationToken ct) =>
         {
             var result = await svc.PatchAsync(dto, ct);
+            if (!result.IsError && dto.Audit?.SecurityRetentionDays is { } retentionDays)
+            {
+                securityAudit.Record(new SecurityAuditRecord
+                {
+                    EventType = AuditEvents.SecurityRetentionChanged,
+                    Severity = AuditSeverity.Warning,
+                    OutcomeCode = AuditOutcomes.Succeeded,
+                    OperationCode = "change-retention",
+                    RetentionDays = retentionDays,
+                });
+            }
+
             return result.Match(
                 ok => Results.Ok(ok),
                 errors => Results.Problem(
@@ -67,7 +79,6 @@ public static class RealmSettingsEndpoints
         // realm-settings:write permission as the rest of this surface.
         group.MapPost("rotate-signing-key", async (
             IRealmKeyStore keyStore,
-            ClaimsPrincipal user,
             ISecurityAuditLog securityAudit,
             CancellationToken ct) =>
         {
@@ -75,16 +86,13 @@ public static class RealmSettingsEndpoints
             var creds = await keyStore.RotateAsync(slug, ct);
             var kid = creds.Key.KeyId;
 
-            var userName = user.Identity?.Name ?? "(unknown)";
-            // Request context — leave Realm unset (ambient TenantContext is correct).
             securityAudit.Record(new SecurityAuditRecord
             {
                 EventType = AuditEvents.SigningKeyRotated,
-                Level = "Warning",
-                Actor = userName,
-                Status = "rotated",
-                Reason = $"kid {kid}",
-                Message = $"signing key rotated by {userName} — new kid {kid}",
+                Severity = AuditSeverity.Warning,
+                OutcomeCode = AuditOutcomes.Succeeded,
+                OperationCode = "rotate",
+                KeyId = kid,
             });
 
             return Results.Ok(new RotateSigningKeyResponseDto(kid));

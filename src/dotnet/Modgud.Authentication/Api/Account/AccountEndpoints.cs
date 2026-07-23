@@ -110,12 +110,14 @@ public static class AccountEndpoints
                 securityAudit.Record(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.LoginFailedUnknownUser,
-                    Level = "Warning",
-                    Actor = LogPiiMasking.MaskUsername(request.UserName),
-                    Ip = ip,
-                    Status = "rejected",
-                    Reason = "user not found or inactive",
-                    Message = $"Login failed for {LogPiiMasking.MaskUsername(request.UserName)} — user not found or inactive",
+                    Severity = AuditSeverity.Warning,
+                    ActorKind = AuditActorKind.AnonymousIdentifier,
+                    TargetSubjectId = user?.Id,
+                    UnknownIdentifier = user is null ? request.UserName : null,
+                    IpAddress = ip,
+                    AuthenticationMethod = ModgudMeters.LoginMethod.Password,
+                    OutcomeCode = AuditOutcomes.Rejected,
+                    ReasonCode = user is null ? "user-not-found" : "user-inactive",
                 });
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Failure);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
@@ -139,12 +141,12 @@ public static class AccountEndpoints
                     securityAudit.Record(new SecurityAuditRecord
                     {
                         EventType = AuditEvents.LoginFailed,
-                        Level = "Warning",
-                        Actor = LogPiiMasking.MaskUsername(request.UserName),
-                        Ip = ip,
-                        Status = "rejected",
-                        Reason = "email not verified",
-                        Message = $"Login blocked for {LogPiiMasking.MaskUsername(request.UserName)} — email not verified (realm requires verification)",
+                        Severity = AuditSeverity.Warning,
+                        TargetSubjectId = user.Id,
+                        IpAddress = ip,
+                        AuthenticationMethod = ModgudMeters.LoginMethod.Password,
+                        OutcomeCode = AuditOutcomes.Rejected,
+                        ReasonCode = "email-not-verified",
                     });
                     ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Failure);
                     return Results.Json(new
