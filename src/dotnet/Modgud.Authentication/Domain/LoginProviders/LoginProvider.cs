@@ -118,8 +118,9 @@ public class LoginProvider
 
     /// <summary>
     /// Federation v1 (decision G): when <c>true</c>, this provider's claims may
-    /// drive <c>app:admin</c>-and-below group membership at login (gated further
-    /// by per-group <see cref="Principals.Group.ExternallyDrivable"/>). Mirror of
+    /// drive ordinary App-scoped and <c>&lt;resource&gt;:admin</c> group
+    /// membership at login (gated further by per-group
+    /// <see cref="Principals.Group.ExternallyDrivable"/>). Mirror of
     /// <see cref="TrustForEmailLink"/>. <c>realm:admin</c> is never externally
     /// drivable regardless of this flag. Default <c>false</c>.
     /// </summary>

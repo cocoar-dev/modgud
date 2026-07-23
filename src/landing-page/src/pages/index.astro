@@ -314,7 +314,7 @@ const operations = [
           <p class="section-kicker">App-aware authorization</p>
           <h2>Permissions arrive where they belong.</h2>
           <p>
-            Apps own resource catalogs. Roles bind to an app. Tokens carry a familiar <code>resource_access</code> block narrowed to the current audience — not a bag of global claims every service has to interpret.
+            Apps own resource catalogs. Application roles bind to one app; <code>realm:admin</code> is the explicit realm-local exception. Tokens carry a familiar <code>resource_access</code> block narrowed to the current audience — not a bag of global claims every service has to interpret.
           </p>
           <ul class="check-list">
             <li>

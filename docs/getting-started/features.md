@@ -36,7 +36,7 @@ A point-by-point list of what Modgud delivers out of the box.
 ### Multi-app permission model
 - **Apps** as first-class organisational containers within a realm
 - **Resources** declared per app
-- **Roles** bound to one app, holding permissions on its resources
+- **Application roles** bound to one app, holding permissions on its resources; pure `realm:admin` roles are the explicit realm-local exception
 - **Groups** with `BoundTo` activation switch — wildcard `*`, specific apps, or dormant
 - Permission strings shaped `<resource>:<action>` (two segments; app context implicit from the catalog container) with two bypass tiers (`realm:admin`, `<resource>:admin`)
 - Apps also carry their own soft configuration facet — origin, branding, and login posture — while still sharing the realm's user pool and a single `sub` per user

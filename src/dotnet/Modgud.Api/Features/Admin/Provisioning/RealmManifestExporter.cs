@@ -132,10 +132,16 @@ public sealed class RealmManifestExporter(
         {
             Name = r.Name,
             Description = r.Description,
-            App = r.AppId is { } aid && appSlugById.TryGetValue(aid, out var slugOf) ? slugOf : null,
+            App = !r.IsRealmAdmin
+                && r.AppId is { } aid
+                && appSlugById.TryGetValue(aid, out var slugOf)
+                    ? slugOf
+                    : null,
             IsRealmAdmin = r.IsRealmAdmin,
-            Permissions = r.PermissionIds
-                .Where(permKeyById.ContainsKey).Select(id => permKeyById[id]).ToList(),
+            Permissions = r.IsRealmAdmin
+                ? []
+                : r.PermissionIds
+                    .Where(permKeyById.ContainsKey).Select(id => permKeyById[id]).ToList(),
         }).ToList();
 
         // ── Users (raw Person for the human list + ApplicationUser for EmailConfirmed) ─

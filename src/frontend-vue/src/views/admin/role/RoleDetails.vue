@@ -69,23 +69,25 @@ const modalTitle = computed(() => {
 const footerButton = computed(() => ({
   visible: true,
   text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
-  disabled: !form.value.Name.trim() || loading.value,
+  disabled: !form.value.Name.trim()
+    || (!form.value.IsRealmAdmin && !form.value.AppId)
+    || loading.value,
   onClick: save,
 }))
 
 onMounted(async () => {
   applicationsStore.initialize()
   if (isCreate.value) {
-    // Clone: prefill from the staged source with the Name blanked. The App-link
-    // + its catalog subset clone 1:1.
+    // Clone: prefill from the staged source with the Name blanked. Realm-admin
+    // roles are normalized to their deliberately App-less shape.
     const clone = consume<RoleDto>(ROLE_CLONE.entity)
     if (clone) {
       form.value = {
         Name: clone.Name ?? '',
         Description: clone.Description || '',
-        AppId: clone.AppId ?? '',
+        AppId: clone.IsRealmAdmin ? '' : (clone.AppId ?? ''),
         IsRealmAdmin: clone.IsRealmAdmin,
-        PermissionIds: new Set(clone.PermissionIds ?? []),
+        PermissionIds: new Set(clone.IsRealmAdmin ? [] : (clone.PermissionIds ?? [])),
       }
     }
     return
@@ -98,9 +100,9 @@ onMounted(async () => {
       form.value = {
         Name: role.Name,
         Description: role.Description || '',
-        AppId: role.AppId ?? '',
+        AppId: role.IsRealmAdmin ? '' : (role.AppId ?? ''),
         IsRealmAdmin: role.IsRealmAdmin,
-        PermissionIds: new Set(role.PermissionIds ?? []),
+        PermissionIds: new Set(role.IsRealmAdmin ? [] : (role.PermissionIds ?? [])),
       }
     }
   } finally {
@@ -120,6 +122,14 @@ function onAppIdChange() {
   form.value.PermissionIds = new Set<string>()
 }
 
+function onRealmAdminChange(value: boolean) {
+  form.value.IsRealmAdmin = value
+  if (value) {
+    form.value.AppId = ''
+    form.value.PermissionIds = new Set<string>()
+  }
+}
+
 async function save() {
   if (!form.value.Name.trim()) return
   loading.value = true
@@ -127,9 +137,11 @@ async function save() {
     const dto = {
       Name: form.value.Name,
       Description: form.value.Description || null,
-      AppId: form.value.AppId || null,
+      AppId: form.value.IsRealmAdmin ? null : (form.value.AppId || null),
       IsRealmAdmin: form.value.IsRealmAdmin,
-      PermissionIds: form.value.AppId ? Array.from(form.value.PermissionIds) : [],
+      PermissionIds: form.value.IsRealmAdmin
+        ? []
+        : (form.value.AppId ? Array.from(form.value.PermissionIds) : []),
     }
     if (isCreate.value) {
       await roleStore.createRole(dto)
@@ -153,7 +165,7 @@ async function save() {
         <CoarTab id="permissions">{{ t('admin.roleDetails.tabs.permissions', {}, 'Permissions') }}</CoarTab>
       </CoarTabGroup>
 
-      <!-- Tab: Allgemein — identity + the App-link + IsRealmAdmin flag.
+      <!-- Tab: Allgemein — identity + mutually-exclusive role scope.
            The permission picker moves to its own tab so the role's
            grant surface gets full breathing room. -->
       <div v-show="activeTab === 'general'" class="tab-content">
@@ -170,12 +182,15 @@ async function save() {
                 <CoarSelect
                   v-model="form.AppId"
                   :options="appOptions"
+                  :disabled="form.IsRealmAdmin"
                   @update:model-value="onAppIdChange"
                 />
                 <p class="field-hint">
-                  {{ form.AppId
+                  {{ form.IsRealmAdmin
+                    ? t('admin.roleDetails.app.realmAdminHint', {}, 'Realm-admin roles are deliberately not linked to an application.')
+                    : form.AppId
                     ? t('admin.roleDetails.app.linkedHint', {}, 'Role grants the selected permissions of this application.')
-                    : t('admin.roleDetails.app.noneHint', {}, 'No application link — only the realm-admin flag below grants anything. Reserved for the System Admin role.') }}
+                    : t('admin.roleDetails.app.noneHint', {}, 'Choose exactly one application, or enable the realm-admin role below.') }}
                 </p>
               </CoarFormField>
               <CoarFormField class="col-full" :label="t('admin.roleDetails.description', {}, 'Description')">
@@ -185,18 +200,19 @@ async function save() {
             </div>
           </section>
 
-          <!-- Section: Berechtigung — Vorsicht (danger / global bypass, LAST). -->
+          <!-- Section: Berechtigung — Vorsicht (current-realm bypass, LAST). -->
           <section class="form-section">
             <h3 class="form-section-heading">{{ t('admin.roleDetails.section.danger', {}, 'Permissions — caution') }}</h3>
             <div class="modal-form-grid">
               <CoarFormField class="col-full" :label="t('admin.roleDetails.isRealmAdmin.label', {}, 'Privileged role')">
                 <CoarCheckbox
-                  v-model="form.IsRealmAdmin"
+                  :model-value="form.IsRealmAdmin"
+                  @update:model-value="onRealmAdminChange"
                   :label="t('admin.roleDetails.isRealmAdmin.toggle', {}, 'System administrator (realm:admin)')"
                 />
-                <p class="field-hint">{{ t('admin.roleDetails.isRealmAdmin.hint', {}, 'Bypasses every permission check in every realm — only for the System Admin role.') }}</p>
+                <p class="field-hint">{{ t('admin.roleDetails.isRealmAdmin.hint', {}, 'Bypasses every App permission in this realm only. It never grants access to another realm.') }}</p>
                 <CoarNote v-if="form.IsRealmAdmin" variant="warning">
-                  {{ t('admin.roleDetails.isRealmAdmin.warning', {}, 'This flag grants realm:admin — the global bypass. Hand it out only to the System Admin role.') }}
+                  {{ t('admin.roleDetails.isRealmAdmin.warning', {}, 'This creates a pure realm-admin role. Its Application and App permissions are cleared.') }}
                 </CoarNote>
               </CoarFormField>
             </div>
@@ -209,11 +225,13 @@ async function save() {
            because they're admin-functionally the same: nothing to pick. -->
       <div v-show="activeTab === 'permissions'" class="tab-content">
         <p v-if="!form.AppId" class="text-sm text-gray-500">
-          {{ t('admin.roleDetails.permissions.noApp', {}, 'This role isn\'t bound to any application — there\'s nothing to grant. Choose an app in the General tab, then its catalog will appear here.') }}
+          {{ form.IsRealmAdmin
+            ? t('admin.roleDetails.permissions.realmAdmin', {}, 'A realm-admin role needs no catalog entries; it bypasses every App permission inside this realm.')
+            : t('admin.roleDetails.permissions.noApp', {}, 'Choose an app in the General tab, then its catalog will appear here.') }}
         </p>
         <template v-else>
           <p class="tab-hint">
-            {{ t('admin.roleDetails.permissions.hint', {}, 'Subset of the app catalog. This role grants every checked permission to users assigned to it (via direct or group membership).') }}
+            {{ t('admin.roleDetails.permissions.hint', {}, 'Subset of the app catalog. This role grants every checked permission through groups that carry it.') }}
           </p>
           <div v-if="linkedAppCatalog.length === 0" class="text-xs text-gray-400 italic">
             {{ t('admin.roleDetails.permissions.empty', {}, 'The selected Application has no entries in its catalog. Add entries via the App admin first.') }}

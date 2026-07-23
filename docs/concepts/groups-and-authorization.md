@@ -72,7 +72,8 @@ bypass-pre-expansion, per-RS subset narrowing) see the canonical
 
 The IAM hosts an arbitrary number of consuming apps in one realm; each
 is identified by a slug (`modgud`, `acme`, `billing`, …).
-PermissionRoles bind to one app (via `AppId`); groups carry an
+Application PermissionRoles bind to one app (via `AppId`); a pure
+`realm:admin` role is the explicit exception. Groups carry an
 activation list (via `BoundTo`).
 
 A group's `BoundTo` field is the **activation switch**: it lists the

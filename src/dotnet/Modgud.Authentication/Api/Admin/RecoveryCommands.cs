@@ -296,8 +296,9 @@ internal sealed class MagicLinkCommand : IRecoveryCommand
 /// <summary>
 /// Rebuilds all Marten projections from event 0. Mirrors the admin rebuild
 /// endpoint but runs without auth — needed when a schema change leaves
-/// <c>mt_doc_principal</c> empty so no user can claim <c>app:admin</c> until the
-/// principal projection is replayed.
+/// <c>mt_doc_principal</c> empty so no user's App-scoped grants or
+/// <c>realm:admin</c> bypass can resolve until the principal projection is
+/// replayed.
 /// </summary>
 internal sealed class RebuildProjectionsCommand : IRecoveryCommand
 {

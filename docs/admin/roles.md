@@ -1,6 +1,9 @@
 # Roles
 
-A **role** bundles permissions for one app. Users receive roles only through their [groups](./groups) — never directly.
+An **application role** bundles permissions for exactly one app. A pure
+`realm:admin` role is the explicit exception: it has no Application link or
+catalog permissions and grants the bypass across every app in its own realm.
+Users receive roles only through their [groups](./groups) — never directly.
 
 ![Roles list](/screenshots/admin-rollen-liste.png)
 
@@ -42,7 +45,7 @@ The app is never part of the string — it comes from the role's
 Application link (or, for the built-in `modgud`/`control-plane` admin
 surfaces, from the endpoint being called). Plus two bypass tiers:
 
-- **`realm:admin`** — realm-wide. The holder may do anything in any app. Set via the role's **Privileged role** flag, not a catalog entry.
+- **`realm:admin`** — current-realm-wide. The holder may do anything in any app in this realm, but gains nothing in another realm. It is represented by a pure realm-admin role, not a catalog entry.
 - **`<resource>:admin`** — resource-wide, within the role's linked Application (e.g. `user:admin` bypasses both `user:read` and `user:write`).
 
 There is no app-wide bypass tier — bypass is either realm-wide or resource-wide, nothing in between.
@@ -105,12 +108,12 @@ The modal has two tabs:
 - **Name** (unique per realm)
 - **Description** (optional)
 - **Application** — which app does this role belong to? Pick "— None
-  (realm-admin role)" for a pure bypass role (only meaningful together
-  with **Privileged role** below); otherwise a role belongs to exactly
-  one Application.
-- **Privileged role** — a checkbox, independent of the Application
-  link. Grants `realm:admin` — the realm-wide bypass. Reserved for the
-  System Admin role.
+  (realm-admin role)" only for a pure bypass role; otherwise a role
+  belongs to exactly one Application.
+- **Privileged role** — switches the role into the pure realm-admin mode.
+  Enabling it clears and disables the Application link and catalog
+  permissions. It grants `realm:admin` in this realm only and is reserved
+  for the System Admin role.
 
 **Permissions**
 
@@ -128,7 +131,7 @@ all from the `modgud` catalog, all on one role.
 
 ## Cloning a role
 
-To make a variant of a role — say a tighter copy of an existing one — right-click it in the list → **Clone**. The Create modal opens pre-filled: the linked Application, the selected permission subset and the realm-admin flag are copied; only the **Name** is blank. Give the copy a new name, adjust the permission selection, and create.
+To make a variant of a role — say a tighter copy of an existing one — right-click it in the list → **Clone**. The Create modal opens pre-filled: for an application role, the linked Application and selected permission subset are copied; for a realm-admin role, only the pure realm-admin mode is copied. The **Name** is blank. Give the copy a new name, adjust the selection, and create.
 
 ## Cross-app roles (special case)
 
@@ -146,7 +149,7 @@ A role becomes a bypass role through either of two mechanisms:
 
 | Mechanism | Effect |
 | --- | --- |
-| **Privileged role** checkbox set | realm-wide bypass (`realm:admin`) — works in every app, ignores the Application link |
+| Pure **Privileged role** | current-realm-wide bypass (`realm:admin`) — works in every app in this realm and has no Application link |
 | A catalog entry with action `admin` checked (e.g. `user:admin`) | resource-wide bypass — every action on that resource, within the role's linked Application |
 
 There's no app-wide bypass in between — a role is either realm-wide or scoped down to individual resources.
