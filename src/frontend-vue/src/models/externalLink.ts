@@ -22,9 +22,9 @@ export interface ExternalLinkDto {
    */
   LastScriptOutput?: Record<string, unknown> | null
   /**
-   * Raw OIDC claims the IdP actually sent. Only present when the LoginProvider
-   * has StoreRawClaims=true. Shape is a JSON object keyed by claim-type, with
-   * scalar or array values — mirrors what flowed through the token.
+   * Raw OIDC claims or normalized SAML attributes the IdP sent. Only present
+   * when the LoginProvider has StoreRawClaims=true. Shape is a JSON object
+   * keyed by claim type, with scalar or array values.
    */
   LastRawClaims?: Record<string, unknown> | null
 }

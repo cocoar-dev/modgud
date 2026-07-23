@@ -11,8 +11,9 @@ namespace Modgud.Authentication.Domain.LoginProviders;
 /// <b>Type discriminator:</b> <see cref="Type"/> is set on creation and
 /// immutable thereafter. Internal-typed providers are seed-only (the realm
 /// seeder writes one of them), do not have a flavor and skip Client/Secret
-/// validation. Oidc-typed (today) and Saml/Ldap/Kerberos-typed (future)
-/// providers go through the flavor + FlavorData mechanism.
+/// validation. OIDC- and SAML-typed providers use their respective flavor
+/// registries plus <c>FlavorData</c>. LDAP/Kerberos are reserved for future
+/// handlers.
 /// </para>
 /// <para>
 /// <b>Secret handling:</b> The client secret is never stored in clear text and

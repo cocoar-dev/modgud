@@ -9,8 +9,8 @@ namespace Modgud.Authentication.Setup;
 /// SAML 2.0 SP federation wiring. Mirrors the OIDC external-auth setup
 /// (<see cref="Modgud.Authentication.Api.ExternalAuth"/>) — flavor registry,
 /// dynamic per-realm scheme manager, and SP signing/encryption cert
-/// management. Implementation lands incrementally across the SAML wave;
-/// see the maintainers' <c>saml-federation</c> design note.
+/// management. See the SAML federation documentation for the supported
+/// SP-initiated surface and explicit v1 boundaries.
 /// </summary>
 public static class SamlSetup
 {

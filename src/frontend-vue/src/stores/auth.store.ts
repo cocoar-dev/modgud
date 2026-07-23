@@ -177,9 +177,9 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * Logout. For federated sessions, `endIdpSession` controls whether the
-   * IdP-side session is also ended (RP-initiated logout). Default `true`
-   * keeps the existing behavior for non-federated callers that don't care.
+   * Logout. For OIDC sessions, `endIdpSession` controls whether the
+   * IdP-side session is also ended (RP-initiated logout). SAML v1 has no
+   * Single Logout surface, so those sessions always end locally in Modgud.
    *
    * Always ends with a full-page navigation rather than SPA routing — this
    * drops the SignalR singleton, clears Pinia state, and guarantees the next

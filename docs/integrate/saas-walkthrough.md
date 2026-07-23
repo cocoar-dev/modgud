@@ -297,9 +297,9 @@ Made it through? **Done. First SaaS app integrated.**
   all to the same App, each with its own narrower `PermissionIds`
   subset.
 - **External login providers:** under
-  [Login Providers](./login-providers) you configure Google /
-  Microsoft / EntraID. Modgud stays the central IDP but delegates
-  the login step.
+  [Login Providers](./login-providers) you configure Microsoft Entra ID and
+  standards-compatible OIDC or SAML providers. Modgud remains the OIDC
+  provider for your application but delegates the user-authentication step.
 - **Standing up a second, similar app:** right-click an existing App,
   Client, Scope, API, Role, or Group in its list and choose **Clone**
   to pre-fill a new one from it, instead of repeating all five

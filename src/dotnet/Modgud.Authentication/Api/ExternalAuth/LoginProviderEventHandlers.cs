@@ -13,7 +13,8 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 // type (the event stream itself is shared) but the LoginProviderReRegister
 // helper short-circuits non-Oidc providers before touching the scheme manager.
 // An Internal LoginProvider being added/updated/enabled must NOT cause OIDC
-// scheme work — the same is true for Saml/Ldap/Kerberos until those land.
+// scheme work. SAML events are handled by SamlLoginProviderEventHandlers;
+// LDAP/Kerberos remain unsupported.
 
 public class LoginProviderOnAddedHandler(
     IQuerySession session,
@@ -73,9 +74,9 @@ internal static class LoginProviderReRegister
             return;
         }
 
-        // Type-discriminator gate. Internal/Saml/Ldap/Kerberos events skip the
-        // scheme-manager path — the manager defends itself too, but pre-
-        // filtering here keeps the warn logs out of the happy path. The
+        // Type-discriminator gate. Every non-OIDC event skips this OIDC
+        // scheme-manager path — SAML has its own parallel handlers, and the
+        // manager defends itself too. Pre-filtering keeps logs clean. The
         // unregister-on-missing branch above is unconditional on purpose: a
         // deleted Oidc provider whose record vanished should still drop its
         // scheme.
