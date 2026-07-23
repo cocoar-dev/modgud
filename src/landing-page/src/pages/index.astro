@@ -91,9 +91,10 @@ const operations = [
       <div class="hero-inner">
         <div class="hero-copy" data-reveal>
           <p class="eyebrow"><span></span> Self-hosted identity control plane</p>
-          <h1>Identity, isolated by realm.<br /> <em>Access, shaped for every app.</em></h1>
+          <h1>“Who are you,<br /> <em>and what brings you here?”</em></h1>
+          <p class="hero-thesis">Identity, isolated by realm. Access, shaped for every app.</p>
           <p class="hero-lede">
-            Modgud is an OAuth 2.0 and OpenID Connect server for multi-tenant applications — with physical tenant isolation, app-aware permissions and every modern way in.
+            Modgud is a self-hosted OAuth 2.0 and OpenID Connect server for multi-tenant applications — with physical tenant isolation, app-aware permissions and every modern way in.
           </p>
           <div class="hero-actions">
             <a class="button button-primary" href={quickstartUrl}>
@@ -200,9 +201,12 @@ const operations = [
       </div>
     </section>
 
-    <section class="standards" aria-label="Supported standards and technologies">
+    <section class="standards" aria-label="Open source commitment and supported standards">
       <div class="standards-inner">
-        <p>Built on standards, not lock-in</p>
+        <div class="standards-copy">
+          <p>Built for our stack. Open for yours.</p>
+          <span>Apache 2.0 · the identity platform behind our own products</span>
+        </div>
         <ul>
           {standards.map((standard) => <li>{standard}</li>)}
         </ul>
@@ -443,10 +447,10 @@ app.MapPost(<span class="code-string">"/orders"</span>, CreateOrder)
           <img src="/shield.svg" alt="" width="148" height="194" loading="lazy" />
         </div>
         <div class="name-copy">
-          <p class="section-kicker">The watcher of the bridge</p>
-          <h2>“Who are you, and what brings you here?”</h2>
+          <p class="section-kicker">The question behind the name</p>
+          <h2>The watcher of the bridge.</h2>
           <p>
-            Modgud takes its name from <em>Móðguðr</em>, the guardian of Gjallarbrú in Norse mythology. She challenged every traveller crossing the bridge — a fitting namesake for the service deciding who may pass, and where.
+            Modgud takes its name from <em>Móðguðr</em>, the guardian of Gjallarbrú in Norse mythology. She challenged every traveller crossing the bridge. In Modgud, that old question becomes a modern boundary: who may pass, and where.
           </p>
         </div>
       </div>
